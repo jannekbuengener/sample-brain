@@ -23,10 +23,7 @@ Scan → Analyze → Tag → Export. Stay in your flow.
 ```bash
 # Create virtual environment
 python -m venv .venv
-.venv\Scripts\activate   # Windows
-source .venv/bin/activate # macOS/Linux
-
-# Install dependencies
+. .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
@@ -48,7 +45,7 @@ python -m src.cli analyze
 python -m src.cli autotype --no-knn
 
 # Export tags to FL Studio
-python -m src.cli export_fl "C:\Users\<username>\Documents\Image-Line"   # Windows
+python -m src.cli export_fl "C:\Users\janne\Documents\Image-Line"   # Windows
 python -m src.cli export_fl "~/Documents/Image-Line"               # macOS/Linux
 ```
 

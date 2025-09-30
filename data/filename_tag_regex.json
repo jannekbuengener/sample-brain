@@ -1,0 +1,226 @@
+{
+  "_flags": "i",
+  "bpm": [
+    {
+      "pattern": "(?<!\\d)(\\d{2,3})\\s?bpm\\b",
+      "group": 1
+    },
+    {
+      "pattern": "\\b(\\d{2,3})\\s?(?:bpm)?\\b",
+      "group": 1
+    }
+  ],
+  "key": [
+    {
+      "pattern": "\\b([A-G])([#♯b♭])?\\s?(m|min|minor|maj|major)?\\b",
+      "note_group": 1,
+      "acc_group": 2,
+      "mode_group": 3
+    }
+  ],
+  "instrument": {
+    "Drum": [
+      "\\bdrum[s]?\\b",
+      "\\bbeat[s]?\\b"
+    ],
+    "Kick": [
+      "\\bkick\\b",
+      "\\bkck\\b"
+    ],
+    "Snare": [
+      "\\bsnare\\b",
+      "\\bsnr\\b"
+    ],
+    "HiHat": [
+      "\\bhihat\\b",
+      "\\bhi[-\\s]?hat\\b",
+      "\\bhat[s]?\\b"
+    ],
+    "Clap": [
+      "\\bclap[s]?\\b"
+    ],
+    "Perc": [
+      "\\bperc(?:ussion)?\\b",
+      "\\bshaker[s]?\\b",
+      "\\btom[s]?\\b",
+      "\\brim(?:shot)?\\b",
+      "\\bcowbell\\b"
+    ],
+    "Cymbal": [
+      "\\bcrash\\b",
+      "\\bride\\b",
+      "\\bcymbal[s]?\\b"
+    ],
+    "Drum Loop": [
+      "\\bdrum\\s?loop\\b",
+      "\\bbeat\\s?loop\\b"
+    ],
+    "Pad": [
+      "\\bpad[s]?\\b",
+      "\\batmos(?:pheric)?\\b",
+      "\\bdrone\\b"
+    ],
+    "Bass": [
+      "\\bbass\\b",
+      "\\bsub\\b"
+    ],
+    "Lead": [
+      "\\blead\\b",
+      "\\bstab[s]?\\b",
+      "\\barp\\b",
+      "\\bpluck\\b"
+    ],
+    "Piano": [
+      "\\bpiano\\b",
+      "\\bkeys?\\b",
+      "\\bkeyboard\\b"
+    ],
+    "Vocal": [
+      "\\bvocal[s]?\\b",
+      "\\bvox\\b"
+    ],
+    "FX": [
+      "\\bfx\\b",
+      "\\bsweep\\b",
+      "\\briser\\b",
+      "\\bimpact\\b",
+      "\\btexture\\b"
+    ]
+  },
+  "genre": {
+    "Electronic": [
+      "\\belectronic\\b"
+    ],
+    "Techno": [
+      "\\btechno\\b"
+    ],
+    "House": [
+      "\\bhouse\\b"
+    ],
+    "Tech-House": [
+      "\\btech[-\\s]?house\\b"
+    ],
+    "Garage House": [
+      "\\bgarage[-\\s]?house\\b"
+    ],
+    "Melodic House & Techno": [
+      "\\bmelodic\\s+house\\s*&\\s*techno\\b"
+    ],
+    "Trance": [
+      "\\btrance\\b"
+    ],
+    "Drum & Bass": [
+      "\\bdrum\\s*&\\s*bass\\b",
+      "\\bdnb\\b"
+    ],
+    "Dubstep": [
+      "\\bdubstep\\b"
+    ],
+    "Ambient": [
+      "\\bambient\\b"
+    ],
+    "Hip-Hop": [
+      "\\bhip[-\\s]?hop\\b"
+    ],
+    "Trap": [
+      "\\btrap\\b"
+    ],
+    "Cinematic": [
+      "\\bcinematic\\b"
+    ],
+    "Dance": [
+      "\\bdance\\b"
+    ]
+  },
+  "subgenre": {
+    "Deep House": [
+      "\\bdeep\\s+house\\b"
+    ],
+    "Progressive House": [
+      "\\bprogressive\\s+house\\b"
+    ],
+    "Minimal Techno": [
+      "\\bminimal\\s+techno\\b"
+    ],
+    "Peaktime/Driving Techno": [
+      "\\bpeaktime\\b|\\bdriving\\b"
+    ],
+    "Raw/Deep/Hypnotic Techno": [
+      "\\braw\\b|\\bdeep\\b|\\bhypnotic\\b"
+    ],
+    "Acid Techno": [
+      "\\bacid\\s+techno\\b"
+    ],
+    "Electro House": [
+      "\\belectro\\s+house\\b"
+    ],
+    "Tropical House": [
+      "\\btropical\\s+house\\b"
+    ],
+    "Nu-Disco": [
+      "\\bnu[-\\s]?disco\\b"
+    ],
+    "Synthwave": [
+      "\\bsynthwave\\b"
+    ],
+    "Soundtrack": [
+      "\\bsoundtrack\\b"
+    ],
+    "Dark Ambient": [
+      "\\bdark\\s+ambient\\b"
+    ],
+    "Boom Bap": [
+      "\\bboom\\s*bap\\b"
+    ]
+  },
+  "mood": {
+    "dreamy": [
+      "\\bdreamy\\b"
+    ],
+    "punchy": [
+      "\\bpunchy\\b"
+    ],
+    "dark": [
+      "\\bdark\\b|\\bhaunting\\b|\\beerie\\b|\\bmysterious\\b"
+    ],
+    "uplifting": [
+      "\\buplifting\\b|\\binspirational\\b|\\bempowering\\b"
+    ],
+    "energetic": [
+      "\\benergetic\\b|\\bdriving\\b|\\bpowerful\\b|\\bintense\\b"
+    ],
+    "melancholic": [
+      "\\bmelancholic\\b|\\bmelancholy\\b|\\bsad\\b"
+    ],
+    "calm": [
+      "\\bcalm\\b|\\bchill\\b|\\bpeaceful\\b"
+    ],
+    "euphoric": [
+      "\\beuphoric\\b"
+    ],
+    "happy": [
+      "\\bhappy\\b|\\bfun\\b|\\bpositive\\b"
+    ],
+    "warm": [
+      "\\bwarm\\b"
+    ],
+    "gritty": [
+      "\\bgritty\\b"
+    ],
+    "airy": [
+      "\\bairy\\b"
+    ],
+    "noisy": [
+      "\\bnoisy\\b"
+    ],
+    "tight": [
+      "\\btight\\b"
+    ]
+  },
+  "bars": [
+    {
+      "pattern": "\\b(\\d{1,2})\\s?bar[s]?\\b",
+      "group": 1
+    }
+  ]
+}

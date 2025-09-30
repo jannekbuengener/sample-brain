@@ -1,0 +1,84 @@
+{
+  "display": {
+    "accidentals": "sharp_only",
+    "mode_label": "minor_major",
+    "format": "{pc} {mode}"
+  },
+  "policy": {
+    "allow_modes": [
+      "minor",
+      "major",
+      "unknown"
+    ],
+    "preferred_mode": "minor",
+    "filter_major": false,
+    "min_confidence": 0.55
+  },
+  "exceptions": {
+    "ignore_key_for_pred_types": [
+      "Drum",
+      "Kick",
+      "Snare",
+      "HiHat",
+      "Clap",
+      "Perc",
+      "Cymbal",
+      "Drum Loop"
+    ]
+  },
+  "enharmonic_map_to_sharp": {
+    "Cb": "B",
+    "B#": "C",
+    "Db": "C#",
+    "Eb": "D#",
+    "Fb": "E",
+    "Gb": "F#",
+    "Ab": "G#",
+    "Bb": "A#",
+    "E#": "F"
+  },
+  "parse_aliases": {
+    "m": "minor",
+    "min": "minor",
+    "minor": "minor",
+    "maj": "major",
+    "major": "major"
+  },
+  "valid_pcs_sharp": [
+    "C",
+    "C#",
+    "D",
+    "D#",
+    "E",
+    "F",
+    "F#",
+    "G",
+    "G#",
+    "A",
+    "A#",
+    "B"
+  ],
+  "unknown_mode_default": "unknown",
+  "examples": {
+    "in": [
+      "Bbmin",
+      "Db",
+      "D#m",
+      "C#",
+      "G major",
+      "CM",
+      "F#m",
+      "A♭m"
+    ],
+    "out": [
+      "A# minor",
+      "C# unknown",
+      "D# minor",
+      "C# unknown",
+      "G major",
+      "C major",
+      "F# minor",
+      "G# minor"
+    ]
+  }
+}
