@@ -27,9 +27,22 @@ def main():
 
     # export
     p_export = sub.add_parser("export", help="Export metadata (DAW-neutral)")
-    p_export.add_argument("--format", "-f", choices=["json", "csv", "yaml"], default="json",
+    p_export.add_argument("--format", "-f", choices=["json", "csv", "yaml", "xml", "parquet"], default="json",
                           help="Export format (default: json)")
     p_export.add_argument("--output", "-o", help="Output file path (optional)")
+    p_export.add_argument("--streaming", action="store_true", help="Use streaming export for large libraries")
+    p_export.add_argument("--chunk-size", type=int, default=1000, help="Chunk size for streaming (default: 1000)")
+
+    # export-daw (DAW-specific adapters)
+    p_daw = sub.add_parser("export-daw", help="Export to DAW-specific formats")
+    p_daw.add_argument("daw", choices=["ableton", "bitwig"], help="Target DAW")
+    p_daw.add_argument("--format", "-f", choices=["json", "xml"], default="json",
+                       help="Format (for Bitwig: json or xml)")
+    p_daw.add_argument("--output", "-o", help="Output file path (optional)")
+
+    # create-views (SQLite views)
+    p_views = sub.add_parser("create-views", help="Create SQLite metadata views")
+    p_views.add_argument("--export-schema", action="store_true", help="Export views schema to SQL file")
 
     # (optional) embed
     p_emb = sub.add_parser("embed", help="OpenL3-Embeddings berechnen (optional)")
@@ -82,13 +95,63 @@ def main():
 
     if args.cmd == "export":
         try:
-            from .export_generic import run_export
+            if args.format in ["xml", "parquet"]:
+                from .export_extended import run_export_xml, run_export_parquet
+                output = Path(args.output) if args.output else None
+                if args.format == "xml":
+                    result_path = run_export_xml(output)
+                else:  # parquet
+                    result_path = run_export_parquet(output)
+            elif args.streaming:
+                from .export_generic import run_export_streaming
+                output = Path(args.output) if args.output else None
+                result_path = run_export_streaming(
+                    format=args.format,
+                    output_path=output,
+                    chunk_size=args.chunk_size
+                )
+            else:
+                from .export_generic import run_export
+                output = Path(args.output) if args.output else None
+                result_path = run_export(format=args.format, output_path=output)
         except Exception as e:
             print(f"[ERROR] Export-Modul fehlt/fehlerhaft: {e}", file=sys.stderr)
             sys.exit(1)
-        output = Path(args.output) if args.output else None
-        result_path = run_export(format=args.format, output_path=output)
         print(f"Export completed: {result_path}")
+        return
+
+    if args.cmd == "export-daw":
+        try:
+            output = Path(args.output) if args.output else None
+            if args.daw == "ableton":
+                from .export_ableton import run_export_ableton
+                collection_path, tag_index_path = run_export_ableton(output)
+                print(f"Ableton export completed:")
+                print(f"  Collection: {collection_path}")
+                print(f"  Tag index:  {tag_index_path}")
+            elif args.daw == "bitwig":
+                from .export_bitwig import run_export_bitwig
+                result_path = run_export_bitwig(format=args.format, output_path=output)
+                print(f"Bitwig export completed: {result_path}")
+        except Exception as e:
+            print(f"[ERROR] DAW export fehlt/fehlerhaft: {e}", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    if args.cmd == "create-views":
+        try:
+            from .export_extended import run_create_sqlite_views, export_sqlite_views_schema
+            views = run_create_sqlite_views()
+            print(f"Created {len(views)} SQLite views:")
+            for view_name in views.keys():
+                print(f"  - {view_name}")
+
+            if args.export_schema:
+                schema_path = export_sqlite_views_schema()
+                print(f"\nSchema exported to: {schema_path}")
+        except Exception as e:
+            print(f"[ERROR] Views creation fehlt/fehlerhaft: {e}", file=sys.stderr)
+            sys.exit(1)
         return
 
     if args.cmd == "embed":
