@@ -35,10 +35,12 @@ def main():
 
     # export-daw (DAW-specific adapters)
     p_daw = sub.add_parser("export-daw", help="Export to DAW-specific formats")
-    p_daw.add_argument("daw", choices=["ableton", "bitwig"], help="Target DAW")
-    p_daw.add_argument("--format", "-f", choices=["json", "xml"], default="json",
-                       help="Format (for Bitwig: json or xml)")
+    p_daw.add_argument("daw", choices=["ableton", "bitwig", "fl", "logic", "cubase", "studio-one", "reaper"],
+                       help="Target DAW")
+    p_daw.add_argument("--format", "-f", choices=["json", "xml", "csv"], default="json",
+                       help="Format (DAW-dependent: Bitwig/Logic/Cubase/Studio One support xml, Reaper supports csv)")
     p_daw.add_argument("--output", "-o", help="Output file path (optional)")
+    p_daw.add_argument("--fl-user-data", help="FL Studio user data path (e.g. C:\\Users\\NAME\\Documents\\Image-Line)")
 
     # create-views (SQLite views)
     p_views = sub.add_parser("create-views", help="Create SQLite metadata views")
@@ -123,16 +125,45 @@ def main():
     if args.cmd == "export-daw":
         try:
             output = Path(args.output) if args.output else None
+
             if args.daw == "ableton":
                 from .export_ableton import run_export_ableton
                 collection_path, tag_index_path = run_export_ableton(output)
                 print(f"Ableton export completed:")
                 print(f"  Collection: {collection_path}")
                 print(f"  Tag index:  {tag_index_path}")
+
             elif args.daw == "bitwig":
                 from .export_bitwig import run_export_bitwig
                 result_path = run_export_bitwig(format=args.format, output_path=output)
                 print(f"Bitwig export completed: {result_path}")
+
+            elif args.daw == "fl":
+                from .export_fl import run_export_fl
+                fl_user_data = Path(args.fl_user_data) if args.fl_user_data else None
+                result_path = run_export_fl(output_path=output, fl_user_data=fl_user_data)
+                print(f"FL Studio export completed: {result_path}")
+
+            elif args.daw == "logic":
+                from .export_logic import run_export_logic
+                result_path = run_export_logic(output)
+                print(f"Logic Pro export completed: {result_path}")
+
+            elif args.daw == "cubase":
+                from .export_cubase import run_export_cubase
+                result_path = run_export_cubase(output)
+                print(f"Cubase/Nuendo export completed: {result_path}")
+
+            elif args.daw == "studio-one":
+                from .export_studio_one import run_export_studio_one
+                result_path = run_export_studio_one(output)
+                print(f"Studio One export completed: {result_path}")
+
+            elif args.daw == "reaper":
+                from .export_reaper import run_export_reaper
+                result_path = run_export_reaper(format=args.format, output_path=output)
+                print(f"REAPER export completed: {result_path}")
+
         except Exception as e:
             print(f"[ERROR] DAW export fehlt/fehlerhaft: {e}", file=sys.stderr)
             sys.exit(1)
