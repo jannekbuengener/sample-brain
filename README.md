@@ -14,6 +14,7 @@ Scan → Analyze → Tag. Stay in your flow.
 ### Core Pipeline
 - **Scan**: build a database from your sample library
 - **Analyze**: extract audio features (BPM, key, loudness, brightness, MFCCs, chroma …)
+  - **EDM Mode**: Enhanced precision for electronic dance music (Camelot keys, sub-bass, energy scoring)
 - **Autotype**: automatic categorization (Kick, Snare, Pad, Drone, Impact …)
 - **Metadata**: DAW-neutral tag generation for universal sample management
 
@@ -54,6 +55,9 @@ python -m src.cli scan
 
 # Analyze audio features
 python -m src.cli analyze
+
+# EDM-optimized analysis (higher precision for electronic music)
+python -m src.cli analyze --setup-edm-db --edm
 
 # Autotype samples (rules only)
 python -m src.cli autotype --no-knn

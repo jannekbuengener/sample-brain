@@ -19,7 +19,9 @@ def main():
     p_scan.add_argument("root", help="Wurzelordner mit Samples (z.B. D:\\...\\Samples)")
 
     # analyze
-    sub.add_parser("analyze", help="Audio-Features (librosa) berechnen")
+    p_analyze = sub.add_parser("analyze", help="Audio-Features (librosa) berechnen")
+    p_analyze.add_argument("--edm", action="store_true", help="EDM-optimierte Analyse (höhere Genauigkeit für elektronische Musik)")
+    p_analyze.add_argument("--setup-edm-db", action="store_true", help="DB-Schema für EDM-Features erweitern")
 
     # autotype
     p_aut = sub.add_parser("autotype", help="Audio-basierte Typisierung -> features.pred_type")
@@ -75,13 +77,34 @@ def main():
         return
 
     if args.cmd == "analyze":
+        # Setup EDM database schema if requested
+        if args.setup_edm_db:
+            try:
+                from .db_edm import add_edm_columns, create_edm_views
+                print("[EDM] Setting up database schema...")
+                add_edm_columns()
+                create_edm_views()
+                print("[EDM] Database schema ready.")
+                if not args.edm:
+                    return  # Just setup, don't analyze
+            except Exception as e:
+                print(f"[ERROR] EDM DB setup failed: {e}", file=sys.stderr)
+                sys.exit(1)
+
+        # Run analysis
         try:
-            from .analyze import run_analyze
+            if args.edm:
+                print("[EDM] Running EDM-optimized analysis...")
+                from .analyze_edm_runner import run_analyze_edm
+                run_analyze_edm()
+                print("[EDM] Analysis completed with enhanced precision.")
+            else:
+                from .analyze import run_analyze
+                run_analyze()
+                print("Analyze completed.")
         except Exception as e:
             print(f"[ERROR] Analyze-Modul fehlt/fehlerhaft: {e}", file=sys.stderr)
             sys.exit(1)
-        run_analyze()
-        print("Analyze completed.")
         return
 
     if args.cmd == "autotype":
