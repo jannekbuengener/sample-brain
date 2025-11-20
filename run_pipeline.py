@@ -20,7 +20,7 @@ def _save_state(state: dict):
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="sample-brain: Scan → Analyze → Autotype (DAW-neutral pipeline)"
+        description="sample-brain: Scan → Analyze → Autotype → Export (DAW-neutral pipeline)"
     )
     p.add_argument(
         "--root", "-r", action="append",
@@ -28,7 +28,10 @@ def parse_args():
     )
     p.add_argument("--no-analyze", action="store_true", help="Analyze-Schritt überspringen")
     p.add_argument("--no-autotype", action="store_true", help="Autotype-Schritt überspringen")
+    p.add_argument("--no-export", action="store_true", help="Export-Schritt überspringen")
     p.add_argument("--rules-only", action="store_true", help="Autotype ohne kNN/Embeddings")
+    p.add_argument("--export-format", choices=["json", "csv", "yaml"], default="json",
+                   help="Export format (default: json)")
     p.add_argument("--save", action="store_true", help="übergebene Pfade in data/last_paths.json speichern")
     return p.parse_args()
 
@@ -80,6 +83,14 @@ def main():
         print(f"[autotype] ok ({'rules+knn' if use_knn else 'rules only'})")
     else:
         print("[autotype] übersprungen (flag)")
+
+    # 6) export (DAW-neutral)
+    if not args.no_export:
+        from src.export_generic import run_export
+        result_path = run_export(format=args.export_format)
+        print(f"[export] ok → {result_path}")
+    else:
+        print("[export] übersprungen (flag)")
 
     print("== fertig ==")
 

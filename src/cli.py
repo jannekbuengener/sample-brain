@@ -25,6 +25,12 @@ def main():
     p_aut = sub.add_parser("autotype", help="Audio-basierte Typisierung -> features.pred_type")
     p_aut.add_argument("--no-knn", action="store_true", help="kNN/Seeds deaktivieren")
 
+    # export
+    p_export = sub.add_parser("export", help="Export metadata (DAW-neutral)")
+    p_export.add_argument("--format", "-f", choices=["json", "csv", "yaml"], default="json",
+                          help="Export format (default: json)")
+    p_export.add_argument("--output", "-o", help="Output file path (optional)")
+
     # (optional) embed
     p_emb = sub.add_parser("embed", help="OpenL3-Embeddings berechnen (optional)")
     p_emb.add_argument("--limit", type=int, default=None, help="Nur X Dateien einbetten")
@@ -72,6 +78,17 @@ def main():
         use_knn = not args.no_knn
         write_autotype_to_db(use_knn=use_knn, knn_min_conf=0.55)
         print("Autotypisierung abgeschlossen.")
+        return
+
+    if args.cmd == "export":
+        try:
+            from .export_generic import run_export
+        except Exception as e:
+            print(f"[ERROR] Export-Modul fehlt/fehlerhaft: {e}", file=sys.stderr)
+            sys.exit(1)
+        output = Path(args.output) if args.output else None
+        result_path = run_export(format=args.format, output_path=output)
+        print(f"Export completed: {result_path}")
         return
 
     if args.cmd == "embed":

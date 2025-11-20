@@ -43,6 +43,9 @@ python -m src.cli analyze
 
 # Autotype samples (rules only)
 python -m src.cli autotype --no-knn
+
+# Export metadata (DAW-neutral)
+python -m src.cli export --format json  # or csv, yaml
 ```
 
 ---
