@@ -25,10 +25,6 @@ def main():
     p_aut = sub.add_parser("autotype", help="Audio-basierte Typisierung -> features.pred_type")
     p_aut.add_argument("--no-knn", action="store_true", help="kNN/Seeds deaktivieren")
 
-    # export_fl
-    p_exp = sub.add_parser("export_fl", help="FL Studio Browser Tags schreiben")
-    p_exp.add_argument("fl_user_data", help=r'Z.B. C:\Users\DEINNAME\Documents\Image-Line')
-
     # (optional) embed
     p_emb = sub.add_parser("embed", help="OpenL3-Embeddings berechnen (optional)")
     p_emb.add_argument("--limit", type=int, default=None, help="Nur X Dateien einbetten")
@@ -76,16 +72,6 @@ def main():
         use_knn = not args.no_knn
         write_autotype_to_db(use_knn=use_knn, knn_min_conf=0.55)
         print("Autotypisierung abgeschlossen.")
-        return
-
-    if args.cmd == "export_fl":
-        try:
-            from .export_fl import run_export
-        except Exception as e:
-            print(f"[ERROR] Export-Modul fehlt/fehlerhaft: {e}", file=sys.stderr)
-            sys.exit(1)
-        run_export(args.fl_user_data)
-        print("FL Tags export completed.")
         return
 
     if args.cmd == "embed":

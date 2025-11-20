@@ -1,5 +1,5 @@
-**AI-powered sample management for FL Studio**  
-Scan → Analyze → Tag → Export. Stay in your flow.  
+**AI-powered sample management - DAW-neutral**
+Scan → Analyze → Tag. Stay in your flow.  
 
 ---
 
@@ -11,10 +11,10 @@ Scan → Analyze → Tag → Export. Stay in your flow.
 
 ## 🚀 Features (MVP)
 
-- **Scan**: build a database from your sample library  
-- **Analyze**: extract audio features (BPM, key, loudness, brightness, MFCCs, chroma …)  
-- **Autotype**: automatic categorization (Kick, Snare, Pad, Drone, Impact …)  
-- **Export**: write smart tags into the **FL Studio Browser**  
+- **Scan**: build a database from your sample library
+- **Analyze**: extract audio features (BPM, key, loudness, brightness, MFCCs, chroma …)
+- **Autotype**: automatic categorization (Kick, Snare, Pad, Drone, Impact …)
+- **Metadata**: DAW-neutral tag generation for universal sample management  
 
 ---
 
@@ -43,10 +43,6 @@ python -m src.cli analyze
 
 # Autotype samples (rules only)
 python -m src.cli autotype --no-knn
-
-# Export tags to FL Studio
-python -m src.cli export_fl "C:\Users\janne\Documents\Image-Line"   # Windows
-python -m src.cli export_fl "~/Documents/Image-Line"               # macOS/Linux
 ```
 
 ---
