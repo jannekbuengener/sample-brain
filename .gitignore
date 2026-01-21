@@ -205,3 +205,13 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+# --- SampleBrain hygiene ---
+data/**/*.wav
+data/**/*.aiff
+data/**/*.flac
+data/**/*.mp3
+data/catalog.db
+data/**/catalog.db
+data/last_paths.json
+.venv/
+__pycache__/
