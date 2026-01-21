@@ -1,0 +1,35 @@
+# pipeline_config.yaml
+# Map folder keywords to profiles. First match wins.
+# You can edit these keywords to match your own folder structure.
+
+folder_profile_map:
+  techno:
+    - techno
+    - hardtechno
+    - schranz
+  house:
+    - house
+    - deep house
+    - tech house
+  hiphop:
+    - hiphop
+    - hip-hop
+    - trap
+    - boom bap
+  vocals:
+    - vocal
+    - vocals
+    - acapella
+    - vox
+  film_scoring:
+    - film
+    - scoring
+    - cinematic
+    - trailer
+    - soundtrack
+
+defaults:
+  profile: techno
+  missing_detail: "--"
+  missing_bpm: "--BPM"
+  missing_key: "--KEY"
