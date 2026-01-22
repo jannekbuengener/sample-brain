@@ -19,15 +19,34 @@ def main():
     p_scan.add_argument("root", help="Wurzelordner mit Samples (z.B. D:\\...\\Samples)")
 
     # analyze
-    sub.add_parser("analyze", help="Audio-Features (librosa) berechnen")
+    p_analyze = sub.add_parser("analyze", help="Audio-Features (librosa) berechnen")
+    p_analyze.add_argument("--edm", action="store_true", help="EDM-optimierte Analyse (höhere Genauigkeit für elektronische Musik)")
+    p_analyze.add_argument("--setup-edm-db", action="store_true", help="DB-Schema für EDM-Features erweitern")
 
     # autotype
     p_aut = sub.add_parser("autotype", help="Audio-basierte Typisierung -> features.pred_type")
     p_aut.add_argument("--no-knn", action="store_true", help="kNN/Seeds deaktivieren")
 
-    # export_fl
-    p_exp = sub.add_parser("export_fl", help="FL Studio Browser Tags schreiben")
-    p_exp.add_argument("fl_user_data", help=r'Z.B. C:\Users\DEINNAME\Documents\Image-Line')
+    # export
+    p_export = sub.add_parser("export", help="Export metadata (DAW-neutral)")
+    p_export.add_argument("--format", "-f", choices=["json", "csv", "yaml", "xml", "parquet"], default="json",
+                          help="Export format (default: json)")
+    p_export.add_argument("--output", "-o", help="Output file path (optional)")
+    p_export.add_argument("--streaming", action="store_true", help="Use streaming export for large libraries")
+    p_export.add_argument("--chunk-size", type=int, default=1000, help="Chunk size for streaming (default: 1000)")
+
+    # export-daw (DAW-specific adapters)
+    p_daw = sub.add_parser("export-daw", help="Export to DAW-specific formats")
+    p_daw.add_argument("daw", choices=["ableton", "bitwig", "fl", "logic", "cubase", "studio-one", "reaper"],
+                       help="Target DAW")
+    p_daw.add_argument("--format", "-f", choices=["json", "xml", "csv"], default="json",
+                       help="Format (DAW-dependent: Bitwig/Logic/Cubase/Studio One support xml, Reaper supports csv)")
+    p_daw.add_argument("--output", "-o", help="Output file path (optional)")
+    p_daw.add_argument("--fl-user-data", help="FL Studio user data path (e.g. C:\\Users\\NAME\\Documents\\Image-Line)")
+
+    # create-views (SQLite views)
+    p_views = sub.add_parser("create-views", help="Create SQLite metadata views")
+    p_views.add_argument("--export-schema", action="store_true", help="Export views schema to SQL file")
 
     # (optional) embed
     p_emb = sub.add_parser("embed", help="OpenL3-Embeddings berechnen (optional)")
@@ -58,13 +77,34 @@ def main():
         return
 
     if args.cmd == "analyze":
+        # Setup EDM database schema if requested
+        if args.setup_edm_db:
+            try:
+                from .db_edm import add_edm_columns, create_edm_views
+                print("[EDM] Setting up database schema...")
+                add_edm_columns()
+                create_edm_views()
+                print("[EDM] Database schema ready.")
+                if not args.edm:
+                    return  # Just setup, don't analyze
+            except Exception as e:
+                print(f"[ERROR] EDM DB setup failed: {e}", file=sys.stderr)
+                sys.exit(1)
+
+        # Run analysis
         try:
-            from .analyze import run_analyze
+            if args.edm:
+                print("[EDM] Running EDM-optimized analysis...")
+                from .analyze_edm_runner import run_analyze_edm
+                run_analyze_edm()
+                print("[EDM] Analysis completed with enhanced precision.")
+            else:
+                from .analyze import run_analyze
+                run_analyze()
+                print("Analyze completed.")
         except Exception as e:
             print(f"[ERROR] Analyze-Modul fehlt/fehlerhaft: {e}", file=sys.stderr)
             sys.exit(1)
-        run_analyze()
-        print("Analyze completed.")
         return
 
     if args.cmd == "autotype":
@@ -78,14 +118,94 @@ def main():
         print("Autotypisierung abgeschlossen.")
         return
 
-    if args.cmd == "export_fl":
+    if args.cmd == "export":
         try:
-            from .export_fl import run_export
+            if args.format in ["xml", "parquet"]:
+                from .export_extended import run_export_xml, run_export_parquet
+                output = Path(args.output) if args.output else None
+                if args.format == "xml":
+                    result_path = run_export_xml(output)
+                else:  # parquet
+                    result_path = run_export_parquet(output)
+            elif args.streaming:
+                from .export_generic import run_export_streaming
+                output = Path(args.output) if args.output else None
+                result_path = run_export_streaming(
+                    format=args.format,
+                    output_path=output,
+                    chunk_size=args.chunk_size
+                )
+            else:
+                from .export_generic import run_export
+                output = Path(args.output) if args.output else None
+                result_path = run_export(format=args.format, output_path=output)
         except Exception as e:
             print(f"[ERROR] Export-Modul fehlt/fehlerhaft: {e}", file=sys.stderr)
             sys.exit(1)
-        run_export(args.fl_user_data)
-        print("FL Tags export completed.")
+        print(f"Export completed: {result_path}")
+        return
+
+    if args.cmd == "export-daw":
+        try:
+            output = Path(args.output) if args.output else None
+
+            if args.daw == "ableton":
+                from .export_ableton import run_export_ableton
+                collection_path, tag_index_path = run_export_ableton(output)
+                print(f"Ableton export completed:")
+                print(f"  Collection: {collection_path}")
+                print(f"  Tag index:  {tag_index_path}")
+
+            elif args.daw == "bitwig":
+                from .export_bitwig import run_export_bitwig
+                result_path = run_export_bitwig(format=args.format, output_path=output)
+                print(f"Bitwig export completed: {result_path}")
+
+            elif args.daw == "fl":
+                from .export_fl import run_export_fl
+                fl_user_data = Path(args.fl_user_data) if args.fl_user_data else None
+                result_path = run_export_fl(output_path=output, fl_user_data=fl_user_data)
+                print(f"FL Studio export completed: {result_path}")
+
+            elif args.daw == "logic":
+                from .export_logic import run_export_logic
+                result_path = run_export_logic(output)
+                print(f"Logic Pro export completed: {result_path}")
+
+            elif args.daw == "cubase":
+                from .export_cubase import run_export_cubase
+                result_path = run_export_cubase(output)
+                print(f"Cubase/Nuendo export completed: {result_path}")
+
+            elif args.daw == "studio-one":
+                from .export_studio_one import run_export_studio_one
+                result_path = run_export_studio_one(output)
+                print(f"Studio One export completed: {result_path}")
+
+            elif args.daw == "reaper":
+                from .export_reaper import run_export_reaper
+                result_path = run_export_reaper(format=args.format, output_path=output)
+                print(f"REAPER export completed: {result_path}")
+
+        except Exception as e:
+            print(f"[ERROR] DAW export fehlt/fehlerhaft: {e}", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    if args.cmd == "create-views":
+        try:
+            from .export_extended import run_create_sqlite_views, export_sqlite_views_schema
+            views = run_create_sqlite_views()
+            print(f"Created {len(views)} SQLite views:")
+            for view_name in views.keys():
+                print(f"  - {view_name}")
+
+            if args.export_schema:
+                schema_path = export_sqlite_views_schema()
+                print(f"\nSchema exported to: {schema_path}")
+        except Exception as e:
+            print(f"[ERROR] Views creation fehlt/fehlerhaft: {e}", file=sys.stderr)
+            sys.exit(1)
         return
 
     if args.cmd == "embed":

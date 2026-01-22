@@ -1,5 +1,5 @@
-**AI-powered sample management for FL Studio**  
-Scan → Analyze → Tag → Export. Stay in your flow.  
+**AI-powered sample management - DAW-neutral**
+Scan → Analyze → Tag. Stay in your flow.  
 
 ---
 
@@ -9,12 +9,27 @@ Scan → Analyze → Tag → Export. Stay in your flow.
 
 ---
 
-## 🚀 Features (MVP)
+## 🚀 Features
 
-- **Scan**: build a database from your sample library  
-- **Analyze**: extract audio features (BPM, key, loudness, brightness, MFCCs, chroma …)  
-- **Autotype**: automatic categorization (Kick, Snare, Pad, Drone, Impact …)  
-- **Export**: write smart tags into the **FL Studio Browser**  
+### Core Pipeline
+- **Scan**: build a database from your sample library
+- **Analyze**: extract audio features (BPM, key, loudness, brightness, MFCCs, chroma …)
+  - **EDM Mode**: Enhanced precision for electronic dance music (Camelot keys, sub-bass, energy scoring)
+- **Autotype**: automatic categorization (Kick, Snare, Pad, Drone, Impact …)
+- **Metadata**: DAW-neutral tag generation for universal sample management
+
+### Export & Integration
+- **Multi-Format Export**: JSON, CSV, YAML, XML, Parquet
+- **Streaming Export**: Memory-efficient processing for large libraries (10k+ samples)
+- **DAW Adapters**: 7 major DAW formats supported
+  - Ableton Live (Collection format)
+  - Bitwig Studio (JSON/XML)
+  - FL Studio (Browser Tags)
+  - Logic Pro (Library XML)
+  - Cubase/Nuendo (MediaBay XML)
+  - Studio One (Sound Set XML)
+  - REAPER (JSON/CSV)
+- **SQLite Views**: Pre-built analytical views for quick queries  
 
 ---
 
@@ -41,12 +56,31 @@ python -m src.cli scan
 # Analyze audio features
 python -m src.cli analyze
 
+# EDM-optimized analysis (higher precision for electronic music)
+python -m src.cli analyze --setup-edm-db --edm
+
 # Autotype samples (rules only)
 python -m src.cli autotype --no-knn
 
-# Export tags to FL Studio
-python -m src.cli export_fl "C:\Users\janne\Documents\Image-Line"   # Windows
-python -m src.cli export_fl "~/Documents/Image-Line"               # macOS/Linux
+# Export metadata (DAW-neutral)
+python -m src.cli export --format json  # json, csv, yaml, xml, parquet
+
+# Export for specific DAWs (7 supported)
+python -m src.cli export-daw ableton        # Ableton Live Collection
+python -m src.cli export-daw bitwig         # Bitwig Studio (JSON)
+python -m src.cli export-daw bitwig -f xml  # Bitwig Studio (XML)
+python -m src.cli export-daw fl --fl-user-data "C:\Users\NAME\Documents\Image-Line"
+python -m src.cli export-daw logic          # Logic Pro
+python -m src.cli export-daw cubase         # Cubase/Nuendo MediaBay
+python -m src.cli export-daw studio-one     # Studio One Sound Set
+python -m src.cli export-daw reaper         # REAPER (JSON)
+python -m src.cli export-daw reaper -f csv  # REAPER (CSV)
+
+# Streaming export for large libraries
+python -m src.cli export --format csv --streaming --chunk-size 1000
+
+# Create SQLite analytical views
+python -m src.cli create-views --export-schema
 ```
 
 ---

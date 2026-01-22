@@ -6,11 +6,6 @@ from pathlib import Path
 # Datei, in der wir zuletzt genutzte Pfade merken (praktisch für spätere UI)
 STATE_FILE = Path(__file__).resolve().parent / "data" / "last_paths.json"
 
-def _default_fl_userdata() -> Path:
-    # Windows-Standard: C:\Users\<user>\Documents\Image-Line
-    home = Path(os.environ.get("USERPROFILE", str(Path.home())))
-    return home / "Documents" / "Image-Line"
-
 def _load_state():
     try:
         with STATE_FILE.open("r", encoding="utf-8") as f:
@@ -25,20 +20,18 @@ def _save_state(state: dict):
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="sample-brain: Scan → Analyze → Autotype → Export (mit dynamischen Pfaden)"
+        description="sample-brain: Scan → Analyze → Autotype → Export (DAW-neutral pipeline)"
     )
     p.add_argument(
         "--root", "-r", action="append",
         help="Sample-Root (kann mehrfach angegeben werden: -r D:\\PRODUCING -r E:\\Samples)"
     )
-    p.add_argument(
-        "--fl-user-data", "-f",
-        help=r"FL User Data Ordner (z.B. C:\Users\NAME\Documents\Image-Line)"
-    )
     p.add_argument("--no-analyze", action="store_true", help="Analyze-Schritt überspringen")
     p.add_argument("--no-autotype", action="store_true", help="Autotype-Schritt überspringen")
     p.add_argument("--no-export", action="store_true", help="Export-Schritt überspringen")
     p.add_argument("--rules-only", action="store_true", help="Autotype ohne kNN/Embeddings")
+    p.add_argument("--export-format", choices=["json", "csv", "yaml"], default="json",
+                   help="Export format (default: json)")
     p.add_argument("--save", action="store_true", help="übergebene Pfade in data/last_paths.json speichern")
     return p.parse_args()
 
@@ -57,21 +50,12 @@ def main():
         from src.config import SAMPLE_ROOTS
         roots = SAMPLE_ROOTS
 
-    fl_user_data: Path | None = None
-    if args.fl_user_data:
-        fl_user_data = Path(args.fl_user_data)
-    elif state.get("fl_user_data"):
-        fl_user_data = Path(state["fl_user_data"])
-    else:
-        fl_user_data = _default_fl_userdata()
-
     # Optional speichern
     if args.save:
-        _save_state({"roots": [str(p) for p in roots], "fl_user_data": str(fl_user_data)})
+        _save_state({"roots": [str(p) for p in roots]})
 
     print("== sample-brain: pipeline start ==")
     print("Roots:", *[str(p) for p in roots], sep="\n  - ")
-    print("FL User Data:", fl_user_data)
 
     # 2) init
     from src.db import init_db
@@ -100,12 +84,13 @@ def main():
     else:
         print("[autotype] übersprungen (flag)")
 
-    # 6) export
+    # 6) export (DAW-neutral)
     if not args.no_export:
-        from src.export_fl import run_export
-        run_export(str(fl_user_data)); print("[export_fl] ok")
+        from src.export_generic import run_export
+        result_path = run_export(format=args.export_format)
+        print(f"[export] ok → {result_path}")
     else:
-        print("[export_fl] übersprungen (flag)")
+        print("[export] übersprungen (flag)")
 
     print("== fertig ==")
 

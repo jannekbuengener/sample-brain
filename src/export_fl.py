@@ -1,131 +1,126 @@
 # src/export_fl.py
-from pathlib import Path
+"""
+FL Studio adapter for sample metadata export.
+Generates FL Studio Browser Tags format.
+"""
+from __future__ import annotations
+import json
 import re
-from sqlalchemy import text
-from .db import init_db
-from .config import SAMPLE_ROOTS
-import json, os
+from pathlib import Path
+from typing import Any
+from .metadata import export_all_metadata
+from .config import DATA_DIR, SAMPLE_ROOTS
 
-MAX_TAGS = 5
-CONF_KEY_MIN = 0.55
 
-def brightness_to_tag(val: float):
-    if val is None: return None
-    if val < 1500: return "Dark"
-    if val > 3500: return "Bright"
-    return None
+def convert_to_fl_format(metadata_list: list[dict[str, Any]], sample_roots: list[Path]) -> tuple[str, set[str]]:
+    """
+    Convert generic metadata to FL Studio Browser Tags format.
 
-def loudness_to_tag(db: float):
-    if db is None: return None
-    if db > -18: return "Punchy"
-    if db < -28: return "Clean"
-    return None
+    FL Studio uses a CSV-like format with a header defining all tags,
+    followed by rows with file paths and their tags.
 
-def duration_class_to_tag(clazz: str):
-    if clazz == "oneshot": return "OneShot"
-    if clazz == "loop":    return "Loop"
-    return None
+    Args:
+        metadata_list: List of generic metadata dictionaries
+        sample_roots: List of sample root directories
 
-def bpm_to_tag(bpm: float|None):
-    if not bpm: return None
-    return f"{int(round(bpm))}BPM"
-
-def key_to_tag(key: str|None, conf: float|None):
-    if not key or (conf is not None and conf < CONF_KEY_MIN): 
-        return None
-    k = key.replace("min","m").replace("maj","").upper()
-    if len(k) == 1: k = k + "maj"
-    if k.endswith("M"): k = k[:-1] + "maj"
-    if k.endswith("m"): k = k[:-1] + "min"
-    return k
-
-def load_regex_map():
-    p = Path("./data/filename_tag_regex.json")
-    if not p.exists():
-        return {}
-    return json.loads(p.read_text(encoding="utf-8"))
-
-def infer_type_from_filename(name: str):
-    patterns = load_regex_map()
-    name_l = name.lower()
-    for tag, pat in patterns.items():
-        try:
-            if re.search(pat, name_l):
-                return tag
-        except re.error:
-            continue
-    return None
-
-def build_tags_for_sample(row, roots):
-    # row: (path, relpath, duration, brightness, loudness, clazz, key, key_conf, bpm, pred_type, filename)
-    path, relpath, duration, brightness, loudness, clazz, key, key_conf, bpm, pred_type, filename = row
-    tags: list[str] = []
-
-    # 1) Typ-Priorität: pred_type (aus Autotype) > Dateiname
-    t = pred_type or infer_type_from_filename(filename)
-    if t: tags.append(t)
-
-    # 2) Charakter
-    bt = brightness_to_tag(brightness)
-    if bt and bt not in tags: tags.append(bt)
-    lt = loudness_to_tag(loudness)
-    if lt and lt not in tags: tags.append(lt)
-
-    if duration and duration > 6 and "Atmospheric" not in tags and (t in (None, "Pad","Drone","Texture","AmbientLayer")):
-        tags.append("Atmospheric")
-
-    # 3) Form (Oneshot/Loop)
-    ct = duration_class_to_tag(clazz)
-    if ct and ct not in tags: tags.append(ct)
-
-    # 4) Harmonik
-    kt = key_to_tag(key, key_conf)
-    if kt and kt not in tags: tags.append(kt)
-    btg = bpm_to_tag(bpm)
-    if btg and btg not in tags: tags.append(btg)
-
-    return tags[:MAX_TAGS]
-
-def write_fl_tags(fl_userdata: Path, roots):
-    engine = init_db()
-    tags_path = Path(fl_userdata) / "FL Studio" / "Settings" / "Browser" / "Tags"
-    tags_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with engine.begin() as conn:
-        rows = conn.execute(text("""
-            SELECT s.path, s.relpath, s.duration,
-                   f.brightness, f.loudness, f.class, f.key, f.key_conf, f.bpm, f.pred_type
-            FROM samples s
-            LEFT JOIN features f ON f.sample_id = s.id
-            ORDER BY s.id
-        """)).fetchall()
-
+    Returns:
+        Tuple of (tags_file_content, all_tags_set)
+    """
     all_tags = set()
     lines = []
-    for r in rows:
-        path = r[0]
-        relpath = r[1]
-        filename = Path(path).name
-        tags = build_tags_for_sample((*r, filename), roots)
-        for t in tags: all_tags.add(t)
 
-        base = Path(roots[0]) if roots else Path(path).drive + os.sep
-        lib_root_lower = str(Path(base)).lower().rstrip("\\/") + os.sep
-        final_path = (lib_root_lower + relpath.replace("/", os.sep)) if relpath else path
-        lines.append(f"\"{final_path}\"," + ",".join(tags))
+    for item in metadata_list:
+        path = item.get("path", "")
+        relpath = item.get("relpath", "")
+        tags = item.get("tags", [])
 
-    header = "@TagCase=*"
-    for t in sorted(all_tags, key=lambda x: x.lower()):
-        if re.search(r'[,\s"]', t):
-            header += "," + '"' + t.replace('"', '') + '"'
+        # Add all tags to global set
+        for tag in tags:
+            all_tags.add(tag)
+
+        # Build FL-compatible path
+        if sample_roots and relpath:
+            base = Path(sample_roots[0]) if sample_roots else Path(path).drive + "\\"
+            lib_root_lower = str(Path(base)).lower().rstrip("\\/") + "\\"
+            final_path = lib_root_lower + relpath.replace("/", "\\")
         else:
-            header += "," + t
+            final_path = path
 
-    with open(tags_path, "w", encoding="utf-8") as f:
+        # Build line: "path",tag1,tag2,tag3
+        tag_str = ",".join(tags) if tags else ""
+        lines.append(f'"{final_path}"' + ("," + tag_str if tag_str else ""))
+
+    return lines, all_tags
+
+
+def export_to_fl_tags(
+    output_path: Path,
+    metadata_list: list[dict[str, Any]],
+    sample_roots: list[Path]
+) -> Path:
+    """
+    Export to FL Studio Browser Tags format.
+
+    Args:
+        output_path: Output file path
+        metadata_list: List of metadata dictionaries
+        sample_roots: List of sample root directories
+
+    Returns:
+        Path to created file
+    """
+    lines, all_tags = convert_to_fl_format(metadata_list, sample_roots)
+
+    # Build header: @TagCase=*,Tag1,Tag2,Tag3,...
+    header = "@TagCase=*"
+    for tag in sorted(all_tags, key=lambda x: x.lower()):
+        # Quote tags with special characters
+        if re.search(r'[,\s"]', tag):
+            header += "," + '"' + tag.replace('"', '') + '"'
+        else:
+            header += "," + tag
+
+    # Write file
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(header + "\n")
-        for L in lines:
-            f.write(L + "\n")
-    print(f"Wrote FL Tags → {tags_path}")
+        for line in lines:
+            f.write(line + "\n")
 
-def run_export(fl_user_data_folder: str):
-    write_fl_tags(Path(fl_user_data_folder), SAMPLE_ROOTS)
+    return output_path
+
+
+def run_export_fl(
+    output_path: Path | None = None,
+    fl_user_data: Path | None = None
+) -> Path:
+    """
+    Export to FL Studio Browser Tags format.
+
+    Args:
+        output_path: Optional custom output path
+        fl_user_data: Optional FL Studio user data directory
+
+    Returns:
+        Path to created Tags file
+    """
+    # Generate metadata
+    metadata_list = export_all_metadata()
+
+    # Determine output path
+    if output_path is None:
+        if fl_user_data is None:
+            # Default to data directory
+            output_path = DATA_DIR / "fl_browser_tags.txt"
+        else:
+            # FL Studio standard location
+            tags_path = Path(fl_user_data) / "FL Studio" / "Settings" / "Browser" / "Tags"
+            tags_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path = tags_path
+    else:
+        output_path = Path(output_path)
+
+    # Ensure parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Export
+    return export_to_fl_tags(output_path, metadata_list, SAMPLE_ROOTS)
