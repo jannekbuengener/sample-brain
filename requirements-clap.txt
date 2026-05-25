@@ -1,0 +1,7 @@
+# CLAP optional dependencies (spike/clap-embedding branch)
+# Install alongside requirements.txt:
+#   pip install -r requirements.txt -r requirements-clap.txt
+# Or install via pyproject.toml extra after pip install -e .:
+#   pip install -e .[clap]
+torch
+transformers>=4.35
