@@ -2,40 +2,27 @@
 
 Prepared backlog only. No GitHub issues have been created yet.
 
-Current repo findings that drive Epic 0:
-- `src/analyze.py` appears to contain patch/diff artifacts and should be validated before further feature work.
-- Generated and local artifacts appear to be tracked in the repository, including `.venv/`, `data/catalog.db`, `data/last_paths.json`, and report outputs.
-- `README.md` is incomplete and currently overstates less than the intended long-term vision, but it also contains broken links and placeholder text.
-- `src/embed.py`, `src/index.py`, and `src/search.py` are currently missing.
-
 ## EPIC 0: Repository Hygiene & Documentation
 
 ### 1. docs: rewrite README for sample-brain product vision
+- **Status:** ✅ completed (EPIC 0, further expanded in Documentation Architecture Sprint)
 - Labels: `docs`, `product`, `high-priority`
 - Goal: Reposition `sample-brain` as a local-first AI sample intelligence tool for producers.
 - Context: Current README is incomplete, links to missing files, and ends with placeholder text.
-- Acceptance criteria:
-  - README describes current pipeline as `Scan -> Analyze -> Autotype -> Export`
-  - README describes target pipeline as `Scan -> Analyze -> Embed -> Index -> Search -> Recommend -> Export/DAW Workflow`
-  - README does not claim completed semantic search or plugin integration
-  - Broken links are removed or replaced
-- Technical notes: Keep claims aligned with actual codebase state.
+- Acceptance criteria: ✅ All met — README describes current pipeline in quickstart, target pipeline via doc links, no overclaims, no broken links.
 - Dependencies: none
 - Priority: P0
 
 ### 2. docs: add architecture overview and module boundaries
+- **Status:** ✅ completed (via `docs/TARGET_ARCHITECTURE.md`)
 - Labels: `docs`, `architecture`, `high-priority`
 - Goal: Document current module boundaries and target local-first architecture.
-- Context: The repo has pipeline docs but no stable architecture overview.
-- Acceptance criteria:
-  - New architecture doc explains current modules and missing semantic-search modules
-  - Target stack names SQLite, FAISS, CLAP, FastAPI, and later React/Tauri
-  - FL Studio export is documented as near-term core integration
-- Technical notes: Distinguish present state vs. target state explicitly.
+- Acceptance criteria: ✅ All met — current and target architecture documented, SQLite/FAISS/CLAP/FastAPI stack named, FL Studio export as near-term core.
 - Dependencies: Issue 1
 - Priority: P0
 
 ### 3. docs: add local MCP setup guide
+- **Status:** ❌ open (not yet written)
 - Labels: `docs`, `mcp`, `onboarding`
 - Goal: Document how `sample-brain` is exposed to the local ChatGPT MCP workflow.
 - Context: The repo is being added as a dedicated MCP root/target in the local server.
@@ -48,19 +35,15 @@ Current repo findings that drive Epic 0:
 - Priority: P0
 
 ### 4. chore: remove generated/local artifacts from repository tracking
+- **Status:** ✅ completed
 - Labels: `chore`, `repo-hygiene`, `high-priority`
 - Goal: Stop tracking generated, local-only, and environment-specific artifacts.
-- Context: `.gitignore` exists, but `.venv/`, DB files, and reports still appear tracked.
-- Acceptance criteria:
-  - `.venv/` is no longer tracked
-  - `data/catalog.db` and similar local state are no longer tracked
-  - generated reports are reviewed and either removed from tracking or intentionally retained with justification
-  - `.gitignore` rules match the intended local-only artifacts
-- Technical notes: Use explicit file review before untracking.
+- Acceptance criteria: ✅ All met — `.venv/`, `data/catalog.db`, reports untracked; `.gitignore` tightened.
 - Dependencies: none
 - Priority: P0
 
 ### 5. chore: validate repository bootstrap from fresh clone
+- **Status:** ❌ open (prerequisites #1 and #4 now done; ready to execute)
 - Labels: `chore`, `setup`, `testing`
 - Goal: Ensure a fresh clone can be set up deterministically.
 - Context: Current repo state includes hygiene issues and unverified bootstrap assumptions.
@@ -69,18 +52,14 @@ Current repo findings that drive Epic 0:
   - Required Python version and dependency install path are verified
   - Minimal happy-path commands run successfully or known gaps are documented
 - Technical notes: Prefer Windows-first instructions, note cross-platform caveats separately.
-- Dependencies: Issues 1 and 4
+- Dependencies: Issues 1 and 4 (both completed)
 - Priority: P1
 
 ### 6. bug: verify and repair src/analyze.py if it contains patch/diff artifacts
+- **Status:** ✅ completed
 - Labels: `bug`, `python`, `high-priority`
 - Goal: Restore `src/analyze.py` to a valid Python module.
-- Context: The file currently appears to contain patch markers instead of clean source.
-- Acceptance criteria:
-  - `src/analyze.py` is valid Python
-  - intended BPM normalization logic is preserved or reintroduced cleanly
-  - module imports and CLI integration still work
-- Technical notes: Start with file recovery before behavior changes.
+- Acceptance criteria: ✅ All met — `src/analyze.py` is clean Python; BPM normalization and CLI integration work.
 - Dependencies: none
 - Priority: P0
 
@@ -359,3 +338,27 @@ Current repo findings that drive Epic 0:
 - Technical notes: Align artifact handling with Epic 0 hygiene rules.
 - Dependencies: Issue 27
 - Priority: P3
+
+## Future Documentation (vorgemerkt)
+
+### 29. docs: write bootloader and context strategy
+- **Status:** ❌ open
+- Labels: `docs`, `architecture`, `planning`
+- Goal: Define how `sample-brain` bootstraps context and handles available tools, knowledge files, and MCP capabilities.
+- Context: The project works through multiple MCP gateways; the bootloader decides what context to inject before any command runs.
+- Acceptance criteria:
+  - Strategy document names the bootloader layer and its responsibilities
+  - Context-injection pipeline is described (global, repo, command-level)
+  - Relationship to AGENTS.md and SKILL.md conventions is documented
+- Priority: P2
+
+### 30. docs: write sample-brain skills spec
+- **Status:** ❌ open
+- Labels: `docs`, `skills`, `planning`
+- Goal: Define custom skills that `sample-brain` exposes to MCP agents for common operations (scan, analyze, search, export).
+- Context: Skills provide structured tool definitions and instructions for LLM agents working with the repo.
+- Acceptance criteria:
+  - Skill categories and scope are named (scanning, analysis, search, maintenance)
+  - Each skill has defined inputs, outputs, and guardrails
+  - Relationship to checklists/workflows and the AGENTS.md contract is documented
+- Priority: P2

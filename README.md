@@ -58,8 +58,23 @@ python -m src.cli export_fl "~/Documents/Image-Line"               # macOS/Linux
 
 ## 📚 Documentation
 
+### Architecture & Requirements
+
+- [Product Requirements](./docs/PRODUCT_REQUIREMENTS.md) — vision, audience, problem, MVP scope
+- [System Requirements](./docs/SYSTEM_REQUIREMENTS.md) — functional and non-functional requirements, constraints
+- [Target Architecture](./docs/TARGET_ARCHITECTURE.md) — current and target pipeline, component boundaries, data flow
+- [Data and Artifact Policy](./docs/DATA_AND_ARTIFACT_POLICY.md) — what is committed vs untracked
+
+### EPIC Specs
+
+- [EPIC 2: Semantic Search Foundation](./docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md) — embedding, indexing, search contracts and milestones
+- [DAW Integration](./docs/DAW_INTEGRATION_SPEC.md) — FL Studio export, Ableton/Reaper research
+
+### Project
+
+- [Issue Backlog](./docs/ISSUE_BACKLOG.md) — planned work across all epics
 - [Project Structure](./STRUCTURE.md)  
-- [Docs folder](./docs/README.md) (setup, roadmap, details)  
+- [Docs folder](./docs/README.md) (setup, roadmap, details)
 
 ---
 
