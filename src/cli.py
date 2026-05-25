@@ -36,8 +36,8 @@ def main():
     p_emb.add_argument(
         "--backend",
         choices=["noop", "clap"],
-        default="noop",
-        help="Embedding backend to use. Defaults to noop. CLAP requires optional dependencies.",
+        default=None,
+        help="Embedding backend to use. Overrides profile/env config. Defaults to configured backend or noop.",
     )
 
     # (optional) index_build
@@ -100,7 +100,16 @@ def main():
         except Exception as e:
             print(f"[WARN] Embeddings übersprungen (Modul fehlt/fehlerhaft): {e}")
             sys.exit(0)
-        run_embed(limit=args.limit, only_missing=not args.all, backend_name=args.backend)
+        import os
+        from .config_loader import resolve_profile, ConfigError
+        try:
+            cfg = resolve_profile(env=dict(os.environ))
+        except ConfigError as e:
+            print(f"[ERROR] Config error: {e}", file=sys.stderr)
+            sys.exit(1)
+        configured_backend = cfg.get("embedding", {}).get("backend", "noop")
+        backend_name = args.backend or configured_backend or "noop"
+        run_embed(limit=args.limit, only_missing=not args.all, backend_name=backend_name)
         print("Embeddings completed.")
         return
 

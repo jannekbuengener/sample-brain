@@ -28,7 +28,10 @@ _ENV_KEY_MAP: dict[str, tuple[str, ...]] = {
     "SAMPLE_BRAIN_MODEL_CACHE_DIR": ("embedding", "model_cache_dir"),
     "SAMPLE_BRAIN_DB_PATH": ("database", "path"),
     "SAMPLE_BRAIN_MAX_TAGS": ("export", "max_tags"),
+    "SAMPLE_BRAIN_EMBEDDING_BACKEND": ("embedding", "backend"),
 }
+
+_VALID_EMBEDDING_BACKENDS = {"noop", "clap"}
 
 
 def load_profiles(
@@ -81,6 +84,7 @@ def resolve_profile(
 
     resolved = profiles[name]
     resolved = _apply_env_overrides(resolved, env)
+    _validate_resolved_config(resolved)
     return resolved
 
 
@@ -119,3 +123,12 @@ def _parse_value(value: str, key: str) -> Any:
 
 def _parse_roots(value: str) -> list[str]:
     return [p.strip() for p in value.split(";") if p.strip()]
+
+
+def _validate_resolved_config(config: dict) -> None:
+    backend = config.get("embedding", {}).get("backend")
+    if backend is not None and backend not in _VALID_EMBEDDING_BACKENDS:
+        raise ConfigError(
+            f"Invalid embedding backend: {backend!r}. "
+            f"Must be one of: {', '.join(sorted(_VALID_EMBEDDING_BACKENDS))}"
+        )
