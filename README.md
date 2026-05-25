@@ -23,7 +23,12 @@ Scan → Analyze → Tag → Export. Stay in your flow.
 ```bash
 # Create virtual environment
 python -m venv .venv
+
+# Activate (Windows)
 . .venv\Scripts\activate
+# Activate (macOS/Linux)
+# source .venv/bin/activate
+
 pip install -r requirements.txt
 ```
 
@@ -65,4 +70,4 @@ Dependencies: see [THIRD_PARTY_LICENSES.md](./THIRD_PARTY_LICENSES.md).
 
 ---
 
-🎧 **Your sound. Your flow.**<Inhalt der README.md Datei hier einfügen>
+🎧 **Your sound. Your flow.**
