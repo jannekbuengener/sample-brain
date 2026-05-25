@@ -209,6 +209,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+# Local Sample Brain profiles
+config/profiles.local.yaml
+
 # --- SampleBrain hygiene ---
 data/**/*.wav
 data/**/*.aiff
