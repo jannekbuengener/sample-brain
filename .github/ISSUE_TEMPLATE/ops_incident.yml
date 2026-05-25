@@ -1,0 +1,26 @@
+name: Ops Incident
+description: Incident / Outage / Runbook-Fail
+title: "[INC] "
+labels: [incident]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+    validations:
+      required: true
+  - type: textarea
+    id: timeline
+    attributes:
+      label: Timeline
+      placeholder: |
+        - T0:
+        - T+:
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+  - type: textarea
+    id: next
+    attributes:
+      label: Next Steps
