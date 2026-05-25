@@ -1,90 +1,233 @@
-*** a/src/analyze.py
---- b/src/analyze.py
-@@
- from pathlib import Path
- import numpy as np
- import soundfile as sf
- import librosa
- from sqlalchemy import text, select
- from tqdm import tqdm
- 
- from .db import init_db
- from .config import DATA_DIR
- 
- # --- helpers ---
- SEMITONES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
- 
-+def _load_json(p: Path):
-+    import json
-+    with open(p, "r", encoding="utf-8") as f:
-+        return json.load(f)
-+
-+def _snap_to_grid(x: float, grid: list[float]) -> float:
-+    return min(grid, key=lambda g: abs(g - x)) if grid else x
-+
-+def _normalize_bpm(bpm_raw: float|None, cfg: dict) -> float|None:
-+    if bpm_raw is None or bpm_raw <= 0:
-+        return None
-+    # Konfiguration lesen
-+    tol_abs = float(cfg.get("tolerance", {}).get("abs_bpm", 1.0))
-+    rng = cfg.get("half_double_resolution", {}).get("prefer_range", [110, 170])
-+    prefer_lo, prefer_hi = float(rng[0]), float(rng[1])
-+    grid_vals = cfg.get("grid_snapping", {}).get("grid_values", [])
-+    return_int = bool(cfg.get("output", {}).get("return_int", True))
-+    # Kandidaten ½× / 1× / 2×
-+    cands = [bpm_raw/2.0, bpm_raw, bpm_raw*2.0]
-+    # Toleranz-Rundung (±1 BPM)
-+    cands = [round(c) for c in cands]
-+    # Bias-Range
-+    prefer = [c for c in cands if prefer_lo <= c <= prefer_hi]
-+    if prefer:
-+        bpm_final = min(prefer, key=lambda c: abs(c - bpm_raw))
-+    else:
-+        bpm_final = _snap_to_grid(bpm_raw, grid_vals) if grid_vals else round(bpm_raw)
-+    return int(round(bpm_final)) if return_int else float(bpm_final)
-+
-+def _estimate_bpm_hpss(y: np.ndarray, sr: int) -> float|None:
-+    # Percussive Spur → stabilere Temposchätzung
-+    try:
-+        _, y_perc = librosa.effects.hpss(y)
-+    except Exception:
-+        y_perc = y
-+    # einfache Mehrfachschätzung (Median)
-+    est = []
-+    tempo, _ = librosa.beat.beat_track(y=y_perc, sr=sr)
-+    if tempo and tempo > 0:
-+        est.append(float(tempo))
-+    if not est:
-+        return None
-+    return float(np.median(est))
-+
- def estimate_key(y, sr):
-@@
- def extract_features(path: Path):
-     y, sr = safe_load(path)
-     if y is None:
-         return None
-@@
--    # tempo (BPM)
--    tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
--    bpm = float(tempo) if tempo is not None else None
-+    # tempo (BPM) → HPSS + Normalisierung (½×/1×/2×, Bias 110–170, Grid)
-+    bpm_raw = _estimate_bpm_hpss(y, sr)
-+    try:
-+        bpm_cfg = _load_json(Path("data") / "bpm_normalization.json")
-+    except Exception:
-+        bpm_cfg = {
-+            "tolerance":{"abs_bpm":1.0},
-+            "half_double_resolution":{"prefer_range":[110,170]},
-+            "grid_snapping":{"grid_values":[60,64,70,72,75,80,85,88,90,92,95,96,98,100,105,108,110,112,115,118,120,122,125,126,128,130,132,135,138,140,142,145,150,152,155,158,160,162,165,168,170]},
-+            "output":{"return_int":True}
-+        }
-+    bpm = _normalize_bpm(bpm_raw, bpm_cfg)
-@@
-     return dict(
-         bpm=bpm, key=key, key_conf=key_conf, loudness=loudness, brightness=brightness,
-         mfcc_mean=mfcc_mean.tobytes(), mfcc_std=mfcc_std.tobytes(),
-         chroma_mean=chroma_mean.tobytes(), chroma_std=chroma_std.tobytes(),
-         clazz=clazz
-     )
+from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import librosa
+import soundfile as sf
+from sqlalchemy import text
+from tqdm import tqdm
+
+from .config import ANALYZE_HOP_LENGTH, ANALYZE_SR
+from .db import init_db
+
+
+SEMITONES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+
+def safe_load(path: Path, target_sr: int = ANALYZE_SR) -> tuple[np.ndarray | None, int | None]:
+    """Best-effort audio load.
+
+    - Returns mono float32 waveform and sample-rate.
+    - Never throws; returns (None, None) on failure.
+    """
+    try:
+        # For many formats, librosa (via soundfile/audioread) is the most robust.
+        y, sr = librosa.load(str(path), sr=target_sr, mono=True)
+        if y is None or sr is None:
+            return None, None
+        y = np.asarray(y, dtype=np.float32)
+        if y.size == 0:
+            return None, None
+        return y, int(sr)
+    except Exception:
+        # As a fallback, try soundfile directly for wav/flac/etc.
+        try:
+            y, sr = sf.read(str(path), dtype="float32", always_2d=False)
+            if y is None:
+                return None, None
+            if isinstance(y, np.ndarray) and y.ndim > 1:
+                y = np.mean(y, axis=1)
+            y = np.asarray(y, dtype=np.float32)
+            if y.size == 0:
+                return None, None
+            if sr and target_sr and int(sr) != int(target_sr):
+                y = librosa.resample(y, orig_sr=int(sr), target_sr=int(target_sr))
+                sr = int(target_sr)
+            return y, int(sr)
+        except Exception:
+            return None, None
+
+
+def estimate_key(y: np.ndarray, sr: int) -> tuple[str | None, float | None]:
+    """Rough key estimate (Krumhansl via chroma)."""
+    try:
+        chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=ANALYZE_HOP_LENGTH)
+        if chroma is None or chroma.size == 0:
+            return None, None
+        chroma_mean = np.mean(chroma, axis=1)
+        if not np.isfinite(chroma_mean).all():
+            return None, None
+        idx = int(np.argmax(chroma_mean))
+        # confidence: normalized peak prominence
+        peak = float(chroma_mean[idx])
+        s = float(np.sum(chroma_mean) + 1e-9)
+        conf = float(peak / s)
+        return SEMITONES[idx], conf
+    except Exception:
+        return None, None
+
+
+def _rms_dbfs(y: np.ndarray) -> float | None:
+    try:
+        rms = float(np.sqrt(np.mean(np.square(y))))
+        if rms <= 0:
+            return None
+        return float(20.0 * np.log10(rms + 1e-12))
+    except Exception:
+        return None
+
+
+def _duration_class(duration: float | None) -> str | None:
+    if duration is None:
+        return None
+    # Heuristic aligned with classify.rule_type thresholds.
+    return "oneshot" if duration <= 1.2 else "loop"
+
+
+@dataclass(frozen=True)
+class Features:
+    bpm: float | None
+    key: str | None
+    key_conf: float | None
+    loudness: float | None
+    brightness: float | None
+    mfcc_mean: bytes | None
+    mfcc_std: bytes | None
+    chroma_mean: bytes | None
+    chroma_std: bytes | None
+    clazz: str | None
+
+
+def extract_features(path: Path, duration: float | None) -> Features | None:
+    y, sr = safe_load(path)
+    if y is None or sr is None:
+        return None
+
+    # Tempo (best-effort). For short one-shots this may be nonsense; that's ok.
+    bpm: float | None
+    try:
+        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        bpm = float(tempo) if tempo and tempo > 0 else None
+    except Exception:
+        bpm = None
+
+    key, key_conf = estimate_key(y, sr)
+    loudness = _rms_dbfs(y)
+
+    brightness: float | None
+    try:
+        centroid = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=ANALYZE_HOP_LENGTH)
+        brightness = float(np.mean(centroid)) if centroid is not None and centroid.size else None
+    except Exception:
+        brightness = None
+
+    # MFCC/chroma stats
+    try:
+        mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13, hop_length=ANALYZE_HOP_LENGTH)
+        mfcc_mean = np.mean(mfcc, axis=1).astype(np.float32).tobytes() if mfcc.size else None
+        mfcc_std = np.std(mfcc, axis=1).astype(np.float32).tobytes() if mfcc.size else None
+    except Exception:
+        mfcc_mean = None
+        mfcc_std = None
+
+    try:
+        chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=ANALYZE_HOP_LENGTH)
+        chroma_mean = np.mean(chroma, axis=1).astype(np.float32).tobytes() if chroma.size else None
+        chroma_std = np.std(chroma, axis=1).astype(np.float32).tobytes() if chroma.size else None
+    except Exception:
+        chroma_mean = None
+        chroma_std = None
+
+    return Features(
+        bpm=bpm,
+        key=key,
+        key_conf=key_conf,
+        loudness=loudness,
+        brightness=brightness,
+        mfcc_mean=mfcc_mean,
+        mfcc_std=mfcc_std,
+        chroma_mean=chroma_mean,
+        chroma_std=chroma_std,
+        clazz=_duration_class(duration),
+    )
+
+
+def run_analyze(limit: int | None = None, only_missing: bool = True) -> None:
+    """Compute features for samples in the catalog.
+
+    Safe by default:
+    - reads sample paths from DB (does not scan filesystem roots)
+    - skips rows that already have a features row (unless only_missing=False)
+    """
+    engine = init_db()
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT s.id, s.path, s.duration, f.sample_id AS has_features
+                FROM samples s
+                LEFT JOIN features f ON f.sample_id = s.id
+                ORDER BY s.id
+                """
+            )
+        ).fetchall()
+
+    processed = 0
+    engine = init_db()
+    with engine.begin() as conn:
+        for sid, path_str, duration, has_features in tqdm(rows, desc="Analyzing", unit="file"):
+            if only_missing and has_features is not None:
+                continue
+
+            feats = extract_features(Path(path_str), duration)
+            if feats is None:
+                continue
+
+            # Upsert into features. Note: column name is `class` (reserved word), so quote it.
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO features (
+                        sample_id, bpm, key, key_conf, loudness, brightness,
+                        mfcc_mean, mfcc_std, chroma_mean, chroma_std, "class"
+                    ) VALUES (
+                        :sample_id, :bpm, :key, :key_conf, :loudness, :brightness,
+                        :mfcc_mean, :mfcc_std, :chroma_mean, :chroma_std, :clazz
+                    )
+                    ON CONFLICT(sample_id) DO UPDATE SET
+                        bpm=excluded.bpm,
+                        key=excluded.key,
+                        key_conf=excluded.key_conf,
+                        loudness=excluded.loudness,
+                        brightness=excluded.brightness,
+                        mfcc_mean=excluded.mfcc_mean,
+                        mfcc_std=excluded.mfcc_std,
+                        chroma_mean=excluded.chroma_mean,
+                        chroma_std=excluded.chroma_std,
+                        "class"=excluded."class"
+                    """
+                ),
+                dict(
+                    sample_id=int(sid),
+                    bpm=feats.bpm,
+                    key=feats.key,
+                    key_conf=feats.key_conf,
+                    loudness=feats.loudness,
+                    brightness=feats.brightness,
+                    mfcc_mean=feats.mfcc_mean,
+                    mfcc_std=feats.mfcc_std,
+                    chroma_mean=feats.chroma_mean,
+                    chroma_std=feats.chroma_std,
+                    clazz=feats.clazz,
+                ),
+            )
+
+            processed += 1
+            if limit is not None and processed >= int(limit):
+                break
+
+
+__all__ = ["run_analyze", "extract_features", "safe_load", "estimate_key"]
