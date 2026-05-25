@@ -8,9 +8,6 @@ Die folgenden Angaben dienen der Transparenz:
 
 ## Python Dependencies
 
-### [Typer](https://github.com/tiangolo/typer)
-- License: MIT
-
 ### [tqdm](https://github.com/tqdm/tqdm)
 - License: MIT
 
