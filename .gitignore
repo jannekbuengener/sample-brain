@@ -219,3 +219,20 @@ data/**/catalog.db
 data/last_paths.json
 .venv/
 __pycache__/
+
+# Local generated reports
+reports/
+
+# Local databases and runtime state
+*.db
+*.sqlite
+*.sqlite3
+
+# Local vector indexes and embeddings
+data/indexes/
+data/embeddings/
+*.faiss
+*.index
+*.npy
+*.npz
+*.pkl
