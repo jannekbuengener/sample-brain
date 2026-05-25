@@ -213,10 +213,19 @@ def get_backend(name: str = "noop") -> EmbeddingBackend:
     return _backend
 
 
-def run_embed(limit: Optional[int] = None, only_missing: bool = True) -> None:
-    config = EmbeddingJobConfig(limit=limit, only_missing=only_missing)
-    backend = get_backend("noop")
+def run_embed(
+    limit: Optional[int] = None,
+    only_missing: bool = True,
+    backend_name: str = "noop",
+) -> None:
+    config = EmbeddingJobConfig(
+        limit=limit,
+        only_missing=only_missing,
+        backend_name=backend_name,
+    )
+    backend = get_backend(config.backend_name)
     worker = EmbeddingWorker(backend)
     result = worker.run(config)
     print(f"[INFO] {result.message}")
-    print("[INFO] No files were processed.")
+    if result.processed == 0:
+        print("[INFO] No files were processed.")
