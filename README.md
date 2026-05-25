@@ -50,7 +50,7 @@ python -m src.cli analyze
 python -m src.cli autotype --no-knn
 
 # Export tags to FL Studio
-python -m src.cli export_fl "C:\Users\janne\Documents\Image-Line"   # Windows
+python -m src.cli export_fl "C:\Users\DEINNAME\Documents\Image-Line"   # Windows
 python -m src.cli export_fl "~/Documents/Image-Line"               # macOS/Linux
 ```
 
