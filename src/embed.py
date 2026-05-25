@@ -39,6 +39,10 @@ class EmbeddingRunResult:
     message: str = ""
 
 
+class EmbeddingBackendUnavailableError(RuntimeError):
+    ...
+
+
 class EmbeddingBackend(ABC):
     @abstractmethod
     def embed_audio(self, audio_path: str) -> np.ndarray:
@@ -73,6 +77,43 @@ class NoopEmbeddingBackend(EmbeddingBackend):
         )
 
 
+_CLAP_METADATA = EmbeddingModelInfo(
+    provider="laion",
+    model_name="laion/clap-htsat-unfused",
+    model_version="planned",
+    embedding_dim=512,
+    modality="audio_text",
+)
+
+
+def _clap_available() -> bool:
+    try:
+        import torch  # noqa: F401
+        import transformers  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+class ClapEmbeddingBackend(EmbeddingBackend):
+    def embed_audio(self, audio_path: str) -> np.ndarray:
+        raise EmbeddingBackendUnavailableError(
+            "CLAP backend is not yet implemented. "
+            "Install torch, transformers, and clap "
+            "to enable real audio embedding."
+        )
+
+    def embed_text(self, text: str) -> np.ndarray:
+        raise EmbeddingBackendUnavailableError(
+            "CLAP backend is not yet implemented. "
+            "Install torch, transformers, and clap "
+            "to enable real text embedding."
+        )
+
+    def model_info(self) -> EmbeddingModelInfo:
+        return _CLAP_METADATA
+
+
 class EmbeddingWorker:
     def __init__(self, backend: EmbeddingBackend) -> None:
         self._backend = backend
@@ -99,6 +140,8 @@ def get_backend(name: str = "noop") -> EmbeddingBackend:
         return _backend
     if name == "noop":
         _backend = NoopEmbeddingBackend()
+    elif name == "clap":
+        _backend = ClapEmbeddingBackend()
     else:
         raise ValueError(f"Unknown embedding backend: {name}")
     return _backend
