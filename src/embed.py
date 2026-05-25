@@ -24,6 +24,21 @@ class EmbeddingModelInfo:
     modality: str
 
 
+@dataclass
+class EmbeddingJobConfig:
+    limit: Optional[int] = None
+    only_missing: bool = True
+    backend_name: str = "noop"
+
+
+@dataclass
+class EmbeddingRunResult:
+    processed: int = 0
+    skipped: int = 0
+    failed: int = 0
+    message: str = ""
+
+
 class EmbeddingBackend(ABC):
     @abstractmethod
     def embed_audio(self, audio_path: str) -> np.ndarray:
@@ -58,6 +73,23 @@ class NoopEmbeddingBackend(EmbeddingBackend):
         )
 
 
+class EmbeddingWorker:
+    def __init__(self, backend: EmbeddingBackend) -> None:
+        self._backend = backend
+
+    def run(self, config: EmbeddingJobConfig) -> EmbeddingRunResult:
+        if isinstance(self._backend, NoopEmbeddingBackend):
+            return EmbeddingRunResult(
+                message=(
+                    "No embedding backend configured. "
+                    "Install torch + transformers and set up a CLAP backend."
+                )
+            )
+        return EmbeddingRunResult(
+            message="Worker skeleton: no samples processed."
+        )
+
+
 _backend: Optional[EmbeddingBackend] = None
 
 
@@ -73,9 +105,9 @@ def get_backend(name: str = "noop") -> EmbeddingBackend:
 
 
 def run_embed(limit: Optional[int] = None, only_missing: bool = True) -> None:
-    print(
-        "[INFO] Embedding pipeline is not yet implemented. "
-        "Run `sample-brain init` first, then install an embedding backend "
-        "(e.g. CLAP with torch + transformers)."
-    )
+    config = EmbeddingJobConfig(limit=limit, only_missing=only_missing)
+    backend = get_backend("noop")
+    worker = EmbeddingWorker(backend)
+    result = worker.run(config)
+    print(f"[INFO] {result.message}")
     print("[INFO] No files were processed.")
