@@ -127,10 +127,21 @@ class ClapEmbeddingBackend(EmbeddingBackend):
         return output.pooler_output.cpu().numpy().flatten()
 
     def embed_audio(self, audio_path: str) -> np.ndarray:
-        raise EmbeddingBackendUnavailableError(
-            "Audio embedding not yet implemented in this spike. "
-            "Requires audio processor integration."
-        )
+        self._load_model()
+        try:
+            import librosa
+        except ImportError:
+            raise EmbeddingBackendUnavailableError(
+                "librosa is required for audio loading."
+            )
+        import torch  # noqa: F811
+        y, sr = librosa.load(audio_path, sr=48000, mono=True)
+        y = np.asarray(y, dtype=np.float32)
+        inputs = self._processor(audio=y, sampling_rate=sr, return_tensors="pt")
+        inputs = {k: v.to(self._device) for k, v in inputs.items()}
+        with torch.no_grad():
+            output = self._model.get_audio_features(**inputs)
+        return output.pooler_output.cpu().numpy().flatten()
 
     def model_info(self) -> EmbeddingModelInfo:
         return _CLAP_METADATA
