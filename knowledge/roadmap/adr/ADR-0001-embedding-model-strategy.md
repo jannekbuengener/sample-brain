@@ -73,10 +73,13 @@ Model metadata that must be persisted:
 ## Consequences
 
 1. **Dependency weight** — CLAP requires PyTorch and Transformers. These are large dependencies and will be introduced deliberately in a later commit (not in this ADR phase).
-2. **CPU vs. GPU** — CLAP works on CPU (slow) and CUDA (fast). The backend must detect device availability and allow configuration.
-3. **Model download** — The first run will download the model weights (~500 MB). This is acceptable for a local-first tool but should be surfaced to the user.
-4. **Version pinning** — Model versions must be pinned in a config or registry to guarantee reproducibility. Upgrading the model invalidates existing embeddings.
-5. **Not implemented yet** — This ADR documents the design decision only. No CLAP import, no model download, no embedding generation exists at the time of writing.
+2. **Optional imports** — CLAP imports must be guarded (`try: import torch; except ImportError: …`). The core CLI and all existing pipeline steps must work without torch/transformers installed.
+3. **CPU vs. GPU** — CLAP works on CPU (slow) and CUDA (fast). The backend must default to CPU and accept an optional `device` parameter. GPU support is opt-in.
+4. **Model download** — The first run will download the model weights (~500 MB). This is acceptable for a local-first tool but should be surfaced to the user.
+5. **Model cache as local artifact** — Downloaded weights are local untracked artifacts. Model cache directories and serialised weight files (`.pt`, `.pth`, `.safetensors`) must be in `.gitignore`.
+6. **CI must stay fast** — CI smoke tests must not trigger model downloads. Compile-only checks suffice.
+7. **Version pinning** — Model versions must be pinned in a config or registry to guarantee reproducibility. Upgrading the model invalidates existing embeddings.
+8. **Not implemented yet** — This ADR documents the design decision only. No CLAP import, no model download, no embedding generation exists at the time of writing.
 
 ---
 

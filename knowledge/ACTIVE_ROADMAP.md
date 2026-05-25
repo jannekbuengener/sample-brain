@@ -20,11 +20,15 @@
 - [x] ADR-0003: Embedding DB Schema Design
 
 ### P1 — First Implementation Steps
-- [ ] Idempotent DB schema extension (`embedding_models`, `sample_embeddings`)
-- [ ] Embedding backend interface (abstract base, no CLAP yet)
-- [ ] CLAP backend spike (torch + transformers)
+- [x] Idempotent DB schema extension (`embedding_models`, `sample_embeddings`)
+- [x] Embedding backend interface (abstract base, no CLAP yet)
+- [x] Embedding registry DB helpers
+- [x] Embedding worker skeleton
+- [ ] Guarded CLAP backend adapter (optional imports, CPU-first, no model download in CI)
 
 ### P2 — Search Pipeline
+- [ ] CLAP backend spike with real audio embedding (torch + transformers dependency)
+- [ ] Batch embedding worker with sample queries
 - [ ] FAISS index build module
 - [ ] Text-to-sample search
 - [ ] Audio-to-audio similarity search

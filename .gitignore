@@ -236,3 +236,9 @@ data/embeddings/
 *.npy
 *.npz
 *.pkl
+
+# Local model cache (downloaded weights, e.g. CLAP, OpenL3)
+data/models/
+*.pt
+*.pth
+*.safetensors
