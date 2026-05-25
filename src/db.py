@@ -208,3 +208,34 @@ def sample_embedding_exists(sample_id: int, model_id: int, source_hash: str) -> 
             },
         ).fetchone()
     return row is not None
+
+
+def iter_pending_samples(
+    model_id: int,
+    limit: int | None = None,
+    only_missing: bool = True,
+) -> list[dict]:
+    engine = get_engine()
+    with engine.begin() as conn:
+        if only_missing:
+            query = """
+                SELECT s.id, s.path, s.hash
+                FROM samples s
+                LEFT JOIN sample_embeddings e
+                    ON e.sample_id = s.id AND e.model_id = :model_id
+                WHERE e.sample_id IS NULL
+                ORDER BY s.id
+            """
+            params: dict = {"model_id": model_id}
+        else:
+            query = """
+                SELECT s.id, s.path, s.hash
+                FROM samples s
+                ORDER BY s.id
+            """
+            params = {}
+        if limit is not None:
+            query += " LIMIT :limit"
+            params["limit"] = limit
+        rows = conn.execute(text(query), params).fetchall()
+        return [{"id": r[0], "path": r[1], "hash": r[2]} for r in rows]

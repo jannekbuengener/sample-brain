@@ -159,8 +159,41 @@ class EmbeddingWorker:
                     "Install torch + transformers and set up a CLAP backend."
                 )
             )
+        from .db import init_db, upsert_embedding_model, insert_sample_embedding, iter_pending_samples
+        init_db()
+        info = self._backend.model_info()
+        model_id = upsert_embedding_model(
+            provider=info.provider,
+            model_name=info.model_name,
+            model_version=info.model_version,
+            embedding_dim=info.embedding_dim,
+            modality=info.modality,
+        )
+        pending = iter_pending_samples(
+            model_id=model_id,
+            limit=config.limit,
+            only_missing=config.only_missing,
+        )
+        processed = 0
+        failed = 0
+        for row in pending:
+            try:
+                vector = self._backend.embed_audio(row["path"])
+                embedding_bytes = vector.astype(np.float32).tobytes()
+                insert_sample_embedding(
+                    sample_id=row["id"],
+                    model_id=model_id,
+                    embedding=embedding_bytes,
+                    embedding_format="float32_blob",
+                    source_hash=row["hash"] or "",
+                )
+                processed += 1
+            except Exception:
+                failed += 1
         return EmbeddingRunResult(
-            message="Worker skeleton: no samples processed."
+            processed=processed,
+            failed=failed,
+            message=f"Processed {processed}, failed {failed}.",
         )
 
 
