@@ -1,0 +1,8 @@
+name: House
+bpm:
+  expected_range: [115, 130]
+  normalize_half_double: false
+key:
+  require_confidence: 2.0
+type_bias: [LOOP]
+character_defaults: [groovy, warm, clean]

@@ -1,0 +1,8 @@
+name: Film Scoring
+bpm:
+  expected_range: null
+  normalize_half_double: false
+key:
+  require_confidence: 1.5
+type_bias: [FX]
+character_defaults: [cinematic, tense, evolving]

@@ -1,0 +1,8 @@
+name: Vocals
+bpm:
+  expected_range: null
+  normalize_half_double: false
+key:
+  require_confidence: 3.0
+type_bias: [VOCAL]
+character_defaults: [clear, airy]

@@ -1,0 +1,8 @@
+name: Hip-Hop
+bpm:
+  expected_range: [70, 105]
+  normalize_half_double: false
+key:
+  require_confidence: 2.0
+type_bias: [ONE-SHOT, LOOP]
+character_defaults: [punchy, dry, dusty]

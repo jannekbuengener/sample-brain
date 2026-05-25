@@ -1,0 +1,8 @@
+name: Techno
+bpm:
+  expected_range: [120, 155]
+  normalize_half_double: true
+key:
+  require_confidence: 2.5
+type_bias: [LOOP, ONE-SHOT]
+character_defaults: [dark, driving, raw]
