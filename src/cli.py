@@ -30,9 +30,15 @@ def main():
     p_exp.add_argument("fl_user_data", help=r'Z.B. C:\Users\DEINNAME\Documents\Image-Line')
 
     # (optional) embed
-    p_emb = sub.add_parser("embed", help="OpenL3-Embeddings berechnen (optional)")
+    p_emb = sub.add_parser("embed", help="Embeddings berechnen (optional)")
     p_emb.add_argument("--limit", type=int, default=None, help="Nur X Dateien einbetten")
     p_emb.add_argument("--all", action="store_true", help="Alle neu berechnen")
+    p_emb.add_argument(
+        "--backend",
+        choices=["noop", "clap"],
+        default="noop",
+        help="Embedding backend to use. Defaults to noop. CLAP requires optional dependencies.",
+    )
 
     # (optional) index_build
     sub.add_parser("index_build", help="FAISS-Index bauen (optional)")
@@ -94,7 +100,7 @@ def main():
         except Exception as e:
             print(f"[WARN] Embeddings übersprungen (Modul fehlt/fehlerhaft): {e}")
             sys.exit(0)
-        run_embed(limit=args.limit, only_missing=not args.all)
+        run_embed(limit=args.limit, only_missing=not args.all, backend_name=args.backend)
         print("Embeddings completed.")
         return
 
