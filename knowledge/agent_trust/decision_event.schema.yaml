@@ -1,0 +1,8 @@
+type: object
+required: [timestamp_utc, actor, action, scope, evidence]
+properties:
+  timestamp_utc: {type: string}
+  actor: {type: string}
+  action: {type: string}
+  scope: {type: string}
+  evidence: {type: string}

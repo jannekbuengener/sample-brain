@@ -1,0 +1,23 @@
+# PROJECT_META
+
+- Projektname: Sample-Brain (sample-brain)
+- Ziel: Offline-Tool für FL Studio Sample-Management: Sample-Library scannen → Audio-Features extrahieren (BPM, Key, Loudness, Brightness, MFCC/Chroma) → Autotype (Loop/OneShot + Instrument-Typ) → FL-Browser-Tags exportieren.
+- Nicht-Ziele:
+  - Kein DAW-Plugin/Realtime-Analyzer in FL Studio (Pipeline ist offline + Export).
+  - Kein Upload/Cloud-Processing; läuft lokal auf deinem Rechner.
+  - Kein Training eines großen Genre-Models im Repo-Default; nur Seeds/Regeln/Profiles.
+  - Keine Distribution/Hosting von Sample-Audio (Repo enthält nur Code/Metadaten, nicht die Samples selbst).
+- Owner: @jannekbuengener
+- Risiken:
+  - Repo enthält/enthält leicht versehentlich Binärballast (.venv, Sample-Audio) → Push zu GitHub wird riesig; ggf. .gitignore + Git LFS nötig.
+  - Analyzer-Risiko: Half/Double-BPM (sichtbar: bpm_normalization.json), extreme BPM-Ausreißer bis ~304.
+  - Key-Confidence wirkt skaliert (key_conf ~3.7–5.4), aber Export-Threshold ist 0.55 → Key-Tags könnten immer gesetzt werden (Mismatch/bug).
+  - Hardcoded SAMPLE_ROOTS (<LOCAL_SAMPLE_ROOTS>) → muss konfigurierbar/profilbasiert werden.
+  - Optionale Module (index/search) sind im CLI vorgesehen, können aber fehlen → Feature-Drift.
+  - Rechtlich: Samples nie mitpushen (Lizenz/Urheberrecht) – nur Hash/Features/Tags.
+- Definition of Done:
+  - CLI läuft end-to-end: init → scan(root) → analyze → export_fl ohne Crash.
+  - catalog.db konsistent: Anzahl samples == features (aktuell 218/218 im Beispiel-DB).
+  - FL-Export erzeugt nachvollziehbare Tags (MAX_TAGS, Key/BPM/Type) in definierter User-Data-Location.
+  - Genre-Profile vorhanden (z.B. Techno/Cinematic): eigene Seed-Listen + Thresholds + Regex-Tag-Maps; per Config wählbar.
+  - Validation-Report vorhanden: BPM/Key Plausibilität + Autotype-Qualität gegen Weak-Labels (Ordner/Filename).

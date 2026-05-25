@@ -1,0 +1,5 @@
+timestamp_utc: "2026-01-21T00:00:00Z"
+actor: "system"
+action: "init"
+scope: "project"
+evidence: "template bootstrap"
