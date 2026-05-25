@@ -79,7 +79,49 @@ Model metadata that must be persisted:
 5. **Model cache as local artifact** — Downloaded weights are local untracked artifacts. Model cache directories and serialised weight files (`.pt`, `.pth`, `.safetensors`) must be in `.gitignore`.
 6. **CI must stay fast** — CI smoke tests must not trigger model downloads. Compile-only checks suffice.
 7. **Version pinning** — Model versions must be pinned in a config or registry to guarantee reproducibility. Upgrading the model invalidates existing embeddings.
-8. **Not implemented yet** — This ADR documents the design decision only. No CLAP import, no model download, no embedding generation exists at the time of writing.
+8. **Guarded adapter stub committed** — A `ClapEmbeddingBackend` stub with guarded imports (`_clap_available()`) and controlled `EmbeddingBackendUnavailableError` exists on `main` (`26cc96e`). No real embedding, no model download, no torch/transformers dependency at runtime.
+
+---
+
+## CLAP Dependency Spike Plan
+
+The following plan governs the first real CLAP spike (torch + transformers + model download). Heavy dependencies must not appear in hygiene, interface, or documentation commits.
+
+### Preferred Spike Option
+
+**Option A: `transformers` + `torch` with Hugging Face `ClapModel`**
+
+- `transformers>=4.35` includes `ClapModel` and `ClapProcessor` natively
+- Model name: `laion/clap-htsat-unfused` (512-dim, audio+text)
+- No separate `laion-clap` package needed
+- If Hugging Face integration proves insufficient, evaluate `laion-clap` only as fallback
+
+### Dependency Constraints
+
+- **CPU-first**: `torch` install must default to CPU (`--index-url https://download.pytorch.org/whl/cpu`). GPU support is a later opt-in via `device="cuda"` parameter.
+- **No runtime dependency**: Import guard (`try: import torch, transformers`) stays in place. `sample-brain --help` and all core pipeline steps must work without torch/transformers.
+- **No CI model download**: The CI smoke workflow stays free of model downloads. Compile-only checks suffice.
+
+### Model Cache Discipline
+
+- Downloaded weights land in `~/.cache/huggingface/` (system-global, outside repo)
+- Repo-local cache directory `data/models/` is already in `.gitignore`
+- File patterns `*.pt`, `*.pth`, `*.safetensors` are already in `.gitignore`
+
+### Acceptance Criteria for the Spike
+
+| # | Criterion |
+|---|-----------|
+| 1 | `_clap_available()` returns `True` after `pip install torch transformers` |
+| 2 | `get_backend("clap").model_info()` returns metadata without downloading any model weights |
+| 3 | `embed_text("kick")` returns a 512-dim `np.ndarray` without crash |
+| 4 | `embed_audio("test/fixtures/sine.wav")` returns a 512-dim `np.ndarray` using a controlled test fixture (not private samples) |
+| 5 | `sample-brain --help` works without torch/transformers installed |
+| 6 | `git status` shows no model/cache/embedding artifacts after running spike tests |
+
+### Branch Strategy
+
+The spike should be developed on a separate branch (`spike/clap-embedding`) to keep `main` clean. Only after spike validation and acceptance would the changes be merged or rebased onto `main`.
 
 ---
 

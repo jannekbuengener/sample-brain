@@ -4,7 +4,7 @@
 
 - **Branch:** `main` — up to date with `origin/main`
 - **Working tree:** clean
-- **Last commit:** `69af525 docs: align README with current CLI commands`
+- **Last commit:** `26cc96e feat: add guarded CLAP backend stub`
 
 ## What Works
 
@@ -17,7 +17,7 @@
 
 ## What Is In Progress
 
-- EPIC 2: Semantic Search Foundation (design phase — ADRs proposed, no code yet)
+- EPIC 2: Semantic Search Foundation (guarded CLAP backend adapter committed on `main`; ADRs active; next step: CLAP dependency spike on `spike/clap-embedding` branch)
 
 ## What Is Blocked
 
@@ -26,5 +26,5 @@
 
 ## Next Decision
 
-- Review the 3 proposed ADRs for EPIC 2
-- After approval: first implementation commit (DB schema extension + embedding backend interface)
+- Execute CLAP dependency spike on `spike/clap-embedding` branch (torch + transformers, HF `ClapModel`, CPU-first)
+- After spike validation: merge or rebase real CLAP backend onto `main`

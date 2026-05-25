@@ -24,10 +24,10 @@
 - [x] Embedding backend interface (abstract base, no CLAP yet)
 - [x] Embedding registry DB helpers
 - [x] Embedding worker skeleton
-- [ ] Guarded CLAP backend adapter (optional imports, CPU-first, no model download in CI)
+- [x] Guarded CLAP backend adapter (optional imports, CPU-first, no model download in CI)
 
 ### P2 — Search Pipeline
-- [ ] CLAP backend spike with real audio embedding (torch + transformers dependency)
+- [ ] CLAP backend spike (torch + transformers, HF `ClapModel`, CPU-first, on `spike/clap-embedding` branch)
 - [ ] Batch embedding worker with sample queries
 - [ ] FAISS index build module
 - [ ] Text-to-sample search
