@@ -72,3 +72,139 @@ def init_db():
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_sample_embeddings_model_id ON sample_embeddings(model_id);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_sample_embeddings_source_hash ON sample_embeddings(source_hash);"))
     return engine
+
+
+def upsert_embedding_model(
+    provider: str,
+    model_name: str,
+    model_version: str | None,
+    embedding_dim: int,
+    modality: str,
+) -> int:
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+            INSERT OR IGNORE INTO embedding_models
+                (provider, model_name, model_version, embedding_dim, modality)
+            VALUES (:provider, :model_name, :model_version, :embedding_dim, :modality)
+            """),
+            {
+                "provider": provider,
+                "model_name": model_name,
+                "model_version": model_version,
+                "embedding_dim": embedding_dim,
+                "modality": modality,
+            },
+        )
+        row = conn.execute(
+            text("""
+            SELECT id FROM embedding_models
+            WHERE provider = :provider
+              AND model_name = :model_name
+              AND (model_version = :model_version OR (model_version IS NULL AND :model_version IS NULL))
+              AND modality = :modality
+            """),
+            {
+                "provider": provider,
+                "model_name": model_name,
+                "model_version": model_version,
+                "modality": modality,
+            },
+        ).fetchone()
+    return row[0]
+
+
+def get_embedding_model(
+    provider: str,
+    model_name: str,
+    model_version: str | None,
+    modality: str,
+) -> dict | None:
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+            SELECT id, provider, model_name, model_version, embedding_dim, modality, created_at
+            FROM embedding_models
+            WHERE provider = :provider
+              AND model_name = :model_name
+              AND (model_version = :model_version OR (model_version IS NULL AND :model_version IS NULL))
+              AND modality = :modality
+            """),
+            {
+                "provider": provider,
+                "model_name": model_name,
+                "model_version": model_version,
+                "modality": modality,
+            },
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": row[0],
+        "provider": row[1],
+        "model_name": row[2],
+        "model_version": row[3],
+        "embedding_dim": row[4],
+        "modality": row[5],
+        "created_at": row[6],
+    }
+
+
+def insert_sample_embedding(
+    sample_id: int,
+    model_id: int,
+    embedding: bytes,
+    embedding_format: str,
+    source_hash: str,
+) -> int:
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+            INSERT OR IGNORE INTO sample_embeddings
+                (sample_id, model_id, embedding, embedding_format, source_hash)
+            VALUES (:sample_id, :model_id, :embedding, :embedding_format, :source_hash)
+            """),
+            {
+                "sample_id": sample_id,
+                "model_id": model_id,
+                "embedding": embedding,
+                "embedding_format": embedding_format,
+                "source_hash": source_hash,
+            },
+        )
+        row = conn.execute(
+            text("""
+            SELECT id FROM sample_embeddings
+            WHERE sample_id = :sample_id
+              AND model_id = :model_id
+              AND source_hash = :source_hash
+            """),
+            {
+                "sample_id": sample_id,
+                "model_id": model_id,
+                "source_hash": source_hash,
+            },
+        ).fetchone()
+    return row[0]
+
+
+def sample_embedding_exists(sample_id: int, model_id: int, source_hash: str) -> bool:
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+            SELECT 1 FROM sample_embeddings
+            WHERE sample_id = :sample_id
+              AND model_id = :model_id
+              AND source_hash = :source_hash
+            """),
+            {
+                "sample_id": sample_id,
+                "model_id": model_id,
+                "source_hash": source_hash,
+            },
+        ).fetchone()
+    return row is not None
