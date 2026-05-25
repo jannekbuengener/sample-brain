@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sample-brain"
+version = "0.1.0"
+description = "Local-first sample library intelligence toolkit for producers."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+sample-brain = "src.cli:main"
+
+[tool.setuptools]
+packages = ["src"]
