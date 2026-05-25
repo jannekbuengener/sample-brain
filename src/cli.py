@@ -9,6 +9,16 @@ def main():
         prog="sample-brain",
         description="Sample Brain CLI (argparse) – stabile Commands ohne Typer/Click."
     )
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="Configuration profile name. Overrides SAMPLE_BRAIN_PROFILE.",
+    )
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Path to base profile config. Defaults to config/profiles.example.yaml.",
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     # init
@@ -101,9 +111,13 @@ def main():
             print(f"[WARN] Embeddings übersprungen (Modul fehlt/fehlerhaft): {e}")
             sys.exit(0)
         import os
-        from .config_loader import resolve_profile, ConfigError
+        from .config_loader import resolve_profile, ConfigError, DEFAULT_EXAMPLE_CONFIG
         try:
-            cfg = resolve_profile(env=dict(os.environ))
+            cfg = resolve_profile(
+                profile_name=args.profile,
+                example_path=Path(args.config) if args.config else DEFAULT_EXAMPLE_CONFIG,
+                env=dict(os.environ),
+            )
         except ConfigError as e:
             print(f"[ERROR] Config error: {e}", file=sys.stderr)
             sys.exit(1)
