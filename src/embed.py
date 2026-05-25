@@ -96,18 +96,40 @@ def _clap_available() -> bool:
 
 
 class ClapEmbeddingBackend(EmbeddingBackend):
-    def embed_audio(self, audio_path: str) -> np.ndarray:
-        raise EmbeddingBackendUnavailableError(
-            "CLAP backend is not yet implemented. "
-            "Install torch, transformers, and clap "
-            "to enable real audio embedding."
-        )
+    def __init__(self) -> None:
+        self._model = None
+        self._processor = None
+        self._device = "cpu"
+
+    def _load_model(self) -> None:
+        if self._model is not None:
+            return
+        try:
+            import torch  # noqa: F811
+            import transformers  # noqa: F811
+        except ImportError:
+            raise EmbeddingBackendUnavailableError(
+                "CLAP dependencies not available. "
+                "pip install torch transformers>=4.35"
+            )
+        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        model_name = "laion/clap-htsat-unfused"
+        self._model = transformers.ClapModel.from_pretrained(model_name).to(self._device)
+        self._processor = transformers.ClapProcessor.from_pretrained(model_name)
 
     def embed_text(self, text: str) -> np.ndarray:
+        self._load_model()
+        import torch  # noqa: F811
+        inputs = self._processor(text=text, return_tensors="pt", padding=True)
+        inputs = {k: v.to(self._device) for k, v in inputs.items()}
+        with torch.no_grad():
+            output = self._model.get_text_features(**inputs)
+        return output.pooler_output.cpu().numpy().flatten()
+
+    def embed_audio(self, audio_path: str) -> np.ndarray:
         raise EmbeddingBackendUnavailableError(
-            "CLAP backend is not yet implemented. "
-            "Install torch, transformers, and clap "
-            "to enable real text embedding."
+            "Audio embedding not yet implemented in this spike. "
+            "Requires audio processor integration."
         )
 
     def model_info(self) -> EmbeddingModelInfo:

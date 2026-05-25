@@ -8,3 +8,8 @@ numba==0.59.1
 pooch==1.8.2
 audioread==3.0.1
 pyyaml==6.0.2
+
+# --- CLAP spike (spike/clap-embedding branch) ---
+# CPU-only install: pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch
+transformers>=4.35
