@@ -66,7 +66,11 @@ def run_scan(custom_roots: Optional[Iterable[Path]] = None,
       - limit: brich nach X Dateien ab (Debug/Teillauf)
       - show_every: alle N Dateien einen kleinen Status ausgeben (zusätzlich zu tqdm)
     """
-    roots = [Path(r) for r in (custom_roots or SAMPLE_ROOTS)]
+    selected_roots = SAMPLE_ROOTS if custom_roots is None else list(custom_roots)
+    roots = [Path(r) for r in selected_roots]
+    if not roots:
+        print("[WARN] No sample roots configured. Use --root or config/profiles.local.yaml.")
+        return
     engine = init_db()
 
     it = iter_audio_files_stream(roots)

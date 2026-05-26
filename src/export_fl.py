@@ -130,4 +130,7 @@ def write_fl_tags(fl_userdata: Path, roots, max_tags=MAX_TAGS):
 def run_export(fl_user_data_folder: str, max_tags=MAX_TAGS, roots=None):
     if roots is None:
         roots = SAMPLE_ROOTS
+    roots = [Path(r) for r in roots]
+    if not roots:
+        print("[WARN] No sample roots configured for relative path resolution. Use --root or config/profiles.local.yaml before exporting.")
     write_fl_tags(Path(fl_user_data_folder), roots, max_tags=max_tags)

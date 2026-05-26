@@ -9,11 +9,10 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 DB_PATH      = DATA_DIR / "catalog.db"
 
-# ---- Wo liegen deine Samples? (Wurzeln – wird rekursiv gescannt) ----
-# In deinem Fall ALLES unter D:\PRODUCING
-SAMPLE_ROOTS = [
-    Path(r"D:\PRODUCING"),
-]
+# ---- Sample roots (legacy fallback) ----
+# Sample roots are now resolved from config profiles or CLI overrides.
+# Keep this empty as a safe legacy fallback; do not commit local paths.
+SAMPLE_ROOTS: list[Path] = []
 
 # ---- Audio-Dateiendungen, die wir berücksichtigen ----
 AUDIO_EXTS = {".wav", ".aif", ".aiff", ".flac", ".mp3", ".ogg"}
