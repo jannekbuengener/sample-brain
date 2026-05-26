@@ -4,14 +4,14 @@
 
 - **Branch:** `main` — synchronised with `origin/main`
 - **Working tree:** clean
-- **Last commit:** `0c474e6 feat: add global profile config CLI flags`
+- **Last commit:** `3dcb8bc feat: add export FL config overrides`
 
 ## What Works (Core Pipeline)
 
-- **Scan** — registers sample files in SQLite catalog
+- **Scan** — registers sample files in SQLite catalog; supports `--root` CLI override
 - **Analyze** — extracts audio features via librosa (BPM, key, loudness, brightness, MFCCs, chroma)
 - **Autotype** — rule-based + optional kNN classification
-- **Export** — writes smart tags into FL Studio Browser
+- **Export** — writes smart tags into FL Studio Browser; supports `--fl-user-data` and `--max-tags` CLI overrides
 - **Packaging** — `pyproject.toml` entry point (`sample-brain --help`) works
 - **CLI** — argparse-based, 8 subcommands registered (4 core stable + 3 optional/experimental)
 
@@ -51,9 +51,12 @@ The following guardrail documents have been defined and committed:
 - ✅ Backend resolution from config profile + env + CLI override
 - ✅ Global `--profile` / `--config` CLI flags
 - ✅ 14 unit tests for config loader
+- ✅ `scan --root` CLI override wired to config profile
+- ✅ `export_fl --fl-user-data` and `--max-tags` CLI overrides wired to config profile
 - ✅ README documentation for profiles, CLI overrides, env vars
-- ❌ `scan --root` not wired yet
-- ❌ `export_fl` / `analyze` not wired to config
+- ✅ `export_fl.py` parameterized: `run_export(max_tags, roots)` with config fallback
+- ❌ `analyze` not wired to config yet
+- ❌ `autotype` not wired to config yet
 
 ## What Is Not Done
 
@@ -64,6 +67,6 @@ The following guardrail documents have been defined and committed:
 
 ## Next Steps (empfohlen)
 
-1. Wire `scan --root` CLI override to config profile
-2. Continue EPIC 1 wiring for remaining subcommands (export_fl, analyze)
+1. README update for export FL config overrides (`--fl-user-data`, `--max-tags`)
+2. Wire `analyze` and `autotype` to config layer
 3. Begin EPIC 2 implementation sequence per spec

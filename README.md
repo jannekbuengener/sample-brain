@@ -53,9 +53,10 @@ python -m src.cli analyze
 # Autotype samples (rules only)
 python -m src.cli autotype --no-knn
 
-# Export tags to FL Studio
-python -m src.cli export_fl "C:\Users\DEINNAME\Documents\Image-Line"   # Windows
-python -m src.cli export_fl "~/Documents/Image-Line"               # macOS/Linux
+# Export tags to FL Studio (uses fl_user_data_path from profile)
+python -m src.cli export_fl                                         # uses profile config
+python -m src.cli export_fl --fl-user-data "<FL_USER_DATA_PATH>"    # override for this run
+python -m src.cli export_fl --max-tags 3                            # limit tags per sample
 ```
 
 ---
@@ -82,6 +83,8 @@ cp config/profiles.example.yaml config/profiles.local.yaml
 | `--config <path>` | All commands | `--config config/profiles.example.yaml embed --limit 1` |
 | `scan --root <path>` | Scan only | `scan --root "<ROOT_A>" --root "<ROOT_B>"` |
 | `embed --backend <name>` | Embed only | `embed --backend clap --limit 1` |
+| `export_fl --fl-user-data <path>` | Export only | `export_fl --fl-user-data "<FL_USER_DATA_PATH>"` |
+| `export_fl --max-tags <n>` | Export only | `export_fl --max-tags 3` |
 
 ### Environment Variables
 
@@ -101,7 +104,8 @@ cp config/profiles.example.yaml config/profiles.local.yaml
 built-in default < example profile < local profile < environment variables < CLI flags
 ```
 
-**Security:** Never commit real sample paths, DB files, reports, indexes, or model caches.
+**Security:** Never commit real sample paths, DB files, reports, indexes, model caches, or FL Studio user data paths.
+Local paths belong in `config/profiles.local.yaml` (which is gitignored).
 See [`docs/DATA_AND_ARTIFACT_POLICY.md`](./docs/DATA_AND_ARTIFACT_POLICY.md) for the full policy.
 
 ---
