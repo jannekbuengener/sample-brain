@@ -63,8 +63,10 @@ python -m src.cli export_fl --max-tags 3                            # limit tags
 python -m src.cli embed --backend noop --limit 5                    # noop placeholder, no real embedding
 python -m src.cli embed --backend clap --limit 5                    # requires pip install torch transformers
 
-# Index & search skeleton (in-memory, no FAISS)
-python -m src.cli index_build --model-id 1                          # build NumPy vector index from stored embeddings
+# Index & search (NumPy, in-memory or persisted via --save)
+python -m src.cli index_build --model-id 1                          # build NumPy vector index (in-memory)
+python -m src.cli index_build --model-id 1 --save                   # build + persist to data/indexes/ as .npz
+python -m src.cli index_build --model-id 1 --save --index-path "custom/path.npz"  # custom save path
 python -m src.cli search "kick" --model-id 1                        # search (CLAP backend required for results)
 ```
 
@@ -95,6 +97,8 @@ cp config/profiles.example.yaml config/profiles.local.yaml
 | `embed --limit <n>` | Embed only | `embed --backend noop --limit 5` |
 | `index_build --model-id <id>` | Index only | `index_build --model-id 1 --limit 100` |
 | `index_build --limit <n>` | Index only | `index_build --model-id 1 --limit 100` |
+| `index_build --save` | Index only | `index_build --model-id 1 --save` |
+| `index_build --index-path <path>` | Index only | `index_build --model-id 1 --save --index-path "custom.npz"` |
 | `search [query] --model-id <id>` | Search only | `search "kick" --model-id 1 --topk 20` |
 | `search --topk <n>` | Search only | `search "kick" --model-id 1 --topk 20` |
 | `export_fl --fl-user-data <path>` | Export only | `export_fl --fl-user-data "<FL_USER_DATA_PATH>"` |

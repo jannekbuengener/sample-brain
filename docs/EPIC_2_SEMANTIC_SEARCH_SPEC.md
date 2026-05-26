@@ -61,10 +61,11 @@ The following EPIC 2 infrastructure already exists on `main`:
 | **`iter_pending_samples()`** | ✅ Done | Source-hash-aware query — returns samples missing current embeddings for a given model |
 | **`--backend` CLI flag** | ✅ Done | `embed --backend {noop,clap}` — wired via config profile or CLI override |
 | **NumPy vector index** | ✅ NumPy skeleton | `src/index.py` — `build_numpy_index()`, `search_index()`, in-memory, cosine similarity. No FAISS dependency. |
-| **Index CLI** | ✅ Controlled command | `index_build --model-id / --limit` — loads embeddings from DB, builds in-memory index, reports summary. |
+| **Index persistence** | ✅ `.npz` save/load | `save_numpy_index()`, `load_numpy_index()`, `default_index_path()` — writes to `data/indexes/`. Metadata validated on load. |
+| **Index CLI** | ✅ Controlled command | `index_build --model-id / --limit / --save / --index-path` — loads embeddings, builds index, persists only with `--save`. |
 | **Search contract** | 🔶 Controlled skeleton | `src/search.py` — `run_search()` prints info that CLAP backend is required. No real query embedding. |
 | **Search CLI** | 🔶 Controlled skeleton | `search [query] --model-id / --topk` — prints search instructions but cannot embed queries without CLAP. |
-| **FAISS index** | ❌ Not integrated | ADR-0002 documents the design. Deferred — NumPy skeleton is the current contract. |
+| **FAISS index** | ❌ Not integrated | ADR-0002 documents the design. Deferred — NumPy `.npz` is the current persistence format. |
 | **Text-to-sample search** | ❌ Not implemented | Blocked by real query embedding backend. NumPy search contract exists for when embeddings arrive. |
 
 ---
@@ -165,13 +166,13 @@ A component or pipeline step is considered production-ready when:
 | 6 | Batch embedding worker | `EmbeddingWorker.run()` — iterate pending samples, call backend, persist | Steps 4, 5 | ✅ Done | Processes N samples, reports processed/skipped/failed, resumable |
 | 7 | CLI `--backend` flag | `embed` subcommand accepts `--backend {noop,clap}` | Step 6 | ✅ Done | Backend selected via CLI, defaults to `"noop"` |
 | 8 | Optional CLAP backend | `ClapEmbeddingBackend` with real model loading | Step 2 | ❌ Stub on `main`, real on spike | `_clap_available()` check, guarded imports, 512-dim vectors, no CI model download |
-| 9 | FAISS index builder | `build_index()` — read embeddings, build IndexFlatIP, write to file | Steps 4, 8 | ❌ Not implemented | Index file written to `data/indexes/`, metadata JSON created, rebuildable from scratch |
+| 9 | NumPy index persistence | `save_numpy_index()` — write `.npz` with vectors, sample_ids, metadata | Steps 4, 8 | ✅ `.npz` persistence | Index file written to `data/indexes/` via `--save`. Metadata: format_version, backend, model_id, dim, metric, normalized, sample_count, created_at. |
 | 10 | Text search embedding | `backend.embed_text()` for search queries | Steps 2, 8 | ❌ Not implemented | Text string → 512-dim vector via selected backend |
-| 11 | Text-to-sample search | Embed query → search FAISS → enrich from SQLite → ranked results | Steps 9, 10 | ❌ Not implemented | Results include path, score, BPM, key, type |
-| 12 | Audio-to-audio search | Embed audio file → search FAISS → enrich → ranked results | Steps 9, 8 | ❌ Not implemented | Same search contract as text, but audio-derived query vector |
-| 13 | CLI `index_build` | Registered subcommand calls `build_numpy_index()` | Step 9 | ✅ NumPy skeleton | Index built on demand, status reported. NumPy in-memory, no FAISS, no file persistence. |
+| 11 | Text-to-sample search | Embed query → search NumPy index → enrich from SQLite → ranked results | Steps 9, 10 | ❌ Not implemented | Results include path, score, BPM, key, type |
+| 12 | Audio-to-audio search | Embed audio file → search NumPy index → enrich → ranked results | Steps 9, 8 | ❌ Not implemented | Same search contract as text, but audio-derived query vector |
+| 13 | CLI `index_build` | Registered subcommand calls `build_numpy_index()` | Step 9 | ✅ NumPy skeleton + persistence | Index built on demand, status reported. Persisted via `--save` / `--index-path`. No FAISS. |
 | 14 | CLI `search` | Registered subcommand calls `run_search()` with query, top-k | Steps 11, 12 | 🔶 Controlled skeleton | Search CLI accepts args and prints instructions. Returns no results without real embedding backend. |
-| 15 | Documentation and validation | Documented contracts, acceptance tests, CI smoke checks | Steps 1-14 | 🔶 Partial | Index/search contracts documented. 14 tests for skeleton. End-to-end validation blocked by real backend. |
+| 15 | Documentation and validation | Documented contracts, acceptance tests, CI smoke checks | Steps 1-14 | 🔶 Partial | Index/search contracts documented. 24 tests for skeleton + persistence. End-to-end validation blocked by real backend. |
 
 **Implementation priority within EPIC 2:** Steps 1-5 are foundation (mostly done). Steps 6-9 are the core build-out. Steps 10-15 layer search on top.
 
@@ -241,15 +242,20 @@ A component or pipeline step is considered production-ready when:
 
 | Field | Type | Source | Required |
 |-------|------|--------|----------|
-| Index file | FAISS file (`.faiss`) | Index builder | ✅ |
-| Metadata file | JSON (`.meta`) | Index builder | ✅ |
-| Index type | TEXT | Config/CLI | ✅ (first: IndexFlatIP) |
-| Distance metric | TEXT | Config | ✅ (IP = inner product) |
+| Index file | NumPy `.npz` archive | Index builder (`save_numpy_index()`) | ✅ |
+| Vectors | float32 `(N, dim)` | `.npz` key `vectors` | ✅ |
+| Sample IDs | int64 `(N,)` | `.npz` key `sample_ids` | ✅ |
+| Metadata | JSON string | `.npz` key `metadata_json` | ✅ |
 | Model reference | model_id | Index builder | ✅ |
-| Build timestamp | ISO 8601 | Index builder | ✅ |
-| Sample count | INTEGER | Index builder | ✅ |
+| Embedding dimension | int | Metadata (`embedding_dim`) | ✅ |
+| Metric | str (`"cosine"`) | Metadata | ✅ |
+| Normalized | bool (`True`) | Metadata | ✅ |
+| Format version | int (`1`) | Metadata | ✅ |
+| Build timestamp | ISO 8601 | Metadata (`created_at`) | ✅ |
+| Sample count | int | Metadata (`sample_count`) | ✅ |
 
-**Location:** `data/indexes/<model_name>-<model_version>-<index_type>.faiss` + `.meta`
+**Current format:** `data/indexes/model-{model_id}-numpy-cosine.npz` (single `.npz` file)
+**Future format (FAISS):** `data/indexes/<model_name>-<model_version>-<index_type>.faiss` + `.meta`
 **Lifecycle:** Rebuildable cache. Source of truth is SQLite `sample_embeddings` table.
 
 ### 8.6 Search result contract
@@ -312,7 +318,25 @@ class EmbeddingBackend(ABC):
 
 ---
 
-## 11. FAISS Index Contract
+## 11. Index Persistence and Validation
+
+The current implementation uses NumPy `.npz` archives for index persistence. FAISS remains the long-term target but is not yet implemented.
+
+### 11.1 NumPy `.npz` persistence
+
+1. **Format:** Single `.npz` file containing three keys: `vectors` (float32), `sample_ids` (int64), `metadata_json` (JSON string).
+2. **Default location:** `data/indexes/model-{model_id}-numpy-cosine.npz` — generated by `default_index_path()`.
+3. **Writing:** `save_numpy_index()` is called by `build_index()` only when `--save` is passed. No automatic writes.
+4. **Reading:** `load_numpy_index()` validates metadata before returning a `VectorIndex`:
+   - `format_version == 1`
+   - `metric == "cosine"`
+   - `backend == "numpy"`
+   - `vectors.shape[0] == sample_ids.shape[0]`
+   - `vectors.shape[1] == metadata["embedding_dim"]`
+   - optional `model_id` cross-check
+5. **Artifact hygiene:** `data/indexes/` and `*.npz` are in `.gitignore`. Index files are never committed.
+
+### 11.2 FAISS Index Contract (future)
 
 1. **FAISS index is a rebuildable cache.** The source of truth for all embeddings is the SQLite `sample_embeddings` table. The index is disposable and rebuildable on demand.
 2. **Index reads embeddings from SQLite.** `build_index()` queries `sample_embeddings` for all vectors of a given model, assembles them into a `np.ndarray`, and trains/loads the index.
