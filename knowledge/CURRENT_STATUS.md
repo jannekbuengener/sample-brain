@@ -2,9 +2,9 @@
 
 ## Current State
 
-- **Branch:** `main` — ahead of `origin/main` by 6 (local documentation commits, not pushed)
+- **Branch:** `main` — synchronised with `origin/main`
 - **Working tree:** clean
-- **Last commit:** `ed3142b docs: add DAW integration spec`
+- **Last commit:** `0c474e6 feat: add global profile config CLI flags`
 
 ## What Works (Core Pipeline)
 
@@ -42,17 +42,28 @@ The following guardrail documents have been defined and committed:
 - **Branch:** `spike/clap-embedding` — contains full CLAP prototype (optional deps, real embedding, DB persistence)
 - **Status:** Parked / Draft — not merged to `main`. The spike validates ADR-0001 architecture decisions but is not production-ready.
 
+## EPIC 1 — Config Profiles (In Progress)
+
+- ✅ `config/profiles.example.yaml` created with placeholder paths
+- ✅ `config/profiles.local.yaml` added to `.gitignore`
+- ✅ `src/config_loader.py` — profile loading, merging, env overrides
+- ✅ `embed --backend` CLI flag with `noop`/`clap` choices
+- ✅ Backend resolution from config profile + env + CLI override
+- ✅ Global `--profile` / `--config` CLI flags
+- ✅ 14 unit tests for config loader
+- ✅ README documentation for profiles, CLI overrides, env vars
+- ❌ `scan --root` not wired yet
+- ❌ `export_fl` / `analyze` not wired to config
+
 ## What Is Not Done
 
 - EPIC 2 implementation (embed → index → search) — not started on `main`
 - FAISS index builder — not imported, not implemented
 - Search pipeline — not imported, not implemented
-- EPIC 1 (config profiles) — not started
 - EPIC 3-6 — not started
 
 ## Next Steps (empfohlen)
 
-1. Review and push the 6 local doc commits (optional — combine when ready)
-2. Define Bootloader and Context Strategy (`docs/BOOTLOADER_AND_CONTEXT_STRATEGY.md`)
-3. Define Sample Brain Skills Spec (`docs/SAMPLE_BRAIN_SKILLS_SPEC.md`)
-4. Begin small `main`-safe implementation steps per EPIC 2 spec (e.g., CLI `--backend` flag, `iter_pending_samples()` DB helper)
+1. Wire `scan --root` CLI override to config profile
+2. Continue EPIC 1 wiring for remaining subcommands (export_fl, analyze)
+3. Begin EPIC 2 implementation sequence per spec
