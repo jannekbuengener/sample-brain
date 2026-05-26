@@ -79,6 +79,17 @@ def main():
         default=None,
         help="Max embeddings to load.",
     )
+    p_idx.add_argument(
+        "--save",
+        action="store_true",
+        help="Persist index to data/indexes/ as .npz file.",
+    )
+    p_idx.add_argument(
+        "--index-path",
+        type=str,
+        default=None,
+        help="Custom path for saved index file. Implies --save.",
+    )
 
     # (optional) search
     p_src = sub.add_parser("search", help="Ähnlichkeitssuche (optional)")
@@ -211,7 +222,13 @@ def main():
         except Exception as e:
             print(f"[WARN] Index übersprungen (Modul fehlt/fehlerhaft): {e}")
             sys.exit(0)
-        build_index(model_id=args.model_id, limit=args.limit)
+        save = args.save or args.index_path is not None
+        build_index(
+            model_id=args.model_id,
+            limit=args.limit,
+            save=save,
+            index_path=args.index_path,
+        )
         return
 
     if args.cmd == "search":

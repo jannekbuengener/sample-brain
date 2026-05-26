@@ -1,5 +1,7 @@
 from __future__ import annotations
+from pathlib import Path
 from unittest.mock import MagicMock, patch
+import json
 
 import numpy as np
 import pytest
@@ -12,6 +14,9 @@ from src.index import (
     search_index,
     build_numpy_index,
     build_index,
+    save_numpy_index,
+    load_numpy_index,
+    default_index_path,
 )
 
 
@@ -160,3 +165,129 @@ class TestBuildIndexCLI:
         captured = capsys.readouterr()
         assert "Index built" in captured.out
         assert "vectors=2" in captured.out
+
+    @patch("src.index.build_numpy_index")
+    def test_build_index_save_prints_path(self, mock_build, capsys, tmp_path):
+        mock_index = MagicMock()
+        mock_index.model_id = 1
+        mock_index.embedding_dim = 3
+        mock_index.sample_ids = [10, 20]
+        mock_index.vectors = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+        mock_build.return_value = mock_index
+
+        index_path = tmp_path / "test.npz"
+        build_index(model_id=1, save=True, index_path=str(index_path))
+        captured = capsys.readouterr()
+        assert "Index saved to" in captured.out
+        assert index_path.exists()
+
+    def test_build_index_save_without_path_prints_info(self, capsys):
+        build_index(model_id=1, save=True)
+        captured = capsys.readouterr()
+        assert "No embeddings found" in captured.out
+
+
+class TestSaveLoadIndex:
+    def _make_index(self, model_id=1, dim=3, n=2):
+        vectors = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)[:n]
+        return VectorIndex(
+            vectors=vectors,
+            sample_ids=list(range(10, 10 + n)),
+            model_id=model_id,
+            embedding_dim=dim,
+        )
+
+    def test_save_load_roundtrip(self, tmp_path):
+        index = self._make_index(model_id=1, dim=3, n=2)
+        path = tmp_path / "test.npz"
+
+        save_numpy_index(index, path)
+        assert path.exists()
+
+        loaded = load_numpy_index(path)
+        assert loaded.model_id == 1
+        assert loaded.embedding_dim == 3
+        assert loaded.sample_ids == [10, 11]
+        assert loaded.vectors.shape == (2, 3)
+        assert np.allclose(loaded.vectors, index.vectors)
+
+    def test_load_nonexistent_path(self, tmp_path):
+        path = tmp_path / "nonexistent.npz"
+        with pytest.raises(FileNotFoundError, match="Index file not found"):
+            load_numpy_index(path)
+
+    def test_load_rejects_wrong_model_id(self, tmp_path):
+        index = self._make_index(model_id=1)
+        path = tmp_path / "test.npz"
+        save_numpy_index(index, path)
+
+        with pytest.raises(ValueError, match="Index model_id 1 does not match requested model_id 2"):
+            load_numpy_index(path, model_id=2)
+
+    def test_load_rejects_bad_format_version(self, tmp_path):
+        index = self._make_index()
+        path = tmp_path / "bad_version.npz"
+        save_numpy_index(index, path)
+
+        data = np.load(path)
+        bad_meta = json.loads(data["metadata_json"].item())
+        bad_meta["format_version"] = 99
+        np.savez_compressed(
+            path,
+            vectors=data["vectors"],
+            sample_ids=data["sample_ids"],
+            metadata_json=json.dumps(bad_meta),
+        )
+        data.close()
+
+        with pytest.raises(ValueError, match="Unsupported format version"):
+            load_numpy_index(path)
+
+    def test_load_rejects_bad_metric(self, tmp_path):
+        index = self._make_index()
+        path = tmp_path / "bad_metric.npz"
+        save_numpy_index(index, path)
+
+        data = np.load(path)
+        bad_meta = json.loads(data["metadata_json"].item())
+        bad_meta["metric"] = "euclidean"
+        np.savez_compressed(
+            path,
+            vectors=data["vectors"],
+            sample_ids=data["sample_ids"],
+            metadata_json=json.dumps(bad_meta),
+        )
+        data.close()
+
+        with pytest.raises(ValueError, match="Unsupported metric"):
+            load_numpy_index(path)
+
+    def test_load_rejects_dimension_mismatch(self, tmp_path):
+        index = self._make_index(dim=3)
+        path = tmp_path / "dim_mismatch.npz"
+        save_numpy_index(index, path)
+
+        data = np.load(path)
+        bad_meta = json.loads(data["metadata_json"].item())
+        bad_meta["embedding_dim"] = 128
+        np.savez_compressed(
+            path,
+            vectors=data["vectors"],
+            sample_ids=data["sample_ids"],
+            metadata_json=json.dumps(bad_meta),
+        )
+        data.close()
+
+        with pytest.raises(ValueError, match="does not match"):
+            load_numpy_index(path)
+
+    def test_default_index_path_format(self):
+        path = default_index_path(model_id=1)
+        assert isinstance(path, Path)
+        assert path.name == "model-1-numpy-cosine.npz"
+        assert "indexes" in str(path)
+        assert path.suffix == ".npz"
+
+    def test_default_index_path_custom_metric(self):
+        path = default_index_path(model_id=5, metric="cosine")
+        assert path.name == "model-5-numpy-cosine.npz"

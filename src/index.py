@@ -1,9 +1,13 @@
 from __future__ import annotations
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
+import json
 
 import numpy as np
 
+from .config import DATA_DIR
 from .db import get_engine, text
 
 
@@ -120,7 +124,85 @@ def search_index(
     ]
 
 
-def build_index(model_id: int | None = None, limit: int | None = None) -> None:
+def default_index_path(model_id: int, metric: str = "cosine") -> Path:
+    indexes_dir = DATA_DIR / "indexes"
+    indexes_dir.mkdir(parents=True, exist_ok=True)
+    return indexes_dir / f"model-{model_id}-numpy-{metric}.npz"
+
+
+def save_numpy_index(index: VectorIndex, path: str | Path) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    metadata = {
+        "format_version": 1,
+        "backend": "numpy",
+        "model_id": index.model_id,
+        "embedding_dim": index.embedding_dim,
+        "metric": "cosine",
+        "normalized": True,
+        "sample_count": len(index.sample_ids),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    np.savez_compressed(
+        path,
+        vectors=index.vectors,
+        sample_ids=np.array(index.sample_ids, dtype=np.int64),
+        metadata_json=json.dumps(metadata),
+    )
+
+
+def load_numpy_index(
+    path: str | Path, model_id: int | None = None
+) -> VectorIndex:
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Index file not found: {path}")
+
+    data = np.load(path)
+    metadata = json.loads(data["metadata_json"].item())
+
+    if metadata.get("format_version") != 1:
+        raise ValueError(
+            f"Unsupported format version: {metadata.get('format_version')}"
+        )
+    if metadata.get("metric") != "cosine":
+        raise ValueError(f"Unsupported metric: {metadata.get('metric')}")
+    if metadata.get("backend") != "numpy":
+        raise ValueError(f"Unsupported backend: {metadata.get('backend')}")
+
+    vectors = data["vectors"]
+    sample_ids = data["sample_ids"].tolist()
+
+    if vectors.shape[0] != len(sample_ids):
+        raise ValueError(
+            f"Vector count {vectors.shape[0]} does not match "
+            f"sample count {len(sample_ids)}"
+        )
+    if vectors.shape[1] != metadata.get("embedding_dim"):
+        raise ValueError(
+            f"Vector dimension {vectors.shape[1]} does not match "
+            f"metadata dimension {metadata.get('embedding_dim')}"
+        )
+    if model_id is not None and metadata.get("model_id") != model_id:
+        raise ValueError(
+            f"Index model_id {metadata.get('model_id')} does not match "
+            f"requested model_id {model_id}"
+        )
+
+    return VectorIndex(
+        vectors=vectors,
+        sample_ids=sample_ids,
+        model_id=metadata["model_id"],
+        embedding_dim=metadata["embedding_dim"],
+    )
+
+
+def build_index(
+    model_id: int | None = None,
+    limit: int | None = None,
+    save: bool = False,
+    index_path: str | None = None,
+) -> None:
     if model_id is None:
         print(
             "[INFO] No model_id specified. "
@@ -140,4 +222,10 @@ def build_index(model_id: int | None = None, limit: int | None = None) -> None:
         f"[INFO] Index built: model_id={index.model_id}, "
         f"dim={index.embedding_dim}, vectors={len(index.sample_ids)}"
     )
-    print("[INFO] Index is in-memory. No index file written.")
+
+    if save:
+        path = Path(index_path) if index_path else default_index_path(model_id)
+        save_numpy_index(index, path)
+        print(f"[INFO] Index saved to: {path}")
+    else:
+        print("[INFO] Index is in-memory. Use --save to persist.")
