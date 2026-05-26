@@ -26,7 +26,12 @@ def main():
 
     # scan
     p_scan = sub.add_parser("scan", help="Samples scannen und in DB registrieren")
-    p_scan.add_argument("root", help="Wurzelordner mit Samples (z.B. D:\\...\\Samples)")
+    p_scan.add_argument(
+        "--root",
+        action="append",
+        default=None,
+        help="Library root to scan. Can be provided multiple times. Overrides configured library_roots.",
+    )
 
     # analyze
     sub.add_parser("analyze", help="Audio-Features (librosa) berechnen")
@@ -68,8 +73,23 @@ def main():
         return
 
     if args.cmd == "scan":
+        if args.root:
+            roots = [Path(r) for r in args.root]
+        else:
+            import os
+            from .config_loader import resolve_profile, ConfigError, DEFAULT_EXAMPLE_CONFIG
+            try:
+                cfg = resolve_profile(
+                    profile_name=args.profile,
+                    example_path=Path(args.config) if args.config else DEFAULT_EXAMPLE_CONFIG,
+                    env=dict(os.environ),
+                )
+            except ConfigError as e:
+                print(f"[ERROR] Config error: {e}", file=sys.stderr)
+                sys.exit(1)
+            roots = [Path(r) for r in cfg.get("library_roots", [])]
         from .scan import run_scan
-        run_scan(Path(args.root))
+        run_scan(roots)
         print("Scan completed.")
         return
 
