@@ -66,12 +66,30 @@ def main():
     )
 
     # (optional) index_build
-    sub.add_parser("index_build", help="FAISS-Index bauen (optional)")
+    p_idx = sub.add_parser("index_build", help="Index aus Embeddings bauen (optional)")
+    p_idx.add_argument(
+        "--model-id",
+        type=int,
+        default=None,
+        help="Embedding model ID (required).",
+    )
+    p_idx.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Max embeddings to load.",
+    )
 
     # (optional) search
     p_src = sub.add_parser("search", help="Ähnlichkeitssuche (optional)")
-    p_src.add_argument("query", help="Pfad zur Audiodatei")
+    p_src.add_argument("query", nargs="?", default=None, help="Suchanfrage (Text oder Pfad)")
     p_src.add_argument("--topk", type=int, default=10)
+    p_src.add_argument(
+        "--model-id",
+        type=int,
+        default=None,
+        help="Embedding model ID (required).",
+    )
 
     args = parser.parse_args()
 
@@ -193,8 +211,7 @@ def main():
         except Exception as e:
             print(f"[WARN] Index übersprungen (Modul fehlt/fehlerhaft): {e}")
             sys.exit(0)
-        p = build_index()
-        print(f"Index geschrieben: {p}")
+        build_index(model_id=args.model_id, limit=args.limit)
         return
 
     if args.cmd == "search":
@@ -203,9 +220,7 @@ def main():
         except Exception as e:
             print(f"[ERROR] Search nicht verfügbar: {e}", file=sys.stderr)
             sys.exit(1)
-        res = run_search(args.query, topk=args.topk)
-        for path, score in res:
-            print(f"{score:.3f}  {path}")
+        run_search(query=args.query, model_id=args.model_id, topk=args.topk)
         return
 
 if __name__ == "__main__":
