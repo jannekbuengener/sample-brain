@@ -191,6 +191,33 @@ def insert_sample_embedding(
     return row[0]
 
 
+def iter_pending_samples(model_id: int, limit: int | None = None) -> list[tuple[int, str, str]]:
+    if limit is not None and limit <= 0:
+        return []
+    engine = get_engine()
+    query = """
+        SELECT s.id, s.path, s.hash
+        FROM samples s
+        WHERE s.hash IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1
+              FROM sample_embeddings e
+              WHERE e.sample_id = s.id
+                AND e.model_id = :model_id
+                AND e.source_hash = s.hash
+          )
+        ORDER BY s.id
+    """
+    if limit is not None:
+        query += "\n        LIMIT :limit"
+    with engine.begin() as conn:
+        params: dict = {"model_id": model_id}
+        if limit is not None:
+            params["limit"] = limit
+        rows = conn.execute(text(query), params).fetchall()
+    return [(row[0], row[1], row[2]) for row in rows]
+
+
 def sample_embedding_exists(sample_id: int, model_id: int, source_hash: str) -> bool:
     engine = get_engine()
     with engine.begin() as conn:
