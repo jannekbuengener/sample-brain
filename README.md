@@ -58,6 +58,14 @@ python -m src.cli autotype --no-knn                                 # disable kN
 python -m src.cli export_fl                                         # uses profile config
 python -m src.cli export_fl --fl-user-data "<FL_USER_DATA_PATH>"    # override for this run
 python -m src.cli export_fl --max-tags 3                            # limit tags per sample
+
+# Embedding pipeline (experimental — requires CLAP backend)
+python -m src.cli embed --backend noop --limit 5                    # noop placeholder, no real embedding
+python -m src.cli embed --backend clap --limit 5                    # requires pip install torch transformers
+
+# Index & search skeleton (in-memory, no FAISS)
+python -m src.cli index_build --model-id 1                          # build NumPy vector index from stored embeddings
+python -m src.cli search "kick" --model-id 1                        # search (CLAP backend required for results)
 ```
 
 ---
@@ -84,6 +92,11 @@ cp config/profiles.example.yaml config/profiles.local.yaml
 | `--config <path>` | All commands | `--config config/profiles.example.yaml embed --limit 1` |
 | `scan --root <path>` | Scan only | `scan --root "<ROOT_A>" --root "<ROOT_B>"` |
 | `embed --backend <name>` | Embed only | `embed --backend clap --limit 1` |
+| `embed --limit <n>` | Embed only | `embed --backend noop --limit 5` |
+| `index_build --model-id <id>` | Index only | `index_build --model-id 1 --limit 100` |
+| `index_build --limit <n>` | Index only | `index_build --model-id 1 --limit 100` |
+| `search [query] --model-id <id>` | Search only | `search "kick" --model-id 1 --topk 20` |
+| `search --topk <n>` | Search only | `search "kick" --model-id 1 --topk 20` |
 | `export_fl --fl-user-data <path>` | Export only | `export_fl --fl-user-data "<FL_USER_DATA_PATH>"` |
 | `export_fl --max-tags <n>` | Export only | `export_fl --max-tags 3` |
 | `autotype --no-knn` | Autotype only | `autotype --no-knn` |

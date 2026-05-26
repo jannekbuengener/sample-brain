@@ -37,11 +37,17 @@
 - [x] Worker + DB tests (13 tests)
 - [x] Guarded CLAP backend adapter (optional imports, CPU-first, no model download in CI)
 
-### P2 — Index & Search Pipeline (not yet started on main)
+### P2 — Index & Search Pipeline (NumPy skeleton on main, FAISS deferred)
 - [ ] CLAP backend spike — exists on `spike/clap-embedding` as parked prototype (not merged)
-- [ ] FAISS index build module
-- [ ] Text-to-sample search
-- [ ] Audio-to-audio similarity search
+- [x] NumPy vector index skeleton (`src/index.py`) — `build_numpy_index()`, `search_index()`, in-memory, cosine similarity
+- [x] Controlled search skeleton (`src/search.py`) — `run_search()` with CLAP-required message
+- [x] CLI `index_build --model-id / --limit` — functional controlled command
+- [x] CLI `search [query] --model-id / --topk` — functional controlled skeleton
+- [x] 14 unit tests for index + search (10 index + 4 search)
+- [ ] FAISS index build module — deferred until NumPy contract stable
+- [ ] Index file persistence — not implemented (in-memory only)
+- [ ] Text-to-sample search — blocked by real query embedding
+- [ ] Audio-to-audio similarity search — blocked by real CLAP backend
 
 ## Future Doku-Stränge (vorgemerkt)
 
@@ -58,4 +64,4 @@
 
 ---
 
-> **Note:** Features listed under P2 are not yet implemented on `main`. The codebase currently supports: Scan → Analyze → Autotype → Embed (worker loop, no-op backend) → Export. A CLAP prototype exists on `spike/clap-embedding` as a parked review branch. FAISS index and search are not yet implemented.
+> **Note:** Embedding pipeline (worker loop, no-op backend) is on `main`. A NumPy vector index skeleton with cosine search is now also on `main` with controlled CLI commands. FAISS is deferred. A CLAP prototype exists on `spike/clap-embedding` as a parked review branch. Index file persistence and real end-to-end semantic search are not yet implemented.

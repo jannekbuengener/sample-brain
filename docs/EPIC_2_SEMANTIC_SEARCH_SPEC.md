@@ -60,8 +60,12 @@ The following EPIC 2 infrastructure already exists on `main`:
 | **CLI subcommands** | ✅ Registered | `embed`, `index_build`, `search` are registered with guarded imports. Fail gracefully if modules are missing. |
 | **`iter_pending_samples()`** | ✅ Done | Source-hash-aware query — returns samples missing current embeddings for a given model |
 | **`--backend` CLI flag** | ✅ Done | `embed --backend {noop,clap}` — wired via config profile or CLI override |
-| **FAISS index** | ❌ Not implemented | ADR-0002 documents the design. No `faiss` import exists on `main`. |
-| **Search pipeline** | ❌ Not implemented | No `src/search.py` on `main`. CLI subcommand is guarded. |
+| **NumPy vector index** | ✅ NumPy skeleton | `src/index.py` — `build_numpy_index()`, `search_index()`, in-memory, cosine similarity. No FAISS dependency. |
+| **Index CLI** | ✅ Controlled command | `index_build --model-id / --limit` — loads embeddings from DB, builds in-memory index, reports summary. |
+| **Search contract** | 🔶 Controlled skeleton | `src/search.py` — `run_search()` prints info that CLAP backend is required. No real query embedding. |
+| **Search CLI** | 🔶 Controlled skeleton | `search [query] --model-id / --topk` — prints search instructions but cannot embed queries without CLAP. |
+| **FAISS index** | ❌ Not integrated | ADR-0002 documents the design. Deferred — NumPy skeleton is the current contract. |
+| **Text-to-sample search** | ❌ Not implemented | Blocked by real query embedding backend. NumPy search contract exists for when embeddings arrive. |
 
 ---
 
@@ -104,8 +108,8 @@ EPIC 2 MVP is reached when:
 1. Embedding model metadata is registered in SQLite on first use
 2. Sample embeddings are computed reproducibly (same sample + same model → same vector)
 3. Embeddings are persisted as BLOBs in `sample_embeddings` table
-4. A FAISS index (IndexFlatIP) can be built from stored embeddings via a CLI command
-5. A text query can be embedded and searched against the index, returning ranked sample paths
+4. A vector index (NumPy cosine similarity skeleton on `main`; FAISS pending) can be built from stored embeddings via a CLI command
+5. A text query can be embedded and searched against the index, returning ranked sample paths (blocked by real query embedding backend)
 6. Search results include sample metadata (BPM, key, type, path) enriched from SQLite
 7. All generated artifacts (DB, index files) remain local and untracked
 8. Core CLI (`--help`, `init`, `scan`, `analyze`, `autotype`, `export_fl`) works without torch/transformers
@@ -165,9 +169,9 @@ A component or pipeline step is considered production-ready when:
 | 10 | Text search embedding | `backend.embed_text()` for search queries | Steps 2, 8 | ❌ Not implemented | Text string → 512-dim vector via selected backend |
 | 11 | Text-to-sample search | Embed query → search FAISS → enrich from SQLite → ranked results | Steps 9, 10 | ❌ Not implemented | Results include path, score, BPM, key, type |
 | 12 | Audio-to-audio search | Embed audio file → search FAISS → enrich → ranked results | Steps 9, 8 | ❌ Not implemented | Same search contract as text, but audio-derived query vector |
-| 13 | CLI `index_build` | Registered subcommand calls `build_index()` | Step 9 | ❌ Guarded only | Index built on demand, status reported |
-| 14 | CLI `search` | Registered subcommand calls `run_search()` with query, top-k | Steps 11, 12 | ❌ Guarded only | Search returns ranked results, formats output, handles empty/no-index errors |
-| 15 | Documentation and validation | Documented contracts, acceptance tests, CI smoke checks | Steps 1-14 | ❌ Not done | All pipeline steps documented, CLI help is accurate, artifact policy respected |
+| 13 | CLI `index_build` | Registered subcommand calls `build_numpy_index()` | Step 9 | ✅ NumPy skeleton | Index built on demand, status reported. NumPy in-memory, no FAISS, no file persistence. |
+| 14 | CLI `search` | Registered subcommand calls `run_search()` with query, top-k | Steps 11, 12 | 🔶 Controlled skeleton | Search CLI accepts args and prints instructions. Returns no results without real embedding backend. |
+| 15 | Documentation and validation | Documented contracts, acceptance tests, CI smoke checks | Steps 1-14 | 🔶 Partial | Index/search contracts documented. 14 tests for skeleton. End-to-end validation blocked by real backend. |
 
 **Implementation priority within EPIC 2:** Steps 1-5 are foundation (mostly done). Steps 6-9 are the core build-out. Steps 10-15 layer search on top.
 
@@ -474,8 +478,8 @@ Each search result must include:
 
 EPIC 2 delivers:
 - Reproducible, versioned sample embeddings
-- Local vector index (FAISS) as a rebuildable cache
-- Text-to-sample and audio-to-audio search
+- Local vector index (NumPy cosine similarity skeleton; FAISS deferred) with CLI-invokable build
+- Search contract and CLI skeleton (real search requires query embedding backend)
 - Metadata enrichment from SQLite on search results
 
 EPIC 3 (Hybrid Ranking & Recommendation) builds on this foundation:

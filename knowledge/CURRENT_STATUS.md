@@ -4,7 +4,7 @@
 
 - **Branch:** `main` — synchronised with `origin/main`
 - **Working tree:** clean
-- **Last commit:** `6420d82 feat: persist embeddings in worker loop`
+- **Last commit:** `a189dfb feat: add numpy vector index and search`
 
 ## What Works (Core Pipeline)
 
@@ -36,9 +36,11 @@ The following guardrail documents have been defined and committed:
 - `EmbeddingWorker.run()` — batch worker loop with DB persistence, per-sample error handling, dimension validation (`src/embed.py`)
 - `--backend {noop,clap}` CLI flag — wired via config profile or CLI override
 - Guarded CLAP backend stub (raises `EmbeddingBackendUnavailableError`)
-- CLI subcommands `embed`, `index_build`, `search` registered with guarded imports
-- 13 unit tests for embedding pipeline (5 worker + 8 DB helpers)
-- **No FAISS, no real CLAP embedding, no search pipeline on `main`**
+- NumPy vector index skeleton (`src/index.py`) — `VectorIndex`, `SearchHit`, `decode_embedding_blob()`, `normalize_vectors()`, `load_embeddings_for_model()`, `build_numpy_index()`, `search_index()`
+- Controlled search skeleton (`src/search.py`) — `run_search()` prints info that CLAP backend is required
+- CLI subcommands `embed`, `index_build`, `search` functional controlled commands
+- 27 unit tests for embedding + index/search pipeline (5 worker + 8 DB + 14 index/search)
+- **No FAISS, no real CLAP embedding, no end-to-end semantic search on `main`**
 
 ## CLAP Spike Status
 
@@ -81,12 +83,14 @@ The following guardrail documents have been defined and committed:
 ## What Is Not Done
 
 - Real CLAP backend — not on `main` (stub only; real implementation on `spike/clap-embedding`)
-- FAISS index builder — not imported, not implemented
-- Search pipeline — not imported, not implemented
+- FAISS index builder — not imported, not integrated
+- Index file persistence — not implemented (index is in-memory only)
+- Real end-to-end semantic search — blocked by real embedding backend
 - EPIC 3-6 — not started
 
 ## Next Steps (empfohlen)
 
-1. FAISS index skeleton / architecture audit
-2. Optional backend strategy decision (dependency-free index vs. lightweight approximate index)
-3. Real CLAP backend port from spike (after index foundation)
+1. Docs update for EPIC 2 Index/Search Skeleton (current step)
+2. Index file persistence / artifact policy enforcement audit
+3. Real CLAP backend port from spike (after index persistence foundation)
+4. FAISS adapter — deferred until NumPy index contract is stable and embeddings exist
