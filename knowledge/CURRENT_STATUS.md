@@ -4,13 +4,13 @@
 
 - **Branch:** `main` — synchronised with `origin/main`
 - **Working tree:** clean
-- **Last commit:** `3dcb8bc feat: add export FL config overrides`
+- **Last commit:** `5501549 feat: resolve autotype settings from config profile`
 
 ## What Works (Core Pipeline)
 
 - **Scan** — registers sample files in SQLite catalog; supports `--root` CLI override
-- **Analyze** — extracts audio features via librosa (BPM, key, loudness, brightness, MFCCs, chroma)
-- **Autotype** — rule-based + optional kNN classification
+- **Analyze** — extracts audio features via librosa (BPM, key, loudness, brightness, MFCCs, chroma); reads from pre-scanned catalog (no `--root` needed)
+- **Autotype** — rule-based + optional kNN classification; supports `--no-knn` CLI override and config profile overrides (`autotype.use_knn`, `autotype.knn_min_conf`)
 - **Export** — writes smart tags into FL Studio Browser; supports `--fl-user-data` and `--max-tags` CLI overrides
 - **Packaging** — `pyproject.toml` entry point (`sample-brain --help`) works
 - **CLI** — argparse-based, 8 subcommands registered (4 core stable + 3 optional/experimental)
@@ -55,8 +55,8 @@ The following guardrail documents have been defined and committed:
 - ✅ `export_fl --fl-user-data` and `--max-tags` CLI overrides wired to config profile
 - ✅ README documentation for profiles, CLI overrides, env vars
 - ✅ `export_fl.py` parameterized: `run_export(max_tags, roots)` with config fallback
-- ❌ `analyze` not wired to config yet
-- ❌ `autotype` not wired to config yet
+- ✅ `autotype` settings (`use_knn`, `knn_min_conf`) wired to config profile; `--no-knn` CLI flag overrides `autotype.use_knn`
+- ❌ `analyze` — DB-based (no `--root` needed); config layer available for future `analyze.limit` / `analyze.only_missing` if desired
 
 ## What Is Not Done
 
@@ -67,6 +67,6 @@ The following guardrail documents have been defined and committed:
 
 ## Next Steps (empfohlen)
 
-1. README update for export FL config overrides (`--fl-user-data`, `--max-tags`)
-2. Wire `analyze` and `autotype` to config layer
+1. README + CURRENT_STATUS update for autotype wiring and analyze DB-based design finding
+2. Push documentation update
 3. Begin EPIC 2 implementation sequence per spec

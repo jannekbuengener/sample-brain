@@ -50,8 +50,9 @@ python -m src.cli scan --root "<ROOT_A>" --root "<ROOT_B>"
 # Analyze audio features
 python -m src.cli analyze
 
-# Autotype samples (rules only)
-python -m src.cli autotype --no-knn
+# Autotype samples (uses use_knn / knn_min_conf from profile)
+python -m src.cli autotype                                          # uses profile config
+python -m src.cli autotype --no-knn                                 # disable kNN for this run
 
 # Export tags to FL Studio (uses fl_user_data_path from profile)
 python -m src.cli export_fl                                         # uses profile config
@@ -85,6 +86,9 @@ cp config/profiles.example.yaml config/profiles.local.yaml
 | `embed --backend <name>` | Embed only | `embed --backend clap --limit 1` |
 | `export_fl --fl-user-data <path>` | Export only | `export_fl --fl-user-data "<FL_USER_DATA_PATH>"` |
 | `export_fl --max-tags <n>` | Export only | `export_fl --max-tags 3` |
+| `autotype --no-knn` | Autotype only | `autotype --no-knn` |
+
+**Note:** `analyze` does not accept `--root` (it reads sample paths from the pre-scanned catalog, not from filesystem roots). To analyze different samples, re-run `scan --root <path>` first, then `analyze`.
 
 ### Environment Variables
 
