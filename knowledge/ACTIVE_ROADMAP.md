@@ -38,7 +38,7 @@
 - [x] Guarded CLAP backend adapter (optional imports, CPU-first, no model download in CI)
 
 ### P2 — Index & Search Pipeline (NumPy skeleton + persistence + backend contract on main, FAISS deferred)
-- [ ] CLAP backend spike — exists on `spike/clap-embedding` as parked prototype (not merged)
+- [x] Guarded CLAP backend on `main` — `ClapEmbeddingBackend` with lazy loading, 512-dim text/audio embedding, download-free `model_info()`, `[clap]` extra
 - [x] NumPy vector index skeleton (`src/index.py`) — `build_numpy_index()`, `search_index()`, in-memory, cosine similarity
 - [x] Search backend contract wired — `run_search()` calls `get_backend()` → `embed_text()` → `search_index()` → ranked hits
 - [x] CLI `search --backend {noop,clap}` — selects backend via CLI or profile config
@@ -51,8 +51,8 @@
 - [x] CLI `index_build --save` — explicit persistence flag (no automatic writes)
 - [x] CLI `index_build --index-path` — custom save path (implies `--save`)
 - [ ] FAISS index build module — deferred until NumPy contract stable
-- [ ] Text-to-sample search — blocked by real query embedding backend
-- [ ] Audio-to-audio similarity search — blocked by real CLAP backend
+- [ ] Text-to-sample search — requires installed CLAP deps + populated embeddings/index
+- [ ] Audio-to-audio similarity search — requires installed CLAP deps + populated embeddings/index
 
 ## Future Doku-Stränge (vorgemerkt)
 
@@ -69,4 +69,4 @@
 
 ---
 
-> **Note:** Embedding pipeline (worker loop, no-op backend) is on `main`. NumPy vector index (in-memory + `.npz` persistence via `--save`) with cosine search is on `main`. Search backend contract is wired — query embedding flows through `EmbeddingBackend.embed_text()`. FAISS is deferred. A CLAP prototype exists on `spike/clap-embedding` as a parked review branch. Real end-to-end semantic search is not yet implemented (blocked by real query embedding backend such as CLAP).
+> **Note:** Embedding pipeline (worker loop, no-op backend) is on `main`. NumPy vector index (in-memory + `.npz` persistence via `--save`) with cosine search is on `main`. Search backend contract is wired — query embedding flows through `EmbeddingBackend.embed_text()`. A guarded `ClapEmbeddingBackend` is on `main` — real embedding calls work after `pip install -e .[clap]` and first-time model download. FAISS is deferred. End-to-end semantic search with real vectors requires installed CLAP deps + populated embeddings/index.

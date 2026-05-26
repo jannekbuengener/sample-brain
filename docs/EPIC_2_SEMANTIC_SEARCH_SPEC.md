@@ -165,14 +165,14 @@ A component or pipeline step is considered production-ready when:
 | 5 | Pending sample selection | `iter_pending_samples()` — query samples missing embeddings | Steps 1, 4 | ✅ Done | Returns sample IDs not yet embedded for a given model; source-hash-aware staleness detection |
 | 6 | Batch embedding worker | `EmbeddingWorker.run()` — iterate pending samples, call backend, persist | Steps 4, 5 | ✅ Done | Processes N samples, reports processed/skipped/failed, resumable |
 | 7 | CLI `--backend` flag | `embed` subcommand accepts `--backend {noop,clap}` | Step 6 | ✅ Done | Backend selected via CLI, defaults to `"noop"` |
-| 8 | Optional CLAP backend | `ClapEmbeddingBackend` with real model loading | Step 2 | ❌ Stub on `main`, real on spike | `_clap_available()` check, guarded imports, 512-dim vectors, no CI model download |
+| 8 | Optional CLAP backend | `ClapEmbeddingBackend` with real model loading | Step 2 | ✅ Implemented guarded on `main` | `_clap_available()` check, guarded imports, 512-dim vectors, no CI model download. Runtime requires `[clap]` install |
 | 9 | NumPy index persistence | `save_numpy_index()` — write `.npz` with vectors, sample_ids, metadata | Steps 4, 8 | ✅ `.npz` persistence | Index file written to `data/indexes/` via `--save`. Metadata: format_version, backend, model_id, dim, metric, normalized, sample_count, created_at. |
-| 10 | Text search embedding | `backend.embed_text()` for search queries | Steps 2, 8 | 🔶 Contract wired, real backend missing | `run_search()` calls `get_backend()` → `embed_text()`. Wired through backend contract. Requires real backend (CLAP) for actual vectors. |
-| 11 | Text-to-sample search | Embed query → search NumPy index → enrich from SQLite → ranked results | Steps 9, 10 | 🔶 Contract wired, blocked by real backend | `search_index()` called from search flow. Full end-to-end path exists with FakeBackend testing. Blocked by real query embedding backend. |
+| 10 | Text search embedding | `backend.embed_text()` for search queries | Steps 2, 8 | 🔶 Contract wired, backend guarded | `run_search()` calls `get_backend()` → `embed_text()`. Backend exists but requires `[clap]` deps + model download for real vectors. |
+| 11 | Text-to-sample search | Embed query → search NumPy index → enrich from SQLite → ranked results | Steps 9, 10 | 🔶 Contract wired, needs runtime setup | `search_index()` called from search flow. Full end-to-end path exists with FakeBackend testing. Real results require `[clap]` deps + populated embeddings/index. |
 | 12 | Audio-to-audio search | Embed audio file → search NumPy index → enrich → ranked results | Steps 9, 8 | ❌ Not implemented | Same search contract as text, but audio-derived query vector |
 | 13 | CLI `index_build` | Registered subcommand calls `build_numpy_index()` | Step 9 | ✅ NumPy skeleton + persistence | Index built on demand, status reported. Persisted via `--save` / `--index-path`. No FAISS. |
 | 14 | CLI `search` | Registered subcommand calls `run_search()` with query, top-k, backend, index-path | Steps 11, 12 | ✅ Backend contract + flags wired | CLI accepts `--backend {noop,clap}`, `--index-path`, `--model-id`, `--topk`. Wired via profile config. Controlled error handling for unavailable backends. |
-| 15 | Documentation and validation | Documented contracts, acceptance tests, CI smoke checks | Steps 1-14 | 🔶 Partial | Index/search contracts documented. 33 tests for index + search (24 index + 9 search). End-to-end validation blocked by real backend. |
+| 15 | Documentation and validation | Documented contracts, acceptance tests, CI smoke checks | Steps 1-14 | 🔶 Partial | Index/search contracts documented. 37 tests for index + search + clap (24 index + 9 search + 4 clap). End-to-end validation requires runtime setup. |
 
 **Implementation priority within EPIC 2:** Steps 1-5 are foundation (mostly done). Steps 6-9 are the core build-out. Steps 10-15 layer search on top.
 
@@ -436,7 +436,7 @@ Each search result must include:
 | Index file not found | `[ERROR] Index file not found: <path>` |
 | Index file corrupt/wrong format | `[ERROR] <validation error from load_numpy_index>` |
 | Index is empty (no results) | `[INFO] No search results.` |
-| Real CLAP backend (future) | Results returned as ranked hits |
+| CLAP backend with deps installed | Results returned as ranked hits |
 
 ---
 

@@ -4,7 +4,7 @@
 
 - **Branch:** `main` — synchronised with `origin/main`
 - **Working tree:** clean
-- **Last commit:** `29875d7 feat: wire search through embedding backend`
+- **Last commit:** `cbea506 feat: implement guarded CLAP backend`
 
 ## What Works (Core Pipeline)
 
@@ -35,24 +35,25 @@ The following guardrail documents have been defined and committed:
 - `iter_pending_samples()` — source-hash-aware pending sample query (`src/db.py`)
 - `EmbeddingWorker.run()` — batch worker loop with DB persistence, per-sample error handling, dimension validation (`src/embed.py`)
 - `--backend {noop,clap}` CLI flag — wired via config profile or CLI override
-- Guarded CLAP backend stub (raises `EmbeddingBackendUnavailableError`)
+- Guarded CLAP backend — real `ClapEmbeddingBackend` with lazy model loading, `embed_text()` (512-dim), `embed_audio()` (512-dim), download-free `model_info()`
 - NumPy vector index skeleton (`src/index.py`) — `VectorIndex`, `SearchHit`, `decode_embedding_blob()`, `normalize_vectors()`, `load_embeddings_for_model()`, `build_numpy_index()`, `search_index()`
 - NumPy index persistence (`src/index.py`) — `save_numpy_index()`, `load_numpy_index()`, `default_index_path()`, metadata validation (format_version, metric, dim, model_id)
 - Search backend contract wired — `run_search()` uses `get_backend(backend_name)` → `embed_text(query)` → `search_index()` → ranked hits
 - `search --backend {noop,clap}` — CLI flag wired via config profile or CLI override
 - `search --index-path` — loads persisted `.npz` index instead of building from DB
 - `NoopEmbeddingBackend` raises `NotImplementedError` → `[ERROR] No embedding backend configured.`
-- `ClapEmbeddingBackend` raises `EmbeddingBackendUnavailableError` → `[ERROR] The selected embedding backend is not available.`
+- `ClapEmbeddingBackend` raises `EmbeddingBackendUnavailableError` with `[clap]` install hint when optional deps missing
 - CLI subcommands `embed`, `index_build`, `search` functional controlled commands
 - `index_build --save` persists `.npz` to `data/indexes/` (no persistence without `--save`)
 - `index_build --index-path` custom save path (implies `--save`)
-- 46 unit tests for embedding + index/search pipeline (5 worker + 8 DB + 24 index + 9 search)
-- **No FAISS, no real CLAP embedding, no end-to-end semantic search on `main`**
+- 50 unit tests for embedding + index/search pipeline (5 worker + 8 DB + 24 index + 9 search + 4 clap)
+- **No FAISS, no real CLAP embedding run (requires `[clap]` install + model download), no end-to-end semantic search with real vectors on `main`**
 
-## CLAP Spike Status
+## CLAP Implementation Status
 
-- **Branch:** `spike/clap-embedding` — contains full CLAP prototype (optional deps, real embedding, DB persistence)
-- **Status:** Parked / Draft — not merged to `main`. The spike validates ADR-0001 architecture decisions but is not production-ready.
+- **On `main`:** Guarded `ClapEmbeddingBackend` with `_load_model()` (lazy, optional imports), `embed_text()`, `embed_audio()`, download-free `model_info()`, `[clap]` optional dependency extra.
+- **Not on `main` (spike-only):** Full worker/DB/CLI refactor from `spike/clap-embedding` — superseded by main's cleaner infrastructure.
+- **Runtime:** First `embed_text()`/`embed_audio()` call downloads model weights (~500 MB). Guarded tests pass without model download.
 
 ## EPIC 1 — Config Profiles (Completed)
 
@@ -89,15 +90,14 @@ The following guardrail documents have been defined and committed:
 
 ## What Is Not Done
 
-- Real CLAP backend — not on `main` (stub only; real implementation on `spike/clap-embedding`)
+- Real CLAP embedding run — requires `pip install -e .[clap]` and first-time model download (~500 MB)
 - FAISS index builder — not imported, not integrated
-- Real end-to-end semantic search — blocked by real embedding backend
-- Query embedding backend — not implemented (CLAP not on `main`)
+- Real end-to-end semantic search — requires installed CLAP deps + populated embeddings/index
 - EPIC 3-6 — not started
 
 ## Next Steps (empfohlen)
 
-1. Docs update for EPIC 2 Index Persistence (current step)
-2. Search query embedding strategy
-3. Real CLAP backend decision / PR #10 handling
-4. FAISS adapter — deferred until NumPy index contract is stable and embeddings exist
+1. Docs update for guarded CLAP backend status (current step)
+2. CLAP smoke test strategy (synthetic/minimal audio fixtures without private samples)
+3. End-to-end local validation with explicit user approval
+4. FAISS adapter — deferred until NumPy index contract is stable and real embeddings exist

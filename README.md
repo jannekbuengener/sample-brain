@@ -30,6 +30,10 @@ python -m venv .venv
 # source .venv/bin/activate
 
 pip install -r requirements.txt
+
+# For CLAP embedding backend (optional):
+pip install -r requirements.txt -r requirements-clap.txt
+# or: pip install -e ".[clap]"
 ```
 
 ---
