@@ -4,7 +4,7 @@
 
 - **Branch:** `main` — synchronised with `origin/main`
 - **Working tree:** clean
-- **Last commit:** `850080d feat: persist numpy vector index`
+- **Last commit:** `29875d7 feat: wire search through embedding backend`
 
 ## What Works (Core Pipeline)
 
@@ -38,11 +38,15 @@ The following guardrail documents have been defined and committed:
 - Guarded CLAP backend stub (raises `EmbeddingBackendUnavailableError`)
 - NumPy vector index skeleton (`src/index.py`) — `VectorIndex`, `SearchHit`, `decode_embedding_blob()`, `normalize_vectors()`, `load_embeddings_for_model()`, `build_numpy_index()`, `search_index()`
 - NumPy index persistence (`src/index.py`) — `save_numpy_index()`, `load_numpy_index()`, `default_index_path()`, metadata validation (format_version, metric, dim, model_id)
-- Controlled search skeleton (`src/search.py`) — `run_search()` prints info that CLAP backend is required
+- Search backend contract wired — `run_search()` uses `get_backend(backend_name)` → `embed_text(query)` → `search_index()` → ranked hits
+- `search --backend {noop,clap}` — CLI flag wired via config profile or CLI override
+- `search --index-path` — loads persisted `.npz` index instead of building from DB
+- `NoopEmbeddingBackend` raises `NotImplementedError` → `[ERROR] No embedding backend configured.`
+- `ClapEmbeddingBackend` raises `EmbeddingBackendUnavailableError` → `[ERROR] The selected embedding backend is not available.`
 - CLI subcommands `embed`, `index_build`, `search` functional controlled commands
 - `index_build --save` persists `.npz` to `data/indexes/` (no persistence without `--save`)
 - `index_build --index-path` custom save path (implies `--save`)
-- 37 unit tests for embedding + index/search pipeline (5 worker + 8 DB + 24 index/search/persistence)
+- 46 unit tests for embedding + index/search pipeline (5 worker + 8 DB + 24 index + 9 search)
 - **No FAISS, no real CLAP embedding, no end-to-end semantic search on `main`**
 
 ## CLAP Spike Status

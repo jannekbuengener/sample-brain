@@ -37,19 +37,21 @@
 - [x] Worker + DB tests (13 tests)
 - [x] Guarded CLAP backend adapter (optional imports, CPU-first, no model download in CI)
 
-### P2 — Index & Search Pipeline (NumPy skeleton + persistence on main, FAISS deferred)
+### P2 — Index & Search Pipeline (NumPy skeleton + persistence + backend contract on main, FAISS deferred)
 - [ ] CLAP backend spike — exists on `spike/clap-embedding` as parked prototype (not merged)
 - [x] NumPy vector index skeleton (`src/index.py`) — `build_numpy_index()`, `search_index()`, in-memory, cosine similarity
-- [x] Controlled search skeleton (`src/search.py`) — `run_search()` with CLAP-required message
+- [x] Search backend contract wired — `run_search()` calls `get_backend()` → `embed_text()` → `search_index()` → ranked hits
+- [x] CLI `search --backend {noop,clap}` — selects backend via CLI or profile config
+- [x] CLI `search --index-path` — loads persisted `.npz` index instead of building from DB
 - [x] CLI `index_build --model-id / --limit` — functional controlled command
-- [x] CLI `search [query] --model-id / --topk` — functional controlled skeleton
-- [x] 24 unit tests for index + search (14 in-memory + 10 persistence)
+- [x] CLI `search [query] --model-id / --topk / --backend / --index-path` — controls search flow
+- [x] 33 unit tests for index + search (24 index + 9 search)
 - [x] NumPy `.npz` index persistence — `save_numpy_index()`, `load_numpy_index()`, `default_index_path()`
 - [x] Index metadata validation — format_version, metric, dimension, model_id cross-check
 - [x] CLI `index_build --save` — explicit persistence flag (no automatic writes)
 - [x] CLI `index_build --index-path` — custom save path (implies `--save`)
 - [ ] FAISS index build module — deferred until NumPy contract stable
-- [ ] Text-to-sample search — blocked by real query embedding
+- [ ] Text-to-sample search — blocked by real query embedding backend
 - [ ] Audio-to-audio similarity search — blocked by real CLAP backend
 
 ## Future Doku-Stränge (vorgemerkt)
@@ -67,4 +69,4 @@
 
 ---
 
-> **Note:** Embedding pipeline (worker loop, no-op backend) is on `main`. NumPy vector index (in-memory + `.npz` persistence via `--save`) with cosine search is on `main`. FAISS is deferred. A CLAP prototype exists on `spike/clap-embedding` as a parked review branch. Real end-to-end semantic search is not yet implemented (blocked by query embedding backend).
+> **Note:** Embedding pipeline (worker loop, no-op backend) is on `main`. NumPy vector index (in-memory + `.npz` persistence via `--save`) with cosine search is on `main`. Search backend contract is wired — query embedding flows through `EmbeddingBackend.embed_text()`. FAISS is deferred. A CLAP prototype exists on `spike/clap-embedding` as a parked review branch. Real end-to-end semantic search is not yet implemented (blocked by real query embedding backend such as CLAP).

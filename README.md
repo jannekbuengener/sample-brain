@@ -67,7 +67,9 @@ python -m src.cli embed --backend clap --limit 5                    # requires p
 python -m src.cli index_build --model-id 1                          # build NumPy vector index (in-memory)
 python -m src.cli index_build --model-id 1 --save                   # build + persist to data/indexes/ as .npz
 python -m src.cli index_build --model-id 1 --save --index-path "custom/path.npz"  # custom save path
-python -m src.cli search "kick" --model-id 1                        # search (CLAP backend required for results)
+python -m src.cli search "kick" --model-id 1                        # search (noop: shows "not configured" message)
+python -m src.cli search "kick" --model-id 1 --backend clap         # search (clap stub: shows "not available" message)
+python -m src.cli search "kick" --model-id 1 --backend clap --index-path "data/indexes/model-1-numpy-cosine.npz"  # load persisted index
 ```
 
 ---
@@ -101,6 +103,8 @@ cp config/profiles.example.yaml config/profiles.local.yaml
 | `index_build --index-path <path>` | Index only | `index_build --model-id 1 --save --index-path "custom.npz"` |
 | `search [query] --model-id <id>` | Search only | `search "kick" --model-id 1 --topk 20` |
 | `search --topk <n>` | Search only | `search "kick" --model-id 1 --topk 20` |
+| `search --backend <name>` | Search only | `search "kick" --model-id 1 --backend clap` |
+| `search --index-path <path>` | Search only | `search "kick" --model-id 1 --backend clap --index-path "data/indexes/model-1-numpy-cosine.npz"` |
 | `export_fl --fl-user-data <path>` | Export only | `export_fl --fl-user-data "<FL_USER_DATA_PATH>"` |
 | `export_fl --max-tags <n>` | Export only | `export_fl --max-tags 3` |
 | `autotype --no-knn` | Autotype only | `autotype --no-knn` |

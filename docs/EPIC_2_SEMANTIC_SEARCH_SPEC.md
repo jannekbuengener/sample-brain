@@ -63,8 +63,8 @@ The following EPIC 2 infrastructure already exists on `main`:
 | **NumPy vector index** | ✅ NumPy skeleton | `src/index.py` — `build_numpy_index()`, `search_index()`, in-memory, cosine similarity. No FAISS dependency. |
 | **Index persistence** | ✅ `.npz` save/load | `save_numpy_index()`, `load_numpy_index()`, `default_index_path()` — writes to `data/indexes/`. Metadata validated on load. |
 | **Index CLI** | ✅ Controlled command | `index_build --model-id / --limit / --save / --index-path` — loads embeddings, builds index, persists only with `--save`. |
-| **Search contract** | 🔶 Controlled skeleton | `src/search.py` — `run_search()` prints info that CLAP backend is required. No real query embedding. |
-| **Search CLI** | 🔶 Controlled skeleton | `search [query] --model-id / --topk` — prints search instructions but cannot embed queries without CLAP. |
+| **Search contract** | ✅ Backend contract wired | `run_search()` calls `get_backend()` → `embed_text()` → `search_index()` → ranked hits. Noop backend raises `NotImplementedError`. CLAP stub raises `EmbeddingBackendUnavailableError`. |
+| **Search CLI** | ✅ Flags wired | `search [query] --model-id / --topk / --backend / --index-path`. Config profile support via `embedding.backend`. |
 | **FAISS index** | ❌ Not integrated | ADR-0002 documents the design. Deferred — NumPy `.npz` is the current persistence format. |
 | **Text-to-sample search** | ❌ Not implemented | Blocked by real query embedding backend. NumPy search contract exists for when embeddings arrive. |
 
@@ -167,12 +167,12 @@ A component or pipeline step is considered production-ready when:
 | 7 | CLI `--backend` flag | `embed` subcommand accepts `--backend {noop,clap}` | Step 6 | ✅ Done | Backend selected via CLI, defaults to `"noop"` |
 | 8 | Optional CLAP backend | `ClapEmbeddingBackend` with real model loading | Step 2 | ❌ Stub on `main`, real on spike | `_clap_available()` check, guarded imports, 512-dim vectors, no CI model download |
 | 9 | NumPy index persistence | `save_numpy_index()` — write `.npz` with vectors, sample_ids, metadata | Steps 4, 8 | ✅ `.npz` persistence | Index file written to `data/indexes/` via `--save`. Metadata: format_version, backend, model_id, dim, metric, normalized, sample_count, created_at. |
-| 10 | Text search embedding | `backend.embed_text()` for search queries | Steps 2, 8 | ❌ Not implemented | Text string → 512-dim vector via selected backend |
-| 11 | Text-to-sample search | Embed query → search NumPy index → enrich from SQLite → ranked results | Steps 9, 10 | ❌ Not implemented | Results include path, score, BPM, key, type |
+| 10 | Text search embedding | `backend.embed_text()` for search queries | Steps 2, 8 | 🔶 Contract wired, real backend missing | `run_search()` calls `get_backend()` → `embed_text()`. Wired through backend contract. Requires real backend (CLAP) for actual vectors. |
+| 11 | Text-to-sample search | Embed query → search NumPy index → enrich from SQLite → ranked results | Steps 9, 10 | 🔶 Contract wired, blocked by real backend | `search_index()` called from search flow. Full end-to-end path exists with FakeBackend testing. Blocked by real query embedding backend. |
 | 12 | Audio-to-audio search | Embed audio file → search NumPy index → enrich → ranked results | Steps 9, 8 | ❌ Not implemented | Same search contract as text, but audio-derived query vector |
 | 13 | CLI `index_build` | Registered subcommand calls `build_numpy_index()` | Step 9 | ✅ NumPy skeleton + persistence | Index built on demand, status reported. Persisted via `--save` / `--index-path`. No FAISS. |
-| 14 | CLI `search` | Registered subcommand calls `run_search()` with query, top-k | Steps 11, 12 | 🔶 Controlled skeleton | Search CLI accepts args and prints instructions. Returns no results without real embedding backend. |
-| 15 | Documentation and validation | Documented contracts, acceptance tests, CI smoke checks | Steps 1-14 | 🔶 Partial | Index/search contracts documented. 24 tests for skeleton + persistence. End-to-end validation blocked by real backend. |
+| 14 | CLI `search` | Registered subcommand calls `run_search()` with query, top-k, backend, index-path | Steps 11, 12 | ✅ Backend contract + flags wired | CLI accepts `--backend {noop,clap}`, `--index-path`, `--model-id`, `--topk`. Wired via profile config. Controlled error handling for unavailable backends. |
+| 15 | Documentation and validation | Documented contracts, acceptance tests, CI smoke checks | Steps 1-14 | 🔶 Partial | Index/search contracts documented. 33 tests for index + search (24 index + 9 search). End-to-end validation blocked by real backend. |
 
 **Implementation priority within EPIC 2:** Steps 1-5 are foundation (mostly done). Steps 6-9 are the core build-out. Steps 10-15 layer search on top.
 
@@ -351,7 +351,33 @@ The current implementation uses NumPy `.npz` archives for index persistence. FAI
 
 ## 12. Search Contract
 
-### 12.1 Text-to-sample search
+### 12.1 Current implementation (NumPy backend-contract search)
+
+As of `29875d7`, the search flow is wired through the `EmbeddingBackend` contract but cannot produce real results without a working embedding backend:
+
+```
+Text query string  ──►  get_backend(backend_name)
+                        └── NoopBackend.embed_text(query)  ──►  NotImplementedError  ──►  [ERROR] No embedding backend configured.
+                        └── ClapBackend.embed_text(query)  ──►  EmbeddingBackendUnavailableError  ──►  [ERROR] not available
+                        └── RealBackend.embed_text(query)  ──►  vector (future)
+
+                                                 vector
+                                                   │
+                                                   ▼
+                              ┌── index_path?  ──►  load_numpy_index(path, model_id)
+                              └── else         ──►  build_numpy_index(model_id)
+                                                   │
+                                                   ▼
+                                         search_index(query_vec, index, topk)
+                                                   │
+                                                   ▼
+                                         Ranked hits (sample_id, score)
+                                                   │
+                                                   ▼
+                                         Enriched results (future: SQLite metadata)
+```
+
+### 12.2 Target implementation (FAISS + CLAP, future)
 
 ```
 Text query string  ──►  backend.embed_text(query)  ──►  512-dim vector
@@ -369,19 +395,19 @@ Text query string  ──►  backend.embed_text(query)  ──►  512-dim vect
                                                    Ranked results with path, BPM, key, type, score
 ```
 
-### 12.2 Audio-to-audio similarity search
+### 12.3 Audio-to-audio similarity search (future)
 
 ```
 Audio file path  ──►  backend.embed_audio(path)  ──►  512-dim vector
                                                               │
                                                               ▼
-                                                      FAISS index.search()
+                                                      FAISS index.search() or NumPy search_index()
                                                               │
                                                               ▼
                                                    (same as text search from here)
 ```
 
-### 12.3 Result contract
+### 12.4 Result contract (target)
 
 Each search result must include:
 
@@ -389,7 +415,7 @@ Each search result must include:
 |-------|--------|-----------------|
 | `sample_id` | SQLite mapping | ✅ Yes |
 | `path` | `samples` table | ✅ Yes |
-| `score` | FAISS (inner product) | ✅ Yes |
+| `score` | cosine similarity (NumPy) / inner product (FAISS) | ✅ Yes |
 | `bpm` | `features` table | If available |
 | `key` | `features` table | If available |
 | `pred_type` | `features` table | If available |
@@ -397,15 +423,20 @@ Each search result must include:
 | `loudness` | `features` table | If available |
 | `brightness` | `features` table | If available |
 
-### 12.4 Error behaviour
+### 12.5 Error behaviour
 
 | Condition | Behaviour |
 |-----------|-----------|
-| No index exists | Clear error message: "No index found. Run `sample-brain index_build` first." |
-| No embeddings for any sample | Clear error message: "No embeddings in database. Run `sample-brain embed` first." |
-| Backend unavailable | `EmbeddingBackendUnavailableError` with install instructions |
-| Query embedding fails | Per-query error reported, search aborted with message |
-| FAISS returns empty results | Empty list returned (no close matches) |
+| No index exists (DB empty) | `[INFO] No search results.` (index is `None`) |
+| No embeddings for any sample | `[INFO] No search results.` (empty index) |
+| Backend unavailable (CLAP) | `[ERROR] The selected embedding backend is not available.` with install instructions |
+| Backend not configured (noop) | `[ERROR] No embedding backend configured.` with hint to use `--backend clap` |
+| Query embedding fails | Per-query error reported as `[ERROR] Search failed: <reason>`, search aborted |
+| Dimension mismatch | `[ERROR] Search failed: Query dimension N does not match index dimension M` |
+| Index file not found | `[ERROR] Index file not found: <path>` |
+| Index file corrupt/wrong format | `[ERROR] <validation error from load_numpy_index>` |
+| Index is empty (no results) | `[INFO] No search results.` |
+| Real CLAP backend (future) | Results returned as ranked hits |
 
 ---
 
