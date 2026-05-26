@@ -5,6 +5,12 @@ from typing import Optional
 
 import numpy as np
 
+from .db import (
+    insert_sample_embedding,
+    iter_pending_samples,
+    upsert_embedding_model,
+)
+
 
 @dataclass
 class EmbeddingVector:
@@ -121,13 +127,69 @@ class EmbeddingWorker:
     def run(self, config: EmbeddingJobConfig) -> EmbeddingRunResult:
         if isinstance(self._backend, NoopEmbeddingBackend):
             return EmbeddingRunResult(
+                processed=0,
+                skipped=0,
+                failed=0,
                 message=(
                     "No embedding backend configured. "
                     "Install torch + transformers and set up a CLAP backend."
-                )
+                ),
             )
+
+        info = self._backend.model_info()
+        model_id = upsert_embedding_model(
+            provider=info.provider,
+            model_name=info.model_name,
+            model_version=info.model_version,
+            embedding_dim=info.embedding_dim,
+            modality=info.modality,
+        )
+
+        pending = iter_pending_samples(model_id=model_id, limit=config.limit)
+
+        processed = 0
+        skipped = 0
+        failed = 0
+
+        for sample_id, path, source_hash in pending:
+            try:
+                vector = self._backend.embed_audio(path)
+                arr = np.asarray(
+                    vector.vector if hasattr(vector, "vector") else vector,
+                    dtype=np.float32,
+                )
+
+                if arr.ndim != 1:
+                    raise ValueError(
+                        f"Embedding must be 1D, got shape {arr.shape}"
+                    )
+
+                if arr.shape[0] != info.embedding_dim:
+                    raise ValueError(
+                        f"Embedding dimension mismatch: "
+                        f"expected {info.embedding_dim}, got {arr.shape[0]}"
+                    )
+
+                insert_sample_embedding(
+                    sample_id=sample_id,
+                    model_id=model_id,
+                    embedding=arr.tobytes(),
+                    embedding_format="numpy.float32",
+                    source_hash=source_hash,
+                )
+                processed += 1
+            except Exception as exc:
+                failed += 1
+                print(f"[WARN] Failed to embed sample_id={sample_id}: {exc}")
+
         return EmbeddingRunResult(
-            message="Worker skeleton: no samples processed."
+            processed=processed,
+            skipped=skipped,
+            failed=failed,
+            message=(
+                f"Embedding run complete: "
+                f"processed={processed}, skipped={skipped}, failed={failed}."
+            ),
         )
 
 
@@ -153,4 +215,3 @@ def run_embed(limit: Optional[int] = None, only_missing: bool = True, backend_na
     worker = EmbeddingWorker(backend)
     result = worker.run(config)
     print(f"[INFO] {result.message}")
-    print("[INFO] No files were processed.")
