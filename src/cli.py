@@ -101,6 +101,18 @@ def main():
         default=None,
         help="Embedding model ID (required).",
     )
+    p_src.add_argument(
+        "--backend",
+        choices=["noop", "clap"],
+        default=None,
+        help="Embedding backend to use. Overrides profile config. Defaults to configured backend or noop.",
+    )
+    p_src.add_argument(
+        "--index-path",
+        type=str,
+        default=None,
+        help="Path to a saved .npz index file. If not provided, index is built from DB.",
+    )
 
     args = parser.parse_args()
 
@@ -237,7 +249,26 @@ def main():
         except Exception as e:
             print(f"[ERROR] Search nicht verfügbar: {e}", file=sys.stderr)
             sys.exit(1)
-        run_search(query=args.query, model_id=args.model_id, topk=args.topk)
+        import os
+        from .config_loader import resolve_profile, ConfigError, DEFAULT_EXAMPLE_CONFIG
+        try:
+            cfg = resolve_profile(
+                profile_name=args.profile,
+                example_path=Path(args.config) if args.config else DEFAULT_EXAMPLE_CONFIG,
+                env=dict(os.environ),
+            )
+        except ConfigError as e:
+            print(f"[ERROR] Config error: {e}", file=sys.stderr)
+            sys.exit(1)
+        configured_backend = cfg.get("embedding", {}).get("backend", "noop")
+        backend_name = args.backend or configured_backend or "noop"
+        run_search(
+            query=args.query,
+            model_id=args.model_id,
+            topk=args.topk,
+            backend_name=backend_name,
+            index_path=args.index_path,
+        )
         return
 
 if __name__ == "__main__":
