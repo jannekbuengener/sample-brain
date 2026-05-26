@@ -40,8 +40,12 @@ pip install -r requirements.txt
 # Initialize DB
 python -m src.cli init
 
-# Scan sample folder (default in config.py)
+# Scan sample folder (uses library_roots from profile)
 python -m src.cli scan
+
+# Scan with explicit root override (repeatable)
+python -m src.cli scan --root "<SAMPLE_LIBRARY_ROOT>"
+python -m src.cli scan --root "<ROOT_A>" --root "<ROOT_B>"
 
 # Analyze audio features
 python -m src.cli analyze
@@ -76,6 +80,7 @@ cp config/profiles.example.yaml config/profiles.local.yaml
 |------|-------|---------|
 | `--profile <name>` | All commands | `--profile minimal-demo embed --limit 1` |
 | `--config <path>` | All commands | `--config config/profiles.example.yaml embed --limit 1` |
+| `scan --root <path>` | Scan only | `scan --root "<ROOT_A>" --root "<ROOT_B>"` |
 | `embed --backend <name>` | Embed only | `embed --backend clap --limit 1` |
 
 ### Environment Variables
