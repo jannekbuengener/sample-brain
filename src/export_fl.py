@@ -56,7 +56,7 @@ def infer_type_from_filename(name: str):
             continue
     return None
 
-def build_tags_for_sample(row, roots):
+def build_tags_for_sample(row, roots, max_tags=MAX_TAGS):
     # row: (path, relpath, duration, brightness, loudness, clazz, key, key_conf, bpm, pred_type, filename)
     path, relpath, duration, brightness, loudness, clazz, key, key_conf, bpm, pred_type, filename = row
     tags: list[str] = []
@@ -84,9 +84,9 @@ def build_tags_for_sample(row, roots):
     btg = bpm_to_tag(bpm)
     if btg and btg not in tags: tags.append(btg)
 
-    return tags[:MAX_TAGS]
+    return tags[:max_tags]
 
-def write_fl_tags(fl_userdata: Path, roots):
+def write_fl_tags(fl_userdata: Path, roots, max_tags=MAX_TAGS):
     engine = init_db()
     tags_path = Path(fl_userdata) / "FL Studio" / "Settings" / "Browser" / "Tags"
     tags_path.parent.mkdir(parents=True, exist_ok=True)
@@ -106,7 +106,7 @@ def write_fl_tags(fl_userdata: Path, roots):
         path = r[0]
         relpath = r[1]
         filename = Path(path).name
-        tags = build_tags_for_sample((*r, filename), roots)
+        tags = build_tags_for_sample((*r, filename), roots, max_tags=max_tags)
         for t in tags: all_tags.add(t)
 
         base = Path(roots[0]) if roots else Path(path).drive + os.sep
@@ -127,5 +127,7 @@ def write_fl_tags(fl_userdata: Path, roots):
             f.write(L + "\n")
     print(f"Wrote FL Tags → {tags_path}")
 
-def run_export(fl_user_data_folder: str):
-    write_fl_tags(Path(fl_user_data_folder), SAMPLE_ROOTS)
+def run_export(fl_user_data_folder: str, max_tags=MAX_TAGS, roots=None):
+    if roots is None:
+        roots = SAMPLE_ROOTS
+    write_fl_tags(Path(fl_user_data_folder), roots, max_tags=max_tags)

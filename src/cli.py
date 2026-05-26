@@ -42,7 +42,17 @@ def main():
 
     # export_fl
     p_exp = sub.add_parser("export_fl", help="FL Studio Browser Tags schreiben")
-    p_exp.add_argument("fl_user_data", help=r'Z.B. C:\Users\DEINNAME\Documents\Image-Line')
+    p_exp.add_argument(
+        "--fl-user-data",
+        default=None,
+        help="FL Studio User Data directory. Overrides configured fl_user_data_path.",
+    )
+    p_exp.add_argument(
+        "--max-tags",
+        type=int,
+        default=None,
+        help="Maximum tags per sample. Overrides configured export.max_tags.",
+    )
 
     # (optional) embed
     p_emb = sub.add_parser("embed", help="Embeddings berechnen (optional)")
@@ -115,12 +125,29 @@ def main():
         return
 
     if args.cmd == "export_fl":
+        import os
+        from .config_loader import resolve_profile, ConfigError, DEFAULT_EXAMPLE_CONFIG
+        try:
+            cfg = resolve_profile(
+                profile_name=args.profile,
+                example_path=Path(args.config) if args.config else DEFAULT_EXAMPLE_CONFIG,
+                env=dict(os.environ),
+            )
+        except ConfigError as e:
+            print(f"[ERROR] Config error: {e}", file=sys.stderr)
+            sys.exit(1)
+        fl_user_data = args.fl_user_data or cfg.get("fl_user_data_path")
+        if not fl_user_data:
+            print("[ERROR] No FL Studio User Data path configured. Use --fl-user-data or set fl_user_data_path in your profile.", file=sys.stderr)
+            sys.exit(1)
+        max_tags = args.max_tags or cfg.get("export", {}).get("max_tags", 5)
+        roots = [Path(r) for r in cfg.get("library_roots", [])]
         try:
             from .export_fl import run_export
         except Exception as e:
             print(f"[ERROR] Export-Modul fehlt/fehlerhaft: {e}", file=sys.stderr)
             sys.exit(1)
-        run_export(args.fl_user_data)
+        run_export(fl_user_data, max_tags=max_tags, roots=roots)
         print("FL Tags export completed.")
         return
 
