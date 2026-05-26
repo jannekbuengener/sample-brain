@@ -102,19 +102,57 @@ def _clap_available() -> bool:
 
 
 class ClapEmbeddingBackend(EmbeddingBackend):
-    def embed_audio(self, audio_path: str) -> np.ndarray:
-        raise EmbeddingBackendUnavailableError(
-            "CLAP backend is not yet implemented. "
-            "Install torch, transformers, and clap "
-            "to enable real audio embedding."
-        )
+    def __init__(self) -> None:
+        self._model = None
+        self._processor = None
+        self._device = "cpu"
+
+    def _load_model(self) -> None:
+        if self._model is not None:
+            return
+        try:
+            import torch  # noqa: F811
+            import transformers  # noqa: F811
+        except ImportError:
+            raise EmbeddingBackendUnavailableError(
+                "CLAP dependencies not available. "
+                "Install with: pip install -e .[clap]"
+            )
+        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        model_name = "laion/clap-htsat-unfused"
+        self._model = transformers.ClapModel.from_pretrained(model_name).to(self._device)
+        self._processor = transformers.ClapProcessor.from_pretrained(model_name)
+        self._model.eval()
 
     def embed_text(self, text: str) -> np.ndarray:
-        raise EmbeddingBackendUnavailableError(
-            "CLAP backend is not yet implemented. "
-            "Install torch, transformers, and clap "
-            "to enable real text embedding."
-        )
+        if not text:
+            raise ValueError("embed_text requires a non-empty string")
+        self._load_model()
+        import torch  # noqa: F811
+        inputs = self._processor(text=text, return_tensors="pt", padding=True)
+        inputs = {k: v.to(self._device) for k, v in inputs.items()}
+        with torch.no_grad():
+            output = self._model.get_text_features(**inputs)
+        vec = output.pooler_output.cpu().numpy().flatten()
+        return np.asarray(vec, dtype=np.float32)
+
+    def embed_audio(self, audio_path: str) -> np.ndarray:
+        self._load_model()
+        try:
+            import librosa
+        except ImportError:
+            raise EmbeddingBackendUnavailableError(
+                "librosa is required for audio loading."
+            )
+        import torch  # noqa: F811
+        y, sr = librosa.load(audio_path, sr=48000, mono=True)
+        y = np.asarray(y, dtype=np.float32)
+        inputs = self._processor(audio=y, sampling_rate=sr, return_tensors="pt")
+        inputs = {k: v.to(self._device) for k, v in inputs.items()}
+        with torch.no_grad():
+            output = self._model.get_audio_features(**inputs)
+        vec = output.pooler_output.cpu().numpy().flatten()
+        return np.asarray(vec, dtype=np.float32)
 
     def model_info(self) -> EmbeddingModelInfo:
         return _CLAP_METADATA
