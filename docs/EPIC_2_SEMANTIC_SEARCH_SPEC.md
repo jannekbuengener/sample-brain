@@ -55,11 +55,11 @@ The following EPIC 2 infrastructure already exists on `main`:
 | **Model registry** | ✅ Stable | `upsert_embedding_model()`, `get_embedding_model()` implement INSERT OR IGNORE and query |
 | **Embedding persistence** | ✅ Stable | `insert_sample_embedding()`, `sample_embedding_exists()` implement BLOB storage and staleness check via `source_hash` |
 | **Backend interface** | ✅ Stable | `EmbeddingBackend` ABC with `embed_audio()`, `embed_text()`, `model_info()` |
-| **Worker skeleton** | ✅ Stable | `EmbeddingWorker` class — returns immediately for `NoopEmbeddingBackend` |
+| **Worker DB persistence** | ✅ Stable | `EmbeddingWorker.run()` iterates pending samples, calls backend, persists BLOB, reports processed/skipped/failed |
 | **CLAP stub** | ✅ Committed | `ClapEmbeddingBackend` — all methods raise `EmbeddingBackendUnavailableError`. No real embedding. |
 | **CLI subcommands** | ✅ Registered | `embed`, `index_build`, `search` are registered with guarded imports. Fail gracefully if modules are missing. |
-| **`iter_pending_samples()`** | ❌ Missing | Exists only on `spike/clap-embedding` branch. Not available on `main`. |
-| **`--backend` CLI flag** | ❌ Missing | `run_embed()` on `main` hardcodes `get_backend("noop")`. No flag to select backend. |
+| **`iter_pending_samples()`** | ✅ Done | Source-hash-aware query — returns samples missing current embeddings for a given model |
+| **`--backend` CLI flag** | ✅ Done | `embed --backend {noop,clap}` — wired via config profile or CLI override |
 | **FAISS index** | ❌ Not implemented | ADR-0002 documents the design. No `faiss` import exists on `main`. |
 | **Search pipeline** | ❌ Not implemented | No `src/search.py` on `main`. CLI subcommand is guarded. |
 
@@ -73,16 +73,18 @@ The branch `spike/clap-embedding` (PR #10) contains a validated prototype of the
 - **Not merged to `main`** — kept as a reference implementation
 - **Not production-ready** — requires review, hardening, and testing before it can be considered stable
 
-### What the spike adds (not on `main`)
+### What remains on the spike (not on `main`)
 
 | Capability | Branch |
 |---|---|
-| `--backend {noop,clap}` CLI flag | `spike/clap-embedding` |
-| `iter_pending_samples()` DB helper | `spike/clap-embedding` |
 | `ClapModel.from_pretrained()` + `ClapProcessor.from_pretrained()` | `spike/clap-embedding` |
 | Real `embed_text()` and `embed_audio()` returning 512-dim vectors | `spike/clap-embedding` |
-| Full `EmbeddingWorker.run()` loop with DB persistence | `spike/clap-embedding` |
 | `requirements-clap.txt` and `[clap]` optional extra | `spike/clap-embedding` |
+
+The following capabilities previously exclusive to the spike have been ported to `main`:
+- `--backend {noop,clap}` CLI flag
+- `iter_pending_samples()` DB helper
+- `EmbeddingWorker.run()` loop with DB persistence
 
 ### Spike status
 
@@ -155,9 +157,9 @@ A component or pipeline step is considered production-ready when:
 | 2 | Embedding backend interface | `EmbeddingBackend` ABC with `embed_audio()`, `embed_text()`, `model_info()` | — | ✅ Done | Interface defines contract; `NoopEmbeddingBackend` raises clear errors |
 | 3 | Model registry helpers | `upsert_embedding_model()`, `get_embedding_model()` | Step 1 | ✅ Done | Models registered with unique constraint, queryable |
 | 4 | Embedding persistence helpers | `insert_sample_embedding()`, `sample_embedding_exists()` | Step 1 | ✅ Done | Embeddings stored as BLOB, staleness checked via `source_hash` |
-| 5 | Pending sample selection | `iter_pending_samples()` — query samples missing embeddings | Steps 1, 4 | ❌ On spike | Returns sample IDs not yet embedded for a given model |
-| 6 | Batch embedding worker | `EmbeddingWorker.run()` — iterate pending samples, call backend, persist | Steps 4, 5 | ❌ Skeleton | Processes N samples, reports processed/skipped/failed, resumable |
-| 7 | CLI `--backend` flag | `embed` subcommand accepts `--backend {noop,clap}` | Step 6 | ❌ On spike | Backend selected via CLI, defaults to `"noop"` |
+| 5 | Pending sample selection | `iter_pending_samples()` — query samples missing embeddings | Steps 1, 4 | ✅ Done | Returns sample IDs not yet embedded for a given model; source-hash-aware staleness detection |
+| 6 | Batch embedding worker | `EmbeddingWorker.run()` — iterate pending samples, call backend, persist | Steps 4, 5 | ✅ Done | Processes N samples, reports processed/skipped/failed, resumable |
+| 7 | CLI `--backend` flag | `embed` subcommand accepts `--backend {noop,clap}` | Step 6 | ✅ Done | Backend selected via CLI, defaults to `"noop"` |
 | 8 | Optional CLAP backend | `ClapEmbeddingBackend` with real model loading | Step 2 | ❌ Stub on `main`, real on spike | `_clap_available()` check, guarded imports, 512-dim vectors, no CI model download |
 | 9 | FAISS index builder | `build_index()` — read embeddings, build IndexFlatIP, write to file | Steps 4, 8 | ❌ Not implemented | Index file written to `data/indexes/`, metadata JSON created, rebuildable from scratch |
 | 10 | Text search embedding | `backend.embed_text()` for search queries | Steps 2, 8 | ❌ Not implemented | Text string → 512-dim vector via selected backend |

@@ -31,12 +31,14 @@
 - [x] Idempotent DB schema extension (`embedding_models`, `sample_embeddings`)
 - [x] Embedding backend interface (abstract base, no CLAP yet)
 - [x] Embedding registry DB helpers
-- [x] Embedding worker skeleton
+- [x] `iter_pending_samples()` — source-hash-aware pending sample query
+- [x] `EmbeddingWorker.run()` — batch worker loop with DB persistence, dimension validation, per-sample error handling
+- [x] CLI `--backend {noop,clap}` flag — wired via config profile or CLI override
+- [x] Worker + DB tests (13 tests)
 - [x] Guarded CLAP backend adapter (optional imports, CPU-first, no model download in CI)
 
-### P2 — Search Pipeline (not yet started on main)
+### P2 — Index & Search Pipeline (not yet started on main)
 - [ ] CLAP backend spike — exists on `spike/clap-embedding` as parked prototype (not merged)
-- [ ] Batch embedding worker with sample queries
 - [ ] FAISS index build module
 - [ ] Text-to-sample search
 - [ ] Audio-to-audio similarity search
@@ -56,4 +58,4 @@
 
 ---
 
-> **Note:** Features listed under P2 are not yet implemented on `main`. The codebase currently supports: Scan → Analyze → Autotype → Export only. A CLAP prototype exists on `spike/clap-embedding` as a parked review branch.
+> **Note:** Features listed under P2 are not yet implemented on `main`. The codebase currently supports: Scan → Analyze → Autotype → Embed (worker loop, no-op backend) → Export. A CLAP prototype exists on `spike/clap-embedding` as a parked review branch. FAISS index and search are not yet implemented.

@@ -4,7 +4,7 @@
 
 - **Branch:** `main` — synchronised with `origin/main`
 - **Working tree:** clean
-- **Last commit:** `9765771 fix: remove hardcoded sample root fallback`
+- **Last commit:** `6420d82 feat: persist embeddings in worker loop`
 
 ## What Works (Core Pipeline)
 
@@ -32,9 +32,12 @@ The following guardrail documents have been defined and committed:
 
 - Embedding backend interface (`EmbeddingBackend` ABC)
 - Embedding model registry + persistence helpers in `src/db.py`
-- Embedding worker skeleton (no-op on `main`)
+- `iter_pending_samples()` — source-hash-aware pending sample query (`src/db.py`)
+- `EmbeddingWorker.run()` — batch worker loop with DB persistence, per-sample error handling, dimension validation (`src/embed.py`)
+- `--backend {noop,clap}` CLI flag — wired via config profile or CLI override
 - Guarded CLAP backend stub (raises `EmbeddingBackendUnavailableError`)
 - CLI subcommands `embed`, `index_build`, `search` registered with guarded imports
+- 13 unit tests for embedding pipeline (5 worker + 8 DB helpers)
 - **No FAISS, no real CLAP embedding, no search pipeline on `main`**
 
 ## CLAP Spike Status
@@ -77,11 +80,13 @@ The following guardrail documents have been defined and committed:
 
 ## What Is Not Done
 
-- EPIC 2 implementation (embed → index → search) — not started on `main`
+- Real CLAP backend — not on `main` (stub only; real implementation on `spike/clap-embedding`)
 - FAISS index builder — not imported, not implemented
 - Search pipeline — not imported, not implemented
 - EPIC 3-6 — not started
 
 ## Next Steps (empfohlen)
 
-1. Begin EPIC 2 implementation sequence per spec (batch embedding → FAISS index → search)
+1. FAISS index skeleton / architecture audit
+2. Optional backend strategy decision (dependency-free index vs. lightweight approximate index)
+3. Real CLAP backend port from spike (after index foundation)
