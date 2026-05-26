@@ -231,6 +231,29 @@ EPIC 1 is done when:
 | 9 | Unknown profile name produces clear error | `--profile nonexistent` says "Unknown profile" |
 | 10 | README explains profile setup | README has a "Configuration" or "Profiles" section |
 
+## 12.1 Implementation Status
+
+EPIC 1 core wiring is complete on `main`. All acceptance criteria are met (or documented as future hardening):
+
+| # | Criterion | Status | Note |
+|---|-----------|--------|------|
+| 1 | No real local paths in committed code or config | ✅ | `SAMPLE_ROOTS` is empty list; `src/config.py` cleaned |
+| 2 | Example profile exists with placeholder paths | ✅ | `config/profiles.example.yaml` |
+| 3 | Local profile is gitignored | ✅ | `config/profiles.local.yaml` in `.gitignore` |
+| 4 | CLI can select a profile via `--profile` | ✅ | Global `--profile` flag implemented |
+| 5 | Default profile is used when none is specified | ✅ | `DEFAULT_PROFILE_NAME = "default"` |
+| 6 | Env vars override profile values | ✅ | 6 env vars supported, tested |
+| 7 | CLI flags override env vars | ✅ | Precedence: CLI > env > profile > default |
+| 8 | Missing paths produce clear error messages | ⚠️ | Backend validated; path existence not yet checked |
+| 9 | Unknown profile name produces clear error | ✅ | Tested and implemented |
+| 10 | README explains profile setup | ✅ | Configuration section, CLI overrides, security note |
+
+**Future hardening** (tracked but not blocking close):
+- Runtime path validation (Section 9)
+- CLI wiring integration tests
+- `embed --model-cache-dir` CLI flag
+- Explicit local-config-only flag
+
 ## 13. Risks and Mitigations
 
 | Risk | Impact | Likelihood | Mitigation |
@@ -253,4 +276,4 @@ EPIC 1 is done when:
 - `docs/BOOTLOADER_AND_CONTEXT_STRATEGY.md` — session startup relies on clean config
 - `docs/SAMPLE_BRAIN_SKILLS_SPEC.md` — skills read config values
 - `docs/ISSUE_BACKLOG.md` — EPIC 1 issues #7 (refactor roots) and #8 (project config file)
-- `knowledge/ACTIVE_ROADMAP.md` — EPIC 1 is not yet started
+- `knowledge/ACTIVE_ROADMAP.md` — EPIC 1 completed; roadmap moved to EPIC 2

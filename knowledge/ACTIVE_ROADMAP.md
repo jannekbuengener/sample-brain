@@ -10,6 +10,15 @@
   - [x] Data and Artifact Policy (`docs/DATA_AND_ARTIFACT_POLICY.md`)
   - [x] EPIC 2 Semantic Search Foundation Spec (`docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md`)
   - [x] DAW Integration Spec (`docs/DAW_INTEGRATION_SPEC.md`)
+- **EPIC 1 — Config Profiles**: completed
+  - [x] Config profile system (YAML, local override, gitignore)
+  - [x] CLI `--profile` / `--config` global flags
+  - [x] Config loader with env var overrides and validation
+  - [x] `scan`, `embed`, `export_fl`, `autotype` wired to config
+  - [x] `analyze` documented as DB-catalog special case
+  - [x] No real local paths remain in committed code
+  - [x] 14 unit tests for config loader
+  - [x] README documentation for profiles, CLI overrides, env vars, precedence
 
 ## Next Focus: EPIC 2 — Semantic Search Foundation
 

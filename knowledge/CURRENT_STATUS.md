@@ -4,7 +4,7 @@
 
 - **Branch:** `main` — synchronised with `origin/main`
 - **Working tree:** clean
-- **Last commit:** `5501549 feat: resolve autotype settings from config profile`
+- **Last commit:** `9765771 fix: remove hardcoded sample root fallback`
 
 ## What Works (Core Pipeline)
 
@@ -42,21 +42,38 @@ The following guardrail documents have been defined and committed:
 - **Branch:** `spike/clap-embedding` — contains full CLAP prototype (optional deps, real embedding, DB persistence)
 - **Status:** Parked / Draft — not merged to `main`. The spike validates ADR-0001 architecture decisions but is not production-ready.
 
-## EPIC 1 — Config Profiles (In Progress)
+## EPIC 1 — Config Profiles (Completed)
 
-- ✅ `config/profiles.example.yaml` created with placeholder paths
-- ✅ `config/profiles.local.yaml` added to `.gitignore`
-- ✅ `src/config_loader.py` — profile loading, merging, env overrides
-- ✅ `embed --backend` CLI flag with `noop`/`clap` choices
-- ✅ Backend resolution from config profile + env + CLI override
-- ✅ Global `--profile` / `--config` CLI flags
-- ✅ 14 unit tests for config loader
-- ✅ `scan --root` CLI override wired to config profile
-- ✅ `export_fl --fl-user-data` and `--max-tags` CLI overrides wired to config profile
-- ✅ README documentation for profiles, CLI overrides, env vars
-- ✅ `export_fl.py` parameterized: `run_export(max_tags, roots)` with config fallback
-- ✅ `autotype` settings (`use_knn`, `knn_min_conf`) wired to config profile; `--no-knn` CLI flag overrides `autotype.use_knn`
-- ❌ `analyze` — DB-based (no `--root` needed); config layer available for future `analyze.limit` / `analyze.only_missing` if desired
+**Acceptance Criteria verification:**
+
+| # | Criterion | Status |
+|---|-----------|--------|
+| 1 | No real local paths in committed code or config | ✅ `SAMPLE_ROOTS` is empty list; no `D:\` or `C:\Users` in `src/` |
+| 2 | Example profile exists with placeholder paths | ✅ `config/profiles.example.yaml` — all `<PLACEHOLDER>` values |
+| 3 | Local profile is gitignored | ✅ `git check-ignore config/profiles.local.yaml` returns the file |
+| 4 | CLI can select a profile via `--profile` | ✅ `--profile minimal-demo embed --limit 1` works |
+| 5 | Default profile used when none specified | ✅ `DEFAULT_PROFILE_NAME = "default"` |
+| 6 | Env vars override profile values | ✅ Tested: `SAMPLE_BRAIN_MAX_TAGS=10` overrides `export.max_tags` |
+| 7 | CLI flags override env vars | ✅ Precedence chain implemented in all handlers |
+| 8 | Missing paths produce clear errors | ⚠️ Partial — backend validated; path existence not yet checked (future hardening) |
+| 9 | Unknown profile produces clear error | ✅ `Unknown profile: {name}. Available: {names}` |
+| 10 | README explains profile setup | ✅ Configuration section, CLI overrides table, security note |
+
+**Wired subcommands:**
+
+| Subcommand | Config keys | CLI overrides |
+|------------|-------------|---------------|
+| `scan` | `library_roots` | `--root` |
+| `embed` | `embedding.backend` | `--backend` |
+| `export_fl` | `fl_user_data_path`, `export.max_tags`, `library_roots` | `--fl-user-data`, `--max-tags` |
+| `autotype` | `autotype.use_knn`, `autotype.knn_min_conf` | `--no-knn` |
+| `analyze` | DB-catalog based (no root wiring needed) | — |
+
+**Future hardening (not blockers for close):**
+- Runtime path validation (EPIC 1 Spec Section 9)
+- CLI wiring integration tests
+- `embed --model-cache-dir` CLI flag
+- Explicit local-config-only flag
 
 ## What Is Not Done
 
@@ -67,6 +84,4 @@ The following guardrail documents have been defined and committed:
 
 ## Next Steps (empfohlen)
 
-1. README + CURRENT_STATUS update for autotype wiring and analyze DB-based design finding
-2. Push documentation update
-3. Begin EPIC 2 implementation sequence per spec
+1. Begin EPIC 2 implementation sequence per spec (batch embedding → FAISS index → search)
