@@ -15,6 +15,10 @@ profiles:
     export:
       max_tags: 5
 
+    autotype:
+      use_knn: true
+      knn_min_conf: 0.55
+
     embedding:
       backend: "noop"
       model_cache_dir: "<MODEL_CACHE_DIR>"
@@ -30,6 +34,9 @@ profiles:
 
     export:
       max_tags: 3
+
+    autotype:
+      use_knn: false
 
     embedding:
       backend: "noop"

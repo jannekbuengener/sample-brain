@@ -114,13 +114,26 @@ def main():
         return
 
     if args.cmd == "autotype":
+        import os
+        from .config_loader import resolve_profile, ConfigError, DEFAULT_EXAMPLE_CONFIG
+        try:
+            cfg = resolve_profile(
+                profile_name=args.profile,
+                example_path=Path(args.config) if args.config else DEFAULT_EXAMPLE_CONFIG,
+                env=dict(os.environ),
+            )
+        except ConfigError as e:
+            print(f"[ERROR] Config error: {e}", file=sys.stderr)
+            sys.exit(1)
+        autotype_cfg = cfg.get("autotype", {})
+        use_knn = not args.no_knn if args.no_knn else autotype_cfg.get("use_knn", True)
+        knn_min_conf = autotype_cfg.get("knn_min_conf", 0.55)
         try:
             from .classify import write_autotype_to_db
         except Exception as e:
             print(f"[ERROR] Autotype-Modul fehlt/fehlerhaft: {e}", file=sys.stderr)
             sys.exit(1)
-        use_knn = not args.no_knn
-        write_autotype_to_db(use_knn=use_knn, knn_min_conf=0.55)
+        write_autotype_to_db(use_knn=use_knn, knn_min_conf=knn_min_conf)
         print("Autotypisierung abgeschlossen.")
         return
 
