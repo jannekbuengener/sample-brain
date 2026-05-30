@@ -1,0 +1,21 @@
+---
+description: Sample Brain project guardrails and workflow defaults
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Sample Brain - Project Rule
+
+## Source of truth
+- Prefer repository code (`src/`) and tests (`tests/`) over assumptions.
+- Keep command examples aligned with `src/cli.py`.
+
+## Safety
+- Never write machine-local paths or secrets into tracked files.
+- Preserve graceful fallback behavior for optional embedding backends.
+
+## Change style
+- Keep edits scoped and minimal.
+- Update tests when behavior changes.
+- For schema/data contract changes in `src/db.py`, verify affected pipeline modules (`scan`, `analyze`, `classify`, `embed`, `index`, `search`).
