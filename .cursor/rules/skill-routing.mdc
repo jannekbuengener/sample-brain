@@ -30,6 +30,10 @@ Referenz: [docs/SKILL_INTEGRATION_PLAN.md](../../docs/SKILL_INTEGRATION_PLAN.md)
 
 Nur bei **explizitem** Security-/CI-Audit-Auftrag. Keine Auto-Änderung ohne separaten Auftrag.
 
+For generic CI/security workflow audits, start with `detecting-supply-chain-attacks-in-ci-cd` or the most specific matching Priority B skill. The result should be documented first; implementation requires a separate explicit task.
+
+Priority B skills come from the external Anthropic-Cybersecurity-Skills package (not copied into this repo).
+
 | Thema | Skill |
 |-------|-------|
 | GitHub Actions härten | `securing-github-actions-workflows` |
