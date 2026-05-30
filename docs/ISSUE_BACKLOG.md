@@ -1,6 +1,23 @@
 # Issue Backlog
 
-Prepared backlog only. No GitHub issues have been created yet.
+Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board reality** below for live state.
+
+## GitHub Board Reality (2026-05-30)
+
+| Item | Status | Notes |
+|------|--------|-------|
+| GitHub #11 | ✅ Closed | M1 — isolated CLAP runtime environment (PASS) |
+| GitHub #12 | ✅ Closed | M2 — real CLAP text embedding smoke (PASS) |
+| GitHub #14 | 🔶 Open | M5 hygiene — docs drift, Dependabot triage, stale PR cleanup |
+| PR #13 | ✅ Merged | `SAMPLE_BRAIN_DB_PATH` external runtime DB (`8046816`) |
+| PR #10 | ✅ Closed | Superseded by incremental EPIC-2 work on `main` |
+| PR #1 | ✅ Closed | Stale Claude review branch (2025) |
+| PR #2–#9 | 🔶 Open | Dependabot — classified in M5a (#14 comment); not merged |
+| M3 persistence smoke | ✅ Done | Documented in `CURRENT_STATUS.md`; no retro issue |
+| M4 NumPy search E2E | ✅ Done | Documented in `CURRENT_STATUS.md`; no retro issue |
+| FAISS adapter | ❌ Deferred | M6 — not started |
+
+Local backlog item numbers below are **planning IDs**, not GitHub issue numbers (except where cross-referenced).
 
 ## EPIC 0: Repository Hygiene & Documentation
 
@@ -104,8 +121,7 @@ Prepared backlog only. No GitHub issues have been created yet.
 ## EPIC 2: Semantic Search Foundation
 
 ### 10. db: add embedding model and sample embedding tables
-- Labels: `db`, `embeddings`, `foundation`
-- Goal: Extend the catalog schema for embeddings and model metadata.
+- **Status:** ✅ completed on `main`
 - Context: Semantic search requires persistent embedding storage and versioning.
 - Acceptance criteria:
   - schema includes embedding metadata and per-sample embeddings
@@ -116,8 +132,7 @@ Prepared backlog only. No GitHub issues have been created yet.
 - Priority: P1
 
 ### 11. feat: implement CLAP embedding backend abstraction
-- Labels: `feat`, `embeddings`, `ml`
-- Goal: Add a backend abstraction for audio/text embeddings with CLAP as the primary candidate.
+- **Status:** ✅ completed — GitHub #11 (runtime env) and #12 (text embed smoke) closed; backend on `main`
 - Context: The target architecture calls for local-first semantic search.
 - Acceptance criteria:
   - backend interface supports text and audio embedding
@@ -128,8 +143,7 @@ Prepared backlog only. No GitHub issues have been created yet.
 - Priority: P1
 
 ### 12. feat: implement batch embedding worker
-- Labels: `feat`, `embeddings`, `pipeline`
-- Goal: Generate embeddings in batches for analyzed samples.
+- **Status:** ✅ completed on `main` — M3 persistence smoke PASS (external DB via `SAMPLE_BRAIN_DB_PATH`)
 - Context: Embedding generation should be decoupled from scan/analyze steps.
 - Acceptance criteria:
   - worker can process pending samples in batches
@@ -139,26 +153,26 @@ Prepared backlog only. No GitHub issues have been created yet.
 - Dependencies: Issues 10 and 11
 - Priority: P1
 
-### 13. feat: implement FAISS index build module
+### 13. feat: implement vector index build module
+- **Status:** ✅ NumPy `.npz` on `main` — FAISS variant deferred (M6)
 - Labels: `feat`, `search`, `indexing`
-- Goal: Build a local FAISS index from stored embeddings.
+- Goal: Build a local vector index from stored embeddings.
 - Context: Local-first search needs a performant local vector index.
 - Acceptance criteria:
-  - index build command/module exists
-  - index can be rebuilt from embedding tables
-  - index location and lifecycle are documented as local artifacts
-- Technical notes: FAISS index files should not be committed.
+  - index build command/module exists — ✅ `index_build` with NumPy `.npz`
+  - index can be rebuilt from embedding tables — ✅
+  - index location and lifecycle documented — ✅ artifact policy
+- Technical notes: NumPy is current; FAISS index files should not be committed when implemented.
 - Dependencies: Issue 12
 - Priority: P1
 
 ### 14. feat: implement text-to-sample semantic search
-- Labels: `feat`, `search`, `ml`
-- Goal: Support natural-language search over the sample catalog.
+- **Status:** ✅ NumPy E2E smoke PASS (M4) — production hardening remains future work
 - Context: This is a core step toward a semantic sample copilot.
 - Acceptance criteria:
-  - text query embeds through the selected backend
-  - FAISS returns ranked sample candidates
-  - result set includes enough metadata for producer workflows
+  - text query embeds through selected backend — ✅ CLAP smoke
+  - index returns ranked sample candidates — ✅ NumPy search
+  - result set includes metadata for producer workflows — 🔶 partial
 - Technical notes: Keep API/UI assumptions minimal in first iteration.
 - Dependencies: Issues 11, 12, 13
 - Priority: P1

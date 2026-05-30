@@ -4,7 +4,7 @@
 
 - **Branch:** `main` — synchronised with `origin/main`
 - **Working tree:** clean
-- **Last commit:** `cbea506 feat: implement guarded CLAP backend`
+- **Last commit:** `8046816 feat: support external SampleBrain DB path (#13)`
 
 ## What Works (Core Pipeline)
 
@@ -46,14 +46,28 @@ The following guardrail documents have been defined and committed:
 - CLI subcommands `embed`, `index_build`, `search` functional controlled commands
 - `index_build --save` persists `.npz` to `data/indexes/` (no persistence without `--save`)
 - `index_build --index-path` custom save path (implies `--save`)
-- 50 unit tests for embedding + index/search pipeline (5 worker + 8 DB + 24 index + 9 search + 4 clap)
-- **No FAISS, no real CLAP embedding run (requires `[clap]` install + model download), no end-to-end semantic search with real vectors on `main`**
+- 50+ unit tests for embedding + index/search pipeline (worker + DB + index + search + clap + config)
+- **`SAMPLE_BRAIN_DB_PATH`** — runtime SQLite path override (merged via PR #13); keeps validation DBs outside repo
+- **No FAISS** — NumPy `.npz` index is the current implementation; FAISS remains a deferred optional adapter
+
+## EPIC 2 Runtime Proof Status
+
+- **M1 / #11:** Isolated CLAP runtime environment — PASS.
+  External venv validated with Python 3.12.10 and CLAP optional dependencies. `model_info()` returns 512-dim metadata without model download.
+- **M2 / #12:** Real CLAP text embedding smoke — PASS.
+  `get_backend("clap").embed_text("kick drum")` returned a real `np.ndarray` with shape `(512,)` and dtype `float32`. HuggingFace model cache stayed outside the repo.
+- **M3:** Real CLAP audio embedding persistence — PASS.
+  Synthetic WAV outside repo was scanned and embedded with `embed --backend clap`; a 512-dim float32 embedding was persisted to an external SQLite DB via `SAMPLE_BRAIN_DB_PATH`.
+- **M4:** NumPy semantic search E2E — PASS.
+  Real CLAP embeddings were loaded from SQLite, persisted into an external NumPy `.npz` index, and queried with `search "kick drum" --backend clap`, returning `rank=1 sample_id=1 score=0.0726`.
+- **PR #13:** `SAMPLE_BRAIN_DB_PATH` support merged.
+  External runtime DBs are now supported without repo-local DB artifacts.
 
 ## CLAP Implementation Status
 
-- **On `main`:** Guarded `ClapEmbeddingBackend` with `_load_model()` (lazy, optional imports), `embed_text()`, `embed_audio()`, download-free `model_info()`, `[clap]` optional dependency extra.
-- **Not on `main` (spike-only):** Full worker/DB/CLI refactor from `spike/clap-embedding` — superseded by main's cleaner infrastructure.
-- **Runtime:** First `embed_text()`/`embed_audio()` call downloads model weights (~500 MB). Guarded tests pass without model download.
+- **On `main`:** Guarded `ClapEmbeddingBackend` with lazy model loading, optional `[clap]` deps, download-free `model_info()`, real `embed_text()` and `embed_audio()` (512-dim float32) validated in controlled smoke path.
+- **Historical:** PR #10 (`spike/clap-embedding`) closed as superseded — `main` is the source of truth.
+- **Runtime:** First `embed_text()`/`embed_audio()` call downloads model weights (~500 MB) to `~/.cache/huggingface/`. Guarded unit tests pass without model download.
 
 ## EPIC 1 — Config Profiles (Completed)
 
@@ -90,14 +104,16 @@ The following guardrail documents have been defined and committed:
 
 ## What Is Not Done
 
-- Real CLAP embedding run — requires `pip install -e .[clap]` and first-time model download (~500 MB)
-- FAISS index builder — not imported, not integrated
-- Real end-to-end semantic search — requires installed CLAP deps + populated embeddings/index
-- EPIC 3-6 — not started
+- **FAISS adapter** — not implemented; NumPy `.npz` index is current
+- **Large-scale / private sample validation** — only controlled synthetic-fixture E2E smoke proven
+- **Production search quality tuning** — E2E smoke confirms plumbing, not ranking quality
+- **Dependabot cleanup** — classified in M5a (#14); not merged yet
+- **Docs hygiene** — tracked in #14 (M5b in progress)
+- **EPIC 3–6** — not started
 
 ## Next Steps (empfohlen)
 
-1. Docs update for guarded CLAP backend status (current step)
-2. CLAP smoke test strategy (synthetic/minimal audio fixtures without private samples)
-3. End-to-end local validation with explicit user approval
-4. FAISS adapter — deferred until NumPy index contract is stable and real embeddings exist
+1. Complete M5b docs drift (#14) — sync status/spec/architecture/backlog with E2E evidence
+2. Dependabot one-by-one merge (#4 checkout, #8 tqdm first; defer #5 numba)
+3. FAISS adapter (M6) — deferred until NumPy path is stable and explicitly approved
+4. EPIC 3 hybrid ranking — not before search path is documented and stable on `main`
