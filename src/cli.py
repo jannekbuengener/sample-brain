@@ -118,9 +118,10 @@ def main():
 
     # Imports hier drin, damit das Skript startet, auch wenn einzelne Module fehlen.
     if args.cmd == "init":
+        from .config import DB_PATH
         from .db import init_db
         init_db()
-        print("DB ready: data\\catalog.db")
+        print(f"DB ready: {DB_PATH}")
         return
 
     if args.cmd == "scan":
