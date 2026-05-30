@@ -21,7 +21,8 @@ EPIC 2 delivers three new capabilities:
 - Per-sample embedding storage in SQLite
 - Pluggable embedding backend interface (CLAP as primary candidate)
 - Batch embedding worker with progress reporting and failure resume
-- Local FAISS vector index, rebuildable from SQLite
+- Local NumPy vector index (`.npz`), rebuildable from SQLite — **current implementation**
+- Local FAISS vector index — **deferred optional adapter** (ADR-0002)
 - Text-to-sample semantic search
 - Audio-to-audio similarity search
 - Metadata enrichment from SQLite on search results
@@ -56,47 +57,31 @@ The following EPIC 2 infrastructure already exists on `main`:
 | **Embedding persistence** | ✅ Stable | `insert_sample_embedding()`, `sample_embedding_exists()` implement BLOB storage and staleness check via `source_hash` |
 | **Backend interface** | ✅ Stable | `EmbeddingBackend` ABC with `embed_audio()`, `embed_text()`, `model_info()` |
 | **Worker DB persistence** | ✅ Stable | `EmbeddingWorker.run()` iterates pending samples, calls backend, persists BLOB, reports processed/skipped/failed |
-| **CLAP stub** | ✅ Committed | `ClapEmbeddingBackend` — all methods raise `EmbeddingBackendUnavailableError`. No real embedding. |
+| **CLAP backend** | ✅ Real on `main` | `ClapEmbeddingBackend` — guarded optional deps, lazy model load, download-free `model_info()`, real `embed_text()` / `embed_audio()` (512-dim) validated in controlled smoke |
 | **CLI subcommands** | ✅ Registered | `embed`, `index_build`, `search` are registered with guarded imports. Fail gracefully if modules are missing. |
 | **`iter_pending_samples()`** | ✅ Done | Source-hash-aware query — returns samples missing current embeddings for a given model |
 | **`--backend` CLI flag** | ✅ Done | `embed --backend {noop,clap}` — wired via config profile or CLI override |
 | **NumPy vector index** | ✅ NumPy skeleton | `src/index.py` — `build_numpy_index()`, `search_index()`, in-memory, cosine similarity. No FAISS dependency. |
 | **Index persistence** | ✅ `.npz` save/load | `save_numpy_index()`, `load_numpy_index()`, `default_index_path()` — writes to `data/indexes/`. Metadata validated on load. |
 | **Index CLI** | ✅ Controlled command | `index_build --model-id / --limit / --save / --index-path` — loads embeddings, builds index, persists only with `--save`. |
-| **Search contract** | ✅ Backend contract wired | `run_search()` calls `get_backend()` → `embed_text()` → `search_index()` → ranked hits. Noop backend raises `NotImplementedError`. CLAP stub raises `EmbeddingBackendUnavailableError`. |
+| **Search contract** | ✅ NumPy E2E proven | `run_search()` → `get_backend()` → `embed_text()` → `search_index()` → ranked hits. Controlled smoke: `search "kick drum"` returned rank=1 hit (score 0.0726). |
 | **Search CLI** | ✅ Flags wired | `search [query] --model-id / --topk / --backend / --index-path`. Config profile support via `embedding.backend`. |
-| **FAISS index** | ❌ Not integrated | ADR-0002 documents the design. Deferred — NumPy `.npz` is the current persistence format. |
-| **Text-to-sample search** | ❌ Not implemented | Blocked by real query embedding backend. NumPy search contract exists for when embeddings arrive. |
+| **FAISS index** | ❌ Deferred (M6) | ADR-0002 documents design. NumPy `.npz` is the current persistence format. |
+| **Text-to-sample search** | ✅ Smoke proven | Controlled E2E with synthetic fixture + external DB/index via `SAMPLE_BRAIN_DB_PATH`. Not private-sample or production-quality validation. |
 
 ---
 
-## 4. Spike Status (`spike/clap-embedding`)
+## 4. Historical Spike (`spike/clap-embedding`, PR #10)
 
-The branch `spike/clap-embedding` (PR #10) contains a validated prototype of the CLAP embedding path. It is:
+PR #10 on branch `spike/clap-embedding` was an early CLAP validation spike. It is now **closed as superseded**.
 
-- **Experimental** — for validation and review
-- **Not merged to `main`** — kept as a reference implementation
-- **Not production-ready** — requires review, hardening, and testing before it can be considered stable
+- **`main` is the source of truth** — guarded CLAP backend, worker, NumPy index/search, and `SAMPLE_BRAIN_DB_PATH` landed incrementally (#11, #12, PR #13).
+- The spike branch is **historical reference only** — do not rebase or merge.
+- M3/M4 E2E evidence was validated on `main` with external runtime artifacts (venv, HF cache, DB, index outside repo).
 
-### What remains on the spike (not on `main`)
+### Runtime validation policy
 
-| Capability | Branch |
-|---|---|
-| `ClapModel.from_pretrained()` + `ClapProcessor.from_pretrained()` | `spike/clap-embedding` |
-| Real `embed_text()` and `embed_audio()` returning 512-dim vectors | `spike/clap-embedding` |
-| `requirements-clap.txt` and `[clap]` optional extra | `spike/clap-embedding` |
-
-The following capabilities previously exclusive to the spike have been ported to `main`:
-- `--backend {noop,clap}` CLI flag
-- `iter_pending_samples()` DB helper
-- `EmbeddingWorker.run()` loop with DB persistence
-
-### Spike status
-
-- The spike is **complete** — all acceptance criteria from ADR-0001 are met
-- The spike is **parked** — not being actively merged or rebased
-- Porting spike changes to `main` is a deliberate step that requires review, not an automatic merge
-- The spike validates the architecture decisions in ADR-0001 and ADR-0003
+Use `SAMPLE_BRAIN_DB_PATH` to point the SQLite catalog at an external path during smoke tests. Keep WAV fixtures, `.npz` indexes, and model caches outside the repo. See `knowledge/CURRENT_STATUS.md` for M1–M4 proof summary.
 
 ---
 
@@ -109,8 +94,8 @@ EPIC 2 MVP is reached when:
 1. Embedding model metadata is registered in SQLite on first use
 2. Sample embeddings are computed reproducibly (same sample + same model → same vector)
 3. Embeddings are persisted as BLOBs in `sample_embeddings` table
-4. A vector index (NumPy cosine similarity skeleton on `main`; FAISS pending) can be built from stored embeddings via a CLI command
-5. A text query can be embedded and searched against the index, returning ranked sample paths (blocked by real query embedding backend)
+4. A vector index (NumPy `.npz` on `main`; FAISS deferred) can be built from stored embeddings via a CLI command
+5. A text query can be embedded and searched against the index, returning ranked sample paths — **proven in controlled smoke** (synthetic fixture; not private-sample validation)
 6. Search results include sample metadata (BPM, key, type, path) enriched from SQLite
 7. All generated artifacts (DB, index files) remain local and untracked
 8. Core CLI (`--help`, `init`, `scan`, `analyze`, `autotype`, `export_fl`) works without torch/transformers
@@ -167,12 +152,12 @@ A component or pipeline step is considered production-ready when:
 | 7 | CLI `--backend` flag | `embed` subcommand accepts `--backend {noop,clap}` | Step 6 | ✅ Done | Backend selected via CLI, defaults to `"noop"` |
 | 8 | Optional CLAP backend | `ClapEmbeddingBackend` with real model loading | Step 2 | ✅ Implemented guarded on `main` | `_clap_available()` check, guarded imports, 512-dim vectors, no CI model download. Runtime requires `[clap]` install |
 | 9 | NumPy index persistence | `save_numpy_index()` — write `.npz` with vectors, sample_ids, metadata | Steps 4, 8 | ✅ `.npz` persistence | Index file written to `data/indexes/` via `--save`. Metadata: format_version, backend, model_id, dim, metric, normalized, sample_count, created_at. |
-| 10 | Text search embedding | `backend.embed_text()` for search queries | Steps 2, 8 | 🔶 Contract wired, backend guarded | `run_search()` calls `get_backend()` → `embed_text()`. Backend exists but requires `[clap]` deps + model download for real vectors. |
-| 11 | Text-to-sample search | Embed query → search NumPy index → enrich from SQLite → ranked results | Steps 9, 10 | 🔶 Contract wired, needs runtime setup | `search_index()` called from search flow. Full end-to-end path exists with FakeBackend testing. Real results require `[clap]` deps + populated embeddings/index. |
+| 10 | Text search embedding | `backend.embed_text()` for search queries | Steps 2, 8 | ✅ Smoke proven | Real CLAP `embed_text()` validated; requires `[clap]` install + first model download for new environments. |
+| 11 | Text-to-sample search | Embed query → search NumPy index → enrich from SQLite → ranked results | Steps 9, 10 | ✅ NumPy E2E smoke | M4: `search "kick drum"` returned rank=1 hit. Controlled synthetic fixture only. |
 | 12 | Audio-to-audio search | Embed audio file → search NumPy index → enrich → ranked results | Steps 9, 8 | ❌ Not implemented | Same search contract as text, but audio-derived query vector |
 | 13 | CLI `index_build` | Registered subcommand calls `build_numpy_index()` | Step 9 | ✅ NumPy skeleton + persistence | Index built on demand, status reported. Persisted via `--save` / `--index-path`. No FAISS. |
 | 14 | CLI `search` | Registered subcommand calls `run_search()` with query, top-k, backend, index-path | Steps 11, 12 | ✅ Backend contract + flags wired | CLI accepts `--backend {noop,clap}`, `--index-path`, `--model-id`, `--topk`. Wired via profile config. Controlled error handling for unavailable backends. |
-| 15 | Documentation and validation | Documented contracts, acceptance tests, CI smoke checks | Steps 1-14 | 🔶 Partial | Index/search contracts documented. 37 tests for index + search + clap (24 index + 9 search + 4 clap). End-to-end validation requires runtime setup. |
+| 15 | Documentation and validation | Documented contracts, acceptance tests, CI smoke checks | Steps 1-14 | 🔶 M5 in progress (#14) | Index/search contracts documented. M1–M4 runtime proof complete. Docs sync tracked in M5b. |
 
 **Implementation priority within EPIC 2:** Steps 1-5 are foundation (mostly done). Steps 6-9 are the core build-out. Steps 10-15 layer search on top.
 
@@ -351,15 +336,13 @@ The current implementation uses NumPy `.npz` archives for index persistence. FAI
 
 ## 12. Search Contract
 
-### 12.1 Current implementation (NumPy backend-contract search)
+### 12.1 Current implementation (NumPy + CLAP)
 
-As of `29875d7`, the search flow is wired through the `EmbeddingBackend` contract but cannot produce real results without a working embedding backend:
+The search flow on `main` uses the `EmbeddingBackend` contract with NumPy cosine similarity:
 
 ```
 Text query string  ──►  get_backend(backend_name)
-                        └── NoopBackend.embed_text(query)  ──►  NotImplementedError  ──►  [ERROR] No embedding backend configured.
-                        └── ClapBackend.embed_text(query)  ──►  EmbeddingBackendUnavailableError  ──►  [ERROR] not available
-                        └── RealBackend.embed_text(query)  ──►  vector (future)
+                        └── ClapBackend.embed_text(query)  ──►  512-dim vector (real, after [clap] install)
 
                                                  vector
                                                    │
@@ -372,10 +355,9 @@ Text query string  ──►  get_backend(backend_name)
                                                    │
                                                    ▼
                                          Ranked hits (sample_id, score)
-                                                   │
-                                                   ▼
-                                         Enriched results (future: SQLite metadata)
 ```
+
+**M4 smoke evidence:** external DB + external `.npz` index → `search "kick drum" --backend clap` → `rank=1 sample_id=1 score=0.0726`.
 
 ### 12.2 Target implementation (FAISS + CLAP, future)
 
@@ -452,56 +434,66 @@ Each search result must include:
 | 4 | `insert_sample_embedding()` stores a BLOB and returns ID | Call with test vector, verify round-trip |
 | 5 | `sample_embedding_exists()` detects existing embedding | Insert, verify `True`; query non-existent, verify `False` |
 
-### M2 — CLAP backend (from spike)
+### M2 — CLAP backend (runtime proof, #12)
 
-| # | Criterion | Validation |
-|---|-----------|------------|
-| 1 | `_clap_available()` returns `True` after `pip install torch transformers` | Import test |
-| 2 | `ClapEmbeddingBackend.model_info()` returns metadata without model download | Call without network, verify no crash |
-| 3 | `ClapEmbeddingBackend.embed_text("kick")` returns 512-dim `np.ndarray` (float32) | Call once, verify shape and dtype |
-| 4 | `ClapEmbeddingBackend.embed_audio(path)` returns 512-dim `np.ndarray` (float32) | Use a synthetic fixture, verify shape and dtype |
-| 5 | `sample-brain --help` works without torch/transformers | Run in clean environment, verify no import error |
-| 6 | `git status` shows no model/cache/embedding artifacts after test run | Run spike, check working tree |
+| # | Criterion | Validation | Status |
+|---|-----------|------------|--------|
+| 1 | `_clap_available()` returns `True` after `pip install torch transformers` | Import test | ✅ #11/#12 |
+| 2 | `ClapEmbeddingBackend.model_info()` returns metadata without model download | Call without network | ✅ M1 |
+| 3 | `ClapEmbeddingBackend.embed_text("kick")` returns 512-dim `np.ndarray` (float32) | Controlled smoke | ✅ M2 |
+| 4 | `ClapEmbeddingBackend.embed_audio(path)` returns 512-dim `np.ndarray` (float32) | M3 synthetic WAV | ✅ M3 |
+| 5 | `sample-brain --help` works without torch/transformers | Clean environment | ✅ CI |
+| 6 | No model/cache/embedding artifacts in repo after test run | External venv + `SAMPLE_BRAIN_DB_PATH` | ✅ |
 
-### M3 — Batch embedding
+### M3 — Real embedding persistence smoke
 
-| # | Criterion | Validation |
-|---|-----------|------------|
-| 1 | Worker queries pending samples via `iter_pending_samples()` | Run on DB with mixed embedded/unembedded samples |
-| 2 | Worker embeds each pending sample and persists to DB | Verify `sample_embeddings` rows after run |
-| 3 | Worker skips already-embedded samples | Re-run, verify `processed = 0` |
-| 4 | Worker reports processed, skipped, and failed counts | Inspect `EmbeddingRunResult` |
-| 5 | Worker resumes after interruption | Embed subset, kill, re-run, verify no duplicates |
+| # | Criterion | Validation | Status |
+|---|-----------|------------|--------|
+| 1 | Worker queries pending samples via `iter_pending_samples()` | Mixed embedded/unembedded DB | ✅ |
+| 2 | Worker embeds pending sample and persists to DB | External SQLite via `SAMPLE_BRAIN_DB_PATH` | ✅ |
+| 3 | Worker skips already-embedded samples | Re-run embed → `processed=0` | ✅ |
+| 4 | Worker reports processed, skipped, and failed counts | `EmbeddingRunResult` | ✅ |
+| 5 | Controlled synthetic fixture only | No private samples | ✅ |
 
-### M4 — FAISS index
+### M4 — NumPy semantic search E2E
 
-| # | Criterion | Validation |
-|---|-----------|------------|
-| 1 | `build_index()` reads all embeddings from `sample_embeddings` | Run on DB with N embeddings, verify index sample count |
-| 2 | Index file is written to `data/indexes/` | Verify file exists and has expected `.faiss` extension |
-| 3 | Metadata JSON is written alongside index | Verify `.meta` file contains model_id, dimension, metric, build_time |
-| 4 | Index is rebuildable from scratch | Delete index, rebuild, verify identical search results |
-| 5 | No index files appear in `git status` | Rebuild, check working tree |
+| # | Criterion | Validation | Status |
+|---|-----------|------------|--------|
+| 1 | `build_index()` / `index_build --save` persists `.npz` from SQLite embeddings | External index path | ✅ |
+| 2 | Index metadata validated on load (format_version, dim, metric) | `load_numpy_index()` | ✅ |
+| 3 | `search "kick drum" --backend clap` returns ranked results | M4 smoke: rank=1, score=0.0726 | ✅ |
+| 4 | External runtime artifacts stay outside repo | `SAMPLE_BRAIN_DB_PATH` + external index | ✅ |
+| 5 | No index/DB files in `git status` after smoke | Artifact policy | ✅ |
 
-### M5 — Text search
+### M6 — FAISS index (deferred)
 
-| # | Criterion | Validation |
-|---|-----------|------------|
-| 1 | `search("dark pad")` returns ranked results | Run with text query, verify list of results |
-| 2 | Results include path, score, and available metadata | Inspect result fields |
-| 3 | Result order is by descending score (most similar first) | Verify first result has highest score |
-| 4 | Query without index gives clear error | Remove index, search, verify helpful error message |
-| 5 | Query without embeddings gives clear error | Clear DB embeddings, search, verify helpful error message |
+| # | Criterion | Validation | Status |
+|---|-----------|------------|--------|
+| 1 | `build_index()` reads embeddings from `sample_embeddings` | Not started | ❌ Deferred |
+| 2 | Index file written to `data/indexes/` with `.faiss` extension | Not started | ❌ Deferred |
+| 3 | Metadata JSON alongside index | Not started | ❌ Deferred |
+| 4 | Index rebuildable from scratch | Not started | ❌ Deferred |
+| 5 | No index files in `git status` | N/A until implemented | ❌ Deferred |
 
-### M6 — Audio similarity
+### M5 — Text search (production hardening)
 
-| # | Criterion | Validation |
-|---|-----------|------------|
-| 1 | `search("path/to/audio.wav")` returns similar samples | Run with audio file, verify list of results |
-| 2 | Same result contract as text search | Inspect fields |
-| 3 | Unsupported audio formats give clear error | Try with non-audio file, verify error |
+| # | Criterion | Validation | Status |
+|---|-----------|------------|--------|
+| 1 | `search("dark pad")` returns ranked results on larger fixture set | Beyond single-sample smoke | 🔶 Future |
+| 2 | Results include path, score, and available metadata | Inspect result fields | 🔶 Partial |
+| 3 | Result order is by descending score | Verify first result highest score | ✅ M4 smoke |
+| 4 | Query without index gives clear error | Remove index, search | ✅ Unit tests |
+| 5 | Query without embeddings gives clear error | Clear DB embeddings | ✅ Unit tests |
 
-### M7 — CLI and documentation
+### M7 — Audio similarity (future)
+
+| # | Criterion | Validation | Status |
+|---|-----------|------------|--------|
+| 1 | Audio-to-audio query returns similar samples | Run with audio file | ❌ Not implemented |
+| 2 | Same result contract as text search | Inspect fields | ❌ |
+| 3 | Unsupported audio formats give clear error | Non-audio file | ❌ |
+
+### M8 — CLI and documentation
 
 | # | Criterion | Validation |
 |---|-----------|------------|
@@ -546,8 +538,8 @@ EPIC 3 (Hybrid Ranking & Recommendation) builds on this foundation:
 | Results | Ranked by semantic similarity | Ranked by hybrid relevance (semantic + music theory + usage patterns) |
 | Recommendation | Not in scope | "Samples like this" based on combined signals |
 
-**EPIC 3 does not begin until EPIC 2 search is stable**, meaning:
-- All M5 (text search) and M6 (audio similarity) acceptance criteria are met
+**EPIC 3 does not begin until EPIC 2 search is stable on `main`**, meaning:
+- M4 NumPy E2E smoke is proven; M5 production hardening and M6 FAISS remain future work
 - The CLI is documented and tested
 - No `git status` pollution from any pipeline step
 - The implementation works without torch/transformers for core pipeline

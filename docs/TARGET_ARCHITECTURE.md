@@ -28,32 +28,34 @@ All four steps are implemented and stable.
 | Component | Module | Status | Description |
 |-----------|--------|--------|-------------|
 | CLI Entry | `src/cli.py` (`main()`) | Stable | argparse-based; 8 subcommands registered, 4 stable (init, scan, analyze, autotype, export_fl), 3 guarded (embed, index_build, search), 1 pre-init (init) |
-| Config | `src/config.py` | Stable | Project paths, DB path, sample roots, audio extensions, analysis parameters. Hardcoded `SAMPLE_ROOTS` is a known limitation. |
-| Database | `src/db.py` | Stable | SQLAlchemy-based SQLite access. Tables: `samples`, `features`, `embedding_models` (schema only, no data), `sample_embeddings` (schema only, no data). |
+| Config | `src/config.py` | Stable | Project paths, DB path (`SAMPLE_BRAIN_DB_PATH` override), sample roots, audio extensions, analysis parameters. Profile system via EPIC 1. |
+| Database | `src/db.py` | Stable | SQLAlchemy-based SQLite access. Tables: `samples`, `features`, `embedding_models`, `sample_embeddings`. Registry and persistence helpers implemented. |
 | Scanner | `src/scan.py` | Stable | Recursive directory traversal, content hash dedup (SHA-1), streaming (no full list in memory), SQLite upsert. |
 | Analyzer | `src/analyze.py` | Stable | librosa-based feature extraction: BPM (beat_track), key (chroma CQT), loudness (RMS), brightness (spectral centroid), MFCCs, chroma. Best-effort error handling per file. |
 | Classifier | `src/classify.py` | Stable | Rule-based autotyping (duration, brightness, loudness, MFCC energy thresholds) + optional kNN on seed vectors. |
 | Export | `src/export_fl.py` | Stable | FL Studio Browser tag file generation. Reads features from DB, assembles tag strings (type, character, key, BPM, loop/oneshot), writes to FL User Data path. |
-| Embedding Interface | `src/embed.py` | Stable (interface) | `EmbeddingBackend` ABC, `NoopEmbeddingBackend` (raises on call), `ClapEmbeddingBackend` (stub — raises `EmbeddingBackendUnavailableError`), `EmbeddingWorker` (skeleton — no actual embedding loop). |
-| Embedding DB | `src/db.py` | Stable (schema) | `embedding_models` and `sample_embeddings` tables exist. Registry helpers (`upsert_embedding_model`, `get_embedding_model`, `insert_sample_embedding`, `sample_embedding_exists`) are implemented. No `iter_pending_samples()` on `main`. |
-| Index | `src/index.py` | **Does not exist on `main`** | CLI subcommand `index_build` is registered with guarded import (fails gracefully). |
-| Search | `src/search.py` | **Does not exist on `main`** | CLI subcommand `search` is registered with guarded import (fails gracefully). |
+| Embedding Interface | `src/embed.py` | Stable | `EmbeddingBackend` ABC, `NoopEmbeddingBackend`, guarded `ClapEmbeddingBackend` (real lazy-load backend with optional deps), `EmbeddingWorker` with DB persistence loop. |
+| Embedding DB | `src/db.py` | Stable | `embedding_models` and `sample_embeddings` tables + helpers including `iter_pending_samples()`. |
+| Index | `src/index.py` | Stable (NumPy) | NumPy cosine index: `build_numpy_index()`, `search_index()`, `.npz` save/load via `save_numpy_index()` / `load_numpy_index()`. FAISS deferred. |
+| Search | `src/search.py` | Stable (NumPy) | `run_search()` wires CLAP text embedding → NumPy index search → ranked hits. NumPy E2E smoke proven. |
 
-### 2.3 What is on `main` vs what is only on `spike/clap-embedding`
+### 2.3 EPIC 2 capabilities on `main`
 
-| Capability | On `main` | On `spike/clap-embedding` |
-|---|---|---|
-| `--backend` CLI flag for embed | ❌ | ✅ |
-| Real CLAP model loading + embedding | ❌ | ✅ (guarded, optional deps) |
-| `iter_pending_samples()` DB helper | ❌ | ✅ |
-| Full embedding worker loop | ❌ | ✅ |
-| `requirements-clap.txt` / `[clap]` extra | ❌ | ✅ (optional dep group) |
+| Capability | Status on `main` |
+|---|---|
+| `--backend {noop,clap}` CLI flag | ✅ |
+| Real CLAP model loading + embedding (optional `[clap]` deps) | ✅ — M1–M3 smoke proven |
+| `iter_pending_samples()` DB helper | ✅ |
+| Full embedding worker loop with DB persistence | ✅ |
+| NumPy `.npz` index build/search | ✅ — M4 E2E smoke proven |
+| `SAMPLE_BRAIN_DB_PATH` external runtime DB | ✅ — PR #13 |
+| FAISS adapter | ❌ Deferred (M6) |
 
-The spike branch is a validated prototype. Its changes are **not** part of the `main` architecture and must be explicitly ported after review.
+PR #10 (`spike/clap-embedding`) is **closed as superseded**. Historical reference only.
 
 ### 2.4 Known Technical Debt
 
-- Hardcoded `SAMPLE_ROOTS` in `src/config.py` — no profile-based configuration yet
+- Hardcoded `SAMPLE_ROOTS` in default config — mitigated by profile system; some export paths still reference defaults
 - No audio fixtures or test suite for pipeline steps
 - `classify.py` imports `from .index import load_embeddings` — fails gracefully but couples autotype to a non-existent module
 - `src/export_fl.py` hardcodes `SAMPLE_ROOTS` for path resolution
@@ -94,9 +96,9 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 | **Scan** | Recursively discover audio files, compute content hash, store metadata | Directory root path | Rows in `samples` table | SQLite (`samples` table) | None (DB is local artifact) | Skip unsupported formats, continue on permission errors | **Current** |
 | **Analyze** | Extract audio features via librosa | `samples` table (path, duration) | Rows in `features` table | SQLite (`features` table) | None | Skip corrupt audio per file, never crash pipeline | **Current** |
 | **Autotype** | Classify by instrument type using rules + optional kNN | `features` table | `features.pred_type` updated | SQLite (`features.pred_type`) | None | kNN degrades gracefully if embeddings / seeds unavailable | **Current** |
-| **Embed** | Generate per-sample embedding vectors via selected backend | `samples` table (audio file path) | Rows in `sample_embeddings` table | SQLite (`sample_embeddings`) + model registry (`embedding_models`) | Hugging Face model cache (`~/.cache/huggingface/`) | Embedding backend unavailable → clear error; per-file failure skip + report | **Planned** |
-| **Index** | Build local vector index from stored embeddings | `sample_embeddings` table | FAISS index file | SQLite (`sample_embeddings`) is source of truth; FAISS is rebuildable cache | `data/indexes/<model>-<version>.faiss` + `.meta` | Not enough embeddings → clear message; index rebuild from scratch supported | **Planned** |
-| **Search** | Resolve text or audio queries against the vector index | Text query or audio file path + FAISS index | Ranked list of sample paths + metadata + scores | SQLite (metadata enrichment after FAISS retrieval) | None (index is read-only during search) | No index → clear error; no results → empty list; backend unavailable → clear error | **Planned** |
+| **Embed** | Generate per-sample embedding vectors via selected backend | `samples` table (audio file path) | Rows in `sample_embeddings` table | SQLite (`sample_embeddings`) + model registry | HF cache (`~/.cache/huggingface/`); optional external DB via `SAMPLE_BRAIN_DB_PATH` | Backend unavailable → clear error; per-file failure skip + report | **Current** — M3 smoke proven |
+| **Index** | Build local NumPy vector index from stored embeddings | `sample_embeddings` table | NumPy `.npz` index file | SQLite is source of truth; index is rebuildable cache | `data/indexes/*.npz` (or external path via `--index-path`) | Not enough embeddings → clear message | **Current** — NumPy on `main`; FAISS deferred |
+| **Search** | Resolve text queries against the vector index | Text query + index | Ranked sample IDs + scores | SQLite (metadata enrichment) | None (index read-only) | No index → clear error; backend unavailable → clear error | **Current** — M4 NumPy E2E smoke proven |
 | **Export** | Write DAW-compatible metadata tags | `features` table + `samples` table | FL Studio Browser tag file | SQLite (data source) | FL Studio tag file at user-specified location | Missing features → skip sample; continue with remaining | **Current** |
 | **Recommend** | Suggest compatible samples based on context (future) | Sample/project context + features + embeddings | Ranked recommendation list | SQLite (source data) | None | N/A — future | **Future** |
 
@@ -158,8 +160,8 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 - **Must not do:** Own SQLite schema, contain export logic, force ML dependency installation
 - **Inputs:** Audio file path or text query
 - **Outputs:** `np.ndarray` (embedding vector)
-- **Backend implementations:** `NoopEmbeddingBackend` (default, raises), `ClapEmbeddingBackend` (stub on `main`, real on spike branch)
-- **Status on `main`:** Interface is stable. No real embedding occurs. CLAP stub raises `EmbeddingBackendUnavailableError`.
+- **Backend implementations:** `NoopEmbeddingBackend` (default, raises), `ClapEmbeddingBackend` (guarded real backend with optional heavy deps)
+- **Status on `main`:** Real embedding validated in controlled smoke (M2 text, M3 audio persistence). Requires `[clap]` install + first model download in new environments.
 
 ### 4.8 Embedding Worker (`src/embed.py` — `EmbeddingWorker`)
 
@@ -167,21 +169,23 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 - **Must not do:** Define schema, add business logic unrelated to embedding
 - **Inputs:** `EmbeddingJobConfig` (backend name, limit, only_missing)
 - **Outputs:** `EmbeddingRunResult` (processed/skipped/failed counts)
-- **Status on `main`:** Skeleton — returns immediately for `NoopEmbeddingBackend`.
+- **Status on `main`:** Full worker loop with DB persistence. M3 smoke proven with external DB.
 
-### 4.9 Vector Index Builder (future — `src/index.py`, EPIC 2)
+### 4.9 Vector Index Builder (`src/index.py`, EPIC 2)
 
-- **Responsibility:** Read embeddings from SQLite, train/apply FAISS index, persist index file and metadata
-- **Must not do:** Query the index, enrich search results, generate embeddings
+- **Responsibility:** Read embeddings from SQLite, build NumPy cosine index, persist `.npz` archive and metadata
+- **Must not do:** Generate embeddings, own SQLite schema
 - **Inputs:** `sample_embeddings` table
-- **Outputs:** FAISS index file at `data/indexes/`
+- **Outputs:** NumPy `.npz` at `data/indexes/` or custom `--index-path`
+- **Status:** Current implementation on `main`. FAISS adapter deferred.
 
-### 4.10 Search Layer (future — `src/search.py`, EPIC 2)
+### 4.10 Search Layer (`src/search.py`, EPIC 2)
 
-- **Responsibility:** Accept text or audio query, embed via selected backend, retrieve from FAISS index, enrich results from SQLite
-- **Must not do:** Train indexes, generate embeddings for storage, autotype
-- **Inputs:** Text query string or audio file path + top-k count
-- **Outputs:** Ranked list of `(path, score, metadata)` tuples
+- **Responsibility:** Accept text query, embed via selected backend, retrieve from NumPy index, return ranked hits
+- **Must not do:** Train indexes, generate embeddings for storage
+- **Inputs:** Text query string + top-k + optional index path
+- **Outputs:** Ranked list of `(sample_id, score)` hits
+- **Status:** NumPy E2E smoke proven (M4). Audio-to-audio search not yet implemented.
 
 ### 4.11 Export Layer (`src/export_fl.py`)
 
@@ -233,22 +237,21 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
                             │
                             ▼
  ┌──────────────────────────────────────────────────────┐
- │  4. Embed: (planned) generate embedding vectors      │
- │     via selected backend (CLAP),                     │
- │     persist to sample_embeddings table                │
+ │  4. Embed: generate embedding vectors via CLAP backend,     │
+ │     persist to sample_embeddings table (SQLite source       │
+ │     of truth; external DB via SAMPLE_BRAIN_DB_PATH)         │
  └──────────────────────────┬───────────────────────────┘
                             │
                             ▼
  ┌──────────────────────────────────────────────────────┐
- │  5. Index: (planned) build FAISS index from stored   │
- │     embeddings, write to data/indexes/                │
+ │  5. Index: build NumPy `.npz` index from stored     │
+ │     embeddings (FAISS deferred as optional adapter)   │
  └──────────────────────────┬───────────────────────────┘
                             │
                             ▼
  ┌──────────────────────────────────────────────────────┐
- │  6. Search: (planned) embed query, retrieve from     │
- │     FAISS, enrich metadata from SQLite,              │
- │     return ranked results                             │
+ │  6. Search: embed query via CLAP, retrieve from      │
+ │     NumPy index, return ranked results                │
  └──────────────────────────┬───────────────────────────┘
                             │
                             ▼
@@ -264,7 +267,7 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
               └─────────────────────────┘
 ```
 
-**Key design property:** SQLite is the source of truth for all metadata. Generated artifacts (FAISS indexes, tag files, reports, caches) are always rebuildable from the SQLite catalog.
+**Key design property:** SQLite is the source of truth for all metadata. Generated artifacts (NumPy indexes, FAISS indexes when added, tag files, reports, caches) are always rebuildable from the SQLite catalog.
 
 ---
 
@@ -286,10 +289,11 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 
 | Artifact | Location | Rebuildable | Notes |
 |----------|----------|-------------|-------|
-| SQLite database | `data/catalog.db` | ✅ Yes (scan → analyze → autotype) | Single-file SQLite, created by `init` |
+| SQLite database | `data/catalog.db` (or `SAMPLE_BRAIN_DB_PATH`) | ✅ Yes (scan → analyze → autotype) | Default local path; override for validation |
 | Reports | `reports/` | ✅ Yes | Generated by validation/make scripts |
 | HF model cache | `~/.cache/huggingface/` | ❌ Downloaded (one-time) | System-global, outside repo |
-| FAISS index files | `data/indexes/` | ✅ Yes (from `sample_embeddings`) | Rebuildable via `index_build` |
+| NumPy index files | `data/indexes/*.npz` | ✅ Yes (from `sample_embeddings`) | Rebuildable via `index_build --save` |
+| FAISS index files | `data/indexes/*.faiss` | ✅ Yes (future) | Not implemented; deferred adapter |
 | FL Studio tags | User-specified path | ✅ Yes (from DB) | Written by `export_fl` |
 
 ### 6.3 Policy Summary
@@ -305,9 +309,9 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 
 ### 7.1 SQLite — Source of Truth for All Metadata
 
-**Status on `main`:** Schema exists, helpers exist, no data flowing yet.
+**Status on `main`:** Schema and helpers exist. M3/M4 E2E smoke proven with real embeddings flowing through worker → SQLite → NumPy index → search.
 
-**Decision:** Embedding vectors are stored as BLOBs in SQLite (`sample_embeddings.embedding`). SQLite remains the single source of truth. FAISS is a rebuildable cache, not a primary store.
+**Decision:** Embedding vectors are stored as BLOBs in SQLite. NumPy `.npz` is the current index format. FAISS remains a deferred optional adapter — not the primary store.
 
 **Rationale (see ADR-0003):**
 - Transactional integrity for sample-to-vector mappings
@@ -321,12 +325,12 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 - `insert_sample_embedding()` — persist a single embedding
 - `sample_embedding_exists()` — staleness check via `source_hash`
 
-**Not on `main` (exists on spike branch):**
+**Not deferred (on `main`):**
 - `iter_pending_samples()` — query samples missing embeddings for a given model
 
 ### 7.2 CLAP — Preferred Embedding Backend
 
-**Status on `main`:** Stub only. Real implementation on `spike/clap-embedding`.
+**Status on `main`:** Real guarded backend. M1–M3 runtime proof complete.
 
 **Decision:** LAION-CLAP is the primary embedding model candidate. The backend is abstracted behind `EmbeddingBackend` ABC to allow future substitution.
 
@@ -340,18 +344,13 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 - `torch` and `transformers` must remain **optional** dependencies — no runtime import in core pipeline
 - CPU-first by default; CUDA is opt-in via `device` parameter
 - Model download (~500 MB) happens on first use, user-visible, one-time
-- The `ClapEmbeddingBackend` on `main` is a guarded stub — calling `embed_audio()` or `embed_text()` raises `EmbeddingBackendUnavailableError`
+- The `ClapEmbeddingBackend` on `main` is a guarded real backend — optional deps, lazy load, 512-dim vectors validated in smoke path
 
-**Spike branch reference:** The full CLAP implementation lives on `spike/clap-embedding` and must be explicitly ported to `main` after review. It adds:
-- Real `ClapModel.from_pretrained()` + `ClapProcessor.from_pretrained()` (Hugging Face `laion/clap-htsat-unfused`)
-- `_load_model()` with guarded torch/transformers imports
-- `embed_text()` and `embed_audio()` producing 512-dim `np.ndarray`
-- Full `EmbeddingWorker.run()` loop with DB persistence
-- CLI `--backend` flag
+**Historical reference:** PR #10 (`spike/clap-embedding`) closed as superseded. Do not merge or rebase.
 
-### 7.3 FAISS — Local Vector Index Cache
+### 7.3 FAISS — Deferred Optional Vector Index Adapter
 
-**Status on `main`:** Not imported. Not implemented. ADR-0002 documents design only.
+**Status on `main`:** Not imported. Not implemented. NumPy `.npz` is current. ADR-0002 documents FAISS as future option.
 
 **Decision:** FAISS (`faiss-cpu`) is the local vector index. It is a rebuildable cache — the source of truth remains SQLite.
 
@@ -370,12 +369,11 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 
 ### 7.4 Search — Query and Retrieval
 
-**Status on `main`:** Not implemented.
+**Status on `main`:** NumPy text search E2E smoke proven (M4). Audio-to-audio search not implemented.
 
-**Planned flow:**
+**Current flow:**
 ```
-Text query  ──►  Embed via CLAP  ──►  FAISS retrieval  ──►  Enrich from SQLite  ──►  Ranked results
-Audio file  ──►  Embed via CLAP  ──►  FAISS retrieval  ──►  Enrich from SQLite  ──►  Ranked results
+Text query  ──►  Embed via CLAP  ──►  NumPy index search  ──►  Ranked results
 ```
 
 **Hybrid search (EPIC 3, future):** Vector similarity combined with BPM, key, type, and duration filters.
@@ -384,9 +382,9 @@ Audio file  ──►  Embed via CLAP  ──►  FAISS retrieval  ──►  En
 
 | Subcommand | Status on `main` | Behaviour |
 |---|---|---|
-| `embed` | Registered, guarded | Calls `run_embed(limit, only_missing)` with hardcoded `get_backend("noop")`. No real embeddings. |
-| `index_build` | Registered, guarded | Imports `from .index import build_index` — fails gracefully (module does not exist). |
-| `search` | Registered, guarded | Imports `from .search import run_search` — fails gracefully (module does not exist). |
+| `embed` | ✅ Functional | `--backend {noop,clap}`, batch worker with DB persistence. Use `SAMPLE_BRAIN_DB_PATH` for external DB during validation. |
+| `index_build` | ✅ Functional | Builds NumPy index from SQLite embeddings; `--save` / `--index-path` for `.npz` persistence. |
+| `search` | ✅ Functional | Text query → CLAP embed → NumPy search. M4 E2E smoke proven. |
 
 ---
 
@@ -516,7 +514,7 @@ The following are explicitly **not part of the target architecture** at any plan
 - **No generative song production** — the system analyses, retrieves, and organises. It does not create music.
 - **No committed audio samples** — `.wav`, `.mp3`, `.flac`, `.aiff` and similar files are never committed to the repository.
 - **No committed DB/index/model/cache artifacts** — all generated state is untracked by design.
-- **No FAISS or vector search in MVP** — semantic search is deliberately gated behind EPIC 2 and an explicit dependency decision.
+- **No FAISS in current implementation** — NumPy `.npz` index is on `main`; FAISS is a deferred optional adapter (M6)
 - **No API or UI before CLI pipeline is reliable** — the CLI pipeline (scan → analyze → autotype → export) must be stable and tested before any API or UI layer is built.
 - **No real-time audio processing** — the pipeline is batch-oriented. Real-time analysis within the DAW is not a goal.
 - **No DAW plugin SDK** — integration happens through metadata export. VST3, AU, or AAX plugins are not planned.
