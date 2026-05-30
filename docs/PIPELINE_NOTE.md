@@ -1,4 +1,2 @@
 # NOTE
-This pipeline uses PyYAML.
-If you don't already have it, add to requirements.txt:
-  pyyaml
+This pipeline uses PyYAML (pinned in requirements.txt).

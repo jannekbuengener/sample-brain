@@ -209,6 +209,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+# Local Sample Brain profiles
+config/profiles.local.yaml
+
 # --- SampleBrain hygiene ---
 data/**/*.wav
 data/**/*.aiff
@@ -236,3 +239,9 @@ data/embeddings/
 *.npy
 *.npz
 *.pkl
+
+# Local model cache (downloaded weights, e.g. CLAP, OpenL3)
+data/models/
+*.pt
+*.pth
+*.safetensors

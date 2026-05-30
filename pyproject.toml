@@ -13,5 +13,11 @@ dependencies = []
 [project.scripts]
 sample-brain = "src.cli:main"
 
+[project.optional-dependencies]
+clap = [
+    "torch",
+    "transformers>=4.35",
+]
+
 [tool.setuptools]
 packages = ["src"]
