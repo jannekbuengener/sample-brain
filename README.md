@@ -38,6 +38,53 @@ pip install -r requirements.txt -r requirements-clap.txt
 
 ---
 
+## Bootstrap / Fresh Setup Validation
+
+Use this path to verify a clean checkout before feature work. Prefer an **isolated venv outside the repo** for agent validation.
+
+**Python:** 3.12 required (`.python-version` pins `3.12.10`). Minor 3.12.x patch drift is acceptable if tests pass.
+
+**Linux system notes:**
+- `python3.12-venv` (or `python3-venv`) may be required for `python -m venv`; fallback: `pip install virtualenv && virtualenv .venv`
+- `libsndfile1` is required for audio analysis (`soundfile` / `librosa` analyze path)
+
+```bash
+# Isolated venv (example paths — keep outside repo)
+python3.12 -m venv /tmp/sample-brain-bootstrap-venv
+source /tmp/sample-brain-bootstrap-venv/bin/activate   # Windows: ...\Scripts\activate
+
+pip install --upgrade pip
+pip install -r requirements.txt pytest
+pip install -e .
+
+# CLI validation
+python -m src.cli --help
+sample-brain --help
+
+# Test validation (fresh venv: 66 passed as of bootstrap validation)
+python -m pytest -q
+
+# External DB smoke (no repo-local DB artifacts)
+export SAMPLE_BRAIN_DB_PATH=/tmp/sample-brain-bootstrap-smoke/catalog.db   # Windows: set env var
+python -m src.cli init
+# init must print the external DB path; parent dir is created outside repo
+
+# Optional synthetic WAV smoke (no CLAP model download)
+mkdir -p /tmp/sample-brain-bootstrap-fixtures
+# generate a tiny WAV outside repo (stdlib wave or soundfile), then:
+python -m src.cli scan --root /tmp/sample-brain-bootstrap-fixtures
+python -m src.cli analyze
+```
+
+**Guardrails:**
+- Do not use private samples for bootstrap validation.
+- Do not commit DB files, indexes, model caches, or generated runtime artifacts.
+- Do not run CLAP model download during bootstrap validation (`embed --backend clap` is out of scope here).
+
+See also [`CONTRIBUTING.md`](./CONTRIBUTING.md) for contributor verification commands.
+
+---
+
 ## 🏃 Quickstart
 
 ```bash

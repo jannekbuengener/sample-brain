@@ -4,7 +4,7 @@
 
 - **Branch:** `main` — synchronised with `origin/main`
 - **Working tree:** clean
-- **Last commit:** `45346b7 build(deps): bump numba from 0.59.1 to 0.65.1 (#5)`
+- **Last commit:** `eb0e37e docs: sharpen skill routing discoverability and audit entry (#19)`
 - **Open PRs:** none
 - **Open issues:** none
 
@@ -124,6 +124,30 @@ Additional docs merges on `main`:
 - **PR #15:** EPIC-2 post-E2E status sync (`134c462`)
 - **PR #17:** Cursor Cloud dev environment instructions in `AGENTS.md` (`c5f623a`)
 
+## Bootstrap Validation — Completed
+
+Verified from clean `main` checkout with an isolated venv outside the repo:
+
+| Check | Result |
+|-------|--------|
+| Isolated venv outside repo | PASS |
+| Python 3.12.x (`.python-version` pins 3.12.10) | PASS |
+| `pip install -r requirements.txt pytest` + `pip install -e .` | PASS |
+| `python -m src.cli --help` | PASS |
+| `sample-brain --help` (entry point) | PASS |
+| `python -m pytest -q` | PASS (66 tests) |
+| External DB init via `SAMPLE_BRAIN_DB_PATH` | PASS |
+| Synthetic WAV scan/analyze smoke | PASS |
+| Git worktree stays clean (no committed runtime artifacts) | PASS |
+
+**Known drift addressed by bootstrap docs PR:**
+- README bootstrap setup commands and Linux env notes (`libsndfile1`, venv package / `virtualenv` fallback)
+- CONTRIBUTING verification commands
+
+**Remaining drift (documented, not blockers):**
+- CLAP-installed venvs can fail unavailable-backend expectation tests — future test-hardening candidate
+- CI smoke runs `py_compile` + CLI `--help` only (not full pytest)
+
 ## What Is Not Done
 
 - **FAISS adapter** — not implemented; NumPy `.npz` index is current; deferred until explicitly scoped
@@ -134,9 +158,10 @@ Additional docs merges on `main`:
 
 ## Next Steps (empfohlen)
 
-Board is clean (no open PRs, no open issues). Pick the next intentional roadmap slice:
+Bootstrap path documented. Board is clean (no open PRs, no open issues). Pick the next intentional roadmap slice:
 
-1. **EPIC 3 hybrid ranking** — when search path and docs are stable enough to extend
-2. **FAISS adapter (M6)** — only as a new scoped task with explicit approval; not a drive-by bump
-3. **Optional hardening:** CLAP unavailable-backend test assumptions; runtime path validation (EPIC 1 Spec Section 9)
-4. **Backlog items** — e.g. MCP setup guide (#3 in planning backlog), bootstrap validation (#5)
+1. **EPIC 3 hybrid ranking** — extend search with BPM/key/type filters
+2. **CLAP test hardening** — unavailable-backend tests in CLAP-installed venvs
+3. **FAISS adapter (M6)** — only as a new scoped task with explicit approval; not a drive-by bump
+4. **Optional hardening:** runtime path validation (EPIC 1 Spec Section 9)
+5. **Backlog items** — e.g. MCP setup guide (#3 in planning backlog)
