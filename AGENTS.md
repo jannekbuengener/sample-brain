@@ -22,6 +22,9 @@
 - Preserve graceful behavior for optional dependencies (especially embedding backends).
 - Prefer updating tests together with behavior changes.
 
+## Skill routing
+- Skill routing: For agent task-to-skill mapping, use `docs/SKILL_INTEGRATION_PLAN.md` and `.cursor/rules/skill-routing.mdc`. These files provide recommendation/routing guidance only; they do not authorize automatic tool, workflow, CI, or security changes.
+
 ## Quality Gates
 - Setup:
 - `py -3.12 -m venv .venv`

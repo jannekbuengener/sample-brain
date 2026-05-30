@@ -42,6 +42,8 @@ Routing-Details: [.cursor/rules/skill-routing.mdc](../.cursor/rules/skill-routin
 
 Nur bei explizitem Security-/CI-Audit-Auftrag – **keine Auto-Änderung** an Workflows oder Tools.
 
+Priority B skills come from the external Anthropic-Cybersecurity-Skills package (not copied into this repo).
+
 | Skill | Wann nutzen |
 |-------|-------------|
 | `securing-github-actions-workflows` | Workflow-Härtung (Permissions, SHA-Pinning, Injection) |
