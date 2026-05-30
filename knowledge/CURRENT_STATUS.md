@@ -4,7 +4,9 @@
 
 - **Branch:** `main` — synchronised with `origin/main`
 - **Working tree:** clean
-- **Last commit:** `8046816 feat: support external SampleBrain DB path (#13)`
+- **Last commit:** `45346b7 build(deps): bump numba from 0.59.1 to 0.65.1 (#5)`
+- **Open PRs:** none
+- **Open issues:** none
 
 ## What Works (Core Pipeline)
 
@@ -102,18 +104,39 @@ The following guardrail documents have been defined and committed:
 - `embed --model-cache-dir` CLI flag
 - Explicit local-config-only flag
 
+## M5 Hygiene & Dependabot Cleanup — Completed
+
+GitHub #14 (M5 hygiene) is **closed**. Dependabot backlog merged one-by-one with CI validation:
+
+| PR | Change | Notes |
+|----|--------|-------|
+| #4 | `actions/checkout` v4→v6 | workflow bump |
+| #8 | `tqdm` 4.66.4→4.67.3 | dependency bump |
+| #2 | `dependency-review-action` v4→v5 | workflow bump |
+| #3 | `github/codeql-action` v3→v4 | workflow bump |
+| #6 | `pooch` 1.8.2→1.9.0 | synthetic WAV smoke PASS |
+| #7 | `audioread` 3.0.1→3.1.0 | synthetic WAV smoke PASS |
+| #9 | `soundfile` 0.12.1→0.13.1 | synthetic WAV smoke + roundtrip PASS |
+| #5 | `numba` 0.59.1→0.65.1 | dedicated Librosa/numba risk check; synthetic WAV smoke PASS |
+
+Additional docs merges on `main`:
+
+- **PR #15:** EPIC-2 post-E2E status sync (`134c462`)
+- **PR #17:** Cursor Cloud dev environment instructions in `AGENTS.md` (`c5f623a`)
+
 ## What Is Not Done
 
-- **FAISS adapter** — not implemented; NumPy `.npz` index is current
+- **FAISS adapter** — not implemented; NumPy `.npz` index is current; deferred until explicitly scoped
 - **Large-scale / private sample validation** — only controlled synthetic-fixture E2E smoke proven
 - **Production search quality tuning** — E2E smoke confirms plumbing, not ranking quality
-- **Dependabot cleanup** — classified in M5a (#14); not merged yet
-- **Docs hygiene** — tracked in #14 (M5b in progress)
+- **CLAP test environment hardening** — local CLAP-installed venvs can fail unavailable-backend tests that expect CLAP to be absent
 - **EPIC 3–6** — not started
 
 ## Next Steps (empfohlen)
 
-1. Complete M5b docs drift (#14) — sync status/spec/architecture/backlog with E2E evidence
-2. Dependabot one-by-one merge (#4 checkout, #8 tqdm first; defer #5 numba)
-3. FAISS adapter (M6) — deferred until NumPy path is stable and explicitly approved
-4. EPIC 3 hybrid ranking — not before search path is documented and stable on `main`
+Board is clean (no open PRs, no open issues). Pick the next intentional roadmap slice:
+
+1. **EPIC 3 hybrid ranking** — when search path and docs are stable enough to extend
+2. **FAISS adapter (M6)** — only as a new scoped task with explicit approval; not a drive-by bump
+3. **Optional hardening:** CLAP unavailable-backend test assumptions; runtime path validation (EPIC 1 Spec Section 9)
+4. **Backlog items** — e.g. MCP setup guide (#3 in planning backlog), bootstrap validation (#5)

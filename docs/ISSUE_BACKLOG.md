@@ -2,20 +2,41 @@
 
 Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board reality** below for live state.
 
-## GitHub Board Reality (2026-05-30)
+## GitHub Board Reality (2026-05-30, post-cleanup)
 
 | Item | Status | Notes |
 |------|--------|-------|
+| Open issues | ✅ None | Board clean |
+| Open PRs | ✅ None | Dependabot backlog cleared |
 | GitHub #11 | ✅ Closed | M1 — isolated CLAP runtime environment (PASS) |
 | GitHub #12 | ✅ Closed | M2 — real CLAP text embedding smoke (PASS) |
-| GitHub #14 | 🔶 Open | M5 hygiene — docs drift, Dependabot triage, stale PR cleanup |
+| GitHub #14 | ✅ Closed | M5 hygiene — docs drift, Dependabot triage, stale PR cleanup |
 | PR #13 | ✅ Merged | `SAMPLE_BRAIN_DB_PATH` external runtime DB (`8046816`) |
+| PR #15 | ✅ Merged | EPIC-2 post-E2E docs sync (`134c462`) |
+| PR #17 | ✅ Merged | Cursor Cloud dev environment instructions (`c5f623a`) |
+| PR #2 | ✅ Merged | `dependency-review-action` v4→v5 |
+| PR #3 | ✅ Merged | `github/codeql-action` v3→v4 |
+| PR #4 | ✅ Merged | `actions/checkout` v4→v6 |
+| PR #5 | ✅ Merged | `numba` 0.59.1→0.65.1 (Librosa/numba risk check) |
+| PR #6 | ✅ Merged | `pooch` 1.8.2→1.9.0 |
+| PR #7 | ✅ Merged | `audioread` 3.0.1→3.1.0 |
+| PR #8 | ✅ Merged | `tqdm` 4.66.4→4.67.3 |
+| PR #9 | ✅ Merged | `soundfile` 0.12.1→0.13.1 |
 | PR #10 | ✅ Closed | Superseded by incremental EPIC-2 work on `main` |
 | PR #1 | ✅ Closed | Stale Claude review branch (2025) |
-| PR #2–#9 | 🔶 Open | Dependabot — classified in M5a (#14 comment); not merged |
 | M3 persistence smoke | ✅ Done | Documented in `CURRENT_STATUS.md`; no retro issue |
 | M4 NumPy search E2E | ✅ Done | Documented in `CURRENT_STATUS.md`; no retro issue |
-| FAISS adapter | ❌ Deferred | M6 — not started |
+| FAISS adapter | ❌ Deferred | M6 — not started; requires explicit scoped approval |
+
+## Post-cleanup board state
+
+As of `main` at `45346b7` (`#5 numba` merge):
+
+- **EPIC 2 runtime and E2E proof** — completed and documented (`CURRENT_STATUS.md`, `EPIC_2_SEMANTIC_SEARCH_SPEC.md`)
+- **Docs sync** — EPIC-2 post-E2E via PR #15; post-Dependabot status sync in progress (this PR)
+- **Dependabot backlog** — PRs #2–#9 merged with CI validation; audio-related bumps (#6, #7, #9, #5) validated with synthetic WAV smoke where applicable
+- **Cursor Cloud onboarding** — PR #17 merged (`AGENTS.md` dev environment instructions)
+- **No open GitHub issues or PRs** — next work is an intentional new roadmap slice, not cleanup
 
 Local backlog item numbers below are **planning IDs**, not GitHub issue numbers (except where cross-referenced).
 
