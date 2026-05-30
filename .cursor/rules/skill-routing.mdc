@@ -1,0 +1,47 @@
+---
+description: Skill routing matrix for sample-brain agent tasks (docs-only, no auto tool/CI changes)
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Skill Routing – sample-brain
+
+Docs/routing-only. Skills werden **empfohlen**, nicht automatisch ausgeführt.
+Keine CI-Workflow-Änderungen, keine neuen Tools, keine bulk Skill-Kopien ins Repo.
+
+Referenz: [docs/SKILL_INTEGRATION_PLAN.md](../../docs/SKILL_INTEGRATION_PLAN.md)
+
+## Routing-Matrix
+
+| Situation | Skill(s) |
+|-----------|------------|
+| Bug oder Fehlverhalten | `jMerta/bug-triage` |
+| CI rot / fehlgeschlagene Checks | `jMerta/ci-fix` |
+| Dependency-Bump / CVE | `jMerta/dependency-upgrader` |
+| Doku driftet vom Code | `jMerta/docs-sync` |
+| Implementierungsplanung | `jMerta/plan-work` |
+| Commit vorbereiten | `jMerta/commit-work` |
+| PR vorbereiten / öffnen | `jMerta/create-pr` |
+| Commit + PR zusammen | `jMerta/commit-work` + `jMerta/create-pr` |
+| Qualitätsprüfung vor Merge | `jMerta/coding-guidelines-verify` |
+
+## Security-Workflow-Audit (Priorität B, nur gezielt)
+
+Nur bei **explizitem** Security-/CI-Audit-Auftrag. Keine Auto-Änderung ohne separaten Auftrag.
+
+| Thema | Skill |
+|-------|-------|
+| GitHub Actions härten | `securing-github-actions-workflows` |
+| Gitleaks erweitern/tunen | `implementing-secret-scanning-with-gitleaks` |
+| SAST-Pipeline | `integrating-sast-into-github-actions-pipeline` |
+| Supply-Chain in CI/CD | `detecting-supply-chain-attacks-in-ci-cd` |
+| Custom Semgrep-Regeln | `implementing-semgrep-for-custom-sast-rules` |
+
+Bestehende Workflows nur **referenzieren** (`ci-smoke`, `codeql`, `dependency-review`, `gitleaks`) – nicht ohne Auftrag ändern.
+
+## Default-Reihenfolge
+
+1. Priorität A (täglicher Workflow)
+2. Priorität B nur bei explizitem Security-Auftrag
+3. Priorität C (Snyk, ZAP, DevSecOps-Meta) nicht als Default
