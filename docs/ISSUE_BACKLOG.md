@@ -2,18 +2,22 @@
 
 Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board reality** below for live state.
 
-## GitHub Board Reality (2026-05-30, post-cleanup)
+## GitHub Board Reality (2026-05-30, post-bootstrap)
 
 | Item | Status | Notes |
 |------|--------|-------|
 | Open issues | ✅ None | Board clean |
-| Open PRs | ✅ None | Dependabot backlog cleared |
+| Open PRs | ✅ None | No open pull requests |
+| `main` HEAD | ✅ Current | `2f9d258` — bootstrap validation docs (#20) |
 | GitHub #11 | ✅ Closed | M1 — isolated CLAP runtime environment (PASS) |
 | GitHub #12 | ✅ Closed | M2 — real CLAP text embedding smoke (PASS) |
 | GitHub #14 | ✅ Closed | M5 hygiene — docs drift, Dependabot triage, stale PR cleanup |
 | PR #13 | ✅ Merged | `SAMPLE_BRAIN_DB_PATH` external runtime DB (`8046816`) |
 | PR #15 | ✅ Merged | EPIC-2 post-E2E docs sync (`134c462`) |
+| PR #16 | ✅ Merged | SkillForge integration plan + routing rule (`cc61eea`) |
 | PR #17 | ✅ Merged | Cursor Cloud dev environment instructions (`c5f623a`) |
+| PR #19 | ✅ Merged | Skill routing discoverability + audit entry (`eb0e37e`) |
+| PR #20 | ✅ Merged | Bootstrap validation path docs (`2f9d258`) |
 | PR #2 | ✅ Merged | `dependency-review-action` v4→v5 |
 | PR #3 | ✅ Merged | `github/codeql-action` v3→v4 |
 | PR #4 | ✅ Merged | `actions/checkout` v4→v6 |
@@ -30,10 +34,10 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 
 ## Post-cleanup board state
 
-As of `main` at `45346b7` (`#5 numba` merge):
+As of `main` at `2f9d258` (PR #20 merge):
 
 - **EPIC 2 runtime and E2E proof** — completed and documented (`CURRENT_STATUS.md`, `EPIC_2_SEMANTIC_SEARCH_SPEC.md`)
-- **Docs sync** — EPIC-2 post-E2E via PR #15; post-Dependabot status sync in progress (this PR)
+- **Docs sync** — SkillForge routing via PRs #16/#19; bootstrap validation via PR #20 (`README.md`, `CONTRIBUTING.md`, `AGENTS.md`, `CURRENT_STATUS.md`)
 - **Dependabot backlog** — PRs #2–#9 merged with CI validation; audio-related bumps (#6, #7, #9, #5) validated with synthetic WAV smoke where applicable
 - **Cursor Cloud onboarding** — PR #17 merged (`AGENTS.md` dev environment instructions)
 - **No open GitHub issues or PRs** — next work is an intentional new roadmap slice, not cleanup
@@ -60,17 +64,11 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Priority: P0
 
 ### 3. docs: add local MCP setup guide
-- **Status:** ❌ open (not yet written)
+- **Status:** ✅ completed (via `docs/MCP_SETUP.md`)
 - Labels: `docs`, `mcp`, `onboarding`
 - Goal: Document how `sample-brain` is exposed to the local ChatGPT MCP workflow.
 - Context: The repo is being added as a dedicated MCP root/target in the local server.
-- Acceptance criteria:
-  - Guide names canonical local checkout path
-  - Guide shows MCP root key and validation commands
-  - Guide warns against indexing sample libraries or committing generated artifacts during setup
-- Technical notes: Keep the guide local-only and Windows-aware first.
-- Dependencies: none
-- Priority: P0
+- Acceptance criteria: ✅ All met — canonical checkout path, MCP root key, validation commands, and safety notes documented in `docs/MCP_SETUP.md`.
 
 ### 4. chore: remove generated/local artifacts from repository tracking
 - **Status:** ✅ completed
@@ -81,17 +79,10 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Priority: P0
 
 ### 5. chore: validate repository bootstrap from fresh clone
-- **Status:** ❌ open (prerequisites #1 and #4 now done; ready to execute)
+- **Status:** ✅ completed (via PR #20 — `README.md`, `CONTRIBUTING.md`, `AGENTS.md`, bootstrap validation in `CURRENT_STATUS.md`)
 - Labels: `chore`, `setup`, `testing`
 - Goal: Ensure a fresh clone can be set up deterministically.
-- Context: Current repo state includes hygiene issues and unverified bootstrap assumptions.
-- Acceptance criteria:
-  - Fresh clone setup steps are documented
-  - Required Python version and dependency install path are verified
-  - Minimal happy-path commands run successfully or known gaps are documented
-- Technical notes: Prefer Windows-first instructions, note cross-platform caveats separately.
-- Dependencies: Issues 1 and 4 (both completed)
-- Priority: P1
+- Acceptance criteria: ✅ All met — fresh-clone setup, dependency path, and contributor verification commands documented; bootstrap validation evidence recorded.
 
 ### 6. bug: verify and repair src/analyze.py if it contains patch/diff artifacts
 - **Status:** ✅ completed
