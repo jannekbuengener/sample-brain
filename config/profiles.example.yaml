@@ -1,0 +1,43 @@
+# Example configuration profiles for Sample Brain.
+# Copy this file to config/profiles.local.yaml and replace placeholders
+# with local machine-specific paths. Do not commit profiles.local.yaml.
+
+profiles:
+  default:
+    library_roots:
+      - "<SAMPLE_LIBRARY_ROOT>"
+
+    fl_user_data_path: "<FL_USER_DATA_PATH>"
+
+    database:
+      path: "data/catalog.db"
+
+    export:
+      max_tags: 5
+
+    autotype:
+      use_knn: true
+      knn_min_conf: 0.55
+
+    embedding:
+      backend: "noop"
+      model_cache_dir: "<MODEL_CACHE_DIR>"
+
+  minimal-demo:
+    library_roots:
+      - "<DEMO_SAMPLE_ROOT>"
+
+    fl_user_data_path: "<FL_USER_DATA_PATH>"
+
+    database:
+      path: "data/catalog.db"
+
+    export:
+      max_tags: 3
+
+    autotype:
+      use_knn: false
+
+    embedding:
+      backend: "noop"
+      model_cache_dir: "<MODEL_CACHE_DIR>"

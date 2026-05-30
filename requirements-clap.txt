@@ -1,0 +1,7 @@
+# Optional CLAP backend dependencies.
+# Install with:
+#   pip install -r requirements.txt -r requirements-clap.txt
+# Or via pyproject.toml extra:
+#   pip install -e .[clap]
+torch
+transformers>=4.35
