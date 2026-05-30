@@ -3,8 +3,21 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from src.embed import ClapEmbeddingBackend, EmbeddingBackendUnavailableError
 from src.index import VectorIndex
 from src.search import run_search
+
+
+def _simulate_clap_deps_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Force CLAP load failure so tests stay valid when torch/transformers are installed."""
+
+    def failing_load(self: ClapEmbeddingBackend) -> None:
+        raise EmbeddingBackendUnavailableError(
+            "CLAP dependencies not available. "
+            "Install with: pip install -e .[clap]"
+        )
+
+    monkeypatch.setattr(ClapEmbeddingBackend, "_load_model", failing_load)
 
 
 @pytest.fixture(autouse=True)
@@ -46,10 +59,12 @@ class TestRunSearchUnavailableBackend:
         captured = capsys.readouterr()
         assert "No embedding backend configured" in captured.out
 
-    def test_clap_backend_prints_unavailable_message(self, capsys):
+    def test_clap_backend_prints_unavailable_message(self, capsys, monkeypatch):
+        _simulate_clap_deps_unavailable(monkeypatch)
         run_search(query="kick", model_id=1, topk=5, backend_name="clap")
         captured = capsys.readouterr()
-        assert "not available" in captured.out
+        assert "[ERROR] The selected embedding backend is not available." in captured.out
+        assert "Install torch + transformers" in captured.out
 
 
 class TestRunSearchWithFakes:
