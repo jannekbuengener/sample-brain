@@ -12,10 +12,10 @@ Sie beschleunigen Bugfix, CI-Triage, Dependency-Pflege, Doku-Sync und PR-Vorbere
 - `.github/workflows/dependency-review.yml` – Dependency Review
 - `.github/workflows/gitleaks.yml` – Secret Scanning
 
-Skill-Quellen (extern, nicht ins Repo kopieren):
+Skill-Quellen (extern, nicht ins Repo kopieren; lokale Pfade nur in privater Agent-/IDE-Konfiguration):
 
-- `D:\Dev\Workspaces\Repos\Claire_de_Binare\.codex\cdb_skills\jMerta`
-- `D:\Dev\Workspaces\Repos\Claire_de_Binare\.codex\cdb_skills\Anthropic-Cybersecurity-Skills`
+- `jMerta` – täglicher Agenten-Workflow (Priorität A)
+- `Anthropic-Cybersecurity-Skills` – Security-Hardening (Priorität B)
 
 Routing-Details: [.cursor/rules/skill-routing.mdc](../.cursor/rules/skill-routing.mdc)
 
