@@ -28,11 +28,14 @@
 ## Quality Gates
 - Setup:
 - `py -3.12 -m venv .venv`
-- `.\.venv\Scripts\python.exe -m pip install -r requirements.txt`
+- `.\.venv\Scripts\python.exe -m pip install -r requirements.txt pytest`
+- `.\.venv\Scripts\python.exe -m pip install -e .`
 - Verify:
 - `.\.venv\Scripts\python.exe -m pytest -q`
 - CLI smoke:
-- `.\.venv\Scripts\python.exe -m src.cli init`
+- `.\.venv\Scripts\python.exe -m src.cli --help`
+- `.\.venv\Scripts\sample-brain --help`
+- External DB smoke (preferred for agents): set `SAMPLE_BRAIN_DB_PATH` outside repo, then `python -m src.cli init`
 
 ## Handover Notes
 - When changing DB schema in `src/db.py`, validate affected read/write paths in `scan`, `analyze`, `classify`, `embed`, `index`, and their tests.
@@ -55,14 +58,19 @@
 ### Verify (Linux paths)
 ```bash
 source .venv/bin/activate   # optional
-python -m src.cli init
+pip install -r requirements.txt pytest
+pip install -e .
+python -m src.cli --help
+sample-brain --help
 python -m pytest -q
 python -m py_compile src/analyze.py src/cli.py
-python -m src.cli --help
 ```
 
-### pytest gotcha
-- Run `python -m src.cli init` once before the full test suite if `data/catalog.db` is missing or empty (0 bytes). Otherwise `tests/test_index.py::TestBuildIndexCLI::test_build_index_save_without_path_prints_info` can fail with `no such table: sample_embeddings`.
+### Bootstrap validation notes
+- Fresh isolated venv bootstrap validation passed `pytest -q` (66 tests) without a repo-local `init`.
+- Prefer `SAMPLE_BRAIN_DB_PATH` pointing outside the repo for agent smoke tests so `git status` stays clean.
+- If `python -m venv` fails on Ubuntu/Debian, use `virtualenv` as fallback (see README bootstrap section).
+- Do not run CLAP model download during bootstrap validation.
 
 ### Hello-world pipeline (no FL Studio install needed)
 Use ephemeral paths under `/tmp` and explicit CLI flags (no committed local profile required):
