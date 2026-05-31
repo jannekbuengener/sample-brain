@@ -7,7 +7,13 @@ import numpy as np
 from .db import load_hybrid_metadata, load_sample_paths
 from .embed import EmbeddingBackendUnavailableError, get_backend
 from .hybrid_rank import HybridQuery, rerank_hits
-from .index import build_numpy_index, load_numpy_index, search_index
+from .index import normalize_vectors
+from .search_backend import (
+    SearchBackendError,
+    StaleVecCacheError,
+    get_search_backend,
+)
+from .search_filters import SearchFilters, resolve_filtered_sample_ids
 
 DEFAULT_METADATA_WEIGHT = 0.5
 
@@ -95,8 +101,10 @@ def run_search(
     model_id: int | None = None,
     topk: int = 10,
     backend_name: str = "noop",
+    search_backend: str = "numpy",
     index_path: str | None = None,
     hybrid_query: HybridQuery | None = None,
+    search_filters: SearchFilters | None = None,
 ) -> None:
     if model_id is None:
         print("[ERROR] search requires --model-id for now.")
@@ -147,23 +155,39 @@ def run_search(
         print(f"[ERROR] Search failed: expected 1D query vector, got shape {query_vec.shape}")
         return
 
-    try:
-        if index_path:
-            index = load_numpy_index(index_path, model_id=model_id)
-        else:
-            index = build_numpy_index(model_id=model_id)
-    except (FileNotFoundError, ValueError) as e:
-        print(f"[ERROR] {e}")
+    query_vec = normalize_vectors(query_vec.reshape(1, -1))[0]
+
+    if search_backend == "sqlite-vec" and index_path:
+        print(
+            "[ERROR] --index-path is only supported with --search-backend numpy."
+        )
         return
 
-    if index is None:
+    candidate_sample_ids = resolve_filtered_sample_ids(search_filters)
+    if candidate_sample_ids is not None and len(candidate_sample_ids) == 0:
         print("[INFO] No search results.")
         return
 
     try:
-        hits = search_index(query_vec, index, topk=topk)
-    except ValueError as e:
-        print(f"[ERROR] Search failed: {e}")
+        backend = get_search_backend(search_backend)
+        hits = backend.search(
+            query_vec,
+            model_id,
+            topk=topk,
+            index_path=index_path,
+            candidate_sample_ids=candidate_sample_ids,
+        )
+    except (FileNotFoundError, ValueError) as e:
+        if isinstance(e, ValueError):
+            print(f"[ERROR] Search failed: {e}")
+        else:
+            print(f"[ERROR] {e}")
+        return
+    except StaleVecCacheError as e:
+        print(f"[ERROR] {e}")
+        return
+    except SearchBackendError as e:
+        print(f"[ERROR] {e}")
         return
 
     if not hits:
