@@ -113,6 +113,54 @@ def main():
         default=None,
         help="Path to a saved .npz index file. If not provided, index is built from DB.",
     )
+    p_src.add_argument(
+        "--target-bpm",
+        type=float,
+        default=None,
+        help="Target BPM for hybrid reranking (default metadata weight 0.5 when set).",
+    )
+    p_src.add_argument(
+        "--target-key",
+        type=str,
+        default=None,
+        help="Target musical key for hybrid reranking (default metadata weight 0.5 when set).",
+    )
+    p_src.add_argument(
+        "--target-type",
+        type=str,
+        default=None,
+        help="Target pred_type for hybrid reranking (default metadata weight 0.5 when set).",
+    )
+    p_src.add_argument(
+        "--semantic-weight",
+        type=float,
+        default=1.0,
+        help="Weight for semantic similarity in hybrid score (default: 1.0).",
+    )
+    p_src.add_argument(
+        "--bpm-weight",
+        type=float,
+        default=0.0,
+        help="Weight for BPM match in hybrid score (default: 0.0, or 0.5 when --target-bpm is set).",
+    )
+    p_src.add_argument(
+        "--key-weight",
+        type=float,
+        default=0.0,
+        help="Weight for key match in hybrid score (default: 0.0, or 0.5 when --target-key is set).",
+    )
+    p_src.add_argument(
+        "--type-weight",
+        type=float,
+        default=0.0,
+        help="Weight for type match in hybrid score (default: 0.0, or 0.5 when --target-type is set).",
+    )
+    p_src.add_argument(
+        "--bpm-tolerance",
+        type=float,
+        default=8.0,
+        help="BPM distance tolerance for partial BPM match scoring (default: 8.0).",
+    )
 
     args = parser.parse_args()
 
@@ -246,7 +294,7 @@ def main():
 
     if args.cmd == "search":
         try:
-            from .search import run_search
+            from .search import hybrid_query_from_cli_args, run_search
         except Exception as e:
             print(f"[ERROR] Search nicht verfügbar: {e}", file=sys.stderr)
             sys.exit(1)
@@ -269,6 +317,7 @@ def main():
             topk=args.topk,
             backend_name=backend_name,
             index_path=args.index_path,
+            hybrid_query=hybrid_query_from_cli_args(args),
         )
         return
 

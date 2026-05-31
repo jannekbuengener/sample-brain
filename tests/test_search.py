@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from src.embed import ClapEmbeddingBackend, EmbeddingBackendUnavailableError
+from src.hybrid_rank import HybridMetadata, HybridQuery
 from src.index import VectorIndex
 from src.search import run_search
 
@@ -154,3 +155,80 @@ class TestRunSearchWithFakes:
         run_search(query="test", model_id=1)
         captured = capsys.readouterr()
         assert "[ERROR] Search failed:" in captured.out
+
+
+class TestRunSearchHybridRerank:
+    def _fake_backend_and_index(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        fake_vector = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+
+        class FakeBackend:
+            def embed_text(self, text):
+                return fake_vector
+
+        monkeypatch.setattr("src.search.get_backend", lambda name: FakeBackend())
+        fake_index = VectorIndex(
+            vectors=np.array([[1.0, 0.0, 0.0], [0.8, 0.6, 0.0]], dtype=np.float32),
+            sample_ids=[10, 20],
+            model_id=1,
+            embedding_dim=3,
+        )
+        monkeypatch.setattr(
+            "src.search.build_numpy_index",
+            lambda model_id=None, limit=None: fake_index,
+        )
+
+    def test_semantic_only_preserves_order_without_db_load(self, capsys, monkeypatch):
+        self._fake_backend_and_index(monkeypatch)
+        load_called = False
+
+        def fake_load(sample_ids):
+            nonlocal load_called
+            load_called = True
+            return {}
+
+        monkeypatch.setattr("src.search.load_hybrid_metadata", fake_load)
+
+        run_search(query="test", model_id=1, topk=5, hybrid_query=None)
+        captured = capsys.readouterr()
+
+        assert not load_called
+        assert "rank=1" in captured.out
+        assert "sample_id=10" in captured.out
+        lines = [line for line in captured.out.splitlines() if line.startswith("rank=")]
+        assert lines[0].startswith("rank=1 sample_id=10")
+        assert lines[1].startswith("rank=2 sample_id=20")
+
+    def test_hybrid_rerank_promotes_bpm_match(self, capsys, monkeypatch):
+        self._fake_backend_and_index(monkeypatch)
+        metadata = {
+            10: HybridMetadata(sample_id=10, bpm=100.0),
+            20: HybridMetadata(sample_id=20, bpm=128.0),
+        }
+        monkeypatch.setattr(
+            "src.search.load_hybrid_metadata",
+            lambda sample_ids: {sid: metadata[sid] for sid in sample_ids if sid in metadata},
+        )
+
+        hybrid_query = HybridQuery(target_bpm=128.0, bpm_weight=0.5)
+        run_search(query="test", model_id=1, topk=5, hybrid_query=hybrid_query)
+        captured = capsys.readouterr()
+
+        assert "rank=1 sample_id=20" in captured.out
+        assert "rank=2 sample_id=10" in captured.out
+
+    def test_default_bpm_weight_applies_when_target_bpm_set(self, capsys, monkeypatch):
+        self._fake_backend_and_index(monkeypatch)
+        metadata = {
+            10: HybridMetadata(sample_id=10, bpm=100.0),
+            20: HybridMetadata(sample_id=20, bpm=128.0),
+        }
+        monkeypatch.setattr(
+            "src.search.load_hybrid_metadata",
+            lambda sample_ids: {sid: metadata[sid] for sid in sample_ids if sid in metadata},
+        )
+
+        hybrid_query = HybridQuery(target_bpm=128.0)
+        run_search(query="test", model_id=1, topk=5, hybrid_query=hybrid_query)
+        captured = capsys.readouterr()
+
+        assert "rank=1 sample_id=20" in captured.out
