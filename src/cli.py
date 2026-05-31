@@ -205,6 +205,12 @@ def main():
         default=None,
         help="Custom path for saved index file. Implies --save.",
     )
+    p_idx.add_argument(
+        "--search-backend",
+        choices=["numpy", "sqlite-vec"],
+        default="numpy",
+        help="Vector search cache backend. numpy keeps in-memory/.npz; sqlite-vec rebuilds vec0 in SQLite.",
+    )
 
     # (optional) search
     p_src = sub.add_parser("search", help="Ähnlichkeitssuche (optional)")
@@ -430,6 +436,7 @@ def main():
             limit=args.limit,
             save=save,
             index_path=args.index_path,
+            search_backend=args.search_backend,
         )
         return
 
