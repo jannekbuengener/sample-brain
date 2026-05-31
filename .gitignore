@@ -234,6 +234,7 @@ reports/
 # Local vector indexes and embeddings
 data/indexes/
 data/embeddings/
+.bench_sqlite_vec/
 *.faiss
 *.index
 *.npy

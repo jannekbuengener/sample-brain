@@ -291,3 +291,59 @@ def test_resolve_profile_strips_database_path_from_env(tmp_path: Path):
         },
     )
     assert cfg["database"]["path"] == "custom/catalog.db"
+
+
+def test_resolve_search_backend_defaults_to_numpy(tmp_path: Path):
+    example = _write_yaml(
+        tmp_path / "example.yaml",
+        {
+            "profiles": {
+                "default": {
+                    "search": {"backend": "numpy"},
+                },
+            },
+        },
+    )
+    cfg = resolve_profile(example_path=example, local_path=None)
+    from src.config_loader import resolve_search_backend
+
+    assert (
+        resolve_search_backend(cli_value=None, config=cfg, env={}) == "numpy"
+    )
+
+
+def test_resolve_search_backend_cli_overrides_profile(tmp_path: Path):
+    example = _write_yaml(
+        tmp_path / "example.yaml",
+        {
+            "profiles": {
+                "default": {
+                    "search": {"backend": "numpy"},
+                },
+            },
+        },
+    )
+    cfg = resolve_profile(example_path=example, local_path=None)
+    from src.config_loader import resolve_search_backend
+
+    assert (
+        resolve_search_backend(
+            cli_value="sqlite-vec", config=cfg, env={}
+        )
+        == "sqlite-vec"
+    )
+
+
+def test_resolve_profile_rejects_invalid_search_backend(tmp_path: Path):
+    example = _write_yaml(
+        tmp_path / "example.yaml",
+        {
+            "profiles": {
+                "default": {
+                    "search": {"backend": "faiss"},
+                },
+            },
+        },
+    )
+    with pytest.raises(ConfigError, match="Invalid search backend"):
+        resolve_profile(example_path=example, local_path=None)

@@ -1,10 +1,10 @@
 from sqlalchemy import create_engine, text
 from pathlib import Path
-from .config import DB_PATH
+from . import config
 
 def get_engine():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    return create_engine(f"sqlite:///{DB_PATH}", future=True)
+    config.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    return create_engine(f"sqlite:///{config.DB_PATH}", future=True)
 
 def init_db():
     engine = get_engine()

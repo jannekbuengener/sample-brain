@@ -160,7 +160,7 @@ Verified from clean `main` checkout with an isolated venv outside the repo:
 
 ## What Is Not Done
 
-- **sqlite-vec vec0 cache / search adapter** — Phase 1 availability probe landed; schema/rebuild/search adapter in follow-up PRs (#41–#46)
+- **sqlite-vec vec0 cache / search adapter** — Phases 1–7 implemented on campaign branches (#47–#50); default search backend remains `numpy` until Phase 6 gates documented PASS
 - **FAISS adapter** — not implemented; NumPy `.npz` index is current; superseded by ADR-0004 (not M6 scope)
 - **Large-scale / private sample validation** — only controlled synthetic-fixture E2E smoke proven
 - **Production search quality tuning** — E2E smoke confirms plumbing, not ranking quality
@@ -169,10 +169,7 @@ Verified from clean `main` checkout with an isolated venv outside the repo:
 
 ## Next Steps (empfohlen)
 
-Bootstrap path documented. After merging this docs PR, pick the sqlite-vec implementation slice:
-
-1. **Phase 2 / Issue #41** — SQLite schema for vector search state and tags
-2. **Follow [SQLITE_VEC_ROADMAP.md](../docs/SQLITE_VEC_ROADMAP.md)** — Phases 3–8 after Phase 2
+1. **Review + merge campaign PR stack** — #47 → #48 → #49 → #50 (Phases 1–7); run local `benchmark vec --samples 100000` before switching default
+2. **Phase 6 gate evidence** — document 100k warm/filtered p95 in ADR-0004 when measured
 3. **CLAP test hardening** — unavailable-backend tests in CLAP-installed venvs
-4. **Optional hardening:** runtime path validation (EPIC 1 Spec Section 9)
-5. **Backlog items** — e.g. MCP setup guide (#3 in planning backlog)
+4. **Phase 8 docs cleanup** — EPIC_2 / TARGET_ARCHITECTURE sync (follow-up)

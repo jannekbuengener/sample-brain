@@ -23,6 +23,9 @@ profiles:
       backend: "noop"
       model_cache_dir: "<MODEL_CACHE_DIR>"
 
+    search:
+      backend: "numpy"
+
   minimal-demo:
     library_roots:
       - "<DEMO_SAMPLE_ROOT>"
@@ -41,3 +44,6 @@ profiles:
     embedding:
       backend: "noop"
       model_cache_dir: "<MODEL_CACHE_DIR>"
+
+    search:
+      backend: "numpy"

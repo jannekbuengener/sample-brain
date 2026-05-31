@@ -181,7 +181,8 @@ class TestBuildIndexCLI:
         assert "Index saved to" in captured.out
         assert index_path.exists()
 
-    def test_build_index_save_without_path_prints_info(self, capsys):
+    @patch("src.index.build_numpy_index", return_value=None)
+    def test_build_index_save_without_path_prints_info(self, mock_build, capsys):
         build_index(model_id=1, save=True)
         captured = capsys.readouterr()
         assert "No embeddings found" in captured.out

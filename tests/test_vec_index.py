@@ -37,7 +37,9 @@ def vec_rebuild_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db_path = tmp_path / "vec_rebuild.db"
     monkeypatch.setenv("SAMPLE_BRAIN_DB_PATH", str(db_path))
     set_db_path(env={"SAMPLE_BRAIN_DB_PATH": str(db_path)})
-    monkeypatch.setattr(db_module, "DB_PATH", db_path)
+    import src.config as config_module
+
+    config_module.DB_PATH = db_path
     init_db()
 
     model_id = upsert_embedding_model(

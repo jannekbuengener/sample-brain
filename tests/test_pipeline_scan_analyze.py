@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
+import src.config as config_module
 import src.db as db_module
 from src.analyze import run_analyze
 from src.scan import run_scan
@@ -14,7 +15,11 @@ from tests.audio_fixtures import write_sine_wav
 @pytest.fixture
 def isolated_catalog(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db_path = tmp_path / "catalog.db"
-    monkeypatch.setattr(db_module, "DB_PATH", db_path)
+    monkeypatch.setenv("SAMPLE_BRAIN_DB_PATH", str(db_path))
+    from src.config import set_db_path
+
+    set_db_path(env={"SAMPLE_BRAIN_DB_PATH": str(db_path)})
+    config_module.DB_PATH = db_path
     db_module.init_db()
     return tmp_path, db_path
 

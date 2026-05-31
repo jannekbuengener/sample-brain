@@ -28,9 +28,11 @@ _ENV_KEY_MAP: dict[str, tuple[str, ...]] = {
     "SAMPLE_BRAIN_DB_PATH": ("database", "path"),
     "SAMPLE_BRAIN_MAX_TAGS": ("export", "max_tags"),
     "SAMPLE_BRAIN_EMBEDDING_BACKEND": ("embedding", "backend"),
+    "SAMPLE_BRAIN_SEARCH_BACKEND": ("search", "backend"),
 }
 
 _VALID_EMBEDDING_BACKENDS = {"noop", "clap"}
+_VALID_SEARCH_BACKENDS = {"numpy", "sqlite-vec"}
 
 
 def load_profiles(
@@ -173,9 +175,39 @@ def _validate_resolved_config(config: dict) -> None:
             f"Must be one of: {', '.join(sorted(_VALID_EMBEDDING_BACKENDS))}"
         )
 
+    search_backend = config.get("search", {}).get("backend")
+    if search_backend is not None and search_backend not in _VALID_SEARCH_BACKENDS:
+        raise ConfigError(
+            f"Invalid search backend: {search_backend!r}. "
+            f"Must be one of: {', '.join(sorted(_VALID_SEARCH_BACKENDS))}"
+        )
+
     roots = config.get("library_roots")
     if roots is not None:
         if not isinstance(roots, list) or any(
             not isinstance(root, str) or not root for root in roots
         ):
             raise ConfigError("library_roots must be a list of non-empty strings")
+
+
+def resolve_search_backend(
+    *,
+    cli_value: str | None,
+    config: dict,
+    env: dict[str, str],
+) -> str:
+    if cli_value is not None:
+        backend = cli_value
+    else:
+        env_value = env.get("SAMPLE_BRAIN_SEARCH_BACKEND")
+        if env_value:
+            backend = env_value.strip()
+        else:
+            backend = config.get("search", {}).get("backend", "numpy")
+
+    if backend not in _VALID_SEARCH_BACKENDS:
+        raise ConfigError(
+            f"Invalid search backend: {backend!r}. "
+            f"Must be one of: {', '.join(sorted(_VALID_SEARCH_BACKENDS))}"
+        )
+    return backend

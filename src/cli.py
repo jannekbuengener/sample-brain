@@ -208,8 +208,8 @@ def main():
     p_idx.add_argument(
         "--search-backend",
         choices=["numpy", "sqlite-vec"],
-        default="numpy",
-        help="Vector search cache backend. numpy keeps in-memory/.npz; sqlite-vec rebuilds vec0 in SQLite.",
+        default=None,
+        help="Vector search cache backend. Overrides profile/env search.backend (default: numpy).",
     )
 
     # (optional) search
@@ -235,10 +235,16 @@ def main():
         help="Embedding backend to use. Overrides profile config. Defaults to configured backend or noop.",
     )
     p_src.add_argument(
+        "--search-backend",
+        choices=["numpy", "sqlite-vec"],
+        default=None,
+        help="Vector search backend. Overrides profile/env search.backend (default: numpy).",
+    )
+    p_src.add_argument(
         "--index-path",
         type=str,
         default=None,
-        help="Path to a saved .npz index file. If not provided, index is built from DB.",
+        help="Path to a saved .npz index file (numpy backend only).",
     )
     p_src.add_argument(
         "--target-bpm",
@@ -287,6 +293,63 @@ def main():
         type=float,
         default=8.0,
         help="BPM distance tolerance for partial BPM match scoring (default: 8.0).",
+    )
+    p_src.add_argument(
+        "--tag",
+        action="append",
+        default=[],
+        help="Filter results to samples tagged with this value (repeatable).",
+    )
+    p_src.add_argument("--min-bpm", type=float, default=None, help="Minimum BPM filter.")
+    p_src.add_argument("--max-bpm", type=float, default=None, help="Maximum BPM filter.")
+    p_src.add_argument(
+        "--key",
+        dest="filter_key",
+        default=None,
+        help="Exact features.key filter (distinct from hybrid --target-key).",
+    )
+    p_src.add_argument(
+        "--scale",
+        default=None,
+        help="Key scale filter: major|minor (parsed from features.key).",
+    )
+    p_src.add_argument(
+        "--min-duration",
+        type=float,
+        default=None,
+        help="Minimum sample duration in seconds.",
+    )
+    p_src.add_argument(
+        "--max-duration",
+        type=float,
+        default=None,
+        help="Maximum sample duration in seconds.",
+    )
+    p_src.add_argument(
+        "--pred-type",
+        default=None,
+        help="Filter by features.pred_type (distinct from hybrid --target-type).",
+    )
+
+    p_db = sub.add_parser("db", help="Database diagnostics")
+    db_sub = p_db.add_subparsers(dest="db_cmd", required=True)
+    db_sub.add_parser("doctor", help="Run SQLite integrity and catalog checks")
+
+    p_bench = sub.add_parser("benchmark", help="Performance harness (optional)")
+    bench_sub = p_bench.add_subparsers(dest="bench_cmd", required=True)
+    p_bench_vec = bench_sub.add_parser("vec", help="Benchmark sqlite-vec search paths")
+    p_bench_vec.add_argument(
+        "--samples",
+        type=int,
+        nargs="+",
+        default=[1000, 10000],
+        help="Synthetic sample counts to benchmark (default: 1000 10000).",
+    )
+    p_bench_vec.add_argument(
+        "--work-dir",
+        type=str,
+        default=None,
+        help="Directory for temporary benchmark databases (default: ./.bench_sqlite_vec).",
     )
 
     # sqlite-vec diagnostics
@@ -427,16 +490,22 @@ def main():
         _apply_runtime_db_path(cfg)
         try:
             from .index import build_index
+            from .config_loader import resolve_search_backend
         except Exception as e:
             print(f"[WARN] Index übersprungen (Modul fehlt/fehlerhaft): {e}")
             sys.exit(0)
         save = args.save or args.index_path is not None
+        search_backend = resolve_search_backend(
+            cli_value=args.search_backend,
+            config=cfg,
+            env=dict(__import__("os").environ),
+        )
         build_index(
             model_id=args.model_id,
             limit=args.limit,
             save=save,
             index_path=args.index_path,
-            search_backend=args.search_backend,
+            search_backend=search_backend,
         )
         return
 
@@ -445,20 +514,64 @@ def main():
         _apply_runtime_db_path(cfg)
         try:
             from .search import hybrid_query_from_cli_args, run_search
+            from .search_filters import search_filters_from_cli_args
+            from .config_loader import resolve_search_backend
+            from .vec_availability import probe_sqlite_vec
         except Exception as e:
             print(f"[ERROR] Search nicht verfügbar: {e}", file=sys.stderr)
             sys.exit(1)
         configured_backend = cfg.get("embedding", {}).get("backend", "noop")
         backend_name = args.backend or configured_backend or "noop"
+        search_backend = resolve_search_backend(
+            cli_value=args.search_backend,
+            config=cfg,
+            env=dict(__import__("os").environ),
+        )
+        if search_backend == "sqlite-vec":
+            vec_report = probe_sqlite_vec()
+            if not vec_report.available:
+                print(
+                    "[WARN] sqlite-vec selected but unavailable; "
+                    "install with: pip install -e .[vec]"
+                )
         run_search(
             query=args.query,
             query_audio=args.query_audio,
             model_id=args.model_id,
             topk=args.topk,
             backend_name=backend_name,
+            search_backend=search_backend,
             index_path=args.index_path,
             hybrid_query=hybrid_query_from_cli_args(args),
+            search_filters=search_filters_from_cli_args(args),
         )
+        return
+
+    if args.cmd == "db":
+        cfg = _resolve_profile_or_exit(args)
+        _apply_runtime_db_path(cfg)
+        if args.db_cmd == "doctor":
+            from .db_doctor import print_db_doctor_report, run_db_doctor
+
+            sys.exit(print_db_doctor_report(run_db_doctor()))
+        return
+
+    if args.cmd == "benchmark":
+        cfg = _resolve_profile_or_exit(args)
+        _apply_runtime_db_path(cfg)
+        if args.bench_cmd == "vec":
+            from .benchmark_vec import print_benchmark_report, run_vec_benchmark
+
+            work_dir = Path(args.work_dir) if args.work_dir else None
+            try:
+                results = run_vec_benchmark(
+                    sample_counts=args.samples,
+                    work_dir=work_dir,
+                )
+            except RuntimeError as exc:
+                print(f"[ERROR] {exc}", file=sys.stderr)
+                sys.exit(1)
+            print_benchmark_report(results)
         return
 
     if args.cmd == "vec":
