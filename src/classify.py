@@ -4,7 +4,7 @@ import csv, math
 from pathlib import Path
 import numpy as np
 from sqlalchemy import text
-from .db import init_db
+from .db import ensure_features_pred_type_column, init_db
 
 SEED_CSV = Path("./data/label_seeds.csv")
 
@@ -93,16 +93,9 @@ def _knn_predict(qvec: np.ndarray, X: np.ndarray, y: np.ndarray, topk=7):
     return dict(label=best[0][0], confidence=conf)
 
 # ---------- Main ----------
-def _ensure_pred_type_column():
-    engine = init_db()
-    with engine.begin() as conn:
-        cols = conn.execute(text("PRAGMA table_info(features)")).fetchall()
-        names = {c[1] for c in cols}
-        if "pred_type" not in names:
-            conn.execute(text("ALTER TABLE features ADD COLUMN pred_type TEXT"))
-
 def write_autotype_to_db(use_knn: bool = True, knn_min_conf: float = 0.55):
-    _ensure_pred_type_column()
+    init_db()
+    ensure_features_pred_type_column()
 
     # Seeds/Embeddings nur laden, wenn kNN wirklich genutzt wird
     X = y = None

@@ -237,12 +237,22 @@ def sample_embedding_exists(sample_id: int, model_id: int, source_hash: str) -> 
     return row is not None
 
 
+def ensure_features_pred_type_column() -> None:
+    engine = get_engine()
+    with engine.begin() as conn:
+        cols = conn.execute(text("PRAGMA table_info(features)")).fetchall()
+        names = {column[1] for column in cols}
+        if "pred_type" not in names:
+            conn.execute(text("ALTER TABLE features ADD COLUMN pred_type TEXT"))
+
+
 def load_hybrid_metadata(sample_ids: list[int]) -> dict[int, "HybridMetadata"]:
     from .hybrid_rank import HybridMetadata
 
     if not sample_ids:
         return {}
 
+    ensure_features_pred_type_column()
     engine = get_engine()
     placeholders = ", ".join(f":id_{index}" for index in range(len(sample_ids)))
     params = {f"id_{index}": sample_id for index, sample_id in enumerate(sample_ids)}
