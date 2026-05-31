@@ -351,6 +351,22 @@ def main():
         default=None,
         help="Directory for temporary benchmark databases (default: ./.bench_sqlite_vec).",
     )
+    p_bench_quality = bench_sub.add_parser(
+        "search-quality",
+        help="Evaluate search ranking quality against a golden query suite",
+    )
+    p_bench_quality.add_argument(
+        "--suite",
+        type=str,
+        default=None,
+        help="Path to golden query suite YAML (default: tests/fixtures/search_quality/golden_v1.yaml).",
+    )
+    p_bench_quality.add_argument(
+        "--work-dir",
+        type=str,
+        default=None,
+        help="Directory for temporary benchmark databases (default: ./.bench_search_quality).",
+    )
 
     # sqlite-vec diagnostics
     p_vec = sub.add_parser("vec", help="sqlite-vec availability diagnostics (optional)")
@@ -572,6 +588,28 @@ def main():
                 print(f"[ERROR] {exc}", file=sys.stderr)
                 sys.exit(1)
             print_benchmark_report(results)
+            return
+        if args.bench_cmd == "search-quality":
+            from .benchmark_search_quality import (
+                DEFAULT_SUITE_PATH,
+                print_search_quality_report,
+                run_search_quality_benchmark,
+            )
+
+            suite_path = Path(args.suite) if args.suite else DEFAULT_SUITE_PATH
+            work_dir = Path(args.work_dir) if args.work_dir else None
+            try:
+                result = run_search_quality_benchmark(
+                    suite_path,
+                    work_dir=work_dir,
+                )
+            except (OSError, ValueError) as exc:
+                print(f"[ERROR] {exc}", file=sys.stderr)
+                sys.exit(1)
+            print_search_quality_report(result)
+            if not all(result.threshold_pass().values()):
+                sys.exit(1)
+            return
         return
 
     if args.cmd == "vec":
