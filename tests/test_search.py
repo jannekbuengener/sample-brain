@@ -7,6 +7,7 @@ from src.embed import ClapEmbeddingBackend, EmbeddingBackendUnavailableError
 from src.hybrid_rank import HybridMetadata, HybridQuery
 from src.index import VectorIndex
 from src.search import run_search
+from tests.audio_fixtures import write_sine_wav
 
 
 def _simulate_clap_deps_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -43,12 +44,12 @@ class TestRunSearchValidation:
     def test_requires_query_string(self, capsys):
         run_search(query=None, model_id=1)
         captured = capsys.readouterr()
-        assert "search requires a query string" in captured.out
+        assert "search requires a text query or --query-audio" in captured.out
 
     def test_rejects_empty_query(self, capsys):
         run_search(query="", model_id=1)
         captured = capsys.readouterr()
-        assert "search requires a query string" in captured.out
+        assert "search requires a text query or --query-audio" in captured.out
 
     def test_rejects_invalid_topk(self, capsys):
         run_search(query="test", model_id=1, topk=0)
@@ -72,6 +73,102 @@ class TestRunSearchUnavailableBackend:
         captured = capsys.readouterr()
         assert "[ERROR] The selected embedding backend is not available." in captured.out
         assert "Install torch + transformers" in captured.out
+
+
+class TestRunSearchAudioQuery:
+    def test_rejects_both_text_and_audio(self, capsys):
+        run_search(query="kick", query_audio="tone.wav", model_id=1)
+        captured = capsys.readouterr()
+        assert "either a text query or --query-audio, not both" in captured.out
+
+    def test_missing_audio_file(self, capsys, tmp_path):
+        missing = tmp_path / "missing.wav"
+        run_search(query_audio=str(missing), model_id=1)
+        captured = capsys.readouterr()
+        assert "query audio file not found" in captured.out
+        assert str(missing) in captured.out
+
+    def test_audio_query_uses_embed_audio(self, capsys, monkeypatch, tmp_path):
+        wav_path = write_sine_wav(
+            tmp_path / "samples" / "tone.wav",
+            duration_sec=0.2,
+            frequency_hz=330.0,
+        )
+        fake_vector = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        called_with: str | None = None
+
+        class FakeBackend:
+            def embed_audio(self, path: str):
+                nonlocal called_with
+                called_with = path
+                return fake_vector
+
+        monkeypatch.setattr("src.search.get_backend", lambda name: FakeBackend())
+        monkeypatch.setattr(
+            "src.search.build_numpy_index",
+            lambda model_id=None, limit=None: VectorIndex(
+                vectors=np.array([[1.0, 0.0, 0.0]], dtype=np.float32),
+                sample_ids=[99],
+                model_id=1,
+                embedding_dim=3,
+            ),
+        )
+
+        run_search(query_audio=str(wav_path), model_id=1, topk=1)
+        captured = capsys.readouterr()
+        assert called_with == str(wav_path)
+        assert "rank=1 sample_id=99" in captured.out
+
+    def test_noop_backend_audio_query_prints_configure_message(self, capsys, tmp_path):
+        wav_path = write_sine_wav(
+            tmp_path / "samples" / "tone.wav",
+            duration_sec=0.2,
+            frequency_hz=440.0,
+        )
+        run_search(query_audio=str(wav_path), model_id=1, backend_name="noop")
+        captured = capsys.readouterr()
+        assert "No embedding backend configured" in captured.out
+
+    def test_audio_query_loads_index_path_when_given(self, monkeypatch, tmp_path):
+        wav_path = write_sine_wav(
+            tmp_path / "samples" / "tone.wav",
+            duration_sec=0.1,
+            frequency_hz=220.0,
+        )
+        fake_vector = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+
+        class FakeBackend:
+            def embed_audio(self, path: str):
+                return fake_vector
+
+        monkeypatch.setattr("src.search.get_backend", lambda name: FakeBackend())
+
+        load_called = False
+
+        def fake_load(path, model_id=None):
+            nonlocal load_called
+            load_called = True
+            assert "test.npz" in str(path)
+            return VectorIndex(
+                vectors=np.array([[1.0, 0.0, 0.0]], dtype=np.float32),
+                sample_ids=[1],
+                model_id=1,
+                embedding_dim=3,
+            )
+
+        build_called = False
+
+        def fake_build(model_id=None, limit=None):
+            nonlocal build_called
+            build_called = True
+            return None
+
+        monkeypatch.setattr("src.search.load_numpy_index", fake_load)
+        monkeypatch.setattr("src.search.build_numpy_index", fake_build)
+
+        run_search(query_audio=str(wav_path), model_id=1, index_path="test.npz")
+        assert load_called
+        assert not build_called
 
 
 class TestRunSearchWithFakes:

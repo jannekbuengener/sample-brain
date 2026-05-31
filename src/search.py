@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
 from .db import load_hybrid_metadata, load_sample_paths
@@ -89,6 +91,7 @@ def hybrid_query_from_cli_args(args) -> HybridQuery | None:
 
 def run_search(
     query: str | None = None,
+    query_audio: str | None = None,
     model_id: int | None = None,
     topk: int = 10,
     backend_name: str = "noop",
@@ -99,8 +102,22 @@ def run_search(
         print("[ERROR] search requires --model-id for now.")
         return
 
-    if not query:
-        print("[ERROR] search requires a query string.")
+    if query and query_audio:
+        print("[ERROR] search accepts either a text query or --query-audio, not both.")
+        return
+
+    if not query and not query_audio:
+        print("[ERROR] search requires a text query or --query-audio.")
+        return
+
+    query_text = query.strip() if query else None
+    if query is not None and not query_text:
+        print("[ERROR] search requires a text query or --query-audio.")
+        return
+
+    audio_path = Path(query_audio).expanduser() if query_audio else None
+    if audio_path is not None and not audio_path.is_file():
+        print(f"[ERROR] query audio file not found: {audio_path}")
         return
 
     if topk <= 0:
@@ -109,7 +126,10 @@ def run_search(
 
     try:
         backend = get_backend(backend_name)
-        embedding = backend.embed_text(query)
+        if audio_path is not None:
+            embedding = backend.embed_audio(str(audio_path))
+        else:
+            embedding = backend.embed_text(query_text)
     except EmbeddingBackendUnavailableError:
         print("[ERROR] The selected embedding backend is not available.")
         print("[INFO] Install torch + transformers and use 'sample-brain embed --backend clap' first.")
