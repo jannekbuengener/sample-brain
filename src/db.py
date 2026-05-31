@@ -237,6 +237,24 @@ def sample_embedding_exists(sample_id: int, model_id: int, source_hash: str) -> 
     return row is not None
 
 
+def load_sample_paths(sample_ids: list[int]) -> dict[int, str]:
+    if not sample_ids:
+        return {}
+
+    engine = get_engine()
+    placeholders = ", ".join(f":id_{index}" for index in range(len(sample_ids)))
+    params = {f"id_{index}": sample_id for index, sample_id in enumerate(sample_ids)}
+    query = f"""
+        SELECT id, path
+        FROM samples
+        WHERE id IN ({placeholders})
+    """
+    with engine.begin() as conn:
+        rows = conn.execute(text(query), params).fetchall()
+
+    return {row[0]: row[1] for row in rows}
+
+
 def ensure_features_pred_type_column() -> None:
     engine = get_engine()
     with engine.begin() as conn:

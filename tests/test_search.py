@@ -28,6 +28,12 @@ def _clear_embed_backend_cache():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _stub_search_output_lookups(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("src.search.load_sample_paths", lambda sample_ids: {})
+    monkeypatch.setattr("src.search.load_hybrid_metadata", lambda sample_ids: {})
+
+
 class TestRunSearchValidation:
     def test_requires_model_id(self, capsys):
         run_search(query="test", model_id=None)
@@ -94,6 +100,78 @@ class TestRunSearchWithFakes:
         assert "rank=1" in captured.out
         assert "sample_id=10" in captured.out
         assert "score=" in captured.out
+
+    def test_output_includes_enriched_metadata_fields(self, capsys, monkeypatch):
+        fake_vector = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+
+        class FakeBackend:
+            def embed_text(self, text):
+                return fake_vector
+
+        monkeypatch.setattr("src.search.get_backend", lambda name: FakeBackend())
+        monkeypatch.setattr("src.search.load_sample_paths", lambda sample_ids: {10: "/samples/kick.wav"})
+        monkeypatch.setattr(
+            "src.search.load_hybrid_metadata",
+            lambda sample_ids: {
+                10: HybridMetadata(
+                    sample_id=10,
+                    bpm=128.0,
+                    key="Am",
+                    pred_type="kick",
+                    audio_class="percussive",
+                )
+            },
+        )
+
+        fake_index = VectorIndex(
+            vectors=np.array([[1.0, 0.0, 0.0]], dtype=np.float32),
+            sample_ids=[10],
+            model_id=1,
+            embedding_dim=3,
+        )
+        monkeypatch.setattr(
+            "src.search.build_numpy_index",
+            lambda model_id=None, limit=None: fake_index,
+        )
+
+        run_search(query="kick", model_id=1, topk=1)
+        captured = capsys.readouterr()
+        assert "path=/samples/kick.wav" in captured.out
+        assert "bpm=128.0" in captured.out
+        assert "key=Am" in captured.out
+        assert "pred_type=kick" in captured.out
+        assert "class=percussive" in captured.out
+
+    def test_output_falls_back_when_metadata_missing(self, capsys, monkeypatch):
+        fake_vector = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+
+        class FakeBackend:
+            def embed_text(self, text):
+                return fake_vector
+
+        monkeypatch.setattr("src.search.get_backend", lambda name: FakeBackend())
+        monkeypatch.setattr("src.search.load_sample_paths", lambda sample_ids: {})
+        monkeypatch.setattr("src.search.load_hybrid_metadata", lambda sample_ids: {})
+
+        fake_index = VectorIndex(
+            vectors=np.array([[1.0, 0.0, 0.0]], dtype=np.float32),
+            sample_ids=[10],
+            model_id=1,
+            embedding_dim=3,
+        )
+        monkeypatch.setattr(
+            "src.search.build_numpy_index",
+            lambda model_id=None, limit=None: fake_index,
+        )
+
+        run_search(query="kick", model_id=1, topk=1)
+        captured = capsys.readouterr()
+        assert "rank=1 sample_id=10" in captured.out
+        assert "path=" in captured.out
+        assert "bpm=" in captured.out
+        assert "key=" in captured.out
+        assert "pred_type=" in captured.out
+        assert "class=" in captured.out
 
     def test_loads_index_path_when_given(self, capsys, monkeypatch):
         fake_vector = np.array([1.0, 0.0, 0.0], dtype=np.float32)
@@ -177,7 +255,7 @@ class TestRunSearchHybridRerank:
             lambda model_id=None, limit=None: fake_index,
         )
 
-    def test_semantic_only_preserves_order_without_db_load(self, capsys, monkeypatch):
+    def test_semantic_only_preserves_order_with_metadata_output(self, capsys, monkeypatch):
         self._fake_backend_and_index(monkeypatch)
         load_called = False
 
@@ -191,7 +269,7 @@ class TestRunSearchHybridRerank:
         run_search(query="test", model_id=1, topk=5, hybrid_query=None)
         captured = capsys.readouterr()
 
-        assert not load_called
+        assert load_called
         assert "rank=1" in captured.out
         assert "sample_id=10" in captured.out
         lines = [line for line in captured.out.splitlines() if line.startswith("rank=")]
