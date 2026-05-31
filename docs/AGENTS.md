@@ -12,6 +12,7 @@
 - Product and system requirements
 - Pipeline and architecture guidance
 - Integration and operational notes
+- Local AI MCP (Cursor/Codex `cdb_context`): [`MCP_SETUP.md`](MCP_SETUP.md)
 - Backlog and branch/process policy
 
 ## Update Rules
