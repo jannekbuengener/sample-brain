@@ -202,11 +202,31 @@ def build_index(
     limit: int | None = None,
     save: bool = False,
     index_path: str | None = None,
+    search_backend: str = "numpy",
 ) -> None:
     if model_id is None:
         print(
             "[INFO] No model_id specified. "
             "Use --model-id to select an embedding model."
+        )
+        return
+
+    if search_backend == "sqlite-vec":
+        from .vec_index import VecIndexUnavailableError, rebuild_vec0_cache
+
+        try:
+            result = rebuild_vec0_cache(model_id)
+        except VecIndexUnavailableError as exc:
+            print(f"[ERROR] {exc}")
+            return
+        except ValueError as exc:
+            print(f"[ERROR] {exc}")
+            return
+
+        print(
+            f"[INFO] sqlite-vec cache rebuilt: model_id={result.model_id}, "
+            f"dim={result.embedding_dim}, vectors={result.sample_count}, "
+            f"table={result.vec_table_name}"
         )
         return
 

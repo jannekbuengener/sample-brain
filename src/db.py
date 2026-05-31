@@ -178,6 +178,30 @@ def get_embedding_model(
     }
 
 
+def get_embedding_model_by_id(model_id: int) -> dict | None:
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+            SELECT id, provider, model_name, model_version, embedding_dim, modality, created_at
+            FROM embedding_models
+            WHERE id = :model_id
+            """),
+            {"model_id": model_id},
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": row[0],
+        "provider": row[1],
+        "model_name": row[2],
+        "model_version": row[3],
+        "embedding_dim": row[4],
+        "modality": row[5],
+        "created_at": row[6],
+    }
+
+
 def insert_sample_embedding(
     sample_id: int,
     model_id: int,
