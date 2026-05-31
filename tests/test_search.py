@@ -5,9 +5,42 @@ import pytest
 
 from src.embed import ClapEmbeddingBackend, EmbeddingBackendUnavailableError
 from src.hybrid_rank import HybridMetadata, HybridQuery
-from src.index import VectorIndex
+from src.index import SearchHit, VectorIndex, search_index
 from src.search import run_search
 from tests.audio_fixtures import write_sine_wav
+
+
+def _patch_search_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    index: VectorIndex,
+    *,
+    expect_index_path: str | None = None,
+) -> dict[str, bool]:
+    flags = {"load_called": False, "build_called": False}
+
+    class Backend:
+        def search(
+            self,
+            query_vector,
+            model_id,
+            topk,
+            *,
+            index_path=None,
+            candidate_sample_ids=None,
+        ):
+            if index_path is not None:
+                flags["load_called"] = True
+                if expect_index_path is not None:
+                    assert expect_index_path in str(index_path)
+            else:
+                flags["build_called"] = True
+            hits = search_index(query_vector, index, topk=topk)
+            if candidate_sample_ids is None:
+                return hits
+            return [hit for hit in hits if hit.sample_id in candidate_sample_ids][:topk]
+
+    monkeypatch.setattr("src.search.get_search_backend", lambda _name: Backend())
+    return flags
 
 
 def _simulate_clap_deps_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -104,9 +137,9 @@ class TestRunSearchAudioQuery:
                 return fake_vector
 
         monkeypatch.setattr("src.search.get_backend", lambda name: FakeBackend())
-        monkeypatch.setattr(
-            "src.search.build_numpy_index",
-            lambda model_id=None, limit=None: VectorIndex(
+        _patch_search_backend(
+            monkeypatch,
+            VectorIndex(
                 vectors=np.array([[1.0, 0.0, 0.0]], dtype=np.float32),
                 sample_ids=[99],
                 model_id=1,
@@ -143,32 +176,20 @@ class TestRunSearchAudioQuery:
 
         monkeypatch.setattr("src.search.get_backend", lambda name: FakeBackend())
 
-        load_called = False
-
-        def fake_load(path, model_id=None):
-            nonlocal load_called
-            load_called = True
-            assert "test.npz" in str(path)
-            return VectorIndex(
+        flags = _patch_search_backend(
+            monkeypatch,
+            VectorIndex(
                 vectors=np.array([[1.0, 0.0, 0.0]], dtype=np.float32),
                 sample_ids=[1],
                 model_id=1,
                 embedding_dim=3,
-            )
-
-        build_called = False
-
-        def fake_build(model_id=None, limit=None):
-            nonlocal build_called
-            build_called = True
-            return None
-
-        monkeypatch.setattr("src.search.load_numpy_index", fake_load)
-        monkeypatch.setattr("src.search.build_numpy_index", fake_build)
+            ),
+            expect_index_path="test.npz",
+        )
 
         run_search(query_audio=str(wav_path), model_id=1, index_path="test.npz")
-        assert load_called
-        assert not build_called
+        assert flags["load_called"]
+        assert not flags["build_called"]
 
 
 class TestRunSearchWithFakes:
@@ -187,10 +208,7 @@ class TestRunSearchWithFakes:
             model_id=1,
             embedding_dim=3,
         )
-        monkeypatch.setattr(
-            "src.search.build_numpy_index",
-            lambda model_id=None, limit=None: fake_index,
-        )
+        _patch_search_backend(monkeypatch, fake_index)
 
         run_search(query="test", model_id=1, topk=5)
         captured = capsys.readouterr()
@@ -226,10 +244,7 @@ class TestRunSearchWithFakes:
             model_id=1,
             embedding_dim=3,
         )
-        monkeypatch.setattr(
-            "src.search.build_numpy_index",
-            lambda model_id=None, limit=None: fake_index,
-        )
+        _patch_search_backend(monkeypatch, fake_index)
 
         run_search(query="kick", model_id=1, topk=1)
         captured = capsys.readouterr()
@@ -256,10 +271,7 @@ class TestRunSearchWithFakes:
             model_id=1,
             embedding_dim=3,
         )
-        monkeypatch.setattr(
-            "src.search.build_numpy_index",
-            lambda model_id=None, limit=None: fake_index,
-        )
+        _patch_search_backend(monkeypatch, fake_index)
 
         run_search(query="kick", model_id=1, topk=1)
         captured = capsys.readouterr()
@@ -279,33 +291,20 @@ class TestRunSearchWithFakes:
 
         monkeypatch.setattr("src.search.get_backend", lambda name: FakeBackend())
 
-        load_called = False
-
-        def fake_load(path, model_id=None):
-            nonlocal load_called
-            load_called = True
-            assert "test.npz" in str(path)
-            return VectorIndex(
+        flags = _patch_search_backend(
+            monkeypatch,
+            VectorIndex(
                 vectors=np.array([[1.0, 0.0, 0.0]], dtype=np.float32),
                 sample_ids=[1],
                 model_id=1,
                 embedding_dim=3,
-            )
-
-        monkeypatch.setattr("src.search.load_numpy_index", fake_load)
-
-        build_called = False
-
-        def fake_build(model_id=None, limit=None):
-            nonlocal build_called
-            build_called = True
-            return None
-
-        monkeypatch.setattr("src.search.build_numpy_index", fake_build)
+            ),
+            expect_index_path="test.npz",
+        )
 
         run_search(query="test", model_id=1, index_path="test.npz")
-        assert load_called, "load_numpy_index should be called when index_path is given"
-        assert not build_called, "build_numpy_index should NOT be called when index_path is given"
+        assert flags["load_called"], "search backend should load index_path when given"
+        assert not flags["build_called"], "search backend should NOT rebuild when index_path is given"
 
     def test_dimension_mismatch_is_controlled(self, capsys, monkeypatch):
         fake_vector = np.array([1.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
@@ -322,10 +321,7 @@ class TestRunSearchWithFakes:
             model_id=1,
             embedding_dim=3,
         )
-        monkeypatch.setattr(
-            "src.search.build_numpy_index",
-            lambda model_id=None, limit=None: fake_index,
-        )
+        _patch_search_backend(monkeypatch, fake_index)
 
         run_search(query="test", model_id=1)
         captured = capsys.readouterr()
@@ -347,10 +343,7 @@ class TestRunSearchHybridRerank:
             model_id=1,
             embedding_dim=3,
         )
-        monkeypatch.setattr(
-            "src.search.build_numpy_index",
-            lambda model_id=None, limit=None: fake_index,
-        )
+        _patch_search_backend(monkeypatch, fake_index)
 
     def test_semantic_only_preserves_order_with_metadata_output(self, capsys, monkeypatch):
         self._fake_backend_and_index(monkeypatch)

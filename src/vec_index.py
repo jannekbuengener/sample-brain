@@ -9,9 +9,10 @@ from pathlib import Path
 import numpy as np
 import sqlite_vec
 
-from .config import DB_PATH
+from . import config
 from .db import get_embedding_model_by_id, get_engine, text, upsert_vector_index_state
 from .index import decode_embedding_blob, normalize_vectors
+from .search_filters import sync_pred_type_tags
 from .vec_availability import format_availability_message, probe_sqlite_vec
 
 VEC_SAMPLE_CURRENT_TABLE = "vec_sample_current"
@@ -45,7 +46,7 @@ def enable_vec_extension(conn: sqlite3.Connection) -> None:
 
 
 def open_vec_connection(db_path: Path | None = None) -> sqlite3.Connection:
-    path = db_path or DB_PATH
+    path = db_path or config.DB_PATH
     conn = sqlite3.connect(str(path))
     enable_vec_extension(conn)
     return conn
@@ -126,6 +127,7 @@ def rebuild_vec0_cache(
         last_rebuild_at=rebuilt_at,
         source_fingerprint=source_fingerprint,
     )
+    sync_pred_type_tags()
 
     return VecRebuildResult(
         model_id=model_id,
