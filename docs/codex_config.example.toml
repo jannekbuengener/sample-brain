@@ -1,0 +1,11 @@
+# Copy to `.codex/config.toml` at the sample-brain repo root (or merge into `~/.codex/config.toml`).
+# Replace CDB_REPO_ROOT with your Claire_de_Binare checkout (forward slashes on Windows).
+#
+# Canon server lives in CDB: `python -m tools.mcp.server` with cwd = CDB repo root.
+# See docs/MCP_SETUP.md.
+
+[mcp_servers.cdb_context]
+enabled = true
+command = "CDB_REPO_ROOT/.venv/Scripts/python.exe"
+args = ["-m", "tools.mcp.server"]
+cwd = "CDB_REPO_ROOT"

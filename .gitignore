@@ -204,6 +204,8 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+# Machine-local MCP client config (template: docs/cursor_mcp.example.json). See docs/MCP_SETUP.md.
+.cursor/mcp.json
 
 # Marimo
 marimo/_static/

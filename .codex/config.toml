@@ -1,0 +1,9 @@
+# Project-local Codex MCP (sample-brain). Cross-repo stdio → Claire de Binare canon server.
+# Windows-local paths (team convention). Linux/macOS: copy docs/codex_config.example.toml and adjust.
+# See docs/MCP_SETUP.md.
+
+[mcp_servers.cdb_context]
+enabled = true
+command = "D:/Dev/Workspaces/Repos/Claire_de_Binare/.venv/Scripts/python.exe"
+args = ["-m", "tools.mcp.server"]
+cwd = "D:/Dev/Workspaces/Repos/Claire_de_Binare"
