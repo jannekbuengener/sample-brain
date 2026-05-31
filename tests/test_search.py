@@ -6,7 +6,8 @@ import pytest
 from src.embed import ClapEmbeddingBackend, EmbeddingBackendUnavailableError
 from src.hybrid_rank import HybridMetadata, HybridQuery
 from src.index import SearchHit, VectorIndex, search_index
-from src.search import run_search
+from src.search import collect_search_hits, run_search
+from src.search_filters import SearchFilters
 from tests.audio_fixtures import write_sine_wav
 
 
@@ -400,3 +401,92 @@ class TestRunSearchHybridRerank:
         captured = capsys.readouterr()
 
         assert "rank=1 sample_id=20" in captured.out
+
+
+class TestRunSearchFiltersEndToEnd:
+    def test_pred_type_filter_limits_vector_search(self, monkeypatch):
+        fake_index = VectorIndex(
+            vectors=np.array(
+                [
+                    [1.0, 0.0, 0.0],
+                    [0.9, 0.1, 0.0],
+                    [0.0, 1.0, 0.0],
+                ],
+                dtype=np.float32,
+            ),
+            sample_ids=[1, 2, 3],
+            model_id=1,
+            embedding_dim=3,
+        )
+        _patch_search_backend(monkeypatch, fake_index)
+        monkeypatch.setattr(
+            "src.search.resolve_filtered_sample_ids",
+            lambda filters: {1, 2} if filters and filters.pred_type == "kick" else None,
+        )
+
+        result = collect_search_hits(
+            query_vector=np.array([1.0, 0.0, 0.0], dtype=np.float32),
+            model_id=1,
+            topk=3,
+            search_filters=SearchFilters(pred_type="kick"),
+        )
+
+        assert result.ok
+        assert [hit.sample_id for hit in result.hits] == [1, 2]
+
+    def test_tag_filter_with_backend_fill(self, monkeypatch):
+        fake_index = VectorIndex(
+            vectors=np.array(
+                [
+                    [1.0, 0.0, 0.0],
+                    [0.95, 0.05, 0.0],
+                    [0.0, 1.0, 0.0],
+                ],
+                dtype=np.float32,
+            ),
+            sample_ids=[1, 2, 3],
+            model_id=1,
+            embedding_dim=3,
+        )
+
+        class FilteringBackend:
+            def search(
+                self,
+                query_vector,
+                model_id,
+                topk,
+                *,
+                index_path=None,
+                candidate_sample_ids=None,
+            ):
+                hits = search_index(query_vector, fake_index, topk=topk)
+                if candidate_sample_ids is None:
+                    return hits
+                filtered = [hit for hit in hits if hit.sample_id in candidate_sample_ids]
+                if len(filtered) >= topk:
+                    return filtered[:topk]
+                expanded = search_index(query_vector, fake_index, topk=50)
+                seen = {hit.sample_id for hit in filtered}
+                for hit in expanded:
+                    if hit.sample_id in candidate_sample_ids and hit.sample_id not in seen:
+                        filtered.append(hit)
+                        seen.add(hit.sample_id)
+                    if len(filtered) >= topk:
+                        break
+                return filtered[:topk]
+
+        monkeypatch.setattr("src.search.get_search_backend", lambda _name: FilteringBackend())
+        monkeypatch.setattr(
+            "src.search.resolve_filtered_sample_ids",
+            lambda filters: {3} if filters and filters.tags == ("snare",) else None,
+        )
+
+        result = collect_search_hits(
+            query_vector=np.array([0.0, 1.0, 0.0], dtype=np.float32),
+            model_id=1,
+            topk=2,
+            search_filters=SearchFilters(tags=("snare",)),
+        )
+
+        assert result.ok
+        assert [hit.sample_id for hit in result.hits] == [3]

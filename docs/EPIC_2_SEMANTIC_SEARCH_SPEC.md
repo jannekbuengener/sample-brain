@@ -34,7 +34,7 @@ EPIC 2 delivers three new capabilities:
 ### Out of scope (EPIC 2)
 
 - Recommendation engine (EPIC 3)
-- Hybrid ranking blending vector + structured metadata (EPIC 3)
+- Hybrid ranking weight tuning beyond baseline measurement (EPIC 3+; CLI rerank exists on `main`)
 - Local HTTP API / FastAPI service (EPIC 4)
 - Desktop UI (EPIC 4)
 - Cloud sync or multi-user features
@@ -158,7 +158,7 @@ A component or pipeline step is considered production-ready when:
 | 9 | NumPy index persistence | `save_numpy_index()` — write `.npz` with vectors, sample_ids, metadata | Steps 4, 8 | ✅ `.npz` persistence | Index file written to `data/indexes/` via `--save`. Metadata: format_version, backend, model_id, dim, metric, normalized, sample_count, created_at. |
 | 10 | Text search embedding | `backend.embed_text()` for search queries | Steps 2, 8 | ✅ Smoke proven | Real CLAP `embed_text()` validated; requires `[clap]` install + first model download for new environments. |
 | 11 | Text-to-sample search | Embed query → search NumPy index → enrich from SQLite → ranked results | Steps 9, 10 | ✅ NumPy E2E smoke | M4: `search "kick drum"` returned rank=1 hit. Controlled synthetic fixture only. |
-| 12 | Audio-to-audio search | Embed audio file → search NumPy index → enrich → ranked results | Steps 9, 8 | ❌ Not implemented | Same search contract as text, but audio-derived query vector |
+| 12 | Audio-to-audio search | Embed audio file → search NumPy index → enrich → ranked results | Steps 9, 8 | ✅ Done | `--query-audio`; same contract as text (#29) |
 | 13 | CLI `index_build` | Registered subcommand calls `build_numpy_index()` | Step 9 | ✅ NumPy skeleton + persistence | Index built on demand, status reported. Persisted via `--save` / `--index-path`. No FAISS. |
 | 14 | CLI `search` | Registered subcommand calls `run_search()` with query, top-k, backend, index-path | Steps 11, 12 | ✅ Backend contract + flags wired | CLI accepts `--backend {noop,clap}`, `--index-path`, `--model-id`, `--topk`. Wired via profile config. Controlled error handling for unavailable backends. |
 | 15 | Documentation and validation | Documented contracts, acceptance tests, CI smoke checks | Steps 1-14 | ✅ Docs + 138 tests | Index/search contracts documented. M1–M4 runtime proof complete. sqlite-vec Phases 1–7 merged (#47–#50); Phase 8 docs in closeout PR. |
@@ -500,23 +500,26 @@ Each search result must include:
 | 4 | Index rebuildable from scratch | Not started | ❌ Deferred |
 | 5 | No index files in `git status` | N/A until implemented | ❌ Deferred |
 
-### M5 — Text search (production hardening)
+### M5 — Search quality (production hardening)
 
 | # | Criterion | Validation | Status |
 |---|-----------|------------|--------|
-| 1 | `search("dark pad")` returns ranked results on larger fixture set | Beyond single-sample smoke | 🔶 Future |
-| 2 | Results include path, score, and available metadata | Inspect result fields | 🔶 Partial |
+| 1 | Golden query suite with P@K / R@K metrics | `benchmark search-quality` + `tests/test_search_quality.py` | ✅ Tier A |
+| 2 | Results include path, score, and available metadata | Inspect result fields | ✅ #28 |
 | 3 | Result order is by descending score | Verify first result highest score | ✅ M4 smoke |
 | 4 | Query without index gives clear error | Remove index, search | ✅ Unit tests |
 | 5 | Query without embeddings gives clear error | Clear DB embeddings | ✅ Unit tests |
+| 6 | CLAP semantic quality on curated set | Tier B golden + `[clap]` local evidence | 🔶 Optional |
 
-### M7 — Audio similarity (future)
+See [ADR-0005](adr/ADR-0005-search-quality-evaluation.md) and [SEARCH_QUALITY_EVIDENCE.md](benchmarks/SEARCH_QUALITY_EVIDENCE.md).
+
+### M7 — Audio similarity
 
 | # | Criterion | Validation | Status |
 |---|-----------|------------|--------|
-| 1 | Audio-to-audio query returns similar samples | Run with audio file | ❌ Not implemented |
-| 2 | Same result contract as text search | Inspect fields | ❌ |
-| 3 | Unsupported audio formats give clear error | Non-audio file | ❌ |
+| 1 | Audio-to-audio query returns similar samples | `--query-audio` + unit tests | ✅ #29 |
+| 2 | Same result contract as text search | Inspect fields | ✅ |
+| 3 | Unsupported audio formats give clear error | Non-audio file | 🔶 Future |
 
 ### M8 — CLI and documentation
 
@@ -558,9 +561,9 @@ EPIC 3 (Hybrid Ranking & Recommendation) builds on this foundation:
 
 | Capability | EPIC 2 delivers | EPIC 3 adds |
 |------------|----------------|-------------|
-| Ranking | Pure vector similarity (inner product) | Blended score: vector similarity × structured metadata filters |
-| Search | Text and audio queries | Context-aware search (BPM, key, type constraints) |
-| Results | Ranked by semantic similarity | Ranked by hybrid relevance (semantic + music theory + usage patterns) |
+| Ranking | Vector similarity + optional hybrid rerank (CLI on `main`) | Weight tuning, recommendation signals |
+| Search | Text, audio, tag filters, hybrid targets | Context-aware recommendation |
+| Results | Ranked by semantic + optional metadata blend | Ranked by hybrid relevance + usage patterns |
 | Recommendation | Not in scope | "Samples like this" based on combined signals |
 
 **EPIC 3 does not begin until EPIC 2 search is stable on `main`**, meaning:
