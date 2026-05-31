@@ -1,0 +1,31 @@
+{
+  "package": "sample-brain-cursor-agents",
+  "target_repo": "jannekbuengener/sample-brain",
+  "layout": ".cursor/agents/",
+  "agent_count": 15,
+  "contract": ".cursor/agents/_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md",
+  "notes": [
+    "Adapted from uploaded CDB agent pack conceptually, not copied verbatim.",
+    "CDB-specific SurrealDB, live-readiness, trading, and infra rules removed.",
+    "SampleBrain-specific SkillForge routing and GitHub checks included."
+  ],
+  "files": [
+    ".cursor/agents/README_SAMPLE_BRAIN_CURSOR_AGENTS.md",
+    ".cursor/agents/_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md",
+    ".cursor/agents/sample-brain-bootstrap-validator.md",
+    ".cursor/agents/sample-brain-ci-debugger.md",
+    ".cursor/agents/sample-brain-code-reviewer.md",
+    ".cursor/agents/sample-brain-control-orchestrator.md",
+    ".cursor/agents/sample-brain-dependency-upgrader.md",
+    ".cursor/agents/sample-brain-docs-sync-maintainer.md",
+    ".cursor/agents/sample-brain-implementation-engineer.md",
+    ".cursor/agents/sample-brain-issue-backlog-maintainer.md",
+    ".cursor/agents/sample-brain-pr-packager.md",
+    ".cursor/agents/sample-brain-quality-gatekeeper.md",
+    ".cursor/agents/sample-brain-repository-auditor.md",
+    ".cursor/agents/sample-brain-security-triage.md",
+    ".cursor/agents/sample-brain-skill-routing-auditor.md",
+    ".cursor/agents/sample-brain-system-architect.md",
+    ".cursor/agents/sample-brain-validation-evidence-analyst.md"
+  ]
+}
