@@ -184,7 +184,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Priority: P1
 
 ### 13. feat: implement vector index build module
-- **Status:** ✅ NumPy `.npz` on `main` — FAISS variant deferred (M6)
+- **Status:** ✅ NumPy `.npz` default + sqlite-vec `vec0` opt-in on `main` (PRs #49–#51); FAISS superseded by ADR-0004
 - Labels: `feat`, `search`, `indexing`
 - Goal: Build a local vector index from stored embeddings.
 - Context: Local-first search needs a performant local vector index.
@@ -192,7 +192,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
   - index build command/module exists — ✅ `index_build` with NumPy `.npz`
   - index can be rebuilt from embedding tables — ✅
   - index location and lifecycle documented — ✅ artifact policy
-- Technical notes: NumPy is current; FAISS index files should not be committed when implemented.
+- Technical notes: NumPy is default search backend; sqlite-vec via `index_build --search-backend sqlite-vec`. FAISS not implemented; ADR-0004 is index strategy.
 - Dependencies: Issue 12
 - Priority: P1
 

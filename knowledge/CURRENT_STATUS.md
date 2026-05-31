@@ -2,12 +2,12 @@
 
 ## Current State
 
-- **Branch:** `main` (campaign #47–#50 merged)
-- **Working tree:** clean after sqlite-vec closeout
-- **Last commit:** `e87d8b6` — search backend + vec rebuild (PR #50)
-- **Open PRs:** none (post closeout)
-- **Open issues:** none
-- **Tests:** 138 passed (`pytest -q` with optional `[vec]` for vec-specific tests)
+- **Branch:** `main` (sqlite-vec campaign #47–#51 merged; Phase 8 docs closeout in flight)
+- **Working tree:** clean
+- **Last commit:** `1602ebb` — benchmark overlap evidence (PR #51)
+- **Open PRs:** Phase 8 docs closeout (`docs/sqlite-vec-phase-8-closeout`)
+- **Open issues:** none (#40–#46 closed)
+- **Tests:** 138 passed (`pytest -q`; optional `[vec]` for vec-specific tests)
 
 ## What Works (Core Pipeline)
 
@@ -16,7 +16,7 @@
 - **Autotype** — rule-based + optional kNN classification; supports `--no-knn` CLI override and config profile overrides (`autotype.use_knn`, `autotype.knn_min_conf`)
 - **Export** — writes smart tags into FL Studio Browser; supports `--fl-user-data` and `--max-tags` CLI overrides
 - **Packaging** — `pyproject.toml` entry point (`sample-brain --help`) works
-- **CLI** — argparse-based, 8 subcommands registered (4 core stable + 3 optional/experimental)
+- **CLI** — argparse-based; core pipeline + optional embed/index/search + `vec`, `db doctor`, `benchmark vec`
 
 ## Documentation Architecture Sprint — Completed
 
@@ -154,12 +154,28 @@ Verified from clean `main` checkout with an isolated venv outside the repo:
 ## Architecture decision (2026-05-31)
 
 - **sqlite-vec eval** — [ADR-0004](../docs/adr/ADR-0004-sqlite-vec-search-backend.md) (Accepted): sqlite-vec `vec0` as rebuildable vector-search cache in the same SQLite file
-- **Campaign merged** — PRs #47–#50 on `main`: availability, schema, vec0 rebuild, search backend adapter, CLI/benchmark harness
+- **Campaign merged** — PRs #47–#51 on `main`: availability, schema, vec0 rebuild, search backend adapter, benchmark harness + gate evidence
 - **Gate evidence** — [SQLITE_VEC_GATE_EVIDENCE.md](../docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md): overlap **PASS**; 100k warm/filtered p95 **FAIL**; default **`numpy`** until all gates PASS
 - **SQLite SoT** — `sample_embeddings` remains the only persistent vector store; cache is droppable/rebuildable
 - **NumPy `.npz`** — interim fallback and benchmark reference until Phase 6–7 gates pass
 - **FAISS** — never implemented on `main`; strategically superseded by ADR-0004 for index strategy (ADR-0002 file unchanged)
-- **Roadmap** — agent-executable phases 0–8: [SQLITE_VEC_ROADMAP.md](../docs/SQLITE_VEC_ROADMAP.md)
+- **Roadmap** — Phases 1–7 done; Phase 8 docs closeout: [SQLITE_VEC_ROADMAP.md](../docs/SQLITE_VEC_ROADMAP.md)
+
+## sqlite-vec bootstrap (opt-in)
+
+```powershell
+pip install -e ".[vec]"
+sample-brain vec status
+sample-brain vec smoke
+sample-brain index_build --model-id 1 --search-backend sqlite-vec
+sample-brain search "kick" --model-id 1 --search-backend sqlite-vec --backend clap
+sample-brain db doctor
+sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-bench
+```
+
+- **Default:** `search.backend: numpy` in profile; override via `SAMPLE_BRAIN_SEARCH_BACKEND` or `--search-backend`
+- **Embedding vs search backend:** `--backend` / `embedding.backend` selects CLAP/noop; `--search-backend` / `search.backend` selects NumPy vs sqlite-vec
+- **Artifacts:** use `SAMPLE_BRAIN_DB_PATH` and external `--work-dir`; never commit DBs, `.npz`, or benchmark outputs
 
 ## What Is Not Done
 
@@ -171,6 +187,6 @@ Verified from clean `main` checkout with an isolated venv outside the repo:
 
 ## Next Steps (empfohlen)
 
-1. **Phase 8 docs hardening** — README / EPIC_2 / AGENTS `[vec]` bootstrap (follow-up PR)
-2. **sqlite-vec latency follow-up** — only if default switch is desired; 100k p95 currently ~3.5 s on Windows evidence host
-3. **CLAP test hardening** — unavailable-backend tests in CLAP-installed venvs
+1. **sqlite-vec latency follow-up** — only if default switch is desired; 100k p95 currently ~3.5 s on Windows evidence host (gate **FAIL**)
+2. **CLAP test hardening** — unavailable-backend tests in CLAP-installed venvs
+3. **EPIC 3–6** — hybrid ranking polish, API, UI (not started)

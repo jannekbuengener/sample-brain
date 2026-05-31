@@ -177,6 +177,8 @@ vector_index_state (
 
 ## Phase 8 — Cleanup / Hardening
 
+**Status:** ✅ Done — docs closeout PR (`docs/sqlite-vec-phase-8-closeout`): README `[vec]` bootstrap, EPIC_2 ADR-0004 alignment, CURRENT_STATUS refresh, ISSUE_BACKLOG sync
+
 | Feld | Inhalt |
 |------|--------|
 | **Ziel** | Docs-Sync; FAISS-Spuren in Docs schrittweise deprecaten; README/AGENTS Bootstrap für sqlite-vec |
