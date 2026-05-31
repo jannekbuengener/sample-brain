@@ -150,16 +150,19 @@ Stop oder Rollback zur NumPy-only-Search, wenn:
 
 ## Benchmark-Gates
 
-**Keine Ausführung in diesem ADR** — Schwellwerte werden in Phase 6 gemessen. Kriterien:
+Schwellwerte gemessen 2026-05-31 auf Windows 11 / Python 3.12.10 — Details: [SQLITE_VEC_GATE_EVIDENCE.md](../benchmarks/SQLITE_VEC_GATE_EVIDENCE.md).
 
-| Gate | Kriterium | Schwellwert |
-|------|-----------|-------------|
-| **Correctness** | Top-k overlap vs NumPy (flat/cosine, gleiche `model_id`) | **TBD** (Ziel: ≥ 95 % overlap @ k=10) |
-| **Latency** | p95 Query-Zeit bei N ∈ {1k, 10k, 100k} | **TBD** — Referenz: EPIC-2 „sub-second“ interaktive Suche |
-| **Rebuild** | Vollständiger vec0-Rebuild aus `sample_embeddings` | **TBD** — budgetierte Zeit pro N (siehe EPIC-2-Spec Skalierung) |
-| **Staleness** | Nach `source_hash`-Änderung | Betroffene Vektoren aus Cache entfernt oder Rebuild erzwungen |
+| Gate | Kriterium | Schwellwert | Gemessen | Verdict |
+|------|-----------|-------------|----------|---------|
+| **Correctness** | Top-k overlap vs NumPy (flat/cosine, gleiche `model_id`) | ≥ 95 % overlap @ k=10 | 100 % @ N∈{1k, 10k, 100k} | **PASS** |
+| **Latency (warm)** | p95 Query-Zeit @ N≥100k | ≤ 200 ms | 3,568.61 ms | **FAIL** |
+| **Latency (filtered)** | p95 Query-Zeit @ N≥100k | ≤ 250 ms | 3,440.95 ms | **FAIL** |
+| **Rebuild** | Vollständiger vec0-Rebuild aus `sample_embeddings` @ 100k | budget TBD (EPIC-2) | 20,297 ms (~20 s) | dokumentiert |
+| **Staleness** | Nach `source_hash`-Änderung | Betroffene Vektoren entfernt / Rebuild erzwungen | Harness nicht in diesem Lauf | offen (separater Test) |
 
 Referenz-EPIC: [EPIC_2_SEMANTIC_SEARCH_SPEC.md](../EPIC_2_SEMANTIC_SEARCH_SPEC.md) — „Sub-second approximate nearest-neighbor search over up to ~100k samples“ (ursprünglich ADR-0002-Anforderung, hier via sqlite-vec verfolgt).
+
+**Entscheidung:** Default `search.backend` bleibt **`numpy`** bis alle Latenz-Gates PASS.
 
 ---
 

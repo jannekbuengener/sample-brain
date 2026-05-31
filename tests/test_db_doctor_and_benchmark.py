@@ -43,3 +43,4 @@ def test_vec_benchmark_mini(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     assert len(results) == 1
     assert results[0].sample_count == 200
     assert results[0].warm_p95_ms >= 0.0
+    assert 0.0 <= results[0].overlap_k10 <= 1.0

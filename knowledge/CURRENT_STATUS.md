@@ -2,11 +2,12 @@
 
 ## Current State
 
-- **Branch:** `feat/sqlite-vec-adr-roadmap`
-- **Working tree:** docs-only slice ready (ADR-0004 + roadmap; uncommitted until PR)
-- **Last commit:** `eb0e37e docs: sharpen skill routing discoverability and audit entry (#19)`
-- **Open PRs:** none
+- **Branch:** `main` (campaign #47–#50 merged)
+- **Working tree:** clean after sqlite-vec closeout
+- **Last commit:** `e87d8b6` — search backend + vec rebuild (PR #50)
+- **Open PRs:** none (post closeout)
 - **Open issues:** none
+- **Tests:** 138 passed (`pytest -q` with optional `[vec]` for vec-specific tests)
 
 ## What Works (Core Pipeline)
 
@@ -153,6 +154,8 @@ Verified from clean `main` checkout with an isolated venv outside the repo:
 ## Architecture decision (2026-05-31)
 
 - **sqlite-vec eval** — [ADR-0004](../docs/adr/ADR-0004-sqlite-vec-search-backend.md) (Accepted): sqlite-vec `vec0` as rebuildable vector-search cache in the same SQLite file
+- **Campaign merged** — PRs #47–#50 on `main`: availability, schema, vec0 rebuild, search backend adapter, CLI/benchmark harness
+- **Gate evidence** — [SQLITE_VEC_GATE_EVIDENCE.md](../docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md): overlap **PASS**; 100k warm/filtered p95 **FAIL**; default **`numpy`** until all gates PASS
 - **SQLite SoT** — `sample_embeddings` remains the only persistent vector store; cache is droppable/rebuildable
 - **NumPy `.npz`** — interim fallback and benchmark reference until Phase 6–7 gates pass
 - **FAISS** — never implemented on `main`; strategically superseded by ADR-0004 for index strategy (ADR-0002 file unchanged)
@@ -160,8 +163,7 @@ Verified from clean `main` checkout with an isolated venv outside the repo:
 
 ## What Is Not Done
 
-- **sqlite-vec vec0 cache / search adapter** — Phases 1–7 implemented on campaign branches (#47–#50); default search backend remains `numpy` until Phase 6 gates documented PASS
-- **FAISS adapter** — not implemented; NumPy `.npz` index is current; superseded by ADR-0004 (not M6 scope)
+- **Default switch to sqlite-vec** — blocked until latency gates PASS (see gate evidence)
 - **Large-scale / private sample validation** — only controlled synthetic-fixture E2E smoke proven
 - **Production search quality tuning** — E2E smoke confirms plumbing, not ranking quality
 - **CLAP test environment hardening** — local CLAP-installed venvs can fail unavailable-backend tests that expect CLAP to be absent
@@ -169,7 +171,6 @@ Verified from clean `main` checkout with an isolated venv outside the repo:
 
 ## Next Steps (empfohlen)
 
-1. **Review + merge campaign PR stack** — #47 → #48 → #49 → #50 (Phases 1–7); run local `benchmark vec --samples 100000` before switching default
-2. **Phase 6 gate evidence** — document 100k warm/filtered p95 in ADR-0004 when measured
+1. **Phase 8 docs hardening** — README / EPIC_2 / AGENTS `[vec]` bootstrap (follow-up PR)
+2. **sqlite-vec latency follow-up** — only if default switch is desired; 100k p95 currently ~3.5 s on Windows evidence host
 3. **CLAP test hardening** — unavailable-backend tests in CLAP-installed venvs
-4. **Phase 8 docs cleanup** — EPIC_2 / TARGET_ARCHITECTURE sync (follow-up)

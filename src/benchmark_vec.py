@@ -13,6 +13,10 @@ from .search_backend import get_search_backend
 from .vec_availability import is_sqlite_vec_available
 from .vec_index import rebuild_vec0_cache
 
+OVERLAP_GATE = 0.95
+WARM_P95_GATE_MS = 200.0
+FILTERED_P95_GATE_MS = 250.0
+
 
 @dataclass(frozen=True)
 class BenchmarkCaseResult:
@@ -22,6 +26,7 @@ class BenchmarkCaseResult:
     warm_p95_ms: float
     filtered_p50_ms: float
     filtered_p95_ms: float
+    overlap_k10: float
     db_size_bytes: int
 
 
@@ -130,6 +135,32 @@ def _timed_search_ms(
     return _percentile(timings, 50), _percentile(timings, 95)
 
 
+def _measure_topk_overlap(
+    model_id: int,
+    query_vector: np.ndarray,
+    *,
+    topk: int = 10,
+    candidate_sample_ids: set[int] | None = None,
+) -> float:
+    numpy_hits = get_search_backend("numpy").search(
+        query_vector,
+        model_id,
+        topk=topk,
+        candidate_sample_ids=candidate_sample_ids,
+    )
+    vec_hits = get_search_backend("sqlite-vec").search(
+        query_vector,
+        model_id,
+        topk=topk,
+        candidate_sample_ids=candidate_sample_ids,
+    )
+    numpy_ids = {hit.sample_id for hit in numpy_hits}
+    vec_ids = {hit.sample_id for hit in vec_hits}
+    if topk <= 0:
+        return 1.0
+    return len(numpy_ids & vec_ids) / topk
+
+
 def run_vec_benchmark(
     sample_counts: list[int] | None = None,
     *,
@@ -165,6 +196,7 @@ def run_vec_benchmark(
             query,
             candidate_sample_ids=filtered_ids,
         )
+        overlap_k10 = _measure_topk_overlap(model_id, query, topk=10)
 
         results.append(
             BenchmarkCaseResult(
@@ -174,6 +206,7 @@ def run_vec_benchmark(
                 warm_p95_ms=warm_p95,
                 filtered_p50_ms=filtered_p50,
                 filtered_p95_ms=filtered_p95,
+                overlap_k10=overlap_k10,
                 db_size_bytes=db_path.stat().st_size,
             )
         )
@@ -183,6 +216,7 @@ def run_vec_benchmark(
 
 def print_benchmark_report(results: list[BenchmarkCaseResult]) -> None:
     for result in results:
+        overlap_gate = result.overlap_k10 >= OVERLAP_GATE
         print(
             f"samples={result.sample_count} "
             f"rebuild_ms={result.rebuild_ms:.1f} "
@@ -190,12 +224,14 @@ def print_benchmark_report(results: list[BenchmarkCaseResult]) -> None:
             f"warm_p95_ms={result.warm_p95_ms:.2f} "
             f"filtered_p50_ms={result.filtered_p50_ms:.2f} "
             f"filtered_p95_ms={result.filtered_p95_ms:.2f} "
-            f"db_size_bytes={result.db_size_bytes}"
+            f"overlap_k10={result.overlap_k10:.3f} "
+            f"db_size_bytes={result.db_size_bytes} "
+            f"gate_overlap_k10={'PASS' if overlap_gate else 'FAIL'}"
         )
 
         if result.sample_count >= 100_000:
-            warm_gate = result.warm_p95_ms <= 200.0
-            filtered_gate = result.filtered_p95_ms <= 250.0
+            warm_gate = result.warm_p95_ms <= WARM_P95_GATE_MS
+            filtered_gate = result.filtered_p95_ms <= FILTERED_P95_GATE_MS
             print(
                 f"  gate_100k_warm_p95={'PASS' if warm_gate else 'FAIL'} "
                 f"gate_100k_filtered_p95={'PASS' if filtered_gate else 'FAIL'}"
