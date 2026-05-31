@@ -4,8 +4,8 @@
 
 - **Branch:** `main`
 - **Working tree:** clean (post sqlite-vec campaign closeout)
-- **Last commit:** `1602ebb` — benchmark gate evidence (PR #51)
-- **Open PRs:** Phase 8 docs closeout (`docs/sqlite-vec-phase-8-closeout`, PR #53)
+- **Last commit:** `cec82e8` — Phase 8 docs closeout (PR #53)
+- **Open PRs:** none
 - **Open issues:** none (#40–#46 closed)
 - **Tests:** 138 passed (`pytest -q`; optional `[vec]` extra for vec-specific tests)
 
