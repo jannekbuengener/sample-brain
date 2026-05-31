@@ -36,8 +36,8 @@ All four steps are implemented and stable.
 | Export | `src/export_fl.py` | Stable | FL Studio Browser tag file generation. Reads features from DB, assembles tag strings (type, character, key, BPM, loop/oneshot), writes to FL User Data path. |
 | Embedding Interface | `src/embed.py` | Stable | `EmbeddingBackend` ABC, `NoopEmbeddingBackend`, guarded `ClapEmbeddingBackend` (real lazy-load backend with optional deps), `EmbeddingWorker` with DB persistence loop. |
 | Embedding DB | `src/db.py` | Stable | `embedding_models` and `sample_embeddings` tables + helpers including `iter_pending_samples()`. |
-| Index | `src/index.py` | Stable (NumPy) | NumPy cosine index: `build_numpy_index()`, `search_index()`, `.npz` save/load via `save_numpy_index()` / `load_numpy_index()`. FAISS deferred. |
-| Search | `src/search.py` | Stable (NumPy) | `run_search()` wires CLAP text embedding → NumPy index search → ranked hits. NumPy E2E smoke proven. |
+| Index | `src/index.py`, `src/vec_index.py`, `src/search_backend.py` | Stable | NumPy cosine index + optional sqlite-vec vec0 cache; `NumpySearchBackend` / `SqliteVecSearchBackend`; default `numpy` |
+| Search | `src/search.py` | Stable | `run_search()` → embedding backend → search backend adapter → ranked hits. NumPy + sqlite-vec paths. |
 
 ### 2.3 EPIC 2 capabilities on `main`
 
@@ -49,7 +49,8 @@ All four steps are implemented and stable.
 | Full embedding worker loop with DB persistence | ✅ |
 | NumPy `.npz` index build/search | ✅ — M4 E2E smoke proven |
 | `SAMPLE_BRAIN_DB_PATH` external runtime DB | ✅ — PR #13 |
-| FAISS adapter | ❌ Deferred (M6) |
+| sqlite-vec vec0 cache + search adapter | ✅ — Phases 1–7 merged; opt-in via `--search-backend sqlite-vec` |
+| FAISS adapter | ❌ Superseded by ADR-0004 (never implemented) |
 
 PR #10 (`spike/clap-embedding`) is **closed as superseded**. Historical reference only.
 

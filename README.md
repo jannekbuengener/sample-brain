@@ -34,6 +34,10 @@ pip install -r requirements.txt
 # For CLAP embedding backend (optional):
 pip install -r requirements.txt -r requirements-clap.txt
 # or: pip install -e ".[clap]"
+
+# For sqlite-vec search backend (optional):
+pip install -e ".[vec]"
+# or: pip install -r requirements-vec.txt
 ```
 
 ---
@@ -61,7 +65,7 @@ pip install -e .
 python -m src.cli --help
 sample-brain --help
 
-# Test validation (fresh venv: 66 passed as of bootstrap validation)
+# Test validation (fresh venv: 138 passed as of bootstrap validation)
 python -m pytest -q
 
 # External DB smoke (no repo-local DB artifacts)
@@ -114,42 +118,26 @@ python -m src.cli export_fl --max-tags 3                            # limit tags
 python -m src.cli embed --backend noop --limit 5                    # noop placeholder, no real embedding
 python -m src.cli embed --backend clap --limit 5                    # requires pip install torch transformers
 
-# Index & search (default vector backend: NumPy; sqlite-vec opt-in — see below)
+# Index & search (NumPy default; sqlite-vec opt-in — see below)
 python -m src.cli index_build --model-id 1                          # build NumPy vector index (in-memory)
 python -m src.cli index_build --model-id 1 --save                   # build + persist to data/indexes/ as .npz
 python -m src.cli index_build --model-id 1 --save --index-path "custom/path.npz"  # custom save path
 python -m src.cli search "kick" --model-id 1                        # search (noop: shows "not configured" message)
 python -m src.cli search "kick" --model-id 1 --backend clap         # search (clap stub: shows "not available" message)
 python -m src.cli search "kick" --model-id 1 --backend clap --index-path "data/indexes/model-1-numpy-cosine.npz"  # load persisted index
+
+# sqlite-vec path (optional — requires pip install -e ".[vec]")
+python -m src.cli vec status                                        # report sqlite-vec availability
+python -m src.cli vec smoke                                         # exit 0 when extension loads
+python -m src.cli index_build --model-id 1 --search-backend sqlite-vec   # rebuild vec0 cache in SQLite DB
+python -m src.cli search "kick" --model-id 1 --search-backend sqlite-vec  # search via vec0 cache (no --index-path)
+python -m src.cli db doctor                                         # SQLite integrity + catalog checks
+python -m src.cli benchmark vec --samples 1000 10000 100000 --work-dir "%TEMP%\\sample-brain-bench"  # gate harness (Windows)
 ```
 
-### sqlite-vec search backend (optional)
+**Search backend default:** `numpy` (profile key `search.backend`). Opt in to `sqlite-vec` via `--search-backend`, `SAMPLE_BRAIN_SEARCH_BACKEND`, or profile. Precedence: profile &lt; env &lt; CLI. Gate evidence: [`docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md`](./docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md) — overlap PASS; 100k latency FAIL on measured host; default stays `numpy` until all gates PASS.
 
-Requires the `[vec]` extra. **Default search backend remains `numpy`** until benchmark latency gates PASS ([gate evidence](./docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md)).
-
-```bash
-pip install -e ".[vec]"
-
-# Availability diagnostics
-python -m src.cli vec status
-python -m src.cli vec smoke          # exit 0 when extension loads
-
-# Rebuild vec0 cache inside the SQLite DB (same file as catalog)
-python -m src.cli index_build --model-id 1 --search-backend sqlite-vec
-
-# Search via sqlite-vec (after vec0 rebuild)
-python -m src.cli search "kick" --model-id 1 --backend clap --search-backend sqlite-vec
-
-# DB integrity + catalog checks
-python -m src.cli db doctor
-
-# Synthetic benchmark harness (work-dir outside repo recommended)
-python -m src.cli benchmark vec --samples 1000 10000 --work-dir "%TEMP%\\sample-brain-bench"
-```
-
-**Search backend precedence:** profile `search.backend` &lt; `SAMPLE_BRAIN_SEARCH_BACKEND` &lt; `--search-backend` on `index_build` / `search`. Profile default in `config/profiles.example.yaml` is `numpy`.
-
-**Artifact safety:** Keep runtime DBs, vec0 cache data, `.npz` indexes, and benchmark work directories outside the repo (e.g. `SAMPLE_BRAIN_DB_PATH`, `--work-dir` under `%TEMP%`). Do not commit generated artifacts.
+**Artifact safety:** Keep runtime DBs, vec0 cache data, `.npz` indexes, and benchmark work directories outside the repo (`SAMPLE_BRAIN_DB_PATH`, `--work-dir` under `%TEMP%`). Do not commit generated artifacts.
 
 ---
 
@@ -231,7 +219,7 @@ See [`docs/DATA_AND_ARTIFACT_POLICY.md`](./docs/DATA_AND_ARTIFACT_POLICY.md) for
 - [EPIC 1: Config and Profiles](./docs/EPIC_1_CONFIG_PROFILES.md) — configuration layers, profile design, env vars, migration plan
 - [EPIC 2: Semantic Search Foundation](./docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md) — embedding, indexing, search contracts and milestones
 - [SQLite + sqlite-vec Roadmap](./docs/SQLITE_VEC_ROADMAP.md) — phased rollout (Phases 1–8 complete; default switch gated)
-- [sqlite-vec benchmark gate evidence](./docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md) — overlap PASS; 100k latency FAIL
+- [sqlite-vec gate evidence](./docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md) — measured benchmark gates (default stays `numpy`)
 - [DAW Integration](./docs/DAW_INTEGRATION_SPEC.md) — FL Studio export, Ableton/Reaper research
 
 ### Project
