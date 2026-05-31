@@ -235,3 +235,32 @@ def sample_embedding_exists(sample_id: int, model_id: int, source_hash: str) -> 
             },
         ).fetchone()
     return row is not None
+
+
+def load_hybrid_metadata(sample_ids: list[int]) -> dict[int, "HybridMetadata"]:
+    from .hybrid_rank import HybridMetadata
+
+    if not sample_ids:
+        return {}
+
+    engine = get_engine()
+    placeholders = ", ".join(f":id_{index}" for index in range(len(sample_ids)))
+    params = {f"id_{index}": sample_id for index, sample_id in enumerate(sample_ids)}
+    query = f"""
+        SELECT sample_id, bpm, key, pred_type, class
+        FROM features
+        WHERE sample_id IN ({placeholders})
+    """
+    with engine.begin() as conn:
+        rows = conn.execute(text(query), params).fetchall()
+
+    return {
+        row[0]: HybridMetadata(
+            sample_id=row[0],
+            bpm=row[1],
+            key=row[2],
+            pred_type=row[3],
+            audio_class=row[4],
+        )
+        for row in rows
+    }
