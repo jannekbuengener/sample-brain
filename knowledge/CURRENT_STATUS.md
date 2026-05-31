@@ -2,8 +2,8 @@
 
 ## Current State
 
-- **Branch:** `main` — synchronised with `origin/main`
-- **Working tree:** clean
+- **Branch:** `feat/sqlite-vec-adr-roadmap`
+- **Working tree:** docs-only slice ready (ADR-0004 + roadmap; uncommitted until PR)
 - **Last commit:** `eb0e37e docs: sharpen skill routing discoverability and audit entry (#19)`
 - **Open PRs:** none
 - **Open issues:** none
@@ -29,6 +29,8 @@ The following guardrail documents have been defined and committed:
 | `DATA_AND_ARTIFACT_POLICY.md` | Committed vs untracked artifacts, gitignore reference, enforcement |
 | `EPIC_2_SEMANTIC_SEARCH_SPEC.md` | Embedding, index, search contracts; implementation sequence; acceptance criteria |
 | `DAW_INTEGRATION_SPEC.md` | FL Studio export, Ableton/Reaper research, format specifications |
+| `adr/ADR-0004-sqlite-vec-search-backend.md` | Accepted: SQLite SoT, sqlite-vec cache, NumPy fallback |
+| `SQLITE_VEC_ROADMAP.md` | Phases 0–8 + Future Issues for sqlite-vec rollout |
 
 ## What Exists on `main` for EPIC 2
 
@@ -148,9 +150,18 @@ Verified from clean `main` checkout with an isolated venv outside the repo:
 - CLAP-installed venvs can fail unavailable-backend expectation tests — future test-hardening candidate
 - CI smoke runs `py_compile` + CLI `--help` only (not full pytest)
 
+## Architecture decision (2026-05-31)
+
+- **sqlite-vec eval** — [ADR-0004](../docs/adr/ADR-0004-sqlite-vec-search-backend.md) (Accepted): sqlite-vec `vec0` as rebuildable vector-search cache in the same SQLite file
+- **SQLite SoT** — `sample_embeddings` remains the only persistent vector store; cache is droppable/rebuildable
+- **NumPy `.npz`** — interim fallback and benchmark reference until Phase 6–7 gates pass
+- **FAISS** — never implemented on `main`; strategically superseded by ADR-0004 for index strategy (ADR-0002 file unchanged)
+- **Roadmap** — agent-executable phases 0–8: [SQLITE_VEC_ROADMAP.md](../docs/SQLITE_VEC_ROADMAP.md)
+
 ## What Is Not Done
 
-- **FAISS adapter** — not implemented; NumPy `.npz` index is current; deferred until explicitly scoped
+- **sqlite-vec implementation** — docs-only ADR/roadmap on this branch; code starts at Phase 1 (Issue #2)
+- **FAISS adapter** — not implemented; NumPy `.npz` index is current; superseded by ADR-0004 (not M6 scope)
 - **Large-scale / private sample validation** — only controlled synthetic-fixture E2E smoke proven
 - **Production search quality tuning** — E2E smoke confirms plumbing, not ranking quality
 - **CLAP test environment hardening** — local CLAP-installed venvs can fail unavailable-backend tests that expect CLAP to be absent
@@ -158,10 +169,10 @@ Verified from clean `main` checkout with an isolated venv outside the repo:
 
 ## Next Steps (empfohlen)
 
-Bootstrap path documented. Board is clean (no open PRs, no open issues). Pick the next intentional roadmap slice:
+Bootstrap path documented. After merging this docs PR, pick the sqlite-vec implementation slice:
 
-1. **EPIC 3 hybrid ranking** — extend search with BPM/key/type filters
-2. **CLAP test hardening** — unavailable-backend tests in CLAP-installed venvs
-3. **FAISS adapter (M6)** — only as a new scoped task with explicit approval; not a drive-by bump
+1. **Phase 1 / Issue #2** — sqlite-vec availability smoke and diagnostics (first code slice; not FAISS M6)
+2. **Follow [SQLITE_VEC_ROADMAP.md](../docs/SQLITE_VEC_ROADMAP.md)** — Phases 2–8 in order after Phase 1 gates
+3. **CLAP test hardening** — unavailable-backend tests in CLAP-installed venvs
 4. **Optional hardening:** runtime path validation (EPIC 1 Spec Section 9)
 5. **Backlog items** — e.g. MCP setup guide (#3 in planning backlog)
