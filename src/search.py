@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import numpy as np
 
-from .db import load_hybrid_metadata
+from .db import load_hybrid_metadata, load_sample_paths
 from .embed import EmbeddingBackendUnavailableError, get_backend
 from .hybrid_rank import HybridQuery, rerank_hits
 from .index import build_numpy_index, load_numpy_index, search_index
 
 DEFAULT_METADATA_WEIGHT = 0.5
+
+
+def _fmt_optional(value: object | None) -> str:
+    return "" if value is None else str(value)
 
 
 def normalize_hybrid_query(query: HybridQuery) -> HybridQuery:
@@ -146,10 +150,28 @@ def run_search(
         print("[INFO] No search results.")
         return
 
+    sample_ids = [hit.sample_id for hit in hits]
+    sample_paths = load_sample_paths(sample_ids)
+    metadata = load_hybrid_metadata(sample_ids)
+
     if hybrid_query is not None and hybrid_rerank_active(hybrid_query):
         normalized = normalize_hybrid_query(hybrid_query)
-        metadata = load_hybrid_metadata([hit.sample_id for hit in hits])
         hits = rerank_hits(hits, metadata, normalized)
 
     for rank, hit in enumerate(hits, start=1):
-        print(f"rank={rank} sample_id={hit.sample_id} score={hit.score:.4f}")
+        hit_path = hit.path or sample_paths.get(hit.sample_id, "")
+        hit_metadata = metadata.get(hit.sample_id)
+        print(
+            " ".join(
+                [
+                    f"rank={rank}",
+                    f"sample_id={hit.sample_id}",
+                    f"score={hit.score:.4f}",
+                    f"path={hit_path}",
+                    f"bpm={_fmt_optional(hit_metadata.bpm if hit_metadata else None)}",
+                    f"key={_fmt_optional(hit_metadata.key if hit_metadata else None)}",
+                    f"pred_type={_fmt_optional(hit_metadata.pred_type if hit_metadata else None)}",
+                    f"class={_fmt_optional(hit_metadata.audio_class if hit_metadata else None)}",
+                ]
+            )
+        )
