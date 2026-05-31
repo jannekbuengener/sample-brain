@@ -135,7 +135,9 @@ python -m src.cli db doctor                                         # SQLite int
 python -m src.cli benchmark vec --samples 1000 10000 100000 --work-dir "%TEMP%\\sample-brain-bench"  # gate harness (Windows)
 ```
 
-**Search backend default:** `numpy` (profile key `search.backend`). Opt in to `sqlite-vec` via `--search-backend`, `SAMPLE_BRAIN_SEARCH_BACKEND`, or profile. Gate evidence: [`docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md`](./docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md) — overlap PASS; 100k latency FAIL on measured host; default stays `numpy` until all gates PASS.
+**Search backend default:** `numpy` (profile key `search.backend`). Opt in to `sqlite-vec` via `--search-backend`, `SAMPLE_BRAIN_SEARCH_BACKEND`, or profile. Precedence: profile &lt; env &lt; CLI. Gate evidence: [`docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md`](./docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md) — overlap PASS; 100k latency FAIL on measured host; default stays `numpy` until all gates PASS.
+
+**Artifact safety:** Keep runtime DBs, vec0 cache data, `.npz` indexes, and benchmark work directories outside the repo (`SAMPLE_BRAIN_DB_PATH`, `--work-dir` under `%TEMP%`). Do not commit generated artifacts.
 
 ---
 
@@ -216,6 +218,7 @@ See [`docs/DATA_AND_ARTIFACT_POLICY.md`](./docs/DATA_AND_ARTIFACT_POLICY.md) for
 
 - [EPIC 1: Config and Profiles](./docs/EPIC_1_CONFIG_PROFILES.md) — configuration layers, profile design, env vars, migration plan
 - [EPIC 2: Semantic Search Foundation](./docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md) — embedding, indexing, search contracts and milestones
+- [SQLite + sqlite-vec Roadmap](./docs/SQLITE_VEC_ROADMAP.md) — phased rollout (Phases 1–8 complete; default switch gated)
 - [sqlite-vec gate evidence](./docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md) — measured benchmark gates (default stays `numpy`)
 - [DAW Integration](./docs/DAW_INTEGRATION_SPEC.md) — FL Studio export, Ableton/Reaper research
 

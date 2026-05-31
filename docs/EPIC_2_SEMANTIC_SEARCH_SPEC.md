@@ -21,8 +21,9 @@ EPIC 2 delivers three new capabilities:
 - Per-sample embedding storage in SQLite
 - Pluggable embedding backend interface (CLAP as primary candidate)
 - Batch embedding worker with progress reporting and failure resume
-- Local NumPy vector index (`.npz`), rebuildable from SQLite — **current implementation**
-- Local vector index — **NumPy `.npz` + optional sqlite-vec vec0 cache** ([ADR-0004](adr/ADR-0004-sqlite-vec-search-backend.md)); FAISS (ADR-0002) superseded, not implemented
+- Local NumPy vector index (`.npz`), rebuildable from SQLite — **default search backend**
+- Local sqlite-vec `vec0` cache in SQLite — **opt-in search backend** ([ADR-0004](adr/ADR-0004-sqlite-vec-search-backend.md)); default remains `numpy` until latency gates PASS
+- Local FAISS vector index — **strategically superseded by ADR-0004** (ADR-0002 file unchanged; never implemented on `main`)
 - Text-to-sample semantic search
 - Audio-to-audio similarity search
 - Metadata enrichment from SQLite on search results
@@ -64,10 +65,11 @@ The following EPIC 2 infrastructure already exists on `main`:
 | **NumPy vector index** | ✅ NumPy skeleton | `src/index.py` — `build_numpy_index()`, `search_index()`, in-memory, cosine similarity. No FAISS dependency. |
 | **Index persistence** | ✅ `.npz` save/load | `save_numpy_index()`, `load_numpy_index()`, `default_index_path()` — writes to `data/indexes/`. Metadata validated on load. |
 | **Index CLI** | ✅ Controlled command | `index_build --model-id / --limit / --save / --index-path` — loads embeddings, builds index, persists only with `--save`. |
-| **Search contract** | ✅ NumPy E2E proven | `run_search()` → `get_backend()` → `embed_text()` → `search_index()` → ranked hits. Controlled smoke: `search "kick drum"` returned rank=1 hit (score 0.0726). |
-| **Search CLI** | ✅ Flags wired | `search [query] --model-id / --topk / --backend / --index-path`. Config profile support via `embedding.backend`. |
+| **Search contract** | ✅ NumPy E2E proven | `run_search()` → embedding backend → vector search → ranked hits. Controlled smoke: `search "kick drum"` returned rank=1 hit (score 0.0726). |
+| **Search CLI** | ✅ Flags wired | `search [query] --model-id / --topk / --backend / --search-backend / --index-path`. Config: `embedding.backend`, `search.backend`. |
 | **Search backend adapter** | ✅ Done | `src/search_backend.py` — `NumpySearchBackend`, `SqliteVecSearchBackend`; default `numpy` via profile/CLI |
-| **sqlite-vec vec0 cache** | ✅ Done | `src/vec_index.py` — rebuildable cache in SQLite (`vector_index_state`, `vec_sample_current`); `index_build --search-backend sqlite-vec` |
+| **sqlite-vec vec0 cache** | ✅ Done | `src/vec_index.py` — rebuildable cache in SQLite; `index_build --search-backend sqlite-vec`; `vec status` / `vec smoke` |
+| **Benchmark harness** | ✅ Done | `benchmark vec` — overlap @ k=10, latency p95; evidence in [SQLITE_VEC_GATE_EVIDENCE.md](benchmarks/SQLITE_VEC_GATE_EVIDENCE.md) |
 | **FAISS index** | ❌ Superseded | ADR-0004 + sqlite-vec replace ADR-0002 FAISS target; never implemented on `main`. NumPy `.npz` remains fallback/reference. |
 | **Text-to-sample search** | ✅ Smoke proven | Controlled E2E with synthetic fixture + external DB/index via `SAMPLE_BRAIN_DB_PATH`. Not private-sample or production-quality validation. |
 
@@ -96,7 +98,7 @@ EPIC 2 MVP is reached when:
 1. Embedding model metadata is registered in SQLite on first use
 2. Sample embeddings are computed reproducibly (same sample + same model → same vector)
 3. Embeddings are persisted as BLOBs in `sample_embeddings` table
-4. A vector index can be built from stored embeddings via CLI — **NumPy `.npz`** (default), **sqlite-vec vec0 cache** in SQLite (opt-in), or in-memory NumPy scan
+4. A vector index can be built from stored embeddings via CLI — **NumPy `.npz`** (default), **sqlite-vec vec0 cache** in SQLite (opt-in; [ADR-0004](adr/ADR-0004-sqlite-vec-search-backend.md)), or in-memory NumPy scan
 5. A text query can be embedded and searched against the index, returning ranked sample paths — **proven in controlled smoke** (synthetic fixture; not private-sample validation)
 6. Search results include sample metadata (BPM, key, type, path) enriched from SQLite
 7. All generated artifacts (DB, index files) remain local and untracked
@@ -313,15 +315,15 @@ class EmbeddingBackend(ABC):
 4. **Uniqueness prevents duplicates.** The `(sample_id, model_id, source_hash)` unique constraint on `sample_embeddings` ensures that re-running the embedding pipeline does not create duplicate entries for unchanged samples.
 5. **Staleness detection.** If a sample file's content hash changes (re-exported, re-rendered, modified), the old embedding is not overwritten — a new row with the new hash is inserted, and the old row remains for traceability.
 6. **Failed embeddings are reported.** The worker must record the count of failed samples. Silent failures are not acceptable.
-7. **No vector index as source of truth.** NumPy `.npz`, sqlite-vec vec0, and any future caches can be deleted and rebuilt at any time without data loss.
+7. **No vector index as source of truth.** NumPy `.npz`, sqlite-vec `vec0`, and any future caches can be deleted and rebuilt at any time without data loss.
 
 ---
 
 ## 11. Index Persistence and Validation
 
-The current implementation supports NumPy `.npz` archives and an optional sqlite-vec vec0 cache in SQLite ([ADR-0004](adr/ADR-0004-sqlite-vec-search-backend.md)). FAISS (ADR-0002) is superseded and not implemented.
+**Index strategy on `main`:** [ADR-0004](adr/ADR-0004-sqlite-vec-search-backend.md) accepts sqlite-vec `vec0` inside the SQLite file as the performance-oriented cache; **NumPy remains the default search backend** until benchmark latency gates PASS. FAISS (ADR-0002) is superseded for new work — the ADR-0002 file is unchanged for history.
 
-### 11.1 NumPy `.npz` persistence
+### 11.1 NumPy `.npz` persistence (default search backend)
 
 1. **Format:** Single `.npz` file containing three keys: `vectors` (float32), `sample_ids` (int64), `metadata_json` (JSON string).
 2. **Default location:** `data/indexes/model-{model_id}-numpy-cosine.npz` — generated by `default_index_path()`.
@@ -335,7 +337,16 @@ The current implementation supports NumPy `.npz` archives and an optional sqlite
    - optional `model_id` cross-check
 5. **Artifact hygiene:** `data/indexes/` and `*.npz` are in `.gitignore`. Index files are never committed.
 
-### 11.2 FAISS Index Contract (future)
+### 11.2 sqlite-vec `vec0` cache (opt-in search backend)
+
+1. **Cache lives in the same SQLite file** as `sample_embeddings` — no separate index service.
+2. **Rebuild:** `index_build --model-id <id> --search-backend sqlite-vec` calls `rebuild_vec0_cache()`; state tracked in `vector_index_state`.
+3. **Search:** `search --search-backend sqlite-vec` uses `SqliteVecSearchBackend`; requires prior rebuild and `[vec]` extra.
+4. **Correctness gate:** top-k overlap vs NumPy ≥ 0.95 — **PASS** (see [SQLITE_VEC_GATE_EVIDENCE.md](benchmarks/SQLITE_VEC_GATE_EVIDENCE.md)).
+5. **Latency gate @ 100k:** warm/filtered p95 ≤ 200/250 ms — **FAIL** on evidence host; default switch blocked.
+6. **Precedence:** profile `search.backend` &lt; `SAMPLE_BRAIN_SEARCH_BACKEND` &lt; CLI `--search-backend`.
+
+### 11.3 FAISS Index Contract (historical — ADR-0002, superseded by ADR-0004)
 
 1. **FAISS index is a rebuildable cache.** The source of truth for all embeddings is the SQLite `sample_embeddings` table. The index is disposable and rebuildable on demand.
 2. **Index reads embeddings from SQLite.** `build_index()` queries `sample_embeddings` for all vectors of a given model, assembles them into a `np.ndarray`, and trains/loads the index.

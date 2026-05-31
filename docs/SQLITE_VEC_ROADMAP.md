@@ -189,7 +189,7 @@ vector_index_state (
 
 ## Phase 8 — Cleanup / Hardening
 
-**Status:** ✅ Done (closeout PR) — README, EPIC_2, AGENTS, CURRENT_STATUS, artifact/architecture sync
+**Status:** ✅ Done — docs closeout PR #53 (`docs/sqlite-vec-phase-8-closeout`): README `[vec]` bootstrap, EPIC_2 ADR-0004 alignment, CURRENT_STATUS refresh, ISSUE_BACKLOG sync
 
 | Feld | Inhalt |
 |------|--------|

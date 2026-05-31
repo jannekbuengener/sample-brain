@@ -5,8 +5,8 @@
 - **Branch:** `main`
 - **Working tree:** clean (post sqlite-vec campaign closeout)
 - **Last commit:** `1602ebb` — benchmark gate evidence (PR #51)
-- **Open PRs:** none
-- **Open issues:** none
+- **Open PRs:** Phase 8 docs closeout (`docs/sqlite-vec-phase-8-closeout`, PR #53)
+- **Open issues:** none (#40–#46 closed)
 - **Tests:** 138 passed (`pytest -q`; optional `[vec]` extra for vec-specific tests)
 
 ## sqlite-vec Campaign — Closed
@@ -19,7 +19,7 @@ Phases 1–8 complete on `main` (PRs #47–#51 + Phase 8 docs closeout):
 | 2 | Schema (`vector_index_state`, vec tables) | #48 |
 | 3 | vec0 cache rebuild from `sample_embeddings` | #49 |
 | 4–7 | Search backend adapter, config gate, benchmark harness | #50, #51 |
-| 8 | Docs hardening (README, EPIC_2, AGENTS, roadmap) | closeout PR |
+| 8 | Docs hardening (README, EPIC_2, roadmap, CURRENT_STATUS) | #53 |
 
 **Gate evidence:** [SQLITE_VEC_GATE_EVIDENCE.md](../docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md)
 
@@ -30,6 +30,22 @@ Phases 1–8 complete on `main` (PRs #47–#51 + Phase 8 docs closeout):
 | filtered p95 @ 100k ≤ 250 ms | **FAIL** (3440 ms) |
 
 **Decision:** Default `search.backend` remains **`numpy`**. Opt in to `sqlite-vec` via profile, `SAMPLE_BRAIN_SEARCH_BACKEND`, or `--search-backend`.
+
+## sqlite-vec bootstrap (opt-in)
+
+```powershell
+pip install -e ".[vec]"
+sample-brain vec status
+sample-brain vec smoke
+sample-brain index_build --model-id 1 --search-backend sqlite-vec
+sample-brain search "kick" --model-id 1 --search-backend sqlite-vec --backend clap
+sample-brain db doctor
+sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-bench
+```
+
+- **Default:** `search.backend: numpy` in profile; override via `SAMPLE_BRAIN_SEARCH_BACKEND` or `--search-backend`
+- **Embedding vs search backend:** `--backend` / `embedding.backend` selects CLAP/noop; `--search-backend` / `search.backend` selects NumPy vs sqlite-vec
+- **Artifacts:** use `SAMPLE_BRAIN_DB_PATH` and external `--work-dir`; never commit DBs, `.npz`, or benchmark outputs
 
 ## What Works (Core Pipeline)
 
@@ -72,7 +88,7 @@ Phases 1–8 complete on `main` (PRs #47–#51 + Phase 8 docs closeout):
 
 ## Next Steps (empfohlen)
 
-1. **sqlite-vec latency follow-up** — only if default switch is desired (~3.5 s p95 @ 100k on evidence host)
+1. **sqlite-vec latency follow-up** — only if default switch is desired (~3.5 s p95 @ 100k on evidence host; gate **FAIL**)
 2. **CLAP test hardening** — unavailable-backend tests in CLAP-installed venvs
 3. **Phase 5 tags/FTS5** — when hybrid/tag search is prioritized
 
