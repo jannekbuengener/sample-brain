@@ -71,6 +71,32 @@ def init_db():
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_sample_embeddings_sample_id ON sample_embeddings(sample_id);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_sample_embeddings_model_id ON sample_embeddings(model_id);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_sample_embeddings_source_hash ON sample_embeddings(source_hash);"))
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS vector_index_state (
+            id INTEGER PRIMARY KEY,
+            model_id INTEGER NOT NULL,
+            backend TEXT NOT NULL,
+            vec_table_name TEXT,
+            embedding_dim INTEGER NOT NULL,
+            sample_count INTEGER NOT NULL,
+            last_rebuild_at TEXT,
+            source_fingerprint TEXT,
+            FOREIGN KEY(model_id) REFERENCES embedding_models(id),
+            UNIQUE(model_id, backend)
+        );
+        """))
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS sample_tags (
+            id INTEGER PRIMARY KEY,
+            sample_id INTEGER NOT NULL,
+            tag TEXT NOT NULL,
+            source TEXT NOT NULL,
+            FOREIGN KEY(sample_id) REFERENCES samples(id),
+            UNIQUE(sample_id, tag, source)
+        );
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_sample_tags_sample_id ON sample_tags(sample_id);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_sample_tags_tag ON sample_tags(tag);"))
     return engine
 
 
@@ -235,6 +261,108 @@ def sample_embedding_exists(sample_id: int, model_id: int, source_hash: str) -> 
             },
         ).fetchone()
     return row is not None
+
+
+def upsert_vector_index_state(
+    model_id: int,
+    backend: str,
+    embedding_dim: int,
+    sample_count: int,
+    *,
+    vec_table_name: str | None = None,
+    last_rebuild_at: str | None = None,
+    source_fingerprint: str | None = None,
+) -> None:
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+            INSERT INTO vector_index_state (
+                model_id, backend, vec_table_name, embedding_dim, sample_count,
+                last_rebuild_at, source_fingerprint
+            ) VALUES (
+                :model_id, :backend, :vec_table_name, :embedding_dim, :sample_count,
+                :last_rebuild_at, :source_fingerprint
+            )
+            ON CONFLICT(model_id, backend) DO UPDATE SET
+                vec_table_name = excluded.vec_table_name,
+                embedding_dim = excluded.embedding_dim,
+                sample_count = excluded.sample_count,
+                last_rebuild_at = excluded.last_rebuild_at,
+                source_fingerprint = excluded.source_fingerprint
+            """),
+            {
+                "model_id": model_id,
+                "backend": backend,
+                "vec_table_name": vec_table_name,
+                "embedding_dim": embedding_dim,
+                "sample_count": sample_count,
+                "last_rebuild_at": last_rebuild_at,
+                "source_fingerprint": source_fingerprint,
+            },
+        )
+
+
+def get_vector_index_state(model_id: int, backend: str) -> dict | None:
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+            SELECT id, model_id, backend, vec_table_name, embedding_dim, sample_count,
+                   last_rebuild_at, source_fingerprint
+            FROM vector_index_state
+            WHERE model_id = :model_id AND backend = :backend
+            """),
+            {"model_id": model_id, "backend": backend},
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": row[0],
+        "model_id": row[1],
+        "backend": row[2],
+        "vec_table_name": row[3],
+        "embedding_dim": row[4],
+        "sample_count": row[5],
+        "last_rebuild_at": row[6],
+        "source_fingerprint": row[7],
+    }
+
+
+def replace_sample_tags(sample_id: int, tags: list[tuple[str, str]]) -> None:
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM sample_tags WHERE sample_id = :sample_id"),
+            {"sample_id": sample_id},
+        )
+        for tag, source in tags:
+            conn.execute(
+                text("""
+                INSERT OR IGNORE INTO sample_tags (sample_id, tag, source)
+                VALUES (:sample_id, :tag, :source)
+                """),
+                {"sample_id": sample_id, "tag": tag, "source": source},
+            )
+
+
+def list_sample_tags(sample_id: int | None = None) -> list[dict]:
+    engine = get_engine()
+    query = """
+        SELECT id, sample_id, tag, source
+        FROM sample_tags
+    """
+    params: dict = {}
+    if sample_id is not None:
+        query += " WHERE sample_id = :sample_id"
+        params["sample_id"] = sample_id
+    query += " ORDER BY sample_id, tag, source"
+    with engine.begin() as conn:
+        rows = conn.execute(text(query), params).fetchall()
+    return [
+        {"id": row[0], "sample_id": row[1], "tag": row[2], "source": row[3]}
+        for row in rows
+    ]
 
 
 def load_sample_paths(sample_ids: list[int]) -> dict[int, str]:
