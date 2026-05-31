@@ -2,13 +2,19 @@
 
 Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board reality** below for live state.
 
-## GitHub Board Reality (2026-05-31, post-PR #25 sync)
+## GitHub Board Reality (2026-05-31, post-PR #37 reconcile)
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Open issues | ✅ None | Board clean |
+| Open issues | 🔶 One docs reconcile issue | #31 open (`docs(backlog): reconcile epic status and board state after PR #26`) |
 | Open PRs | ✅ None | No open pull requests |
-| `main` HEAD | ✅ Current | `33f1e3c` — SampleBrain Cursor subagents (#25) |
+| `main` HEAD | ✅ Current | `cfd6e63` — merge of PR #37 (config/export contract fix) |
+| GitHub #27 | ✅ Closed | Implemented via PR #32 (`9d41782`) |
+| GitHub #28 | ✅ Closed | Implemented via PR #34 (`31fc3f1`) |
+| GitHub #29 | ✅ Closed | Implemented via PR #36 (`e7d59c7`) |
+| GitHub #30 | ✅ Closed | Implemented via PR #35 (`05135a1`) |
+| PR #33 | ✅ Merged | Bugfix follow-up for hybrid metadata (`f12a962`) |
+| PR #37 | ✅ Merged | Config-/Export-contract stabilization (`cfd6e63`) |
 | GitHub #11 | ✅ Closed | M1 — isolated CLAP runtime environment (PASS) |
 | GitHub #12 | ✅ Closed | M2 — real CLAP text embedding smoke (PASS) |
 | GitHub #14 | ✅ Closed | M5 hygiene — docs drift, Dependabot triage, stale PR cleanup |
@@ -23,6 +29,7 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 | PR #23 | ✅ Merged | EPIC-3 hybrid ranking score contract (`e981a53`) |
 | PR #24 | ✅ Merged | Issue backlog board sync (`6a37b78`) |
 | PR #25 | ✅ Merged | SampleBrain Cursor subagents (`33f1e3c`) |
+| PR #26 | ✅ Merged | Backlog board sync baseline before this reconcile |
 | PR #2 | ✅ Merged | `dependency-review-action` v4→v5 |
 | PR #3 | ✅ Merged | `github/codeql-action` v3→v4 |
 | PR #4 | ✅ Merged | `actions/checkout` v4→v6 |
@@ -39,16 +46,17 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 
 ## Post-cleanup board state
 
-As of `main` at `33f1e3c` (PR #25 merge):
+As of `main` at `cfd6e63` (PR #37 merge):
 
 - **EPIC 2 runtime and E2E proof** — completed and documented (`CURRENT_STATUS.md`, `EPIC_2_SEMANTIC_SEARCH_SPEC.md`)
 - **EPIC 3 foundation** — hybrid ranking score contract merged via PR #23
-- **Docs sync** — SkillForge routing via PRs #16/#19; bootstrap validation via PR #20; backlog board via PRs #21/#24
+- **Docs sync** — SkillForge routing via PRs #16/#19; bootstrap validation via PR #20; backlog board via PRs #21/#24/#26
 - **Test hardening** — CLAP unavailable-backend search path via PR #22 (`tests/test_search.py`)
 - **Dependabot backlog** — PRs #2–#9 merged with CI validation; audio-related bumps (#6, #7, #9, #5) validated with synthetic WAV smoke where applicable
 - **Cursor Cloud onboarding** — PR #17 merged (`AGENTS.md` dev environment instructions)
 - **Cursor subagents** — PR #25 merged (`.cursor/agents/sample-brain-*.md`)
-- **No open GitHub issues or PRs** — next work is an intentional new roadmap slice, not cleanup
+- **E2E milestone closures** — #27/#28/#29/#30 are closed via PR #32/#34/#36/#35; PR #33 merged as schema bugfix follow-up; PR #37 merged as config/export contract fix
+- **Current board reality** — no further product issues are open; only docs reconcile issue #31 remains open
 
 Local backlog item numbers below are **planning IDs**, not GitHub issue numbers (except where cross-referenced).
 
@@ -103,6 +111,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 ## EPIC 1: Config & Project Setup
 
 ### 7. refactor: replace hardcoded sample roots with configurable library profiles
+- **Status:** ✅ completed on `main` (profile-based config active)
 - Labels: `refactor`, `config`, `pipeline`
 - Goal: Make sample library roots configurable through named profiles.
 - Context: Current scan flow appears to rely on hardcoded or fragile path assumptions.
@@ -115,6 +124,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Priority: P1
 
 ### 8. feat: add project configuration file for library roots, FL Studio path and model settings
+- **Status:** ✅ completed on `main` (config profiles + CLI/env precedence)
 - Labels: `feat`, `config`, `mvp`
 - Goal: Introduce a project-level configuration file.
 - Context: The tool needs explicit configuration for libraries, export paths, and future model settings.
@@ -376,7 +386,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 ## Future Documentation (vorgemerkt)
 
 ### 29. docs: write bootloader and context strategy
-- **Status:** ❌ open
+- **Status:** ✅ closed (GitHub #29; implemented and merged via PR #36 `e7d59c7`)
 - Labels: `docs`, `architecture`, `planning`
 - Goal: Define how `sample-brain` bootstraps context and handles available tools, knowledge files, and MCP capabilities.
 - Context: The project works through multiple MCP gateways; the bootloader decides what context to inject before any command runs.
@@ -387,7 +397,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Priority: P2
 
 ### 30. docs: write sample-brain skills spec
-- **Status:** ❌ open
+- **Status:** ✅ closed (GitHub #30; implemented and merged via PR #35 `05135a1`)
 - Labels: `docs`, `skills`, `planning`
 - Goal: Define custom skills that `sample-brain` exposes to MCP agents for common operations (scan, analyze, search, export).
 - Context: Skills provide structured tool definitions and instructions for LLM agents working with the repo.
