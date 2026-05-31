@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+import src.config as config_module
 from src.config import DEFAULT_DB_PATH, PROJECT_ROOT, set_db_path
+
+
+@pytest.fixture(autouse=True)
+def _restore_db_path():
+    original = config_module.DB_PATH
+    yield
+    config_module.DB_PATH = original
 
 
 def test_set_db_path_uses_default_when_no_profile_or_env():

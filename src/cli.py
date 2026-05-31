@@ -1,8 +1,10 @@
 # src/cli.py
 from __future__ import annotations
 import argparse
+import json
 from pathlib import Path
 import sys
+import time
 
 
 def _resolve_profile_or_exit(args) -> dict:
@@ -16,6 +18,91 @@ def _resolve_profile_or_exit(args) -> dict:
             env=dict(os.environ),
         )
     except ConfigError as e:
+        print(f"[ERROR] Config error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _debug_log(
+    hypothesis_id: str,
+    location: str,
+    message: str,
+    data: dict,
+    run_id: str = "pre-fix",
+) -> None:
+    payload = {
+        "sessionId": "3c0b2c",
+        "runId": run_id,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        log_path = Path(__file__).resolve().parents[1] / "debug-3c0b2c.log"
+        with open(log_path, "a", encoding="utf-8") as log_file:
+            log_file.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def _resolve_profile_for_init(args) -> dict:
+    import os
+    from .config_loader import resolve_profile, ConfigError, DEFAULT_EXAMPLE_CONFIG
+
+    explicit_config = args.config is not None
+    example_path = Path(args.config) if explicit_config else DEFAULT_EXAMPLE_CONFIG
+    # region agent log
+    _debug_log(
+        hypothesis_id="H1",
+        location="src/cli.py:resolve_profile_for_init_entry",
+        message="Resolving init profile with fallback semantics",
+        data={
+            "explicit_config": explicit_config,
+            "example_path": str(example_path),
+            "cwd": str(Path.cwd()),
+        },
+    )
+    # endregion
+    try:
+        return resolve_profile(
+            profile_name=args.profile,
+            example_path=example_path,
+            env=dict(os.environ),
+        )
+    except ConfigError as e:
+        if explicit_config:
+            # region agent log
+            _debug_log(
+                hypothesis_id="H2",
+                location="src/cli.py:resolve_profile_for_init_explicit_error",
+                message="Explicit init config failed",
+                data={"error": str(e), "example_path": str(example_path)},
+            )
+            # endregion
+            print(f"[ERROR] Config error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        if "Example config not found" in str(e):
+            # region agent log
+            _debug_log(
+                hypothesis_id="H3",
+                location="src/cli.py:resolve_profile_for_init_implicit_fallback",
+                message="Implicit init fallback on missing default example config",
+                data={"error": str(e), "cwd": str(Path.cwd())},
+                run_id="post-fix",
+            )
+            # endregion
+            return {}
+
+        # region agent log
+        _debug_log(
+            hypothesis_id="H4",
+            location="src/cli.py:resolve_profile_for_init_unexpected_error",
+            message="Implicit init config error is not fallback-eligible",
+            data={"error": str(e)},
+        )
+        # endregion
         print(f"[ERROR] Config error: {e}", file=sys.stderr)
         sys.exit(1)
 
@@ -200,8 +287,29 @@ def main():
 
     # Imports hier drin, damit das Skript startet, auch wenn einzelne Module fehlen.
     if args.cmd == "init":
-        cfg = _resolve_profile_or_exit(args)
+        # region agent log
+        _debug_log(
+            hypothesis_id="H5",
+            location="src/cli.py:init_entry",
+            message="Entered init command path",
+            data={
+                "config_arg": args.config,
+                "profile_arg": args.profile,
+                "cwd": str(Path.cwd()),
+            },
+        )
+        # endregion
+        cfg = _resolve_profile_for_init(args)
         db_path = _apply_runtime_db_path(cfg)
+        # region agent log
+        _debug_log(
+            hypothesis_id="H6",
+            location="src/cli.py:init_db_path_applied",
+            message="Init runtime DB path resolved",
+            data={"resolved_db_path": str(db_path)},
+            run_id="post-fix",
+        )
+        # endregion
         from .db import init_db
 
         init_db()
