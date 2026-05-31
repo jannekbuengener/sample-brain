@@ -93,7 +93,13 @@ def main():
 
     # (optional) search
     p_src = sub.add_parser("search", help="Ähnlichkeitssuche (optional)")
-    p_src.add_argument("query", nargs="?", default=None, help="Suchanfrage (Text oder Pfad)")
+    p_src.add_argument("query", nargs="?", default=None, help="Text Suchanfrage")
+    p_src.add_argument(
+        "--query-audio",
+        type=str,
+        default=None,
+        help="Pfad zu einer Referenz-Audiodatei für Audio-zu-Audio Suche.",
+    )
     p_src.add_argument("--topk", type=int, default=10)
     p_src.add_argument(
         "--model-id",
@@ -313,6 +319,7 @@ def main():
         backend_name = args.backend or configured_backend or "noop"
         run_search(
             query=args.query,
+            query_audio=args.query_audio,
             model_id=args.model_id,
             topk=args.topk,
             backend_name=backend_name,
