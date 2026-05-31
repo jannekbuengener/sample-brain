@@ -1,0 +1,6 @@
+# Optional sqlite-vec vector search cache dependencies.
+# Install with:
+#   pip install -r requirements.txt -r requirements-vec.txt
+# Or via pyproject.toml extra:
+#   pip install -e .[vec]
+sqlite-vec==0.1.9
