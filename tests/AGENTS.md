@@ -21,6 +21,12 @@
 - Use meaningful fixture names and avoid hidden shared mutable state.
 - Keep mocked expectations resilient (assert intent, not call noise).
 
+## Synthetic Audio Fixtures
+- Generate WAV fixtures at runtime in temp directories; do not commit audio binaries.
+- Use `tests/audio_fixtures.py` helpers for deterministic synthetic signals.
+- Keep catalog writes isolated by monkeypatching `src.db.DB_PATH` to a `tmp_path` location.
+- Assert behavior contracts (`scan`/`analyze` no-crash + DB rows), not exact BPM/key values.
+
 ## Execution
 - Run all tests:
 - `.\.venv\Scripts\python.exe -m pytest -q`
