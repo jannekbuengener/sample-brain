@@ -4,10 +4,34 @@ import argparse
 from pathlib import Path
 import sys
 
+
+def _resolve_profile_or_exit(args) -> dict:
+    import os
+    from .config_loader import resolve_profile, ConfigError, DEFAULT_EXAMPLE_CONFIG
+
+    try:
+        return resolve_profile(
+            profile_name=args.profile,
+            example_path=Path(args.config) if args.config else DEFAULT_EXAMPLE_CONFIG,
+            env=dict(os.environ),
+        )
+    except ConfigError as e:
+        print(f"[ERROR] Config error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _apply_runtime_db_path(config: dict) -> Path:
+    from .config import set_db_path
+
+    database = config.get("database", {})
+    db_path = database.get("path") if isinstance(database, dict) else None
+    return set_db_path(profile_db_path=db_path)
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="sample-brain",
-        description="Sample Brain CLI (argparse) – stabile Commands ohne Typer/Click."
+        description="Sample Brain CLI (argparse) – stabile Commands ohne Typer/Click.",
     )
     parser.add_argument(
         "--profile",
@@ -22,7 +46,7 @@ def main():
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     # init
-    p_init = sub.add_parser("init", help="DB und Verzeichnisse initialisieren")
+    sub.add_parser("init", help="DB und Verzeichnisse initialisieren")
 
     # scan
     p_scan = sub.add_parser("scan", help="Samples scannen und in DB registrieren")
@@ -37,7 +61,9 @@ def main():
     sub.add_parser("analyze", help="Audio-Features (librosa) berechnen")
 
     # autotype
-    p_aut = sub.add_parser("autotype", help="Audio-basierte Typisierung -> features.pred_type")
+    p_aut = sub.add_parser(
+        "autotype", help="Audio-basierte Typisierung -> features.pred_type"
+    )
     p_aut.add_argument("--no-knn", action="store_true", help="kNN/Seeds deaktivieren")
 
     # export_fl
@@ -56,7 +82,9 @@ def main():
 
     # (optional) embed
     p_emb = sub.add_parser("embed", help="Embeddings berechnen (optional)")
-    p_emb.add_argument("--limit", type=int, default=None, help="Nur X Dateien einbetten")
+    p_emb.add_argument(
+        "--limit", type=int, default=None, help="Nur X Dateien einbetten"
+    )
     p_emb.add_argument("--all", action="store_true", help="Alle neu berechnen")
     p_emb.add_argument(
         "--backend",
@@ -172,34 +200,30 @@ def main():
 
     # Imports hier drin, damit das Skript startet, auch wenn einzelne Module fehlen.
     if args.cmd == "init":
-        from .config import DB_PATH
+        cfg = _resolve_profile_or_exit(args)
+        db_path = _apply_runtime_db_path(cfg)
         from .db import init_db
+
         init_db()
-        print(f"DB ready: {DB_PATH}")
+        print(f"DB ready: {db_path}")
         return
 
     if args.cmd == "scan":
+        cfg = _resolve_profile_or_exit(args)
+        _apply_runtime_db_path(cfg)
         if args.root:
             roots = [Path(r) for r in args.root]
         else:
-            import os
-            from .config_loader import resolve_profile, ConfigError, DEFAULT_EXAMPLE_CONFIG
-            try:
-                cfg = resolve_profile(
-                    profile_name=args.profile,
-                    example_path=Path(args.config) if args.config else DEFAULT_EXAMPLE_CONFIG,
-                    env=dict(os.environ),
-                )
-            except ConfigError as e:
-                print(f"[ERROR] Config error: {e}", file=sys.stderr)
-                sys.exit(1)
             roots = [Path(r) for r in cfg.get("library_roots", [])]
         from .scan import run_scan
+
         run_scan(roots)
         print("Scan completed.")
         return
 
     if args.cmd == "analyze":
+        cfg = _resolve_profile_or_exit(args)
+        _apply_runtime_db_path(cfg)
         try:
             from .analyze import run_analyze
         except Exception as e:
@@ -210,17 +234,8 @@ def main():
         return
 
     if args.cmd == "autotype":
-        import os
-        from .config_loader import resolve_profile, ConfigError, DEFAULT_EXAMPLE_CONFIG
-        try:
-            cfg = resolve_profile(
-                profile_name=args.profile,
-                example_path=Path(args.config) if args.config else DEFAULT_EXAMPLE_CONFIG,
-                env=dict(os.environ),
-            )
-        except ConfigError as e:
-            print(f"[ERROR] Config error: {e}", file=sys.stderr)
-            sys.exit(1)
+        cfg = _resolve_profile_or_exit(args)
+        _apply_runtime_db_path(cfg)
         autotype_cfg = cfg.get("autotype", {})
         use_knn = not args.no_knn if args.no_knn else autotype_cfg.get("use_knn", True)
         knn_min_conf = autotype_cfg.get("knn_min_conf", 0.55)
@@ -234,20 +249,14 @@ def main():
         return
 
     if args.cmd == "export_fl":
-        import os
-        from .config_loader import resolve_profile, ConfigError, DEFAULT_EXAMPLE_CONFIG
-        try:
-            cfg = resolve_profile(
-                profile_name=args.profile,
-                example_path=Path(args.config) if args.config else DEFAULT_EXAMPLE_CONFIG,
-                env=dict(os.environ),
-            )
-        except ConfigError as e:
-            print(f"[ERROR] Config error: {e}", file=sys.stderr)
-            sys.exit(1)
+        cfg = _resolve_profile_or_exit(args)
+        _apply_runtime_db_path(cfg)
         fl_user_data = args.fl_user_data or cfg.get("fl_user_data_path")
         if not fl_user_data:
-            print("[ERROR] No FL Studio User Data path configured. Use --fl-user-data or set fl_user_data_path in your profile.", file=sys.stderr)
+            print(
+                "[ERROR] No FL Studio User Data path configured. Use --fl-user-data or set fl_user_data_path in your profile.",
+                file=sys.stderr,
+            )
             sys.exit(1)
         max_tags = args.max_tags or cfg.get("export", {}).get("max_tags", 5)
         roots = [Path(r) for r in cfg.get("library_roots", [])]
@@ -261,29 +270,24 @@ def main():
         return
 
     if args.cmd == "embed":
+        cfg = _resolve_profile_or_exit(args)
+        _apply_runtime_db_path(cfg)
         try:
             from .embed import run_embed
         except Exception as e:
             print(f"[WARN] Embeddings übersprungen (Modul fehlt/fehlerhaft): {e}")
             sys.exit(0)
-        import os
-        from .config_loader import resolve_profile, ConfigError, DEFAULT_EXAMPLE_CONFIG
-        try:
-            cfg = resolve_profile(
-                profile_name=args.profile,
-                example_path=Path(args.config) if args.config else DEFAULT_EXAMPLE_CONFIG,
-                env=dict(os.environ),
-            )
-        except ConfigError as e:
-            print(f"[ERROR] Config error: {e}", file=sys.stderr)
-            sys.exit(1)
         configured_backend = cfg.get("embedding", {}).get("backend", "noop")
         backend_name = args.backend or configured_backend or "noop"
-        run_embed(limit=args.limit, only_missing=not args.all, backend_name=backend_name)
+        run_embed(
+            limit=args.limit, only_missing=not args.all, backend_name=backend_name
+        )
         print("Embeddings completed.")
         return
 
     if args.cmd == "index_build":
+        cfg = _resolve_profile_or_exit(args)
+        _apply_runtime_db_path(cfg)
         try:
             from .index import build_index
         except Exception as e:
@@ -299,21 +303,12 @@ def main():
         return
 
     if args.cmd == "search":
+        cfg = _resolve_profile_or_exit(args)
+        _apply_runtime_db_path(cfg)
         try:
             from .search import hybrid_query_from_cli_args, run_search
         except Exception as e:
             print(f"[ERROR] Search nicht verfügbar: {e}", file=sys.stderr)
-            sys.exit(1)
-        import os
-        from .config_loader import resolve_profile, ConfigError, DEFAULT_EXAMPLE_CONFIG
-        try:
-            cfg = resolve_profile(
-                profile_name=args.profile,
-                example_path=Path(args.config) if args.config else DEFAULT_EXAMPLE_CONFIG,
-                env=dict(os.environ),
-            )
-        except ConfigError as e:
-            print(f"[ERROR] Config error: {e}", file=sys.stderr)
             sys.exit(1)
         configured_backend = cfg.get("embedding", {}).get("backend", "noop")
         backend_name = args.backend or configured_backend or "noop"
@@ -327,6 +322,7 @@ def main():
             hybrid_query=hybrid_query_from_cli_args(args),
         )
         return
+
 
 if __name__ == "__main__":
     main()

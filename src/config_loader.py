@@ -5,8 +5,7 @@ from typing import Any, Optional
 import yaml
 
 
-class ConfigError(Exception):
-    ...
+class ConfigError(Exception): ...
 
 
 DEFAULT_PROFILE_NAME = "default"
@@ -82,8 +81,9 @@ def resolve_profile(
         available = ", ".join(sorted(profiles.keys()))
         raise ConfigError(f"Unknown profile: {name}. Available: {available}")
 
-    resolved = profiles[name]
+    resolved = _deep_merge({}, profiles[name])
     resolved = _apply_env_overrides(resolved, env)
+    resolved = _normalize_resolved_config(resolved)
     _validate_resolved_config(resolved)
     return resolved
 
@@ -113,16 +113,56 @@ def _apply_env_overrides(profile: dict, env: dict[str, str]) -> dict:
 
 
 def _parse_value(value: str, key: str) -> Any:
+    if key == "library_roots":
+        return _parse_roots(value)
     if key == "max_tags":
         try:
-            return int(value)
+            return int(value.strip())
         except ValueError:
             raise ConfigError(f"Invalid integer for {key}: {value}")
-    return value
+    return value.strip()
 
 
 def _parse_roots(value: str) -> list[str]:
     return [p.strip() for p in value.split(";") if p.strip()]
+
+
+def _normalize_resolved_config(config: dict) -> dict:
+    roots = config.get("library_roots", [])
+    if roots is None:
+        normalized_roots: list[str] = []
+    elif isinstance(roots, str):
+        normalized_roots = _parse_roots(roots)
+    elif isinstance(roots, list):
+        normalized_roots = []
+        for root in roots:
+            if not isinstance(root, str):
+                raise ConfigError("library_roots must contain only strings")
+            stripped = root.strip()
+            if stripped:
+                normalized_roots.append(stripped)
+    else:
+        raise ConfigError(
+            f"library_roots must be a list[str] or ';'-separated string, got {type(roots).__name__}"
+        )
+    config["library_roots"] = normalized_roots
+
+    database = config.get("database")
+    if database is None:
+        return config
+    if not isinstance(database, dict):
+        raise ConfigError("database config must be a dict")
+
+    db_path = database.get("path")
+    if db_path is None:
+        return config
+    if not isinstance(db_path, str):
+        raise ConfigError("database.path must be a string")
+    db_path = db_path.strip()
+    if not db_path:
+        raise ConfigError("database.path must not be empty")
+    database["path"] = db_path
+    return config
 
 
 def _validate_resolved_config(config: dict) -> None:
@@ -132,3 +172,10 @@ def _validate_resolved_config(config: dict) -> None:
             f"Invalid embedding backend: {backend!r}. "
             f"Must be one of: {', '.join(sorted(_VALID_EMBEDDING_BACKENDS))}"
         )
+
+    roots = config.get("library_roots")
+    if roots is not None:
+        if not isinstance(roots, list) or any(
+            not isinstance(root, str) or not root for root in roots
+        ):
+            raise ConfigError("library_roots must be a list of non-empty strings")
