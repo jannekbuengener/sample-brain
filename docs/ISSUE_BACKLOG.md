@@ -2,13 +2,13 @@
 
 Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board reality** below for live state.
 
-## GitHub Board Reality (2026-05-31, post-merge sync)
+## GitHub Board Reality (2026-05-31, post-PR #25 sync)
 
 | Item | Status | Notes |
 |------|--------|-------|
 | Open issues | ✅ None | Board clean |
-| Open PRs | 🔶 1 draft | PR #23 — hybrid ranking score contract (`feat/epic3-hybrid-ranking-contract`) |
-| `main` HEAD | ✅ Current | `f87c696` — CLAP search test hardening (#22) |
+| Open PRs | ✅ None | No open pull requests |
+| `main` HEAD | ✅ Current | `33f1e3c` — SampleBrain Cursor subagents (#25) |
 | GitHub #11 | ✅ Closed | M1 — isolated CLAP runtime environment (PASS) |
 | GitHub #12 | ✅ Closed | M2 — real CLAP text embedding smoke (PASS) |
 | GitHub #14 | ✅ Closed | M5 hygiene — docs drift, Dependabot triage, stale PR cleanup |
@@ -20,6 +20,9 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 | PR #20 | ✅ Merged | Bootstrap validation path docs (`2f9d258`) |
 | PR #21 | ✅ Merged | Issue backlog board sync (`e0d7745`) |
 | PR #22 | ✅ Merged | CLAP unavailable search test hardening (`f87c696`) |
+| PR #23 | ✅ Merged | EPIC-3 hybrid ranking score contract (`e981a53`) |
+| PR #24 | ✅ Merged | Issue backlog board sync (`6a37b78`) |
+| PR #25 | ✅ Merged | SampleBrain Cursor subagents (`33f1e3c`) |
 | PR #2 | ✅ Merged | `dependency-review-action` v4→v5 |
 | PR #3 | ✅ Merged | `github/codeql-action` v3→v4 |
 | PR #4 | ✅ Merged | `actions/checkout` v4→v6 |
@@ -36,14 +39,16 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 
 ## Post-cleanup board state
 
-As of `main` at `f87c696` (PR #22 merge):
+As of `main` at `33f1e3c` (PR #25 merge):
 
 - **EPIC 2 runtime and E2E proof** — completed and documented (`CURRENT_STATUS.md`, `EPIC_2_SEMANTIC_SEARCH_SPEC.md`)
-- **Docs sync** — SkillForge routing via PRs #16/#19; bootstrap validation via PR #20; backlog board via PR #21
+- **EPIC 3 foundation** — hybrid ranking score contract merged via PR #23
+- **Docs sync** — SkillForge routing via PRs #16/#19; bootstrap validation via PR #20; backlog board via PRs #21/#24
 - **Test hardening** — CLAP unavailable-backend search path via PR #22 (`tests/test_search.py`)
 - **Dependabot backlog** — PRs #2–#9 merged with CI validation; audio-related bumps (#6, #7, #9, #5) validated with synthetic WAV smoke where applicable
 - **Cursor Cloud onboarding** — PR #17 merged (`AGENTS.md` dev environment instructions)
-- **Open PR #23 (draft)** — EPIC-3 hybrid ranking score contract; no open GitHub issues
+- **Cursor subagents** — PR #25 merged (`.cursor/agents/sample-brain-*.md`)
+- **No open GitHub issues or PRs** — next work is an intentional new roadmap slice, not cleanup
 
 Local backlog item numbers below are **planning IDs**, not GitHub issue numbers (except where cross-referenced).
 
