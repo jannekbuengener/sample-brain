@@ -283,6 +283,20 @@ def main():
         help="BPM distance tolerance for partial BPM match scoring (default: 8.0).",
     )
 
+    # sqlite-vec diagnostics
+    p_vec = sub.add_parser("vec", help="sqlite-vec availability diagnostics (optional)")
+    vec_sub = p_vec.add_subparsers(dest="vec_cmd", required=True)
+    p_vec_status = vec_sub.add_parser("status", help="Report sqlite-vec availability")
+    p_vec_status.add_argument(
+        "--json",
+        action="store_true",
+        help="Print diagnostics as JSON.",
+    )
+    vec_sub.add_parser(
+        "smoke",
+        help="Exit 0 when sqlite-vec loads; exit 1 with diagnostics otherwise.",
+    )
+
     args = parser.parse_args()
 
     # Imports hier drin, damit das Skript startet, auch wenn einzelne Module fehlen.
@@ -311,9 +325,18 @@ def main():
         )
         # endregion
         from .db import init_db
+        from .vec_availability import format_availability_message, probe_sqlite_vec
 
         init_db()
         print(f"DB ready: {db_path}")
+        vec_report = probe_sqlite_vec()
+        if vec_report.available:
+            print(format_availability_message(vec_report))
+        else:
+            print(
+                "[INFO] sqlite-vec optional extra not loaded "
+                f"({vec_report.reason}). Install with: pip install -e .[vec]"
+            )
         return
 
     if args.cmd == "scan":
@@ -430,6 +453,27 @@ def main():
             hybrid_query=hybrid_query_from_cli_args(args),
         )
         return
+
+    if args.cmd == "vec":
+        from .vec_availability import format_availability_message, probe_sqlite_vec
+
+        report = probe_sqlite_vec()
+        if args.vec_cmd == "status":
+            if args.json:
+                print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+            else:
+                print(format_availability_message(report))
+                print(f"python={report.python_version}")
+                print(f"sqlite={report.sqlite_version}")
+                print(f"package_installed={report.package_installed}")
+                print(f"extension_loaded={report.extension_loaded}")
+            return
+
+        if args.vec_cmd == "smoke":
+            print(format_availability_message(report))
+            if not report.available:
+                sys.exit(1)
+            return
 
 
 if __name__ == "__main__":

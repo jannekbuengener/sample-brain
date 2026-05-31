@@ -18,6 +18,9 @@ clap = [
     "torch",
     "transformers>=4.35",
 ]
+vec = [
+    "sqlite-vec==0.1.9",
+]
 
 [tool.setuptools]
 packages = ["src"]
