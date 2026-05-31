@@ -37,6 +37,18 @@
 - `.\.venv\Scripts\sample-brain --help`
 - External DB smoke (preferred for agents): set `SAMPLE_BRAIN_DB_PATH` outside repo, then `python -m src.cli init`
 
+### Optional `[vec]` verify (sqlite-vec search path)
+
+Only when working on sqlite-vec gates or backend behavior:
+
+```bash
+pip install -e ".[vec]"
+python -m src.cli vec status
+python -m pytest -q   # 138 tests; vec-specific tests skip without [vec]
+```
+
+Benchmark harness (local only, work-dir outside repo): `python -m src.cli benchmark vec --samples 1000 10000 100000 --work-dir /tmp/sample-brain-bench`. Gate evidence: [`docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md`](docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md). Default search backend remains **`numpy`** until all gates PASS.
+
 ## Handover Notes
 - When changing DB schema in `src/db.py`, validate affected read/write paths in `scan`, `analyze`, `classify`, `embed`, `index`, and their tests.
 - When changing CLI args in `src/cli.py`, keep behavior and help text coherent across related commands.
@@ -67,7 +79,7 @@ python -m py_compile src/analyze.py src/cli.py
 ```
 
 ### Bootstrap validation notes
-- Fresh isolated venv bootstrap validation passed `pytest -q` (66 tests) without a repo-local `init`.
+- Fresh isolated venv bootstrap validation passed `pytest -q` (138 tests) without a repo-local `init`.
 - Prefer `SAMPLE_BRAIN_DB_PATH` pointing outside the repo for agent smoke tests so `git status` stays clean.
 - If `python -m venv` fails on Ubuntu/Debian, use `virtualenv` as fallback (see README bootstrap section).
 - Do not run CLAP model download during bootstrap validation.

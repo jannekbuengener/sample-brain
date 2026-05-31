@@ -31,6 +31,8 @@ Agent-taugliche Umsetzungs-Roadmap für die Architektur aus [ADR-0004](adr/ADR-0
 
 ## Phase 1 — Availability Smoke + Diagnostics
 
+**Status:** ✅ Done (PR #47)
+
 | Feld | Inhalt |
 |------|--------|
 | **Ziel** | Prüfen, ob sqlite-vec auf Zielplattformen (Windows, Linux) ladbar ist; klare Diagnose bei Fehlschlag |
@@ -45,6 +47,8 @@ Agent-taugliche Umsetzungs-Roadmap für die Architektur aus [ADR-0004](adr/ADR-0
 ---
 
 ## Phase 2 — Schema: Vector Search State + Tags
+
+**Status:** ✅ Done (PR #48)
 
 | Feld | Inhalt |
 |------|--------|
@@ -81,6 +85,8 @@ vector_index_state (
 
 ## Phase 3 — vec0 Cache Rebuild from `sample_embeddings`
 
+**Status:** ✅ Done (PR #49)
+
 | Feld | Inhalt |
 |------|--------|
 | **Ziel** | Idempotenter Rebuild der sqlite-vec vec0-Tabelle aus `sample_embeddings` |
@@ -97,6 +103,8 @@ vector_index_state (
 ---
 
 ## Phase 4 — Search Backend Adapter (`numpy` | `sqlite-vec`)
+
+**Status:** ✅ Done (PR #50)
 
 | Feld | Inhalt |
 |------|--------|
@@ -143,6 +151,8 @@ vector_index_state (
 
 ## Phase 6 — Benchmark Harness
 
+**Status:** ✅ Done (PR #51) — measured gates: [SQLITE_VEC_GATE_EVIDENCE.md](benchmarks/SQLITE_VEC_GATE_EVIDENCE.md)
+
 | Feld | Inhalt |
 |------|--------|
 | **Ziel** | Messbare Gates aus ADR-0004; Schwellwerte von TBD → konkrete Zahlen |
@@ -160,6 +170,8 @@ vector_index_state (
 
 ## Phase 7 — Default Switch Behind Config Gate
 
+**Status:** ✅ Done (PR #50) — default remains `numpy` until latency gates PASS (see Phase 6 evidence)
+
 | Feld | Inhalt |
 |------|--------|
 | **Ziel** | `sqlite-vec` als wählbares Backend via Config/CLI — **Default bleibt `numpy` bis Gates PASS** |
@@ -176,6 +188,8 @@ vector_index_state (
 ---
 
 ## Phase 8 — Cleanup / Hardening
+
+**Status:** ✅ Done (closeout PR) — README, EPIC_2, AGENTS, CURRENT_STATUS, artifact/architecture sync
 
 | Feld | Inhalt |
 |------|--------|
