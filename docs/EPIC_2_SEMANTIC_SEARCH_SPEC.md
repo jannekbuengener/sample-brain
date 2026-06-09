@@ -384,13 +384,14 @@ Text query string  ──►  get_backend(backend_name)
 
 **M4 smoke evidence:** external DB + external `.npz` index → `search "kick drum" --backend clap` → `rank=1 sample_id=1 score=0.0726`.
 
-### 12.2 Target implementation (FAISS + CLAP, future)
+### 12.2 Target implementation (sqlite-vec / NumPy + CLAP)
 
 ```
 Text query string  ──►  backend.embed_text(query)  ──►  512-dim vector
                                                               │
                                                               ▼
-                                                      FAISS index.search()
+                                    ┌── search_backend == sqlite-vec ──►  vec0 query
+                                    └── search_backend == numpy    ──►  NumPy search_index()
                                                               │
                                                               ▼
                                                    Top-k position IDs + scores
@@ -402,13 +403,13 @@ Text query string  ──►  backend.embed_text(query)  ──►  512-dim vect
                                                    Ranked results with path, BPM, key, type, score
 ```
 
-### 12.3 Audio-to-audio similarity search (future)
+### 12.3 Audio-to-audio similarity search
 
 ```
 Audio file path  ──►  backend.embed_audio(path)  ──►  512-dim vector
                                                               │
                                                               ▼
-                                                      FAISS index.search() or NumPy search_index()
+                                                      sqlite-vec or NumPy search
                                                               │
                                                               ▼
                                                    (same as text search from here)
@@ -422,7 +423,7 @@ Each search result must include:
 |-------|--------|-----------------|
 | `sample_id` | SQLite mapping | ✅ Yes |
 | `path` | `samples` table | ✅ Yes |
-| `score` | cosine similarity (NumPy) / inner product (FAISS) | ✅ Yes |
+| `score` | cosine similarity (NumPy) / vec distance (sqlite-vec) | ✅ Yes |
 | `bpm` | `features` table | If available |
 | `key` | `features` table | If available |
 | `pred_type` | `features` table | If available |
@@ -490,15 +491,15 @@ Each search result must include:
 | 4 | External runtime artifacts stay outside repo | `SAMPLE_BRAIN_DB_PATH` + external index | ✅ |
 | 5 | No index/DB files in `git status` after smoke | Artifact policy | ✅ |
 
-### M6 — FAISS index (deferred)
+### M6 — FAISS index (superseded)
 
-| # | Criterion | Validation | Status |
-|---|-----------|------------|--------|
-| 1 | `build_index()` reads embeddings from `sample_embeddings` | Not started | ❌ Deferred |
-| 2 | Index file written to `data/indexes/` with `.faiss` extension | Not started | ❌ Deferred |
-| 3 | Metadata JSON alongside index | Not started | ❌ Deferred |
-| 4 | Index rebuildable from scratch | Not started | ❌ Deferred |
-| 5 | No index files in `git status` | N/A until implemented | ❌ Deferred |
+FAISS was never implemented on `main`. [ADR-0004](adr/ADR-0004-sqlite-vec-search-backend.md) supersedes ADR-0002; sqlite-vec `vec0` is the opt-in performance cache. NumPy `.npz` remains default search backend.
+
+| # | Criterion | Status |
+|---|-----------|--------|
+| 1 | FAISS adapter | ❌ Never implemented; superseded by ADR-0004 |
+| 2 | sqlite-vec vec0 opt-in | ✅ Done via `[vec]` extra |
+| 3 | NumPy default backend | ✅ Active |
 
 ### M5 — Search quality (production hardening)
 
@@ -545,7 +546,7 @@ See [ADR-0005](adr/ADR-0005-search-quality-evaluation.md) and [SEARCH_QUALITY_EV
 | Private samples accidentally referenced in tests or docs | High — privacy violation | Low | Synthetic fixtures only; policy explicitly bans sample audio in repo |
 | Generated artifacts accidentally committed | Medium — repo bloat | Medium | `.gitignore` + commit checklist + CI check + artifact policy |
 | False sense of semantic accuracy (user expects perfect results, gets approximations) | Medium — trust erosion | Medium | Document confidence limits in help text and docs; "no fake intelligence" principle |
-| FAISS index rebuild time for >100k samples | Medium — minutes on CPU | Low | Explicitly deferred to EPIC 2+; IndexFlatIP is fast to build (no training) |
+| sqlite-vec rebuild time for >100k samples | Medium — ~20s at 100k | Low | sqlite-vec vec0 rebuild is measured; NumPy fallback available |
 
 ---
 
@@ -553,7 +554,7 @@ See [ADR-0005](adr/ADR-0005-search-quality-evaluation.md) and [SEARCH_QUALITY_EV
 
 EPIC 2 delivers:
 - Reproducible, versioned sample embeddings
-- Local vector index (NumPy cosine similarity skeleton; FAISS deferred) with CLI-invokable build
+- Local vector index (NumPy cosine similarity; sqlite-vec opt-in) with CLI-invokable build
 - Search contract and CLI skeleton (real search requires query embedding backend)
 - Metadata enrichment from SQLite on search results
 
@@ -567,7 +568,7 @@ EPIC 3 (Hybrid Ranking & Recommendation) builds on this foundation:
 | Recommendation | Not in scope | "Samples like this" based on combined signals |
 
 **EPIC 3 does not begin until EPIC 2 search is stable on `main`**, meaning:
-- M4 NumPy E2E smoke is proven; M5 production hardening and M6 FAISS remain future work
+- M4 NumPy E2E smoke is proven; M5 production hardening (Tier A) completed; M6 (FAISS) superseded by ADR-0004
 - The CLI is documented and tested
 - No `git status` pollution from any pipeline step
 - The implementation works without torch/transformers for core pipeline

@@ -95,7 +95,7 @@ The following can always be regenerated from committed source code and local sam
 data/catalog.db          →  rebuild from scan → analyze → autotype pipeline
 reports/*                →  project-specific report generation commands, if present
 data/indexes/*.npz        →  rebuild from stored sample embeddings (current NumPy format)
-data/indexes/*.faiss     →  rebuild from stored sample embeddings (future FAISS format)
+data/indexes/*.faiss     →  N/A (superseded by sqlite-vec / NumPy)
 data/embeddings/*.npy    →  rebuild from the embedding pipeline, when file-based embedding caches are used
 .venv/                   →  python -m venv .venv && pip install -r requirements.txt
 ```
@@ -156,7 +156,7 @@ The following patterns are covered by `.gitignore` (see the file itself for the 
 | `data/last_paths.json` | Last scan state |
 | `*.db`, `*.sqlite`, `*.sqlite3` | Any database files |
 | `data/indexes/`, `data/embeddings/` | Vector index and embedding files |
-| `*.faiss`, `*.index` | FAISS index files |
+| `*.faiss`, `*.index` | Legacy FAISS index files (superseded by ADR-0004) |
 | `*.npy`, `*.npz` | NumPy array files |
 | `*.pkl` | Pickle files |
 | `data/models/` | Downloaded model weights |
@@ -208,7 +208,7 @@ The CI smoke workflow (if running) checks that `git status --short` is clean aft
 | `docs/TARGET_ARCHITECTURE.md` (Section 6) | Source of Truth vs Generated Artifacts |
 | `docs/MCP_SETUP.md` | Safety notes for MCP workflow (do not commit DBs or indexes) |
 | `knowledge/roadmap/adr/ADR-0001.md` | CLAP dependency constraints, model cache discipline |
-| `knowledge/roadmap/adr/ADR-0002.md` | FAISS artifact hygiene (index files are untracked) |
+| `knowledge/roadmap/adr/ADR-0002-local-vector-index-strategy.md` | FAISS artifact hygiene (historical; superseded by ADR-0004) |
 | `knowledge/roadmap/adr/ADR-0003.md` | Embedding BLOB storage — DB is local, not committed |
 | `knowledge/project/PROJECT_META.md` | Risks section — binary bloat, accidental sample commits |
 | `.gitignore` | The actual ignore rules (always authoritative) |
