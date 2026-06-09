@@ -78,7 +78,7 @@ Diese Messungen repräsentieren **Stage 1 (Brute-force, vec0)** im ADR-0004 Stag
 
 ## Stage 2 — int8 Quantization
 
-Added by PR [#XX](https://github.com/jannekbuengener/sample-brain/pull/XX). Implements `benchmark vec --quantization int8` to measure int8 quantized vec0 performance against the NumPy float32 reference.
+Added by PR [#78](https://github.com/jannekbuengener/sample-brain/pull/78). Implements `benchmark vec --quantization int8` to measure int8 quantized vec0 performance against the NumPy float32 reference.
 
 ### Methodology
 
