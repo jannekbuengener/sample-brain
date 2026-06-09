@@ -80,6 +80,38 @@ def _rms_dbfs(y: np.ndarray) -> float | None:
         return None
 
 
+def _extract_bpm_scalar(tempo) -> float | None:
+    if tempo is None:
+        return None
+    if isinstance(tempo, (int, float)):
+        scalar = float(tempo)
+    elif isinstance(tempo, np.ndarray) and tempo.size == 1:
+        scalar = float(tempo.item())
+    elif isinstance(tempo, np.ndarray) and tempo.ndim == 0:
+        scalar = float(tempo.item())
+    elif isinstance(tempo, (np.ndarray, list)) and len(tempo) > 0:
+        scalar = float(tempo[0])
+    else:
+        return None
+    return scalar if scalar > 0 else None
+
+
+def normalize_bpm(bpm: float | None, mode: str = "none") -> float | None:
+    if bpm is None:
+        return None
+    if bpm <= 0:
+        return None
+    if mode == "heuristic":
+        if bpm < 90:
+            return bpm * 2.0
+        if bpm > 200:
+            return bpm / 2.0
+        return bpm
+    if mode != "none":
+        return None
+    return bpm
+
+
 def _duration_class(duration: float | None) -> str | None:
     if duration is None:
         return None
@@ -101,7 +133,9 @@ class Features:
     clazz: str | None
 
 
-def extract_features(path: Path, duration: float | None) -> Features | None:
+def extract_features(
+    path: Path, duration: float | None, bpm_normalization: str = "none"
+) -> Features | None:
     y, sr = safe_load(path)
     if y is None or sr is None:
         return None
@@ -110,9 +144,10 @@ def extract_features(path: Path, duration: float | None) -> Features | None:
     bpm: float | None
     try:
         tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-        bpm = float(tempo) if tempo and tempo > 0 else None
+        bpm = _extract_bpm_scalar(tempo)
     except Exception:
         bpm = None
+    bpm = normalize_bpm(bpm, mode=bpm_normalization)
 
     key, key_conf = estimate_key(y, sr)
     loudness = _rms_dbfs(y)
@@ -155,7 +190,11 @@ def extract_features(path: Path, duration: float | None) -> Features | None:
     )
 
 
-def run_analyze(limit: int | None = None, only_missing: bool = True) -> None:
+def run_analyze(
+    limit: int | None = None,
+    only_missing: bool = True,
+    bpm_normalization: str = "none",
+) -> None:
     """Compute features for samples in the catalog.
 
     Safe by default:
@@ -182,7 +221,7 @@ def run_analyze(limit: int | None = None, only_missing: bool = True) -> None:
             if only_missing and has_features is not None:
                 continue
 
-            feats = extract_features(Path(path_str), duration)
+            feats = extract_features(Path(path_str), duration, bpm_normalization=bpm_normalization)
             if feats is None:
                 continue
 

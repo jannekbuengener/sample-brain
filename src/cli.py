@@ -471,12 +471,13 @@ def main():
     if args.cmd == "analyze":
         cfg = _resolve_profile_or_exit(args)
         _apply_runtime_db_path(cfg)
+        bpm_normalization = cfg.get("analyze", {}).get("bpm_normalization", "none")
         try:
             from .analyze import run_analyze
         except Exception as e:
             print(f"[ERROR] Analyze-Modul fehlt/fehlerhaft: {e}", file=sys.stderr)
             sys.exit(1)
-        run_analyze()
+        run_analyze(bpm_normalization=bpm_normalization)
         print("Analyze completed.")
         return
 
