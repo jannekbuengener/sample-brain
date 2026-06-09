@@ -1,4 +1,4 @@
-tqdm==4.67.3
+tqdm==4.68.1
 sqlalchemy==2.0.50
 soundfile==0.14.0
 numpy==2.4.6
