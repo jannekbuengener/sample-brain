@@ -1,17 +1,20 @@
 # CURRENT_STATUS
 
-## Current State
+## Live State
 
-- **Branch:** `feat/search-quality-campaign`
-- **Working tree:** search quality campaign in progress
-- **Base commit:** `da8c3fe` (`main`)
-- **Open PRs:** none
-- **Open issues:** none (#40–#46 closed)
-- **Tests:** 149 passed (`pytest -q`; optional `[vec]` / `[clap]` extras for opt-in tests)
+- **Branch:** `main`
+- **HEAD:** `b096fcb` (`build(deps): bump numpy from 1.26.4 to 2.4.6`)
+- **Open PRs:** 2 Dependabot (#63 soundfile 0.14.0, #64 tqdm 4.68.1)
+- **Open issues:** none (all closed)
+- **Tests:** 106 passed, 2 skipped (`pytest -q` core; 4 `[vec]`-dependent test files fail import without `sqlite_vec` installed — see test command below)
 
-## Search Quality Campaign — In Progress
+```powershell
+python -m pytest -q --ignore=tests/test_search.py --ignore=tests/test_search_backend.py --ignore=tests/test_search_quality.py --ignore=tests/test_vec_index.py
+```
 
-Branch `feat/search-quality-campaign` adds relevance evaluation on existing search infrastructure (no DB schema change, no sqlite-vec tuning):
+## Search Quality Campaign — Closed
+
+Merged via PR #54 (`0673819`, 2026-05-31). Adds relevance evaluation on existing search infrastructure (no DB schema change, no sqlite-vec tuning):
 
 | Deliverable | Status |
 |-------------|--------|
@@ -24,11 +27,6 @@ Branch `feat/search-quality-campaign` adds relevance evaluation on existing sear
 | Evidence report | ✅ [SEARCH_QUALITY_EVIDENCE.md](../docs/benchmarks/SEARCH_QUALITY_EVIDENCE.md) |
 
 **Tier A gates (measured):** Mean P@1=1.000, P@5=0.600, R@10=1.000, filter compliance 100%, must-recall PASS.
-
-```powershell
-python -m src.cli benchmark search-quality --work-dir $env:TEMP\sample-brain-quality
-python -m pytest -q tests/test_search_quality.py -m "not clap"
-```
 
 ## sqlite-vec Campaign — Closed
 
@@ -68,8 +66,9 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 - **Embedding vs search backend:** `--backend` / `embedding.backend` selects CLAP/noop; `--search-backend` / `search.backend` selects NumPy vs sqlite-vec
 - **Artifacts:** use `SAMPLE_BRAIN_DB_PATH` and external `--work-dir`; never commit DBs, `.npz`, or benchmark outputs
 
-## What Works (Core Pipeline)
+## What Works
 
+### Core Pipeline
 - **Scan** — registers sample files in SQLite catalog; supports `--root` CLI override
 - **Analyze** — extracts audio features via librosa; reads from pre-scanned catalog
 - **Autotype** — rule-based + optional kNN classification
@@ -77,8 +76,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 - **Packaging** — `sample-brain --help` entry point works
 - **CLI** — core pipeline + optional embed/index/search/vec/benchmark/db doctor
 
-## What Works (Semantic Search + sqlite-vec)
-
+### Semantic Search + sqlite-vec
 - **Embeddings** — CLAP backend (optional `[clap]`), worker persistence, `SAMPLE_BRAIN_DB_PATH`
 - **NumPy search** — default backend; `.npz` persistence via `--save` / `--index-path`
 - **sqlite-vec** — optional `[vec]` extra; `index_build --search-backend sqlite-vec`; `search --search-backend sqlite-vec`
@@ -95,7 +93,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 
 | Check | Result |
 |-------|--------|
-| `pip install -e .` + `pytest -q` | PASS (149 tests) |
+| `pip install -e .` + `pytest -q` (core) | PASS (106 passed, 2 skipped; 4 `[vec]`-dependent files fail import without `sqlite_vec`) |
 | CLI `--help` | PASS |
 | External DB via `SAMPLE_BRAIN_DB_PATH` | PASS |
 | Optional `[vec]`: `vec status` | PASS when installed |
@@ -107,13 +105,6 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 - **Phase 5 tags + FTS5 MVP** — not started (roadmap Phase 5)
 - **Large-scale private-sample validation** — synthetic/benchmark fixtures only
 - **EPIC 3–6** — not started
-
-## Next Steps (empfohlen)
-
-1. **Merge search quality campaign** — PR from `feat/search-quality-campaign` after review
-2. **Tier B CLAP golden suite** — optional local evidence with `[clap]` when semantic labels are curated
-3. **sqlite-vec latency follow-up** — only if default switch is desired (~3.5 s p95 @ 100k; gate **FAIL**)
-4. **Phase 5 tags/FTS5** — when hybrid/tag search is prioritized
 
 ## Key Docs
 
