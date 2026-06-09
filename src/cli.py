@@ -388,6 +388,16 @@ def main():
         default=None,
         help="Directory for temporary benchmark databases (default: ./.bench_search_quality).",
     )
+    p_bench_bpm = bench_sub.add_parser(
+        "bpm-evidence",
+        help="Evaluate BPM half/double detection error rates on synthetic fixtures",
+    )
+    p_bench_bpm.add_argument(
+        "--work-dir",
+        type=str,
+        default=None,
+        help="Directory for temporary fixture WAVs (default: ./.bench_bpm_evidence).",
+    )
 
     # sqlite-vec diagnostics
     p_vec = sub.add_parser("vec", help="sqlite-vec availability diagnostics (optional)")
@@ -594,6 +604,13 @@ def main():
         return
 
     if args.cmd == "benchmark":
+        if args.bench_cmd == "bpm-evidence":
+            from .bpm_evidence import run_cli_bpm_evidence
+
+            work_dir = Path(args.work_dir) if args.work_dir else Path(".bench_bpm_evidence")
+            run_cli_bpm_evidence(work_dir)
+            return
+
         cfg = _resolve_profile_or_exit(args)
         _apply_runtime_db_path(cfg)
         if args.bench_cmd == "vec":
