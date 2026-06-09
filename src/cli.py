@@ -346,6 +346,12 @@ def main():
         help="Synthetic sample counts to benchmark (default: 1000 10000).",
     )
     p_bench_vec.add_argument(
+        "--quantization",
+        choices=["float32", "int8"],
+        default="float32",
+        help="Vector quantization strategy for vec0 cache (default: float32).",
+    )
+    p_bench_vec.add_argument(
         "--work-dir",
         type=str,
         default=None,
@@ -582,6 +588,7 @@ def main():
             try:
                 results = run_vec_benchmark(
                     sample_counts=args.samples,
+                    quantization=args.quantization,
                     work_dir=work_dir,
                 )
             except RuntimeError as exc:

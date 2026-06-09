@@ -44,3 +44,23 @@ def test_vec_benchmark_mini(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     assert results[0].sample_count == 200
     assert results[0].warm_p95_ms >= 0.0
     assert 0.0 <= results[0].overlap_k10 <= 1.0
+
+
+@pytest.mark.skipif(
+    not is_sqlite_vec_available(),
+    reason="sqlite-vec optional extra not installed in this environment",
+)
+def test_vec_benchmark_mini_int8(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    work_dir = tmp_path / "bench-int8"
+    monkeypatch.chdir(tmp_path)
+    from src.benchmark_vec import run_vec_benchmark
+
+    results = run_vec_benchmark(
+        sample_counts=[200], quantization="int8", work_dir=work_dir
+    )
+    assert len(results) == 1
+    assert results[0].sample_count == 200
+    assert results[0].warm_p95_ms >= 0.0
+    assert results[0].warm_p99_ms >= 0.0
+    assert 0.0 <= results[0].overlap_k10 <= 1.0
+    assert 0.0 <= results[0].precision_at_1 <= 1.0
