@@ -10,7 +10,7 @@ alwaysApply: true
 Docs/routing-only. Skills werden **empfohlen**, nicht automatisch ausgeführt.
 Keine CI-Workflow-Änderungen, keine neuen Tools, keine bulk Skill-Kopien ins Repo.
 
-Referenz: [docs/SKILL_INTEGRATION_PLAN.md](../../docs/SKILL_INTEGRATION_PLAN.md)
+Referenz: [docs/SKILL_INTEGRATION_PLAN.md](../../docs/SKILL_INTEGRATION_PLAN.md), [SB.VERFUEGBARE.SKILLS.md](../../SB.VERFUEGBARE.SKILLS.md) (identische Matrix)
 
 ## Routing-Matrix
 

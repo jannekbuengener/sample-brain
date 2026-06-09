@@ -9,6 +9,7 @@
 - `tests/` -> unit/integration test expectations (`tests/AGENTS.md`)
 - `docs/` -> product/architecture/process docs (`docs/AGENTS.md`)
 - `agents/` -> shared cross-agent charter (`agents/AGENTS.md`)
+- `SB.*` root files -> Sample-Brain-Orchestrator: `SB.BOOTLOADER.md` (session startup), `SB.AGENT.LIST.json` (agent registry), `SB.AGENT.RULESET.md` (agent operating rules), `SB.VERFUEGBARE.SKILLS.md` (available skill matrix)
 
 ## Project Baseline
 - Stack: Python (3.12+), sqlite, librosa/soundfile, numpy/scipy, sqlalchemy.
@@ -23,7 +24,7 @@
 - Prefer updating tests together with behavior changes.
 
 ## Skill routing
-- Skill routing: For agent task-to-skill mapping, use `docs/SKILL_INTEGRATION_PLAN.md` and `.cursor/rules/skill-routing.mdc`. These files provide recommendation/routing guidance only; they do not authorize automatic tool, workflow, CI, or security changes.
+- Skill routing: For agent task-to-skill mapping, use `docs/SKILL_INTEGRATION_PLAN.md`, `.cursor/rules/skill-routing.mdc`, and `SB.VERFUEGBARE.SKILLS.md`. These files provide recommendation/routing guidance only; they do not authorize automatic tool, workflow, CI, or security changes.
 
 ## Quality Gates
 - Setup:

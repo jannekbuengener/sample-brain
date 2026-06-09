@@ -35,8 +35,10 @@ These documents are loaded depending on the task category.
 
 - `docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md` — embedding contracts, index design, search pipeline, acceptance criteria
 - `knowledge/roadmap/adr/ADR-0001-embedding-model-strategy.md` — CLAP selection rationale, backend design
-- `knowledge/roadmap/adr/ADR-0002-local-vector-index-strategy.md` — FAISS selection, index lifecycle
+- `knowledge/roadmap/adr/ADR-0002-local-vector-index-strategy.md` — FAISS selection (historical; superseded by ADR-0004)
 - `knowledge/roadmap/adr/ADR-0003-embedding-db-schema-design.md` — SQLite schema for embeddings, BLOB rationale
+- `docs/adr/ADR-0004-sqlite-vec-search-backend.md` — sqlite-vec strategy (active)
+- `docs/adr/ADR-0005-search-quality-evaluation.md` — search quality evaluation
 
 ### DAW / Export
 
@@ -68,7 +70,7 @@ The following sources must never be read automatically during session startup. T
 | `knowledge/SHARED.WORKING.MEMORY.md` | Private working memory — not part of the repo contract |
 | `knowledge/logs/` | Agent session logs — runtime state, not project artifacts |
 | Local SQLite database (`data/catalog.db`) | Generated artifact — environment-specific, untracked |
-| FAISS index files (`data/indexes/`) | Generated artifact — rebuildable cache, untracked |
+| Vector index files (`data/indexes/*.npz`) | Generated artifact — rebuildable cache, untracked |
 | Reports (`reports/`) | Generated artifact — untracked |
 | `.venv/` or any virtual environment | Local setup state — never read as context |
 | Model cache (`~/.cache/huggingface/`, `data/models/`) | Downloaded weights — system-global, outside repo contract |
@@ -134,6 +136,8 @@ If documents contradict each other, the following priority applies:
 - Generated artifacts (DB, indexes, models, caches) must not be opened or read through MCP; metadata/status checks may be allowed when needed for hygiene audits.
 
 ## 10. Bootloader Output
+
+A concise session-start complement exists at `SB.BOOTLOADER.md` (root) with minimal read order and startup sequence for quick agent orientation.
 
 Every session should report after bootloader execution:
 

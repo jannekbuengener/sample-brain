@@ -62,6 +62,18 @@ samples=100000 rebuild_ms=20297.1 warm_p50_ms=2673.87 warm_p95_ms=3568.61 filter
 | Latency filtered p95 | ≤ 250 ms @ N≥100k | 3,440.95 ms | **FAIL** |
 | Rebuild time | budget TBD (EPIC-2) | 20,297 ms (~20 s) @ 100k | documented (no hard gate in harness) |
 
+## Stage Model
+
+Diese Messungen repräsentieren **Stage 1 (Brute-force, vec0)** im ADR-0004 Stage-Modell (Amendment 2026-06-09):
+
+| Stage | Latency p95@100k | Status |
+|-------|------------------|--------|
+| 1 — Brute-force (vec0) | 3,568.61 ms (warm) / 3,440.95 ms (filtered) | **Aktuell** — dokumentiert, kein Gate |
+| 2 — int8 Quantisierung | ≤ 1000 ms (Ziel) | Zu benchmarken |
+| 3 — Binary Quantisierung | ≤ 250 ms (Ziel) | Zu benchmarken |
+| 4 — Partition Key | ≤ 500 ms (Ziel) | Zu benchmarken |
+| 5 — ANN | ≤ 200 ms (Ziel) | Future |
+
 ## Decision
 
-**Default search backend stays `numpy`.** sqlite-vec is opt-in via `--search-backend sqlite-vec` or profile/env override. Correctness vs NumPy is proven; interactive latency at 100k does not meet ADR-0004/EPIC-2 sub-second targets on this Windows host. Follow-up performance work is out of scope for this evidence slice.
+**Default search backend stays `numpy`.** sqlite-vec is opt-in via `--search-backend sqlite-vec` or profile/env override. Correctness vs NumPy is proven; interactive latency at 100k (Stage 1) does not meet ADR-0004 sub-second targets on this Windows host. Follow-up performance work maps to Stages 2–5 of the gate model. NumPy remains default until all latency gates for a chosen stage PASS.

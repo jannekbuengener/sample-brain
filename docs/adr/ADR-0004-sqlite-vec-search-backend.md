@@ -187,6 +187,31 @@ Referenz-EPIC: [EPIC_2_SEMANTIC_SEARCH_SPEC.md](../EPIC_2_SEMANTIC_SEARCH_SPEC.m
 
 ---
 
+---
+
+## Amendment 2026-06-09: Staged Latency Gates
+
+Die ursprünglichen Benchmark-Gates (warm p95 ≤ 200ms, filtered p95 ≤ 250ms bei N≥100k) sind für den aktuellen brute-force-vec0-Pfad (v0.1.9) nicht erreichbar. Gemessene Werte: warm p95 ≈ 3568ms, filtered p95 ≈ 3440ms bei 100k.
+
+Der Gate-Modell wird daher in fünf realistischen Stages abgebildet, die von der aktuellen Brute-Force-Implementierung über Quantisierungs- und Partitionierungs-Optimierungen bis zu ANN führen:
+
+| Stage | Strategie | Overlap@k10 | Latency p95@100k (Ziel) | Status |
+|-------|-----------|-------------|-------------------------|--------|
+| 1 | Brute-force (vec0, aktuell) | ≥ 0.95 | ≤ 5000ms (dokumentiert, kein Gate) | **Aktuell** |
+| 2 | int8 Quantisierung | ≥ 0.95 | ≤ 1000ms | Zu benchmarken |
+| 3 | Binary Quantisierung | ≥ 0.85 | ≤ 250ms | Zu benchmarken |
+| 4 | Partition Key | ≥ 0.95 | ≤ 500ms | Zu benchmarken |
+| 5 | ANN (wenn sqlite-vec stabil) | ≥ 0.95 | ≤ 200ms | Future |
+
+**Regeln:**
+- NumPy bleibt Default-Backend, bis alle Latenz-Gates einer gewählten Stage PASS sind.
+- Jede Stage wird unabhängig gebenchmarkt und dokumentiert (Evidence in `docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md`).
+- Der Overlap@k10 muss gegen die NumPy-Referenz gemessen werden.
+- Eine Stage gilt erst als bestanden, wenn alle ihre Gates in einer reproduzierbaren Benchmark-Umgebung PASS sind.
+- Der Wechsel zu einer neuen Stage erfordert ein explizites GO (Issue/PR).
+
+---
+
 ## Referenzen
 
 | Referenz | Pfad |

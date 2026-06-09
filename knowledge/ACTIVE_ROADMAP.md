@@ -20,12 +20,14 @@
   - [x] 14 unit tests for config loader
   - [x] README documentation for profiles, CLI overrides, env vars, precedence
 
-## Next Focus: EPIC 2 — Semantic Search Foundation
+## Current Focus: EPIC 2 — Semantic Search Foundation (Completed)
 
 ### Design & ADRs
-- [x] ADR-0001: Embedding Model Strategy (CLAP)
-- [x] ADR-0002: Local Vector Index Strategy (FAISS)
-- [x] ADR-0003: Embedding DB Schema Design
+- [x] ADR-0001: Embedding Model Strategy (CLAP) — Accepted
+- [x] ADR-0002: Local Vector Index Strategy (FAISS) — Superseded by ADR-0004
+- [x] ADR-0003: Embedding DB Schema Design — Accepted
+- [x] ADR-0004: SQLite + sqlite-vec Search Backend — Accepted
+- [x] ADR-0005: Search Quality Evaluation — Accepted
 
 ### Infrastructure on `main`
 - [x] Idempotent DB schema extension (`embedding_models`, `sample_embeddings`)
@@ -37,26 +39,29 @@
 - [x] Worker + DB tests (13 tests)
 - [x] Guarded CLAP backend adapter (optional imports, CPU-first, no model download in CI)
 
-### P2 — Index & Search Pipeline (NumPy skeleton + persistence + backend contract on main, FAISS deferred)
+### Index & Search Pipeline
 - [x] Guarded CLAP backend on `main` — `ClapEmbeddingBackend` with lazy loading, 512-dim text/audio embedding, download-free `model_info()`, `[clap]` extra
-- [x] NumPy vector index skeleton (`src/index.py`) — `build_numpy_index()`, `search_index()`, in-memory, cosine similarity
+- [x] NumPy vector index (`src/index.py`) — `build_numpy_index()`, `search_index()`, in-memory, cosine similarity; default search backend
+- [x] sqlite-vec vec0 cache (`src/vec_index.py`, `src/search_backend.py`) — opt-in via `--search-backend sqlite-vec`; ADR-0004 accepted
+- [x] Search backend adapter — `NumpySearchBackend`, `SqliteVecSearchBackend`; default `numpy`
 - [x] Search backend contract wired — `run_search()` calls `get_backend()` → `embed_text()` → `search_index()` → ranked hits
 - [x] CLI `search --backend {noop,clap}` — selects backend via CLI or profile config
 - [x] CLI `search --index-path` — loads persisted `.npz` index instead of building from DB
-- [x] CLI `index_build --model-id / --limit` — functional controlled command
-- [x] CLI `search [query] --model-id / --topk / --backend / --index-path` — controls search flow
-- [x] 33 unit tests for index + search (24 index + 9 search)
+- [x] CLI `index_build --model-id / --limit / --search-backend` — functional controlled command
+- [x] CLI `search [query] --model-id / --topk / --backend / --search-backend / --index-path` — controls search flow
+- [x] 33+ unit tests for index + search (24 index + 9 search)
 - [x] NumPy `.npz` index persistence — `save_numpy_index()`, `load_numpy_index()`, `default_index_path()`
 - [x] Index metadata validation — format_version, metric, dimension, model_id cross-check
 - [x] CLI `index_build --save` — explicit persistence flag (no automatic writes)
 - [x] CLI `index_build --index-path` — custom save path (implies `--save`)
-- [ ] FAISS index build module — deferred until NumPy contract stable
-- [ ] Text-to-sample search — requires installed CLAP deps + populated embeddings/index
-- [ ] Audio-to-audio similarity search — requires installed CLAP deps + populated embeddings/index
+- [x] Text-to-sample search — smoke proven (M4)
+- [x] Audio-to-audio similarity search — implemented via `--query-audio`
+- [x] sqlite-vec Phases 1–8 closed — campaigns complete
+- [x] Search quality campaign — Tier A gates PASS (PR #54)
+- [x] FAISS: superseded by ADR-0004 — never implemented on `main`
 
-## Future Doku-Stränge (vorgemerkt)
+## Documentation Topics (vorgemerkt)
 
-- `docs/BOOTLOADER_AND_CONTEXT_STRATEGY.md`
 - `docs/SAMPLE_BRAIN_SKILLS_SPEC.md`
 
 ## Later: EPIC 3-6
@@ -69,4 +74,4 @@
 
 ---
 
-> **Note:** Embedding pipeline (worker loop, no-op backend) is on `main`. NumPy vector index (in-memory + `.npz` persistence via `--save`) with cosine search is on `main`. Search backend contract is wired — query embedding flows through `EmbeddingBackend.embed_text()`. A guarded `ClapEmbeddingBackend` is on `main` — real embedding calls work after `pip install -e .[clap]` and first-time model download. FAISS is deferred. End-to-end semantic search with real vectors requires installed CLAP deps + populated embeddings/index.
+> **Note:** Embedding pipeline (worker loop, no-op backend) is on `main`. NumPy vector index (in-memory + `.npz` persistence via `--save`) with cosine search is on `main`. sqlite-vec vec0 cache is opt-in via `[vec]` extra (ADR-0004). Search backend contract is wired — query embedding flows through `EmbeddingBackend.embed_text()`. A guarded `ClapEmbeddingBackend` is on `main`. FAISS is superseded (ADR-0002 kept as historical record). End-to-end semantic search with real vectors requires installed CLAP deps + populated embeddings/index.

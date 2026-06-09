@@ -1,0 +1,62 @@
+{
+  "_comment": "Sample Brain — verfügbare Cursor Sub-Agents. Routing via SKILL_INTEGRATION_PLAN.md und skill-routing.mdc.",
+  "version": 1,
+  "updated": "2026-06-09",
+  "agents": [
+    {
+      "id": "sample-brain-control-orchestrator",
+      "name": "Control Orchestrator",
+      "description": "Orchestriert Workflows, delegiert an spezialisierte Agents, koordiniert PR-Queue und Board-Zustand",
+      "default": true,
+      "readonly": true
+    },
+    {
+      "id": "sample-brain-ci-debugger",
+      "name": "CI Debugger",
+      "description": "Diagnostiziert CI/CD-Fehlschläge, analysiert GitHub Actions Logs, schlägt Fixes vor",
+      "readonly": true
+    },
+    {
+      "id": "sample-brain-code-reviewer",
+      "name": "Code Reviewer",
+      "description": "PR-Code-Review: Diff-Analyse, Gate-Checks, Safety- und Scope-Prüfung",
+      "readonly": true
+    },
+    {
+      "id": "sample-brain-docs-sync-maintainer",
+      "name": "Docs Sync Maintainer",
+      "description": "Erkennt Canon-Drift zwischen Docs und Code/CLI, synchronisiert Status-Dokumente",
+      "readonly": true
+    },
+    {
+      "id": "sample-brain-implementation-engineer",
+      "name": "Implementation Engineer",
+      "description": "Setzt spezifizierte Features um: Code, Tests, Docs gemäß ADR-Vorgaben",
+      "readonly": false
+    },
+    {
+      "id": "sample-brain-security-triage",
+      "name": "Security Triage",
+      "description": "Security-Audit: Gitleaks-Funde, Dependency-Review, Secret-Scan, CI-Härtung",
+      "readonly": true
+    },
+    {
+      "id": "sample-brain-dependency-upgrader",
+      "name": "Dependency Upgrader",
+      "description": "Dependency-Bumps via Dependabot oder manuelle Updates mit kompatiblem Range-Check",
+      "readonly": false
+    },
+    {
+      "id": "sample-brain-pr-packager",
+      "name": "PR Packager",
+      "description": "Bereitet PRs vor: Branch-Erstellung, Commit-Squash, PR-Body mit Closes-Referenzen",
+      "readonly": false
+    },
+    {
+      "id": "sample-brain-issue-backlog-maintainer",
+      "name": "Issue Backlog Maintainer",
+      "description": "Pflegt ISSUE_BACKLOG.md, synchronisiert Issue-Status mit Board-Reality",
+      "readonly": true
+    }
+  ]
+}
