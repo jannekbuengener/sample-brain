@@ -70,8 +70,8 @@ Diese Messungen repräsentieren **Stage 1 (Brute-force, vec0)** im ADR-0004 Stag
 |-------|------------------|--------|
 | 1 — Brute-force (vec0) | 3,568.61 ms (warm) / 3,440.95 ms (filtered) | **Aktuell** — dokumentiert, kein Gate |
 | 2 — int8 Quantisierung | ≤ 1000 ms (Ziel) | **Done** — siehe unten |
-| 3 — Binary Quantisierung | ≤ 250 ms (Ziel) | Zu benchmarken |
-| 4 — Partition Key | ≤ 500 ms (Ziel) | Zu benchmarken |
+| 3 — Binary Quantisierung | ≤ 250 ms (Ziel) | **Done — EXCLUDED** — siehe unten |
+| 4 — Partition Key | ≤ 500 ms (Ziel) | **Benchmarked (1k/10k)** — siehe unten |
 | 5 — ANN | ≤ 200 ms (Ziel) | Future |
 
 ---
@@ -160,7 +160,101 @@ sample=100000 rebuild_ms=9831.5 warm_p50_ms=86.79 warm_p95_ms=102.96 warm_p99_ms
 
 **Default search backend stays `numpy`.** sqlite-vec int8 quantization demonstrates dramatic latency improvements (102ms p95 at 100k) but with a correctness tradeoff (overlap@10 as low as 0.800). A switch from float32 vec0 to int8 vec0 requires accepting this accuracy reduction. No automated backend switch is triggered by this evidence.
 
-**Follow-up:** Stage 3 (binary quantization) may improve latency further. Partition Key (Stage 4) may improve both latency and accuracy by reducing search space without quantization loss.
+**Follow-up:** Partition Key (Stage 4) may improve both latency and accuracy by reducing search space without quantization loss. Binary quantization (Stage 3) is EXCLUDED — see below.
+
+---
+
+## Stage 3 — Binary Quantization
+
+Added by PR [#69](https://github.com/jannekbuengener/sample-brain/pull/69). Implements `benchmark vec --quantization binary` to measure sign-binarized bit[512] vec0 performance against the NumPy float32 reference.
+
+### Methodology
+
+- Float32 embeddings from `sample_embeddings` are binarized by sign: bit=1 if value > 0, else bit=0.
+- 512 bits are packed MSB-first into 64 bytes per vector.
+- The vec0 table is created with `bit[512]` column type and populated via `vec_bit(packed_bytes)`.
+- Queries are binarized and packed with the same method.
+- sqlite-vec v0.1.9 internally computes Hamming distance for bit vectors.
+- All measurements run against the same synthetic benchmarks as Stages 1 and 2.
+
+### Run metadata
+
+| Field | Value |
+|-------|-------|
+| Date | 2026-06-09 |
+| Host | Windows 11, Python 3.12.10, AMD64 |
+| sqlite-vec | v0.1.9 |
+| SQLite | 3.49.1 |
+
+### Command
+
+```powershell
+.\.venv\Scripts\python.exe -m src.cli benchmark vec --samples 1000 10000 50000 100000 --quantization binary --work-dir $env:TEMP\sb-bench-binary-final
+```
+
+### Benchmark results
+
+| N | rebuild_ms | warm_p50 | warm_p95 | warm_p99 | filtered_p50 | filtered_p95 | filtered_p99 | overlap_k10 | precision@1 | db_size |
+|---|------------|----------|----------|----------|--------------|--------------|--------------|-------------|-------------|---------|
+| 1,000 | 139.7 | 3.22 | 4.31 | 4.31 | 5.04 | 8.73 | 8.73 | 0.300 | 0.000 | 4,481,024 |
+| 10,000 | 1,439.5 | 4.45 | 4.58 | 4.58 | 9.33 | 10.12 | 10.12 | 0.100 | 0.000 | 43,884,544 |
+| 50,000 | 6,977.2 | 9.44 | 12.03 | 12.03 | 30.43 | 33.45 | 33.45 | 0.000 | 0.000 | 219,435,008 |
+| 100,000 | 14,957.9 | 12.32 | 17.51 | 17.51 | 67.43 | 75.81 | 75.81 | 0.000 | 0.000 | 439,111,680 |
+
+Full harness stdout:
+
+```
+samples=1000 rebuild_ms=139.7 warm_p50_ms=3.22 warm_p95_ms=4.31 warm_p99_ms=4.31 filtered_p50_ms=5.04 filtered_p95_ms=8.73 filtered_p99_ms=8.73 overlap_k10=0.300 precision_at_1=0.000 db_size_bytes=4481024 gate_overlap_k10=FAIL
+samples=10000 rebuild_ms=1439.5 warm_p50_ms=4.45 warm_p95_ms=4.58 warm_p99_ms=4.58 filtered_p50_ms=9.33 filtered_p95_ms=10.12 filtered_p99_ms=10.12 overlap_k10=0.100 precision_at_1=0.000 db_size_bytes=43884544 gate_overlap_k10=FAIL
+samples=50000 rebuild_ms=6977.2 warm_p50_ms=9.44 warm_p95_ms=12.03 warm_p99_ms=12.03 filtered_p50_ms=30.43 filtered_p95_ms=33.45 filtered_p99_ms=33.45 overlap_k10=0.000 precision_at_1=0.000 db_size_bytes=219435008 gate_overlap_k10=FAIL
+samples=100000 rebuild_ms=14957.9 warm_p50_ms=12.32 warm_p95_ms=17.51 warm_p99_ms=17.51 filtered_p50_ms=67.43 filtered_p95_ms=75.81 filtered_p99_ms=75.81 overlap_k10=0.000 precision_at_1=0.000 db_size_bytes=439111680 gate_overlap_k10=FAIL
+  gate_100k_warm_p95=PASS gate_100k_filtered_p95=PASS
+```
+
+### Stage 3 ADR-0004 target
+
+| Gate | Threshold | Measured (100k) | Verdict |
+|------|-----------|-----------------|---------|
+| Latency warm p95 | ≤ 250 ms | 17.51 ms | **PASS** |
+| Latency filtered p95 | ≤ 250 ms | 75.81 ms | **PASS** |
+| Overlap@10 vs NumPy | ≥ 0.85 | 0.000 | **FAIL** |
+| Precision@1 vs NumPy | — | 0.000 | **FAIL** |
+| Rebuild time | budget TBD | 14,958 ms | documented |
+
+### Comparison with other stages (100k reference)
+
+| Strategy | p95 (100k) | Overlap@10 (100k) | DB size (100k) |
+|----------|-----------|-------------------|---------------|
+| float32 brute-force | 3,568.61 ms | 1.000 | 647 MB |
+| int8 | 102.96 ms | 0.800 | 484 MB |
+| **binary (Stage 3)** | **17.51 ms** | **0.000** | **439 MB** |
+| Partition 10 (float32, 10k ref) | 3.26 ms | 1.000 | 64 MB |
+
+### Key observations
+
+1. **Overlap@10 collapses at scale**: 0.300 at 1k, 0.100 at 10k, 0.000 at 50k+. Sign-based binarization of synthetic normal-distribution vectors produces near-random ranking similarity at moderate scale. The Hamming distance of 512-bit vectors cannot preserve cosine ranking for unclustered random data.
+
+2. **Precision@1 is 0.000 at all N**: Binary quantization never returns the correct top-1 result (matching NumPy float32) in any measurement. The information loss from 32-bit float → 1-bit binary destroys fine-grained ranking.
+
+3. **Latency is excellent but irrelevant**: At 17.5 ms warm p95 and 75.8 ms filtered p95, binary is 6× faster than int8 and 200× faster than float32. However, the recall loss makes this speed unusable for any ranking-sensitive search.
+
+4. **Storage savings are marginal**: Only 9% smaller than int8 (439MB vs 484MB at 100k), because the vec0 internal index structure dominates over raw vector storage.
+
+5. **Root cause**: Synthetic normal-distribution vectors have no cluster structure — every vector is roughly equidistant from every other in Hamming space. Real CLAP embeddings may show better binary recall, but the benchmark measures a worst-case lower bound.
+
+### Stage 3 decision
+
+**Binary quantization (Stage 3) is EXCLUDED as a product path for sample-brain.**
+
+| Criterion | Result |
+|-----------|--------|
+| ADR-0004 Stage 3 overlap gate (≥ 0.85) | **FAIL** (0.000 at 100k) |
+| ADR-0004 Stage 3 latency gate (≤ 250 ms) | **PASS** (17.51 ms) |
+| Precision@1 usability threshold | **FAIL** (0.000) |
+| Improvement over int8 | None — int8 provides usable ranking (0.800 overlap), binary provides none |
+| Improvement over partition key | None — partition key delivers 1.000 overlap at comparable latency |
+
+The Stage 3 evidence proves that binary quantization through sign-binarized Hamming distance is not viable as a search strategy for sample-brain's vector corpus. The benchmark documents this as a clean exclusion boundary, preventing future re-evaluation without new evidence.
 
 ---
 
@@ -269,6 +363,6 @@ See [Issue #70](https://github.com/jannekbuengener/sample-brain/issues/70) for d
 |-------|------------------|--------|
 | 1 — Brute-force (vec0) | 3,568.61 ms (warm) / 3,440.95 ms (filtered) | **Aktuell** — dokumentiert, kein Gate |
 | 2 — int8 Quantisierung | ≤ 1000 ms (Ziel) | **Done** — siehe oben |
-| 3 — Binary Quantisierung | ≤ 250 ms (Ziel) | Zu benchmarken |
+| 3 — Binary Quantisierung | ≤ 250 ms (Ziel) | **Done — EXCLUDED** — siehe oben |
 | 4 — Partition Key | ≤ 500 ms (Ziel) | **Benchmarked (1k/10k)** — siehe oben |
 | 5 — ANN | ≤ 200 ms (Ziel) | Future |

@@ -347,7 +347,7 @@ def main():
     )
     p_bench_vec.add_argument(
         "--quantization",
-        choices=["float32", "int8"],
+        choices=["float32", "int8", "binary"],
         default="float32",
         help="Vector quantization strategy for vec0 cache (default: float32).",
     )

@@ -198,9 +198,9 @@ Der Gate-Modell wird daher in fünf realistischen Stages abgebildet, die von der
 | Stage | Strategie | Overlap@k10 | Latency p95@100k (Ziel) | Status |
 |-------|-----------|-------------|-------------------------|--------|
 | 1 | Brute-force (vec0, aktuell) | ≥ 0.95 | ≤ 5000ms (dokumentiert, kein Gate) | **Aktuell** |
-| 2 | int8 Quantisierung | ≥ 0.95 | ≤ 1000ms | Zu benchmarken |
-| 3 | Binary Quantisierung | ≥ 0.85 | ≤ 250ms | Zu benchmarken |
-| 4 | Partition Key | ≥ 0.95 | ≤ 500ms | Zu benchmarken |
+| 2 | int8 Quantisierung | ≥ 0.95 | ≤ 1000ms | **Done** |
+| 3 | Binary Quantisierung | ≥ 0.85 | ≤ 250ms | **Done — EXCLUDED** |
+| 4 | Partition Key | ≥ 0.95 | ≤ 500ms | **Benchmarked (1k/10k)** |
 | 5 | ANN (wenn sqlite-vec stabil) | ≥ 0.95 | ≤ 200ms | Future |
 
 **Regeln:**
