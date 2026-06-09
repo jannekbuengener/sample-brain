@@ -9,7 +9,7 @@
 ## Mandatory Bootstrap (every session)
 
 1. Read `AGENTS.md` (root scope)
-2. Read `.cursor/rules/sample-brain-project.mdc`
+2. Read `.cursor/rules/sample-brain-project.mdc` (if present)
 3. Read `SB.BOOTLOADER.md`
 4. Read `.cursor/rules/skill-routing.mdc` when task involves skill selection
 5. Fetch live repo/GitHub state before making board/PR/issue claims

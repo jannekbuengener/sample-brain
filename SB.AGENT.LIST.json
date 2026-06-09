@@ -57,6 +57,42 @@
       "name": "Issue Backlog Maintainer",
       "description": "Pflegt ISSUE_BACKLOG.md, synchronisiert Issue-Status mit Board-Reality",
       "readonly": true
+    },
+    {
+      "id": "sample-brain-bootstrap-validator",
+      "name": "Bootstrap Validator",
+      "description": "SampleBrain bootstrap validator for fresh setup instructions, editable install, CLI entry points, and runtime smoke evidence.",
+      "readonly": true
+    },
+    {
+      "id": "sample-brain-quality-gatekeeper",
+      "name": "Quality Gatekeeper",
+      "description": "Read-only SampleBrain quality gatekeeper for scope compliance, required checks, PR merge gates, and final PASS/HOLD calls.",
+      "readonly": true
+    },
+    {
+      "id": "sample-brain-repository-auditor",
+      "name": "Repository Auditor",
+      "description": "Read-only SampleBrain repository auditor for repo state, file layout, drift, hygiene, and risk inventory.",
+      "readonly": true
+    },
+    {
+      "id": "sample-brain-skill-routing-auditor",
+      "name": "Skill Routing Auditor",
+      "description": "Read-only auditor for SampleBrain SkillForge routing docs, Cursor rules, Priority A/B/C usage, and agent-task mapping quality.",
+      "readonly": true
+    },
+    {
+      "id": "sample-brain-system-architect",
+      "name": "System Architect",
+      "description": "Read-only SampleBrain system architect for small architecture decisions, CLI/data-flow boundaries, and minimal design notes.",
+      "readonly": true
+    },
+    {
+      "id": "sample-brain-validation-evidence-analyst",
+      "name": "Validation Evidence Analyst",
+      "description": "Read-only SampleBrain validation analyst for command evidence, test interpretation, bootstrap proof, and PASS/HOLD decisions.",
+      "readonly": true
     }
   ]
 }
