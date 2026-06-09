@@ -352,6 +352,21 @@ def main():
         help="Vector quantization strategy for vec0 cache (default: float32).",
     )
     p_bench_vec.add_argument(
+        "--partition-strategy",
+        choices=["none", "synthetic"],
+        default="none",
+        help="Partition key strategy (default: none). "
+             "'synthetic' creates separate vec0 tables per partition.",
+    )
+    p_bench_vec.add_argument(
+        "--partition-counts",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Number of partitions to benchmark (e.g. 10 25 50 100). "
+             "Requires --partition-strategy.",
+    )
+    p_bench_vec.add_argument(
         "--work-dir",
         type=str,
         default=None,
@@ -589,6 +604,8 @@ def main():
                 results = run_vec_benchmark(
                     sample_counts=args.samples,
                     quantization=args.quantization,
+                    partition_counts=args.partition_counts,
+                    partition_strategy=args.partition_strategy,
                     work_dir=work_dir,
                 )
             except RuntimeError as exc:
