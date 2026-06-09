@@ -25,6 +25,7 @@ WARM_P95_GATE_MS = 200.0
 FILTERED_P95_GATE_MS = 250.0
 
 VEC_SAMPLE_INT8_TABLE = "vec_sample_int8"
+VEC_SAMPLE_BIT_TABLE = "vec_sample_bit"
 
 PARTITION_TABLE_PREFIX = "vec_bench_part"
 
@@ -60,6 +61,16 @@ def _percentile(values: list[float], pct: float) -> float:
 
 def _quantize_float32_to_int8(vector: np.ndarray) -> np.ndarray:
     return np.clip(np.round(vector * 127.0), -128.0, 127.0).astype(np.int8)
+
+
+def _quantize_float32_to_bit(vector: np.ndarray) -> bytes:
+    bits = (vector > 0).astype(np.uint8)
+    n_bytes = (len(bits) + 7) // 8
+    packed = bytearray(n_bytes)
+    for i, b in enumerate(bits):
+        if b:
+            packed[i // 8] |= 1 << (7 - (i % 8))
+    return bytes(packed)
 
 
 def _rebuild_int8_vec0_cache(
@@ -148,6 +159,155 @@ def _int8_search(
         if len(hits) >= topk:
             break
     return hits
+
+
+def _rebuild_bit_vec0_cache(
+    model_id: int,
+    db_path: Path,
+) -> int:
+    model = get_embedding_model_by_id(model_id)
+    if model is None:
+        raise ValueError(f"Unknown embedding model_id={model_id}")
+    embedding_dim = model["embedding_dim"]
+    rows = load_current_embedding_rows(model_id)
+    conn = open_vec_connection(db_path)
+    try:
+        conn.execute(f"DROP TABLE IF EXISTS {VEC_SAMPLE_BIT_TABLE}")
+        conn.execute(
+            f"""
+            CREATE VIRTUAL TABLE {VEC_SAMPLE_BIT_TABLE} USING vec0(
+              embedding bit[{embedding_dim}]
+            )
+            """
+        )
+        insert_sql = f"""
+            INSERT INTO {VEC_SAMPLE_BIT_TABLE}(rowid, embedding)
+            VALUES (?, vec_bit(?))
+        """
+        for sample_id, blob, _source_hash, dim in rows:
+            vector = decode_embedding_blob(blob, dim)
+            normalized = normalize_vectors(vector.reshape(1, -1))[0]
+            packed = _quantize_float32_to_bit(normalized)
+            conn.execute(insert_sql, (sample_id, packed))
+        conn.commit()
+    finally:
+        conn.close()
+    return len(rows)
+
+
+def _bit_search(
+    model_id: int,
+    query_vector: np.ndarray,
+    *,
+    topk: int = 10,
+    candidate_sample_ids: set[int] | None = None,
+    db_path: Path | None = None,
+) -> list[SearchHit]:
+    model = get_embedding_model_by_id(model_id)
+    if model is None:
+        raise ValueError(f"Unknown embedding model_id={model_id}")
+    query_norm = normalize_vectors(query_vector.reshape(1, -1))[0]
+    packed = _quantize_float32_to_bit(query_norm)
+    conn = open_vec_connection(db_path)
+    try:
+        conn.row_factory = sqlite3.Row
+        fetch_k = topk
+        if candidate_sample_ids is not None:
+            fetch_k = max(topk * 50, 200)
+        matches = conn.execute(
+            f"""
+            SELECT rowid, distance
+            FROM {VEC_SAMPLE_BIT_TABLE}
+            WHERE embedding MATCH vec_bit(?)
+            ORDER BY distance
+            LIMIT ?
+            """,
+            (packed, fetch_k),
+        ).fetchall()
+    finally:
+        conn.close()
+    hits: list[SearchHit] = []
+    for row in matches:
+        sample_id = int(row["rowid"])
+        if candidate_sample_ids is not None and sample_id not in candidate_sample_ids:
+            continue
+        distance = float(row["distance"])
+        hits.append(SearchHit(sample_id=sample_id, path="", score=-distance))
+        if len(hits) >= topk:
+            break
+    return hits
+
+
+def _bit_timed_search_ms(
+    model_id: int,
+    query_vector: np.ndarray,
+    *,
+    topk: int = 10,
+    candidate_sample_ids: set[int] | None = None,
+    db_path: Path | None = None,
+    repeats: int = 5,
+) -> tuple[float, float, float]:
+    timings: list[float] = []
+    for _ in range(repeats):
+        start = time.perf_counter()
+        _bit_search(
+            model_id,
+            query_vector,
+            topk=topk,
+            candidate_sample_ids=candidate_sample_ids,
+            db_path=db_path,
+        )
+        timings.append((time.perf_counter() - start) * 1000.0)
+    return (
+        _percentile(timings, 50),
+        _percentile(timings, 95),
+        _percentile(timings, 99),
+    )
+
+
+def _measure_bit_topk_overlap(
+    model_id: int,
+    query_vector: np.ndarray,
+    *,
+    topk: int = 10,
+    candidate_sample_ids: set[int] | None = None,
+    db_path: Path | None = None,
+) -> float:
+    numpy_hits = get_search_backend("numpy").search(
+        query_vector,
+        model_id,
+        topk=topk,
+        candidate_sample_ids=candidate_sample_ids,
+    )
+    bit_hits = _bit_search(
+        model_id,
+        query_vector,
+        topk=topk,
+        candidate_sample_ids=candidate_sample_ids,
+        db_path=db_path,
+    )
+    numpy_ids = {hit.sample_id for hit in numpy_hits}
+    bit_ids = {hit.sample_id for hit in bit_hits}
+    if topk <= 0:
+        return 1.0
+    return len(numpy_ids & bit_ids) / topk
+
+
+def _measure_bit_precision_at_1(
+    model_id: int,
+    query_vector: np.ndarray,
+    *,
+    db_path: Path | None = None,
+) -> float:
+    numpy_hits = get_search_backend("numpy").search(
+        query_vector, model_id, topk=1
+    )
+    bit_hits = _bit_search(
+        model_id, query_vector, topk=1, db_path=db_path
+    )
+    if not numpy_hits or not bit_hits:
+        return 0.0
+    return 1.0 if numpy_hits[0].sample_id == bit_hits[0].sample_id else 0.0
 
 
 def _seed_benchmark_db(
@@ -487,10 +647,10 @@ def run_vec_benchmark(
             "sqlite-vec is not available. Install with: pip install -e .[vec]"
         )
 
-    if quantization not in ("float32", "int8"):
+    if quantization not in ("float32", "int8", "binary"):
         raise ValueError(
             f"Unknown quantization strategy: {quantization!r}. "
-            "Must be 'float32' or 'int8'."
+            "Must be 'float32', 'int8', or 'binary'."
         )
 
     counts = sample_counts or [1_000, 10_000, 50_000, 100_000]
@@ -501,7 +661,9 @@ def run_vec_benchmark(
     base_dir = work_dir or Path(".") / ".bench_sqlite_vec"
     base_dir.mkdir(parents=True, exist_ok=True)
 
+    is_quantized = quantization in ("int8", "binary")
     is_int8 = quantization == "int8"
+    is_binary = quantization == "binary"
 
     for sample_count in counts:
         db_path = base_dir / f"bench-{sample_count}.db"
@@ -557,6 +719,8 @@ def run_vec_benchmark(
             start = time.perf_counter()
             if is_int8:
                 _rebuild_int8_vec0_cache(model_id, db_path=db_path)
+            elif is_binary:
+                _rebuild_bit_vec0_cache(model_id, db_path=db_path)
             else:
                 rebuild_vec0_cache(model_id, db_path=db_path)
             rebuild_ms = (time.perf_counter() - start) * 1000.0
@@ -577,6 +741,19 @@ def run_vec_benchmark(
                     model_id, query, topk=10, db_path=db_path
                 )
                 precision_at_1 = _measure_precision_at_1(
+                    model_id, query, db_path=db_path
+                )
+            elif is_binary:
+                warm_p50, warm_p95, warm_p99 = _bit_timed_search_ms(
+                    model_id, query, db_path=db_path
+                )
+                filtered_p50, filtered_p95, filtered_p99 = _bit_timed_search_ms(
+                    model_id, query, candidate_sample_ids=filtered_ids, db_path=db_path
+                )
+                overlap_k10 = _measure_bit_topk_overlap(
+                    model_id, query, topk=10, db_path=db_path
+                )
+                precision_at_1 = _measure_bit_precision_at_1(
                     model_id, query, db_path=db_path
                 )
             else:
