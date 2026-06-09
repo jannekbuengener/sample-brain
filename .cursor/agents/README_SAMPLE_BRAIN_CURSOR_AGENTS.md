@@ -41,6 +41,10 @@ For concrete work:
 - release/PR packaging: `sample-brain-pr-packager`
 - board/backlog sync: `sample-brain-issue-backlog-maintainer`
 
+## Full registry
+
+This README lists frequently-used agents. The complete agent registry is at [`SB.AGENT.LIST.json`](../../SB.AGENT.LIST.json) (root).
+
 ## Hard guardrail
 
 `readonly: false` means the agent can edit only after explicit scoped GO. Without GO, every agent behaves read-only.
