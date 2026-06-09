@@ -2,13 +2,15 @@
 
 Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board reality** below for live state.
 
-## GitHub Board Reality (2026-05-31, post-PR #37 reconcile)
+## GitHub Board Reality (2026-06-09)
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Open issues | 🔶 One docs reconcile issue | #31 open (`docs(backlog): reconcile epic status and board state after PR #26`) |
-| Open PRs | ✅ None | No open pull requests |
-| `main` HEAD | ✅ Current | `cfd6e63` — merge of PR #37 (config/export contract fix) |
+| Open issues | ✅ None | All closed (#31 included) |
+| Open PRs | 🔶 2 Dependabot | #63 (soundfile 0.14.0), #64 (tqdm 4.68.1) |
+| `main` HEAD | ✅ Current | `b096fcb` — build(deps): bump numpy from 1.26.4 to 2.4.6 |
+| sqlite-vec campaign (PRs #47–#53) | ✅ Closed | Phases 1–8 complete |
+| search-quality campaign (PR #54) | ✅ Closed | Merged 2026-05-31 |
 | GitHub #27 | ✅ Closed | Implemented via PR #32 (`9d41782`) |
 | GitHub #28 | ✅ Closed | Implemented via PR #34 (`31fc3f1`) |
 | GitHub #29 | ✅ Closed | Implemented via PR #36 (`e7d59c7`) |
@@ -46,9 +48,11 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 
 ## Post-cleanup board state
 
-As of `main` at `cfd6e63` (PR #37 merge):
+As of `main` at `b096fcb`:
 
 - **EPIC 2 runtime and E2E proof** — completed and documented (`CURRENT_STATUS.md`, `EPIC_2_SEMANTIC_SEARCH_SPEC.md`)
+- **sqlite-vec campaign** — Phases 1–8 closed (PRs #47–#53); default backend remains `numpy`
+- **Search quality campaign** — closed (PR #54, merged 2026-05-31); Tier A gates PASS
 - **EPIC 3 foundation** — hybrid ranking score contract merged via PR #23
 - **Docs sync** — SkillForge routing via PRs #16/#19; bootstrap validation via PR #20; backlog board via PRs #21/#24/#26
 - **Test hardening** — CLAP unavailable-backend search path via PR #22 (`tests/test_search.py`)
@@ -56,7 +60,7 @@ As of `main` at `cfd6e63` (PR #37 merge):
 - **Cursor Cloud onboarding** — PR #17 merged (`AGENTS.md` dev environment instructions)
 - **Cursor subagents** — PR #25 merged (`.cursor/agents/sample-brain-*.md`)
 - **E2E milestone closures** — #27/#28/#29/#30 are closed via PR #32/#34/#36/#35; PR #33 merged as schema bugfix follow-up; PR #37 merged as config/export contract fix
-- **Current board reality** — no further product issues are open; only docs reconcile issue #31 remains open
+- **Current board reality** — no open product issues; 2 open Dependabot PRs (#63, #64)
 
 Local backlog item numbers below are **planning IDs**, not GitHub issue numbers (except where cross-referenced).
 
