@@ -19,6 +19,7 @@ _ENV_VARS = {
     "model_cache_dir": "SAMPLE_BRAIN_MODEL_CACHE_DIR",
     "db_path": "SAMPLE_BRAIN_DB_PATH",
     "max_tags": "SAMPLE_BRAIN_MAX_TAGS",
+    "bpm_normalization": "SAMPLE_BRAIN_BPM_NORMALIZATION",
 }
 
 _ENV_KEY_MAP: dict[str, tuple[str, ...]] = {
@@ -29,10 +30,12 @@ _ENV_KEY_MAP: dict[str, tuple[str, ...]] = {
     "SAMPLE_BRAIN_MAX_TAGS": ("export", "max_tags"),
     "SAMPLE_BRAIN_EMBEDDING_BACKEND": ("embedding", "backend"),
     "SAMPLE_BRAIN_SEARCH_BACKEND": ("search", "backend"),
+    "SAMPLE_BRAIN_BPM_NORMALIZATION": ("analyze", "bpm_normalization"),
 }
 
 _VALID_EMBEDDING_BACKENDS = {"noop", "clap"}
 _VALID_SEARCH_BACKENDS = {"numpy", "sqlite-vec"}
+_VALID_BPM_NORMALIZATION_MODES = {"none", "heuristic"}
 
 
 def load_profiles(
@@ -180,6 +183,13 @@ def _validate_resolved_config(config: dict) -> None:
         raise ConfigError(
             f"Invalid search backend: {search_backend!r}. "
             f"Must be one of: {', '.join(sorted(_VALID_SEARCH_BACKENDS))}"
+        )
+
+    bpm_norm = config.get("analyze", {}).get("bpm_normalization")
+    if bpm_norm is not None and bpm_norm not in _VALID_BPM_NORMALIZATION_MODES:
+        raise ConfigError(
+            f"Invalid analyze.bpm_normalization: {bpm_norm!r}. "
+            f"Must be one of: {', '.join(sorted(_VALID_BPM_NORMALIZATION_MODES))}"
         )
 
     roots = config.get("library_roots")

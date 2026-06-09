@@ -19,6 +19,9 @@ profiles:
       use_knn: true
       knn_min_conf: 0.55
 
+    analyze:
+      bpm_normalization: "none"
+
     embedding:
       backend: "noop"
       model_cache_dir: "<MODEL_CACHE_DIR>"
@@ -40,6 +43,9 @@ profiles:
 
     autotype:
       use_knn: false
+
+    analyze:
+      bpm_normalization: "none"
 
     embedding:
       backend: "noop"
