@@ -11,6 +11,8 @@ EPIC 2 delivers three new capabilities:
 - **Index** — build a local vector index for fast similarity search
 - **Search** — resolve natural language or audio queries against the catalog
 
+Semantic search is a core capability that feeds into the VST3-first product target (Issues [#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95)): search results power variant-based recommendations in the **Realtime Fit & Transform Engine** and in-catalog discovery in the **VST-first Producing Workspace**.
+
 ---
 
 ## 2. Scope
@@ -42,7 +44,7 @@ EPIC 2 delivers three new capabilities:
 - Sample generation or transformation (EPIC 6)
 - Committing DB, index, model, or cache artifacts to version control
 - Real-time audio analysis
-- DAW plugin SDK
+- DAW plugin SDK (previously out of scope; now superseded by the VST3-first product target — see Issues [#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95). DAW integration via VST3 plugin is now the primary product path.)
 
 ---
 
@@ -566,6 +568,10 @@ EPIC 3 (Hybrid Ranking & Recommendation) builds on this foundation:
 | Search | Text, audio, tag filters, hybrid targets | Context-aware recommendation |
 | Results | Ranked by semantic + optional metadata blend | Ranked by hybrid relevance + usage patterns |
 | Recommendation | Not in scope | "Samples like this" based on combined signals |
+
+Semantic search results from EPIC 2 are consumed by the VST-first product target pillars:
+- **Realtime Fit & Transform Engine** — variant-based recommendations (-12/+12 semitones, pitch/sync modes) use search as the retrieval backbone to find source samples and their variants
+- **VST-first Producing Workspace** — in-plugin sample discovery, similarity search, and collection management build on EPIC 2's NumPy/sqlite-vec search backend
 
 **EPIC 3 does not begin until EPIC 2 search is stable on `main`**, meaning:
 - M4 NumPy E2E smoke is proven; M5 production hardening (Tier A) completed; M6 (FAISS) superseded by ADR-0004
