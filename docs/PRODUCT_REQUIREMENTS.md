@@ -2,7 +2,11 @@
 
 ## 1. Product Vision
 
-Sample Brain is a local-first sample intelligence toolkit for producers that turns private sample libraries into searchable, explainable, DAW-friendly creative infrastructure.
+Sample Brain is a **local-first, agent-shepherded sample, harmony and producing assistant**.  
+The first product incarnation is a **VST3 browser/assistant plugin**. A **standalone producing application** follows later from the same core.  
+The product is organized around 5 pillars: **Library Intelligence**, **Harmonic & Rhythmic Matching**, **Track Context Analysis**, **Realtime Fit & Transform Engine**, and **VST-first Producing Workspace**.
+
+See Product Target Issues [#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95) for the full target definition.
 
 ## 2. Target Audience
 
@@ -13,6 +17,7 @@ Sample Brain is a local-first sample intelligence toolkit for producers that tur
 - **Sound Designer** — builds custom sample libraries, needs consistent metadata and similarity search across variants
 - **Sample library power user** — owns 50k+ samples, has outgrown folder-based navigation
 - **Privacy-conscious producer** — wants local processing, no cloud upload, ownership of analysis data
+- **VST3-host user** — works in any VST3-capable DAW and wants inline sample intelligence without leaving the DAW
 
 ### Not primary
 
@@ -29,9 +34,10 @@ Local sample libraries are the backbone of music production, yet they remain cha
 - **Semantic information is missing** — BPM, key, timbre, type, and character are implicit in the audio but not exposed for search or filtering.
 - **Session context is lost** — tags, ratings, and groupings exist inside the DAW project but cannot be queried across the library.
 - **Cloud services conflict with workflow** — Splice and Loopcloud require online access, monthly fees, and sending audio data to third parties. Many producers prefer local ownership and offline access.
-- **DAW integration is brittle** — FL Studio's browser works with filesystem tags, but no open-source tool systematically generates them from audio content.
+- **DAW integration is brittle** — existing integration relies on filesystem browser tags (FL Studio) or export formats. A native VST3 plugin provides inline access without context switches.
+- **Sample-to-track fit is manual** — finding samples that match the current track's BPM, key, and groove requires manual auditioning and pitch/time adjustment.
 
-Sample Brain solves this by running a local analysis pipeline that enriches a producer's library with structured, searchable metadata — without uploading a single sample.
+Sample Brain solves this by providing a local-first producing intelligence stack — from library analysis and harmonic matching through to a VST3 producing workspace — without uploading a single sample.
 
 ## 4. Product Positioning
 
@@ -40,8 +46,8 @@ Sample Brain solves this by running a local analysis pipeline that enriches a pr
 - **Local-first** — all processing runs on the producer's machine. No cloud dependency for core functionality.
 - **Private by default** — audio data never leaves the local filesystem. Analysis results stay in a local SQLite database.
 - **Library intelligence, not co-producer** — the system analyzes, categorises, and retrieves. It does not generate finished music.
-- **Analysis and search system** — a CLI toolkit that reads samples and produces structured metadata and tags.
-- **DAW-near, not DAW-dependent** — the pipeline works independently; DAW export is a convenience layer, not the product core.
+- **VST3-first producing assistant** — the primary product interface is a VST3 browser/assistant plugin. A standalone producing app follows later from the same core.
+- **Agent-shepherded** — the repository is curated by specialized agents, not human-audit-grade governance.
 
 ### What Sample Brain is not
 
@@ -50,6 +56,7 @@ Sample Brain solves this by running a local analysis pipeline that enriches a pr
 - Not a cloud sample service — no sync, no multi-user, no hosted index.
 - Not a replacement for manual curation — the system augments human decisions, it does not replace them.
 - Not a system that commits sample audio to version control — samples are analysed in place; only metadata and configuration live in the repository.
+- Not an FL-native tool — no FLP manipulation, no FL-native reverse engineering, no FL-Browser dependency as the main product path.
 
 ## 5. MVP Scope
 
@@ -78,35 +85,66 @@ Sample Brain solves this by running a local analysis pipeline that enriches a pr
 
 ## 6. Target Product Capabilities
 
-### Short-term (current MVP)
+### Current CLI Pipeline (stable)
 
 ```text
 Scan  →  Analyze  →  Autotype  →  Export
 ```
 
-All four steps are implemented and stable on `main`.
+All four steps are implemented and stable on `main`. The CLI pipeline remains the data foundation for all higher-level product incarnations.
 
-### Medium-term (EPIC 2 — Semantic Search Foundation)
+### EPIC 2 — Semantic Search Foundation (completed on `main`)
 
 ```text
 Scan  →  Analyze  →  Embed  →  Index  →  Search  →  Export
 ```
 
 - Embedding backend with CLAP as primary candidate
-- Local vector index via FAISS
+- NumPy vector index (default) + optional sqlite-vec
 - Text-to-sample and audio-to-audio similarity search
 
-### Long-term (EPIC 3-6)
+### VST-first Product Target (Issues #90–#95)
+
+The product target reorganizes into 5 pillars:
 
 ```text
-Scan  →  Analyze  →  Embed  →  Index  →  Search  →  Recommend  →  Export / DAW Workflow
+┌────────────────────────────────────────────────────────┐
+│                    VST3 / Standalone                    │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐ │
+│  │ Library  │  │ Matching │  │ Context  │  │Transf. │ │
+│  │Intell.   │  │Harmonic  │  │Analysis  │  │Engine  │ │
+│  │          │  │Rhythmic  │  │          │  │Fit+Var │ │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └───┬────┘ │
+│       └──────────────┴──────────────┴────────────┘      │
+│                           │                              │
+│                    ┌──────┴──────┐                       │
+│                    │  Producing  │                       │
+│                    │  Workspace  │                       │
+│                    │ (VST3/SA)   │                       │
+│                    └─────────────┘                       │
+└────────────────────────────────────────────────────────┘
 ```
 
-- Hybrid ranking (semantic + structured metadata)
-- Local FastAPI service
-- Desktop UI (React/Tauri)
-- DAW workflow integration (FL Studio, Ableton, Reaper)
-- DSP-based re-imagine / variant generation
+- **Library Intelligence** — scan, audio analysis, autotype, keywords, title normalisation, canonical metadata
+- **Harmonic & Rhythmic Matching** — key/BPM compatibility, semi-tone suggestions, groove-fit
+- **Track Context Analysis** — derive track profile and missing-layer hypotheses from marked files or stems
+- **Realtime Fit & Transform Engine** — variant-based recommendations (-12/+12 semitones, pitch/sync modes)
+- **VST-first Producing Workspace** — VST3 browser/assistant plugin (CLAP optional later); standalone later from same core
+
+### Long-term (EPIC 3-6 + beyond)
+
+```text
+CLI Library  →  Plugin / Standalone App
+                  │
+                  ├── Hybrid ranking (semantic + structured metadata)
+                  ├── Local FastAPI service
+                  ├── Standalone producing app (from same core)
+                  └── DSP-based variant generation (pitch, time, stretch, reverse, slice)
+```
+
+- FL Studio Browser export becomes **legacy/fallback** — not the main product path
+- FL Studio remains the first target host but is **not a hard product dependency**
+- All VST3-capable DAWs are potential hosts
 
 ## 7. User Stories
 
@@ -154,8 +192,10 @@ The following are explicitly **not** goals for Sample Brain. They are out of sco
 - **No marketplace or sample sharing** — no store, no ratings, no user profiles, no community features.
 - **No social or collaboration features** — single-user local tool. Multi-user support is not planned.
 - **No FAISS or vector search in MVP** — semantic search is EPIC 2, explicitly gated behind a stable foundation pipeline. Vector dependencies are introduced deliberately, not organically.
-- **No real-time audio processing** — the pipeline is batch-oriented. Real-time analysis within the DAW is not a goal.
-- **No DAW plugin SDK** — integration happens through metadata export (FL Studio tags, future Reaper/Ableton formats). VST3, AU, or AAX plugins are not planned.
+- **No real-time audio analysis in the audio thread** — heavy scanning, DB access, indexing, and ML inference must not run in the audio thread. The pipeline generates data ahead of time; the plugin only plays back prepared audio and displays precomputed metadata.
+- **No FL-native reverse engineering** — no FLP parsing/manipulation, no FL Studio internal API access. Integration uses documented public interfaces (VST3, filesystem tags).
+- **No FL-Browser dependency as the main product path** — FL Studio Browser export is a legacy/fallback integration. The main product path is the VST3 plugin.
+- **No committed runtime state** — no private samples, DBs, indexes, model caches, or local sample paths in the repository.
 
 ## 10. Success Criteria
 

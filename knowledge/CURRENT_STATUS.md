@@ -5,7 +5,7 @@
 - **Branch:** `main`
 - **HEAD:** `b096fcb` (`build(deps): bump numpy from 1.26.4 to 2.4.6`)
 - **Open PRs:** 2 Dependabot (#63 soundfile 0.14.0, #64 tqdm 4.68.1)
-- **Open issues:** none (all closed)
+- **Open issues:** 9 — #72, #73, #74 (previous EPIC-2 follow-ups), **#90–#95 (VST-first product target, new)**
 - **Tests:** 106 passed, 2 skipped (`pytest -q` core; 4 `[vec]`-dependent test files fail import without `sqlite_vec` installed — see test command below)
 
 ```powershell

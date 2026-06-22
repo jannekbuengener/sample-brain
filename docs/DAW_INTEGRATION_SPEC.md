@@ -276,11 +276,13 @@ CLI (export_fl)  →  ExportDispatcher  →  FormatEncoder
 ## 9. Non-Goals
 
 - **No bidirectional sync.** Sample Brain does not read DAW project files or detect changes made inside the DAW.
-- **No real-time DAW plugin.** VST3, AU, and AAX plugins are not planned.
-- **No sample transfer into the DAW.** Export produces metadata and tags, not audio files.
+- **No sample transfer into the DAW.** Export produces metadata, tags, and drag-drop references — not embedded audio files.
 - **No cloud sync.** DAW integration is entirely local.
 - **No DAW-specific project file parsing.** Sample Brain does not read `.flp`, `.als`, `.rpp`, or similar project files.
 - **No automated DAW detection.** The user must specify the DAW type and export path manually or via config.
+- **No FL-native reverse engineering.** No FLP parsing/manipulation, no FL Studio internal API access.
+
+> **Note:** The old "no VST3/AU/AAX plugin" non-goal is **superseded** by the VST3-first product target (Issues [#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95)). The first product incarnation is a VST3 browser/assistant plugin; a standalone producing app follows later. See `docs/PRODUCT_REQUIREMENTS.md` §6 for the updated target.
 
 ---
 
