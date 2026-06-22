@@ -466,17 +466,31 @@ A local HTTP API that wraps pipeline operations and search:
 
 **Status:** Not implemented. Not planned before EPIC 2 completion.
 
-### 10.2 Desktop UI (EPIC 4)
+### 10.2 VST-first Producing Workspace (Product Target, Issues #90–#95)
 
-React/Tauri local desktop application with:
-- Sample browser and search interface
-- Audio preview
-- Result inspection and export
-- Local-first, no cloud backend
+The first product incarnation is a **VST3 browser/assistant plugin**. A standalone producing application follows later from the same core. Both share the same processing backend (Library Intelligence, Matching, Context, Transform).
 
-**Status:** Not implemented. Not planned before API stability.
+**VST3 Plugin (first):**
+- VST3 is the primary plugin standard; CLAP support is optional later
+- Browser UI with sample grid/list, audio preview with waveform
+- Filter/search/similar samples across the catalog
+- Drag & drop into DAW
+- Collections, favorites, project basket
+- Variant browser (BPM-locked, key-shifted previews)
+- FL Studio is the first target host but not a hard product dependency — all VST3-capable DAWs are potential hosts
 
-### 10.3 Recommendation Engine (EPIC 3)
+**Standalone App (later):**
+- Same core as the plugin
+- Standalone producing workspace without DAW dependency
+- Additional functionality: playback, arrangement, session management
+
+**Status:** Target defined in Issues #90–#95. Architecture and implementation are follow-up scope.
+
+### 10.3 Desktop UI (EPIC 4 — superseded by VST-first target)
+
+The previously planned React/Tauri desktop UI is **superseded** by the VST3-first and standalone product target. Standalone app replaces the separate desktop UI concept.
+
+### 10.4 Recommendation Engine (EPIC 3)
 
 Hybrid ranking combining:
 - Vector similarity (CLAP embeddings)
@@ -515,9 +529,10 @@ The following are explicitly **not part of the target architecture** at any plan
 - **No committed audio samples** — `.wav`, `.mp3`, `.flac`, `.aiff` and similar files are never committed to the repository.
 - **No committed DB/index/model/cache artifacts** — all generated state is untracked by design.
 - **No FAISS in current implementation** — NumPy `.npz` index is on `main`; FAISS is superseded by ADR-0004
-- **No API or UI before CLI pipeline is reliable** — the CLI pipeline (scan → analyze → autotype → export) must be stable and tested before any API or UI layer is built.
-- **No real-time audio processing** — the pipeline is batch-oriented. Real-time analysis within the DAW is not a goal.
-- **No DAW plugin SDK** — integration happens through metadata export. VST3, AU, or AAX plugins are not planned.
+- **No API or UI before CLI pipeline is reliable** — the CLI pipeline must be stable and tested before any API or UI layer is built.
+- **No real-time audio analysis in the audio thread** — the pipeline is batch-oriented. Heavy scanning, DB access, indexing, and ML inference must not run in the audio thread. The plugin only plays back prepared audio and displays precomputed metadata.
+- **No FL-native reverse engineering** — no FLP parsing/manipulation, no FL Studio internal API access. Integration uses documented public interfaces.
+- **No FL-Browser dependency as the main product path** — FL Studio Browser export is legacy/fallback.
 
 ---
 

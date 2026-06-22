@@ -1,9 +1,10 @@
 # PROJECT_META
 
 - Projektname: Sample-Brain (sample-brain)
-- Ziel: Offline-Tool für FL Studio Sample-Management: Sample-Library scannen → Audio-Features extrahieren (BPM, Key, Loudness, Brightness, MFCC/Chroma) → Autotype (Loop/OneShot + Instrument-Typ) → FL-Browser-Tags exportieren.
+- Ziel: VST3-first Sample-, Harmonie- und Producing-Assistent. CLI-Pipeline als Datenbasis, VST3-Browser-Plugin als erster Produktkörper, Standalone-App später aus gleichem Core. 5 Produktsäulen: Library Intelligence, Harmonic & Rhythmic Matching, Track Context Analysis, Realtime Fit & Transform Engine, Producing Workspace.
 - Nicht-Ziele:
-  - Kein DAW-Plugin/Realtime-Analyzer in FL Studio (Pipeline ist offline + Export).
+  - Kein FL-native Reverse Engineering (kein FLP-Parsing, keine FL-Internals).
+  - Kein schweres Scanning/Indexing im Audio-Thread.
   - Kein Upload/Cloud-Processing; läuft lokal auf deinem Rechner.
   - Kein Training eines großen Genre-Models im Repo-Default; nur Seeds/Regeln/Profiles.
   - Keine Distribution/Hosting von Sample-Audio (Repo enthält nur Code/Metadaten, nicht die Samples selbst).

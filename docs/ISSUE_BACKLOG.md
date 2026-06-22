@@ -2,13 +2,14 @@
 
 Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board reality** below for live state.
 
-## GitHub Board Reality (2026-06-09)
+## GitHub Board Reality (2026-06-22)
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Open issues | ✅ None | All closed (#31 included) |
-| Open PRs | 🔶 2 Dependabot | #63 (soundfile 0.14.0), #64 (tqdm 4.68.1) |
-| `main` HEAD | ✅ Current | `b096fcb` — build(deps): bump numpy from 1.26.4 to 2.4.6 |
+| Open issues | 🔶 9 total | #72 (key confidence), #73 (CLAP Tier-B), #74 (sqlite-vec ANN), **#90–#95 (VST-first product target)** |
+| VST-first product target | ✅ Defined | Issues #90 (Parent) + #91–#95 (5 product pillars) |
+| Open PRs | 🔶 5 Dependabot | #85 (sqlalchemy 2.0.51), #86 (scipy 1.18.0), #87 (checkout v7), #88 (numpy 2.5.0), #89 (tqdm 4.68.3) |
+| `main` HEAD | ✅ Current | See latest `git log` |
 | sqlite-vec campaign (PRs #47–#53) | ✅ Closed | Phases 1–8 complete |
 | search-quality campaign (PR #54) | ✅ Closed | Merged 2026-05-31 |
 | GitHub #27 | ✅ Closed | Implemented via PR #32 (`9d41782`) |

@@ -1,5 +1,5 @@
-**AI-powered sample management for FL Studio**  
-Scan → Analyze → Tag → Export. Stay in your flow.  
+**VST-first sample, harmony and producing intelligence — local-first, agent-shepherded**  
+Scan → Analyze → Match → Transform → Produce. Stay in your flow.  
 
 ---
 
@@ -9,12 +9,27 @@ Scan → Analyze → Tag → Export. Stay in your flow.
 
 ---
 
-## 🚀 Features (MVP)
+## 🚀 Product Vision
+
+Sample-Brain is a **local-first, agent-shepherded sample, harmony and producing assistant**.  
+The first product is a **VST3 browser/assistant plugin** — a standalone producing app follows later from the same core.
+
+### 5 Product Pillars
+
+1. **[LIBRARY] Library Intelligence** — sample scan, BPM/key/loudness/brightness/MFCC/chroma analysis, autotype, keyword enrichment, title normalisation, canonical metadata. Original files stay untouched.
+2. **[MATCHING] Harmonic & Rhythmic Matching** — key compatibility, BPM compatibility, half/double-time detection, semitone suggestions, groove/loop-length fit. Fit-score as a later contract.
+3. **[CONTEXT] Track Context Analysis** — current track or marked file as context source. BPM, key, energy, spectrum, groove, missing-layer hypotheses (toploop, atmos, fill, bass, vocal…). Track profile as search/ranking input.
+4. **[TRANSFORM] Realtime Fit & Transform Engine** — variant-based (not file-based) recommendations. Target-BPM, semitone shift -12/+12, pitch modes (repitch, time-stretch, pitch-shift, formant-safe, percussive, tonal/poly, texture/dirty), sync modes (free preview, bar-locked, beat-locked, one-shot). No scans/DB/ML in the audio thread.
+5. **[WORKSPACE] VST-first Producing Workspace** — VST3 browser plugin (CLAP optional later). Sample preview, filter/search/similar, drag & drop into DAW, collections/favorites/project basket. Standalone later from the same core.
+
+See [Product Requirements](./docs/PRODUCT_REQUIREMENTS.md) for the full target definition (Issues [#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95)).
+
+### Current CLI Pipeline (stable)
 
 - **Scan**: build a database from your sample library  
 - **Analyze**: extract audio features (BPM, key, loudness, brightness, MFCCs, chroma …)  
 - **Autotype**: automatic categorization (Kick, Snare, Pad, Drone, Impact …)  
-- **Export**: write smart tags into the **FL Studio Browser**  
+- **Export**: write smart tags into the **FL Studio Browser** (legacy/fallback — not the main product path)  
 
 ---
 

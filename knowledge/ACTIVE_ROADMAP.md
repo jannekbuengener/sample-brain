@@ -64,12 +64,24 @@
 
 - `docs/SAMPLE_BRAIN_SKILLS_SPEC.md`
 
+## VST-first Product Target (Issues #90–#95)
+
+The product target has been redefined from FL-Browser-first to **VST3-first producing intelligence** with 5 pillars:
+
+- **[LIBRARY]** Library Intelligence and Metadata/Naming Engine — [#94](https://github.com/jannekbuengener/sample-brain/issues/94)
+- **[MATCHING]** Harmonic and Rhythmic Matching — [#91](https://github.com/jannekbuengener/sample-brain/issues/91)
+- **[CONTEXT]** Track Context Analysis — [#95](https://github.com/jannekbuengener/sample-brain/issues/95)
+- **[TRANSFORM]** Realtime Fit and Transform Engine — [#92](https://github.com/jannekbuengener/sample-brain/issues/92)
+- **[WORKSPACE]** VST-first Producing Workspace — [#93](https://github.com/jannekbuengener/sample-brain/issues/93)
+
+FL Studio Browser export becomes **legacy/fallback** — not the main product path.
+
 ## Later: EPIC 3-6
 
 - Hybrid ranking (BPM, key, type + vector similarity)
 - FastAPI local service
-- React/Tauri desktop UI
-- DAW integration (FL Studio, Ableton, Reaper)
+- Standalone producing app (from same core as VST3 plugin)
+- DAW integration (Ableton, Reaper — beyond VST3)
 - DSP-based re-imagine / variant generator
 
 ---
