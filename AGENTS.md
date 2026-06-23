@@ -50,6 +50,13 @@ python -m pytest -q   # 138 tests; vec-specific tests skip without [vec]
 
 Benchmark harness (local only, work-dir outside repo): `python -m src.cli benchmark vec --samples 1000 10000 100000 --work-dir /tmp/sample-brain-bench`. Gate evidence: [`docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md`](docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md). Default search backend remains **`numpy`** until all gates PASS.
 
+## CI Gate Policy
+- **`CI_GREEN` is the default merge contract.** Merge only when required checks are green. Optional checks should be green, skipped, or explicitly explained.
+- **Degraded CI mode is exceptional.** Use it only when GitHub-hosted runners, self-hosted runners, or repository/account infrastructure block checks before PR logic runs.
+- **Docs-only billing waivers are narrow.** They require explicit merge-GO, a PR-specific waiver comment, exact docs-only scope, and no code, dependency, workflow, artifact, or secret risk.
+- **Code/test/runtime scope under CI outage is not auto-waivable.** Follow `docs/CI_DEGRADED_MODE.md` and treat local validation as required evidence, not as a fake green substitute.
+- **Self-hosted runner fallback is the preferred recurring workaround.** Any runner or workflow change remains a separate scoped task with its own review and GO.
+
 ## Handover Notes
 - When changing DB schema in `src/db.py`, validate affected read/write paths in `scan`, `analyze`, `classify`, `embed`, `index`, and their tests.
 - When changing CLI args in `src/cli.py`, keep behavior and help text coherent across related commands.
