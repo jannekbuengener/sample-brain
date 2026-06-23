@@ -73,6 +73,11 @@ For code, test, runtime, dependency, or config scope under CI outage:
 
 The preferred technical workaround for recurring hosted-runner, billing, or capacity problems is a minimal self-hosted runner path.
 
+Boundary note:
+
+- A self-hosted runner fallback is most useful when GitHub can still dispatch Actions jobs but hosted capacity or runner availability is the bottleneck.
+- It does **not** guarantee a bypass for repository/account billing lock. If GitHub does not dispatch jobs at all because the account is locked, billing remediation remains the first unblocker.
+
 Rules:
 
 - A runner may be shared across local repositories if it is safe, clearly labeled, and not expected to serve conflicting parallel workloads.
@@ -87,6 +92,8 @@ Rules:
 - No secrets, local machine paths, or private environment details should be committed into workflow files.
 
 If repeated CI outages occur and no runner fallback exists, the escalation status is **`RUNNER_FALLBACK_REQUIRED`**.
+
+For Sample-Brain, the technical rollout of shared self-hosted runner fallback remains separate implementation scope and is tracked in Issue [#99](https://github.com/jannekbuengener/sample-brain/issues/99).
 
 ## 6. No-Waiver Surfaces
 
