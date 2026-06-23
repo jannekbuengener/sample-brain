@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .index import SearchHit
+from .matching import score_bpm_match, score_key_match, score_type_match
 
 
 @dataclass(frozen=True)
@@ -24,47 +25,6 @@ class HybridQuery:
     key_weight: float = 0.0
     type_weight: float = 0.0
     bpm_tolerance: float = 8.0
-
-
-def _normalize_text(value: str | None) -> str | None:
-    if value is None:
-        return None
-    normalized = value.strip().casefold()
-    return normalized or None
-
-
-def score_bpm_match(
-    sample_bpm: float | None,
-    target_bpm: float | None,
-    tolerance: float,
-) -> float:
-    if sample_bpm is None or target_bpm is None:
-        return 0.0
-    if tolerance <= 0:
-        return 0.0
-
-    diff = abs(sample_bpm - target_bpm)
-    if diff >= tolerance:
-        return 0.0
-    if diff == 0:
-        return 1.0
-    return 1.0 - (diff / tolerance)
-
-
-def score_key_match(sample_key: str | None, target_key: str | None) -> float:
-    normalized_sample = _normalize_text(sample_key)
-    normalized_target = _normalize_text(target_key)
-    if normalized_sample is None or normalized_target is None:
-        return 0.0
-    return 1.0 if normalized_sample == normalized_target else 0.0
-
-
-def score_type_match(sample_type: str | None, target_type: str | None) -> float:
-    normalized_sample = _normalize_text(sample_type)
-    normalized_target = _normalize_text(target_type)
-    if normalized_sample is None or normalized_target is None:
-        return 0.0
-    return 1.0 if normalized_sample == normalized_target else 0.0
 
 
 def combine_hybrid_score(
