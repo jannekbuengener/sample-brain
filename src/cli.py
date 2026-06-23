@@ -167,6 +167,33 @@ def main():
         help="Maximum tags per sample. Overrides configured export.max_tags.",
     )
 
+    # match
+    p_match = sub.add_parser("match", help="Katalogbasiertes Matching gegen Zielprofil")
+    p_match.add_argument(
+        "--target-bpm",
+        type=float,
+        required=True,
+        help="Target BPM for catalog matching.",
+    )
+    p_match.add_argument(
+        "--target-key",
+        type=str,
+        default=None,
+        help="Optional target key for catalog matching.",
+    )
+    p_match.add_argument(
+        "--desired-type",
+        type=str,
+        default=None,
+        help="Optional desired pred_type for catalog matching.",
+    )
+    p_match.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Maximum number of ranked matches to print (default: 10).",
+    )
+
     # (optional) embed
     p_emb = sub.add_parser("embed", help="Embeddings berechnen (optional)")
     p_emb.add_argument(
@@ -300,8 +327,12 @@ def main():
         default=[],
         help="Filter results to samples tagged with this value (repeatable).",
     )
-    p_src.add_argument("--min-bpm", type=float, default=None, help="Minimum BPM filter.")
-    p_src.add_argument("--max-bpm", type=float, default=None, help="Maximum BPM filter.")
+    p_src.add_argument(
+        "--min-bpm", type=float, default=None, help="Minimum BPM filter."
+    )
+    p_src.add_argument(
+        "--max-bpm", type=float, default=None, help="Maximum BPM filter."
+    )
     p_src.add_argument(
         "--key",
         dest="filter_key",
@@ -356,7 +387,7 @@ def main():
         choices=["none", "synthetic"],
         default="none",
         help="Partition key strategy (default: none). "
-             "'synthetic' creates separate vec0 tables per partition.",
+        "'synthetic' creates separate vec0 tables per partition.",
     )
     p_bench_vec.add_argument(
         "--partition-counts",
@@ -364,7 +395,7 @@ def main():
         nargs="+",
         default=None,
         help="Number of partitions to benchmark (e.g. 10 25 50 100). "
-             "Requires --partition-strategy.",
+        "Requires --partition-strategy.",
     )
     p_bench_vec.add_argument(
         "--work-dir",
@@ -595,6 +626,22 @@ def main():
         )
         return
 
+    if args.cmd == "match":
+        cfg = _resolve_profile_or_exit(args)
+        _apply_runtime_db_path(cfg)
+        try:
+            from .matching import run_match
+        except Exception as e:
+            print(f"[ERROR] Matching nicht verfügbar: {e}", file=sys.stderr)
+            sys.exit(1)
+        run_match(
+            target_bpm=args.target_bpm,
+            target_key=args.target_key,
+            desired_type=args.desired_type,
+            limit=args.limit,
+        )
+        return
+
     if args.cmd == "db":
         cfg = _resolve_profile_or_exit(args)
         _apply_runtime_db_path(cfg)
@@ -608,7 +655,9 @@ def main():
         if args.bench_cmd == "bpm-evidence":
             from .bpm_evidence import run_cli_bpm_evidence
 
-            work_dir = Path(args.work_dir) if args.work_dir else Path(".bench_bpm_evidence")
+            work_dir = (
+                Path(args.work_dir) if args.work_dir else Path(".bench_bpm_evidence")
+            )
             run_cli_bpm_evidence(work_dir)
             return
 
