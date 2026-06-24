@@ -1,7 +1,7 @@
 tqdm==4.68.1
 sqlalchemy==2.0.50
 soundfile==0.14.0
-numpy==2.4.6
+numpy==2.5.0
 scipy==1.17.1
 librosa==0.11.0
 numba==0.65.1
