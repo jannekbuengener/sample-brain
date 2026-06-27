@@ -95,6 +95,29 @@ If repeated CI outages occur and no runner fallback exists, the escalation statu
 
 For Sample-Brain, the technical rollout of shared self-hosted runner fallback remains separate implementation scope and is tracked in Issue [#99](https://github.com/jannekbuengener/sample-brain/issues/99).
 
+### 5.1 Sample-Brain Self-Hosted Runner (2026-06-27)
+
+**Why:** GitHub-hosted runners (`ubuntu-latest`) are blocked by an account/repo-level billing lock since 2026-06-15. All 4 existing workflows fail before job dispatch. The CDB repository (`jannekbuengener/Claire_de_Binare`) demonstrated that self-hosted runners bypass this lock.
+
+**Runner scope:** repo-level, registered against `jannekbuengener/sample-brain`. NOT part of the CDB runner group.
+
+**Labels:** `self-hosted`, `sample-brain`. No `cdb`, `docker`, or `merge-gate` labels.
+
+**Workflow:** `.github/workflows/ci-smoke-self-hosted.yml` (new, separate file). Contains only Python smoke steps: checkout, Python version, `pip install`, `py_compile`, `--help`.
+
+**Trigger:** `workflow_dispatch` only. No `pull_request`, no `push`.
+
+**Security:**
+- No secrets in the workflow file
+- `contents: read` only
+- No deployment or publishing steps
+- No fork PR code can auto-trigger (manual dispatch only)
+- Runner is a separate process instance, separate workdir, separate config from CDB runners
+
+**Validation status:** `WORKFLOW_READY_WAITING_FOR_RUNNER_REGISTRATION` – the workflow file exists but cannot be tested until a runner is registered.
+
+**Operator runbook:** See `docs/runbooks/SAMPLE_BRAIN_SELF_HOSTED_RUNNER.md`.
+
 ## 6. No-Waiver Surfaces
 
 No degraded-mode docs waiver is allowed for:
