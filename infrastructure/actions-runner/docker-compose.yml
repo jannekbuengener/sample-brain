@@ -1,0 +1,25 @@
+name: sample-brain-runner
+
+services:
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sample-brain-runner
+    restart: unless-stopped
+    env_file:
+      - .env.runner
+    environment:
+      - RUNNER_NAME=sample-brain-runner
+      - RUNNER_LABELS=sample-brain,linux,x64
+    volumes:
+      - sb-runner-state:/home/runner/state
+      - sb-runner-work:/home/runner/_work
+      # Uncomment if workflows need Docker-in-Docker or host Docker access.
+      # - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  sb-runner-state:
+    name: sample-brain-runner-state
+  sb-runner-work:
+    name: sample-brain-runner-work

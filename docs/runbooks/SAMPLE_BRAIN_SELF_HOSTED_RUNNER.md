@@ -1,6 +1,13 @@
-# Sample-Brain Self-Hosted Runner – Operator Runbook
+# Sample-Brain Self-Hosted Runner – Operator Runbook (Legacy)
 
-## Zielbild
+> **HINWEIS:** Dieses Runbook beschreibt den ursprünglichen (non-Docker)
+> Installationsansatz. Seit 2026-06-27 ist der **Docker-basierte Ansatz**
+> der Standard. Siehe:
+> - `docs/runbooks/SELF_HOSTED_RUNNER_INSTALL.md` — Aktuelle Installationsanleitung
+> - `infrastructure/actions-runner/` — Docker-Compose-Dateien und Quellen
+> - `docs/infrastructure/SELF_HOSTED_RUNNER.md` — Architektur und Begründung
+
+## Zielbild (historisch)
 
 Sample-Brain benötigt einen eigenständigen repo-level self-hosted GitHub Actions Runner als Fallback, weil GitHub-hosted Runner (`ubuntu-latest`) durch einen Billing-Lock blockiert sind.
 
