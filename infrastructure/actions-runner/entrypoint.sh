@@ -23,6 +23,7 @@ STATE_CREDENTIALS="${STATE_DIR}/.credentials"
 STATE_CREDENTIALS_RSA="${STATE_DIR}/.credentials_rsaparams"
 
 mkdir -p "${STATE_DIR}" "${RUNNER_WORKDIR}"
+sudo chown -R runner:runner "${STATE_DIR}" "${RUNNER_WORKDIR}"
 
 restore_state() {
     if [[ -f "${STATE_RUNNER}" && -f "${STATE_CREDENTIALS}" && -f "${STATE_CREDENTIALS_RSA}" ]]; then

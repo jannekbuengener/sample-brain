@@ -10,8 +10,8 @@ services:
     env_file:
       - .env.runner
     environment:
-      - RUNNER_NAME=sample-brain-runner
-      - RUNNER_LABELS=sample-brain,linux,x64
+      - RUNNER_NAME=sample-brain-runner-1
+      - RUNNER_LABELS=self-hosted,sample-brain
     volumes:
       - sb-runner-state:/home/runner/state
       - sb-runner-work:/home/runner/_work
