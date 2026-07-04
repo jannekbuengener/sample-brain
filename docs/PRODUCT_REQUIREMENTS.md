@@ -60,28 +60,53 @@ Sample Brain solves this by providing a local-first producing intelligence stack
 
 ## 5. MVP Scope
 
-### MVP must support
+This section separates what is **shipped on `main` today** (CLI baseline) from the **VST-first product MVP** (target). See Product Target Issues [#90](https://github.com/jannekbuengener/sample-brain/issues/90) (parent) and [#91](https://github.com/jannekbuengener/sample-brain/issues/91)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95) (five pillars) for the full target definition.
 
-| Capability | Description |
-|---|---|
-| **Scan** | Recursively index a local sample library into a SQLite catalog, deduplicated by content hash |
-| **Analyze** | Extract audio features via librosa: BPM, key, loudness, brightness, MFCCs, chroma |
-| **Autotype** | Classify samples by instrument type (kick, snare, pad, etc.) using rules + optional kNN |
-| **Export** | Write FL Studio Browser-compatible tags from analysis results |
-| **CLI** | All operations accessible via a single `sample-brain` entry point with argparse subcommands |
-| **Local database** | SQLite catalog as the single source of truth for all metadata |
-| **Artifact hygiene** | No generated artifacts (database, analysis outputs, cache) committed to version control |
+### 5.1 Shipped CLI Baseline (`main`)
 
-### MVP explicitly does not include
+The CLI pipeline is implemented, stable, and remains the **data foundation** for all product incarnations.
 
-- Semantic / vector search (FAISS, CLAP)
-- Desktop graphical user interface
-- HTTP API / FastAPI service
-- Recommendation engine
-- Cloud sync or multi-user
-- Real-time audio analysis
-- DAWs other than FL Studio
-- Sample generation or transformation
+| Capability | Description | Status |
+|---|---|---|
+| **Scan** | Recursively index a local sample library into a SQLite catalog, deduplicated by content hash | ✅ Shipped |
+| **Analyze** | Extract audio features via librosa: BPM, key, loudness, brightness, MFCCs, chroma | ✅ Shipped |
+| **Autotype** | Classify samples by instrument type (kick, snare, pad, etc.) using rules + optional kNN | ✅ Shipped |
+| **Export (FL Browser)** | Write FL Studio Browser-compatible tags from analysis results — **legacy/fallback data path**, not the main product interface | ✅ Shipped |
+| **Embed / Index / Search** | Semantic search via optional CLAP embeddings, NumPy index (default), optional sqlite-vec backend (EPIC 2) | ✅ Shipped |
+| **CLI** | All operations accessible via a single `sample-brain` entry point with argparse subcommands | ✅ Shipped |
+| **Local database** | SQLite catalog as the single source of truth for all metadata | ✅ Shipped |
+| **Artifact hygiene** | No generated artifacts (database, analysis outputs, cache) committed to version control | ✅ Shipped |
+
+```text
+Scan  →  Analyze  →  Autotype  →  Export (FL fallback)
+                  └→  Embed  →  Index  →  Search
+```
+
+### 5.2 VST-first Product MVP (target)
+
+The first product incarnation is a **VST3 browser/assistant plugin** sharing the same SQLite-backed core. A standalone producing app follows later. Pillars map to Issues [#94](https://github.com/jannekbuengener/sample-brain/issues/94) (Library), [#91](https://github.com/jannekbuengener/sample-brain/issues/91) (Matching), [#95](https://github.com/jannekbuengener/sample-brain/issues/95) (Context), [#92](https://github.com/jannekbuengener/sample-brain/issues/92) (Transform), [#93](https://github.com/jannekbuengener/sample-brain/issues/93) (Workspace).
+
+| Capability | Description | Pillar |
+|---|---|---|
+| **VST3 plugin** | First product body; CLAP plugin format optional later; FL Studio is first target host, not a hard dependency | [#93](https://github.com/jannekbuengener/sample-brain/issues/93) Workspace |
+| **Library browse** | Sample grid/list with filter and search over the SQLite catalog | [#94](https://github.com/jannekbuengener/sample-brain/issues/94) Library |
+| **Preview** | Audio preview with waveform; playback of prepared audio only (no heavy work in the audio thread) | [#93](https://github.com/jannekbuengener/sample-brain/issues/93) Workspace |
+| **Basis matching** | Key/BPM compatibility scoring and fit suggestions for the current context | [#91](https://github.com/jannekbuengener/sample-brain/issues/91) Matching |
+| **Simple variant preview** | Variant-based recommendations (target BPM, semitone shift) with async background rendering | [#92](https://github.com/jannekbuengener/sample-brain/issues/92) Transform |
+| **Drag & drop** | Drag samples or variants into the host DAW (MIDI/audio) | [#93](https://github.com/jannekbuengener/sample-brain/issues/93) Workspace |
+
+**Not in the product MVP (later):** full track context analysis from host integration ([#95](https://github.com/jannekbuengener/sample-brain/issues/95)), advanced transform pitch/sync modes, standalone app, hybrid recommendation engine (EPIC 3).
+
+### 5.3 Explicitly out of scope
+
+The following apply to **both** the shipped CLI baseline and the VST-first product target unless re-evaluated:
+
+- **No cloud requirement** — no mandatory account, sync, or hosted index for core functionality
+- **No marketplace** — no sample store, ratings, purchases, or community features
+- **No generative music production** — no melody generation, arrangement, or mastering
+- **No heavy analysis in the audio thread** — scanning, DB access, ML, and variant rendering run asynchronously; the plugin plays back prepared data only
+- **No DAW replacement** — Sample Brain is a producing assistant, not a full DAW or arrangement tool
+- **No FL-Browser dependency as the main product path** — FL Studio Browser export remains a CLI fallback; the VST3 plugin is the primary interface
 
 ## 6. Target Product Capabilities
 

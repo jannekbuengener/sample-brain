@@ -2,9 +2,9 @@
 
 ## 1. Purpose
 
-This document defines the current and planned DAW integration strategy for Sample Brain. It covers the short-term anchor (FL Studio Browser tags), medium-term improvements, and long-term research for additional DAWs.
+This document defines the current and planned DAW integration strategy for Sample Brain. It covers the **VST3-first product path** (target), the **legacy FL Studio Browser tag export** (fallback), and research for additional DAW metadata paths.
 
-**Key principle:** DAW integration is a metadata export layer, not a real-time plugin. Sample Brain runs its pipeline independently; the DAW consumes the enriched metadata through its native browsing and tagging mechanisms.
+**Key principle:** The primary product interface is a **VST3 browser/assistant plugin** (Issues [#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95)). The CLI `export_fl` path is a legacy/fallback metadata export for producers who run the pipeline outside the plugin. See `docs/PRODUCT_REQUIREMENTS.md` §5 for the shipped-vs-target scope split.
 
 ---
 
@@ -47,7 +47,7 @@ The only implemented DAW integration is FL Studio Browser tag export via `sample
 
 ## 3. Supported DAWs
 
-### 3.1 FL Studio (Short-term Anchor)
+### 3.1 FL Studio (Legacy Fallback)
 
 **Integration method:** Browser Tag file
 
@@ -126,41 +126,58 @@ Kick,Snare,HiHat-Closed,Pad,Loop,Dark,Bright,Punchy,Atmospheric
 
 ## 4. Integration Strategy
 
-### 4.1 Short-term (Current — EPIC 5)
+### 4.0 Product integration tiers
+
+| Tier | Path | Role | Status |
+|------|------|------|--------|
+| **Tier 1 (target)** | VST3 Plugin ← shared core ← SQLite catalog | Primary product interface: browse, preview, match, transform, drag & drop into any VST3-capable host | Target — Issues [#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95) |
+| **Tier 2 (fallback)** | CLI `export_fl` → FL Browser tags ← SQLite catalog | Legacy metadata export for FL Studio Browser without the plugin | ✅ Shipped — stable |
+| **Tier 3 (research)** | Ableton / Reaper metadata paths ← SQLite catalog | Alternative DAW metadata injection without a plugin SDK | ❌ Not implemented |
+
+```
+Tier 1 (target):     Host DAW  ←──  VST3 Plugin  ←──  Shared core  ←──  SQLite catalog
+Tier 2 (fallback):   FL Studio  ←──  CLI export_fl  ←──  SQLite catalog
+Tier 3 (research):   Ableton/Reaper  ←──  metadata export research  ←──  SQLite catalog
+```
+
+FL Studio is the **first target host** for Tier 1 but **not a hard product dependency**. All VST3-capable DAWs are potential hosts.
+
+### 4.1 Legacy fallback path (Tier 2 — shipped)
 
 ```
 FL Studio  ←──  CLI export_fl  ←──  SQLite catalog
 ```
 
-- FL Studio Browser Tags are the only supported export
+- FL Studio Browser Tags are the only **implemented** CLI export format
+- Classified as **legacy/fallback** — not the main product path (see Tier 1)
 - Focus on stability, configurable limits, and edge-case handling
 - Documentation of tag format and export workflow
 
-### 4.2 Medium-term (Planned — EPIC 5+)
+### 4.2 Research path (Tier 3 — planned)
 
 ```
-FL Studio  ←──  CLI export_fl  ←──  SQLite catalog
-Ableton    ←──  research/adapt   ←──  SQLite catalog
-Reaper     ←──  BWF chunks      ←──  SQLite catalog
+Ableton  ←──  research/adapt  ←──  SQLite catalog
+Reaper   ←──  BWF chunks      ←──  SQLite catalog
 ```
 
-- Research Ableton and Reaper integration paths
+- Research Ableton and Reaper integration paths (Sections 3.2–3.3)
 - Implement metadata embedding (BWF chunks) as a candidate cross-DAW metadata strategy, subject to DAW-specific validation
 - Support project-context search fields (BPM, key, target type) as search filters
+- Does not replace Tier 1 — plugin remains the primary integration
 
-### 4.3 Long-term (Future)
+### 4.3 Long-term extensions (future)
 
 ```
-FL Studio  ←──  CLI export_fl  ←──  SQLite catalog
-Ableton    ←──  dedicated export  ←──  SQLite catalog
-Reaper     ←──  BWF + peaks      ←──  SQLite catalog
-Local API  ←──  FastAPI layer    ←──  SQLite catalog
-Desktop UI ←──  audio preview    ←──  SQLite catalog
+VST3 Plugin  ←──  shared core  ←──  SQLite catalog
+Standalone App  ←──  same core  ←──  SQLite catalog
+Local API  ←──  FastAPI layer  ←──  SQLite catalog
+Tier 3 encoders  ←──  ExportDispatcher  ←──  SQLite catalog
 ```
 
-- DAW-agnostic metadata export layer
+- Standalone producing app from the same core as the VST3 plugin
 - Local API so DAW scripts can query the catalog without CLI overhead
-- Desktop UI with drag-and-drop from sample search results into DAW
+- DAW-agnostic metadata export layer via encoder dispatch (Section 6.2)
+- Previously planned React/Tauri desktop UI is superseded by VST-first + standalone target
 
 ---
 

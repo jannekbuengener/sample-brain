@@ -3,9 +3,10 @@
 ## Live State
 
 - **Branch:** `main`
-- **HEAD:** `b096fcb` (`build(deps): bump numpy from 1.26.4 to 2.4.6`)
-- **Open PRs:** 2 Dependabot (#63 soundfile 0.14.0, #64 tqdm 4.68.1)
-- **Open issues:** 9 — #72, #73, #74 (previous EPIC-2 follow-ups), **#90–#95 (VST-first product target, new)**
+- **HEAD:** `7eada5c` (`Merge pull request #87 from jannekbuengener/dependabot/github_actions/actions/checkout-7`)
+- **Open PRs:** 1 Dependabot — **#88** (numpy 2.5.0) → **HOLD_DEPENDENCY_VALIDATION**
+- **Open issues:** 9 — #72, #73, #74 (EPIC-2 follow-ups), **#90–#95 (VST-first product target)**
+- **Current focus:** VST-first product docs consolidation ([#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95))
 - **Tests:** 106 passed, 2 skipped (`pytest -q` core; 4 `[vec]`-dependent test files fail import without `sqlite_vec` installed — see test command below)
 
 ```powershell
@@ -72,7 +73,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 - **Scan** — registers sample files in SQLite catalog; supports `--root` CLI override
 - **Analyze** — extracts audio features via librosa; reads from pre-scanned catalog
 - **Autotype** — rule-based + optional kNN classification
-- **Export** — writes smart tags into FL Studio Browser
+- **Export** — writes smart tags into FL Studio Browser (**legacy/fallback** CLI path; VST3 plugin is the product target)
 - **Packaging** — `sample-brain --help` entry point works
 - **CLI** — core pipeline + optional embed/index/search/vec/benchmark/db doctor
 
