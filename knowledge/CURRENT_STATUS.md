@@ -3,11 +3,12 @@
 ## Live State
 
 - **Branch:** `main`
-- **HEAD:** `6f77176` (`Merge pull request #107` — product parent reconcile)
-- **Open PRs:** 1 Dependabot — **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** (`numba` requires `numpy<2.5`); #72 key_conf evidence PR pending
-- **Open issues:** 3 — #72–#74 (EPIC-2 follow-ups)
-- **Product pillars:** All 5 specs under [`docs/product/`](../docs/product/README.md) — #90 closed via PR #107
-- **Current focus:** EPIC-2 follow-ups ([#72](https://github.com/jannekbuengener/sample-brain/issues/72) key confidence evidence, [#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B, [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN)
+- **HEAD:** `b0315cc` (`Merge pull request #108` — key confidence evidence)
+- **Open PRs:** 1 Dependabot — **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** (`numba` requires `numpy<2.5`)
+- **Open issues:** 2 — [#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B, [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN (EPIC-2 follow-ups)
+- **Product pillars:** All 5 specs under [`docs/product/`](../docs/product/README.md) — #90 closed via PR #107; no open product-docs issues
+- **Recently closed:** [#72](https://github.com/jannekbuengener/sample-brain/issues/72) key confidence evidence via PR #108 — [KEY_CONF_EVIDENCE.md](../docs/benchmarks/KEY_CONF_EVIDENCE.md)
+- **Current focus:** EPIC-2 follow-ups ([#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B, [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN)
 - **Tests:** 231 passed (`pytest -q` on validated host; full suite with optional `[vec]` modules when installed)
 
 ## Search Quality Campaign — Closed

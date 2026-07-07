@@ -6,10 +6,10 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Open issues | 🔶 3 total | #72–#74 (EPIC-2 follow-ups); #72 evidence PR pending |
+| Open issues | 🔶 2 total | #73–#74 (EPIC-2 follow-ups) |
 | VST-first product target | ✅ Spec complete | PR #102 parent; PR #105 (#91/#94 closed); PR #106 (#92/#93/#95 closed); PR #107 (#90 closed); all 5 specs under `docs/product/` |
-| Open PRs | 🔶 1 Dependabot + #72 evidence | **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** |
-| `main` HEAD | ✅ Current | `6f77176` — Merge PR #107 (`docs/product-parent-reconcile-90`) |
+| Open PRs | 🔶 1 Dependabot | **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** |
+| `main` HEAD | ✅ Current | `b0315cc` — Merge PR #108 (`fix/key-conf-evidence-72`) |
 
 ### Dependabot triage (2026-07-07)
 
@@ -19,6 +19,7 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 | #104 | numba 0.65.1 → 0.66.0 | **Merged** (`9ce9f2b`) | Does not unblock #103 |
 | PR #105 | docs: product pillar specs (#91, #94) | **Merged** (`6c75ad0`) | Closes #91, #94 |
 | PR #106 | docs: remaining pillar specs (#92, #93, #95) | **Merged** (`ca56cd7`) | Closes #92, #93, #95 |
+| PR #108 | fix: key confidence evidence (#72) | **Merged** (`b0315cc`) | Closes #72 |
 
 **Recommendation:** Close or snooze #103 until a `numba` release supports `numpy>=2.5`.
 
@@ -28,6 +29,7 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 | GitHub #28 | ✅ Closed | Implemented via PR #34 (`31fc3f1`) |
 | GitHub #29 | ✅ Closed | Implemented via PR #36 (`e7d59c7`) |
 | GitHub #30 | ✅ Closed | Implemented via PR #35 (`05135a1`) |
+| GitHub #72 | ✅ Closed | Implemented via PR #108 (`b0315cc`) |
 | PR #33 | ✅ Merged | Bugfix follow-up for hybrid metadata (`f12a962`) |
 | PR #37 | ✅ Merged | Config-/Export-contract stabilization (`cfd6e63`) |
 | GitHub #11 | ✅ Closed | M1 — isolated CLAP runtime environment (PASS) |
@@ -61,15 +63,16 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 
 ## Post-cleanup board state
 
-As of `main` at `ca56cd7`:
+As of `main` at `b0315cc`:
 
 - **EPIC 2 runtime and E2E proof** — completed and documented (`CURRENT_STATUS.md`, `EPIC_2_SEMANTIC_SEARCH_SPEC.md`)
 - **sqlite-vec campaign** — Phases 1–8 closed (PRs #47–#53); default backend remains `numpy`
 - **Search quality campaign** — closed (PR #54, merged 2026-05-31); Tier A gates PASS
 - **EPIC 3 foundation** — hybrid ranking score contract merged via PR #23
-- **VST-first product target** — PR #102 parent consolidated; PR #105 merged (#91/#94); PR #106 merged (#92/#93/#95); all 5 pillar specs under `docs/product/`; parent #90 closes via parent-reconcile PR
+- **VST-first product target** — PR #102 parent consolidated; PR #105 merged (#91/#94); PR #106 merged (#92/#93/#95); all 5 pillar specs under `docs/product/`; parent #90 closed via PR #107
+- **Key confidence evidence (#72)** — closed via PR #108 (`b0315cc`); evidence in `docs/benchmarks/KEY_CONF_EVIDENCE.md`
 - **Dependabot** — PR #103 (numpy 2.5.1) **HOLD**; PR #104 merged; PR #105 merged; PR #106 merged
-- **Current board reality** — 3 open issues (#72–#74); 1 Dependabot PR (#103); #72 key_conf evidence PR pending
+- **Current board reality** — 2 open issues (#73, #74); 1 Dependabot PR (#103) **HOLD**
 
 Local backlog item numbers below are **planning IDs**, not GitHub issue numbers (except where cross-referenced).
 
