@@ -128,6 +128,156 @@ def write_texture_noise_wav(
     return path
 
 
+def _render_fixture_waveform(
+    fixture_type: str,
+    params: dict[str, Any],
+    *,
+    duration_sec: float = 4.0,
+) -> np.ndarray:
+    sr = _CLAP_SR
+    sample_count = max(1, int(sr * duration_sec))
+    t = np.linspace(0.0, duration_sec, sample_count, endpoint=False, dtype=np.float32)
+
+    if fixture_type == "kick_transient":
+        bpm = float(params.get("bpm", 120.0))
+        y = np.zeros(sample_count, dtype=np.float32)
+        interval_sec = 60.0 / bpm
+        kick_duration = min(0.15, interval_sec * 0.4)
+        kick_samples = max(1, int(kick_duration * sr))
+        t_kick = np.linspace(0.0, kick_duration, kick_samples, dtype=np.float32)
+        envelope = np.exp(-t_kick * 25.0)
+        kick = 0.8 * np.sin(2.0 * np.pi * 60.0 * t_kick) * envelope
+        num_pulses = int(duration_sec / interval_sec)
+        for i in range(num_pulses):
+            start = int(i * interval_sec * sr)
+            if start + kick_samples <= sample_count:
+                y[start : start + kick_samples] += kick.astype(np.float32)
+        return np.clip(y, -1.0, 1.0)
+
+    if fixture_type == "sine_tone":
+        frequency_hz = float(params.get("frequency_hz", 220.0))
+        return (0.5 * np.sin(2.0 * np.pi * frequency_hz * t)).astype(np.float32)
+
+    if fixture_type == "perc_hit":
+        hit_duration = float(params.get("duration_sec", 0.08))
+        hit_samples = max(1, int(hit_duration * sr))
+        t_hit = np.linspace(0.0, hit_duration, hit_samples, dtype=np.float32)
+        envelope = np.exp(-t_hit * 80.0)
+        hit = 0.9 * np.sin(2.0 * np.pi * 1200.0 * t_hit) * envelope
+        y = np.zeros(sample_count, dtype=np.float32)
+        y[:hit_samples] = hit.astype(np.float32)
+        return y
+
+    raise ValueError(f"Cannot render waveform for fixture type: {fixture_type}")
+
+
+def _synthetic_reverb_ir(
+    *,
+    ir_decay_sec: float,
+    seed: int,
+) -> np.ndarray:
+    sr = _CLAP_SR
+    ir_samples = max(1, int(ir_decay_sec * sr))
+    rng = np.random.default_rng(seed)
+    noise = rng.normal(0.0, 1.0, ir_samples).astype(np.float32)
+    decay = np.exp(-np.linspace(0.0, 5.0, ir_samples, dtype=np.float32))
+    ir = noise * decay
+    peak = float(np.max(np.abs(ir)))
+    if peak > 0.0:
+        ir = ir / peak
+    return ir
+
+
+def apply_synthetic_reverb(
+    dry: np.ndarray,
+    *,
+    ir_decay_sec: float = 1.5,
+    mix: float = 0.65,
+    seed: int = 101,
+) -> np.ndarray:
+    ir = _synthetic_reverb_ir(ir_decay_sec=ir_decay_sec, seed=seed)
+    wet_tail = np.fft.irfft(np.fft.rfft(dry) * np.fft.rfft(ir, n=len(dry))).astype(np.float32)
+    peak = float(np.max(np.abs(wet_tail)))
+    if peak > 0.0:
+        wet_tail = wet_tail / peak
+    mix = float(np.clip(mix, 0.0, 1.0))
+    wet = ((1.0 - mix) * dry + mix * wet_tail).astype(np.float32)
+    return np.clip(wet, -1.0, 1.0)
+
+
+def write_freq_sweep_riser_wav(
+    path: Path,
+    *,
+    duration_sec: float = 3.0,
+    start_hz: float = 200.0,
+    end_hz: float = 4000.0,
+    curve: str = "exponential",
+    amplitude: float = 0.6,
+) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sr = _CLAP_SR
+    sample_count = max(1, int(sr * duration_sec))
+    t = np.linspace(0.0, duration_sec, sample_count, endpoint=False, dtype=np.float32)
+    if curve == "linear":
+        freq = start_hz + (end_hz - start_hz) * (t / duration_sec)
+    else:
+        ratio = end_hz / max(start_hz, 1.0)
+        freq = start_hz * (ratio ** (t / duration_sec))
+    phase = 2.0 * np.pi * np.cumsum(freq) / sr
+    fade_in = np.minimum(1.0, t / max(duration_sec * 0.15, 0.01)).astype(np.float32)
+    wave = (amplitude * np.sin(phase) * fade_in).astype(np.float32)
+    sf.write(path, wave, sr, subtype="PCM_16")
+    return path
+
+
+def write_impact_hit_wav(
+    path: Path,
+    *,
+    decay_sec: float = 0.5,
+    noise_seed: int = 7,
+    amplitude: float = 0.9,
+) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sr = _CLAP_SR
+    sample_count = max(1, int(sr * decay_sec))
+    t = np.linspace(0.0, decay_sec, sample_count, dtype=np.float32)
+    rng = np.random.default_rng(noise_seed)
+    noise = rng.normal(0.0, 1.0, sample_count).astype(np.float32)
+    noise_env = np.exp(-t * 12.0)
+    thump_env = np.exp(-t * 35.0)
+    thump = np.sin(2.0 * np.pi * 55.0 * t) * thump_env
+    wave = amplitude * np.clip(noise * noise_env + 0.7 * thump, -1.0, 1.0)
+    sf.write(path, wave.astype(np.float32), sr, subtype="PCM_16")
+    return path
+
+
+def write_wet_reverb_wav(
+    path: Path,
+    *,
+    base_fixture_type: str,
+    base_params: dict[str, Any] | None = None,
+    duration_sec: float = 4.0,
+    ir_decay_sec: float = 1.5,
+    mix: float = 0.65,
+    seed: int = 101,
+) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    base_params = base_params or {}
+    dry = _render_fixture_waveform(
+        base_fixture_type,
+        base_params,
+        duration_sec=duration_sec,
+    )
+    wet = apply_synthetic_reverb(
+        dry,
+        ir_decay_sec=ir_decay_sec,
+        mix=mix,
+        seed=seed,
+    )
+    sf.write(path, wet, _CLAP_SR, subtype="PCM_16")
+    return path
+
+
 _NOTE_ROOT_HZ: dict[str, float] = {
     "C": 261.63,
     "D": 293.66,
@@ -175,5 +325,32 @@ def generate_search_quality_fixture(
         return write_texture_noise_wav(
             path,
             seed=int(params.get("seed", 42)),
+        )
+    if fixture_type == "freq_sweep_riser":
+        return write_freq_sweep_riser_wav(
+            path,
+            duration_sec=float(params.get("duration_sec", 3.0)),
+            start_hz=float(params.get("start_hz", 200.0)),
+            end_hz=float(params.get("end_hz", 4000.0)),
+            curve=str(params.get("curve", "exponential")),
+        )
+    if fixture_type == "impact_hit":
+        return write_impact_hit_wav(
+            path,
+            decay_sec=float(params.get("decay_sec", 0.5)),
+            noise_seed=int(params.get("noise_seed", 7)),
+        )
+    if fixture_type == "wet_reverb":
+        base_params = params.get("base_params") or {}
+        if not isinstance(base_params, dict):
+            base_params = {}
+        return write_wet_reverb_wav(
+            path,
+            base_fixture_type=str(params.get("base_fixture_type", "sine_tone")),
+            base_params=base_params,
+            duration_sec=float(params.get("duration_sec", 4.0)),
+            ir_decay_sec=float(params.get("ir_decay_sec", 1.5)),
+            mix=float(params.get("mix", 0.65)),
+            seed=int(params.get("seed", 101)),
         )
     raise ValueError(f"Unknown search quality fixture type: {fixture_type}")

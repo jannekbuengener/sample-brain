@@ -134,7 +134,8 @@ class TestGoldenTierBPhase1:
         assert suite["defaults"]["backend"] == "clap"
         assert len(suite["catalog"]["samples"]) >= 10
         classes = {query.get("query_class") for query in suite["queries"]}
-        assert classes == {"kick_snare_perc", "pad_texture"}
+        assert "kick_snare_perc" in classes
+        assert "pad_texture" in classes
         modes = {query.get("mode") for query in suite["queries"]}
         assert modes == {"text", "audio"}
         for query in suite["queries"]:
@@ -159,3 +160,57 @@ class TestGoldenTierBPhase1:
         checks = result.threshold_pass()
         assert checks["mean_precision_at_5"]
         assert result.failure_buckets is not None
+
+
+class TestGoldenTierBPhase2:
+    @pytest.fixture
+    def suite_path(self) -> Path:
+        return DEFAULT_TIER_B_SUITE_PATH
+
+    def test_suite_structure(self, suite_path: Path):
+        suite = load_search_quality_suite(suite_path)
+        assert int(suite.get("phase", 1)) >= 2
+        classes = {query.get("query_class") for query in suite["queries"]}
+        assert "riser_impact" in classes
+        assert "dry_wet" in classes
+        assert classes >= {
+            "kick_snare_perc",
+            "pad_texture",
+            "riser_impact",
+            "dry_wet",
+        }
+        sample_classes = {
+            sample.get("sample_class") for sample in suite["catalog"]["samples"]
+        }
+        assert "riser_impact" in sample_classes
+        assert "dry_wet" in sample_classes
+        riser_queries = [
+            q for q in suite["queries"] if q.get("query_class") == "riser_impact"
+        ]
+        dry_wet_queries = [
+            q for q in suite["queries"] if q.get("query_class") == "dry_wet"
+        ]
+        assert len(riser_queries) >= 6
+        assert len(dry_wet_queries) >= 6
+        for query in riser_queries + dry_wet_queries:
+            assert query.get("negative_sample_ids")
+            assert query.get("mode") in {"text", "audio"}
+
+    @pytest.mark.clap
+    def test_tier_b_phase2_benchmark(self, suite_path: Path, tmp_path: Path):
+        if not _clap_available():
+            pytest.skip("CLAP optional extra not installed")
+        result = run_search_quality_benchmark(
+            suite_path,
+            work_dir=tmp_path / "clap-quality-p2",
+        )
+        assert result.tier == "B"
+        assert result.summary.query_count >= 20
+        for row in result.query_results:
+            assert row.error is None, row.query_id
+        class_keys = {row.group_key for row in result.class_summaries}
+        assert "riser_impact" in class_keys
+        assert "dry_wet" in class_keys
+        checks = result.threshold_pass()
+        assert checks["mean_precision_at_5"]
+        assert checks["mean_recall_at_10"]
