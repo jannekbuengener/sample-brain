@@ -1,9 +1,12 @@
 version: 1
 tier: B
-phase: 1
+phase: 2
+phases_covered: [1, 2]
 embedding_dim: 512
 notes: >
-  Phase 1 covers query classes kick_snare_perc and pad_texture only.
+  Phase 1: kick_snare_perc and pad_texture.
+  Phase 2: riser_impact and dry_wet (dry_wet included after CLAP spike PASS).
+  Optional query_style on text queries (reporting only): keyword, natural_language, exclusion.
   Synthetic fixtures are generated at benchmark time; no audio is committed.
 defaults:
   topk: 10
@@ -109,10 +112,124 @@ catalog:
       pred_type: texture
       sample_class: pad_texture
       tags: [texture, ambient]
+    - id: 13
+      fixture_name: riser-a
+      fixture_type: freq_sweep_riser
+      fixture_params: {duration_sec: 4.0, start_hz: 200, end_hz: 3000, curve: exponential}
+      duration: 4.0
+      pred_type: fx
+      sample_class: riser_impact
+      tags: [riser, sweep]
+    - id: 14
+      fixture_name: riser-b
+      fixture_type: freq_sweep_riser
+      fixture_params: {duration_sec: 3.0, start_hz: 150, end_hz: 5000, curve: exponential}
+      duration: 3.0
+      pred_type: fx
+      sample_class: riser_impact
+      tags: [riser, build]
+    - id: 15
+      fixture_name: riser-c
+      fixture_type: freq_sweep_riser
+      fixture_params: {duration_sec: 2.5, start_hz: 300, end_hz: 4000, curve: linear}
+      duration: 2.5
+      pred_type: fx
+      sample_class: riser_impact
+      tags: [riser, whoosh]
+    - id: 16
+      fixture_name: impact-a
+      fixture_type: impact_hit
+      fixture_params: {decay_sec: 0.4, noise_seed: 11}
+      duration: 0.4
+      pred_type: impact
+      sample_class: riser_impact
+      tags: [impact, hit]
+    - id: 17
+      fixture_name: impact-b
+      fixture_type: impact_hit
+      fixture_params: {decay_sec: 0.6, noise_seed: 17}
+      duration: 0.6
+      pred_type: impact
+      sample_class: riser_impact
+      tags: [impact, boom]
+    - id: 18
+      fixture_name: impact-c
+      fixture_type: impact_hit
+      fixture_params: {decay_sec: 0.8, noise_seed: 23}
+      duration: 0.8
+      pred_type: impact
+      sample_class: riser_impact
+      tags: [impact, cinematic]
+    - id: 19
+      fixture_name: kick-dry-a
+      fixture_type: kick_transient
+      fixture_params: {bpm: 120}
+      duration: 4.0
+      pred_type: kick
+      sample_class: dry_wet
+      tags: [kick, dry]
+    - id: 20
+      fixture_name: kick-wet-a
+      fixture_type: wet_reverb
+      fixture_params:
+        base_fixture_type: kick_transient
+        base_params: {bpm: 120}
+        duration_sec: 4.0
+        ir_decay_sec: 2.0
+        mix: 0.75
+        seed: 201
+      duration: 4.0
+      pred_type: kick
+      sample_class: dry_wet
+      tags: [kick, wet, reverb]
+    - id: 21
+      fixture_name: pad-dry-a
+      fixture_type: sine_tone
+      fixture_params: {frequency_hz: 220}
+      duration: 4.0
+      pred_type: pad
+      sample_class: dry_wet
+      tags: [pad, dry]
+    - id: 22
+      fixture_name: pad-wet-a
+      fixture_type: wet_reverb
+      fixture_params:
+        base_fixture_type: sine_tone
+        base_params: {frequency_hz: 220}
+        duration_sec: 4.0
+        ir_decay_sec: 2.5
+        mix: 0.7
+        seed: 202
+      duration: 4.0
+      pred_type: pad
+      sample_class: dry_wet
+      tags: [pad, wet, reverb]
+    - id: 23
+      fixture_name: perc-dry-a
+      fixture_type: perc_hit
+      duration: 0.5
+      pred_type: percussion
+      sample_class: dry_wet
+      tags: [perc, dry]
+    - id: 24
+      fixture_name: perc-wet-a
+      fixture_type: wet_reverb
+      fixture_params:
+        base_fixture_type: perc_hit
+        base_params: {duration_sec: 0.08}
+        duration_sec: 2.0
+        ir_decay_sec: 1.8
+        mix: 0.8
+        seed: 203
+      duration: 2.0
+      pred_type: percussion
+      sample_class: dry_wet
+      tags: [perc, wet, reverb]
 queries:
   - id: kick_text_basic
     mode: text
     query_class: kick_snare_perc
+    query_style: keyword
     text: kick drum
     relevant_sample_ids: [1, 2, 3]
     negative_sample_ids: [7, 8, 9, 10, 11, 12]
@@ -120,6 +237,7 @@ queries:
   - id: kick_text_low
     mode: text
     query_class: kick_snare_perc
+    query_style: natural_language
     text: bass drum hit
     relevant_sample_ids: [1, 2, 3]
     negative_sample_ids: [7, 8, 9, 10, 11, 12]
@@ -127,6 +245,7 @@ queries:
   - id: snare_text_basic
     mode: text
     query_class: kick_snare_perc
+    query_style: keyword
     text: snare drum
     relevant_sample_ids: [4, 5]
     negative_sample_ids: [1, 2, 3, 7, 8, 9, 10, 11, 12]
@@ -134,6 +253,7 @@ queries:
   - id: perc_text_basic
     mode: text
     query_class: kick_snare_perc
+    query_style: keyword
     text: percussion hit
     relevant_sample_ids: [6]
     negative_sample_ids: [7, 8, 9, 10, 11, 12]
@@ -141,6 +261,7 @@ queries:
   - id: pad_text_warm
     mode: text
     query_class: pad_texture
+    query_style: natural_language
     text: warm pad synth
     relevant_sample_ids: [7, 8, 9]
     negative_sample_ids: [1, 2, 3, 4, 5, 6]
@@ -148,6 +269,7 @@ queries:
   - id: pad_text_ambient
     mode: text
     query_class: pad_texture
+    query_style: natural_language
     text: ambient texture sound
     relevant_sample_ids: [10, 11, 12]
     negative_sample_ids: [1, 2, 3, 4, 5, 6]
@@ -179,4 +301,105 @@ queries:
     query_audio_fixture: texture-a
     relevant_sample_ids: [10, 11, 12]
     negative_sample_ids: [1, 2, 3, 4, 5, 6]
+    must_recall_within_k: 10
+  - id: riser_text_build_up
+    mode: text
+    query_class: riser_impact
+    query_style: keyword
+    text: riser build up
+    relevant_sample_ids: [13, 14, 15]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+    must_recall_within_k: 10
+  - id: riser_text_sweep
+    mode: text
+    query_class: riser_impact
+    query_style: natural_language
+    text: rising sweep sound
+    relevant_sample_ids: [13, 14, 15]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+    must_recall_within_k: 10
+  - id: riser_text_whoosh
+    mode: text
+    query_class: riser_impact
+    query_style: natural_language
+    text: whoosh transition
+    relevant_sample_ids: [15]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+    must_recall_within_k: 10
+  - id: impact_text_cinematic
+    mode: text
+    query_class: riser_impact
+    query_style: natural_language
+    text: cinematic impact hit
+    relevant_sample_ids: [18]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21, 22, 23, 24]
+    must_recall_within_k: 10
+  - id: impact_text_boom
+    mode: text
+    query_class: riser_impact
+    query_style: exclusion
+    text: impact hit, not a kick
+    relevant_sample_ids: [17]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21, 22, 23, 24]
+    must_recall_within_k: 10
+  - id: riser_audio_ref
+    mode: audio
+    query_class: riser_impact
+    query_audio_fixture: riser-a
+    relevant_sample_ids: [13, 14, 15]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+    must_recall_within_k: 10
+  - id: dry_kick_text
+    mode: text
+    query_class: dry_wet
+    query_style: keyword
+    text: dry kick
+    relevant_sample_ids: [19]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24]
+    must_recall_within_k: 10
+  - id: dry_kick_exclusion
+    mode: text
+    query_class: dry_wet
+    query_style: exclusion
+    text: kick with no reverb tail
+    relevant_sample_ids: [19]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24]
+    must_recall_within_k: 10
+  - id: dry_perc_text
+    mode: text
+    query_class: dry_wet
+    query_style: keyword
+    text: dry percussion
+    relevant_sample_ids: [23]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24]
+    must_recall_within_k: 10
+  - id: reverb_tail_text
+    mode: text
+    query_class: dry_wet
+    query_style: keyword
+    text: reverb tail
+    relevant_sample_ids: [20]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 23]
+    must_recall_within_k: 10
+  - id: wet_pad_text
+    mode: text
+    query_class: dry_wet
+    query_style: natural_language
+    text: reverb pad synth
+    relevant_sample_ids: [22]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24]
+    must_recall_within_k: 10
+  - id: dry_kick_audio_ref
+    mode: audio
+    query_class: dry_wet
+    query_audio_fixture: kick-dry-a
+    relevant_sample_ids: [19]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24]
+    must_recall_within_k: 10
+  - id: wet_kick_audio_ref
+    mode: audio
+    query_class: dry_wet
+    query_audio_fixture: kick-wet-a
+    relevant_sample_ids: [20]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 24]
     must_recall_within_k: 10

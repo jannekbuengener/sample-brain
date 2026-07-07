@@ -60,6 +60,7 @@ class QueryEvalResult:
     negatives_in_top10: int
     failure_bucket: str
     error: str | None = None
+    query_style: str | None = None
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,7 @@ class SearchQualityBenchmarkResult:
     thresholds: dict[str, float]
     class_summaries: tuple[GroupedMetricSummary, ...] = ()
     mode_summaries: tuple[GroupedMetricSummary, ...] = ()
+    style_summaries: tuple[GroupedMetricSummary, ...] = ()
     failure_buckets: dict[str, int] | None = None
 
     def threshold_pass(self) -> dict[str, bool]:
@@ -391,12 +393,14 @@ def run_search_quality_benchmark(
     metric_rows: list[dict[str, float]] = []
     class_metric_rows: list[tuple[str, dict[str, float]]] = []
     mode_metric_rows: list[tuple[str, dict[str, float]]] = []
+    style_metric_rows: list[tuple[str, dict[str, float]]] = []
     bucket_labels: list[str] = []
 
     for raw_query in suite.get("queries") or []:
         query_id = str(raw_query["id"])
         mode = str(raw_query.get("mode", "vector"))
         query_class = raw_query.get("query_class")
+        query_style = raw_query.get("query_style")
         topk = int(raw_query.get("topk", default_topk))
         relevant_ids = {int(value) for value in raw_query.get("relevant_sample_ids") or []}
         negative_ids = {int(value) for value in raw_query.get("negative_sample_ids") or []}
@@ -497,6 +501,8 @@ def run_search_quality_benchmark(
         if query_class:
             class_metric_rows.append((str(query_class), metrics))
         mode_metric_rows.append((mode, metrics))
+        if mode == "text" and query_style:
+            style_metric_rows.append((str(query_style), metrics))
 
         passed_must_recall = True
         if must_recall_k is not None:
@@ -528,6 +534,7 @@ def run_search_quality_benchmark(
                 negatives_in_top5=neg_top5,
                 negatives_in_top10=neg_top10,
                 failure_bucket=bucket,
+                query_style=str(query_style) if query_style else None,
             )
         )
 
@@ -541,6 +548,7 @@ def run_search_quality_benchmark(
         thresholds={key: float(value) for key, value in thresholds.items()},
         class_summaries=tuple(aggregate_metric_summaries_by_group(class_metric_rows)),
         mode_summaries=tuple(aggregate_metric_summaries_by_group(mode_metric_rows)),
+        style_summaries=tuple(aggregate_metric_summaries_by_group(style_metric_rows)),
         failure_buckets=failure_bucket_counts(bucket_labels),
     )
 
@@ -575,6 +583,15 @@ def print_search_quality_report(result: SearchQualityBenchmarkResult) -> None:
                 f"mrr={row.summary.mrr:.3f} "
                 f"queries={row.summary.query_count}"
             )
+    if result.style_summaries:
+        print("per_query_style:")
+        for row in result.style_summaries:
+            print(
+                f"  style={row.group_key} "
+                f"p@5={row.summary.precision_at_5:.3f} "
+                f"mrr={row.summary.mrr:.3f} "
+                f"queries={row.summary.query_count}"
+            )
     if result.failure_buckets:
         print("failure_buckets:")
         for label in FAILURE_BUCKET_LABELS:
@@ -589,6 +606,7 @@ def print_search_quality_report(result: SearchQualityBenchmarkResult) -> None:
             f"query={row.query_id} "
             f"class={row.query_class or '-'} "
             f"mode={row.mode} "
+            f"style={row.query_style or '-'} "
             f"p@1={row.metrics['precision_at_1']:.3f} "
             f"p@5={row.metrics['precision_at_5']:.3f} "
             f"mrr={row.metrics['mrr']:.3f} "
