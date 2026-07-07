@@ -6,10 +6,10 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Open issues | 🔶 7 total (pre-remaining-specs PR) | #90 (parent), #92–#93–#95 (product pillars), #72–#74 (EPIC-2 follow-ups) |
-| VST-first product target | 🔶 Pillar specs | PR #102 parent; PR #105 Library+Matching (#91/#94 closed); **#92/#93/#95 specs in flight** |
+| Open issues | 🔶 4 total | #90 (parent — reconcile in this PR), #72–#74 (EPIC-2 follow-ups) |
+| VST-first product target | ✅ Spec complete | PR #102 parent; PR #105 (#91/#94 closed); PR #106 (#92/#93/#95 closed); all 5 specs under `docs/product/` |
 | Open PRs | 🔶 1 Dependabot | **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** |
-| `main` HEAD | ✅ Current | `6c75ad0` — Merge PR #105 (`docs/product-library-intelligence-spec`) |
+| `main` HEAD | ✅ Current | `ca56cd7` — Merge PR #106 (`docs/product-remaining-pillar-specs`) |
 
 ### Dependabot triage (2026-07-07)
 
@@ -18,6 +18,7 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 | #103 | numpy 2.4.6 → 2.5.1 | **HOLD** — do not merge | `numba` 0.66.0 declares `numpy<2.5`; pip `ResolutionImpossible` on CI |
 | #104 | numba 0.65.1 → 0.66.0 | **Merged** (`9ce9f2b`) | Does not unblock #103 |
 | PR #105 | docs: product pillar specs (#91, #94) | **Merged** (`6c75ad0`) | Closes #91, #94 |
+| PR #106 | docs: remaining pillar specs (#92, #93, #95) | **Merged** (`ca56cd7`) | Closes #92, #93, #95 |
 
 **Recommendation:** Close or snooze #103 until a `numba` release supports `numpy>=2.5`.
 
@@ -60,15 +61,15 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 
 ## Post-cleanup board state
 
-As of `main` at `6c75ad0` (before remaining-pillar-specs PR):
+As of `main` at `ca56cd7`:
 
 - **EPIC 2 runtime and E2E proof** — completed and documented (`CURRENT_STATUS.md`, `EPIC_2_SEMANTIC_SEARCH_SPEC.md`)
 - **sqlite-vec campaign** — Phases 1–8 closed (PRs #47–#53); default backend remains `numpy`
 - **Search quality campaign** — closed (PR #54, merged 2026-05-31); Tier A gates PASS
 - **EPIC 3 foundation** — hybrid ranking score contract merged via PR #23
-- **VST-first product target** — PR #102 parent; PR #105 merged (#91/#94 closed); specs for #92/#93/#95 in progress
-- **Dependabot** — PR #103 (numpy 2.5.1) **HOLD**; PR #104 merged; PR #105 merged
-- **Current board reality** — 7 open issues (#90, #92–#93–#95, #72–#74); 1 open Dependabot PR (#103)
+- **VST-first product target** — PR #102 parent consolidated; PR #105 merged (#91/#94); PR #106 merged (#92/#93/#95); all 5 pillar specs under `docs/product/`; parent #90 closes via parent-reconcile PR
+- **Dependabot** — PR #103 (numpy 2.5.1) **HOLD**; PR #104 merged; PR #105 merged; PR #106 merged
+- **Current board reality** — 4 open issues (#90, #72–#74); 1 open Dependabot PR (#103)
 
 Local backlog item numbers below are **planning IDs**, not GitHub issue numbers (except where cross-referenced).
 

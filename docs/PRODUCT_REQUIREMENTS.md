@@ -132,6 +132,8 @@ Scan  →  Analyze  →  Embed  →  Index  →  Search  →  Export
 
 ### VST-first Product Target (Issues #90–#95)
 
+All five pillar specs are documented under [`docs/product/`](product/README.md) (merged via PR #105 and PR #106). Parent scope #90 closes when backlog/status docs reflect the completed spec set.
+
 The product target reorganizes into 5 pillars:
 
 ```text
