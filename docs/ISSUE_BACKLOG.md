@@ -2,14 +2,24 @@
 
 Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board reality** below for live state.
 
-## GitHub Board Reality (2026-07-04)
+## GitHub Board Reality (2026-07-07)
 
 | Item | Status | Notes |
 |------|--------|-------|
 | Open issues | 🔶 9 total | #72 (key confidence), #73 (CLAP Tier-B), #74 (sqlite-vec ANN), **#90–#95 (VST-first product target, open)** |
-| VST-first product target | 🔶 Docs in progress | Issues #90 (Parent) + #91–#95 (5 pillars); PRD §5 + DAW integration tiers consolidation |
-| Open PRs | 🔶 1 Dependabot | **#88** (numpy 2.5.0) → **HOLD_DEPENDENCY_VALIDATION** |
-| `main` HEAD | ✅ Current | `7eada5c` — see latest `git log` |
+| VST-first product target | 🔶 Pillar specs in progress | Parent consolidated PR #102; **`docs/product/`** — Library (#94) + Matching (#91) specs available; #92–#95 planned |
+| Open PRs | 🔶 1 Dependabot | **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** (`numba` pins `numpy<2.5`; see below) |
+| `main` HEAD | ✅ Current | `9ce9f2b` — Merge PR #104 (numba 0.66.0); see latest `git log` |
+
+### Dependabot triage (2026-07-07)
+
+| PR | Bump | Verdict | Evidence |
+|----|------|---------|----------|
+| #103 | numpy 2.4.6 → 2.5.1 | **HOLD** — do not merge | `numba==0.65.1` (and `0.66.0`) declare `numpy<2.5`; pip `ResolutionImpossible` on CI and local dry-run |
+| #104 | numba 0.65.1 → 0.66.0 | **Merged** (PR #104 → `9ce9f2b`) | Does not unblock #103 |
+
+**Recommendation:** Close or snooze #103 until a `numba` release supports `numpy>=2.5`.
+
 | sqlite-vec campaign (PRs #47–#53) | ✅ Closed | Phases 1–8 complete |
 | search-quality campaign (PR #54) | ✅ Closed | Merged 2026-05-31 |
 | GitHub #27 | ✅ Closed | Implemented via PR #32 (`9d41782`) |
@@ -49,15 +59,15 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 
 ## Post-cleanup board state
 
-As of `main` at `7eada5c`:
+As of `main` at `9ce9f2b` (base for this PR):
 
 - **EPIC 2 runtime and E2E proof** — completed and documented (`CURRENT_STATUS.md`, `EPIC_2_SEMANTIC_SEARCH_SPEC.md`)
 - **sqlite-vec campaign** — Phases 1–8 closed (PRs #47–#53); default backend remains `numpy`
 - **Search quality campaign** — closed (PR #54, merged 2026-05-31); Tier A gates PASS
 - **EPIC 3 foundation** — hybrid ranking score contract merged via PR #23
-- **VST-first product target** — Issues #90–#95 open; docs consolidation in progress (PRD §5, DAW integration tiers)
-- **Dependabot** — PR #88 (numpy) open → **HOLD_DEPENDENCY_VALIDATION**
-- **Current board reality** — 9 open issues (#72–#74, #90–#95); 1 open Dependabot PR (#88)
+- **VST-first product target** — Issues #90–#95 open; PR #102 consolidated parent in PRD/DAW; pillar specs under `docs/product/` (Library #94, Matching #91)
+- **Dependabot** — PR #103 (numpy 2.5.1) **HOLD** (`numba` requires `numpy<2.5`); PR #104 (numba 0.66.0) **merged**
+- **Current board reality** — 9 open issues (#72–#74, #90–#95); 1 open Dependabot PR (#103)
 
 Local backlog item numbers below are **planning IDs**, not GitHub issue numbers (except where cross-referenced).
 
