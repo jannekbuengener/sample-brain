@@ -6,10 +6,10 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Open issues | 🔶 4 total | #90 (parent — reconcile in this PR), #72–#74 (EPIC-2 follow-ups) |
-| VST-first product target | ✅ Spec complete | PR #102 parent; PR #105 (#91/#94 closed); PR #106 (#92/#93/#95 closed); all 5 specs under `docs/product/` |
-| Open PRs | 🔶 1 Dependabot | **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** |
-| `main` HEAD | ✅ Current | `ca56cd7` — Merge PR #106 (`docs/product-remaining-pillar-specs`) |
+| Open issues | 🔶 3 total | #72–#74 (EPIC-2 follow-ups); #72 evidence PR pending |
+| VST-first product target | ✅ Spec complete | PR #102 parent; PR #105 (#91/#94 closed); PR #106 (#92/#93/#95 closed); PR #107 (#90 closed); all 5 specs under `docs/product/` |
+| Open PRs | 🔶 1 Dependabot + #72 evidence | **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** |
+| `main` HEAD | ✅ Current | `6f77176` — Merge PR #107 (`docs/product-parent-reconcile-90`) |
 
 ### Dependabot triage (2026-07-07)
 
@@ -69,7 +69,7 @@ As of `main` at `ca56cd7`:
 - **EPIC 3 foundation** — hybrid ranking score contract merged via PR #23
 - **VST-first product target** — PR #102 parent consolidated; PR #105 merged (#91/#94); PR #106 merged (#92/#93/#95); all 5 pillar specs under `docs/product/`; parent #90 closes via parent-reconcile PR
 - **Dependabot** — PR #103 (numpy 2.5.1) **HOLD**; PR #104 merged; PR #105 merged; PR #106 merged
-- **Current board reality** — 4 open issues (#90, #72–#74); 1 open Dependabot PR (#103)
+- **Current board reality** — 3 open issues (#72–#74); 1 Dependabot PR (#103); #72 key_conf evidence PR pending
 
 Local backlog item numbers below are **planning IDs**, not GitHub issue numbers (except where cross-referenced).
 

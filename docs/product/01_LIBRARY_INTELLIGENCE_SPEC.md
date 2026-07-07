@@ -167,7 +167,7 @@ Keywords supplement `pred_type` and filename regex with structured, searchable t
 
 `src/export_fl.py` uses `CONF_KEY_MIN = 0.55` — key tags are withheld below this threshold.
 
-**Known risk:** historical notes in `knowledge/project/PROJECT_META.md` mention observed values outside 0–1; calibration is tracked in [#72](https://github.com/jannekbuengener/sample-brain/issues/72). Library spec treats confidence fields as **first-class metadata** with documented thresholds per consumer (export, plugin UI, matching).
+**Known risk:** historical notes in `knowledge/project/PROJECT_META.md` mention observed values outside 0–1 from legacy Krumhansl analysis; calibration evidence is in [KEY_CONF_EVIDENCE.md](../benchmarks/KEY_CONF_EVIDENCE.md) ([#72](https://github.com/jannekbuengener/sample-brain/issues/72)). Library spec treats confidence fields as **first-class metadata** with documented thresholds per consumer (export, plugin UI, matching).
 
 ### 6.2 Target confidence policy
 
