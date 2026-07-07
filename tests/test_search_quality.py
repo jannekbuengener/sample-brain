@@ -6,11 +6,17 @@ import pytest
 
 from src.benchmark_search_quality import (
     DEFAULT_SUITE_PATH,
+    DEFAULT_TIER_B_SUITE_PATH,
     load_search_quality_suite,
     run_search_quality_benchmark,
 )
+from src.embed import _clap_available
 from src.search_eval import (
     aggregate_metric_summaries,
+    aggregate_metric_summaries_by_group,
+    assign_failure_bucket,
+    failure_bucket_counts,
+    negatives_in_top_k,
     precision_at_k,
     recall_at_k,
     reciprocal_rank,
@@ -40,6 +46,48 @@ class TestSearchEvalMetrics:
         summary = aggregate_metric_summaries([row, row])
         assert summary.query_count == 2
         assert summary.precision_at_1 == row["precision_at_1"]
+
+    def test_negatives_in_top_k(self):
+        ranked = [1, 2, 3, 4, 5]
+        negatives = {2, 4, 99}
+        assert negatives_in_top_k(ranked, negatives, 5) == 2
+        assert negatives_in_top_k(ranked, negatives, 2) == 1
+
+    def test_assign_failure_bucket(self):
+        metrics = summarize_query_metrics([1, 2, 3], {1})
+        assert (
+            assign_failure_bucket(
+                metrics,
+                negatives_in_top5=0,
+                passed_must_recall=True,
+                error=None,
+            )
+            == "success"
+        )
+        assert (
+            assign_failure_bucket(
+                metrics,
+                negatives_in_top5=1,
+                passed_must_recall=True,
+                error=None,
+            )
+            == "negative_leak_top5"
+        )
+
+    def test_aggregate_by_group(self):
+        row_a = summarize_query_metrics([1, 2], {1})
+        row_b = summarize_query_metrics([3, 4], {3})
+        grouped = aggregate_metric_summaries_by_group(
+            [("kick", row_a), ("pad", row_b), ("kick", row_a)]
+        )
+        by_key = {item.group_key: item.summary.query_count for item in grouped}
+        assert by_key["kick"] == 2
+        assert by_key["pad"] == 1
+
+    def test_failure_bucket_counts(self):
+        counts = failure_bucket_counts(["success", "success", "error"])
+        assert counts["success"] == 2
+        assert counts["error"] == 1
 
 
 class TestGoldenTierARegression:
@@ -75,15 +123,39 @@ class TestGoldenTierARegression:
         assert benchmark_result.summary.precision_at_5 >= 0.50
 
 
-@pytest.mark.clap
-class TestGoldenTierBPlaceholder:
-    def test_clap_suite_is_documented(self):
-        suite_path = (
-            Path(__file__).resolve().parent
-            / "fixtures"
-            / "search_quality"
-            / "golden_v2_clap.yaml"
-        )
+class TestGoldenTierBPhase1:
+    @pytest.fixture
+    def suite_path(self) -> Path:
+        return DEFAULT_TIER_B_SUITE_PATH
+
+    def test_suite_structure(self, suite_path: Path):
         suite = load_search_quality_suite(suite_path)
         assert suite["tier"] == "B"
         assert suite["defaults"]["backend"] == "clap"
+        assert len(suite["catalog"]["samples"]) >= 10
+        classes = {query.get("query_class") for query in suite["queries"]}
+        assert classes == {"kick_snare_perc", "pad_texture"}
+        modes = {query.get("mode") for query in suite["queries"]}
+        assert modes == {"text", "audio"}
+        for query in suite["queries"]:
+            assert query.get("relevant_sample_ids")
+            assert query.get("negative_sample_ids")
+
+    @pytest.mark.clap
+    def test_tier_b_phase1_benchmark(self, suite_path: Path, tmp_path: Path):
+        if not _clap_available():
+            pytest.skip("CLAP optional extra not installed")
+        result = run_search_quality_benchmark(
+            suite_path,
+            work_dir=tmp_path / "clap-quality",
+        )
+        assert result.tier == "B"
+        assert result.summary.query_count >= 8
+        for row in result.query_results:
+            assert row.error is None, row.query_id
+        assert result.class_summaries
+        assert result.mode_summaries
+        assert result.failure_buckets is not None
+        checks = result.threshold_pass()
+        assert checks["mean_precision_at_5"]
+        assert result.failure_buckets is not None

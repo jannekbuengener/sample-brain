@@ -3,13 +3,13 @@
 ## Live State
 
 - **Branch:** `main`
-- **HEAD:** `b0315cc` (`Merge pull request #108` — key confidence evidence)
+- **HEAD:** `08e72c0` (`Merge pull request #109` — post-#72 docs sync)
 - **Open PRs:** 1 Dependabot — **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** (`numba` requires `numpy<2.5`)
-- **Open issues:** 2 — [#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B, [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN (EPIC-2 follow-ups)
+- **Open issues:** 2 — [#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B (Phase 1 PR in progress), [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN (EPIC-2 follow-ups)
 - **Product pillars:** All 5 specs under [`docs/product/`](../docs/product/README.md) — #90 closed via PR #107; no open product-docs issues
 - **Recently closed:** [#72](https://github.com/jannekbuengener/sample-brain/issues/72) key confidence evidence via PR #108 — [KEY_CONF_EVIDENCE.md](../docs/benchmarks/KEY_CONF_EVIDENCE.md)
-- **Current focus:** EPIC-2 follow-ups ([#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B, [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN)
-- **Tests:** 231 passed (`pytest -q` on validated host; full suite with optional `[vec]` modules when installed)
+- **Current focus:** EPIC-2 follow-ups — #73 Tier-B Phase 1 evidence, #74 ANN tracking
+- **Tests:** 235+ passed (`pytest -q -m "not clap"` on validated host; +1 optional `[clap]` Tier-B test when installed)
 
 ## Search Quality Campaign — Closed
 
@@ -22,7 +22,7 @@ Merged via PR #54 (`0673819`, 2026-05-31). Adds relevance evaluation on existing
 | `search_eval.py` + `collect_search_hits()` + `benchmark search-quality` | ✅ |
 | Tier A regression (`test_search_quality.py`) | ✅ |
 | Filter/hybrid E2E tests | ✅ |
-| Tier B CLAP stub (`golden_v2_clap.yaml`, `@pytest.mark.clap`) | ✅ optional |
+| Tier B CLAP Phase 1 (`golden_v2_clap.yaml`, `@pytest.mark.clap`) | 🔶 Phase 1 PR | kick_snare_perc + pad_texture; [SEARCH_QUALITY_EVIDENCE.md](../docs/benchmarks/SEARCH_QUALITY_EVIDENCE.md) Tier B section |
 | Evidence report | ✅ [SEARCH_QUALITY_EVIDENCE.md](../docs/benchmarks/SEARCH_QUALITY_EVIDENCE.md) |
 
 **Tier A gates (measured):** Mean P@1=1.000, P@5=0.600, R@10=1.000, filter compliance 100%, must-recall PASS.
@@ -100,7 +100,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 ## What Is Not Done
 
 - **Default switch to sqlite-vec** — blocked until latency gates PASS
-- **Tier B CLAP search-quality evidence** — stub only; local `@pytest.mark.clap` optional
+- **Tier B CLAP search-quality evidence** — Phase 1 measured (synthetic fixtures); Phase 2+ query classes remain (#73)
 - **Phase 5 tags + FTS5 MVP** — not started (roadmap Phase 5)
 - **Large-scale private-sample validation** — synthetic/benchmark fixtures only
 - **EPIC 3–6** — not started
