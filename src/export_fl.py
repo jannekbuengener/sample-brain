@@ -46,7 +46,7 @@ def bpm_to_tag(bpm: float | None):
 
 
 def key_to_tag(key: str | None, conf: float | None):
-    if not key or (conf is not None and conf < CONF_KEY_MIN):
+    if not key or conf is None or conf < CONF_KEY_MIN:
         return None
     normalized = key.replace("min", "m").replace("maj", "").upper()
     if len(normalized) == 1:

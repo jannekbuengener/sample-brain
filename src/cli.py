@@ -429,6 +429,16 @@ def main():
         default=None,
         help="Directory for temporary fixture WAVs (default: ./.bench_bpm_evidence).",
     )
+    p_bench_key_conf = bench_sub.add_parser(
+        "key-conf-evidence",
+        help="Evaluate key_conf distribution and export threshold on synthetic fixtures",
+    )
+    p_bench_key_conf.add_argument(
+        "--work-dir",
+        type=str,
+        default=None,
+        help="Directory for temporary fixture WAVs (default: ./.bench_key_conf_evidence).",
+    )
 
     # sqlite-vec diagnostics
     p_vec = sub.add_parser("vec", help="sqlite-vec availability diagnostics (optional)")
@@ -659,6 +669,17 @@ def main():
                 Path(args.work_dir) if args.work_dir else Path(".bench_bpm_evidence")
             )
             run_cli_bpm_evidence(work_dir)
+            return
+
+        if args.bench_cmd == "key-conf-evidence":
+            from .key_conf_evidence import run_cli_key_conf_evidence
+
+            work_dir = (
+                Path(args.work_dir)
+                if args.work_dir
+                else Path(".bench_key_conf_evidence")
+            )
+            run_cli_key_conf_evidence(work_dir)
             return
 
         cfg = _resolve_profile_or_exit(args)

@@ -12,7 +12,7 @@
 - Risiken:
   - Repo enthält/enthält leicht versehentlich Binärballast (.venv, Sample-Audio) → Push zu GitHub wird riesig; ggf. .gitignore + Git LFS nötig.
   - Analyzer-Risiko: Half/Double-BPM (sichtbar: bpm_normalization.json), extreme BPM-Ausreißer bis ~304.
-  - Key-Confidence wirkt skaliert (key_conf ~3.7–5.4), aber Export-Threshold ist 0.55 → Key-Tags könnten immer gesetzt werden (Mismatch/bug).
+  - Key-Confidence: aktueller Analyzer nutzt peak/sum (0–1); Export-Threshold 0.55 ist dafür konsistent. Legacy-DB-Werte (~3.7–5.4, alte Krumhansl-Formel) und Profile/Tooling (require_confidence 1.5–3.0) sind nicht aligned — Evidence: docs/benchmarks/KEY_CONF_EVIDENCE.md (#72).
   - Hardcoded SAMPLE_ROOTS (<LOCAL_SAMPLE_ROOTS>) → muss konfigurierbar/profilbasiert werden.
   - Optionale Module (index/search) sind im CLI vorgesehen, können aber fehlen → Feature-Drift.
   - Rechtlich: Samples nie mitpushen (Lizenz/Urheberrecht) – nur Hash/Features/Tags.
