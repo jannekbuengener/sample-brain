@@ -6,12 +6,12 @@ Canonical pillar contracts for the VST-first product target ([Issue #90](https:/
 
 | Pillar | Issue | Spec | Status |
 |--------|-------|------|--------|
-| Parent — VST-first producing intelligence | [#90](https://github.com/jannekbuengener/sample-brain/issues/90) | PRD §5–6, [`DAW_INTEGRATION_SPEC.md`](../DAW_INTEGRATION_SPEC.md) | Parent consolidated (PR #102); all child specs below |
+| Parent — VST-first producing intelligence | [#90](https://github.com/jannekbuengener/sample-brain/issues/90) | PRD §5–6, [`DAW_INTEGRATION_SPEC.md`](../DAW_INTEGRATION_SPEC.md) | **Parent spec complete** — PR #102 consolidated; all child specs done; parent closes via reconcile PR |
 | **[LIBRARY]** Library Intelligence & Metadata/Naming | [#94](https://github.com/jannekbuengener/sample-brain/issues/94) | [`01_LIBRARY_INTELLIGENCE_SPEC.md`](01_LIBRARY_INTELLIGENCE_SPEC.md) | **Done** (PR #105) |
 | **[MATCHING]** Harmonic & Rhythmic Matching | [#91](https://github.com/jannekbuengener/sample-brain/issues/91) | [`02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md`](02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md) | **Done** (PR #105) |
-| **[CONTEXT]** Track Context Analysis | [#95](https://github.com/jannekbuengener/sample-brain/issues/95) | [`03_TRACK_CONTEXT_ANALYSIS_SPEC.md`](03_TRACK_CONTEXT_ANALYSIS_SPEC.md) | **Spec available** |
-| **[TRANSFORM]** Realtime Fit & Transform Engine | [#92](https://github.com/jannekbuengener/sample-brain/issues/92) | [`04_REALTIME_FIT_TRANSFORM_SPEC.md`](04_REALTIME_FIT_TRANSFORM_SPEC.md) | **Spec available** |
-| **[WORKSPACE]** VST-first Producing Workspace | [#93](https://github.com/jannekbuengener/sample-brain/issues/93) | [`05_VST_PRODUCING_WORKSPACE_SPEC.md`](05_VST_PRODUCING_WORKSPACE_SPEC.md) | **Spec available** |
+| **[CONTEXT]** Track Context Analysis | [#95](https://github.com/jannekbuengener/sample-brain/issues/95) | [`03_TRACK_CONTEXT_ANALYSIS_SPEC.md`](03_TRACK_CONTEXT_ANALYSIS_SPEC.md) | **Done** (PR #106) |
+| **[TRANSFORM]** Realtime Fit & Transform Engine | [#92](https://github.com/jannekbuengener/sample-brain/issues/92) | [`04_REALTIME_FIT_TRANSFORM_SPEC.md`](04_REALTIME_FIT_TRANSFORM_SPEC.md) | **Done** (PR #106) |
+| **[WORKSPACE]** VST-first Producing Workspace | [#93](https://github.com/jannekbuengener/sample-brain/issues/93) | [`05_VST_PRODUCING_WORKSPACE_SPEC.md`](05_VST_PRODUCING_WORKSPACE_SPEC.md) | **Done** (PR #106) |
 
 ## Dependency order
 
