@@ -192,6 +192,11 @@ class TestGoldenTierBPhase2:
         ]
         assert len(riser_queries) >= 6
         assert len(dry_wet_queries) >= 6
+        text_queries = [q for q in suite["queries"] if q.get("mode") == "text"]
+        styled = [q for q in text_queries if q.get("query_style")]
+        assert len(styled) >= 10
+        styles = {q.get("query_style") for q in styled}
+        assert styles >= {"keyword", "natural_language", "exclusion"}
         for query in riser_queries + dry_wet_queries:
             assert query.get("negative_sample_ids")
             assert query.get("mode") in {"text", "audio"}
@@ -211,6 +216,10 @@ class TestGoldenTierBPhase2:
         class_keys = {row.group_key for row in result.class_summaries}
         assert "riser_impact" in class_keys
         assert "dry_wet" in class_keys
+        style_keys = {row.group_key for row in result.style_summaries}
+        assert "keyword" in style_keys
+        assert "natural_language" in style_keys
+        assert "exclusion" in style_keys
         checks = result.threshold_pass()
         assert checks["mean_precision_at_5"]
         assert checks["mean_recall_at_10"]

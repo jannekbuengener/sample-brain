@@ -6,6 +6,7 @@ embedding_dim: 512
 notes: >
   Phase 1: kick_snare_perc and pad_texture.
   Phase 2: riser_impact and dry_wet (dry_wet included after CLAP spike PASS).
+  Optional query_style on text queries (reporting only): keyword, natural_language, exclusion.
   Synthetic fixtures are generated at benchmark time; no audio is committed.
 defaults:
   topk: 10
@@ -228,6 +229,7 @@ queries:
   - id: kick_text_basic
     mode: text
     query_class: kick_snare_perc
+    query_style: keyword
     text: kick drum
     relevant_sample_ids: [1, 2, 3]
     negative_sample_ids: [7, 8, 9, 10, 11, 12]
@@ -235,6 +237,7 @@ queries:
   - id: kick_text_low
     mode: text
     query_class: kick_snare_perc
+    query_style: natural_language
     text: bass drum hit
     relevant_sample_ids: [1, 2, 3]
     negative_sample_ids: [7, 8, 9, 10, 11, 12]
@@ -242,6 +245,7 @@ queries:
   - id: snare_text_basic
     mode: text
     query_class: kick_snare_perc
+    query_style: keyword
     text: snare drum
     relevant_sample_ids: [4, 5]
     negative_sample_ids: [1, 2, 3, 7, 8, 9, 10, 11, 12]
@@ -249,6 +253,7 @@ queries:
   - id: perc_text_basic
     mode: text
     query_class: kick_snare_perc
+    query_style: keyword
     text: percussion hit
     relevant_sample_ids: [6]
     negative_sample_ids: [7, 8, 9, 10, 11, 12]
@@ -256,6 +261,7 @@ queries:
   - id: pad_text_warm
     mode: text
     query_class: pad_texture
+    query_style: natural_language
     text: warm pad synth
     relevant_sample_ids: [7, 8, 9]
     negative_sample_ids: [1, 2, 3, 4, 5, 6]
@@ -263,6 +269,7 @@ queries:
   - id: pad_text_ambient
     mode: text
     query_class: pad_texture
+    query_style: natural_language
     text: ambient texture sound
     relevant_sample_ids: [10, 11, 12]
     negative_sample_ids: [1, 2, 3, 4, 5, 6]
@@ -298,6 +305,7 @@ queries:
   - id: riser_text_build_up
     mode: text
     query_class: riser_impact
+    query_style: keyword
     text: riser build up
     relevant_sample_ids: [13, 14, 15]
     negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 18, 19, 20, 21, 22, 23, 24]
@@ -305,6 +313,7 @@ queries:
   - id: riser_text_sweep
     mode: text
     query_class: riser_impact
+    query_style: natural_language
     text: rising sweep sound
     relevant_sample_ids: [13, 14, 15]
     negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 18, 19, 20, 21, 22, 23, 24]
@@ -312,6 +321,7 @@ queries:
   - id: riser_text_whoosh
     mode: text
     query_class: riser_impact
+    query_style: natural_language
     text: whoosh transition
     relevant_sample_ids: [15]
     negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 18, 19, 20, 21, 22, 23, 24]
@@ -319,6 +329,7 @@ queries:
   - id: impact_text_cinematic
     mode: text
     query_class: riser_impact
+    query_style: natural_language
     text: cinematic impact hit
     relevant_sample_ids: [18]
     negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21, 22, 23, 24]
@@ -326,7 +337,8 @@ queries:
   - id: impact_text_boom
     mode: text
     query_class: riser_impact
-    text: boom impact
+    query_style: exclusion
+    text: impact hit, not a kick
     relevant_sample_ids: [17]
     negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21, 22, 23, 24]
     must_recall_within_k: 10
@@ -340,13 +352,23 @@ queries:
   - id: dry_kick_text
     mode: text
     query_class: dry_wet
+    query_style: keyword
     text: dry kick
+    relevant_sample_ids: [19]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24]
+    must_recall_within_k: 10
+  - id: dry_kick_exclusion
+    mode: text
+    query_class: dry_wet
+    query_style: exclusion
+    text: kick with no reverb tail
     relevant_sample_ids: [19]
     negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24]
     must_recall_within_k: 10
   - id: dry_perc_text
     mode: text
     query_class: dry_wet
+    query_style: keyword
     text: dry percussion
     relevant_sample_ids: [23]
     negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24]
@@ -354,6 +376,7 @@ queries:
   - id: reverb_tail_text
     mode: text
     query_class: dry_wet
+    query_style: keyword
     text: reverb tail
     relevant_sample_ids: [20]
     negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 23]
@@ -361,6 +384,7 @@ queries:
   - id: wet_pad_text
     mode: text
     query_class: dry_wet
+    query_style: natural_language
     text: reverb pad synth
     relevant_sample_ids: [22]
     negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24]

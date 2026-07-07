@@ -201,7 +201,7 @@ Before adding `dry_wet` to the golden set, a local CLAP discrimination spike was
 | Suite | `tests/fixtures/search_quality/golden_v2_clap.yaml` |
 | Tier | B (CLAP 512-d embeddings, NumPy search backend) |
 | Catalog size | 24 synthetic samples (Phase 1: 12 + Phase 2: 12) |
-| Query count | 22 (15 text + 7 audio) |
+| Query count | 23 (16 text + 7 audio) |
 | Work dir | `%TEMP%\sample-brain-clap-quality-p2` (external; not committed) |
 
 ### Commands
@@ -214,17 +214,17 @@ pip install -e ".[clap]"
 .\.venv\Scripts\python.exe -m pytest -q tests/test_search_quality.py -m clap
 ```
 
-New synthetic generators in `src/search_quality_fixtures.py`: `freq_sweep_riser`, `impact_hit`, `wet_reverb` (FFT convolution with deterministic IR). No audio files committed.
+New synthetic generators in `src/search_quality_fixtures.py`: `freq_sweep_riser`, `impact_hit`, `wet_reverb` (FFT convolution with deterministic IR). Text queries may carry optional `query_style` (`keyword`, `natural_language`, `exclusion`) for reporting only — no ranking or gate impact. No audio files committed.
 
 ### Aggregate results (Tier B Phase 2 — full suite)
 
 | Metric | Measured | Threshold | Verdict |
 |--------|----------|-----------|---------|
-| Mean P@1 | 0.409 | (informative) | — |
-| Mean P@5 | 0.291 | ≥ 0.20 | **PASS** |
-| Mean R@10 | 0.826 | ≥ 0.30 | **PASS** |
-| MRR@10 | 0.557 | (informative) | — |
-| Must-recall queries | 19/22 | (informative) | 3 FAIL |
+| Mean P@1 | 0.391 | (informative) | — |
+| Mean P@5 | 0.287 | ≥ 0.20 | **PASS** |
+| Mean R@10 | 0.833 | ≥ 0.30 | **PASS** |
+| MRR@10 | 0.544 | (informative) | — |
+| Must-recall queries | 20/23 | (informative) | 3 FAIL |
 
 ### Per query class (Phase 2 full suite)
 
@@ -233,13 +233,25 @@ New synthetic generators in `src/search_quality_fixtures.py`: `freq_sweep_riser`
 | `kick_snare_perc` | 6 | 0.400 | 0.688 | 1 |
 | `pad_texture` | 4 | 0.300 | 0.467 | 1 |
 | `riser_impact` | 6 | 0.300 | 0.521 | 2 |
-| `dry_wet` | 6 | 0.167 | 0.524 | 2 |
+| `dry_wet` | 7 | 0.171 | 0.485 | 2 |
+
+### Per query style (text queries, reporting only)
+
+Optional YAML field `query_style` groups producer-style text queries for evidence — **not** used in search ranking or gates.
+
+| Query style | Queries | Mean P@5 | MRR | Example queries |
+|-------------|---------|----------|-----|-----------------|
+| `keyword` | 7 | 0.257 | 0.491 | `"dry kick"`, `"reverb tail"`, `"riser build up"` |
+| `natural_language` | 7 | 0.229 | 0.404 | `"rising sweep sound"`, `"warm pad synth"` |
+| `exclusion` | 2 | 0.100 | 0.125 | `"kick with no reverb tail"`, `"impact hit, not a kick"` |
+
+**Interpretation (informative):** On this synthetic catalog, short keyword-style text queries slightly outperform natural-language phrasing; exclusion-style negation queries score lowest (P@5=0.100). This suggests CLAP handles simple producer keywords better than negation constraints on minimal fixtures — not a claim about real libraries.
 
 ### Per mode (text vs audio)
 
 | Mode | Queries | Mean P@5 | MRR |
 |------|---------|----------|-----|
-| text | 15 | 0.227 | 0.417 |
+| text | 16 | 0.225 | 0.407 |
 | audio | 7 | 0.429 | 0.857 |
 
 Audio-to-audio queries remain stronger than text (MRR=0.857). Text queries show increased cross-class confusion with the larger 24-sample catalog.
@@ -249,14 +261,14 @@ Audio-to-audio queries remain stronger than text (MRR=0.857). Text queries show 
 | Class | Samples | Generators | Queries |
 |-------|---------|------------|---------|
 | `riser_impact` | 6 (3 riser + 3 impact) | `freq_sweep_riser`, `impact_hit` | 6 (5 text + 1 audio) |
-| `dry_wet` | 6 (3 dry/wet pairs) | `kick_transient`/`sine_tone`/`perc_hit` + `wet_reverb` | 6 (4 text + 2 audio) |
+| `dry_wet` | 6 (3 dry/wet pairs) | `kick_transient`/`sine_tone`/`perc_hit` + `wet_reverb` | 7 (5 text + 2 audio) |
 
 ### Text-to-sample evidence (Phase 2 classes)
 
 | Query class | Text queries | Mean P@5 | Notes |
 |-------------|--------------|----------|-------|
 | `riser_impact` | 5 | 0.240 | `"riser build up"` and `"rising sweep sound"` rank risers at P@5=0.600; impact text queries weaker |
-| `dry_wet` | 4 | 0.150 | Dry/wet text discrimination weak; hard-negative leaks common |
+| `dry_wet` | 5 | 0.160 | Dry/wet text discrimination weak; exclusion query `"kick with no reverb tail"` P@5=0.200 |
 
 ### Audio-to-audio evidence (Phase 2 classes)
 
@@ -272,7 +284,7 @@ Audio references rank first relevant hit at rank 1 (MRR=1.000) for all Phase 2 a
 | Bucket | Count | Meaning |
 |--------|-------|---------|
 | `success` | 5 | Relevant hits in top ranks; no hard-negative leak in top-5 |
-| `negative_leak_top5` | 14 | Hard negative sample appeared in top-5 |
+| `negative_leak_top5` | 15 | Hard negative sample appeared in top-5 |
 | `must_recall_fail` | 3 | Relevant set not fully recalled within k=10 |
 
 Notable hard-negative leaks: cross-class samples from the expanded 24-item catalog appear in top-5 for most Phase 2 queries. Phase 1 queries also show catalog-dilution regression (`snare_text_basic`, `pad_text_warm`, `texture_audio_ref` must-recall FAIL with 24 samples vs 10/10 PASS on 12-sample catalog).
@@ -282,24 +294,28 @@ Hard negatives and must-recall are **reported**, not enforced as merge gates —
 ### Full harness stdout (Phase 2)
 
 ```
-suite=tests\fixtures\search_quality\golden_v2_clap.yaml tier=B queries=22
-mean_precision_at_1=0.409 mean_precision_at_5=0.291 mean_recall_at_10=0.826 mrr=0.557
+suite=tests\fixtures\search_quality\golden_v2_clap.yaml tier=B queries=23
+mean_precision_at_1=0.391 mean_precision_at_5=0.287 mean_recall_at_10=0.833 mrr=0.544
 gate_mean_precision_at_1=PASS
 gate_mean_precision_at_5=PASS
 gate_mean_recall_at_10=PASS
 gate_must_recall_queries=FAIL
 gate_filter_compliance=PASS
 per_query_class:
-  class=dry_wet p@5=0.167 mrr=0.524 queries=6
+  class=dry_wet p@5=0.171 mrr=0.485 queries=7
   class=kick_snare_perc p@5=0.400 mrr=0.688 queries=6
   class=pad_texture p@5=0.300 mrr=0.467 queries=4
   class=riser_impact p@5=0.300 mrr=0.521 queries=6
 per_mode:
   mode=audio p@5=0.429 mrr=0.857 queries=7
-  mode=text p@5=0.227 mrr=0.417 queries=15
+  mode=text p@5=0.225 mrr=0.407 queries=16
+per_query_style:
+  style=exclusion p@5=0.100 mrr=0.125 queries=2
+  style=keyword p@5=0.257 mrr=0.491 queries=7
+  style=natural_language p@5=0.229 mrr=0.404 queries=7
 failure_buckets:
   success=5
-  negative_leak_top5=14
+  negative_leak_top5=15
   must_recall_fail=3
 ```
 
@@ -307,7 +323,7 @@ failure_buckets:
 
 - **Synthetic fixtures only** — chirp/impact/reverb generators; not representative of real producer libraries.
 - **Catalog dilution** — Phase 1 queries regress on must-recall when catalog grows from 12→24 samples.
-- **dry_wet text weakness** — spike PASS on pair discrimination, but multi-sample text queries show low P@5 and frequent hard-negative leaks.
+- **query_style reporting** — optional YAML tag for text-query phrasing analysis; exclusion queries weakest on synthetic fixtures
 - **Phase 2 scope** — 4/6 #73 query classes; `vocal_no_vocal` and `genre_mood` deferred (Phase 2b/3).
 - **Local-only** — requires `[clap]` extra and HF model download; CI skips via `@pytest.mark.clap`.
 - **No private samples** — no real library scans; work-dir artifacts stay outside the repo.
@@ -334,6 +350,6 @@ Campaign adds `tests/test_search_quality.py` (Tier A metrics + frozen P@5 baseli
 
 ## Decision
 
-**Tier A regression gates PASS.** The harness proves filter compliance, hybrid reranking, and P@K/R@K aggregation on deterministic fixtures. **Tier B Phase 1** delivers first measured CLAP semantic evidence on synthetic fixtures (P@5=0.440, MRR=0.792). **Tier B Phase 2** extends to 4/6 query classes (P@5=0.291, MRR=0.557 on 24-sample catalog); default merge gate remains Tier A only.
+**Tier A regression gates PASS.** The harness proves filter compliance, hybrid reranking, and P@K/R@K aggregation on deterministic fixtures. **Tier B Phase 1** delivers first measured CLAP semantic evidence on synthetic fixtures (P@5=0.440, MRR=0.792). **Tier B Phase 2** extends to 4/6 query classes (P@5=0.287, MRR=0.544 on 24-sample catalog); default merge gate remains Tier A only.
 
 **Explicitly not measured here:** sqlite-vec latency, CLAP semantic accuracy on private samples, hybrid weight tuning, full #73 query-class coverage (vocal/no-vocal, genre/mood pending).
