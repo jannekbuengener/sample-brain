@@ -86,7 +86,7 @@ Scan  →  Analyze  →  Autotype  →  Export (FL fallback)
 
 The first product incarnation is a **VST3 browser/assistant plugin** sharing the same SQLite-backed core. A standalone producing app follows later. Pillars map to Issues [#94](https://github.com/jannekbuengener/sample-brain/issues/94) (Library), [#91](https://github.com/jannekbuengener/sample-brain/issues/91) (Matching), [#95](https://github.com/jannekbuengener/sample-brain/issues/95) (Context), [#92](https://github.com/jannekbuengener/sample-brain/issues/92) (Transform), [#93](https://github.com/jannekbuengener/sample-brain/issues/93) (Workspace).
 
-**Pillar contracts:** implementable specs live under [`docs/product/`](product/README.md) (index + per-pillar documents). PRD §5–6 remain the vision layer; pillar specs define fields, boundaries, and shipped-vs-target gaps.
+**Pillar contracts:** implementable specs for all five pillars live under [`docs/product/`](product/README.md). PRD §5–6 remain the vision layer; pillar specs define fields, boundaries, and shipped-vs-target gaps.
 
 | Capability | Description | Pillar |
 |---|---|---|

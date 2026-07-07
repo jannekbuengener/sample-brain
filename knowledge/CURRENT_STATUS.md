@@ -3,15 +3,11 @@
 ## Live State
 
 - **Branch:** `main`
-- **HEAD:** `9ce9f2b` (`Merge pull request #104 from jannekbuengener/dependabot/pip/numba-0.66.0`) — base before pillar-spec PR
+- **HEAD:** `6c75ad0` (`Merge pull request #105` — Library + Matching pillar specs)
 - **Open PRs:** 1 Dependabot — **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** (`numba` requires `numpy<2.5`)
-- **Open issues:** 9 — #72, #73, #74 (EPIC-2 follow-ups), **#90–#95 (VST-first product target)**
-- **Current focus:** VST-first pillar specs under [`docs/product/`](../docs/product/README.md) — Library ([#94](https://github.com/jannekbuengener/sample-brain/issues/94)) + Matching ([#91](https://github.com/jannekbuengener/sample-brain/issues/91)); #92–#95 specs planned
-- **Tests:** 106 passed, 2 skipped (`pytest -q` core; 4 `[vec]`-dependent test files fail import without `sqlite_vec` installed — see test command below)
-
-```powershell
-python -m pytest -q --ignore=tests/test_search.py --ignore=tests/test_search_backend.py --ignore=tests/test_search_quality.py --ignore=tests/test_vec_index.py
-```
+- **Open issues:** 7 — #90 (parent), #92–#93–#95 (product pillars), #72–#74 (EPIC-2 follow-ups); **#91 and #94 closed** via PR #105
+- **Current focus:** Remaining pillar specs — Context ([#95](https://github.com/jannekbuengener/sample-brain/issues/95)), Transform ([#92](https://github.com/jannekbuengener/sample-brain/issues/92)), Workspace ([#93](https://github.com/jannekbuengener/sample-brain/issues/93)) under [`docs/product/`](../docs/product/README.md)
+- **Tests:** 219 passed (`pytest -q` on validated host; full suite with optional `[vec]` modules when installed)
 
 ## Search Quality Campaign — Closed
 
