@@ -13,8 +13,9 @@ from .analyze import (
 from .classify import rule_type
 from .scan import iter_audio_files_stream, safe_audio_info
 
-ProgressPhase = Literal["scanning", "analyzing", "done", "error"]
+ProgressPhase = Literal["scanning", "analyzing", "done", "error", "cancelled"]
 ProgressCallback = Callable[[int, int, str, ProgressPhase], None]
+ShouldCancel = Callable[[], bool]
 
 ERROR_LABELS: dict[str, str] = {
     "audio_info_failed": "Datei-Metadaten konnten nicht gelesen werden",
@@ -217,13 +218,29 @@ def analyze_folder_for_workbench(
     folder: Path | str,
     limit: int | None = None,
     progress_callback: ProgressCallback | None = None,
+    should_cancel: ShouldCancel | None = None,
 ) -> WorkbenchResult:
     """Scan *folder* for audio files, analyze each, and return playlist rows."""
     root = Path(folder).expanduser().resolve()
     if not root.is_dir():
         raise ValueError(f"Not a directory: {root}")
 
+    def _cancelled() -> bool:
+        return should_cancel is not None and should_cancel()
+
     _emit_progress(progress_callback, 0, 0, "", "scanning")
+    if _cancelled():
+        _emit_progress(progress_callback, 0, 0, "", "cancelled")
+        return WorkbenchResult(
+            summary={
+                "files_found": 0,
+                "analyzed_count": 0,
+                "error_count": 0,
+                "cancelled": 1,
+            },
+            rows=[],
+        )
+
     audio_paths = _collect_audio_paths(root, limit)
     total = len(audio_paths)
 
@@ -232,6 +249,9 @@ def analyze_folder_for_workbench(
     error_count = 0
 
     for index, audio_path in enumerate(audio_paths, start=1):
+        if _cancelled():
+            _emit_progress(progress_callback, index - 1, total, "", "cancelled")
+            break
         rel = str(audio_path.relative_to(root))
         display_name = audio_path.name
         _emit_progress(progress_callback, index, total, display_name, "analyzing")
@@ -308,14 +328,14 @@ def analyze_folder_for_workbench(
             )
             _emit_progress(progress_callback, index, total, display_name, "error")
 
-    return WorkbenchResult(
-        summary={
-            "files_found": total,
-            "analyzed_count": analyzed_count,
-            "error_count": error_count,
-        },
-        rows=rows,
-    )
+    summary: dict[str, int] = {
+        "files_found": total,
+        "analyzed_count": analyzed_count,
+        "error_count": error_count,
+    }
+    if _cancelled():
+        summary["cancelled"] = 1
+    return WorkbenchResult(summary=summary, rows=rows)
 
 
 def row_as_dict(row: WorkbenchRow) -> dict[str, Any]:
@@ -327,6 +347,7 @@ __all__ = [
     "FOLDER_ERROR_MESSAGES",
     "ProgressCallback",
     "ProgressPhase",
+    "ShouldCancel",
     "WorkbenchFolderValidation",
     "WorkbenchRow",
     "WorkbenchResult",

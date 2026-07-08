@@ -60,6 +60,7 @@ class WorkbenchApp:
 
         self._rows: list[WorkbenchRow] = []
         self._busy = False
+        self._cancel_event = threading.Event()
 
         self._build_styles()
         self._build_layout()
@@ -126,7 +127,11 @@ class WorkbenchApp:
         self._analyze_btn = ttk.Button(
             toolbar, text="Analyse starten", style="Accent.TButton", command=self._start_analysis
         )
-        self._analyze_btn.pack(side=tk.LEFT, padx=(0, 16))
+        self._analyze_btn.pack(side=tk.LEFT, padx=(0, 8))
+        self._cancel_btn = ttk.Button(
+            toolbar, text="Abbrechen", command=self._cancel_analysis, state=tk.DISABLED
+        )
+        self._cancel_btn.pack(side=tk.LEFT, padx=(0, 16))
 
         ttk.Label(toolbar, text="Limit:").pack(side=tk.LEFT)
         self._limit_var = tk.StringVar(value="50")
@@ -236,7 +241,9 @@ class WorkbenchApp:
             return
 
         self._busy = True
+        self._cancel_event.clear()
         self._analyze_btn.state(["disabled"])
+        self._cancel_btn.state(["!disabled"])
         self._clear_playlist()
         self._show_progress(0, 1)
         self._set_status("Analyse startet …", tone="active")
@@ -247,6 +254,13 @@ class WorkbenchApp:
             daemon=True,
         )
         thread.start()
+
+    def _cancel_analysis(self) -> None:
+        if not self._busy:
+            return
+        self._cancel_event.set()
+        self._cancel_btn.state(["disabled"])
+        self._set_status("Abbruch angefordert …", tone="active")
 
     def _on_progress(self, current: int, total: int, display_name: str, phase: str) -> None:
         if phase == "scanning":
@@ -264,6 +278,8 @@ class WorkbenchApp:
                 f"Analysiere {current}/{total}: {display_name} (Fehler)",
                 tone="active",
             )
+        elif phase == "cancelled":
+            self._set_status("Analyse abgebrochen.", tone="neutral")
 
     def _show_progress(self, current: int, total: int) -> None:
         if total <= 0:
@@ -290,6 +306,7 @@ class WorkbenchApp:
                 folder,
                 limit=limit,
                 progress_callback=progress_cb,
+                should_cancel=self._cancel_event.is_set,
             )
             self.root.after(0, lambda: self._on_analysis_done(result, None))
         except Exception as exc:
@@ -297,7 +314,9 @@ class WorkbenchApp:
 
     def _on_analysis_done(self, result: WorkbenchResult | None, error: Exception | None) -> None:
         self._busy = False
+        self._cancel_event.clear()
         self._analyze_btn.state(["!disabled"])
+        self._cancel_btn.state(["disabled"])
         self._hide_progress()
 
         if error is not None:
@@ -310,6 +329,15 @@ class WorkbenchApp:
         self._populate_playlist(result)
 
         s = result.summary
+        cancelled = s.get("cancelled", 0)
+        if cancelled:
+            self._set_status(
+                f"Abgebrochen — {s['analyzed_count']} analysiert, "
+                f"{s['error_count']} Fehler von {s['files_found']} Dateien.",
+                tone="neutral",
+            )
+            return
+
         tone = "error" if s["error_count"] else "success"
         self._set_status(
             f"Fertig — {s['files_found']} Dateien, "

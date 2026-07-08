@@ -74,6 +74,50 @@ def test_controller_collects_errors(tmp_path: Path):
     assert "error_detail" in row.details
 
 
+def test_cancel_before_scan_returns_empty(sample_folder: Path):
+    result = analyze_folder_for_workbench(
+        sample_folder,
+        should_cancel=lambda: True,
+    )
+
+    assert result.summary["files_found"] == 0
+    assert result.summary["analyzed_count"] == 0
+    assert result.summary.get("cancelled") == 1
+    assert result.rows == []
+
+
+def test_cancel_mid_analysis_returns_partial_results(sample_folder: Path):
+    checks = {"n": 0}
+
+    def cancel_after_first_file() -> bool:
+        checks["n"] += 1
+        return checks["n"] > 2
+
+    result = analyze_folder_for_workbench(
+        sample_folder,
+        should_cancel=cancel_after_first_file,
+    )
+
+    assert result.summary["files_found"] == 2
+    assert result.summary.get("cancelled") == 1
+    assert len(result.rows) == 1
+
+
+def test_cancel_emits_cancelled_phase(sample_folder: Path):
+    events: list[tuple[int, int, str, str]] = []
+
+    def cancel_immediately() -> bool:
+        return len(events) > 0
+
+    analyze_folder_for_workbench(
+        sample_folder,
+        progress_callback=lambda c, t, n, p: events.append((c, t, n, p)),
+        should_cancel=cancel_immediately,
+    )
+
+    assert any(e[3] == "cancelled" for e in events)
+
+
 def test_progress_callback_reports_current_and_total(sample_folder: Path):
     events: list[tuple[int, int, str, str]] = []
 
