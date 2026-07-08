@@ -7,6 +7,7 @@ import pytest
 from src.workbench_preview import (
     PreviewResult,
     WorkbenchPreviewPlayer,
+    preview_toggle_action,
     validate_preview_path,
 )
 from tests.audio_fixtures import write_sine_wav
@@ -97,3 +98,30 @@ def test_preview_player_returns_backend_error(tmp_path: Path):
     assert not result.ok
     assert result.message == "backend down"
     assert player.current_path is None
+
+
+def test_preview_toggle_action_stops_same_file(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.1, frequency_hz=440.0)
+    resolved = wav.resolve()
+    assert (
+        preview_toggle_action(
+            is_playing=True,
+            current_path=resolved,
+            requested_path=wav,
+        )
+        == "stop"
+    )
+
+
+def test_preview_toggle_action_plays_different_or_idle(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.1, frequency_hz=440.0)
+    other = write_sine_wav(tmp_path / "other.wav", duration_sec=0.1, frequency_hz=220.0)
+    assert preview_toggle_action(is_playing=False, current_path=None, requested_path=wav) == "play"
+    assert (
+        preview_toggle_action(
+            is_playing=True,
+            current_path=wav.resolve(),
+            requested_path=other,
+        )
+        == "play"
+    )
