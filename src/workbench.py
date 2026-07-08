@@ -31,6 +31,7 @@ from .workbench_controller import (
 from .workbench_library import WorkbenchCueNotFoundError, WorkbenchCueValidationError
 from .workbench_preview import WorkbenchPreviewPlayer, preview_toggle_action
 from .workbench_waveform import (
+    attack_marker_x,
     compute_waveform_envelope,
     cue_marker_x,
     loop_region_x,
@@ -52,6 +53,7 @@ WAVEFORM_HEIGHT = 72
 CUE_MARKER = "#ffffff"
 LOOP_REGION_FILL = "#1a3d28"
 LOOP_MARKER = "#6fcf6f"
+ATTACK_MARKER = "#ffc857"
 WAVEFORM_USAGE_HINT = "Linksklick: Play · Rechtsklick: ab Stelle · Shift+Klick: Cue setzen"
 WAVEFORM_LOOP_EDIT_HINT = "Loop-Modus: 1. Klick Start · 2. Klick Ende · Loop löschen"
 
@@ -1077,6 +1079,17 @@ class WorkbenchApp:
                     height - 2,
                     fill=CUE_MARKER,
                     width=2,
+                )
+            attack_x = attack_marker_x(cue.attack_ms, duration_ms, width)
+            if attack_x is not None:
+                canvas.create_line(
+                    attack_x,
+                    2,
+                    attack_x,
+                    height - 2,
+                    fill=ATTACK_MARKER,
+                    width=2,
+                    dash=(4, 2),
                 )
 
     def _set_detail(self, row: WorkbenchRow | None) -> None:

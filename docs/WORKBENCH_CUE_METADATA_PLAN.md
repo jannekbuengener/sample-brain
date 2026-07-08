@@ -15,7 +15,8 @@
 | Interactive cue set / drag | ✅ Shipped (Shift+left-click sets `cue_start_ms`; no drag) |
 | Preview from `cue_start_ms` | ✅ Shipped (temp WAV slice; original unchanged) |
 | Waveform play controls | ✅ Shipped (left = play from saved cue; right = temp play at click; Shift+left = permanent cue set; no visible Play/Stop buttons) |
-| Loop region UI | ✅ Read-only markers/region + edit mode (set/clear via toggle) |
+| Loop region UI | ✅ Display + edit mode (toggle, two-click set, clear) |
+| Attack marker UI | ✅ Read-only marker when `attack_ms` set; edit remains follow-up |
 
 ## 1. Problem
 
@@ -113,7 +114,7 @@ def default_cue_for_duration(duration_ms: float) -> SampleCueMetadata: ...
 | **v2 loop** | Loop region handles on waveform for loops only | v1 edit |
 | **Later** | Export trimmed copy, DAW drag with offset | product decision + #93 |
 
-**Waveform panel today:** peak envelope + saved cue marker + loop region display/edit (toggle mode, two-click set, clear) + context-sensitive usage hint; left-click plays from saved cue (when loop mode off); right-click plays temporarily from click position; Shift+left-click sets `cue_start_ms` permanently (local library metadata only); double-click row and Space still toggle preview; no visible Play/Stop buttons in detail header.
+**Waveform panel today:** peak envelope + saved cue marker + loop region display/edit + read-only attack marker (when `attack_ms` set) + context-sensitive usage hint; left-click plays from saved cue (when loop mode off); right-click plays temporarily from click position; Shift+left-click sets `cue_start_ms` permanently (local library metadata only); double-click row and Space still toggle preview; no visible Play/Stop buttons in detail header.
 
 ## 7. Detection heuristics (future, non-blocking)
 

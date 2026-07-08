@@ -122,6 +122,13 @@ def loop_region_x(
     return x_start, x_end
 
 
+def attack_marker_x(attack_ms: int | None, duration_ms: int, width: int) -> int | None:
+    """Map attack time to canvas x coordinate, or None when unset/invalid."""
+    if attack_ms is None or attack_ms < 0:
+        return None
+    return cue_marker_x(attack_ms, duration_ms, width)
+
+
 def cue_ms_from_x(x: int, width: int, duration_ms: int) -> int:
     """Map canvas x coordinate to cue time in milliseconds."""
     if width <= 0 or duration_ms <= 0:
@@ -135,6 +142,7 @@ def cue_ms_from_x(x: int, width: int, duration_ms: int) -> int:
 
 
 __all__ = [
+    "attack_marker_x",
     "clamp_cue_start_ms",
     "compute_waveform_envelope",
     "cue_marker_x",
