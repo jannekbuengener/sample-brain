@@ -16,6 +16,7 @@ from .workbench_controller import (
     export_workbench_rows_to_csv,
     filter_workbench_rows,
     format_path_display_lines,
+    get_preview_start_ms,
     get_workbench_library_folders,
     load_cached_folder_rows,
     load_workbench_last_folder,
@@ -761,11 +762,15 @@ class WorkbenchApp:
     def _play_preview(self) -> None:
         if not self._preview_row_path:
             return
-        result = self._preview.play(self._preview_row_path)
+        start_ms = get_preview_start_ms(self._preview_row_path)
+        result = self._preview.play(self._preview_row_path, start_ms=start_ms)
         if result.ok:
             self._stop_btn.state(["!disabled"])
             name = Path(self._preview_row_path).name
-            self._set_status(f"Wiedergabe: {name}", tone="active")
+            if start_ms > 0:
+                self._set_status(f"Wiedergabe ab Cue ({start_ms} ms): {name}", tone="active")
+            else:
+                self._set_status(f"Wiedergabe ab Anfang: {name}", tone="active")
         else:
             self._stop_btn.state(["disabled"])
             self._set_status(result.message or "Wiedergabe fehlgeschlagen.", tone="error")
