@@ -7,6 +7,7 @@
 - **Open issues:** 2 — [#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B (4/6 classes on main; vocal proxy spike **HOLD**), [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN (EPIC-2 follow-ups)
 - **Local Workbench MVP:** `sample-brain workbench` — tkinter folder analysis + playlist/detail (no VST, no FL export, no search preview)
 - **Workbench UX polish:** progress bar + status counter during analysis; classified error messages (not generic "Could not extract features")
+- **Workbench Windows shortcut:** optional desktop `.lnk` via `tools/windows/create_workbench_desktop_shortcut.ps1` (local helper, no installer)
 - **Product pillars:** All 5 specs under [`docs/product/`](../docs/product/README.md) — #90 closed via PR #107; no open product-docs issues
 - **Recently closed:** [#72](https://github.com/jannekbuengener/sample-brain/issues/72) key confidence evidence via PR #108 — [KEY_CONF_EVIDENCE.md](../docs/benchmarks/KEY_CONF_EVIDENCE.md)
 - **Current focus:** EPIC-2 follow-ups — #73 vocal/no-vocal deferred after proxy spike HOLD; genre/mood data strategy; #74 ANN tracking

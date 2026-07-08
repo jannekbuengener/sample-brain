@@ -305,6 +305,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Goal: Define the first viable local desktop UI concept.
 - Context: A later React/Tauri UI should follow a clear producer workflow.
 - **Partial:** Local Workbench MVP (`sample-brain workbench`) shipped — tkinter playlist/detail for folder analysis; no search preview yet.
+- **Partial:** Windows desktop shortcut helper (`tools/windows/`) — local `.lnk` creation only, no installer/EXE.
 - Acceptance criteria:
   - user flows for search, inspect, preview, and export are documented
   - scope boundaries for first UI are explicit

@@ -87,6 +87,8 @@ Local Workbench (MVP): folder → analyze in-process → playlist + detail (no D
 
 **Local Workbench MVP** is a tkinter-based local purpose UI — not the VST product target. It exposes scan/analyze/classify logic on a chosen folder without FL Studio export, semantic search, audio preview, or cloud sync. Start: `python -m src.cli workbench` (or `sample-brain workbench`).
 
+On Windows, a desktop shortcut can be created locally (not shipped as an installer): run `powershell -ExecutionPolicy Bypass -File .\tools\windows\create_workbench_desktop_shortcut.ps1` from the repo root. See [`tools/windows/README.md`](../tools/windows/README.md).
+
 ### 5.2 VST-first Product MVP (target)
 
 The first product incarnation is a **VST3 browser/assistant plugin** sharing the same SQLite-backed core. A standalone producing app follows later. Pillars map to Issues [#94](https://github.com/jannekbuengener/sample-brain/issues/94) (Library), [#91](https://github.com/jannekbuengener/sample-brain/issues/91) (Matching), [#95](https://github.com/jannekbuengener/sample-brain/issues/95) (Context), [#92](https://github.com/jannekbuengener/sample-brain/issues/92) (Transform), [#93](https://github.com/jannekbuengener/sample-brain/issues/93) (Workspace).
