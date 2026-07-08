@@ -8,7 +8,12 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable
 
-from .workbench_controller import WorkbenchResult, WorkbenchRow, analyze_folder_for_workbench
+from .workbench_controller import (
+    WorkbenchResult,
+    WorkbenchRow,
+    analyze_folder_for_workbench,
+    validate_workbench_folder,
+)
 
 # Dark palette inspired by ui_mockup.png (functional, not pixel-perfect).
 BG_DARK = "#121212"
@@ -53,13 +58,12 @@ class WorkbenchApp:
         self.root.configure(bg=BG_DARK)
         self.root.minsize(960, 560)
 
-        self._folder: Path | None = None
         self._rows: list[WorkbenchRow] = []
         self._busy = False
 
         self._build_styles()
         self._build_layout()
-        self._set_status("Bereit — Ordner wählen und Analyse starten.")
+        self._set_status("Bereit — Ordnerpfad eingeben oder wählen, dann Analyse starten.")
 
     def _build_styles(self) -> None:
         style = ttk.Style(self.root)
@@ -112,6 +116,12 @@ class WorkbenchApp:
         toolbar = ttk.Frame(self.root, padding=(12, 10, 12, 6))
         toolbar.pack(fill=tk.X)
 
+        ttk.Label(toolbar, text="Ordner:").pack(side=tk.LEFT, padx=(0, 6))
+        self._folder_var = tk.StringVar(value="")
+        self._folder_entry = ttk.Entry(toolbar, textvariable=self._folder_var)
+        self._folder_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+        self._folder_entry.bind("<Return>", self._on_folder_enter)
+
         ttk.Button(toolbar, text="Ordner wählen", command=self._pick_folder).pack(side=tk.LEFT, padx=(0, 8))
         self._analyze_btn = ttk.Button(
             toolbar, text="Analyse starten", style="Accent.TButton", command=self._start_analysis
@@ -121,10 +131,7 @@ class WorkbenchApp:
         ttk.Label(toolbar, text="Limit:").pack(side=tk.LEFT)
         self._limit_var = tk.StringVar(value="50")
         limit_entry = ttk.Entry(toolbar, textvariable=self._limit_var, width=6)
-        limit_entry.pack(side=tk.LEFT, padx=(6, 16))
-
-        self._folder_label = ttk.Label(toolbar, text="Kein Ordner ausgewählt", style="Muted.TLabel")
-        self._folder_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        limit_entry.pack(side=tk.LEFT, padx=(6, 0))
 
         body = ttk.Frame(self.root, padding=(12, 0, 12, 8))
         body.pack(fill=tk.BOTH, expand=True)
@@ -183,13 +190,26 @@ class WorkbenchApp:
         self._progress.pack(fill=tk.X, pady=(4, 0))
         self._progress.pack_forget()
 
+    def _on_folder_enter(self, _event: tk.Event | None = None) -> None:
+        self._start_analysis()
+
+    def _resolve_folder(self) -> Path | None:
+        validation = validate_workbench_folder(self._folder_var.get())
+        if not validation.ok:
+            message = validation.error_message or "Ungültiger Ordner"
+            self._set_status(message, tone="error")
+            messagebox.showerror("Ordner", message)
+            return None
+        assert validation.normalized_path is not None
+        self._folder_var.set(str(validation.normalized_path))
+        return validation.normalized_path
+
     def _pick_folder(self) -> None:
         chosen = filedialog.askdirectory(title="Sample-Ordner wählen")
         if not chosen:
             return
-        self._folder = Path(chosen)
-        self._folder_label.configure(text=str(self._folder))
-        self._set_status(f"Ordner: {self._folder}")
+        self._folder_var.set(chosen)
+        self._set_status(f"Ordner: {chosen}")
 
     def _parse_limit(self) -> int | None:
         raw = self._limit_var.get().strip()
@@ -208,8 +228,8 @@ class WorkbenchApp:
     def _start_analysis(self) -> None:
         if self._busy:
             return
-        if self._folder is None:
-            messagebox.showinfo("Ordner", "Bitte zuerst einen Sample-Ordner wählen.")
+        folder = self._resolve_folder()
+        if folder is None:
             return
         limit = self._parse_limit()
         if self._limit_var.get().strip() and limit is None:
@@ -223,7 +243,7 @@ class WorkbenchApp:
 
         thread = threading.Thread(
             target=self._run_analysis,
-            args=(self._folder, limit),
+            args=(folder, limit),
             daemon=True,
         )
         thread.start()

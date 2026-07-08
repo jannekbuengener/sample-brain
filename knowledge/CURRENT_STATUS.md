@@ -2,10 +2,11 @@
 
 ## Live State
 
-- **Branch:** `main` @ `82d749c` (vocal proxy spike evidence #112)
+- **Branch:** `main` @ `1463ce3` (workbench short-sample warning polish #116)
 - **Open PRs:** 1 Dependabot — **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** (`numba` requires `numpy<2.5`)
-- **Open issues:** 2 — [#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B (4/6 classes on main; vocal proxy spike **HOLD**), [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN (EPIC-2 follow-ups)
+- **Open issues:** 3 — [#117](https://github.com/jannekbuengener/sample-brain/issues/117) Workbench usability follow-ups (P0 path entry in progress), [#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B, [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN
 - **Local Workbench MVP:** `sample-brain workbench` — tkinter folder analysis + playlist/detail (no VST, no FL export, no search preview)
+- **Workbench P0 (#117):** folder path text entry + dialog; validation for empty/missing/non-directory paths
 - **Workbench UX polish:** progress bar + status counter during analysis; classified error messages (not generic "Could not extract features")
 - **Workbench short-clip handling:** samples under 0.5s skip BPM/key overclaim; UI shows Kurzclip hint; targeted librosa warning suppression
 - **Workbench Windows shortcut:** optional desktop `.lnk` via `tools/windows/create_workbench_desktop_shortcut.ps1` (local helper, no installer)
@@ -76,7 +77,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 - **Analyze** — extracts audio features via librosa; reads from pre-scanned catalog
 - **Autotype** — rule-based + optional kNN classification
 - **Export** — writes smart tags into FL Studio Browser (**legacy/fallback** CLI path; VST3 plugin is the product target)
-- **Local Workbench** — tkinter MVP: pick folder, run in-process analyze + rule-based type, playlist + detail panel (`workbench` subcommand)
+- **Local Workbench** — tkinter MVP: enter or pick folder path, run in-process analyze + rule-based type, playlist + detail panel (`workbench` subcommand)
 - **Packaging** — `sample-brain --help` entry point works
 - **CLI** — core pipeline + optional embed/index/search/vec/benchmark/db doctor
 
