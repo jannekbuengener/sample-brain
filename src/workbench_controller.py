@@ -5,7 +5,11 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Literal
 
-from .analyze import extract_features, safe_load
+from .analyze import (
+    SHORT_AUDIO_WARNING_CODE,
+    extract_features,
+    safe_load,
+)
 from .classify import rule_type
 from .scan import iter_audio_files_stream, safe_audio_info
 
@@ -217,6 +221,9 @@ def analyze_folder_for_workbench(
                 "pred_type": pred_type,
                 "tags": tags,
             }
+            if feats.quality_note:
+                details["short_audio_warning"] = feats.quality_note
+                details["short_audio_warning_code"] = SHORT_AUDIO_WARNING_CODE
 
             rows.append(
                 WorkbenchRow(

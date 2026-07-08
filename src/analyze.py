@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import warnings
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import numpy as np
 import librosa
@@ -15,6 +17,10 @@ from .db import init_db
 
 
 SEMITONES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+SHORT_AUDIO_DURATION_SEC = 0.5
+SHORT_AUDIO_QUALITY_NOTE = "Kurzclip — BPM/Key eingeschränkt verlässlich"
+SHORT_AUDIO_WARNING_CODE = "short_audio_warning"
 
 
 def safe_load(path: Path, target_sr: int = ANALYZE_SR) -> tuple[np.ndarray | None, int | None]:
@@ -119,6 +125,41 @@ def _duration_class(duration: float | None) -> str | None:
     return "oneshot" if duration <= 1.2 else "loop"
 
 
+def _effective_n_fft(n_samples: int, *, default: int = 2048, minimum: int = 64) -> int:
+    if n_samples <= minimum:
+        return max(2, int(n_samples) // 2 * 2 or 2)
+    cap = min(default, int(n_samples))
+    n_fft = minimum
+    while n_fft * 2 <= cap:
+        n_fft *= 2
+    return n_fft
+
+
+def _is_short_clip(duration: float | None, n_samples: int, sr: int) -> bool:
+    threshold_samples = int(sr * SHORT_AUDIO_DURATION_SEC)
+    if n_samples < threshold_samples:
+        return True
+    if duration is not None and duration < SHORT_AUDIO_DURATION_SEC:
+        return True
+    return False
+
+
+@contextmanager
+def _suppress_known_short_audio_librosa_warnings() -> Iterator[None]:
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"n_fft=.*is too large for input signal",
+            category=UserWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=r"Trying to estimate tuning from empty frequency set",
+            category=UserWarning,
+        )
+        yield
+
+
 @dataclass(frozen=True)
 class Features:
     bpm: float | None
@@ -131,6 +172,7 @@ class Features:
     chroma_mean: bytes | None
     chroma_std: bytes | None
     clazz: str | None
+    quality_note: str | None = None
 
 
 def extract_features(
@@ -140,41 +182,66 @@ def extract_features(
     if y is None or sr is None:
         return None
 
-    # Tempo (best-effort). For short one-shots this may be nonsense; that's ok.
-    bpm: float | None
-    try:
-        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-        bpm = _extract_bpm_scalar(tempo)
-    except Exception:
-        bpm = None
-    bpm = normalize_bpm(bpm, mode=bpm_normalization)
+    short_clip = _is_short_clip(duration, y.size, sr)
+    quality_note = SHORT_AUDIO_QUALITY_NOTE if short_clip else None
+    n_fft = _effective_n_fft(y.size)
+    warning_ctx = (
+        _suppress_known_short_audio_librosa_warnings()
+        if short_clip
+        else nullcontext()
+    )
 
-    key, key_conf = estimate_key(y, sr)
-    loudness = _rms_dbfs(y)
+    with warning_ctx:
+        bpm: float | None
+        if short_clip:
+            bpm = None
+        else:
+            try:
+                tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+                bpm = _extract_bpm_scalar(tempo)
+            except Exception:
+                bpm = None
+            bpm = normalize_bpm(bpm, mode=bpm_normalization)
 
-    brightness: float | None
-    try:
-        centroid = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=ANALYZE_HOP_LENGTH)
-        brightness = float(np.mean(centroid)) if centroid is not None and centroid.size else None
-    except Exception:
-        brightness = None
+        if short_clip:
+            key, key_conf = None, None
+        else:
+            key, key_conf = estimate_key(y, sr)
 
-    # MFCC/chroma stats
-    try:
-        mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13, hop_length=ANALYZE_HOP_LENGTH)
-        mfcc_mean = np.mean(mfcc, axis=1).astype(np.float32).tobytes() if mfcc.size else None
-        mfcc_std = np.std(mfcc, axis=1).astype(np.float32).tobytes() if mfcc.size else None
-    except Exception:
-        mfcc_mean = None
-        mfcc_std = None
+        loudness = _rms_dbfs(y)
 
-    try:
-        chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=ANALYZE_HOP_LENGTH)
-        chroma_mean = np.mean(chroma, axis=1).astype(np.float32).tobytes() if chroma.size else None
-        chroma_std = np.std(chroma, axis=1).astype(np.float32).tobytes() if chroma.size else None
-    except Exception:
-        chroma_mean = None
-        chroma_std = None
+        brightness: float | None
+        try:
+            centroid = librosa.feature.spectral_centroid(
+                y=y, sr=sr, hop_length=ANALYZE_HOP_LENGTH, n_fft=n_fft
+            )
+            brightness = (
+                float(np.mean(centroid)) if centroid is not None and centroid.size else None
+            )
+        except Exception:
+            brightness = None
+
+        try:
+            mfcc = librosa.feature.mfcc(
+                y=y,
+                sr=sr,
+                n_mfcc=13,
+                hop_length=ANALYZE_HOP_LENGTH,
+                n_fft=n_fft,
+            )
+            mfcc_mean = np.mean(mfcc, axis=1).astype(np.float32).tobytes() if mfcc.size else None
+            mfcc_std = np.std(mfcc, axis=1).astype(np.float32).tobytes() if mfcc.size else None
+        except Exception:
+            mfcc_mean = None
+            mfcc_std = None
+
+        try:
+            chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=ANALYZE_HOP_LENGTH)
+            chroma_mean = np.mean(chroma, axis=1).astype(np.float32).tobytes() if chroma.size else None
+            chroma_std = np.std(chroma, axis=1).astype(np.float32).tobytes() if chroma.size else None
+        except Exception:
+            chroma_mean = None
+            chroma_std = None
 
     return Features(
         bpm=bpm,
@@ -187,6 +254,7 @@ def extract_features(
         chroma_mean=chroma_mean,
         chroma_std=chroma_std,
         clazz=_duration_class(duration),
+        quality_note=quality_note,
     )
 
 
@@ -269,4 +337,12 @@ def run_analyze(
                 break
 
 
-__all__ = ["run_analyze", "extract_features", "safe_load", "estimate_key"]
+__all__ = [
+    "SHORT_AUDIO_DURATION_SEC",
+    "SHORT_AUDIO_QUALITY_NOTE",
+    "SHORT_AUDIO_WARNING_CODE",
+    "run_analyze",
+    "extract_features",
+    "safe_load",
+    "estimate_key",
+]

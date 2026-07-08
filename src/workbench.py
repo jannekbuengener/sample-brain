@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import threading
+import textwrap
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -37,6 +38,12 @@ def _fmt(value: float | None, *, digits: int = 2) -> str:
     if value is None:
         return "—"
     return f"{float(value):.{digits}f}"
+
+
+def _wrap_text(value: str, *, width: int = 52) -> str:
+    if len(value) <= width:
+        return value
+    return textwrap.fill(value, width=width, break_long_words=True, break_on_hyphens=False)
 
 
 class WorkbenchApp:
@@ -334,10 +341,15 @@ class WorkbenchApp:
         else:
             lines = [
                 f"Name:     {row.display_name}",
-                f"Pfad:     {row.path}",
-                f"Relativ:  {row.relative_path}",
-                f"Status:   {row.status}",
+                f"Pfad:",
             ]
+            lines.extend(f"  {part}" for part in _wrap_text(row.path).splitlines())
+            lines.append("Relativ:")
+            lines.extend(f"  {part}" for part in _wrap_text(row.relative_path).splitlines())
+            lines.append(f"Status:   {row.status}")
+            short_hint = row.details.get("short_audio_warning")
+            if short_hint:
+                lines.append(f"Hinweis:  {short_hint}")
             if row.error:
                 lines.append(f"Fehler:   {row.error}")
             if row.error_code:
@@ -349,7 +361,15 @@ class WorkbenchApp:
             if row.details:
                 lines.append("— Analyse —")
                 for key, value in row.details.items():
-                    if key in {"path", "relative_path", "error_code", "error_detail"}:
+                    if key in {
+                        "path",
+                        "relative_path",
+                        "error_code",
+                        "error_detail",
+                        "short_audio_warning_code",
+                    }:
+                        continue
+                    if key == "short_audio_warning":
                         continue
                     if isinstance(value, list):
                         value = ", ".join(str(v) for v in value)
