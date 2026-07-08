@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import inspect
 from pathlib import Path
 from types import SimpleNamespace
@@ -7,10 +8,18 @@ from unittest.mock import patch
 
 import pytest
 
-from src.workbench import WorkbenchApp
 from src.workbench_controller import WorkbenchRow, preview_start_ms_from_waveform_x
 from src.workbench_preview import PreviewResult, WorkbenchPreviewPlayer
 from tests.audio_fixtures import write_sine_wav
+
+
+def _workbench_module():
+    """Return the live workbench module (controller tests may reload it)."""
+    return importlib.import_module("src.workbench")
+
+
+def _workbench_app_cls():
+    return _workbench_module().WorkbenchApp
 
 
 def test_preview_start_ms_from_waveform_x_maps_click_to_ms():
@@ -20,7 +29,7 @@ def test_preview_start_ms_from_waveform_x_maps_click_to_ms():
 
 
 def test_workbench_layout_has_no_play_stop_buttons():
-    source = inspect.getsource(WorkbenchApp._build_layout)
+    source = inspect.getsource(_workbench_app_cls()._build_layout)
     assert "_play_btn" not in source
     assert "_stop_btn" not in source
 
@@ -41,8 +50,9 @@ def _sample_row(path: Path) -> WorkbenchRow:
     )
 
 
-def _playback_app(*, canvas_width: int = 400) -> WorkbenchApp:
-    app = WorkbenchApp.__new__(WorkbenchApp)
+def _playback_app(*, canvas_width: int = 400):
+    cls = _workbench_app_cls()
+    app = cls.__new__(cls)
     app._busy = False
     app._detail_row = None
     app._preview_row_path = None
@@ -72,11 +82,11 @@ def test_left_click_plays_without_saving_cue(tmp_path: Path):
     app._detail_row = _sample_row(wav)
     app._preview_row_path = str(wav.resolve())
 
-    import src.workbench as wb
+    wb = _workbench_module()
 
     with (
         patch.object(wb, "get_preview_start_ms", return_value=456),
-        patch("src.workbench_controller.save_workbench_sample_cue") as mock_save,
+        patch.object(wb, "save_workbench_sample_cue") as mock_save,
     ):
         app._play_selected_from_waveform()
         mock_save.assert_not_called()
@@ -98,11 +108,11 @@ def test_right_click_plays_at_click_position_without_saving_cue(tmp_path: Path):
     app._detail_row = _sample_row(wav)
     app._preview_row_path = str(wav.resolve())
 
-    import src.workbench as wb
+    wb = _workbench_module()
 
     with (
         patch.object(wb, "preview_start_ms_from_waveform_x", return_value=123),
-        patch("src.workbench_controller.save_workbench_sample_cue") as mock_save,
+        patch.object(wb, "save_workbench_sample_cue") as mock_save,
     ):
         app._play_selected_from_waveform_position(100)
         mock_save.assert_not_called()
@@ -116,7 +126,7 @@ def test_right_click_unknown_duration_sets_status(tmp_path: Path, monkeypatch):
     app = _playback_app()
     app._detail_row = _sample_row(missing)
     app._preview_row_path = str(missing.resolve())
-    monkeypatch.setattr("src.workbench.read_audio_duration_ms", lambda _path: None)
+    monkeypatch.setattr(_workbench_module(), "read_audio_duration_ms", lambda _path: None)
 
     app._play_selected_from_waveform_position(50)
     assert app._play_calls == []
@@ -139,6 +149,7 @@ def test_waveform_click_handlers_delegate(monkeypatch):
     app = _playback_app()
     left_called: list[bool] = []
     right_called: list[int] = []
+    shift_called: list[int] = []
 
     monkeypatch.setattr(app, "_play_selected_from_waveform", lambda: left_called.append(True))
     monkeypatch.setattr(
@@ -146,9 +157,135 @@ def test_waveform_click_handlers_delegate(monkeypatch):
         "_play_selected_from_waveform_position",
         lambda x: right_called.append(x),
     )
+    monkeypatch.setattr(
+        app,
+        "_set_selected_cue_from_waveform_position",
+        lambda x: shift_called.append(x),
+    )
 
-    app._on_waveform_click(SimpleNamespace())
+    app._on_waveform_click(SimpleNamespace(state=0, x=0))
+    app._on_waveform_click(SimpleNamespace(state=0x0001, x=88))
     app._on_waveform_right_click(SimpleNamespace(x=42))
 
     assert left_called == [True]
+    assert shift_called == [88]
     assert right_called == [42]
+
+
+def test_shift_click_saves_cue_without_playing(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.5, frequency_hz=440.0)
+    app = _playback_app()
+    app._detail_row = _sample_row(wav)
+    app._preview_row_path = str(wav.resolve())
+    draw_calls: list[bool] = []
+
+    wb = _workbench_module()
+
+    monkeypatch_draw = lambda row: draw_calls.append(True)
+    app._draw_waveform = monkeypatch_draw
+
+    with (
+        patch.object(wb, "preview_start_ms_from_waveform_x", return_value=250),
+        patch.object(wb, "load_workbench_sample_cue") as mock_load,
+        patch.object(wb, "save_workbench_sample_cue") as mock_save,
+        patch.object(wb, "read_audio_duration_ms", return_value=500),
+    ):
+        from src.workbench_library import WorkbenchCueMetadata
+
+        mock_load.return_value = WorkbenchCueMetadata(cue_start_ms=0)
+        app._set_selected_cue_from_waveform_position(200)
+
+        mock_save.assert_called_once()
+        saved_path, saved_metadata = mock_save.call_args[0]
+        assert str(saved_path) == str(wav.resolve())
+        assert saved_metadata.cue_start_ms == 250
+        assert saved_metadata.cue_source == "manual"
+
+    assert app._play_calls == []
+    assert draw_calls == [True]
+    assert app._status_var.value == "Cue dauerhaft gesetzt: 250 ms"
+
+
+def test_shift_click_preserves_attack_and_loop_metadata(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.5, frequency_hz=440.0)
+    app = _playback_app()
+    app._detail_row = _sample_row(wav)
+
+    wb = _workbench_module()
+    from src.workbench_library import WorkbenchCueMetadata
+
+    existing = WorkbenchCueMetadata(
+        cue_start_ms=10,
+        attack_ms=50,
+        loop_start_ms=100,
+        loop_end_ms=400,
+        cue_source="detected",
+    )
+
+    with (
+        patch.object(wb, "preview_start_ms_from_waveform_x", return_value=300),
+        patch.object(wb, "load_workbench_sample_cue", return_value=existing),
+        patch.object(wb, "save_workbench_sample_cue") as mock_save,
+        patch.object(wb, "read_audio_duration_ms", return_value=500),
+        patch.object(app, "_draw_waveform", lambda _row: None),
+    ):
+        app._set_selected_cue_from_waveform_position(150)
+
+        saved_metadata = mock_save.call_args[0][1]
+        assert saved_metadata.cue_start_ms == 300
+        assert saved_metadata.attack_ms == 50
+        assert saved_metadata.loop_start_ms == 100
+        assert saved_metadata.loop_end_ms == 400
+        assert saved_metadata.cue_source == "manual"
+
+
+def test_shift_click_no_sample_sets_status():
+    app = _playback_app()
+    app._detail_row = None
+    app._set_selected_cue_from_waveform_position(50)
+    assert app._play_calls == []
+    assert app._status_var.value == "Kein Sample ausgewählt."
+
+
+def test_shift_click_unknown_duration_sets_status(tmp_path: Path, monkeypatch):
+    missing = tmp_path / "missing.wav"
+    app = _playback_app()
+    app._detail_row = _sample_row(missing)
+    monkeypatch.setattr(_workbench_module(), "read_audio_duration_ms", lambda _path: None)
+
+    app._set_selected_cue_from_waveform_position(50)
+    assert app._play_calls == []
+    assert app._status_var.value == "Kann Cue-Position nicht bestimmen."
+
+
+def test_shift_click_sample_not_in_library_sets_status(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.5, frequency_hz=440.0)
+    app = _playback_app()
+    app._detail_row = _sample_row(wav)
+
+    wb = _workbench_module()
+    from src.workbench_library import WorkbenchCueNotFoundError, WorkbenchCueMetadata
+
+    with (
+        patch.object(wb, "preview_start_ms_from_waveform_x", return_value=100),
+        patch.object(wb, "load_workbench_sample_cue", return_value=WorkbenchCueMetadata()),
+        patch.object(
+            wb,
+            "save_workbench_sample_cue",
+            side_effect=WorkbenchCueNotFoundError("not in library"),
+        ),
+        patch.object(wb, "read_audio_duration_ms", return_value=500),
+    ):
+        app._set_selected_cue_from_waveform_position(80)
+
+    assert app._play_calls == []
+    assert "Bibliothek" in app._status_var.value
+
+
+def test_cue_start_ms_from_waveform_x_returns_none_without_duration(tmp_path: Path, monkeypatch):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.2, frequency_hz=440.0)
+    app = _playback_app()
+    app._detail_row = _sample_row(wav)
+    monkeypatch.setattr(_workbench_module(), "read_audio_duration_ms", lambda _path: None)
+
+    assert app._cue_start_ms_from_waveform_x(100) is None
