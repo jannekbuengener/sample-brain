@@ -74,7 +74,7 @@ The CLI pipeline is implemented, stable, and remains the **data foundation** for
 | **Export (FL Browser)** | Write FL Studio Browser-compatible tags from analysis results — **legacy/fallback data path**, not the main product interface | ✅ Shipped |
 | **Embed / Index / Search** | Semantic search via optional CLAP embeddings, NumPy index (default), optional sqlite-vec backend (EPIC 2) | ✅ Shipped |
 | **CLI** | All operations accessible via a single `sample-brain` entry point with argparse subcommands | ✅ Shipped |
-| **Local Workbench (MVP)** | First local purpose UI: folder pick, analyze, playlist/table view, sample detail panel (`sample-brain workbench`) | ✅ Shipped (MVP) |
+| **Local Workbench (MVP)** | Folder pick, analyze, playlist/table, detail panel, audio preview, read-only waveform (`sample-brain workbench`) | ✅ Shipped (MVP) |
 | **Local database** | SQLite catalog as the single source of truth for all metadata | ✅ Shipped |
 | **Artifact hygiene** | No generated artifacts (database, analysis outputs, cache) committed to version control | ✅ Shipped |
 
@@ -82,10 +82,10 @@ The CLI pipeline is implemented, stable, and remains the **data foundation** for
 Scan  →  Analyze  →  Autotype  →  Export (FL fallback)
                   └→  Embed  →  Index  →  Search
 
-Local Workbench (MVP): folder → analyze in-process → playlist + detail (no DB required). Follow-ups on `main` (#119–#125, #128): cancel, path entry, filter, sort, detail path polish, last-folder memory, CSV export, library metadata cache v1 (`~/.sample-brain/workbench_library.db`, internal display names only), library folder list. Audio preview v1 (#117): play/stop selected sample — original files unchanged.
+Local Workbench (MVP): folder → analyze in-process → playlist + detail. Shipped follow-ups (#117, PRs #119–#131): cancel, path entry, filter, sort, detail path polish, last-folder memory, CSV export, library cache v1 (`~/.sample-brain/workbench_library.db`), library folder list, audio preview (play/stop), read-only waveform envelope. Cue/loop/attack metadata: **planned only** — [`WORKBENCH_CUE_METADATA_PLAN.md`](WORKBENCH_CUE_METADATA_PLAN.md); original sample files never modified by workbench.
 ```
 
-**Local Workbench MVP** is a tkinter-based local purpose UI — not the VST product target. It exposes scan/analyze/classify logic on a chosen folder without FL Studio export, semantic search, or cloud sync. Audio preview v1: play/stop for the selected sample (platform backend, no new Python dependency). Start: `python -m src.cli workbench` (or `sample-brain workbench`).
+**Local Workbench MVP** is a tkinter-based local purpose UI — not the VST product target. It exposes scan/analyze/classify logic on a chosen folder without FL Studio export, semantic search, or cloud sync. **Shipped:** audio preview (play/stop, platform backend, no new Python dependency) and read-only waveform envelope. **Planned:** cue/loop/attack as local metadata only ([`WORKBENCH_CUE_METADATA_PLAN.md`](WORKBENCH_CUE_METADATA_PLAN.md)). Start: `python -m src.cli workbench` (or `sample-brain workbench`).
 
 On Windows, a desktop shortcut can be created locally (not shipped as an installer): run `powershell -ExecutionPolicy Bypass -File .\tools\windows\create_workbench_desktop_shortcut.ps1` from the repo root. See [`tools/windows/README.md`](../tools/windows/README.md).
 
