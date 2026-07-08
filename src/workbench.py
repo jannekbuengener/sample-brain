@@ -8,7 +8,6 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Callable
 
 from .workbench_controller import (
-    WorkbenchCueMetadata,
     WorkbenchResult,
     WorkbenchRow,
     add_workbench_library_folder,
@@ -21,18 +20,16 @@ from .workbench_controller import (
     load_cached_folder_rows,
     load_workbench_last_folder,
     load_workbench_sample_cue,
+    preview_start_ms_from_waveform_x,
     remove_workbench_library_folder,
     save_workbench_last_folder,
-    save_workbench_sample_cue,
     sort_workbench_rows,
     validate_workbench_folder,
 )
-from .workbench_library import WorkbenchCueNotFoundError, WorkbenchCueValidationError
 from .workbench_preview import WorkbenchPreviewPlayer, preview_toggle_action
 from .workbench_waveform import (
     compute_waveform_envelope,
     cue_marker_x,
-    cue_ms_from_x,
     read_audio_duration_ms,
 )
 
@@ -262,20 +259,6 @@ class WorkbenchApp:
         )
         detail_actions = ttk.Frame(detail_header, style="Panel.TFrame")
         detail_actions.pack(side=tk.RIGHT)
-        self._play_btn = ttk.Button(
-            detail_actions,
-            text="▶ Abspielen",
-            command=self._play_preview,
-            state=tk.DISABLED,
-        )
-        self._play_btn.pack(side=tk.LEFT, padx=(0, 4))
-        self._stop_btn = ttk.Button(
-            detail_actions,
-            text="■ Stop",
-            command=self._stop_preview,
-            state=tk.DISABLED,
-        )
-        self._stop_btn.pack(side=tk.LEFT, padx=(0, 8))
         self._copy_path_btn = ttk.Button(
             detail_actions,
             text="Pfad kopieren",
@@ -311,6 +294,7 @@ class WorkbenchApp:
         self._waveform_canvas.pack(fill=tk.X, pady=(8, 0))
         self._waveform_canvas.bind("<Configure>", self._on_waveform_resize)
         self._waveform_canvas.bind("<Button-1>", self._on_waveform_click)
+        self._waveform_canvas.bind("<Button-3>", self._on_waveform_right_click)
 
         status_bar = ttk.Frame(self.root, style="Panel.TFrame")
         status_bar.pack(fill=tk.X, side=tk.BOTTOM)
@@ -504,7 +488,6 @@ class WorkbenchApp:
         self._busy = True
         self._cancel_event.clear()
         self._analyze_btn.state(["disabled"])
-        self._play_btn.state(["disabled"])
         self._cancel_btn.state(["!disabled"])
         self._clear_playlist()
         self._show_progress(0, 1)
@@ -580,7 +563,7 @@ class WorkbenchApp:
         self._analyze_btn.state(["!disabled"])
         self._cancel_btn.state(["disabled"])
         self._hide_progress()
-        self._update_preview_buttons(self._selected_row())
+        self._update_preview_state(self._selected_row())
 
         if error is not None:
             self._set_status(f"Fehler: {error}", tone="error")
@@ -747,37 +730,37 @@ class WorkbenchApp:
         self._stop_preview()
         self.root.destroy()
 
-    def _update_preview_buttons(self, row: WorkbenchRow | None) -> None:
+    def _update_preview_state(self, row: WorkbenchRow | None) -> None:
         has_path = row is not None and bool(row.path)
         self._preview_row_path = row.path if has_path else None
-        if has_path and not self._busy:
-            self._play_btn.state(["!disabled"])
-        else:
-            self._play_btn.state(["disabled"])
-        if self._preview.current_path is not None:
-            self._stop_btn.state(["!disabled"])
-        else:
-            self._stop_btn.state(["disabled"])
 
-    def _play_preview(self) -> None:
+    def _play_preview(
+        self,
+        *,
+        start_ms: int | None = None,
+        from_click_position: bool = False,
+    ) -> None:
         if not self._preview_row_path:
             return
-        start_ms = get_preview_start_ms(self._preview_row_path)
+        if start_ms is None:
+            start_ms = get_preview_start_ms(self._preview_row_path)
         result = self._preview.play(self._preview_row_path, start_ms=start_ms)
+        name = Path(self._preview_row_path).name
         if result.ok:
-            self._stop_btn.state(["!disabled"])
-            name = Path(self._preview_row_path).name
-            if start_ms > 0:
+            if from_click_position:
+                self._set_status(
+                    f"Wiedergabe ab Klickposition ({start_ms} ms): {name}",
+                    tone="active",
+                )
+            elif start_ms > 0:
                 self._set_status(f"Wiedergabe ab Cue ({start_ms} ms): {name}", tone="active")
             else:
                 self._set_status(f"Wiedergabe ab Anfang: {name}", tone="active")
         else:
-            self._stop_btn.state(["disabled"])
             self._set_status(result.message or "Wiedergabe fehlgeschlagen.", tone="error")
 
     def _stop_preview(self) -> None:
         self._preview.stop()
-        self._stop_btn.state(["disabled"])
 
     def _copy_detail_path(self) -> None:
         if not self._detail_copy_path:
@@ -808,7 +791,16 @@ class WorkbenchApp:
     def _on_waveform_resize(self, _event: tk.Event | None = None) -> None:
         self._draw_waveform(self._detail_row)
 
-    def _on_waveform_click(self, event: tk.Event) -> None:
+    def _play_selected_from_waveform(self) -> None:
+        if self._busy:
+            return
+        row = self._detail_row
+        if row is None or not row.path:
+            self._set_status("Kein Sample ausgewählt.", tone="neutral")
+            return
+        self._play_preview()
+
+    def _play_selected_from_waveform_position(self, x: int) -> None:
         if self._busy:
             return
         row = self._detail_row
@@ -817,31 +809,17 @@ class WorkbenchApp:
             return
         duration_ms = read_audio_duration_ms(row.path)
         if duration_ms is None:
-            self._set_status("Cue setzen nicht möglich — Dauer unbekannt.", tone="error")
+            self._set_status("Kann Startposition nicht bestimmen.", tone="error")
             return
         width = max(int(self._waveform_canvas.winfo_width()), 1)
-        cue_ms = cue_ms_from_x(int(event.x), width, duration_ms)
-        existing = load_workbench_sample_cue(row.path)
-        metadata = WorkbenchCueMetadata(
-            cue_start_ms=cue_ms,
-            attack_ms=existing.attack_ms,
-            loop_start_ms=existing.loop_start_ms,
-            loop_end_ms=existing.loop_end_ms,
-            cue_source="manual",
-        )
-        try:
-            save_workbench_sample_cue(row.path, metadata, duration_ms=duration_ms)
-        except WorkbenchCueNotFoundError:
-            self._set_status(
-                "Cue speichern nicht möglich — Sample nicht in Library-Cache.",
-                tone="error",
-            )
-            return
-        except WorkbenchCueValidationError as exc:
-            self._set_status(str(exc), tone="error")
-            return
-        self._draw_waveform(row)
-        self._set_status(f"Cue gesetzt: {cue_ms} ms", tone="success")
+        start_ms = preview_start_ms_from_waveform_x(int(x), width, duration_ms)
+        self._play_preview(start_ms=start_ms, from_click_position=True)
+
+    def _on_waveform_click(self, _event: tk.Event) -> None:
+        self._play_selected_from_waveform()
+
+    def _on_waveform_right_click(self, event: tk.Event) -> None:
+        self._play_selected_from_waveform_position(int(event.x))
 
     def _draw_waveform(self, row: WorkbenchRow | None) -> None:
         canvas = self._waveform_canvas
@@ -892,7 +870,7 @@ class WorkbenchApp:
         self._detail_text.configure(state=tk.NORMAL)
         self._detail_text.delete("1.0", tk.END)
         self._detail_copy_path = row.path if row is not None else None
-        self._update_preview_buttons(row)
+        self._update_preview_state(row)
         if row is None:
             self._copy_path_btn.state(["disabled"])
             self._detail_text.insert(tk.END, "Kein Sample ausgewählt.")

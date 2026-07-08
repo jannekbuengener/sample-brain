@@ -696,6 +696,13 @@ def get_preview_start_ms(
     return max(0, int(cue.cue_start_ms))
 
 
+def preview_start_ms_from_waveform_x(x: int, width: int, duration_ms: int) -> int:
+    """Map waveform canvas x coordinate to preview start offset in milliseconds."""
+    from .workbench_waveform import cue_ms_from_x
+
+    return cue_ms_from_x(x, width, duration_ms)
+
+
 __all__ = [
     "ERROR_LABELS",
     "FOLDER_ERROR_MESSAGES",
@@ -714,6 +721,7 @@ __all__ = [
     "format_path_display_lines",
     "get_workbench_library_folders",
     "get_preview_start_ms",
+    "preview_start_ms_from_waveform_x",
     "load_cached_folder_rows",
     "load_workbench_last_folder",
     "load_workbench_sample_cue",
