@@ -8,6 +8,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Callable
 
 from .workbench_controller import (
+    WorkbenchCueMetadata,
     WorkbenchResult,
     WorkbenchRow,
     add_workbench_library_folder,
@@ -21,13 +22,16 @@ from .workbench_controller import (
     load_workbench_sample_cue,
     remove_workbench_library_folder,
     save_workbench_last_folder,
+    save_workbench_sample_cue,
     sort_workbench_rows,
     validate_workbench_folder,
 )
+from .workbench_library import WorkbenchCueNotFoundError, WorkbenchCueValidationError
 from .workbench_preview import WorkbenchPreviewPlayer, preview_toggle_action
 from .workbench_waveform import (
     compute_waveform_envelope,
     cue_marker_x,
+    cue_ms_from_x,
     read_audio_duration_ms,
 )
 
@@ -305,6 +309,7 @@ class WorkbenchApp:
         )
         self._waveform_canvas.pack(fill=tk.X, pady=(8, 0))
         self._waveform_canvas.bind("<Configure>", self._on_waveform_resize)
+        self._waveform_canvas.bind("<Button-1>", self._on_waveform_click)
 
         status_bar = ttk.Frame(self.root, style="Panel.TFrame")
         status_bar.pack(fill=tk.X, side=tk.BOTTOM)
@@ -797,6 +802,41 @@ class WorkbenchApp:
 
     def _on_waveform_resize(self, _event: tk.Event | None = None) -> None:
         self._draw_waveform(self._detail_row)
+
+    def _on_waveform_click(self, event: tk.Event) -> None:
+        if self._busy:
+            return
+        row = self._detail_row
+        if row is None or not row.path:
+            self._set_status("Kein Sample ausgewählt.", tone="neutral")
+            return
+        duration_ms = read_audio_duration_ms(row.path)
+        if duration_ms is None:
+            self._set_status("Cue setzen nicht möglich — Dauer unbekannt.", tone="error")
+            return
+        width = max(int(self._waveform_canvas.winfo_width()), 1)
+        cue_ms = cue_ms_from_x(int(event.x), width, duration_ms)
+        existing = load_workbench_sample_cue(row.path)
+        metadata = WorkbenchCueMetadata(
+            cue_start_ms=cue_ms,
+            attack_ms=existing.attack_ms,
+            loop_start_ms=existing.loop_start_ms,
+            loop_end_ms=existing.loop_end_ms,
+            cue_source="manual",
+        )
+        try:
+            save_workbench_sample_cue(row.path, metadata, duration_ms=duration_ms)
+        except WorkbenchCueNotFoundError:
+            self._set_status(
+                "Cue speichern nicht möglich — Sample nicht in Library-Cache.",
+                tone="error",
+            )
+            return
+        except WorkbenchCueValidationError as exc:
+            self._set_status(str(exc), tone="error")
+            return
+        self._draw_waveform(row)
+        self._set_status(f"Cue gesetzt: {cue_ms} ms", tone="success")
 
     def _draw_waveform(self, row: WorkbenchRow | None) -> None:
         canvas = self._waveform_canvas

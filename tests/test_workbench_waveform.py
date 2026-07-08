@@ -9,6 +9,7 @@ from src.workbench_waveform import (
     clamp_cue_start_ms,
     compute_waveform_envelope,
     cue_marker_x,
+    cue_ms_from_x,
     read_audio_duration_ms,
 )
 from tests.audio_fixtures import write_sine_wav
@@ -65,3 +66,34 @@ def test_read_audio_duration_ms_from_synthetic_wav(tmp_path: Path):
     duration_ms = read_audio_duration_ms(wav)
     assert duration_ms is not None
     assert 180 <= duration_ms <= 220
+
+
+def test_cue_ms_from_x_at_zero():
+    assert cue_ms_from_x(0, width=200, duration_ms=1000) == 0
+
+
+def test_cue_ms_from_x_at_midpoint():
+    assert cue_ms_from_x(100, width=200, duration_ms=1000) == 500
+
+
+def test_cue_ms_from_x_clamps_negative_x():
+    assert cue_ms_from_x(-10, width=200, duration_ms=1000) == 0
+
+
+def test_cue_ms_from_x_clamps_beyond_width():
+    assert cue_ms_from_x(500, width=200, duration_ms=1000) == 999
+
+
+def test_cue_ms_from_x_handles_zero_width_or_duration():
+    assert cue_ms_from_x(50, width=0, duration_ms=1000) == 0
+    assert cue_ms_from_x(50, width=200, duration_ms=0) == 0
+
+
+def test_cue_ms_from_x_roundtrip_with_marker_x():
+    duration_ms = 1000
+    width = 240
+    for x in (0, 60, 120, 180, 239):
+        cue_ms = cue_ms_from_x(x, width, duration_ms)
+        marker = cue_marker_x(cue_ms, duration_ms, width)
+        assert marker is not None
+        assert abs(marker - x) <= 1

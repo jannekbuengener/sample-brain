@@ -83,9 +83,22 @@ def cue_marker_x(cue_start_ms: int, duration_ms: int, width: int) -> int | None:
     return int((clamped / duration_ms) * width)
 
 
+def cue_ms_from_x(x: int, width: int, duration_ms: int) -> int:
+    """Map canvas x coordinate to cue time in milliseconds."""
+    if width <= 0 or duration_ms <= 0:
+        return 0
+    if x <= 0:
+        return 0
+    if x >= width:
+        return max(0, duration_ms - 1)
+    ms = int(round((x / width) * duration_ms))
+    return clamp_cue_start_ms(ms, duration_ms)
+
+
 __all__ = [
     "clamp_cue_start_ms",
     "compute_waveform_envelope",
     "cue_marker_x",
+    "cue_ms_from_x",
     "read_audio_duration_ms",
 ]
