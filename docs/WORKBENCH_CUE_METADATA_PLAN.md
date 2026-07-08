@@ -1,6 +1,6 @@
 # Workbench Cue / Loop / Attack Metadata Plan
 
-**Status:** Cue metadata v1 + preview from saved cue + waveform play controls + Shift+click permanent cue set shipped on `main`. Loop/attack UI follow-ups remain open.  
+**Status:** Cue metadata v1 + preview from saved cue + waveform play controls + Shift+click permanent cue set + read-only loop markers shipped on `main`. Loop edit / attack UI follow-ups remain open.  
 **Parent:** [#117 — workbench usability and library workflow follow-ups](https://github.com/jannekbuengener/sample-brain/issues/117)  
 **Related code:** `src/workbench_library.py`, `src/workbench_waveform.py`, `src/workbench_preview.py`, `src/workbench.py`
 
@@ -15,7 +15,7 @@
 | Interactive cue set / drag | ✅ Shipped (Shift+left-click sets `cue_start_ms`; no drag) |
 | Preview from `cue_start_ms` | ✅ Shipped (temp WAV slice; original unchanged) |
 | Waveform play controls | ✅ Shipped (left = play from saved cue; right = temp play at click; Shift+left = permanent cue set; no visible Play/Stop buttons) |
-| Loop region UI | ❌ Follow-up |
+| Loop region UI | ✅ Read-only markers/region (v1); loop edit remains follow-up |
 
 ## 1. Problem
 
@@ -113,7 +113,7 @@ def default_cue_for_duration(duration_ms: float) -> SampleCueMetadata: ...
 | **v2 loop** | Loop region handles on waveform for loops only | v1 edit |
 | **Later** | Export trimmed copy, DAW drag with offset | product decision + #93 |
 
-**Waveform panel today:** peak envelope + saved cue marker; left-click plays from saved cue; right-click plays temporarily from click position; Shift+left-click sets `cue_start_ms` permanently (local library metadata only); double-click row and Space still toggle preview; no visible Play/Stop buttons in detail header.
+**Waveform panel today:** peak envelope + saved cue marker + read-only loop region (when `loop_start_ms`/`loop_end_ms` set in metadata); left-click plays from saved cue; right-click plays temporarily from click position; Shift+left-click sets `cue_start_ms` permanently (local library metadata only); double-click row and Space still toggle preview; no visible Play/Stop buttons in detail header.
 
 ## 7. Detection heuristics (future, non-blocking)
 

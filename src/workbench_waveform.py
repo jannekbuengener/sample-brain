@@ -83,6 +83,45 @@ def cue_marker_x(cue_start_ms: int, duration_ms: int, width: int) -> int | None:
     return int((clamped / duration_ms) * width)
 
 
+def normalize_loop_bounds(
+    loop_start_ms: int | None,
+    loop_end_ms: int | None,
+    duration_ms: int,
+) -> tuple[int, int] | None:
+    """Return clamped loop bounds in ms for read-only display, or None when invalid."""
+    if loop_start_ms is None or loop_end_ms is None:
+        return None
+    if duration_ms <= 0:
+        return None
+    if loop_end_ms < loop_start_ms:
+        return None
+    start = max(0, min(loop_start_ms, duration_ms - 1))
+    end = max(start + 1, min(loop_end_ms, duration_ms))
+    if end <= start:
+        return None
+    return start, end
+
+
+def loop_region_x(
+    loop_start_ms: int | None,
+    loop_end_ms: int | None,
+    duration_ms: int,
+    width: int,
+) -> tuple[int, int] | None:
+    """Map loop bounds to canvas x coordinates ``(x_start, x_end)`` for display."""
+    if width <= 0:
+        return None
+    bounds = normalize_loop_bounds(loop_start_ms, loop_end_ms, duration_ms)
+    if bounds is None:
+        return None
+    start_ms, end_ms = bounds
+    x_start = int((start_ms / duration_ms) * width)
+    x_end = int((end_ms / duration_ms) * width)
+    if x_end <= x_start:
+        x_end = min(width, x_start + 1)
+    return x_start, x_end
+
+
 def cue_ms_from_x(x: int, width: int, duration_ms: int) -> int:
     """Map canvas x coordinate to cue time in milliseconds."""
     if width <= 0 or duration_ms <= 0:
@@ -100,5 +139,7 @@ __all__ = [
     "compute_waveform_envelope",
     "cue_marker_x",
     "cue_ms_from_x",
+    "loop_region_x",
+    "normalize_loop_bounds",
     "read_audio_duration_ms",
 ]
