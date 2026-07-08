@@ -10,6 +10,7 @@ import pytest
 from src.workbench_controller import (
     analyze_folder_for_workbench,
     error_message_for_code,
+    validate_workbench_folder,
 )
 from tests.audio_fixtures import write_kick_transient_wav, write_sine_wav
 
@@ -118,6 +119,46 @@ def test_invalid_folder_raises(tmp_path: Path):
     missing = tmp_path / "does_not_exist"
     with pytest.raises(ValueError, match="Not a directory"):
         analyze_folder_for_workbench(missing)
+
+
+def test_validate_workbench_folder_rejects_empty():
+    result = validate_workbench_folder("   ")
+
+    assert not result.ok
+    assert result.error_code == "empty"
+    assert result.error_message == "Kein Ordner ausgewählt"
+    assert result.normalized_path is None
+
+
+def test_validate_workbench_folder_rejects_missing(tmp_path: Path):
+    missing = tmp_path / "missing_dir"
+    result = validate_workbench_folder(str(missing))
+
+    assert not result.ok
+    assert result.error_code == "not_found"
+    assert result.error_message == "Ordner existiert nicht"
+
+
+def test_validate_workbench_folder_rejects_file(tmp_path: Path):
+    file_path = tmp_path / "not_a_folder.txt"
+    file_path.write_text("x", encoding="utf-8")
+
+    result = validate_workbench_folder(str(file_path))
+
+    assert not result.ok
+    assert result.error_code == "not_a_directory"
+    assert result.error_message == "Pfad ist keine Ordner"
+
+
+def test_validate_workbench_folder_accepts_valid_directory(tmp_path: Path):
+    folder = tmp_path / "samples"
+    folder.mkdir()
+
+    result = validate_workbench_folder(str(folder))
+
+    assert result.ok
+    assert result.error_code is None
+    assert result.normalized_path == folder.resolve()
 
 
 def test_cli_help_includes_workbench():

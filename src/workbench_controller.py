@@ -24,6 +24,57 @@ ERROR_LABELS: dict[str, str] = {
     "analysis_exception": "Unbekannter Analysefehler",
 }
 
+FOLDER_ERROR_MESSAGES: dict[str, str] = {
+    "empty": "Kein Ordner ausgewählt",
+    "not_found": "Ordner existiert nicht",
+    "not_a_directory": "Pfad ist keine Ordner",
+}
+
+
+@dataclass
+class WorkbenchFolderValidation:
+    ok: bool
+    normalized_path: Path | None
+    error_code: str | None
+    error_message: str | None
+
+
+def validate_workbench_folder(path_text: str) -> WorkbenchFolderValidation:
+    """Validate a user-entered folder path for the workbench UI."""
+    stripped = path_text.strip()
+    if not stripped:
+        return WorkbenchFolderValidation(
+            ok=False,
+            normalized_path=None,
+            error_code="empty",
+            error_message=FOLDER_ERROR_MESSAGES["empty"],
+        )
+
+    candidate = Path(stripped).expanduser()
+    if not candidate.exists():
+        return WorkbenchFolderValidation(
+            ok=False,
+            normalized_path=None,
+            error_code="not_found",
+            error_message=FOLDER_ERROR_MESSAGES["not_found"],
+        )
+
+    resolved = candidate.resolve()
+    if not resolved.is_dir():
+        return WorkbenchFolderValidation(
+            ok=False,
+            normalized_path=None,
+            error_code="not_a_directory",
+            error_message=FOLDER_ERROR_MESSAGES["not_a_directory"],
+        )
+
+    return WorkbenchFolderValidation(
+        ok=True,
+        normalized_path=resolved,
+        error_code=None,
+        error_message=None,
+    )
+
 
 @dataclass
 class WorkbenchRow:
@@ -273,11 +324,14 @@ def row_as_dict(row: WorkbenchRow) -> dict[str, Any]:
 
 __all__ = [
     "ERROR_LABELS",
+    "FOLDER_ERROR_MESSAGES",
     "ProgressCallback",
     "ProgressPhase",
+    "WorkbenchFolderValidation",
     "WorkbenchRow",
     "WorkbenchResult",
     "analyze_folder_for_workbench",
     "error_message_for_code",
     "row_as_dict",
+    "validate_workbench_folder",
 ]
