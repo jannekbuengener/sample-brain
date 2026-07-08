@@ -11,7 +11,8 @@
 - **Workbench library cache v1 (#117):** user-local SQLite (`~/.sample-brain/workbench_library.db`) remembers analyzed folders/samples; invalidation via path + size + mtime; internal `display_name` only — original files unchanged
 - **Workbench library folder list (#117, merged):** sidebar lists known library folders; `+` adds folder to cache; `−` removes cache metadata only (no file deletes/moves/renames); selecting a folder loads cached samples when available
 - **Workbench audio preview v1 (#117, merged PR #129):** Play/Stop buttons in detail panel; platform playback (winsound/afplay/aplay); non-WAV via temp PCM decode; original files never modified
-- **Workbench preview controls (#117, in progress):** double-click row to play; Space toggles play/stop; selection preserved across filter/sort; preview disabled during analysis
+- **Workbench preview controls (#117, merged PR #130):** double-click row to play; Space toggles play/stop; selection preserved across filter/sort; preview disabled during analysis
+- **Workbench waveform panel v1 (#117, in progress):** read-only peak envelope under detail panel; no cue/loop editing; original files unchanged
 - **Workbench UX polish:** progress bar + status counter during analysis; classified error messages (not generic "Could not extract features")
 - **Workbench short-clip handling:** samples under 0.5s skip BPM/key overclaim; UI shows Kurzclip hint; targeted librosa warning suppression
 - **Workbench Windows shortcut:** optional desktop `.lnk` via `tools/windows/create_workbench_desktop_shortcut.ps1` (local helper, no installer)
@@ -112,7 +113,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 
 - **Default switch to sqlite-vec** — blocked until latency gates PASS
 - **Tier B CLAP search-quality evidence** — Phase 1+2 merged; 4/6 classes on main; vocal/no-vocal proxy spike **HOLD_VOCAL_PROXY_FAILED**; genre/mood remain (#73 OPEN)
-- **Workbench waveform / preview controls polish / global multi-folder library view / catalog DB unification / search integration** — preview v1 has play/stop only (no pause, no waveform); no cross-folder playlist yet; catalog.db not wired to workbench yet; no semantic search UI (#117 remains open)
+- **Workbench waveform / cue-loop metadata / global multi-folder library view / catalog DB unification / search integration** — read-only waveform envelope v1 (no cue/attack/loop markers); preview has play/stop only (no pause); no cross-folder playlist yet; catalog.db not wired to workbench yet; no semantic search UI (#117 remains open)
 - **Phase 5 tags + FTS5 MVP** — not started (roadmap Phase 5)
 - **Large-scale private-sample validation** — synthetic/benchmark fixtures only
 - **EPIC 3–6** — not started
