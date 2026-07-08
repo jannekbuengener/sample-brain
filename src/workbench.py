@@ -89,6 +89,7 @@ class WorkbenchApp:
         self._preview = WorkbenchPreviewPlayer()
         self._preview_row_path: str | None = None
         self._detail_row: WorkbenchRow | None = None
+        self._loop_edit_pending_start_ms: int | None = None
 
         self._build_styles()
         self._build_layout()
@@ -289,6 +290,21 @@ class WorkbenchApp:
             highlightbackground=BORDER,
         )
         self._detail_text.pack(fill=tk.BOTH, expand=True)
+
+        waveform_controls = ttk.Frame(detail_frame, style="Panel.TFrame")
+        waveform_controls.pack(fill=tk.X, pady=(8, 4))
+        self._loop_edit_mode_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            waveform_controls,
+            text="Loop bearbeiten",
+            variable=self._loop_edit_mode_var,
+            command=self._on_loop_edit_mode_toggled,
+        ).pack(side=tk.LEFT)
+        ttk.Button(
+            waveform_controls,
+            text="Loop löschen",
+            command=self._clear_loop_metadata,
+        ).pack(side=tk.LEFT, padx=(8, 0))
 
         self._waveform_canvas = tk.Canvas(
             detail_frame,
@@ -875,9 +891,105 @@ class WorkbenchApp:
         self._draw_waveform(row)
         self._set_status(f"Cue dauerhaft gesetzt: {cue_start_ms} ms", tone="success")
 
+    def _on_loop_edit_mode_toggled(self) -> None:
+        if self._loop_edit_mode_var.get():
+            self._loop_edit_pending_start_ms = None
+            self._set_status("Loop bearbeiten aktiv — 1. Klick: Loop-Start", tone="active")
+            return
+        self._loop_edit_pending_start_ms = None
+        self._set_status("Loop bearbeiten aus", tone="neutral")
+
+    def _handle_loop_edit_waveform_click(self, x: int) -> None:
+        if self._busy:
+            return
+        row = self._detail_row
+        if row is None or not row.path:
+            self._set_status("Kein Sample ausgewählt.", tone="neutral")
+            return
+        duration_ms = read_audio_duration_ms(row.path)
+        if duration_ms is None:
+            self._set_status("Kann Loop-Position nicht bestimmen.", tone="error")
+            return
+        click_ms = self._cue_start_ms_from_waveform_x(x)
+        if click_ms is None:
+            self._set_status("Kann Loop-Position nicht bestimmen.", tone="error")
+            return
+
+        if self._loop_edit_pending_start_ms is None:
+            self._loop_edit_pending_start_ms = click_ms
+            self._set_status(
+                f"Loop-Start gesetzt: {click_ms} ms — 2. Klick: Loop-Ende",
+                tone="active",
+            )
+            return
+
+        start_ms = min(self._loop_edit_pending_start_ms, click_ms)
+        end_ms = max(self._loop_edit_pending_start_ms, click_ms)
+        self._loop_edit_pending_start_ms = None
+
+        try:
+            existing = load_workbench_sample_cue(row.path)
+            metadata = WorkbenchCueMetadata(
+                cue_start_ms=existing.cue_start_ms,
+                attack_ms=existing.attack_ms,
+                loop_start_ms=start_ms,
+                loop_end_ms=end_ms,
+                cue_source=existing.cue_source or "manual",
+            )
+            save_workbench_sample_cue(row.path, metadata, duration_ms=duration_ms)
+        except WorkbenchCueNotFoundError:
+            self._set_status(
+                "Sample nicht in der lokalen Bibliothek — zuerst analysieren.",
+                tone="error",
+            )
+            return
+        except WorkbenchCueValidationError as exc:
+            self._set_status(f"Loop konnte nicht gespeichert werden: {exc}", tone="error")
+            return
+
+        self._loop_edit_mode_var.set(False)
+        self._draw_waveform(row)
+        self._set_status(f"Loop gesetzt: {start_ms}–{end_ms} ms", tone="success")
+
+    def _clear_loop_metadata(self) -> None:
+        if self._busy:
+            return
+        row = self._detail_row
+        if row is None or not row.path:
+            self._set_status("Kein Sample ausgewählt.", tone="neutral")
+            return
+        duration_ms = read_audio_duration_ms(row.path)
+        try:
+            existing = load_workbench_sample_cue(row.path)
+            metadata = WorkbenchCueMetadata(
+                cue_start_ms=existing.cue_start_ms,
+                attack_ms=existing.attack_ms,
+                loop_start_ms=None,
+                loop_end_ms=None,
+                cue_source=existing.cue_source or "manual",
+            )
+            save_workbench_sample_cue(row.path, metadata, duration_ms=duration_ms)
+        except WorkbenchCueNotFoundError:
+            self._set_status(
+                "Sample nicht in der lokalen Bibliothek — zuerst analysieren.",
+                tone="error",
+            )
+            return
+        except WorkbenchCueValidationError as exc:
+            self._set_status(f"Loop konnte nicht gelöscht werden: {exc}", tone="error")
+            return
+
+        self._loop_edit_pending_start_ms = None
+        self._loop_edit_mode_var.set(False)
+        self._draw_waveform(row)
+        self._set_status("Loop gelöscht", tone="success")
+
     def _on_waveform_click(self, event: tk.Event) -> None:
         if event.state & 0x0001:
             self._set_selected_cue_from_waveform_position(int(event.x))
+            return
+        if self._loop_edit_mode_var.get():
+            self._handle_loop_edit_waveform_click(int(event.x))
             return
         self._play_selected_from_waveform()
 
