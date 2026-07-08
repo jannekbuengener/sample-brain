@@ -53,6 +53,7 @@ CUE_MARKER = "#ffffff"
 LOOP_REGION_FILL = "#1a3d28"
 LOOP_MARKER = "#6fcf6f"
 WAVEFORM_USAGE_HINT = "Linksklick: Play · Rechtsklick: ab Stelle · Shift+Klick: Cue setzen"
+WAVEFORM_LOOP_EDIT_HINT = "Loop-Modus: 1. Klick Start · 2. Klick Ende · Loop löschen"
 
 COLUMNS = (
     ("name", "Name", 180),
@@ -318,9 +319,10 @@ class WorkbenchApp:
         self._waveform_canvas.bind("<Configure>", self._on_waveform_resize)
         self._waveform_canvas.bind("<Button-1>", self._on_waveform_click)
         self._waveform_canvas.bind("<Button-3>", self._on_waveform_right_click)
+        self._waveform_usage_var = tk.StringVar(value=WAVEFORM_USAGE_HINT)
         ttk.Label(
             detail_frame,
-            text=WAVEFORM_USAGE_HINT,
+            textvariable=self._waveform_usage_var,
             style="Muted.TLabel",
         ).pack(fill=tk.X, pady=(2, 0))
 
@@ -891,12 +893,18 @@ class WorkbenchApp:
         self._draw_waveform(row)
         self._set_status(f"Cue dauerhaft gesetzt: {cue_start_ms} ms", tone="success")
 
+    def _update_waveform_usage_hint(self) -> None:
+        hint = WAVEFORM_LOOP_EDIT_HINT if self._loop_edit_mode_var.get() else WAVEFORM_USAGE_HINT
+        self._waveform_usage_var.set(hint)
+
     def _on_loop_edit_mode_toggled(self) -> None:
         if self._loop_edit_mode_var.get():
             self._loop_edit_pending_start_ms = None
+            self._update_waveform_usage_hint()
             self._set_status("Loop bearbeiten aktiv — 1. Klick: Loop-Start", tone="active")
             return
         self._loop_edit_pending_start_ms = None
+        self._update_waveform_usage_hint()
         self._set_status("Loop bearbeiten aus", tone="neutral")
 
     def _handle_loop_edit_waveform_click(self, x: int) -> None:
@@ -948,6 +956,7 @@ class WorkbenchApp:
             return
 
         self._loop_edit_mode_var.set(False)
+        self._update_waveform_usage_hint()
         self._draw_waveform(row)
         self._set_status(f"Loop gesetzt: {start_ms}–{end_ms} ms", tone="success")
 
@@ -981,6 +990,7 @@ class WorkbenchApp:
 
         self._loop_edit_pending_start_ms = None
         self._loop_edit_mode_var.set(False)
+        self._update_waveform_usage_hint()
         self._draw_waveform(row)
         self._set_status("Loop gelöscht", tone="success")
 
