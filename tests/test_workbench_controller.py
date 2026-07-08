@@ -11,6 +11,7 @@ from src.workbench_controller import (
     analyze_folder_for_workbench,
     error_message_for_code,
     filter_workbench_rows,
+    format_path_display_lines,
     sort_workbench_rows,
     validate_workbench_folder,
 )
@@ -40,6 +41,40 @@ def sample_folder(tmp_path: Path) -> Path:
     write_kick_transient_wav(samples / "kick_b.wav", bpm=120.0, duration_sec=2.0)
     (samples / "notes.txt").write_text("not audio", encoding="utf-8")
     return samples
+
+
+def test_format_path_display_lines_keeps_short_path_on_one_line():
+    path = "kits/drums/kick.wav"
+    assert format_path_display_lines(path) == [path]
+
+
+def test_format_path_display_lines_collapses_long_middle():
+    path = "root/alpha/beta/gamma/delta/epsilon/file.wav"
+    lines = format_path_display_lines(path, max_width=34)
+    assert lines == ["root/alpha/…/epsilon/file.wav"]
+
+
+def test_format_path_display_lines_uses_segment_layout_when_collapsed_too_long():
+    path = "vault/" + "/".join(f"segment-{index}" for index in range(6)) + "/sample.wav"
+    lines = format_path_display_lines(path, max_width=24)
+    assert len(lines) > 1
+    assert lines[0].startswith("  vault")
+    assert any(line.startswith("› ") for line in lines)
+    assert lines[-1].endswith("sample.wav")
+
+
+def test_format_path_display_lines_wraps_long_segment_name():
+    long_name = "x" * 40 + ".wav"
+    path = f"packs/{long_name}"
+    lines = format_path_display_lines(path, max_width=20)
+    assert len(lines) >= 3
+    assert lines[0] == "  packs"
+    assert any(long_name[:12] in line for line in lines)
+
+
+def test_format_path_display_lines_empty_path():
+    assert format_path_display_lines("") == ["—"]
+    assert format_path_display_lines("   ") == ["—"]
 
 
 def test_controller_finds_audio_files(sample_folder: Path):

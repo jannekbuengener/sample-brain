@@ -1,8 +1,9 @@
 """Folder-scoped analysis for the local workbench (no DB required)."""
 from __future__ import annotations
 
+import textwrap
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any, Callable, Literal
 
 from .analyze import (
@@ -38,6 +39,53 @@ class WorkbenchFolderValidation:
     normalized_path: Path | None
     error_code: str | None
     error_message: str | None
+
+
+def format_path_display_lines(
+    path: str,
+    *,
+    max_width: int = 48,
+    head_segments: int = 2,
+    tail_segments: int = 2,
+) -> list[str]:
+    """Format a filesystem path for the workbench detail panel.
+
+    Short paths stay on one line. Longer paths collapse the middle; very long
+    paths fall back to one segment per line with wrapped segment names.
+    """
+    stripped = path.strip()
+    if not stripped:
+        return ["—"]
+
+    parts = list(PurePath(stripped).parts)
+    if not parts:
+        return ["—"]
+
+    flat = "/".join(parts)
+    if len(flat) <= max_width:
+        return [flat]
+
+    if len(parts) > head_segments + tail_segments:
+        head = parts[:head_segments]
+        tail = parts[-tail_segments:]
+        collapsed = "/".join(head) + "/…/" + "/".join(tail)
+        if len(collapsed) <= max_width:
+            return [collapsed]
+
+    lines: list[str] = []
+    wrap_width = max(10, max_width - 2)
+    for index, part in enumerate(parts):
+        indent = "› " if index else "  "
+        wrapped = textwrap.wrap(
+            part,
+            width=wrap_width,
+            break_long_words=True,
+            break_on_hyphens=False,
+        ) or [part]
+        for chunk_index, chunk in enumerate(wrapped):
+            prefix = indent if chunk_index == 0 else "  "
+            lines.append(f"{prefix}{chunk}")
+    return lines
 
 
 def validate_workbench_folder(path_text: str) -> WorkbenchFolderValidation:
@@ -413,6 +461,7 @@ __all__ = [
     "analyze_folder_for_workbench",
     "error_message_for_code",
     "filter_workbench_rows",
+    "format_path_display_lines",
     "PLAYLIST_SORT_COLUMNS",
     "row_as_dict",
     "sort_workbench_rows",

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import threading
-import textwrap
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -13,6 +12,7 @@ from .workbench_controller import (
     WorkbenchRow,
     analyze_folder_for_workbench,
     filter_workbench_rows,
+    format_path_display_lines,
     sort_workbench_rows,
     validate_workbench_folder,
 )
@@ -47,12 +47,6 @@ def _fmt(value: float | None, *, digits: int = 2) -> str:
     return f"{float(value):.{digits}f}"
 
 
-def _wrap_text(value: str, *, width: int = 52) -> str:
-    if len(value) <= width:
-        return value
-    return textwrap.fill(value, width=width, break_long_words=True, break_on_hyphens=False)
-
-
 class WorkbenchApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -66,6 +60,7 @@ class WorkbenchApp:
         self._sort_reverse = False
         self._busy = False
         self._cancel_event = threading.Event()
+        self._detail_copy_path: str | None = None
 
         self._build_styles()
         self._build_layout()
@@ -187,7 +182,18 @@ class WorkbenchApp:
 
         detail_frame = ttk.Frame(body, style="Panel.TFrame", padding=10)
         detail_frame.grid(row=0, column=1, sticky="nsew")
-        ttk.Label(detail_frame, text="Sample-Details", style="Heading.TLabel").pack(anchor=tk.W, pady=(0, 8))
+        detail_header = ttk.Frame(detail_frame, style="Panel.TFrame")
+        detail_header.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(detail_header, text="Sample-Details", style="Heading.TLabel").pack(
+            side=tk.LEFT, anchor=tk.W
+        )
+        self._copy_path_btn = ttk.Button(
+            detail_header,
+            text="Pfad kopieren",
+            command=self._copy_detail_path,
+            state=tk.DISABLED,
+        )
+        self._copy_path_btn.pack(side=tk.RIGHT)
 
         self._detail_text = tk.Text(
             detail_frame,
@@ -446,19 +452,29 @@ class WorkbenchApp:
         if 0 <= idx < len(self._visible_rows):
             self._set_detail(self._visible_rows[idx])
 
+    def _copy_detail_path(self) -> None:
+        if not self._detail_copy_path:
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(self._detail_copy_path)
+        self._set_status("Pfad in Zwischenablage kopiert.", tone="success")
+
     def _set_detail(self, row: WorkbenchRow | None) -> None:
         self._detail_text.configure(state=tk.NORMAL)
         self._detail_text.delete("1.0", tk.END)
+        self._detail_copy_path = row.path if row is not None else None
         if row is None:
+            self._copy_path_btn.state(["disabled"])
             self._detail_text.insert(tk.END, "Kein Sample ausgewählt.")
         else:
+            self._copy_path_btn.state(["!disabled"])
             lines = [
                 f"Name:     {row.display_name}",
-                f"Pfad:",
+                "Pfad:",
             ]
-            lines.extend(f"  {part}" for part in _wrap_text(row.path).splitlines())
+            lines.extend(format_path_display_lines(row.path))
             lines.append("Relativ:")
-            lines.extend(f"  {part}" for part in _wrap_text(row.relative_path).splitlines())
+            lines.extend(format_path_display_lines(row.relative_path))
             lines.append(f"Status:   {row.status}")
             short_hint = row.details.get("short_audio_warning")
             if short_hint:
