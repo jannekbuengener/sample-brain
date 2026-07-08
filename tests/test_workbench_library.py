@@ -7,8 +7,12 @@ import pytest
 from src.workbench_library import (
     WORKBENCH_ANALYZER_VERSION,
     init_workbench_library,
+    list_library_folders,
+    load_folder_samples,
     lookup_sample,
     normalize_display_name,
+    register_library_folder,
+    remove_library_folder,
     upsert_folder,
     upsert_sample,
     workbench_library_db_path,
@@ -151,3 +155,91 @@ def test_lookup_sample_cache_miss_on_size(library_db: Path, tmp_path: Path):
     upsert_sample(folder_id, row, size_bytes=4, mtime_ns=100, db_path=library_db)
 
     assert lookup_sample(audio.resolve(), 99, 100, db_path=library_db) is None
+
+
+def test_list_library_folders_returns_registered_folders(library_db: Path, tmp_path: Path):
+    alpha = tmp_path / "alpha"
+    beta = tmp_path / "beta"
+    alpha.mkdir()
+    beta.mkdir()
+
+    register_library_folder(alpha, db_path=library_db)
+    register_library_folder(beta, db_path=library_db)
+
+    folders = list_library_folders(db_path=library_db)
+    paths = {folder.path for folder in folders}
+    assert paths == {str(alpha.resolve()), str(beta.resolve())}
+    assert all(folder.id > 0 for folder in folders)
+
+
+def test_list_library_folders_orders_by_last_opened(library_db: Path, tmp_path: Path):
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+
+    register_library_folder(first, db_path=library_db)
+    register_library_folder(second, db_path=library_db)
+    register_library_folder(first, db_path=library_db)
+
+    folders = list_library_folders(db_path=library_db)
+    assert folders[0].path == str(first.resolve())
+
+
+def test_remove_library_folder_deletes_folder_and_samples(library_db: Path, tmp_path: Path):
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+
+    folder_id = upsert_folder(folder, db_path=library_db)
+    row = WorkbenchRow(
+        display_name="kick",
+        relative_path="kick.wav",
+        path=str(audio.resolve()),
+        bpm=None,
+        key=None,
+        key_conf=None,
+        loudness=None,
+        brightness=None,
+        sample_class=None,
+        pred_type=None,
+        status="ok",
+    )
+    upsert_sample(folder_id, row, size_bytes=4, mtime_ns=100, db_path=library_db)
+
+    assert remove_library_folder(folder_id, db_path=library_db)
+    assert list_library_folders(db_path=library_db) == []
+    assert load_folder_samples(folder, db_path=library_db) == []
+    assert audio.is_file()
+
+
+def test_remove_library_folder_by_path(library_db: Path, tmp_path: Path):
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    upsert_folder(folder, db_path=library_db)
+
+    assert remove_library_folder(str(folder.resolve()), db_path=library_db)
+    assert list_library_folders(db_path=library_db) == []
+
+
+def test_remove_library_folder_is_idempotent(library_db: Path, tmp_path: Path):
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    folder_id = upsert_folder(folder, db_path=library_db)
+
+    assert remove_library_folder(folder_id, db_path=library_db)
+    assert not remove_library_folder(folder_id, db_path=library_db)
+    assert not remove_library_folder(str(folder.resolve()), db_path=library_db)
+
+
+def test_register_library_folder_without_scan_timestamp(library_db: Path, tmp_path: Path):
+    folder = tmp_path / "samples"
+    folder.mkdir()
+
+    register_library_folder(folder, db_path=library_db)
+    folders = list_library_folders(db_path=library_db)
+
+    assert len(folders) == 1
+    assert folders[0].last_opened_at is not None
+    assert folders[0].last_scan_at is None

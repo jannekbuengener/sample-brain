@@ -17,8 +17,14 @@ from .classify import rule_type
 from .scan import iter_audio_files_stream, safe_audio_info
 from .workbench_library import (
     WORKBENCH_ANALYZER_VERSION,
+    LibraryFolder,
+    list_library_folders,
+    load_folder_samples,
     lookup_sample,
+    mark_folder_opened,
     normalize_display_name,
+    register_library_folder,
+    remove_library_folder,
     upsert_folder,
     upsert_sample,
     workbench_library_db_path,
@@ -614,6 +620,47 @@ def save_workbench_last_folder(
     return True
 
 
+def get_workbench_library_folders(
+    *,
+    library_db_path: Path | None = None,
+) -> list[LibraryFolder]:
+    """Return folders registered in the workbench library cache."""
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    return list_library_folders(db_path=db)
+
+
+def add_workbench_library_folder(
+    folder: Path | str,
+    *,
+    library_db_path: Path | None = None,
+) -> int:
+    """Register a folder in the workbench library without analyzing it."""
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    return register_library_folder(folder, db_path=db)
+
+
+def remove_workbench_library_folder(
+    folder_id_or_path: int | str | Path,
+    *,
+    library_db_path: Path | None = None,
+) -> bool:
+    """Remove folder metadata and cached samples from the workbench library."""
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    return remove_library_folder(folder_id_or_path, db_path=db)
+
+
+def load_cached_folder_rows(
+    folder: Path | str,
+    *,
+    library_db_path: Path | None = None,
+) -> list[WorkbenchRow]:
+    """Load cached analysis rows for a library folder, if any."""
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    mark_folder_opened(folder, db_path=db)
+    cached = load_folder_samples(folder, db_path=db)
+    return [row.to_workbench_row() for row in cached]
+
+
 __all__ = [
     "ERROR_LABELS",
     "FOLDER_ERROR_MESSAGES",
@@ -623,14 +670,18 @@ __all__ = [
     "WorkbenchFolderValidation",
     "WorkbenchRow",
     "WorkbenchResult",
+    "add_workbench_library_folder",
     "analyze_folder_for_workbench",
     "error_message_for_code",
     "export_workbench_rows_to_csv",
     "filter_workbench_rows",
     "format_path_display_lines",
+    "get_workbench_library_folders",
+    "load_cached_folder_rows",
     "load_workbench_last_folder",
     "PLAYLIST_SORT_COLUMNS",
     "PLAYLIST_CSV_FIELDS",
+    "remove_workbench_library_folder",
     "row_as_dict",
     "save_workbench_last_folder",
     "sort_workbench_rows",
