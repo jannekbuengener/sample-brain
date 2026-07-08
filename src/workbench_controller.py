@@ -151,6 +151,44 @@ def filter_workbench_rows(rows: list[WorkbenchRow], query: str) -> list[Workbenc
     return [row for row in rows if needle in _haystack(row)]
 
 
+PLAYLIST_SORT_COLUMNS = frozenset(
+    {"name", "bpm", "key", "key_conf", "loudness", "brightness", "pred_type", "status"}
+)
+
+
+def _sort_key_for_column(row: WorkbenchRow, column: str) -> tuple:
+    if column == "name":
+        return (row.display_name.casefold(),)
+    if column == "bpm":
+        return (row.bpm is None, row.bpm if row.bpm is not None else 0.0)
+    if column == "key":
+        return (row.key is None, (row.key or "").casefold())
+    if column == "key_conf":
+        return (row.key_conf is None, row.key_conf if row.key_conf is not None else 0.0)
+    if column == "loudness":
+        return (row.loudness is None, row.loudness if row.loudness is not None else 0.0)
+    if column == "brightness":
+        return (row.brightness is None, row.brightness if row.brightness is not None else 0.0)
+    if column == "pred_type":
+        value = row.pred_type or row.sample_class or ""
+        return (not value, value.casefold())
+    if column == "status":
+        return (row.status.casefold(),)
+    raise ValueError(f"Unsupported sort column: {column}")
+
+
+def sort_workbench_rows(
+    rows: list[WorkbenchRow],
+    column: str,
+    *,
+    reverse: bool = False,
+) -> list[WorkbenchRow]:
+    """Return a new list sorted by playlist column *column*."""
+    if column not in PLAYLIST_SORT_COLUMNS:
+        raise ValueError(f"Unsupported sort column: {column}")
+    return sorted(rows, key=lambda row: _sort_key_for_column(row, column), reverse=reverse)
+
+
 def _format_optional(value: float | None, *, digits: int = 2) -> float | None:
     if value is None:
         return None
@@ -375,6 +413,8 @@ __all__ = [
     "analyze_folder_for_workbench",
     "error_message_for_code",
     "filter_workbench_rows",
+    "PLAYLIST_SORT_COLUMNS",
     "row_as_dict",
+    "sort_workbench_rows",
     "validate_workbench_folder",
 ]

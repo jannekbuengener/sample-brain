@@ -11,6 +11,7 @@ from src.workbench_controller import (
     analyze_folder_for_workbench,
     error_message_for_code,
     filter_workbench_rows,
+    sort_workbench_rows,
     validate_workbench_folder,
 )
 from tests.audio_fixtures import write_kick_transient_wav, write_sine_wav
@@ -73,6 +74,31 @@ def test_controller_collects_errors(tmp_path: Path):
     assert row.error == error_message_for_code(row.error_code)
     assert row.error != "Could not extract features"
     assert "error_detail" in row.details
+
+
+def test_sort_workbench_rows_by_name(sample_folder: Path):
+    result = analyze_folder_for_workbench(sample_folder)
+
+    ascending = sort_workbench_rows(result.rows, "name")
+    assert [row.display_name for row in ascending] == ["kick_b.wav", "tone_a.wav"]
+
+    descending = sort_workbench_rows(result.rows, "name", reverse=True)
+    assert [row.display_name for row in descending] == ["tone_a.wav", "kick_b.wav"]
+
+
+def test_sort_workbench_rows_by_bpm(sample_folder: Path):
+    result = analyze_folder_for_workbench(sample_folder)
+
+    by_bpm = sort_workbench_rows(result.rows, "bpm")
+    bpms = [row.bpm for row in by_bpm if row.bpm is not None]
+    assert bpms == sorted(bpms)
+
+
+def test_sort_workbench_rows_rejects_unknown_column(sample_folder: Path):
+    result = analyze_folder_for_workbench(sample_folder)
+
+    with pytest.raises(ValueError, match="Unsupported sort column"):
+        sort_workbench_rows(result.rows, "unknown")
 
 
 def test_filter_workbench_rows_matches_name_and_type(sample_folder: Path):
