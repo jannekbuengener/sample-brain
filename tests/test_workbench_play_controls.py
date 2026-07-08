@@ -59,11 +59,16 @@ def _playback_app(*, canvas_width: int = 400, loop_edit_mode: bool = False):
     app._status_var = SimpleNamespace(value="")
     app._loop_edit_pending_start_ms = None
     loop_mode = {"value": loop_edit_mode}
+    usage_values: list[str] = []
 
     app._loop_edit_mode_var = SimpleNamespace(
         get=lambda: loop_mode["value"],
         set=lambda value: loop_mode.__setitem__("value", bool(value)),
     )
+    app._waveform_usage_var = SimpleNamespace(
+        set=lambda value: usage_values.append(str(value)),
+    )
+    app._usage_values = usage_values
 
     def set_status(message: str, *, tone: str = "neutral") -> None:
         app._status_var.value = message
@@ -305,6 +310,32 @@ def test_waveform_usage_hint_documents_click_controls():
     assert "Rechtsklick" in hint
     assert "Shift" in hint
     assert "Cue" in hint
+
+
+def test_waveform_loop_edit_hint_documents_mode_controls():
+    wb = _workbench_module()
+    hint = wb.WAVEFORM_LOOP_EDIT_HINT
+    assert "Loop-Modus" in hint
+    assert "Start" in hint
+    assert "Ende" in hint
+    assert "löschen" in hint
+
+
+def test_update_waveform_usage_hint_switches_with_loop_mode():
+    wb = _workbench_module()
+    app = _playback_app()
+    usage_values: list[str] = []
+    app._waveform_usage_var = SimpleNamespace(
+        set=lambda value: usage_values.append(str(value)),
+    )
+
+    app._loop_edit_mode_var.set(True)
+    app._update_waveform_usage_hint()
+    assert usage_values[-1] == wb.WAVEFORM_LOOP_EDIT_HINT
+
+    app._loop_edit_mode_var.set(False)
+    app._update_waveform_usage_hint()
+    assert usage_values[-1] == wb.WAVEFORM_USAGE_HINT
 
 
 def test_loop_edit_mode_toggle_sets_status():
