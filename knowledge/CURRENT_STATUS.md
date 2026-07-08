@@ -13,7 +13,7 @@
 - **Workbench audio preview v1 (#117, merged PR #129):** Play/Stop buttons in detail panel; platform playback (winsound/afplay/aplay); non-WAV via temp PCM decode; original files never modified
 - **Workbench preview controls (#117, merged PR #130):** double-click row to play; Space toggles play/stop; selection preserved across filter/sort; preview disabled during analysis
 - **Workbench waveform panel v1 (#117, merged PR #131):** read-only peak envelope under detail panel (`workbench_waveform`); no cue/loop markers yet; original files unchanged
-- **Workbench cue metadata:** plan documented in [`docs/WORKBENCH_CUE_METADATA_PLAN.md`](../docs/WORKBENCH_CUE_METADATA_PLAN.md) — schema/UI slices not implemented
+- **Workbench cue metadata v1 (#117, in progress):** schema v2 in `workbench_library.db`; `load_sample_cue` / `save_sample_cue`; read-only cue marker on waveform; no interactive editing yet
 - **Workbench UX polish:** progress bar + status counter during analysis; classified error messages (not generic "Could not extract features")
 - **Workbench short-clip handling:** samples under 0.5s skip BPM/key overclaim; UI shows Kurzclip hint; targeted librosa warning suppression
 - **Workbench Windows shortcut:** optional desktop `.lnk` via `tools/windows/create_workbench_desktop_shortcut.ps1` (local helper, no installer)
@@ -114,7 +114,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 
 - **Default switch to sqlite-vec** — blocked until latency gates PASS
 - **Tier B CLAP search-quality evidence** — Phase 1+2 merged; 4/6 classes on main; vocal/no-vocal proxy spike **HOLD_VOCAL_PROXY_FAILED**; genre/mood remain (#73 OPEN)
-- **Workbench cue/loop metadata** — plan only ([`WORKBENCH_CUE_METADATA_PLAN.md`](../docs/WORKBENCH_CUE_METADATA_PLAN.md)); no DB columns or UI markers yet
+- **Workbench cue/loop metadata** — v1: local cue fields in `workbench_library.db`, read-only marker on waveform; no click/drag editing, no cue-offset preview, no loop playback (#117 remains open)
 - **Workbench global multi-folder library view / catalog DB unification / search integration** — no cross-folder playlist; `catalog.db` not wired to workbench; no semantic search UI; preview has no pause/playhead sync (#117 remains open)
 - **Phase 5 tags + FTS5 MVP** — not started (roadmap Phase 5)
 - **Large-scale private-sample validation** — synthetic/benchmark fixtures only

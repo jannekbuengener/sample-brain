@@ -1,20 +1,30 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 from src.workbench_library import (
     WORKBENCH_ANALYZER_VERSION,
+    WORKBENCH_LIBRARY_SCHEMA_VERSION,
+    WorkbenchCueMetadata,
+    WorkbenchCueNotFoundError,
+    WorkbenchCueValidationError,
+    connect_workbench_library,
+    default_workbench_cue_metadata,
     init_workbench_library,
     list_library_folders,
     load_folder_samples,
+    load_sample_cue,
     lookup_sample,
     normalize_display_name,
     register_library_folder,
     remove_library_folder,
+    save_sample_cue,
     upsert_folder,
     upsert_sample,
+    validate_workbench_cue_metadata,
     workbench_library_db_path,
 )
 from src.workbench_controller import WorkbenchRow
@@ -243,3 +253,229 @@ def test_register_library_folder_without_scan_timestamp(library_db: Path, tmp_pa
     assert len(folders) == 1
     assert folders[0].last_opened_at is not None
     assert folders[0].last_scan_at is None
+
+
+def _sample_columns(db_path: Path) -> set[str]:
+    with connect_workbench_library(db_path) as conn:
+        rows = conn.execute("PRAGMA table_info(samples)").fetchall()
+    return {str(row[1]) for row in rows}
+
+
+def _create_legacy_v1_library_db(db_path: Path) -> None:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE folders (
+            id INTEGER PRIMARY KEY,
+            path TEXT UNIQUE NOT NULL,
+            last_scan_at TEXT,
+            last_opened_at TEXT
+        );
+        CREATE TABLE samples (
+            id INTEGER PRIMARY KEY,
+            folder_id INTEGER NOT NULL,
+            original_path TEXT UNIQUE NOT NULL,
+            relative_path TEXT,
+            size_bytes INTEGER,
+            mtime_ns INTEGER,
+            display_name TEXT,
+            bpm REAL,
+            key TEXT,
+            key_conf REAL,
+            loudness REAL,
+            brightness REAL,
+            sample_class TEXT,
+            pred_type TEXT,
+            status TEXT,
+            error_code TEXT,
+            quality_note TEXT,
+            tags TEXT,
+            analyzed_at TEXT,
+            analyzer_version TEXT,
+            FOREIGN KEY(folder_id) REFERENCES folders(id)
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_new_library_db_has_cue_columns(library_db: Path):
+    columns = _sample_columns(library_db)
+    assert "cue_start_ms" in columns
+    assert "attack_ms" in columns
+    assert "loop_start_ms" in columns
+    assert "loop_end_ms" in columns
+    assert "cue_source" in columns
+    assert "cue_updated_at" in columns
+    assert WORKBENCH_LIBRARY_SCHEMA_VERSION == 2
+
+
+def test_legacy_library_db_is_migrated_to_add_cue_columns(tmp_path: Path):
+    db_path = tmp_path / "state" / "workbench_library.db"
+    _create_legacy_v1_library_db(db_path)
+    assert "cue_start_ms" not in _sample_columns(db_path)
+
+    init_workbench_library(db_path)
+    init_workbench_library(db_path)
+
+    columns = _sample_columns(db_path)
+    assert "cue_start_ms" in columns
+    assert "loop_end_ms" in columns
+
+
+def test_load_sample_cue_returns_defaults_for_unknown_path(library_db: Path, tmp_path: Path):
+    missing = tmp_path / "missing.wav"
+    cue = load_sample_cue(missing, db_path=library_db)
+    assert cue == default_workbench_cue_metadata()
+
+
+def test_save_and_load_sample_cue_roundtrip(library_db: Path, tmp_path: Path):
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "tone.wav"
+    audio.write_bytes(b"RIFF" + b"\x00" * 40)
+    folder_id = upsert_folder(folder, db_path=library_db)
+    row = WorkbenchRow(
+        display_name="tone",
+        relative_path="tone.wav",
+        path=str(audio.resolve()),
+        bpm=120.0,
+        key="C",
+        key_conf=0.8,
+        loudness=-12.0,
+        brightness=1500.0,
+        sample_class="oneshot",
+        pred_type="Kick",
+        status="ok",
+    )
+    upsert_sample(folder_id, row, size_bytes=44, mtime_ns=100, db_path=library_db)
+
+    metadata = WorkbenchCueMetadata(
+        cue_start_ms=250,
+        attack_ms=120,
+        loop_start_ms=500,
+        loop_end_ms=1500,
+        cue_source="manual",
+    )
+    save_sample_cue(audio.resolve(), metadata, db_path=library_db, duration_ms=2000)
+    loaded = load_sample_cue(audio.resolve(), db_path=library_db)
+
+    assert loaded.cue_start_ms == 250
+    assert loaded.attack_ms == 120
+    assert loaded.loop_start_ms == 500
+    assert loaded.loop_end_ms == 1500
+    assert loaded.cue_source == "manual"
+    assert loaded.cue_updated_at is not None
+
+
+def test_save_sample_cue_rejects_negative_values(library_db: Path, tmp_path: Path):
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    folder_id = upsert_folder(folder, db_path=library_db)
+    row = WorkbenchRow(
+        display_name="kick",
+        relative_path="kick.wav",
+        path=str(audio.resolve()),
+        bpm=None,
+        key=None,
+        key_conf=None,
+        loudness=None,
+        brightness=None,
+        sample_class=None,
+        pred_type=None,
+        status="ok",
+    )
+    upsert_sample(folder_id, row, size_bytes=4, mtime_ns=100, db_path=library_db)
+
+    with pytest.raises(WorkbenchCueValidationError):
+        save_sample_cue(
+            audio.resolve(),
+            WorkbenchCueMetadata(cue_start_ms=-1),
+            db_path=library_db,
+        )
+
+
+def test_save_sample_cue_rejects_invalid_loop_range(library_db: Path, tmp_path: Path):
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "loop.wav"
+    audio.write_bytes(b"data")
+    folder_id = upsert_folder(folder, db_path=library_db)
+    row = WorkbenchRow(
+        display_name="loop",
+        relative_path="loop.wav",
+        path=str(audio.resolve()),
+        bpm=None,
+        key=None,
+        key_conf=None,
+        loudness=None,
+        brightness=None,
+        sample_class="loop",
+        pred_type=None,
+        status="ok",
+    )
+    upsert_sample(folder_id, row, size_bytes=4, mtime_ns=100, db_path=library_db)
+
+    with pytest.raises(WorkbenchCueValidationError):
+        save_sample_cue(
+            audio.resolve(),
+            WorkbenchCueMetadata(loop_start_ms=1000, loop_end_ms=500),
+            db_path=library_db,
+        )
+
+
+def test_save_sample_cue_unknown_sample_raises(library_db: Path, tmp_path: Path):
+    missing = tmp_path / "ghost.wav"
+    missing.write_bytes(b"data")
+    with pytest.raises(WorkbenchCueNotFoundError):
+        save_sample_cue(missing, WorkbenchCueMetadata(), db_path=library_db)
+
+
+def test_upsert_sample_preserves_saved_cue_metadata(library_db: Path, tmp_path: Path):
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "tone.wav"
+    audio.write_bytes(b"RIFF" + b"\x00" * 40)
+    folder_id = upsert_folder(folder, db_path=library_db)
+    row = WorkbenchRow(
+        display_name="tone",
+        relative_path="tone.wav",
+        path=str(audio.resolve()),
+        bpm=120.0,
+        key="C",
+        key_conf=0.8,
+        loudness=-12.0,
+        brightness=1500.0,
+        sample_class="oneshot",
+        pred_type="Kick",
+        status="ok",
+    )
+    upsert_sample(folder_id, row, size_bytes=44, mtime_ns=100, db_path=library_db)
+    save_sample_cue(
+        audio.resolve(),
+        WorkbenchCueMetadata(cue_start_ms=400),
+        db_path=library_db,
+    )
+
+    updated = WorkbenchRow(
+        display_name="tone",
+        relative_path="tone.wav",
+        path=str(audio.resolve()),
+        bpm=128.0,
+        key="D",
+        key_conf=0.9,
+        loudness=-10.0,
+        brightness=1600.0,
+        sample_class="oneshot",
+        pred_type="Kick",
+        status="ok",
+    )
+    upsert_sample(folder_id, updated, size_bytes=44, mtime_ns=100, db_path=library_db)
+
+    cue = load_sample_cue(audio.resolve(), db_path=library_db)
+    assert cue.cue_start_ms == 400
+    assert lookup_sample(audio.resolve(), 44, 100, db_path=library_db).bpm == 128.0

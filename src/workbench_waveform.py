@@ -50,4 +50,42 @@ def compute_waveform_envelope(path: Path | str, *, max_points: int = 200) -> lis
     return envelope[:max_points]
 
 
-__all__ = ["compute_waveform_envelope"]
+def read_audio_duration_ms(path: Path | str) -> int | None:
+    """Return audio duration in milliseconds without modifying *path*."""
+    resolved = Path(path)
+    if not resolved.is_file():
+        return None
+    try:
+        info = sf.info(resolved)
+    except Exception:
+        return None
+    if info.duration is None or info.duration <= 0:
+        return None
+    return max(1, int(round(float(info.duration) * 1000.0)))
+
+
+def clamp_cue_start_ms(cue_start_ms: int, duration_ms: int | None) -> int:
+    """Clamp cue start to ``[0, duration_ms)`` when duration is known."""
+    if cue_start_ms < 0:
+        return 0
+    if duration_ms is None or duration_ms <= 0:
+        return cue_start_ms
+    if cue_start_ms >= duration_ms:
+        return max(0, duration_ms - 1)
+    return cue_start_ms
+
+
+def cue_marker_x(cue_start_ms: int, duration_ms: int, width: int) -> int | None:
+    """Map cue time to canvas x coordinate."""
+    if duration_ms <= 0 or width <= 0:
+        return None
+    clamped = clamp_cue_start_ms(cue_start_ms, duration_ms)
+    return int((clamped / duration_ms) * width)
+
+
+__all__ = [
+    "clamp_cue_start_ms",
+    "compute_waveform_envelope",
+    "cue_marker_x",
+    "read_audio_duration_ms",
+]
