@@ -15,7 +15,7 @@
 | Interactive cue set / drag | ✅ Shipped (Shift+left-click sets `cue_start_ms`; no drag) |
 | Preview from `cue_start_ms` | ✅ Shipped (temp WAV slice; original unchanged) |
 | Waveform play controls | ✅ Shipped (left = play from saved cue; right = temp play at click; Shift+left = permanent cue set; no visible Play/Stop buttons) |
-| Loop region UI | ✅ Read-only markers/region (v1); loop edit remains follow-up |
+| Loop region UI | ✅ Read-only markers/region + edit mode (set/clear via toggle) |
 
 ## 1. Problem
 

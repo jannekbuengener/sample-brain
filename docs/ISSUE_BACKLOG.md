@@ -320,7 +320,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Labels: `ui`, `feat`, `desktop`
 - Goal: Provide a first local result inspector with sample preview.
 - Context: Search becomes much more useful when results can be auditioned quickly.
-- **Partial:** Workbench MVP: waveform play surface (#117) — left-click plays from saved cue; right-click temp play at click; Shift+left-click sets cue permanently; read-only loop region when loop metadata set; loop edit planned ([`WORKBENCH_LOOP_EDIT_PLAN.md`](WORKBENCH_LOOP_EDIT_PLAN.md)); no loop/attack edit yet.
+- **Partial:** Workbench MVP: waveform play surface (#117) — left-click plays from saved cue; right-click temp play at click; Shift+left-click sets cue permanently; loop region visible + editable via loop-edit mode (toggle, two-click set, clear); attack edit not yet.
 - **Partial:** Workbench shows analysis progress (N/M + progress bar) and classified error messages.
 - **Partial:** Workbench short clips (<0.5s) show Kurzclip hint; BPM/Key not overclaimed; librosa n_fft warnings suppressed for short audio.
 - Acceptance criteria:
