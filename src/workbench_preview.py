@@ -201,6 +201,18 @@ class WorkbenchPreviewPlayer:
         return self._current_path
 
 
+def preview_toggle_action(
+    *,
+    is_playing: bool,
+    current_path: Path | None,
+    requested_path: Path,
+) -> str:
+    """Return ``stop`` when the same file is already playing, else ``play``."""
+    if is_playing and current_path is not None and current_path == requested_path.resolve():
+        return "stop"
+    return "play"
+
+
 def preview_platform_note() -> str:
     """Short note on preview playback support for the current platform."""
     system = platform.system()
@@ -215,5 +227,6 @@ __all__ = [
     "PreviewResult",
     "WorkbenchPreviewPlayer",
     "preview_platform_note",
+    "preview_toggle_action",
     "validate_preview_path",
 ]

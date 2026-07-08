@@ -23,7 +23,7 @@ from .workbench_controller import (
     sort_workbench_rows,
     validate_workbench_folder,
 )
-from .workbench_preview import WorkbenchPreviewPlayer
+from .workbench_preview import WorkbenchPreviewPlayer, preview_toggle_action
 
 # Dark palette inspired by ui_mockup.png (functional, not pixel-perfect).
 BG_DARK = "#121212"
@@ -236,6 +236,8 @@ class WorkbenchApp:
         self._tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
         self._tree.bind("<<TreeviewSelect>>", self._on_select)
+        self._tree.bind("<Double-Button-1>", self._on_tree_double_click)
+        self._tree.bind("<space>", self._on_space_preview)
 
         detail_frame = ttk.Frame(body, style="Panel.TFrame", padding=10)
         detail_frame.grid(row=0, column=2, sticky="nsew")
@@ -476,6 +478,7 @@ class WorkbenchApp:
         self._busy = True
         self._cancel_event.clear()
         self._analyze_btn.state(["disabled"])
+        self._play_btn.state(["disabled"])
         self._cancel_btn.state(["!disabled"])
         self._clear_playlist()
         self._show_progress(0, 1)
@@ -551,6 +554,7 @@ class WorkbenchApp:
         self._analyze_btn.state(["!disabled"])
         self._cancel_btn.state(["disabled"])
         self._hide_progress()
+        self._update_preview_buttons(self._selected_row())
 
         if error is not None:
             self._set_status(f"Fehler: {error}", tone="error")
@@ -592,6 +596,7 @@ class WorkbenchApp:
             )
 
     def _clear_playlist(self) -> None:
+        self._stop_preview()
         self._tree.delete(*self._tree.get_children())
         self._rows = []
         self._visible_rows = []
@@ -627,6 +632,7 @@ class WorkbenchApp:
         self._filter_var.set("")
 
     def _refresh_playlist_view(self) -> None:
+        preserve_path = self._preview_row_path
         visible = filter_workbench_rows(self._rows, self._filter_var.get())
         if self._sort_column is not None:
             visible = sort_workbench_rows(
@@ -656,20 +662,60 @@ class WorkbenchApp:
                 tags=tags,
             )
         self._tree.tag_configure("error", foreground=ERROR)
+        if preserve_path:
+            for idx, row in enumerate(self._visible_rows):
+                if row.path == preserve_path:
+                    self._tree.selection_set(str(idx))
+                    self._tree.see(str(idx))
+                    self._set_detail(row)
+                    return
         self._set_detail(None)
 
     def _populate_playlist(self, result: WorkbenchResult) -> None:
         self._rows = result.rows
         self._refresh_playlist_view()
 
-    def _on_select(self, _event: tk.Event | None = None) -> None:
+    def _selected_row(self) -> WorkbenchRow | None:
         selected = self._tree.selection()
         if not selected:
-            self._set_detail(None)
-            return
+            return None
         idx = int(selected[0])
         if 0 <= idx < len(self._visible_rows):
-            self._set_detail(self._visible_rows[idx])
+            return self._visible_rows[idx]
+        return None
+
+    def _on_select(self, _event: tk.Event | None = None) -> None:
+        row = self._selected_row()
+        if row is None:
+            self._set_detail(None)
+            return
+        if (
+            self._preview.current_path is not None
+            and row.path
+            and Path(row.path).resolve() != self._preview.current_path
+        ):
+            self._stop_preview()
+        self._set_detail(row)
+
+    def _on_tree_double_click(self, _event: tk.Event | None = None) -> None:
+        if self._busy:
+            return
+        self._on_select()
+        self._play_preview()
+
+    def _on_space_preview(self, _event: tk.Event | None = None) -> str:
+        if self._busy or not self._preview_row_path:
+            return "break"
+        action = preview_toggle_action(
+            is_playing=self._preview.current_path is not None,
+            current_path=self._preview.current_path,
+            requested_path=Path(self._preview_row_path),
+        )
+        if action == "stop":
+            self._stop_preview()
+        else:
+            self._play_preview()
+        return "break"
 
     def _on_close(self) -> None:
         self._stop_preview()
@@ -678,7 +724,7 @@ class WorkbenchApp:
     def _update_preview_buttons(self, row: WorkbenchRow | None) -> None:
         has_path = row is not None and bool(row.path)
         self._preview_row_path = row.path if has_path else None
-        if has_path:
+        if has_path and not self._busy:
             self._play_btn.state(["!disabled"])
         else:
             self._play_btn.state(["disabled"])
