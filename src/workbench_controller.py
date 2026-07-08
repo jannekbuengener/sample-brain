@@ -1,6 +1,7 @@
 """Folder-scoped analysis for the local workbench (no DB required)."""
 from __future__ import annotations
 
+import csv
 import os
 import textwrap
 from dataclasses import asdict, dataclass, field
@@ -450,6 +451,35 @@ def row_as_dict(row: WorkbenchRow) -> dict[str, Any]:
     return asdict(row)
 
 
+PLAYLIST_CSV_FIELDS: tuple[str, ...] = (
+    "display_name",
+    "relative_path",
+    "path",
+    "bpm",
+    "key",
+    "key_conf",
+    "loudness",
+    "brightness",
+    "sample_class",
+    "pred_type",
+    "status",
+    "error",
+    "error_code",
+)
+
+
+def export_workbench_rows_to_csv(rows: list[WorkbenchRow], destination: Path) -> int:
+    """Write playlist rows to a UTF-8 CSV file. Returns the number of rows written."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=PLAYLIST_CSV_FIELDS)
+        writer.writeheader()
+        for row in rows:
+            data = row_as_dict(row)
+            writer.writerow({field: data.get(field, "") for field in PLAYLIST_CSV_FIELDS})
+    return len(rows)
+
+
 def workbench_state_dir(*, env: Mapping[str, str] | None = None) -> Path:
     """Return the user-local directory for workbench UI state."""
     env_map = os.environ if env is None else env
@@ -521,10 +551,12 @@ __all__ = [
     "WorkbenchResult",
     "analyze_folder_for_workbench",
     "error_message_for_code",
+    "export_workbench_rows_to_csv",
     "filter_workbench_rows",
     "format_path_display_lines",
     "load_workbench_last_folder",
     "PLAYLIST_SORT_COLUMNS",
+    "PLAYLIST_CSV_FIELDS",
     "row_as_dict",
     "save_workbench_last_folder",
     "sort_workbench_rows",

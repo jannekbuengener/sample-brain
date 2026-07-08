@@ -11,6 +11,7 @@ from .workbench_controller import (
     WorkbenchResult,
     WorkbenchRow,
     analyze_folder_for_workbench,
+    export_workbench_rows_to_csv,
     filter_workbench_rows,
     format_path_display_lines,
     load_workbench_last_folder,
@@ -158,6 +159,9 @@ class WorkbenchApp:
         filter_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self._filter_var.trace_add("write", self._on_filter_changed)
         filter_entry.bind("<Escape>", self._clear_filter)
+        ttk.Button(filter_bar, text="CSV exportieren", command=self._export_csv).pack(
+            side=tk.RIGHT, padx=(8, 0)
+        )
 
         tree_frame = ttk.Frame(playlist_frame, style="Panel.TFrame")
         tree_frame.pack(fill=tk.BOTH, expand=True)
@@ -468,6 +472,25 @@ class WorkbenchApp:
         self.root.clipboard_clear()
         self.root.clipboard_append(self._detail_copy_path)
         self._set_status("Pfad in Zwischenablage kopiert.", tone="success")
+
+    def _export_csv(self) -> None:
+        rows = self._visible_rows if self._visible_rows else self._rows
+        if not rows:
+            messagebox.showinfo("Export", "Keine Playlist-Daten zum Exportieren.")
+            return
+        destination = filedialog.asksaveasfilename(
+            title="Playlist als CSV speichern",
+            defaultextension=".csv",
+            filetypes=[("CSV", "*.csv"), ("Alle Dateien", "*.*")],
+        )
+        if not destination:
+            return
+        try:
+            count = export_workbench_rows_to_csv(rows, Path(destination))
+        except OSError as exc:
+            messagebox.showerror("Export", f"Export fehlgeschlagen: {exc}")
+            return
+        self._set_status(f"CSV exportiert ({count} Zeilen).", tone="success")
 
     def _set_detail(self, row: WorkbenchRow | None) -> None:
         self._detail_text.configure(state=tk.NORMAL)

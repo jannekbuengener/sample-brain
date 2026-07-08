@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import csv
 import subprocess
 import sys
 from pathlib import Path
@@ -10,6 +11,7 @@ import pytest
 from src.workbench_controller import (
     analyze_folder_for_workbench,
     error_message_for_code,
+    export_workbench_rows_to_csv,
     filter_workbench_rows,
     format_path_display_lines,
     load_workbench_last_folder,
@@ -324,6 +326,32 @@ def test_save_workbench_last_folder_rejects_invalid_path(tmp_path: Path):
     state_dir = tmp_path / "state"
     assert not save_workbench_last_folder("", state_dir=state_dir)
     assert not workbench_last_folder_file(state_dir=state_dir).exists()
+
+
+def test_export_workbench_rows_to_csv_writes_playlist_fields(sample_folder: Path, tmp_path: Path):
+    result = analyze_folder_for_workbench(sample_folder)
+    destination = tmp_path / "playlist.csv"
+
+    count = export_workbench_rows_to_csv(result.rows, destination)
+
+    assert count == len(result.rows)
+    assert destination.is_file()
+    with destination.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == len(result.rows)
+    assert rows[0]["display_name"]
+    assert rows[0]["status"]
+
+
+def test_export_workbench_rows_to_csv_empty_list(tmp_path: Path):
+    destination = tmp_path / "empty.csv"
+
+    count = export_workbench_rows_to_csv([], destination)
+
+    assert count == 0
+    with destination.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows == []
 
 
 def test_cli_help_includes_workbench():
