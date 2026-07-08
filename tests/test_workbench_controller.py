@@ -7,7 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from src.workbench_controller import analyze_folder_for_workbench
+from src.workbench_controller import (
+    analyze_folder_for_workbench,
+    error_message_for_code,
+)
 from tests.audio_fixtures import write_kick_transient_wav, write_sine_wav
 
 
@@ -23,6 +26,7 @@ PLAYLIST_KEYS = {
     "pred_type",
     "status",
     "error",
+    "error_code",
 }
 
 
@@ -61,8 +65,42 @@ def test_controller_collects_errors(tmp_path: Path):
 
     assert result.summary["files_found"] == 1
     assert result.summary["error_count"] == 1
-    assert result.rows[0].status == "error"
-    assert result.rows[0].error is not None
+    row = result.rows[0]
+    assert row.status == "error"
+    assert row.error_code is not None
+    assert row.error == error_message_for_code(row.error_code)
+    assert row.error != "Could not extract features"
+    assert "error_detail" in row.details
+
+
+def test_progress_callback_reports_current_and_total(sample_folder: Path):
+    events: list[tuple[int, int, str, str]] = []
+
+    def progress(current: int, total: int, name: str, phase: str) -> None:
+        events.append((current, total, name, phase))
+
+    result = analyze_folder_for_workbench(sample_folder, progress_callback=progress)
+
+    assert result.summary["files_found"] == 2
+    analyzing = [e for e in events if e[3] == "analyzing"]
+    assert len(analyzing) == 2
+    assert analyzing[0][0] == 1 and analyzing[0][1] == 2
+    assert analyzing[1][0] == 2 and analyzing[1][1] == 2
+    assert events[0][3] == "scanning"
+
+
+def test_empty_folder_progress_and_summary(tmp_path: Path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    events: list[tuple[int, int, str, str]] = []
+
+    result = analyze_folder_for_workbench(
+        empty,
+        progress_callback=lambda c, t, n, p: events.append((c, t, n, p)),
+    )
+
+    assert result.summary == {"files_found": 0, "analyzed_count": 0, "error_count": 0}
+    assert events and events[0][3] == "scanning"
 
 
 def test_playlist_rows_contain_expected_fields(sample_folder: Path):

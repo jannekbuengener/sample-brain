@@ -167,10 +167,14 @@ class WorkbenchApp:
 
         status_bar = ttk.Frame(self.root, style="Panel.TFrame")
         status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+        status_inner = ttk.Frame(status_bar, style="Panel.TFrame")
+        status_inner.pack(fill=tk.X, padx=8, pady=4)
         self._status_var = tk.StringVar(value="")
-        ttk.Label(status_bar, textvariable=self._status_var, style="Status.TLabel").pack(
-            fill=tk.X, anchor=tk.W
-        )
+        self._status_label = ttk.Label(status_inner, textvariable=self._status_var, style="Status.TLabel")
+        self._status_label.pack(fill=tk.X, anchor=tk.W)
+        self._progress = ttk.Progressbar(status_inner, mode="determinate", maximum=100)
+        self._progress.pack(fill=tk.X, pady=(4, 0))
+        self._progress.pack_forget()
 
     def _pick_folder(self) -> None:
         chosen = filedialog.askdirectory(title="Sample-Ordner wählen")
@@ -207,7 +211,8 @@ class WorkbenchApp:
         self._busy = True
         self._analyze_btn.state(["disabled"])
         self._clear_playlist()
-        self._set_status("Analyse läuft …", tone="active")
+        self._show_progress(0, 1)
+        self._set_status("Analyse startet …", tone="active")
 
         thread = threading.Thread(
             target=self._run_analysis,
@@ -216,9 +221,49 @@ class WorkbenchApp:
         )
         thread.start()
 
+    def _on_progress(self, current: int, total: int, display_name: str, phase: str) -> None:
+        if phase == "scanning":
+            self._set_status("Dateien werden gesammelt …", tone="active")
+            return
+        if total <= 0:
+            self._hide_progress()
+            self._set_status("Keine Audiodateien gefunden.", tone="neutral")
+            return
+        self._show_progress(current, total)
+        if phase == "analyzing":
+            self._set_status(f"Analysiere {current}/{total}: {display_name}", tone="active")
+        elif phase == "error":
+            self._set_status(
+                f"Analysiere {current}/{total}: {display_name} (Fehler)",
+                tone="active",
+            )
+
+    def _show_progress(self, current: int, total: int) -> None:
+        if total <= 0:
+            self._hide_progress()
+            return
+        self._progress.configure(maximum=total, value=min(current, total))
+        if not self._progress.winfo_ismapped():
+            self._progress.pack(fill=tk.X, pady=(4, 0))
+
+    def _hide_progress(self) -> None:
+        self._progress.configure(value=0)
+        if self._progress.winfo_ismapped():
+            self._progress.pack_forget()
+
     def _run_analysis(self, folder: Path, limit: int | None) -> None:
+        def progress_cb(current: int, total: int, display_name: str, phase: str) -> None:
+            self.root.after(
+                0,
+                lambda: self._on_progress(current, total, display_name, phase),
+            )
+
         try:
-            result = analyze_folder_for_workbench(folder, limit=limit)
+            result = analyze_folder_for_workbench(
+                folder,
+                limit=limit,
+                progress_callback=progress_cb,
+            )
             self.root.after(0, lambda: self._on_analysis_done(result, None))
         except Exception as exc:
             self.root.after(0, lambda: self._on_analysis_done(None, exc))
@@ -226,6 +271,7 @@ class WorkbenchApp:
     def _on_analysis_done(self, result: WorkbenchResult | None, error: Exception | None) -> None:
         self._busy = False
         self._analyze_btn.state(["!disabled"])
+        self._hide_progress()
 
         if error is not None:
             self._set_status(f"Fehler: {error}", tone="error")
@@ -294,11 +340,16 @@ class WorkbenchApp:
             ]
             if row.error:
                 lines.append(f"Fehler:   {row.error}")
+            if row.error_code:
+                lines.append(f"Code:     {row.error_code}")
+            err_detail = row.details.get("error_detail")
+            if err_detail:
+                lines.append(f"Ursache:  {err_detail}")
             lines.append("")
             if row.details:
                 lines.append("— Analyse —")
                 for key, value in row.details.items():
-                    if key in {"path", "relative_path"}:
+                    if key in {"path", "relative_path", "error_code", "error_detail"}:
                         continue
                     if isinstance(value, list):
                         value = ", ".join(str(v) for v in value)
@@ -327,11 +378,7 @@ class WorkbenchApp:
             color = ERROR
         elif tone == "success":
             color = SUCCESS
-        for widget in self.root.winfo_children():
-            if isinstance(widget, ttk.Frame):
-                for child in widget.winfo_children():
-                    if isinstance(child, ttk.Label) and child.cget("style") == "Status.TLabel":
-                        child.configure(foreground=color)
+        self._status_label.configure(foreground=color)
 
 
 def run_workbench(on_ready: Callable[[], None] | None = None) -> None:
