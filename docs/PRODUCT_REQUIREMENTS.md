@@ -74,13 +74,18 @@ The CLI pipeline is implemented, stable, and remains the **data foundation** for
 | **Export (FL Browser)** | Write FL Studio Browser-compatible tags from analysis results — **legacy/fallback data path**, not the main product interface | ✅ Shipped |
 | **Embed / Index / Search** | Semantic search via optional CLAP embeddings, NumPy index (default), optional sqlite-vec backend (EPIC 2) | ✅ Shipped |
 | **CLI** | All operations accessible via a single `sample-brain` entry point with argparse subcommands | ✅ Shipped |
+| **Local Workbench (MVP)** | First local purpose UI: folder pick, analyze, playlist/table view, sample detail panel (`sample-brain workbench`) | ✅ Shipped (MVP) |
 | **Local database** | SQLite catalog as the single source of truth for all metadata | ✅ Shipped |
 | **Artifact hygiene** | No generated artifacts (database, analysis outputs, cache) committed to version control | ✅ Shipped |
 
 ```text
 Scan  →  Analyze  →  Autotype  →  Export (FL fallback)
                   └→  Embed  →  Index  →  Search
+
+Local Workbench (MVP): folder → analyze in-process → playlist + detail (no DB required)
 ```
+
+**Local Workbench MVP** is a tkinter-based local purpose UI — not the VST product target. It exposes scan/analyze/classify logic on a chosen folder without FL Studio export, semantic search, audio preview, or cloud sync. Start: `python -m src.cli workbench` (or `sample-brain workbench`).
 
 ### 5.2 VST-first Product MVP (target)
 

@@ -304,6 +304,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Labels: `ui`, `design`, `planning`
 - Goal: Define the first viable local desktop UI concept.
 - Context: A later React/Tauri UI should follow a clear producer workflow.
+- **Partial:** Local Workbench MVP (`sample-brain workbench`) shipped — tkinter playlist/detail for folder analysis; no search preview yet.
 - Acceptance criteria:
   - user flows for search, inspect, preview, and export are documented
   - scope boundaries for first UI are explicit
@@ -316,6 +317,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Labels: `ui`, `feat`, `desktop`
 - Goal: Provide a first local result inspector with sample preview.
 - Context: Search becomes much more useful when results can be auditioned quickly.
+- **Partial:** Workbench MVP covers result inspection (metadata detail panel) without audio preview.
 - Acceptance criteria:
   - result metadata can be inspected locally
   - sample preview works for supported formats

@@ -2,9 +2,10 @@
 
 ## Live State
 
-- **Branch:** `main` @ `9cd86cb` (PR #111 Phase 2 merged)
+- **Branch:** `main` @ `82d749c` (vocal proxy spike evidence #112)
 - **Open PRs:** 1 Dependabot — **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** (`numba` requires `numpy<2.5`)
 - **Open issues:** 2 — [#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B (4/6 classes on main; vocal proxy spike **HOLD**), [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN (EPIC-2 follow-ups)
+- **Local Workbench MVP:** `sample-brain workbench` — tkinter folder analysis + playlist/detail (no VST, no FL export, no search preview)
 - **Product pillars:** All 5 specs under [`docs/product/`](../docs/product/README.md) — #90 closed via PR #107; no open product-docs issues
 - **Recently closed:** [#72](https://github.com/jannekbuengener/sample-brain/issues/72) key confidence evidence via PR #108 — [KEY_CONF_EVIDENCE.md](../docs/benchmarks/KEY_CONF_EVIDENCE.md)
 - **Current focus:** EPIC-2 follow-ups — #73 vocal/no-vocal deferred after proxy spike HOLD; genre/mood data strategy; #74 ANN tracking
@@ -72,6 +73,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 - **Analyze** — extracts audio features via librosa; reads from pre-scanned catalog
 - **Autotype** — rule-based + optional kNN classification
 - **Export** — writes smart tags into FL Studio Browser (**legacy/fallback** CLI path; VST3 plugin is the product target)
+- **Local Workbench** — tkinter MVP: pick folder, run in-process analyze + rule-based type, playlist + detail panel (`workbench` subcommand)
 - **Packaging** — `sample-brain --help` entry point works
 - **CLI** — core pipeline + optional embed/index/search/vec/benchmark/db doctor
 
@@ -100,7 +102,8 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 ## What Is Not Done
 
 - **Default switch to sqlite-vec** — blocked until latency gates PASS
-- **Tier B CLAP search-quality evidence** — Phase 1+2 merged (PR #110, #111); 4/6 classes on main; vocal/no-vocal proxy spike **HOLD_VOCAL_PROXY_FAILED**; genre/mood remain (#73 OPEN)
+- **Tier B CLAP search-quality evidence** — Phase 1+2 merged; 4/6 classes on main; vocal/no-vocal proxy spike **HOLD_VOCAL_PROXY_FAILED**; genre/mood remain (#73 OPEN)
+- **Workbench audio preview / search integration** — MVP is folder-only; no playback, no catalog DB bind, no semantic search UI
 - **Phase 5 tags + FTS5 MVP** — not started (roadmap Phase 5)
 - **Large-scale private-sample validation** — synthetic/benchmark fixtures only
 - **EPIC 3–6** — not started
