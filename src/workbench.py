@@ -13,6 +13,7 @@ from .workbench_controller import (
     WorkbenchRow,
     analyze_folder_for_workbench,
     filter_workbench_rows,
+    sort_workbench_rows,
     validate_workbench_folder,
 )
 
@@ -61,6 +62,8 @@ class WorkbenchApp:
 
         self._rows: list[WorkbenchRow] = []
         self._visible_rows: list[WorkbenchRow] = []
+        self._sort_column: str | None = None
+        self._sort_reverse = False
         self._busy = False
         self._cancel_event = threading.Event()
 
@@ -169,7 +172,11 @@ class WorkbenchApp:
             selectmode="browse",
         )
         for col_id, heading, width in COLUMNS:
-            self._tree.heading(col_id, text=heading)
+            self._tree.heading(
+                col_id,
+                text=heading,
+                command=lambda c=col_id: self._on_sort_column(c),
+            )
             self._tree.column(col_id, width=width, anchor=tk.W if col_id == "name" else tk.CENTER)
 
         scroll_y = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self._tree.yview)
@@ -363,8 +370,30 @@ class WorkbenchApp:
         self._tree.delete(*self._tree.get_children())
         self._rows = []
         self._visible_rows = []
+        self._sort_column = None
+        self._sort_reverse = False
         self._filter_var.set("")
+        self._update_sort_headings()
         self._set_detail(None)
+
+    def _on_sort_column(self, column: str) -> None:
+        if self._sort_column == column:
+            self._sort_reverse = not self._sort_reverse
+        else:
+            self._sort_column = column
+            self._sort_reverse = False
+        self._refresh_playlist_view()
+
+    def _update_sort_headings(self) -> None:
+        for col_id, heading, _width in COLUMNS:
+            label = heading
+            if col_id == self._sort_column:
+                label = f"{heading} {'▼' if self._sort_reverse else '▲'}"
+            self._tree.heading(
+                col_id,
+                text=label,
+                command=lambda c=col_id: self._on_sort_column(c),
+            )
 
     def _on_filter_changed(self, *_args: object) -> None:
         self._refresh_playlist_view()
@@ -373,7 +402,15 @@ class WorkbenchApp:
         self._filter_var.set("")
 
     def _refresh_playlist_view(self) -> None:
-        self._visible_rows = filter_workbench_rows(self._rows, self._filter_var.get())
+        visible = filter_workbench_rows(self._rows, self._filter_var.get())
+        if self._sort_column is not None:
+            visible = sort_workbench_rows(
+                visible,
+                self._sort_column,
+                reverse=self._sort_reverse,
+            )
+        self._visible_rows = visible
+        self._update_sort_headings()
         self._tree.delete(*self._tree.get_children())
         for idx, row in enumerate(self._visible_rows):
             tags = ("error",) if row.status == "error" else ()
