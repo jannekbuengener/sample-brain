@@ -113,7 +113,7 @@ def default_cue_for_duration(duration_ms: float) -> SampleCueMetadata: ...
 | **v2 loop** | Loop region handles on waveform for loops only | v1 edit |
 | **Later** | Export trimmed copy, DAW drag with offset | product decision + #93 |
 
-**Waveform panel today:** peak envelope + saved cue marker + read-only loop region (when `loop_start_ms`/`loop_end_ms` set in metadata); left-click plays from saved cue; right-click plays temporarily from click position; Shift+left-click sets `cue_start_ms` permanently (local library metadata only); double-click row and Space still toggle preview; no visible Play/Stop buttons in detail header.
+**Waveform panel today:** peak envelope + saved cue marker + read-only loop region (when `loop_start_ms`/`loop_end_ms` set in metadata) + inline usage hint; left-click plays from saved cue; right-click plays temporarily from click position; Shift+left-click sets `cue_start_ms` permanently (local library metadata only); double-click row and Space still toggle preview; no visible Play/Stop buttons in detail header.
 
 ## 7. Detection heuristics (future, non-blocking)
 

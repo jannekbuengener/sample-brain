@@ -289,3 +289,12 @@ def test_cue_start_ms_from_waveform_x_returns_none_without_duration(tmp_path: Pa
     monkeypatch.setattr(_workbench_module(), "read_audio_duration_ms", lambda _path: None)
 
     assert app._cue_start_ms_from_waveform_x(100) is None
+
+
+def test_waveform_usage_hint_documents_click_controls():
+    wb = _workbench_module()
+    hint = wb.WAVEFORM_USAGE_HINT
+    assert "Linksklick" in hint
+    assert "Rechtsklick" in hint
+    assert "Shift" in hint
+    assert "Cue" in hint
