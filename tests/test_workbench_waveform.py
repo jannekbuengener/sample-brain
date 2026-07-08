@@ -10,6 +10,8 @@ from src.workbench_waveform import (
     compute_waveform_envelope,
     cue_marker_x,
     cue_ms_from_x,
+    loop_region_x,
+    normalize_loop_bounds,
     read_audio_duration_ms,
 )
 from tests.audio_fixtures import write_sine_wav
@@ -97,3 +99,43 @@ def test_cue_ms_from_x_roundtrip_with_marker_x():
         marker = cue_marker_x(cue_ms, duration_ms, width)
         assert marker is not None
         assert abs(marker - x) <= 1
+
+
+def test_normalize_loop_bounds_requires_both_values():
+    assert normalize_loop_bounds(None, 500, 1000) is None
+    assert normalize_loop_bounds(100, None, 1000) is None
+
+
+def test_normalize_loop_bounds_rejects_inverted_range():
+    assert normalize_loop_bounds(500, 100, 1000) is None
+
+
+def test_normalize_loop_bounds_clamps_to_duration():
+    bounds = normalize_loop_bounds(-50, 2000, 1000)
+    assert bounds == (0, 1000)
+
+
+def test_loop_region_x_maps_ms_to_canvas():
+    region = loop_region_x(250, 750, duration_ms=1000, width=200)
+    assert region == (50, 150)
+
+
+def test_loop_region_x_returns_none_without_loop():
+    assert loop_region_x(None, None, duration_ms=1000, width=200) is None
+
+
+def test_loop_region_x_ensures_minimum_width():
+    region = loop_region_x(500, 501, duration_ms=1000, width=200)
+    assert region is not None
+    x_start, x_end = region
+    assert x_end > x_start
+
+
+def test_loop_region_x_cue_marker_independent():
+    duration_ms = 1000
+    width = 200
+    cue_x = cue_marker_x(100, duration_ms, width)
+    loop = loop_region_x(400, 800, duration_ms, width)
+    assert cue_x is not None
+    assert loop is not None
+    assert cue_x not in loop or loop[0] <= cue_x <= loop[1]

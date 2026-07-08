@@ -2,10 +2,10 @@
 
 ## Live State
 
-- **Branch:** `main` @ `0a81c69` (workbench waveform play controls #136); Shift+click permanent cue-set slice on feature branch
+- **Branch:** `main` @ `4054821` (workbench Shift+click cue set #137)
 - **Open PRs:** 1 Dependabot — **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** (`numba` requires `numpy<2.5`)
-- **Open issues:** 3 — [#117](https://github.com/jannekbuengener/sample-brain/issues/117) Workbench usability follow-ups (Shift+click cue set shipped; loop/attack editor follow-up), [#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B, [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN
-- **Local Workbench MVP:** `sample-brain workbench` — tkinter folder analysis + playlist/detail + waveform-as-play-surface + saved cue marker + Shift+click cue set
+- **Open issues:** 3 — [#117](https://github.com/jannekbuengener/sample-brain/issues/117) Workbench usability follow-ups (loop marker v1 slice in progress; loop edit / attack editor follow-up), [#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B, [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN
+- **Local Workbench MVP:** `sample-brain workbench` — tkinter folder analysis + playlist/detail + waveform-as-play-surface + saved cue marker + Shift+click cue set + read-only loop region when loop metadata set
 - **Workbench P0 (#117, merged):** cancel analysis (#119), folder path entry (#118), playlist filter (#120), column sort (#121), detail path polish + copy (#122)
 - **Workbench P1 (#117, merged):** last-folder memory (#124), CSV playlist export (#125)
 - **Workbench library cache v1 (#117):** user-local SQLite (`~/.sample-brain/workbench_library.db`) remembers analyzed folders/samples; invalidation via path + size + mtime; internal `display_name` only — original files unchanged
@@ -16,7 +16,7 @@
 - **Workbench cue metadata v1 (#117, merged PR #133):** schema v2 in `workbench_library.db`; load/save API; read-only cue marker on waveform
 - **Workbench preview cue offset (#117, merged PR #135):** play starts at saved `cue_start_ms` via temp in-memory slice; original files unchanged
 - **Workbench waveform play controls (#117, merged PR #136):** visible Play/Stop buttons removed; left-click on waveform plays from saved cue (no cue write); right-click plays temporarily from click position; double-click/Space unchanged
-- **Workbench Shift+click cue set (#117, slice):** Shift+left-click on waveform sets `cue_start_ms` permanently in local library metadata; attack/loop fields preserved; original files unchanged
+- **Workbench Shift+click cue set (#117, merged PR #137):** Shift+left-click on waveform sets `cue_start_ms` permanently in local library metadata; attack/loop fields preserved; original files unchanged
 - **Workbench UX polish:** progress bar + status counter during analysis; classified error messages (not generic "Could not extract features")
 - **Workbench short-clip handling:** samples under 0.5s skip BPM/key overclaim; UI shows Kurzclip hint; targeted librosa warning suppression
 - **Workbench Windows shortcut:** optional desktop `.lnk` via `tools/windows/create_workbench_desktop_shortcut.ps1` (local helper, no installer)
@@ -117,7 +117,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 
 - **Default switch to sqlite-vec** — blocked until latency gates PASS
 - **Tier B CLAP search-quality evidence** — Phase 1+2 merged; 4/6 classes on main; vocal/no-vocal proxy spike **HOLD_VOCAL_PROXY_FAILED**; genre/mood remain (#73 OPEN)
-- **Workbench cue/loop metadata** — waveform play controls + preview from saved cue + Shift+click permanent cue set; loop playback, attack editor remain follow-ups (#117 remains open)
+- **Workbench cue/loop metadata** — waveform play controls + preview from saved cue + Shift+click permanent cue set + read-only loop region; loop edit, loop playback, attack editor remain follow-ups (#117 remains open)
 - **Workbench global multi-folder library view / catalog DB unification / search integration** — no cross-folder playlist; `catalog.db` not wired to workbench; no semantic search UI; preview has no pause/playhead sync (#117 remains open)
 - **Phase 5 tags + FTS5 MVP** — not started (roadmap Phase 5)
 - **Large-scale private-sample validation** — synthetic/benchmark fixtures only

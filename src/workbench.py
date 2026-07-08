@@ -33,6 +33,7 @@ from .workbench_preview import WorkbenchPreviewPlayer, preview_toggle_action
 from .workbench_waveform import (
     compute_waveform_envelope,
     cue_marker_x,
+    loop_region_x,
     read_audio_duration_ms,
 )
 
@@ -49,6 +50,8 @@ SUCCESS = "#6fcf6f"
 BORDER = "#333333"
 WAVEFORM_HEIGHT = 72
 CUE_MARKER = "#ffffff"
+LOOP_REGION_FILL = "#1a3d28"
+LOOP_MARKER = "#6fcf6f"
 
 COLUMNS = (
     ("name", "Name", 180),
@@ -895,6 +898,26 @@ class WorkbenchApp:
             return
         mid = height // 2
         step = width / len(envelope)
+        cue = load_workbench_sample_cue(row.path)
+        duration_ms = read_audio_duration_ms(row.path)
+        loop_bounds: tuple[int, int] | None = None
+        if duration_ms is not None:
+            loop_bounds = loop_region_x(
+                cue.loop_start_ms,
+                cue.loop_end_ms,
+                duration_ms,
+                width,
+            )
+            if loop_bounds is not None:
+                x_start, x_end = loop_bounds
+                canvas.create_rectangle(
+                    x_start,
+                    1,
+                    x_end,
+                    height - 1,
+                    fill=LOOP_REGION_FILL,
+                    outline="",
+                )
         for index, peak in enumerate(envelope):
             x = int(index * step + step / 2)
             bar_height = max(1, int(peak * (height * 0.45)))
@@ -905,9 +928,18 @@ class WorkbenchApp:
                 mid + bar_height,
                 fill=ACCENT,
             )
-        cue = load_workbench_sample_cue(row.path)
-        duration_ms = read_audio_duration_ms(row.path)
         if duration_ms is not None:
+            if loop_bounds is not None:
+                x_start, x_end = loop_bounds
+                for marker_x in (x_start, x_end):
+                    canvas.create_line(
+                        marker_x,
+                        2,
+                        marker_x,
+                        height - 2,
+                        fill=LOOP_MARKER,
+                        width=2,
+                    )
             marker_x = cue_marker_x(cue.cue_start_ms, duration_ms, width)
             if marker_x is not None:
                 canvas.create_line(
