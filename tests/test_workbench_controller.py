@@ -12,8 +12,11 @@ from src.workbench_controller import (
     error_message_for_code,
     filter_workbench_rows,
     format_path_display_lines,
+    load_workbench_last_folder,
+    save_workbench_last_folder,
     sort_workbench_rows,
     validate_workbench_folder,
+    workbench_last_folder_file,
 )
 from tests.audio_fixtures import write_kick_transient_wav, write_sine_wav
 
@@ -290,6 +293,37 @@ def test_validate_workbench_folder_accepts_valid_directory(tmp_path: Path):
     assert result.ok
     assert result.error_code is None
     assert result.normalized_path == folder.resolve()
+
+
+def test_save_and_load_workbench_last_folder(tmp_path: Path):
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    state_dir = tmp_path / "state"
+
+    assert save_workbench_last_folder(folder, state_dir=state_dir)
+    assert load_workbench_last_folder(state_dir=state_dir) == str(folder.resolve())
+    assert workbench_last_folder_file(state_dir=state_dir).is_file()
+
+
+def test_load_workbench_last_folder_returns_none_for_missing_state(tmp_path: Path):
+    assert load_workbench_last_folder(state_dir=tmp_path / "missing") is None
+
+
+def test_load_workbench_last_folder_ignores_invalid_saved_path(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    workbench_last_folder_file(state_dir=state_dir).write_text(
+        str(tmp_path / "gone"),
+        encoding="utf-8",
+    )
+
+    assert load_workbench_last_folder(state_dir=state_dir) is None
+
+
+def test_save_workbench_last_folder_rejects_invalid_path(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    assert not save_workbench_last_folder("", state_dir=state_dir)
+    assert not workbench_last_folder_file(state_dir=state_dir).exists()
 
 
 def test_cli_help_includes_workbench():

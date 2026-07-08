@@ -1,10 +1,11 @@
 """Folder-scoped analysis for the local workbench (no DB required)."""
 from __future__ import annotations
 
+import os
 import textwrap
 from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePath
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, Mapping
 
 from .analyze import (
     SHORT_AUDIO_WARNING_CODE,
@@ -449,6 +450,66 @@ def row_as_dict(row: WorkbenchRow) -> dict[str, Any]:
     return asdict(row)
 
 
+def workbench_state_dir(*, env: Mapping[str, str] | None = None) -> Path:
+    """Return the user-local directory for workbench UI state."""
+    env_map = os.environ if env is None else env
+    override = env_map.get("SAMPLE_BRAIN_WORKBENCH_STATE_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
+    return (Path.home() / ".sample-brain").resolve()
+
+
+def workbench_last_folder_file(
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> Path:
+    base = state_dir if state_dir is not None else workbench_state_dir(env=env)
+    return base / "workbench_last_folder.txt"
+
+
+def load_workbench_last_folder(
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> str | None:
+    """Load the last validated workbench folder path, or None if missing/invalid."""
+    path_file = workbench_last_folder_file(state_dir=state_dir, env=env)
+    if not path_file.is_file():
+        return None
+    try:
+        text = path_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not text:
+        return None
+    validation = validate_workbench_folder(text)
+    if not validation.ok:
+        return None
+    assert validation.normalized_path is not None
+    return str(validation.normalized_path)
+
+
+def save_workbench_last_folder(
+    folder: str | Path,
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> bool:
+    """Persist the last workbench folder path after validation."""
+    validation = validate_workbench_folder(str(folder))
+    if not validation.ok:
+        return False
+    assert validation.normalized_path is not None
+    path_file = workbench_last_folder_file(state_dir=state_dir, env=env)
+    try:
+        path_file.parent.mkdir(parents=True, exist_ok=True)
+        path_file.write_text(str(validation.normalized_path), encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
 __all__ = [
     "ERROR_LABELS",
     "FOLDER_ERROR_MESSAGES",
@@ -462,8 +523,12 @@ __all__ = [
     "error_message_for_code",
     "filter_workbench_rows",
     "format_path_display_lines",
+    "load_workbench_last_folder",
     "PLAYLIST_SORT_COLUMNS",
     "row_as_dict",
+    "save_workbench_last_folder",
     "sort_workbench_rows",
     "validate_workbench_folder",
+    "workbench_last_folder_file",
+    "workbench_state_dir",
 ]
