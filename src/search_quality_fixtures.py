@@ -113,6 +113,111 @@ def write_chord_pad_wav(
     return path
 
 
+def _formant_envelope(freqs: np.ndarray, formants_hz: list[float], bandwidth_q: float) -> np.ndarray:
+    envelope = np.full(freqs.shape, 0.01, dtype=np.float32)
+    for center_hz in formants_hz:
+        bandwidth_hz = max(center_hz / bandwidth_q, 20.0)
+        envelope += np.exp(-0.5 * ((freqs - center_hz) / bandwidth_hz) ** 2).astype(np.float32)
+    return envelope
+
+
+def render_formant_tone_waveform(
+    *,
+    duration_sec: float = 4.0,
+    f0_hz: float = 150.0,
+    formants_hz: list[float] | None = None,
+    bandwidth_q: float = 8.0,
+    vibrato_hz: float = 0.0,
+    vibrato_depth: float = 0.0,
+    amplitude: float = 0.5,
+) -> np.ndarray:
+    """Deterministic formant-like harmonic source (synthetic vocal proxy, not real speech)."""
+    sr = _CLAP_SR
+    sample_count = max(1, int(sr * duration_sec))
+    t = np.linspace(0.0, duration_sec, sample_count, endpoint=False, dtype=np.float32)
+    formants = formants_hz or [700.0, 1220.0, 2600.0]
+
+    if vibrato_hz > 0.0 and vibrato_depth > 0.0:
+        f0_inst = f0_hz * (
+            1.0 + vibrato_depth * np.sin(2.0 * np.pi * vibrato_hz * t)
+        ).astype(np.float32)
+        phase = (2.0 * np.pi * np.cumsum(f0_inst) / sr).astype(np.float32)
+    else:
+        phase = (2.0 * np.pi * f0_hz * t).astype(np.float32)
+
+    source = np.zeros(sample_count, dtype=np.float32)
+    for harmonic in range(1, 24):
+        if harmonic * f0_hz >= sr / 2.0:
+            break
+        source += (1.0 / harmonic) * np.sin(harmonic * phase).astype(np.float32)
+
+    spectrum = np.fft.rfft(source)
+    freqs = np.fft.rfftfreq(sample_count, 1.0 / sr)
+    shaped = np.fft.irfft(spectrum * _formant_envelope(freqs, formants, bandwidth_q), n=sample_count)
+    peak = float(np.max(np.abs(shaped)))
+    if peak > 0.0:
+        shaped = shaped / peak
+    return np.clip(amplitude * shaped.astype(np.float32), -1.0, 1.0)
+
+
+def write_formant_tone_wav(
+    path: Path,
+    *,
+    duration_sec: float = 4.0,
+    f0_hz: float = 150.0,
+    formants_hz: list[float] | None = None,
+    bandwidth_q: float = 8.0,
+    vibrato_hz: float = 0.0,
+    vibrato_depth: float = 0.0,
+    amplitude: float = 0.5,
+) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wave = render_formant_tone_waveform(
+        duration_sec=duration_sec,
+        f0_hz=f0_hz,
+        formants_hz=formants_hz,
+        bandwidth_q=bandwidth_q,
+        vibrato_hz=vibrato_hz,
+        vibrato_depth=vibrato_depth,
+        amplitude=amplitude,
+    )
+    sf.write(path, wave, _CLAP_SR, subtype="PCM_16")
+    return path
+
+
+def write_vowel_pad_wav(
+    path: Path,
+    *,
+    duration_sec: float = 4.0,
+    f0_hz: float = 140.0,
+    formants_hz: list[float] | None = None,
+    bandwidth_q: float = 8.0,
+    vibrato_hz: float = 5.5,
+    vibrato_depth: float = 0.015,
+    attack_sec: float = 0.35,
+    amplitude: float = 0.45,
+) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wave = render_formant_tone_waveform(
+        duration_sec=duration_sec,
+        f0_hz=f0_hz,
+        formants_hz=formants_hz,
+        bandwidth_q=bandwidth_q,
+        vibrato_hz=vibrato_hz,
+        vibrato_depth=vibrato_depth,
+        amplitude=1.0,
+    )
+    sample_count = wave.shape[0]
+    attack_samples = max(1, int(attack_sec * _CLAP_SR))
+    envelope = np.ones(sample_count, dtype=np.float32)
+    envelope[:attack_samples] = np.linspace(0.0, 1.0, attack_samples, dtype=np.float32)
+    release_samples = max(1, int(0.25 * _CLAP_SR))
+    envelope[-release_samples:] *= np.linspace(1.0, 0.0, release_samples, dtype=np.float32)
+    wave = np.clip(amplitude * wave * envelope, -1.0, 1.0).astype(np.float32)
+    sf.write(path, wave, _CLAP_SR, subtype="PCM_16")
+    return path
+
+
 def write_texture_noise_wav(
     path: Path,
     *,
@@ -352,5 +457,32 @@ def generate_search_quality_fixture(
             ir_decay_sec=float(params.get("ir_decay_sec", 1.5)),
             mix=float(params.get("mix", 0.65)),
             seed=int(params.get("seed", 101)),
+        )
+    if fixture_type == "formant_tone":
+        raw_formants = params.get("formants_hz") or [700.0, 1220.0, 2600.0]
+        formants_hz = [float(value) for value in raw_formants]
+        return write_formant_tone_wav(
+            path,
+            duration_sec=float(params.get("duration_sec", 4.0)),
+            f0_hz=float(params.get("f0_hz", 150.0)),
+            formants_hz=formants_hz,
+            bandwidth_q=float(params.get("bandwidth_q", 8.0)),
+            vibrato_hz=float(params.get("vibrato_hz", 0.0)),
+            vibrato_depth=float(params.get("vibrato_depth", 0.0)),
+            amplitude=float(params.get("amplitude", 0.5)),
+        )
+    if fixture_type == "vowel_pad":
+        raw_formants = params.get("formants_hz") or [500.0, 1700.0, 2500.0]
+        formants_hz = [float(value) for value in raw_formants]
+        return write_vowel_pad_wav(
+            path,
+            duration_sec=float(params.get("duration_sec", 4.0)),
+            f0_hz=float(params.get("f0_hz", 140.0)),
+            formants_hz=formants_hz,
+            bandwidth_q=float(params.get("bandwidth_q", 8.0)),
+            vibrato_hz=float(params.get("vibrato_hz", 5.5)),
+            vibrato_depth=float(params.get("vibrato_depth", 0.015)),
+            attack_sec=float(params.get("attack_sec", 0.35)),
+            amplitude=float(params.get("amplitude", 0.45)),
         )
     raise ValueError(f"Unknown search quality fixture type: {fixture_type}")

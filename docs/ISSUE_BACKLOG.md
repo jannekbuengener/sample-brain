@@ -7,10 +7,10 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 | Item | Status | Notes |
 |------|--------|-------|
 | Open issues | 🔶 2 total | #73–#74 (EPIC-2 follow-ups) |
-| #73 CLAP Tier-B | 🔶 Phase 2 PR | `feat/clap-tier-b-phase2-evidence` — 4/6 classes (Phase 1 merged PR #110) |
+| #73 CLAP Tier-B | 🔶 4/6 on main | Phase 1+2 merged (#110, #111); vocal proxy spike **HOLD**; genre/mood pending |
 | VST-first product target | ✅ Spec complete | PR #102 parent; PR #105 (#91/#94 closed); PR #106 (#92/#93/#95 closed); PR #107 (#90 closed); all 5 specs under `docs/product/` |
 | Open PRs | 🔶 1 Dependabot | **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** |
-| `main` HEAD | ✅ Current | `f1381fb` — Merge PR #110 (CLAP Tier-B Phase 1) |
+| `main` HEAD | ✅ Current | `9cd86cb` — Merge PR #111 (CLAP Tier-B Phase 2) |
 
 ### Dependabot triage (2026-07-07)
 
@@ -68,12 +68,12 @@ As of `main` at `08e72c0`:
 
 - **EPIC 2 runtime and E2E proof** — completed and documented (`CURRENT_STATUS.md`, `EPIC_2_SEMANTIC_SEARCH_SPEC.md`)
 - **sqlite-vec campaign** — Phases 1–8 closed (PRs #47–#53); default backend remains `numpy`
-- **Search quality campaign** — Tier A gates PASS (PR #54); Tier B Phase 1 merged (PR #110); Tier B Phase 2 evidence in progress (#73)
+- **Search quality campaign** — Tier A gates PASS (PR #54); Tier B Phase 1+2 merged (#110, #111); vocal proxy spike HOLD; 4/6 #73 classes on main
 - **EPIC 3 foundation** — hybrid ranking score contract merged via PR #23
 - **VST-first product target** — PR #102 parent consolidated; PR #105 merged (#91/#94); PR #106 merged (#92/#93/#95); all 5 pillar specs under `docs/product/`; parent #90 closed via PR #107
 - **Key confidence evidence (#72)** — closed via PR #108; evidence in `docs/benchmarks/KEY_CONF_EVIDENCE.md`
 - **Dependabot** — PR #103 (numpy 2.5.1) **HOLD**; PR #104 merged
-- **Current board reality** — 2 open issues (#73 Phase 2 PR, #74 tracking); 1 Dependabot PR (#103) **HOLD**
+- **Current board reality** — 2 open issues (#73 4/6 + vocal HOLD, #74 tracking); 1 Dependabot PR (#103) **HOLD**
 
 Local backlog item numbers below are **planning IDs**, not GitHub issue numbers (except where cross-referenced).
 

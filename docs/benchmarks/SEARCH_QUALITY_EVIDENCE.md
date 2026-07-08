@@ -331,9 +331,69 @@ failure_buckets:
 
 ### Follow-up (#73 Phase 2b/3)
 
-- Phase 2b: vocal/no-vocal with explicit proxy-only limitation
+- ~~Phase 2b: vocal/no-vocal with explicit proxy-only limitation~~ → spike run; **HOLD_VOCAL_PROXY_FAILED** (see below)
 - Phase 3: genre/mood with curated public-domain mini-set (outside repo)
 - Consider split suites or catalog partitioning to reduce dilution regression
+
+## Tier B Phase 2b — vocal/no-vocal proxy spike (HOLD)
+
+Isolated CLAP spike on synthetic formant/vowel fixtures vs instrumental controls. **Not merged into `golden_v2_clap.yaml`.** This is **not** evidence of real vocal discrimination.
+
+### Run metadata
+
+| Field | Value |
+|-------|-------|
+| Date | 2026-07-08 |
+| Branch | `feat/clap-tier-b-vocal-proxy-spike` |
+| Base commit | `9cd86cb` (Phase 2 on `main`) |
+| Suite | `tests/fixtures/search_quality/golden_v2_clap_vocal_proxy_spike.yaml` |
+| Catalog size | 6 (3 formant/vowel proxy + 3 instrumental) |
+| Query count | 6 (4 text + 2 audio) |
+| Work dir | external temp dir (not committed) |
+
+### Commands
+
+```powershell
+pip install -e ".[clap]"
+.\.venv\Scripts\python.exe -m src.cli benchmark search-quality `
+  --suite tests/fixtures/search_quality/golden_v2_clap_vocal_proxy_spike.yaml `
+  --work-dir $env:TEMP\sample-brain-clap-vocal-spike
+.\.venv\Scripts\python.exe -m pytest -q tests/test_vocal_proxy_spike.py -m clap
+```
+
+New generators in `src/search_quality_fixtures.py`: `formant_tone`, `vowel_pad`. No audio committed.
+
+### Spike verdict: **HOLD_VOCAL_PROXY_FAILED**
+
+Stufe-1 margin gates **FAIL** — CLAP text embeddings do not prefer vocal-proxy over instrumental on mean-audio cosine margins:
+
+| Check | Threshold | Measured | Verdict |
+|-------|-----------|----------|---------|
+| Text `"singing voice"` margin (vocal − instrumental) | ≥ +0.08 | **−0.063** | **FAIL** |
+| Text `"vocal sound"` margin | ≥ +0.08 | **−0.010** | **FAIL** |
+| Formant-proxy vs chord_pad margin | ≥ +0.05 | **−0.153** | **FAIL** |
+| Audio-ref vocal-proxy top-1 in vocal class | rank 1 | rank 1 | PASS |
+| Audio-ref instrumental top-1 in instrumental class | rank 1 | rank 1 | PASS |
+| Isolated mean P@5 | ≥ 0.25 | 0.500 | PASS |
+
+### Isolated benchmark (informative only)
+
+| Metric | Measured |
+|--------|----------|
+| Mean P@5 | 0.500 |
+| MRR@10 | 0.917 |
+| Audio mode P@5 | 0.600 |
+| Text mode P@5 | 0.450 |
+
+Audio-to-audio discrimination works on the 6-sample catalog; **text-to-embedding margin gates fail**. Negative leaks in top-5 on all queries (6/6).
+
+### Limitations and decision
+
+- **Synthetic vocal-proxy only** — formant harmonics, not speech, lyrics, or producer vocal chops.
+- **No real vocal discrimination claim** — spike does not justify adding `vocal_no_vocal` to Tier-B golden set.
+- **No producer-library claim** — isolated 6-sample catalog only.
+- **Issue #73 remains OPEN** — vocal/no-vocal requires separate data strategy (curated public-domain vocals); genre/mood still pending.
+- **Next step:** defer `vocal_no_vocal` Tier-B evidence; plan genre_mood / public-domain vocal mini-set (Phase 3).
 
 ## Tier B stub (superseded by Phase 1 above)
 

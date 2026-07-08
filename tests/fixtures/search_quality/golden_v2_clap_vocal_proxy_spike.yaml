@@ -1,0 +1,122 @@
+version: 1
+tier: B
+phase: 2b_spike
+embedding_dim: 512
+notes: >
+  Isolated vocal/no-vocal proxy spike only. Synthetic formant fixtures are not real vocals.
+  Not merged into golden_v2_clap.yaml. No exclusion/negation queries.
+defaults:
+  topk: 10
+  model_id: 1
+  backend: clap
+thresholds:
+  mean_precision_at_5: 0.25
+  mean_recall_at_10: 0.30
+catalog:
+  samples:
+    - id: 1
+      fixture_name: vocal-proxy-a
+      fixture_type: formant_tone
+      fixture_params:
+        f0_hz: 150.0
+        formants_hz: [700.0, 1220.0, 2600.0]
+        bandwidth_q: 8.0
+      duration: 4.0
+      pred_type: vocal
+      sample_class: vocal_no_vocal
+      tags: [vocal, proxy]
+    - id: 2
+      fixture_name: vocal-proxy-b
+      fixture_type: formant_tone
+      fixture_params:
+        f0_hz: 165.0
+        formants_hz: [500.0, 1700.0, 2500.0]
+        bandwidth_q: 8.0
+        vibrato_hz: 5.0
+        vibrato_depth: 0.012
+      duration: 4.0
+      pred_type: vocal
+      sample_class: vocal_no_vocal
+      tags: [vocal, proxy]
+    - id: 3
+      fixture_name: vocal-proxy-c
+      fixture_type: vowel_pad
+      fixture_params:
+        f0_hz: 130.0
+        formants_hz: [600.0, 1400.0, 2800.0]
+        bandwidth_q: 7.5
+      duration: 4.0
+      pred_type: vocal
+      sample_class: vocal_no_vocal
+      tags: [vocal, vowel]
+    - id: 4
+      fixture_name: instrumental-chord
+      fixture_type: chord_pad
+      fixture_params: {root: D}
+      duration: 4.0
+      pred_type: pad
+      sample_class: vocal_no_vocal
+      tags: [pad, instrumental]
+    - id: 5
+      fixture_name: instrumental-sine
+      fixture_type: sine_tone
+      fixture_params: {frequency_hz: 330}
+      duration: 4.0
+      pred_type: pad
+      sample_class: vocal_no_vocal
+      tags: [synth, instrumental]
+    - id: 6
+      fixture_name: instrumental-texture
+      fixture_type: texture_noise
+      fixture_params: {seed: 77}
+      duration: 4.0
+      pred_type: texture
+      sample_class: vocal_no_vocal
+      tags: [texture, instrumental]
+queries:
+  - id: singing_voice_text
+    mode: text
+    query_class: vocal_no_vocal
+    query_style: keyword
+    text: singing voice
+    relevant_sample_ids: [1, 2, 3]
+    negative_sample_ids: [4, 5, 6]
+    must_recall_within_k: 10
+  - id: vocal_sound_text
+    mode: text
+    query_class: vocal_no_vocal
+    query_style: keyword
+    text: vocal sound
+    relevant_sample_ids: [1, 2, 3]
+    negative_sample_ids: [4, 5, 6]
+    must_recall_within_k: 10
+  - id: human_voice_tone_text
+    mode: text
+    query_class: vocal_no_vocal
+    query_style: natural_language
+    text: human voice tone
+    relevant_sample_ids: [1, 2, 3]
+    negative_sample_ids: [4, 5, 6]
+    must_recall_within_k: 10
+  - id: instrumental_pad_text
+    mode: text
+    query_class: vocal_no_vocal
+    query_style: natural_language
+    text: instrumental synth pad
+    relevant_sample_ids: [4, 5]
+    negative_sample_ids: [1, 2, 3]
+    must_recall_within_k: 10
+  - id: vocal_proxy_audio_ref
+    mode: audio
+    query_class: vocal_no_vocal
+    query_audio_fixture: vocal-proxy-a
+    relevant_sample_ids: [1, 2, 3]
+    negative_sample_ids: [4, 5, 6]
+    must_recall_within_k: 10
+  - id: instrumental_chord_audio_ref
+    mode: audio
+    query_class: vocal_no_vocal
+    query_audio_fixture: instrumental-chord
+    relevant_sample_ids: [4, 5, 6]
+    negative_sample_ids: [1, 2, 3]
+    must_recall_within_k: 10
