@@ -380,11 +380,21 @@ class WorkbenchApp:
             return
 
         tone = "error" if s["error_count"] else "success"
-        self._set_status(
-            f"Fertig — {s['files_found']} Dateien, "
-            f"{s['analyzed_count']} analysiert, {s['error_count']} Fehler.",
-            tone=tone,
-        )
+        cache_hits = s.get("cache_hits", 0)
+        cache_misses = s.get("cache_misses", 0)
+        if cache_hits or cache_misses:
+            self._set_status(
+                f"Fertig — {s['files_found']} Dateien, "
+                f"{cache_hits} aus Cache, {cache_misses} neu analysiert, "
+                f"{s['error_count']} Fehler.",
+                tone=tone,
+            )
+        else:
+            self._set_status(
+                f"Fertig — {s['files_found']} Dateien, "
+                f"{s['analyzed_count']} analysiert, {s['error_count']} Fehler.",
+                tone=tone,
+            )
 
     def _clear_playlist(self) -> None:
         self._tree.delete(*self._tree.get_children())

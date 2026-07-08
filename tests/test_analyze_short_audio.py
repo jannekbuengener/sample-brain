@@ -14,6 +14,13 @@ from src.workbench_controller import analyze_folder_for_workbench
 from tests.audio_fixtures import write_kick_transient_wav, write_sine_wav
 
 
+@pytest.fixture(autouse=True)
+def _isolated_workbench_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    state_dir = tmp_path / "workbench_state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+
+
 def test_short_clip_sets_quality_note_without_user_warnings(tmp_path: Path):
     sample = tmp_path / "short.wav"
     write_sine_wav(sample, duration_sec=0.08, frequency_hz=440.0)
@@ -44,7 +51,13 @@ def test_short_clip_workbench_row_keeps_ok_status_with_hint(tmp_path: Path):
 
     result = analyze_folder_for_workbench(tmp_path)
 
-    assert result.summary == {"files_found": 1, "analyzed_count": 1, "error_count": 0}
+    assert result.summary == {
+        "files_found": 1,
+        "analyzed_count": 1,
+        "error_count": 0,
+        "cache_hits": 0,
+        "cache_misses": 1,
+    }
     row = result.rows[0]
     assert row.status == "ok"
     assert row.error is None

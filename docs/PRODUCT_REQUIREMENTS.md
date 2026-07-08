@@ -82,7 +82,7 @@ The CLI pipeline is implemented, stable, and remains the **data foundation** for
 Scan  →  Analyze  →  Autotype  →  Export (FL fallback)
                   └→  Embed  →  Index  →  Search
 
-Local Workbench (MVP): folder → analyze in-process → playlist + detail (no DB required). Follow-ups on `main` (#119–#125): cancel, path entry, filter, sort, detail path polish, last-folder memory, CSV export.
+Local Workbench (MVP): folder → analyze in-process → playlist + detail (no DB required). Follow-ups on `main` (#119–#125): cancel, path entry, filter, sort, detail path polish, last-folder memory, CSV export, library metadata cache v1 (`~/.sample-brain/workbench_library.db`, internal display names only).
 ```
 
 **Local Workbench MVP** is a tkinter-based local purpose UI — not the VST product target. It exposes scan/analyze/classify logic on a chosen folder without FL Studio export, semantic search, audio preview, or cloud sync. Start: `python -m src.cli workbench` (or `sample-brain workbench`).
