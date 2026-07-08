@@ -12,6 +12,7 @@ from .workbench_controller import (
     WorkbenchResult,
     WorkbenchRow,
     analyze_folder_for_workbench,
+    filter_workbench_rows,
     validate_workbench_folder,
 )
 
@@ -59,6 +60,7 @@ class WorkbenchApp:
         self.root.minsize(960, 560)
 
         self._rows: list[WorkbenchRow] = []
+        self._visible_rows: list[WorkbenchRow] = []
         self._busy = False
         self._cancel_event = threading.Event()
 
@@ -147,9 +149,21 @@ class WorkbenchApp:
         playlist_frame = ttk.Frame(body, style="Panel.TFrame", padding=8)
         playlist_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
 
+        filter_bar = ttk.Frame(playlist_frame, style="Panel.TFrame")
+        filter_bar.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(filter_bar, text="Suche:", style="Panel.TLabel").pack(side=tk.LEFT, padx=(0, 6))
+        self._filter_var = tk.StringVar(value="")
+        filter_entry = ttk.Entry(filter_bar, textvariable=self._filter_var)
+        filter_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self._filter_var.trace_add("write", self._on_filter_changed)
+        filter_entry.bind("<Escape>", self._clear_filter)
+
+        tree_frame = ttk.Frame(playlist_frame, style="Panel.TFrame")
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+
         col_ids = [c[0] for c in COLUMNS]
         self._tree = ttk.Treeview(
-            playlist_frame,
+            tree_frame,
             columns=col_ids,
             show="headings",
             selectmode="browse",
@@ -158,7 +172,7 @@ class WorkbenchApp:
             self._tree.heading(col_id, text=heading)
             self._tree.column(col_id, width=width, anchor=tk.W if col_id == "name" else tk.CENTER)
 
-        scroll_y = ttk.Scrollbar(playlist_frame, orient=tk.VERTICAL, command=self._tree.yview)
+        scroll_y = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self._tree.yview)
         self._tree.configure(yscrollcommand=scroll_y.set)
         self._tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
@@ -348,11 +362,20 @@ class WorkbenchApp:
     def _clear_playlist(self) -> None:
         self._tree.delete(*self._tree.get_children())
         self._rows = []
+        self._visible_rows = []
+        self._filter_var.set("")
         self._set_detail(None)
 
-    def _populate_playlist(self, result: WorkbenchResult) -> None:
+    def _on_filter_changed(self, *_args: object) -> None:
+        self._refresh_playlist_view()
+
+    def _clear_filter(self, _event: tk.Event | None = None) -> None:
+        self._filter_var.set("")
+
+    def _refresh_playlist_view(self) -> None:
+        self._visible_rows = filter_workbench_rows(self._rows, self._filter_var.get())
         self._tree.delete(*self._tree.get_children())
-        for idx, row in enumerate(result.rows):
+        for idx, row in enumerate(self._visible_rows):
             tags = ("error",) if row.status == "error" else ()
             self._tree.insert(
                 "",
@@ -371,6 +394,11 @@ class WorkbenchApp:
                 tags=tags,
             )
         self._tree.tag_configure("error", foreground=ERROR)
+        self._set_detail(None)
+
+    def _populate_playlist(self, result: WorkbenchResult) -> None:
+        self._rows = result.rows
+        self._refresh_playlist_view()
 
     def _on_select(self, _event: tk.Event | None = None) -> None:
         selected = self._tree.selection()
@@ -378,8 +406,8 @@ class WorkbenchApp:
             self._set_detail(None)
             return
         idx = int(selected[0])
-        if 0 <= idx < len(self._rows):
-            self._set_detail(self._rows[idx])
+        if 0 <= idx < len(self._visible_rows):
+            self._set_detail(self._visible_rows[idx])
 
     def _set_detail(self, row: WorkbenchRow | None) -> None:
         self._detail_text.configure(state=tk.NORMAL)

@@ -10,6 +10,7 @@ import pytest
 from src.workbench_controller import (
     analyze_folder_for_workbench,
     error_message_for_code,
+    filter_workbench_rows,
     validate_workbench_folder,
 )
 from tests.audio_fixtures import write_kick_transient_wav, write_sine_wav
@@ -72,6 +73,31 @@ def test_controller_collects_errors(tmp_path: Path):
     assert row.error == error_message_for_code(row.error_code)
     assert row.error != "Could not extract features"
     assert "error_detail" in row.details
+
+
+def test_filter_workbench_rows_matches_name_and_type(sample_folder: Path):
+    result = analyze_folder_for_workbench(sample_folder)
+
+    by_name = filter_workbench_rows(result.rows, "tone")
+    assert len(by_name) == 1
+    assert by_name[0].display_name == "tone_a.wav"
+
+    by_type = filter_workbench_rows(result.rows, "kick")
+    assert len(by_type) == 1
+    assert by_type[0].display_name == "kick_b.wav"
+
+
+def test_filter_workbench_rows_empty_query_returns_all(sample_folder: Path):
+    result = analyze_folder_for_workbench(sample_folder)
+
+    assert filter_workbench_rows(result.rows, "") == result.rows
+    assert filter_workbench_rows(result.rows, "   ") == result.rows
+
+
+def test_filter_workbench_rows_no_match(sample_folder: Path):
+    result = analyze_folder_for_workbench(sample_folder)
+
+    assert filter_workbench_rows(result.rows, "zzz-not-found") == []
 
 
 def test_cancel_before_scan_returns_empty(sample_folder: Path):
