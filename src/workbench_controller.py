@@ -686,6 +686,16 @@ def save_workbench_sample_cue(
     save_sample_cue(path, metadata, db_path=db, duration_ms=duration_ms)
 
 
+def get_preview_start_ms(
+    path: Path | str,
+    *,
+    library_db_path: Path | None = None,
+) -> int:
+    """Return saved cue start for preview playback (0 when unset or unknown)."""
+    cue = load_workbench_sample_cue(path, library_db_path=library_db_path)
+    return max(0, int(cue.cue_start_ms))
+
+
 __all__ = [
     "ERROR_LABELS",
     "FOLDER_ERROR_MESSAGES",
@@ -703,6 +713,7 @@ __all__ = [
     "filter_workbench_rows",
     "format_path_display_lines",
     "get_workbench_library_folders",
+    "get_preview_start_ms",
     "load_cached_folder_rows",
     "load_workbench_last_folder",
     "load_workbench_sample_cue",

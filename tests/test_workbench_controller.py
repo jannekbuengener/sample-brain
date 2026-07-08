@@ -15,6 +15,7 @@ from src.workbench_controller import (
     export_workbench_rows_to_csv,
     filter_workbench_rows,
     format_path_display_lines,
+    get_preview_start_ms,
     get_workbench_library_folders,
     load_cached_folder_rows,
     load_workbench_last_folder,
@@ -473,3 +474,20 @@ def test_save_workbench_sample_cue_unknown_path_raises(tmp_path: Path):
     missing.write_bytes(b"data")
     with pytest.raises(WorkbenchCueNotFoundError):
         save_workbench_sample_cue(missing, WorkbenchCueMetadata(cue_start_ms=0))
+
+
+def test_get_preview_start_ms_returns_saved_cue(sample_folder: Path):
+    result = analyze_folder_for_workbench(sample_folder)
+    row = result.rows[0]
+    save_workbench_sample_cue(
+        row.path,
+        WorkbenchCueMetadata(cue_start_ms=456, cue_source="manual"),
+        duration_ms=2000,
+    )
+    assert get_preview_start_ms(row.path) == 456
+
+
+def test_get_preview_start_ms_defaults_to_zero_for_unknown_path(tmp_path: Path):
+    missing = tmp_path / "ghost.wav"
+    missing.write_bytes(b"data")
+    assert get_preview_start_ms(missing) == 0
