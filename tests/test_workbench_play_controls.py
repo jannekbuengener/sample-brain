@@ -1,0 +1,154 @@
+from __future__ import annotations
+
+import inspect
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import pytest
+
+from src.workbench import WorkbenchApp
+from src.workbench_controller import WorkbenchRow, preview_start_ms_from_waveform_x
+from src.workbench_preview import PreviewResult, WorkbenchPreviewPlayer
+from tests.audio_fixtures import write_sine_wav
+
+
+def test_preview_start_ms_from_waveform_x_maps_click_to_ms():
+    assert preview_start_ms_from_waveform_x(100, 200, 1000) == 500
+    assert preview_start_ms_from_waveform_x(0, 200, 1000) == 0
+    assert preview_start_ms_from_waveform_x(200, 200, 1000) == 999
+
+
+def test_workbench_layout_has_no_play_stop_buttons():
+    source = inspect.getsource(WorkbenchApp._build_layout)
+    assert "_play_btn" not in source
+    assert "_stop_btn" not in source
+
+
+def _sample_row(path: Path) -> WorkbenchRow:
+    return WorkbenchRow(
+        display_name=path.name,
+        relative_path=path.name,
+        path=str(path.resolve()),
+        bpm=120.0,
+        key="C",
+        key_conf=0.9,
+        loudness=-10.0,
+        brightness=50.0,
+        sample_class="kick",
+        pred_type="kick",
+        status="ok",
+    )
+
+
+def _playback_app(*, canvas_width: int = 400) -> WorkbenchApp:
+    app = WorkbenchApp.__new__(WorkbenchApp)
+    app._busy = False
+    app._detail_row = None
+    app._preview_row_path = None
+    app._status_var = SimpleNamespace(value="")
+
+    def set_status(message: str, *, tone: str = "neutral") -> None:
+        app._status_var.value = message
+
+    app._set_status = set_status
+    app._waveform_canvas = SimpleNamespace(
+        winfo_width=lambda: canvas_width,
+    )
+    play_calls: list[tuple[str, int]] = []
+
+    def mock_play(path, *, start_ms=0):
+        play_calls.append((str(path), start_ms))
+        return PreviewResult(ok=True)
+
+    app._preview = SimpleNamespace(play=mock_play)
+    app._play_calls = play_calls
+    return app
+
+
+def test_left_click_plays_without_saving_cue(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.2, frequency_hz=440.0)
+    app = _playback_app()
+    app._detail_row = _sample_row(wav)
+    app._preview_row_path = str(wav.resolve())
+
+    import src.workbench as wb
+
+    with (
+        patch.object(wb, "get_preview_start_ms", return_value=456),
+        patch("src.workbench_controller.save_workbench_sample_cue") as mock_save,
+    ):
+        app._play_selected_from_waveform()
+        mock_save.assert_not_called()
+
+    assert app._play_calls == [(str(wav.resolve()), 456)]
+    assert "Cue (456 ms)" in app._status_var.value
+
+
+def test_left_click_no_sample_sets_status():
+    app = _playback_app()
+    app._detail_row = None
+    app._play_selected_from_waveform()
+    assert app._status_var.value == "Kein Sample ausgewählt."
+
+
+def test_right_click_plays_at_click_position_without_saving_cue(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.5, frequency_hz=440.0)
+    app = _playback_app()
+    app._detail_row = _sample_row(wav)
+    app._preview_row_path = str(wav.resolve())
+
+    import src.workbench as wb
+
+    with (
+        patch.object(wb, "preview_start_ms_from_waveform_x", return_value=123),
+        patch("src.workbench_controller.save_workbench_sample_cue") as mock_save,
+    ):
+        app._play_selected_from_waveform_position(100)
+        mock_save.assert_not_called()
+
+    assert app._play_calls == [(str(wav.resolve()), 123)]
+    assert "Klickposition (123 ms)" in app._status_var.value
+
+
+def test_right_click_unknown_duration_sets_status(tmp_path: Path, monkeypatch):
+    missing = tmp_path / "missing.wav"
+    app = _playback_app()
+    app._detail_row = _sample_row(missing)
+    app._preview_row_path = str(missing.resolve())
+    monkeypatch.setattr("src.workbench.read_audio_duration_ms", lambda _path: None)
+
+    app._play_selected_from_waveform_position(50)
+    assert app._play_calls == []
+    assert app._status_var.value == "Kann Startposition nicht bestimmen."
+
+
+def test_play_preview_status_for_click_position(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.2, frequency_hz=440.0)
+    app = _playback_app()
+    app._preview_row_path = str(wav.resolve())
+    app._preview = WorkbenchPreviewPlayer(
+        play_fn=lambda path, start_ms=0: PreviewResult(ok=True),
+        stop_fn=lambda: None,
+    )
+    app._play_preview(start_ms=77, from_click_position=True)
+    assert "Klickposition (77 ms)" in app._status_var.value
+
+
+def test_waveform_click_handlers_delegate(monkeypatch):
+    app = _playback_app()
+    left_called: list[bool] = []
+    right_called: list[int] = []
+
+    monkeypatch.setattr(app, "_play_selected_from_waveform", lambda: left_called.append(True))
+    monkeypatch.setattr(
+        app,
+        "_play_selected_from_waveform_position",
+        lambda x: right_called.append(x),
+    )
+
+    app._on_waveform_click(SimpleNamespace())
+    app._on_waveform_right_click(SimpleNamespace(x=42))
+
+    assert left_called == [True]
+    assert right_called == [42]
