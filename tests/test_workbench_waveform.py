@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from src.workbench_waveform import (
+    attack_marker_x,
     clamp_cue_start_ms,
     compute_waveform_envelope,
     cue_marker_x,
@@ -139,3 +140,12 @@ def test_loop_region_x_cue_marker_independent():
     assert cue_x is not None
     assert loop is not None
     assert cue_x not in loop or loop[0] <= cue_x <= loop[1]
+
+
+def test_attack_marker_x_maps_attack_time():
+    assert attack_marker_x(250, duration_ms=1000, width=200) == 50
+
+
+def test_attack_marker_x_returns_none_when_unset():
+    assert attack_marker_x(None, duration_ms=1000, width=200) is None
+    assert attack_marker_x(-1, duration_ms=1000, width=200) is None
