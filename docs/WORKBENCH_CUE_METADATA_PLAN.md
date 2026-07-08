@@ -1,6 +1,6 @@
 # Workbench Cue / Loop / Attack Metadata Plan
 
-**Status:** Cue metadata v1 + preview from saved cue + waveform play controls shipped on `main`. Permanent cue-set UX and loop/attack UI follow-ups remain open.  
+**Status:** Cue metadata v1 + preview from saved cue + waveform play controls + Shift+click permanent cue set shipped on `main`. Loop/attack UI follow-ups remain open.  
 **Parent:** [#117 — workbench usability and library workflow follow-ups](https://github.com/jannekbuengener/sample-brain/issues/117)  
 **Related code:** `src/workbench_library.py`, `src/workbench_waveform.py`, `src/workbench_preview.py`, `src/workbench.py`
 
@@ -12,9 +12,9 @@
 | Idempotent migration for existing `workbench_library.db` | ✅ Shipped |
 | `WorkbenchCueMetadata` + `load_sample_cue` / `save_sample_cue` | ✅ Shipped |
 | Read-only cue marker on waveform canvas | ✅ Shipped |
-| Interactive cue set / drag | ❌ Follow-up (Shift+click, cue mode, or context menu — not simple left-click) |
+| Interactive cue set / drag | ✅ Shipped (Shift+left-click sets `cue_start_ms`; no drag) |
 | Preview from `cue_start_ms` | ✅ Shipped (temp WAV slice; original unchanged) |
-| Waveform play controls | ✅ Shipped (left = play from saved cue; right = temp play at click; no visible Play/Stop buttons) |
+| Waveform play controls | ✅ Shipped (left = play from saved cue; right = temp play at click; Shift+left = permanent cue set; no visible Play/Stop buttons) |
 | Loop region UI | ❌ Follow-up |
 
 ## 1. Problem
@@ -106,14 +106,14 @@ def default_cue_for_duration(duration_ms: float) -> SampleCueMetadata: ...
 |---|---|---|
 | **Plan** (this doc) | Fields, safety, schema | — |
 | **v1 read** | Show default `cue_start_ms=0`; draw vertical marker on waveform | ✅ Shipped |
-| **v1 edit** | ~~Click on waveform to set `cue_start_ms`~~ superseded by waveform play controls; permanent cue-set UX follow-up | ✅ Shipped then superseded |
+| **v1 edit** | Shift+left-click sets `cue_start_ms` permanently; left-click plays only | ✅ Shipped |
 | **v1 preview** | Preview starts at `cue_start_ms` | ✅ Shipped (temp slice only; original files unchanged) |
-| **v1 waveform play** | Left-click play from saved cue; right-click temp play at click position; no cue write on click | ✅ Shipped |
+| **v1 waveform play** | Left-click play from saved cue; right-click temp play at click; Shift+left-click permanent cue set | ✅ Shipped |
 | **v2 detect** | Optional `attack_ms` via librosa onset (analysis thread only) | analyze / workbench analyze path |
 | **v2 loop** | Loop region handles on waveform for loops only | v1 edit |
 | **Later** | Export trimmed copy, DAW drag with offset | product decision + #93 |
 
-**Waveform panel today:** peak envelope + saved cue marker; left-click plays from saved cue; right-click plays temporarily from click position; double-click row and Space still toggle preview; no visible Play/Stop buttons in detail header.
+**Waveform panel today:** peak envelope + saved cue marker; left-click plays from saved cue; right-click plays temporarily from click position; Shift+left-click sets `cue_start_ms` permanently (local library metadata only); double-click row and Space still toggle preview; no visible Play/Stop buttons in detail header.
 
 ## 7. Detection heuristics (future, non-blocking)
 
@@ -146,7 +146,7 @@ Detector output is **suggestion only**; user override sets `cue_source=manual`.
 2. ~~`workbench_cue_waveform_edit_v1` — click to set `cue_start_ms`~~ ✅ (superseded by waveform play controls; permanent cue-set UX is follow-up)  
 3. ~~`workbench_preview_cue_offset` — preview from cue (platform limits documented)~~ ✅  
 4. ~~`workbench_waveform_play_controls` — waveform as play surface; left/right click playback~~ ✅  
-5. `workbench_cue_set_ux` — permanent cue set (Shift+click, cue mode, or context menu)  
+5. ~~`workbench_cue_set_ux` — permanent cue set (Shift+left-click)~~ ✅  
 6. `workbench_attack_detect_suggest` — optional detector → `attack_ms`  
 7. `workbench_loop_metadata_v1` — loop region fields + UI  
 

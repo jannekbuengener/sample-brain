@@ -8,6 +8,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Callable
 
 from .workbench_controller import (
+    WorkbenchCueMetadata,
     WorkbenchResult,
     WorkbenchRow,
     add_workbench_library_folder,
@@ -23,9 +24,11 @@ from .workbench_controller import (
     preview_start_ms_from_waveform_x,
     remove_workbench_library_folder,
     save_workbench_last_folder,
+    save_workbench_sample_cue,
     sort_workbench_rows,
     validate_workbench_folder,
 )
+from .workbench_library import WorkbenchCueNotFoundError, WorkbenchCueValidationError
 from .workbench_preview import WorkbenchPreviewPlayer, preview_toggle_action
 from .workbench_waveform import (
     compute_waveform_envelope,
@@ -815,7 +818,58 @@ class WorkbenchApp:
         start_ms = preview_start_ms_from_waveform_x(int(x), width, duration_ms)
         self._play_preview(start_ms=start_ms, from_click_position=True)
 
-    def _on_waveform_click(self, _event: tk.Event) -> None:
+    def _cue_start_ms_from_waveform_x(self, x: int) -> int | None:
+        """Map waveform canvas x to cue start ms, or None when duration is unknown."""
+        row = self._detail_row
+        if row is None or not row.path:
+            return None
+        duration_ms = read_audio_duration_ms(row.path)
+        if duration_ms is None:
+            return None
+        width = max(int(self._waveform_canvas.winfo_width()), 1)
+        return preview_start_ms_from_waveform_x(int(x), width, duration_ms)
+
+    def _set_selected_cue_from_waveform_position(self, x: int) -> None:
+        if self._busy:
+            return
+        row = self._detail_row
+        if row is None or not row.path:
+            self._set_status("Kein Sample ausgewählt.", tone="neutral")
+            return
+        duration_ms = read_audio_duration_ms(row.path)
+        if duration_ms is None:
+            self._set_status("Kann Cue-Position nicht bestimmen.", tone="error")
+            return
+        cue_start_ms = self._cue_start_ms_from_waveform_x(x)
+        if cue_start_ms is None:
+            self._set_status("Kann Cue-Position nicht bestimmen.", tone="error")
+            return
+        try:
+            existing = load_workbench_sample_cue(row.path)
+            metadata = WorkbenchCueMetadata(
+                cue_start_ms=cue_start_ms,
+                attack_ms=existing.attack_ms,
+                loop_start_ms=existing.loop_start_ms,
+                loop_end_ms=existing.loop_end_ms,
+                cue_source="manual",
+            )
+            save_workbench_sample_cue(row.path, metadata, duration_ms=duration_ms)
+        except WorkbenchCueNotFoundError:
+            self._set_status(
+                "Sample nicht in der lokalen Bibliothek — zuerst analysieren.",
+                tone="error",
+            )
+            return
+        except WorkbenchCueValidationError as exc:
+            self._set_status(f"Cue konnte nicht gespeichert werden: {exc}", tone="error")
+            return
+        self._draw_waveform(row)
+        self._set_status(f"Cue dauerhaft gesetzt: {cue_start_ms} ms", tone="success")
+
+    def _on_waveform_click(self, event: tk.Event) -> None:
+        if event.state & 0x0001:
+            self._set_selected_cue_from_waveform_position(int(event.x))
+            return
         self._play_selected_from_waveform()
 
     def _on_waveform_right_click(self, event: tk.Event) -> None:
