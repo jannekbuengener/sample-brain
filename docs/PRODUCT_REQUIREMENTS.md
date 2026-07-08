@@ -82,10 +82,10 @@ The CLI pipeline is implemented, stable, and remains the **data foundation** for
 Scan  →  Analyze  →  Autotype  →  Export (FL fallback)
                   └→  Embed  →  Index  →  Search
 
-Local Workbench (MVP): folder → analyze in-process → playlist + detail (no DB required). Follow-ups on `main` (#119–#125): cancel, path entry, filter, sort, detail path polish, last-folder memory, CSV export, library metadata cache v1 (`~/.sample-brain/workbench_library.db`, internal display names only). Library folder list (#117): known folders visible; add/remove affects cache metadata only — original sample files stay on disk.
+Local Workbench (MVP): folder → analyze in-process → playlist + detail (no DB required). Follow-ups on `main` (#119–#125, #128): cancel, path entry, filter, sort, detail path polish, last-folder memory, CSV export, library metadata cache v1 (`~/.sample-brain/workbench_library.db`, internal display names only), library folder list. Audio preview v1 (#117): play/stop selected sample — original files unchanged.
 ```
 
-**Local Workbench MVP** is a tkinter-based local purpose UI — not the VST product target. It exposes scan/analyze/classify logic on a chosen folder without FL Studio export, semantic search, audio preview, or cloud sync. Start: `python -m src.cli workbench` (or `sample-brain workbench`).
+**Local Workbench MVP** is a tkinter-based local purpose UI — not the VST product target. It exposes scan/analyze/classify logic on a chosen folder without FL Studio export, semantic search, or cloud sync. Audio preview v1: play/stop for the selected sample (platform backend, no new Python dependency). Start: `python -m src.cli workbench` (or `sample-brain workbench`).
 
 On Windows, a desktop shortcut can be created locally (not shipped as an installer): run `powershell -ExecutionPolicy Bypass -File .\tools\windows\create_workbench_desktop_shortcut.ps1` from the repo root. See [`tools/windows/README.md`](../tools/windows/README.md).
 

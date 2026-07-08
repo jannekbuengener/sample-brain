@@ -304,9 +304,9 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Labels: `ui`, `design`, `planning`
 - Goal: Define the first viable local desktop UI concept.
 - Context: A later React/Tauri UI should follow a clear producer workflow.
-- **Partial:** Local Workbench MVP (`sample-brain workbench`) shipped — tkinter playlist/detail; filter/sort (#120–#121), last-folder memory (#124), CSV export (#125), library metadata cache v1 (user-local SQLite, no original-file writes); library folder list with add/remove (#117, in progress); no search preview yet.
+- **Partial:** Local Workbench MVP (`sample-brain workbench`) shipped — tkinter playlist/detail; filter/sort (#120–#121), last-folder memory (#124), CSV export (#125), library metadata cache v1 (user-local SQLite, no original-file writes); library folder list with add/remove (#117, merged PR #128); audio preview v1 (#117, play/stop in detail panel, no new dependency).
 - **Partial:** Workbench folder path entry (#117) — type or paste folder path in UI; dialog still available; last used folder restored on startup (#124).
-- **Partial:** Workbench library folder list (#117) — known folders visible in UI; `+` registers folder in local library cache; `−` removes folder metadata and cached samples only (original files unchanged).
+- **Partial:** Workbench library folder list (#117) — known folders visible in UI; `+` registers folder in local library cache; `−` removes folder metadata and cached samples only (original files unchanged). Merged PR #128.
 - **Partial:** Windows desktop shortcut helper (`tools/windows/`) — local `.lnk` creation only, no installer/EXE.
 - Acceptance criteria:
   - user flows for search, inspect, preview, and export are documented
@@ -320,7 +320,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Labels: `ui`, `feat`, `desktop`
 - Goal: Provide a first local result inspector with sample preview.
 - Context: Search becomes much more useful when results can be auditioned quickly.
-- **Partial:** Workbench MVP covers result inspection (metadata detail panel) without audio preview; CSV export of playlist rows (#125).
+- **Partial:** Workbench MVP covers result inspection (metadata detail panel) and audio preview v1 (#117): Play/Stop for selected sample via platform backend (Windows: winsound; macOS: afplay; Linux: aplay); non-WAV decoded to temp PCM WAV only — original files unchanged; CSV export of playlist rows (#125).
 - **Partial:** Workbench shows analysis progress (N/M + progress bar) and classified error messages.
 - **Partial:** Workbench short clips (<0.5s) show Kurzclip hint; BPM/Key not overclaimed; librosa n_fft warnings suppressed for short audio.
 - Acceptance criteria:
