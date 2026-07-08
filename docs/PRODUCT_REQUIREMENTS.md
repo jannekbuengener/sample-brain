@@ -82,10 +82,10 @@ The CLI pipeline is implemented, stable, and remains the **data foundation** for
 Scan  →  Analyze  →  Autotype  →  Export (FL fallback)
                   └→  Embed  →  Index  →  Search
 
-Local Workbench (MVP): folder → analyze in-process → playlist + detail. Shipped follow-ups (#117, PRs #119–#131): cancel, path entry, filter, sort, detail path polish, last-folder memory, CSV export, library cache v1 (`~/.sample-brain/workbench_library.db`), library folder list, audio preview (play/stop), read-only waveform envelope. Cue/loop/attack metadata: **planned only** — [`WORKBENCH_CUE_METADATA_PLAN.md`](WORKBENCH_CUE_METADATA_PLAN.md); original sample files never modified by workbench.
+Local Workbench (MVP): folder → analyze in-process → playlist + detail. Shipped follow-ups (#117, PRs #119–#131+): cancel, path entry, filter, sort, detail path polish, last-folder memory, CSV export, library cache v1, library folder list, audio preview, read-only waveform envelope, **cue metadata v1** (local `workbench_library.db`, read-only marker). Interactive cue/loop editing and preview offset: follow-up — [`WORKBENCH_CUE_METADATA_PLAN.md`](WORKBENCH_CUE_METADATA_PLAN.md). Original sample files never modified by workbench.
 ```
 
-**Local Workbench MVP** is a tkinter-based local purpose UI — not the VST product target. It exposes scan/analyze/classify logic on a chosen folder without FL Studio export, semantic search, or cloud sync. **Shipped:** audio preview (play/stop, platform backend, no new Python dependency) and read-only waveform envelope. **Planned:** cue/loop/attack as local metadata only ([`WORKBENCH_CUE_METADATA_PLAN.md`](WORKBENCH_CUE_METADATA_PLAN.md)). Start: `python -m src.cli workbench` (or `sample-brain workbench`).
+**Local Workbench MVP** is a tkinter-based local purpose UI — not the VST product target. It exposes scan/analyze/classify logic on a chosen folder without FL Studio export, semantic search, or cloud sync. **Shipped:** audio preview (play/stop), read-only waveform envelope, and cue metadata v1 (local DB fields + read-only cue marker). **Planned next:** interactive cue set, preview from cue, loop region UI ([`WORKBENCH_CUE_METADATA_PLAN.md`](WORKBENCH_CUE_METADATA_PLAN.md)). Start: `python -m src.cli workbench` (or `sample-brain workbench`).
 
 On Windows, a desktop shortcut can be created locally (not shipped as an installer): run `powershell -ExecutionPolicy Bypass -File .\tools\windows\create_workbench_desktop_shortcut.ps1` from the repo root. See [`tools/windows/README.md`](../tools/windows/README.md).
 

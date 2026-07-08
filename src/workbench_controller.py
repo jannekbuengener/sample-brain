@@ -18,13 +18,16 @@ from .scan import iter_audio_files_stream, safe_audio_info
 from .workbench_library import (
     WORKBENCH_ANALYZER_VERSION,
     LibraryFolder,
+    WorkbenchCueMetadata,
     list_library_folders,
     load_folder_samples,
+    load_sample_cue,
     lookup_sample,
     mark_folder_opened,
     normalize_display_name,
     register_library_folder,
     remove_library_folder,
+    save_sample_cue,
     upsert_folder,
     upsert_sample,
     workbench_library_db_path,
@@ -661,6 +664,28 @@ def load_cached_folder_rows(
     return [row.to_workbench_row() for row in cached]
 
 
+def load_workbench_sample_cue(
+    path: Path | str,
+    *,
+    library_db_path: Path | None = None,
+) -> WorkbenchCueMetadata:
+    """Load cue metadata for a sample path from the workbench library cache."""
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    return load_sample_cue(path, db_path=db)
+
+
+def save_workbench_sample_cue(
+    path: Path | str,
+    metadata: WorkbenchCueMetadata,
+    *,
+    library_db_path: Path | None = None,
+    duration_ms: int | None = None,
+) -> None:
+    """Persist cue metadata for a sample already stored in the workbench library."""
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    save_sample_cue(path, metadata, db_path=db, duration_ms=duration_ms)
+
+
 __all__ = [
     "ERROR_LABELS",
     "FOLDER_ERROR_MESSAGES",
@@ -669,6 +694,7 @@ __all__ = [
     "ShouldCancel",
     "WorkbenchFolderValidation",
     "WorkbenchRow",
+    "WorkbenchCueMetadata",
     "WorkbenchResult",
     "add_workbench_library_folder",
     "analyze_folder_for_workbench",
@@ -679,11 +705,13 @@ __all__ = [
     "get_workbench_library_folders",
     "load_cached_folder_rows",
     "load_workbench_last_folder",
+    "load_workbench_sample_cue",
     "PLAYLIST_SORT_COLUMNS",
     "PLAYLIST_CSV_FIELDS",
     "remove_workbench_library_folder",
     "row_as_dict",
     "save_workbench_last_folder",
+    "save_workbench_sample_cue",
     "sort_workbench_rows",
     "validate_workbench_folder",
     "workbench_last_folder_file",

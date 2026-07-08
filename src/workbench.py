@@ -18,13 +18,18 @@ from .workbench_controller import (
     get_workbench_library_folders,
     load_cached_folder_rows,
     load_workbench_last_folder,
+    load_workbench_sample_cue,
     remove_workbench_library_folder,
     save_workbench_last_folder,
     sort_workbench_rows,
     validate_workbench_folder,
 )
 from .workbench_preview import WorkbenchPreviewPlayer, preview_toggle_action
-from .workbench_waveform import compute_waveform_envelope
+from .workbench_waveform import (
+    compute_waveform_envelope,
+    cue_marker_x,
+    read_audio_duration_ms,
+)
 
 # Dark palette inspired by ui_mockup.png (functional, not pixel-perfect).
 BG_DARK = "#121212"
@@ -38,6 +43,7 @@ ERROR = "#ff3b30"
 SUCCESS = "#6fcf6f"
 BORDER = "#333333"
 WAVEFORM_HEIGHT = 72
+CUE_MARKER = "#ffffff"
 
 COLUMNS = (
     ("name", "Name", 180),
@@ -822,6 +828,19 @@ class WorkbenchApp:
                 mid + bar_height,
                 fill=ACCENT,
             )
+        cue = load_workbench_sample_cue(row.path)
+        duration_ms = read_audio_duration_ms(row.path)
+        if duration_ms is not None:
+            marker_x = cue_marker_x(cue.cue_start_ms, duration_ms, width)
+            if marker_x is not None:
+                canvas.create_line(
+                    marker_x,
+                    2,
+                    marker_x,
+                    height - 2,
+                    fill=CUE_MARKER,
+                    width=2,
+                )
 
     def _set_detail(self, row: WorkbenchRow | None) -> None:
         self._detail_row = row

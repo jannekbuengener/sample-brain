@@ -10,7 +10,49 @@ from pathlib import Path, PurePath
 from typing import Any, Mapping
 
 WORKBENCH_ANALYZER_VERSION = "workbench_v1"
+WORKBENCH_LIBRARY_SCHEMA_VERSION = 2
 _LIBRARY_DB_NAME = "workbench_library.db"
+
+_CUE_SAMPLE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("cue_start_ms", "INTEGER DEFAULT 0"),
+    ("attack_ms", "INTEGER DEFAULT NULL"),
+    ("loop_start_ms", "INTEGER DEFAULT NULL"),
+    ("loop_end_ms", "INTEGER DEFAULT NULL"),
+    ("cue_source", "TEXT DEFAULT 'manual'"),
+    ("cue_updated_at", "TEXT DEFAULT NULL"),
+)
+
+_SAMPLES_CREATE_SQL = """
+            CREATE TABLE IF NOT EXISTS samples (
+                id INTEGER PRIMARY KEY,
+                folder_id INTEGER NOT NULL,
+                original_path TEXT UNIQUE NOT NULL,
+                relative_path TEXT,
+                size_bytes INTEGER,
+                mtime_ns INTEGER,
+                display_name TEXT,
+                bpm REAL,
+                key TEXT,
+                key_conf REAL,
+                loudness REAL,
+                brightness REAL,
+                sample_class TEXT,
+                pred_type TEXT,
+                status TEXT,
+                error_code TEXT,
+                quality_note TEXT,
+                tags TEXT,
+                analyzed_at TEXT,
+                analyzer_version TEXT,
+                cue_start_ms INTEGER DEFAULT 0,
+                attack_ms INTEGER DEFAULT NULL,
+                loop_start_ms INTEGER DEFAULT NULL,
+                loop_end_ms INTEGER DEFAULT NULL,
+                cue_source TEXT DEFAULT 'manual',
+                cue_updated_at TEXT DEFAULT NULL,
+                FOREIGN KEY(folder_id) REFERENCES folders(id)
+            );
+"""
 
 
 def _workbench_state_dir(*, env: Mapping[str, str] | None = None) -> Path:
@@ -52,35 +94,15 @@ def init_workbench_library(db_path: Path | None = None) -> None:
                 last_opened_at TEXT
             );
 
-            CREATE TABLE IF NOT EXISTS samples (
-                id INTEGER PRIMARY KEY,
-                folder_id INTEGER NOT NULL,
-                original_path TEXT UNIQUE NOT NULL,
-                relative_path TEXT,
-                size_bytes INTEGER,
-                mtime_ns INTEGER,
-                display_name TEXT,
-                bpm REAL,
-                key TEXT,
-                key_conf REAL,
-                loudness REAL,
-                brightness REAL,
-                sample_class TEXT,
-                pred_type TEXT,
-                status TEXT,
-                error_code TEXT,
-                quality_note TEXT,
-                tags TEXT,
-                analyzed_at TEXT,
-                analyzer_version TEXT,
-                FOREIGN KEY(folder_id) REFERENCES folders(id)
-            );
-
+"""
+            + _SAMPLES_CREATE_SQL
+            + """
             CREATE INDEX IF NOT EXISTS idx_samples_folder_id ON samples(folder_id);
             CREATE INDEX IF NOT EXISTS idx_samples_lookup
                 ON samples(original_path, size_bytes, mtime_ns);
             """
         )
+        _migrate_library_schema_v2(conn)
         conn.commit()
 
 
@@ -94,6 +116,157 @@ def normalize_display_name(filename: str) -> str:
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+class WorkbenchCueValidationError(ValueError):
+    """Raised when cue metadata fails validation."""
+
+
+class WorkbenchCueNotFoundError(LookupError):
+    """Raised when cue metadata is saved for an unknown library sample."""
+
+
+@dataclass
+class WorkbenchCueMetadata:
+    cue_start_ms: int = 0
+    attack_ms: int | None = None
+    loop_start_ms: int | None = None
+    loop_end_ms: int | None = None
+    cue_source: str = "manual"
+    cue_updated_at: str | None = None
+
+
+def default_workbench_cue_metadata() -> WorkbenchCueMetadata:
+    """Return default cue metadata (start at 0 ms)."""
+    return WorkbenchCueMetadata()
+
+
+def _sample_table_columns(conn: sqlite3.Connection) -> set[str]:
+    rows = conn.execute("PRAGMA table_info(samples)").fetchall()
+    return {str(row[1]) for row in rows}
+
+
+def _migrate_library_schema_v2(conn: sqlite3.Connection) -> None:
+    """Add cue metadata columns to existing workbench library databases."""
+    columns = _sample_table_columns(conn)
+    if not columns:
+        return
+    for name, definition in _CUE_SAMPLE_COLUMNS:
+        if name not in columns:
+            conn.execute(f"ALTER TABLE samples ADD COLUMN {name} {definition}")
+
+
+def validate_workbench_cue_metadata(
+    metadata: WorkbenchCueMetadata,
+    *,
+    duration_ms: int | None = None,
+) -> None:
+    """Validate cue metadata invariants. Raises WorkbenchCueValidationError."""
+    if metadata.cue_start_ms < 0:
+        raise WorkbenchCueValidationError("cue_start_ms must be non-negative")
+    if metadata.attack_ms is not None and metadata.attack_ms < 0:
+        raise WorkbenchCueValidationError("attack_ms must be non-negative when set")
+    if metadata.loop_start_ms is not None and metadata.loop_start_ms < 0:
+        raise WorkbenchCueValidationError("loop_start_ms must be non-negative when set")
+    if metadata.loop_end_ms is not None and metadata.loop_end_ms < 0:
+        raise WorkbenchCueValidationError("loop_end_ms must be non-negative when set")
+    if metadata.loop_start_ms is not None and metadata.loop_end_ms is None:
+        raise WorkbenchCueValidationError("loop_end_ms required when loop_start_ms is set")
+    if metadata.loop_end_ms is not None and metadata.loop_start_ms is None:
+        raise WorkbenchCueValidationError("loop_start_ms required when loop_end_ms is set")
+    if (
+        metadata.loop_start_ms is not None
+        and metadata.loop_end_ms is not None
+        and metadata.loop_end_ms < metadata.loop_start_ms
+    ):
+        raise WorkbenchCueValidationError("loop_end_ms must be >= loop_start_ms")
+    if duration_ms is not None and duration_ms > 0:
+        if metadata.cue_start_ms >= duration_ms:
+            raise WorkbenchCueValidationError("cue_start_ms must be before sample end")
+        if metadata.attack_ms is not None and metadata.attack_ms >= duration_ms:
+            raise WorkbenchCueValidationError("attack_ms must be before sample end")
+        if metadata.loop_start_ms is not None and metadata.loop_start_ms >= duration_ms:
+            raise WorkbenchCueValidationError("loop_start_ms must be before sample end")
+        if metadata.loop_end_ms is not None and metadata.loop_end_ms > duration_ms:
+            raise WorkbenchCueValidationError("loop_end_ms must not exceed sample duration")
+
+
+def _cue_metadata_from_row(row: sqlite3.Row | None) -> WorkbenchCueMetadata:
+    if row is None:
+        return default_workbench_cue_metadata()
+    cue_start = row["cue_start_ms"]
+    return WorkbenchCueMetadata(
+        cue_start_ms=0 if cue_start is None else int(cue_start),
+        attack_ms=None if row["attack_ms"] is None else int(row["attack_ms"]),
+        loop_start_ms=None if row["loop_start_ms"] is None else int(row["loop_start_ms"]),
+        loop_end_ms=None if row["loop_end_ms"] is None else int(row["loop_end_ms"]),
+        cue_source=row["cue_source"] or "manual",
+        cue_updated_at=row["cue_updated_at"],
+    )
+
+
+def load_sample_cue(
+    original_path: Path | str,
+    *,
+    db_path: Path | None = None,
+) -> WorkbenchCueMetadata:
+    """Load cue metadata for a library sample. Returns defaults when unknown."""
+    path = str(Path(original_path).expanduser().resolve())
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT cue_start_ms, attack_ms, loop_start_ms, loop_end_ms,
+                   cue_source, cue_updated_at
+            FROM samples
+            WHERE original_path = ?
+            """,
+            (path,),
+        ).fetchone()
+    return _cue_metadata_from_row(row)
+
+
+def save_sample_cue(
+    original_path: Path | str,
+    metadata: WorkbenchCueMetadata,
+    *,
+    db_path: Path | None = None,
+    duration_ms: int | None = None,
+) -> None:
+    """Persist cue metadata for an existing library sample."""
+    path = str(Path(original_path).expanduser().resolve())
+    validate_workbench_cue_metadata(metadata, duration_ms=duration_ms)
+    init_workbench_library(db_path)
+    updated_at = metadata.cue_updated_at or _utc_now_iso()
+    with connect_workbench_library(db_path) as conn:
+        row = conn.execute(
+            "SELECT id FROM samples WHERE original_path = ?",
+            (path,),
+        ).fetchone()
+        if row is None:
+            raise WorkbenchCueNotFoundError(f"sample not in workbench library: {path}")
+        conn.execute(
+            """
+            UPDATE samples SET
+                cue_start_ms = ?,
+                attack_ms = ?,
+                loop_start_ms = ?,
+                loop_end_ms = ?,
+                cue_source = ?,
+                cue_updated_at = ?
+            WHERE original_path = ?
+            """,
+            (
+                metadata.cue_start_ms,
+                metadata.attack_ms,
+                metadata.loop_start_ms,
+                metadata.loop_end_ms,
+                metadata.cue_source,
+                updated_at,
+                path,
+            ),
+        )
+        conn.commit()
 
 
 @dataclass
@@ -447,18 +620,26 @@ def load_folder_samples(
 
 __all__ = [
     "WORKBENCH_ANALYZER_VERSION",
+    "WORKBENCH_LIBRARY_SCHEMA_VERSION",
     "CachedWorkbenchRow",
     "LibraryFolder",
+    "WorkbenchCueMetadata",
+    "WorkbenchCueNotFoundError",
+    "WorkbenchCueValidationError",
     "connect_workbench_library",
+    "default_workbench_cue_metadata",
     "init_workbench_library",
     "list_library_folders",
     "load_folder_samples",
+    "load_sample_cue",
     "lookup_sample",
     "mark_folder_opened",
     "normalize_display_name",
     "register_library_folder",
     "remove_library_folder",
+    "save_sample_cue",
     "upsert_folder",
     "upsert_sample",
+    "validate_workbench_cue_metadata",
     "workbench_library_db_path",
 ]

@@ -5,7 +5,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from src.workbench_waveform import compute_waveform_envelope
+from src.workbench_waveform import (
+    clamp_cue_start_ms,
+    compute_waveform_envelope,
+    cue_marker_x,
+    read_audio_duration_ms,
+)
 from tests.audio_fixtures import write_sine_wav
 
 
@@ -40,3 +45,23 @@ def test_compute_waveform_envelope_handles_silence(tmp_path: Path):
     envelope = compute_waveform_envelope(path, max_points=10)
     assert envelope
     assert max(envelope) == pytest.approx(0.0)
+
+
+def test_cue_marker_x_at_zero():
+    assert cue_marker_x(0, duration_ms=1000, width=200) == 0
+
+
+def test_cue_marker_x_at_midpoint():
+    assert cue_marker_x(500, duration_ms=1000, width=200) == 100
+
+
+def test_clamp_cue_start_ms_limits_to_duration():
+    assert clamp_cue_start_ms(1500, duration_ms=1000) == 999
+    assert clamp_cue_start_ms(-5, duration_ms=1000) == 0
+
+
+def test_read_audio_duration_ms_from_synthetic_wav(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.2, frequency_hz=440.0)
+    duration_ms = read_audio_duration_ms(wav)
+    assert duration_ms is not None
+    assert 180 <= duration_ms <= 220

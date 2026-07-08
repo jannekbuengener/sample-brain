@@ -1,8 +1,20 @@
 # Workbench Cue / Loop / Attack Metadata Plan
 
-**Status:** Plan only (not implemented on `main`)  
+**Status:** Cue metadata v1 implemented on `main` (schema v2, load/save API, read-only waveform marker). Interactive editing not yet shipped.  
 **Parent:** [#117 — workbench usability and library workflow follow-ups](https://github.com/jannekbuengener/sample-brain/issues/117)  
-**Related code:** `src/workbench_library.py`, `src/workbench_waveform.py`, `src/workbench_preview.py`
+**Related code:** `src/workbench_library.py`, `src/workbench_waveform.py`, `src/workbench_preview.py`, `src/workbench.py`
+
+## Implementation status (v1)
+
+| Item | Status |
+|---|---|
+| Schema v2 columns on `samples` | ✅ Shipped |
+| Idempotent migration for existing `workbench_library.db` | ✅ Shipped |
+| `WorkbenchCueMetadata` + `load_sample_cue` / `save_sample_cue` | ✅ Shipped |
+| Read-only cue marker on waveform canvas | ✅ Shipped |
+| Interactive cue set / drag | ❌ Follow-up |
+| Preview from `cue_start_ms` | ❌ Follow-up |
+| Loop region UI | ❌ Follow-up |
 
 ## 1. Problem
 
@@ -92,8 +104,8 @@ def default_cue_for_duration(duration_ms: float) -> SampleCueMetadata: ...
 | Phase | Scope | Depends on |
 |---|---|---|
 | **Plan** (this doc) | Fields, safety, schema | — |
-| **v1 read** | Show default `cue_start_ms=0`; draw vertical marker on waveform | schema v2 + load |
-| **v1 edit** | Click/drag on waveform to set `cue_start_ms`; save to DB | v1 read |
+| **v1 read** | Show default `cue_start_ms=0`; draw vertical marker on waveform | ✅ Shipped |
+| **v1 edit** | Click/drag on waveform to set `cue_start_ms`; save to DB | ❌ Follow-up |
 | **v1 preview** | Preview starts at `cue_start_ms` | preview player offset (no new dep; may need temp slice or player seek) |
 | **v2 detect** | Optional `attack_ms` via librosa onset (analysis thread only) | analyze / workbench analyze path |
 | **v2 loop** | Loop region handles on waveform for loops only | v1 edit |
@@ -128,7 +140,7 @@ Detector output is **suggestion only**; user override sets `cue_source=manual`.
 
 ## 10. Recommended implementation order
 
-1. `workbench_cue_metadata_v1` — schema v2 migration + load/save + read-only markers at 0 ms  
+1. ~~`workbench_cue_metadata_v1` — schema v2 migration + load/save + read-only markers at 0 ms~~ ✅  
 2. `workbench_cue_waveform_edit_v1` — click to set `cue_start_ms`  
 3. `workbench_preview_cue_offset` — preview from cue (platform limits documented)  
 4. `workbench_attack_detect_suggest` — optional detector → `attack_ms`  
