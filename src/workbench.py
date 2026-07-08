@@ -23,6 +23,7 @@ from .workbench_controller import (
     sort_workbench_rows,
     validate_workbench_folder,
 )
+from .workbench_preview import WorkbenchPreviewPlayer
 
 # Dark palette inspired by ui_mockup.png (functional, not pixel-perfect).
 BG_DARK = "#121212"
@@ -68,12 +69,15 @@ class WorkbenchApp:
         self._busy = False
         self._cancel_event = threading.Event()
         self._detail_copy_path: str | None = None
+        self._preview = WorkbenchPreviewPlayer()
+        self._preview_row_path: str | None = None
 
         self._build_styles()
         self._build_layout()
         self._restore_last_folder()
         self._refresh_library_list()
         self._set_status("Bereit — Ordnerpfad eingeben oder wählen, dann Analyse starten.")
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _build_styles(self) -> None:
         style = ttk.Style(self.root)
@@ -240,13 +244,29 @@ class WorkbenchApp:
         ttk.Label(detail_header, text="Sample-Details", style="Heading.TLabel").pack(
             side=tk.LEFT, anchor=tk.W
         )
+        detail_actions = ttk.Frame(detail_header, style="Panel.TFrame")
+        detail_actions.pack(side=tk.RIGHT)
+        self._play_btn = ttk.Button(
+            detail_actions,
+            text="▶ Abspielen",
+            command=self._play_preview,
+            state=tk.DISABLED,
+        )
+        self._play_btn.pack(side=tk.LEFT, padx=(0, 4))
+        self._stop_btn = ttk.Button(
+            detail_actions,
+            text="■ Stop",
+            command=self._stop_preview,
+            state=tk.DISABLED,
+        )
+        self._stop_btn.pack(side=tk.LEFT, padx=(0, 8))
         self._copy_path_btn = ttk.Button(
-            detail_header,
+            detail_actions,
             text="Pfad kopieren",
             command=self._copy_detail_path,
             state=tk.DISABLED,
         )
-        self._copy_path_btn.pack(side=tk.RIGHT)
+        self._copy_path_btn.pack(side=tk.LEFT)
 
         self._detail_text = tk.Text(
             detail_frame,
@@ -452,6 +472,7 @@ class WorkbenchApp:
         if self._limit_var.get().strip() and limit is None:
             return
 
+        self._stop_preview()
         self._busy = True
         self._cancel_event.clear()
         self._analyze_btn.state(["disabled"])
@@ -650,6 +671,38 @@ class WorkbenchApp:
         if 0 <= idx < len(self._visible_rows):
             self._set_detail(self._visible_rows[idx])
 
+    def _on_close(self) -> None:
+        self._stop_preview()
+        self.root.destroy()
+
+    def _update_preview_buttons(self, row: WorkbenchRow | None) -> None:
+        has_path = row is not None and bool(row.path)
+        self._preview_row_path = row.path if has_path else None
+        if has_path:
+            self._play_btn.state(["!disabled"])
+        else:
+            self._play_btn.state(["disabled"])
+        if self._preview.current_path is not None:
+            self._stop_btn.state(["!disabled"])
+        else:
+            self._stop_btn.state(["disabled"])
+
+    def _play_preview(self) -> None:
+        if not self._preview_row_path:
+            return
+        result = self._preview.play(self._preview_row_path)
+        if result.ok:
+            self._stop_btn.state(["!disabled"])
+            name = Path(self._preview_row_path).name
+            self._set_status(f"Wiedergabe: {name}", tone="active")
+        else:
+            self._stop_btn.state(["disabled"])
+            self._set_status(result.message or "Wiedergabe fehlgeschlagen.", tone="error")
+
+    def _stop_preview(self) -> None:
+        self._preview.stop()
+        self._stop_btn.state(["disabled"])
+
     def _copy_detail_path(self) -> None:
         if not self._detail_copy_path:
             return
@@ -680,6 +733,7 @@ class WorkbenchApp:
         self._detail_text.configure(state=tk.NORMAL)
         self._detail_text.delete("1.0", tk.END)
         self._detail_copy_path = row.path if row is not None else None
+        self._update_preview_buttons(row)
         if row is None:
             self._copy_path_btn.state(["disabled"])
             self._detail_text.insert(tk.END, "Kein Sample ausgewählt.")
