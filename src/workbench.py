@@ -13,6 +13,8 @@ from .workbench_controller import (
     analyze_folder_for_workbench,
     filter_workbench_rows,
     format_path_display_lines,
+    load_workbench_last_folder,
+    save_workbench_last_folder,
     sort_workbench_rows,
     validate_workbench_folder,
 )
@@ -64,6 +66,7 @@ class WorkbenchApp:
 
         self._build_styles()
         self._build_layout()
+        self._restore_last_folder()
         self._set_status("Bereit — Ordnerpfad eingeben oder wählen, dann Analyse starten.")
 
     def _build_styles(self) -> None:
@@ -225,6 +228,11 @@ class WorkbenchApp:
     def _on_folder_enter(self, _event: tk.Event | None = None) -> None:
         self._start_analysis()
 
+    def _restore_last_folder(self) -> None:
+        remembered = load_workbench_last_folder()
+        if remembered:
+            self._folder_var.set(remembered)
+
     def _resolve_folder(self) -> Path | None:
         validation = validate_workbench_folder(self._folder_var.get())
         if not validation.ok:
@@ -234,6 +242,7 @@ class WorkbenchApp:
             return None
         assert validation.normalized_path is not None
         self._folder_var.set(str(validation.normalized_path))
+        save_workbench_last_folder(validation.normalized_path)
         return validation.normalized_path
 
     def _pick_folder(self) -> None:
@@ -241,6 +250,7 @@ class WorkbenchApp:
         if not chosen:
             return
         self._folder_var.set(chosen)
+        save_workbench_last_folder(chosen)
         self._set_status(f"Ordner: {chosen}")
 
     def _parse_limit(self) -> int | None:
