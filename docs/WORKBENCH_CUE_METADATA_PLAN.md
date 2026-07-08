@@ -148,7 +148,8 @@ Detector output is **suggestion only**; user override sets `cue_source=manual`.
 4. ~~`workbench_waveform_play_controls` — waveform as play surface; left/right click playback~~ ✅  
 5. ~~`workbench_cue_set_ux` — permanent cue set (Shift+left-click)~~ ✅  
 6. `workbench_attack_detect_suggest` — optional detector → `attack_ms`  
-7. `workbench_loop_metadata_v1` — loop region fields + UI  
+7. `workbench_loop_edit_mode_v1` — loop region set/clear per [`WORKBENCH_LOOP_EDIT_PLAN.md`](WORKBENCH_LOOP_EDIT_PLAN.md)  
+8. `workbench_loop_metadata_v1` — ~~loop region fields~~ fields shipped; edit UI per loop edit plan  
 
 ## 11. Docs sync checklist
 
