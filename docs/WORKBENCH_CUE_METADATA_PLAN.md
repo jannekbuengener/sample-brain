@@ -12,7 +12,7 @@
 | Idempotent migration for existing `workbench_library.db` | ✅ Shipped |
 | `WorkbenchCueMetadata` + `load_sample_cue` / `save_sample_cue` | ✅ Shipped |
 | Read-only cue marker on waveform canvas | ✅ Shipped |
-| Interactive cue set / drag | ❌ Follow-up |
+| Interactive cue set / drag | ❌ Click-to-set shipped; drag follow-up |
 | Preview from `cue_start_ms` | ❌ Follow-up |
 | Loop region UI | ❌ Follow-up |
 
@@ -105,7 +105,7 @@ def default_cue_for_duration(duration_ms: float) -> SampleCueMetadata: ...
 |---|---|---|
 | **Plan** (this doc) | Fields, safety, schema | — |
 | **v1 read** | Show default `cue_start_ms=0`; draw vertical marker on waveform | ✅ Shipped |
-| **v1 edit** | Click/drag on waveform to set `cue_start_ms`; save to DB | ❌ Follow-up |
+| **v1 edit** | Click on waveform to set `cue_start_ms`; save to DB | ✅ Shipped (click only, no drag) |
 | **v1 preview** | Preview starts at `cue_start_ms` | preview player offset (no new dep; may need temp slice or player seek) |
 | **v2 detect** | Optional `attack_ms` via librosa onset (analysis thread only) | analyze / workbench analyze path |
 | **v2 loop** | Loop region handles on waveform for loops only | v1 edit |
@@ -141,7 +141,7 @@ Detector output is **suggestion only**; user override sets `cue_source=manual`.
 ## 10. Recommended implementation order
 
 1. ~~`workbench_cue_metadata_v1` — schema v2 migration + load/save + read-only markers at 0 ms~~ ✅  
-2. `workbench_cue_waveform_edit_v1` — click to set `cue_start_ms`  
+2. ~~`workbench_cue_waveform_edit_v1` — click to set `cue_start_ms`~~ ✅  
 3. `workbench_preview_cue_offset` — preview from cue (platform limits documented)  
 4. `workbench_attack_detect_suggest` — optional detector → `attack_ms`  
 5. `workbench_loop_metadata_v1` — loop region fields + UI  

@@ -18,12 +18,15 @@ from src.workbench_controller import (
     get_workbench_library_folders,
     load_cached_folder_rows,
     load_workbench_last_folder,
+    load_workbench_sample_cue,
     remove_workbench_library_folder,
     save_workbench_last_folder,
+    save_workbench_sample_cue,
     sort_workbench_rows,
     validate_workbench_folder,
     workbench_last_folder_file,
 )
+from src.workbench_library import WorkbenchCueMetadata, WorkbenchCueNotFoundError
 from tests.audio_fixtures import write_kick_transient_wav, write_sine_wav
 
 
@@ -450,3 +453,23 @@ def test_load_cached_folder_rows_empty_when_not_analyzed(tmp_path: Path):
     add_workbench_library_folder(folder)
 
     assert load_cached_folder_rows(folder) == []
+
+
+def test_save_and_load_workbench_sample_cue_via_controller(sample_folder: Path):
+    result = analyze_folder_for_workbench(sample_folder)
+    row = result.rows[0]
+    save_workbench_sample_cue(
+        row.path,
+        WorkbenchCueMetadata(cue_start_ms=123, cue_source="manual"),
+        duration_ms=2000,
+    )
+    loaded = load_workbench_sample_cue(row.path)
+    assert loaded.cue_start_ms == 123
+    assert loaded.cue_source == "manual"
+
+
+def test_save_workbench_sample_cue_unknown_path_raises(tmp_path: Path):
+    missing = tmp_path / "ghost.wav"
+    missing.write_bytes(b"data")
+    with pytest.raises(WorkbenchCueNotFoundError):
+        save_workbench_sample_cue(missing, WorkbenchCueMetadata(cue_start_ms=0))
