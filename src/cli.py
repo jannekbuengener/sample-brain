@@ -454,6 +454,11 @@ def main():
         help="Exit 0 when sqlite-vec loads; exit 1 with diagnostics otherwise.",
     )
 
+    sub.add_parser(
+        "workbench",
+        help="Lokale Werkbank starten (Playlist-Ansicht, tkinter)",
+    )
+
     args = parser.parse_args()
 
     # Imports hier drin, damit das Skript startet, auch wenn einzelne Module fehlen.
@@ -744,6 +749,18 @@ def main():
             if not report.available:
                 sys.exit(1)
             return
+
+    if args.cmd == "workbench":
+        try:
+            from .workbench import run_workbench
+        except ImportError as e:
+            print(
+                f"[ERROR] Workbench UI nicht verfügbar (tkinter fehlt?): {e}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        run_workbench()
+        return
 
 
 if __name__ == "__main__":
