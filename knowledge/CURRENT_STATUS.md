@@ -5,7 +5,7 @@
 - **Branch:** `main` @ `4054821` (workbench Shift+click cue set #137)
 - **Open PRs:** 1 Dependabot — **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** (`numba` requires `numpy<2.5`)
 - **Open issues:** 3 — [#117](https://github.com/jannekbuengener/sample-brain/issues/117) Workbench usability follow-ups (loop marker v1 slice in progress; loop edit / attack editor follow-up), [#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B, [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN
-- **Local Workbench MVP:** `sample-brain workbench` — tkinter folder analysis + playlist/detail + waveform-as-play-surface + saved cue marker + Shift+click cue set + read-only loop region when loop metadata set
+- **Local Workbench MVP:** `sample-brain workbench` — tkinter folder analysis + playlist/detail + waveform-as-play-surface + saved cue marker + Shift+click cue set + read-only loop region + waveform usage hint
 - **Workbench P0 (#117, merged):** cancel analysis (#119), folder path entry (#118), playlist filter (#120), column sort (#121), detail path polish + copy (#122)
 - **Workbench P1 (#117, merged):** last-folder memory (#124), CSV playlist export (#125)
 - **Workbench library cache v1 (#117):** user-local SQLite (`~/.sample-brain/workbench_library.db`) remembers analyzed folders/samples; invalidation via path + size + mtime; internal `display_name` only — original files unchanged

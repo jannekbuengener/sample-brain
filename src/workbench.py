@@ -52,6 +52,7 @@ WAVEFORM_HEIGHT = 72
 CUE_MARKER = "#ffffff"
 LOOP_REGION_FILL = "#1a3d28"
 LOOP_MARKER = "#6fcf6f"
+WAVEFORM_USAGE_HINT = "Linksklick: Play · Rechtsklick: ab Stelle · Shift+Klick: Cue setzen"
 
 COLUMNS = (
     ("name", "Name", 180),
@@ -301,6 +302,11 @@ class WorkbenchApp:
         self._waveform_canvas.bind("<Configure>", self._on_waveform_resize)
         self._waveform_canvas.bind("<Button-1>", self._on_waveform_click)
         self._waveform_canvas.bind("<Button-3>", self._on_waveform_right_click)
+        ttk.Label(
+            detail_frame,
+            text=WAVEFORM_USAGE_HINT,
+            style="Muted.TLabel",
+        ).pack(fill=tk.X, pady=(2, 0))
 
         status_bar = ttk.Frame(self.root, style="Panel.TFrame")
         status_bar.pack(fill=tk.X, side=tk.BOTTOM)
