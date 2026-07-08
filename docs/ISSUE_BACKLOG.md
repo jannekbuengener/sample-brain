@@ -320,7 +320,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Labels: `ui`, `feat`, `desktop`
 - Goal: Provide a first local result inspector with sample preview.
 - Context: Search becomes much more useful when results can be auditioned quickly.
-- **Partial:** Workbench MVP covers result inspection (metadata detail panel) and audio preview v1 (#117, PR #129): Play/Stop; preview controls — double-click play, Space toggle, selection preserved on filter/sort.
+- **Partial:** Workbench MVP covers result inspection, audio preview v1 (#129), preview controls (#130), and read-only waveform envelope panel v1 (#117) — no cue/loop editing yet.
 - **Partial:** Workbench shows analysis progress (N/M + progress bar) and classified error messages.
 - **Partial:** Workbench short clips (<0.5s) show Kurzclip hint; BPM/Key not overclaimed; librosa n_fft warnings suppressed for short audio.
 - Acceptance criteria:

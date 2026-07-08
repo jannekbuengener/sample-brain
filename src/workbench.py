@@ -24,6 +24,7 @@ from .workbench_controller import (
     validate_workbench_folder,
 )
 from .workbench_preview import WorkbenchPreviewPlayer, preview_toggle_action
+from .workbench_waveform import compute_waveform_envelope
 
 # Dark palette inspired by ui_mockup.png (functional, not pixel-perfect).
 BG_DARK = "#121212"
@@ -36,6 +37,7 @@ TEXT_MUTED = "#9a9a9a"
 ERROR = "#ff3b30"
 SUCCESS = "#6fcf6f"
 BORDER = "#333333"
+WAVEFORM_HEIGHT = 72
 
 COLUMNS = (
     ("name", "Name", 180),
@@ -71,6 +73,7 @@ class WorkbenchApp:
         self._detail_copy_path: str | None = None
         self._preview = WorkbenchPreviewPlayer()
         self._preview_row_path: str | None = None
+        self._detail_row: WorkbenchRow | None = None
 
         self._build_styles()
         self._build_layout()
@@ -285,6 +288,17 @@ class WorkbenchApp:
             highlightbackground=BORDER,
         )
         self._detail_text.pack(fill=tk.BOTH, expand=True)
+
+        self._waveform_canvas = tk.Canvas(
+            detail_frame,
+            height=WAVEFORM_HEIGHT,
+            bg=PANEL_ALT,
+            highlightthickness=1,
+            highlightbackground=BORDER,
+            relief=tk.FLAT,
+        )
+        self._waveform_canvas.pack(fill=tk.X, pady=(8, 0))
+        self._waveform_canvas.bind("<Configure>", self._on_waveform_resize)
 
         status_bar = ttk.Frame(self.root, style="Panel.TFrame")
         status_bar.pack(fill=tk.X, side=tk.BOTTOM)
@@ -775,7 +789,42 @@ class WorkbenchApp:
             return
         self._set_status(f"CSV exportiert ({count} Zeilen).", tone="success")
 
+    def _on_waveform_resize(self, _event: tk.Event | None = None) -> None:
+        self._draw_waveform(self._detail_row)
+
+    def _draw_waveform(self, row: WorkbenchRow | None) -> None:
+        canvas = self._waveform_canvas
+        canvas.delete("all")
+        width = max(int(canvas.winfo_width()), 1)
+        height = max(int(canvas.winfo_height()), 1)
+        if row is None or not row.path:
+            canvas.create_text(width // 2, height // 2, text="—", fill=TEXT_MUTED)
+            return
+        max_points = max(width // 2, 48)
+        envelope = compute_waveform_envelope(row.path, max_points=max_points)
+        if not envelope:
+            canvas.create_text(
+                width // 2,
+                height // 2,
+                text="Waveform nicht verfügbar",
+                fill=TEXT_MUTED,
+            )
+            return
+        mid = height // 2
+        step = width / len(envelope)
+        for index, peak in enumerate(envelope):
+            x = int(index * step + step / 2)
+            bar_height = max(1, int(peak * (height * 0.45)))
+            canvas.create_line(
+                x,
+                mid - bar_height,
+                x,
+                mid + bar_height,
+                fill=ACCENT,
+            )
+
     def _set_detail(self, row: WorkbenchRow | None) -> None:
+        self._detail_row = row
         self._detail_text.configure(state=tk.NORMAL)
         self._detail_text.delete("1.0", tk.END)
         self._detail_copy_path = row.path if row is not None else None
@@ -834,6 +883,7 @@ class WorkbenchApp:
                 )
             self._detail_text.insert(tk.END, "\n".join(lines))
         self._detail_text.configure(state=tk.DISABLED)
+        self._draw_waveform(row)
 
     def _set_status(self, message: str, *, tone: str = "neutral") -> None:
         self._status_var.set(message)
