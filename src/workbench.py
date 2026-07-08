@@ -10,11 +10,15 @@ from typing import Callable
 from .workbench_controller import (
     WorkbenchResult,
     WorkbenchRow,
+    add_workbench_library_folder,
     analyze_folder_for_workbench,
     export_workbench_rows_to_csv,
     filter_workbench_rows,
     format_path_display_lines,
+    get_workbench_library_folders,
+    load_cached_folder_rows,
     load_workbench_last_folder,
+    remove_workbench_library_folder,
     save_workbench_last_folder,
     sort_workbench_rows,
     validate_workbench_folder,
@@ -68,6 +72,7 @@ class WorkbenchApp:
         self._build_styles()
         self._build_layout()
         self._restore_last_folder()
+        self._refresh_library_list()
         self._set_status("Bereit — Ordnerpfad eingeben oder wählen, dann Analyse starten.")
 
     def _build_styles(self) -> None:
@@ -144,12 +149,53 @@ class WorkbenchApp:
 
         body = ttk.Frame(self.root, padding=(12, 0, 12, 8))
         body.pack(fill=tk.BOTH, expand=True)
-        body.columnconfigure(0, weight=3)
-        body.columnconfigure(1, weight=1)
+        body.columnconfigure(0, weight=0, minsize=200)
+        body.columnconfigure(1, weight=3)
+        body.columnconfigure(2, weight=1)
         body.rowconfigure(0, weight=1)
 
+        library_frame = ttk.Frame(body, style="Panel.TFrame", padding=8)
+        library_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+
+        lib_header = ttk.Frame(library_frame, style="Panel.TFrame")
+        lib_header.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(lib_header, text="Library-Ordner", style="Heading.TLabel").pack(
+            side=tk.LEFT, anchor=tk.W
+        )
+        lib_btns = ttk.Frame(lib_header, style="Panel.TFrame")
+        lib_btns.pack(side=tk.RIGHT)
+        ttk.Button(lib_btns, text="+", width=3, command=self._add_library_folder).pack(
+            side=tk.LEFT, padx=(0, 4)
+        )
+        ttk.Button(lib_btns, text="−", width=3, command=self._remove_library_folder).pack(
+            side=tk.LEFT
+        )
+
+        lib_list_frame = ttk.Frame(library_frame, style="Panel.TFrame")
+        lib_list_frame.pack(fill=tk.BOTH, expand=True)
+
+        self._library_list = tk.Listbox(
+            lib_list_frame,
+            bg=PANEL_ALT,
+            fg=TEXT,
+            selectbackground=ACCENT_DIM,
+            selectforeground="#ffffff",
+            highlightthickness=1,
+            highlightbackground=BORDER,
+            activestyle="none",
+            font=("Segoe UI", 9),
+            relief=tk.FLAT,
+        )
+        lib_scroll = ttk.Scrollbar(lib_list_frame, orient=tk.VERTICAL, command=self._library_list.yview)
+        self._library_list.configure(yscrollcommand=lib_scroll.set)
+        self._library_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        lib_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self._library_list.bind("<<ListboxSelect>>", self._on_library_select)
+        self._library_list.bind("<Double-Button-1>", self._on_library_activate)
+        self._library_paths: list[str] = []
+
         playlist_frame = ttk.Frame(body, style="Panel.TFrame", padding=8)
-        playlist_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        playlist_frame.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
 
         filter_bar = ttk.Frame(playlist_frame, style="Panel.TFrame")
         filter_bar.pack(fill=tk.X, pady=(0, 6))
@@ -188,7 +234,7 @@ class WorkbenchApp:
         self._tree.bind("<<TreeviewSelect>>", self._on_select)
 
         detail_frame = ttk.Frame(body, style="Panel.TFrame", padding=10)
-        detail_frame.grid(row=0, column=1, sticky="nsew")
+        detail_frame.grid(row=0, column=2, sticky="nsew")
         detail_header = ttk.Frame(detail_frame, style="Panel.TFrame")
         detail_header.pack(fill=tk.X, pady=(0, 8))
         ttk.Label(detail_header, text="Sample-Details", style="Heading.TLabel").pack(
@@ -228,6 +274,131 @@ class WorkbenchApp:
         self._progress = ttk.Progressbar(status_inner, mode="determinate", maximum=100)
         self._progress.pack(fill=tk.X, pady=(4, 0))
         self._progress.pack_forget()
+
+    def _library_display_label(self, path: str) -> str:
+        parts = Path(path).parts
+        if len(parts) <= 2:
+            return path
+        return f"…/{'/'.join(parts[-2:])}"
+
+    def _refresh_library_list(self) -> None:
+        folders = get_workbench_library_folders()
+        self._library_paths = [folder.path for folder in folders]
+        self._library_list.delete(0, tk.END)
+        for folder_path in self._library_paths:
+            self._library_list.insert(tk.END, self._library_display_label(folder_path))
+
+    def _selected_library_path(self) -> str | None:
+        selection = self._library_list.curselection()
+        if not selection:
+            return None
+        index = int(selection[0])
+        if 0 <= index < len(self._library_paths):
+            return self._library_paths[index]
+        return None
+
+    def _add_library_folder(self) -> None:
+        if self._busy:
+            return
+        raw = self._folder_var.get().strip()
+        if raw:
+            validation = validate_workbench_folder(raw)
+            if not validation.ok:
+                messagebox.showerror(
+                    "Library",
+                    validation.error_message or "Ungültiger Ordner",
+                )
+                return
+            assert validation.normalized_path is not None
+            folder = validation.normalized_path
+        else:
+            chosen = filedialog.askdirectory(title="Ordner zur Library hinzufügen")
+            if not chosen:
+                return
+            validation = validate_workbench_folder(chosen)
+            if not validation.ok:
+                messagebox.showerror(
+                    "Library",
+                    validation.error_message or "Ungültiger Ordner",
+                )
+                return
+            assert validation.normalized_path is not None
+            folder = validation.normalized_path
+
+        add_workbench_library_folder(folder)
+        self._folder_var.set(str(folder))
+        save_workbench_last_folder(folder)
+        self._refresh_library_list()
+        self._select_library_path(str(folder))
+        self._load_cached_folder(folder, announce_if_empty=True)
+        self._set_status(f"Ordner zur Library hinzugefügt: {folder}", tone="success")
+
+    def _remove_library_folder(self) -> None:
+        if self._busy:
+            return
+        path = self._selected_library_path()
+        if path is None:
+            messagebox.showinfo("Library", "Bitte zuerst einen Library-Ordner auswählen.")
+            return
+        confirmed = messagebox.askyesno(
+            "Library entfernen",
+            "Nur aus Sample Brain entfernen?\n\n"
+            "Cache-Metadaten werden gelöscht. Originaldateien bleiben erhalten.",
+        )
+        if not confirmed:
+            return
+        removed = remove_workbench_library_folder(path)
+        self._refresh_library_list()
+        if removed:
+            self._set_status("Ordner aus Library entfernt (Dateien unverändert).", tone="neutral")
+        else:
+            self._set_status("Ordner war nicht in der Library.", tone="neutral")
+
+    def _select_library_path(self, path: str) -> None:
+        try:
+            index = self._library_paths.index(path)
+        except ValueError:
+            return
+        self._library_list.selection_clear(0, tk.END)
+        self._library_list.selection_set(index)
+        self._library_list.see(index)
+
+    def _on_library_select(self, _event: tk.Event | None = None) -> None:
+        if self._busy:
+            return
+        path = self._selected_library_path()
+        if path is None:
+            return
+        self._folder_var.set(path)
+        save_workbench_last_folder(path)
+        self._load_cached_folder(Path(path), announce_if_empty=True)
+
+    def _on_library_activate(self, _event: tk.Event | None = None) -> None:
+        self._on_library_select()
+
+    def _load_cached_folder(self, folder: Path, *, announce_if_empty: bool = False) -> None:
+        rows = load_cached_folder_rows(folder)
+        if not rows:
+            self._clear_playlist()
+            if announce_if_empty:
+                self._set_status(
+                    "Kein Cache für diesen Ordner — Analyse starten, um Samples zu laden.",
+                    tone="neutral",
+                )
+            return
+        self._rows = rows
+        summary = {
+            "files_found": len(rows),
+            "analyzed_count": sum(1 for row in rows if row.status == "ok"),
+            "error_count": sum(1 for row in rows if row.status == "error"),
+            "cache_hits": len(rows),
+            "cache_misses": 0,
+        }
+        self._populate_playlist(WorkbenchResult(summary=summary, rows=rows))
+        self._set_status(
+            f"{len(rows)} gecachte Samples geladen — Analyse starten für Aktualisierung.",
+            tone="success",
+        )
 
     def _on_folder_enter(self, _event: tk.Event | None = None) -> None:
         self._start_analysis()
@@ -368,6 +539,9 @@ class WorkbenchApp:
         assert result is not None
         self._rows = result.rows
         self._populate_playlist(result)
+        self._refresh_library_list()
+        folder_path = str(self._folder_var.get())
+        self._select_library_path(folder_path)
 
         s = result.summary
         cancelled = s.get("cancelled", 0)

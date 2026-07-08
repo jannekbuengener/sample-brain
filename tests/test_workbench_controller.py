@@ -9,12 +9,16 @@ from pathlib import Path
 import pytest
 
 from src.workbench_controller import (
+    add_workbench_library_folder,
     analyze_folder_for_workbench,
     error_message_for_code,
     export_workbench_rows_to_csv,
     filter_workbench_rows,
     format_path_display_lines,
+    get_workbench_library_folders,
+    load_cached_folder_rows,
     load_workbench_last_folder,
+    remove_workbench_library_folder,
     save_workbench_last_folder,
     sort_workbench_rows,
     validate_workbench_folder,
@@ -412,3 +416,37 @@ def test_cli_import_does_not_load_tkinter():
 def test_workbench_module_imports_tkinter_only_when_loaded():
     mod = importlib.import_module("src.workbench")
     assert mod is not None
+
+
+def test_get_workbench_library_folders_lists_registered(sample_folder: Path):
+    add_workbench_library_folder(sample_folder)
+
+    folders = get_workbench_library_folders()
+    paths = {folder.path for folder in folders}
+    assert str(sample_folder.resolve()) in paths
+
+
+def test_remove_workbench_library_folder_returns_bool(sample_folder: Path):
+    add_workbench_library_folder(sample_folder)
+
+    assert remove_workbench_library_folder(sample_folder)
+    assert not remove_workbench_library_folder(sample_folder)
+    assert get_workbench_library_folders() == []
+
+
+def test_load_cached_folder_rows_after_analysis(sample_folder: Path):
+    analyze_folder_for_workbench(sample_folder)
+
+    rows = load_cached_folder_rows(sample_folder)
+
+    assert len(rows) == 2
+    names = {row.display_name for row in rows}
+    assert names == {"tone a", "kick b"}
+
+
+def test_load_cached_folder_rows_empty_when_not_analyzed(tmp_path: Path):
+    folder = tmp_path / "empty_lib"
+    folder.mkdir()
+    add_workbench_library_folder(folder)
+
+    assert load_cached_folder_rows(folder) == []

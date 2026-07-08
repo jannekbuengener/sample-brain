@@ -97,6 +97,14 @@ def _utc_now_iso() -> str:
 
 
 @dataclass
+class LibraryFolder:
+    id: int
+    path: str
+    last_scan_at: str | None
+    last_opened_at: str | None
+
+
+@dataclass
 class CachedWorkbenchRow:
     original_path: str
     relative_path: str
@@ -148,6 +156,102 @@ class CachedWorkbenchRow:
             error_code=self.error_code,
             details=details,
         )
+
+
+def _resolve_folder_id(
+    folder_id_or_path: int | str | Path,
+    conn: sqlite3.Connection,
+) -> int | None:
+    if isinstance(folder_id_or_path, int):
+        row = conn.execute(
+            "SELECT id FROM folders WHERE id = ?",
+            (folder_id_or_path,),
+        ).fetchone()
+        return int(row["id"]) if row is not None else None
+
+    path = str(Path(folder_id_or_path).expanduser().resolve())
+    row = conn.execute("SELECT id FROM folders WHERE path = ?", (path,)).fetchone()
+    return int(row["id"]) if row is not None else None
+
+
+def register_library_folder(folder_path: Path | str, *, db_path: Path | None = None) -> int:
+    """Add a folder to the workbench library without running analysis."""
+    path = Path(folder_path).expanduser().resolve()
+    now = _utc_now_iso()
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO folders (path, last_scan_at, last_opened_at)
+            VALUES (?, NULL, ?)
+            ON CONFLICT(path) DO UPDATE SET
+                last_opened_at=excluded.last_opened_at
+            """,
+            (str(path), now),
+        )
+        row = conn.execute("SELECT id FROM folders WHERE path = ?", (str(path),)).fetchone()
+        conn.commit()
+    assert row is not None
+    return int(row["id"])
+
+
+def mark_folder_opened(folder_path: Path | str, *, db_path: Path | None = None) -> None:
+    """Update last_opened_at for a known library folder."""
+    path = str(Path(folder_path).expanduser().resolve())
+    now = _utc_now_iso()
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        conn.execute(
+            "UPDATE folders SET last_opened_at = ? WHERE path = ?",
+            (now, path),
+        )
+        conn.commit()
+
+
+def list_library_folders(*, db_path: Path | None = None) -> list[LibraryFolder]:
+    """Return known library folders, most recently opened first."""
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT id, path, last_scan_at, last_opened_at
+            FROM folders
+            ORDER BY
+                CASE WHEN last_opened_at IS NULL THEN 1 ELSE 0 END,
+                last_opened_at DESC,
+                path COLLATE NOCASE ASC
+            """
+        ).fetchall()
+    return [
+        LibraryFolder(
+            id=int(row["id"]),
+            path=row["path"],
+            last_scan_at=row["last_scan_at"],
+            last_opened_at=row["last_opened_at"],
+        )
+        for row in rows
+    ]
+
+
+def remove_library_folder(
+    folder_id_or_path: int | str | Path,
+    *,
+    db_path: Path | None = None,
+) -> bool:
+    """Remove folder metadata and cached samples from the workbench library.
+
+    Does not delete or modify any files on disk. Idempotent: returns False when
+    the folder was not in the library.
+    """
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        folder_id = _resolve_folder_id(folder_id_or_path, conn)
+        if folder_id is None:
+            return False
+        conn.execute("DELETE FROM samples WHERE folder_id = ?", (folder_id,))
+        conn.execute("DELETE FROM folders WHERE id = ?", (folder_id,))
+        conn.commit()
+    return True
 
 
 def upsert_folder(folder_path: Path | str, *, db_path: Path | None = None) -> int:
@@ -344,11 +448,16 @@ def load_folder_samples(
 __all__ = [
     "WORKBENCH_ANALYZER_VERSION",
     "CachedWorkbenchRow",
+    "LibraryFolder",
     "connect_workbench_library",
     "init_workbench_library",
+    "list_library_folders",
     "load_folder_samples",
     "lookup_sample",
+    "mark_folder_opened",
     "normalize_display_name",
+    "register_library_folder",
+    "remove_library_folder",
     "upsert_folder",
     "upsert_sample",
     "workbench_library_db_path",

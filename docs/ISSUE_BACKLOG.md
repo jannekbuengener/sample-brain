@@ -304,8 +304,9 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Labels: `ui`, `design`, `planning`
 - Goal: Define the first viable local desktop UI concept.
 - Context: A later React/Tauri UI should follow a clear producer workflow.
-- **Partial:** Local Workbench MVP (`sample-brain workbench`) shipped — tkinter playlist/detail; filter/sort (#120–#121), last-folder memory (#124), CSV export (#125), library metadata cache v1 (user-local SQLite, no original-file writes); no search preview yet.
+- **Partial:** Local Workbench MVP (`sample-brain workbench`) shipped — tkinter playlist/detail; filter/sort (#120–#121), last-folder memory (#124), CSV export (#125), library metadata cache v1 (user-local SQLite, no original-file writes); library folder list with add/remove (#117, in progress); no search preview yet.
 - **Partial:** Workbench folder path entry (#117) — type or paste folder path in UI; dialog still available; last used folder restored on startup (#124).
+- **Partial:** Workbench library folder list (#117) — known folders visible in UI; `+` registers folder in local library cache; `−` removes folder metadata and cached samples only (original files unchanged).
 - **Partial:** Windows desktop shortcut helper (`tools/windows/`) — local `.lnk` creation only, no installer/EXE.
 - Acceptance criteria:
   - user flows for search, inspect, preview, and export are documented
