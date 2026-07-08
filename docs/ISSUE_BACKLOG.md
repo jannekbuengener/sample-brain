@@ -304,8 +304,8 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Labels: `ui`, `design`, `planning`
 - Goal: Define the first viable local desktop UI concept.
 - Context: A later React/Tauri UI should follow a clear producer workflow.
-- **Partial:** Local Workbench MVP (`sample-brain workbench`) shipped — tkinter playlist/detail for folder analysis; no search preview yet.
-- **Partial:** Workbench folder path entry (#117 P0) — type or paste folder path in UI; dialog still available.
+- **Partial:** Local Workbench MVP (`sample-brain workbench`) shipped — tkinter playlist/detail for folder analysis; filter/sort (#120–#121), last-folder memory (#124), CSV export (#125); no search preview yet.
+- **Partial:** Workbench folder path entry (#117) — type or paste folder path in UI; dialog still available; last used folder restored on startup (#124).
 - **Partial:** Windows desktop shortcut helper (`tools/windows/`) — local `.lnk` creation only, no installer/EXE.
 - Acceptance criteria:
   - user flows for search, inspect, preview, and export are documented
@@ -319,7 +319,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Labels: `ui`, `feat`, `desktop`
 - Goal: Provide a first local result inspector with sample preview.
 - Context: Search becomes much more useful when results can be auditioned quickly.
-- **Partial:** Workbench MVP covers result inspection (metadata detail panel) without audio preview.
+- **Partial:** Workbench MVP covers result inspection (metadata detail panel) without audio preview; CSV export of playlist rows (#125).
 - **Partial:** Workbench shows analysis progress (N/M + progress bar) and classified error messages.
 - **Partial:** Workbench short clips (<0.5s) show Kurzclip hint; BPM/Key not overclaimed; librosa n_fft warnings suppressed for short audio.
 - Acceptance criteria:
