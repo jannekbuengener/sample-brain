@@ -318,6 +318,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Goal: Provide a first local result inspector with sample preview.
 - Context: Search becomes much more useful when results can be auditioned quickly.
 - **Partial:** Workbench MVP covers result inspection (metadata detail panel) without audio preview.
+- **Partial:** Workbench shows analysis progress (N/M + progress bar) and classified error messages.
 - Acceptance criteria:
   - result metadata can be inspected locally
   - sample preview works for supported formats
