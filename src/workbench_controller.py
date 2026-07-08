@@ -130,6 +130,27 @@ def error_message_for_code(code: str) -> str:
     return ERROR_LABELS.get(code, ERROR_LABELS["analysis_exception"])
 
 
+def filter_workbench_rows(rows: list[WorkbenchRow], query: str) -> list[WorkbenchRow]:
+    """Return rows whose playlist-visible fields match *query* (case-insensitive)."""
+    needle = query.strip().casefold()
+    if not needle:
+        return list(rows)
+
+    def _haystack(row: WorkbenchRow) -> str:
+        parts = [
+            row.display_name,
+            row.relative_path,
+            row.key or "",
+            row.pred_type or "",
+            row.sample_class or "",
+            row.status,
+            row.error or "",
+        ]
+        return " ".join(parts).casefold()
+
+    return [row for row in rows if needle in _haystack(row)]
+
+
 def _format_optional(value: float | None, *, digits: int = 2) -> float | None:
     if value is None:
         return None
@@ -353,6 +374,7 @@ __all__ = [
     "WorkbenchResult",
     "analyze_folder_for_workbench",
     "error_message_for_code",
+    "filter_workbench_rows",
     "row_as_dict",
     "validate_workbench_folder",
 ]
