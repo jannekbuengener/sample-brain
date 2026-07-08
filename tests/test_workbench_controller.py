@@ -23,6 +23,13 @@ from src.workbench_controller import (
 from tests.audio_fixtures import write_kick_transient_wav, write_sine_wav
 
 
+@pytest.fixture(autouse=True)
+def _isolated_workbench_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    state_dir = tmp_path / "workbench_state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+
+
 PLAYLIST_KEYS = {
     "display_name",
     "relative_path",
@@ -87,7 +94,7 @@ def test_controller_finds_audio_files(sample_folder: Path):
 
     assert result.summary["files_found"] == 2
     names = {row.display_name for row in result.rows}
-    assert names == {"tone_a.wav", "kick_b.wav"}
+    assert names == {"tone a", "kick b"}
 
 
 def test_controller_summary_counts(sample_folder: Path):
@@ -120,10 +127,10 @@ def test_sort_workbench_rows_by_name(sample_folder: Path):
     result = analyze_folder_for_workbench(sample_folder)
 
     ascending = sort_workbench_rows(result.rows, "name")
-    assert [row.display_name for row in ascending] == ["kick_b.wav", "tone_a.wav"]
+    assert [row.display_name for row in ascending] == ["kick b", "tone a"]
 
     descending = sort_workbench_rows(result.rows, "name", reverse=True)
-    assert [row.display_name for row in descending] == ["tone_a.wav", "kick_b.wav"]
+    assert [row.display_name for row in descending] == ["tone a", "kick b"]
 
 
 def test_sort_workbench_rows_by_bpm(sample_folder: Path):
@@ -146,11 +153,11 @@ def test_filter_workbench_rows_matches_name_and_type(sample_folder: Path):
 
     by_name = filter_workbench_rows(result.rows, "tone")
     assert len(by_name) == 1
-    assert by_name[0].display_name == "tone_a.wav"
+    assert by_name[0].display_name == "tone a"
 
     by_type = filter_workbench_rows(result.rows, "kick")
     assert len(by_type) == 1
-    assert by_type[0].display_name == "kick_b.wav"
+    assert by_type[0].display_name == "kick b"
 
 
 def test_filter_workbench_rows_empty_query_returns_all(sample_folder: Path):
@@ -236,7 +243,13 @@ def test_empty_folder_progress_and_summary(tmp_path: Path):
         progress_callback=lambda c, t, n, p: events.append((c, t, n, p)),
     )
 
-    assert result.summary == {"files_found": 0, "analyzed_count": 0, "error_count": 0}
+    assert result.summary == {
+        "files_found": 0,
+        "analyzed_count": 0,
+        "error_count": 0,
+        "cache_hits": 0,
+        "cache_misses": 0,
+    }
     assert events and events[0][3] == "scanning"
 
 
@@ -249,6 +262,27 @@ def test_playlist_rows_contain_expected_fields(sample_folder: Path):
         assert PLAYLIST_KEYS <= set(fields.keys())
         assert row.details
         assert "path" in row.details
+
+
+def test_analyze_folder_uses_cache_on_second_run(sample_folder: Path):
+    first = analyze_folder_for_workbench(sample_folder)
+    assert first.summary["cache_misses"] == 2
+    assert first.summary["cache_hits"] == 0
+
+    second = analyze_folder_for_workbench(sample_folder)
+    assert second.summary["cache_hits"] == 2
+    assert second.summary["cache_misses"] == 0
+    assert second.summary["analyzed_count"] == 2
+
+
+def test_analyze_folder_cache_disabled(sample_folder: Path):
+    first = analyze_folder_for_workbench(sample_folder, use_cache=False)
+    second = analyze_folder_for_workbench(sample_folder, use_cache=False)
+
+    assert first.summary["cache_hits"] == 0
+    assert first.summary["cache_misses"] == 0
+    assert second.summary["cache_hits"] == 0
+    assert second.summary["cache_misses"] == 0
 
 
 def test_invalid_folder_raises(tmp_path: Path):

@@ -8,6 +8,7 @@
 - **Local Workbench MVP:** `sample-brain workbench` — tkinter folder analysis + playlist/detail (no VST, no FL export, no search preview, no audio playback)
 - **Workbench P0 (#117, merged):** cancel analysis (#119), folder path entry (#118), playlist filter (#120), column sort (#121), detail path polish + copy (#122)
 - **Workbench P1 (#117, merged):** last-folder memory (#124), CSV playlist export (#125)
+- **Workbench library cache v1 (#117):** user-local SQLite (`~/.sample-brain/workbench_library.db`) remembers analyzed folders/samples; invalidation via path + size + mtime; internal `display_name` only — original files unchanged
 - **Workbench UX polish:** progress bar + status counter during analysis; classified error messages (not generic "Could not extract features")
 - **Workbench short-clip handling:** samples under 0.5s skip BPM/key overclaim; UI shows Kurzclip hint; targeted librosa warning suppression
 - **Workbench Windows shortcut:** optional desktop `.lnk` via `tools/windows/create_workbench_desktop_shortcut.ps1` (local helper, no installer)
@@ -78,7 +79,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 - **Analyze** — extracts audio features via librosa; reads from pre-scanned catalog
 - **Autotype** — rule-based + optional kNN classification
 - **Export** — writes smart tags into FL Studio Browser (**legacy/fallback** CLI path; VST3 plugin is the product target)
-- **Local Workbench** — tkinter MVP: enter or pick folder path (last folder restored from `~/.sample-brain/`), cancel mid-analysis, filter/sort playlist, segment-wise detail paths + copy, CSV export of visible rows, run in-process analyze + rule-based type (`workbench` subcommand)
+- **Local Workbench** — tkinter MVP: enter or pick folder path (last folder restored from `~/.sample-brain/`), cancel mid-analysis, filter/sort playlist, segment-wise detail paths + copy, CSV export, library cache for re-analysis skip, run in-process analyze + rule-based type (`workbench` subcommand)
 - **Packaging** — `sample-brain --help` entry point works
 - **CLI** — core pipeline + optional embed/index/search/vec/benchmark/db doctor
 
@@ -108,7 +109,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 
 - **Default switch to sqlite-vec** — blocked until latency gates PASS
 - **Tier B CLAP search-quality evidence** — Phase 1+2 merged; 4/6 classes on main; vocal/no-vocal proxy spike **HOLD_VOCAL_PROXY_FAILED**; genre/mood remain (#73 OPEN)
-- **Workbench audio preview / catalog DB / search integration** — MVP is folder-only; no playback, no catalog DB bind, no semantic search UI (#117 remains open for roadmap items)
+- **Workbench audio preview / catalog DB unification / search integration** — no playback; catalog.db not wired to workbench yet; no semantic search UI (#117 remains open)
 - **Phase 5 tags + FTS5 MVP** — not started (roadmap Phase 5)
 - **Large-scale private-sample validation** — synthetic/benchmark fixtures only
 - **EPIC 3–6** — not started

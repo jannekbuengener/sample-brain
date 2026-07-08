@@ -15,6 +15,14 @@ from .analyze import (
 )
 from .classify import rule_type
 from .scan import iter_audio_files_stream, safe_audio_info
+from .workbench_library import (
+    WORKBENCH_ANALYZER_VERSION,
+    lookup_sample,
+    normalize_display_name,
+    upsert_folder,
+    upsert_sample,
+    workbench_library_db_path,
+)
 
 ProgressPhase = Literal["scanning", "analyzing", "done", "error", "cancelled"]
 ProgressCallback = Callable[[int, int, str, ProgressPhase], None]
@@ -323,11 +331,22 @@ def _emit_progress(
         callback(current, total, display_name, phase)
 
 
+def _file_stat(audio_path: Path) -> tuple[int, int] | None:
+    try:
+        st = audio_path.stat()
+        return st.st_size, st.st_mtime_ns
+    except OSError:
+        return None
+
+
 def analyze_folder_for_workbench(
     folder: Path | str,
     limit: int | None = None,
     progress_callback: ProgressCallback | None = None,
     should_cancel: ShouldCancel | None = None,
+    *,
+    use_cache: bool = True,
+    library_db_path: Path | None = None,
 ) -> WorkbenchResult:
     """Scan *folder* for audio files, analyze each, and return playlist rows."""
     root = Path(folder).expanduser().resolve()
@@ -337,6 +356,11 @@ def analyze_folder_for_workbench(
     def _cancelled() -> bool:
         return should_cancel is not None and should_cancel()
 
+    cache_db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    folder_id: int | None = None
+    if use_cache:
+        folder_id = upsert_folder(root, db_path=cache_db)
+
     _emit_progress(progress_callback, 0, 0, "", "scanning")
     if _cancelled():
         _emit_progress(progress_callback, 0, 0, "", "cancelled")
@@ -345,6 +369,8 @@ def analyze_folder_for_workbench(
                 "files_found": 0,
                 "analyzed_count": 0,
                 "error_count": 0,
+                "cache_hits": 0,
+                "cache_misses": 0,
                 "cancelled": 1,
             },
             rows=[],
@@ -356,14 +382,35 @@ def analyze_folder_for_workbench(
     rows: list[WorkbenchRow] = []
     analyzed_count = 0
     error_count = 0
+    cache_hits = 0
+    cache_misses = 0
 
     for index, audio_path in enumerate(audio_paths, start=1):
         if _cancelled():
             _emit_progress(progress_callback, index - 1, total, "", "cancelled")
             break
         rel = str(audio_path.relative_to(root))
-        display_name = audio_path.name
+        display_name = normalize_display_name(audio_path.name)
         _emit_progress(progress_callback, index, total, display_name, "analyzing")
+
+        stat = _file_stat(audio_path)
+        if use_cache and folder_id is not None and stat is not None:
+            size_bytes, mtime_ns = stat
+            cached = lookup_sample(audio_path, size_bytes, mtime_ns, db_path=cache_db)
+            if cached is not None:
+                row = cached.to_workbench_row()
+                rows.append(row)
+                cache_hits += 1
+                if row.status == "error":
+                    error_count += 1
+                else:
+                    analyzed_count += 1
+                phase: ProgressPhase = "error" if row.status == "error" else "done"
+                _emit_progress(progress_callback, index, total, display_name, phase)
+                continue
+
+        if use_cache:
+            cache_misses += 1
 
         try:
             sr, ch, dur = safe_audio_info(audio_path)
@@ -379,6 +426,15 @@ def analyze_folder_for_workbench(
                     error_detail=error_detail,
                 )
                 rows.append(row)
+                if use_cache and folder_id is not None and stat is not None:
+                    upsert_sample(
+                        folder_id,
+                        row,
+                        size_bytes=stat[0],
+                        mtime_ns=stat[1],
+                        db_path=cache_db,
+                        analyzer_version=WORKBENCH_ANALYZER_VERSION,
+                    )
                 _emit_progress(progress_callback, index, total, display_name, "error")
                 continue
 
@@ -405,42 +461,60 @@ def analyze_folder_for_workbench(
                 details["short_audio_warning"] = feats.quality_note
                 details["short_audio_warning_code"] = SHORT_AUDIO_WARNING_CODE
 
-            rows.append(
-                WorkbenchRow(
-                    display_name=display_name,
-                    relative_path=rel,
-                    path=str(audio_path),
-                    bpm=feats.bpm,
-                    key=feats.key,
-                    key_conf=feats.key_conf,
-                    loudness=feats.loudness,
-                    brightness=feats.brightness,
-                    sample_class=feats.clazz,
-                    pred_type=pred_type,
-                    status="ok",
-                    details=details,
-                )
+            row = WorkbenchRow(
+                display_name=display_name,
+                relative_path=rel,
+                path=str(audio_path),
+                bpm=feats.bpm,
+                key=feats.key,
+                key_conf=feats.key_conf,
+                loudness=feats.loudness,
+                brightness=feats.brightness,
+                sample_class=feats.clazz,
+                pred_type=pred_type,
+                status="ok",
+                details=details,
             )
+            rows.append(row)
             analyzed_count += 1
+            if use_cache and folder_id is not None and stat is not None:
+                upsert_sample(
+                    folder_id,
+                    row,
+                    size_bytes=stat[0],
+                    mtime_ns=stat[1],
+                    db_path=cache_db,
+                    analyzer_version=WORKBENCH_ANALYZER_VERSION,
+                )
             _emit_progress(progress_callback, index, total, display_name, "done")
         except Exception as exc:
             error_count += 1
             detail = str(exc).strip() or "unexpected exception"
-            rows.append(
-                _make_error_row(
-                    display_name=display_name,
-                    rel=rel,
-                    path=audio_path,
-                    error_code="analysis_exception",
-                    error_detail=detail[:200],
-                )
+            row = _make_error_row(
+                display_name=display_name,
+                rel=rel,
+                path=audio_path,
+                error_code="analysis_exception",
+                error_detail=detail[:200],
             )
+            rows.append(row)
+            if use_cache and folder_id is not None and stat is not None:
+                upsert_sample(
+                    folder_id,
+                    row,
+                    size_bytes=stat[0],
+                    mtime_ns=stat[1],
+                    db_path=cache_db,
+                    analyzer_version=WORKBENCH_ANALYZER_VERSION,
+                )
             _emit_progress(progress_callback, index, total, display_name, "error")
 
     summary: dict[str, int] = {
         "files_found": total,
         "analyzed_count": analyzed_count,
         "error_count": error_count,
+        "cache_hits": cache_hits,
+        "cache_misses": cache_misses,
     }
     if _cancelled():
         summary["cancelled"] = 1
