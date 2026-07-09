@@ -11,6 +11,7 @@ from src.workbench_preview import (
     prepare_preview_playback_path,
     preview_toggle_action,
     validate_preview_path,
+    validate_preview_region_ms,
     validate_preview_start_ms,
 )
 from tests.audio_fixtures import write_sine_wav
@@ -195,3 +196,37 @@ def test_preview_toggle_action_plays_different_or_idle(tmp_path: Path):
         )
         == "play"
     )
+
+
+def test_validate_preview_region_ms_rejects_invalid_bounds(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.4, frequency_hz=440.0)
+    assert validate_preview_region_ms(wav, 200, 100).ok is False
+    assert validate_preview_region_ms(wav, 0, 99999).ok is False
+
+
+def test_prepare_preview_playback_path_creates_bounded_temp_region(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.4, frequency_hz=440.0)
+    play_path, temp_path, result = prepare_preview_playback_path(wav.resolve(), 100, end_ms=250)
+    assert result.ok
+    assert play_path is not None
+    assert temp_path is not None
+    assert play_path == temp_path
+    assert temp_path.name.startswith("sample_brain_preview_")
+    temp_path.unlink(missing_ok=True)
+
+
+def test_preview_player_play_region_invokes_backend_at_zero(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.5, frequency_hz=440.0)
+    calls: list[tuple[Path, int]] = []
+
+    def fake_play(path: Path, start_ms: int = 0) -> PreviewResult:
+        calls.append((path, start_ms))
+        return PreviewResult(ok=True)
+
+    player = WorkbenchPreviewPlayer(play_fn=fake_play, stop_fn=lambda: None)
+    result = player.play_region(wav, start_ms=100, end_ms=300)
+    assert result.ok
+    assert len(calls) == 1
+    assert calls[0][1] == 0
+    assert calls[0][0].name.startswith("sample_brain_preview_")
+    calls[0][0].unlink(missing_ok=True)
