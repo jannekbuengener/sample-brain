@@ -316,6 +316,11 @@ class WorkbenchApp:
             text="Loop vorhören",
             command=self._play_loop_preview,
         ).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(
+            waveform_controls,
+            text="Loop wiederholen",
+            command=self._play_loop_repeat,
+        ).pack(side=tk.LEFT, padx=(8, 0))
         self._attack_edit_mode_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             waveform_controls,
@@ -855,6 +860,36 @@ class WorkbenchApp:
             )
         else:
             self._set_status(result.message or "Loop-Preview fehlgeschlagen.", tone="error")
+
+    def _play_loop_repeat(self) -> None:
+        if self._busy:
+            return
+        row = self._detail_row
+        if row is None or not row.path:
+            self._set_status("Kein Sample ausgewählt.", tone="neutral")
+            return
+        try:
+            cue = load_workbench_sample_cue(row.path)
+        except WorkbenchCueNotFoundError:
+            self._set_status(
+                "Sample nicht in der lokalen Bibliothek — zuerst analysieren.",
+                tone="error",
+            )
+            return
+        if cue.loop_start_ms is None or cue.loop_end_ms is None:
+            self._set_status("Kein Loop gesetzt — Loop-Region zuerst setzen.", tone="error")
+            return
+        start_ms = int(cue.loop_start_ms)
+        end_ms = int(cue.loop_end_ms)
+        result = self._preview.play_region_loop(row.path, start_ms=start_ms, end_ms=end_ms)
+        name = Path(row.path).name
+        if result.ok:
+            self._set_status(
+                f"Loop-Wiederholung aktiv ({start_ms}–{end_ms} ms): {name} — Stop zum Beenden",
+                tone="active",
+            )
+        else:
+            self._set_status(result.message or "Loop-Wiederholung fehlgeschlagen.", tone="error")
 
     def _copy_detail_path(self) -> None:
         if not self._detail_copy_path:

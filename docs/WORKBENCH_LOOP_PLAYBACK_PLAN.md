@@ -1,6 +1,6 @@
 # Workbench Loop Playback Plan
 
-**Status:** Loop **once** preview shipped (`Loop vorhören`, PR #149). **Endless repeat** remains planned — this document defines scope, constraints, and a minimal v1 approach.  
+**Status:** Loop **once** preview shipped (`Loop vorhören`, PR #149). **Repeat** preview shipped (`Loop wiederholen`) — temp slice, sync play loop until stop; original files unchanged.  
 **Parent:** [#117 — workbench usability and library workflow follow-ups](https://github.com/jannekbuengener/sample-brain/issues/117)  
 **Related:** [`WORKBENCH_LOOP_EDIT_PLAN.md`](WORKBENCH_LOOP_EDIT_PLAN.md), [`WORKBENCH_CUE_METADATA_PLAN.md`](WORKBENCH_CUE_METADATA_PLAN.md), `src/workbench_preview.py`
 

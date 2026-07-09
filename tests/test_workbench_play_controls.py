@@ -677,3 +677,24 @@ def test_apply_attack_suggestion_persists_attack_ms(tmp_path: Path, monkeypatch)
     assert app._pending_attack_suggestion is None
     assert "übernommen" in app._status_var.value.lower()
     assert redrawn == [app._detail_row]
+
+
+def test_play_loop_repeat_invokes_preview_region_loop(tmp_path: Path, monkeypatch):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.4, frequency_hz=440.0)
+    row = _sample_row(wav)
+    app = _playback_app()
+    app._detail_row = row
+    calls: list[tuple[int, int]] = []
+
+    def fake_play_region_loop(_path, *, start_ms, end_ms):
+        calls.append((start_ms, end_ms))
+        return PreviewResult(ok=True)
+
+    app._preview = SimpleNamespace(play_region_loop=fake_play_region_loop)
+    monkeypatch.setattr(
+        "src.workbench.load_workbench_sample_cue",
+        lambda _path: SimpleNamespace(loop_start_ms=50.0, loop_end_ms=200.0),
+    )
+    app._play_loop_repeat()
+    assert calls == [(50, 200)]
+    assert "wiederholung aktiv" in app._status_var.value.lower()

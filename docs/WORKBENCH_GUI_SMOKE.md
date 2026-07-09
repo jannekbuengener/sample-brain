@@ -31,8 +31,9 @@ Not automated in CI. When running locally with a display:
 8. **Shift+left-click** → set cue (persists in `workbench_library.db`)
 9. Enable **Loop bearbeiten** → two clicks set loop region
 10. **Loop vorhören** → plays loop region once (temp slice; original unchanged)
-11. Enable **Attack bearbeiten** → single click sets attack marker
-12. **Attack vorschlagen** → shows suggestion only; **Vorschlag übernehmen** persists after explicit click
+11. **Loop wiederholen** → repeats loop region until Stop
+12. Enable **Attack bearbeiten** → single click sets attack marker
+13. **Attack vorschlagen** → shows suggestion only; **Vorschlag übernehmen** persists after explicit click
 
 ## Limitations
 
