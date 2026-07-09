@@ -24,6 +24,7 @@ from src.workbench_controller import (
     load_workbench_last_folder,
     load_workbench_sample_cue,
     remove_workbench_library_folder,
+    parse_workbench_bpm_bound,
     row_source_kind,
     save_workbench_last_folder,
     save_workbench_sample_cue,
@@ -357,6 +358,69 @@ def test_catalog_readonly_rows_remain_unchanged_by_structured_filter():
         WorkbenchRowFilters(source="catalog"),
     )
     assert all(is_catalog_readonly_row(row) for row in catalog_rows)
+
+
+def test_parse_workbench_bpm_bound_accepts_valid_and_rejects_invalid():
+    assert parse_workbench_bpm_bound("") is None
+    assert parse_workbench_bpm_bound("  ") is None
+    assert parse_workbench_bpm_bound("abc") is None
+    assert parse_workbench_bpm_bound("-1") is None
+    assert parse_workbench_bpm_bound("120") == 120.0
+    assert parse_workbench_bpm_bound("90,5") == 90.5
+
+
+def test_apply_workbench_structured_filters_by_bpm_range():
+    rows = _sample_rows_for_filters()
+    in_range = apply_workbench_structured_filters(
+        rows,
+        WorkbenchRowFilters(min_bpm=100.0, max_bpm=125.0),
+    )
+    assert [row.display_name for row in in_range] == ["kick cache"]
+
+    above = apply_workbench_structured_filters(rows, WorkbenchRowFilters(min_bpm=125.0))
+    assert len(above) == 1
+    assert above[0].display_name == "catalog snare"
+
+
+def test_apply_workbench_structured_filters_excludes_missing_bpm_when_bounds_active():
+    rows = _sample_rows_for_filters() + [
+        WorkbenchRow(
+            display_name="no bpm",
+            relative_path="x.wav",
+            path="/cache/x.wav",
+            bpm=None,
+            key=None,
+            key_conf=None,
+            loudness=None,
+            brightness=None,
+            sample_class=None,
+            pred_type=None,
+            status="ok",
+            details={},
+        )
+    ]
+    filtered = apply_workbench_structured_filters(rows, WorkbenchRowFilters(min_bpm=80.0))
+    assert all(row.bpm is not None for row in filtered)
+    assert "no bpm" not in {row.display_name for row in filtered}
+
+
+def test_apply_workbench_filters_bpm_with_text_and_key():
+    rows = _sample_rows_for_filters()
+    combined = apply_workbench_filters(
+        rows,
+        "kick",
+        WorkbenchRowFilters(min_bpm=110.0, max_bpm=130.0, key="Am"),
+    )
+    assert len(combined) == 1
+    assert combined[0].display_name == "kick cache"
+
+
+def test_apply_workbench_structured_filters_bpm_sort_stability_via_apply_order():
+    rows = _sample_rows_for_filters()
+    filtered = apply_workbench_structured_filters(rows, WorkbenchRowFilters(min_bpm=80.0))
+    sorted_rows = sort_workbench_rows(filtered, "bpm")
+    bpms = [row.bpm for row in sorted_rows if row.bpm is not None]
+    assert bpms == sorted(bpms)
 
 
 def test_cancel_before_scan_returns_empty(sample_folder: Path):
