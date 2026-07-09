@@ -10,7 +10,7 @@ from pathlib import Path, PurePath
 from typing import Any, Mapping
 
 WORKBENCH_ANALYZER_VERSION = "workbench_v1"
-WORKBENCH_LIBRARY_SCHEMA_VERSION = 2
+WORKBENCH_LIBRARY_SCHEMA_VERSION = 3
 _LIBRARY_DB_NAME = "workbench_library.db"
 
 _CUE_SAMPLE_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -20,6 +20,11 @@ _CUE_SAMPLE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("loop_end_ms", "INTEGER DEFAULT NULL"),
     ("cue_source", "TEXT DEFAULT 'manual'"),
     ("cue_updated_at", "TEXT DEFAULT NULL"),
+)
+
+_PROVENANCE_SOURCE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("loop_source", "TEXT DEFAULT NULL"),
+    ("attack_source", "TEXT DEFAULT NULL"),
 )
 
 _SAMPLES_CREATE_SQL = """
@@ -50,6 +55,8 @@ _SAMPLES_CREATE_SQL = """
                 loop_end_ms INTEGER DEFAULT NULL,
                 cue_source TEXT DEFAULT 'manual',
                 cue_updated_at TEXT DEFAULT NULL,
+                loop_source TEXT DEFAULT NULL,
+                attack_source TEXT DEFAULT NULL,
                 FOREIGN KEY(folder_id) REFERENCES folders(id)
             );
 """
@@ -103,6 +110,7 @@ def init_workbench_library(db_path: Path | None = None) -> None:
             """
         )
         _migrate_library_schema_v2(conn)
+        _migrate_library_schema_v3(conn)
         conn.commit()
 
 
@@ -134,6 +142,8 @@ class WorkbenchCueMetadata:
     loop_end_ms: int | None = None
     cue_source: str = "manual"
     cue_updated_at: str | None = None
+    loop_source: str | None = None
+    attack_source: str | None = None
 
 
 def default_workbench_cue_metadata() -> WorkbenchCueMetadata:
@@ -152,6 +162,16 @@ def _migrate_library_schema_v2(conn: sqlite3.Connection) -> None:
     if not columns:
         return
     for name, definition in _CUE_SAMPLE_COLUMNS:
+        if name not in columns:
+            conn.execute(f"ALTER TABLE samples ADD COLUMN {name} {definition}")
+
+
+def _migrate_library_schema_v3(conn: sqlite3.Connection) -> None:
+    """Add per-field provenance source columns (loop_source, attack_source)."""
+    columns = _sample_table_columns(conn)
+    if not columns:
+        return
+    for name, definition in _PROVENANCE_SOURCE_COLUMNS:
         if name not in columns:
             conn.execute(f"ALTER TABLE samples ADD COLUMN {name} {definition}")
 
@@ -195,6 +215,8 @@ def _cue_metadata_from_row(row: sqlite3.Row | None) -> WorkbenchCueMetadata:
     if row is None:
         return default_workbench_cue_metadata()
     cue_start = row["cue_start_ms"]
+    loop_source = row["loop_source"] if "loop_source" in row.keys() else None
+    attack_source = row["attack_source"] if "attack_source" in row.keys() else None
     return WorkbenchCueMetadata(
         cue_start_ms=0 if cue_start is None else int(cue_start),
         attack_ms=None if row["attack_ms"] is None else int(row["attack_ms"]),
@@ -202,6 +224,8 @@ def _cue_metadata_from_row(row: sqlite3.Row | None) -> WorkbenchCueMetadata:
         loop_end_ms=None if row["loop_end_ms"] is None else int(row["loop_end_ms"]),
         cue_source=row["cue_source"] or "manual",
         cue_updated_at=row["cue_updated_at"],
+        loop_source=loop_source,
+        attack_source=attack_source,
     )
 
 
@@ -217,7 +241,7 @@ def load_sample_cue(
         row = conn.execute(
             """
             SELECT cue_start_ms, attack_ms, loop_start_ms, loop_end_ms,
-                   cue_source, cue_updated_at
+                   cue_source, cue_updated_at, loop_source, attack_source
             FROM samples
             WHERE original_path = ?
             """,
@@ -253,7 +277,9 @@ def save_sample_cue(
                 loop_start_ms = ?,
                 loop_end_ms = ?,
                 cue_source = ?,
-                cue_updated_at = ?
+                cue_updated_at = ?,
+                loop_source = ?,
+                attack_source = ?
             WHERE original_path = ?
             """,
             (
@@ -263,6 +289,8 @@ def save_sample_cue(
                 metadata.loop_end_ms,
                 metadata.cue_source,
                 updated_at,
+                metadata.loop_source,
+                metadata.attack_source,
                 path,
             ),
         )

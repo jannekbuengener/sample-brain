@@ -1466,6 +1466,8 @@ class WorkbenchApp:
                 loop_start_ms=existing.loop_start_ms,
                 loop_end_ms=existing.loop_end_ms,
                 cue_source="manual",
+                loop_source=existing.loop_source,
+                attack_source=existing.attack_source,
             )
             save_workbench_sample_cue(row.path, metadata, duration_ms=duration_ms)
         except WorkbenchCueNotFoundError:
@@ -1560,6 +1562,8 @@ class WorkbenchApp:
                 loop_start_ms=start_ms,
                 loop_end_ms=end_ms,
                 cue_source=existing.cue_source or "manual",
+                loop_source="manual",
+                attack_source=existing.attack_source,
             )
             save_workbench_sample_cue(row.path, metadata, duration_ms=duration_ms)
         except WorkbenchCueNotFoundError:
@@ -1603,6 +1607,8 @@ class WorkbenchApp:
                 loop_start_ms=existing.loop_start_ms,
                 loop_end_ms=existing.loop_end_ms,
                 cue_source=existing.cue_source or "manual",
+                loop_source=existing.loop_source,
+                attack_source="manual",
             )
             save_workbench_sample_cue(row.path, metadata, duration_ms=duration_ms)
         except WorkbenchCueNotFoundError:
@@ -1639,6 +1645,8 @@ class WorkbenchApp:
                 loop_start_ms=existing.loop_start_ms,
                 loop_end_ms=existing.loop_end_ms,
                 cue_source=existing.cue_source or "manual",
+                loop_source=existing.loop_source,
+                attack_source="manual",
             )
             save_workbench_sample_cue(row.path, metadata, duration_ms=duration_ms)
         except WorkbenchCueNotFoundError:
@@ -1716,6 +1724,8 @@ class WorkbenchApp:
                 loop_start_ms=existing.loop_start_ms,
                 loop_end_ms=existing.loop_end_ms,
                 cue_source=existing.cue_source or "manual",
+                loop_source=existing.loop_source,
+                attack_source="manual",
             )
             save_workbench_sample_cue(row.path, metadata, duration_ms=duration_ms)
         except WorkbenchCueNotFoundError:
@@ -1755,6 +1765,8 @@ class WorkbenchApp:
                 loop_start_ms=None,
                 loop_end_ms=None,
                 cue_source=existing.cue_source or "manual",
+                loop_source="manual",
+                attack_source=existing.attack_source,
             )
             save_workbench_sample_cue(row.path, metadata, duration_ms=duration_ms)
         except WorkbenchCueNotFoundError:

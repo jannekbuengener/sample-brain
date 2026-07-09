@@ -432,6 +432,7 @@ def test_loop_edit_second_click_saves_loop_and_exits_mode(tmp_path: Path):
     assert saved_metadata.loop_end_ms == 300
     assert saved_metadata.cue_start_ms == 20
     assert saved_metadata.attack_ms == 40
+    assert saved_metadata.loop_source == "manual"
     assert app._loop_edit_pending_start_ms is None
     assert app._loop_edit_mode_var.get() is False
     assert draw_calls == [True]
@@ -488,6 +489,7 @@ def test_clear_loop_metadata_preserves_cue_and_attack(tmp_path: Path):
     saved_metadata = mock_save.call_args[0][1]
     assert saved_metadata.loop_start_ms is None
     assert saved_metadata.loop_end_ms is None
+    assert saved_metadata.loop_source == "manual"
     assert saved_metadata.cue_start_ms == 25
     assert saved_metadata.attack_ms == 60
     assert app._loop_edit_pending_start_ms is None
@@ -562,6 +564,7 @@ def test_attack_edit_click_saves_attack_and_exits_mode(tmp_path: Path):
 
     saved_metadata = mock_save.call_args[0][1]
     assert saved_metadata.attack_ms == 180
+    assert saved_metadata.attack_source == "manual"
     assert saved_metadata.cue_start_ms == 30
     assert saved_metadata.loop_start_ms == 100
     assert saved_metadata.loop_end_ms == 400
@@ -595,6 +598,7 @@ def test_clear_attack_metadata_preserves_cue_and_loop(tmp_path: Path):
 
     saved_metadata = mock_save.call_args[0][1]
     assert saved_metadata.attack_ms is None
+    assert saved_metadata.attack_source == "manual"
     assert saved_metadata.cue_start_ms == 25
     assert saved_metadata.loop_start_ms == 100
     assert app._attack_edit_mode_var.get() is False

@@ -38,10 +38,14 @@ def is_definite_oneshot(pred_type: str | None, sample_class: str | None) -> bool
 
 
 def _has_manual_loop_fields(metadata: WorkbenchCueMetadata) -> bool:
+    if metadata.loop_source == "manual":
+        return True
     return metadata.loop_start_ms is not None or metadata.loop_end_ms is not None
 
 
 def _has_manual_attack(metadata: WorkbenchCueMetadata) -> bool:
+    if metadata.attack_source == "manual":
+        return True
     return metadata.attack_ms is not None
 
 
@@ -93,6 +97,8 @@ def apply_auto_loop_metadata(
         loop_end_ms=duration_ms,
         cue_source=existing.cue_source,
         cue_updated_at=existing.cue_updated_at,
+        loop_source="detected",
+        attack_source=existing.attack_source,
     )
 
 
@@ -126,6 +132,8 @@ def apply_auto_oneshot_metadata(
         loop_end_ms=existing.loop_end_ms,
         cue_source=cue_source,
         cue_updated_at=existing.cue_updated_at,
+        loop_source=existing.loop_source,
+        attack_source="detected",
     )
 
 
