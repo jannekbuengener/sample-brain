@@ -337,6 +337,53 @@ def test_analyze_folder_does_not_overwrite_legacy_loop_without_source(
     assert cue.loop_source is None
 
 
+def test_analyze_folder_does_not_restore_manually_cleared_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """User cleared loop (loop_source=manual, fields empty) stays empty on re-analyze."""
+    wav = write_sine_wav(tmp_path / "loop.wav", duration_sec=1.5, frequency_hz=200.0)
+    monkeypatch.setattr(
+        "src.workbench_controller.rule_type",
+        lambda *_args, **_kwargs: ["Loop"],
+    )
+    analyze_folder_for_workbench(tmp_path)
+    save_workbench_sample_cue(
+        wav,
+        WorkbenchCueMetadata(
+            loop_start_ms=None,
+            loop_end_ms=None,
+            loop_source="manual",
+        ),
+        duration_ms=1500,
+    )
+    analyze_folder_for_workbench(tmp_path)
+    cue = load_workbench_sample_cue(wav)
+    assert cue.loop_start_ms is None
+    assert cue.loop_end_ms is None
+    assert cue.loop_source == "manual"
+
+
+def test_analyze_folder_does_not_restore_manually_cleared_attack(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """User cleared attack (attack_source=manual, attack empty) stays empty on re-analyze."""
+    wav = write_sine_wav(tmp_path / "shot.wav", duration_sec=0.4, frequency_hz=440.0, amplitude=0.9)
+    monkeypatch.setattr(
+        "src.workbench_controller.rule_type",
+        lambda *_args, **_kwargs: ["OneShot"],
+    )
+    analyze_folder_for_workbench(tmp_path)
+    save_workbench_sample_cue(
+        wav,
+        WorkbenchCueMetadata(attack_ms=None, attack_source="manual"),
+        duration_ms=400,
+    )
+    analyze_folder_for_workbench(tmp_path)
+    cue = load_workbench_sample_cue(wav)
+    assert cue.attack_ms is None
+    assert cue.attack_source == "manual"
+
+
 def test_catalog_readonly_row_never_written_via_apply(tmp_path: Path):
     row = _row(catalog_readonly=True, path=str(tmp_path / "x.wav"))
     assert apply_auto_metadata_after_analyze(row) is None

@@ -93,7 +93,7 @@ cue_source    TEXT  -- 'manual' | 'detected' | 'default' (existing)
 
 **Default cue:** `cue_start_ms = 0` is the implicit default on read when NULL; for auto-fill purposes, treat NULL as empty. Do **not** overwrite `cue_start_ms` when it is `0` and `cue_source == "manual"`.
 
-Auto-metadata sets `loop_source='detected'` / `attack_source='detected'` on write. Manual UI edits set `loop_source='manual'` / `attack_source='manual'`.
+Auto-metadata sets `loop_source='detected'` / `attack_source='detected'` on write. Manual UI edits set `loop_source='manual'` / `attack_source='manual'`. **Clear actions** (Loop löschen / Attack löschen) also set the corresponding `*_source='manual'` so re-analyze does not restore values the user explicitly removed.
 
 ### 5.3 Follow-up (not in #177)
 
