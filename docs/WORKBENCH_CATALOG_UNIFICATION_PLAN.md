@@ -42,11 +42,11 @@ The workbench today uses a **separate** user-local SQLite cache (`workbench_libr
 
 ## 4. Recommended direction (phased)
 
-### Phase A — Now (safe, no catalog touch)
+### Phase A — Now (safe, no catalog touch) — ✅ shipped
 
-1. **Global workbench library view** — load all cached samples from `workbench_library.db` across registered folders (`load_all_cached_samples`).
-2. **Reuse existing filter/sort** on combined rows; include `library_folder` in search haystack.
-3. **Keep cue/loop/attack** in workbench DB only.
+1. **Global workbench library view** — `load_all_cached_samples` across registered folders.
+2. **Cross-folder filter/sort** — `library_folder` included in search haystack.
+3. **Cue/loop/attack** remain in workbench DB only.
 
 ### Phase B — Read-only bridge (next, still no writes to catalog)
 
@@ -79,8 +79,8 @@ The workbench today uses a **separate** user-local SQLite cache (`workbench_libr
 
 | Slice | Scope | Risk |
 |---|---|---|
-| `workbench_global_cached_library_view_v1` | All folders from workbench cache | Low |
-| `workbench_global_search_filter_v1` | Filter across global rows | Low |
+| `workbench_global_cached_library_view_v1` | All folders from workbench cache | ✅ Low |
+| `workbench_global_search_filter_v1` | Filter across global rows | ✅ Low |
 | `workbench_catalog_readonly_bridge_plan` | Docs + read API sketch | Low |
 | `workbench_catalog_readonly_bridge_v1` | Read catalog → playlist | Medium |
 | `workbench_cue_export_to_catalog` | Explicit user export of cue fields | High — needs schema GO |

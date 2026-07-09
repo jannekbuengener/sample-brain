@@ -802,6 +802,25 @@ class WorkbenchApp:
                     self._set_detail(row)
                     return
         self._set_detail(None)
+        if self._global_library_mode and self._rows:
+            query = self._filter_var.get().strip()
+            if query:
+                self._set_status(
+                    f"Alle Library-Samples: {len(visible)} von {len(self._rows)} Treffer",
+                    tone="neutral",
+                )
+            else:
+                folder_count = len(
+                    {
+                        row.details.get("library_folder")
+                        for row in self._rows
+                        if row.details.get("library_folder")
+                    }
+                )
+                self._set_status(
+                    f"{len(self._rows)} gecachte Samples aus {folder_count} Ordner(n) geladen.",
+                    tone="success",
+                )
 
     def _populate_playlist(self, result: WorkbenchResult) -> None:
         self._rows = result.rows

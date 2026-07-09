@@ -26,6 +26,7 @@ from src.workbench_controller import (
     sort_workbench_rows,
     validate_workbench_folder,
     workbench_last_folder_file,
+    WorkbenchRow,
 )
 from src.workbench_library import WorkbenchCueMetadata, WorkbenchCueNotFoundError
 from tests.audio_fixtures import write_kick_transient_wav, write_sine_wav
@@ -179,6 +180,47 @@ def test_filter_workbench_rows_no_match(sample_folder: Path):
     result = analyze_folder_for_workbench(sample_folder)
 
     assert filter_workbench_rows(result.rows, "zzz-not-found") == []
+
+
+def test_filter_workbench_rows_matches_library_folder() -> None:
+    rows = [
+        WorkbenchRow(
+            display_name="kick",
+            relative_path="pack_a/kick.wav",
+            path="/data/pack_a/kick.wav",
+            bpm=120.0,
+            key="C",
+            key_conf=0.8,
+            loudness=-10.0,
+            brightness=50.0,
+            sample_class="kick",
+            pred_type="kick",
+            status="ok",
+            details={"library_folder": "/music/pack_a"},
+        ),
+        WorkbenchRow(
+            display_name="snare",
+            relative_path="pack_b/snare.wav",
+            path="/data/pack_b/snare.wav",
+            bpm=120.0,
+            key="C",
+            key_conf=0.8,
+            loudness=-10.0,
+            brightness=50.0,
+            sample_class="snare",
+            pred_type="snare",
+            status="ok",
+            details={"library_folder": "/music/other_pack"},
+        ),
+    ]
+
+    by_folder = filter_workbench_rows(rows, "pack_a")
+    assert len(by_folder) == 1
+    assert by_folder[0].display_name == "kick"
+
+    by_other = filter_workbench_rows(rows, "other")
+    assert len(by_other) == 1
+    assert by_other[0].display_name == "snare"
 
 
 def test_cancel_before_scan_returns_empty(sample_folder: Path):
