@@ -56,6 +56,7 @@ LOOP_MARKER = "#6fcf6f"
 ATTACK_MARKER = "#ffc857"
 WAVEFORM_USAGE_HINT = "Linksklick: Play · Rechtsklick: ab Stelle · Shift+Klick: Cue setzen"
 WAVEFORM_LOOP_EDIT_HINT = "Loop-Modus: 1. Klick Start · 2. Klick Ende · Loop löschen"
+WAVEFORM_ATTACK_EDIT_HINT = "Attack-Modus: Klick setzt Attack · Attack löschen"
 
 COLUMNS = (
     ("name", "Name", 180),
@@ -908,7 +909,12 @@ class WorkbenchApp:
         self._set_status(f"Cue dauerhaft gesetzt: {cue_start_ms} ms", tone="success")
 
     def _update_waveform_usage_hint(self) -> None:
-        hint = WAVEFORM_LOOP_EDIT_HINT if self._loop_edit_mode_var.get() else WAVEFORM_USAGE_HINT
+        if self._loop_edit_mode_var.get():
+            hint = WAVEFORM_LOOP_EDIT_HINT
+        elif self._attack_edit_mode_var.get():
+            hint = WAVEFORM_ATTACK_EDIT_HINT
+        else:
+            hint = WAVEFORM_USAGE_HINT
         self._waveform_usage_var.set(hint)
 
     def _on_loop_edit_mode_toggled(self) -> None:

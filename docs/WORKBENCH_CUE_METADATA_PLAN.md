@@ -114,7 +114,7 @@ def default_cue_for_duration(duration_ms: float) -> SampleCueMetadata: ...
 | **v2 loop** | Loop region handles on waveform for loops only | v1 edit |
 | **Later** | Export trimmed copy, DAW drag with offset | product decision + #93 |
 
-**Waveform panel today:** peak envelope + saved cue marker + loop region display/edit + read-only attack marker (when `attack_ms` set) + context-sensitive usage hint; left-click plays from saved cue (when loop mode off); right-click plays temporarily from click position; Shift+left-click sets `cue_start_ms` permanently (local library metadata only); double-click row and Space still toggle preview; no visible Play/Stop buttons in detail header.
+**Waveform panel today:** peak envelope + cue/loop/attack markers + edit modes for loop and attack + context-sensitive usage hint (normal / loop / attack); left-click plays from saved cue when no edit mode active; right-click temp play; Shift+left-click sets cue; double-click row and Space toggle preview.
 
 ## 7. Detection heuristics (future, non-blocking)
 
