@@ -1,6 +1,6 @@
 # Workbench Attack Edit Plan
 
-**Status:** Planning only — read-only attack marker shipped on `main` (PR #143). Attack editing not yet shipped.  
+**Status:** Attack edit mode v1 shipped on `main` (toggle + single-click set + clear). Read-only attack marker (PR #143).  
 **Parent:** [#117 — workbench usability and library workflow follow-ups](https://github.com/jannekbuengener/sample-brain/issues/117)  
 **Related:** [`WORKBENCH_CUE_METADATA_PLAN.md`](WORKBENCH_CUE_METADATA_PLAN.md), [`WORKBENCH_LOOP_EDIT_PLAN.md`](WORKBENCH_LOOP_EDIT_PLAN.md)
 
