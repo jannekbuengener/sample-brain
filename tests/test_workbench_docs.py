@@ -36,6 +36,16 @@ def test_workbench_gui_smoke_doc_exists():
     assert "#117" in text or "117" in text
 
 
+def test_workbench_loop_playback_plan_documents_repeat_scope():
+    plan = REPO_ROOT / "docs" / "WORKBENCH_LOOP_PLAYBACK_PLAN.md"
+    assert plan.is_file(), "loop playback plan must exist"
+    text = plan.read_text(encoding="utf-8")
+    assert "loop_start_ms" in text or "loop region" in text.lower()
+    assert "never modif" in text.lower() or "unchanged" in text.lower()
+    assert "once" in text.lower() or "repeat" in text.lower()
+    assert "#117" in text or "117" in text
+
+
 def test_workbench_attack_edit_plan_documents_bindings_and_recommendation():
     assert ATTACK_EDIT_PLAN.is_file(), "attack edit plan must exist"
     text = ATTACK_EDIT_PLAN.read_text(encoding="utf-8")

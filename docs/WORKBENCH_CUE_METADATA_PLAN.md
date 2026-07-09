@@ -17,6 +17,7 @@
 | Waveform play controls | ✅ Shipped (left = play from saved cue; right = temp play at click; Shift+left = permanent cue set; no visible Play/Stop buttons) |
 | Loop region UI | ✅ Display + edit mode (toggle, two-click set, clear) |
 | Loop region preview (once) | ✅ `Loop vorhören` — temp slice; no endless loop |
+| Loop region preview (repeat) | 📋 Planned — see [`WORKBENCH_LOOP_PLAYBACK_PLAN.md`](WORKBENCH_LOOP_PLAYBACK_PLAN.md) |
 | Attack marker UI | ✅ Display + edit mode (toggle, single-click set, clear) |
 | Attack suggestion (analysis) | ✅ `suggest_attack_ms` — Vorschlag only; no auto-write |
 | Attack suggestion UI | ✅ Buttons `Attack vorschlagen` + `Vorschlag übernehmen` |
