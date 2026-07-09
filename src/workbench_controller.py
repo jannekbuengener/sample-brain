@@ -15,6 +15,7 @@ from .analyze import (
 )
 from .classify import rule_type
 from .scan import iter_audio_files_stream, safe_audio_info
+from .workbench_catalog import load_catalog_samples
 from .workbench_library import (
     WORKBENCH_ANALYZER_VERSION,
     LibraryFolder,
@@ -682,6 +683,16 @@ def load_all_cached_rows(
     return [row.to_workbench_row() for row in cached]
 
 
+def load_catalog_rows(
+    *,
+    catalog_path: Path | str | None = None,
+    limit: int | None = None,
+) -> list[WorkbenchRow]:
+    """Load read-only catalog samples for workbench display."""
+    catalog_rows = load_catalog_samples(catalog_path, limit=limit)
+    return [row.to_workbench_row() for row in catalog_rows]
+
+
 def load_workbench_sample_cue(
     path: Path | str,
     *,
@@ -744,6 +755,7 @@ __all__ = [
     "preview_start_ms_from_waveform_x",
     "load_all_cached_rows",
     "load_cached_folder_rows",
+    "load_catalog_rows",
     "load_workbench_last_folder",
     "load_workbench_sample_cue",
     "PLAYLIST_SORT_COLUMNS",

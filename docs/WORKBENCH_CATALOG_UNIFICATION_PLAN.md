@@ -82,7 +82,7 @@ The workbench today uses a **separate** user-local SQLite cache (`workbench_libr
 | `workbench_global_cached_library_view_v1` | All folders from workbench cache | ✅ Low |
 | `workbench_global_search_filter_v1` | Filter across global rows | ✅ Low |
 | `workbench_catalog_readonly_bridge_plan` | Docs + read API sketch | ✅ Plan doc shipped |
-| `workbench_catalog_readonly_loader_v1` | Read-only `load_catalog_samples` | Low |
+| `workbench_catalog_readonly_loader_v1` | Read-only `load_catalog_samples` | ✅ Shipped |
 | `workbench_catalog_readonly_view_v1` | Catalog sidebar + playlist | Medium |
 | `workbench_cue_export_to_catalog` | Explicit user export of cue fields | High — needs schema GO |
 
