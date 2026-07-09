@@ -1,6 +1,6 @@
 # Workbench Search UI Plan
 
-**Status:** Structured filter controls, BPM range, and unified status bar shipped on `main`; active-filter summary shipped; reset button planned next.  
+**Status:** Structured filters, BPM range, status bar, active-filter summary, and reset button shipped on `main`; layout polish optional next.  
 **Parent:** [#117 — workbench usability and library workflow follow-ups](https://github.com/jannekbuengener/sample-brain/issues/117)  
 **Related:** [`WORKBENCH_CATALOG_UNIFICATION_PLAN.md`](WORKBENCH_CATALOG_UNIFICATION_PLAN.md), [`WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md`](WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md), [`WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md`](WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md), `src/workbench_controller.py`, `src/search_filters.py`
 
@@ -198,7 +198,8 @@ Catalog rows set `details["source"] == "catalog"` in `workbench_catalog.py`; cac
 | **3** | `workbench_bpm_filter_v1` | BPM min/max fields ✅ |
 | **4** | `workbench_search_status_polish` | Status bar clarity ✅ |
 | **5** | `workbench_active_filter_summary_v1` | Active filter hint line ✅ |
-| **6** | `workbench_filter_reset_button_v1` | Visible reset action |
+| **6** | `workbench_filter_reset_button_v1` | Visible reset action ✅ |
+| **7** | `workbench_filter_layout_polish_v1` | Narrow-window layout tweak |
 | Later | Catalog→cache import | Separate plan |
 | Later | Semantic search in workbench | Blocked on product decision + #73/#74 |
 
@@ -221,7 +222,8 @@ Catalog rows set `details["source"] == "catalog"` in `workbench_catalog.py`; cac
 - [x] BPM filter shipped (Phase 3).
 - [x] Status polish shipped (Phase 4).
 - [x] Active filter summary (Phase 5).
-- [ ] Filter reset button (Phase 6).
+- [x] Filter reset button (Phase 6).
+- [ ] Filter layout polish (Phase 7).
 
 ## 12. References
 

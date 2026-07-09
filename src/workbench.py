@@ -304,6 +304,11 @@ class WorkbenchApp:
         self._bpm_max_var = tk.StringVar(value="")
         self._add_bpm_filter_entry(structured_bar, "BPM von:", self._bpm_min_var)
         self._add_bpm_filter_entry(structured_bar, "BPM bis:", self._bpm_max_var)
+        ttk.Button(
+            structured_bar,
+            text="Filter zurücksetzen",
+            command=self._clear_filter,
+        ).pack(side=tk.RIGHT, padx=(8, 0))
 
         self._active_filter_var = tk.StringVar(value="")
         ttk.Label(
@@ -986,6 +991,7 @@ class WorkbenchApp:
     def _clear_filter(self, _event: tk.Event | None = None) -> None:
         self._filter_var.set("")
         self._reset_structured_filters()
+        self._refresh_playlist_view()
 
     def _refresh_playlist_view(self) -> None:
         preserve_path = self._preview_row_path
