@@ -77,7 +77,12 @@ def _playback_app(*, canvas_width: int = 400, loop_edit_mode: bool = False, atta
 
     def _update_waveform_usage_hint() -> None:
         wb = _workbench_module()
-        hint = wb.WAVEFORM_LOOP_EDIT_HINT if app._loop_edit_mode_var.get() else wb.WAVEFORM_USAGE_HINT
+        if app._loop_edit_mode_var.get():
+            hint = wb.WAVEFORM_LOOP_EDIT_HINT
+        elif app._attack_edit_mode_var.get():
+            hint = wb.WAVEFORM_ATTACK_EDIT_HINT
+        else:
+            hint = wb.WAVEFORM_USAGE_HINT
         app._waveform_usage_var.set(hint)
 
     app._update_waveform_usage_hint = _update_waveform_usage_hint
@@ -348,6 +353,26 @@ def test_update_waveform_usage_hint_switches_with_loop_mode():
     app._loop_edit_mode_var.set(False)
     app._update_waveform_usage_hint()
     assert usage_values[-1] == wb.WAVEFORM_USAGE_HINT
+
+
+def test_waveform_attack_edit_hint_documents_mode_controls():
+    wb = _workbench_module()
+    hint = wb.WAVEFORM_ATTACK_EDIT_HINT
+    assert "Attack-Modus" in hint
+    assert "Attack löschen" in hint
+
+
+def test_update_waveform_usage_hint_switches_to_attack_mode():
+    wb = _workbench_module()
+    app = _playback_app()
+    usage_values: list[str] = []
+    app._waveform_usage_var = SimpleNamespace(
+        set=lambda value: usage_values.append(str(value)),
+    )
+
+    app._attack_edit_mode_var.set(True)
+    app._update_waveform_usage_hint()
+    assert usage_values[-1] == wb.WAVEFORM_ATTACK_EDIT_HINT
 
 
 def test_loop_edit_mode_toggle_sets_status():
