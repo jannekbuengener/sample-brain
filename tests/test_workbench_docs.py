@@ -5,6 +5,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CUE_PLAN = REPO_ROOT / "docs" / "WORKBENCH_CUE_METADATA_PLAN.md"
 LOOP_EDIT_PLAN = REPO_ROOT / "docs" / "WORKBENCH_LOOP_EDIT_PLAN.md"
+ATTACK_EDIT_PLAN = REPO_ROOT / "docs" / "WORKBENCH_ATTACK_EDIT_PLAN.md"
 
 
 def test_workbench_cue_metadata_plan_documents_safety_and_fields():
@@ -24,3 +25,12 @@ def test_workbench_loop_edit_plan_documents_bindings_and_recommendation():
     assert "loop_start_ms" in text
     assert "never" in text.lower() and "modif" in text.lower()
     assert "Loop-edit mode" in text or "loop-edit mode" in text.lower()
+
+
+def test_workbench_attack_edit_plan_documents_bindings_and_recommendation():
+    assert ATTACK_EDIT_PLAN.is_file(), "attack edit plan must exist"
+    text = ATTACK_EDIT_PLAN.read_text(encoding="utf-8")
+    assert "attack_ms" in text
+    assert "cue_start_ms" in text
+    assert "never" in text.lower() and "modif" in text.lower()
+    assert "Attack-edit mode" in text or "attack-edit mode" in text.lower()

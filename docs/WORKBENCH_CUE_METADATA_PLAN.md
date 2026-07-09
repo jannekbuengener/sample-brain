@@ -16,7 +16,7 @@
 | Preview from `cue_start_ms` | ✅ Shipped (temp WAV slice; original unchanged) |
 | Waveform play controls | ✅ Shipped (left = play from saved cue; right = temp play at click; Shift+left = permanent cue set; no visible Play/Stop buttons) |
 | Loop region UI | ✅ Display + edit mode (toggle, two-click set, clear) |
-| Attack marker UI | ✅ Read-only marker when `attack_ms` set; edit remains follow-up |
+| Attack marker UI | ✅ Read-only marker; edit planned in [`WORKBENCH_ATTACK_EDIT_PLAN.md`](WORKBENCH_ATTACK_EDIT_PLAN.md) |
 
 ## 1. Problem
 
@@ -148,9 +148,9 @@ Detector output is **suggestion only**; user override sets `cue_source=manual`.
 3. ~~`workbench_preview_cue_offset` — preview from cue (platform limits documented)~~ ✅  
 4. ~~`workbench_waveform_play_controls` — waveform as play surface; left/right click playback~~ ✅  
 5. ~~`workbench_cue_set_ux` — permanent cue set (Shift+left-click)~~ ✅  
-6. `workbench_attack_detect_suggest` — optional detector → `attack_ms`  
-7. `workbench_loop_edit_mode_v1` — loop region set/clear per [`WORKBENCH_LOOP_EDIT_PLAN.md`](WORKBENCH_LOOP_EDIT_PLAN.md)  
-8. `workbench_loop_metadata_v1` — ~~loop region fields~~ fields shipped; edit UI per loop edit plan  
+6. `workbench_attack_edit_mode_v1` — attack set/clear per [`WORKBENCH_ATTACK_EDIT_PLAN.md`](WORKBENCH_ATTACK_EDIT_PLAN.md)  
+7. `workbench_attack_detect_suggest` — optional detector → `attack_ms`  
+8. ~~`workbench_loop_metadata_v1`~~ — fields + edit UI shipped  
 
 ## 11. Docs sync checklist
 
