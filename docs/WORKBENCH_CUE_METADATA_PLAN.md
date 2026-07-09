@@ -17,6 +17,7 @@
 | Waveform play controls | ✅ Shipped (left = play from saved cue; right = temp play at click; Shift+left = permanent cue set; no visible Play/Stop buttons) |
 | Loop region UI | ✅ Display + edit mode (toggle, two-click set, clear) |
 | Attack marker UI | ✅ Display + edit mode (toggle, single-click set, clear) |
+| Attack suggestion (analysis) | ✅ `suggest_attack_ms` — Vorschlag only; no auto-write |
 
 ## 1. Problem
 
