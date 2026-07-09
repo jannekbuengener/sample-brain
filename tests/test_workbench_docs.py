@@ -27,6 +27,15 @@ def test_workbench_loop_edit_plan_documents_bindings_and_recommendation():
     assert "Loop-edit mode" in text or "loop-edit mode" in text.lower()
 
 
+def test_workbench_gui_smoke_doc_exists():
+    smoke_doc = REPO_ROOT / "docs" / "WORKBENCH_GUI_SMOKE.md"
+    assert smoke_doc.is_file(), "GUI smoke status doc must exist"
+    text = smoke_doc.read_text(encoding="utf-8")
+    assert "workbench" in text.lower()
+    assert "never modif" in text.lower() or "unchanged" in text.lower()
+    assert "#117" in text or "117" in text
+
+
 def test_workbench_attack_edit_plan_documents_bindings_and_recommendation():
     assert ATTACK_EDIT_PLAN.is_file(), "attack edit plan must exist"
     text = ATTACK_EDIT_PLAN.read_text(encoding="utf-8")
