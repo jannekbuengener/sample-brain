@@ -12,7 +12,7 @@
 - **Workbench library folder list (#117, merged):** sidebar lists known library folders; `+` adds folder to cache; `−` removes cache metadata only; **Alle Library-Samples** loads all cached rows across folders; global search/filter/sort across cache (#155)
 - **Workbench catalog bridge (#117, shipped):** read-only `catalog.db` browse via sidebar **Catalog lesen**; loader + UI; default load limit with total count status; catalog rows prefixed in playlist; edit modes blocked with clear message; no writes to catalog
 - **Workbench catalog import (#117, planned):** [`WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md`](../docs/WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md) — catalog→cache semantics; explicit user action; no implementation yet
-- **Workbench search UI (#117, in progress):** [`WORKBENCH_SEARCH_UI_PLAN.md`](../docs/WORKBENCH_SEARCH_UI_PLAN.md) — structured local filters + unified status bar + active-filter summary shipped; reset button planned; semantic/CLAP/#73 and sqlite-vec/#74 out of scope
+- **Workbench search UI (#117, shipped core):** [`WORKBENCH_SEARCH_UI_PLAN.md`](../docs/WORKBENCH_SEARCH_UI_PLAN.md) — structured filters, status bar, active-filter summary, reset button shipped; optional layout polish remains; semantic/CLAP/#73 and sqlite-vec/#74 out of scope
 - **Workbench audio preview v1 (#117, merged PR #129):** platform playback (winsound/afplay/aplay); non-WAV via temp PCM decode; original files never modified
 - **Workbench preview controls (#117, merged PR #130):** double-click row to play; Space toggles play/stop; selection preserved across filter/sort; preview disabled during analysis
 - **Workbench waveform panel v1 (#117, merged PR #131):** read-only peak envelope under detail panel (`workbench_waveform`); original files unchanged

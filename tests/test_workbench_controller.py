@@ -574,6 +574,51 @@ def test_format_workbench_active_filter_summary_ignores_invalid_bpm_fields():
     assert summary == ""
 
 
+def test_workbench_clear_filter_resets_all_filter_fields():
+    import tkinter as tk
+
+    from src.workbench import WorkbenchApp
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp.__new__(WorkbenchApp)
+        app._filter_var = tk.StringVar(value="kick")
+        app._source_filter_var = tk.StringVar(value="cache")
+        app._type_filter_var = tk.StringVar(value="kick")
+        app._key_filter_var = tk.StringVar(value="Am")
+        app._status_filter_var = tk.StringVar(value="ok")
+        app._bpm_min_var = tk.StringVar(value="120")
+        app._bpm_max_var = tk.StringVar(value="130")
+        refreshed = {"count": 0}
+
+        def _refresh() -> None:
+            refreshed["count"] += 1
+
+        app._refresh_playlist_view = _refresh  # type: ignore[method-assign]
+        WorkbenchApp._clear_filter(app)
+        assert app._filter_var.get() == ""
+        assert app._source_filter_var.get() == FILTER_ALL_LABEL
+        assert app._type_filter_var.get() == FILTER_ALL_LABEL
+        assert app._key_filter_var.get() == FILTER_ALL_LABEL
+        assert app._status_filter_var.get() == FILTER_ALL_LABEL
+        assert app._bpm_min_var.get() == ""
+        assert app._bpm_max_var.get() == ""
+        assert refreshed["count"] == 1
+    finally:
+        root.destroy()
+
+
+def test_workbench_layout_has_filter_reset_button():
+    import inspect
+
+    from src.workbench import WorkbenchApp
+
+    source = inspect.getsource(WorkbenchApp._build_layout)
+    assert "Filter zurücksetzen" in source
+    assert "command=self._clear_filter" in source
+
+
 def test_cancel_before_scan_returns_empty(sample_folder: Path):
     result = analyze_folder_for_workbench(
         sample_folder,
