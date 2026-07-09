@@ -4,6 +4,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CUE_PLAN = REPO_ROOT / "docs" / "WORKBENCH_CUE_METADATA_PLAN.md"
+AUTO_METADATA_PLAN = REPO_ROOT / "docs" / "WORKBENCH_AUTO_METADATA_PLAN.md"
 LOOP_EDIT_PLAN = REPO_ROOT / "docs" / "WORKBENCH_LOOP_EDIT_PLAN.md"
 ATTACK_EDIT_PLAN = REPO_ROOT / "docs" / "WORKBENCH_ATTACK_EDIT_PLAN.md"
 
@@ -79,6 +80,21 @@ def test_workbench_loop_playback_plan_documents_repeat_scope():
     assert "never modif" in text.lower() or "unchanged" in text.lower()
     assert "once" in text.lower() or "repeat" in text.lower()
     assert "#117" in text or "117" in text
+
+
+def test_workbench_auto_metadata_plan_documents_loop_oneshot_and_manual_protection():
+    assert AUTO_METADATA_PLAN.is_file(), "auto metadata plan must exist"
+    text = AUTO_METADATA_PLAN.read_text(encoding="utf-8")
+    assert "loop_start_ms" in text
+    assert "loop_end_ms" in text
+    assert "attack_ms" in text
+    assert "OneShot" in text
+    assert "manual" in text.lower()
+    assert "cue_source" in text
+    assert "never modif" in text.lower() or "never modified" in text.lower()
+    assert "#117" in text or "117" in text
+    assert "#172" in text or "172" in text
+    assert "#173" in text or "173" in text
 
 
 def test_workbench_attack_edit_plan_documents_bindings_and_recommendation():
