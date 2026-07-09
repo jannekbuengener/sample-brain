@@ -16,7 +16,7 @@
 | Preview from `cue_start_ms` | ✅ Shipped (temp WAV slice; original unchanged) |
 | Waveform play controls | ✅ Shipped (left = play from saved cue; right = temp play at click; Shift+left = permanent cue set; no visible Play/Stop buttons) |
 | Loop region UI | ✅ Display + edit mode (toggle, two-click set, clear) |
-| Attack marker UI | ✅ Read-only marker; edit planned in [`WORKBENCH_ATTACK_EDIT_PLAN.md`](WORKBENCH_ATTACK_EDIT_PLAN.md) |
+| Attack marker UI | ✅ Display + edit mode (toggle, single-click set, clear) |
 
 ## 1. Problem
 

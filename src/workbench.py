@@ -308,6 +308,18 @@ class WorkbenchApp:
             text="Loop löschen",
             command=self._clear_loop_metadata,
         ).pack(side=tk.LEFT, padx=(8, 0))
+        self._attack_edit_mode_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            waveform_controls,
+            text="Attack bearbeiten",
+            variable=self._attack_edit_mode_var,
+            command=self._on_attack_edit_mode_toggled,
+        ).pack(side=tk.LEFT, padx=(16, 0))
+        ttk.Button(
+            waveform_controls,
+            text="Attack löschen",
+            command=self._clear_attack_metadata,
+        ).pack(side=tk.LEFT, padx=(8, 0))
 
         self._waveform_canvas = tk.Canvas(
             detail_frame,
@@ -901,6 +913,7 @@ class WorkbenchApp:
 
     def _on_loop_edit_mode_toggled(self) -> None:
         if self._loop_edit_mode_var.get():
+            self._attack_edit_mode_var.set(False)
             self._loop_edit_pending_start_ms = None
             self._update_waveform_usage_hint()
             self._set_status("Loop bearbeiten aktiv — 1. Klick: Loop-Start", tone="active")
@@ -908,6 +921,16 @@ class WorkbenchApp:
         self._loop_edit_pending_start_ms = None
         self._update_waveform_usage_hint()
         self._set_status("Loop bearbeiten aus", tone="neutral")
+
+    def _on_attack_edit_mode_toggled(self) -> None:
+        if self._attack_edit_mode_var.get():
+            self._loop_edit_mode_var.set(False)
+            self._loop_edit_pending_start_ms = None
+            self._update_waveform_usage_hint()
+            self._set_status("Attack bearbeiten aktiv — Klick auf Waveform", tone="active")
+            return
+        self._update_waveform_usage_hint()
+        self._set_status("Attack bearbeiten aus", tone="neutral")
 
     def _handle_loop_edit_waveform_click(self, x: int) -> None:
         if self._busy:
@@ -962,6 +985,80 @@ class WorkbenchApp:
         self._draw_waveform(row)
         self._set_status(f"Loop gesetzt: {start_ms}–{end_ms} ms", tone="success")
 
+    def _handle_attack_edit_waveform_click(self, x: int) -> None:
+        if self._busy:
+            return
+        row = self._detail_row
+        if row is None or not row.path:
+            self._set_status("Kein Sample ausgewählt.", tone="neutral")
+            return
+        duration_ms = read_audio_duration_ms(row.path)
+        if duration_ms is None:
+            self._set_status("Kann Attack-Position nicht bestimmen.", tone="error")
+            return
+        attack_ms = self._cue_start_ms_from_waveform_x(x)
+        if attack_ms is None:
+            self._set_status("Kann Attack-Position nicht bestimmen.", tone="error")
+            return
+
+        try:
+            existing = load_workbench_sample_cue(row.path)
+            metadata = WorkbenchCueMetadata(
+                cue_start_ms=existing.cue_start_ms,
+                attack_ms=attack_ms,
+                loop_start_ms=existing.loop_start_ms,
+                loop_end_ms=existing.loop_end_ms,
+                cue_source=existing.cue_source or "manual",
+            )
+            save_workbench_sample_cue(row.path, metadata, duration_ms=duration_ms)
+        except WorkbenchCueNotFoundError:
+            self._set_status(
+                "Sample nicht in der lokalen Bibliothek — zuerst analysieren.",
+                tone="error",
+            )
+            return
+        except WorkbenchCueValidationError as exc:
+            self._set_status(f"Attack konnte nicht gespeichert werden: {exc}", tone="error")
+            return
+
+        self._attack_edit_mode_var.set(False)
+        self._update_waveform_usage_hint()
+        self._draw_waveform(row)
+        self._set_status(f"Attack gesetzt: {attack_ms} ms", tone="success")
+
+    def _clear_attack_metadata(self) -> None:
+        if self._busy:
+            return
+        row = self._detail_row
+        if row is None or not row.path:
+            self._set_status("Kein Sample ausgewählt.", tone="neutral")
+            return
+        duration_ms = read_audio_duration_ms(row.path)
+        try:
+            existing = load_workbench_sample_cue(row.path)
+            metadata = WorkbenchCueMetadata(
+                cue_start_ms=existing.cue_start_ms,
+                attack_ms=None,
+                loop_start_ms=existing.loop_start_ms,
+                loop_end_ms=existing.loop_end_ms,
+                cue_source=existing.cue_source or "manual",
+            )
+            save_workbench_sample_cue(row.path, metadata, duration_ms=duration_ms)
+        except WorkbenchCueNotFoundError:
+            self._set_status(
+                "Sample nicht in der lokalen Bibliothek — zuerst analysieren.",
+                tone="error",
+            )
+            return
+        except WorkbenchCueValidationError as exc:
+            self._set_status(f"Attack konnte nicht gelöscht werden: {exc}", tone="error")
+            return
+
+        self._attack_edit_mode_var.set(False)
+        self._update_waveform_usage_hint()
+        self._draw_waveform(row)
+        self._set_status("Attack gelöscht", tone="success")
+
     def _clear_loop_metadata(self) -> None:
         if self._busy:
             return
@@ -1002,6 +1099,9 @@ class WorkbenchApp:
             return
         if self._loop_edit_mode_var.get():
             self._handle_loop_edit_waveform_click(int(event.x))
+            return
+        if self._attack_edit_mode_var.get():
+            self._handle_attack_edit_waveform_click(int(event.x))
             return
         self._play_selected_from_waveform()
 

@@ -50,7 +50,7 @@ def _sample_row(path: Path) -> WorkbenchRow:
     )
 
 
-def _playback_app(*, canvas_width: int = 400, loop_edit_mode: bool = False):
+def _playback_app(*, canvas_width: int = 400, loop_edit_mode: bool = False, attack_edit_mode: bool = False):
     cls = _workbench_app_cls()
     app = cls.__new__(cls)
     app._busy = False
@@ -59,16 +59,28 @@ def _playback_app(*, canvas_width: int = 400, loop_edit_mode: bool = False):
     app._status_var = SimpleNamespace(value="")
     app._loop_edit_pending_start_ms = None
     loop_mode = {"value": loop_edit_mode}
+    attack_mode = {"value": attack_edit_mode}
     usage_values: list[str] = []
 
     app._loop_edit_mode_var = SimpleNamespace(
         get=lambda: loop_mode["value"],
         set=lambda value: loop_mode.__setitem__("value", bool(value)),
     )
+    app._attack_edit_mode_var = SimpleNamespace(
+        get=lambda: attack_mode["value"],
+        set=lambda value: attack_mode.__setitem__("value", bool(value)),
+    )
     app._waveform_usage_var = SimpleNamespace(
         set=lambda value: usage_values.append(str(value)),
     )
     app._usage_values = usage_values
+
+    def _update_waveform_usage_hint() -> None:
+        wb = _workbench_module()
+        hint = wb.WAVEFORM_LOOP_EDIT_HINT if app._loop_edit_mode_var.get() else wb.WAVEFORM_USAGE_HINT
+        app._waveform_usage_var.set(hint)
+
+    app._update_waveform_usage_hint = _update_waveform_usage_hint
 
     def set_status(message: str, *, tone: str = "neutral") -> None:
         app._status_var.value = message
@@ -477,3 +489,95 @@ def test_loop_edit_mode_shift_click_still_sets_cue(tmp_path: Path):
     app._set_selected_cue_from_waveform_position = lambda x: cue_called.append(x)
     app._on_waveform_click(SimpleNamespace(state=0x0001, x=55))
     assert cue_called == [55]
+
+
+def test_attack_edit_mode_toggle_disables_loop_mode():
+    app = _playback_app()
+    app._loop_edit_mode_var.set(True)
+    app._attack_edit_mode_var.set(True)
+    app._on_attack_edit_mode_toggled()
+    assert app._loop_edit_mode_var.get() is False
+    assert "Attack bearbeiten aktiv" in app._status_var.value
+
+
+def test_loop_edit_mode_toggle_disables_attack_mode():
+    app = _playback_app()
+    app._attack_edit_mode_var.set(True)
+    app._loop_edit_mode_var.set(True)
+    app._on_loop_edit_mode_toggled()
+    assert app._attack_edit_mode_var.get() is False
+    assert "Loop bearbeiten aktiv" in app._status_var.value
+
+
+def test_attack_edit_click_saves_attack_and_exits_mode(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.5, frequency_hz=440.0)
+    app = _playback_app(attack_edit_mode=True)
+    app._detail_row = _sample_row(wav)
+    draw_calls: list[bool] = []
+    app._draw_waveform = lambda _row: draw_calls.append(True)
+
+    wb = _workbench_module()
+    from src.workbench_library import WorkbenchCueMetadata
+
+    existing = WorkbenchCueMetadata(
+        cue_start_ms=30,
+        loop_start_ms=100,
+        loop_end_ms=400,
+    )
+
+    with (
+        patch.object(wb, "preview_start_ms_from_waveform_x", return_value=180),
+        patch.object(wb, "load_workbench_sample_cue", return_value=existing),
+        patch.object(wb, "save_workbench_sample_cue") as mock_save,
+        patch.object(wb, "read_audio_duration_ms", return_value=500),
+    ):
+        app._handle_attack_edit_waveform_click(120)
+
+    saved_metadata = mock_save.call_args[0][1]
+    assert saved_metadata.attack_ms == 180
+    assert saved_metadata.cue_start_ms == 30
+    assert saved_metadata.loop_start_ms == 100
+    assert saved_metadata.loop_end_ms == 400
+    assert app._attack_edit_mode_var.get() is False
+    assert draw_calls == [True]
+    assert "Attack gesetzt: 180 ms" in app._status_var.value
+
+
+def test_clear_attack_metadata_preserves_cue_and_loop(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.5, frequency_hz=440.0)
+    app = _playback_app(attack_edit_mode=True)
+    app._detail_row = _sample_row(wav)
+    app._draw_waveform = lambda _row: None
+
+    wb = _workbench_module()
+    from src.workbench_library import WorkbenchCueMetadata
+
+    existing = WorkbenchCueMetadata(
+        cue_start_ms=25,
+        attack_ms=60,
+        loop_start_ms=100,
+        loop_end_ms=400,
+    )
+
+    with (
+        patch.object(wb, "load_workbench_sample_cue", return_value=existing),
+        patch.object(wb, "save_workbench_sample_cue") as mock_save,
+        patch.object(wb, "read_audio_duration_ms", return_value=500),
+    ):
+        app._clear_attack_metadata()
+
+    saved_metadata = mock_save.call_args[0][1]
+    assert saved_metadata.attack_ms is None
+    assert saved_metadata.cue_start_ms == 25
+    assert saved_metadata.loop_start_ms == 100
+    assert app._attack_edit_mode_var.get() is False
+    assert app._status_var.value == "Attack gelöscht"
+
+
+def test_attack_edit_mode_left_click_does_not_play(tmp_path: Path):
+    app = _playback_app(attack_edit_mode=True)
+    attack_called: list[int] = []
+    app._handle_attack_edit_waveform_click = lambda x: attack_called.append(x)
+    app._on_waveform_click(SimpleNamespace(state=0, x=90))
+    assert attack_called == [90]
+    assert app._play_calls == []
