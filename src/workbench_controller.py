@@ -842,6 +842,72 @@ def append_catalog_readonly_status_hint(message: str) -> str:
     return f"{message} {CATALOG_READONLY_STATUS_HINT}"
 
 
+WorkbenchSearchMode = Literal["folder", "global_library", "catalog"]
+
+
+@dataclass(frozen=True)
+class WorkbenchSearchStatusContext:
+    mode: WorkbenchSearchMode
+    loaded_count: int
+    visible_count: int
+    filters_active: bool = False
+    catalog_total: int | None = None
+    catalog_load_limit: int | None = None
+    folder_count: int | None = None
+
+
+def format_workbench_search_status(ctx: WorkbenchSearchStatusContext) -> str:
+    """Build a unified workbench search/filter status line for the status bar."""
+    if ctx.mode == "catalog":
+        return _format_catalog_search_status(ctx)
+    if ctx.mode == "global_library":
+        return _format_global_library_search_status(ctx)
+    return _format_folder_search_status(ctx)
+
+
+def _format_folder_search_status(ctx: WorkbenchSearchStatusContext) -> str:
+    if ctx.filters_active:
+        return f"Ordner: {ctx.visible_count} von {ctx.loaded_count} Treffer"
+    return f"Ordner: {ctx.loaded_count} Samples"
+
+
+def _format_global_library_search_status(ctx: WorkbenchSearchStatusContext) -> str:
+    if ctx.filters_active:
+        return (
+            f"Alle Library-Samples: {ctx.visible_count} von {ctx.loaded_count} Treffer"
+        )
+    if ctx.folder_count and ctx.folder_count > 0:
+        return (
+            f"Alle Library-Samples: {ctx.loaded_count} Samples "
+            f"aus {ctx.folder_count} Ordner(n)"
+        )
+    return f"Alle Library-Samples: {ctx.loaded_count} Samples"
+
+
+def _format_catalog_search_status(ctx: WorkbenchSearchStatusContext) -> str:
+    loaded = ctx.loaded_count
+    total = ctx.catalog_total if ctx.catalog_total is not None else loaded
+    limit_active = (
+        ctx.catalog_load_limit is not None
+        and ctx.catalog_total is not None
+        and ctx.catalog_total > ctx.catalog_load_limit
+    )
+    if ctx.filters_active:
+        base = f"Catalog-Samples: {loaded}"
+        if total > loaded:
+            base += f" von {total}"
+        base += f" geladen, {ctx.visible_count} Treffer"
+        hints = ["read-only"]
+        if limit_active:
+            hints.append("Limit aktiv")
+        return f"{base} ({', '.join(hints)})"
+    return format_catalog_load_status(
+        loaded,
+        total,
+        limit=ctx.catalog_load_limit if limit_active else None,
+    )
+
+
 def load_catalog_rows(
     *,
     catalog_path: Path | str | None = None,
@@ -919,7 +985,10 @@ __all__ = [
     "export_workbench_rows_to_csv",
     "filter_workbench_rows",
     "format_catalog_load_status",
+    "format_workbench_search_status",
     "is_catalog_readonly_row",
+    "WorkbenchSearchMode",
+    "WorkbenchSearchStatusContext",
     "row_source_kind",
     "workbench_filter_options",
     "WorkbenchRowFilters",

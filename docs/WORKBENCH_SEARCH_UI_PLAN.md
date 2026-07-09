@@ -1,6 +1,6 @@
 # Workbench Search UI Plan
 
-**Status:** Planning only — no structured filter controls shipped yet; text search exists on `main`.  
+**Status:** Structured filter controls and BPM range shipped on `main`; status bar polish shipped; active-filter summary and reset button planned next.  
 **Parent:** [#117 — workbench usability and library workflow follow-ups](https://github.com/jannekbuengener/sample-brain/issues/117)  
 **Related:** [`WORKBENCH_CATALOG_UNIFICATION_PLAN.md`](WORKBENCH_CATALOG_UNIFICATION_PLAN.md), [`WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md`](WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md), [`WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md`](WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md), `src/workbench_controller.py`, `src/search_filters.py`
 
@@ -196,7 +196,8 @@ Catalog rows set `details["source"] == "catalog"` in `workbench_catalog.py`; cac
 | **1** | `workbench_search_ui_plan` | This document ✅ |
 | **2** | `workbench_structured_filter_controls_v1` | Quelle, Type, Key, Status + UI row ✅ |
 | **3** | `workbench_bpm_filter_v1` | BPM min/max fields ✅ |
-| **4** | `workbench_search_status_polish` | Status bar clarity |
+| **4** | `workbench_search_status_polish` | Status bar clarity ✅ |
+| **5** | `workbench_active_filter_summary_v1` | Active filter hint line |
 | Later | Catalog→cache import | Separate plan |
 | Later | Semantic search in workbench | Blocked on product decision + #73/#74 |
 
@@ -217,7 +218,8 @@ Catalog rows set `details["source"] == "catalog"` in `workbench_catalog.py`; cac
 - [x] Smallest implementation slices named.
 - [x] Structured filter UI shipped (Phase 2).
 - [x] BPM filter shipped (Phase 3).
-- [ ] Status polish shipped (Phase 4).
+- [x] Status polish shipped (Phase 4).
+- [ ] Active filter summary (Phase 5).
 
 ## 12. References
 
