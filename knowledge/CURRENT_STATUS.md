@@ -117,7 +117,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 
 - **Default switch to sqlite-vec** — blocked until latency gates PASS
 - **Tier B CLAP search-quality evidence** — Phase 1+2 merged; 4/6 classes on main; vocal/no-vocal proxy spike **HOLD_VOCAL_PROXY_FAILED**; genre/mood remain (#73 OPEN)
-- **Workbench cue/loop/attack metadata** — loop + attack edit modes; attack suggestion API + UI (#147–#148); loop once-preview shipped (#149); endless loop repeat planned ([`WORKBENCH_LOOP_PLAYBACK_PLAN.md`](../docs/WORKBENCH_LOOP_PLAYBACK_PLAN.md)) (#117 remains open)
+- **Workbench cue/loop/attack metadata** — loop + attack edit modes; attack suggestion API + UI (#147–#148); loop once-preview (#149); loop repeat preview shipped (#117 follow-up)
 - **Workbench global multi-folder library view / catalog DB unification / search integration** — no cross-folder playlist; `catalog.db` not wired to workbench; no semantic search UI; preview has no pause/playhead sync (#117 remains open)
 - **Phase 5 tags + FTS5 MVP** — not started (roadmap Phase 5)
 - **Large-scale private-sample validation** — synthetic/benchmark fixtures only

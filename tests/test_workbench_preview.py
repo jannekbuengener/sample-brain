@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pytest
@@ -230,3 +231,58 @@ def test_preview_player_play_region_invokes_backend_at_zero(tmp_path: Path):
     assert calls[0][1] == 0
     assert calls[0][0].name.startswith("sample_brain_preview_")
     calls[0][0].unlink(missing_ok=True)
+
+
+def test_preview_player_play_region_loop_repeats_until_stop(tmp_path: Path):
+    import time
+
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.5, frequency_hz=440.0)
+    play_count = 0
+
+    def fake_sync_play(_path: Path) -> PreviewResult:
+        nonlocal play_count
+        play_count += 1
+        return PreviewResult(ok=True)
+
+    player = WorkbenchPreviewPlayer(
+        play_fn=lambda _path, _start_ms=0: PreviewResult(ok=True),
+        stop_fn=lambda: None,
+        loop_sync_play_fn=fake_sync_play,
+    )
+    result = player.play_region_loop(wav, start_ms=50, end_ms=200)
+    assert result.ok
+    assert player.is_loop_repeating
+    time.sleep(0.05)
+    player.stop()
+    assert play_count >= 1
+    assert not player.is_loop_repeating
+
+
+def test_preview_player_play_stops_active_loop_repeat(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.5, frequency_hz=440.0)
+    play_count = 0
+
+    def fake_sync_play(_path: Path) -> PreviewResult:
+        nonlocal play_count
+        play_count += 1
+        return PreviewResult(ok=True)
+
+    player = WorkbenchPreviewPlayer(
+        play_fn=lambda path, start_ms=0: PreviewResult(ok=True),
+        stop_fn=lambda: None,
+        loop_sync_play_fn=fake_sync_play,
+    )
+    assert player.play_region_loop(wav, start_ms=10, end_ms=100).ok
+    player.play(wav)
+    assert not player.is_loop_repeating
+
+
+def test_preview_player_play_region_loop_rejects_invalid_bounds(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.3, frequency_hz=440.0)
+    player = WorkbenchPreviewPlayer(
+        play_fn=lambda _path, _start_ms=0: PreviewResult(ok=True),
+        stop_fn=lambda: None,
+        loop_sync_play_fn=lambda _path: PreviewResult(ok=True),
+    )
+    result = player.play_region_loop(wav, start_ms=200, end_ms=100)
+    assert not result.ok

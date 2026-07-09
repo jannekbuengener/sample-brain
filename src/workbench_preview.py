@@ -16,6 +16,7 @@ from .workbench_waveform import read_audio_duration_ms
 
 PreviewPlayFn = Callable[[Path, int], "PreviewResult"]
 PreviewStopFn = Callable[[], None]
+LoopSyncPlayFn = Callable[[Path], "PreviewResult"]
 
 _PREVIEW_TEMP_PREFIX = "sample_brain_preview_"
 
@@ -241,6 +242,38 @@ def _default_stop() -> None:
         _subprocess_stop()
 
 
+def _windows_play_sync(path: Path) -> PreviewResult:
+    import winsound
+
+    try:
+        winsound.PlaySound(str(path), winsound.SND_FILENAME)
+    except RuntimeError as exc:
+        return PreviewResult(ok=False, message=f"Wiedergabe fehlgeschlagen: {exc}")
+    return PreviewResult(ok=True)
+
+
+def _subprocess_play_sync(cmd: list[str]) -> PreviewResult:
+    try:
+        subprocess.run(
+            cmd,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, FileNotFoundError, subprocess.CalledProcessError) as exc:
+        return PreviewResult(ok=False, message=f"Wiedergabe fehlgeschlagen: {exc}")
+    return PreviewResult(ok=True)
+
+
+def _default_sync_play(path: Path) -> PreviewResult:
+    system = platform.system()
+    if system == "Windows":
+        return _windows_play_sync(path)
+    if system == "Darwin":
+        return _subprocess_play_sync(["afplay", str(path)])
+    return _subprocess_play_sync(["aplay", "-q", str(path)])
+
+
 def validate_preview_path(path: str | Path) -> PreviewResult:
     """Check whether *path* can be attempted for preview playback."""
     resolved = Path(path)
@@ -259,12 +292,38 @@ class WorkbenchPreviewPlayer:
         *,
         play_fn: PreviewPlayFn | None = None,
         stop_fn: PreviewStopFn | None = None,
+        loop_sync_play_fn: LoopSyncPlayFn | None = None,
     ) -> None:
         self._play_fn = play_fn or _default_play
         self._stop_fn = stop_fn or _default_stop
+        self._loop_sync_play_fn = loop_sync_play_fn or _default_sync_play
         self._lock = threading.Lock()
         self._current_path: Path | None = None
         self._current_start_ms: int = 0
+        self._loop_stop_event = threading.Event()
+        self._loop_thread: threading.Thread | None = None
+        self._loop_temp_path: Path | None = None
+
+    def _finalize_stop_side_effects(
+        self,
+        loop_thread: threading.Thread | None,
+        loop_temp: Path | None,
+    ) -> None:
+        if loop_thread is not None:
+            loop_thread.join(timeout=2.0)
+        if loop_temp is not None:
+            loop_temp.unlink(missing_ok=True)
+
+    def _begin_stop_unlocked(self) -> tuple[threading.Thread | None, Path | None]:
+        self._loop_stop_event.set()
+        loop_thread = self._loop_thread
+        loop_temp = self._loop_temp_path
+        self._loop_thread = None
+        self._loop_temp_path = None
+        self._stop_fn()
+        self._current_path = None
+        self._current_start_ms = 0
+        return loop_thread, loop_temp
 
     def play(self, path: str | Path, *, start_ms: int = 0) -> PreviewResult:
         validation = validate_preview_path(path)
@@ -276,7 +335,9 @@ class WorkbenchPreviewPlayer:
         if not offset_validation.ok:
             return offset_validation
         with self._lock:
-            self._stop_unlocked()
+            loop_thread, loop_temp = self._begin_stop_unlocked()
+        self._finalize_stop_side_effects(loop_thread, loop_temp)
+        with self._lock:
             result = self._play_fn(resolved, offset)
             if result.ok:
                 self._current_path = resolved
@@ -306,7 +367,9 @@ class WorkbenchPreviewPlayer:
         if not prep.ok or play_path is None:
             return prep
         with self._lock:
-            self._stop_unlocked()
+            loop_thread, loop_temp = self._begin_stop_unlocked()
+        self._finalize_stop_side_effects(loop_thread, loop_temp)
+        with self._lock:
             result = self._play_fn(play_path, 0)
             if result.ok:
                 self._current_path = resolved
@@ -315,14 +378,70 @@ class WorkbenchPreviewPlayer:
                 temp_path.unlink(missing_ok=True)
             return result
 
+    def play_region_loop(
+        self,
+        path: str | Path,
+        *,
+        start_ms: int,
+        end_ms: int,
+    ) -> PreviewResult:
+        """Repeat a bounded loop region until ``stop()``; original file unchanged."""
+        validation = validate_preview_path(path)
+        if not validation.ok:
+            return validation
+        resolved = Path(path).resolve()
+        region_validation = validate_preview_region_ms(resolved, start_ms, end_ms)
+        if not region_validation.ok:
+            return region_validation
+        play_path, temp_path, prep = prepare_preview_playback_path(
+            resolved,
+            normalize_preview_start_ms(start_ms),
+            end_ms=normalize_preview_start_ms(end_ms),
+        )
+        if not prep.ok or play_path is None:
+            return prep
+        with self._lock:
+            loop_thread, loop_temp = self._begin_stop_unlocked()
+        self._finalize_stop_side_effects(loop_thread, loop_temp)
+        self._loop_stop_event.clear()
+        with self._lock:
+            self._loop_temp_path = temp_path
+            self._current_path = resolved
+            self._current_start_ms = normalize_preview_start_ms(start_ms)
+            self._loop_thread = threading.Thread(
+                target=self._loop_region_worker,
+                args=(play_path,),
+                daemon=True,
+                name="workbench-loop-repeat",
+            )
+            self._loop_thread.start()
+        return PreviewResult(ok=True)
+
+    def _loop_region_worker(self, play_path: Path) -> None:
+        while not self._loop_stop_event.is_set():
+            result = self._loop_sync_play_fn(play_path)
+            if not result.ok:
+                break
+        loop_temp: Path | None = None
+        with self._lock:
+            if self._loop_thread is threading.current_thread():
+                self._loop_thread = None
+            loop_temp = self._loop_temp_path
+            self._loop_temp_path = None
+            self._current_path = None
+            self._current_start_ms = 0
+        if loop_temp is not None:
+            loop_temp.unlink(missing_ok=True)
+
     def stop(self) -> None:
         with self._lock:
-            self._stop_unlocked()
+            loop_thread, loop_temp = self._begin_stop_unlocked()
+        self._finalize_stop_side_effects(loop_thread, loop_temp)
 
-    def _stop_unlocked(self) -> None:
-        self._stop_fn()
-        self._current_path = None
-        self._current_start_ms = 0
+    @property
+    def is_loop_repeating(self) -> bool:
+        thread = self._loop_thread
+        return thread is not None and thread.is_alive()
 
     @property
     def current_path(self) -> Path | None:
