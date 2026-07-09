@@ -1068,6 +1068,44 @@ def load_catalog_rows(
     return [row.to_workbench_row() for row in catalog_rows]
 
 
+_PROVENANCE_SOURCE_UI: dict[str, str] = {
+    "detected": "erkannt",
+    "manual": "manuell",
+}
+
+
+def format_metadata_provenance_label(source: str | None) -> str | None:
+    """Map provenance source token to German UI label, or None when not shown."""
+    if source is None:
+        return None
+    key = str(source).strip().lower()
+    if not key:
+        return None
+    return _PROVENANCE_SOURCE_UI.get(key)
+
+
+def _should_show_cue_provenance(metadata: WorkbenchCueMetadata) -> bool:
+    if metadata.cue_source == "detected":
+        return True
+    return metadata.cue_source == "manual" and bool(metadata.cue_updated_at)
+
+
+def format_metadata_provenance_hint(metadata: WorkbenchCueMetadata) -> str:
+    """Compact German provenance hint for loop/attack/cue metadata."""
+    parts: list[str] = []
+    loop_label = format_metadata_provenance_label(metadata.loop_source)
+    if loop_label:
+        parts.append(f"Loop: {loop_label}")
+    attack_label = format_metadata_provenance_label(metadata.attack_source)
+    if attack_label:
+        parts.append(f"Attack: {attack_label}")
+    if _should_show_cue_provenance(metadata):
+        cue_label = format_metadata_provenance_label(metadata.cue_source)
+        if cue_label:
+            parts.append(f"Cue: {cue_label}")
+    return " · ".join(parts)
+
+
 def load_workbench_sample_cue(
     path: Path | str,
     *,
@@ -1149,6 +1187,8 @@ __all__ = [
     "workbench_filter_options",
     "WorkbenchRowFilters",
     "FILTER_ALL_LABEL",
+    "format_metadata_provenance_hint",
+    "format_metadata_provenance_label",
     "format_path_display_lines",
     "get_workbench_library_folders",
     "get_preview_start_ms",

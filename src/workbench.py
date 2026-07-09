@@ -30,6 +30,7 @@ from .workbench_controller import (
     effective_workbench_row_filters,
     effective_workbench_text_query,
     format_catalog_load_status,
+    format_metadata_provenance_hint,
     format_path_display_lines,
     format_workbench_active_filter_summary,
     format_workbench_search_status,
@@ -495,6 +496,13 @@ class WorkbenchApp:
             style="Muted.TLabel",
         )
         self._waveform_usage_label.pack(fill=tk.X, pady=(2, 0))
+        self._provenance_var = tk.StringVar(value="")
+        self._provenance_label = ttk.Label(
+            detail_frame,
+            textvariable=self._provenance_var,
+            style="Muted.TLabel",
+        )
+        self._provenance_label.pack(fill=tk.X, pady=(2, 0))
 
         status_bar = ttk.Frame(self.root, style="Panel.TFrame")
         status_bar.pack(fill=tk.X, side=tk.BOTTOM)
@@ -551,11 +559,13 @@ class WorkbenchApp:
             self._waveform_controls.pack(fill=tk.X, pady=(8, 4))
             self._waveform_canvas.pack(fill=tk.X, pady=(8, 0))
             self._waveform_usage_label.pack(fill=tk.X, pady=(2, 0))
+            self._provenance_label.pack(fill=tk.X, pady=(2, 0))
         else:
             self._end_waveform_edit_modes()
             self._waveform_controls.pack_forget()
             self._waveform_canvas.pack_forget()
             self._waveform_usage_label.pack_forget()
+            self._provenance_label.pack_forget()
 
         self._view_settings = settings
         self._persist_view_settings()
@@ -1800,6 +1810,23 @@ class WorkbenchApp:
     def _on_waveform_right_click(self, event: tk.Event) -> None:
         self._play_selected_from_waveform_position(int(event.x))
 
+    def _update_metadata_provenance_display(
+        self,
+        row: WorkbenchRow | None,
+        *,
+        cue: WorkbenchCueMetadata | None = None,
+    ) -> None:
+        if row is None or not row.path:
+            self._provenance_var.set("")
+            return
+        if cue is None:
+            try:
+                cue = load_workbench_sample_cue(row.path)
+            except Exception:
+                self._provenance_var.set("")
+                return
+        self._provenance_var.set(format_metadata_provenance_hint(cue))
+
     def _draw_waveform(self, row: WorkbenchRow | None) -> None:
         canvas = self._waveform_canvas
         canvas.delete("all")
@@ -1807,6 +1834,7 @@ class WorkbenchApp:
         height = max(int(canvas.winfo_height()), 1)
         if row is None or not row.path:
             canvas.create_text(width // 2, height // 2, text="—", fill=TEXT_MUTED)
+            self._update_metadata_provenance_display(None)
             return
         max_points = max(width // 2, 48)
         envelope = compute_waveform_envelope(row.path, max_points=max_points)
@@ -1821,6 +1849,7 @@ class WorkbenchApp:
         mid = height // 2
         step = width / len(envelope)
         cue = load_workbench_sample_cue(row.path)
+        self._update_metadata_provenance_display(row, cue=cue)
         duration_ms = read_audio_duration_ms(row.path)
         loop_bounds: tuple[int, int] | None = None
         if duration_ms is not None:
