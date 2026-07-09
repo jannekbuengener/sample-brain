@@ -128,18 +128,17 @@ New module `src/workbench_catalog.py`:
 
 **Tests** (`tests/test_workbench_catalog.py`): tmp_path DB, mapped fields, pending without features, missing DB → `[]`.
 
-### Phase 3 — `workbench_catalog_readonly_view_v1`
+### Phase 3 — `workbench_catalog_readonly_view_v1` ✅
 
 UI in `src/workbench.py`:
 
-- Sidebar entry: **「Catalog lesen」** or **「Catalog-Samples」**.
-- Loads catalog rows into playlist; status line: `Catalog-Samples: N geladen`.
-- Detail panel: `Quelle: catalog.db (read-only)`.
-- Reuse `filter_workbench_rows` / `sort_workbench_rows`.
-- Block `save_sample_cue` and edit modes when `details.get("catalog_readonly")`.
-- Preview: only if `Path(path).is_file()`.
+- Sidebar entry **「Catalog lesen」** (shows unavailable when DB missing)
+- Loads catalog rows into playlist; status `Catalog-Samples: N geladen (read-only)`
+- Detail panel: `Quelle: catalog.db (read-only)`
+- Reuses filter/sort; blocks cue/loop/attack saves for catalog rows
+- Preview: only if `Path(path).is_file()`
 
-**Tests:** controller-level or UI callback tests with mocked loader; no real user paths.
+**Tests:** `is_catalog_readonly_row`, `load_catalog_rows`, sort stability in `tests/test_workbench_catalog.py`.
 
 ### Phase 4 — Later unification (explicit GO)
 
