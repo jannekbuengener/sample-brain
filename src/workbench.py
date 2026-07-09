@@ -11,20 +11,22 @@ from .workbench_controller import (
     WorkbenchCueMetadata,
     WorkbenchResult,
     WorkbenchRow,
+    WorkbenchRowFilters,
     ALL_LIBRARY_VIEW_LABEL,
     CATALOG_VIEW_LABEL,
     WORKBENCH_CATALOG_LIBRARY_TOKEN,
     WORKBENCH_GLOBAL_LIBRARY_TOKEN,
+    FILTER_ALL_LABEL,
     add_workbench_library_folder,
     analyze_folder_for_workbench,
     append_catalog_readonly_status_hint,
+    apply_workbench_filters,
     catalog_available,
     catalog_row_display_name,
     CATALOG_READONLY_EDIT_MESSAGE,
     count_catalog_samples,
     DEFAULT_CATALOG_LOAD_LIMIT,
     export_workbench_rows_to_csv,
-    filter_workbench_rows,
     format_catalog_load_status,
     format_path_display_lines,
     get_preview_start_ms,
@@ -41,6 +43,7 @@ from .workbench_controller import (
     save_workbench_sample_cue,
     sort_workbench_rows,
     validate_workbench_folder,
+    workbench_filter_options,
 )
 from .workbench_attack_suggest import AttackSuggestion, suggest_attack_ms
 from .workbench_library import WorkbenchCueNotFoundError, WorkbenchCueValidationError
@@ -83,6 +86,8 @@ COLUMNS = (
     ("pred_type", "Type", 90),
     ("status", "Status", 70),
 )
+
+
 
 
 def _fmt(value: float | None, *, digits: int = 2) -> str:
@@ -256,6 +261,41 @@ class WorkbenchApp:
             side=tk.RIGHT, padx=(8, 0)
         )
 
+        structured_bar = ttk.Frame(playlist_frame, style="Panel.TFrame")
+        structured_bar.pack(fill=tk.X, pady=(0, 6))
+        self._source_filter_var = tk.StringVar(value=FILTER_ALL_LABEL)
+        self._type_filter_var = tk.StringVar(value=FILTER_ALL_LABEL)
+        self._key_filter_var = tk.StringVar(value=FILTER_ALL_LABEL)
+        self._status_filter_var = tk.StringVar(value=FILTER_ALL_LABEL)
+        self._source_filter_combo = self._add_structured_filter_combo(
+            structured_bar,
+            "Quelle:",
+            self._source_filter_var,
+            (FILTER_ALL_LABEL, "cache", "catalog"),
+            width=9,
+        )
+        self._type_filter_combo = self._add_structured_filter_combo(
+            structured_bar,
+            "Type:",
+            self._type_filter_var,
+            (FILTER_ALL_LABEL,),
+            width=10,
+        )
+        self._key_filter_combo = self._add_structured_filter_combo(
+            structured_bar,
+            "Key:",
+            self._key_filter_var,
+            (FILTER_ALL_LABEL,),
+            width=8,
+        )
+        self._status_filter_combo = self._add_structured_filter_combo(
+            structured_bar,
+            "Status:",
+            self._status_filter_var,
+            (FILTER_ALL_LABEL, "ok", "error", "pending"),
+            width=8,
+        )
+
         tree_frame = ttk.Frame(playlist_frame, style="Panel.TFrame")
         tree_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -393,6 +433,68 @@ class WorkbenchApp:
         self._progress = ttk.Progressbar(status_inner, mode="determinate", maximum=100)
         self._progress.pack(fill=tk.X, pady=(4, 0))
         self._progress.pack_forget()
+
+    def _add_structured_filter_combo(
+        self,
+        parent: ttk.Frame,
+        label: str,
+        variable: tk.StringVar,
+        values: tuple[str, ...],
+        *,
+        width: int,
+    ) -> ttk.Combobox:
+        frame = ttk.Frame(parent, style="Panel.TFrame")
+        frame.pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Label(frame, text=label, style="Panel.TLabel").pack(side=tk.LEFT, padx=(0, 4))
+        combo = ttk.Combobox(
+            frame,
+            textvariable=variable,
+            values=values,
+            width=width,
+            state="readonly",
+        )
+        combo.pack(side=tk.LEFT)
+        combo.bind("<<ComboboxSelected>>", self._on_structured_filter_changed)
+        return combo
+
+    def _on_structured_filter_changed(self, _event: tk.Event | None = None) -> None:
+        self._refresh_playlist_view()
+
+    def _current_row_filters(self) -> WorkbenchRowFilters | None:
+        source_label = self._source_filter_var.get().strip().casefold()
+        if source_label == "cache":
+            source = "cache"
+        elif source_label == "catalog":
+            source = "catalog"
+        else:
+            source = "all"
+        filters = WorkbenchRowFilters(
+            source=source,
+            pred_type=self._type_filter_var.get(),
+            key=self._key_filter_var.get(),
+            status=self._status_filter_var.get(),
+        )
+        return filters if filters.active() else None
+
+    def _playlist_filters_active(self) -> bool:
+        return bool(self._filter_var.get().strip()) or self._current_row_filters() is not None
+
+    def _update_structured_filter_options(self) -> None:
+        options = workbench_filter_options(self._rows)
+        type_values = (FILTER_ALL_LABEL, *options["types"])
+        key_values = (FILTER_ALL_LABEL, *options["keys"])
+        self._type_filter_combo["values"] = type_values
+        self._key_filter_combo["values"] = key_values
+        if self._type_filter_var.get() not in type_values:
+            self._type_filter_var.set(FILTER_ALL_LABEL)
+        if self._key_filter_var.get() not in key_values:
+            self._key_filter_var.set(FILTER_ALL_LABEL)
+
+    def _reset_structured_filters(self) -> None:
+        self._source_filter_var.set(FILTER_ALL_LABEL)
+        self._type_filter_var.set(FILTER_ALL_LABEL)
+        self._key_filter_var.set(FILTER_ALL_LABEL)
+        self._status_filter_var.set(FILTER_ALL_LABEL)
 
     def _library_display_label(self, path: str) -> str:
         parts = Path(path).parts
@@ -818,6 +920,7 @@ class WorkbenchApp:
         self._sort_column = None
         self._sort_reverse = False
         self._filter_var.set("")
+        self._reset_structured_filters()
         self._update_sort_headings()
         self._set_detail(None)
 
@@ -845,10 +948,15 @@ class WorkbenchApp:
 
     def _clear_filter(self, _event: tk.Event | None = None) -> None:
         self._filter_var.set("")
+        self._reset_structured_filters()
 
     def _refresh_playlist_view(self) -> None:
         preserve_path = self._preview_row_path
-        visible = filter_workbench_rows(self._rows, self._filter_var.get())
+        visible = apply_workbench_filters(
+            self._rows,
+            self._filter_var.get(),
+            self._current_row_filters(),
+        )
         if self._sort_column is not None:
             visible = sort_workbench_rows(
                 visible,
@@ -886,8 +994,7 @@ class WorkbenchApp:
                     return
         self._set_detail(None)
         if self._catalog_library_mode and self._rows:
-            query = self._filter_var.get().strip()
-            if query:
+            if self._playlist_filters_active():
                 self._set_status(
                     f"Catalog-Samples: {len(visible)} von {len(self._rows)} Treffer",
                     tone="neutral",
@@ -904,8 +1011,7 @@ class WorkbenchApp:
                     tone="success",
                 )
         elif self._global_library_mode and self._rows:
-            query = self._filter_var.get().strip()
-            if query:
+            if self._playlist_filters_active():
                 self._set_status(
                     f"Alle Library-Samples: {len(visible)} von {len(self._rows)} Treffer",
                     tone="neutral",
@@ -925,6 +1031,7 @@ class WorkbenchApp:
 
     def _populate_playlist(self, result: WorkbenchResult) -> None:
         self._rows = result.rows
+        self._update_structured_filter_options()
         self._refresh_playlist_view()
 
     def _selected_row(self) -> WorkbenchRow | None:

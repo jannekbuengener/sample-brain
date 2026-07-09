@@ -235,6 +235,105 @@ def filter_workbench_rows(rows: list[WorkbenchRow], query: str) -> list[Workbenc
     return [row for row in rows if needle in _haystack(row)]
 
 
+WorkbenchSourceFilter = Literal["all", "cache", "catalog"]
+FILTER_ALL_LABEL = "alle"
+
+
+@dataclass(frozen=True)
+class WorkbenchRowFilters:
+    source: WorkbenchSourceFilter = "all"
+    pred_type: str | None = None
+    key: str | None = None
+    status: str | None = None
+
+    def active(self) -> bool:
+        return (
+            self.source != "all"
+            or _normalize_filter_value(self.pred_type) is not None
+            or _normalize_filter_value(self.key) is not None
+            or _normalize_filter_value(self.status) is not None
+        )
+
+
+def _normalize_filter_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized or normalized.casefold() == FILTER_ALL_LABEL:
+        return None
+    return normalized
+
+
+def row_source_kind(row: WorkbenchRow) -> Literal["cache", "catalog"]:
+    """Return whether *row* came from catalog.db (read-only) or workbench cache."""
+    if row.details.get("catalog_readonly"):
+        return "catalog"
+    return "cache"
+
+
+def workbench_filter_options(rows: list[WorkbenchRow]) -> dict[str, tuple[str, ...]]:
+    """Distinct type/class and key values from *rows* for filter dropdowns."""
+    types: set[str] = set()
+    keys: set[str] = set()
+    for row in rows:
+        for candidate in (row.pred_type, row.sample_class):
+            if candidate and str(candidate).strip():
+                types.add(str(candidate).strip())
+        if row.key and str(row.key).strip():
+            keys.add(str(row.key).strip())
+    return {
+        "types": tuple(sorted(types, key=str.casefold)),
+        "keys": tuple(sorted(keys, key=str.casefold)),
+    }
+
+
+def apply_workbench_structured_filters(
+    rows: list[WorkbenchRow],
+    filters: WorkbenchRowFilters | None,
+) -> list[WorkbenchRow]:
+    """Return rows matching structured metadata filters (AND)."""
+    if filters is None or not filters.active():
+        return list(rows)
+
+    pred_type = _normalize_filter_value(filters.pred_type)
+    key = _normalize_filter_value(filters.key)
+    status = _normalize_filter_value(filters.status)
+
+    def _matches(row: WorkbenchRow) -> bool:
+        if filters.source == "cache" and row_source_kind(row) != "cache":
+            return False
+        if filters.source == "catalog" and row_source_kind(row) != "catalog":
+            return False
+        if pred_type is not None:
+            row_types = {
+                value.strip().casefold()
+                for value in (row.pred_type, row.sample_class)
+                if value and str(value).strip()
+            }
+            if pred_type.casefold() not in row_types:
+                return False
+        if key is not None:
+            row_key = (row.key or "").strip()
+            if not row_key or row_key.casefold() != key.casefold():
+                return False
+        if status is not None:
+            if row.status.casefold() != status.casefold():
+                return False
+        return True
+
+    return [row for row in rows if _matches(row)]
+
+
+def apply_workbench_filters(
+    rows: list[WorkbenchRow],
+    text_query: str,
+    filters: WorkbenchRowFilters | None = None,
+) -> list[WorkbenchRow]:
+    """Apply text search then structured filters (AND composition)."""
+    filtered = filter_workbench_rows(rows, text_query)
+    return apply_workbench_structured_filters(filtered, filters)
+
+
 PLAYLIST_SORT_COLUMNS = frozenset(
     {"name", "bpm", "key", "key_conf", "loudness", "brightness", "pred_type", "status"}
 )
@@ -783,7 +882,8 @@ __all__ = [
     "WorkbenchResult",
     "add_workbench_library_folder",
     "analyze_folder_for_workbench",
-    "append_catalog_readonly_status_hint",
+    "apply_workbench_filters",
+    "apply_workbench_structured_filters",
     "catalog_available",
     "catalog_row_display_name",
     "CATALOG_READONLY_EDIT_MESSAGE",
@@ -795,6 +895,10 @@ __all__ = [
     "filter_workbench_rows",
     "format_catalog_load_status",
     "is_catalog_readonly_row",
+    "row_source_kind",
+    "workbench_filter_options",
+    "WorkbenchRowFilters",
+    "FILTER_ALL_LABEL",
     "format_path_display_lines",
     "get_workbench_library_folders",
     "get_preview_start_ms",

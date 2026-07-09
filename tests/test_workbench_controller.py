@@ -11,22 +11,29 @@ import pytest
 from src.workbench_controller import (
     add_workbench_library_folder,
     analyze_folder_for_workbench,
+    apply_workbench_filters,
+    apply_workbench_structured_filters,
     error_message_for_code,
     export_workbench_rows_to_csv,
     filter_workbench_rows,
     format_path_display_lines,
     get_preview_start_ms,
     get_workbench_library_folders,
+    is_catalog_readonly_row,
     load_cached_folder_rows,
     load_workbench_last_folder,
     load_workbench_sample_cue,
     remove_workbench_library_folder,
+    row_source_kind,
     save_workbench_last_folder,
     save_workbench_sample_cue,
     sort_workbench_rows,
     validate_workbench_folder,
+    workbench_filter_options,
     workbench_last_folder_file,
     WorkbenchRow,
+    WorkbenchRowFilters,
+    FILTER_ALL_LABEL,
 )
 from src.workbench_library import WorkbenchCueMetadata, WorkbenchCueNotFoundError
 from tests.audio_fixtures import write_kick_transient_wav, write_sine_wav
@@ -221,6 +228,135 @@ def test_filter_workbench_rows_matches_library_folder() -> None:
     by_other = filter_workbench_rows(rows, "other")
     assert len(by_other) == 1
     assert by_other[0].display_name == "snare"
+
+
+def _sample_rows_for_filters() -> list[WorkbenchRow]:
+    return [
+        WorkbenchRow(
+            display_name="kick cache",
+            relative_path="kick.wav",
+            path="/cache/kick.wav",
+            bpm=120.0,
+            key="Am",
+            key_conf=0.8,
+            loudness=-10.0,
+            brightness=50.0,
+            sample_class="kick",
+            pred_type="kick",
+            status="ok",
+            details={"library_folder": "/music/pack"},
+        ),
+        WorkbenchRow(
+            display_name="pad cache",
+            relative_path="pad.wav",
+            path="/cache/pad.wav",
+            bpm=90.0,
+            key="C",
+            key_conf=0.7,
+            loudness=-12.0,
+            brightness=40.0,
+            sample_class="pad",
+            pred_type="pad",
+            status="ok",
+            details={},
+        ),
+        WorkbenchRow(
+            display_name="catalog snare",
+            relative_path="snare.wav",
+            path="/catalog/snare.wav",
+            bpm=128.0,
+            key="Am",
+            key_conf=0.9,
+            loudness=-8.0,
+            brightness=55.0,
+            sample_class="snare",
+            pred_type="snare",
+            status="pending",
+            details={"catalog_readonly": True, "source": "catalog"},
+        ),
+    ]
+
+
+def test_row_source_kind_distinguishes_cache_and_catalog():
+    rows = _sample_rows_for_filters()
+    assert row_source_kind(rows[0]) == "cache"
+    assert row_source_kind(rows[2]) == "catalog"
+
+
+def test_apply_workbench_structured_filters_by_source():
+    rows = _sample_rows_for_filters()
+    cache_only = apply_workbench_structured_filters(
+        rows,
+        WorkbenchRowFilters(source="cache"),
+    )
+    assert [row.display_name for row in cache_only] == ["kick cache", "pad cache"]
+
+    catalog_only = apply_workbench_structured_filters(
+        rows,
+        WorkbenchRowFilters(source="catalog"),
+    )
+    assert len(catalog_only) == 1
+    assert catalog_only[0].display_name == "catalog snare"
+
+
+def test_apply_workbench_structured_filters_by_type_key_status():
+    rows = _sample_rows_for_filters()
+
+    by_type = apply_workbench_structured_filters(
+        rows,
+        WorkbenchRowFilters(pred_type="pad"),
+    )
+    assert len(by_type) == 1
+    assert by_type[0].display_name == "pad cache"
+
+    by_key = apply_workbench_structured_filters(
+        rows,
+        WorkbenchRowFilters(key="Am"),
+    )
+    assert {row.display_name for row in by_key} == {"kick cache", "catalog snare"}
+
+    by_status = apply_workbench_structured_filters(
+        rows,
+        WorkbenchRowFilters(status="pending"),
+    )
+    assert len(by_status) == 1
+    assert by_status[0].display_name == "catalog snare"
+
+
+def test_apply_workbench_filters_combines_text_and_structured():
+    rows = _sample_rows_for_filters()
+    combined = apply_workbench_filters(
+        rows,
+        "kick",
+        WorkbenchRowFilters(key="Am"),
+    )
+    assert len(combined) == 1
+    assert combined[0].display_name == "kick cache"
+
+
+def test_apply_workbench_structured_filters_reset_shows_all():
+    rows = _sample_rows_for_filters()
+    assert apply_workbench_structured_filters(rows, None) == rows
+    assert apply_workbench_structured_filters(
+        rows,
+        WorkbenchRowFilters(source="all", pred_type=FILTER_ALL_LABEL),
+    ) == rows
+
+
+def test_workbench_filter_options_collects_distinct_values():
+    rows = _sample_rows_for_filters()
+    options = workbench_filter_options(rows)
+    assert options["types"] == ("kick", "pad", "snare")
+    assert options["keys"] == ("Am", "C")
+
+
+def test_catalog_readonly_rows_remain_unchanged_by_structured_filter():
+    rows = _sample_rows_for_filters()
+    catalog_rows = apply_workbench_structured_filters(
+        rows,
+        WorkbenchRowFilters(source="catalog"),
+    )
+    assert all(is_catalog_readonly_row(row) for row in catalog_rows)
 
 
 def test_cancel_before_scan_returns_empty(sample_folder: Path):
