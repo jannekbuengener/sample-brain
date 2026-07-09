@@ -15,7 +15,13 @@ from .analyze import (
 )
 from .classify import rule_type
 from .scan import iter_audio_files_stream, safe_audio_info
-from .workbench_catalog import catalog_available, load_catalog_samples
+from .workbench_catalog import (
+    DEFAULT_CATALOG_LOAD_LIMIT,
+    catalog_available,
+    count_catalog_samples,
+    format_catalog_load_status,
+    load_catalog_samples,
+)
 from .workbench_library import (
     WORKBENCH_ANALYZER_VERSION,
     LibraryFolder,
@@ -756,9 +762,12 @@ __all__ = [
     "add_workbench_library_folder",
     "analyze_folder_for_workbench",
     "catalog_available",
+    "count_catalog_samples",
+    "DEFAULT_CATALOG_LOAD_LIMIT",
     "error_message_for_code",
     "export_workbench_rows_to_csv",
     "filter_workbench_rows",
+    "format_catalog_load_status",
     "is_catalog_readonly_row",
     "format_path_display_lines",
     "get_workbench_library_folders",

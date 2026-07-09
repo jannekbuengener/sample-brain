@@ -11,6 +11,7 @@ from .workbench_library import normalize_display_name
 
 CATALOG_SOURCE = "catalog"
 CATALOG_LIBRARY_FOLDER_LABEL = "catalog.db (read-only)"
+DEFAULT_CATALOG_LOAD_LIMIT = 5000
 
 _CATALOG_SELECT_SQL = """
 SELECT
@@ -168,11 +169,48 @@ def load_catalog_samples(
     return [_catalog_row_from_sqlite(row) for row in rows]
 
 
+def count_catalog_samples(path: Path | str | None = None) -> int:
+    """Return total sample count in catalog via SELECT-only access. Returns 0 when unavailable."""
+    db_path = catalog_db_path(path)
+    if not catalog_available(db_path):
+        return 0
+    try:
+        conn = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
+        try:
+            row = conn.execute("SELECT COUNT(*) AS n FROM samples").fetchone()
+            return int(row[0]) if row is not None else 0
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return 0
+
+
+def format_catalog_load_status(
+    loaded: int,
+    total: int,
+    *,
+    limit: int | None = None,
+) -> str:
+    """Build a user-facing catalog load status line (no performance claims)."""
+    if loaded <= 0:
+        return "Catalog-Samples: keine geladen (read-only)."
+    base = f"Catalog-Samples: {loaded}"
+    if total > loaded:
+        base += f" von {total}"
+    if limit is not None and total > limit:
+        base += " (Limit aktiv)"
+    base += " geladen (read-only)."
+    return base
+
+
 __all__ = [
     "CATALOG_LIBRARY_FOLDER_LABEL",
     "CATALOG_SOURCE",
+    "DEFAULT_CATALOG_LOAD_LIMIT",
     "CatalogSampleRow",
     "catalog_available",
     "catalog_db_path",
+    "count_catalog_samples",
+    "format_catalog_load_status",
     "load_catalog_samples",
 ]

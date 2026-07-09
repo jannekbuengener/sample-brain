@@ -18,8 +18,11 @@ from .workbench_controller import (
     add_workbench_library_folder,
     analyze_folder_for_workbench,
     catalog_available,
+    count_catalog_samples,
+    DEFAULT_CATALOG_LOAD_LIMIT,
     export_workbench_rows_to_csv,
     filter_workbench_rows,
+    format_catalog_load_status,
     format_path_display_lines,
     get_preview_start_ms,
     get_workbench_library_folders,
@@ -106,6 +109,8 @@ class WorkbenchApp:
         self._pending_attack_suggestion: AttackSuggestion | None = None
         self._global_library_mode = False
         self._catalog_library_mode = False
+        self._catalog_total_count = 0
+        self._catalog_load_limit: int | None = None
 
         self._build_styles()
         self._build_layout()
@@ -566,14 +571,20 @@ class WorkbenchApp:
             self._clear_playlist()
             self._global_library_mode = False
             self._catalog_library_mode = False
+            self._catalog_total_count = 0
+            self._catalog_load_limit = None
             self._set_status(
                 "Keine catalog.db gefunden — Pfad prüfen (SAMPLE_BRAIN_DB_PATH).",
                 tone="neutral",
             )
             return
-        rows = load_catalog_rows()
+        total = count_catalog_samples()
+        limit = DEFAULT_CATALOG_LOAD_LIMIT
+        rows = load_catalog_rows(limit=limit)
         self._catalog_library_mode = True
         self._global_library_mode = False
+        self._catalog_total_count = total
+        self._catalog_load_limit = limit if total > limit else None
         if not rows:
             self._clear_playlist()
             self._set_status("Catalog.db ohne Samples.", tone="neutral")
@@ -588,7 +599,11 @@ class WorkbenchApp:
         }
         self._populate_playlist(WorkbenchResult(summary=summary, rows=rows))
         self._set_status(
-            f"Catalog-Samples: {len(rows)} geladen (read-only).",
+            format_catalog_load_status(
+                len(rows),
+                total,
+                limit=limit if self._catalog_load_limit is not None else None,
+            ),
             tone="success",
         )
 
@@ -874,7 +889,11 @@ class WorkbenchApp:
                 )
             else:
                 self._set_status(
-                    f"Catalog-Samples: {len(self._rows)} geladen (read-only).",
+                    format_catalog_load_status(
+                        len(self._rows),
+                        self._catalog_total_count,
+                        limit=self._catalog_load_limit,
+                    ),
                     tone="success",
                 )
         elif self._global_library_mode and self._rows:

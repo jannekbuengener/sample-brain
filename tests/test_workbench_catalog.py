@@ -13,6 +13,8 @@ from src.workbench_catalog import (
     CATALOG_SOURCE,
     catalog_available,
     catalog_db_path,
+    count_catalog_samples,
+    format_catalog_load_status,
     load_catalog_samples,
 )
 
@@ -118,6 +120,28 @@ class TestLoadCatalogSamples:
         rows = [r.to_workbench_row() for r in load_catalog_samples(catalog_db)]
         filtered = filter_workbench_rows(rows, "catalog")
         assert len(filtered) == 3
+
+
+class TestCountCatalogSamples:
+    def test_count_matches_rows(self, catalog_db: Path):
+        assert count_catalog_samples(catalog_db) == 3
+
+    def test_missing_db_returns_zero(self, tmp_path: Path):
+        assert count_catalog_samples(tmp_path / "nope.db") == 0
+
+
+class TestFormatCatalogLoadStatus:
+    def test_all_loaded_no_limit_hint(self):
+        msg = format_catalog_load_status(3, 3)
+        assert "3" in msg
+        assert "read-only" in msg.lower()
+        assert "Limit aktiv" not in msg
+
+    def test_truncated_shows_total_and_limit(self):
+        msg = format_catalog_load_status(500, 12000, limit=5000)
+        assert "500" in msg
+        assert "12000" in msg
+        assert "Limit aktiv" in msg
 
 
 class TestCatalogReadonlyGuards:
