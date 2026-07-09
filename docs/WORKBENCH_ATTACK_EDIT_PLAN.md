@@ -1,6 +1,6 @@
 # Workbench Attack Edit Plan
 
-**Status:** Attack edit mode v1 shipped on `main` (toggle + single-click set + clear). Read-only attack marker (PR #143). Attack **suggestion** (`suggest_attack_ms`) is analysis-only — user must explicitly accept before persisting; original files unchanged.  
+**Status:** Attack edit mode v1 shipped on `main`. Attack suggestion API + UI (`Attack vorschlagen` / `Vorschlag übernehmen`) shipped — suggestion only until user accepts; original files unchanged.  
 **Parent:** [#117 — workbench usability and library workflow follow-ups](https://github.com/jannekbuengener/sample-brain/issues/117)  
 **Related:** [`WORKBENCH_CUE_METADATA_PLAN.md`](WORKBENCH_CUE_METADATA_PLAN.md), [`WORKBENCH_LOOP_EDIT_PLAN.md`](WORKBENCH_LOOP_EDIT_PLAN.md)
 

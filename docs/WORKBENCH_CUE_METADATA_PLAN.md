@@ -18,6 +18,7 @@
 | Loop region UI | ✅ Display + edit mode (toggle, two-click set, clear) |
 | Attack marker UI | ✅ Display + edit mode (toggle, single-click set, clear) |
 | Attack suggestion (analysis) | ✅ `suggest_attack_ms` — Vorschlag only; no auto-write |
+| Attack suggestion UI | ✅ Buttons `Attack vorschlagen` + `Vorschlag übernehmen` |
 
 ## 1. Problem
 

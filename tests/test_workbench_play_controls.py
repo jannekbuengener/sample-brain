@@ -359,6 +359,7 @@ def test_waveform_attack_edit_hint_documents_mode_controls():
     wb = _workbench_module()
     hint = wb.WAVEFORM_ATTACK_EDIT_HINT
     assert "Attack-Modus" in hint
+    assert "Attack vorschlagen" in hint
     assert "Attack löschen" in hint
 
 
@@ -606,3 +607,73 @@ def test_attack_edit_mode_left_click_does_not_play(tmp_path: Path):
     app._on_waveform_click(SimpleNamespace(state=0, x=90))
     assert attack_called == [90]
     assert app._play_calls == []
+
+
+def _suggest_app(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.25, frequency_hz=440.0)
+    row = _sample_row(wav)
+    app = _playback_app()
+    app._detail_row = row
+    apply_states: list[str] = []
+    app._attack_suggest_apply_btn = SimpleNamespace(
+        state=lambda args: apply_states.append(str(args)),
+    )
+    app._apply_states = apply_states
+    return app, wav
+
+
+def test_suggest_attack_metadata_sets_pending_without_saving(tmp_path: Path, monkeypatch):
+    from src.workbench_attack_suggest import AttackSuggestion
+
+    app, _wav = _suggest_app(tmp_path)
+    suggestion = AttackSuggestion(
+        attack_ms=42,
+        method="energy_threshold",
+        confidence="medium",
+        reason="test",
+    )
+    monkeypatch.setattr(
+        "src.workbench.suggest_attack_ms",
+        lambda _path: suggestion,
+    )
+    saved: list[object] = []
+    monkeypatch.setattr("src.workbench.save_workbench_sample_cue", lambda *a, **k: saved.append(a))
+
+    app._suggest_attack_metadata()
+
+    assert app._pending_attack_suggestion == suggestion
+    assert "42 ms" in app._status_var.value
+    assert saved == []
+    assert app._apply_states[-1] == "['!disabled']"
+
+
+def test_apply_attack_suggestion_persists_attack_ms(tmp_path: Path, monkeypatch):
+    from src.workbench_attack_suggest import AttackSuggestion
+    from src.workbench_controller import WorkbenchCueMetadata
+
+    app, wav = _suggest_app(tmp_path)
+    app._pending_attack_suggestion = AttackSuggestion(
+        attack_ms=55,
+        method="energy_threshold",
+        confidence="high",
+        reason="test",
+    )
+    existing = WorkbenchCueMetadata(cue_start_ms=10, attack_ms=None)
+    monkeypatch.setattr("src.workbench.load_workbench_sample_cue", lambda _path: existing)
+    saved: list[WorkbenchCueMetadata] = []
+    monkeypatch.setattr(
+        "src.workbench.save_workbench_sample_cue",
+        lambda _path, metadata, **kwargs: saved.append(metadata),
+    )
+    redrawn: list[object] = []
+    app._draw_waveform = lambda row: redrawn.append(row)
+    app._update_waveform_usage_hint = lambda: None
+
+    app._apply_attack_suggestion()
+
+    assert len(saved) == 1
+    assert saved[0].attack_ms == 55
+    assert saved[0].cue_start_ms == 10
+    assert app._pending_attack_suggestion is None
+    assert "übernommen" in app._status_var.value.lower()
+    assert redrawn == [app._detail_row]
