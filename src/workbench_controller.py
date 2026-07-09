@@ -15,7 +15,7 @@ from .analyze import (
 )
 from .classify import rule_type
 from .scan import iter_audio_files_stream, safe_audio_info
-from .workbench_catalog import load_catalog_samples
+from .workbench_catalog import catalog_available, load_catalog_samples
 from .workbench_library import (
     WORKBENCH_ANALYZER_VERSION,
     LibraryFolder,
@@ -40,7 +40,9 @@ ProgressCallback = Callable[[int, int, str, ProgressPhase], None]
 ShouldCancel = Callable[[], bool]
 
 WORKBENCH_GLOBAL_LIBRARY_TOKEN = "__workbench_all_library__"
+WORKBENCH_CATALOG_LIBRARY_TOKEN = "__workbench_catalog_readonly__"
 ALL_LIBRARY_VIEW_LABEL = "Alle Library-Samples"
+CATALOG_VIEW_LABEL = "Catalog lesen"
 
 ERROR_LABELS: dict[str, str] = {
     "audio_info_failed": "Datei-Metadaten konnten nicht gelesen werden",
@@ -683,6 +685,11 @@ def load_all_cached_rows(
     return [row.to_workbench_row() for row in cached]
 
 
+def is_catalog_readonly_row(row: WorkbenchRow) -> bool:
+    """Return True when *row* was loaded from catalog.db (no cue/loop writes)."""
+    return bool(row.details.get("catalog_readonly"))
+
+
 def load_catalog_rows(
     *,
     catalog_path: Path | str | None = None,
@@ -734,9 +741,11 @@ def preview_start_ms_from_waveform_x(x: int, width: int, duration_ms: int) -> in
 
 __all__ = [
     "ALL_LIBRARY_VIEW_LABEL",
+    "CATALOG_VIEW_LABEL",
     "ERROR_LABELS",
     "FOLDER_ERROR_MESSAGES",
     "WORKBENCH_GLOBAL_LIBRARY_TOKEN",
+    "WORKBENCH_CATALOG_LIBRARY_TOKEN",
     "ProgressCallback",
     "ProgressPhase",
     "ShouldCancel",
@@ -746,9 +755,11 @@ __all__ = [
     "WorkbenchResult",
     "add_workbench_library_folder",
     "analyze_folder_for_workbench",
+    "catalog_available",
     "error_message_for_code",
     "export_workbench_rows_to_csv",
     "filter_workbench_rows",
+    "is_catalog_readonly_row",
     "format_path_display_lines",
     "get_workbench_library_folders",
     "get_preview_start_ms",

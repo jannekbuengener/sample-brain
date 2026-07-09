@@ -118,3 +118,44 @@ class TestLoadCatalogSamples:
         rows = [r.to_workbench_row() for r in load_catalog_samples(catalog_db)]
         filtered = filter_workbench_rows(rows, "catalog")
         assert len(filtered) == 3
+
+
+class TestCatalogReadonlyGuards:
+    def test_is_catalog_readonly_row(self, catalog_db: Path):
+        from src.workbench_controller import is_catalog_readonly_row
+
+        row = load_catalog_samples(catalog_db)[0].to_workbench_row()
+        assert is_catalog_readonly_row(row) is True
+
+    def test_cache_row_is_not_catalog_readonly(self) -> None:
+        from src.workbench_controller import WorkbenchRow, is_catalog_readonly_row
+
+        row = WorkbenchRow(
+            display_name="kick",
+            relative_path="kick.wav",
+            path="/samples/kick.wav",
+            bpm=120.0,
+            key="C",
+            key_conf=0.9,
+            loudness=-10.0,
+            brightness=0.5,
+            sample_class="perc",
+            pred_type="kick",
+            status="ok",
+        )
+        assert is_catalog_readonly_row(row) is False
+
+    def test_load_catalog_rows_controller(self, catalog_db: Path):
+        from src.workbench_controller import load_catalog_rows
+
+        rows = load_catalog_rows(catalog_path=catalog_db)
+        assert len(rows) == 3
+        assert all(row.details.get("catalog_readonly") for row in rows)
+
+    def test_sort_catalog_rows_stable(self, catalog_db: Path):
+        from src.workbench_controller import load_catalog_rows, sort_workbench_rows
+
+        rows = load_catalog_rows(catalog_path=catalog_db)
+        sorted_rows = sort_workbench_rows(rows, "name")
+        names = [row.display_name for row in sorted_rows]
+        assert names == sorted(names, key=str.casefold)
