@@ -17,7 +17,10 @@ from .workbench_controller import (
     WORKBENCH_GLOBAL_LIBRARY_TOKEN,
     add_workbench_library_folder,
     analyze_folder_for_workbench,
+    append_catalog_readonly_status_hint,
     catalog_available,
+    catalog_row_display_name,
+    CATALOG_READONLY_EDIT_MESSAGE,
     count_catalog_samples,
     DEFAULT_CATALOG_LOAD_LIMIT,
     export_workbench_rows_to_csv,
@@ -599,10 +602,12 @@ class WorkbenchApp:
         }
         self._populate_playlist(WorkbenchResult(summary=summary, rows=rows))
         self._set_status(
-            format_catalog_load_status(
-                len(rows),
-                total,
-                limit=limit if self._catalog_load_limit is not None else None,
+            append_catalog_readonly_status_hint(
+                format_catalog_load_status(
+                    len(rows),
+                    total,
+                    limit=limit if self._catalog_load_limit is not None else None,
+                )
             ),
             tone="success",
         )
@@ -860,7 +865,7 @@ class WorkbenchApp:
                 tk.END,
                 iid=str(idx),
                 values=(
-                    row.display_name,
+                    catalog_row_display_name(row),
                     _fmt(row.bpm, digits=1),
                     row.key or "—",
                     _fmt(row.key_conf, digits=3),
@@ -889,10 +894,12 @@ class WorkbenchApp:
                 )
             else:
                 self._set_status(
-                    format_catalog_load_status(
-                        len(self._rows),
-                        self._catalog_total_count,
-                        limit=self._catalog_load_limit,
+                    append_catalog_readonly_status_hint(
+                        format_catalog_load_status(
+                            len(self._rows),
+                            self._catalog_total_count,
+                            limit=self._catalog_load_limit,
+                        )
                     ),
                     tone="success",
                 )
@@ -1124,12 +1131,16 @@ class WorkbenchApp:
 
     def _block_catalog_edit(self, row: WorkbenchRow | None) -> bool:
         if row is not None and is_catalog_readonly_row(row):
-            self._set_status(
-                "Catalog-Zeile read-only — Cue/Loop/Attack nicht speicherbar.",
-                tone="neutral",
-            )
+            self._set_status(CATALOG_READONLY_EDIT_MESSAGE, tone="neutral")
+            return True
+        if self._catalog_library_mode and row is None:
+            self._set_status(CATALOG_READONLY_EDIT_MESSAGE, tone="neutral")
             return True
         return False
+
+    def _show_catalog_edit_blocked(self) -> None:
+        self._set_status(CATALOG_READONLY_EDIT_MESSAGE, tone="neutral")
+        messagebox.showinfo("Catalog read-only", CATALOG_READONLY_EDIT_MESSAGE)
 
     def _set_selected_cue_from_waveform_position(self, x: int) -> None:
         if self._busy:
@@ -1181,6 +1192,12 @@ class WorkbenchApp:
 
     def _on_loop_edit_mode_toggled(self) -> None:
         if self._loop_edit_mode_var.get():
+            if self._catalog_library_mode or (
+                self._detail_row is not None and is_catalog_readonly_row(self._detail_row)
+            ):
+                self._loop_edit_mode_var.set(False)
+                self._show_catalog_edit_blocked()
+                return
             self._attack_edit_mode_var.set(False)
             self._loop_edit_pending_start_ms = None
             self._update_waveform_usage_hint()
@@ -1192,6 +1209,12 @@ class WorkbenchApp:
 
     def _on_attack_edit_mode_toggled(self) -> None:
         if self._attack_edit_mode_var.get():
+            if self._catalog_library_mode or (
+                self._detail_row is not None and is_catalog_readonly_row(self._detail_row)
+            ):
+                self._attack_edit_mode_var.set(False)
+                self._show_catalog_edit_blocked()
+                return
             self._loop_edit_mode_var.set(False)
             self._loop_edit_pending_start_ms = None
             self._update_waveform_usage_hint()
@@ -1565,6 +1588,7 @@ class WorkbenchApp:
             if is_catalog_readonly_row(row):
                 lines = [
                     "Quelle:   catalog.db (read-only)",
+                    "Bearbeitung: Cue/Loop/Attack nur im Workbench-Cache speicherbar",
                     "",
                 ]
             else:

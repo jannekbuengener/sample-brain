@@ -86,6 +86,7 @@ The workbench today uses a **separate** user-local SQLite cache (`workbench_libr
 | `workbench_catalog_readonly_view_v1` | Catalog sidebar + playlist | ✅ Shipped |
 | `workbench_catalog_cache_import_plan` | Import/sync semantics (docs only) | ✅ Plan doc |
 | `workbench_large_catalog_ux_v1` | Limit/count/status for large catalog loads | ✅ Shipped |
+| `workbench_catalog_readonly_badge_polish` | Clearer read-only row distinction in UI | ✅ Shipped |
 | `workbench_catalog_to_cache_import_v1` | Explicit catalog → cache import (code) | High — needs implementation GO |
 | `workbench_cue_export_to_catalog` | Explicit user export of cue fields | High — needs schema GO |
 

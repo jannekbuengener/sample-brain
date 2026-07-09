@@ -696,6 +696,28 @@ def is_catalog_readonly_row(row: WorkbenchRow) -> bool:
     return bool(row.details.get("catalog_readonly"))
 
 
+CATALOG_READONLY_EDIT_MESSAGE = (
+    "Catalog-Zeile read-only — Cue/Loop/Attack werden hier nicht gespeichert."
+)
+CATALOG_READONLY_STATUS_HINT = (
+    "Catalog read-only — Cue/Loop/Attack werden hier nicht gespeichert."
+)
+
+
+def catalog_row_display_name(row: WorkbenchRow) -> str:
+    """Playlist label for catalog rows (visual distinction without changing filter keys)."""
+    if is_catalog_readonly_row(row):
+        return f"⧉ {row.display_name}"
+    return row.display_name
+
+
+def append_catalog_readonly_status_hint(message: str) -> str:
+    """Append the standard catalog read-only edit hint to a load status line."""
+    if CATALOG_READONLY_STATUS_HINT in message:
+        return message
+    return f"{message} {CATALOG_READONLY_STATUS_HINT}"
+
+
 def load_catalog_rows(
     *,
     catalog_path: Path | str | None = None,
@@ -761,7 +783,11 @@ __all__ = [
     "WorkbenchResult",
     "add_workbench_library_folder",
     "analyze_folder_for_workbench",
+    "append_catalog_readonly_status_hint",
     "catalog_available",
+    "catalog_row_display_name",
+    "CATALOG_READONLY_EDIT_MESSAGE",
+    "CATALOG_READONLY_STATUS_HINT",
     "count_catalog_samples",
     "DEFAULT_CATALOG_LOAD_LIMIT",
     "error_message_for_code",

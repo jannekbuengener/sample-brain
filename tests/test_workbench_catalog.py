@@ -151,6 +151,41 @@ class TestCatalogReadonlyGuards:
         row = load_catalog_samples(catalog_db)[0].to_workbench_row()
         assert is_catalog_readonly_row(row) is True
 
+    def test_catalog_row_display_name_prefix(self, catalog_db: Path):
+        from src.workbench_controller import catalog_row_display_name
+
+        row = load_catalog_samples(catalog_db)[0].to_workbench_row()
+        assert catalog_row_display_name(row).startswith("⧉ ")
+
+    def test_cache_display_name_unprefixed(self) -> None:
+        from src.workbench_controller import WorkbenchRow, catalog_row_display_name
+
+        row = WorkbenchRow(
+            display_name="kick",
+            relative_path="kick.wav",
+            path="/samples/kick.wav",
+            bpm=120.0,
+            key="C",
+            key_conf=0.9,
+            loudness=-10.0,
+            brightness=0.5,
+            sample_class="perc",
+            pred_type="kick",
+            status="ok",
+        )
+        assert catalog_row_display_name(row) == "kick"
+
+    def test_append_catalog_readonly_status_hint(self):
+        from src.workbench_controller import (
+            CATALOG_READONLY_STATUS_HINT,
+            append_catalog_readonly_status_hint,
+        )
+
+        base = "Catalog-Samples: 3 geladen (read-only)."
+        msg = append_catalog_readonly_status_hint(base)
+        assert CATALOG_READONLY_STATUS_HINT in msg
+        assert append_catalog_readonly_status_hint(msg) == msg
+
     def test_cache_row_is_not_catalog_readonly(self) -> None:
         from src.workbench_controller import WorkbenchRow, is_catalog_readonly_row
 

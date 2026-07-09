@@ -10,7 +10,7 @@
 - **Workbench P1 (#117, merged):** last-folder memory (#124), CSV playlist export (#125)
 - **Workbench library cache v1 (#117):** user-local SQLite (`~/.sample-brain/workbench_library.db`) remembers analyzed folders/samples; invalidation via path + size + mtime; internal `display_name` only — original files unchanged
 - **Workbench library folder list (#117, merged):** sidebar lists known library folders; `+` adds folder to cache; `−` removes cache metadata only; **Alle Library-Samples** loads all cached rows across folders; global search/filter/sort across cache (#155)
-- **Workbench catalog bridge (#117, shipped):** read-only `catalog.db` browse via sidebar **Catalog lesen**; loader + UI; default load limit with total count status; no writes to catalog
+- **Workbench catalog bridge (#117, shipped):** read-only `catalog.db` browse via sidebar **Catalog lesen**; loader + UI; default load limit with total count status; catalog rows prefixed in playlist; edit modes blocked with clear message; no writes to catalog
 - **Workbench catalog import (#117, planned):** [`WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md`](../docs/WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md) — catalog→cache semantics; explicit user action; no implementation yet
 - **Workbench audio preview v1 (#117, merged PR #129):** platform playback (winsound/afplay/aplay); non-WAV via temp PCM decode; original files never modified
 - **Workbench preview controls (#117, merged PR #130):** double-click row to play; Space toggles play/stop; selection preserved across filter/sort; preview disabled during analysis
