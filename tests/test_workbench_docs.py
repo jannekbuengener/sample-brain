@@ -88,3 +88,18 @@ def test_workbench_attack_edit_plan_documents_bindings_and_recommendation():
     assert "cue_start_ms" in text
     assert "never" in text.lower() and "modif" in text.lower()
     assert "Attack-edit mode" in text or "attack-edit mode" in text.lower()
+
+
+def test_workbench_search_ui_plan_documents_filters_and_scope():
+    plan = REPO_ROOT / "docs" / "WORKBENCH_SEARCH_UI_PLAN.md"
+    assert plan.is_file(), "search UI plan must exist"
+    text = plan.read_text(encoding="utf-8")
+    assert "filter_workbench_rows" in text or "Textsuche" in text
+    assert "catalog" in text.lower()
+    assert "cache" in text.lower()
+    assert "bpm" in text.lower()
+    assert "semantic" in text.lower() or "CLAP" in text
+    assert "#73" in text or "73" in text
+    assert "#74" in text or "74" in text
+    assert "never modif" in text.lower() or "no writes" in text.lower()
+    assert "#117" in text or "117" in text

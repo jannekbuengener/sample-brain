@@ -309,6 +309,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - **Partial:** Workbench library folder list (#117) — known folders visible in UI; `+` registers folder in local library cache; `−` removes folder metadata and cached samples only (original files unchanged). Merged PR #128.
 - **Planned:** Workbench catalog read-only bridge (#117) — [`WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md`](WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md); loader + UI shipped; no `catalog.db` writes.
 - **Planned:** Workbench catalog→cache import (#117) — [`WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md`](WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md); explicit user action only; no auto-import; implementation not started.
+- **Planned:** Workbench structured search/filter UI (#117) — [`WORKBENCH_SEARCH_UI_PLAN.md`](WORKBENCH_SEARCH_UI_PLAN.md); text filter shipped; structured filters (source, type, key, status, BPM) planned; semantic search / #73 / #74 explicitly out of scope.
 - **Partial:** Windows desktop shortcut helper (`tools/windows/`) — local `.lnk` creation only, no installer/EXE.
 - Acceptance criteria:
   - user flows for search, inspect, preview, and export are documented
