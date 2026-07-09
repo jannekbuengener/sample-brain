@@ -28,6 +28,7 @@ from .workbench_controller import (
     sort_workbench_rows,
     validate_workbench_folder,
 )
+from .workbench_attack_suggest import AttackSuggestion, suggest_attack_ms
 from .workbench_library import WorkbenchCueNotFoundError, WorkbenchCueValidationError
 from .workbench_preview import WorkbenchPreviewPlayer, preview_toggle_action
 from .workbench_waveform import (
@@ -56,7 +57,7 @@ LOOP_MARKER = "#6fcf6f"
 ATTACK_MARKER = "#ffc857"
 WAVEFORM_USAGE_HINT = "Linksklick: Play · Rechtsklick: ab Stelle · Shift+Klick: Cue setzen"
 WAVEFORM_LOOP_EDIT_HINT = "Loop-Modus: 1. Klick Start · 2. Klick Ende · Loop löschen"
-WAVEFORM_ATTACK_EDIT_HINT = "Attack-Modus: Klick setzt Attack · Attack löschen"
+WAVEFORM_ATTACK_EDIT_HINT = "Attack-Modus: Klick setzt Attack · Attack vorschlagen · Attack löschen"
 
 COLUMNS = (
     ("name", "Name", 180),
@@ -94,6 +95,7 @@ class WorkbenchApp:
         self._preview_row_path: str | None = None
         self._detail_row: WorkbenchRow | None = None
         self._loop_edit_pending_start_ms: int | None = None
+        self._pending_attack_suggestion: AttackSuggestion | None = None
 
         self._build_styles()
         self._build_layout()
@@ -321,6 +323,18 @@ class WorkbenchApp:
             text="Attack löschen",
             command=self._clear_attack_metadata,
         ).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(
+            waveform_controls,
+            text="Attack vorschlagen",
+            command=self._suggest_attack_metadata,
+        ).pack(side=tk.LEFT, padx=(16, 0))
+        self._attack_suggest_apply_btn = ttk.Button(
+            waveform_controls,
+            text="Vorschlag übernehmen",
+            command=self._apply_attack_suggestion,
+            state=tk.DISABLED,
+        )
+        self._attack_suggest_apply_btn.pack(side=tk.LEFT, padx=(8, 0))
 
         self._waveform_canvas = tk.Canvas(
             detail_frame,
@@ -1028,6 +1042,7 @@ class WorkbenchApp:
             return
 
         self._attack_edit_mode_var.set(False)
+        self._clear_attack_suggestion()
         self._update_waveform_usage_hint()
         self._draw_waveform(row)
         self._set_status(f"Attack gesetzt: {attack_ms} ms", tone="success")
@@ -1063,7 +1078,84 @@ class WorkbenchApp:
         self._attack_edit_mode_var.set(False)
         self._update_waveform_usage_hint()
         self._draw_waveform(row)
+        self._clear_attack_suggestion()
         self._set_status("Attack gelöscht", tone="success")
+
+    def _set_attack_suggestion_pending(self, suggestion: AttackSuggestion | None) -> None:
+        self._pending_attack_suggestion = suggestion
+        btn = getattr(self, "_attack_suggest_apply_btn", None)
+        if btn is None:
+            return
+        if suggestion is None:
+            btn.state(["disabled"])
+        else:
+            btn.state(["!disabled"])
+
+    def _clear_attack_suggestion(self) -> None:
+        self._set_attack_suggestion_pending(None)
+
+    def _suggest_attack_metadata(self) -> None:
+        if self._busy:
+            return
+        row = self._detail_row
+        if row is None or not row.path:
+            self._set_status("Kein Sample ausgewählt.", tone="neutral")
+            return
+        suggestion = suggest_attack_ms(row.path)
+        if suggestion is None:
+            self._clear_attack_suggestion()
+            self._set_status("Attack-Vorschlag nicht möglich.", tone="error")
+            return
+        self._set_attack_suggestion_pending(suggestion)
+        self._set_status(
+            (
+                f"Attack-Vorschlag: {suggestion.attack_ms} ms "
+                f"({suggestion.confidence}) — {suggestion.reason} "
+                "· Übernehmen oder ignorieren"
+            ),
+            tone="active",
+        )
+
+    def _apply_attack_suggestion(self) -> None:
+        if self._busy:
+            return
+        suggestion = self._pending_attack_suggestion
+        if suggestion is None:
+            self._set_status("Kein Attack-Vorschlag vorhanden.", tone="neutral")
+            return
+        row = self._detail_row
+        if row is None or not row.path:
+            self._set_status("Kein Sample ausgewählt.", tone="neutral")
+            return
+        duration_ms = read_audio_duration_ms(row.path)
+        try:
+            existing = load_workbench_sample_cue(row.path)
+            metadata = WorkbenchCueMetadata(
+                cue_start_ms=existing.cue_start_ms,
+                attack_ms=suggestion.attack_ms,
+                loop_start_ms=existing.loop_start_ms,
+                loop_end_ms=existing.loop_end_ms,
+                cue_source=existing.cue_source or "manual",
+            )
+            save_workbench_sample_cue(row.path, metadata, duration_ms=duration_ms)
+        except WorkbenchCueNotFoundError:
+            self._set_status(
+                "Sample nicht in der lokalen Bibliothek — zuerst analysieren.",
+                tone="error",
+            )
+            return
+        except WorkbenchCueValidationError as exc:
+            self._set_status(f"Attack konnte nicht gespeichert werden: {exc}", tone="error")
+            return
+
+        self._attack_edit_mode_var.set(False)
+        self._clear_attack_suggestion()
+        self._update_waveform_usage_hint()
+        self._draw_waveform(row)
+        self._set_status(
+            f"Attack übernommen: {suggestion.attack_ms} ms ({suggestion.confidence})",
+            tone="success",
+        )
 
     def _clear_loop_metadata(self) -> None:
         if self._busy:
@@ -1200,6 +1292,7 @@ class WorkbenchApp:
 
     def _set_detail(self, row: WorkbenchRow | None) -> None:
         self._detail_row = row
+        self._clear_attack_suggestion()
         self._detail_text.configure(state=tk.NORMAL)
         self._detail_text.delete("1.0", tk.END)
         self._detail_copy_path = row.path if row is not None else None
