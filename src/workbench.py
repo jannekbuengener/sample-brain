@@ -27,10 +27,14 @@ from .workbench_controller import (
     count_catalog_samples,
     DEFAULT_CATALOG_LOAD_LIMIT,
     export_workbench_rows_to_csv,
+    effective_workbench_row_filters,
+    effective_workbench_text_query,
     format_catalog_load_status,
     format_path_display_lines,
     format_workbench_active_filter_summary,
     format_workbench_search_status,
+    format_workbench_view_restore_status,
+    format_workbench_view_section_hidden_status,
     WorkbenchSearchStatusContext,
     WorkbenchSearchMode,
     get_preview_start_ms,
@@ -41,14 +45,23 @@ from .workbench_controller import (
     load_catalog_rows,
     load_workbench_last_folder,
     load_workbench_sample_cue,
+    load_workbench_view_settings,
     parse_workbench_bpm_bound,
     preview_start_ms_from_waveform_x,
     remove_workbench_library_folder,
     save_workbench_last_folder,
     save_workbench_sample_cue,
+    save_workbench_view_settings,
     sort_workbench_rows,
     validate_workbench_folder,
     workbench_filter_options,
+    DEFAULT_WORKBENCH_VIEW_SETTINGS,
+    VIEW_SECTION_FILTERS,
+    VIEW_SECTION_LIBRARY_MANAGE,
+    VIEW_SECTION_SEARCH,
+    VIEW_SECTION_WAVEFORM_TOOLS,
+    WORKBENCH_VIEW_TOGGLE_HELP,
+    WorkbenchViewSettings,
 )
 from .workbench_attack_suggest import AttackSuggestion, suggest_attack_ms
 from .workbench_library import WorkbenchCueNotFoundError, WorkbenchCueValidationError
@@ -114,7 +127,6 @@ class WorkbenchApp:
         self._sort_reverse = False
         self._busy = False
         self._cancel_event = threading.Event()
-        self._detail_copy_path: str | None = None
         self._preview = WorkbenchPreviewPlayer()
         self._preview_row_path: str | None = None
         self._detail_row: WorkbenchRow | None = None
@@ -124,6 +136,7 @@ class WorkbenchApp:
         self._catalog_library_mode = False
         self._catalog_total_count = 0
         self._catalog_load_limit: int | None = None
+        self._view_settings = load_workbench_view_settings()
 
         self._build_styles()
         self._build_layout()
@@ -204,6 +217,49 @@ class WorkbenchApp:
         limit_entry = ttk.Entry(toolbar, textvariable=self._limit_var, width=6)
         limit_entry.pack(side=tk.LEFT, padx=(6, 0))
 
+        view_bar = ttk.Frame(self.root, padding=(12, 0, 12, 6))
+        view_bar.pack(fill=tk.X)
+        ttk.Label(view_bar, text="Ansicht:", style="Muted.TLabel").pack(side=tk.LEFT, padx=(0, 8))
+        self._show_search_var = tk.BooleanVar(value=self._view_settings.show_search)
+        self._show_filters_var = tk.BooleanVar(value=self._view_settings.show_filters)
+        self._show_library_manage_var = tk.BooleanVar(value=self._view_settings.show_library_manage)
+        self._show_waveform_tools_var = tk.BooleanVar(value=self._view_settings.show_waveform_tools)
+        ttk.Checkbutton(
+            view_bar,
+            text="Suche",
+            variable=self._show_search_var,
+            command=lambda: self._on_view_section_toggled(VIEW_SECTION_SEARCH),
+        ).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Checkbutton(
+            view_bar,
+            text="Filter",
+            variable=self._show_filters_var,
+            command=lambda: self._on_view_section_toggled(VIEW_SECTION_FILTERS),
+        ).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Checkbutton(
+            view_bar,
+            text="Library +/−",
+            variable=self._show_library_manage_var,
+            command=lambda: self._on_view_section_toggled(VIEW_SECTION_LIBRARY_MANAGE),
+        ).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Checkbutton(
+            view_bar,
+            text="Waveform-Werkzeuge",
+            variable=self._show_waveform_tools_var,
+            command=lambda: self._on_view_section_toggled(VIEW_SECTION_WAVEFORM_TOOLS),
+        ).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(
+            view_bar,
+            text="Standardansicht wiederherstellen",
+            command=self._restore_default_view,
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        self._view_help_var = tk.StringVar(value=WORKBENCH_VIEW_TOGGLE_HELP)
+        ttk.Label(
+            view_bar,
+            textvariable=self._view_help_var,
+            style="Muted.TLabel",
+        ).pack(side=tk.LEFT, padx=(16, 0))
+
         body = ttk.Frame(self.root, padding=(12, 0, 12, 8))
         body.pack(fill=tk.BOTH, expand=True)
         body.columnconfigure(0, weight=0, minsize=200)
@@ -221,6 +277,7 @@ class WorkbenchApp:
         )
         lib_btns = ttk.Frame(lib_header, style="Panel.TFrame")
         lib_btns.pack(side=tk.RIGHT)
+        self._lib_manage_btns = lib_btns
         ttk.Button(lib_btns, text="+", width=3, command=self._add_library_folder).pack(
             side=tk.LEFT, padx=(0, 4)
         )
@@ -256,6 +313,7 @@ class WorkbenchApp:
 
         filter_bar = ttk.Frame(playlist_frame, style="Panel.TFrame")
         filter_bar.pack(fill=tk.X, pady=(0, 6))
+        self._filter_bar = filter_bar
         ttk.Label(filter_bar, text="Suche:", style="Panel.TLabel").pack(side=tk.LEFT, padx=(0, 6))
         self._filter_var = tk.StringVar(value="")
         filter_entry = ttk.Entry(filter_bar, textvariable=self._filter_var)
@@ -268,6 +326,7 @@ class WorkbenchApp:
 
         structured_bar = ttk.Frame(playlist_frame, style="Panel.TFrame")
         structured_bar.pack(fill=tk.X, pady=(0, 6))
+        self._structured_bar = structured_bar
         self._source_filter_var = tk.StringVar(value=FILTER_ALL_LABEL)
         self._type_filter_var = tk.StringVar(value=FILTER_ALL_LABEL)
         self._key_filter_var = tk.StringVar(value=FILTER_ALL_LABEL)
@@ -350,15 +409,6 @@ class WorkbenchApp:
         ttk.Label(detail_header, text="Sample-Details", style="Heading.TLabel").pack(
             side=tk.LEFT, anchor=tk.W
         )
-        detail_actions = ttk.Frame(detail_header, style="Panel.TFrame")
-        detail_actions.pack(side=tk.RIGHT)
-        self._copy_path_btn = ttk.Button(
-            detail_actions,
-            text="Pfad kopieren",
-            command=self._copy_detail_path,
-            state=tk.DISABLED,
-        )
-        self._copy_path_btn.pack(side=tk.LEFT)
 
         self._detail_text = tk.Text(
             detail_frame,
@@ -378,6 +428,7 @@ class WorkbenchApp:
 
         waveform_controls = ttk.Frame(detail_frame, style="Panel.TFrame")
         waveform_controls.pack(fill=tk.X, pady=(8, 4))
+        self._waveform_controls = waveform_controls
         self._loop_edit_mode_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             waveform_controls,
@@ -438,11 +489,12 @@ class WorkbenchApp:
         self._waveform_canvas.bind("<Button-1>", self._on_waveform_click)
         self._waveform_canvas.bind("<Button-3>", self._on_waveform_right_click)
         self._waveform_usage_var = tk.StringVar(value=WAVEFORM_USAGE_HINT)
-        ttk.Label(
+        self._waveform_usage_label = ttk.Label(
             detail_frame,
             textvariable=self._waveform_usage_var,
             style="Muted.TLabel",
-        ).pack(fill=tk.X, pady=(2, 0))
+        )
+        self._waveform_usage_label.pack(fill=tk.X, pady=(2, 0))
 
         status_bar = ttk.Frame(self.root, style="Panel.TFrame")
         status_bar.pack(fill=tk.X, side=tk.BOTTOM)
@@ -454,6 +506,92 @@ class WorkbenchApp:
         self._progress = ttk.Progressbar(status_inner, mode="determinate", maximum=100)
         self._progress.pack(fill=tk.X, pady=(4, 0))
         self._progress.pack_forget()
+        self._apply_view_visibility(notify=False)
+
+    def _current_view_settings(self) -> WorkbenchViewSettings:
+        return WorkbenchViewSettings(
+            show_search=bool(self._show_search_var.get()),
+            show_filters=bool(self._show_filters_var.get()),
+            show_library_manage=bool(self._show_library_manage_var.get()),
+            show_waveform_tools=bool(self._show_waveform_tools_var.get()),
+        )
+
+    def _persist_view_settings(self) -> None:
+        self._view_settings = self._current_view_settings()
+        save_workbench_view_settings(self._view_settings)
+
+    def _end_waveform_edit_modes(self) -> None:
+        self._loop_edit_mode_var.set(False)
+        self._attack_edit_mode_var.set(False)
+        self._loop_edit_pending_start_ms = None
+        self._update_waveform_usage_hint()
+
+    def _apply_view_visibility(self, *, notify: bool, status_message: str | None = None) -> None:
+        settings = self._current_view_settings()
+        if settings.show_search:
+            self._filter_bar.pack(fill=tk.X, pady=(0, 6))
+        else:
+            self._filter_bar.pack_forget()
+            if self._filter_var.get().strip():
+                self._filter_var.set("")
+
+        if settings.show_filters:
+            self._structured_bar.pack(fill=tk.X, pady=(0, 6))
+        else:
+            self._structured_bar.pack_forget()
+            if self._current_row_filters() is not None:
+                self._reset_structured_filters()
+
+        if settings.show_library_manage:
+            self._lib_manage_btns.pack(side=tk.RIGHT)
+        else:
+            self._lib_manage_btns.pack_forget()
+
+        if settings.show_waveform_tools:
+            self._waveform_controls.pack(fill=tk.X, pady=(8, 4))
+            self._waveform_canvas.pack(fill=tk.X, pady=(8, 0))
+            self._waveform_usage_label.pack(fill=tk.X, pady=(2, 0))
+        else:
+            self._end_waveform_edit_modes()
+            self._waveform_controls.pack_forget()
+            self._waveform_canvas.pack_forget()
+            self._waveform_usage_label.pack_forget()
+
+        self._view_settings = settings
+        self._persist_view_settings()
+        self._refresh_playlist_view()
+        if notify and status_message:
+            self._set_status(status_message, tone="neutral")
+
+    def _on_view_section_toggled(self, section: str) -> None:
+        settings = self._current_view_settings()
+        hidden_messages = {
+            VIEW_SECTION_SEARCH: (not settings.show_search, VIEW_SECTION_SEARCH),
+            VIEW_SECTION_FILTERS: (not settings.show_filters, VIEW_SECTION_FILTERS),
+            VIEW_SECTION_LIBRARY_MANAGE: (
+                not settings.show_library_manage,
+                VIEW_SECTION_LIBRARY_MANAGE,
+            ),
+            VIEW_SECTION_WAVEFORM_TOOLS: (
+                not settings.show_waveform_tools,
+                VIEW_SECTION_WAVEFORM_TOOLS,
+            ),
+        }
+        is_hidden, key = hidden_messages.get(section, (False, section))
+        status_message = (
+            format_workbench_view_section_hidden_status(key) if is_hidden else None
+        )
+        self._apply_view_visibility(notify=True, status_message=status_message)
+
+    def _restore_default_view(self) -> None:
+        self._show_search_var.set(True)
+        self._show_filters_var.set(True)
+        self._show_library_manage_var.set(True)
+        self._show_waveform_tools_var.set(True)
+        self._apply_view_visibility(
+            notify=True,
+            status_message=format_workbench_view_restore_status(),
+        )
 
     def _add_structured_filter_combo(
         self,
@@ -995,10 +1133,18 @@ class WorkbenchApp:
 
     def _refresh_playlist_view(self) -> None:
         preserve_path = self._preview_row_path
+        text_query = effective_workbench_text_query(
+            self._filter_var.get(),
+            search_visible=self._view_settings.show_search,
+        )
+        row_filters = effective_workbench_row_filters(
+            self._current_row_filters(),
+            filters_visible=self._view_settings.show_filters,
+        )
         visible = apply_workbench_filters(
             self._rows,
-            self._filter_var.get(),
-            self._current_row_filters(),
+            text_query,
+            row_filters,
         )
         if self._sort_column is not None:
             visible = sort_workbench_rows(
@@ -1038,8 +1184,8 @@ class WorkbenchApp:
         self._set_detail(None)
         self._active_filter_var.set(
             format_workbench_active_filter_summary(
-                self._filter_var.get(),
-                self._build_row_filters(),
+                text_query,
+                row_filters,
             )
         )
         if self._rows and (
@@ -1224,13 +1370,6 @@ class WorkbenchApp:
             )
         else:
             self._set_status(result.message or "Loop-Wiederholung fehlgeschlagen.", tone="error")
-
-    def _copy_detail_path(self) -> None:
-        if not self._detail_copy_path:
-            return
-        self.root.clipboard_clear()
-        self.root.clipboard_append(self._detail_copy_path)
-        self._set_status("Pfad in Zwischenablage kopiert.", tone="success")
 
     def _export_csv(self) -> None:
         rows = self._visible_rows if self._visible_rows else self._rows
@@ -1738,13 +1877,10 @@ class WorkbenchApp:
         self._clear_attack_suggestion()
         self._detail_text.configure(state=tk.NORMAL)
         self._detail_text.delete("1.0", tk.END)
-        self._detail_copy_path = row.path if row is not None else None
         self._update_preview_state(row)
         if row is None:
-            self._copy_path_btn.state(["disabled"])
             self._detail_text.insert(tk.END, "Kein Sample ausgewählt.")
         else:
-            self._copy_path_btn.state(["!disabled"])
             if is_catalog_readonly_row(row):
                 lines = [
                     "Quelle:   catalog.db (read-only)",

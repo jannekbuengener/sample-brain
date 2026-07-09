@@ -25,14 +25,26 @@ from src.workbench_controller import (
     load_cached_folder_rows,
     load_workbench_last_folder,
     load_workbench_sample_cue,
+    load_workbench_view_settings,
     remove_workbench_library_folder,
     parse_workbench_bpm_bound,
     row_source_kind,
     save_workbench_last_folder,
     save_workbench_sample_cue,
+    save_workbench_view_settings,
     sort_workbench_rows,
     validate_workbench_folder,
     workbench_filter_options,
+    workbench_view_settings_file,
+    effective_workbench_row_filters,
+    effective_workbench_text_query,
+    format_workbench_view_restore_status,
+    format_workbench_view_section_hidden_status,
+    DEFAULT_WORKBENCH_VIEW_SETTINGS,
+    VIEW_SECTION_FILTERS,
+    VIEW_SECTION_SEARCH,
+    VIEW_SECTION_WAVEFORM_TOOLS,
+    WorkbenchViewSettings,
     workbench_last_folder_file,
     WorkbenchRow,
     WorkbenchRowFilters,
@@ -929,3 +941,79 @@ def test_get_preview_start_ms_defaults_to_zero_for_unknown_path(tmp_path: Path):
     missing = tmp_path / "ghost.wav"
     missing.write_bytes(b"data")
     assert get_preview_start_ms(missing) == 0
+
+
+def test_effective_workbench_text_query_hides_search_when_bar_hidden():
+    assert effective_workbench_text_query("kick", search_visible=False) == ""
+    assert effective_workbench_text_query("kick", search_visible=True) == "kick"
+
+
+def test_effective_workbench_row_filters_hides_structured_filters():
+    filters = WorkbenchRowFilters(pred_type="Loop")
+    assert effective_workbench_row_filters(filters, filters_visible=False) is None
+    assert effective_workbench_row_filters(filters, filters_visible=True) == filters
+
+
+def test_workbench_view_settings_round_trip(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    custom = WorkbenchViewSettings(
+        show_search=False,
+        show_filters=True,
+        show_library_manage=False,
+        show_waveform_tools=True,
+    )
+    assert save_workbench_view_settings(custom, state_dir=state_dir) is True
+    loaded = load_workbench_view_settings(state_dir=state_dir)
+    assert loaded == custom
+
+
+def test_workbench_view_settings_invalid_json_falls_back_to_defaults(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    path_file = workbench_view_settings_file(state_dir=state_dir)
+    path_file.write_text("{not-json", encoding="utf-8")
+    assert load_workbench_view_settings(state_dir=state_dir) == DEFAULT_WORKBENCH_VIEW_SETTINGS
+
+
+def test_format_workbench_view_status_messages():
+    assert "zurückgesetzt" in format_workbench_view_section_hidden_status(VIEW_SECTION_FILTERS)
+    assert "Waveform" in format_workbench_view_section_hidden_status(VIEW_SECTION_WAVEFORM_TOOLS)
+    assert format_workbench_view_restore_status() == "Standardansicht wiederhergestellt"
+
+
+def test_hidden_search_does_not_filter_playlist_rows():
+    rows = [
+        WorkbenchRow(
+            display_name="kick.wav",
+            relative_path="kick.wav",
+            path="/a/kick.wav",
+            bpm=120.0,
+            key="C",
+            key_conf=0.8,
+            loudness=-10.0,
+            brightness=50.0,
+            sample_class="oneshot",
+            pred_type="Kick",
+            status="ok",
+        ),
+        WorkbenchRow(
+            display_name="pad.wav",
+            relative_path="pad.wav",
+            path="/a/pad.wav",
+            bpm=90.0,
+            key="Am",
+            key_conf=0.7,
+            loudness=-12.0,
+            brightness=40.0,
+            sample_class="loop",
+            pred_type="Pad",
+            status="ok",
+        ),
+    ]
+    visible = apply_workbench_filters(
+        rows,
+        effective_workbench_text_query("kick", search_visible=False),
+        effective_workbench_row_filters(None, filters_visible=True),
+    )
+    assert len(visible) == 2
