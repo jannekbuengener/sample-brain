@@ -20,6 +20,7 @@ from .workbench_library import (
     LibraryFolder,
     WorkbenchCueMetadata,
     list_library_folders,
+    load_all_cached_samples,
     load_folder_samples,
     load_sample_cue,
     lookup_sample,
@@ -36,6 +37,9 @@ from .workbench_library import (
 ProgressPhase = Literal["scanning", "analyzing", "done", "error", "cancelled"]
 ProgressCallback = Callable[[int, int, str, ProgressPhase], None]
 ShouldCancel = Callable[[], bool]
+
+WORKBENCH_GLOBAL_LIBRARY_TOKEN = "__workbench_all_library__"
+ALL_LIBRARY_VIEW_LABEL = "Alle Library-Samples"
 
 ERROR_LABELS: dict[str, str] = {
     "audio_info_failed": "Datei-Metadaten konnten nicht gelesen werden",
@@ -664,6 +668,16 @@ def load_cached_folder_rows(
     return [row.to_workbench_row() for row in cached]
 
 
+def load_all_cached_rows(
+    *,
+    library_db_path: Path | None = None,
+) -> list[WorkbenchRow]:
+    """Load cached analysis rows from every registered workbench library folder."""
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    cached = load_all_cached_samples(db_path=db)
+    return [row.to_workbench_row() for row in cached]
+
+
 def load_workbench_sample_cue(
     path: Path | str,
     *,
@@ -704,8 +718,10 @@ def preview_start_ms_from_waveform_x(x: int, width: int, duration_ms: int) -> in
 
 
 __all__ = [
+    "ALL_LIBRARY_VIEW_LABEL",
     "ERROR_LABELS",
     "FOLDER_ERROR_MESSAGES",
+    "WORKBENCH_GLOBAL_LIBRARY_TOKEN",
     "ProgressCallback",
     "ProgressPhase",
     "ShouldCancel",
@@ -722,6 +738,7 @@ __all__ = [
     "get_workbench_library_folders",
     "get_preview_start_ms",
     "preview_start_ms_from_waveform_x",
+    "load_all_cached_rows",
     "load_cached_folder_rows",
     "load_workbench_last_folder",
     "load_workbench_sample_cue",

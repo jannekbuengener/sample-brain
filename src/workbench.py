@@ -11,6 +11,8 @@ from .workbench_controller import (
     WorkbenchCueMetadata,
     WorkbenchResult,
     WorkbenchRow,
+    ALL_LIBRARY_VIEW_LABEL,
+    WORKBENCH_GLOBAL_LIBRARY_TOKEN,
     add_workbench_library_folder,
     analyze_folder_for_workbench,
     export_workbench_rows_to_csv,
@@ -18,6 +20,7 @@ from .workbench_controller import (
     format_path_display_lines,
     get_preview_start_ms,
     get_workbench_library_folders,
+    load_all_cached_rows,
     load_cached_folder_rows,
     load_workbench_last_folder,
     load_workbench_sample_cue,
@@ -96,6 +99,7 @@ class WorkbenchApp:
         self._detail_row: WorkbenchRow | None = None
         self._loop_edit_pending_start_ms: int | None = None
         self._pending_attack_suggestion: AttackSuggestion | None = None
+        self._global_library_mode = False
 
         self._build_styles()
         self._build_layout()
@@ -384,9 +388,10 @@ class WorkbenchApp:
 
     def _refresh_library_list(self) -> None:
         folders = get_workbench_library_folders()
-        self._library_paths = [folder.path for folder in folders]
+        self._library_paths = [WORKBENCH_GLOBAL_LIBRARY_TOKEN] + [folder.path for folder in folders]
         self._library_list.delete(0, tk.END)
-        for folder_path in self._library_paths:
+        self._library_list.insert(tk.END, f"★ {ALL_LIBRARY_VIEW_LABEL}")
+        for folder_path in self._library_paths[1:]:
             self._library_list.insert(tk.END, self._library_display_label(folder_path))
 
     def _selected_library_path(self) -> str | None:
@@ -441,6 +446,12 @@ class WorkbenchApp:
         if path is None:
             messagebox.showinfo("Library", "Bitte zuerst einen Library-Ordner auswählen.")
             return
+        if path == WORKBENCH_GLOBAL_LIBRARY_TOKEN:
+            messagebox.showinfo(
+                "Library",
+                "Bitte einen konkreten Ordner zum Entfernen auswählen.",
+            )
+            return
         confirmed = messagebox.askyesno(
             "Library entfernen",
             "Nur aus Sample Brain entfernen?\n\n"
@@ -450,12 +461,19 @@ class WorkbenchApp:
             return
         removed = remove_workbench_library_folder(path)
         self._refresh_library_list()
-        if removed:
+        if self._global_library_mode:
+            self._load_all_cached_samples()
+        elif removed:
             self._set_status("Ordner aus Library entfernt (Dateien unverändert).", tone="neutral")
         else:
             self._set_status("Ordner war nicht in der Library.", tone="neutral")
 
     def _select_library_path(self, path: str) -> None:
+        if path == WORKBENCH_GLOBAL_LIBRARY_TOKEN:
+            self._library_list.selection_clear(0, tk.END)
+            self._library_list.selection_set(0)
+            self._library_list.see(0)
+            return
         try:
             index = self._library_paths.index(path)
         except ValueError:
@@ -470,6 +488,10 @@ class WorkbenchApp:
         path = self._selected_library_path()
         if path is None:
             return
+        if path == WORKBENCH_GLOBAL_LIBRARY_TOKEN:
+            self._load_all_cached_samples()
+            return
+        self._global_library_mode = False
         self._folder_var.set(path)
         save_workbench_last_folder(path)
         self._load_cached_folder(Path(path), announce_if_empty=True)
@@ -477,7 +499,39 @@ class WorkbenchApp:
     def _on_library_activate(self, _event: tk.Event | None = None) -> None:
         self._on_library_select()
 
+    def _load_all_cached_samples(self) -> None:
+        rows = load_all_cached_rows()
+        self._global_library_mode = True
+        if not rows:
+            self._clear_playlist()
+            self._set_status(
+                "Keine gecachten Samples in der Library — Ordner analysieren oder hinzufügen.",
+                tone="neutral",
+            )
+            return
+        self._rows = rows
+        folder_count = len(
+            {
+                row.details.get("library_folder")
+                for row in rows
+                if row.details.get("library_folder")
+            }
+        )
+        summary = {
+            "files_found": len(rows),
+            "analyzed_count": sum(1 for row in rows if row.status == "ok"),
+            "error_count": sum(1 for row in rows if row.status == "error"),
+            "cache_hits": len(rows),
+            "cache_misses": 0,
+        }
+        self._populate_playlist(WorkbenchResult(summary=summary, rows=rows))
+        self._set_status(
+            f"{len(rows)} gecachte Samples aus {folder_count} Ordner(n) geladen.",
+            tone="success",
+        )
+
     def _load_cached_folder(self, folder: Path, *, announce_if_empty: bool = False) -> None:
+        self._global_library_mode = False
         rows = load_cached_folder_rows(folder)
         if not rows:
             self._clear_playlist()

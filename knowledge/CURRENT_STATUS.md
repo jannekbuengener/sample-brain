@@ -9,7 +9,7 @@
 - **Workbench P0 (#117, merged):** cancel analysis (#119), folder path entry (#118), playlist filter (#120), column sort (#121), detail path polish + copy (#122)
 - **Workbench P1 (#117, merged):** last-folder memory (#124), CSV playlist export (#125)
 - **Workbench library cache v1 (#117):** user-local SQLite (`~/.sample-brain/workbench_library.db`) remembers analyzed folders/samples; invalidation via path + size + mtime; internal `display_name` only — original files unchanged
-- **Workbench library folder list (#117, merged):** sidebar lists known library folders; `+` adds folder to cache; `−` removes cache metadata only (no file deletes/moves/renames); selecting a folder loads cached samples when available
+- **Workbench library folder list (#117, merged):** sidebar lists known library folders; `+` adds folder to cache; `−` removes cache metadata only; **Alle Library-Samples** loads all cached rows across folders
 - **Workbench audio preview v1 (#117, merged PR #129):** platform playback (winsound/afplay/aplay); non-WAV via temp PCM decode; original files never modified
 - **Workbench preview controls (#117, merged PR #130):** double-click row to play; Space toggles play/stop; selection preserved across filter/sort; preview disabled during analysis
 - **Workbench waveform panel v1 (#117, merged PR #131):** read-only peak envelope under detail panel (`workbench_waveform`); original files unchanged
@@ -118,7 +118,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 - **Default switch to sqlite-vec** — blocked until latency gates PASS
 - **Tier B CLAP search-quality evidence** — Phase 1+2 merged; 4/6 classes on main; vocal/no-vocal proxy spike **HOLD_VOCAL_PROXY_FAILED**; genre/mood remain (#73 OPEN)
 - **Workbench cue/loop/attack metadata** — loop + attack edit modes; attack suggestion API + UI (#147–#148); loop once-preview (#149); loop repeat preview shipped (#117 follow-up)
-- **Workbench global multi-folder library view / catalog DB unification** — plan in [`WORKBENCH_CATALOG_UNIFICATION_PLAN.md`](../docs/WORKBENCH_CATALOG_UNIFICATION_PLAN.md); global cached view + search in progress (#117 remains open)
+- **Workbench global multi-folder library view** — shipped: **Alle Library-Samples** in sidebar; catalog unification planned ([`WORKBENCH_CATALOG_UNIFICATION_PLAN.md`](../docs/WORKBENCH_CATALOG_UNIFICATION_PLAN.md)) (#117 remains open)
 - **Phase 5 tags + FTS5 MVP** — not started (roadmap Phase 5)
 - **Large-scale private-sample validation** — synthetic/benchmark fixtures only
 - **EPIC 3–6** — not started

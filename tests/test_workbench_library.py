@@ -16,6 +16,7 @@ from src.workbench_library import (
     init_workbench_library,
     list_library_folders,
     load_folder_samples,
+    load_all_cached_samples,
     load_sample_cue,
     lookup_sample,
     normalize_display_name,
@@ -479,3 +480,81 @@ def test_upsert_sample_preserves_saved_cue_metadata(library_db: Path, tmp_path: 
     cue = load_sample_cue(audio.resolve(), db_path=library_db)
     assert cue.cue_start_ms == 400
     assert lookup_sample(audio.resolve(), 44, 100, db_path=library_db).bpm == 128.0
+
+
+def _cache_row(
+    folder_id: int,
+    *,
+    folder: Path,
+    name: str,
+    library_db: Path,
+) -> None:
+    audio = folder / name
+    audio.write_bytes(b"RIFF" + b"\x00" * 40)
+    row = WorkbenchRow(
+        display_name=name.replace(".wav", ""),
+        relative_path=name,
+        path=str(audio.resolve()),
+        bpm=120.0,
+        key="C",
+        key_conf=0.8,
+        loudness=-12.0,
+        brightness=1500.0,
+        sample_class="oneshot",
+        pred_type="Kick",
+        status="ok",
+    )
+    upsert_sample(folder_id, row, size_bytes=44, mtime_ns=100, db_path=library_db)
+
+
+def test_load_all_cached_samples_returns_rows_from_multiple_folders(
+    library_db: Path,
+    tmp_path: Path,
+) -> None:
+    folder_a = tmp_path / "pack_a"
+    folder_b = tmp_path / "pack_b"
+    folder_a.mkdir()
+    folder_b.mkdir()
+    id_a = upsert_folder(folder_a, db_path=library_db)
+    id_b = upsert_folder(folder_b, db_path=library_db)
+    _cache_row(id_a, folder=folder_a, name="kick.wav", library_db=library_db)
+    _cache_row(id_b, folder=folder_b, name="snare.wav", library_db=library_db)
+
+    rows = load_all_cached_samples(db_path=library_db)
+    assert len(rows) == 2
+    folders = {row.library_folder_path for row in rows}
+    assert folders == {str(folder_a.resolve()), str(folder_b.resolve())}
+
+
+def test_load_all_cached_samples_excludes_removed_folder(
+    library_db: Path,
+    tmp_path: Path,
+) -> None:
+    folder_a = tmp_path / "pack_a"
+    folder_b = tmp_path / "pack_b"
+    folder_a.mkdir()
+    folder_b.mkdir()
+    id_a = upsert_folder(folder_a, db_path=library_db)
+    id_b = upsert_folder(folder_b, db_path=library_db)
+    _cache_row(id_a, folder=folder_a, name="kick.wav", library_db=library_db)
+    _cache_row(id_b, folder=folder_b, name="snare.wav", library_db=library_db)
+
+    remove_library_folder(folder_b, db_path=library_db)
+    rows = load_all_cached_samples(db_path=library_db)
+
+    assert len(rows) == 1
+    assert rows[0].library_folder_path == str(folder_a.resolve())
+
+
+def test_load_all_cached_samples_to_workbench_row_includes_library_folder(
+    library_db: Path,
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "pack"
+    folder.mkdir()
+    folder_id = upsert_folder(folder, db_path=library_db)
+    _cache_row(folder_id, folder=folder, name="tone.wav", library_db=library_db)
+
+    wb_row = load_all_cached_samples(db_path=library_db)[0].to_workbench_row()
+    assert wb_row.details.get("library_folder") == str(folder.resolve())
+    assert wb_row.relative_path.startswith("pack/")

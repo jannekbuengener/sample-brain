@@ -297,6 +297,7 @@ class CachedWorkbenchRow:
     tags: list[str] | None = None
     analyzed_at: str | None = None
     analyzer_version: str | None = None
+    library_folder_path: str | None = None
 
     def to_workbench_row(self) -> Any:
         from .workbench_controller import WorkbenchRow, error_message_for_code
@@ -305,6 +306,8 @@ class CachedWorkbenchRow:
             "path": self.original_path,
             "relative_path": self.relative_path,
         }
+        if self.library_folder_path:
+            details["library_folder"] = self.library_folder_path
         if self.error_code:
             details["error_code"] = self.error_code
             details["error_detail"] = self.quality_note or ""
@@ -313,9 +316,17 @@ class CachedWorkbenchRow:
         if self.tags:
             details["tags"] = list(self.tags)
 
+        relative_path = self.relative_path
+        if self.library_folder_path:
+            folder_label = PurePath(self.library_folder_path).name
+            if relative_path:
+                relative_path = f"{folder_label}/{relative_path}"
+            else:
+                relative_path = folder_label
+
         return WorkbenchRow(
             display_name=self.display_name,
-            relative_path=self.relative_path,
+            relative_path=relative_path,
             path=self.original_path,
             bpm=self.bpm,
             key=self.key,
@@ -329,6 +340,40 @@ class CachedWorkbenchRow:
             error_code=self.error_code,
             details=details,
         )
+
+
+def _cached_row_from_sqlite_row(
+    row: sqlite3.Row,
+    *,
+    library_folder_path: str | None = None,
+) -> CachedWorkbenchRow:
+    tags_raw = row["tags"]
+    tags = json.loads(tags_raw) if tags_raw else None
+    folder_path = library_folder_path
+    if folder_path is None and "library_folder_path" in row.keys():
+        folder_path = row["library_folder_path"]
+    original_path = row["original_path"]
+    return CachedWorkbenchRow(
+        original_path=original_path,
+        relative_path=row["relative_path"] or "",
+        display_name=row["display_name"] or PurePath(original_path).name,
+        size_bytes=int(row["size_bytes"]),
+        mtime_ns=int(row["mtime_ns"]),
+        bpm=row["bpm"],
+        key=row["key"],
+        key_conf=row["key_conf"],
+        loudness=row["loudness"],
+        brightness=row["brightness"],
+        sample_class=row["sample_class"],
+        pred_type=row["pred_type"],
+        status=row["status"] or "ok",
+        error_code=row["error_code"],
+        quality_note=row["quality_note"],
+        tags=tags,
+        analyzed_at=row["analyzed_at"],
+        analyzer_version=row["analyzer_version"],
+        library_folder_path=folder_path,
+    )
 
 
 def _resolve_folder_id(
@@ -589,33 +634,22 @@ def load_folder_samples(
             """,
             (path,),
         ).fetchall()
-    result: list[CachedWorkbenchRow] = []
-    for row in rows:
-        tags_raw = row["tags"]
-        tags = json.loads(tags_raw) if tags_raw else None
-        result.append(
-            CachedWorkbenchRow(
-                original_path=row["original_path"],
-                relative_path=row["relative_path"] or "",
-                display_name=row["display_name"] or "",
-                size_bytes=int(row["size_bytes"]),
-                mtime_ns=int(row["mtime_ns"]),
-                bpm=row["bpm"],
-                key=row["key"],
-                key_conf=row["key_conf"],
-                loudness=row["loudness"],
-                brightness=row["brightness"],
-                sample_class=row["sample_class"],
-                pred_type=row["pred_type"],
-                status=row["status"] or "ok",
-                error_code=row["error_code"],
-                quality_note=row["quality_note"],
-                tags=tags,
-                analyzed_at=row["analyzed_at"],
-                analyzer_version=row["analyzer_version"],
-            )
-        )
-    return result
+    return [_cached_row_from_sqlite_row(row, library_folder_path=path) for row in rows]
+
+
+def load_all_cached_samples(*, db_path: Path | None = None) -> list[CachedWorkbenchRow]:
+    """Load cached samples from every registered workbench library folder."""
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT s.*, f.path AS library_folder_path
+            FROM samples s
+            JOIN folders f ON f.id = s.folder_id
+            ORDER BY f.path COLLATE NOCASE, s.relative_path, s.display_name
+            """
+        ).fetchall()
+    return [_cached_row_from_sqlite_row(row) for row in rows]
 
 
 __all__ = [
@@ -630,6 +664,7 @@ __all__ = [
     "default_workbench_cue_metadata",
     "init_workbench_library",
     "list_library_folders",
+    "load_all_cached_samples",
     "load_folder_samples",
     "load_sample_cue",
     "lookup_sample",
