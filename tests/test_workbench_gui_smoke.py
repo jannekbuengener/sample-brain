@@ -17,6 +17,8 @@ def test_workbench_gui_startup_smoke_constructs_key_widgets():
 
         assert hasattr(app, "_library_list"), "library folder list must exist"
         assert hasattr(app, "_waveform_canvas"), "waveform canvas must exist"
+        assert hasattr(app, "_provenance_label"), "metadata provenance label must exist"
+        assert hasattr(app, "_provenance_var"), "metadata provenance var must exist"
         assert WAVEFORM_USAGE_HINT in app._waveform_usage_var.get()
         assert hasattr(app, "_loop_edit_mode_var")
         assert hasattr(app, "_attack_edit_mode_var")

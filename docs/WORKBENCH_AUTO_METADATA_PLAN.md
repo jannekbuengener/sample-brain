@@ -178,7 +178,7 @@ All logic must be **unit-testable** without tkinter. Tests use synthetic WAV in 
 2. **#172** — auto-loop at analyze persist (after plan merge)  
 3. **#173** — auto-attack/cue at analyze persist (after #172 or parallel if shared helper)  
 4. **Follow-up** — per-field `*_source` migration (#177) — ✅ shipped schema v3
-5. **#178** — preview UX for provenance badges  
+5. **#178** — preview UX for provenance badges — ✅ Workbench shows compact `erkannt` / `manuell` hints for loop/attack/cue via `loop_source`, `attack_source`, `cue_source` (read-only UI; no rule change; no backfill)
 
 ## 12. Decision summary (v1 rule card)
 
@@ -196,4 +196,15 @@ TRIGGER:  analyze_folder_for_workbench persist only
 
 ---
 
-*Refs #117, #171, #172, #173. Runtime auto-write at analyze persist only.*
+*Refs #117, #171, #172, #173, #178. Runtime auto-write at analyze persist only.*
+
+### Preview UX (#178)
+
+The workbench waveform area shows compact German provenance hints when metadata sources are known:
+
+- `detected` → **erkannt**
+- `manual` → **manuell**
+- `NULL` / unset loop or attack source → hidden (legacy unknown)
+- Default cue without user edit → hidden; shown when auto-detected or after explicit cue save
+
+No auto-metadata rule changes and no retroactive backfill in this slice.
