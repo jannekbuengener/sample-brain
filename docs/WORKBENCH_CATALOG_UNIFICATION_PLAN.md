@@ -84,6 +84,8 @@ The workbench today uses a **separate** user-local SQLite cache (`workbench_libr
 | `workbench_catalog_readonly_bridge_plan` | Docs + read API sketch | ✅ Plan doc shipped |
 | `workbench_catalog_readonly_loader_v1` | Read-only `load_catalog_samples` | ✅ Shipped |
 | `workbench_catalog_readonly_view_v1` | Catalog sidebar + playlist | ✅ Shipped |
+| `workbench_catalog_cache_import_plan` | Import/sync semantics (docs only) | ✅ Plan doc |
+| `workbench_catalog_to_cache_import_v1` | Explicit catalog → cache import (code) | High — needs implementation GO |
 | `workbench_cue_export_to_catalog` | Explicit user export of cue fields | High — needs schema GO |
 
 ## 7. Identity matching (future bridge)

@@ -58,6 +58,19 @@ def test_workbench_catalog_readonly_bridge_plan_documents_read_only_safety():
     assert "#117" in text or "117" in text
 
 
+def test_workbench_catalog_cache_import_plan_documents_user_action_and_safety():
+    plan = REPO_ROOT / "docs" / "WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md"
+    assert plan.is_file(), "catalog cache import plan must exist"
+    text = plan.read_text(encoding="utf-8")
+    assert "workbench_library" in text
+    assert "catalog" in text.lower()
+    assert "no automatic import" in text.lower() or "no automatic" in text.lower()
+    assert "conflict" in text.lower()
+    assert "backup" in text.lower()
+    assert "never modif" in text.lower() or "no writes" in text.lower()
+    assert "#117" in text or "117" in text
+
+
 def test_workbench_loop_playback_plan_documents_repeat_scope():
     plan = REPO_ROOT / "docs" / "WORKBENCH_LOOP_PLAYBACK_PLAN.md"
     assert plan.is_file(), "loop playback plan must exist"

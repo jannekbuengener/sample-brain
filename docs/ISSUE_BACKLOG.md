@@ -307,7 +307,8 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - **Partial:** Local Workbench MVP (`sample-brain workbench`) shipped — tkinter playlist/detail; filter/sort (#120–#121), last-folder memory (#124), CSV export (#125), library metadata cache v1, library folder list (#128), audio preview (#129–#130), read-only waveform panel (#131); cue/loop/attack metadata editable via edit modes; attack suggestion + loop once-preview shipped (#147–#149). See [`WORKBENCH_CUE_METADATA_PLAN.md`](WORKBENCH_CUE_METADATA_PLAN.md), [`WORKBENCH_GUI_SMOKE.md`](WORKBENCH_GUI_SMOKE.md).
 - **Partial:** Workbench folder path entry (#117) — type or paste folder path in UI; dialog still available; last used folder restored on startup (#124).
 - **Partial:** Workbench library folder list (#117) — known folders visible in UI; `+` registers folder in local library cache; `−` removes folder metadata and cached samples only (original files unchanged). Merged PR #128.
-- **Planned:** Workbench catalog read-only bridge (#117) — [`WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md`](WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md); loader + UI slices follow; no `catalog.db` writes.
+- **Planned:** Workbench catalog read-only bridge (#117) — [`WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md`](WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md); loader + UI shipped; no `catalog.db` writes.
+- **Planned:** Workbench catalog→cache import (#117) — [`WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md`](WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md); explicit user action only; no auto-import; implementation not started.
 - **Partial:** Windows desktop shortcut helper (`tools/windows/`) — local `.lnk` creation only, no installer/EXE.
 - Acceptance criteria:
   - user flows for search, inspect, preview, and export are documented

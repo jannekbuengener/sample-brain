@@ -140,9 +140,13 @@ UI in `src/workbench.py`:
 
 **Tests:** `is_catalog_readonly_row`, `load_catalog_rows`, sort stability in `tests/test_workbench_catalog.py`.
 
-### Phase 4 — Later unification (explicit GO)
+### Phase 4 — Cache import planning ✅
 
-See [`WORKBENCH_CATALOG_UNIFICATION_PLAN.md`](WORKBENCH_CATALOG_UNIFICATION_PLAN.md) Phase C–D: cue export, single source of truth, user-triggered cache import.
+- **Dedicated plan:** [`WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md`](WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md) — catalog→cache direction, conflicts, backup, explicit user action, no auto-import.
+
+### Phase 5 — Later unification (explicit GO)
+
+See [`WORKBENCH_CATALOG_UNIFICATION_PLAN.md`](WORKBENCH_CATALOG_UNIFICATION_PLAN.md) Phase C–D: cue export, single source of truth, user-triggered cache import implementation.
 
 ## 7. Smallest safe loader sketch
 
