@@ -320,7 +320,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Labels: `ui`, `feat`, `desktop`
 - Goal: Provide a first local result inspector with sample preview.
 - Context: Search becomes much more useful when results can be auditioned quickly.
-- **Partial:** Workbench MVP: waveform play surface (#117) — cue/loop metadata editable (loop mode); read-only attack marker when `attack_ms` set; attack edit not yet.
+- **Partial:** Workbench MVP: waveform (#117) — cue/loop editable; attack marker read-only; attack edit planned ([`WORKBENCH_ATTACK_EDIT_PLAN.md`](WORKBENCH_ATTACK_EDIT_PLAN.md)).
 - **Partial:** Workbench shows analysis progress (N/M + progress bar) and classified error messages.
 - **Partial:** Workbench short clips (<0.5s) show Kurzclip hint; BPM/Key not overclaimed; librosa n_fft warnings suppressed for short audio.
 - Acceptance criteria:
