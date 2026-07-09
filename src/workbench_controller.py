@@ -245,6 +245,8 @@ class WorkbenchRowFilters:
     pred_type: str | None = None
     key: str | None = None
     status: str | None = None
+    min_bpm: float | None = None
+    max_bpm: float | None = None
 
     def active(self) -> bool:
         return (
@@ -252,7 +254,23 @@ class WorkbenchRowFilters:
             or _normalize_filter_value(self.pred_type) is not None
             or _normalize_filter_value(self.key) is not None
             or _normalize_filter_value(self.status) is not None
+            or self.min_bpm is not None
+            or self.max_bpm is not None
         )
+
+
+def parse_workbench_bpm_bound(value: str | None) -> float | None:
+    """Parse a BPM filter bound from user input; invalid values return None."""
+    normalized = (value or "").strip()
+    if not normalized:
+        return None
+    try:
+        parsed = float(normalized.replace(",", "."))
+    except ValueError:
+        return None
+    if parsed < 0:
+        return None
+    return parsed
 
 
 def _normalize_filter_value(value: str | None) -> str | None:
@@ -318,6 +336,13 @@ def apply_workbench_structured_filters(
                 return False
         if status is not None:
             if row.status.casefold() != status.casefold():
+                return False
+        if filters.min_bpm is not None or filters.max_bpm is not None:
+            if row.bpm is None:
+                return False
+            if filters.min_bpm is not None and row.bpm < filters.min_bpm:
+                return False
+            if filters.max_bpm is not None and row.bpm > filters.max_bpm:
                 return False
         return True
 
@@ -908,7 +933,7 @@ __all__ = [
     "load_catalog_rows",
     "load_workbench_last_folder",
     "load_workbench_sample_cue",
-    "PLAYLIST_SORT_COLUMNS",
+    "parse_workbench_bpm_bound",
     "PLAYLIST_CSV_FIELDS",
     "remove_workbench_library_folder",
     "row_as_dict",

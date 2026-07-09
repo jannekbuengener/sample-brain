@@ -37,6 +37,7 @@ from .workbench_controller import (
     load_catalog_rows,
     load_workbench_last_folder,
     load_workbench_sample_cue,
+    parse_workbench_bpm_bound,
     preview_start_ms_from_waveform_x,
     remove_workbench_library_folder,
     save_workbench_last_folder,
@@ -295,6 +296,10 @@ class WorkbenchApp:
             (FILTER_ALL_LABEL, "ok", "error", "pending"),
             width=8,
         )
+        self._bpm_min_var = tk.StringVar(value="")
+        self._bpm_max_var = tk.StringVar(value="")
+        self._add_bpm_filter_entry(structured_bar, "BPM von:", self._bpm_min_var)
+        self._add_bpm_filter_entry(structured_bar, "BPM bis:", self._bpm_max_var)
 
         tree_frame = ttk.Frame(playlist_frame, style="Panel.TFrame")
         tree_frame.pack(fill=tk.BOTH, expand=True)
@@ -457,7 +462,21 @@ class WorkbenchApp:
         combo.bind("<<ComboboxSelected>>", self._on_structured_filter_changed)
         return combo
 
-    def _on_structured_filter_changed(self, _event: tk.Event | None = None) -> None:
+    def _add_bpm_filter_entry(
+        self,
+        parent: ttk.Frame,
+        label: str,
+        variable: tk.StringVar,
+    ) -> ttk.Entry:
+        frame = ttk.Frame(parent, style="Panel.TFrame")
+        frame.pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Label(frame, text=label, style="Panel.TLabel").pack(side=tk.LEFT, padx=(0, 4))
+        entry = ttk.Entry(frame, textvariable=variable, width=6)
+        entry.pack(side=tk.LEFT)
+        variable.trace_add("write", self._on_structured_filter_changed)
+        return entry
+
+    def _on_structured_filter_changed(self, *_args: object) -> None:
         self._refresh_playlist_view()
 
     def _current_row_filters(self) -> WorkbenchRowFilters | None:
@@ -473,6 +492,8 @@ class WorkbenchApp:
             pred_type=self._type_filter_var.get(),
             key=self._key_filter_var.get(),
             status=self._status_filter_var.get(),
+            min_bpm=parse_workbench_bpm_bound(self._bpm_min_var.get()),
+            max_bpm=parse_workbench_bpm_bound(self._bpm_max_var.get()),
         )
         return filters if filters.active() else None
 
@@ -495,6 +516,8 @@ class WorkbenchApp:
         self._type_filter_var.set(FILTER_ALL_LABEL)
         self._key_filter_var.set(FILTER_ALL_LABEL)
         self._status_filter_var.set(FILTER_ALL_LABEL)
+        self._bpm_min_var.set("")
+        self._bpm_max_var.set("")
 
     def _library_display_label(self, path: str) -> str:
         parts = Path(path).parts
