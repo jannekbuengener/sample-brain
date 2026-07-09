@@ -1,6 +1,6 @@
 # Workbench Loop Edit Plan
 
-**Status:** Loop edit mode v1 shipped on `main`. Loop region **once** preview (`Loop vorhören`) shipped — temp slice only; no endless repeat; original files unchanged.  
+**Status:** Loop edit mode v1 shipped on `main`. Loop region **once** preview (`Loop vorhören`) shipped — temp slice only; no endless repeat; original files unchanged. Endless repeat: see [`WORKBENCH_LOOP_PLAYBACK_PLAN.md`](WORKBENCH_LOOP_PLAYBACK_PLAN.md).  
 **Parent:** [#117 — workbench usability and library workflow follow-ups](https://github.com/jannekbuengener/sample-brain/issues/117)  
 **Related:** [`WORKBENCH_CUE_METADATA_PLAN.md`](WORKBENCH_CUE_METADATA_PLAN.md)
 
