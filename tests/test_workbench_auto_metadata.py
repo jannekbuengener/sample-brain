@@ -89,10 +89,16 @@ def test_apply_auto_loop_metadata_sets_full_region():
     assert result.loop_end_ms == 2000
     assert result.attack_ms is None
     assert result.cue_start_ms == 0
+    assert result.loop_source == "detected"
 
 
 def test_apply_auto_loop_metadata_skips_when_loop_fields_set():
     existing = WorkbenchCueMetadata(loop_start_ms=100, loop_end_ms=500)
+    assert apply_auto_loop_metadata(existing, duration_ms=2000) is None
+
+
+def test_apply_auto_loop_metadata_skips_when_loop_source_manual():
+    existing = WorkbenchCueMetadata(loop_source="manual")
     assert apply_auto_loop_metadata(existing, duration_ms=2000) is None
 
 
@@ -136,12 +142,28 @@ def test_apply_auto_oneshot_metadata_sets_attack_and_cue(tmp_path: Path):
     assert result.attack_ms == 42
     assert result.cue_start_ms == 42
     assert result.cue_source == "detected"
+    assert result.attack_source == "detected"
 
 
 def test_apply_auto_oneshot_metadata_preserves_existing_attack(tmp_path: Path):
     wav = write_sine_wav(tmp_path / "shot.wav", duration_sec=0.4, frequency_hz=440.0)
     existing = WorkbenchCueMetadata(attack_ms=99, cue_source="manual")
     assert apply_auto_oneshot_metadata(existing, wav, duration_ms=400) is None
+
+
+def test_apply_auto_oneshot_metadata_skips_when_attack_source_manual(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "shot.wav", duration_sec=0.4, frequency_hz=440.0)
+    existing = WorkbenchCueMetadata(attack_source="manual")
+    with patch(
+        "src.workbench_auto_metadata.suggest_attack_ms",
+        return_value=AttackSuggestion(
+            attack_ms=42,
+            method="energy_threshold",
+            confidence="high",
+            reason="test",
+        ),
+    ):
+        assert apply_auto_oneshot_metadata(existing, wav, duration_ms=400) is None
 
 
 def test_apply_auto_oneshot_metadata_preserves_manual_cue(tmp_path: Path):
@@ -210,6 +232,7 @@ def test_apply_auto_metadata_after_analyze_loop_integration(
     loaded = load_workbench_sample_cue(wav)
     assert loaded.loop_start_ms == 0
     assert loaded.loop_end_ms == 2000
+    assert loaded.loop_source == "detected"
 
 
 def test_apply_auto_metadata_after_analyze_non_loop_unchanged(tmp_path: Path):
@@ -249,6 +272,7 @@ def test_analyze_folder_applies_auto_loop_for_loop_row(tmp_path: Path, monkeypat
     cue = load_workbench_sample_cue(wav)
     assert cue.loop_start_ms == 0
     assert cue.loop_end_ms == 1500
+    assert cue.loop_source == "detected"
 
 
 def test_analyze_folder_applies_auto_oneshot_attack(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -262,6 +286,7 @@ def test_analyze_folder_applies_auto_oneshot_attack(tmp_path: Path, monkeypatch:
     cue = load_workbench_sample_cue(wav)
     assert cue.attack_ms is not None
     assert cue.cue_source == "detected"
+    assert cue.attack_source == "detected"
 
 
 def test_analyze_folder_does_not_overwrite_manual_loop_on_reanalyze(
@@ -275,13 +300,41 @@ def test_analyze_folder_does_not_overwrite_manual_loop_on_reanalyze(
     analyze_folder_for_workbench(tmp_path)
     save_workbench_sample_cue(
         wav,
-        WorkbenchCueMetadata(loop_start_ms=200, loop_end_ms=900, cue_source="manual"),
+        WorkbenchCueMetadata(
+            loop_start_ms=200,
+            loop_end_ms=900,
+            cue_source="manual",
+            loop_source="manual",
+        ),
         duration_ms=1500,
     )
     analyze_folder_for_workbench(tmp_path)
     cue = load_workbench_sample_cue(wav)
     assert cue.loop_start_ms == 200
     assert cue.loop_end_ms == 900
+    assert cue.loop_source == "manual"
+
+
+def test_analyze_folder_does_not_overwrite_legacy_loop_without_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Legacy rows: loop fields set but loop_source NULL remain protected."""
+    wav = write_sine_wav(tmp_path / "loop.wav", duration_sec=1.5, frequency_hz=200.0)
+    monkeypatch.setattr(
+        "src.workbench_controller.rule_type",
+        lambda *_args, **_kwargs: ["Loop"],
+    )
+    analyze_folder_for_workbench(tmp_path)
+    save_workbench_sample_cue(
+        wav,
+        WorkbenchCueMetadata(loop_start_ms=200, loop_end_ms=900, loop_source=None),
+        duration_ms=1500,
+    )
+    analyze_folder_for_workbench(tmp_path)
+    cue = load_workbench_sample_cue(wav)
+    assert cue.loop_start_ms == 200
+    assert cue.loop_end_ms == 900
+    assert cue.loop_source is None
 
 
 def test_catalog_readonly_row_never_written_via_apply(tmp_path: Path):

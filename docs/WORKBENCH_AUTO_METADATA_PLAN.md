@@ -67,38 +67,38 @@ Fallback: if `pred_type` is missing but `sample_class == "oneshot"`, treat as `O
 
 ## 5. Manual value protection
 
-### 5.1 Current schema limitation
+### 5.1 Per-field provenance (schema v3, shipped #177)
 
-`workbench_library.db` stores a single `cue_source` column (`manual` | `detected` | `default`). There are **no per-field source columns** for `loop_start_ms`, `attack_ms`, etc.
+`workbench_library.db` schema v3 adds nullable per-field source columns:
 
-Implication: we cannot reliably distinguish “user cleared attack but left loop” vs “attack never set” using `cue_source` alone.
+```text
+loop_source   TEXT  -- 'detected' | 'manual' | NULL
+attack_source TEXT  -- 'detected' | 'manual' | NULL
+cue_source    TEXT  -- 'manual' | 'detected' | 'default' (existing)
+```
 
-### 5.2 v1 protection rules (no migration)
+`WORKBENCH_LIBRARY_SCHEMA_VERSION = 3`. Migration is idempotent (`ALTER TABLE` per missing column). Legacy rows keep `loop_source`/`attack_source` as `NULL` (unknown); field-emptiness protection from v1 remains for those rows.
 
-Use **field emptiness + conservative source flag**:
+### 5.2 Protection rules (with provenance)
 
 | Field state | Auto-fill allowed? |
 |---|---|
-| `loop_start_ms` **or** `loop_end_ms` is non-NULL | ❌ Never auto-loop |
-| `attack_ms` is non-NULL | ❌ Never auto-attack |
+| `loop_source == "manual"` | ❌ Never auto-loop |
+| `loop_start_ms` **or** `loop_end_ms` is non-NULL | ❌ Never auto-loop (legacy NULL-source rows) |
+| `attack_source == "manual"` | ❌ Never auto-attack |
+| `attack_ms` is non-NULL | ❌ Never auto-attack (legacy NULL-source rows) |
 | `cue_start_ms` is non-NULL **and** `cue_source == "manual"` | ❌ Never auto-cue |
-| `cue_source == "manual"` **and** any of loop/attack/cue non-default | ❌ Skip affected auto writes (per-field in v1 impl) |
 | All target fields NULL / unset | ✅ Auto-fill per §6–§7 |
-| `cue_source == "detected"` with partial fields | ✅ Fill only still-empty fields (same event) |
+| `*_source == "detected"` with partial fields | ✅ Fill only still-empty fields (same event) |
 
 **Default cue:** `cue_start_ms = 0` is the implicit default on read when NULL; for auto-fill purposes, treat NULL as empty. Do **not** overwrite `cue_start_ms` when it is `0` and `cue_source == "manual"`.
 
-### 5.3 v2 recommendation (before aggressive re-analyze auto-fill)
+Auto-metadata sets `loop_source='detected'` / `attack_source='detected'` on write. Manual UI edits set `loop_source='manual'` / `attack_source='manual'`.
 
-Add nullable per-field provenance (requires approved DB migration):
+### 5.3 Follow-up (not in #177)
 
-```text
-loop_source   TEXT  -- 'auto' | 'manual' | NULL
-attack_source TEXT
-cue_source    TEXT  -- already exists; keep
-```
-
-Until migration ships: **#172 / #173 must fail closed** if manual vs auto cannot be determined.
+- Re-analyze auto-refresh for rows with `*_source='detected'` only — separate slice after #178 UI
+- Retroactive backfill for legacy NULL-source rows — optional maintenance command
 
 ## 6. Auto-loop rule (v1)
 
@@ -115,7 +115,7 @@ Until migration ships: **#172 / #173 must fail closed** if manual vs auto cannot
 ```text
 loop_start_ms = 0
 loop_end_ms   = duration_ms   # clamped to sample end
-cue_source    = 'detected'    # only when no prior manual cue_source=manual
+loop_source   = 'detected'
 ```
 
 **Do not** set `cue_start_ms` in the loop auto-fill slice.
@@ -138,7 +138,7 @@ cue_source    = 'detected'    # only when no prior manual cue_source=manual
 2. If suggestion is `None` or confidence is `low` with duration edge cases → **skip** (no write).
 3. Set `attack_ms = suggestion.attack_ms`.
 4. **Cue (optional):** if `cue_start_ms` is NULL and `cue_source` is not `manual`, set `cue_start_ms = attack_ms`.
-5. Set `cue_source = 'detected'`.
+5. Set `cue_source = 'detected'` when cue is auto-set; set `attack_source = 'detected'`.
 
 **Do not** auto-set cue when user already has `cue_start_ms` at default 0 with `cue_source = manual` from an explicit Shift+click workflow.
 
@@ -177,7 +177,8 @@ All logic must be **unit-testable** without tkinter. Tests use synthetic WAV in 
 1. **This plan** (#171) — ✅ docs-only  
 2. **#172** — auto-loop at analyze persist (after plan merge)  
 3. **#173** — auto-attack/cue at analyze persist (after #172 or parallel if shared helper)  
-4. **Follow-up** — per-field `*_source` migration if re-analyze auto-refresh is needed  
+4. **Follow-up** — per-field `*_source` migration (#177) — ✅ shipped schema v3
+5. **#178** — preview UX for provenance badges  
 
 ## 12. Decision summary (v1 rule card)
 

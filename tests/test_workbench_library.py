@@ -302,6 +302,53 @@ def _create_legacy_v1_library_db(db_path: Path) -> None:
     conn.close()
 
 
+def _create_legacy_v2_library_db(db_path: Path) -> None:
+    """Schema v2: cue columns present, no loop_source/attack_source."""
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE folders (
+            id INTEGER PRIMARY KEY,
+            path TEXT UNIQUE NOT NULL,
+            last_scan_at TEXT,
+            last_opened_at TEXT
+        );
+        CREATE TABLE samples (
+            id INTEGER PRIMARY KEY,
+            folder_id INTEGER NOT NULL,
+            original_path TEXT UNIQUE NOT NULL,
+            relative_path TEXT,
+            size_bytes INTEGER,
+            mtime_ns INTEGER,
+            display_name TEXT,
+            bpm REAL,
+            key TEXT,
+            key_conf REAL,
+            loudness REAL,
+            brightness REAL,
+            sample_class TEXT,
+            pred_type TEXT,
+            status TEXT,
+            error_code TEXT,
+            quality_note TEXT,
+            tags TEXT,
+            analyzed_at TEXT,
+            analyzer_version TEXT,
+            cue_start_ms INTEGER DEFAULT 0,
+            attack_ms INTEGER DEFAULT NULL,
+            loop_start_ms INTEGER DEFAULT NULL,
+            loop_end_ms INTEGER DEFAULT NULL,
+            cue_source TEXT DEFAULT 'manual',
+            cue_updated_at TEXT DEFAULT NULL,
+            FOREIGN KEY(folder_id) REFERENCES folders(id)
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
 def test_new_library_db_has_cue_columns(library_db: Path):
     columns = _sample_columns(library_db)
     assert "cue_start_ms" in columns
@@ -310,7 +357,9 @@ def test_new_library_db_has_cue_columns(library_db: Path):
     assert "loop_end_ms" in columns
     assert "cue_source" in columns
     assert "cue_updated_at" in columns
-    assert WORKBENCH_LIBRARY_SCHEMA_VERSION == 2
+    assert "loop_source" in columns
+    assert "attack_source" in columns
+    assert WORKBENCH_LIBRARY_SCHEMA_VERSION == 3
 
 
 def test_legacy_library_db_is_migrated_to_add_cue_columns(tmp_path: Path):
@@ -324,6 +373,22 @@ def test_legacy_library_db_is_migrated_to_add_cue_columns(tmp_path: Path):
     columns = _sample_columns(db_path)
     assert "cue_start_ms" in columns
     assert "loop_end_ms" in columns
+
+
+def test_legacy_v2_library_db_is_migrated_to_add_provenance_columns(tmp_path: Path):
+    db_path = tmp_path / "state" / "workbench_library.db"
+    _create_legacy_v2_library_db(db_path)
+    columns = _sample_columns(db_path)
+    assert "cue_start_ms" in columns
+    assert "loop_source" not in columns
+    assert "attack_source" not in columns
+
+    init_workbench_library(db_path)
+    init_workbench_library(db_path)
+
+    columns = _sample_columns(db_path)
+    assert "loop_source" in columns
+    assert "attack_source" in columns
 
 
 def test_load_sample_cue_returns_defaults_for_unknown_path(library_db: Path, tmp_path: Path):
@@ -359,6 +424,8 @@ def test_save_and_load_sample_cue_roundtrip(library_db: Path, tmp_path: Path):
         loop_start_ms=500,
         loop_end_ms=1500,
         cue_source="manual",
+        loop_source="manual",
+        attack_source="detected",
     )
     save_sample_cue(audio.resolve(), metadata, db_path=library_db, duration_ms=2000)
     loaded = load_sample_cue(audio.resolve(), db_path=library_db)
@@ -368,6 +435,8 @@ def test_save_and_load_sample_cue_roundtrip(library_db: Path, tmp_path: Path):
     assert loaded.loop_start_ms == 500
     assert loaded.loop_end_ms == 1500
     assert loaded.cue_source == "manual"
+    assert loaded.loop_source == "manual"
+    assert loaded.attack_source == "detected"
     assert loaded.cue_updated_at is not None
 
 
