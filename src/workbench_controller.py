@@ -217,6 +217,10 @@ def filter_workbench_rows(rows: list[WorkbenchRow], query: str) -> list[Workbenc
             row.status,
             row.error or "",
         ]
+        library_folder = row.details.get("library_folder")
+        if library_folder:
+            parts.append(str(library_folder))
+            parts.append(Path(str(library_folder)).name)
         return " ".join(parts).casefold()
 
     return [row for row in rows if needle in _haystack(row)]
