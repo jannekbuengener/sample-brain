@@ -113,24 +113,20 @@ Catalog rows map into existing `WorkbenchRow` (`src/workbench_controller.py`) fo
 - Read API sketch, field matrix, safety contract, test strategy.
 - No runtime code.
 
-### Phase 2 — `workbench_catalog_readonly_loader_v1`
+### Phase 2 — `workbench_catalog_readonly_loader_v1` ✅
 
-New module `src/workbench_catalog.py` (preferred) or isolated functions:
+New module `src/workbench_catalog.py`:
 
-| Function | Contract |
+| Function | Status |
 |---|---|
-| `catalog_db_path(path=None)` | Resolve path; default `config.DB_PATH` |
-| `catalog_available(path=None) -> bool` | File exists and has `samples` table |
-| `load_catalog_samples(path=None, limit=None) -> list[CatalogSampleRow]` | `SELECT` only; empty list if missing DB |
+| `catalog_db_path()` | ✅ Shipped |
+| `catalog_available()` | ✅ Shipped |
+| `load_catalog_samples()` | ✅ Shipped |
+| `load_catalog_rows()` in controller | ✅ Shipped |
 
-`CatalogSampleRow` dataclass mirrors `CachedWorkbenchRow` + `source="catalog"`.
+`CatalogSampleRow` dataclass + `to_workbench_row()` with `source=catalog`, `catalog_readonly=True`.
 
-**Tests** (`tests/test_workbench_catalog.py`):
-
-- Seed `tmp_path` DB via `init_db()` + SQL inserts (pattern: `tests/test_search_filters.py`).
-- Loader returns mapped fields.
-- Missing DB → `catalog_available() == False`, load returns `[]`.
-- Sample without features → `status == "pending"`.
+**Tests** (`tests/test_workbench_catalog.py`): tmp_path DB, mapped fields, pending without features, missing DB → `[]`.
 
 ### Phase 3 — `workbench_catalog_readonly_view_v1`
 
