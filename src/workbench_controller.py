@@ -359,6 +359,41 @@ def apply_workbench_filters(
     return apply_workbench_structured_filters(filtered, filters)
 
 
+def format_workbench_active_filter_summary(
+    text_query: str,
+    filters: WorkbenchRowFilters | None,
+) -> str:
+    """Return a compact active-filter hint, or empty string when none apply."""
+    parts: list[str] = []
+    text = (text_query or "").strip()
+    if text:
+        parts.append(f'Text="{text}"')
+    if filters is not None:
+        if filters.source == "cache":
+            parts.append("Quelle=Cache")
+        elif filters.source == "catalog":
+            parts.append("Quelle=Catalog")
+        pred_type = _normalize_filter_value(filters.pred_type)
+        if pred_type is not None:
+            parts.append(f"Type={pred_type}")
+        key = _normalize_filter_value(filters.key)
+        if key is not None:
+            parts.append(f"Key={key}")
+        status = _normalize_filter_value(filters.status)
+        if status is not None:
+            parts.append(f"Status={status}")
+        if filters.min_bpm is not None or filters.max_bpm is not None:
+            if filters.min_bpm is not None and filters.max_bpm is not None:
+                parts.append(f"BPM {filters.min_bpm:g}–{filters.max_bpm:g}")
+            elif filters.min_bpm is not None:
+                parts.append(f"BPM ab {filters.min_bpm:g}")
+            elif filters.max_bpm is not None:
+                parts.append(f"BPM bis {filters.max_bpm:g}")
+    if not parts:
+        return ""
+    return "Aktive Filter: " + " · ".join(parts)
+
+
 PLAYLIST_SORT_COLUMNS = frozenset(
     {"name", "bpm", "key", "key_conf", "loudness", "brightness", "pred_type", "status"}
 )
@@ -985,6 +1020,7 @@ __all__ = [
     "export_workbench_rows_to_csv",
     "filter_workbench_rows",
     "format_catalog_load_status",
+    "format_workbench_active_filter_summary",
     "format_workbench_search_status",
     "is_catalog_readonly_row",
     "WorkbenchSearchMode",
