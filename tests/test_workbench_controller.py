@@ -17,6 +17,7 @@ from src.workbench_controller import (
     export_workbench_rows_to_csv,
     filter_workbench_rows,
     format_path_display_lines,
+    format_workbench_active_filter_summary,
     format_workbench_search_status,
     get_preview_start_ms,
     get_workbench_library_folders,
@@ -520,6 +521,57 @@ def test_format_workbench_search_status_catalog_no_hits_with_filters():
     assert status == (
         "Catalog-Samples: 500 von 12000 geladen, 0 Treffer (read-only, Limit aktiv)"
     )
+
+
+def test_format_workbench_active_filter_summary_empty():
+    assert format_workbench_active_filter_summary("", None) == ""
+    assert (
+        format_workbench_active_filter_summary("  ", WorkbenchRowFilters()) == ""
+    )
+
+
+def test_format_workbench_active_filter_summary_text_only():
+    summary = format_workbench_active_filter_summary("kick", None)
+    assert summary == 'Aktive Filter: Text="kick"'
+
+
+def test_format_workbench_active_filter_summary_source():
+    summary = format_workbench_active_filter_summary(
+        "",
+        WorkbenchRowFilters(source="catalog"),
+    )
+    assert summary == "Aktive Filter: Quelle=Catalog"
+
+
+def test_format_workbench_active_filter_summary_key_and_bpm_range():
+    summary = format_workbench_active_filter_summary(
+        "",
+        WorkbenchRowFilters(key="Am", min_bpm=120.0, max_bpm=130.0),
+    )
+    assert summary == "Aktive Filter: Key=Am · BPM 120–130"
+
+
+def test_format_workbench_active_filter_summary_combined():
+    summary = format_workbench_active_filter_summary(
+        "kick",
+        WorkbenchRowFilters(source="cache", status="ok", pred_type="kick"),
+    )
+    assert "Text=\"kick\"" in summary
+    assert "Quelle=Cache" in summary
+    assert "Type=kick" in summary
+    assert "Status=ok" in summary
+
+
+def test_format_workbench_active_filter_summary_ignores_invalid_bpm_fields():
+    summary = format_workbench_active_filter_summary(
+        "",
+        WorkbenchRowFilters(
+            pred_type=FILTER_ALL_LABEL,
+            key=FILTER_ALL_LABEL,
+            status=FILTER_ALL_LABEL,
+        ),
+    )
+    assert summary == ""
 
 
 def test_cancel_before_scan_returns_empty(sample_folder: Path):

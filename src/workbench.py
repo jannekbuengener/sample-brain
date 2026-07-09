@@ -29,6 +29,7 @@ from .workbench_controller import (
     export_workbench_rows_to_csv,
     format_catalog_load_status,
     format_path_display_lines,
+    format_workbench_active_filter_summary,
     format_workbench_search_status,
     WorkbenchSearchStatusContext,
     WorkbenchSearchMode,
@@ -304,6 +305,13 @@ class WorkbenchApp:
         self._add_bpm_filter_entry(structured_bar, "BPM von:", self._bpm_min_var)
         self._add_bpm_filter_entry(structured_bar, "BPM bis:", self._bpm_max_var)
 
+        self._active_filter_var = tk.StringVar(value="")
+        ttk.Label(
+            playlist_frame,
+            textvariable=self._active_filter_var,
+            style="Muted.TLabel",
+        ).pack(fill=tk.X, pady=(0, 4))
+
         tree_frame = ttk.Frame(playlist_frame, style="Panel.TFrame")
         tree_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -482,7 +490,7 @@ class WorkbenchApp:
     def _on_structured_filter_changed(self, *_args: object) -> None:
         self._refresh_playlist_view()
 
-    def _current_row_filters(self) -> WorkbenchRowFilters | None:
+    def _build_row_filters(self) -> WorkbenchRowFilters:
         source_label = self._source_filter_var.get().strip().casefold()
         if source_label == "cache":
             source = "cache"
@@ -490,7 +498,7 @@ class WorkbenchApp:
             source = "catalog"
         else:
             source = "all"
-        filters = WorkbenchRowFilters(
+        return WorkbenchRowFilters(
             source=source,
             pred_type=self._type_filter_var.get(),
             key=self._key_filter_var.get(),
@@ -498,6 +506,9 @@ class WorkbenchApp:
             min_bpm=parse_workbench_bpm_bound(self._bpm_min_var.get()),
             max_bpm=parse_workbench_bpm_bound(self._bpm_max_var.get()),
         )
+
+    def _current_row_filters(self) -> WorkbenchRowFilters | None:
+        filters = self._build_row_filters()
         return filters if filters.active() else None
 
     def _playlist_filters_active(self) -> bool:
@@ -1019,6 +1030,12 @@ class WorkbenchApp:
                     self._set_detail(row)
                     return
         self._set_detail(None)
+        self._active_filter_var.set(
+            format_workbench_active_filter_summary(
+                self._filter_var.get(),
+                self._build_row_filters(),
+            )
+        )
         if self._rows and (
             self._catalog_library_mode
             or self._global_library_mode
