@@ -49,6 +49,23 @@ def validate_preview_start_ms(path: Path | str, start_ms: int) -> PreviewResult:
     return PreviewResult(ok=True)
 
 
+def validate_preview_region_ms(path: Path | str, start_ms: int, end_ms: int) -> PreviewResult:
+    """Validate a bounded preview region ``[start_ms, end_ms)``."""
+    start = normalize_preview_start_ms(start_ms)
+    end = normalize_preview_start_ms(end_ms)
+    start_check = validate_preview_start_ms(path, start)
+    if not start_check.ok:
+        return start_check
+    duration_ms = read_audio_duration_ms(path)
+    if duration_ms is None:
+        return PreviewResult(ok=False, message="Dauer unbekannt — Loop-Preview nicht möglich.")
+    if end <= start:
+        return PreviewResult(ok=False, message="Loop-Ende muss nach Loop-Start liegen.")
+    if end > duration_ms:
+        return PreviewResult(ok=False, message="Loop-Ende liegt außerhalb der Datei.")
+    return PreviewResult(ok=True)
+
+
 def _write_pcm_wav_temp(source: Path) -> Path:
     """Decode *source* to a temporary 16-bit PCM WAV (original file unchanged)."""
     data, sr = sf.read(source, dtype="float32", always_2d=False)
@@ -61,14 +78,24 @@ def _write_pcm_wav_temp(source: Path) -> Path:
     return temp
 
 
-def _write_pcm_wav_temp_from_offset(source: Path, start_ms: int) -> Path:
-    """Decode *source* from *start_ms* into a temporary WAV (original unchanged)."""
+def _write_pcm_wav_temp_from_offset(source: Path, start_ms: int, *, end_ms: int | None = None) -> Path:
+    """Decode *source* from *start_ms* (optionally until *end_ms*) into a temp WAV."""
     start_sec = normalize_preview_start_ms(start_ms) / 1000.0
     info = sf.info(source)
     start_frame = int(start_sec * info.samplerate)
-    data, sr = sf.read(source, dtype="float32", always_2d=False, start=start_frame)
+    stop_frame: int | None = None
+    if end_ms is not None:
+        end_sec = normalize_preview_start_ms(end_ms) / 1000.0
+        stop_frame = int(end_sec * info.samplerate)
+    data, sr = sf.read(
+        source,
+        dtype="float32",
+        always_2d=False,
+        start=start_frame,
+        stop=stop_frame,
+    )
     if getattr(data, "size", 0) == 0:
-        raise ValueError("empty audio after cue offset")
+        raise ValueError("empty audio after region slice")
     fd, name = tempfile.mkstemp(suffix=".wav", prefix=_PREVIEW_TEMP_PREFIX)
     os.close(fd)
     temp = Path(name)
@@ -79,9 +106,21 @@ def _write_pcm_wav_temp_from_offset(source: Path, start_ms: int) -> Path:
 def prepare_preview_playback_path(
     source: Path,
     start_ms: int = 0,
+    *,
+    end_ms: int | None = None,
 ) -> tuple[Path | None, Path | None, PreviewResult]:
     """Return playback path, optional temp path, and status."""
     offset = normalize_preview_start_ms(start_ms)
+    if end_ms is not None:
+        region_check = validate_preview_region_ms(source, offset, end_ms)
+        if not region_check.ok:
+            return None, None, region_check
+        try:
+            temp = _write_pcm_wav_temp_from_offset(source, offset, end_ms=end_ms)
+        except Exception as exc:
+            return None, None, PreviewResult(ok=False, message=f"Loop-Preview fehlgeschlagen: {exc}")
+        return temp, temp, PreviewResult(ok=True)
+
     offset_check = validate_preview_start_ms(source, offset)
     if not offset_check.ok:
         return None, None, offset_check
@@ -244,6 +283,38 @@ class WorkbenchPreviewPlayer:
                 self._current_start_ms = offset
             return result
 
+    def play_region(
+        self,
+        path: str | Path,
+        *,
+        start_ms: int,
+        end_ms: int,
+    ) -> PreviewResult:
+        """Play a bounded region once via temporary slice; original file unchanged."""
+        validation = validate_preview_path(path)
+        if not validation.ok:
+            return validation
+        resolved = Path(path).resolve()
+        region_validation = validate_preview_region_ms(resolved, start_ms, end_ms)
+        if not region_validation.ok:
+            return region_validation
+        play_path, temp_path, prep = prepare_preview_playback_path(
+            resolved,
+            normalize_preview_start_ms(start_ms),
+            end_ms=normalize_preview_start_ms(end_ms),
+        )
+        if not prep.ok or play_path is None:
+            return prep
+        with self._lock:
+            self._stop_unlocked()
+            result = self._play_fn(play_path, 0)
+            if result.ok:
+                self._current_path = resolved
+                self._current_start_ms = normalize_preview_start_ms(start_ms)
+            elif temp_path is not None:
+                temp_path.unlink(missing_ok=True)
+            return result
+
     def stop(self) -> None:
         with self._lock:
             self._stop_unlocked()
@@ -292,5 +363,6 @@ __all__ = [
     "preview_platform_note",
     "preview_toggle_action",
     "validate_preview_path",
+    "validate_preview_region_ms",
     "validate_preview_start_ms",
 ]
