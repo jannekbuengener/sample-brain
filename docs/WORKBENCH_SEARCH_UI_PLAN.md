@@ -194,7 +194,7 @@ Catalog rows set `details["source"] == "catalog"` in `workbench_catalog.py`; cac
 | Phase | Slice | Scope |
 |---|---|---|
 | **1** | `workbench_search_ui_plan` | This document ✅ |
-| **2** | `workbench_structured_filter_controls_v1` | Quelle, Type, Key, Status + UI row |
+| **2** | `workbench_structured_filter_controls_v1` | Quelle, Type, Key, Status + UI row ✅ |
 | **3** | `workbench_bpm_filter_v1` | BPM min/max fields |
 | **4** | `workbench_search_status_polish` | Status bar clarity |
 | Later | Catalog→cache import | Separate plan |
@@ -215,7 +215,7 @@ Catalog rows set `details["source"] == "catalog"` in `workbench_catalog.py`; cac
 - [x] Filter field priorities defined.
 - [x] Cache vs catalog vs semantic tracks separated.
 - [x] Smallest implementation slices named.
-- [ ] Structured filter UI shipped (Phase 2).
+- [x] Structured filter UI shipped (Phase 2).
 - [ ] BPM filter shipped (Phase 3).
 - [ ] Status polish shipped (Phase 4).
 
