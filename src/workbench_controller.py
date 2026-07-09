@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import os
 import textwrap
 from dataclasses import asdict, dataclass, field
@@ -799,6 +800,118 @@ def save_workbench_last_folder(
     return True
 
 
+@dataclass(frozen=True)
+class WorkbenchViewSettings:
+    show_search: bool = True
+    show_filters: bool = True
+    show_library_manage: bool = True
+    show_waveform_tools: bool = True
+
+
+DEFAULT_WORKBENCH_VIEW_SETTINGS = WorkbenchViewSettings()
+
+VIEW_SECTION_SEARCH = "search"
+VIEW_SECTION_FILTERS = "filters"
+VIEW_SECTION_LIBRARY_MANAGE = "library_manage"
+VIEW_SECTION_WAVEFORM_TOOLS = "waveform_tools"
+
+WORKBENCH_VIEW_TOGGLE_HELP = (
+    "Suche, Filter, Library-Verwaltung und Waveform-Werkzeuge können ein- und ausgeblendet werden."
+)
+
+
+def workbench_view_settings_file(
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> Path:
+    base = state_dir if state_dir is not None else workbench_state_dir(env=env)
+    return base / "workbench_view_settings.json"
+
+
+def _view_settings_from_mapping(data: Mapping[str, Any]) -> WorkbenchViewSettings:
+    def _bool(key: str, default: bool) -> bool:
+        value = data.get(key, default)
+        return default if not isinstance(value, bool) else value
+
+    return WorkbenchViewSettings(
+        show_search=_bool("show_search", True),
+        show_filters=_bool("show_filters", True),
+        show_library_manage=_bool("show_library_manage", True),
+        show_waveform_tools=_bool("show_waveform_tools", True),
+    )
+
+
+def load_workbench_view_settings(
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> WorkbenchViewSettings:
+    """Load persisted view visibility; invalid files fall back to defaults."""
+    path_file = workbench_view_settings_file(state_dir=state_dir, env=env)
+    if not path_file.is_file():
+        return DEFAULT_WORKBENCH_VIEW_SETTINGS
+    try:
+        raw = json.loads(path_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return DEFAULT_WORKBENCH_VIEW_SETTINGS
+    if not isinstance(raw, dict):
+        return DEFAULT_WORKBENCH_VIEW_SETTINGS
+    return _view_settings_from_mapping(raw)
+
+
+def save_workbench_view_settings(
+    settings: WorkbenchViewSettings,
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> bool:
+    """Persist workbench view visibility to user-local state."""
+    path_file = workbench_view_settings_file(state_dir=state_dir, env=env)
+    try:
+        path_file.parent.mkdir(parents=True, exist_ok=True)
+        path_file.write_text(
+            json.dumps(asdict(settings), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        return False
+    return True
+
+
+def effective_workbench_text_query(raw_query: str, *, search_visible: bool) -> str:
+    """Return text query only when the search bar is visible."""
+    if not search_visible:
+        return ""
+    return raw_query
+
+
+def effective_workbench_row_filters(
+    filters: WorkbenchRowFilters | None,
+    *,
+    filters_visible: bool,
+) -> WorkbenchRowFilters | None:
+    """Return structured filters only when the filter bar is visible."""
+    if not filters_visible:
+        return None
+    return filters
+
+
+def format_workbench_view_section_hidden_status(section: str) -> str:
+    """Status line after hiding a view section."""
+    messages = {
+        VIEW_SECTION_SEARCH: "Suche ausgeblendet und zurückgesetzt",
+        VIEW_SECTION_FILTERS: "Filter ausgeblendet und zurückgesetzt",
+        VIEW_SECTION_LIBRARY_MANAGE: "Library-Verwaltung ausgeblendet",
+        VIEW_SECTION_WAVEFORM_TOOLS: "Waveform-Werkzeuge ausgeblendet",
+    }
+    return messages.get(section, "Ansicht aktualisiert")
+
+
+def format_workbench_view_restore_status() -> str:
+    return "Standardansicht wiederhergestellt"
+
+
 def get_workbench_library_folders(
     *,
     library_db_path: Path | None = None,
@@ -1016,12 +1129,17 @@ __all__ = [
     "CATALOG_READONLY_STATUS_HINT",
     "count_catalog_samples",
     "DEFAULT_CATALOG_LOAD_LIMIT",
+    "DEFAULT_WORKBENCH_VIEW_SETTINGS",
     "error_message_for_code",
+    "effective_workbench_row_filters",
+    "effective_workbench_text_query",
     "export_workbench_rows_to_csv",
     "filter_workbench_rows",
     "format_catalog_load_status",
     "format_workbench_active_filter_summary",
     "format_workbench_search_status",
+    "format_workbench_view_restore_status",
+    "format_workbench_view_section_hidden_status",
     "is_catalog_readonly_row",
     "WorkbenchSearchMode",
     "WorkbenchSearchStatusContext",
@@ -1037,15 +1155,24 @@ __all__ = [
     "load_cached_folder_rows",
     "load_catalog_rows",
     "load_workbench_last_folder",
+    "load_workbench_view_settings",
     "load_workbench_sample_cue",
     "parse_workbench_bpm_bound",
     "PLAYLIST_CSV_FIELDS",
     "remove_workbench_library_folder",
     "row_as_dict",
     "save_workbench_last_folder",
+    "save_workbench_view_settings",
     "save_workbench_sample_cue",
     "sort_workbench_rows",
     "validate_workbench_folder",
     "workbench_last_folder_file",
     "workbench_state_dir",
+    "workbench_view_settings_file",
+    "WORKBENCH_VIEW_TOGGLE_HELP",
+    "VIEW_SECTION_FILTERS",
+    "VIEW_SECTION_LIBRARY_MANAGE",
+    "VIEW_SECTION_SEARCH",
+    "VIEW_SECTION_WAVEFORM_TOOLS",
+    "WorkbenchViewSettings",
 ]

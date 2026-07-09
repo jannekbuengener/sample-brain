@@ -54,6 +54,7 @@ def _playback_app(*, canvas_width: int = 400, loop_edit_mode: bool = False, atta
     cls = _workbench_app_cls()
     app = cls.__new__(cls)
     app._busy = False
+    app._catalog_library_mode = False
     app._detail_row = None
     app._preview_row_path = None
     app._status_var = SimpleNamespace(value="")
