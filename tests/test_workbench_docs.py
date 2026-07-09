@@ -46,6 +46,18 @@ def test_workbench_catalog_unification_plan_documents_two_databases():
     assert "#117" in text or "117" in text
 
 
+def test_workbench_catalog_readonly_bridge_plan_documents_read_only_safety():
+    plan = REPO_ROOT / "docs" / "WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md"
+    assert plan.is_file(), "catalog readonly bridge plan must exist"
+    text = plan.read_text(encoding="utf-8")
+    assert "SAMPLE_BRAIN_DB_PATH" in text
+    assert "read-only" in text.lower() or "readonly" in text.lower()
+    assert "never modif" in text.lower() or "no writes" in text.lower()
+    assert "features" in text
+    assert "cue" in text.lower()
+    assert "#117" in text or "117" in text
+
+
 def test_workbench_loop_playback_plan_documents_repeat_scope():
     plan = REPO_ROOT / "docs" / "WORKBENCH_LOOP_PLAYBACK_PLAN.md"
     assert plan.is_file(), "loop playback plan must exist"
