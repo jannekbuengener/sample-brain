@@ -1,6 +1,6 @@
 # Workbench Auto-Metadata Plan (Loop, OneShot, Attack, Cue)
 
-**Status:** Planning only — no runtime auto-write in this slice.  
+**Status:** Implemented in `src/workbench_auto_metadata.py` (#172 / #173).  
 **Parent:** [#117 — workbench usability and library workflow follow-ups](https://github.com/jannekbuengener/sample-brain/issues/117)  
 **Blocks:** [#172 — auto loop region](https://github.com/jannekbuengener/sample-brain/issues/172), [#173 — auto attack/cue for OneShot](https://github.com/jannekbuengener/sample-brain/issues/173)  
 **Related:** [`WORKBENCH_CUE_METADATA_PLAN.md`](WORKBENCH_CUE_METADATA_PLAN.md), [`WORKBENCH_ATTACK_EDIT_PLAN.md`](WORKBENCH_ATTACK_EDIT_PLAN.md), `src/classify.py`, `src/workbench_library.py`, `src/workbench_attack_suggest.py`
@@ -82,7 +82,7 @@ Use **field emptiness + conservative source flag**:
 | `loop_start_ms` **or** `loop_end_ms` is non-NULL | ❌ Never auto-loop |
 | `attack_ms` is non-NULL | ❌ Never auto-attack |
 | `cue_start_ms` is non-NULL **and** `cue_source == "manual"` | ❌ Never auto-cue |
-| `cue_source == "manual"` **and** any of loop/attack/cue non-default | ❌ Skip all auto writes for that row |
+| `cue_source == "manual"` **and** any of loop/attack/cue non-default | ❌ Skip affected auto writes (per-field in v1 impl) |
 | All target fields NULL / unset | ✅ Auto-fill per §6–§7 |
 | `cue_source == "detected"` with partial fields | ✅ Fill only still-empty fields (same event) |
 
@@ -146,9 +146,9 @@ cue_source    = 'detected'    # only when no prior manual cue_source=manual
 
 | Slice | Module | Function (proposed) |
 |---|---|---|
-| Loop auto-fill | `workbench_library.py` or `workbench_controller.py` | `apply_auto_loop_metadata(row, duration_ms, existing: WorkbenchCueMetadata) -> WorkbenchCueMetadata \| None` |
-| OneShot auto-fill | `workbench_attack_suggest.py` + library | `apply_auto_oneshot_metadata(row, path, existing) -> ...` |
-| Persist gate | `workbench_library.py` `save_sample_cue` caller after analyze | invoke only when `should_auto_fill(existing)` |
+| Loop auto-fill | `workbench_auto_metadata.py` | `apply_auto_loop_metadata(existing, duration_ms=...) -> WorkbenchCueMetadata \| None` |
+| OneShot auto-fill | `workbench_auto_metadata.py` | `apply_auto_oneshot_metadata(existing, path, duration_ms=...) -> ...` |
+| Persist gate | `workbench_controller.py` `analyze_folder_for_workbench` after `upsert_sample` | `apply_auto_metadata_after_analyze(row)` |
 
 All logic must be **unit-testable** without tkinter. Tests use synthetic WAV in `tmp_path` only.
 
@@ -195,4 +195,4 @@ TRIGGER:  analyze_folder_for_workbench persist only
 
 ---
 
-*Refs #117, #171. Planning only — does not close parent or implementation issues.*
+*Refs #117, #171, #172, #173. Runtime auto-write at analyze persist only.*

@@ -23,6 +23,7 @@ from .workbench_catalog import (
     format_catalog_load_status,
     load_catalog_samples,
 )
+from .workbench_auto_metadata import apply_auto_metadata_after_analyze
 from .workbench_library import (
     WORKBENCH_ANALYZER_VERSION,
     LibraryFolder,
@@ -672,6 +673,7 @@ def analyze_folder_for_workbench(
                     db_path=cache_db,
                     analyzer_version=WORKBENCH_ANALYZER_VERSION,
                 )
+                apply_auto_metadata_after_analyze(row, library_db_path=cache_db)
             _emit_progress(progress_callback, index, total, display_name, "done")
         except Exception as exc:
             error_count += 1
