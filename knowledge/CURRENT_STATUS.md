@@ -2,9 +2,9 @@
 
 ## Live State
 
-- **Branch:** `main` @ `2476446` (attack suggest API #147)
+- **Branch:** `main` @ `5fc3ef6` (loop once-preview #149)
 - **Open PRs:** 1 Dependabot — **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** (`numba` requires `numpy<2.5`)
-- **Open issues:** 3 — [#117](https://github.com/jannekbuengener/sample-brain/issues/117) Workbench usability follow-ups (attack suggestion UI + loop playback follow-up), [#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B, [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN
+- **Open issues:** 3 — [#117](https://github.com/jannekbuengener/sample-brain/issues/117) Workbench usability follow-ups (endless loop playback, catalog unification), [#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B, [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN
 - **Local Workbench MVP:** `sample-brain workbench` — tkinter folder analysis + playlist/detail + waveform-as-play-surface + cue/loop metadata + loop edit mode (toggle + two-click set + clear)
 - **Workbench P0 (#117, merged):** cancel analysis (#119), folder path entry (#118), playlist filter (#120), column sort (#121), detail path polish + copy (#122)
 - **Workbench P1 (#117, merged):** last-folder memory (#124), CSV playlist export (#125)
@@ -117,7 +117,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 
 - **Default switch to sqlite-vec** — blocked until latency gates PASS
 - **Tier B CLAP search-quality evidence** — Phase 1+2 merged; 4/6 classes on main; vocal/no-vocal proxy spike **HOLD_VOCAL_PROXY_FAILED**; genre/mood remain (#73 OPEN)
-- **Workbench cue/loop/attack metadata** — loop + attack edit modes; attack suggestion API + UI (#147–#148); loop once-preview in progress; endless loop playback remains follow-up (#117 remains open)
+- **Workbench cue/loop/attack metadata** — loop + attack edit modes; attack suggestion API + UI (#147–#148); loop once-preview shipped (#149); endless loop playback remains follow-up (#117 remains open)
 - **Workbench global multi-folder library view / catalog DB unification / search integration** — no cross-folder playlist; `catalog.db` not wired to workbench; no semantic search UI; preview has no pause/playhead sync (#117 remains open)
 - **Phase 5 tags + FTS5 MVP** — not started (roadmap Phase 5)
 - **Large-scale private-sample validation** — synthetic/benchmark fixtures only
