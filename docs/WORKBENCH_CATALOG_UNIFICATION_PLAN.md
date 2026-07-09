@@ -53,7 +53,7 @@ The workbench today uses a **separate** user-local SQLite cache (`workbench_libr
 1. Optional UI: “Catalog öffnen (read-only)” pointing at `SAMPLE_BRAIN_DB_PATH`.
 2. Read `samples` + `features` into `WorkbenchRow` for display/preview only.
 3. **Do not** write cue metadata into catalog until schema + product GO.
-4. See Phase B above; dedicated bridge plan is a follow-up slice after global library view is stable.
+4. **Dedicated plan:** [`WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md`](WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md) — field mapping, loader sketch, UI phases, safety contract.
 
 ### Phase C — Unified metadata (later, explicit GO)
 
@@ -81,8 +81,9 @@ The workbench today uses a **separate** user-local SQLite cache (`workbench_libr
 |---|---|---|
 | `workbench_global_cached_library_view_v1` | All folders from workbench cache | ✅ Low |
 | `workbench_global_search_filter_v1` | Filter across global rows | ✅ Low |
-| `workbench_catalog_readonly_bridge_plan` | Docs + read API sketch | Low |
-| `workbench_catalog_readonly_bridge_v1` | Read catalog → playlist | Medium |
+| `workbench_catalog_readonly_bridge_plan` | Docs + read API sketch | ✅ Plan doc shipped |
+| `workbench_catalog_readonly_loader_v1` | Read-only `load_catalog_samples` | Low |
+| `workbench_catalog_readonly_view_v1` | Catalog sidebar + playlist | Medium |
 | `workbench_cue_export_to_catalog` | Explicit user export of cue fields | High — needs schema GO |
 
 ## 7. Identity matching (future bridge)
