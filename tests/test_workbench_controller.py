@@ -17,6 +17,7 @@ from src.workbench_controller import (
     export_workbench_rows_to_csv,
     filter_workbench_rows,
     format_path_display_lines,
+    format_workbench_search_status,
     get_preview_start_ms,
     get_workbench_library_folders,
     is_catalog_readonly_row,
@@ -34,6 +35,7 @@ from src.workbench_controller import (
     workbench_last_folder_file,
     WorkbenchRow,
     WorkbenchRowFilters,
+    WorkbenchSearchStatusContext,
     FILTER_ALL_LABEL,
 )
 from src.workbench_library import WorkbenchCueMetadata, WorkbenchCueNotFoundError
@@ -421,6 +423,103 @@ def test_apply_workbench_structured_filters_bpm_sort_stability_via_apply_order()
     sorted_rows = sort_workbench_rows(filtered, "bpm")
     bpms = [row.bpm for row in sorted_rows if row.bpm is not None]
     assert bpms == sorted(bpms)
+
+
+def test_format_workbench_search_status_folder_with_filters():
+    status = format_workbench_search_status(
+        WorkbenchSearchStatusContext(
+            mode="folder",
+            loaded_count=80,
+            visible_count=12,
+            filters_active=True,
+        )
+    )
+    assert status == "Ordner: 12 von 80 Treffer"
+
+
+def test_format_workbench_search_status_folder_without_filters():
+    status = format_workbench_search_status(
+        WorkbenchSearchStatusContext(
+            mode="folder",
+            loaded_count=80,
+            visible_count=80,
+            filters_active=False,
+        )
+    )
+    assert status == "Ordner: 80 Samples"
+
+
+def test_format_workbench_search_status_global_library_with_filters():
+    status = format_workbench_search_status(
+        WorkbenchSearchStatusContext(
+            mode="global_library",
+            loaded_count=240,
+            visible_count=23,
+            filters_active=True,
+        )
+    )
+    assert status == "Alle Library-Samples: 23 von 240 Treffer"
+
+
+def test_format_workbench_search_status_global_library_without_filters():
+    status = format_workbench_search_status(
+        WorkbenchSearchStatusContext(
+            mode="global_library",
+            loaded_count=240,
+            visible_count=240,
+            filters_active=False,
+            folder_count=5,
+        )
+    )
+    assert status == "Alle Library-Samples: 240 Samples aus 5 Ordner(n)"
+
+
+def test_format_workbench_search_status_catalog_with_limit_and_filters():
+    status = format_workbench_search_status(
+        WorkbenchSearchStatusContext(
+            mode="catalog",
+            loaded_count=500,
+            visible_count=18,
+            filters_active=True,
+            catalog_total=12000,
+            catalog_load_limit=5000,
+        )
+    )
+    assert status == (
+        "Catalog-Samples: 500 von 12000 geladen, 18 Treffer (read-only, Limit aktiv)"
+    )
+
+
+def test_format_workbench_search_status_catalog_without_filters():
+    status = format_workbench_search_status(
+        WorkbenchSearchStatusContext(
+            mode="catalog",
+            loaded_count=500,
+            visible_count=500,
+            filters_active=False,
+            catalog_total=12000,
+            catalog_load_limit=5000,
+        )
+    )
+    assert "500 von 12000" in status
+    assert "Limit aktiv" in status
+    assert "read-only" in status
+
+
+def test_format_workbench_search_status_catalog_no_hits_with_filters():
+    status = format_workbench_search_status(
+        WorkbenchSearchStatusContext(
+            mode="catalog",
+            loaded_count=500,
+            visible_count=0,
+            filters_active=True,
+            catalog_total=12000,
+            catalog_load_limit=5000,
+        )
+    )
+    assert status == (
+        "Catalog-Samples: 500 von 12000 geladen, 0 Treffer (read-only, Limit aktiv)"
+    )
 
 
 def test_cancel_before_scan_returns_empty(sample_folder: Path):

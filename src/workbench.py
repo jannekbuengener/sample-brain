@@ -29,6 +29,9 @@ from .workbench_controller import (
     export_workbench_rows_to_csv,
     format_catalog_load_status,
     format_path_display_lines,
+    format_workbench_search_status,
+    WorkbenchSearchStatusContext,
+    WorkbenchSearchMode,
     get_preview_start_ms,
     get_workbench_library_folders,
     is_catalog_readonly_row,
@@ -1016,30 +1019,14 @@ class WorkbenchApp:
                     self._set_detail(row)
                     return
         self._set_detail(None)
-        if self._catalog_library_mode and self._rows:
-            if self._playlist_filters_active():
-                self._set_status(
-                    f"Catalog-Samples: {len(visible)} von {len(self._rows)} Treffer",
-                    tone="neutral",
-                )
-            else:
-                self._set_status(
-                    append_catalog_readonly_status_hint(
-                        format_catalog_load_status(
-                            len(self._rows),
-                            self._catalog_total_count,
-                            limit=self._catalog_load_limit,
-                        )
-                    ),
-                    tone="success",
-                )
-        elif self._global_library_mode and self._rows:
-            if self._playlist_filters_active():
-                self._set_status(
-                    f"Alle Library-Samples: {len(visible)} von {len(self._rows)} Treffer",
-                    tone="neutral",
-                )
-            else:
+        if self._rows and (
+            self._catalog_library_mode
+            or self._global_library_mode
+            or not self._busy
+        ):
+            filters_active = self._playlist_filters_active()
+            folder_count: int | None = None
+            if self._global_library_mode:
                 folder_count = len(
                     {
                         row.details.get("library_folder")
@@ -1047,10 +1034,30 @@ class WorkbenchApp:
                         if row.details.get("library_folder")
                     }
                 )
-                self._set_status(
-                    f"{len(self._rows)} gecachte Samples aus {folder_count} Ordner(n) geladen.",
-                    tone="success",
+            mode: WorkbenchSearchMode = "folder"
+            if self._catalog_library_mode:
+                mode = "catalog"
+            elif self._global_library_mode:
+                mode = "global_library"
+            status_line = format_workbench_search_status(
+                WorkbenchSearchStatusContext(
+                    mode=mode,
+                    loaded_count=len(self._rows),
+                    visible_count=len(visible),
+                    filters_active=filters_active,
+                    catalog_total=(
+                        self._catalog_total_count if self._catalog_library_mode else None
+                    ),
+                    catalog_load_limit=(
+                        self._catalog_load_limit if self._catalog_library_mode else None
+                    ),
+                    folder_count=folder_count,
                 )
+            )
+            if self._catalog_library_mode and not filters_active:
+                status_line = append_catalog_readonly_status_hint(status_line)
+            tone = "neutral" if filters_active else "success"
+            self._set_status(status_line, tone=tone)
 
     def _populate_playlist(self, result: WorkbenchResult) -> None:
         self._rows = result.rows
