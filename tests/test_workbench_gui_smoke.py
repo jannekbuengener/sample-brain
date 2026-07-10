@@ -1,4 +1,5 @@
 """Programmatic workbench GUI startup smoke — no display or audio output required."""
+
 from __future__ import annotations
 
 import threading
@@ -6,7 +7,12 @@ import tkinter as tk
 from pathlib import Path
 from unittest.mock import patch
 
-from src.workbench import PLAYLIST_ACTION_COLUMN, PLAYLIST_ACTION_LABEL, WAVEFORM_USAGE_HINT, WorkbenchApp
+from src.workbench import (
+    PLAYLIST_ACTION_COLUMN,
+    PLAYLIST_ACTION_LABEL,
+    WAVEFORM_USAGE_HINT,
+    WorkbenchApp,
+)
 from src.workbench_controller import (
     FILTER_ALL_LABEL,
     WORKBENCH_VIEW_TOGGLE_HELP,
@@ -31,7 +37,9 @@ def _widget_is_packed(widget: tk.Misc) -> bool:
         return False
 
 
-def test_workbench_gui_startup_smoke_constructs_key_widgets(tmp_path: Path, monkeypatch):
+def test_workbench_gui_startup_smoke_constructs_key_widgets(
+    tmp_path: Path, monkeypatch
+):
     """WorkbenchApp builds without error and exposes core UI handles."""
     state_dir = tmp_path / "state"
     state_dir.mkdir()
@@ -78,6 +86,9 @@ def test_workbench_gui_startup_smoke_constructs_key_widgets(tmp_path: Path, monk
         assert app._fl_export_btn.instate(["disabled"])
         assert hasattr(app, "_catalog_import_btn"), "catalog import button must exist"
         assert app._catalog_import_btn.instate(["disabled"])
+        assert hasattr(app, "_similar_btn"), "similar samples button must exist"
+        assert hasattr(app, "_similar_tree"), "similar samples tree must exist"
+        assert app._similar_btn.instate(["disabled"])
 
         app._folder_var.set(str(folder))
         started = threading.Event()
@@ -100,7 +111,9 @@ def test_workbench_gui_startup_smoke_constructs_key_widgets(tmp_path: Path, monk
         app._analyze_btn.state(["!disabled"])
         app._cancel_btn.state(["disabled"])
 
-        with patch("src.workbench.filedialog.askdirectory", return_value=str(dialog_folder)):
+        with patch(
+            "src.workbench.filedialog.askdirectory", return_value=str(dialog_folder)
+        ):
             app._pick_folder()
             root.update_idletasks()
         assert app._folder_var.get() == str(dialog_folder)
@@ -245,7 +258,9 @@ def test_workbench_playlist_action_click_opens_dialog(tmp_path: Path):
             opened.append(target)
 
         with patch.object(app._tree, "identify_region", return_value="cell"):
-            with patch.object(app, "_column_id_at_x", return_value=PLAYLIST_ACTION_COLUMN):
+            with patch.object(
+                app, "_column_id_at_x", return_value=PLAYLIST_ACTION_COLUMN
+            ):
                 with patch.object(app, "_row_at_tree_event", return_value=row):
                     with patch.object(
                         app, "_open_add_to_playlist_dialog", side_effect=capture_dialog
@@ -318,7 +333,9 @@ def test_workbench_view_toolbar_hidden_via_edit_menu(tmp_path: Path, monkeypatch
         root.destroy()
 
 
-def test_workbench_restore_default_view_shows_toolbar_and_sections(tmp_path: Path, monkeypatch):
+def test_workbench_restore_default_view_shows_toolbar_and_sections(
+    tmp_path: Path, monkeypatch
+):
     state_dir = tmp_path / "state"
     state_dir.mkdir()
     monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
@@ -339,6 +356,58 @@ def test_workbench_restore_default_view_shows_toolbar_and_sections(tmp_path: Pat
         assert _widget_is_packed(app._view_bar)
         assert app._show_search_var.get() is True
         assert _widget_is_packed(app._filter_bar)
+    finally:
+        root.destroy()
+
+
+def test_workbench_similar_suggestions_panel_populates(tmp_path: Path):
+    ref = tmp_path / "ref.wav"
+    match = tmp_path / "match.wav"
+    ref.write_bytes(b"data")
+    match.write_bytes(b"data")
+    reference = WorkbenchRow(
+        display_name="ref",
+        relative_path="ref.wav",
+        path=str(ref),
+        bpm=128.0,
+        key="Am",
+        key_conf=0.8,
+        loudness=-20.0,
+        brightness=2000.0,
+        sample_class="loop",
+        pred_type="kick",
+        status="ok",
+    )
+    similar = WorkbenchRow(
+        display_name="match",
+        relative_path="match.wav",
+        path=str(match),
+        bpm=128.0,
+        key="Am",
+        key_conf=0.8,
+        loudness=-20.0,
+        brightness=2000.0,
+        sample_class="loop",
+        pred_type="kick",
+        status="ok",
+    )
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        app._populate_playlist(
+            WorkbenchResult(summary={"ok": 2}, rows=[reference, similar]),
+        )
+        app._tree.selection_set("0")
+        app._set_detail(reference)
+        root.update_idletasks()
+        app._refresh_similar_suggestions()
+        root.update_idletasks()
+        assert app._similar_tree.get_children()
+        values = app._similar_tree.item("0", "values")
+        assert values[0] == "match"
+        assert values[5]  # score column non-empty
     finally:
         root.destroy()
 
