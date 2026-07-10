@@ -45,12 +45,14 @@ from .workbench_controller import (
     load_all_cached_rows,
     load_cached_folder_rows,
     load_catalog_rows,
+    load_workbench_analysis_limit,
     load_workbench_last_folder,
     load_workbench_sample_cue,
     load_workbench_view_settings,
     parse_workbench_bpm_bound,
     preview_start_ms_from_waveform_x,
     remove_workbench_library_folder,
+    save_workbench_analysis_limit,
     save_workbench_last_folder,
     save_workbench_sample_cue,
     save_workbench_view_settings,
@@ -216,9 +218,10 @@ class WorkbenchApp:
         self._cancel_btn.pack(side=tk.LEFT, padx=(0, 16))
 
         ttk.Label(toolbar, text="Limit:").pack(side=tk.LEFT)
-        self._limit_var = tk.StringVar(value="50")
-        limit_entry = ttk.Entry(toolbar, textvariable=self._limit_var, width=6)
-        limit_entry.pack(side=tk.LEFT, padx=(6, 0))
+        self._limit_var = tk.StringVar(value=load_workbench_analysis_limit())
+        self._limit_entry = ttk.Entry(toolbar, textvariable=self._limit_var, width=6)
+        self._limit_entry.pack(side=tk.LEFT, padx=(6, 0))
+        self._limit_entry.bind("<FocusOut>", self._on_limit_focus_out)
 
         view_bar = ttk.Frame(self.root, padding=(12, 0, 12, 6))
         view_bar.pack(fill=tk.X)
@@ -990,6 +993,12 @@ class WorkbenchApp:
             return None
         return value
 
+    def _persist_analysis_limit(self) -> None:
+        save_workbench_analysis_limit(self._limit_var.get())
+
+    def _on_limit_focus_out(self, _event: object = None) -> None:
+        self._persist_analysis_limit()
+
     def _start_analysis(self) -> None:
         if self._busy:
             return
@@ -999,6 +1008,7 @@ class WorkbenchApp:
         limit = self._parse_limit()
         if self._limit_var.get().strip() and limit is None:
             return
+        self._persist_analysis_limit()
 
         self._stop_preview()
         self._busy = True
@@ -1305,6 +1315,7 @@ class WorkbenchApp:
         return "break"
 
     def _on_close(self) -> None:
+        self._persist_analysis_limit()
         self._stop_preview()
         self.root.destroy()
 

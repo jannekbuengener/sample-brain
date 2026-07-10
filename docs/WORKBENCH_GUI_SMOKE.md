@@ -18,6 +18,7 @@
 | Play / Stop preview buttons | `_play_btn` / `_stop_btn` in detail header | ✅ PASS |
 | Long path detail formatting | `format_path_display_lines` in detail panel (`tests/test_workbench_controller.py`) | ✅ PASS |
 | CLI entrypoint | `python -m src.cli workbench --help` via `workbench` subcommand | ✅ PASS |
+| Analysis limit restored on startup | `load_workbench_analysis_limit` + `tests/test_workbench_gui_smoke.py` | ✅ PASS |
 
 ## Interactive manual smoke (producer workflow)
 
@@ -33,11 +34,12 @@ Not automated in CI. When running locally with a display:
 8. **Left-click** waveform → play from saved cue
 9. **Right-click** waveform → temporary play from click position
 10. **Shift+left-click** → set cue (persists in `workbench_library.db`)
-11. Enable **Loop bearbeiten** → two clicks set loop region
-12. **Loop vorhören** → plays loop region once (temp slice; original unchanged)
-13. **Loop wiederholen** → repeats loop region until Stop
-14. Enable **Attack bearbeiten** → single click sets attack marker
-15. **Attack vorschlagen** → shows suggestion only; **Vorschlag übernehmen** persists after explicit click
+11. Change **Limit** (e.g. `25`), start analysis or leave the field — value persists in user-local state (`workbench_analysis_limit.txt` under `~/.sample-brain` or `SAMPLE_BRAIN_WORKBENCH_STATE_DIR`)
+12. Enable **Loop bearbeiten** → two clicks set loop region
+13. **Loop vorhören** → plays loop region once (temp slice; original unchanged)
+14. **Loop wiederholen** → repeats loop region until Stop
+15. Enable **Attack bearbeiten** → single click sets attack marker
+16. **Attack vorschlagen** → shows suggestion only; **Vorschlag übernehmen** persists after explicit click
 
 ## Limitations
 
