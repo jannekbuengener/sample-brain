@@ -14,7 +14,7 @@
 | Read-only cue marker on waveform canvas | ✅ Shipped |
 | Interactive cue set / drag | ✅ Shipped (Shift+left-click sets `cue_start_ms`; no drag) |
 | Preview from `cue_start_ms` | ✅ Shipped (temp WAV slice; original unchanged) |
-| Waveform play controls | ✅ Shipped (left = play from saved cue; right = temp play at click; Shift+left = permanent cue set; no visible Play/Stop buttons) |
+| Waveform play controls | ✅ Shipped (detail-header Play/Stop buttons; left = play from saved cue; right = temp play at click; Shift+left = permanent cue set) |
 | Loop region UI | ✅ Display + edit mode (toggle, two-click set, clear) |
 | Loop region preview (once) | ✅ `Loop vorhören` — temp slice; no endless loop |
 | Loop region preview (repeat) | ✅ `Loop wiederholen` — repeat until stop; temp slice |

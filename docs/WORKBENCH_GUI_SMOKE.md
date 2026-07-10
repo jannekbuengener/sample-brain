@@ -15,6 +15,7 @@
 | Loop edit mode control | `_loop_edit_mode_var` | ✅ PASS |
 | Attack edit mode control | `_attack_edit_mode_var` | ✅ PASS |
 | Attack suggestion apply button | `_attack_suggest_apply_btn` | ✅ PASS |
+| Play / Stop preview buttons | `_play_btn` / `_stop_btn` in detail header | ✅ PASS |
 | CLI entrypoint | `python -m src.cli workbench --help` via `workbench` subcommand | ✅ PASS |
 
 ## Interactive manual smoke (producer workflow)
@@ -26,14 +27,16 @@ Not automated in CI. When running locally with a display:
 3. Confirm waveform panel and usage hint under detail area
 4. Add a local folder with `+` (user-owned path only — never commit private paths)
 5. Select a sample → waveform envelope draws
-6. **Left-click** waveform → play from saved cue
-7. **Right-click** waveform → temporary play from click position
-8. **Shift+left-click** → set cue (persists in `workbench_library.db`)
-9. Enable **Loop bearbeiten** → two clicks set loop region
-10. **Loop vorhören** → plays loop region once (temp slice; original unchanged)
-11. **Loop wiederholen** → repeats loop region until Stop
-12. Enable **Attack bearbeiten** → single click sets attack marker
-13. **Attack vorschlagen** → shows suggestion only; **Vorschlag übernehmen** persists after explicit click
+6. **▶ Abspielen** in detail header → play from saved cue (or file start)
+7. **■ Stop** → stop preview
+8. **Left-click** waveform → play from saved cue
+9. **Right-click** waveform → temporary play from click position
+10. **Shift+left-click** → set cue (persists in `workbench_library.db`)
+11. Enable **Loop bearbeiten** → two clicks set loop region
+12. **Loop vorhören** → plays loop region once (temp slice; original unchanged)
+13. **Loop wiederholen** → repeats loop region until Stop
+14. Enable **Attack bearbeiten** → single click sets attack marker
+15. **Attack vorschlagen** → shows suggestion only; **Vorschlag übernehmen** persists after explicit click
 
 ## Limitations
 
