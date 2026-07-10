@@ -22,6 +22,7 @@
 | FL export button present / state | `_fl_export_btn` in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
 | Catalog→cache import button present | `_catalog_import_btn` in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
 | Playlist action column per sample row | `playlist_action` / `+ Playlist` in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
+| Playlist sidebar list present | `_playlist_list` in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
 
 ## Interactive manual smoke (producer workflow)
 
@@ -46,6 +47,7 @@ Not automated in CI. When running locally with a display:
 17. Enable **Attack bearbeiten** → single click sets attack marker
 18. **Attack vorschlagen** → shows suggestion only; **Vorschlag übernehmen** persists after explicit click
 19. Click **+ Playlist** on a sample row → choose existing playlist or enter a new name → status confirms assignment in `workbench_library.db` (`playlists` / `playlist_samples` tables)
+20. Select a playlist under **Playlists** in the sidebar → sample table shows assigned samples; empty playlist shows 0 samples without crash
 
 ## Limitations
 

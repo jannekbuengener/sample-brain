@@ -846,6 +846,47 @@ def get_or_create_playlist(name: str, *, db_path: Path | None = None) -> Workben
     return create_playlist(normalized, db_path=db_path)
 
 
+def get_playlist_by_name(name: str, *, db_path: Path | None = None) -> WorkbenchPlaylist | None:
+    """Return a song-context playlist by name, or None when unknown."""
+    try:
+        normalized = normalize_playlist_name(name)
+    except WorkbenchPlaylistValidationError:
+        return None
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT id, name, created_at, updated_at
+            FROM playlists
+            WHERE name = ? COLLATE NOCASE
+            """,
+            (normalized,),
+        ).fetchone()
+    if row is None:
+        return None
+    return _playlist_from_row(row)
+
+
+def list_playlist_sample_paths(
+    playlist_id: int,
+    *,
+    db_path: Path | None = None,
+) -> list[str]:
+    """Return sample paths assigned to a playlist, oldest assignment first."""
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT sample_path
+            FROM playlist_samples
+            WHERE playlist_id = ?
+            ORDER BY added_at ASC, id ASC
+            """,
+            (playlist_id,),
+        ).fetchall()
+    return [str(row["sample_path"]) for row in rows]
+
+
 def add_sample_to_playlist(
     playlist_id: int,
     sample_path: Path | str,
@@ -905,8 +946,10 @@ __all__ = [
     "create_playlist",
     "default_workbench_cue_metadata",
     "get_or_create_playlist",
+    "get_playlist_by_name",
     "init_workbench_library",
     "list_library_folders",
+    "list_playlist_sample_paths",
     "list_playlists",
     "load_all_cached_samples",
     "load_folder_samples",

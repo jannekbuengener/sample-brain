@@ -20,12 +20,14 @@ from src.workbench_controller import (
     filter_workbench_rows,
     format_path_display_lines,
     format_playlist_add_status,
+    format_playlist_load_status,
     format_workbench_detail_field_lines,
     format_workbench_active_filter_summary,
     format_workbench_search_status,
     get_preview_start_ms,
     get_workbench_library_folders,
     list_workbench_playlists,
+    load_playlist_workbench_rows,
     is_catalog_readonly_row,
     load_cached_folder_rows,
     load_workbench_analysis_limit,
@@ -1259,3 +1261,84 @@ def test_add_workbench_row_to_playlist_and_status_message(tmp_path: Path, monkey
         format_playlist_add_status(duplicate)
         == 'Sample ist bereits in Playlist "Song A"'
     )
+
+
+def test_load_playlist_workbench_rows_empty_playlist(tmp_path: Path, monkeypatch):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    from src.workbench_library import create_playlist, workbench_library_db_path
+
+    db_path = workbench_library_db_path(state_dir=state_dir)
+    create_playlist("Song A", db_path=db_path)
+    assert load_playlist_workbench_rows("Song A", library_db_path=db_path) == []
+    assert load_playlist_workbench_rows("Missing", library_db_path=db_path) == []
+
+
+def test_load_playlist_workbench_rows_uses_cache_and_handles_missing_file(
+    tmp_path: Path,
+    monkeypatch,
+):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    from src.workbench_library import (
+        add_sample_to_playlist,
+        create_playlist,
+        upsert_folder,
+        upsert_sample,
+        workbench_library_db_path,
+    )
+
+    db_path = workbench_library_db_path(state_dir=state_dir)
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    cached = folder / "kick.wav"
+    cached.write_bytes(b"wav")
+    missing = tmp_path / "gone.wav"
+
+    folder_id = upsert_folder(folder, db_path=db_path)
+    cached_row = WorkbenchRow(
+        display_name="kick",
+        relative_path="kick.wav",
+        path=str(cached),
+        bpm=128.0,
+        key="Am",
+        key_conf=0.8,
+        loudness=-20.0,
+        brightness=2000.0,
+        sample_class="loop",
+        pred_type="Kick",
+        status="ok",
+    )
+    upsert_sample(folder_id, cached_row, size_bytes=cached.stat().st_size, mtime_ns=cached.stat().st_mtime_ns, db_path=db_path)
+
+    playlist = create_playlist("Song A", db_path=db_path)
+    add_sample_to_playlist(playlist.id, cached, db_path=db_path)
+    add_sample_to_playlist(playlist.id, missing, db_path=db_path)
+
+    rows = load_playlist_workbench_rows("Song A", library_db_path=db_path)
+    assert len(rows) == 2
+    assert rows[0].display_name == "kick"
+    assert rows[0].bpm == 128.0
+    assert rows[0].details.get("song_playlist") == "Song A"
+    assert rows[1].status == "error"
+    assert rows[1].error_code == "unsupported_or_unreadable_audio"
+
+
+def test_format_playlist_load_status():
+    assert format_playlist_load_status("Song A", []) == 'Playlist "Song A" geladen: 0 Samples'
+    row = WorkbenchRow(
+        display_name="kick",
+        relative_path="kick.wav",
+        path="/tmp/kick.wav",
+        bpm=None,
+        key=None,
+        key_conf=None,
+        loudness=None,
+        brightness=None,
+        sample_class=None,
+        pred_type=None,
+        status="ok",
+    )
+    assert format_playlist_load_status("Song A", [row]) == 'Playlist "Song A" geladen: 1 Samples'

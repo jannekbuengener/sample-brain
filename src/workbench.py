@@ -37,6 +37,7 @@ from .workbench_controller import (
     format_metadata_provenance_hint,
     format_path_display_lines,
     format_playlist_add_status,
+    format_playlist_load_status,
     format_workbench_active_filter_summary,
     format_workbench_detail_field_lines,
     format_workbench_search_status,
@@ -51,6 +52,7 @@ from .workbench_controller import (
     list_workbench_playlists,
     load_all_cached_rows,
     load_cached_folder_rows,
+    load_playlist_workbench_rows,
     load_catalog_rows,
     load_workbench_analysis_limit,
     load_workbench_last_folder,
@@ -157,6 +159,8 @@ class WorkbenchApp:
         self._pending_attack_suggestion: AttackSuggestion | None = None
         self._global_library_mode = False
         self._catalog_library_mode = False
+        self._playlist_library_mode = False
+        self._playlist_names: list[str] = []
         self._catalog_total_count = 0
         self._catalog_load_limit: int | None = None
         self._view_settings = load_workbench_view_settings()
@@ -165,6 +169,7 @@ class WorkbenchApp:
         self._build_layout()
         self._restore_last_folder()
         self._refresh_library_list()
+        self._refresh_playlist_list()
         self._set_status("Bereit — Ordnerpfad eingeben oder wählen, dann Analyse starten.")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -331,6 +336,37 @@ class WorkbenchApp:
         self._library_list.bind("<<ListboxSelect>>", self._on_library_select)
         self._library_list.bind("<Double-Button-1>", self._on_library_activate)
         self._library_paths: list[str] = []
+
+        playlist_header = ttk.Frame(library_frame, style="Panel.TFrame")
+        playlist_header.pack(fill=tk.X, pady=(10, 6))
+        ttk.Label(playlist_header, text="Playlists", style="Heading.TLabel").pack(
+            side=tk.LEFT, anchor=tk.W
+        )
+
+        playlist_list_frame = ttk.Frame(library_frame, style="Panel.TFrame")
+        playlist_list_frame.pack(fill=tk.X)
+
+        self._playlist_list = tk.Listbox(
+            playlist_list_frame,
+            bg=PANEL_ALT,
+            fg=TEXT,
+            selectbackground=ACCENT_DIM,
+            selectforeground="#ffffff",
+            highlightthickness=1,
+            highlightbackground=BORDER,
+            activestyle="none",
+            font=("Segoe UI", 9),
+            relief=tk.FLAT,
+            height=6,
+        )
+        playlist_scroll = ttk.Scrollbar(
+            playlist_list_frame, orient=tk.VERTICAL, command=self._playlist_list.yview
+        )
+        self._playlist_list.configure(yscrollcommand=playlist_scroll.set)
+        self._playlist_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        playlist_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self._playlist_list.bind("<<ListboxSelect>>", self._on_playlist_select)
+        self._playlist_list.bind("<Double-Button-1>", self._on_playlist_activate)
 
         playlist_frame = ttk.Frame(body, style="Panel.TFrame", padding=8)
         playlist_frame.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
@@ -763,6 +799,27 @@ class WorkbenchApp:
         for folder_path in self._library_paths[2:]:
             self._library_list.insert(tk.END, self._library_display_label(folder_path))
 
+    def _refresh_playlist_list(self) -> None:
+        self._playlist_names = list_workbench_playlists()
+        self._playlist_list.delete(0, tk.END)
+        for name in self._playlist_names:
+            self._playlist_list.insert(tk.END, name)
+
+    def _clear_playlist_list_selection(self) -> None:
+        self._playlist_list.selection_clear(0, tk.END)
+
+    def _clear_library_list_selection(self) -> None:
+        self._library_list.selection_clear(0, tk.END)
+
+    def _selected_playlist_name(self) -> str | None:
+        selection = self._playlist_list.curselection()
+        if not selection:
+            return None
+        index = int(selection[0])
+        if 0 <= index < len(self._playlist_names):
+            return self._playlist_names[index]
+        return None
+
     def _selected_library_path(self) -> str | None:
         selection = self._library_list.curselection()
         if not selection:
@@ -867,6 +924,8 @@ class WorkbenchApp:
     def _on_library_select(self, _event: tk.Event | None = None) -> None:
         if self._busy:
             return
+        self._clear_playlist_list_selection()
+        self._playlist_library_mode = False
         path = self._selected_library_path()
         if path is None:
             return
@@ -885,10 +944,42 @@ class WorkbenchApp:
     def _on_library_activate(self, _event: tk.Event | None = None) -> None:
         self._on_library_select()
 
+    def _on_playlist_select(self, _event: tk.Event | None = None) -> None:
+        if self._busy:
+            return
+        name = self._selected_playlist_name()
+        if name is None:
+            return
+        self._clear_library_list_selection()
+        self._global_library_mode = False
+        self._catalog_library_mode = False
+        self._playlist_library_mode = True
+        self._load_playlist_samples(name)
+
+    def _on_playlist_activate(self, _event: tk.Event | None = None) -> None:
+        self._on_playlist_select()
+
+    def _load_playlist_samples(self, playlist_name: str) -> None:
+        rows = load_playlist_workbench_rows(playlist_name)
+        if not rows:
+            self._clear_playlist()
+            self._set_status(format_playlist_load_status(playlist_name, rows), tone="neutral")
+            return
+        summary = {
+            "files_found": len(rows),
+            "analyzed_count": sum(1 for row in rows if row.status == "ok"),
+            "error_count": sum(1 for row in rows if row.status == "error"),
+            "cache_hits": 0,
+            "cache_misses": 0,
+        }
+        self._populate_playlist(WorkbenchResult(summary=summary, rows=rows))
+        self._set_status(format_playlist_load_status(playlist_name, rows), tone="success")
+
     def _load_all_cached_samples(self) -> None:
         rows = load_all_cached_rows()
         self._global_library_mode = True
         self._catalog_library_mode = False
+        self._playlist_library_mode = False
         if not rows:
             self._clear_playlist()
             self._set_status(
@@ -934,6 +1025,7 @@ class WorkbenchApp:
         rows = load_catalog_rows(limit=limit)
         self._catalog_library_mode = True
         self._global_library_mode = False
+        self._playlist_library_mode = False
         self._catalog_total_count = total
         self._catalog_load_limit = limit if total > limit else None
         if not rows:
@@ -963,6 +1055,7 @@ class WorkbenchApp:
     def _load_cached_folder(self, folder: Path, *, announce_if_empty: bool = False) -> None:
         self._global_library_mode = False
         self._catalog_library_mode = False
+        self._playlist_library_mode = False
         rows = load_cached_folder_rows(folder)
         if not rows:
             self._clear_playlist()
@@ -1443,6 +1536,7 @@ class WorkbenchApp:
                 return
             tone = "success" if outcome.result == "added" else "neutral"
             self._set_status(format_playlist_add_status(outcome), tone=tone)
+            self._refresh_playlist_list()
             _close()
 
         ttk.Button(actions, text="Hinzufügen", style="Accent.TButton", command=_submit).pack(

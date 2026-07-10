@@ -46,6 +46,8 @@ def test_workbench_gui_startup_smoke_constructs_key_widgets(tmp_path: Path):
         assert hasattr(app, "_tree"), "playlist tree must exist"
         assert PLAYLIST_ACTION_COLUMN in app._tree["columns"]
         assert hasattr(app, "_open_add_to_playlist_dialog")
+        assert hasattr(app, "_playlist_list"), "playlist sidebar list must exist"
+        assert hasattr(app, "_load_playlist_samples")
         assert hasattr(app, "_show_search_var")
         assert hasattr(app, "_filter_bar")
         assert not hasattr(app, "_copy_path_btn")
@@ -231,5 +233,40 @@ def test_workbench_playlist_action_click_opens_dialog(tmp_path: Path):
                     ):
                         app._on_tree_click(type("E", (), {"x": 1, "y": 1})())
         assert opened == [row]
+    finally:
+        root.destroy()
+
+
+def test_workbench_playlist_select_loads_rows(tmp_path: Path, monkeypatch):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    from src.workbench_library import (
+        add_sample_to_playlist,
+        create_playlist,
+        workbench_library_db_path,
+    )
+
+    sample = tmp_path / "kick.wav"
+    sample.write_bytes(b"data")
+    db_path = workbench_library_db_path(state_dir=state_dir)
+    playlist = create_playlist("Song A", db_path=db_path)
+    add_sample_to_playlist(playlist.id, sample, db_path=db_path)
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        root.update_idletasks()
+        assert app._playlist_list.size() == 1
+        app._playlist_list.selection_set(0)
+        loaded: list[str] = []
+
+        def capture_load(name: str) -> None:
+            loaded.append(name)
+
+        with patch.object(app, "_load_playlist_samples", side_effect=capture_load):
+            app._on_playlist_select()
+        assert loaded == ["Song A"]
     finally:
         root.destroy()
