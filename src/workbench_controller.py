@@ -14,6 +14,7 @@ from .analyze import (
     extract_features,
     safe_load,
 )
+from .bpm_display import format_bpm_display, round_bpm_display
 from .classify import rule_type
 from .scan import iter_audio_files_stream, safe_audio_info
 from .workbench_catalog import (
@@ -386,11 +387,13 @@ def format_workbench_active_filter_summary(
             parts.append(f"Status={status}")
         if filters.min_bpm is not None or filters.max_bpm is not None:
             if filters.min_bpm is not None and filters.max_bpm is not None:
-                parts.append(f"BPM {filters.min_bpm:g}–{filters.max_bpm:g}")
+                parts.append(
+                    f"BPM {format_bpm_display(filters.min_bpm)}–{format_bpm_display(filters.max_bpm)}"
+                )
             elif filters.min_bpm is not None:
-                parts.append(f"BPM ab {filters.min_bpm:g}")
+                parts.append(f"BPM ab {format_bpm_display(filters.min_bpm)}")
             elif filters.max_bpm is not None:
-                parts.append(f"BPM bis {filters.max_bpm:g}")
+                parts.append(f"BPM bis {format_bpm_display(filters.max_bpm)}")
     if not parts:
         return ""
     return "Aktive Filter: " + " · ".join(parts)
@@ -635,7 +638,7 @@ def analyze_folder_for_workbench(
                 "duration_sec": _format_optional(dur, digits=3),
                 "samplerate": sr,
                 "channels": ch,
-                "bpm": _format_optional(feats.bpm, digits=1),
+                "bpm": round_bpm_display(feats.bpm),
                 "key": feats.key,
                 "key_conf": _format_optional(feats.key_conf, digits=3),
                 "loudness_dbfs": _format_optional(feats.loudness, digits=2),
@@ -738,6 +741,9 @@ def export_workbench_rows_to_csv(rows: list[WorkbenchRow], destination: Path) ->
         writer.writeheader()
         for row in rows:
             data = row_as_dict(row)
+            displayed_bpm = round_bpm_display(data.get("bpm"))
+            if displayed_bpm is not None:
+                data["bpm"] = displayed_bpm
             writer.writerow({field: data.get(field, "") for field in PLAYLIST_CSV_FIELDS})
     return len(rows)
 

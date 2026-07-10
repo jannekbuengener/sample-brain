@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .bpm_display import format_bpm_display
 from .db import load_hybrid_metadata, load_sample_paths
 from .embed import EmbeddingBackendUnavailableError, get_backend
 from .hybrid_rank import HybridQuery, rerank_hits
@@ -32,6 +33,12 @@ class SearchRunResult:
 
 def _fmt_optional(value: object | None) -> str:
     return "" if value is None else str(value)
+
+
+def _fmt_bpm_optional(value: object | None) -> str:
+    if value is None:
+        return ""
+    return format_bpm_display(value, placeholder="")
 
 
 def normalize_hybrid_query(query: HybridQuery) -> HybridQuery:
@@ -289,7 +296,7 @@ def run_search(
                     f"sample_id={hit.sample_id}",
                     f"score={hit.score:.4f}",
                     f"path={hit_path}",
-                    f"bpm={_fmt_optional(hit_metadata.bpm if hit_metadata else None)}",
+                    f"bpm={_fmt_bpm_optional(hit_metadata.bpm if hit_metadata else None)}",
                     f"key={_fmt_optional(hit_metadata.key if hit_metadata else None)}",
                     f"pred_type={_fmt_optional(hit_metadata.pred_type if hit_metadata else None)}",
                     f"class={_fmt_optional(hit_metadata.audio_class if hit_metadata else None)}",

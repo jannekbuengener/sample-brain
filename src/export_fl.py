@@ -5,6 +5,7 @@ import os
 import re
 from pathlib import Path
 
+from .bpm_display import format_bpm_tag
 from .config import REGEX_MAP_PATH, SAMPLE_ROOTS
 
 MAX_TAGS = 5
@@ -40,9 +41,7 @@ def duration_class_to_tag(clazz: str):
 
 
 def bpm_to_tag(bpm: float | None):
-    if not bpm:
-        return None
-    return f"{int(round(bpm))}BPM"
+    return format_bpm_tag(bpm)
 
 
 def key_to_tag(key: str | None, conf: float | None):
