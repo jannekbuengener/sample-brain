@@ -31,6 +31,7 @@ from .workbench_controller import (
     export_workbench_rows_to_fl_tags,
     format_catalog_import_preview_message,
     format_catalog_import_result_message,
+    compute_workbench_similar_suggestions,
     effective_workbench_row_filters,
     effective_workbench_text_query,
     format_catalog_load_status,
@@ -71,6 +72,8 @@ from .workbench_controller import (
     save_workbench_view_settings,
     sort_workbench_rows,
     validate_workbench_folder,
+    validate_workbench_matching_reference,
+    WorkbenchSuggestion,
     workbench_filter_options,
     workbench_rows_for_fl_export,
     DEFAULT_WORKBENCH_VIEW_SETTINGS,
@@ -132,7 +135,14 @@ COLUMNS = (
 PLAYLIST_ACTION_COLUMN = "playlist_action"
 PLAYLIST_ACTION_LABEL = "+ Playlist"
 
-
+SUGGESTION_COLUMNS = (
+    ("name", "Name", 140),
+    ("bpm", "BPM", 50),
+    ("key", "Key", 45),
+    ("pred_type", "Typ", 70),
+    ("reason", "Grund", 180),
+    ("score", "Score", 55),
+)
 
 
 def _fmt(value: float | None, *, digits: int = 2) -> str:
@@ -166,6 +176,7 @@ class WorkbenchApp:
         self._catalog_total_count = 0
         self._catalog_load_limit: int | None = None
         self._view_settings = load_workbench_view_settings()
+        self._similar_suggestions: list[WorkbenchSuggestion] = []
 
         self._build_styles()
         self._build_menubar()
@@ -499,6 +510,57 @@ class WorkbenchApp:
         self._tree.bind("<Button-1>", self._on_tree_click)
         self._tree.bind("<Double-Button-1>", self._on_tree_double_click)
         self._tree.bind("<space>", self._on_space_preview)
+
+        suggest_header = ttk.Frame(playlist_frame, style="Panel.TFrame")
+        suggest_header.pack(fill=tk.X, pady=(8, 4))
+        ttk.Label(
+            suggest_header,
+            text="Ähnliche Samples",
+            style="Heading.TLabel",
+        ).pack(side=tk.LEFT, anchor=tk.W)
+        self._similar_btn = ttk.Button(
+            suggest_header,
+            text="Ähnliche Samples",
+            command=self._refresh_similar_suggestions,
+            state=tk.DISABLED,
+        )
+        self._similar_btn.pack(side=tk.RIGHT)
+
+        suggest_frame = ttk.Frame(playlist_frame, style="Panel.TFrame")
+        suggest_frame.pack(fill=tk.X, pady=(0, 4))
+
+        suggest_col_ids = [column[0] for column in SUGGESTION_COLUMNS]
+        self._similar_tree = ttk.Treeview(
+            suggest_frame,
+            columns=suggest_col_ids,
+            show="headings",
+            selectmode="browse",
+            height=5,
+        )
+        for col_id, heading, width in SUGGESTION_COLUMNS:
+            self._similar_tree.heading(col_id, text=heading)
+            anchor = tk.W if col_id in {"name", "reason"} else tk.CENTER
+            self._similar_tree.column(col_id, width=width, anchor=anchor, stretch=(col_id == "reason"))
+        suggest_scroll = ttk.Scrollbar(
+            suggest_frame,
+            orient=tk.VERTICAL,
+            command=self._similar_tree.yview,
+        )
+        self._similar_tree.configure(yscrollcommand=suggest_scroll.set)
+        self._similar_tree.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        suggest_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self._similar_tree.bind("<Double-Button-1>", self._on_similar_double_click)
+        self._similar_tree.bind("<Return>", self._on_similar_double_click)
+        self._similar_tree.bind("<Button-3>", self._on_similar_context_menu)
+
+        self._similar_status_var = tk.StringVar(
+            value="Sample auswählen und „Ähnliche Samples“ berechnen.",
+        )
+        ttk.Label(
+            playlist_frame,
+            textvariable=self._similar_status_var,
+            style="Muted.TLabel",
+        ).pack(fill=tk.X, pady=(0, 4))
 
         detail_frame = ttk.Frame(body, style="Panel.TFrame", padding=10)
         detail_frame.grid(row=0, column=2, sticky="nsew")
@@ -1322,7 +1384,127 @@ class WorkbenchApp:
         self._filter_var.set("")
         self._reset_structured_filters()
         self._update_sort_headings()
+        self._clear_similar_suggestions()
         self._set_detail(None)
+
+    def _clear_similar_suggestions(self) -> None:
+        self._similar_suggestions = []
+        self._similar_tree.delete(*self._similar_tree.get_children())
+        self._similar_status_var.set(
+            "Sample auswählen und „Ähnliche Samples“ berechnen.",
+        )
+        self._similar_btn.state(["disabled"])
+
+    def _update_similar_button_state(self, row: WorkbenchRow | None) -> None:
+        btn = getattr(self, "_similar_btn", None)
+        if btn is None:
+            return
+        usable = validate_workbench_matching_reference(row) is None
+        busy = getattr(self, "_busy", False)
+        if usable and not busy:
+            btn.state(["!disabled"])
+        else:
+            btn.state(["disabled"])
+
+    def _refresh_similar_suggestions(self) -> None:
+        if self._busy:
+            return
+        row = self._selected_row()
+        suggestions, status = compute_workbench_similar_suggestions(row, self._rows)
+        self._similar_suggestions = suggestions
+        self._similar_tree.delete(*self._similar_tree.get_children())
+        for index, item in enumerate(suggestions):
+            display_name = catalog_row_display_name(item.row)
+            self._similar_tree.insert(
+                "",
+                tk.END,
+                iid=str(index),
+                values=(
+                    display_name,
+                    format_bpm_display(item.row.bpm),
+                    item.row.key or "—",
+                    item.row.pred_type or item.row.sample_class or "—",
+                    item.reason,
+                    f"{item.total_score:.4f}",
+                ),
+            )
+        if status is not None:
+            self._similar_status_var.set(status)
+            tone = "success" if suggestions else "neutral"
+            self._set_status(status, tone=tone)
+        else:
+            self._similar_status_var.set(f"{len(suggestions)} Vorschläge")
+            self._set_status(
+                f"{len(suggestions)} ähnliche Samples gefunden.",
+                tone="success",
+            )
+
+    def _selected_suggestion(self) -> WorkbenchSuggestion | None:
+        selected = self._similar_tree.selection()
+        if not selected:
+            return None
+        index = int(selected[0])
+        if 0 <= index < len(self._similar_suggestions):
+            return self._similar_suggestions[index]
+        return None
+
+    def _focus_playlist_row_by_path(self, path: str) -> bool:
+        for index, row in enumerate(self._visible_rows):
+            if row.path == path:
+                self._tree.selection_set(str(index))
+                self._tree.see(str(index))
+                self._set_detail(row)
+                return True
+        return False
+
+    def _on_similar_double_click(self, _event: tk.Event | None = None) -> str | None:
+        suggestion = self._selected_suggestion()
+        if suggestion is None:
+            return "break"
+        if not self._focus_playlist_row_by_path(suggestion.row.path):
+            self._set_status(
+                "Vorschlag ist in der aktuellen Filteransicht nicht sichtbar.",
+                tone="neutral",
+            )
+        return "break"
+
+    def _on_similar_context_menu(self, event: tk.Event) -> None:
+        row_id = self._similar_tree.identify_row(event.y)
+        if row_id:
+            self._similar_tree.selection_set(row_id)
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label="Pfad kopieren", command=self._copy_suggestion_path)
+        menu.add_command(label="Preview", command=self._preview_suggestion)
+        menu.add_command(
+            label="In Playlist fokussieren",
+            command=lambda: self._on_similar_double_click(),
+        )
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _copy_suggestion_path(self) -> None:
+        suggestion = self._selected_suggestion()
+        if suggestion is None:
+            self._set_status("Kein Vorschlag ausgewählt.", tone="neutral")
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(suggestion.row.path)
+        self._set_status("Pfad kopiert.", tone="success")
+
+    def _preview_suggestion(self) -> None:
+        if self._busy:
+            return
+        suggestion = self._selected_suggestion()
+        if suggestion is None:
+            self._set_status("Kein Vorschlag ausgewählt.", tone="neutral")
+            return
+        if not suggestion.row.path:
+            self._set_status("Vorschlag ohne Dateipfad.", tone="error")
+            return
+        self._preview_row_path = suggestion.row.path
+        self._play_preview()
 
     def _on_sort_column(self, column: str) -> None:
         if self._sort_column == column:
@@ -2382,6 +2564,7 @@ class WorkbenchApp:
     def _set_detail(self, row: WorkbenchRow | None) -> None:
         self._detail_row = row
         self._clear_attack_suggestion()
+        self._update_similar_button_state(row)
         self._detail_text.configure(state=tk.NORMAL)
         self._detail_text.delete("1.0", tk.END)
         self._update_preview_state(row)

@@ -26,6 +26,7 @@
 | View toolbar visible by default | `_view_bar` mapped on startup | ✅ PASS |
 | Edit menu toggles view toolbar | `_show_view_toolbar_var` + hide/show in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
 | View toolbar setting persists | `show_view_toolbar` in `workbench_view_settings.json` | ✅ PASS |
+| Similar samples button + panel | `_similar_btn` / `_similar_tree` in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
 
 ## Interactive manual smoke (producer workflow)
 
@@ -54,6 +55,7 @@ Not automated in CI. When running locally with a display:
 21. Under **Edit**, uncheck **Ansichtsleiste anzeigen** → view toolbar hides; sample table gains vertical space; section toggles remain in saved settings
 22. Re-enable **Ansichtsleiste anzeigen** → toolbar returns with all section controls and help text
 23. Click **Standardansicht wiederherstellen** → toolbar and all section toggles return to visible defaults
+24. Select a sample with analyzed BPM → click **Ähnliche Samples** → suggestion table lists scored matches from loaded rows (reference excluded); right-click a suggestion for **Pfad kopieren** or **Preview**
 
 ## Limitations
 

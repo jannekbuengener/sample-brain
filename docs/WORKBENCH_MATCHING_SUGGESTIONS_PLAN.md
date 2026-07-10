@@ -1,7 +1,7 @@
 # Workbench Matching-/Vorschlagsansicht Plan
 
-**Status:** Planning only — no implementation in this document.  
-**Issue:** [#198 — Workbench: Matching- und Vorschlagsansicht planen](https://github.com/jannekbuengener/sample-brain/issues/198)  
+**Status:** V1 shipped — see `src/workbench_controller.py` (`suggest_similar_workbench_rows`) and Workbench UI panel below playlist.  
+**Issue:** [#208 — Workbench: Matching-Vorschläge V1 umsetzen](https://github.com/jannekbuengener/sample-brain/issues/208) (implementation); [#198 — plan](https://github.com/jannekbuengener/sample-brain/issues/198) (planning)  
 **Parent:** [#117 — workbench usability and library workflow follow-ups](https://github.com/jannekbuengener/sample-brain/issues/117) (closed)  
 **Related:** [`docs/product/02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md`](product/02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md), [`WORKBENCH_SEARCH_UI_PLAN.md`](WORKBENCH_SEARCH_UI_PLAN.md), `src/matching.py`, `src/workbench_controller.py`
 

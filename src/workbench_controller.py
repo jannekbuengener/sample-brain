@@ -1,14 +1,19 @@
 """Folder-scoped analysis for the local workbench (no DB required)."""
+
 from __future__ import annotations
 
 import csv
 import json
+import math
 import os
 import sqlite3
 import textwrap
+import zlib
 from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePath
 from typing import Any, Callable, Literal, Mapping
+
+from .matching import DEFAULT_LIMIT, MatchCandidate, MatchProfile, match_candidates
 
 from .analyze import (
     SHORT_AUDIO_WARNING_CODE,
@@ -232,7 +237,11 @@ class WorkbenchResult:
         return {
             "summary": dict(self.summary),
             "rows": [
-                {**row.playlist_fields(), "path": row.path, "details": dict(row.details)}
+                {
+                    **row.playlist_fields(),
+                    "path": row.path,
+                    "details": dict(row.details),
+                }
                 for row in self.rows
             ],
         }
@@ -445,7 +454,10 @@ def _sort_key_for_column(row: WorkbenchRow, column: str) -> tuple:
     if column == "loudness":
         return (row.loudness is None, row.loudness if row.loudness is not None else 0.0)
     if column == "brightness":
-        return (row.brightness is None, row.brightness if row.brightness is not None else 0.0)
+        return (
+            row.brightness is None,
+            row.brightness if row.brightness is not None else 0.0,
+        )
     if column == "pred_type":
         value = row.pred_type or row.sample_class or ""
         return (not value, value.casefold())
@@ -463,7 +475,9 @@ def sort_workbench_rows(
     """Return a new list sorted by playlist column *column*."""
     if column not in PLAYLIST_SORT_COLUMNS:
         raise ValueError(f"Unsupported sort column: {column}")
-    return sorted(rows, key=lambda row: _sort_key_for_column(row, column), reverse=reverse)
+    return sorted(
+        rows, key=lambda row: _sort_key_for_column(row, column), reverse=reverse
+    )
 
 
 def _format_optional(value: float | None, *, digits: int = 2) -> float | None:
@@ -575,7 +589,9 @@ def analyze_folder_for_workbench(
     def _cancelled() -> bool:
         return should_cancel is not None and should_cancel()
 
-    cache_db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    cache_db = (
+        library_db_path if library_db_path is not None else workbench_library_db_path()
+    )
     folder_id: int | None = None
     if use_cache:
         folder_id = upsert_folder(root, db_path=cache_db)
@@ -773,7 +789,9 @@ def export_workbench_rows_to_csv(rows: list[WorkbenchRow], destination: Path) ->
             displayed_bpm = round_bpm_display(data.get("bpm"))
             if displayed_bpm is not None:
                 data["bpm"] = displayed_bpm
-            writer.writerow({field: data.get(field, "") for field in PLAYLIST_CSV_FIELDS})
+            writer.writerow(
+                {field: data.get(field, "") for field in PLAYLIST_CSV_FIELDS}
+            )
     return len(rows)
 
 
@@ -920,8 +938,12 @@ def export_workbench_rows_to_fl_tags(
             error_message="Keine exportierbaren Playlist-Zeilen vorhanden.",
         )
 
-    resolved_roots = list(roots) if roots is not None else resolve_workbench_fl_export_roots()
-    tag_limit = max_tags if max_tags is not None else resolve_workbench_fl_export_max_tags()
+    resolved_roots = (
+        list(roots) if roots is not None else resolve_workbench_fl_export_roots()
+    )
+    tag_limit = (
+        max_tags if max_tags is not None else resolve_workbench_fl_export_max_tags()
+    )
     try:
         tags_path, exported_count, warnings = write_fl_tags_from_sample_rows(
             sample_rows,
@@ -1089,9 +1111,7 @@ VIEW_SECTION_FILTERS = "filters"
 VIEW_SECTION_LIBRARY_MANAGE = "library_manage"
 VIEW_SECTION_WAVEFORM_TOOLS = "waveform_tools"
 
-WORKBENCH_VIEW_TOGGLE_HELP = (
-    "Suche, Filter, Library-Verwaltung und Waveform-Werkzeuge können ein- und ausgeblendet werden."
-)
+WORKBENCH_VIEW_TOGGLE_HELP = "Suche, Filter, Library-Verwaltung und Waveform-Werkzeuge können ein- und ausgeblendet werden."
 
 
 def workbench_view_settings_file(
@@ -1529,9 +1549,7 @@ def preview_catalog_import(
             folder_registered=True,
             error_message="Keine Catalog-Zeilen zum Importieren.",
         )
-    items = [
-        _classify_catalog_import_item(row, library_db_path=db) for row in rows
-    ]
+    items = [_classify_catalog_import_item(row, library_db_path=db) for row in rows]
     return CatalogImportPreview(
         items=items,
         target_folder=str(folder),
@@ -1553,8 +1571,7 @@ def format_catalog_import_preview_message(preview: CatalogImportPreview) -> str:
         lines.append(f"Ungültige Zeilen: {preview.error_count}")
     lines.append("")
     lines.append(
-        "Cue/Loop/Attack im Cache bleiben erhalten. "
-        "catalog.db wird nicht verändert."
+        "Cue/Loop/Attack im Cache bleiben erhalten. " "catalog.db wird nicht verändert."
     )
     lines.append("")
     lines.append("Import starten?")
@@ -1871,6 +1888,124 @@ def format_playlist_load_status(playlist_name: str, rows: list[WorkbenchRow]) ->
     return f'Playlist "{playlist_name}" geladen: {len(rows)} Samples'
 
 
+MATCHING_NO_SELECTION_MESSAGE = "Kein Sample ausgewählt."
+MATCHING_NO_BPM_MESSAGE = "Ähnliche Samples benötigen ein analysiertes BPM."
+MATCHING_NO_SUGGESTIONS_MESSAGE = "Keine Vorschläge in geladener Ansicht."
+
+
+@dataclass(frozen=True)
+class WorkbenchSuggestion:
+    row: WorkbenchRow
+    total_score: float
+    reason: str
+
+
+def workbench_row_sample_id(path: str) -> int:
+    """Stable in-memory ID for matching tie-breaks (no catalog.db join)."""
+    return zlib.crc32(path.encode("utf-8")) & 0x7FFFFFFF
+
+
+def workbench_row_to_match_candidate(
+    row: WorkbenchRow,
+    *,
+    sample_id: int | None = None,
+) -> MatchCandidate:
+    sid = workbench_row_sample_id(row.path) if sample_id is None else sample_id
+    return MatchCandidate(
+        sample_id=sid,
+        path=row.path,
+        bpm=row.bpm,
+        key=row.key,
+        pred_type=row.pred_type,
+    )
+
+
+def _reference_bpm_usable(bpm: float | None) -> bool:
+    return bpm is not None and math.isfinite(bpm) and bpm > 0
+
+
+def validate_workbench_matching_reference(reference: WorkbenchRow | None) -> str | None:
+    """Return a user-facing error when *reference* cannot drive matching."""
+    if reference is None:
+        return MATCHING_NO_SELECTION_MESSAGE
+    if not _reference_bpm_usable(reference.bpm):
+        return MATCHING_NO_BPM_MESSAGE
+    return None
+
+
+def format_workbench_suggestion_reason(reasons: tuple[str, ...]) -> str:
+    """Compact German-friendly reason line from ``MatchResult.reasons``."""
+    positive = [
+        reason
+        for reason in reasons
+        if "missing" not in reason and "mismatch" not in reason
+    ]
+    chosen = positive if positive else list(reasons)
+    return "; ".join(chosen)
+
+
+def suggest_similar_workbench_rows(
+    reference: WorkbenchRow,
+    candidates: list[WorkbenchRow],
+    *,
+    limit: int = DEFAULT_LIMIT,
+) -> list[WorkbenchSuggestion]:
+    """Score loaded workbench rows against *reference* using ``src.matching``."""
+    if limit <= 0:
+        return []
+
+    profile = MatchProfile(
+        target_bpm=float(reference.bpm),  # validated by caller
+        target_key=reference.key,
+        desired_type=reference.pred_type,
+        limit=None,
+    )
+
+    pool = [
+        row
+        for row in candidates
+        if row.status == "ok" and row.path and row.path != reference.path
+    ]
+    if not pool:
+        return []
+
+    match_candidates_list = [workbench_row_to_match_candidate(row) for row in pool]
+    results = match_candidates(match_candidates_list, profile)
+
+    suggestions: list[WorkbenchSuggestion] = []
+    for result in results:
+        if result.total_score <= 0:
+            continue
+        row = next(item for item in pool if item.path == result.path)
+        suggestions.append(
+            WorkbenchSuggestion(
+                row=row,
+                total_score=result.total_score,
+                reason=format_workbench_suggestion_reason(result.reasons),
+            )
+        )
+        if len(suggestions) >= limit:
+            break
+    return suggestions
+
+
+def compute_workbench_similar_suggestions(
+    reference: WorkbenchRow | None,
+    candidates: list[WorkbenchRow],
+    *,
+    limit: int = DEFAULT_LIMIT,
+) -> tuple[list[WorkbenchSuggestion], str | None]:
+    """UI entry point: validate reference, compute suggestions, return status."""
+    error = validate_workbench_matching_reference(reference)
+    if error is not None:
+        return [], error
+    assert reference is not None
+    suggestions = suggest_similar_workbench_rows(reference, candidates, limit=limit)
+    if not suggestions:
+        return [], MATCHING_NO_SUGGESTIONS_MESSAGE
+    return suggestions, None
+
+
 __all__ = [
     "ALL_LIBRARY_VIEW_LABEL",
     "CATALOG_VIEW_LABEL",
@@ -1931,7 +2066,17 @@ __all__ = [
     "workbench_rows_for_fl_export",
     "WorkbenchFlExportResult",
     "WorkbenchRowFilters",
+    "WorkbenchSuggestion",
     "FILTER_ALL_LABEL",
+    "MATCHING_NO_BPM_MESSAGE",
+    "MATCHING_NO_SELECTION_MESSAGE",
+    "MATCHING_NO_SUGGESTIONS_MESSAGE",
+    "compute_workbench_similar_suggestions",
+    "format_workbench_suggestion_reason",
+    "suggest_similar_workbench_rows",
+    "validate_workbench_matching_reference",
+    "workbench_row_sample_id",
+    "workbench_row_to_match_candidate",
     "format_metadata_provenance_hint",
     "format_metadata_provenance_label",
     "format_path_display_lines",
