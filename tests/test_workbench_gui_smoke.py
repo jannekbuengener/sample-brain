@@ -9,6 +9,7 @@ from unittest.mock import patch
 from src.workbench import WAVEFORM_USAGE_HINT, WorkbenchApp
 from src.workbench_controller import (
     WORKBENCH_VIEW_TOGGLE_HELP,
+    WorkbenchRow,
     load_workbench_analysis_limit,
     save_workbench_analysis_limit,
 )
@@ -47,6 +48,8 @@ def test_workbench_gui_startup_smoke_constructs_key_widgets(tmp_path: Path):
         assert hasattr(app, "_folder_entry"), "folder path entry must exist"
         assert hasattr(app, "_cancel_btn"), "cancel button must exist"
         assert app._cancel_btn.instate(["disabled"])
+        assert hasattr(app, "_fl_export_btn"), "fl export button must exist"
+        assert app._fl_export_btn.instate(["disabled"])
 
         app._folder_var.set(str(folder))
         started = threading.Event()
@@ -90,5 +93,35 @@ def test_workbench_restores_persisted_analysis_limit(tmp_path: Path, monkeypatch
         app = WorkbenchApp(root)
         root.update_idletasks()
         assert app._limit_var.get() == "25"
+    finally:
+        root.destroy()
+
+
+def test_workbench_fl_export_button_enables_with_exportable_rows(tmp_path: Path):
+    sample = tmp_path / "kick.wav"
+    sample.write_bytes(b"data")
+    row = WorkbenchRow(
+        display_name="kick",
+        relative_path="kick.wav",
+        path=str(sample),
+        bpm=128.0,
+        key="Am",
+        key_conf=0.8,
+        loudness=-20.0,
+        brightness=2000.0,
+        sample_class="loop",
+        pred_type="Kick",
+        status="ok",
+        details={"duration_sec": "2.5"},
+    )
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        app._rows = [row]
+        app._refresh_playlist_view()
+        root.update_idletasks()
+        assert app._fl_export_btn.instate(["!disabled"])
     finally:
         root.destroy()

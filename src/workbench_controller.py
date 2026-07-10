@@ -15,6 +15,7 @@ from .analyze import (
     safe_load,
 )
 from .bpm_display import format_bpm_display, round_bpm_display
+from .export_fl import MAX_TAGS, write_fl_tags_from_sample_rows
 from .classify import rule_type
 from .scan import iter_audio_files_stream, safe_audio_info
 from .workbench_catalog import (
@@ -766,6 +767,173 @@ def export_workbench_rows_to_csv(rows: list[WorkbenchRow], destination: Path) ->
     return len(rows)
 
 
+@dataclass(frozen=True)
+class WorkbenchFlExportResult:
+    ok: bool
+    exported_count: int = 0
+    skipped_count: int = 0
+    tags_path: Path | None = None
+    error_message: str | None = None
+    warnings: tuple[str, ...] = ()
+
+
+def _workbench_row_duration_sec(row: WorkbenchRow) -> float | None:
+    raw = row.details.get("duration_sec")
+    if raw is None or raw == "":
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def workbench_row_to_fl_sample_row(row: WorkbenchRow) -> tuple | None:
+    """Map a workbench row to the export_fl sample-row tuple, or None if not exportable."""
+    if row.status != "ok" or not row.path:
+        return None
+    return (
+        row.path,
+        row.relative_path or None,
+        _workbench_row_duration_sec(row),
+        row.brightness,
+        row.loudness,
+        row.sample_class,
+        row.key,
+        row.key_conf,
+        row.bpm,
+        row.pred_type,
+    )
+
+
+def workbench_rows_for_fl_export(rows: list[WorkbenchRow]) -> list[WorkbenchRow]:
+    """Return playlist rows eligible for FL tag export."""
+    return [row for row in rows if workbench_row_to_fl_sample_row(row) is not None]
+
+
+def _configured_path_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.startswith("<"):
+        return None
+    return text
+
+
+def resolve_workbench_fl_user_data_path(
+    *,
+    env: Mapping[str, str] | None = None,
+) -> str | None:
+    """Resolve FL Studio user data path from env override or profile config."""
+    env_map = os.environ if env is None else env
+    override = _configured_path_value(env_map.get("SAMPLE_BRAIN_FL_USER_DATA"))
+    if override:
+        return override
+    try:
+        from .config_loader import resolve_profile
+
+        cfg = resolve_profile(env=env_map)
+    except Exception:
+        return None
+    return _configured_path_value(cfg.get("fl_user_data_path"))
+
+
+def resolve_workbench_fl_export_roots(
+    *,
+    env: Mapping[str, str] | None = None,
+) -> list[Path]:
+    """Resolve library roots used for FL export path resolution."""
+    env_map = os.environ if env is None else env
+    try:
+        from .config_loader import resolve_profile
+
+        cfg = resolve_profile(env=env_map)
+        roots = cfg.get("library_roots", [])
+        if isinstance(roots, list):
+            return [Path(root) for root in roots if str(root).strip()]
+    except Exception:
+        pass
+    from .config import SAMPLE_ROOTS
+
+    return [Path(root) for root in SAMPLE_ROOTS]
+
+
+def resolve_workbench_fl_export_max_tags(
+    *,
+    env: Mapping[str, str] | None = None,
+) -> int:
+    env_map = os.environ if env is None else env
+    override = env_map.get("SAMPLE_BRAIN_MAX_TAGS")
+    if override and str(override).strip().isdigit():
+        return int(str(override).strip())
+    try:
+        from .config_loader import resolve_profile
+
+        cfg = resolve_profile(env=env_map)
+        configured = cfg.get("export", {}).get("max_tags")
+        if isinstance(configured, int) and configured > 0:
+            return configured
+    except Exception:
+        pass
+    return MAX_TAGS
+
+
+def export_workbench_rows_to_fl_tags(
+    rows: list[WorkbenchRow],
+    fl_user_data: str | Path,
+    *,
+    roots: list[Path] | None = None,
+    max_tags: int | None = None,
+) -> WorkbenchFlExportResult:
+    """Export visible workbench rows to FL Studio Browser tags."""
+    fl_path_text = str(fl_user_data).strip()
+    if not fl_path_text:
+        return WorkbenchFlExportResult(
+            ok=False,
+            error_message="FL User Data Pfad fehlt.",
+        )
+
+    exportable = workbench_rows_for_fl_export(rows)
+    if not exportable:
+        return WorkbenchFlExportResult(
+            ok=False,
+            error_message="Keine exportierbaren Playlist-Zeilen vorhanden.",
+        )
+
+    sample_rows = []
+    for row in exportable:
+        mapped = workbench_row_to_fl_sample_row(row)
+        if mapped is not None:
+            sample_rows.append(mapped)
+    if not sample_rows:
+        return WorkbenchFlExportResult(
+            ok=False,
+            error_message="Keine exportierbaren Playlist-Zeilen vorhanden.",
+        )
+
+    resolved_roots = list(roots) if roots is not None else resolve_workbench_fl_export_roots()
+    tag_limit = max_tags if max_tags is not None else resolve_workbench_fl_export_max_tags()
+    try:
+        tags_path, exported_count, warnings = write_fl_tags_from_sample_rows(
+            sample_rows,
+            Path(fl_path_text),
+            resolved_roots,
+            max_tags=tag_limit,
+        )
+    except OSError as exc:
+        return WorkbenchFlExportResult(
+            ok=False,
+            error_message=f"FL-Export fehlgeschlagen: {exc}",
+        )
+
+    return WorkbenchFlExportResult(
+        ok=True,
+        exported_count=exported_count,
+        skipped_count=len(rows) - exported_count,
+        tags_path=tags_path,
+        warnings=tuple(warnings),
+    )
+
+
 def workbench_state_dir(*, env: Mapping[str, str] | None = None) -> Path:
     """Return the user-local directory for workbench UI state."""
     env_map = os.environ if env is None else env
@@ -1268,6 +1436,7 @@ __all__ = [
     "effective_workbench_row_filters",
     "effective_workbench_text_query",
     "export_workbench_rows_to_csv",
+    "export_workbench_rows_to_fl_tags",
     "filter_workbench_rows",
     "format_catalog_load_status",
     "format_workbench_active_filter_summary",
@@ -1279,6 +1448,9 @@ __all__ = [
     "WorkbenchSearchStatusContext",
     "row_source_kind",
     "workbench_filter_options",
+    "workbench_row_to_fl_sample_row",
+    "workbench_rows_for_fl_export",
+    "WorkbenchFlExportResult",
     "WorkbenchRowFilters",
     "FILTER_ALL_LABEL",
     "format_metadata_provenance_hint",
@@ -1298,6 +1470,9 @@ __all__ = [
     "normalize_workbench_analysis_limit_text",
     "parse_workbench_bpm_bound",
     "PLAYLIST_CSV_FIELDS",
+    "resolve_workbench_fl_export_max_tags",
+    "resolve_workbench_fl_export_roots",
+    "resolve_workbench_fl_user_data_path",
     "remove_workbench_library_folder",
     "row_as_dict",
     "save_workbench_analysis_limit",

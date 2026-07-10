@@ -129,6 +129,57 @@ def build_tags_for_sample(row, roots, max_tags=MAX_TAGS):
     return tags[:max_tags]
 
 
+def _format_fl_tags_header(all_tags: set[str]) -> str:
+    header = "@TagCase=*"
+    for tag in sorted(all_tags, key=lambda value: value.lower()):
+        if re.search(r'[,\s"]', tag):
+            header += "," + '"' + tag.replace('"', "") + '"'
+        else:
+            header += "," + tag
+    return header
+
+
+def write_fl_tags_from_sample_rows(
+    sample_rows: list[tuple],
+    fl_userdata: Path,
+    roots: list[Path],
+    max_tags: int = MAX_TAGS,
+) -> tuple[Path, int, list[str]]:
+    """Write FL Browser tags from in-memory sample rows.
+
+    Each row tuple matches the ``build_tags_for_sample`` input without filename:
+    (path, relpath, duration, brightness, loudness, clazz, key, key_conf, bpm, pred_type)
+    """
+    tags_path = fl_userdata / "FL Studio" / "Settings" / "Browser" / "Tags"
+    tags_path.parent.mkdir(parents=True, exist_ok=True)
+
+    all_tags: set[str] = set()
+    lines: list[str] = []
+    warnings: list[str] = []
+    warned_paths: set[str] = set()
+    for row in sample_rows:
+        path = row[0]
+        relpath = row[1]
+        filename = Path(path).name
+        tags = build_tags_for_sample((*row, filename), roots, max_tags=max_tags)
+        for tag in tags:
+            all_tags.add(tag)
+
+        final_path, warning = resolve_export_path(
+            path=path, relpath=relpath, roots=roots
+        )
+        if warning and path not in warned_paths:
+            warnings.append(warning)
+            warned_paths.add(path)
+        lines.append(f'"{final_path}",' + ",".join(tags))
+
+    with open(tags_path, "w", encoding="utf-8") as handle:
+        handle.write(_format_fl_tags_header(all_tags) + "\n")
+        for line in lines:
+            handle.write(line + "\n")
+    return tags_path, len(lines), warnings
+
+
 def _normalized_path(path: Path | str) -> str:
     return os.path.normcase(str(Path(path)))
 
@@ -168,8 +219,6 @@ def write_fl_tags(fl_userdata: Path, roots, max_tags=MAX_TAGS):
     from .db import init_db
 
     engine = init_db()
-    tags_path = Path(fl_userdata) / "FL Studio" / "Settings" / "Browser" / "Tags"
-    tags_path.parent.mkdir(parents=True, exist_ok=True)
 
     with engine.begin() as conn:
         rows = conn.execute(text("""
@@ -180,37 +229,13 @@ def write_fl_tags(fl_userdata: Path, roots, max_tags=MAX_TAGS):
                 ORDER BY s.id
                 """)).fetchall()
 
-    all_tags = set()
-    lines = []
-    warned_paths: set[str] = set()
-    for row in rows:
-        path = row[0]
-        relpath = row[1]
-        filename = Path(path).name
-        tags = build_tags_for_sample((*row, filename), roots, max_tags=max_tags)
-        for tag in tags:
-            all_tags.add(tag)
-
-        final_path, warning = resolve_export_path(
-            path=path, relpath=relpath, roots=roots
-        )
-        if warning and path not in warned_paths:
-            print(warning)
-            warned_paths.add(path)
-        lines.append(f'"{final_path}",' + ",".join(tags))
-
-    header = "@TagCase=*"
-    for tag in sorted(all_tags, key=lambda value: value.lower()):
-        if re.search(r'[,\s"]', tag):
-            header += "," + '"' + tag.replace('"', "") + '"'
-        else:
-            header += "," + tag
-
-    with open(tags_path, "w", encoding="utf-8") as f:
-        f.write(header + "\n")
-        for line in lines:
-            f.write(line + "\n")
-    print(f"Wrote FL Tags → {tags_path}")
+    sample_rows = [tuple(row) for row in rows]
+    tags_path, count, warnings = write_fl_tags_from_sample_rows(
+        sample_rows, fl_userdata, [Path(root) for root in roots], max_tags=max_tags
+    )
+    for warning in warnings:
+        print(warning)
+    print(f"Wrote FL Tags → {tags_path} ({count} samples)")
 
 
 def run_export(fl_user_data_folder: str, max_tags=MAX_TAGS, roots=None):
