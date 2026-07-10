@@ -16,6 +16,7 @@
 | Attack edit mode control | `_attack_edit_mode_var` | ✅ PASS |
 | Attack suggestion apply button | `_attack_suggest_apply_btn` | ✅ PASS |
 | Play / Stop preview buttons | `_play_btn` / `_stop_btn` in detail header | ✅ PASS |
+| Long path detail formatting | `format_path_display_lines` in detail panel (`tests/test_workbench_controller.py`) | ✅ PASS |
 | CLI entrypoint | `python -m src.cli workbench --help` via `workbench` subcommand | ✅ PASS |
 
 ## Interactive manual smoke (producer workflow)
@@ -26,7 +27,7 @@ Not automated in CI. When running locally with a display:
 2. Confirm **Library-Ordner** sidebar and playlist table are visible
 3. Confirm waveform panel and usage hint under detail area
 4. Add a local folder with `+` (user-owned path only — never commit private paths)
-5. Select a sample → waveform envelope draws
+5. Select a sample → waveform envelope draws; for a deep folder path, detail panel shows collapsed/segment path lines (not one unreadable horizontal line)
 6. **▶ Abspielen** in detail header → play from saved cue (or file start)
 7. **■ Stop** → stop preview
 8. **Left-click** waveform → play from saved cue

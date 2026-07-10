@@ -33,6 +33,7 @@ from .workbench_controller import (
     format_metadata_provenance_hint,
     format_path_display_lines,
     format_workbench_active_filter_summary,
+    format_workbench_detail_field_lines,
     format_workbench_search_status,
     format_workbench_view_restore_status,
     format_workbench_view_section_hidden_status,
@@ -1990,9 +1991,7 @@ class WorkbenchApp:
                         continue
                     if key == "short_audio_warning":
                         continue
-                    if isinstance(value, list):
-                        value = ", ".join(str(v) for v in value)
-                    lines.append(f"{key:16} {value}")
+                    lines.extend(format_workbench_detail_field_lines(key, value))
             else:
                 lines.extend(
                     [

@@ -17,6 +17,7 @@ from src.workbench_controller import (
     export_workbench_rows_to_csv,
     filter_workbench_rows,
     format_path_display_lines,
+    format_workbench_detail_field_lines,
     format_workbench_active_filter_summary,
     format_workbench_search_status,
     get_preview_start_ms,
@@ -119,6 +120,66 @@ def test_format_path_display_lines_wraps_long_segment_name():
 def test_format_path_display_lines_empty_path():
     assert format_path_display_lines("") == ["—"]
     assert format_path_display_lines("   ") == ["—"]
+
+
+def test_format_workbench_detail_field_lines_formats_long_library_folder():
+    path = "vault/" + "/".join(f"segment-{index}-extra" for index in range(8)) + "/pack"
+    lines = format_workbench_detail_field_lines("library_folder", path)
+    rendered = "\n".join(lines)
+    assert rendered.startswith("library_folder")
+    assert "…" in rendered
+    assert rendered.endswith("pack") or rendered.splitlines()[-1].endswith("pack")
+    assert path not in rendered
+
+
+def test_format_workbench_detail_field_lines_keeps_short_library_folder_inline():
+    path = "kits/drums"
+    lines = format_workbench_detail_field_lines("library_folder", path)
+    assert lines == [f"library_folder   {path}"]
+
+
+def test_workbench_set_detail_formats_long_paths_in_panel():
+    import tkinter as tk
+
+    from src.workbench import WorkbenchApp
+    from src.workbench_controller import WorkbenchRow
+
+    long_abs = "vault/" + "/".join(f"segment-{index}-extra" for index in range(8)) + "/sample.wav"
+    long_lib = "vault/" + "/".join(f"lib-{index}-extra" for index in range(8)) + "/pack"
+    row = WorkbenchRow(
+        display_name="demo",
+        relative_path="pack/demo.wav",
+        path=long_abs,
+        bpm=120.0,
+        key="C",
+        key_conf=0.8,
+        loudness=-10.0,
+        brightness=50.0,
+        sample_class="kick",
+        pred_type="kick",
+        status="ok",
+        details={"library_folder": long_lib, "duration_sec": 1.5},
+    )
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp.__new__(WorkbenchApp)
+        app._detail_text = tk.Text(root, wrap="word")
+        app._detail_row = None
+        app._clear_attack_suggestion = lambda: None  # type: ignore[method-assign]
+        app._update_preview_state = lambda _row: None  # type: ignore[method-assign]
+        app._draw_waveform = lambda _row: None  # type: ignore[method-assign]
+
+        WorkbenchApp._set_detail(app, row)
+        text = app._detail_text.get("1.0", tk.END)
+        assert "Pfad:" in text
+        assert "library_folder" in text
+        assert "…" in text or "› " in text
+        assert long_abs not in text
+        assert long_lib not in text
+    finally:
+        root.destroy()
 
 
 def test_controller_finds_audio_files(sample_folder: Path):

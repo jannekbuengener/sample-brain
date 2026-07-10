@@ -123,6 +123,24 @@ def format_path_display_lines(
     return lines
 
 
+PATH_LIKE_DETAIL_KEYS = frozenset({"library_folder"})
+
+
+def format_workbench_detail_field_lines(key: str, value: Any) -> list[str]:
+    """Format one field in the workbench detail *Analyse* section."""
+    if key in PATH_LIKE_DETAIL_KEYS and isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return [f"{key:16} —"]
+        formatted = format_path_display_lines(stripped)
+        if len(formatted) == 1:
+            return [f"{key:16} {formatted[0]}"]
+        return [f"{key}:", *formatted]
+    if isinstance(value, list):
+        value = ", ".join(str(v) for v in value)
+    return [f"{key:16} {value}"]
+
+
 def validate_workbench_folder(path_text: str) -> WorkbenchFolderValidation:
     """Validate a user-entered folder path for the workbench UI."""
     stripped = path_text.strip()
@@ -1196,6 +1214,7 @@ __all__ = [
     "format_metadata_provenance_hint",
     "format_metadata_provenance_label",
     "format_path_display_lines",
+    "format_workbench_detail_field_lines",
     "get_workbench_library_folders",
     "get_preview_start_ms",
     "preview_start_ms_from_waveform_x",
