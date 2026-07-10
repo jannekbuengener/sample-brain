@@ -21,6 +21,7 @@
 | Analysis limit restored on startup | `load_workbench_analysis_limit` + `tests/test_workbench_gui_smoke.py` | ✅ PASS |
 | FL export button present / state | `_fl_export_btn` in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
 | Catalog→cache import button present | `_catalog_import_btn` in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
+| Playlist action column per sample row | `playlist_action` / `+ Playlist` in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
 
 ## Interactive manual smoke (producer workflow)
 
@@ -44,6 +45,7 @@ Not automated in CI. When running locally with a display:
 16. **Loop wiederholen** → repeats loop region until Stop
 17. Enable **Attack bearbeiten** → single click sets attack marker
 18. **Attack vorschlagen** → shows suggestion only; **Vorschlag übernehmen** persists after explicit click
+19. Click **+ Playlist** on a sample row → choose existing playlist or enter a new name → status confirms assignment in `workbench_library.db` (`playlists` / `playlist_samples` tables)
 
 ## Limitations
 
@@ -54,7 +56,7 @@ Not automated in CI. When running locally with a display:
 
 ## Safety contract (unchanged)
 
-- Cue/loop/attack metadata lives in `~/.sample-brain/workbench_library.db` (or `SAMPLE_BRAIN_WORKBENCH_STATE_DIR`).
+- Cue/loop/attack metadata and song-context playlist assignments live in `~/.sample-brain/workbench_library.db` (or `SAMPLE_BRAIN_WORKBENCH_STATE_DIR`).
 - Preview may create **temporary** PCM WAV slices in the system temp directory; originals stay untouched.
 
 ---

@@ -10,6 +10,7 @@ import pytest
 
 from src.workbench_controller import (
     add_workbench_library_folder,
+    add_workbench_row_to_playlist,
     analyze_folder_for_workbench,
     apply_workbench_filters,
     apply_workbench_structured_filters,
@@ -18,11 +19,13 @@ from src.workbench_controller import (
     export_workbench_rows_to_fl_tags,
     filter_workbench_rows,
     format_path_display_lines,
+    format_playlist_add_status,
     format_workbench_detail_field_lines,
     format_workbench_active_filter_summary,
     format_workbench_search_status,
     get_preview_start_ms,
     get_workbench_library_folders,
+    list_workbench_playlists,
     is_catalog_readonly_row,
     load_cached_folder_rows,
     load_workbench_analysis_limit,
@@ -1207,3 +1210,52 @@ def test_hidden_search_does_not_filter_playlist_rows():
         effective_workbench_row_filters(None, filters_visible=True),
     )
     assert len(visible) == 2
+
+
+def test_list_workbench_playlists_returns_names(tmp_path: Path, monkeypatch):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    from src.workbench_library import create_playlist, workbench_library_db_path
+
+    create_playlist("Song A", db_path=workbench_library_db_path(state_dir=state_dir))
+    create_playlist("Song B", db_path=workbench_library_db_path(state_dir=state_dir))
+
+    assert list_workbench_playlists(
+        library_db_path=workbench_library_db_path(state_dir=state_dir)
+    ) == ["Song A", "Song B"]
+
+
+def test_add_workbench_row_to_playlist_and_status_message(tmp_path: Path, monkeypatch):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    from src.workbench_library import workbench_library_db_path
+
+    sample = tmp_path / "kick.wav"
+    sample.write_bytes(b"wav")
+    row = WorkbenchRow(
+        display_name="kick",
+        relative_path="kick.wav",
+        path=str(sample),
+        bpm=128.0,
+        key="Am",
+        key_conf=0.8,
+        loudness=-20.0,
+        brightness=2000.0,
+        sample_class="loop",
+        pred_type="Kick",
+        status="ok",
+    )
+    db_path = workbench_library_db_path(state_dir=state_dir)
+
+    added = add_workbench_row_to_playlist(row, "Song A", library_db_path=db_path)
+    assert added.result == "added"
+    assert format_playlist_add_status(added) == 'Sample zu Playlist "Song A" hinzugefügt'
+
+    duplicate = add_workbench_row_to_playlist(row, "Song A", library_db_path=db_path)
+    assert duplicate.result == "duplicate"
+    assert (
+        format_playlist_add_status(duplicate)
+        == 'Sample ist bereits in Playlist "Song A"'
+    )

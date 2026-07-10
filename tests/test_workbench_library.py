@@ -11,15 +11,21 @@ from src.workbench_library import (
     WorkbenchCueMetadata,
     WorkbenchCueNotFoundError,
     WorkbenchCueValidationError,
+    WorkbenchPlaylistValidationError,
+    add_sample_to_playlist,
     connect_workbench_library,
+    create_playlist,
     default_workbench_cue_metadata,
+    get_or_create_playlist,
     init_workbench_library,
     list_library_folders,
+    list_playlists,
     load_folder_samples,
     load_all_cached_samples,
     load_sample_cue,
     lookup_sample,
     normalize_display_name,
+    normalize_playlist_name,
     register_library_folder,
     remove_library_folder,
     save_sample_cue,
@@ -359,7 +365,7 @@ def test_new_library_db_has_cue_columns(library_db: Path):
     assert "cue_updated_at" in columns
     assert "loop_source" in columns
     assert "attack_source" in columns
-    assert WORKBENCH_LIBRARY_SCHEMA_VERSION == 3
+    assert WORKBENCH_LIBRARY_SCHEMA_VERSION == 4
 
 
 def test_legacy_library_db_is_migrated_to_add_cue_columns(tmp_path: Path):
@@ -627,3 +633,53 @@ def test_load_all_cached_samples_to_workbench_row_includes_library_folder(
     wb_row = load_all_cached_samples(db_path=library_db)[0].to_workbench_row()
     assert wb_row.details.get("library_folder") == str(folder.resolve())
     assert wb_row.relative_path.startswith("pack/")
+
+
+def test_new_library_db_has_playlist_tables(library_db: Path):
+    with connect_workbench_library(library_db) as conn:
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+    assert "playlists" in tables
+    assert "playlist_samples" in tables
+
+
+def test_legacy_v3_library_db_is_migrated_to_add_playlist_tables(tmp_path: Path):
+    db_path = tmp_path / "state" / "workbench_library.db"
+    _create_legacy_v1_library_db(db_path)
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        before = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='playlists'"
+        ).fetchone()
+    assert before is not None
+
+
+def test_normalize_playlist_name_rejects_empty():
+    with pytest.raises(WorkbenchPlaylistValidationError):
+        normalize_playlist_name("   ")
+
+
+def test_create_playlist_and_list_sorted(library_db: Path):
+    create_playlist("Song B", db_path=library_db)
+    create_playlist("Song A", db_path=library_db)
+    names = [playlist.name for playlist in list_playlists(db_path=library_db)]
+    assert names == ["Song A", "Song B"]
+
+
+def test_add_sample_to_playlist_prevents_duplicates(library_db: Path, tmp_path: Path):
+    sample = tmp_path / "kick.wav"
+    sample.write_bytes(b"wav")
+    playlist = create_playlist("Song A", db_path=library_db)
+    assert add_sample_to_playlist(playlist.id, sample, db_path=library_db) == "added"
+    assert add_sample_to_playlist(playlist.id, sample, db_path=library_db) == "duplicate"
+
+
+def test_get_or_create_playlist_is_idempotent(library_db: Path):
+    first = get_or_create_playlist("Song A", db_path=library_db)
+    second = get_or_create_playlist("song a", db_path=library_db)
+    assert first.id == second.id
+    assert len(list_playlists(db_path=library_db)) == 1
