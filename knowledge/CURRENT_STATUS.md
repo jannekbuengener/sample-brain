@@ -106,7 +106,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 
 - **Default switch to sqlite-vec** — blocked until latency gates PASS
 - **Tier B CLAP search-quality evidence** — Phase 1+2 merged; 4/6 classes on main; vocal/no-vocal proxy spike **HOLD_VOCAL_PROXY_FAILED**; genre/mood remain (#73 OPEN)
-- **Workbench Matching-/Vorschlagsansicht** — planning only ([#198](https://github.com/jannekbuengener/sample-brain/issues/198) OPEN); #117 epic closed
+- **Workbench Matching-/Vorschlagsansicht** — plan drafted ([#198](https://github.com/jannekbuengener/sample-brain/issues/198) OPEN; [`WORKBENCH_MATCHING_SUGGESTIONS_PLAN.md`](../docs/WORKBENCH_MATCHING_SUGGESTIONS_PLAN.md)); implementation follow-up after merge-GO
 - **numpy 2.5 / numba unblock** — tracked via [#196](https://github.com/jannekbuengener/sample-brain/issues/196) HOLD; do not merge until `numba` supports `numpy>=2.5`
 - **Phase 5 tags + FTS5 MVP** — not started (roadmap Phase 5)
 - **Large-scale private-sample validation** — synthetic/benchmark fixtures only
@@ -122,3 +122,4 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 | [SQLITE_VEC_GATE_EVIDENCE.md](../docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md) | Measured backend gates |
 | [SEARCH_QUALITY_EVIDENCE.md](../docs/benchmarks/SEARCH_QUALITY_EVIDENCE.md) | Tier A relevance gates |
 | [WORKBENCH_CUE_METADATA_PLAN.md](../docs/WORKBENCH_CUE_METADATA_PLAN.md) | Cue/loop/attack metadata plan (workbench, #117 closed) |
+| [WORKBENCH_MATCHING_SUGGESTIONS_PLAN.md](../docs/WORKBENCH_MATCHING_SUGGESTIONS_PLAN.md) | Matching-/Vorschlagsansicht V1 plan (#198) |

@@ -8,7 +8,7 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 |------|--------|-------|
 | Open issues | 🔶 4 total | #198 (Workbench matching plan), #196 (numpy/numba), #73–#74 (EPIC-2 follow-ups) |
 | #117 Workbench epic | ✅ Closed | Parent closed 2026-07-10; P0–P2 child work shipped (#190–#192 closed); runtime hotfix PR #199 merged |
-| #198 Workbench matching | 🔶 Open | Matching-/Vorschlagsansicht planen — planning only; parent was #117 |
+| #198 Workbench matching | 🔶 Open | Plan drafted — [`WORKBENCH_MATCHING_SUGGESTIONS_PLAN.md`](WORKBENCH_MATCHING_SUGGESTIONS_PLAN.md); implementation follow-up after merge-GO |
 | #196 numpy/numba | 🔶 HOLD | `numpy>=2.5` blocked by `numba` pin; supersedes closed Dependabot PR #103 |
 | #73 CLAP Tier-B | 🔶 4/6 on main | Phase 1+2 merged (#110, #111); vocal proxy spike **HOLD**; genre/mood pending |
 | #74 sqlite-vec ANN | 🔶 Tracking | Monitor ANN release readiness; default backend remains `numpy` |
@@ -312,7 +312,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Context: A later React/Tauri UI should follow a clear producer workflow.
 - **Partial:** Local Workbench MVP (`sample-brain workbench`) shipped — tkinter playlist/detail; filter/sort (#120–#121), last-folder memory (#124), CSV export (#125), library metadata cache v1, library folder list (#128), audio preview (#129–#130), read-only waveform panel (#131); cue/loop/attack metadata editable via edit modes; attack suggestion + loop once-preview shipped (#147–#149). See [`WORKBENCH_CUE_METADATA_PLAN.md`](WORKBENCH_CUE_METADATA_PLAN.md), [`WORKBENCH_GUI_SMOKE.md`](WORKBENCH_GUI_SMOKE.md).
 - **Shipped:** Workbench track **#117** closed (2026-07-10) — folder path entry (#124), library folder list (#128), catalog read-only bridge (PRs #158–#161), catalog→cache import (#192), structured search/filter UI, FL export (#191), analysis-limit persistence (#190), runtime hotfix PR #199.
-- **Open:** Workbench Matching-/Vorschlagsansicht — **#198** (planning only; no implementation scope in this issue); semantic/CLAP search remains **#73**; sqlite-vec/ANN remains **#74**.
+- **Open:** Workbench Matching-/Vorschlagsansicht — **#198** (plan in [`WORKBENCH_MATCHING_SUGGESTIONS_PLAN.md`](WORKBENCH_MATCHING_SUGGESTIONS_PLAN.md); implementation follow-up); semantic/CLAP search remains **#73**; sqlite-vec/ANN remains **#74**.
 - **Partial:** Windows desktop shortcut helper (`tools/windows/`) — local `.lnk` creation only, no installer/EXE.
 - Acceptance criteria:
   - user flows for search, inspect, preview, and export are documented
