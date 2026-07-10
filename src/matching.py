@@ -6,6 +6,7 @@ import re
 
 from sqlalchemy import text
 
+from .bpm_display import format_bpm_display
 from .db import ensure_features_pred_type_column, get_engine, init_db
 
 DEFAULT_LIMIT = 10
@@ -152,15 +153,15 @@ def _score_bpm_details(
     candidates = [
         (
             direct_score,
-            f"bpm direct match: {sample_bpm:.1f} vs {target_bpm:.1f}",
+            f"bpm direct match: {format_bpm_display(sample_bpm)} vs {format_bpm_display(target_bpm)}",
         ),
         (
             half_time_score,
-            f"bpm half-time fit: {sample_bpm:.1f} -> {sample_bpm * 2.0:.1f}",
+            f"bpm half-time fit: {format_bpm_display(sample_bpm)} -> {format_bpm_display(sample_bpm * 2.0)}",
         ),
         (
             double_time_score,
-            f"bpm double-time fit: {sample_bpm:.1f} -> {sample_bpm / 2.0:.1f}",
+            f"bpm double-time fit: {format_bpm_display(sample_bpm)} -> {format_bpm_display(sample_bpm / 2.0)}",
         ),
     ]
     best_score, best_reason = max(candidates, key=lambda item: item[0])
@@ -169,7 +170,7 @@ def _score_bpm_details(
 
     return _BpmMatchDetails(
         score=0.0,
-        reason=f"bpm mismatch: {sample_bpm:.1f} vs {target_bpm:.1f}",
+        reason=f"bpm mismatch: {format_bpm_display(sample_bpm)} vs {format_bpm_display(target_bpm)}",
     )
 
 
@@ -383,7 +384,7 @@ def run_match(
                     f"key_score={match.key_score:.4f}",
                     f"type_score={match.type_score:.4f}",
                     f"path={match.path}",
-                    f"bpm={'' if match.bpm is None else match.bpm}",
+                    f"bpm={format_bpm_display(match.bpm, placeholder='')}",
                     f"key={'' if match.key is None else match.key}",
                     f"pred_type={'' if match.pred_type is None else match.pred_type}",
                     f"reasons={'; '.join(match.reasons)}",

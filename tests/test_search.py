@@ -250,7 +250,7 @@ class TestRunSearchWithFakes:
         run_search(query="kick", model_id=1, topk=1)
         captured = capsys.readouterr()
         assert "path=/samples/kick.wav" in captured.out
-        assert "bpm=128.0" in captured.out
+        assert "bpm=128" in captured.out
         assert "key=Am" in captured.out
         assert "pred_type=kick" in captured.out
         assert "class=percussive" in captured.out

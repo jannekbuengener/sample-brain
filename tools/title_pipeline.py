@@ -23,6 +23,9 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+
+from src.bpm_display import format_bpm_tag, round_bpm_display
+
 import yaml
 
 TITLE_EXAMPLE = "HH, closed, [LOOP] - 132BPM, F#m, dark/vintage"
@@ -118,7 +121,10 @@ def normalize_key(key: str) -> str:
 
 
 def normalize_bpm(bpm: int) -> str:
-    return f"{int(bpm)}BPM"
+    tag = format_bpm_tag(bpm)
+    if tag is None:
+        return f"{int(bpm)}BPM"
+    return tag
 
 
 @dataclass
@@ -221,7 +227,7 @@ def normalize_bpm_by_profile(bpm: float, profile: Profile) -> Optional[int]:
 
         val = min(candidates, key=score)
 
-    return int(round(val))
+    return round_bpm_display(val)
 
 
 def build_title(existing: dict, analysis: dict, profile: Profile, defaults: dict) -> str:
@@ -241,7 +247,7 @@ def build_title(existing: dict, analysis: dict, profile: Profile, defaults: dict
     if typ == "ONE SHOT":
         typ = "ONE-SHOT"
 
-    bpm_s = bpm if isinstance(bpm, str) else normalize_bpm(int(bpm))
+    bpm_s = bpm if isinstance(bpm, str) else (format_bpm_tag(bpm) or normalize_bpm(int(bpm)))
     key_s = normalize_key(key) if isinstance(key, str) else str(key)
     char_s = (char or "").strip()
 

@@ -17,6 +17,8 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
+from src.bpm_display import format_bpm_display
+
 BPM_HINT_RE = re.compile(r'(\d{2,3})\s*?bpm', re.IGNORECASE)
 
 def extract_bpm_hint(text: str):
@@ -137,9 +139,9 @@ Notes:
     lines.append("## BPM distribution
 ")
     if len(bpm_stats) > 0:
-        lines.append(f"- min/median/max: **{bpm_stats.min():.1f} / {bpm_stats.median():.1f} / {bpm_stats.max():.1f}**
+        lines.append(f"- min/median/max: **{format_bpm_display(bpm_stats.min())} / {format_bpm_display(bpm_stats.median())} / {format_bpm_display(bpm_stats.max())}**
 ")
-        lines.append(f"- 10th/90th percentile: **{bpm_stats.quantile(0.1):.1f} / {bpm_stats.quantile(0.9):.1f}**
+        lines.append(f"- 10th/90th percentile: **{format_bpm_display(bpm_stats.quantile(0.1))} / {format_bpm_display(bpm_stats.quantile(0.9))}**
 ")
     lines.append("
 ## Key confidence

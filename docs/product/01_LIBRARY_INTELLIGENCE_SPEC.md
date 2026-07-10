@@ -67,7 +67,7 @@ Implemented in `src/db.py`:
 | Field | Type | Source | Notes |
 |-------|------|--------|-------|
 | `sample_id` | INTEGER PK/FK | `samples.id` | 1:1 with sample |
-| `bpm` | REAL | librosa tempo | Optional BPM normalisation via profile (`analyze.bpm_normalization`) |
+| `bpm` | REAL | librosa tempo | Optional BPM normalisation via profile (`analyze.bpm_normalization`); stored as analysis raw float. Producer-facing display uses `src/bpm_display.py` (whole integers, round half up). |
 | `key` | TEXT | chroma peak | Root note only today (no maj/min in stored key) |
 | `key_conf` | REAL | chroma prominence | Normalised peak/sum ratio; see §5.1 |
 | `loudness` | REAL | RMS dBFS | |
@@ -76,6 +76,8 @@ Implemented in `src/db.py`:
 | `chroma_mean`, `chroma_std` | BLOB | librosa chroma | float32 serialised |
 | `class` | TEXT | duration rules | `loop` or `oneshot` |
 | `pred_type` | TEXT | autotype | e.g. Kick, Snare, Loop, Pad |
+
+**Display vs storage:** `features.bpm` keeps the analysis raw float (optionally octave-normalised at analyze time). Workbench, FL export tags, title pipeline, search/match CLI text, and validation reports use `src/bpm_display.py` for producer-facing integers. Display rounding is **round half up** (`128.5` → `129`), not Python's built-in `round()` (banker's rounding).
 
 #### `sample_tags` — multi-source tags (target: primary keyword store)
 

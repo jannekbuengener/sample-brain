@@ -53,6 +53,7 @@ class TestMatchCandidates:
         assert score_bpm_match(70.0, 140.0, 8.0) == pytest.approx(0.9)
         assert results[1].bpm_score == pytest.approx(0.9)
         assert "half-time" in results[1].reasons[0]
+        assert "70 -> 140" in results[1].reasons[0]
 
     def test_missing_fields_do_not_crash(self):
         profile = MatchProfile(

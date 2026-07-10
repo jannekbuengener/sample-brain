@@ -64,6 +64,7 @@ from .workbench_controller import (
     WORKBENCH_VIEW_TOGGLE_HELP,
     WorkbenchViewSettings,
 )
+from .bpm_display import format_bpm_display
 from .workbench_attack_suggest import AttackSuggestion, suggest_attack_ms
 from .workbench_library import WorkbenchCueNotFoundError, WorkbenchCueValidationError
 from .workbench_preview import WorkbenchPreviewPlayer, preview_toggle_action
@@ -1173,7 +1174,7 @@ class WorkbenchApp:
                 iid=str(idx),
                 values=(
                     catalog_row_display_name(row),
-                    _fmt(row.bpm, digits=1),
+                    format_bpm_display(row.bpm),
                     row.key or "—",
                     _fmt(row.key_conf, digits=3),
                     _fmt(row.loudness, digits=2),
@@ -1968,7 +1969,7 @@ class WorkbenchApp:
             else:
                 lines.extend(
                     [
-                        f"bpm:          {_fmt(row.bpm, digits=1)}",
+                        f"bpm:          {format_bpm_display(row.bpm)}",
                         f"key:          {row.key or '—'}",
                         f"key_conf:     {_fmt(row.key_conf, digits=3)}",
                         f"loudness:     {_fmt(row.loudness, digits=2)}",
