@@ -28,10 +28,138 @@ def test_preview_start_ms_from_waveform_x_maps_click_to_ms():
     assert preview_start_ms_from_waveform_x(200, 200, 1000) == 999
 
 
-def test_workbench_layout_has_no_play_stop_buttons():
+def test_workbench_layout_has_play_stop_buttons():
     source = inspect.getsource(_workbench_app_cls()._build_layout)
-    assert "_play_btn" not in source
-    assert "_stop_btn" not in source
+    assert "_play_btn" in source
+    assert "_stop_btn" in source
+    assert "▶ Abspielen" in source
+    assert "■ Stop" in source
+
+
+def _mock_ttk_button():
+    enabled = {"value": False}
+
+    def state(spec: list[str]) -> None:
+        if "!disabled" in spec:
+            enabled["value"] = True
+        elif "disabled" in spec:
+            enabled["value"] = False
+
+    def instate(spec: list[str]) -> bool:
+        if "disabled" in spec:
+            return not enabled["value"]
+        if "!disabled" in spec:
+            return enabled["value"]
+        return False
+
+    return SimpleNamespace(state=state, instate=instate, _enabled=enabled)
+
+
+class _MockPreviewPlayer:
+    def __init__(self) -> None:
+        self.current_path: Path | None = None
+        self.play_calls: list[tuple[str, int]] = []
+        self.stop_calls: list[bool] = []
+
+    def play(self, path, *, start_ms: int = 0) -> PreviewResult:
+        self.play_calls.append((str(path), start_ms))
+        self.current_path = Path(path).resolve()
+        return PreviewResult(ok=True)
+
+    def stop(self) -> None:
+        self.stop_calls.append(True)
+        self.current_path = None
+
+
+def _button_state_app():
+    cls = _workbench_app_cls()
+    app = cls.__new__(cls)
+    app._busy = False
+    app._detail_row = None
+    app._preview_row_path = None
+    app._play_btn = _mock_ttk_button()
+    app._stop_btn = _mock_ttk_button()
+    app._preview = _MockPreviewPlayer()
+    app._status_var = SimpleNamespace(value="")
+    app._set_status = lambda message, *, tone="neutral": setattr(
+        app._status_var, "value", message
+    )
+    app._update_preview_state = cls._update_preview_state.__get__(app, cls)
+    app._play_preview = cls._play_preview.__get__(app, cls)
+    app._stop_preview = cls._stop_preview.__get__(app, cls)
+    return app
+
+
+def test_play_button_disabled_without_selection():
+    app = _button_state_app()
+    app._update_preview_state(None)
+    assert app._play_btn.instate(["disabled"])
+    assert app._stop_btn.instate(["disabled"])
+
+
+def test_play_button_disabled_during_busy(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.2, frequency_hz=440.0)
+    app = _button_state_app()
+    app._busy = True
+    app._update_preview_state(_sample_row(wav))
+    assert app._play_btn.instate(["disabled"])
+
+
+def test_play_button_enabled_with_selection(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.2, frequency_hz=440.0)
+    app = _button_state_app()
+    app._update_preview_state(_sample_row(wav))
+    assert app._play_btn.instate(["!disabled"])
+    assert app._stop_btn.instate(["disabled"])
+
+
+def test_play_button_calls_preview_with_selected_path(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.2, frequency_hz=440.0)
+    app = _button_state_app()
+    row = _sample_row(wav)
+    app._detail_row = row
+    app._preview_row_path = row.path
+    wb = _workbench_module()
+    with patch.object(wb, "get_preview_start_ms", return_value=0):
+        app._play_preview()
+    assert app._preview.play_calls == [(row.path, 0)]
+
+
+def test_stop_button_calls_preview_stop(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.2, frequency_hz=440.0)
+    app = _button_state_app()
+    row = _sample_row(wav)
+    app._detail_row = row
+    app._preview_row_path = row.path
+    app._preview.current_path = Path(row.path)
+    app._stop_preview()
+    assert app._preview.stop_calls == [True]
+    assert app._stop_btn.instate(["disabled"])
+
+
+def test_stop_button_enabled_while_playing(tmp_path: Path):
+    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.2, frequency_hz=440.0)
+    app = _button_state_app()
+    row = _sample_row(wav)
+    app._detail_row = row
+    app._preview_row_path = row.path
+    wb = _workbench_module()
+    with patch.object(wb, "get_preview_start_ms", return_value=0):
+        app._play_preview()
+    assert app._stop_btn.instate(["!disabled"])
+
+
+def test_update_preview_state_refreshes_buttons_on_selection_change(tmp_path: Path):
+    wav_a = write_sine_wav(tmp_path / "a.wav", duration_sec=0.2, frequency_hz=440.0)
+    wav_b = write_sine_wav(tmp_path / "b.wav", duration_sec=0.2, frequency_hz=880.0)
+    app = _button_state_app()
+    app._update_preview_state(_sample_row(wav_a))
+    assert app._play_btn.instate(["!disabled"])
+    app._update_preview_state(None)
+    assert app._play_btn.instate(["disabled"])
+    app._update_preview_state(_sample_row(wav_b))
+    assert app._preview_row_path == str(wav_b.resolve())
+    assert app._play_btn.instate(["!disabled"])
 
 
 def _sample_row(path: Path) -> WorkbenchRow:
@@ -101,8 +229,10 @@ def _playback_app(*, canvas_width: int = 400, loop_edit_mode: bool = False, atta
         play_calls.append((str(path), start_ms))
         return PreviewResult(ok=True)
 
-    app._preview = SimpleNamespace(play=mock_play)
+    app._preview = SimpleNamespace(play=mock_play, current_path=None)
     app._play_calls = play_calls
+    app._play_btn = _mock_ttk_button()
+    app._stop_btn = _mock_ttk_button()
     return app
 
 

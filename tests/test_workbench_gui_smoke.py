@@ -31,6 +31,10 @@ def test_workbench_gui_startup_smoke_constructs_key_widgets(tmp_path: Path):
         assert hasattr(app, "_loop_edit_mode_var")
         assert hasattr(app, "_attack_edit_mode_var")
         assert hasattr(app, "_attack_suggest_apply_btn")
+        assert hasattr(app, "_play_btn"), "play button must exist"
+        assert hasattr(app, "_stop_btn"), "stop button must exist"
+        assert app._play_btn.instate(["disabled"])
+        assert app._stop_btn.instate(["disabled"])
         assert hasattr(app, "_tree"), "playlist tree must exist"
         assert hasattr(app, "_show_search_var")
         assert hasattr(app, "_filter_bar")

@@ -411,6 +411,22 @@ class WorkbenchApp:
         ttk.Label(detail_header, text="Sample-Details", style="Heading.TLabel").pack(
             side=tk.LEFT, anchor=tk.W
         )
+        detail_actions = ttk.Frame(detail_header, style="Panel.TFrame")
+        detail_actions.pack(side=tk.RIGHT)
+        self._play_btn = ttk.Button(
+            detail_actions,
+            text="▶ Abspielen",
+            command=self._play_preview,
+            state=tk.DISABLED,
+        )
+        self._play_btn.pack(side=tk.LEFT, padx=(0, 4))
+        self._stop_btn = ttk.Button(
+            detail_actions,
+            text="■ Stop",
+            command=self._stop_preview,
+            state=tk.DISABLED,
+        )
+        self._stop_btn.pack(side=tk.LEFT)
 
         self._detail_text = tk.Text(
             detail_frame,
@@ -988,6 +1004,7 @@ class WorkbenchApp:
         self._cancel_event.clear()
         self._analyze_btn.state(["disabled"])
         self._cancel_btn.state(["!disabled"])
+        self._play_btn.state(["disabled"])
         self._clear_playlist()
         self._show_progress(0, 1)
         self._set_status("Analyse startet …", tone="active")
@@ -1293,6 +1310,14 @@ class WorkbenchApp:
     def _update_preview_state(self, row: WorkbenchRow | None) -> None:
         has_path = row is not None and bool(row.path)
         self._preview_row_path = row.path if has_path else None
+        if has_path and not self._busy:
+            self._play_btn.state(["!disabled"])
+        else:
+            self._play_btn.state(["disabled"])
+        if self._preview.current_path is not None:
+            self._stop_btn.state(["!disabled"])
+        else:
+            self._stop_btn.state(["disabled"])
 
     def _play_preview(
         self,
@@ -1318,9 +1343,11 @@ class WorkbenchApp:
                 self._set_status(f"Wiedergabe ab Anfang: {name}", tone="active")
         else:
             self._set_status(result.message or "Wiedergabe fehlgeschlagen.", tone="error")
+        self._update_preview_state(self._detail_row)
 
     def _stop_preview(self) -> None:
         self._preview.stop()
+        self._update_preview_state(self._detail_row)
 
     def _play_loop_preview(self) -> None:
         if self._busy:
