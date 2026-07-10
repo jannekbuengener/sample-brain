@@ -28,6 +28,8 @@ from .workbench_controller import (
     DEFAULT_CATALOG_LOAD_LIMIT,
     export_workbench_rows_to_csv,
     export_workbench_rows_to_fl_tags,
+    format_catalog_import_preview_message,
+    format_catalog_import_result_message,
     effective_workbench_row_filters,
     effective_workbench_text_query,
     format_catalog_load_status,
@@ -42,6 +44,7 @@ from .workbench_controller import (
     WorkbenchSearchMode,
     get_preview_start_ms,
     get_workbench_library_folders,
+    import_catalog_rows_to_cache,
     is_catalog_readonly_row,
     load_all_cached_rows,
     load_cached_folder_rows,
@@ -51,6 +54,7 @@ from .workbench_controller import (
     load_workbench_sample_cue,
     load_workbench_view_settings,
     parse_workbench_bpm_bound,
+    preview_catalog_import,
     preview_start_ms_from_waveform_x,
     resolve_workbench_fl_user_data_path,
     remove_workbench_library_folder,
@@ -335,6 +339,13 @@ class WorkbenchApp:
             filter_bar, text="FL exportieren", command=self._export_fl, state=tk.DISABLED
         )
         self._fl_export_btn.pack(side=tk.RIGHT, padx=(8, 0))
+        self._catalog_import_btn = ttk.Button(
+            filter_bar,
+            text="Aus Catalog importieren",
+            command=self._import_catalog_to_cache,
+            state=tk.DISABLED,
+        )
+        self._catalog_import_btn.pack(side=tk.RIGHT, padx=(8, 0))
 
         structured_bar = ttk.Frame(playlist_frame, style="Panel.TFrame")
         structured_bar.pack(fill=tk.X, pady=(0, 6))
@@ -1199,6 +1210,7 @@ class WorkbenchApp:
             )
         self._visible_rows = visible
         self._update_fl_export_button_state()
+        self._update_catalog_import_button_state()
         self._update_sort_headings()
         self._tree.delete(*self._tree.get_children())
         for idx, row in enumerate(self._visible_rows):
@@ -1455,6 +1467,90 @@ class WorkbenchApp:
             self._fl_export_btn.state(["!disabled"])
         else:
             self._fl_export_btn.state(["disabled"])
+
+    def _update_catalog_import_button_state(self) -> None:
+        rows = self._playlist_rows_for_export()
+        catalog_rows = [row for row in rows if is_catalog_readonly_row(row)]
+        if self._catalog_library_mode and catalog_rows and not self._busy:
+            self._catalog_import_btn.state(["!disabled"])
+        else:
+            self._catalog_import_btn.state(["disabled"])
+
+    def _pick_import_target_folder(self) -> Path | None:
+        folders = get_workbench_library_folders()
+        if not folders:
+            messagebox.showinfo(
+                "Catalog-Import",
+                "Bitte zuerst einen Library-Ordner hinzufügen, "
+                "in den importiert werden soll.",
+            )
+            return None
+        current = self._folder_var.get().strip()
+        if current:
+            validation = validate_workbench_folder(current)
+            if validation.ok and validation.normalized_path is not None:
+                resolved = str(validation.normalized_path)
+                if any(folder.path == resolved for folder in folders):
+                    return validation.normalized_path
+        if len(folders) == 1:
+            return Path(folders[0].path)
+        lines = "\n".join(f"• {folder.path}" for folder in folders[:8])
+        if len(folders) > 8:
+            lines += f"\n• … ({len(folders)} Ordner gesamt)"
+        messagebox.showinfo(
+            "Catalog-Import",
+            "Bitte den Zielordner im Feld „Ordner“ setzen "
+            "(muss in der Library registriert sein).\n\n"
+            f"Registrierte Ordner:\n{lines}",
+        )
+        return None
+
+    def _import_catalog_to_cache(self) -> None:
+        if self._busy or not self._catalog_library_mode:
+            return
+        rows = [
+            row
+            for row in self._playlist_rows_for_export()
+            if is_catalog_readonly_row(row)
+        ]
+        if not rows:
+            messagebox.showinfo(
+                "Catalog-Import",
+                "Keine Catalog-Zeilen in der aktuellen Ansicht.",
+            )
+            return
+        target_folder = self._pick_import_target_folder()
+        if target_folder is None:
+            return
+        preview = preview_catalog_import(rows, target_folder)
+        if preview.error_message and not preview.items:
+            messagebox.showerror("Catalog-Import", preview.error_message)
+            return
+        if not messagebox.askyesno(
+            "Aus Catalog importieren",
+            format_catalog_import_preview_message(preview),
+        ):
+            self._set_status("Catalog-Import abgebrochen.", tone="neutral")
+            return
+        result = import_catalog_rows_to_cache(
+            rows,
+            target_folder,
+            conflict_policy="overwrite_analysis_only",
+        )
+        messagebox.showinfo(
+            "Catalog-Import",
+            format_catalog_import_result_message(result),
+        )
+        if result.imported > 0:
+            self._load_cached_folder(target_folder, announce_if_empty=False)
+            self._set_status(
+                f"Catalog-Import: {result.imported} Zeile(n) in Cache übernommen.",
+                tone="success",
+            )
+        elif result.cancelled:
+            self._set_status("Catalog-Import abgebrochen.", tone="neutral")
+        else:
+            self._set_status("Catalog-Import: keine neuen Zeilen.", tone="neutral")
 
     def _export_fl(self) -> None:
         rows = self._playlist_rows_for_export()

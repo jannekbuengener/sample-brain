@@ -645,6 +645,29 @@ def upsert_sample(
         conn.commit()
 
 
+def load_sample_by_path(
+    original_path: Path | str,
+    *,
+    db_path: Path | None = None,
+) -> CachedWorkbenchRow | None:
+    """Load a cached sample row by absolute path, ignoring mtime/size match."""
+    path = str(Path(original_path).expanduser().resolve())
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT s.*, f.path AS library_folder_path
+            FROM samples s
+            JOIN folders f ON f.id = s.folder_id
+            WHERE s.original_path = ?
+            """,
+            (path,),
+        ).fetchone()
+    if row is None:
+        return None
+    return _cached_row_from_sqlite_row(row)
+
+
 def load_folder_samples(
     folder_path: Path | str,
     *,
@@ -694,6 +717,7 @@ __all__ = [
     "list_library_folders",
     "load_all_cached_samples",
     "load_folder_samples",
+    "load_sample_by_path",
     "load_sample_cue",
     "lookup_sample",
     "mark_folder_opened",
