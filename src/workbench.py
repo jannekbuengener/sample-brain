@@ -43,6 +43,8 @@ from .workbench_controller import (
     format_workbench_search_status,
     format_workbench_view_restore_status,
     format_workbench_view_section_hidden_status,
+    format_workbench_view_toolbar_hidden_status,
+    format_workbench_view_toolbar_shown_status,
     WorkbenchSearchStatusContext,
     WorkbenchSearchMode,
     get_preview_start_ms,
@@ -166,6 +168,7 @@ class WorkbenchApp:
         self._view_settings = load_workbench_view_settings()
 
         self._build_styles()
+        self._build_menubar()
         self._build_layout()
         self._restore_last_folder()
         self._refresh_library_list()
@@ -220,8 +223,24 @@ class WorkbenchApp:
         style.configure("TEntry", fieldbackground=PANEL_ALT, foreground=TEXT, insertcolor=TEXT)
         style.configure("Status.TLabel", background=PANEL_ALT, foreground=TEXT_MUTED, padding=(8, 4))
 
+    def _build_menubar(self) -> None:
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+
+        edit_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Edit", menu=edit_menu)
+        self._show_view_toolbar_var = tk.BooleanVar(
+            value=self._view_settings.show_view_toolbar
+        )
+        edit_menu.add_checkbutton(
+            label="Ansichtsleiste anzeigen",
+            variable=self._show_view_toolbar_var,
+            command=self._on_view_toolbar_toggled,
+        )
+
     def _build_layout(self) -> None:
         toolbar = ttk.Frame(self.root, padding=(12, 10, 12, 6))
+        self._toolbar = toolbar
         toolbar.pack(fill=tk.X)
 
         ttk.Label(toolbar, text="Ordner:").pack(side=tk.LEFT, padx=(0, 6))
@@ -247,6 +266,7 @@ class WorkbenchApp:
         self._limit_entry.bind("<FocusOut>", self._on_limit_focus_out)
 
         view_bar = ttk.Frame(self.root, padding=(12, 0, 12, 6))
+        self._view_bar = view_bar
         view_bar.pack(fill=tk.X)
         ttk.Label(view_bar, text="Ansicht:", style="Muted.TLabel").pack(side=tk.LEFT, padx=(0, 8))
         self._show_search_var = tk.BooleanVar(value=self._view_settings.show_search)
@@ -290,6 +310,7 @@ class WorkbenchApp:
         ).pack(side=tk.LEFT, padx=(16, 0))
 
         body = ttk.Frame(self.root, padding=(12, 0, 12, 8))
+        self._body = body
         body.pack(fill=tk.BOTH, expand=True)
         body.columnconfigure(0, weight=0, minsize=200)
         body.columnconfigure(1, weight=3)
@@ -606,10 +627,12 @@ class WorkbenchApp:
         self._progress = ttk.Progressbar(status_inner, mode="determinate", maximum=100)
         self._progress.pack(fill=tk.X, pady=(4, 0))
         self._progress.pack_forget()
+        self._apply_view_toolbar_visibility(notify=False)
         self._apply_view_visibility(notify=False)
 
     def _current_view_settings(self) -> WorkbenchViewSettings:
         return WorkbenchViewSettings(
+            show_view_toolbar=bool(self._show_view_toolbar_var.get()),
             show_search=bool(self._show_search_var.get()),
             show_filters=bool(self._show_filters_var.get()),
             show_library_manage=bool(self._show_library_manage_var.get()),
@@ -619,6 +642,34 @@ class WorkbenchApp:
     def _persist_view_settings(self) -> None:
         self._view_settings = self._current_view_settings()
         save_workbench_view_settings(self._view_settings)
+
+    def _view_bar_is_packed(self) -> bool:
+        try:
+            self._view_bar.pack_info()
+            return True
+        except tk.TclError:
+            return False
+
+    def _apply_view_toolbar_visibility(self, *, notify: bool) -> None:
+        visible = bool(self._show_view_toolbar_var.get())
+        if visible:
+            if not self._view_bar_is_packed():
+                self._view_bar.pack(fill=tk.X, before=self._body)
+        else:
+            self._view_bar.pack_forget()
+        settings = self._current_view_settings()
+        self._view_settings = settings
+        self._persist_view_settings()
+        if notify:
+            status_message = (
+                format_workbench_view_toolbar_shown_status()
+                if visible
+                else format_workbench_view_toolbar_hidden_status()
+            )
+            self._set_status(status_message, tone="neutral")
+
+    def _on_view_toolbar_toggled(self) -> None:
+        self._apply_view_toolbar_visibility(notify=True)
 
     def _end_waveform_edit_modes(self) -> None:
         self._loop_edit_mode_var.set(False)
@@ -686,10 +737,12 @@ class WorkbenchApp:
         self._apply_view_visibility(notify=True, status_message=status_message)
 
     def _restore_default_view(self) -> None:
+        self._show_view_toolbar_var.set(True)
         self._show_search_var.set(True)
         self._show_filters_var.set(True)
         self._show_library_manage_var.set(True)
         self._show_waveform_tools_var.set(True)
+        self._apply_view_toolbar_visibility(notify=False)
         self._apply_view_visibility(
             notify=True,
             status_message=format_workbench_view_restore_status(),
