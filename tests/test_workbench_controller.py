@@ -663,13 +663,13 @@ def test_workbench_clear_filter_resets_all_filter_fields():
     root.withdraw()
     try:
         app = WorkbenchApp.__new__(WorkbenchApp)
-        app._filter_var = tk.StringVar(value="kick")
-        app._source_filter_var = tk.StringVar(value="cache")
-        app._type_filter_var = tk.StringVar(value="kick")
-        app._key_filter_var = tk.StringVar(value="Am")
-        app._status_filter_var = tk.StringVar(value="ok")
-        app._bpm_min_var = tk.StringVar(value="120")
-        app._bpm_max_var = tk.StringVar(value="130")
+        app._filter_var = tk.StringVar(master=root, value="kick")
+        app._source_filter_var = tk.StringVar(master=root, value="cache")
+        app._type_filter_var = tk.StringVar(master=root, value="kick")
+        app._key_filter_var = tk.StringVar(master=root, value="Am")
+        app._status_filter_var = tk.StringVar(master=root, value="ok")
+        app._bpm_min_var = tk.StringVar(master=root, value="120")
+        app._bpm_max_var = tk.StringVar(master=root, value="130")
         refreshed = {"count": 0}
 
         def _refresh() -> None:
@@ -677,6 +677,7 @@ def test_workbench_clear_filter_resets_all_filter_fields():
 
         app._refresh_playlist_view = _refresh  # type: ignore[method-assign]
         WorkbenchApp._clear_filter(app)
+        root.update_idletasks()
         assert app._filter_var.get() == ""
         assert app._source_filter_var.get() == FILTER_ALL_LABEL
         assert app._type_filter_var.get() == FILTER_ALL_LABEL
