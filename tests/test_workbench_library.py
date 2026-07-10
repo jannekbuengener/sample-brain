@@ -17,8 +17,10 @@ from src.workbench_library import (
     create_playlist,
     default_workbench_cue_metadata,
     get_or_create_playlist,
+    get_playlist_by_name,
     init_workbench_library,
     list_library_folders,
+    list_playlist_sample_paths,
     list_playlists,
     load_folder_samples,
     load_all_cached_samples,
@@ -683,3 +685,25 @@ def test_get_or_create_playlist_is_idempotent(library_db: Path):
     second = get_or_create_playlist("song a", db_path=library_db)
     assert first.id == second.id
     assert len(list_playlists(db_path=library_db)) == 1
+
+
+def test_get_playlist_by_name_is_case_insensitive(library_db: Path):
+    create_playlist("Song A", db_path=library_db)
+    found = get_playlist_by_name("song a", db_path=library_db)
+    assert found is not None
+    assert found.name == "Song A"
+    assert get_playlist_by_name("Missing", db_path=library_db) is None
+
+
+def test_list_playlist_sample_paths_empty_and_ordered(library_db: Path, tmp_path: Path):
+    first = tmp_path / "kick.wav"
+    second = tmp_path / "snare.wav"
+    first.write_bytes(b"a")
+    second.write_bytes(b"b")
+    playlist = create_playlist("Song A", db_path=library_db)
+    assert list_playlist_sample_paths(playlist.id, db_path=library_db) == []
+
+    add_sample_to_playlist(playlist.id, first, db_path=library_db)
+    add_sample_to_playlist(playlist.id, second, db_path=library_db)
+    paths = list_playlist_sample_paths(playlist.id, db_path=library_db)
+    assert paths == [str(first.resolve()), str(second.resolve())]

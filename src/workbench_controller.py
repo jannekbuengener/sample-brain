@@ -36,7 +36,9 @@ from .workbench_library import (
     WorkbenchPlaylistValidationError,
     add_sample_to_playlist,
     get_or_create_playlist,
+    get_playlist_by_name,
     list_library_folders,
+    list_playlist_sample_paths,
     list_playlists,
     load_all_cached_samples,
     load_folder_samples,
@@ -1777,6 +1779,88 @@ def format_playlist_add_status(outcome: WorkbenchPlaylistAddOutcome) -> str:
     return f'Sample ist bereits in Playlist "{outcome.playlist_name}"'
 
 
+def _workbench_row_for_playlist_sample_path(
+    sample_path: str,
+    *,
+    playlist_name: str,
+    library_db_path: Path,
+) -> WorkbenchRow:
+    """Resolve a playlist sample path to a workbench row without raising."""
+    cached = load_sample_by_path(sample_path, db_path=library_db_path)
+    if cached is not None:
+        row = cached.to_workbench_row()
+        details = dict(row.details)
+        details["song_playlist"] = playlist_name
+        return WorkbenchRow(
+            display_name=row.display_name,
+            relative_path=row.relative_path,
+            path=row.path,
+            bpm=row.bpm,
+            key=row.key,
+            key_conf=row.key_conf,
+            loudness=row.loudness,
+            brightness=row.brightness,
+            sample_class=row.sample_class,
+            pred_type=row.pred_type,
+            status=row.status,
+            error=row.error,
+            error_code=row.error_code,
+            details=details,
+        )
+
+    path = Path(sample_path)
+    display = normalize_display_name(path.name) if path.name else sample_path
+    if path.is_file():
+        return WorkbenchRow(
+            display_name=display,
+            relative_path=path.name,
+            path=str(path.resolve()),
+            bpm=None,
+            key=None,
+            key_conf=None,
+            loudness=None,
+            brightness=None,
+            sample_class=None,
+            pred_type=None,
+            status="ok",
+            details={"song_playlist": playlist_name},
+        )
+
+    return _make_error_row(
+        display_name=display,
+        rel=path.name or sample_path,
+        path=path,
+        error_code="unsupported_or_unreadable_audio",
+        error_detail="file not found",
+    )
+
+
+def load_playlist_workbench_rows(
+    playlist_name: str,
+    *,
+    library_db_path: Path | None = None,
+) -> list[WorkbenchRow]:
+    """Load workbench rows for all samples assigned to a song-context playlist."""
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    playlist = get_playlist_by_name(playlist_name, db_path=db)
+    if playlist is None:
+        return []
+    paths = list_playlist_sample_paths(playlist.id, db_path=db)
+    return [
+        _workbench_row_for_playlist_sample_path(
+            sample_path,
+            playlist_name=playlist.name,
+            library_db_path=db,
+        )
+        for sample_path in paths
+    ]
+
+
+def format_playlist_load_status(playlist_name: str, rows: list[WorkbenchRow]) -> str:
+    """Format a user-facing status message after loading a playlist."""
+    return f'Playlist "{playlist_name}" geladen: {len(rows)} Samples'
+
+
 __all__ = [
     "ALL_LIBRARY_VIEW_LABEL",
     "CATALOG_VIEW_LABEL",
@@ -1820,6 +1904,7 @@ __all__ = [
     "format_catalog_import_result_message",
     "format_catalog_load_status",
     "format_playlist_add_status",
+    "format_playlist_load_status",
     "format_workbench_active_filter_summary",
     "format_workbench_search_status",
     "format_workbench_view_restore_status",
@@ -1847,6 +1932,7 @@ __all__ = [
     "load_all_cached_rows",
     "load_cached_folder_rows",
     "load_catalog_rows",
+    "load_playlist_workbench_rows",
     "load_workbench_analysis_limit",
     "load_workbench_last_folder",
     "load_workbench_view_settings",
