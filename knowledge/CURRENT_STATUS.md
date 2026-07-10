@@ -2,17 +2,18 @@
 
 ## Live State
 
-- **Branch:** `main` @ `2d42ee3` (docs backlog sync after workbench close; runtime hotfix PR #199)
+- **Branch:** `main` @ `9968c6d` (feat: add workbench playlist detail view; PR #206)
 - **Open PRs:** none
 - **Open issues:** 4 — [#198](https://github.com/jannekbuengener/sample-brain/issues/198) Workbench matching/suggestions planning, [#196](https://github.com/jannekbuengener/sample-brain/issues/196) numpy/numba HOLD, [#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B, [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN
 - **Local Workbench:** `sample-brain workbench` — tkinter MVP shipped; parent epic [#117](https://github.com/jannekbuengener/sample-brain/issues/117) **closed** 2026-07-10
-  - Shipped under #117: folder analysis, playlist/filter/sort, library cache + multi-folder view, catalog read-only bridge, catalog→cache import (#192), FL export (#191), analysis-limit persistence (#190), cue/loop/attack metadata, audio preview + waveform, structured search UI, runtime hotfix PR #199
+  - Shipped under #117: folder analysis, sample table filter/sort, library cache + multi-folder view, catalog read-only bridge, catalog→cache import (#192), FL export (#191), analysis-limit persistence (#190), cue/loop/attack metadata, audio preview + waveform, structured search UI, runtime hotfix PR #199
+  - **Playlist workflow V1 shipped:** [#203](https://github.com/jannekbuengener/sample-brain/issues/203) closed (PR #204) — per-row `+ Playlist`, dialog, local song-context assignment; [#205](https://github.com/jannekbuengener/sample-brain/issues/205) closed (PR #206) — sidebar **Playlists**, load assigned samples into existing table
   - Open follow-up: [#198](https://github.com/jannekbuengener/sample-brain/issues/198) Matching-/Vorschlagsansicht planen (planning only; semantic search remains #73; sqlite-vec/ANN remains #74)
 - **Dependency HOLD:** [#196](https://github.com/jannekbuengener/sample-brain/issues/196) — `numpy>=2.5` blocked by `numba` pin; Dependabot PR #103 closed (not merged)
 - **Product pillars:** All 5 specs under [`docs/product/`](../docs/product/README.md) — #90 closed via PR #107; no open product-docs issues
-- **Recently closed:** [#117](https://github.com/jannekbuengener/sample-brain/issues/117) Workbench epic (2026-07-10); [#72](https://github.com/jannekbuengener/sample-brain/issues/72) key confidence evidence via PR #108 — [KEY_CONF_EVIDENCE.md](../docs/benchmarks/KEY_CONF_EVIDENCE.md)
+- **Recently closed:** [#205](https://github.com/jannekbuengener/sample-brain/issues/205) playlist detail view (PR #206); [#203](https://github.com/jannekbuengener/sample-brain/issues/203) playlist assignment (PR #204); [#117](https://github.com/jannekbuengener/sample-brain/issues/117) Workbench epic (2026-07-10); [#72](https://github.com/jannekbuengener/sample-brain/issues/72) key confidence evidence via PR #108 — [KEY_CONF_EVIDENCE.md](../docs/benchmarks/KEY_CONF_EVIDENCE.md)
 - **Current focus:** EPIC-2 follow-ups — #198 Workbench matching plan; #196 dependency HOLD; #73 vocal/no-vocal deferred after proxy spike HOLD; genre/mood data strategy; #74 ANN tracking
-- **Tests:** CI green on `main`; local `pytest -q` — 567 passed, 1 skipped (last full-suite run on `main`)
+- **Tests:** CI green on `main`; local `pytest -q` — 583 passed, 1 skipped (last full-suite run on `main`)
 
 ## Search Quality Campaign — Closed
 
@@ -76,7 +77,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 - **Analyze** — extracts audio features via librosa; reads from pre-scanned catalog
 - **Autotype** — rule-based + optional kNN classification
 - **Export** — writes smart tags into FL Studio Browser (**legacy/fallback** CLI path; VST3 plugin is the product target)
-- **Local Workbench** — tkinter MVP: enter or pick folder path (last folder restored from `~/.sample-brain/`), library folder list with add/remove (cache-only), cancel mid-analysis, filter/sort playlist, segment-wise detail paths + copy, CSV export, library cache for re-analysis skip, waveform play surface (left = saved cue, right = click position), double-click/Space preview, read-only waveform envelope + cue marker, run in-process analyze + rule-based type (`workbench` subcommand)
+- **Local Workbench** — tkinter MVP: enter or pick folder path (last folder restored from `~/.sample-brain/`), library folder list with add/remove (cache-only), cancel mid-analysis, filter/sort sample table, segment-wise detail paths, CSV export, library cache for re-analysis skip, waveform play surface (left = saved cue, right = click position), double-click/Space preview, read-only waveform envelope + cue marker, run in-process analyze + rule-based type; **song-context playlists V1** — per-row `+ Playlist` assignment ([#203](https://github.com/jannekbuengener/sample-brain/issues/203), PR #204), sidebar playlist list and load into table ([#205](https://github.com/jannekbuengener/sample-brain/issues/205), PR #206) (`workbench` subcommand)
 - **Packaging** — `sample-brain --help` entry point works
 - **CLI** — core pipeline + optional embed/index/search/vec/benchmark/db doctor
 
@@ -107,6 +108,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 - **Default switch to sqlite-vec** — blocked until latency gates PASS
 - **Tier B CLAP search-quality evidence** — Phase 1+2 merged; 4/6 classes on main; vocal/no-vocal proxy spike **HOLD_VOCAL_PROXY_FAILED**; genre/mood remain (#73 OPEN)
 - **Workbench Matching-/Vorschlagsansicht** — plan drafted ([#198](https://github.com/jannekbuengener/sample-brain/issues/198) OPEN; [`WORKBENCH_MATCHING_SUGGESTIONS_PLAN.md`](../docs/WORKBENCH_MATCHING_SUGGESTIONS_PLAN.md)); implementation follow-up after merge-GO
+- **Workbench playlist management (optional later)** — rename/delete playlist; remove sample from playlist — not scoped; no open issue
 - **numpy 2.5 / numba unblock** — tracked via [#196](https://github.com/jannekbuengener/sample-brain/issues/196) HOLD; do not merge until `numba` supports `numpy>=2.5`
 - **Phase 5 tags + FTS5 MVP** — not started (roadmap Phase 5)
 - **Large-scale private-sample validation** — synthetic/benchmark fixtures only
@@ -122,4 +124,5 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 | [SQLITE_VEC_GATE_EVIDENCE.md](../docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md) | Measured backend gates |
 | [SEARCH_QUALITY_EVIDENCE.md](../docs/benchmarks/SEARCH_QUALITY_EVIDENCE.md) | Tier A relevance gates |
 | [WORKBENCH_CUE_METADATA_PLAN.md](../docs/WORKBENCH_CUE_METADATA_PLAN.md) | Cue/loop/attack metadata plan (workbench, #117 closed) |
+| [WORKBENCH_GUI_SMOKE.md](../docs/WORKBENCH_GUI_SMOKE.md) | Workbench GUI smoke status (incl. playlist V1) |
 | [WORKBENCH_MATCHING_SUGGESTIONS_PLAN.md](../docs/WORKBENCH_MATCHING_SUGGESTIONS_PLAN.md) | Matching-/Vorschlagsansicht V1 plan (#198) |
