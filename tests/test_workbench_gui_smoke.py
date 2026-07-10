@@ -8,10 +8,13 @@ from unittest.mock import patch
 
 from src.workbench import WAVEFORM_USAGE_HINT, WorkbenchApp
 from src.workbench_controller import (
+    FILTER_ALL_LABEL,
     WORKBENCH_VIEW_TOGGLE_HELP,
+    WorkbenchResult,
     WorkbenchRow,
     load_workbench_analysis_limit,
     save_workbench_analysis_limit,
+    workbench_filter_options,
 )
 
 
@@ -95,6 +98,38 @@ def test_workbench_restores_persisted_analysis_limit(tmp_path: Path, monkeypatch
         app = WorkbenchApp(root)
         root.update_idletasks()
         assert app._limit_var.get() == "25"
+    finally:
+        root.destroy()
+
+
+def test_workbench_populate_playlist_updates_structured_filter_options(tmp_path: Path):
+    """Regression: playlist population must refresh type/key filter combos."""
+    sample = tmp_path / "kick.wav"
+    sample.write_bytes(b"data")
+    row = WorkbenchRow(
+        display_name="kick",
+        relative_path="kick.wav",
+        path=str(sample),
+        bpm=128.0,
+        key="Am",
+        key_conf=0.8,
+        loudness=-20.0,
+        brightness=2000.0,
+        sample_class="loop",
+        pred_type="Kick",
+        status="ok",
+        details={"duration_sec": "2.5"},
+    )
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        options = workbench_filter_options([row])
+        app._populate_playlist(WorkbenchResult(summary={"ok": 1}, rows=[row]))
+        root.update_idletasks()
+        assert app._type_filter_combo["values"] == (FILTER_ALL_LABEL, *options["types"])
+        assert app._key_filter_combo["values"] == (FILTER_ALL_LABEL, *options["keys"])
     finally:
         root.destroy()
 

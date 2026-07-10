@@ -64,6 +64,7 @@ from .workbench_controller import (
     save_workbench_view_settings,
     sort_workbench_rows,
     validate_workbench_folder,
+    workbench_filter_options,
     workbench_rows_for_fl_export,
     DEFAULT_WORKBENCH_VIEW_SETTINGS,
     VIEW_SECTION_FILTERS,
