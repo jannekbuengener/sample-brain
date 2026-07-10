@@ -2,31 +2,17 @@
 
 ## Live State
 
-- **Branch:** `main` @ `25d6942` (BPM filter #164; search status polish in flight)
-- **Open PRs:** 1 Dependabot — **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** (`numba` requires `numpy<2.5`)
-- **Open issues:** 3 — [#117](https://github.com/jannekbuengener/sample-brain/issues/117) Workbench follow-ups (large-catalog UX + import plan next), [#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B, [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN
-- **Local Workbench MVP:** `sample-brain workbench` — tkinter folder analysis + playlist/detail + waveform-as-play-surface + cue/loop metadata + loop edit mode (toggle + two-click set + clear)
-- **Workbench P0 (#117, merged):** cancel analysis (#119), folder path entry (#118), playlist filter (#120), column sort (#121), detail path polish + copy (#122)
-- **Workbench P1 (#117, merged):** last-folder memory (#124), CSV playlist export (#125)
-- **Workbench library cache v1 (#117):** user-local SQLite (`~/.sample-brain/workbench_library.db`) remembers analyzed folders/samples; invalidation via path + size + mtime; internal `display_name` only — original files unchanged
-- **Workbench library folder list (#117, merged):** sidebar lists known library folders; `+` adds folder to cache; `−` removes cache metadata only; **Alle Library-Samples** loads all cached rows across folders; global search/filter/sort across cache (#155)
-- **Workbench catalog bridge (#117, shipped):** read-only `catalog.db` browse via sidebar **Catalog lesen**; loader + UI; default load limit with total count status; catalog rows prefixed in playlist; edit modes blocked with clear message; no writes to catalog
-- **Workbench catalog import (#117, planned):** [`WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md`](../docs/WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md) — catalog→cache semantics; explicit user action; no implementation yet
-- **Workbench search UI (#117, shipped core):** [`WORKBENCH_SEARCH_UI_PLAN.md`](../docs/WORKBENCH_SEARCH_UI_PLAN.md) — structured filters, status bar, active-filter summary, reset button shipped; optional layout polish remains; semantic/CLAP/#73 and sqlite-vec/#74 out of scope
-- **Workbench audio preview v1 (#117, merged PR #129):** platform playback (winsound/afplay/aplay); non-WAV via temp PCM decode; original files never modified
-- **Workbench preview controls (#117, merged PR #130):** double-click row to play; Space toggles play/stop; selection preserved across filter/sort; preview disabled during analysis
-- **Workbench waveform panel v1 (#117, merged PR #131):** read-only peak envelope under detail panel (`workbench_waveform`); original files unchanged
-- **Workbench cue metadata v1 (#117, merged PR #133):** schema v2 in `workbench_library.db`; load/save API; read-only cue marker on waveform
-- **Workbench preview cue offset (#117, merged PR #135):** play starts at saved `cue_start_ms` via temp in-memory slice; original files unchanged
-- **Workbench waveform play controls (#117, merged PR #136):** visible Play/Stop buttons removed; left-click on waveform plays from saved cue (no cue write); right-click plays temporarily from click position; double-click/Space unchanged
-- **Workbench Shift+click cue set (#117, merged PR #137):** Shift+left-click on waveform sets `cue_start_ms` permanently in local library metadata; attack/loop fields preserved; original files unchanged
-- **Workbench UX polish:** progress bar + status counter during analysis; classified error messages (not generic "Could not extract features")
-- **Workbench short-clip handling:** samples under 0.5s skip BPM/key overclaim; UI shows Kurzclip hint; targeted librosa warning suppression
-- **Workbench Windows shortcut:** optional desktop `.lnk` via `tools/windows/create_workbench_desktop_shortcut.ps1` (local helper, no installer)
+- **Branch:** `main` @ `2d42ee3` (docs backlog sync after workbench close; runtime hotfix PR #199)
+- **Open PRs:** none
+- **Open issues:** 4 — [#198](https://github.com/jannekbuengener/sample-brain/issues/198) Workbench matching/suggestions planning, [#196](https://github.com/jannekbuengener/sample-brain/issues/196) numpy/numba HOLD, [#73](https://github.com/jannekbuengener/sample-brain/issues/73) CLAP Tier-B, [#74](https://github.com/jannekbuengener/sample-brain/issues/74) sqlite-vec ANN
+- **Local Workbench:** `sample-brain workbench` — tkinter MVP shipped; parent epic [#117](https://github.com/jannekbuengener/sample-brain/issues/117) **closed** 2026-07-10
+  - Shipped under #117: folder analysis, playlist/filter/sort, library cache + multi-folder view, catalog read-only bridge, catalog→cache import (#192), FL export (#191), analysis-limit persistence (#190), cue/loop/attack metadata, audio preview + waveform, structured search UI, runtime hotfix PR #199
+  - Open follow-up: [#198](https://github.com/jannekbuengener/sample-brain/issues/198) Matching-/Vorschlagsansicht planen (planning only; semantic search remains #73; sqlite-vec/ANN remains #74)
+- **Dependency HOLD:** [#196](https://github.com/jannekbuengener/sample-brain/issues/196) — `numpy>=2.5` blocked by `numba` pin; Dependabot PR #103 closed (not merged)
 - **Product pillars:** All 5 specs under [`docs/product/`](../docs/product/README.md) — #90 closed via PR #107; no open product-docs issues
-- **Recently closed:** [#72](https://github.com/jannekbuengener/sample-brain/issues/72) key confidence evidence via PR #108 — [KEY_CONF_EVIDENCE.md](../docs/benchmarks/KEY_CONF_EVIDENCE.md)
-- **Current focus:** EPIC-2 follow-ups — #73 vocal/no-vocal deferred after proxy spike HOLD; genre/mood data strategy; #74 ANN tracking
-- **Tests:** 318 passed, 1 skipped (`pytest -q`); optional `[clap]` tests skip on HOLD vocal spike margins
+- **Recently closed:** [#117](https://github.com/jannekbuengener/sample-brain/issues/117) Workbench epic (2026-07-10); [#72](https://github.com/jannekbuengener/sample-brain/issues/72) key confidence evidence via PR #108 — [KEY_CONF_EVIDENCE.md](../docs/benchmarks/KEY_CONF_EVIDENCE.md)
+- **Current focus:** EPIC-2 follow-ups — #198 Workbench matching plan; #196 dependency HOLD; #73 vocal/no-vocal deferred after proxy spike HOLD; genre/mood data strategy; #74 ANN tracking
+- **Tests:** CI green on `main`; local `pytest -q` — 567 passed, 1 skipped (last full-suite run on `main`)
 
 ## Search Quality Campaign — Closed
 
@@ -120,8 +106,8 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 
 - **Default switch to sqlite-vec** — blocked until latency gates PASS
 - **Tier B CLAP search-quality evidence** — Phase 1+2 merged; 4/6 classes on main; vocal/no-vocal proxy spike **HOLD_VOCAL_PROXY_FAILED**; genre/mood remain (#73 OPEN)
-- **Workbench cue/loop/attack metadata** — loop + attack edit modes; attack suggestion API + UI (#147–#148); loop once-preview (#149); loop repeat preview shipped (#117 follow-up)
-- **Workbench global multi-folder library view** — shipped: **Alle Library-Samples** in sidebar; catalog unification planned ([`WORKBENCH_CATALOG_UNIFICATION_PLAN.md`](../docs/WORKBENCH_CATALOG_UNIFICATION_PLAN.md)) (#117 remains open)
+- **Workbench Matching-/Vorschlagsansicht** — planning only ([#198](https://github.com/jannekbuengener/sample-brain/issues/198) OPEN); #117 epic closed
+- **numpy 2.5 / numba unblock** — tracked via [#196](https://github.com/jannekbuengener/sample-brain/issues/196) HOLD; do not merge until `numba` supports `numpy>=2.5`
 - **Phase 5 tags + FTS5 MVP** — not started (roadmap Phase 5)
 - **Large-scale private-sample validation** — synthetic/benchmark fixtures only
 - **EPIC 3–6** — not started
@@ -135,4 +121,4 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 | [SQLITE_VEC_ROADMAP.md](../docs/SQLITE_VEC_ROADMAP.md) | Phases 0–8 (all done) |
 | [SQLITE_VEC_GATE_EVIDENCE.md](../docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md) | Measured backend gates |
 | [SEARCH_QUALITY_EVIDENCE.md](../docs/benchmarks/SEARCH_QUALITY_EVIDENCE.md) | Tier A relevance gates |
-| [WORKBENCH_CUE_METADATA_PLAN.md](../docs/WORKBENCH_CUE_METADATA_PLAN.md) | Cue/loop/attack metadata plan (workbench, #117) |
+| [WORKBENCH_CUE_METADATA_PLAN.md](../docs/WORKBENCH_CUE_METADATA_PLAN.md) | Cue/loop/attack metadata plan (workbench, #117 closed) |
