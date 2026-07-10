@@ -2,27 +2,32 @@
 
 Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board reality** below for live state.
 
-## GitHub Board Reality (2026-07-08)
+## GitHub Board Reality (2026-07-10)
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Open issues | 🔶 2 total | #73–#74 (EPIC-2 follow-ups) |
+| Open issues | 🔶 4 total | #198 (Workbench matching plan), #196 (numpy/numba), #73–#74 (EPIC-2 follow-ups) |
+| #117 Workbench epic | ✅ Closed | Parent closed 2026-07-10; P0–P2 child work shipped (#190–#192 closed); runtime hotfix PR #199 merged |
+| #198 Workbench matching | 🔶 Open | Matching-/Vorschlagsansicht planen — planning only; parent was #117 |
+| #196 numpy/numba | 🔶 HOLD | `numpy>=2.5` blocked by `numba` pin; supersedes closed Dependabot PR #103 |
 | #73 CLAP Tier-B | 🔶 4/6 on main | Phase 1+2 merged (#110, #111); vocal proxy spike **HOLD**; genre/mood pending |
+| #74 sqlite-vec ANN | 🔶 Tracking | Monitor ANN release readiness; default backend remains `numpy` |
 | VST-first product target | ✅ Spec complete | PR #102 parent; PR #105 (#91/#94 closed); PR #106 (#92/#93/#95 closed); PR #107 (#90 closed); all 5 specs under `docs/product/` |
-| Open PRs | 🔶 1 Dependabot | **#103** (numpy 2.5.1) → **HOLD_DEPENDENCY_VALIDATION** |
-| `main` HEAD | ✅ Current | `9cd86cb` — Merge PR #111 (CLAP Tier-B Phase 2) |
+| Open PRs | ✅ None | No open PRs on `main` |
+| `main` HEAD | ✅ Current | `dd423e1` — fix: import workbench filter options (PR #199) |
 
-### Dependabot triage (2026-07-07)
+### Dependabot triage (2026-07-10)
 
-| PR | Bump | Verdict | Evidence |
+| PR / Issue | Bump / topic | Verdict | Evidence |
 |----|------|---------|----------|
-| #103 | numpy 2.4.6 → 2.5.1 | **HOLD** — do not merge | `numba` 0.66.0 declares `numpy<2.5`; pip `ResolutionImpossible` on CI |
-| #104 | numba 0.65.1 → 0.66.0 | **Merged** (`9ce9f2b`) | Does not unblock #103 |
+| #103 | numpy 2.4.6 → 2.5.1 | **Closed** — not merged | `numba` 0.66.0 declares `numpy<2.5`; pip `ResolutionImpossible` on CI |
+| #196 | numpy 2.5 / numba | **HOLD** — track only | Open dependency tracker; do not merge numpy 2.5 until numba supports it |
+| #104 | numba 0.65.1 → 0.66.0 | **Merged** (`9ce9f2b`) | Does not unblock #196 |
 | PR #105 | docs: product pillar specs (#91, #94) | **Merged** (`6c75ad0`) | Closes #91, #94 |
 | PR #106 | docs: remaining pillar specs (#92, #93, #95) | **Merged** (`ca56cd7`) | Closes #92, #93, #95 |
 | PR #108 | fix: key confidence evidence (#72) | **Merged** (`b0315cc`) | Closes #72 |
 
-**Recommendation:** Close or snooze #103 until a `numba` release supports `numpy>=2.5`.
+**Recommendation:** Track numpy 2.5 unblock via **#196**; do not reopen #103 without numba compatibility evidence.
 
 | sqlite-vec campaign (PRs #47–#53) | ✅ Closed | Phases 1–8 complete |
 | search-quality campaign (PR #54) | ✅ Closed | Merged 2026-05-31 |
@@ -64,16 +69,17 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 
 ## Post-cleanup board state
 
-As of `main` at `08e72c0`:
+As of `main` at `dd423e1`:
 
 - **EPIC 2 runtime and E2E proof** — completed and documented (`CURRENT_STATUS.md`, `EPIC_2_SEMANTIC_SEARCH_SPEC.md`)
-- **sqlite-vec campaign** — Phases 1–8 closed (PRs #47–#53); default backend remains `numpy`
+- **sqlite-vec campaign** — Phases 1–8 closed (PRs #47–#53); default backend remains `numpy`; **#74** tracks ANN readiness
 - **Search quality campaign** — Tier A gates PASS (PR #54); Tier B Phase 1+2 merged (#110, #111); vocal proxy spike HOLD; 4/6 #73 classes on main
 - **EPIC 3 foundation** — hybrid ranking score contract merged via PR #23
 - **VST-first product target** — PR #102 parent consolidated; PR #105 merged (#91/#94); PR #106 merged (#92/#93/#95); all 5 pillar specs under `docs/product/`; parent #90 closed via PR #107
 - **Key confidence evidence (#72)** — closed via PR #108; evidence in `docs/benchmarks/KEY_CONF_EVIDENCE.md`
-- **Dependabot** — PR #103 (numpy 2.5.1) **HOLD**; PR #104 merged
-- **Current board reality** — 2 open issues (#73 4/6 + vocal HOLD, #74 tracking); 1 Dependabot PR (#103) **HOLD**
+- **Local Workbench track (#117)** — closed 2026-07-10; MVP + library/cache/catalog/import/FL-export shipped; runtime hotfix PR #199 merged; **#198** is the open follow-up for Matching-/Vorschlagsansicht planning
+- **Dependabot** — PR #103 closed (not merged); **#196** tracks numpy 2.5 / numba HOLD
+- **Current board reality** — 4 open issues (#198 planning, #196 dependency HOLD, #73 4/6 + vocal HOLD, #74 ANN tracking); 0 open PRs
 
 Local backlog item numbers below are **planning IDs**, not GitHub issue numbers (except where cross-referenced).
 
@@ -305,11 +311,8 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Goal: Define the first viable local desktop UI concept.
 - Context: A later React/Tauri UI should follow a clear producer workflow.
 - **Partial:** Local Workbench MVP (`sample-brain workbench`) shipped — tkinter playlist/detail; filter/sort (#120–#121), last-folder memory (#124), CSV export (#125), library metadata cache v1, library folder list (#128), audio preview (#129–#130), read-only waveform panel (#131); cue/loop/attack metadata editable via edit modes; attack suggestion + loop once-preview shipped (#147–#149). See [`WORKBENCH_CUE_METADATA_PLAN.md`](WORKBENCH_CUE_METADATA_PLAN.md), [`WORKBENCH_GUI_SMOKE.md`](WORKBENCH_GUI_SMOKE.md).
-- **Partial:** Workbench folder path entry (#117) — type or paste folder path in UI; dialog still available; last used folder restored on startup (#124).
-- **Partial:** Workbench library folder list (#117) — known folders visible in UI; `+` registers folder in local library cache; `−` removes folder metadata and cached samples only (original files unchanged). Merged PR #128.
-- **Planned:** Workbench catalog read-only bridge (#117) — [`WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md`](WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md); loader + UI shipped; no `catalog.db` writes.
-- **Planned:** Workbench catalog→cache import (#117) — [`WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md`](WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md); explicit user action only; no auto-import; implementation not started.
-- **Shipped:** Workbench structured search/filter UI (#117) — [`WORKBENCH_SEARCH_UI_PLAN.md`](WORKBENCH_SEARCH_UI_PLAN.md); text + structured filters (source, type, key, status, BPM), status bar polish, active-filter summary, reset button; optional layout polish remains; semantic search / #73 / #74 explicitly out of scope.
+- **Shipped:** Workbench track **#117** closed (2026-07-10) — folder path entry (#124), library folder list (#128), catalog read-only bridge (PRs #158–#161), catalog→cache import (#192), structured search/filter UI, FL export (#191), analysis-limit persistence (#190), runtime hotfix PR #199.
+- **Open:** Workbench Matching-/Vorschlagsansicht — **#198** (planning only; no implementation scope in this issue); semantic/CLAP search remains **#73**; sqlite-vec/ANN remains **#74**.
 - **Partial:** Windows desktop shortcut helper (`tools/windows/`) — local `.lnk` creation only, no installer/EXE.
 - Acceptance criteria:
   - user flows for search, inspect, preview, and export are documented
@@ -323,7 +326,7 @@ Local backlog item numbers below are **planning IDs**, not GitHub issue numbers 
 - Labels: `ui`, `feat`, `desktop`
 - Goal: Provide a first local result inspector with sample preview.
 - Context: Search becomes much more useful when results can be auditioned quickly.
-- **Partial:** Workbench MVP: waveform (#117) — cue/loop/attack metadata editable via edit modes; original files unchanged.
+- **Partial:** Workbench MVP: waveform — cue/loop/attack metadata editable via edit modes; original files unchanged (shipped under **#117**, now closed).
 - **Partial:** Workbench shows analysis progress (N/M + progress bar) and classified error messages.
 - **Partial:** Workbench short clips (<0.5s) show Kurzclip hint; BPM/Key not overclaimed; librosa n_fft warnings suppressed for short audio.
 - Acceptance criteria:
