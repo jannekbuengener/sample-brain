@@ -826,6 +826,75 @@ def save_workbench_last_folder(
     return True
 
 
+DEFAULT_WORKBENCH_ANALYSIS_LIMIT_TEXT = "50"
+
+
+def workbench_analysis_limit_file(
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> Path:
+    base = state_dir if state_dir is not None else workbench_state_dir(env=env)
+    return base / "workbench_analysis_limit.txt"
+
+
+def normalize_workbench_analysis_limit_text(raw: str) -> str:
+    """Return UI-safe analysis limit text: empty for no limit, else a positive int string."""
+    text = raw.strip()
+    if not text:
+        return ""
+    try:
+        value = int(text)
+    except ValueError:
+        return DEFAULT_WORKBENCH_ANALYSIS_LIMIT_TEXT
+    if value <= 0:
+        return DEFAULT_WORKBENCH_ANALYSIS_LIMIT_TEXT
+    return str(value)
+
+
+def load_workbench_analysis_limit(
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> str:
+    """Load persisted analysis limit for the workbench UI; invalid/missing falls back to default."""
+    path_file = workbench_analysis_limit_file(state_dir=state_dir, env=env)
+    if not path_file.is_file():
+        return DEFAULT_WORKBENCH_ANALYSIS_LIMIT_TEXT
+    try:
+        text = path_file.read_text(encoding="utf-8")
+    except OSError:
+        return DEFAULT_WORKBENCH_ANALYSIS_LIMIT_TEXT
+    return normalize_workbench_analysis_limit_text(text)
+
+
+def save_workbench_analysis_limit(
+    limit_text: str,
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> bool:
+    """Persist analysis limit field value when empty or a positive integer."""
+    text = limit_text.strip()
+    if not text:
+        persisted = ""
+    else:
+        try:
+            value = int(text)
+        except ValueError:
+            return False
+        if value <= 0:
+            return False
+        persisted = str(value)
+    path_file = workbench_analysis_limit_file(state_dir=state_dir, env=env)
+    try:
+        path_file.parent.mkdir(parents=True, exist_ok=True)
+        path_file.write_text(persisted, encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class WorkbenchViewSettings:
     show_search: bool = True
@@ -1193,6 +1262,7 @@ __all__ = [
     "CATALOG_READONLY_STATUS_HINT",
     "count_catalog_samples",
     "DEFAULT_CATALOG_LOAD_LIMIT",
+    "DEFAULT_WORKBENCH_ANALYSIS_LIMIT_TEXT",
     "DEFAULT_WORKBENCH_VIEW_SETTINGS",
     "error_message_for_code",
     "effective_workbench_row_filters",
@@ -1221,18 +1291,22 @@ __all__ = [
     "load_all_cached_rows",
     "load_cached_folder_rows",
     "load_catalog_rows",
+    "load_workbench_analysis_limit",
     "load_workbench_last_folder",
     "load_workbench_view_settings",
     "load_workbench_sample_cue",
+    "normalize_workbench_analysis_limit_text",
     "parse_workbench_bpm_bound",
     "PLAYLIST_CSV_FIELDS",
     "remove_workbench_library_folder",
     "row_as_dict",
+    "save_workbench_analysis_limit",
     "save_workbench_last_folder",
     "save_workbench_view_settings",
     "save_workbench_sample_cue",
     "sort_workbench_rows",
     "validate_workbench_folder",
+    "workbench_analysis_limit_file",
     "workbench_last_folder_file",
     "workbench_state_dir",
     "workbench_view_settings_file",

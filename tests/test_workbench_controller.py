@@ -24,12 +24,15 @@ from src.workbench_controller import (
     get_workbench_library_folders,
     is_catalog_readonly_row,
     load_cached_folder_rows,
+    load_workbench_analysis_limit,
     load_workbench_last_folder,
     load_workbench_sample_cue,
     load_workbench_view_settings,
     remove_workbench_library_folder,
     parse_workbench_bpm_bound,
     row_source_kind,
+    normalize_workbench_analysis_limit_text,
+    save_workbench_analysis_limit,
     save_workbench_last_folder,
     save_workbench_sample_cue,
     save_workbench_view_settings,
@@ -42,10 +45,12 @@ from src.workbench_controller import (
     format_workbench_view_restore_status,
     format_workbench_view_section_hidden_status,
     DEFAULT_WORKBENCH_VIEW_SETTINGS,
+    DEFAULT_WORKBENCH_ANALYSIS_LIMIT_TEXT,
     VIEW_SECTION_FILTERS,
     VIEW_SECTION_SEARCH,
     VIEW_SECTION_WAVEFORM_TOOLS,
     WorkbenchViewSettings,
+    workbench_analysis_limit_file,
     workbench_last_folder_file,
     WorkbenchRow,
     WorkbenchRowFilters,
@@ -1035,6 +1040,56 @@ def test_workbench_view_settings_invalid_json_falls_back_to_defaults(tmp_path: P
     path_file = workbench_view_settings_file(state_dir=state_dir)
     path_file.write_text("{not-json", encoding="utf-8")
     assert load_workbench_view_settings(state_dir=state_dir) == DEFAULT_WORKBENCH_VIEW_SETTINGS
+
+
+def test_save_and_load_workbench_analysis_limit(tmp_path: Path):
+    state_dir = tmp_path / "state"
+
+    assert save_workbench_analysis_limit("25", state_dir=state_dir)
+    assert load_workbench_analysis_limit(state_dir=state_dir) == "25"
+    assert workbench_analysis_limit_file(state_dir=state_dir).is_file()
+
+
+def test_load_workbench_analysis_limit_defaults_when_missing(tmp_path: Path):
+    assert (
+        load_workbench_analysis_limit(state_dir=tmp_path / "missing")
+        == DEFAULT_WORKBENCH_ANALYSIS_LIMIT_TEXT
+    )
+
+
+def test_load_workbench_analysis_limit_empty_means_no_limit(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    assert save_workbench_analysis_limit("", state_dir=state_dir)
+    assert load_workbench_analysis_limit(state_dir=state_dir) == ""
+
+
+def test_load_workbench_analysis_limit_invalid_values_fall_back_to_default(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    path_file = workbench_analysis_limit_file(state_dir=state_dir)
+
+    path_file.write_text("abc", encoding="utf-8")
+    assert load_workbench_analysis_limit(state_dir=state_dir) == DEFAULT_WORKBENCH_ANALYSIS_LIMIT_TEXT
+
+    path_file.write_text("0", encoding="utf-8")
+    assert load_workbench_analysis_limit(state_dir=state_dir) == DEFAULT_WORKBENCH_ANALYSIS_LIMIT_TEXT
+
+    path_file.write_text("-3", encoding="utf-8")
+    assert load_workbench_analysis_limit(state_dir=state_dir) == DEFAULT_WORKBENCH_ANALYSIS_LIMIT_TEXT
+
+
+def test_save_workbench_analysis_limit_rejects_invalid_values(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    assert not save_workbench_analysis_limit("abc", state_dir=state_dir)
+    assert not save_workbench_analysis_limit("0", state_dir=state_dir)
+    assert not workbench_analysis_limit_file(state_dir=state_dir).exists()
+
+
+def test_normalize_workbench_analysis_limit_text():
+    assert normalize_workbench_analysis_limit_text("") == ""
+    assert normalize_workbench_analysis_limit_text("  12  ") == "12"
+    assert normalize_workbench_analysis_limit_text("abc") == DEFAULT_WORKBENCH_ANALYSIS_LIMIT_TEXT
+    assert normalize_workbench_analysis_limit_text("0") == DEFAULT_WORKBENCH_ANALYSIS_LIMIT_TEXT
 
 
 def test_format_workbench_view_status_messages():

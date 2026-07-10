@@ -7,7 +7,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from src.workbench import WAVEFORM_USAGE_HINT, WorkbenchApp
-from src.workbench_controller import WORKBENCH_VIEW_TOGGLE_HELP
+from src.workbench_controller import (
+    WORKBENCH_VIEW_TOGGLE_HELP,
+    load_workbench_analysis_limit,
+    save_workbench_analysis_limit,
+)
 
 
 def test_workbench_gui_startup_smoke_constructs_key_widgets(tmp_path: Path):
@@ -69,5 +73,22 @@ def test_workbench_gui_startup_smoke_constructs_key_widgets(tmp_path: Path):
             app._pick_folder()
             root.update_idletasks()
         assert app._folder_var.get() == str(dialog_folder)
+    finally:
+        root.destroy()
+
+
+def test_workbench_restores_persisted_analysis_limit(tmp_path: Path, monkeypatch):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    assert save_workbench_analysis_limit("25", state_dir=state_dir)
+    assert load_workbench_analysis_limit(state_dir=state_dir) == "25"
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        root.update_idletasks()
+        assert app._limit_var.get() == "25"
     finally:
         root.destroy()
