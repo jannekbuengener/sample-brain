@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import sqlite3
 import textwrap
 from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePath
@@ -28,11 +29,13 @@ from .workbench_catalog import (
 from .workbench_auto_metadata import apply_auto_metadata_after_analyze
 from .workbench_library import (
     WORKBENCH_ANALYZER_VERSION,
+    CachedWorkbenchRow,
     LibraryFolder,
     WorkbenchCueMetadata,
     list_library_folders,
     load_all_cached_samples,
     load_folder_samples,
+    load_sample_by_path,
     load_sample_cue,
     lookup_sample,
     mark_folder_opened,
@@ -1319,6 +1322,335 @@ def _format_catalog_search_status(ctx: WorkbenchSearchStatusContext) -> str:
     )
 
 
+CatalogImportConflictPolicy = Literal[
+    "skip_existing", "overwrite_analysis_only", "cancel_on_conflict"
+]
+
+CatalogImportAction = Literal[
+    "import", "skip_up_to_date", "skip_existing", "conflict", "error"
+]
+
+
+@dataclass(frozen=True)
+class CatalogImportPreviewItem:
+    path: str
+    display_name: str
+    action: CatalogImportAction
+    message: str | None = None
+
+
+@dataclass
+class CatalogImportPreview:
+    items: list[CatalogImportPreviewItem]
+    target_folder: str | None
+    folder_registered: bool
+    error_message: str | None = None
+
+    @property
+    def import_count(self) -> int:
+        return sum(1 for item in self.items if item.action == "import")
+
+    @property
+    def skip_count(self) -> int:
+        return sum(
+            1
+            for item in self.items
+            if item.action in ("skip_up_to_date", "skip_existing")
+        )
+
+    @property
+    def conflict_count(self) -> int:
+        return sum(1 for item in self.items if item.action == "conflict")
+
+    @property
+    def error_count(self) -> int:
+        return sum(1 for item in self.items if item.action == "error")
+
+
+@dataclass
+class CatalogImportResult:
+    imported: int = 0
+    skipped: int = 0
+    conflicts: int = 0
+    errors: int = 0
+    cancelled: bool = False
+    error_message: str | None = None
+
+
+def _resolve_registered_folder_id(
+    folder: Path | str,
+    *,
+    library_db_path: Path,
+) -> int | None:
+    path = str(Path(folder).expanduser().resolve())
+    for entry in list_library_folders(db_path=library_db_path):
+        if entry.path == path:
+            return entry.id
+    return None
+
+
+def _file_stat_for_import(path: str) -> tuple[int, int]:
+    candidate = Path(path).expanduser()
+    if candidate.is_file():
+        stat = candidate.stat()
+        return stat.st_size, stat.st_mtime_ns
+    return 0, 0
+
+
+def _analysis_fields_equal(
+    catalog_row: WorkbenchRow,
+    cached_row: CachedWorkbenchRow,
+) -> bool:
+    if catalog_row.status != cached_row.status:
+        return False
+    if catalog_row.pred_type != cached_row.pred_type:
+        return False
+    if catalog_row.sample_class != cached_row.sample_class:
+        return False
+    if catalog_row.key != cached_row.key:
+        return False
+    if catalog_row.bpm is None and cached_row.bpm is None:
+        pass
+    elif catalog_row.bpm is not None and cached_row.bpm is not None:
+        if abs(catalog_row.bpm - cached_row.bpm) > 0.05:
+            return False
+    else:
+        return False
+    return True
+
+
+def _catalog_row_for_cache_import(
+    row: WorkbenchRow,
+    *,
+    target_folder: Path,
+) -> WorkbenchRow:
+    sample_path = Path(row.path).expanduser().resolve()
+    try:
+        relative_path = str(sample_path.relative_to(target_folder.resolve()))
+    except ValueError:
+        relative_path = row.relative_path or sample_path.name
+    details = {
+        key: value
+        for key, value in row.details.items()
+        if key not in ("source", "catalog_readonly", "library_folder")
+    }
+    return WorkbenchRow(
+        display_name=row.display_name,
+        relative_path=relative_path,
+        path=str(sample_path),
+        bpm=row.bpm,
+        key=row.key,
+        key_conf=row.key_conf,
+        loudness=row.loudness,
+        brightness=row.brightness,
+        sample_class=row.sample_class,
+        pred_type=row.pred_type,
+        status=row.status,
+        error=row.error,
+        error_code=row.error_code,
+        details=details,
+    )
+
+
+def _classify_catalog_import_item(
+    row: WorkbenchRow,
+    *,
+    library_db_path: Path,
+) -> CatalogImportPreviewItem:
+    if not is_catalog_readonly_row(row):
+        return CatalogImportPreviewItem(
+            path=row.path,
+            display_name=row.display_name,
+            action="error",
+            message="Keine Catalog-Zeile",
+        )
+    cached = load_sample_by_path(row.path, db_path=library_db_path)
+    if cached is None:
+        return CatalogImportPreviewItem(
+            path=row.path,
+            display_name=row.display_name,
+            action="import",
+        )
+    if _analysis_fields_equal(row, cached):
+        return CatalogImportPreviewItem(
+            path=row.path,
+            display_name=row.display_name,
+            action="skip_up_to_date",
+            message="Bereits im Cache",
+        )
+    return CatalogImportPreviewItem(
+        path=row.path,
+        display_name=row.display_name,
+        action="conflict",
+        message="Abweichende Analyse im Cache",
+    )
+
+
+def preview_catalog_import(
+    rows: list[WorkbenchRow],
+    target_folder: Path | str,
+    *,
+    library_db_path: Path | None = None,
+) -> CatalogImportPreview:
+    """Preview catalog→cache import without writing."""
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    folder = Path(target_folder).expanduser().resolve()
+    folder_id = _resolve_registered_folder_id(folder, library_db_path=db)
+    if folder_id is None:
+        return CatalogImportPreview(
+            items=[],
+            target_folder=str(folder),
+            folder_registered=False,
+            error_message=(
+                "Zielordner ist nicht in der Workbench-Library registriert."
+            ),
+        )
+    if not rows:
+        return CatalogImportPreview(
+            items=[],
+            target_folder=str(folder),
+            folder_registered=True,
+            error_message="Keine Catalog-Zeilen zum Importieren.",
+        )
+    items = [
+        _classify_catalog_import_item(row, library_db_path=db) for row in rows
+    ]
+    return CatalogImportPreview(
+        items=items,
+        target_folder=str(folder),
+        folder_registered=True,
+    )
+
+
+def format_catalog_import_preview_message(preview: CatalogImportPreview) -> str:
+    """User-facing confirmation text for catalog import."""
+    if preview.error_message:
+        return preview.error_message
+    lines = [
+        f"Zielordner: {preview.target_folder}",
+        f"Importieren: {preview.import_count}",
+        f"Überspringen (aktuell): {preview.skip_count}",
+        f"Konflikte: {preview.conflict_count}",
+    ]
+    if preview.error_count:
+        lines.append(f"Ungültige Zeilen: {preview.error_count}")
+    lines.append("")
+    lines.append(
+        "Cue/Loop/Attack im Cache bleiben erhalten. "
+        "catalog.db wird nicht verändert."
+    )
+    lines.append("")
+    lines.append("Import starten?")
+    return "\n".join(lines)
+
+
+def format_catalog_import_result_message(result: CatalogImportResult) -> str:
+    """User-facing summary after catalog import."""
+    if result.cancelled:
+        base = "Import abgebrochen."
+        if result.error_message:
+            return f"{base}\n{result.error_message}"
+        return base
+    return (
+        f"Importiert: {result.imported}\n"
+        f"Übersprungen: {result.skipped}\n"
+        f"Konflikte (nicht importiert): {result.conflicts}\n"
+        f"Fehler: {result.errors}"
+    )
+
+
+def import_catalog_rows_to_cache(
+    rows: list[WorkbenchRow],
+    target_folder: Path | str,
+    *,
+    conflict_policy: CatalogImportConflictPolicy = "overwrite_analysis_only",
+    library_db_path: Path | None = None,
+) -> CatalogImportResult:
+    """Copy catalog metadata rows into workbench_library.db (cache only)."""
+    preview = preview_catalog_import(
+        rows,
+        target_folder,
+        library_db_path=library_db_path,
+    )
+    if preview.error_message and not preview.items:
+        return CatalogImportResult(
+            cancelled=True,
+            error_message=preview.error_message,
+        )
+    if preview.conflict_count > 0 and conflict_policy == "cancel_on_conflict":
+        return CatalogImportResult(
+            cancelled=True,
+            conflicts=preview.conflict_count,
+            error_message="Import wegen Konflikten abgebrochen.",
+        )
+
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    folder = Path(target_folder).expanduser().resolve()
+    folder_id = _resolve_registered_folder_id(folder, library_db_path=db)
+    if folder_id is None:
+        return CatalogImportResult(
+            cancelled=True,
+            error_message=preview.error_message,
+        )
+
+    imported = 0
+    skipped = 0
+    conflicts = 0
+    errors = 0
+
+    for item in preview.items:
+        if item.action == "error":
+            errors += 1
+            continue
+        if item.action == "skip_up_to_date":
+            skipped += 1
+            continue
+        if item.action == "skip_existing":
+            skipped += 1
+            continue
+        if item.action == "conflict":
+            if conflict_policy == "skip_existing":
+                conflicts += 1
+                skipped += 1
+                continue
+            if conflict_policy == "cancel_on_conflict":
+                conflicts += 1
+                continue
+
+        source_row = next((row for row in rows if row.path == item.path), None)
+        if source_row is None:
+            errors += 1
+            continue
+
+        cache_row = _catalog_row_for_cache_import(
+            source_row,
+            target_folder=folder,
+        )
+        size_bytes, mtime_ns = _file_stat_for_import(cache_row.path)
+        if size_bytes == 0 and source_row.details.get("size_bytes") is not None:
+            size_bytes = int(source_row.details["size_bytes"])
+        try:
+            upsert_sample(
+                folder_id,
+                cache_row,
+                size_bytes=size_bytes,
+                mtime_ns=mtime_ns,
+                db_path=db,
+                analyzer_version=WORKBENCH_ANALYZER_VERSION,
+            )
+        except (TypeError, sqlite3.Error, OSError):
+            errors += 1
+            continue
+        imported += 1
+
+    return CatalogImportResult(
+        imported=imported,
+        skipped=skipped,
+        conflicts=conflicts,
+        errors=errors,
+    )
+
+
 def load_catalog_rows(
     *,
     catalog_path: Path | str | None = None,
@@ -1426,6 +1758,10 @@ __all__ = [
     "apply_workbench_structured_filters",
     "catalog_available",
     "catalog_row_display_name",
+    "CatalogImportConflictPolicy",
+    "CatalogImportPreview",
+    "CatalogImportPreviewItem",
+    "CatalogImportResult",
     "CATALOG_READONLY_EDIT_MESSAGE",
     "CATALOG_READONLY_STATUS_HINT",
     "count_catalog_samples",
@@ -1438,11 +1774,14 @@ __all__ = [
     "export_workbench_rows_to_csv",
     "export_workbench_rows_to_fl_tags",
     "filter_workbench_rows",
+    "format_catalog_import_preview_message",
+    "format_catalog_import_result_message",
     "format_catalog_load_status",
     "format_workbench_active_filter_summary",
     "format_workbench_search_status",
     "format_workbench_view_restore_status",
     "format_workbench_view_section_hidden_status",
+    "import_catalog_rows_to_cache",
     "is_catalog_readonly_row",
     "WorkbenchSearchMode",
     "WorkbenchSearchStatusContext",
@@ -1459,6 +1798,7 @@ __all__ = [
     "format_workbench_detail_field_lines",
     "get_workbench_library_folders",
     "get_preview_start_ms",
+    "preview_catalog_import",
     "preview_start_ms_from_waveform_x",
     "load_all_cached_rows",
     "load_cached_folder_rows",

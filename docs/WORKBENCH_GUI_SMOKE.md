@@ -20,6 +20,7 @@
 | CLI entrypoint | `python -m src.cli workbench --help` via `workbench` subcommand | ✅ PASS |
 | Analysis limit restored on startup | `load_workbench_analysis_limit` + `tests/test_workbench_gui_smoke.py` | ✅ PASS |
 | FL export button present / state | `_fl_export_btn` in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
+| Catalog→cache import button present | `_catalog_import_btn` in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
 
 ## Interactive manual smoke (producer workflow)
 
@@ -37,11 +38,12 @@ Not automated in CI. When running locally with a display:
 10. **Shift+left-click** → set cue (persists in `workbench_library.db`)
 11. Change **Limit** (e.g. `25`), start analysis or leave the field — value persists in user-local state (`workbench_analysis_limit.txt` under `~/.sample-brain` or `SAMPLE_BRAIN_WORKBENCH_STATE_DIR`)
 12. With analyzed playlist rows visible, click **FL exportieren** — writes FL Browser tags via existing `export_fl` logic (configured `fl_user_data_path`, `SAMPLE_BRAIN_FL_USER_DATA`, or folder picker)
-13. Enable **Loop bearbeiten** → two clicks set loop region
-14. **Loop vorhören** → plays loop region once (temp slice; original unchanged)
-15. **Loop wiederholen** → repeats loop region until Stop
-16. Enable **Attack bearbeiten** → single click sets attack marker
-17. **Attack vorschlagen** → shows suggestion only; **Vorschlag übernehmen** persists after explicit click
+13. In **Catalog lesen**, with visible catalog rows, click **Aus Catalog importieren** — confirm dialog shows import/skip/conflict counts; target folder must be registered in Library; cache rows update without re-analyzing audio and `catalog.db` stays read-only
+14. Enable **Loop bearbeiten** → two clicks set loop region
+15. **Loop vorhören** → plays loop region once (temp slice; original unchanged)
+16. **Loop wiederholen** → repeats loop region until Stop
+17. Enable **Attack bearbeiten** → single click sets attack marker
+18. **Attack vorschlagen** → shows suggestion only; **Vorschlag übernehmen** persists after explicit click
 
 ## Limitations
 

@@ -218,3 +218,207 @@ class TestCatalogReadonlyGuards:
         sorted_rows = sort_workbench_rows(rows, "name")
         names = [row.display_name for row in sorted_rows]
         assert names == sorted(names, key=str.casefold)
+
+
+class TestCatalogCacheImport:
+    def test_preview_requires_registered_folder(
+        self,
+        catalog_db: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from src.workbench_controller import load_catalog_rows, preview_catalog_import
+
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+        rows = load_catalog_rows(catalog_path=catalog_db)
+        target = tmp_path / "library"
+        target.mkdir()
+
+        preview = preview_catalog_import(rows[:1], target)
+
+        assert preview.folder_registered is False
+        assert preview.error_message is not None
+
+    def test_preview_classifies_new_rows(
+        self,
+        catalog_db: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from src.workbench_controller import (
+            add_workbench_library_folder,
+            load_catalog_rows,
+            preview_catalog_import,
+        )
+
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+        target = tmp_path / "library"
+        target.mkdir()
+        add_workbench_library_folder(target)
+        rows = load_catalog_rows(catalog_path=catalog_db)
+
+        preview = preview_catalog_import(rows, target)
+
+        assert preview.folder_registered is True
+        assert preview.import_count == 3
+        assert preview.skip_count == 0
+
+    def test_import_writes_cache_without_touching_catalog(
+        self,
+        catalog_db: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from src.workbench_controller import (
+            add_workbench_library_folder,
+            import_catalog_rows_to_cache,
+            load_cached_folder_rows,
+            load_catalog_rows,
+        )
+        from src.workbench_library import workbench_library_db_path
+
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+        target = tmp_path / "library"
+        target.mkdir()
+        add_workbench_library_folder(target)
+        rows = load_catalog_rows(catalog_path=catalog_db)
+        catalog_mtime_before = catalog_db.stat().st_mtime_ns
+
+        result = import_catalog_rows_to_cache(rows, target)
+
+        assert result.imported == 3
+        assert result.cancelled is False
+        cached = load_cached_folder_rows(target)
+        assert len(cached) == 3
+        kick = next(row for row in cached if row.display_name == "kick")
+        assert kick.bpm == 128.0
+        assert kick.pred_type == "kick"
+        assert not kick.details.get("catalog_readonly")
+        assert catalog_db.stat().st_mtime_ns == catalog_mtime_before
+        assert workbench_library_db_path(state_dir=state_dir).is_file()
+
+    def test_import_preserves_existing_cue_metadata(
+        self,
+        catalog_db: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from src.workbench_controller import (
+            add_workbench_library_folder,
+            import_catalog_rows_to_cache,
+            load_catalog_rows,
+            load_workbench_sample_cue,
+            save_workbench_sample_cue,
+        )
+        from src.workbench_library import (
+            WorkbenchCueMetadata,
+            load_sample_by_path,
+            upsert_folder,
+            upsert_sample,
+            workbench_library_db_path,
+        )
+
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+        db_path = workbench_library_db_path(state_dir=state_dir)
+        target = tmp_path / "library"
+        target.mkdir()
+        folder_id = upsert_folder(target, db_path=db_path)
+        kick_path = "/samples/kick.wav"
+        row = load_catalog_rows(catalog_path=catalog_db)[0]
+        row = type(row)(
+            **{
+                **row.__dict__,
+                "bpm": 99.0,
+                "pred_type": "legacy",
+            }
+        )
+        upsert_sample(folder_id, row, size_bytes=1024, mtime_ns=1, db_path=db_path)
+        save_workbench_sample_cue(
+            kick_path,
+            WorkbenchCueMetadata(cue_start_ms=250, cue_source="manual"),
+            library_db_path=db_path,
+            duration_ms=2000,
+        )
+        add_workbench_library_folder(target)
+        catalog_rows = load_catalog_rows(catalog_path=catalog_db)
+
+        result = import_catalog_rows_to_cache(catalog_rows, target)
+
+        assert result.imported >= 1
+        cue = load_workbench_sample_cue(kick_path, library_db_path=db_path)
+        assert cue.cue_start_ms == 250
+        cached = load_sample_by_path(kick_path, db_path=db_path)
+        assert cached is not None
+        assert cached.bpm == 128.0
+
+    def test_import_empty_rows_is_safe(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from src.workbench_controller import (
+            add_workbench_library_folder,
+            import_catalog_rows_to_cache,
+        )
+
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+        target = tmp_path / "library"
+        target.mkdir()
+        add_workbench_library_folder(target)
+
+        result = import_catalog_rows_to_cache([], target)
+
+        assert result.cancelled is True
+        assert result.imported == 0
+
+    def test_cancel_on_conflict_aborts_import(
+        self,
+        catalog_db: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from src.workbench_controller import (
+            add_workbench_library_folder,
+            import_catalog_rows_to_cache,
+            load_catalog_rows,
+        )
+        from src.workbench_library import upsert_folder, upsert_sample, workbench_library_db_path
+
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+        db_path = workbench_library_db_path(state_dir=state_dir)
+        target = tmp_path / "library"
+        target.mkdir()
+        folder_id = upsert_folder(target, db_path=db_path)
+        catalog_rows = load_catalog_rows(catalog_path=catalog_db)
+        stale = catalog_rows[0]
+        stale = type(stale)(
+            **{
+                **stale.__dict__,
+                "bpm": 60.0,
+                "pred_type": "legacy",
+            }
+        )
+        upsert_sample(folder_id, stale, size_bytes=1024, mtime_ns=1, db_path=db_path)
+        add_workbench_library_folder(target)
+
+        result = import_catalog_rows_to_cache(
+            catalog_rows,
+            target,
+            conflict_policy="cancel_on_conflict",
+        )
+
+        assert result.cancelled is True
+        assert result.conflicts >= 1
+        assert result.imported == 0

@@ -50,6 +50,8 @@ def test_workbench_gui_startup_smoke_constructs_key_widgets(tmp_path: Path):
         assert app._cancel_btn.instate(["disabled"])
         assert hasattr(app, "_fl_export_btn"), "fl export button must exist"
         assert app._fl_export_btn.instate(["disabled"])
+        assert hasattr(app, "_catalog_import_btn"), "catalog import button must exist"
+        assert app._catalog_import_btn.instate(["disabled"])
 
         app._folder_var.set(str(folder))
         started = threading.Event()
