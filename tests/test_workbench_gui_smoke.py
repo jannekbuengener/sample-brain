@@ -6,7 +6,7 @@ import tkinter as tk
 from pathlib import Path
 from unittest.mock import patch
 
-from src.workbench import WAVEFORM_USAGE_HINT, WorkbenchApp
+from src.workbench import PLAYLIST_ACTION_COLUMN, PLAYLIST_ACTION_LABEL, WAVEFORM_USAGE_HINT, WorkbenchApp
 from src.workbench_controller import (
     FILTER_ALL_LABEL,
     WORKBENCH_VIEW_TOGGLE_HELP,
@@ -44,6 +44,8 @@ def test_workbench_gui_startup_smoke_constructs_key_widgets(tmp_path: Path):
         assert app._play_btn.instate(["disabled"])
         assert app._stop_btn.instate(["disabled"])
         assert hasattr(app, "_tree"), "playlist tree must exist"
+        assert PLAYLIST_ACTION_COLUMN in app._tree["columns"]
+        assert hasattr(app, "_open_add_to_playlist_dialog")
         assert hasattr(app, "_show_search_var")
         assert hasattr(app, "_filter_bar")
         assert not hasattr(app, "_copy_path_btn")
@@ -160,5 +162,74 @@ def test_workbench_fl_export_button_enables_with_exportable_rows(tmp_path: Path)
         app._refresh_playlist_view()
         root.update_idletasks()
         assert app._fl_export_btn.instate(["!disabled"])
+    finally:
+        root.destroy()
+
+
+def test_workbench_playlist_action_column_shows_add_label(tmp_path: Path):
+    sample = tmp_path / "kick.wav"
+    sample.write_bytes(b"data")
+    row = WorkbenchRow(
+        display_name="kick",
+        relative_path="kick.wav",
+        path=str(sample),
+        bpm=128.0,
+        key="Am",
+        key_conf=0.8,
+        loudness=-20.0,
+        brightness=2000.0,
+        sample_class="loop",
+        pred_type="Kick",
+        status="ok",
+    )
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        app._populate_playlist(WorkbenchResult(summary={"ok": 1}, rows=[row]))
+        root.update_idletasks()
+        values = app._tree.item("0", "values")
+        assert values[-1] == PLAYLIST_ACTION_LABEL
+    finally:
+        root.destroy()
+
+
+def test_workbench_playlist_action_click_opens_dialog(tmp_path: Path):
+    sample = tmp_path / "kick.wav"
+    sample.write_bytes(b"data")
+    row = WorkbenchRow(
+        display_name="kick",
+        relative_path="kick.wav",
+        path=str(sample),
+        bpm=128.0,
+        key="Am",
+        key_conf=0.8,
+        loudness=-20.0,
+        brightness=2000.0,
+        sample_class="loop",
+        pred_type="Kick",
+        status="ok",
+    )
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        app._populate_playlist(WorkbenchResult(summary={"ok": 1}, rows=[row]))
+        root.update_idletasks()
+        opened: list[WorkbenchRow] = []
+
+        def capture_dialog(target: WorkbenchRow) -> None:
+            opened.append(target)
+
+        with patch.object(app._tree, "identify_region", return_value="cell"):
+            with patch.object(app, "_column_id_at_x", return_value=PLAYLIST_ACTION_COLUMN):
+                with patch.object(app, "_row_at_tree_event", return_value=row):
+                    with patch.object(
+                        app, "_open_add_to_playlist_dialog", side_effect=capture_dialog
+                    ):
+                        app._on_tree_click(type("E", (), {"x": 1, "y": 1})())
+        assert opened == [row]
     finally:
         root.destroy()

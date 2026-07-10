@@ -18,6 +18,7 @@ from .workbench_controller import (
     WORKBENCH_GLOBAL_LIBRARY_TOKEN,
     FILTER_ALL_LABEL,
     add_workbench_library_folder,
+    add_workbench_row_to_playlist,
     analyze_folder_for_workbench,
     append_catalog_readonly_status_hint,
     apply_workbench_filters,
@@ -35,6 +36,7 @@ from .workbench_controller import (
     format_catalog_load_status,
     format_metadata_provenance_hint,
     format_path_display_lines,
+    format_playlist_add_status,
     format_workbench_active_filter_summary,
     format_workbench_detail_field_lines,
     format_workbench_search_status,
@@ -46,6 +48,7 @@ from .workbench_controller import (
     get_workbench_library_folders,
     import_catalog_rows_to_cache,
     is_catalog_readonly_row,
+    list_workbench_playlists,
     load_all_cached_rows,
     load_cached_folder_rows,
     load_catalog_rows,
@@ -76,7 +79,11 @@ from .workbench_controller import (
 )
 from .bpm_display import format_bpm_display
 from .workbench_attack_suggest import AttackSuggestion, suggest_attack_ms
-from .workbench_library import WorkbenchCueNotFoundError, WorkbenchCueValidationError
+from .workbench_library import (
+    WorkbenchCueNotFoundError,
+    WorkbenchCueValidationError,
+    WorkbenchPlaylistValidationError,
+)
 from .workbench_preview import WorkbenchPreviewPlayer, preview_toggle_action
 from .workbench_waveform import (
     attack_marker_x,
@@ -115,7 +122,11 @@ COLUMNS = (
     ("brightness", "Brightness", 90),
     ("pred_type", "Type", 90),
     ("status", "Status", 70),
+    ("playlist_action", "Playlist", 90),
 )
+
+PLAYLIST_ACTION_COLUMN = "playlist_action"
+PLAYLIST_ACTION_LABEL = "+ Playlist"
 
 
 
@@ -414,15 +425,21 @@ class WorkbenchApp:
             self._tree.heading(
                 col_id,
                 text=heading,
-                command=lambda c=col_id: self._on_sort_column(c),
+                command=(
+                    (lambda: None)
+                    if col_id == PLAYLIST_ACTION_COLUMN
+                    else lambda c=col_id: self._on_sort_column(c)
+                ),
             )
-            self._tree.column(col_id, width=width, anchor=tk.W if col_id == "name" else tk.CENTER)
+            anchor = tk.W if col_id in {"name", "playlist_action"} else tk.CENTER
+            self._tree.column(col_id, width=width, anchor=anchor)
 
         scroll_y = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self._tree.yview)
         self._tree.configure(yscrollcommand=scroll_y.set)
         self._tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
         self._tree.bind("<<TreeviewSelect>>", self._on_select)
+        self._tree.bind("<Button-1>", self._on_tree_click)
         self._tree.bind("<Double-Button-1>", self._on_tree_double_click)
         self._tree.bind("<space>", self._on_space_preview)
 
@@ -1229,6 +1246,7 @@ class WorkbenchApp:
                     _fmt(row.brightness, digits=1),
                     row.pred_type or row.sample_class or "—",
                     row.status,
+                    PLAYLIST_ACTION_LABEL,
                 ),
                 tags=tags,
             )
@@ -1319,6 +1337,120 @@ class WorkbenchApp:
             return
         self._on_select()
         self._play_preview()
+
+    def _column_id_at_x(self, x: int) -> str | None:
+        column = self._tree.identify_column(x)
+        if not column.startswith("#"):
+            return None
+        col_index = int(column[1:]) - 1
+        col_ids = [col_id for col_id, _heading, _width in COLUMNS]
+        if 0 <= col_index < len(col_ids):
+            return col_ids[col_index]
+        return None
+
+    def _row_at_tree_event(self, event: tk.Event) -> WorkbenchRow | None:
+        row_id = self._tree.identify_row(event.y)
+        if not row_id:
+            return None
+        idx = int(row_id)
+        if 0 <= idx < len(self._visible_rows):
+            return self._visible_rows[idx]
+        return None
+
+    def _on_tree_click(self, event: tk.Event) -> str | None:
+        if self._busy:
+            return None
+        if self._tree.identify_region(event.x, event.y) != "cell":
+            return None
+        if self._column_id_at_x(event.x) != PLAYLIST_ACTION_COLUMN:
+            return None
+        row = self._row_at_tree_event(event)
+        if row is None:
+            return "break"
+        self._open_add_to_playlist_dialog(row)
+        return "break"
+
+    def _open_add_to_playlist_dialog(self, row: WorkbenchRow) -> None:
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Sample zu Playlist hinzufügen")
+        dialog.configure(bg=BG_DARK)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        body = ttk.Frame(dialog, style="Panel.TFrame", padding=12)
+        body.pack(fill=tk.BOTH, expand=True)
+
+        sample_label = catalog_row_display_name(row)
+        ttk.Label(
+            body,
+            text=f"Sample: {sample_label}",
+            style="Panel.TLabel",
+            wraplength=360,
+        ).pack(anchor=tk.W, pady=(0, 8))
+
+        playlists = list_workbench_playlists()
+        selected_var = tk.StringVar(value=playlists[0] if playlists else "")
+        new_name_var = tk.StringVar(value="")
+
+        ttk.Label(body, text="Bestehende Playlist:", style="Panel.TLabel").pack(
+            anchor=tk.W
+        )
+        playlist_combo = ttk.Combobox(
+            body,
+            textvariable=selected_var,
+            values=playlists,
+            state="readonly" if playlists else "disabled",
+            width=42,
+        )
+        playlist_combo.pack(fill=tk.X, pady=(4, 10))
+
+        ttk.Label(body, text="Neue Playlist:", style="Panel.TLabel").pack(anchor=tk.W)
+        new_entry = ttk.Entry(body, textvariable=new_name_var, width=44)
+        new_entry.pack(fill=tk.X, pady=(4, 12))
+        if not playlists:
+            new_entry.focus_set()
+        else:
+            playlist_combo.focus_set()
+
+        actions = ttk.Frame(body, style="Panel.TFrame")
+        actions.pack(fill=tk.X)
+
+        def _close() -> None:
+            dialog.grab_release()
+            dialog.destroy()
+
+        def _submit() -> None:
+            playlist_name = new_name_var.get().strip() or selected_var.get().strip()
+            if not playlist_name:
+                messagebox.showerror(
+                    "Playlist",
+                    "Bitte eine bestehende Playlist wählen oder einen Namen eingeben.",
+                    parent=dialog,
+                )
+                return
+            try:
+                outcome = add_workbench_row_to_playlist(row, playlist_name)
+            except WorkbenchPlaylistValidationError as exc:
+                messagebox.showerror("Playlist", str(exc), parent=dialog)
+                return
+            except OSError as exc:
+                messagebox.showerror(
+                    "Playlist",
+                    f"Zuordnung konnte nicht gespeichert werden: {exc}",
+                    parent=dialog,
+                )
+                return
+            tone = "success" if outcome.result == "added" else "neutral"
+            self._set_status(format_playlist_add_status(outcome), tone=tone)
+            _close()
+
+        ttk.Button(actions, text="Hinzufügen", style="Accent.TButton", command=_submit).pack(
+            side=tk.RIGHT
+        )
+        ttk.Button(actions, text="Abbrechen", command=_close).pack(side=tk.RIGHT, padx=(0, 8))
+        dialog.bind("<Escape>", lambda _event: _close())
+        dialog.protocol("WM_DELETE_WINDOW", _close)
 
     def _on_space_preview(self, _event: tk.Event | None = None) -> str:
         if self._busy or not self._preview_row_path:

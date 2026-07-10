@@ -7,10 +7,10 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 WORKBENCH_ANALYZER_VERSION = "workbench_v1"
-WORKBENCH_LIBRARY_SCHEMA_VERSION = 3
+WORKBENCH_LIBRARY_SCHEMA_VERSION = 4
 _LIBRARY_DB_NAME = "workbench_library.db"
 
 _CUE_SAMPLE_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -107,10 +107,32 @@ def init_workbench_library(db_path: Path | None = None) -> None:
             CREATE INDEX IF NOT EXISTS idx_samples_folder_id ON samples(folder_id);
             CREATE INDEX IF NOT EXISTS idx_samples_lookup
                 ON samples(original_path, size_bytes, mtime_ns);
+
+            CREATE TABLE IF NOT EXISTS playlists (
+                id INTEGER PRIMARY KEY,
+                name TEXT UNIQUE NOT NULL COLLATE NOCASE,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS playlist_samples (
+                id INTEGER PRIMARY KEY,
+                playlist_id INTEGER NOT NULL,
+                sample_path TEXT NOT NULL,
+                added_at TEXT NOT NULL,
+                FOREIGN KEY(playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+                UNIQUE(playlist_id, sample_path)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_playlist_samples_playlist_id
+                ON playlist_samples(playlist_id);
+            CREATE INDEX IF NOT EXISTS idx_playlist_samples_path
+                ON playlist_samples(sample_path);
             """
         )
         _migrate_library_schema_v2(conn)
         _migrate_library_schema_v3(conn)
+        _migrate_library_schema_v4(conn)
         conn.commit()
 
 
@@ -174,6 +196,39 @@ def _migrate_library_schema_v3(conn: sqlite3.Connection) -> None:
     for name, definition in _PROVENANCE_SOURCE_COLUMNS:
         if name not in columns:
             conn.execute(f"ALTER TABLE samples ADD COLUMN {name} {definition}")
+
+
+def _migrate_library_schema_v4(conn: sqlite3.Connection) -> None:
+    """Add song-context playlist tables to existing workbench library databases."""
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='playlists'"
+    ).fetchone()
+    if row is not None:
+        return
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS playlists (
+            id INTEGER PRIMARY KEY,
+            name TEXT UNIQUE NOT NULL COLLATE NOCASE,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS playlist_samples (
+            id INTEGER PRIMARY KEY,
+            playlist_id INTEGER NOT NULL,
+            sample_path TEXT NOT NULL,
+            added_at TEXT NOT NULL,
+            FOREIGN KEY(playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+            UNIQUE(playlist_id, sample_path)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_playlist_samples_playlist_id
+            ON playlist_samples(playlist_id);
+        CREATE INDEX IF NOT EXISTS idx_playlist_samples_path
+            ON playlist_samples(sample_path);
+        """
+    )
 
 
 def validate_workbench_cue_metadata(
@@ -703,18 +758,156 @@ def load_all_cached_samples(*, db_path: Path | None = None) -> list[CachedWorkbe
     return [_cached_row_from_sqlite_row(row) for row in rows]
 
 
+class WorkbenchPlaylistValidationError(ValueError):
+    """Raised when song-context playlist input fails validation."""
+
+
+@dataclass
+class WorkbenchPlaylist:
+    id: int
+    name: str
+    created_at: str
+    updated_at: str
+
+
+PlaylistSampleAddResult = Literal["added", "duplicate"]
+
+
+def normalize_playlist_name(name: str) -> str:
+    """Normalize a user-facing song-context playlist name."""
+    text = re.sub(r"\s+", " ", name.strip())
+    if not text:
+        raise WorkbenchPlaylistValidationError("playlist name must not be empty")
+    if len(text) > 200:
+        raise WorkbenchPlaylistValidationError("playlist name too long (max 200)")
+    return text
+
+
+def _playlist_from_row(row: sqlite3.Row) -> WorkbenchPlaylist:
+    return WorkbenchPlaylist(
+        id=int(row["id"]),
+        name=row["name"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def list_playlists(*, db_path: Path | None = None) -> list[WorkbenchPlaylist]:
+    """Return song-context playlists sorted by name."""
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT id, name, created_at, updated_at
+            FROM playlists
+            ORDER BY name COLLATE NOCASE ASC
+            """
+        ).fetchall()
+    return [_playlist_from_row(row) for row in rows]
+
+
+def create_playlist(name: str, *, db_path: Path | None = None) -> WorkbenchPlaylist:
+    """Create a new song-context playlist."""
+    normalized = normalize_playlist_name(name)
+    now = _utc_now_iso()
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO playlists (name, created_at, updated_at)
+            VALUES (?, ?, ?)
+            """,
+            (normalized, now, now),
+        )
+        row = conn.execute(
+            "SELECT id, name, created_at, updated_at FROM playlists WHERE name = ?",
+            (normalized,),
+        ).fetchone()
+        conn.commit()
+    assert row is not None
+    return _playlist_from_row(row)
+
+
+def get_or_create_playlist(name: str, *, db_path: Path | None = None) -> WorkbenchPlaylist:
+    """Return an existing playlist by name or create it when missing."""
+    normalized = normalize_playlist_name(name)
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT id, name, created_at, updated_at
+            FROM playlists
+            WHERE name = ? COLLATE NOCASE
+            """,
+            (normalized,),
+        ).fetchone()
+        if row is not None:
+            return _playlist_from_row(row)
+    return create_playlist(normalized, db_path=db_path)
+
+
+def add_sample_to_playlist(
+    playlist_id: int,
+    sample_path: Path | str,
+    *,
+    db_path: Path | None = None,
+) -> PlaylistSampleAddResult:
+    """Assign a sample path to a song-context playlist."""
+    path = str(Path(sample_path).expanduser().resolve())
+    if not path:
+        raise WorkbenchPlaylistValidationError("sample path must not be empty")
+    now = _utc_now_iso()
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        playlist = conn.execute(
+            "SELECT id FROM playlists WHERE id = ?",
+            (playlist_id,),
+        ).fetchone()
+        if playlist is None:
+            raise WorkbenchPlaylistValidationError(f"playlist not found: {playlist_id}")
+        existing = conn.execute(
+            """
+            SELECT id FROM playlist_samples
+            WHERE playlist_id = ? AND sample_path = ?
+            """,
+            (playlist_id, path),
+        ).fetchone()
+        if existing is not None:
+            return "duplicate"
+        conn.execute(
+            """
+            INSERT INTO playlist_samples (playlist_id, sample_path, added_at)
+            VALUES (?, ?, ?)
+            """,
+            (playlist_id, path, now),
+        )
+        conn.execute(
+            "UPDATE playlists SET updated_at = ? WHERE id = ?",
+            (now, playlist_id),
+        )
+        conn.commit()
+    return "added"
+
+
 __all__ = [
     "WORKBENCH_ANALYZER_VERSION",
     "WORKBENCH_LIBRARY_SCHEMA_VERSION",
     "CachedWorkbenchRow",
     "LibraryFolder",
+    "PlaylistSampleAddResult",
     "WorkbenchCueMetadata",
     "WorkbenchCueNotFoundError",
     "WorkbenchCueValidationError",
+    "WorkbenchPlaylist",
+    "WorkbenchPlaylistValidationError",
+    "add_sample_to_playlist",
     "connect_workbench_library",
+    "create_playlist",
     "default_workbench_cue_metadata",
+    "get_or_create_playlist",
     "init_workbench_library",
     "list_library_folders",
+    "list_playlists",
     "load_all_cached_samples",
     "load_folder_samples",
     "load_sample_by_path",
@@ -722,6 +915,7 @@ __all__ = [
     "lookup_sample",
     "mark_folder_opened",
     "normalize_display_name",
+    "normalize_playlist_name",
     "register_library_folder",
     "remove_library_folder",
     "save_sample_cue",

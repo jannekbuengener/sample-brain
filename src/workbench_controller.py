@@ -31,8 +31,13 @@ from .workbench_library import (
     WORKBENCH_ANALYZER_VERSION,
     CachedWorkbenchRow,
     LibraryFolder,
+    PlaylistSampleAddResult,
     WorkbenchCueMetadata,
+    WorkbenchPlaylistValidationError,
+    add_sample_to_playlist,
+    get_or_create_playlist,
     list_library_folders,
+    list_playlists,
     load_all_cached_samples,
     load_folder_samples,
     load_sample_by_path,
@@ -1738,6 +1743,40 @@ def preview_start_ms_from_waveform_x(x: int, width: int, duration_ms: int) -> in
     return cue_ms_from_x(x, width, duration_ms)
 
 
+@dataclass(frozen=True)
+class WorkbenchPlaylistAddOutcome:
+    result: PlaylistSampleAddResult
+    playlist_name: str
+
+
+def list_workbench_playlists(*, library_db_path: Path | None = None) -> list[str]:
+    """Return song-context playlist names from the workbench library."""
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    return [playlist.name for playlist in list_playlists(db_path=db)]
+
+
+def add_workbench_row_to_playlist(
+    row: WorkbenchRow,
+    playlist_name: str,
+    *,
+    library_db_path: Path | None = None,
+) -> WorkbenchPlaylistAddOutcome:
+    """Assign a workbench row to a song-context playlist."""
+    if not row.path:
+        raise WorkbenchPlaylistValidationError("sample path is missing")
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    playlist = get_or_create_playlist(playlist_name, db_path=db)
+    result = add_sample_to_playlist(playlist.id, row.path, db_path=db)
+    return WorkbenchPlaylistAddOutcome(result=result, playlist_name=playlist.name)
+
+
+def format_playlist_add_status(outcome: WorkbenchPlaylistAddOutcome) -> str:
+    """Format a user-facing status message after playlist assignment."""
+    if outcome.result == "added":
+        return f'Sample zu Playlist "{outcome.playlist_name}" hinzugefügt'
+    return f'Sample ist bereits in Playlist "{outcome.playlist_name}"'
+
+
 __all__ = [
     "ALL_LIBRARY_VIEW_LABEL",
     "CATALOG_VIEW_LABEL",
@@ -1751,8 +1790,11 @@ __all__ = [
     "WorkbenchFolderValidation",
     "WorkbenchRow",
     "WorkbenchCueMetadata",
+    "WorkbenchPlaylistAddOutcome",
+    "WorkbenchPlaylistValidationError",
     "WorkbenchResult",
     "add_workbench_library_folder",
+    "add_workbench_row_to_playlist",
     "analyze_folder_for_workbench",
     "apply_workbench_filters",
     "apply_workbench_structured_filters",
@@ -1777,6 +1819,7 @@ __all__ = [
     "format_catalog_import_preview_message",
     "format_catalog_import_result_message",
     "format_catalog_load_status",
+    "format_playlist_add_status",
     "format_workbench_active_filter_summary",
     "format_workbench_search_status",
     "format_workbench_view_restore_status",
@@ -1800,6 +1843,7 @@ __all__ = [
     "get_preview_start_ms",
     "preview_catalog_import",
     "preview_start_ms_from_waveform_x",
+    "list_workbench_playlists",
     "load_all_cached_rows",
     "load_cached_folder_rows",
     "load_catalog_rows",
