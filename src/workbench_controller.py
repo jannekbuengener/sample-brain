@@ -1075,6 +1075,7 @@ def save_workbench_analysis_limit(
 
 @dataclass(frozen=True)
 class WorkbenchViewSettings:
+    show_view_toolbar: bool = True
     show_search: bool = True
     show_filters: bool = True
     show_library_manage: bool = True
@@ -1108,6 +1109,7 @@ def _view_settings_from_mapping(data: Mapping[str, Any]) -> WorkbenchViewSetting
         return default if not isinstance(value, bool) else value
 
     return WorkbenchViewSettings(
+        show_view_toolbar=_bool("show_view_toolbar", True),
         show_search=_bool("show_search", True),
         show_filters=_bool("show_filters", True),
         show_library_manage=_bool("show_library_manage", True),
@@ -1183,6 +1185,14 @@ def format_workbench_view_section_hidden_status(section: str) -> str:
 
 def format_workbench_view_restore_status() -> str:
     return "Standardansicht wiederhergestellt"
+
+
+def format_workbench_view_toolbar_hidden_status() -> str:
+    return "Ansichtsleiste ausgeblendet"
+
+
+def format_workbench_view_toolbar_shown_status() -> str:
+    return "Ansichtsleiste eingeblendet"
 
 
 def get_workbench_library_folders(
@@ -1909,6 +1919,8 @@ __all__ = [
     "format_workbench_search_status",
     "format_workbench_view_restore_status",
     "format_workbench_view_section_hidden_status",
+    "format_workbench_view_toolbar_hidden_status",
+    "format_workbench_view_toolbar_shown_status",
     "import_catalog_rows_to_cache",
     "is_catalog_readonly_row",
     "WorkbenchSearchMode",

@@ -12,14 +12,30 @@ from src.workbench_controller import (
     WORKBENCH_VIEW_TOGGLE_HELP,
     WorkbenchResult,
     WorkbenchRow,
+    format_workbench_view_toolbar_hidden_status,
+    format_workbench_view_toolbar_shown_status,
     load_workbench_analysis_limit,
+    load_workbench_view_settings,
     save_workbench_analysis_limit,
+    save_workbench_view_settings,
     workbench_filter_options,
+    WorkbenchViewSettings,
 )
 
 
-def test_workbench_gui_startup_smoke_constructs_key_widgets(tmp_path: Path):
+def _widget_is_packed(widget: tk.Misc) -> bool:
+    try:
+        widget.pack_info()
+        return True
+    except tk.TclError:
+        return False
+
+
+def test_workbench_gui_startup_smoke_constructs_key_widgets(tmp_path: Path, monkeypatch):
     """WorkbenchApp builds without error and exposes core UI handles."""
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
     folder = tmp_path / "samples"
     folder.mkdir()
     dialog_folder = tmp_path / "dialog_samples"
@@ -49,6 +65,9 @@ def test_workbench_gui_startup_smoke_constructs_key_widgets(tmp_path: Path):
         assert hasattr(app, "_playlist_list"), "playlist sidebar list must exist"
         assert hasattr(app, "_load_playlist_samples")
         assert hasattr(app, "_show_search_var")
+        assert hasattr(app, "_show_view_toolbar_var")
+        assert hasattr(app, "_view_bar")
+        assert _widget_is_packed(app._view_bar)
         assert hasattr(app, "_filter_bar")
         assert not hasattr(app, "_copy_path_btn")
         assert WORKBENCH_VIEW_TOGGLE_HELP in app._view_help_var.get()
@@ -268,5 +287,76 @@ def test_workbench_playlist_select_loads_rows(tmp_path: Path, monkeypatch):
         with patch.object(app, "_load_playlist_samples", side_effect=capture_load):
             app._on_playlist_select()
         assert loaded == ["Song A"]
+    finally:
+        root.destroy()
+
+
+def test_workbench_view_toolbar_hidden_via_edit_menu(tmp_path: Path, monkeypatch):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        root.update_idletasks()
+        assert _widget_is_packed(app._view_bar)
+
+        app._show_view_toolbar_var.set(False)
+        app._on_view_toolbar_toggled()
+        root.update_idletasks()
+        assert not _widget_is_packed(app._view_bar)
+        assert app._show_search_var.get() is True
+        assert _widget_is_packed(app._filter_bar)
+
+        app._show_view_toolbar_var.set(True)
+        app._on_view_toolbar_toggled()
+        root.update_idletasks()
+        assert _widget_is_packed(app._view_bar)
+        assert WORKBENCH_VIEW_TOGGLE_HELP in app._view_help_var.get()
+    finally:
+        root.destroy()
+
+
+def test_workbench_restore_default_view_shows_toolbar_and_sections(tmp_path: Path, monkeypatch):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        root.update_idletasks()
+        app._show_view_toolbar_var.set(False)
+        app._on_view_toolbar_toggled()
+        app._show_search_var.set(False)
+        app._on_view_section_toggled("search")
+        root.update_idletasks()
+        assert not _widget_is_packed(app._view_bar)
+
+        app._restore_default_view()
+        root.update_idletasks()
+        assert _widget_is_packed(app._view_bar)
+        assert app._show_search_var.get() is True
+        assert _widget_is_packed(app._filter_bar)
+    finally:
+        root.destroy()
+
+
+def test_workbench_restores_persisted_view_toolbar_setting(tmp_path: Path, monkeypatch):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    settings = WorkbenchViewSettings(show_view_toolbar=False)
+    assert save_workbench_view_settings(settings, state_dir=state_dir)
+    assert load_workbench_view_settings(state_dir=state_dir).show_view_toolbar is False
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        root.update_idletasks()
+        assert app._show_view_toolbar_var.get() is False
+        assert not _widget_is_packed(app._view_bar)
     finally:
         root.destroy()

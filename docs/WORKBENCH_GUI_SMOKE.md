@@ -23,6 +23,9 @@
 | Catalog→cache import button present | `_catalog_import_btn` in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
 | Playlist action column per sample row | `playlist_action` / `+ Playlist` in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
 | Playlist sidebar list present | `_playlist_list` in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
+| View toolbar visible by default | `_view_bar` mapped on startup | ✅ PASS |
+| Edit menu toggles view toolbar | `_show_view_toolbar_var` + hide/show in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
+| View toolbar setting persists | `show_view_toolbar` in `workbench_view_settings.json` | ✅ PASS |
 
 ## Interactive manual smoke (producer workflow)
 
@@ -48,6 +51,9 @@ Not automated in CI. When running locally with a display:
 18. **Attack vorschlagen** → shows suggestion only; **Vorschlag übernehmen** persists after explicit click
 19. Click **+ Playlist** on a sample row → choose existing playlist or enter a new name → status confirms assignment in `workbench_library.db` (`playlists` / `playlist_samples` tables)
 20. Select a playlist under **Playlists** in the sidebar → sample table shows assigned samples; empty playlist shows 0 samples without crash
+21. Under **Edit**, uncheck **Ansichtsleiste anzeigen** → view toolbar hides; sample table gains vertical space; section toggles remain in saved settings
+22. Re-enable **Ansichtsleiste anzeigen** → toolbar returns with all section controls and help text
+23. Click **Standardansicht wiederherstellen** → toolbar and all section toggles return to visible defaults
 
 ## Limitations
 

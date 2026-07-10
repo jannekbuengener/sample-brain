@@ -50,6 +50,8 @@ from src.workbench_controller import (
     effective_workbench_text_query,
     format_workbench_view_restore_status,
     format_workbench_view_section_hidden_status,
+    format_workbench_view_toolbar_hidden_status,
+    format_workbench_view_toolbar_shown_status,
     DEFAULT_WORKBENCH_VIEW_SETTINGS,
     DEFAULT_WORKBENCH_ANALYSIS_LIMIT_TEXT,
     VIEW_SECTION_FILTERS,
@@ -1103,6 +1105,7 @@ def test_workbench_view_settings_round_trip(tmp_path: Path):
     state_dir = tmp_path / "state"
     state_dir.mkdir()
     custom = WorkbenchViewSettings(
+        show_view_toolbar=False,
         show_search=False,
         show_filters=True,
         show_library_manage=False,
@@ -1175,6 +1178,8 @@ def test_format_workbench_view_status_messages():
     assert "zurückgesetzt" in format_workbench_view_section_hidden_status(VIEW_SECTION_FILTERS)
     assert "Waveform" in format_workbench_view_section_hidden_status(VIEW_SECTION_WAVEFORM_TOOLS)
     assert format_workbench_view_restore_status() == "Standardansicht wiederhergestellt"
+    assert format_workbench_view_toolbar_hidden_status() == "Ansichtsleiste ausgeblendet"
+    assert format_workbench_view_toolbar_shown_status() == "Ansichtsleiste eingeblendet"
 
 
 def test_hidden_search_does_not_filter_playlist_rows():
