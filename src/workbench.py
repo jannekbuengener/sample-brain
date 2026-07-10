@@ -27,6 +27,7 @@ from .workbench_controller import (
     count_catalog_samples,
     DEFAULT_CATALOG_LOAD_LIMIT,
     export_workbench_rows_to_csv,
+    export_workbench_rows_to_fl_tags,
     effective_workbench_row_filters,
     effective_workbench_text_query,
     format_catalog_load_status,
@@ -51,6 +52,7 @@ from .workbench_controller import (
     load_workbench_view_settings,
     parse_workbench_bpm_bound,
     preview_start_ms_from_waveform_x,
+    resolve_workbench_fl_user_data_path,
     remove_workbench_library_folder,
     save_workbench_analysis_limit,
     save_workbench_last_folder,
@@ -58,7 +60,7 @@ from .workbench_controller import (
     save_workbench_view_settings,
     sort_workbench_rows,
     validate_workbench_folder,
-    workbench_filter_options,
+    workbench_rows_for_fl_export,
     DEFAULT_WORKBENCH_VIEW_SETTINGS,
     VIEW_SECTION_FILTERS,
     VIEW_SECTION_LIBRARY_MANAGE,
@@ -329,6 +331,10 @@ class WorkbenchApp:
         ttk.Button(filter_bar, text="CSV exportieren", command=self._export_csv).pack(
             side=tk.RIGHT, padx=(8, 0)
         )
+        self._fl_export_btn = ttk.Button(
+            filter_bar, text="FL exportieren", command=self._export_fl, state=tk.DISABLED
+        )
+        self._fl_export_btn.pack(side=tk.RIGHT, padx=(8, 0))
 
         structured_bar = ttk.Frame(playlist_frame, style="Panel.TFrame")
         structured_bar.pack(fill=tk.X, pady=(0, 6))
@@ -1192,6 +1198,7 @@ class WorkbenchApp:
                 reverse=self._sort_reverse,
             )
         self._visible_rows = visible
+        self._update_fl_export_button_state()
         self._update_sort_headings()
         self._tree.delete(*self._tree.get_children())
         for idx, row in enumerate(self._visible_rows):
@@ -1439,6 +1446,49 @@ class WorkbenchApp:
             messagebox.showerror("Export", f"Export fehlgeschlagen: {exc}")
             return
         self._set_status(f"CSV exportiert ({count} Zeilen).", tone="success")
+
+    def _playlist_rows_for_export(self) -> list[WorkbenchRow]:
+        return self._visible_rows if self._visible_rows else self._rows
+
+    def _update_fl_export_button_state(self) -> None:
+        if workbench_rows_for_fl_export(self._playlist_rows_for_export()):
+            self._fl_export_btn.state(["!disabled"])
+        else:
+            self._fl_export_btn.state(["disabled"])
+
+    def _export_fl(self) -> None:
+        rows = self._playlist_rows_for_export()
+        exportable = workbench_rows_for_fl_export(rows)
+        if not exportable:
+            messagebox.showinfo(
+                "FL-Export",
+                "Keine exportierbaren Playlist-Zeilen vorhanden.",
+            )
+            return
+
+        fl_user_data = resolve_workbench_fl_user_data_path()
+        if not fl_user_data:
+            chosen = filedialog.askdirectory(title="FL Studio User Data Ordner wählen")
+            if not chosen:
+                self._set_status("FL-Export abgebrochen.", tone="neutral")
+                return
+            fl_user_data = chosen
+
+        result = export_workbench_rows_to_fl_tags(exportable, fl_user_data)
+        if not result.ok:
+            messagebox.showerror("FL-Export", result.error_message or "FL-Export fehlgeschlagen.")
+            self._set_status(result.error_message or "FL-Export fehlgeschlagen.", tone="error")
+            return
+
+        status = f"FL-Tags exportiert ({result.exported_count} Samples)."
+        if result.tags_path is not None:
+            status += f" → {result.tags_path}"
+        self._set_status(status, tone="success")
+        if result.warnings:
+            messagebox.showwarning(
+                "FL-Export",
+                "Export abgeschlossen mit Pfad-Warnungen. Details in der Statuszeile.",
+            )
 
     def _on_waveform_resize(self, _event: tk.Event | None = None) -> None:
         self._draw_waveform(self._detail_row)

@@ -15,6 +15,7 @@ from src.workbench_controller import (
     apply_workbench_structured_filters,
     error_message_for_code,
     export_workbench_rows_to_csv,
+    export_workbench_rows_to_fl_tags,
     filter_workbench_rows,
     format_path_display_lines,
     format_workbench_detail_field_lines,
@@ -52,6 +53,7 @@ from src.workbench_controller import (
     WorkbenchViewSettings,
     workbench_analysis_limit_file,
     workbench_last_folder_file,
+    workbench_rows_for_fl_export,
     WorkbenchRow,
     WorkbenchRowFilters,
     WorkbenchSearchStatusContext,
@@ -910,6 +912,77 @@ def test_export_workbench_rows_to_csv_empty_list(tmp_path: Path):
     with destination.open(encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle))
     assert rows == []
+
+
+def _ok_workbench_row(tmp_path: Path, name: str = "kick.wav") -> WorkbenchRow:
+    sample = tmp_path / name
+    sample.parent.mkdir(parents=True, exist_ok=True)
+    sample.write_bytes(b"data")
+    return WorkbenchRow(
+        display_name="kick",
+        relative_path=name,
+        path=str(sample),
+        bpm=128.0,
+        key="Am",
+        key_conf=0.8,
+        loudness=-20.0,
+        brightness=2000.0,
+        sample_class="loop",
+        pred_type="Kick",
+        status="ok",
+        details={"duration_sec": "2.5"},
+    )
+
+
+def test_workbench_rows_for_fl_export_skips_error_rows(tmp_path: Path):
+    ok_row = _ok_workbench_row(tmp_path)
+    error_row = WorkbenchRow(
+        display_name="bad",
+        relative_path="bad.wav",
+        path=str(tmp_path / "bad.wav"),
+        bpm=None,
+        key=None,
+        key_conf=None,
+        loudness=None,
+        brightness=None,
+        sample_class=None,
+        pred_type=None,
+        status="error",
+        error="failed",
+    )
+
+    exportable = workbench_rows_for_fl_export([ok_row, error_row])
+
+    assert exportable == [ok_row]
+
+
+def test_export_workbench_rows_to_fl_tags_empty_playlist(tmp_path: Path):
+    result = export_workbench_rows_to_fl_tags([], tmp_path / "fl_user")
+
+    assert not result.ok
+    assert result.error_message is not None
+
+
+def test_export_workbench_rows_to_fl_tags_rejects_missing_fl_path(tmp_path: Path):
+    row = _ok_workbench_row(tmp_path)
+
+    result = export_workbench_rows_to_fl_tags([row], "   ")
+
+    assert not result.ok
+    assert "FL User Data" in (result.error_message or "")
+
+
+def test_export_workbench_rows_to_fl_tags_writes_tags(tmp_path: Path):
+    root = tmp_path / "library"
+    row = _ok_workbench_row(root)
+    fl_user = tmp_path / "fl_user"
+
+    result = export_workbench_rows_to_fl_tags([row], fl_user, roots=[root])
+
+    assert result.ok
+    assert result.exported_count == 1
+    assert result.tags_path is not None
+    assert result.tags_path.is_file()
 
 
 def test_cli_help_includes_workbench():

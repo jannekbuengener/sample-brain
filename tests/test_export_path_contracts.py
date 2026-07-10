@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from src.export_fl import resolve_export_path, run_export
+from src.export_fl import resolve_export_path, run_export, write_fl_tags_from_sample_rows
 
 
 def test_resolve_export_path_with_single_root_match(tmp_path: Path):
@@ -60,3 +60,35 @@ def test_resolve_export_path_without_roots_keeps_stored_path(tmp_path: Path):
 def test_run_export_rejects_empty_fl_user_data():
     with pytest.raises(ValueError, match="FL user data path is empty"):
         run_export(fl_user_data_folder="   ", roots=[])
+
+
+def test_write_fl_tags_from_sample_rows_writes_expected_file(tmp_path: Path):
+    root = tmp_path / "library"
+    sample = root / "drums" / "kick.wav"
+    sample.parent.mkdir(parents=True)
+    sample.write_bytes(b"data")
+    rows = [
+        (
+            str(sample),
+            "drums/kick.wav",
+            2.5,
+            2000.0,
+            -20.0,
+            "loop",
+            "Am",
+            0.8,
+            128.0,
+            "Kick",
+        )
+    ]
+    fl_user = tmp_path / "fl_user"
+
+    tags_path, count, warnings = write_fl_tags_from_sample_rows(rows, fl_user, [root])
+
+    assert count == 1
+    assert warnings == []
+    assert tags_path.is_file()
+    content = tags_path.read_text(encoding="utf-8")
+    assert content.startswith("@TagCase=*")
+    assert "kick.wav" in content
+    assert "Kick" in content
