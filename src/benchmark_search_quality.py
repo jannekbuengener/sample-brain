@@ -11,7 +11,13 @@ import yaml
 
 from . import config
 from .config import set_db_path
-from .db import get_engine, init_db, insert_sample_embedding, text, upsert_embedding_model
+from .db import (
+    get_engine,
+    init_db,
+    insert_sample_embedding,
+    text,
+    upsert_embedding_model,
+)
 from .embed import ClapEmbeddingBackend, EmbeddingBackendUnavailableError
 from .hybrid_rank import HybridQuery
 from .search import collect_search_hits
@@ -28,6 +34,10 @@ from .search_eval import (
     summarize_query_metrics,
 )
 from .search_filters import SearchFilters
+from .search_quality_contract import (
+    SearchQualityContractError,
+    validate_search_quality_suite,
+)
 from .search_quality_fixtures import generate_search_quality_fixture
 
 DEFAULT_SUITE_PATH = (
@@ -88,16 +98,27 @@ class SearchQualityBenchmarkResult:
             row.passed_must_recall for row in self.query_results if row.error is None
         )
         checks["filter_compliance"] = all(
-            row.filter_compliance >= 1.0 for row in self.query_results if row.error is None
+            row.filter_compliance >= 1.0
+            for row in self.query_results
+            if row.error is None
         )
         return checks
 
 
-def load_search_quality_suite(path: Path) -> dict[str, Any]:
+def load_search_quality_suite(
+    path: Path,
+    *,
+    validate: bool = True,
+) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         data = yaml.safe_load(handle)
     if not isinstance(data, dict):
         raise ValueError(f"Invalid suite file: {path}")
+    if validate:
+        try:
+            validate_search_quality_suite(data)
+        except SearchQualityContractError as exc:
+            raise ValueError(f"Invalid suite contract in {path}: {exc}") from exc
     return data
 
 
@@ -170,12 +191,10 @@ def seed_golden_catalog(
         for sample in samples:
             sample_id = int(sample["id"])
             conn.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO samples (id, path, hash, duration)
                     VALUES (:id, :path, :hash, :duration)
-                    """
-                ),
+                    """),
                 {
                     "id": sample_id,
                     "path": sample.get("path", f"/golden/sample-{sample_id}.wav"),
@@ -184,12 +203,10 @@ def seed_golden_catalog(
                 },
             )
             conn.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO features (sample_id, bpm, key, pred_type, class)
                     VALUES (:sample_id, :bpm, :key, :pred_type, :class)
-                    """
-                ),
+                    """),
                 {
                     "sample_id": sample_id,
                     "bpm": sample.get("bpm"),
@@ -200,12 +217,10 @@ def seed_golden_catalog(
             )
             for tag in sample.get("tags") or []:
                 conn.execute(
-                    text(
-                        """
+                    text("""
                         INSERT OR IGNORE INTO sample_tags (sample_id, tag, source)
                         VALUES (:sample_id, :tag, 'golden')
-                        """
-                    ),
+                        """),
                     {"sample_id": sample_id, "tag": str(tag)},
                 )
 
@@ -217,13 +232,11 @@ def seed_golden_catalog(
                 )
             source_hash = str(sample.get("hash", f"hash-{sample_id}"))
             conn.execute(
-                text(
-                    """
+                text("""
                     INSERT OR IGNORE INTO sample_embeddings
                         (sample_id, model_id, embedding, embedding_format, source_hash)
                     VALUES (:sample_id, :model_id, :embedding, :embedding_format, :source_hash)
-                    """
-                ),
+                    """),
                 {
                     "sample_id": sample_id,
                     "model_id": model_id,
@@ -291,12 +304,10 @@ def seed_tier_b_clap_catalog(
 
         with engine.begin() as conn:
             conn.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO samples (id, path, hash, duration)
                     VALUES (:id, :path, :hash, :duration)
-                    """
-                ),
+                    """),
                 {
                     "id": sample_id,
                     "path": str(wav_path),
@@ -305,12 +316,10 @@ def seed_tier_b_clap_catalog(
                 },
             )
             conn.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO features (sample_id, bpm, key, pred_type, class)
                     VALUES (:sample_id, :bpm, :key, :pred_type, :class)
-                    """
-                ),
+                    """),
                 {
                     "sample_id": sample_id,
                     "bpm": sample.get("bpm"),
@@ -321,12 +330,10 @@ def seed_tier_b_clap_catalog(
             )
             for tag in sample.get("tags") or []:
                 conn.execute(
-                    text(
-                        """
+                    text("""
                         INSERT OR IGNORE INTO sample_tags (sample_id, tag, source)
                         VALUES (:sample_id, :tag, 'golden')
-                        """
-                    ),
+                        """),
                     {"sample_id": sample_id, "tag": str(tag)},
                 )
 
@@ -397,13 +404,19 @@ def run_search_quality_benchmark(
     bucket_labels: list[str] = []
 
     for raw_query in suite.get("queries") or []:
+        if raw_query.get("eval_excluded"):
+            continue
         query_id = str(raw_query["id"])
         mode = str(raw_query.get("mode", "vector"))
         query_class = raw_query.get("query_class")
         query_style = raw_query.get("query_style")
         topk = int(raw_query.get("topk", default_topk))
-        relevant_ids = {int(value) for value in raw_query.get("relevant_sample_ids") or []}
-        negative_ids = {int(value) for value in raw_query.get("negative_sample_ids") or []}
+        relevant_ids = {
+            int(value) for value in raw_query.get("relevant_sample_ids") or []
+        }
+        negative_ids = {
+            int(value) for value in raw_query.get("negative_sample_ids") or []
+        }
         filters = _filters_from_mapping(raw_query.get("filters"))
         hybrid = _hybrid_from_mapping(raw_query.get("hybrid"))
         must_recall_k = raw_query.get("must_recall_within_k")
@@ -421,7 +434,11 @@ def run_search_quality_benchmark(
             )
         elif mode in {"text", "audio"}:
             try:
-                query_audio = _resolve_query_audio(raw_query, fixture_paths) if mode == "audio" else None
+                query_audio = (
+                    _resolve_query_audio(raw_query, fixture_paths)
+                    if mode == "audio"
+                    else None
+                )
             except ValueError as exc:
                 query_results.append(
                     QueryEvalResult(
@@ -555,7 +572,9 @@ def run_search_quality_benchmark(
 
 def print_search_quality_report(result: SearchQualityBenchmarkResult) -> None:
     checks = result.threshold_pass()
-    print(f"suite={result.suite_path} tier={result.tier} queries={result.summary.query_count}")
+    print(
+        f"suite={result.suite_path} tier={result.tier} queries={result.summary.query_count}"
+    )
     print(
         "mean_precision_at_1="
         f"{result.summary.precision_at_1:.3f} "

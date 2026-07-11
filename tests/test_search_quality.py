@@ -131,6 +131,17 @@ class TestGoldenTierBPhase1:
     def test_suite_structure(self, suite_path: Path):
         suite = load_search_quality_suite(suite_path)
         assert suite["tier"] == "B"
+        assert suite.get("contract_version") == 1
+        assert set(suite.get("query_classes_present") or []) >= {
+            "kick_snare_perc",
+            "pad_texture",
+            "riser_impact",
+            "dry_wet",
+        }
+        assert set(suite.get("query_classes_pending") or []) >= {
+            "vocal_no_vocal",
+            "genre_mood",
+        }
         assert suite["defaults"]["backend"] == "clap"
         assert len(suite["catalog"]["samples"]) >= 10
         classes = {query.get("query_class") for query in suite["queries"]}
