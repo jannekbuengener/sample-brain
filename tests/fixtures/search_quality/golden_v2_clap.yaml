@@ -1,13 +1,26 @@
 version: 1
+contract_version: 1
 tier: B
 phase: 2
 phases_covered: [1, 2]
 embedding_dim: 512
+query_classes_present:
+  - kick_snare_perc
+  - pad_texture
+  - riser_impact
+  - dry_wet
+query_classes_pending:
+  - vocal_no_vocal
+  - genre_mood
 notes: >
-  Phase 1: kick_snare_perc and pad_texture.
+  Tier-B golden query contract (Issue #214). Phase 1: kick_snare_perc and pad_texture.
   Phase 2: riser_impact and dry_wet (dry_wet included after CLAP spike PASS).
+  vocal_no_vocal and genre_mood remain pending safe fixtures (#215); not evaluatable here.
   Optional query_style on text queries (reporting only): keyword, natural_language, exclusion.
+  Text mode uses `text`; audio mode uses portable `query_audio_fixture` catalog references only.
+  Hard negatives use `negative_sample_ids`, separate from `relevant_sample_ids`.
   Synthetic fixtures are generated at benchmark time; no audio is committed.
+  This contract does not prove successful CLAP search quality; evidence is in #216/#217/#219.
 defaults:
   topk: 10
   model_id: 1

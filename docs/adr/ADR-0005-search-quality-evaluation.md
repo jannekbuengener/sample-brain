@@ -126,3 +126,59 @@ Tier B Schwellw sind informativ bis kuratiertes CLAP-Set existiert.
 
 - [`docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md`](../benchmarks/SQLITE_VEC_GATE_EVIDENCE.md) — Backend-Gates (separates Concern)
 - [`src/search.py`](../../src/search.py), [`src/hybrid_rank.py`](../../src/hybrid_rank.py), [`src/search_filters.py`](../../src/search_filters.py)
+
+---
+
+## Appendix: Tier-B Golden Query Contract (Issue #214)
+
+Tier B uses [`tests/fixtures/search_quality/golden_v2_clap.yaml`](../../tests/fixtures/search_quality/golden_v2_clap.yaml) with machine validation in [`src/search_quality_contract.py`](../../src/search_quality_contract.py). `load_search_quality_suite()` rejects invalid suites before benchmark runs.
+
+### Tier A vs Tier B
+
+| Aspect | Tier A | Tier B |
+|--------|--------|--------|
+| Purpose | Pipeline regression (ranking, filters, hybrid) | Semantic relevance (CLAP) |
+| Query modes | `vector` | `text`, `audio` |
+| Embeddings | Deterministic vectors in YAML | CLAP at benchmark time |
+| CI | Blocking (`pytest`, no CLAP) | Optional local (`@pytest.mark.clap`) |
+
+### Query modes (Tier B)
+
+- **Text-to-sample (`mode: text`)** — requires non-empty `text`; must not set `query_audio` or `query_audio_fixture`.
+- **Audio-to-audio (`mode: audio`)** — requires `query_audio_fixture` referencing a catalog `fixture_name`; must not set `text` or private `query_audio` paths.
+
+### Canonical query classes
+
+Stable enum: `kick_snare_perc`, `pad_texture`, `riser_impact`, `dry_wet`, `vocal_no_vocal`, `genre_mood`.
+
+On `main` (Phase 1+2, PRs #110/#111): **4/6 present** — `kick_snare_perc`, `pad_texture`, `riser_impact`, `dry_wet`. **`vocal_no_vocal`** and **`genre_mood`** await safe fixtures (#215).
+
+### Relevance and hard negatives
+
+| Field | Semantics |
+|-------|-----------|
+| `relevant_sample_ids` | Expected positive hits (required, non-empty for evaluatable queries) |
+| `negative_sample_ids` | Hard negatives — must not appear in top-K; optional but must not overlap relevant |
+| `must_recall_within_k` | Optional recall gate within K (default reporting K=10) |
+
+### Portable fixture references
+
+Catalog samples use `fixture_name` + `fixture_type` (runtime WAV generation). Audio queries reference `query_audio_fixture: <fixture_name>`. Private absolute paths (`C:\…`, `/Users/…`, `/home/…`) are rejected.
+
+### Failure buckets (reporting)
+
+Assigned by [`src/search_eval.py`](../../src/search_eval.py): `success`, `negative_leak_top5`, `zero_precision_at_5`, `zero_mrr`, `must_recall_fail`, `error`. Aggregated per query class and mode in the benchmark harness.
+
+### Informative Tier-B thresholds
+
+Documented in suite `thresholds:` (not CI-blocking): mean P@5, mean R@10. Full evidence publication is #219.
+
+### Child issues using this contract
+
+- **#215** — safe audio fixtures for `vocal_no_vocal`, `genre_mood`
+- **#216** — text-to-sample evaluation
+- **#217** — audio-to-audio evaluation
+- **#218** — reproducible optional CLAP runtime
+- **#219** — evidence publication
+
+Vocal proxy spike (`golden_v2_clap_vocal_proxy_spike.yaml`) remains **HOLD** — not Tier-B production evidence.
