@@ -286,7 +286,7 @@ class TestTierBGoldenContract:
             validate_search_quality_suite(suite)
         assert exc.value.query_id == "empty_relevant"
 
-    def test_existing_four_query_classes_remain_loadable(self):
+    def test_all_six_query_classes_loadable(self):
         suite = load_search_quality_suite(DEFAULT_TIER_B_SUITE_PATH)
         validated = validate_search_quality_suite(suite)
         classes = {query.query_class for query in validated.queries}
@@ -295,6 +295,8 @@ class TestTierBGoldenContract:
             "pad_texture",
             "riser_impact",
             "dry_wet",
+            "vocal_no_vocal",
+            "genre_mood",
         }
         assert classes <= TIER_B_QUERY_CLASSES
 

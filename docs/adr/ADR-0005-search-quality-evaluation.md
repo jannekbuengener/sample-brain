@@ -151,7 +151,7 @@ Tier B uses [`tests/fixtures/search_quality/golden_v2_clap.yaml`](../../tests/fi
 
 Stable enum: `kick_snare_perc`, `pad_texture`, `riser_impact`, `dry_wet`, `vocal_no_vocal`, `genre_mood`.
 
-On `main` (Phase 1+2, PRs #110/#111): **4/6 present** — `kick_snare_perc`, `pad_texture`, `riser_impact`, `dry_wet`. **`vocal_no_vocal`** and **`genre_mood`** await safe fixtures (#215).
+On `main` (Phase 1+2, PRs #110/#111; Phase 3 #215): **6/6 present** — all canonical query classes including `vocal_no_vocal` and `genre_mood` with safe synthetic fixtures.
 
 ### Relevance and hard negatives
 

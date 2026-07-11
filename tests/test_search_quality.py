@@ -137,11 +137,10 @@ class TestGoldenTierBPhase1:
             "pad_texture",
             "riser_impact",
             "dry_wet",
-        }
-        assert set(suite.get("query_classes_pending") or []) >= {
             "vocal_no_vocal",
             "genre_mood",
         }
+        assert not suite.get("query_classes_pending")
         assert suite["defaults"]["backend"] == "clap"
         assert len(suite["catalog"]["samples"]) >= 10
         classes = {query.get("query_class") for query in suite["queries"]}
@@ -234,3 +233,39 @@ class TestGoldenTierBPhase2:
         checks = result.threshold_pass()
         assert checks["mean_precision_at_5"]
         assert checks["mean_recall_at_10"]
+
+
+class TestGoldenTierBPhase3:
+    @pytest.fixture
+    def suite_path(self) -> Path:
+        return DEFAULT_TIER_B_SUITE_PATH
+
+    def test_suite_structure(self, suite_path: Path):
+        suite = load_search_quality_suite(suite_path)
+        assert int(suite.get("phase", 1)) >= 3
+        classes = {query.get("query_class") for query in suite["queries"]}
+        assert classes >= {
+            "kick_snare_perc",
+            "pad_texture",
+            "riser_impact",
+            "dry_wet",
+            "vocal_no_vocal",
+            "genre_mood",
+        }
+        sample_classes = {
+            sample.get("sample_class") for sample in suite["catalog"]["samples"]
+        }
+        assert "vocal_no_vocal" in sample_classes
+        assert "genre_mood" in sample_classes
+        vocal_queries = [
+            q for q in suite["queries"] if q.get("query_class") == "vocal_no_vocal"
+        ]
+        genre_queries = [
+            q for q in suite["queries"] if q.get("query_class") == "genre_mood"
+        ]
+        assert len(vocal_queries) >= 6
+        assert len(genre_queries) >= 6
+        for query in vocal_queries + genre_queries:
+            assert query.get("negative_sample_ids")
+            assert query.get("relevant_sample_ids")
+            assert query.get("mode") in {"text", "audio"}

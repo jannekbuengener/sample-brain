@@ -393,7 +393,46 @@ Audio-to-audio discrimination works on the 6-sample catalog; **text-to-embedding
 - **No real vocal discrimination claim** — spike does not justify adding `vocal_no_vocal` to Tier-B golden set.
 - **No producer-library claim** — isolated 6-sample catalog only.
 - **Issue #73 remains OPEN** — vocal/no-vocal requires separate data strategy (curated public-domain vocals); genre/mood still pending.
-- **Next step:** defer `vocal_no_vocal` Tier-B evidence; plan genre_mood / public-domain vocal mini-set (Phase 3).
+- **Next step:** safe synthetic fixtures for `vocal_no_vocal` and `genre_mood` delivered in Phase 3 (#215); CLAP quality evaluation remains #216/#217.
+
+## Tier B Phase 3 — Safe CLAP fixtures (#215)
+
+Issue #215 adds deterministic synthetic fixtures for the remaining Tier-B query classes without committing audio binaries.
+
+### Fixture foundation
+
+| Query class | Catalog samples | Text queries | Audio queries | Generator types |
+|-------------|-----------------|--------------|---------------|-----------------|
+| `vocal_no_vocal` | 7 (ids 25–31) | 4 | 2 | `formant_tone`, `vowel_pad`, chord/sine/texture/kick controls |
+| `genre_mood` | 6 (ids 32–37) | 6 | 2 | `electronic_scene`, `ambient_scene`, `cinematic_tension_scene`, `warm_harmonic_scene`, `aggressive_perc_scene` |
+
+Machine-readable recipes: `tests/fixtures/search_quality/fixture_recipes.yaml`. Runtime generation: `src/search_quality_fixtures.py` (`generate_catalog_fixtures`, `generate_all_recipe_fixtures`).
+
+### Local generation (no CLAP required)
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q tests/test_search_quality_fixtures.py
+```
+
+Reproducibility smoke (temp dir outside repo):
+
+```powershell
+$dir = Join-Path $env:TEMP "sample-brain-fixture-smoke"
+.\.venv\Scripts\python.exe -c "from pathlib import Path; from src.search_quality_fixtures import generate_all_recipe_fixtures; generate_all_recipe_fixtures(Path(r'$dir'))"
+```
+
+### What Phase 3 proves
+
+- Deterministic, license-safe fixture generation at 48 kHz mono PCM
+- Golden contract (#214) satisfied for all six query classes
+- Portable `fixture_name` / `query_audio_fixture` references only
+
+### What Phase 3 does **not** prove
+
+- CLAP recognizes synthetic vocals as “real” singing or speech
+- Genre/mood text labels match CLAP embeddings (labels are evaluation hypotheses)
+- P@5, MRR@10, or production search readiness (#216, #217, #219)
+- Vocal proxy spike promotion — `golden_v2_clap_vocal_proxy_spike.yaml` remains **HOLD**
 
 ## Tier B stub (superseded by Phase 1 above)
 
@@ -412,4 +451,4 @@ Campaign adds `tests/test_search_quality.py` (Tier A metrics + frozen P@5 baseli
 
 **Tier A regression gates PASS.** The harness proves filter compliance, hybrid reranking, and P@K/R@K aggregation on deterministic fixtures. **Tier B Phase 1** delivers first measured CLAP semantic evidence on synthetic fixtures (P@5=0.440, MRR=0.792). **Tier B Phase 2** extends to 4/6 query classes (P@5=0.287, MRR=0.544 on 24-sample catalog); default merge gate remains Tier A only.
 
-**Explicitly not measured here:** sqlite-vec latency, CLAP semantic accuracy on private samples, hybrid weight tuning, full #73 query-class coverage (vocal/no-vocal, genre/mood pending).
+**Explicitly not measured here:** sqlite-vec latency, CLAP semantic accuracy on private samples, hybrid weight tuning. Tier-B **fixture foundation** for all six query classes is complete (#215); CLAP ranking evidence for `vocal_no_vocal` / `genre_mood` awaits #216/#217/#219.
