@@ -1,21 +1,24 @@
 version: 1
 contract_version: 1
 tier: B
-phase: 2
-phases_covered: [1, 2]
+phase: 3
+phases_covered: [1, 2, 3]
 embedding_dim: 512
 query_classes_present:
   - kick_snare_perc
   - pad_texture
   - riser_impact
   - dry_wet
-query_classes_pending:
   - vocal_no_vocal
   - genre_mood
+query_classes_pending: []
 notes: >
   Tier-B golden query contract (Issue #214). Phase 1: kick_snare_perc and pad_texture.
-  Phase 2: riser_impact and dry_wet (dry_wet included after CLAP spike PASS).
-  vocal_no_vocal and genre_mood remain pending safe fixtures (#215); not evaluatable here.
+  Phase 2: riser_impact and dry_wet. Phase 3 (#215): vocal_no_vocal and genre_mood safe
+  synthetic fixtures via tests/fixtures/search_quality/fixture_recipes.yaml.
+  Vocal-like fixtures are formant/vowel proxies only — not real speech or singing.
+  Genre/mood labels (dark, uplifting, ambient, cinematic, warm, aggressive) are evaluation
+  hypotheses; empirical CLAP checks belong to #216/#217/#219.
   Optional query_style on text queries (reporting only): keyword, natural_language, exclusion.
   Text mode uses `text`; audio mode uses portable `query_audio_fixture` catalog references only.
   Hard negatives use `negative_sample_ids`, separate from `relevant_sample_ids`.
@@ -238,6 +241,121 @@ catalog:
       pred_type: percussion
       sample_class: dry_wet
       tags: [perc, wet, reverb]
+    - id: 25
+      fixture_name: vocal-formant-a
+      fixture_type: formant_tone
+      fixture_params:
+        f0_hz: 150.0
+        formants_hz: [700.0, 1220.0, 2600.0]
+        bandwidth_q: 8.0
+      duration: 4.0
+      pred_type: vocal
+      sample_class: vocal_no_vocal
+      tags: [vocal, proxy, synthetic]
+    - id: 26
+      fixture_name: vocal-formant-b
+      fixture_type: formant_tone
+      fixture_params:
+        f0_hz: 165.0
+        formants_hz: [500.0, 1700.0, 2500.0]
+        bandwidth_q: 8.0
+        vibrato_hz: 5.0
+        vibrato_depth: 0.012
+      duration: 4.0
+      pred_type: vocal
+      sample_class: vocal_no_vocal
+      tags: [vocal, proxy, synthetic]
+    - id: 27
+      fixture_name: vocal-vowel-a
+      fixture_type: vowel_pad
+      fixture_params:
+        f0_hz: 130.0
+        formants_hz: [600.0, 1400.0, 2800.0]
+        bandwidth_q: 7.5
+      duration: 4.0
+      pred_type: vocal
+      sample_class: vocal_no_vocal
+      tags: [vocal, vowel, synthetic]
+    - id: 28
+      fixture_name: no-vocal-chord-a
+      fixture_type: chord_pad
+      fixture_params: {root: D}
+      duration: 4.0
+      pred_type: pad
+      sample_class: vocal_no_vocal
+      tags: [instrumental, pad]
+    - id: 29
+      fixture_name: no-vocal-lead-a
+      fixture_type: sine_tone
+      fixture_params: {frequency_hz: 330}
+      duration: 4.0
+      pred_type: pad
+      sample_class: vocal_no_vocal
+      tags: [instrumental, synth]
+    - id: 30
+      fixture_name: no-vocal-texture-a
+      fixture_type: texture_noise
+      fixture_params: {seed: 77}
+      duration: 4.0
+      pred_type: texture
+      sample_class: vocal_no_vocal
+      tags: [instrumental, texture]
+    - id: 31
+      fixture_name: no-vocal-kick-a
+      fixture_type: kick_transient
+      fixture_params: {bpm: 120}
+      duration: 4.0
+      pred_type: kick
+      sample_class: vocal_no_vocal
+      tags: [instrumental, kick, percussion]
+    - id: 32
+      fixture_name: genre-dark-electronic
+      fixture_type: electronic_scene
+      fixture_params: {variant: dark, bpm: 128.0, seed: 21511}
+      duration: 4.0
+      pred_type: loop
+      sample_class: genre_mood
+      tags: [electronic, dark, loop]
+    - id: 33
+      fixture_name: genre-bright-electronic
+      fixture_type: electronic_scene
+      fixture_params: {variant: bright, bpm: 132.0, seed: 21512}
+      duration: 4.0
+      pred_type: loop
+      sample_class: genre_mood
+      tags: [electronic, bright, uplifting]
+    - id: 34
+      fixture_name: genre-ambient-calm
+      fixture_type: ambient_scene
+      fixture_params: {root_hz: 196.0, seed: 21513}
+      duration: 4.0
+      pred_type: pad
+      sample_class: genre_mood
+      tags: [ambient, calm, pad]
+    - id: 35
+      fixture_name: genre-cinematic-tension
+      fixture_type: cinematic_tension_scene
+      fixture_params: {rumble_hz: 45.0, seed: 21514}
+      duration: 4.0
+      pred_type: fx
+      sample_class: genre_mood
+      tags: [cinematic, tension, texture]
+    - id: 36
+      fixture_name: genre-warm-relaxed
+      fixture_type: warm_harmonic_scene
+      fixture_params: {root_hz: 220.0, bpm: 90.0, seed: 21515}
+      duration: 4.0
+      pred_type: pad
+      sample_class: genre_mood
+      tags: [warm, relaxed, harmonic]
+    - id: 37
+      fixture_name: genre-aggressive-perc
+      fixture_type: aggressive_perc_scene
+      fixture_params: {bpm: 150.0, seed: 21516}
+      duration: 4.0
+      pred_type: percussion
+      sample_class: genre_mood
+      tags: [aggressive, percussion, energy]
 queries:
   - id: kick_text_basic
     mode: text
@@ -415,4 +533,112 @@ queries:
     query_audio_fixture: kick-wet-a
     relevant_sample_ids: [20]
     negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 24]
+    must_recall_within_k: 10
+  - id: singing_voice_text
+    mode: text
+    query_class: vocal_no_vocal
+    query_style: keyword
+    text: singing voice
+    relevant_sample_ids: [25, 26, 27]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37]
+    must_recall_within_k: 10
+  - id: vocal_sound_text
+    mode: text
+    query_class: vocal_no_vocal
+    query_style: keyword
+    text: vocal sound
+    relevant_sample_ids: [25, 26, 27]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37]
+    must_recall_within_k: 10
+  - id: human_voice_tone_text
+    mode: text
+    query_class: vocal_no_vocal
+    query_style: natural_language
+    text: human voice tone
+    relevant_sample_ids: [25, 26, 27]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37]
+    must_recall_within_k: 10
+  - id: instrumental_no_vocal_text
+    mode: text
+    query_class: vocal_no_vocal
+    query_style: exclusion
+    text: instrumental synth without vocals
+    relevant_sample_ids: [28, 29, 30, 31]
+    negative_sample_ids: [25, 26, 27]
+    must_recall_within_k: 10
+  - id: vocal_formant_audio_ref
+    mode: audio
+    query_class: vocal_no_vocal
+    query_audio_fixture: vocal-formant-a
+    relevant_sample_ids: [25, 26, 27]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37]
+    must_recall_within_k: 10
+  - id: instrumental_chord_audio_ref
+    mode: audio
+    query_class: vocal_no_vocal
+    query_audio_fixture: no-vocal-chord-a
+    relevant_sample_ids: [28, 29, 30, 31]
+    negative_sample_ids: [25, 26, 27]
+    must_recall_within_k: 10
+  - id: dark_electronic_text
+    mode: text
+    query_class: genre_mood
+    query_style: keyword
+    text: dark driving electronic loop
+    relevant_sample_ids: [32]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 33, 34, 35, 36, 37]
+    must_recall_within_k: 10
+  - id: bright_uplifting_text
+    mode: text
+    query_class: genre_mood
+    query_style: natural_language
+    text: bright uplifting electronic
+    relevant_sample_ids: [33]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 34, 35, 36, 37]
+    must_recall_within_k: 10
+  - id: ambient_calm_text
+    mode: text
+    query_class: genre_mood
+    query_style: natural_language
+    text: calm ambient pad
+    relevant_sample_ids: [34]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35, 36, 37]
+    must_recall_within_k: 10
+  - id: cinematic_tension_text
+    mode: text
+    query_class: genre_mood
+    query_style: keyword
+    text: cinematic tension texture
+    relevant_sample_ids: [35]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 36, 37]
+    must_recall_within_k: 10
+  - id: warm_relaxed_text
+    mode: text
+    query_class: genre_mood
+    query_style: natural_language
+    text: warm relaxed harmonic pad
+    relevant_sample_ids: [36]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 37]
+    must_recall_within_k: 10
+  - id: aggressive_energy_text
+    mode: text
+    query_class: genre_mood
+    query_style: keyword
+    text: aggressive rhythmic energy
+    relevant_sample_ids: [37]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
+    must_recall_within_k: 10
+  - id: dark_electronic_audio_ref
+    mode: audio
+    query_class: genre_mood
+    query_audio_fixture: genre-dark-electronic
+    relevant_sample_ids: [32]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 33, 34, 35, 36, 37]
+    must_recall_within_k: 10
+  - id: ambient_calm_audio_ref
+    mode: audio
+    query_class: genre_mood
+    query_audio_fixture: genre-ambient-calm
+    relevant_sample_ids: [34]
+    negative_sample_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35, 36, 37]
     must_recall_within_k: 10

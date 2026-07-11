@@ -1,0 +1,254 @@
+version: 1
+contract_version: 1
+notes: >
+  Machine-readable Tier-B fixture recipes for vocal_no_vocal and genre_mood (#215).
+  All fixtures are fully procedural; no third-party audio. WAV files are generated
+  at runtime only. Genre/mood labels are evaluation hypotheses, not objective truths.
+defaults:
+  sample_rate: 48000
+  bit_depth: 16
+  channels: 1
+  origin: fully_procedural
+  no_third_party_audio: true
+recipes:
+  vocal-formant-a:
+    fixture_id: vocal-formant-a
+    query_class: vocal_no_vocal
+    semantic_subclass: synthetic_vocal_proxy
+    fixture_type: formant_tone
+    role: positive_candidate
+    duration_sec: 4.0
+    seed: 21501
+    fixture_params:
+      f0_hz: 150.0
+      formants_hz: [700.0, 1220.0, 2600.0]
+      bandwidth_q: 8.0
+    expected_filename: vocal-formant-a.wav
+    audio_properties:
+      sample_rate: 48000
+      channels: 1
+      non_silent: true
+      no_clipping: true
+    semantic_limits: >
+      Formant-harmonic proxy only; not real speech or singing.
+  vocal-formant-b:
+    fixture_id: vocal-formant-b
+    query_class: vocal_no_vocal
+    semantic_subclass: synthetic_vocal_proxy_vibrato
+    fixture_type: formant_tone
+    role: positive_candidate
+    duration_sec: 4.0
+    seed: 21502
+    fixture_params:
+      f0_hz: 165.0
+      formants_hz: [500.0, 1700.0, 2500.0]
+      bandwidth_q: 8.0
+      vibrato_hz: 5.0
+      vibrato_depth: 0.012
+    expected_filename: vocal-formant-b.wav
+    audio_properties:
+      sample_rate: 48000
+      channels: 1
+      non_silent: true
+      no_clipping: true
+    semantic_limits: >
+      Vibrato formant proxy; not real human voice.
+  vocal-vowel-a:
+    fixture_id: vocal-vowel-a
+    query_class: vocal_no_vocal
+    semantic_subclass: synthetic_vowel_pad
+    fixture_type: vowel_pad
+    role: positive_candidate
+    duration_sec: 4.0
+    seed: 21503
+    fixture_params:
+      f0_hz: 130.0
+      formants_hz: [600.0, 1400.0, 2800.0]
+      bandwidth_q: 7.5
+    expected_filename: vocal-vowel-a.wav
+    audio_properties:
+      sample_rate: 48000
+      channels: 1
+      non_silent: true
+      no_clipping: true
+    semantic_limits: >
+      Sustained vowel-like pad; not recorded speech.
+  no-vocal-chord-a:
+    fixture_id: no-vocal-chord-a
+    query_class: vocal_no_vocal
+    semantic_subclass: instrumental_chord_pad
+    fixture_type: chord_pad
+    role: hard_negative_candidate
+    duration_sec: 4.0
+    seed: 21504
+    fixture_params:
+      root: D
+    expected_filename: no-vocal-chord-a.wav
+    audio_properties:
+      sample_rate: 48000
+      channels: 1
+      non_silent: true
+      no_clipping: true
+    semantic_limits: Pure instrumental chord; no vocal formants.
+  no-vocal-lead-a:
+    fixture_id: no-vocal-lead-a
+    query_class: vocal_no_vocal
+    semantic_subclass: instrumental_lead
+    fixture_type: sine_tone
+    role: hard_negative_candidate
+    duration_sec: 4.0
+    seed: 21505
+    fixture_params:
+      frequency_hz: 330.0
+    expected_filename: no-vocal-lead-a.wav
+    audio_properties:
+      sample_rate: 48000
+      channels: 1
+      non_silent: true
+      no_clipping: true
+    semantic_limits: Pure sine lead; no speech-like envelope.
+  no-vocal-texture-a:
+    fixture_id: no-vocal-texture-a
+    query_class: vocal_no_vocal
+    semantic_subclass: noise_texture
+    fixture_type: texture_noise
+    role: tolerated_negative_candidate
+    duration_sec: 4.0
+    seed: 21506
+    fixture_params:
+      seed: 77
+    expected_filename: no-vocal-texture-a.wav
+    audio_properties:
+      sample_rate: 48000
+      channels: 1
+      non_silent: true
+      no_clipping: true
+    semantic_limits: Noise texture control; not vocal-like.
+  no-vocal-kick-a:
+    fixture_id: no-vocal-kick-a
+    query_class: vocal_no_vocal
+    semantic_subclass: percussion_kick
+    fixture_type: kick_transient
+    role: hard_negative_candidate
+    duration_sec: 4.0
+    seed: 21507
+    fixture_params:
+      bpm: 120.0
+    expected_filename: no-vocal-kick-a.wav
+    audio_properties:
+      sample_rate: 48000
+      channels: 1
+      non_silent: true
+      no_clipping: true
+    semantic_limits: Rhythmic kick loop; not speech-like.
+  genre-dark-electronic:
+    fixture_id: genre-dark-electronic
+    query_class: genre_mood
+    semantic_subclass: dark_driving_electronic
+    fixture_type: electronic_scene
+    role: positive_candidate
+    duration_sec: 4.0
+    seed: 21511
+    fixture_params:
+      variant: dark
+      bpm: 128.0
+    expected_filename: genre-dark-electronic.wav
+    audio_properties:
+      sample_rate: 48000
+      channels: 1
+      non_silent: true
+      no_clipping: true
+    semantic_limits: >
+      Procedural dark electronic loop hypothesis; subjective label for #216/#217.
+  genre-bright-electronic:
+    fixture_id: genre-bright-electronic
+    query_class: genre_mood
+    semantic_subclass: bright_energetic_electronic
+    fixture_type: electronic_scene
+    role: positive_candidate
+    duration_sec: 4.0
+    seed: 21512
+    fixture_params:
+      variant: bright
+      bpm: 132.0
+    expected_filename: genre-bright-electronic.wav
+    audio_properties:
+      sample_rate: 48000
+      channels: 1
+      non_silent: true
+      no_clipping: true
+    semantic_limits: >
+      Procedural bright electronic loop hypothesis; subjective label.
+  genre-ambient-calm:
+    fixture_id: genre-ambient-calm
+    query_class: genre_mood
+    semantic_subclass: calm_ambient_pad
+    fixture_type: ambient_scene
+    role: positive_candidate
+    duration_sec: 4.0
+    seed: 21513
+    fixture_params:
+      root_hz: 196.0
+    expected_filename: genre-ambient-calm.wav
+    audio_properties:
+      sample_rate: 48000
+      channels: 1
+      non_silent: true
+      no_clipping: true
+    semantic_limits: >
+      Slow ambient pad scene; calm/mood labels are evaluation hypotheses.
+  genre-cinematic-tension:
+    fixture_id: genre-cinematic-tension
+    query_class: genre_mood
+    semantic_subclass: cinematic_tension_texture
+    fixture_type: cinematic_tension_scene
+    role: positive_candidate
+    duration_sec: 4.0
+    seed: 21514
+    fixture_params:
+      rumble_hz: 45.0
+    expected_filename: genre-cinematic-tension.wav
+    audio_properties:
+      sample_rate: 48000
+      channels: 1
+      non_silent: true
+      no_clipping: true
+    semantic_limits: >
+      Low rumble + noise swell scene; cinematic label is subjective.
+  genre-warm-relaxed:
+    fixture_id: genre-warm-relaxed
+    query_class: genre_mood
+    semantic_subclass: warm_relaxed_harmonic
+    fixture_type: warm_harmonic_scene
+    role: positive_candidate
+    duration_sec: 4.0
+    seed: 21515
+    fixture_params:
+      root_hz: 220.0
+      bpm: 90.0
+    expected_filename: genre-warm-relaxed.wav
+    audio_properties:
+      sample_rate: 48000
+      channels: 1
+      non_silent: true
+      no_clipping: true
+    semantic_limits: >
+      Warm major chord with gentle pulse; relaxed mood is a hypothesis.
+  genre-aggressive-perc:
+    fixture_id: genre-aggressive-perc
+    query_class: genre_mood
+    semantic_subclass: aggressive_rhythmic_noise
+    fixture_type: aggressive_perc_scene
+    role: positive_candidate
+    duration_sec: 4.0
+    seed: 21516
+    fixture_params:
+      bpm: 150.0
+    expected_filename: genre-aggressive-perc.wav
+    audio_properties:
+      sample_rate: 48000
+      channels: 1
+      non_silent: true
+      no_clipping: true
+    semantic_limits: >
+      Fast noise/percussion scene; aggressive label is subjective.
