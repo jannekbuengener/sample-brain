@@ -14,7 +14,7 @@
       "id": "sample-brain-ci-debugger",
       "name": "CI Debugger",
       "description": "Diagnostiziert CI/CD-Fehlschläge, analysiert GitHub Actions Logs, schlägt Fixes vor",
-      "readonly": true
+      "readonly": false
     },
     {
       "id": "sample-brain-code-reviewer",
@@ -26,7 +26,7 @@
       "id": "sample-brain-docs-sync-maintainer",
       "name": "Docs Sync Maintainer",
       "description": "Erkennt Canon-Drift zwischen Docs und Code/CLI, synchronisiert Status-Dokumente",
-      "readonly": true
+      "readonly": false
     },
     {
       "id": "sample-brain-implementation-engineer",
@@ -56,7 +56,7 @@
       "id": "sample-brain-issue-backlog-maintainer",
       "name": "Issue Backlog Maintainer",
       "description": "Pflegt ISSUE_BACKLOG.md, synchronisiert Issue-Status mit Board-Reality",
-      "readonly": true
+      "readonly": false
     },
     {
       "id": "sample-brain-bootstrap-validator",
