@@ -45,7 +45,13 @@ Snyk, ZAP, DevSecOps-Meta — nur bei explizitem Auftrag.
 DOCS -> TESTS -> TEST FREEZE -> IMPLEMENTATION -> CHECKS. Die lokale Kette ist:
 
 ```text
-Neues Feature/Issue -> sample-brain-issue-to-session-plan -> sample-brain-test-first
+Issue mit signifikantem Produktcode-Slice -> sample-brain-issue-to-session-plan -> sample-brain-test-first
+Issue mit Docs-Slice -> sample-brain-issue-to-session-plan -> jMerta/docs-sync
+Issue mit CI-/Tooling-Slice -> sample-brain-issue-to-session-plan -> jMerta/ci-fix und optional sample-brain-ci-debugger
+Issue mit Dependency-Slice -> sample-brain-issue-to-session-plan -> jMerta/dependency-upgrader
+Issue mit Workflow-Slice -> sample-brain-issue-to-session-plan -> bestehende workflow-spezifische Route
+Issue mit Governance-Slice -> sample-brain-issue-to-session-plan -> bestehender Governance-/Docs-Weg
+Issue mit unbekanntem Slice -> sample-brain-issue-to-session-plan -> planning_blocked
 Unklarer Bug mit Produkt-/Verhaltensursache -> sample-brain-root-cause -> sample-brain-regression-gap -> sample-brain-test-first
 Unklarer Bug mit CI-/Tooling-/Infrastruktur-Ursache -> sample-brain-root-cause -> jMerta/ci-fix und sample-brain-ci-debugger
 Unklarer Bug mit Docs-/Contract-Ursache -> sample-brain-root-cause -> jMerta/docs-sync; sample-brain-test-first nur bei einer späteren genehmigten Produktcode-Aenderung
