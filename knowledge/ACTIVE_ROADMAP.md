@@ -62,7 +62,7 @@
 
 ## Track Deconstruction (#227-#268)
 
-GitHub reconciliation complete. Six parallel meta-parents define the full track-to-asset pipeline. Each parent decomposes into a docs contract (#232 Track Map is first) followed by runtime/research child issues. All are **OPEN** with no runtime implementation on `main`.
+GitHub reconciliation complete. Five meta-parents define the full track-to-asset pipeline. Each parent decomposes into a docs contract (#232 Track Map is first) followed by runtime/research child issues. All are **OPEN** with no runtime implementation on `main`.
 
 ### Parent hierarchy and working order
 

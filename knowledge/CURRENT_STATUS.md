@@ -104,7 +104,7 @@ sample-brain benchmark vec --samples 1000 --work-dir $env:TEMP\sample-brain-benc
 
 ## Track Deconstruction (#227-#268)
 
-GitHub reconciliation complete. Six meta-parents are **OPEN** with docs contracts in progress or planned. No runtime implementation exists on `main`.
+GitHub reconciliation complete. Five meta-parents are **OPEN** with docs contracts in progress or planned. No runtime implementation exists on `main`.
 
 ### Parent hierarchy
 

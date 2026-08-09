@@ -207,8 +207,14 @@ The `analysis` block holds the overall status plus musical, audio-summary, and t
 |-------|------|----------|-------------|
 | `downbeats.status` | string | yes | Individual status (Section 10). |
 | `downbeats.times_sec` | array of numbers | conditional | Downbeat / bar positions in seconds on the shared timebase. Present when status is `ok` or `partial`. |
-| `downbeats.beat_indices` | array of integers | no | Optional per-downbeat beat-index reference into `beats.times_sec`. |
+| `downbeats.beat_indices` | array of integers | no | Optional zero-based per-downbeat index into `beats.times_sec`. May be present only when `beats.status` is `ok` or `partial` and `beats.times_sec` is present. |
 | `downbeats.source_ref` | string | conditional | Key into `provenance.components`. Required when data is present. |
+
+**Rules:**
+
+- When `downbeats.beat_indices` is present, `beats.status` must be `ok` or `partial` and `beats.times_sec` must be present.
+- `downbeats.beat_indices` must contain exactly one entry per value in `downbeats.times_sec`.
+- Indices are zero-based. Every index must satisfy `0 <= index < len(beats.times_sec)`.
 
 ### 6.8 Energy
 
@@ -365,7 +371,7 @@ not_run                   -->  ok (does NOT degrade overall; only if not request
 | `source.original.audio_properties.duration_sec` | yes | number | Seconds |
 | `source.original.audio_properties.sample_rate_hz` | yes | integer | Hz |
 | `source.original.audio_properties.channels` | yes | integer | Channel count |
-| `source.original.source_ref` | conditional | string | Key into `provenance.components` |
+| `source.original.source_ref` | yes | string | Key into `provenance.components` |
 | `source.working_audio` | no | object | Only when working WAV exists |
 | `timebase.audio_ref` | yes | string | JSON pointer: `/source/original` or `/source/working_audio` |
 | `timebase.unit` | yes | string | `"seconds"` |
@@ -396,7 +402,7 @@ not_run                   -->  ok (does NOT degrade overall; only if not request
 | `analysis.timeline.beats.source_ref` | conditional | string | Key into `provenance.components` |
 | `analysis.timeline.downbeats.status` | yes | string | Individual status |
 | `analysis.timeline.downbeats.times_sec` | conditional | array | When status ok/partial |
-| `analysis.timeline.downbeats.beat_indices` | no | array | Optional |
+| `analysis.timeline.downbeats.beat_indices` | no | array | Zero-based; requires resolvable `beats.times_sec`, matching downbeat count, and in-range indices |
 | `analysis.timeline.downbeats.source_ref` | conditional | string | Key into `provenance.components` |
 | `analysis.timeline.energy.status` | yes | string | Individual status |
 | `analysis.timeline.energy.grid_kind` | conditional | string | `"uniform_time"` |
@@ -540,14 +546,7 @@ This example reflects what the current runtime (as of `main`, without Track Deco
     }
   },
   "quality": {
-    "notes": [
-      {
-        "code": "LOW_KEY_CONF",
-        "severity": "warning",
-        "path": "/analysis/musical/key",
-        "message": "Chroma peak prominence 0.82 is borderline; confirm key by ear for harmonic matching."
-      }
-    ]
+    "notes": []
   }
 }
 ```
