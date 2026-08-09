@@ -12,6 +12,7 @@ Skills werden empfohlen, nicht automatisch ausgeführt.
 | Dependency-Bump / CVE | `jMerta/dependency-upgrader` |
 | Doku driftet vom Code | `jMerta/docs-sync` |
 | Implementierungsplanung | `jMerta/plan-work` |
+| Wesentliche Produktivcode-Implementierung (vor Code) | `sample-brain-test-first` |
 | Commit vorbereiten | `jMerta/commit-work` |
 | PR vorbereiten / öffnen | `jMerta/create-pr` |
 | Commit + PR zusammen | `jMerta/commit-work` + `jMerta/create-pr` |
@@ -36,3 +37,7 @@ Snyk, ZAP, DevSecOps-Meta — nur bei explizitem Auftrag.
 1. Priorität A
 2. Priorität B (nur Security-Auftrag)
 3. Priorität C (nicht als Default)
+
+`sample-brain-test-first` ist der lokale Repo-Vertrag fuer die Reihenfolge
+DOCS -> TESTS -> TEST FREEZE -> IMPLEMENTATION -> CHECKS. Er ergänzt, ersetzt
+aber nicht die externen Workflow-Skills.

@@ -12,8 +12,9 @@ Sie beschleunigen Bugfix, CI-Triage, Dependency-Pflege, Doku-Sync und PR-Vorbere
 - `.github/workflows/dependency-review.yml` – Dependency Review
 - `.github/workflows/gitleaks.yml` – Secret Scanning
 
-Skill-Quellen (extern, nicht ins Repo kopieren; lokale Pfade nur in privater Agent-/IDE-Konfiguration):
+Skill-Quellen:
 
+- `sample-brain-test-first` – lokaler Repo-Vertrag fuer wesentliche Produktivcode-Implementierung
 - `jMerta` – täglicher Agenten-Workflow (Priorität A)
 - `Anthropic-Cybersecurity-Skills` – Security-Hardening (Priorität B)
 
@@ -32,9 +33,14 @@ Routing-Details: [.cursor/rules/skill-routing.mdc](../.cursor/rules/skill-routin
 | `jMerta/commit-work` | Commit vorbereiten, Message, Staging |
 | `jMerta/create-pr` | PR öffnen, Beschreibung, Checks |
 | `jMerta/plan-work` | Implementierung planen, Scope klären |
+| `sample-brain-test-first` | Vor jeder wesentlichen Produktivcode-Implementierung anwenden |
 | `jMerta/coding-guidelines-verify` | Qualitätsprüfung vor Merge (scoped AGENTS) |
 
 **Default:** Bei unklarem Task zuerst Priorität A prüfen.
+
+`sample-brain-test-first` ist der lokale Vertrag fuer DOCS -> TESTS -> TEST
+FREEZE -> IMPLEMENTATION -> CHECKS. Er ergänzt die externen Workflow-Skills;
+er ersetzt sie nicht.
 
 ---
 
