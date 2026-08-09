@@ -16,7 +16,10 @@ Referenz: [docs/SKILL_INTEGRATION_PLAN.md](../../docs/SKILL_INTEGRATION_PLAN.md)
 
 | Situation | Skill(s) |
 |-----------|------------|
-| Bug oder Fehlverhalten | `jMerta/bug-triage` |
+| Neues Feature oder Issue planen | `sample-brain-issue-to-session-plan` |
+| Unklare Fehlerursache | `sample-brain-root-cause` |
+| Bekannter Defekt / fehlender Schutz | `sample-brain-regression-gap` |
+| Bug oder Fehlverhalten | `jMerta/bug-triage` ergänzend |
 | CI rot / fehlgeschlagene Checks | `jMerta/ci-fix` |
 | Dependency-Bump / CVE | `jMerta/dependency-upgrader` |
 | Doku driftet vom Code | `jMerta/docs-sync` |
@@ -51,6 +54,22 @@ Bestehende Workflows nur **referenzieren** (`ci-smoke`, `codeql`, `dependency-re
 2. Priorität B nur bei explizitem Security-Auftrag
 3. Priorität C (Snyk, ZAP, DevSecOps-Meta) nicht als Default
 
-`sample-brain-test-first` ist der lokale Repo-Vertrag fuer DOCS -> TESTS ->
-TEST FREEZE -> IMPLEMENTATION -> CHECKS. Er ergänzt die externen
-Workflow-Skills und ersetzt sie nicht.
+Die lokale Reihenfolge ist verbindlich fuer Sample-Brain-spezifische Arbeit:
+
+```text
+Issue mit signifikantem Produktcode-Slice -> sample-brain-issue-to-session-plan -> sample-brain-test-first
+Issue mit Docs-Slice -> sample-brain-issue-to-session-plan -> jMerta/docs-sync
+Issue mit CI-/Tooling-Slice -> sample-brain-issue-to-session-plan -> jMerta/ci-fix und optional sample-brain-ci-debugger
+Issue mit Dependency-Slice -> sample-brain-issue-to-session-plan -> jMerta/dependency-upgrader
+Issue mit Workflow-Slice -> sample-brain-issue-to-session-plan -> bestehende workflow-spezifische Route
+Issue mit Governance-Slice -> sample-brain-issue-to-session-plan -> bestehender Governance-/Docs-Weg
+Issue mit unbekanntem Slice -> sample-brain-issue-to-session-plan -> planning_blocked
+Unklarer Bug mit Produkt-/Verhaltensursache -> sample-brain-root-cause -> sample-brain-regression-gap -> sample-brain-test-first
+Unklarer Bug mit CI-/Tooling-/Infrastruktur-Ursache -> sample-brain-root-cause -> jMerta/ci-fix und sample-brain-ci-debugger
+Unklarer Bug mit Docs-/Contract-Ursache -> sample-brain-root-cause -> jMerta/docs-sync; sample-brain-test-first nur bei einer späteren genehmigten Produktcode-Aenderung
+Bekannter Defekt -> sample-brain-regression-gap -> sample-brain-test-first
+```
+
+`sample-brain-test-first` fixiert DOCS -> TESTS -> TEST FREEZE ->
+IMPLEMENTATION -> CHECKS. Die lokalen Skills ergänzen externe Workflow-Skills
+und ersetzen sie nicht.

@@ -9,3 +9,10 @@ Codex, or OpenCode mirrors until a repository loader and an active need are
 verified.
 
 External skills remain routing references; their bodies are not copied here.
+
+## Repository-Owned Skills
+
+- `sample-brain-test-first`
+- `sample-brain-root-cause`
+- `sample-brain-regression-gap`
+- `sample-brain-issue-to-session-plan`
