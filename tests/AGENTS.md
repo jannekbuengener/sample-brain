@@ -20,6 +20,8 @@
 - When behavior changes in `src/`, update or add the narrowest test that proves the new contract.
 - Use meaningful fixture names and avoid hidden shared mutable state.
 - Keep mocked expectations resilient (assert intent, not call noise).
+- Significant implementation follows `docs/skills/sample-brain-test-first/SKILL.md`.
+- Frozen tests must not be silently changed during implementation.
 
 ## Synthetic Audio Fixtures
 - Generate WAV fixtures at runtime in temp directories; do not commit audio binaries.
