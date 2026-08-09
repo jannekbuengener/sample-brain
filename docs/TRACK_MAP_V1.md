@@ -38,7 +38,7 @@ A Track Map is **track-level only**: one audio file → one Track Map. It is not
 |-----------|------|
 | **Portable identity** | Content hash + file name + audio params identify the track; no absolute local paths, no `file://`, no drive letters, no UNC paths, no `..` segments. |
 | **No invented values** | If a component did not run or produced no result, status reflects that; values are not fabricated. |
-| **Status transparency** | Every sub-result has a status (`ok` / `partial` / `not_run` / `failed` / `no_result`); `not_run` does not degrade the overall analysis status. |
+| **Status transparency** | Every sub-result has a status (`ok` / `partial` / `not_run` / `failed` / `no_result`). `not_run` for an unrequested optional component does not degrade the overall status; requested-but-unavailable components contribute `partial` or `failed` according to whether the analysis purpose remains usable. |
 | **Provenance per component** | Every analysis step records its Sample-Brain component, version, backend, model, and relevant config in a centralized `provenance.components` registry; analysis values reference components via `source_ref`. |
 | **Timebase stability** | All timeline positions share a common audio timebase in seconds, bound to the audio file referenced via `audio_ref`. Sample-accurate render boundaries are handled in later Asset/Rendering contracts. |
 | **Additive evolution** | Future beat/bar-synced energy forms can be added without reinterpreting existing fields. v1 stores only actually used parameter values. |
@@ -51,7 +51,7 @@ A Track Map is **track-level only**: one audio file → one Track Map. It is not
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `document_type` | string | yes | Must be `"sample_brain.track_map"`. Identifies the document kind. |
-| `schema_version` | string | yes | Must be `"1.0.0"`. String matching MAJOR.MINOR.PATCH. This document defines 1.0.0. |
+| `schema_version` | string | yes | SemVer string matching MAJOR.MINOR.PATCH. This canonical contract revision is `"1.0.0"`; compatible v1 documents may use `1.x.x`. |
 | `source` | object | yes | Source identity (Section 4). |
 | `timebase` | object | yes | Timebase reference (Section 5). |
 | `analysis` | object | yes | Analysis status + musical/audio/timeline blocks (Section 6). |
@@ -63,7 +63,8 @@ A Track Map is **track-level only**: one audio file → one Track Map. It is not
 - **MAJOR** increments when a previously required field is removed or renamed in a breaking way.
 - **MINOR** increments when new optional fields or additive optional structures are introduced, provided existing v1 fields and enums retain their meaning.
 - **PATCH** increments for non-breaking documentation or example corrections.
-- Readers must reject any Track Map whose `schema_version` major number is unsupported. v1 consumers accept `1.x.x`.
+- The current, frozen contract revision documented here is `1.0.0`; this document does not raise that version.
+- Readers must reject any Track Map whose `schema_version` major number is unsupported. v1 consumers accept compatible `1.x.x` documents unless another explicitly defined incompatibility applies.
 - The status enum values (`ok`, `partial`, `not_run`, `failed`, `no_result`) are fixed for v1. New status values require a `MAJOR` increment.
 - `analysis.status` accepts only `ok`, `partial`, `failed` in v1.
 
@@ -151,13 +152,17 @@ The `analysis` block holds the overall status plus musical, audio-summary, and t
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `key.status` | string | yes | Individual status (Section 10). |
-| `key.root` | string | conditional | Root note name (e.g. `C`, `F#`). Present when available. |
+| `key.root` | string | conditional | Required when status is `ok` or `partial`. Must be one of `C`, `C#`, `D`, `D#`, `E`, `F`, `F#`, `G`, `G#`, `A`, `A#`, `B`. |
 | `key.key_conf` | number | conditional | Confidence as `chroma_peak_prominence` — the normalized chroma peak prominence (ratio, ~0-1). Not a calibrated probability. |
 | `key.key_conf_kind` | string | conditional | Must be `"chroma_peak_prominence"` when `key_conf` is present. Documents the meaning of `key_conf`. |
 | `key.source_ref` | string | conditional | Key into `provenance.components`. Required when a key value is present. |
 
 **Rules:**
 
+- When `key.status` is `ok` or `partial`, `key.root` must be present. `partial` means a usable root exists while another part of the key result is limited.
+- When no meaningful root can be determined, `key.status` must be `no_result` with `reason_code` and `source_ref`; `ok` or `partial` without `key.root` is invalid.
+- The canonical v1 root vocabulary is `C`, `C#`, `D`, `D#`, `E`, `F`, `F#`, `G`, `G#`, `A`, `A#`, `B`, matching `src/analyze.py::SEMITONES`.
+- Enharmonic inputs such as `Db`, `Eb`, `Gb`, `Ab`, or `Bb` must be normalized to the corresponding canonical sharp spelling before serialization.
 - `key.root` alone is valid — the public v1 contract contains only Root, `key_conf`, and `key_conf_kind`.
 - `key.mode` is not part of v1. A later mode would be an additive future contract decision.
 - `key_conf` is expressed as `chroma_peak_prominence` and explicitly **not** as a generic probability. See [`docs/benchmarks/KEY_CONF_EVIDENCE.md`](benchmarks/KEY_CONF_EVIDENCE.md) and issue [#72](https://github.com/jannekbuengener/sample-brain/issues/72).
@@ -270,9 +275,9 @@ When a timeline block has `status: "not_run"`, no position/value arrays are emit
 
 **Rules:**
 
-- `analysis.status` = `ok` — all components required for the actual analysis purpose completed successfully. Components not requested or not yet available may be `not_run` and do not degrade the status.
-- `analysis.status` = `partial` — the analysis purpose remains usable, but at least one **requested** component produced `partial`, `failed`, `no_result`, or could not be started.
-- `analysis.status` = `failed` — the requested analysis purpose is not meaningfully fulfillable (a required top-level step failed).
+- `analysis.status` = `ok` — all components required for the actual analysis purpose completed successfully. Optional components that were not requested may be `not_run` with a `*_NOT_REQUESTED` reason and do not degrade the status.
+- `analysis.status` = `partial` — the analysis purpose remains usable, but at least one requested component produced `partial`, `failed`, `no_result`, or is `not_run` because it was unavailable or could not be started.
+- `analysis.status` = `failed` — the requested analysis purpose is not meaningfully fulfillable, including when a requested component is `not_run` because its absence prevents the purpose from being fulfilled.
 - No separate `requested_modules` structure is added; the distinction between requested and optional components is implicit in the analysis purpose definition.
 
 ---
@@ -298,7 +303,7 @@ The Track Map uses a **centralized** `provenance.components` registry. Each anal
 
 - Provenance records document **what was actually used**, not what was available.
 - **Never** include: secrets, private absolute paths, model-cache paths, or private sample-directory paths.
-- Each analysis block (source, bpm, key, loudness, brightness, beats, downbeats, energy, sections) has its own `source_ref` entry into `provenance.components` when it produced data.
+- Each analysis block (source, bpm, key, loudness, brightness, beats, downbeats, energy, sections) has a `source_ref` entry into `provenance.components` whenever its status payload requires one or it produced result data.
 - A component entry may be referenced by multiple analysis blocks (e.g. `analyze` may back BPM, key, loudness, and brightness).
 
 ---
@@ -332,13 +337,15 @@ Each analysis sub-component and each timeline block carries one of:
 |--------|---------|-----------------------|
 | `ok` | Component ran successfully and produced a complete result. | `source_ref` when data is present. |
 | `partial` | Component ran but produced only partial result (e.g. detected some beats, not all). | `source_ref` when data is present. |
-| `not_run` | Component was not requested or is not available. No data is produced and none is invented. | `reason_code` (required). No `source_ref`. |
+| `not_run` | Component was not requested, or was requested but unavailable before execution. No data is produced and none is invented. | `reason_code` (required). No `source_ref`. |
 | `failed` | Component was requested and attempted, but errored. | `error.code`, `error.message`, `source_ref`. Optional `error.retryable`. |
 | `no_result` | Component ran successfully but produced no meaningful result (e.g. BPM undetectable). | `reason_code` (required), `source_ref`. |
 
 ### Status field details
 
-- `reason_code` (string): A stable machine-readable code explaining why the component was `not_run` or produced `no_result` (e.g. `BEAT_GRID_NOT_REQUESTED`, `BPM_UNDETECTABLE`).
+- `reason_code` (string): A stable machine-readable code explaining why the component was `not_run` or produced `no_result` (e.g. `BEAT_GRID_NOT_REQUESTED`, `BACKEND_UNAVAILABLE`, `MODEL_UNAVAILABLE`, `COMPONENT_UNAVAILABLE`, `BPM_UNDETECTABLE`).
+- An unrequested optional component uses `not_run` with a `*_NOT_REQUESTED` reason and does not degrade `analysis.status`.
+- A requested component that is unavailable or cannot start also uses `not_run`, with an unavailable reason code. It contributes `partial` when the analysis purpose remains usable and `failed` when the purpose cannot be meaningfully fulfilled.
 - `error` (object): Present when `status` is `failed`.
   - `error.code` (string): Stable error code.
   - `error.message` (string): Human-readable error message.
@@ -352,17 +359,33 @@ ok                        -->  ok (no degradation)
 partial                   -->  partial
 failed                    -->  partial (or failed if required)
 no_result                 -->  partial (component ran but had nothing to say)
-not_run                   -->  ok (does NOT degrade overall; only if not requested)
+not_run + not requested   -->  ok (no degradation)
+not_run + requested       -->  partial (or failed if the analysis purpose is not fulfillable)
 ```
 
 ---
 
 ## 11. Full Field Reference
 
+### Common status payload (normative)
+
+The following fields apply to every status-capable analysis component: `analysis.musical.bpm`, `analysis.musical.key`, `analysis.audio_summary.loudness`, `analysis.audio_summary.brightness`, and each component under `analysis.timeline`. These requirements supplement the result-specific rows below.
+
+| Field pattern | Required | Type | Notes |
+|---|---|---|---|
+| `<component>.status` | yes | string | `ok`, `partial`, `not_run`, `failed`, or `no_result` |
+| `<component>.reason_code` | conditional | string | Required when status is `not_run` or `no_result` |
+| `<component>.error.code` | conditional | string | Required when status is `failed` |
+| `<component>.error.message` | conditional | string | Required when status is `failed` |
+| `<component>.error.retryable` | no | boolean | Optional when status is `failed` |
+| `<component>.source_ref` | conditional | string | Required for `failed` and `no_result`; required for `ok`/`partial` when result data is present; absent for `not_run` |
+
+For `ok` or `partial`, the component's result-specific required fields are defined in the rows below. No result fields are emitted for `not_run`, `failed`, or `no_result` unless explicitly required by the common payload above.
+
 | Field (dotted path) | Required | Type | Notes |
 |---|---|---|---|
 | `document_type` | yes | string | `"sample_brain.track_map"` |
-| `schema_version` | yes | string | `"1.0.0"` |
+| `schema_version` | yes | string | Compatible v1 SemVer (`1.x.x`); current contract revision is `"1.0.0"` |
 | `source.original.file_name` | yes | string | Base name |
 | `source.original.relative_uri` | no | string | Relative to Track Map file |
 | `source.original.size_bytes` | no | integer | File size |
@@ -383,7 +406,7 @@ not_run                   -->  ok (does NOT degrade overall; only if not request
 | `analysis.musical.bpm.normalization` | conditional | string | Applied tempo normalization |
 | `analysis.musical.bpm.source_ref` | conditional | string | Key into `provenance.components` |
 | `analysis.musical.key.status` | yes | string | Individual status |
-| `analysis.musical.key.root` | conditional | string | When available |
+| `analysis.musical.key.root` | conditional | string | Required for key status `ok`/`partial`; canonical sharp-based v1 vocabulary only |
 | `analysis.musical.key.key_conf_kind` | conditional | string | Must be `chroma_peak_prominence` |
 | `analysis.musical.key.key_conf` | conditional | number | Normalized prominence (0-1) |
 | `analysis.musical.key.source_ref` | conditional | string | Key into `provenance.components` |
@@ -442,7 +465,7 @@ not_run                   -->  ok (does NOT degrade overall; only if not request
 
 ## 12. Complete JSON Example
 
-This is a prospective contract example showing a valid Track Map v1 document. Current `main` does not yet emit this complete Track Map; runtime production is tracked separately in #233. The example uses realistic values from existing analysis capabilities, while timeline blocks are `not_run`; key has no mode; BPM has no confidence. The overall `analysis.status` is `ok` because `not_run` blocks do not degrade it.
+This is a prospective contract example showing a valid Track Map v1 document. Current `main` does not yet emit this complete Track Map; runtime production is tracked separately in #233. The example uses realistic values from existing analysis capabilities, while unrequested timeline blocks are `not_run` with `*_NOT_REQUESTED` reasons; key has no mode; BPM has no confidence. The overall `analysis.status` is `ok` because those unrequested optional blocks do not degrade it.
 
 ```json
 {
