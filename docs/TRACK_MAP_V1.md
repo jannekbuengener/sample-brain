@@ -40,7 +40,7 @@ A Track Map is **track-level only**: one audio file → one Track Map. It is not
 | **No invented values** | If a component did not run or produced no result, status reflects that; values are not fabricated. |
 | **Status transparency** | Every sub-result has a status (`ok` / `partial` / `not_run` / `failed` / `no_result`); `not_run` does not degrade the overall analysis status. |
 | **Provenance per component** | Every analysis step records its Sample-Brain component, version, backend, model, and relevant config in a centralized `provenance.components` registry; analysis values reference components via `source_ref`. |
-| **Timebase stability** | All timeline positions share one flat sample-based timebase; bar/beat grids are derived from it. |
+| **Timebase stability** | All timeline positions share a common audio timebase in seconds, bound to the audio file referenced via `audio_ref`. Sample-accurate render boundaries are handled in later Asset/Rendering contracts. |
 | **Additive evolution** | Future beat/bar-synced energy forms can be added without reinterpreting existing fields. v1 stores only actually used parameter values. |
 | **Separation of concerns** | Arrangement roles, stems, producer assets, and pack fields live in their own documents. |
 
@@ -55,8 +55,8 @@ A Track Map is **track-level only**: one audio file → one Track Map. It is not
 | `source` | object | yes | Source identity (Section 4). |
 | `timebase` | object | yes | Timebase reference (Section 5). |
 | `analysis` | object | yes | Analysis status + musical/audio/timeline blocks (Section 6). |
-| `provenance` | object | no | Centralized component registry (Section 8). |
-| `quality` | object | no | Quality notes (Section 9). |
+| `provenance` | object | yes | Centralized component registry (Section 8). |
+| `quality` | object | yes | Quality notes (Section 9). |
 
 ### Versioning
 
@@ -85,7 +85,7 @@ The Track Map must be portable: it must not embed absolute local paths, username
 | `audio_properties.duration_sec` | number | yes | Duration of the audio in seconds (float). |
 | `audio_properties.sample_rate_hz` | integer | yes | Sample rate in Hz. |
 | `audio_properties.channels` | integer | yes | Number of audio channels. |
-| `source_ref` | string | conditional | Key into `provenance.components` for the component that computed the hash and audio properties. Required when `provenance` is present. |
+| `source_ref` | string | yes | Key into `provenance.components` for the component that computed the hash and audio properties. |
 
 ### `source.working_audio` (optional — only when a working WAV exists)
 
@@ -102,11 +102,13 @@ Present only when a re-rendered/re-mixed working WAV has been produced and is po
 
 ## 5. Timebase
 
-All timeline positions in the Track Map share a single, flat sample-based timebase.
+All timeline positions in the Track Map share a common audio timebase in seconds, bound to the audio file referenced via `audio_ref`. Sample-accurate render boundaries are handled in later Asset/Rendering contracts.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `audio_ref` | string | yes | JSON pointer to the audio source. Must be `"/source/original"` (default, no working audio) or `"/source/working_audio"` (when working audio exists and `source.working_audio` is present). |
+| `unit` | string | yes | Must be `"seconds"`. The timebase uses seconds as its unit. |
+| `origin_sec` | number | yes | Must be `0.0`. The origin is the absolute start of the referenced audio file. |
 
 ### Rules
 
@@ -135,13 +137,13 @@ The `analysis` block holds the overall status plus musical, audio-summary, and t
 | `bpm.status` | string | yes | Individual status (Section 10). |
 | `bpm.value` | number | conditional | Primary BPM value (float). Present when status is `ok` or `partial`. |
 | `bpm.unit` | string | conditional | Must be `"bpm"` when `value` is present. |
-| `bpm.normalization` | string | conditional | Tempo normalization applied to the raw estimate (e.g. `"none"`, `"half"`, `"double"`). Part of the applied analysis configuration; not a display-only concern. |
+| `bpm.normalization` | string | conditional | Actually applied tempo normalization strategy (e.g. `"none"`, `"heuristic"`). Part of the applied analysis configuration; not a display-only concern. |
 | `bpm.source_ref` | string | conditional | Key into `provenance.components`. Required when `value` is present. |
 
 **Rules:**
 
 - No invented `bpm.confidence` field. Confidence is not part of the v1 BPM contract.
-- `bpm.value` may be the raw librosa tempo estimate; BPM normalization (half/double) is captured in `bpm.normalization`.
+- `bpm.value` may be the raw librosa tempo estimate; BPM normalization is captured in `bpm.normalization` as the actually applied strategy (e.g. `"none"`, `"heuristic"`). No contract default for normalization semantics.
 - `bpm.normalization` is part of the actually applied analysis configuration and must not be removed from the contract as a mere display topic.
 
 ### 6.3 Key
@@ -152,13 +154,12 @@ The `analysis` block holds the overall status plus musical, audio-summary, and t
 | `key.root` | string | conditional | Root note name (e.g. `C`, `F#`). Present when available. |
 | `key.key_conf` | number | conditional | Confidence as `chroma_peak_prominence` — the normalized chroma peak prominence (ratio, ~0-1). Not a calibrated probability. |
 | `key.key_conf_kind` | string | conditional | Must be `"chroma_peak_prominence"` when `key_conf` is present. Documents the meaning of `key_conf`. |
-| `key.mode` | string | no | Optional mode label (e.g. `major`, `minor`). May be present only when supported by evidence; v1 does not require or invent a mode. |
 | `key.source_ref` | string | conditional | Key into `provenance.components`. Required when a key value is present. |
 
 **Rules:**
 
-- `key.root` alone is valid — no `key.mode` is required.
-- The contract never forces a major/minor mode. `key.mode` is optional and status-based.
+- `key.root` alone is valid — the public v1 contract contains only Root, `key_conf`, and `key_conf_kind`.
+- `key.mode` is not part of v1. A later mode would be an additive future contract decision.
 - `key_conf` is expressed as `chroma_peak_prominence` and explicitly **not** as a generic probability. See [`docs/benchmarks/KEY_CONF_EVIDENCE.md`](benchmarks/KEY_CONF_EVIDENCE.md) and issue [#72](https://github.com/jannekbuengener/sample-brain/issues/72).
 - The `features.key` and `features.key_conf` columns in the Library catalog map to `key.root` and `key.key_conf` respectively.
 
@@ -218,14 +219,15 @@ The `analysis` block holds the overall status plus musical, audio-summary, and t
 | `energy.value_kind` | string | conditional | The actual kind of energy value produced (e.g. `rms_linear`, `rms_dbfs`, `spectral_flux`). No fixed default is assumed by the contract. |
 | `energy.unit` | string | conditional | Unit of the values (e.g. `linear`, `dBFS`, `Hz`). No fixed default. |
 | `energy.start_sec` | number | conditional | Start time of the grid on the shared timebase. |
-| `energy.window_sec` | number | no | Analysis window in seconds, only when used by the producer. Not present by default. |
-| `energy.hop_sec` | number | no | Hop size in seconds, only when used by the producer. Not present by default. |
+| `energy.window_sec` | number | conditional | Analysis window in seconds. Required when `grid_kind` is `"uniform_time"` and status is `ok` or `partial`. |
+| `energy.hop_sec` | number | conditional | Hop size in seconds. Required when `grid_kind` is `"uniform_time"` and status is `ok` or `partial`. |
 | `energy.values` | array of numbers | conditional | Energy values at each grid point. |
 | `energy.source_ref` | string | conditional | Key into `provenance.components`. Required when data is present. |
 
 **Rules:**
 
 - The contract stores only the parameter values the producing component actually used. No defaults are imposed for `window_sec`, `hop_sec`, or `value_kind`.
+- When `grid_kind` is `"uniform_time"` and status is `ok` or `partial`, the fields `window_sec`, `hop_sec`, `value_kind`, `unit`, `start_sec`, `values`, and `source_ref` must all be present.
 - Bar-synchronous energy forms (future) are additive: a future block may carry `value_kind` variants or a new sub-key without reinterpreting the existing `energy` block.
 
 ### 6.9 Sections
@@ -262,9 +264,10 @@ When a timeline block has `status: "not_run"`, no position/value arrays are emit
 
 **Rules:**
 
-- `analysis.status` is `partial` only when at least one *requested* component produced `partial` or `failed`.
-- **A component with `not_run` does not by itself make the overall `analysis.status` partial.** If the overall analysis ran the available components successfully, `analysis.status` is `ok` even when beats, downbeats, energy, or sections are `not_run`.
-- `analysis.status` is `failed` only when a required top-level step failed and the Track Map cannot be considered usable.
+- `analysis.status` = `ok` — all components required for the actual analysis purpose completed successfully. Components not requested or not yet available may be `not_run` and do not degrade the status.
+- `analysis.status` = `partial` — the analysis purpose remains usable, but at least one **requested** component produced `partial`, `failed`, `no_result`, or could not be started.
+- `analysis.status` = `failed` — the requested analysis purpose is not meaningfully fulfillable (a required top-level step failed).
+- No separate `requested_modules` structure is added; the distinction between requested and optional components is implicit in the analysis purpose definition.
 
 ---
 
@@ -272,7 +275,7 @@ When a timeline block has `status: "not_run"`, no position/value arrays are emit
 
 The Track Map uses a **centralized** `provenance.components` registry. Each analysis value references its producing component via `source_ref`. Inline provenance is not part of the v1 contract.
 
-`provenance.components` is a JSON object (map). Each key is a component identifier; each value is the component metadata.
+`provenance.components` is a JSON object (map). Each key is a component identifier; each value is the component metadata. **Both `provenance` and `provenance.components` are required.**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -283,7 +286,7 @@ The Track Map uses a **centralized** `provenance.components` registry. Each anal
 | `model.name` | string | conditional | Model identifier, if a model was used. Absent for algorithmic components. |
 | `model.version` | string | conditional | Model version, if a model was used. Either `model.version` or `model.revision` may be present. |
 | `model.revision` | string | conditional | Model revision / hash, if a model was used. Either `model.version` or `model.revision` may be present. |
-| `configuration` | object | conditional | Relevant configuration values that affected the result. Must not contain secrets. |
+| `configuration` | object | yes | Relevant configuration values that affected the result. Must not contain secrets. If no special parameters are needed, use `{}`. |
 
 ### Rules
 
@@ -296,20 +299,20 @@ The Track Map uses a **centralized** `provenance.components` registry. Each anal
 
 ## 9. Quality Notes
 
-Machine-readable quality notes provide structured hints about data quality, confidence, or processing anomalies.
+Machine-readable quality notes provide structured hints about data quality, confidence, or processing anomalies. Both `quality` and `quality.notes` are required; `quality.notes` may be an empty array.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `quality.notes` | array | no | Array of quality note objects. |
+| `quality.notes` | array | yes | Array of quality note objects (may be empty). |
 | `quality.notes[].code` | string | yes | Stable code identifier (e.g. `SHORT_SAMPLE`, `LOW_KEY_CONF`, `MISSING_DOWNBEAT`). |
 | `quality.notes[].severity` | string | yes | `info`, `warning`, or `error`. |
-| `quality.notes[].path` | string | yes | Dotted path to the affected field (e.g. `analysis.musical.key`). Must not contain private paths. |
+| `quality.notes[].path` | string | yes | JSON Pointer path to the affected field (e.g. `/analysis/musical/key`). Must not contain private paths. |
 | `quality.notes[].message` | string | yes | Human-readable message. |
 
 ### Rules
 
 - Quality notes are advisory and machine-readable. They do not change the status model but annotate it.
-- Each note's `path` must point to a location within this v1 contract or to a known future extension point.
+- Each note's `path` must be a valid JSON Pointer pointing to a location within this v1 contract or to a known future extension point.
 
 ---
 
@@ -343,7 +346,7 @@ ok                        -->  ok (no degradation)
 partial                   -->  partial
 failed                    -->  partial (or failed if required)
 no_result                 -->  partial (component ran but had nothing to say)
-not_run                   -->  ok (does NOT degrade overall)
+not_run                   -->  ok (does NOT degrade overall; only if not requested)
 ```
 
 ---
@@ -365,6 +368,8 @@ not_run                   -->  ok (does NOT degrade overall)
 | `source.original.source_ref` | conditional | string | Key into `provenance.components` |
 | `source.working_audio` | no | object | Only when working WAV exists |
 | `timebase.audio_ref` | yes | string | JSON pointer: `/source/original` or `/source/working_audio` |
+| `timebase.unit` | yes | string | `"seconds"` |
+| `timebase.origin_sec` | yes | number | `0.0` |
 | `analysis.status` | yes | string | `ok`, `partial`, `failed` |
 | `analysis.musical.bpm.status` | yes | string | Individual status |
 | `analysis.musical.bpm.value` | conditional | number | When status ok/partial |
@@ -375,7 +380,6 @@ not_run                   -->  ok (does NOT degrade overall)
 | `analysis.musical.key.root` | conditional | string | When available |
 | `analysis.musical.key.key_conf_kind` | conditional | string | Must be `chroma_peak_prominence` |
 | `analysis.musical.key.key_conf` | conditional | number | Normalized prominence (0-1) |
-| `analysis.musical.key.mode` | no | string | Optional; not invented |
 | `analysis.musical.key.source_ref` | conditional | string | Key into `provenance.components` |
 | `analysis.audio_summary.loudness.status` | yes | string | Individual status |
 | `analysis.audio_summary.loudness.value` | conditional | number | dBFS |
@@ -399,8 +403,8 @@ not_run                   -->  ok (does NOT degrade overall)
 | `analysis.timeline.energy.value_kind` | conditional | string | Actually used kind; no default |
 | `analysis.timeline.energy.unit` | conditional | string | No default |
 | `analysis.timeline.energy.start_sec` | conditional | number | Grid start |
-| `analysis.timeline.energy.window_sec` | no | number | Only when used |
-| `analysis.timeline.energy.hop_sec` | no | number | Only when used |
+| `analysis.timeline.energy.window_sec` | conditional | number | Required when uniform_time and ok/partial |
+| `analysis.timeline.energy.hop_sec` | conditional | number | Required when uniform_time and ok/partial |
 | `analysis.timeline.energy.values` | conditional | array | When status ok/partial |
 | `analysis.timeline.energy.source_ref` | conditional | string | Key into `provenance.components` |
 | `analysis.timeline.sections.status` | yes | string | Individual status |
@@ -411,7 +415,8 @@ not_run                   -->  ok (does NOT degrade overall)
 | `analysis.timeline.sections.items[].label` | no | string | Neutral label |
 | `analysis.timeline.sections.items[].label_namespace` | conditional | string | Required when `label` present |
 | `analysis.timeline.sections.source_ref` | conditional | string | Key into `provenance.components` |
-| `provenance.components` | conditional | object | Map of component ID → metadata |
+| `provenance` | yes | object | Centralized component registry |
+| `provenance.components` | yes | object | Map of component ID → metadata |
 | `provenance.components[key].component` | yes | string | Component name |
 | `provenance.components[key].sample_brain_version` | yes | string | Version |
 | `provenance.components[key].backend.name` | conditional | string | Backend name |
@@ -419,11 +424,12 @@ not_run                   -->  ok (does NOT degrade overall)
 | `provenance.components[key].model.name` | conditional | string | Model name |
 | `provenance.components[key].model.version` | conditional | string | Model version |
 | `provenance.components[key].model.revision` | conditional | string | Model revision |
-| `provenance.components[key].configuration` | conditional | object | Config values; no secrets |
-| `quality.notes` | no | array | Advisory quality annotations |
+| `provenance.components[key].configuration` | yes | object | Config values; no secrets; `{}` if none |
+| `quality` | yes | object | Quality notes container |
+| `quality.notes` | yes | array | Quality notes array (may be empty) |
 | `quality.notes[].code` | yes | string | Stable code |
 | `quality.notes[].severity` | yes | string | `info`, `warning`, `error` |
-| `quality.notes[].path` | yes | string | Dotted path; no private paths |
+| `quality.notes[].path` | yes | string | JSON Pointer path (e.g. `/analysis/musical/key`); no private paths |
 | `quality.notes[].message` | yes | string | Human-readable |
 
 ---
@@ -454,7 +460,9 @@ This example reflects what the current runtime (as of `main`, without Track Deco
     }
   },
   "timebase": {
-    "audio_ref": "/source/original"
+    "audio_ref": "/source/original",
+    "unit": "seconds",
+    "origin_sec": 0.0
   },
   "analysis": {
     "status": "ok",
@@ -536,7 +544,7 @@ This example reflects what the current runtime (as of `main`, without Track Deco
       {
         "code": "LOW_KEY_CONF",
         "severity": "warning",
-        "path": "analysis.musical.key",
+        "path": "/analysis/musical/key",
         "message": "Chroma peak prominence 0.82 is borderline; confirm key by ear for harmonic matching."
       }
     ]
