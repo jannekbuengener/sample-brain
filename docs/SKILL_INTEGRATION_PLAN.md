@@ -14,6 +14,9 @@ Sie beschleunigen Bugfix, CI-Triage, Dependency-Pflege, Doku-Sync und PR-Vorbere
 
 Skill-Quellen:
 
+- `sample-brain-issue-to-session-plan` – lokaler Planungs-Start fuer ein konkretes Issue
+- `sample-brain-root-cause` – lokaler Nachweis einer unklaren Fehlerursache
+- `sample-brain-regression-gap` – lokaler fehlender Schutz fuer einen bekannten Defekt
 - `sample-brain-test-first` – lokaler Repo-Vertrag fuer wesentliche Produktivcode-Implementierung
 - `jMerta` – täglicher Agenten-Workflow (Priorität A)
 - `Anthropic-Cybersecurity-Skills` – Security-Hardening (Priorität B)
@@ -33,14 +36,25 @@ Routing-Details: [.cursor/rules/skill-routing.mdc](../.cursor/rules/skill-routin
 | `jMerta/commit-work` | Commit vorbereiten, Message, Staging |
 | `jMerta/create-pr` | PR öffnen, Beschreibung, Checks |
 | `jMerta/plan-work` | Implementierung planen, Scope klären |
+| `sample-brain-issue-to-session-plan` | Neues Feature oder Issue zuerst in einen kleinen aktuellen Arbeitsplan überführen |
+| `sample-brain-root-cause` | Unklare Fehlerursache erst mit Evidenz isolieren |
+| `sample-brain-regression-gap` | Für bekannten Defekt den kleinsten fehlenden Schutz bestimmen |
 | `sample-brain-test-first` | Vor jeder wesentlichen Produktivcode-Implementierung anwenden |
 | `jMerta/coding-guidelines-verify` | Qualitätsprüfung vor Merge (scoped AGENTS) |
 
 **Default:** Bei unklarem Task zuerst Priorität A prüfen.
 
-`sample-brain-test-first` ist der lokale Vertrag fuer DOCS -> TESTS -> TEST
-FREEZE -> IMPLEMENTATION -> CHECKS. Er ergänzt die externen Workflow-Skills;
-er ersetzt sie nicht.
+Die lokale Reihenfolge ist verbindlich fuer Sample-Brain-spezifische Arbeit:
+
+```text
+Neues Feature/Issue -> sample-brain-issue-to-session-plan -> sample-brain-test-first
+Unklarer Bug -> sample-brain-root-cause -> sample-brain-regression-gap -> sample-brain-test-first
+Bekannter Defekt -> sample-brain-regression-gap -> sample-brain-test-first
+```
+
+`sample-brain-test-first` fixiert DOCS -> TESTS -> TEST FREEZE ->
+IMPLEMENTATION -> CHECKS. Die lokalen Skills ergänzen externe Workflow-Skills;
+sie ersetzen diese nicht.
 
 ---
 

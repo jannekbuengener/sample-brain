@@ -7,7 +7,10 @@ Skills werden empfohlen, nicht automatisch ausgeführt.
 
 | Situation | Skill |
 |-----------|-------|
-| Bug oder Fehlverhalten | `jMerta/bug-triage` |
+| Neues Feature oder Issue planen | `sample-brain-issue-to-session-plan` |
+| Unklare Fehlerursache | `sample-brain-root-cause` |
+| Bekannter Defekt / fehlender Schutz | `sample-brain-regression-gap` |
+| Bug oder Fehlverhalten | `jMerta/bug-triage` ergänzend |
 | CI rot / fehlgeschlagene Checks | `jMerta/ci-fix` |
 | Dependency-Bump / CVE | `jMerta/dependency-upgrader` |
 | Doku driftet vom Code | `jMerta/docs-sync` |
@@ -39,5 +42,12 @@ Snyk, ZAP, DevSecOps-Meta — nur bei explizitem Auftrag.
 3. Priorität C (nicht als Default)
 
 `sample-brain-test-first` ist der lokale Repo-Vertrag fuer die Reihenfolge
-DOCS -> TESTS -> TEST FREEZE -> IMPLEMENTATION -> CHECKS. Er ergänzt, ersetzt
-aber nicht die externen Workflow-Skills.
+DOCS -> TESTS -> TEST FREEZE -> IMPLEMENTATION -> CHECKS. Die lokale Kette ist:
+
+```text
+Neues Feature/Issue -> sample-brain-issue-to-session-plan -> sample-brain-test-first
+Unklarer Bug -> sample-brain-root-cause -> sample-brain-regression-gap -> sample-brain-test-first
+Bekannter Defekt -> sample-brain-regression-gap -> sample-brain-test-first
+```
+
+Die lokalen Skills ergänzen, ersetzen aber nicht die externen Workflow-Skills.
