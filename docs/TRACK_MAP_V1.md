@@ -127,6 +127,7 @@ The `analysis` block holds the overall status plus musical, audio-summary, and t
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `analysis.status` | string | yes | Overall status: `ok`, `partial`, or `failed` (Section 10). |
+| `analysis.requested_components` | array of strings | yes | Analysis components requested for this document. Contains each requested v1 component exactly once (Section 7). |
 | `analysis.musical` | object | yes | Musical analysis: BPM, Key (Section 6.2–6.3). |
 | `analysis.audio_summary` | object | yes | Audio summary: Loudness, Brightness (Section 6.4–6.5). |
 | `analysis.timeline` | object | yes | Timeline: Beats, Downbeats, Energy, Sections (Section 6.6–6.9). |
@@ -138,14 +139,14 @@ The `analysis` block holds the overall status plus musical, audio-summary, and t
 | `bpm.status` | string | yes | Individual status (Section 10). |
 | `bpm.value` | number | conditional | Primary BPM value (float). Present when status is `ok` or `partial`. |
 | `bpm.unit` | string | conditional | Must be `"bpm"` when `value` is present. |
-| `bpm.normalization` | string | conditional | Actually applied tempo normalization strategy (e.g. `"none"`, `"heuristic"`). Part of the applied analysis configuration; not a display-only concern. |
+| `bpm.normalization` | string | conditional | Required when `value` is present. Actually applied tempo normalization strategy (e.g. `"none"`, `"heuristic"`). Part of the applied analysis configuration; not a display-only concern. |
 | `bpm.source_ref` | string | conditional | Key into `provenance.components`. Required when `value` is present. |
 
 **Rules:**
 
 - No invented `bpm.confidence` field. Confidence is not part of the v1 BPM contract.
 - `bpm.value` may be the raw librosa tempo estimate; BPM normalization is captured in `bpm.normalization` as the actually applied strategy (e.g. `"none"`, `"heuristic"`). No contract default for normalization semantics.
-- `bpm.normalization` is part of the actually applied analysis configuration and must not be removed from the contract as a mere display topic.
+- `bpm.normalization` is required whenever `bpm.value` is emitted, is part of the actually applied analysis configuration, and must not be removed from the contract as a mere display topic.
 
 ### 6.3 Key
 
@@ -220,6 +221,7 @@ The `analysis` block holds the overall status plus musical, audio-summary, and t
 - When `downbeats.beat_indices` is present, `beats.status` must be `ok` or `partial` and `beats.times_sec` must be present.
 - `downbeats.beat_indices` must contain exactly one entry per value in `downbeats.times_sec`.
 - Indices are zero-based. Every index must satisfy `0 <= index < len(beats.times_sec)`.
+- For every position `i`, `beats.times_sec[downbeats.beat_indices[i]]` must equal `downbeats.times_sec[i]` exactly as serialized.
 
 ### 6.8 Energy
 
@@ -258,6 +260,7 @@ The `analysis` block holds the overall status plus musical, audio-summary, and t
 
 - Sections use `items[]` objects, **not** parallel arrays of `boundaries_sec` and `labels`.
 - Start is inclusive; end is exclusive.
+- Every item must satisfy `0 <= start_sec < end_sec <= duration_sec`, where `duration_sec` is the duration of the audio selected by `timebase.audio_ref`.
 - Techno arrangement roles (`intro`, `drop`, `breakdown`, etc.) are **not** part of this block — they live in the Arrangement Map (#228 / #238–#243).
 - MFCC / chroma raw arrays remain as **raw arrays outside the public v1 contract**. They are stored in the Library catalog as BLOBs (`features.mfcc_mean`, `features.chroma_mean`) and are not serialized into the Track Map v1 body. Future v2 contracts may reference them.
 
@@ -272,13 +275,15 @@ When a timeline block has `status: "not_run"`, no position/value arrays are emit
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `analysis.status` | string | yes | `ok`, `partial`, or `failed`. |
+| `analysis.requested_components` | array of strings | yes | Requested component IDs: `bpm`, `key`, `loudness`, `brightness`, `beats`, `downbeats`, `energy`, and/or `sections`. |
 
 **Rules:**
 
-- `analysis.status` = `ok` — all components required for the actual analysis purpose completed successfully. Optional components that were not requested may be `not_run` with a `*_NOT_REQUESTED` reason and do not degrade the status.
-- `analysis.status` = `partial` — the analysis purpose remains usable, but at least one requested component produced `partial`, `failed`, `no_result`, or is `not_run` because it was unavailable or could not be started.
-- `analysis.status` = `failed` — the requested analysis purpose is not meaningfully fulfillable, including when a requested component is `not_run` because its absence prevents the purpose from being fulfilled.
-- No separate `requested_modules` structure is added; the distinction between requested and optional components is implicit in the analysis purpose definition.
+- `analysis.requested_components` is non-empty and contains each listed ID at most once. It is the complete, serialized definition of the requested analysis purpose; components not listed are optional for this document and must use `not_run` with a `*_NOT_REQUESTED` reason when not produced.
+- `analysis.status` = `ok` — every requested component has status `ok`.
+- `analysis.status` = `partial` — at least one requested component has status `ok` or `partial`, but not every requested component has status `ok`.
+- `analysis.status` = `failed` — no requested component has status `ok` or `partial`.
+- Only statuses of `analysis.requested_components` contribute to `analysis.status`; this makes aggregation deterministic for every document.
 
 ---
 
@@ -400,10 +405,11 @@ For `ok` or `partial`, the component's result-specific required fields are defin
 | `timebase.unit` | yes | string | `"seconds"` |
 | `timebase.origin_sec` | yes | number | `0.0` |
 | `analysis.status` | yes | string | `ok`, `partial`, `failed` |
+| `analysis.requested_components` | yes | array | Non-empty, unique requested IDs from the v1 component vocabulary |
 | `analysis.musical.bpm.status` | yes | string | Individual status |
 | `analysis.musical.bpm.value` | conditional | number | When status ok/partial |
 | `analysis.musical.bpm.unit` | conditional | string | `"bpm"` |
-| `analysis.musical.bpm.normalization` | conditional | string | Applied tempo normalization |
+| `analysis.musical.bpm.normalization` | conditional | string | Required when `bpm.value` is present; applied tempo normalization |
 | `analysis.musical.bpm.source_ref` | conditional | string | Key into `provenance.components` |
 | `analysis.musical.key.status` | yes | string | Individual status |
 | `analysis.musical.key.root` | conditional | string | Required for key status `ok`/`partial`; canonical sharp-based v1 vocabulary only |
@@ -425,7 +431,7 @@ For `ok` or `partial`, the component's result-specific required fields are defin
 | `analysis.timeline.beats.source_ref` | conditional | string | Key into `provenance.components` |
 | `analysis.timeline.downbeats.status` | yes | string | Individual status |
 | `analysis.timeline.downbeats.times_sec` | conditional | array | When status ok/partial |
-| `analysis.timeline.downbeats.beat_indices` | no | array | Zero-based; requires resolvable `beats.times_sec`, matching downbeat count, and in-range indices |
+| `analysis.timeline.downbeats.beat_indices` | no | array | Zero-based; requires resolvable matching `beats.times_sec` entries, matching downbeat count, and in-range indices |
 | `analysis.timeline.downbeats.source_ref` | conditional | string | Key into `provenance.components` |
 | `analysis.timeline.energy.status` | yes | string | Individual status |
 | `analysis.timeline.energy.grid_kind` | conditional | string | `"uniform_time"` |
@@ -439,8 +445,8 @@ For `ok` or `partial`, the component's result-specific required fields are defin
 | `analysis.timeline.sections.status` | yes | string | Individual status |
 | `analysis.timeline.sections.items` | conditional | array | When status ok/partial |
 | `analysis.timeline.sections.items[].id` | yes | string | Unique section ID |
-| `analysis.timeline.sections.items[].start_sec` | yes | number | Start (inclusive) |
-| `analysis.timeline.sections.items[].end_sec` | yes | number | End (exclusive) |
+| `analysis.timeline.sections.items[].start_sec` | yes | number | Start (inclusive; within selected audio duration) |
+| `analysis.timeline.sections.items[].end_sec` | yes | number | End (exclusive; after start and within selected audio duration) |
 | `analysis.timeline.sections.items[].label` | no | string | Neutral label |
 | `analysis.timeline.sections.items[].label_namespace` | conditional | string | Required when `label` present |
 | `analysis.timeline.sections.source_ref` | conditional | string | Key into `provenance.components` |
@@ -495,6 +501,12 @@ This is a prospective contract example showing a valid Track Map v1 document. Cu
   },
   "analysis": {
     "status": "ok",
+    "requested_components": [
+      "bpm",
+      "key",
+      "loudness",
+      "brightness"
+    ],
     "musical": {
       "bpm": {
         "status": "ok",
