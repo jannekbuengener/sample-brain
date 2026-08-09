@@ -1,3 +1,9 @@
+---
+name: sample-brain-test-first
+description: >
+  Enforce documentation, tests, test freeze, implementation, and checks for
+  significant Sample Brain product changes.
+---
 <!--
 Canonical Skill Source: docs/skills/sample-brain-test-first/SKILL.md
 Surface: cursor
@@ -5,12 +11,6 @@ Sync Status: mirrored-from-canon
 Last Verified: 2026-08-09
 Drift Policy: Cursor mirrors must match the canonical skill body.
 -->
----
-name: sample-brain-test-first
-description: >
-  Enforce documentation, tests, test freeze, implementation, and checks for
-  significant Sample Brain product changes.
----
 
 # Sample Brain Test-First Skill
 
