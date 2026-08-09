@@ -123,3 +123,61 @@ CI, tooling, and infrastructure includes GitHub Actions configuration, runners,
 local CI environments, test harnesses, and check configuration. Product behavior
 includes analysis, storage, query, formatting, CLI, SQLite, rendering, and
 contract behavior implemented by Sample Brain.
+
+## Relationships
+
+**Standalone Guarantee:** `standalone: true`
+
+This skill runs independently with a concrete symptom. Other skill outputs or
+triage results are optional context enhancements. Use this skill directly with
+a reproducible defect and evidence pointers.
+
+### Can Receive From
+
+- `sample-brain-code-reviewer` — code analysis
+- `sample-brain-ci-debugger` — CI failure triage
+- `sample-brain-repository-auditor` — repository-level concerns
+- `sample-brain-system-architect` — architecture/boundary questions
+- `sample-brain-validation-evidence-analyst` — validation evidence
+- Generic bug triage (optional) — initial defect description
+
+### Route If
+
+| Condition | Target | Required | Notes |
+|-----------|--------|----------|-------|
+| `product_behavior_cause` | `sample-brain-regression-gap` | Yes | Confirmed product behavior defect requires guard identification |
+| `ci_tooling_cause` | `sample-brain-ci-debugger` | No | CI, tooling, or infrastructure defects |
+| `docs_contract_cause` | `sample-brain-docs-sync-maintainer` | No | Documentation or contract violations |
+| `dependency_cause` | `sample-brain-dependency-upgrader` | No | Dependency or version issues |
+| `cause_not_proven` | `ROOT_CAUSE_INCONCLUSIVE` | Yes | Insufficient evidence to identify cause |
+
+**Critical Note:** Do NOT route to `test-first` directly. Product cause must flow
+through `sample-brain-regression-gap` to identify missing protection. Only route to
+`regression-gap` when cause is confirmed as product-behavior.
+
+### Next Recommended
+
+For confirmed product cause: `sample-brain-regression-gap` (identify missing guard)
+
+For other confirmed causes: route to appropriate specialized skill
+(CI, docs, dependency paths)
+
+### Optional External Routes
+
+| External | Local Fallback | Notes |
+|----------|----------------|-------|
+| `jMerta/bug-triage` | Direct start with reproducible symptom | Declared but not verified; use local fallback |
+
+### When to STOP
+
+- `ROOT_CAUSE_INCONCLUSIVE`: Evidence does not prove a cause. Name the exact missing
+  evidence needed to retry.
+- Symptom is not reproducible or too broad after reasonable scoping.
+- Proposed work expands into runtime mutation, dependency changes, model installation,
+  or private data requirements.
+
+### Cycle Rules
+
+No forward loop back to root-cause from regression-gap or test-first in normal flow.
+Backward loop to root-cause allowed only when regression-gap encounters `cause_unclear`
+(a refinement/clarification cycle, not a normal path).

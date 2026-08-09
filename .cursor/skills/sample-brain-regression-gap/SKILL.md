@@ -74,9 +74,60 @@ next_recommended_step: sample-brain-test-first | sample-brain-root-cause
 - Do not write a test, change code, change dependencies, install models, or use
   private or generated data.
 
-## Relationship To Other Skills
+## Relationships
 
-```text
-unclear bug with product-behavior cause -> sample-brain-root-cause -> this skill -> sample-brain-test-first
-known defect -> this skill -> sample-brain-test-first
-```
+**Standalone Guarantee:** `standalone: true`
+
+This skill runs independently with a confirmed defect or root cause. Other skill
+outputs are optional context enhancements. Use this skill directly after identifying
+a product-behavior defect.
+
+### Can Receive From
+
+- `sample-brain-root-cause` — confirmed cause handoff
+- `sample-brain-code-reviewer` — code analysis
+- `sample-brain-quality-gatekeeper` — quality/scope review
+- `sample-brain-validation-evidence-analyst` — validation evidence
+
+### Route If
+
+| Condition | Target | Required | Notes |
+|-----------|--------|----------|-------|
+| `missing_product_guard_identified` | `sample-brain-test-first` | Yes | Guard identified; test-first writes and freezes test before implementation |
+| `ci_only_gap` | `sample-brain-ci-debugger` | No | CI, tooling, or infrastructure gaps (not product defects) |
+| `docs_only_gap` | `sample-brain-docs-sync-maintainer` | No | Documentation or contract gaps |
+| `dependency_gap` | `sample-brain-dependency-upgrader` | No | Dependency or version gaps |
+| `cause_unclear` | `sample-brain-root-cause` | No | Insufficient defect clarity; return to root-cause for refinement |
+| `frozen_test_conflict` | `IMPLEMENTATION_BLOCKED_CONTRACT_OR_TEST_CONFLICT` | Yes | Suspected frozen test contradicts canonical documentation |
+
+**Critical Note:** Regression gap identifies missing protection but does NOT write or
+change tests. It routes to test-first only when the guard is clear and bounded.
+Do not infer a guard from speculation.
+
+### Next Recommended
+
+For identified missing guard: `sample-brain-test-first` (enforces test freeze before implementation)
+
+For gaps in other domains: specialized skill (CI, docs, dependency paths)
+
+For unclear causes: `sample-brain-root-cause` (refine defect understanding)
+
+### Optional External Routes
+
+| External | Local Fallback | Notes |
+|----------|----------------|-------|
+| (None primary) | — | Internal routing sufficient; no declared external routes for this skill |
+
+### When to STOP
+
+- `IMPLEMENTATION_BLOCKED_CONTRACT_OR_TEST_CONFLICT`: Suspected frozen test
+  contradicts canonical documentation or is technically infeasible.
+- Defect is not bounded or target is unknown after reasonable inspection.
+- Task expands into test-suite redesign or specification changes.
+- Cause remains unclear after reasonable investigation (route back to root-cause).
+
+### Cycle Rules
+
+Forward loop to test-first only when guard is clear and bounded. Backward loop to
+root-cause allowed when cause is unclear (refinement cycle). Cycles must be narrowing
+and result in either a clear guard or a STOP condition; no ping-pong without progress.

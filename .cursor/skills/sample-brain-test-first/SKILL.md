@@ -134,3 +134,64 @@ key detection, track deconstruction, stems, loops, sections, sample-library
 work, search, matching, workbench, preview, rendering, SQLite, FL Studio
 export, and optional model backends. It does not authorize runtime changes,
 dependencies, models, private data, or audio processing by itself.
+
+## Relationships
+
+**Standalone Guarantee:** `standalone: true`
+
+This skill runs independently with documented requirements and/or a clear slice.
+Other skill outputs are optional context enhancements. Use this skill after
+planning or after a confirmed defect/guard.
+
+### Can Receive From
+
+- `sample-brain-issue-to-session-plan` — planned work slice
+- `sample-brain-regression-gap` — identified missing guard
+- `sample-brain-root-cause` — confirmed cause + expected behavior + required guard (all explicit)
+- `sample-brain-system-architect` — architecture guidance
+
+### Route If
+
+| Condition | Target | Required | Notes |
+|-----------|--------|----------|-------|
+| `implementation_approved_after_test_freeze` | `sample-brain-implementation-engineer` | Yes | Code implementation after frozen tests written and approved |
+| `implementation_green` | `sample-brain-quality-gatekeeper` | Yes | All checks pass; ready for quality review |
+| `validation_evidence_needed` | `sample-brain-validation-evidence-analyst` | No | Clarify acceptance criteria or gather evidence |
+| `code_review_needed` | `sample-brain-code-reviewer` | No | Code review before or after checks |
+| `documentation_missing` | `IMPLEMENTATION_BLOCKED_DOCUMENTATION_REQUIRED` | Yes | Required documentation is missing or contradictory |
+| `tests_missing` | `IMPLEMENTATION_BLOCKED_TESTS_REQUIRED` | Yes | Required test coverage is missing |
+| `contract_test_conflict` | `IMPLEMENTATION_BLOCKED_CONTRACT_OR_TEST_CONFLICT` | Yes | Frozen test contradicts documentation or is infeasible |
+| `code_still_failing` | `IMPLEMENTATION_FAILED_CODE_NEEDS_FIX` | Yes | Implementation does not pass frozen tests |
+
+**Critical Note:** Test-first does NOT authorize automatic implementation or merge.
+Each gate (DOCS, TESTS, FREEZE, IMPLEMENTATION, CHECKS) must be completed and
+approved explicitly. PR Packager routes only after implementation verification + validation + explicit GO.
+
+### Next Recommended
+
+After all gates pass:
+- `sample-brain-pr-packager` (only after explicit GO; no auto-forward)
+
+Conditional routing: depends on gate status and findings
+
+### Optional External Routes
+
+| External | Local Fallback | Notes |
+|----------|----------------|-------|
+| `jMerta/commit-work` | `sample-brain-pr-packager` | Declared but not verified; use local fallback |
+| `jMerta/create-pr` | `sample-brain-pr-packager` | Declared but not verified; use local fallback |
+| `jMerta/coding-guidelines-verify` | `sample-brain-code-reviewer` + `sample-brain-quality-gatekeeper` | Declared but not verified; use local fallbacks |
+
+### When to STOP
+
+- `IMPLEMENTATION_BLOCKED_DOCUMENTATION_REQUIRED`: Required documentation missing or contradictory
+- `IMPLEMENTATION_BLOCKED_TESTS_REQUIRED`: Required test coverage missing
+- `IMPLEMENTATION_BLOCKED_CONTRACT_OR_TEST_CONFLICT`: Frozen test contradicts documentation
+- `IMPLEMENTATION_FAILED_CODE_NEEDS_FIX`: Implementation does not pass frozen tests; return to IMPLEMENTATION_GATE
+
+**No automatic merge or implementation without explicit approval at each gate.**
+
+### Cycle Rules
+
+No forward loop back to planning or test-first from implementation/checks. Each gate
+must move toward completion or stop with a clear blocker. No ping-pong without progress.
