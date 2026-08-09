@@ -100,15 +100,61 @@ next_recommended_step: <route_to>
 - The slice class is `unknown`: return `planning_blocked` and name the exact
   missing classification evidence.
 
-## Relationship To Other Skills
+## Relationships
 
-```text
-new feature or issue -> this skill -> sample-brain-test-first
-unclear bug with product-behavior cause -> sample-brain-root-cause -> sample-brain-regression-gap -> sample-brain-test-first
-unclear bug with CI, tooling, or infrastructure cause -> sample-brain-root-cause -> jMerta/ci-fix and sample-brain-ci-debugger
-unclear bug with documentation or contract cause -> sample-brain-root-cause -> jMerta/docs-sync; sample-brain-test-first only for a later approved product-code change
-known defect -> sample-brain-regression-gap -> sample-brain-test-first
-```
+**Standalone Guarantee:** `standalone: true`
+
+This skill runs independently with complete inputs. Other skill outputs are optional
+context enhancements. An open issue is a work candidate; receiving a handoff from
+another skill does not authorize implementation.
+
+### Can Receive From
+
+- `sample-brain-control-orchestrator` — orchestrated work priority
+- `sample-brain-repository-auditor` — repository-level concerns
+- `sample-brain-skill-routing-auditor` — skill/routing governance
+- `sample-brain-issue-backlog-maintainer` — backlog triage results
+
+### Route If
+
+| Condition | Target | Required | Notes |
+|-----------|--------|----------|-------|
+| `product_code` | `sample-brain-test-first` | Yes | Significant product changes require test-first sequence |
+| `docs` | `sample-brain-docs-sync-maintainer` | No | Documentation-only changes |
+| `ci_tooling` | `sample-brain-ci-debugger` | No | CI or tooling infrastructure issues |
+| `dependency` | `sample-brain-dependency-upgrader` | No | Dependency or upgrade work |
+| `workflow` | `sample-brain-control-orchestrator` | No | Workflow or process changes (existing path) |
+| `governance` | `sample-brain-skill-routing-auditor` | No | Governance or policy changes (existing path) |
+| `unknown` | `PLANNING_BLOCKED` | Yes | Missing classification evidence required |
+
+**Critical Note:** The condition `product_code` is the only direct path to `test-first`.
+A generic "new feature or issue" classification is not sufficient; slice class must be
+determined before routing to implementation.
+
+### Next Recommended
+
+After routing by slice class, the recommended next step is determined by the target:
+- For `product_code`: `sample-brain-test-first` enforces DOCS → TESTS → FREEZE → IMPLEMENTATION → CHECKS
+- For `docs`: existing documentation path
+- For `ci_tooling`: existing CI path
+- For others: existing specialized paths
+
+### Optional External Routes
+
+| External | Local Fallback | Notes |
+|----------|----------------|-------|
+| `jMerta/plan-work` | `sample-brain-control-orchestrator` or direct start | Declared but not verified; use local fallback |
+
+### When to STOP
+
+- `PLANNING_BLOCKED`: Issue, acceptance criteria, canonical documentation, or slice
+  classification is missing or contradictory. Name the exact required evidence.
+- Unknown slice class after reasonable review: cannot route safely.
+
+### Cycle Rules
+
+No forward loop back to issue planning from test-first or implementation. Planning
+ends when a clear slice is routed to its designated handler.
 
 Issue `#233` is a valid future input: this skill may identify its documented
 one-shot analysis scope and direct dependencies, but it does not implement it.
