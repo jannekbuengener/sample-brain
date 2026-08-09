@@ -27,9 +27,11 @@ For example, a displayed BPM of `129.73` may originate in analysis, storage,
 retrieval, or presentation. Do not propose rounding until the responsible
 boundary is proven.
 
-This skill does not implement product changes or write tests. After a confirmed
-cause, route to `sample-brain-regression-gap`, then to
-`sample-brain-test-first` before implementation.
+This skill does not implement product changes or write tests. The confirmed
+cause determines the next route: product behavior goes to
+`sample-brain-regression-gap`, then `sample-brain-test-first`; CI, tooling, or
+infrastructure stays in the existing CI path; documentation or contract causes
+go to the existing documentation path.
 
 ## When To Use
 
@@ -64,7 +66,8 @@ fixture is acceptable when needed and permitted by the artifact policy.
    concrete file and line, Git SHA, CLI/test output, schema/query, JSON contract,
    log, or synthetic fixture.
 4. Name one root cause only when the evidence distinguishes it from the symptom.
-5. Propose the smallest reversible fix plan without changing code or tests.
+5. Classify the confirmed cause and choose its existing routing path before
+   proposing the smallest reversible fix plan without changing code or tests.
 
 ## Delegation
 
@@ -92,7 +95,7 @@ evidence: []
 root_cause: <proven cause or unknown>
 minimal_fix_plan: <description only>
 residual_risk: <risk or unknown>
-next_recommended_step: sample-brain-regression-gap | ROOT_CAUSE_INCONCLUSIVE
+next_recommended_step: sample-brain-regression-gap | jMerta/ci-fix | jMerta/docs-sync | ROOT_CAUSE_INCONCLUSIVE
 ```
 
 ## Stop Conditions
@@ -106,7 +109,17 @@ next_recommended_step: sample-brain-regression-gap | ROOT_CAUSE_INCONCLUSIVE
 
 ## Handoff
 
+Root cause decides the next route. Not every confirmed error is a product-code
+error; keep the repair at the proven source of the failure.
+
 ```text
-confirmed cause -> sample-brain-regression-gap -> sample-brain-test-first
+product behavior -> sample-brain-regression-gap -> sample-brain-test-first
+CI, tooling, or infrastructure -> jMerta/ci-fix and sample-brain-ci-debugger
+documentation or contract -> jMerta/docs-sync; use sample-brain-test-first only if a later approved product change follows
 inconclusive cause -> collect only the named evidence, then rerun this skill
 ```
+
+CI, tooling, and infrastructure includes GitHub Actions configuration, runners,
+local CI environments, test harnesses, and check configuration. Product behavior
+includes analysis, storage, query, formatting, CLI, SQLite, rendering, and
+contract behavior implemented by Sample Brain.
