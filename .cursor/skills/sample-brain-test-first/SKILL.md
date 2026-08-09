@@ -28,12 +28,22 @@ No phase may be skipped.
 
 ## DOCS_GATE
 
-Before implementation, read the canonical sources that define the slice. Use
-the applicable issue and acceptance criteria, `docs/SYSTEM_REQUIREMENTS.md`,
-`docs/TARGET_ARCHITECTURE.md`, feature or contract documents,
-`tests/AGENTS.md`, existing behavior tests, and affected API, JSON, or SQLite
-contracts. For future track deconstruction work, this includes
-`docs/TRACK_MAP_V1.md` when applicable.
+Before implementation, read `docs/BOOTLOADER_AND_CONTEXT_STRATEGY.md` and
+`docs/DATA_AND_ARTIFACT_POLICY.md` together with the canonical sources that
+define the slice: the applicable issue and acceptance criteria,
+`docs/SYSTEM_REQUIREMENTS.md`, `docs/TARGET_ARCHITECTURE.md`, feature or
+contract documents, `tests/AGENTS.md`, existing behavior tests, and affected
+API, JSON, or SQLite contracts. For future track deconstruction work, this
+includes `docs/TRACK_MAP_V1.md` when applicable.
+
+The Bootloader Strategy and Artifact Policy remain binding for this skill.
+Until explicit scoped approval, repo and GitHub operations remain read-only;
+this skill does not authorize writes. Do not automatically read private working
+memory, session logs, local databases, vector indexes, reports, virtual
+environments, model caches, sample audio, or private prompt and skill packs.
+Do not use secrets, commit private audio in tests, or stage private databases,
+caches, generated artifacts, or environment-specific paths. These boundaries
+do not expand the allowed task scope.
 
 The documentation must determine the intended behavior. If it is missing,
 contradictory, or leaves acceptance criteria unclear, stop with
