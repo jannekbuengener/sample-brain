@@ -77,6 +77,6 @@ next_recommended_step: sample-brain-test-first | sample-brain-root-cause
 ## Relationship To Other Skills
 
 ```text
-unclear bug -> sample-brain-root-cause -> this skill -> sample-brain-test-first
+unclear bug with product-behavior cause -> sample-brain-root-cause -> this skill -> sample-brain-test-first
 known defect -> this skill -> sample-brain-test-first
 ```

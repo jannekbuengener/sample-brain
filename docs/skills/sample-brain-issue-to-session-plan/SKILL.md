@@ -30,10 +30,15 @@ when present, direct dependencies, materially relevant open PRs, the current
 `main` state, existing implementation, and existing tests.
 
 Read only the additional documentation needed to ground the issue. Do not widen
-the search to adjacent work without an explicit dependency. Do not read private
-tracks, samples, databases, caches, generated artifacts, secrets, model caches,
-or local paths. Do not create files, tests, code, issues, or PR changes merely
-because this skill produced a plan.
+the search to adjacent work without an explicit dependency. Tracked
+repository-local paths in the current Sample-Brain checkout are allowed for
+read-only planning, including repo-relative documentation, product code, and
+tests. Do not read private local files outside the repository, user-specific
+absolute paths without explicit relevance and approval, private tracks, samples,
+databases, caches, generated artifacts, secrets, model caches, or other
+environment-specific files outside the tracked repository canon. Do not create
+files, tests, code, issues, or PR changes merely because this skill produced a
+plan.
 
 ## Method
 
@@ -86,7 +91,9 @@ next_recommended_step: sample-brain-test-first | planning_blocked
 
 ```text
 new feature or issue -> this skill -> sample-brain-test-first
-unclear bug -> sample-brain-root-cause -> sample-brain-regression-gap -> sample-brain-test-first
+unclear bug with product-behavior cause -> sample-brain-root-cause -> sample-brain-regression-gap -> sample-brain-test-first
+unclear bug with CI, tooling, or infrastructure cause -> sample-brain-root-cause -> jMerta/ci-fix and sample-brain-ci-debugger
+unclear bug with documentation or contract cause -> sample-brain-root-cause -> jMerta/docs-sync; sample-brain-test-first only for a later approved product-code change
 known defect -> sample-brain-regression-gap -> sample-brain-test-first
 ```
 

@@ -46,7 +46,9 @@ DOCS -> TESTS -> TEST FREEZE -> IMPLEMENTATION -> CHECKS. Die lokale Kette ist:
 
 ```text
 Neues Feature/Issue -> sample-brain-issue-to-session-plan -> sample-brain-test-first
-Unklarer Bug -> sample-brain-root-cause -> sample-brain-regression-gap -> sample-brain-test-first
+Unklarer Bug mit Produkt-/Verhaltensursache -> sample-brain-root-cause -> sample-brain-regression-gap -> sample-brain-test-first
+Unklarer Bug mit CI-/Tooling-/Infrastruktur-Ursache -> sample-brain-root-cause -> jMerta/ci-fix und sample-brain-ci-debugger
+Unklarer Bug mit Docs-/Contract-Ursache -> sample-brain-root-cause -> jMerta/docs-sync; sample-brain-test-first nur bei einer späteren genehmigten Produktcode-Aenderung
 Bekannter Defekt -> sample-brain-regression-gap -> sample-brain-test-first
 ```
 
