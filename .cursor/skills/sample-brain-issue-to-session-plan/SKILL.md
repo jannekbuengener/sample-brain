@@ -46,16 +46,24 @@ plan.
    terms. Mark missing or contradictory requirements as unconfirmed.
 2. Determine the applicable canonical documentation, current implementation,
    existing tests, direct dependencies, and relevant open PRs.
-3. Define one small slice, likely affected paths, explicit non-goals, blockers,
+3. Classify the slice before choosing a handoff: `product_code`, `docs`,
+   `ci_tooling`, `dependency`, `workflow`, `governance`, or `unknown`.
+4. Define one small slice, likely affected paths, explicit non-goals, blockers,
    and a minimum validation set.
-4. For any implementation slice, require this fixed sequence:
+5. For a significant `product_code` slice, require this fixed sequence:
 
 ```text
 DOCS_GATE -> TEST_GATE -> TEST_FREEZE -> IMPLEMENTATION -> CHECKS
 ```
 
-5. Route implementation through `sample-brain-test-first`. Do not bypass the
-   sequence even when the issue seems small or well specified.
+6. Route by slice class: `product_code` to `sample-brain-test-first`; `docs` to
+   `jMerta/docs-sync`; `ci_tooling` to `jMerta/ci-fix` and, when appropriate,
+   `sample-brain-ci-debugger`; `dependency` to
+   `jMerta/dependency-upgrader`; `workflow` through the existing
+   `.cursor/rules/skill-routing.mdc` rule; and `governance` through the
+   applicable existing repository governance path. Do not create a parallel
+   routing policy. For `unknown`, return `planning_blocked` and name the exact
+   information needed to classify the slice.
 
 ## Output
 
@@ -67,12 +75,15 @@ current_state: <implementation and test evidence>
 direct_dependencies: []
 relevant_open_prs: []
 small_slice: <bounded work>
+slice_class: product_code | docs | ci_tooling | dependency | workflow | governance | unknown
+route_to: <existing specialized route or planning_blocked>
+test_first_required: true | false
 likely_paths: []
 must_not_touch: []
 blockers: []
-test_first_sequence: DOCS_GATE -> TEST_GATE -> TEST_FREEZE -> IMPLEMENTATION -> CHECKS
+test_first_sequence: DOCS_GATE -> TEST_GATE -> TEST_FREEZE -> IMPLEMENTATION -> CHECKS | not_required
 minimum_validation: []
-next_recommended_step: sample-brain-test-first | planning_blocked
+next_recommended_step: <route_to>
 ```
 
 ## Stop Conditions
@@ -86,6 +97,8 @@ next_recommended_step: sample-brain-test-first | planning_blocked
   private data, or generated artifacts: stop and remove that expansion.
 - An issue requests runtime implementation but no test-first path can be named:
   stop before implementation.
+- The slice class is `unknown`: return `planning_blocked` and name the exact
+  missing classification evidence.
 
 ## Relationship To Other Skills
 
