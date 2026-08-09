@@ -119,7 +119,7 @@ GitHub reconciliation complete. Five meta-parents define the full track-to-asset
 
 | Parent | Track Map doc | Runtime | Notes |
 |--------|---------------|---------|-------|
-| #227 Track Intelligence | [docs/TRACK_MAP_V1.md](docs/TRACK_MAP_V1.md) (`schema_version 1.0.0`) | #233-#237, #236, #265 OPEN | Track Map contract documented in docs (#232 `OPEN` / `READY_TO_DOCUMENT`, pending PR merge); runtime follow-up (#233, #236, #265) |
+| #227 Track Intelligence | [docs/TRACK_MAP_V1.md](../docs/TRACK_MAP_V1.md) (`schema_version 1.0.0`) | #233-#237, #236, #265 OPEN | Track Map contract documented in docs (#232 `OPEN` / `READY_TO_DOCUMENT`, pending PR merge); runtime follow-up (#233, #236, #265) |
 | #228 Structure/Arrangement | Not started | #238-#243 OPEN | Role vocabulary (#238) before heuristic classifier (#240) |
 | #229 Stem Separation | Not started | #244-#249 OPEN | `python-audio-separator` wrapper; `htdemucs`/`htdemucs_ft` baselines; exact checkpoint/license review required (#246) |
 | #230 Asset Generation | Not started | #250-#256, #266, #267 OPEN | Loop/section candidates separated; `kick_bass` = kick + musical bassline (#268) |

@@ -4,7 +4,7 @@
 
 - **Branch:** `main` @ `5aa7e25` (feat: add matching suggestions V1 for loaded rows; PRs #206/#208)
 - **Open PRs:** none
-- **Open issues:** 42 — Track Deconstruction (#227-#268); EPIC-2 follow-ups (#196 HOLD, #73 partial, #74 tracking); recent (#212-#219). [#198](https://github.com/jannekbuengener/sample-brain/issues/198) **closed** 2026-08 (matching suggestions shipped via #208).
+- **Open issues:** 51 — Track Deconstruction (#227-#268); EPIC-2 follow-ups (#196 HOLD, #73 partial, #74 tracking); recent (#212-#219). [#198](https://github.com/jannekbuengener/sample-brain/issues/198) **closed** 2026-08 (matching suggestions shipped via #208).
 - **Local Workbench:** `sample-brain workbench` — tkinter MVP shipped; parent epic [#117](https://github.com/jannekbuengener/sample-brain/issues/117) **closed** 2026-07-10; matching suggestions V1 shipped via [#208](https://github.com/jannekbuengener/sample-brain/issues/208) (PR #209); [#198](https://github.com/jannekbuengener/sample-brain/issues/198) **closed** 2026-08
   - Shipped under #117: folder analysis, sample table filter/sort, library cache + multi-folder view, catalog read-only bridge, catalog→cache import (#192), FL export (#191), analysis-limit persistence (#190), cue/loop/attack metadata, audio preview + waveform, structured search UI, runtime hotfix PR #199
   - **Playlist workflow V1 shipped:** [#203](https://github.com/jannekbuengener/sample-brain/issues/203) closed (PR #204) — per-row `+ Playlist`, dialog, local song-context assignment; [#205](https://github.com/jannekbuengener/sample-brain/issues/205) closed (PR #206) — sidebar **Playlists**, load assigned samples into existing table
@@ -159,7 +159,7 @@ GitHub reconciliation complete. Five meta-parents are **OPEN** with docs contrac
 
 ### Track Map v1 contract
 
-[#232](https://github.com/jannekbuengener/sample-brain/issues/232) is `OPEN` / `READY_TO_DOCUMENT`. The canonical contract is documented in [`docs/TRACK_MAP_V1.md`](docs/TRACK_MAP_V1.md) (PR #269, docs-only). Runtime production is tracked in #233 and downstream slices.
+[#232](https://github.com/jannekbuengener/sample-brain/issues/232) is `OPEN` / `READY_TO_DOCUMENT`. The canonical contract is documented in [`docs/TRACK_MAP_V1.md`](../docs/TRACK_MAP_V1.md) (PR #269, docs-only). Runtime production is tracked in #233 and downstream slices.
 
 ### Research decisions (recorded, not implemented)
 
@@ -185,7 +185,7 @@ GitHub reconciliation complete. Five meta-parents are **OPEN** with docs contrac
 - **Phase 5 tags + FTS5 MVP** — not started (roadmap Phase 5)
 - **Large-scale private-sample validation** — synthetic/benchmark fixtures only
 - **EPIC 3–6** — not started
-- **Track Deconstruction** (#227-#268) — docs contracts only; no runtime on `main`. Track Map v1 contract documented ([`TRACK_MAP_V1.md`](docs/TRACK_MAP_V1.md)); runtime (#233, #236, #265) and downstream contracts (Arrangement, Stems, Assets, Pack) remain future work.
+- **Track Deconstruction** (#227-#268) — docs contracts only; no runtime on `main`. Track Map v1 contract documented ([`TRACK_MAP_V1.md`](../docs/TRACK_MAP_V1.md)); runtime (#233, #236, #265) and downstream contracts (Arrangement, Stems, Assets, Pack) remain future work.
 
 ## Key Docs
 

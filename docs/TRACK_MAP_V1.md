@@ -61,7 +61,7 @@ A Track Map is **track-level only**: one audio file → one Track Map. It is not
 ### Versioning
 
 - **MAJOR** increments when a previously required field is removed or renamed in a breaking way.
-- **MINOR** increments when new optional fields or additive status values are introduced.
+- **MINOR** increments when new optional fields or additive optional structures are introduced, provided existing v1 fields and enums retain their meaning.
 - **PATCH** increments for non-breaking documentation or example corrections.
 - Readers must reject any Track Map whose `schema_version` major number is unsupported. v1 consumers accept `1.x.x`.
 - The status enum values (`ok`, `partial`, `not_run`, `failed`, `no_result`) are fixed for v1. New status values require a `MAJOR` increment.
@@ -442,7 +442,7 @@ not_run                   -->  ok (does NOT degrade overall; only if not request
 
 ## 12. Complete JSON Example
 
-This example reflects what the current runtime (as of `main`, without Track Deconstruction implementation) can produce. Timeline blocks are `not_run`; key has no mode; BPM has no confidence. The overall `analysis.status` is `ok` because `not_run` blocks do not degrade it.
+This is a prospective contract example showing a valid Track Map v1 document. Current `main` does not yet emit this complete Track Map; runtime production is tracked separately in #233. The example uses realistic values from existing analysis capabilities, while timeline blocks are `not_run`; key has no mode; BPM has no confidence. The overall `analysis.status` is `ok` because `not_run` blocks do not degrade it.
 
 ```json
 {
