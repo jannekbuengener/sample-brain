@@ -1,0 +1,481 @@
+{
+  "document_type": "sample_brain.arrangement_role_vocabulary",
+  "schema_version": "1.0.0",
+  "issue": 238,
+  "parent_issue": 228,
+  "track_map_contract_issue": 232,
+  "signal_matrix_issue": 239,
+  "structure_v1_issue": 265,
+  "confidence_contract_issue": 241,
+  "classifier_issue": 240,
+  "section_roles": [
+    {
+      "name": "intro",
+      "definition": "Track opening, establishing groove elements gradually",
+      "musical_function": "Establish rhythmic and tonal foundation; often sparse to moderate energy",
+      "typical_position": "Early (first 1-4 sections)",
+      "positive_signals": [
+        "relative_track_position",
+        "multi_bar_trend",
+        "semantic_role_hint"
+      ],
+      "negative_signals": [
+        "bar_energy_rms",
+        "low_end_share",
+        "onset_density",
+        "stem_drum_activity",
+        "stem_bass_activity",
+        "evidence_completeness"
+      ],
+      "typical_confusions": [
+        "Can resemble a short build or sparse groove"
+      ],
+      "allowed_neighbors": [
+        "groove",
+        "build",
+        "unknown"
+      ],
+      "must_not_derive": "Intro does not mean always first section; not all first sections are intro"
+    },
+    {
+      "name": "groove",
+      "definition": "Stable, repeating main rhythmic/low-end section (core dancefloor material)",
+      "musical_function": "Sustained functional dance section with stable rhythm and low-end presence",
+      "typical_position": "Middle (often longest span)",
+      "positive_signals": [
+        "bar_energy_rms",
+        "low_end_share",
+        "onset_density",
+        "rhythm_stability",
+        "self_similarity",
+        "recurrence",
+        "stem_drum_activity",
+        "stem_bass_activity",
+        "semantic_role_hint"
+      ],
+      "negative_signals": [
+        "relative_track_position",
+        "bar_loudness_delta",
+        "timbre_delta",
+        "spectral_delta",
+        "novelty",
+        "neighbor_delta",
+        "multi_bar_trend",
+        "evidence_completeness"
+      ],
+      "typical_confusions": [
+        "Can be confused with drop if energy is high; with build if stability is not yet established"
+      ],
+      "allowed_neighbors": [
+        "intro",
+        "build",
+        "drop",
+        "breakdown",
+        "outro",
+        "unknown"
+      ],
+      "must_not_derive": "Groove does not mean only 4/4; not all stable sections are groove"
+    },
+    {
+      "name": "build",
+      "definition": "Rising tension, increasing energy/onset density/spectral brightness toward a drop",
+      "musical_function": "Tension-builder leading into a functional climax",
+      "typical_position": "Pre-drop (often 1-4 bars before drop)",
+      "positive_signals": [
+        "bar_loudness_delta",
+        "onset_density",
+        "timbre_delta",
+        "spectral_delta",
+        "neighbor_delta",
+        "multi_bar_trend",
+        "semantic_role_hint"
+      ],
+      "negative_signals": [
+        "relative_track_position",
+        "rhythm_stability",
+        "self_similarity",
+        "recurrence",
+        "evidence_completeness"
+      ],
+      "typical_confusions": [
+        "Can resemble late intro or early drop if transition is sharp"
+      ],
+      "allowed_neighbors": [
+        "intro",
+        "groove",
+        "drop",
+        "unknown"
+      ],
+      "must_not_derive": "Build does not always mean 8/16 bars; not all rising sections are build"
+    },
+    {
+      "name": "drop",
+      "definition": "High-energy climax, full low-end + rhythmic density, functional peak",
+      "musical_function": "Functional peak section with maximum energy, low-end, and rhythmic density",
+      "typical_position": "After build, often repeated",
+      "positive_signals": [
+        "bar_energy_rms",
+        "bar_loudness_delta",
+        "low_end_share",
+        "onset_density",
+        "rhythm_stability",
+        "spectral_delta",
+        "self_similarity",
+        "recurrence",
+        "stem_drum_activity",
+        "stem_bass_activity",
+        "semantic_role_hint"
+      ],
+      "negative_signals": [
+        "relative_track_position",
+        "multi_bar_trend",
+        "evidence_completeness"
+      ],
+      "typical_confusions": [
+        "Can resemble high-energy groove; boundary with following breakdown/groove can be ambiguous"
+      ],
+      "allowed_neighbors": [
+        "build",
+        "groove",
+        "breakdown",
+        "outro",
+        "unknown"
+      ],
+      "must_not_derive": "Drop is a section, not a single event; drop_onset is the entry event, drop is the section"
+    },
+    {
+      "name": "breakdown",
+      "definition": "Reduced energy, textural/timbral focus, rhythmic suspension",
+      "musical_function": "Contrast section with reduced rhythmic drive, often textural or melodic focus",
+      "typical_position": "Post-drop or mid-track contrast",
+      "positive_signals": [
+        "timbre_delta",
+        "novelty",
+        "neighbor_delta",
+        "semantic_role_hint"
+      ],
+      "negative_signals": [
+        "relative_track_position",
+        "bar_energy_rms",
+        "bar_loudness_delta",
+        "low_end_share",
+        "onset_density",
+        "rhythm_stability",
+        "self_similarity",
+        "recurrence",
+        "stem_drum_activity",
+        "stem_bass_activity",
+        "evidence_completeness"
+      ],
+      "typical_confusions": [
+        "Can resemble sparse intro or outro; timbral shift without energy drop is ambiguous"
+      ],
+      "allowed_neighbors": [
+        "drop",
+        "groove",
+        "build",
+        "outro",
+        "unknown"
+      ],
+      "must_not_derive": "Breakdown does not always mean quiet; not all low-energy sections are breakdown"
+    },
+    {
+      "name": "outro",
+      "definition": "Track closing, energy/element reduction toward end",
+      "musical_function": "Wind-down section reducing elements toward track end",
+      "typical_position": "Late (last 1-4 sections)",
+      "positive_signals": [
+        "relative_track_position",
+        "neighbor_delta",
+        "multi_bar_trend",
+        "semantic_role_hint"
+      ],
+      "negative_signals": [
+        "bar_energy_rms",
+        "bar_loudness_delta",
+        "onset_density",
+        "rhythm_stability",
+        "spectral_delta",
+        "stem_bass_activity",
+        "evidence_completeness"
+      ],
+      "typical_confusions": [
+        "Can resemble late breakdown or fading groove"
+      ],
+      "allowed_neighbors": [
+        "breakdown",
+        "groove",
+        "unknown"
+      ],
+      "must_not_derive": "Outro does not always mean final section; not all final sections are outro"
+    },
+    {
+      "name": "unknown",
+      "definition": "Valid, normal result — evidence is missing, weak, contradictory, or outside vocabulary",
+      "musical_function": "Explicitly represents insufficient or ambiguous evidence for any specific role",
+      "typical_position": "Any position",
+      "positive_signals": [
+        "evidence_completeness"
+      ],
+      "negative_signals": [
+        "semantic_role_hint"
+      ],
+      "typical_confusions": [
+        "Default when no role reaches sufficient evidence; not an error"
+      ],
+      "allowed_neighbors": [
+        "intro",
+        "groove",
+        "build",
+        "drop",
+        "breakdown",
+        "outro"
+      ],
+      "must_not_derive": "Unknown is not a failure; not a placeholder for 'could not decide'; no dummy confidence needed"
+    }
+  ],
+  "boundary_events": [
+    {
+      "name": "drop_onset",
+      "definition": "Entry into a drop section at a specific neutral boundary",
+      "musical_meaning": "The moment the drop hits — sharp energy/timbre/spectral rise",
+      "positive_signals": [
+        "bar_loudness_delta",
+        "timbre_delta",
+        "spectral_delta",
+        "novelty",
+        "neighbor_delta"
+      ],
+      "negative_signals": [
+        "self_similarity",
+        "recurrence",
+        "evidence_completeness"
+      ],
+      "relation_to_section_roles": "Not a section role. Emitted at a boundary between sections. The section after this boundary is drop. A drop section can exist without a detected drop_onset (e.g., gradual entry)."
+    }
+  ],
+  "deferred_terms": [
+    {
+      "term": "transition",
+      "decision": "Not a core section role in v1",
+      "reasoning": "Transition is a relational property between two sections (e.g., build->drop, drop->breakdown), not a standalone functional section with a stable musical definition in Techno. Its duration, signal profile, and boundaries are inconsistent across tracks.",
+      "modeling_alternative": "Transition character is captured by boundary events (drop_onset at build->drop), neighbor deltas and novelty at boundaries (from #239), and role sequence in the Arrangement Map (e.g., build followed by drop).",
+      "future": "If a later pilot (#242) reveals a consistent, classifiable transition section with distinct signals, it may be added in v2 with a new schema version."
+    }
+  ],
+  "unknown_policy": {
+    "status": "first_class_normal_result",
+    "conditions": [
+      "Evidence is missing (signals not_run/failed/no_result)",
+      "Evidence is contradictory (positive and negative signals for multiple roles)",
+      "Evidence is weak (no role reaches track-relative threshold)",
+      "Section falls outside the seven-role vocabulary"
+    ],
+    "outcome": "Arrangement Map emits role: \"unknown\" with evidence_completeness accounting for why",
+    "no_dummy_confidence": true,
+    "manual_override": "Per #241, manual override applies with history preserved"
+  },
+  "layer_separation": {
+    "neutral_boundary_layer": {
+      "document": "StructureV1 (#265)",
+      "emits": "Neutral analysis.timeline.sections (bar-synchronous, no roles)",
+      "must_not_emit": [
+        "intro",
+        "groove",
+        "build",
+        "drop",
+        "breakdown",
+        "outro",
+        "unknown",
+        "transition",
+        "drop_onset"
+      ]
+    },
+    "arrangement_role_layer": {
+      "document": "Arrangement Map (#240)",
+      "consumes": "Neutral sections + role signals from #239",
+      "emits": "Section roles + boundary events from this vocabulary",
+      "must_not_emit": [
+        "New boundary positions",
+        "Stem/CLAP labels as ground truth"
+      ]
+    },
+    "confidence_override_layer": {
+      "document": "#241",
+      "emits": "Status, evidence accounting, manual overrides",
+      "must_not_emit": [
+        "Invented confidence",
+        "Silent history overwrite"
+      ]
+    },
+    "rules": [
+      "Boundary confidence and role confidence stay separate",
+      "A strong neutral boundary can still have role unknown",
+      "A strong role hint must not create a boundary",
+      "StructureV1 never emits roles or events",
+      "Arrangement Map never moves neutral boundaries",
+      "drop_onset references a neutral boundary position; it does not create one",
+      "A drop section can exist without a drop_onset event (gradual entry)",
+      "A drop_onset event can exist without a following drop role if evidence is contradictory (event emits with status: partial)"
+    ]
+  },
+  "signal_reference": {
+    "source": "Arrangement Signal Matrix v1 (#239)",
+    "normalization": "track_relative_only",
+    "forbidden": [
+      "universal Techno thresholds",
+      "fixed role cutoffs before private pilot evidence",
+      "invented confidence when a signal is missing"
+    ],
+    "allowed_normalization": [
+      "track percentile",
+      "local median and MAD robust z-score",
+      "section-local delta against neighboring bars",
+      "relative share inside the same track",
+      "rolling 4 bar, 8 bar, and 16 bar trend"
+    ],
+    "role_signal_groups": {
+      "intro": {
+        "positive": [
+          "beat_downbeat_reference",
+          "multi_bar_trends"
+        ],
+        "negative": [
+          "energy_loudness",
+          "low_end",
+          "onsets",
+          "drum_bass_activity",
+          "missing_data"
+        ]
+      },
+      "groove": {
+        "positive": [
+          "energy_loudness",
+          "low_end",
+          "onsets",
+          "rhythmic_stability",
+          "self_similarity",
+          "recurrence"
+        ],
+        "negative": [
+          "beat_downbeat_reference",
+          "energy_loudness_delta",
+          "timbre_changes",
+          "spectral_changes",
+          "novelty",
+          "before_after_differences",
+          "multi_bar_trends",
+          "missing_data"
+        ]
+      },
+      "build": {
+        "positive": [
+          "energy_loudness_delta",
+          "onsets",
+          "timbre_changes",
+          "spectral_changes",
+          "before_after_differences",
+          "multi_bar_trends"
+        ],
+        "negative": [
+          "beat_downbeat_reference",
+          "rhythmic_stability",
+          "self_similarity",
+          "recurrence",
+          "missing_data"
+        ]
+      },
+      "drop": {
+        "positive": [
+          "energy_loudness",
+          "energy_loudness_delta",
+          "low_end",
+          "onsets",
+          "rhythmic_stability",
+          "spectral_changes",
+          "self_similarity",
+          "recurrence"
+        ],
+        "negative": [
+          "beat_downbeat_reference",
+          "multi_bar_trends",
+          "missing_data"
+        ]
+      },
+      "breakdown": {
+        "positive": [
+          "timbre_changes",
+          "novelty",
+          "before_after_differences"
+        ],
+        "negative": [
+          "beat_downbeat_reference",
+          "energy_loudness",
+          "energy_loudness_delta",
+          "low_end",
+          "onsets",
+          "rhythmic_stability",
+          "self_similarity",
+          "recurrence",
+          "drum_bass_activity",
+          "missing_data"
+        ]
+      },
+      "outro": {
+        "positive": [
+          "beat_downbeat_reference",
+          "before_after_differences",
+          "multi_bar_trends"
+        ],
+        "negative": [
+          "energy_loudness",
+          "energy_loudness_delta",
+          "onsets",
+          "rhythmic_stability",
+          "spectral_changes",
+          "drum_bass_activity",
+          "missing_data"
+        ]
+      },
+      "unknown": {
+        "positive": [
+          "missing_data"
+        ],
+        "negative": [
+          "semantic_optional"
+        ]
+      },
+      "drop_onset": {
+        "positive": [
+          "energy_loudness_delta",
+          "timbre_changes",
+          "spectral_changes",
+          "novelty",
+          "before_after_differences"
+        ],
+        "negative": [
+          "self_similarity",
+          "recurrence",
+          "missing_data"
+        ]
+      }
+    }
+  },
+  "non_goals_v1": [
+    "No classification rules, thresholds, or weights",
+    "No boundary detection (belongs to #265)",
+    "No CLAP, stem, or All-In-One label requirements",
+    "No genre sub-typing (e.g., minimal_drop, hard_groove)",
+    "No transition section role",
+    "No invented confidence scores",
+    "No asset generation"
+  ],
+  "acceptance_mapping": {
+    "role_vocabulary_documented": "sections 2, 3, 4, 5",
+    "section_roles_and_boundary_events_separated": "sections 2, 3, 6",
+    "drop_and_drop_onset_distinguished": "sections 2, 3, 6",
+    "unknown_fully_defined": "section 5",
+    "transition_decision_explicit": "section 4",
+    "contract_usable_for_239_240": "sections 2, 3, 6, 7; machine-readable JSON"
+  }
+}
