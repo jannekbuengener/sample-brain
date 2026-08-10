@@ -1,0 +1,284 @@
+{
+  "document_type": "sample_brain.arrangement_confidence_override",
+  "schema_version": "1.0.0",
+  "issue": 241,
+  "parent_issue": 228,
+  "track_map_contract_issue": 232,
+  "role_vocabulary_issue": 238,
+  "signal_matrix_issue": 239,
+  "classifier_issue": 240,
+  "structure_v1_issue": 265,
+  "status_model": {
+    "values": [
+      "available",
+      "uncertain",
+      "unknown",
+      "unavailable",
+      "failed"
+    ],
+    "definitions": {
+      "available": "Automatic analysis produced a complete, usable result for this section role or boundary event.",
+      "uncertain": "Automatic analysis ran but produced a partial or ambiguous result (e.g., weak evidence, contradictory signals). The result is usable but not definitive.",
+      "unknown": "Valid normal result — evidence is missing, weak, contradictory, or outside the vocabulary. No dummy confidence is invented.",
+      "unavailable": "Automatic analysis was not run, not requested, or could not be started (e.g., missing downbeats, component not_run).",
+      "failed": "Automatic analysis was requested and attempted but errored."
+    },
+    "rules": [
+      "Status applies independently to section roles and boundary events.",
+      "Boundary status and role status are separate fields; no shared universal confidence.",
+      "A neutral boundary may have status 'available' while the following section role has status 'unknown'.",
+      "A role status of 'available' does not imply the underlying neutral boundary status is 'available'.",
+      "Status 'unknown' is a first-class normal result, not an error or low-confidence placeholder.",
+      "No dummy confidence value is ever invented for 'unknown'."
+    ]
+  },
+  "automatic_result": {
+    "description": "Original analysis result emitted by the Arrangement Map classifier (#240). Preserved intact when overrides exist.",
+    "fields": {
+      "role": {
+        "type": "string",
+        "enum": [
+          "intro",
+          "groove",
+          "build",
+          "drop",
+          "breakdown",
+          "outro",
+          "unknown"
+        ],
+        "description": "Automatically classified section role from the #238 vocabulary."
+      },
+      "event": {
+        "type": "string",
+        "enum": [
+          "drop_onset",
+          "null"
+        ],
+        "description": "Automatically detected boundary event (separate from section role)."
+      },
+      "status": {
+        "$ref": "#/status_model/values",
+        "description": "Status of the automatic analysis for this role or event."
+      },
+      "evidence": {
+        "type": "object",
+        "description": "Per-signal evidence contributions from #239 signals that were available.",
+        "properties": {
+          "positive_signals": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Signal names from #239 that positively support this role/event."
+          },
+          "negative_signals": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Signal names from #239 that argue against this role/event."
+          },
+          "missing_signals": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Signal names from #239 that were nullable/unavailable for this section."
+          },
+          "contradictory_signals": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Signal names where positive and negative evidence both exist for different roles."
+          }
+        }
+      },
+      "provenance": {
+        "type": "object",
+        "description": "Source tracking for the automatic result.",
+        "properties": {
+          "component": {
+            "type": "string",
+            "const": "arrangement_map"
+          },
+          "sample_brain_version": { "type": "string" },
+          "backend": { "type": "string" },
+          "backend_version": { "type": "string" },
+          "configuration": { "type": "object" },
+          "timestamp_utc": { "type": "string", "format": "date-time" }
+        },
+        "required": ["component", "sample_brain_version", "timestamp_utc"]
+      },
+      "scores": {
+        "type": "object",
+        "description": "Optional per-role/event scores, only present when their semantics are explicitly defined. No universal confidence.",
+        "properties": {
+          "role_score": {
+            "type": "number",
+            "description": "Track-relative role scoring value (e.g., weighted signal aggregate). Range and meaning defined by classifier implementation. Absent when not computable or not defined."
+          },
+          "event_score": {
+            "type": "number",
+            "description": "Track-relative boundary event scoring value. Range and meaning defined by classifier implementation. Absent when not computable or not defined."
+          },
+          "boundary_quality": {
+            "type": "number",
+            "description": "Neutral boundary quality from StructureV1 (#265), separate from role scoring. Range 0-1 (relative strength). Absent when not computable."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "required": ["role", "status", "evidence", "provenance"],
+    "rules": [
+      "Automatic result is never deleted or invisibly replaced by an override.",
+      "Both section role and boundary event automatic results are tracked separately.",
+      "Scores are optional and only included when their name, level (boundary/role/event), meaning, range, provenance, calibration status, and absent semantics are explicitly defined.",
+      "If scores are absent, no dummy values are invented."
+    ]
+  },
+  "manual_override": {
+    "description": "Explicit user correction applied to a section role or boundary event.",
+    "fields": {
+      "role": {
+        "type": "string",
+        "enum": [
+          "intro",
+          "groove",
+          "build",
+          "drop",
+          "breakdown",
+          "outro",
+          "unknown",
+          "null"
+        ],
+        "description": "User-specified section role override. Optional if overriding only event."
+      },
+      "event": {
+        "type": "string",
+        "enum": [
+          "drop_onset",
+          "null"
+        ],
+        "description": "User-specified boundary event override. Optional if overriding only role."
+      },
+      "author": {
+        "type": ["string", "null"],
+        "description": "Override author identifier. Nullable when not reliably available in the runtime environment."
+      },
+      "timestamp_utc": {
+        "type": ["string", "null"],
+        "format": "date-time",
+        "description": "Override timestamp. Nullable when not reliably available."
+      },
+      "reason": {
+        "type": ["string", "null"],
+        "description": "User-provided reason or note for the override. Nullable."
+      },
+      "source": {
+        "type": "string",
+        "const": "manual",
+        "description": "Fixed value 'manual' to distinguish from automatic analysis."
+      }
+    },
+    "required": ["source"],
+    "rules": [
+      "Override applies to either section role OR boundary event OR both, independently.",
+      "Role override and event override are separate; they do not imply each other.",
+      "Metadata fields (author, timestamp, reason) are nullable — no fake values are generated when unavailable.",
+      "Override does not modify or delete the automatic result; both coexist.",
+      "An override with role='unknown' is valid and means the user explicitly asserts insufficient evidence."
+    ]
+  },
+  "effective_value_policy": {
+    "description": "How the effective (visible/used) value is determined from automatic result and manual override.",
+    "rules": [
+      "If a valid manual override exists for a given layer (role or event), effective = manual override.",
+      "Otherwise, effective = automatic analysis result.",
+      "Automatic analysis result is always preserved and queryable.",
+      "Manual override is always preserved and queryable separately.",
+      "Effective value is a derived view, not a destructive replacement.",
+      "Role effective value and event effective value are computed independently.",
+      "Removing a manual override causes effective to fall back to automatic analysis automatically; no re-analysis is triggered."
+    ],
+    "examples": {
+      "A": {
+        "description": "Secure boundary + unknown role",
+        "automatic": { "role": "unknown", "status": "unknown", "event": null, "event_status": "unavailable" },
+        "override": null,
+        "effective": { "role": "unknown", "event": null }
+      },
+      "B": {
+        "description": "Automatic groove + manual override to build",
+        "automatic": { "role": "groove", "status": "available", "event": null, "event_status": "unavailable" },
+        "override": { "role": "build", "author": "user1", "reason": "Energy rise feels like build not groove" },
+        "effective": { "role": "build", "event": null }
+      },
+      "C": {
+        "description": "Automatic drop preserved, effective becomes manual groove",
+        "automatic": { "role": "drop", "status": "available", "event": "drop_onset", "event_status": "available" },
+        "override": { "role": "groove", "author": "user1", "reason": "Not peak energy, more sustained" },
+        "effective": { "role": "groove", "event": "drop_onset" }
+      },
+      "D": {
+        "description": "drop_onset event separate from section role",
+        "automatic": { "role": "drop", "status": "available", "event": "drop_onset", "event_status": "available" },
+        "override": { "event": null, "reason": "No sharp onset detected, gradual entry" },
+        "effective": { "role": "drop", "event": null }
+      },
+      "E": {
+        "description": "Override removed → automatic becomes effective again",
+        "automatic": { "role": "build", "status": "available" },
+        "override_removed": true,
+        "effective": { "role": "build" }
+      }
+    }
+  },
+  "boundary_vs_role_uncertainty": {
+    "description": "Strict separation between neutral boundary certainty and arrangement role/event certainty.",
+    "rules": [
+      "StructureV1 (#265) emits neutral boundaries with their own status (ok/partial/no_result/failed) and boundary_quality score (0-1 relative strength).",
+      "StructureV1 never emits roles or events (including drop_onset).",
+      "Arrangement Map (#240) emits section roles and boundary events with their own status (available/uncertain/unknown/unavailable/failed).",
+      "Arrangement Map never moves neutral boundaries.",
+      "drop_onset references a neutral boundary position; it does not create one.",
+      "A high boundary_quality does not imply a role status of 'available'.",
+      "A role status of 'available' does not imply the underlying neutral boundary had high boundary_quality.",
+      "Boundary status and role status are stored and queried independently.",
+      "No single universal confidence field bridges both layers."
+    ]
+  },
+  "score_confidence_policy": {
+    "description": "Rules for numerical scores/confidence values to prevent invented certainty.",
+    "rules": [
+      "No universal 'confidence' field is defined or required.",
+      "Numerical scores are optional and only included when ALL of the following are explicitly defined: name, level (boundary/role/event), meaning, value range, provenance, calibration status (calibrated probability vs relative track score), and semantics of absent score.",
+      "If score semantics cannot be defined reliably, the score field is omitted entirely — no placeholder values.",
+      "Scores from different levels (boundary vs role vs event) are never combined into a single value.",
+      "Missing score never implies low confidence; it means 'not defined for this result'.",
+      "The 'evidence_completeness' signal from #239 accounts for missing/failed/weak/contradictory inputs instead of inventing a confidence number."
+    ]
+  },
+  "versioning": {
+    "schema_version": "1.0.0",
+    "document_type": "sample_brain.arrangement_confidence_override",
+    "major_increments": [
+      "Status model value changes",
+      "Automatic result or manual override field structure changes",
+      "Effective value policy logic changes",
+      "Boundary/role separation rules changes"
+    ],
+    "minor_increments": [
+      "Documentation clarifications",
+      "Non-breaking JSON additions (new optional fields with defaults)",
+      "Additional examples"
+    ],
+    "patch_increments": [
+      "Typo fixes",
+      "Cross-reference corrections"
+    ]
+  },
+  "acceptance_mapping": {
+    "status_model_defined": "status_model.values + definitions",
+    "unknown_first_class": "status_model.rules + unknown_policy in #238",
+    "automatic_vs_manual_separated": "automatic_result + manual_override fields",
+    "effective_value_policy": "effective_value_policy.rules + examples",
+    "boundary_role_separation": "boundary_vs_role_uncertainty.rules",
+    "no_universal_confidence": "score_confidence_policy.rules",
+    "machine_readable_contract": "This JSON file + tests",
+    "compatible_with_238_239_240_265": "Cross-references in header + field enums matching #238 vocabulary"
+  }
+}
