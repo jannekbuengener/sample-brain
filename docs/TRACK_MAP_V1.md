@@ -2,7 +2,7 @@
 
 **Issue:** [#232](https://github.com/jannekbuengener/sample-brain/issues/232)
 **Parent:** [#227](https://github.com/jannekbuengener/sample-brain/issues/227)
-**Status on issue tracker:** `OPEN` / `READY_TO_DOCUMENT` (not closed until PR is merged to `main`)
+**Status on issue tracker:** `CLOSED` / documented on `main`
 **Schema version:** `1.0.0`
 **Document type:** `sample_brain.track_map`
 
@@ -23,7 +23,8 @@ The Track Map is the stable identity of a single audio track plus the lightweigh
 
 - bar-synchronous boundary analysis (StructureV1, #265)
 - BeatGrid (BPM, beats, downbeats, #236)
-- arrangement role signals (#238–#240)
+- arrangement role signals (#238-#240; see
+  [Arrangement Signal Matrix v1](ARRANGEMENT_SIGNAL_MATRIX_V1.md))
 - technical stem separation (#229 / #244–#249)
 - producer-oriented assets (#230 / #250–#256)
 - Performance Pack assembly (#231 / #257–#264)
@@ -629,6 +630,7 @@ The Track Map deliberately excludes the following. They have or will have their 
 | Document | Role |
 |----------|------|
 | [`docs/product/03_TRACK_CONTEXT_ANALYSIS_SPEC.md`](product/03_TRACK_CONTEXT_ANALYSIS_SPEC.md) | Track profile for VST/workspace context (sample-level) |
+| [`docs/ARRANGEMENT_SIGNAL_MATRIX_V1.md`](ARRANGEMENT_SIGNAL_MATRIX_V1.md) | Boundary and role signal matrix for #239 |
 | [`docs/product/01_LIBRARY_INTELLIGENCE_SPEC.md`](product/01_LIBRARY_INTELLIGENCE_SPEC.md) | Catalog analysis: BPM, key, loudness, brightness, MFCC, chroma |
 | [`docs/product/02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md`](product/02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md) | Fit scoring on Track Map fields |
 | [`docs/TARGET_ARCHITECTURE.md`](TARGET_ARCHITECTURE.md) | Module boundaries, pipeline contracts |
@@ -649,7 +651,7 @@ The Track Map deliberately excludes the following. They have or will have their 
 | Component | Status on `main` | Track Map role |
 |-----------|-----------------|----------------|
 | Library analysis (BPM, key, loudness, brightness) | Shipped (`src/analyze.py`) | Feeds section 6 fields |
-| BeatGrid (#236) | Not implemented | Feeds section 6.6 beats / 6.7 downbeats |
+| BeatGrid (#236) | Shipped (`src/beat_grid.py`, PR #276) | Feeds section 6.6 beats / 6.7 downbeats |
 | StructureV1 (#265) | Not implemented | Feeds section 6.9 sections |
 | Energy timeline | Not implemented | Feeds section 6.8 energy |
 | Track Deconstruction orchestrator (#227) | Not implemented | Assembles full Track Map |
