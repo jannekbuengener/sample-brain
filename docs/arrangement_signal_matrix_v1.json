@@ -1,0 +1,711 @@
+{
+  "document_type": "sample_brain.arrangement_signal_matrix",
+  "schema_version": 1,
+  "issue": 239,
+  "parent_issue": 228,
+  "track_map_contract_issue": 232,
+  "structure_v1_issue": 265,
+  "role_vocabulary": {
+    "source_issue": 238,
+    "status": "draft_from_open_issue",
+    "section_roles": [
+      "intro",
+      "groove",
+      "build",
+      "drop",
+      "breakdown",
+      "outro",
+      "unknown"
+    ],
+    "boundary_events": [
+      "drop_onset"
+    ],
+    "deferred_terms": [
+      "transition"
+    ],
+    "rules": [
+      "drop is a section role",
+      "drop_onset is a boundary event",
+      "unknown is a valid result",
+      "transition is not emitted until issue 238 defines it"
+    ]
+  },
+  "separation_policy": {
+    "boundary_layer": "StructureV1 consumes neutral bar-synchronous signals and emits neutral sections or boundary candidates only.",
+    "role_layer": "Arrangement scoring consumes neutral sections plus role signals and may later emit roles from the issue 238 vocabulary.",
+    "forbidden": [
+      "StructureV1 must not emit intro, groove, build, drop, breakdown, outro, unknown, transition, or drop_onset as section labels.",
+      "Arrangement scoring must not rewrite boundary positions as a substitute for StructureV1.",
+      "All-In-One labels, CLAP labels, or stem labels must not be treated as Techno ground truth."
+    ]
+  },
+  "normalization_policy": {
+    "allowed": [
+      "track percentile",
+      "local median and MAD robust z-score",
+      "section-local delta against neighboring bars",
+      "relative share inside the same track",
+      "rolling 4 bar, 8 bar, and 16 bar trend"
+    ],
+    "forbidden": [
+      "universal Techno thresholds",
+      "fixed role cutoffs before private pilot evidence",
+      "invented confidence when a signal is missing"
+    ]
+  },
+  "structure_v1_mvp_minimum": [
+    "bar_grid",
+    "bar_energy_rms",
+    "bar_loudness_delta",
+    "low_end_share",
+    "onset_density",
+    "rhythm_stability",
+    "timbre_delta",
+    "spectral_delta",
+    "self_similarity",
+    "recurrence",
+    "novelty",
+    "neighbor_delta",
+    "multi_bar_trend",
+    "neutral_section_boundary"
+  ],
+  "role_signal_summary": {
+    "intro": {
+      "positive_signals": [
+        "relative_track_position",
+        "multi_bar_trend",
+        "semantic_role_hint"
+      ],
+      "negative_signals": [
+        "bar_energy_rms",
+        "low_end_share",
+        "onset_density",
+        "stem_drum_activity",
+        "stem_bass_activity",
+        "evidence_completeness"
+      ]
+    },
+    "groove": {
+      "positive_signals": [
+        "bar_energy_rms",
+        "low_end_share",
+        "onset_density",
+        "rhythm_stability",
+        "self_similarity",
+        "recurrence",
+        "stem_drum_activity",
+        "stem_bass_activity",
+        "semantic_role_hint"
+      ],
+      "negative_signals": [
+        "relative_track_position",
+        "bar_loudness_delta",
+        "timbre_delta",
+        "spectral_delta",
+        "novelty",
+        "neighbor_delta",
+        "multi_bar_trend",
+        "evidence_completeness"
+      ]
+    },
+    "build": {
+      "positive_signals": [
+        "bar_loudness_delta",
+        "onset_density",
+        "timbre_delta",
+        "spectral_delta",
+        "neighbor_delta",
+        "multi_bar_trend",
+        "semantic_role_hint"
+      ],
+      "negative_signals": [
+        "relative_track_position",
+        "rhythm_stability",
+        "self_similarity",
+        "recurrence",
+        "evidence_completeness"
+      ]
+    },
+    "drop": {
+      "positive_signals": [
+        "bar_energy_rms",
+        "bar_loudness_delta",
+        "low_end_share",
+        "onset_density",
+        "rhythm_stability",
+        "spectral_delta",
+        "self_similarity",
+        "recurrence",
+        "stem_drum_activity",
+        "stem_bass_activity",
+        "semantic_role_hint"
+      ],
+      "negative_signals": [
+        "relative_track_position",
+        "multi_bar_trend",
+        "evidence_completeness"
+      ]
+    },
+    "breakdown": {
+      "positive_signals": [
+        "timbre_delta",
+        "novelty",
+        "neighbor_delta",
+        "semantic_role_hint"
+      ],
+      "negative_signals": [
+        "relative_track_position",
+        "bar_energy_rms",
+        "bar_loudness_delta",
+        "low_end_share",
+        "onset_density",
+        "rhythm_stability",
+        "self_similarity",
+        "recurrence",
+        "stem_drum_activity",
+        "stem_bass_activity",
+        "evidence_completeness"
+      ]
+    },
+    "outro": {
+      "positive_signals": [
+        "relative_track_position",
+        "neighbor_delta",
+        "multi_bar_trend",
+        "semantic_role_hint"
+      ],
+      "negative_signals": [
+        "bar_energy_rms",
+        "bar_loudness_delta",
+        "onset_density",
+        "rhythm_stability",
+        "spectral_delta",
+        "stem_bass_activity",
+        "evidence_completeness"
+      ]
+    },
+    "unknown": {
+      "positive_signals": [
+        "evidence_completeness"
+      ],
+      "negative_signals": [
+        "semantic_role_hint"
+      ]
+    },
+    "drop_onset": {
+      "positive_signals": [
+        "bar_loudness_delta",
+        "timbre_delta",
+        "spectral_delta",
+        "novelty",
+        "neighbor_delta"
+      ],
+      "negative_signals": [
+        "self_similarity",
+        "recurrence",
+        "evidence_completeness"
+      ]
+    }
+  },
+  "signals": [
+    {
+      "name": "bar_grid",
+      "group": "beat_downbeat_reference",
+      "meaning": "Bar index and bar time range derived from downbeats on the shared audio timebase.",
+      "source_calculation": "Use analysis.timeline.downbeats.times_sec when available; derive half-open bar ranges against the Track Map timebase and duration.",
+      "aggregation": "bar_synchronous",
+      "normalization": "none; the grid is positional reference data",
+      "role_positive": [],
+      "role_negative": [],
+      "boundary_detection": true,
+      "role_scoring": true,
+      "mvp_level": "mvp",
+      "required_track_map_fields": [
+        "timebase",
+        "source.original.audio_properties.duration_sec",
+        "analysis.timeline.beats",
+        "analysis.timeline.downbeats",
+        "provenance.components.beat_grid"
+      ],
+      "provenance": "BeatGrid component provenance from issue 236 plus Track Map timebase from issue 234.",
+      "missing_signal_behavior": "If downbeats are missing, StructureV1 may stay not_run or partial; do not estimate roles from seconds-only windows."
+    },
+    {
+      "name": "relative_track_position",
+      "group": "beat_downbeat_reference",
+      "meaning": "Relative bar position within the track. This is a weak role context signal, not a boundary signal.",
+      "source_calculation": "Compute bar index divided by total bar count from the downbeat grid and Track Map duration.",
+      "aggregation": "bar_synchronous",
+      "normalization": "relative position within the same track",
+      "role_positive": [
+        "intro",
+        "outro"
+      ],
+      "role_negative": [
+        "groove",
+        "build",
+        "drop",
+        "breakdown"
+      ],
+      "boundary_detection": false,
+      "role_scoring": true,
+      "mvp_level": "mvp",
+      "required_track_map_fields": [
+        "timebase",
+        "source.original.audio_properties.duration_sec",
+        "analysis.timeline.downbeats"
+      ],
+      "provenance": "Derived role-context signal from BeatGrid and Track Map timebase; no musical analysis backend of its own.",
+      "missing_signal_behavior": "Nullable when total bars cannot be derived; do not use absolute seconds as a role substitute."
+    },
+    {
+      "name": "bar_energy_rms",
+      "group": "energy_loudness",
+      "meaning": "Per-bar RMS energy or dBFS loudness contour.",
+      "source_calculation": "Aggregate the Track Map energy grid into downbeat-defined bars; if the producer emits a future bar-synchronous energy block, consume that directly.",
+      "aggregation": "bar_synchronous",
+      "normalization": "track percentile and median/MAD robust z-score",
+      "role_positive": [
+        "groove",
+        "drop"
+      ],
+      "role_negative": [
+        "intro",
+        "breakdown",
+        "outro"
+      ],
+      "boundary_detection": true,
+      "role_scoring": true,
+      "mvp_level": "mvp",
+      "required_track_map_fields": [
+        "analysis.timeline.energy",
+        "analysis.timeline.downbeats",
+        "provenance.components"
+      ],
+      "provenance": "Energy component configuration, value_kind, unit, window_sec, hop_sec, and source_ref.",
+      "missing_signal_behavior": "Nullable; boundary and role paths continue with lower evidence and no replacement confidence."
+    },
+    {
+      "name": "bar_loudness_delta",
+      "group": "energy_loudness",
+      "meaning": "Local loudness change before and after each bar or section boundary.",
+      "source_calculation": "Compute previous/next and rolling loudness deltas from bar_energy_rms or another documented loudness series.",
+      "aggregation": "bar_synchronous_and_neighbor_window",
+      "normalization": "local delta against neighboring bars; robust z-score within the track",
+      "role_positive": [
+        "build",
+        "drop",
+        "drop_onset"
+      ],
+      "role_negative": [
+        "groove",
+        "breakdown",
+        "outro"
+      ],
+      "boundary_detection": true,
+      "role_scoring": true,
+      "mvp_level": "mvp",
+      "required_track_map_fields": [
+        "analysis.timeline.energy",
+        "analysis.timeline.downbeats",
+        "provenance.components"
+      ],
+      "provenance": "Derived from the same provenance as the source energy/loudness series plus StructureV1 config.",
+      "missing_signal_behavior": "Nullable; do not infer drop_onset or build solely from section order."
+    },
+    {
+      "name": "low_end_share",
+      "group": "low_end",
+      "meaning": "Relative low-frequency energy share per bar. This is a low-end proxy, not confirmed bass activity.",
+      "source_calculation": "Band-energy ratio from audio spectrum using the same working audio and bar grid.",
+      "aggregation": "bar_synchronous",
+      "normalization": "track-relative share and percentile",
+      "role_positive": [
+        "groove",
+        "drop"
+      ],
+      "role_negative": [
+        "intro",
+        "breakdown"
+      ],
+      "boundary_detection": true,
+      "role_scoring": true,
+      "mvp_level": "mvp",
+      "required_track_map_fields": [
+        "timebase",
+        "analysis.timeline.downbeats",
+        "provenance.components.structure_v1"
+      ],
+      "provenance": "StructureV1 spectral/low-end component with band definition in configuration.",
+      "missing_signal_behavior": "Nullable; never relabel it as bass_activity unless a stem or explicit bass detector produced that signal."
+    },
+    {
+      "name": "onset_density",
+      "group": "onsets",
+      "meaning": "Count or normalized density of detected onsets per bar.",
+      "source_calculation": "Onset envelope or onset picks aggregated into downbeat-defined bars.",
+      "aggregation": "bar_synchronous",
+      "normalization": "track percentile and rolling local delta",
+      "role_positive": [
+        "groove",
+        "drop",
+        "build"
+      ],
+      "role_negative": [
+        "intro",
+        "breakdown",
+        "outro"
+      ],
+      "boundary_detection": true,
+      "role_scoring": true,
+      "mvp_level": "mvp",
+      "required_track_map_fields": [
+        "analysis.timeline.downbeats",
+        "provenance.components.structure_v1"
+      ],
+      "provenance": "StructureV1 onset component with onset method and parameters in configuration.",
+      "missing_signal_behavior": "Nullable; rhythm roles remain unknown or lower evidence rather than guessed."
+    },
+    {
+      "name": "rhythm_stability",
+      "group": "rhythmic_stability",
+      "meaning": "How stable the onset pattern and beat-aligned activity remain over adjacent bars.",
+      "source_calculation": "Compare bar-level onset envelopes or rhythmic descriptors across neighboring bars.",
+      "aggregation": "bar_synchronous_and_rolling_window",
+      "normalization": "relative stability percentile within the track",
+      "role_positive": [
+        "groove",
+        "drop"
+      ],
+      "role_negative": [
+        "build",
+        "breakdown",
+        "outro"
+      ],
+      "boundary_detection": true,
+      "role_scoring": true,
+      "mvp_level": "mvp",
+      "required_track_map_fields": [
+        "analysis.timeline.beats",
+        "analysis.timeline.downbeats",
+        "provenance.components.structure_v1"
+      ],
+      "provenance": "StructureV1 rhythm component plus BeatGrid provenance.",
+      "missing_signal_behavior": "Nullable; do not treat a missing rhythmic signal as silence or instability."
+    },
+    {
+      "name": "timbre_delta",
+      "group": "timbre_changes",
+      "meaning": "Bar-to-bar or section-to-section change in timbral descriptor space.",
+      "source_calculation": "Compare MFCC-like or other documented timbre descriptors computed by StructureV1; public Track Map v1 does not expose raw MFCC arrays.",
+      "aggregation": "bar_synchronous_and_neighbor_window",
+      "normalization": "local delta and robust z-score within the track",
+      "role_positive": [
+        "build",
+        "drop_onset",
+        "breakdown"
+      ],
+      "role_negative": [
+        "groove"
+      ],
+      "boundary_detection": true,
+      "role_scoring": true,
+      "mvp_level": "mvp",
+      "required_track_map_fields": [
+        "timebase",
+        "analysis.timeline.downbeats",
+        "provenance.components.structure_v1"
+      ],
+      "provenance": "StructureV1 timbre component with descriptor family and parameters in configuration.",
+      "missing_signal_behavior": "Nullable; role scoring must continue without fabricating timbre change."
+    },
+    {
+      "name": "spectral_delta",
+      "group": "spectral_changes",
+      "meaning": "Change in spectral shape or band distribution across bars.",
+      "source_calculation": "Compute bar-level spectral centroid, rolloff, flux, or band-ratio deltas from the working audio.",
+      "aggregation": "bar_synchronous_and_neighbor_window",
+      "normalization": "track-relative delta and percentile",
+      "role_positive": [
+        "build",
+        "drop",
+        "drop_onset"
+      ],
+      "role_negative": [
+        "groove",
+        "outro"
+      ],
+      "boundary_detection": true,
+      "role_scoring": true,
+      "mvp_level": "mvp",
+      "required_track_map_fields": [
+        "analysis.audio_summary.brightness",
+        "analysis.timeline.downbeats",
+        "provenance.components.structure_v1"
+      ],
+      "provenance": "StructureV1 spectral component; global brightness is only a fallback context field, not a bar series.",
+      "missing_signal_behavior": "Nullable; do not replace it with global brightness as if it were bar-synchronous."
+    },
+    {
+      "name": "self_similarity",
+      "group": "self_similarity",
+      "meaning": "Similarity matrix or per-bar similarity summary showing repeated musical material.",
+      "source_calculation": "Build a bar-level self-similarity representation from energy, timbre, rhythm, and spectral descriptors.",
+      "aggregation": "bar_pairwise_or_bar_summary",
+      "normalization": "within-track similarity scale",
+      "role_positive": [
+        "groove",
+        "drop"
+      ],
+      "role_negative": [
+        "build",
+        "breakdown",
+        "drop_onset"
+      ],
+      "boundary_detection": true,
+      "role_scoring": true,
+      "mvp_level": "mvp",
+      "required_track_map_fields": [
+        "analysis.timeline.downbeats",
+        "provenance.components.structure_v1"
+      ],
+      "provenance": "StructureV1 similarity component with descriptor inputs listed in configuration.",
+      "missing_signal_behavior": "Nullable; neutral boundaries can still use novelty/energy deltas if present."
+    },
+    {
+      "name": "recurrence",
+      "group": "recurrence",
+      "meaning": "Detected recurrence or repeated-bar structure across the track.",
+      "source_calculation": "Recurrence plot or repeated-segment summary derived from the self-similarity representation.",
+      "aggregation": "bar_pairwise_or_section_summary",
+      "normalization": "within-track recurrence strength",
+      "role_positive": [
+        "groove",
+        "drop"
+      ],
+      "role_negative": [
+        "build",
+        "breakdown",
+        "drop_onset"
+      ],
+      "boundary_detection": true,
+      "role_scoring": true,
+      "mvp_level": "mvp",
+      "required_track_map_fields": [
+        "analysis.timeline.downbeats",
+        "provenance.components.structure_v1"
+      ],
+      "provenance": "StructureV1 recurrence component with recurrence parameters in configuration.",
+      "missing_signal_behavior": "Nullable; no role confidence boost may be created from absence of recurrence."
+    },
+    {
+      "name": "novelty",
+      "group": "novelty",
+      "meaning": "Local novelty curve indicating candidate neutral boundaries.",
+      "source_calculation": "Compute novelty from self-similarity or multi-feature deltas around each bar.",
+      "aggregation": "bar_synchronous",
+      "normalization": "local novelty against neighboring bars",
+      "role_positive": [
+        "drop_onset",
+        "breakdown"
+      ],
+      "role_negative": [
+        "groove"
+      ],
+      "boundary_detection": true,
+      "role_scoring": true,
+      "mvp_level": "mvp",
+      "required_track_map_fields": [
+        "analysis.timeline.downbeats",
+        "provenance.components.structure_v1"
+      ],
+      "provenance": "StructureV1 novelty component with kernel/window configuration.",
+      "missing_signal_behavior": "Nullable; #265 may still emit lower-evidence sections from other boundary signals."
+    },
+    {
+      "name": "neighbor_delta",
+      "group": "before_after_differences",
+      "meaning": "Before/after difference around each candidate boundary across energy, low-end, onset, timbre, and spectral signals.",
+      "source_calculation": "Compare previous and next bar windows around a bar index or neutral boundary candidate.",
+      "aggregation": "boundary_neighbor_window",
+      "normalization": "local robust z-score relative to neighboring bars",
+      "role_positive": [
+        "build",
+        "drop_onset",
+        "breakdown",
+        "outro"
+      ],
+      "role_negative": [
+        "groove"
+      ],
+      "boundary_detection": true,
+      "role_scoring": true,
+      "mvp_level": "mvp",
+      "required_track_map_fields": [
+        "analysis.timeline.downbeats",
+        "analysis.timeline.sections",
+        "provenance.components.structure_v1"
+      ],
+      "provenance": "StructureV1 derived signal referencing all source feature components used.",
+      "missing_signal_behavior": "Nullable per source feature; compute only from available declared inputs and preserve missing-input notes."
+    },
+    {
+      "name": "multi_bar_trend",
+      "group": "multi_bar_trends",
+      "meaning": "4, 8, and 16 bar rise, fall, or stability trends for energy, low-end, onsets, timbre, and spectrum.",
+      "source_calculation": "Rolling trend over downbeat-aligned windows of 4, 8, and 16 bars.",
+      "aggregation": "rolling_4_8_16_bars",
+      "normalization": "slope and percentile relative to the same track",
+      "role_positive": [
+        "intro",
+        "build",
+        "outro"
+      ],
+      "role_negative": [
+        "groove",
+        "drop"
+      ],
+      "boundary_detection": true,
+      "role_scoring": true,
+      "mvp_level": "mvp",
+      "required_track_map_fields": [
+        "analysis.timeline.downbeats",
+        "provenance.components.structure_v1"
+      ],
+      "provenance": "StructureV1 trend component with window lengths recorded in configuration.",
+      "missing_signal_behavior": "Nullable for tracks shorter than the requested window; no fallback trend is invented."
+    },
+    {
+      "name": "neutral_section_boundary",
+      "group": "neutral_section_boundaries",
+      "meaning": "Neutral section ranges produced by StructureV1 without arrangement roles.",
+      "source_calculation": "Boundary backend combines available neutral signals and emits Track Map sections with neutral labels only.",
+      "aggregation": "section",
+      "normalization": "not applicable to output ranges",
+      "role_positive": [],
+      "role_negative": [],
+      "boundary_detection": true,
+      "role_scoring": true,
+      "mvp_level": "mvp",
+      "required_track_map_fields": [
+        "analysis.timeline.sections.items",
+        "analysis.timeline.sections.source_ref",
+        "provenance.components.structure_v1"
+      ],
+      "provenance": "StructureV1 component provenance, status, configuration, and quality notes.",
+      "missing_signal_behavior": "If sections are not_run, failed, or no_result, Arrangement Map generation must not classify roles."
+    },
+    {
+      "name": "evidence_completeness",
+      "group": "missing_data",
+      "meaning": "Per-section accounting of available, missing, failed, and contradictory signal evidence.",
+      "source_calculation": "Summarize the status and nullable values of the signals consumed by a later role scorer.",
+      "aggregation": "section",
+      "normalization": "not a confidence score; report counts and missing categories relative to the attempted signal set",
+      "role_positive": [
+        "unknown"
+      ],
+      "role_negative": [
+        "intro",
+        "groove",
+        "build",
+        "drop",
+        "breakdown",
+        "outro",
+        "drop_onset"
+      ],
+      "boundary_detection": false,
+      "role_scoring": true,
+      "mvp_level": "mvp",
+      "required_track_map_fields": [
+        "analysis.timeline.sections",
+        "quality.notes",
+        "provenance.components"
+      ],
+      "provenance": "Derived by the Arrangement Map scorer from declared input signal statuses; records input source_refs rather than inventing a new audio backend.",
+      "missing_signal_behavior": "Always computable as metadata when role scoring is attempted; it records missing inputs instead of replacing them."
+    },
+    {
+      "name": "stem_drum_activity",
+      "group": "drum_bass_activity",
+      "meaning": "Confirmed drum stem activity per bar, if a future stem pipeline supplies it.",
+      "source_calculation": "Aggregate drum stem energy/onsets over the same bar grid.",
+      "aggregation": "bar_synchronous",
+      "normalization": "track-relative stem activity percentile",
+      "role_positive": [
+        "groove",
+        "drop"
+      ],
+      "role_negative": [
+        "intro",
+        "breakdown"
+      ],
+      "boundary_detection": false,
+      "role_scoring": true,
+      "mvp_level": "optional",
+      "required_track_map_fields": [
+        "separate Stem Manifest reference",
+        "analysis.timeline.downbeats",
+        "provenance.components.stem_activity"
+      ],
+      "provenance": "Optional stem component provenance; never required for #265.",
+      "missing_signal_behavior": "Optional and nullable; absence does not degrade MVP boundary detection or role scoring."
+    },
+    {
+      "name": "stem_bass_activity",
+      "group": "drum_bass_activity",
+      "meaning": "Confirmed bass stem activity per bar, if a future stem pipeline supplies it.",
+      "source_calculation": "Aggregate bass stem energy/pitch-presence over the same bar grid.",
+      "aggregation": "bar_synchronous",
+      "normalization": "track-relative stem activity percentile",
+      "role_positive": [
+        "groove",
+        "drop"
+      ],
+      "role_negative": [
+        "intro",
+        "breakdown",
+        "outro"
+      ],
+      "boundary_detection": false,
+      "role_scoring": true,
+      "mvp_level": "optional",
+      "required_track_map_fields": [
+        "separate Stem Manifest reference",
+        "analysis.timeline.downbeats",
+        "provenance.components.stem_activity"
+      ],
+      "provenance": "Optional stem component provenance; never required for #265.",
+      "missing_signal_behavior": "Optional and nullable; do not substitute low_end_share as confirmed bass activity."
+    },
+    {
+      "name": "semantic_role_hint",
+      "group": "semantic_optional",
+      "meaning": "Optional semantic embedding hint for arrangement role scoring after separate evidence exists.",
+      "source_calculation": "Future CLAP or other embedding comparison against documented prompts or references.",
+      "aggregation": "section_or_bar_window",
+      "normalization": "track-relative or calibration-set relative, only after evidence",
+      "role_positive": [
+        "intro",
+        "groove",
+        "build",
+        "drop",
+        "breakdown",
+        "outro"
+      ],
+      "role_negative": [
+        "unknown"
+      ],
+      "boundary_detection": false,
+      "role_scoring": true,
+      "mvp_level": "optional",
+      "required_track_map_fields": [
+        "separate semantic signal reference",
+        "analysis.timeline.sections",
+        "provenance.components.semantic_role_hint"
+      ],
+      "provenance": "Optional semantic component provenance; not part of #265 MVP and not Techno truth.",
+      "missing_signal_behavior": "Optional and nullable; absence must not lower confidence by itself."
+    }
+  ]
+}
