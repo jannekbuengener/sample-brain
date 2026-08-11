@@ -35,3 +35,18 @@ the classifier creates no boundary. `transition` is never emitted.
 This is not a quality claim or a universal statement about Techno. It uses no
 ML model, CLAP, stems, cloud service, or new dependency. Private-track pilots
 remain the separate scope of #242.
+
+## Runtime wiring
+
+`SectionSignalsAssembler` is the production bridge between neutral StructureV1
+bar evidence and the classifier. It aggregates each public, normalized bar
+series over the unchanged neutral section range, retains the inferred-bar-grid
+provenance, and passes one `SectionSignals` value per section to
+`ArrangementClassifier`. `build_arrangement_map(structure_result)` provides
+the small end-to-end consumer.
+
+The assembler neither creates boundaries nor assigns roles. A missing or
+misaligned bar series is recorded as missing; it is never replaced with a
+default value. The classifier returns `unknown` without scores unless every
+core signal is available. This keeps incomplete StructureV1 evidence from
+being mistaken for neutral evidence.
