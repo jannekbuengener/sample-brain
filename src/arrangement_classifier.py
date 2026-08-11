@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Literal
+from typing import Literal, Mapping
 
 from .structure_v1 import StructureBoundary, StructureSection, StructureV1Result
 
@@ -68,6 +68,7 @@ class SectionSignals:
     available_signals: tuple[str, ...] = ()
     missing_signals: tuple[str, ...] = ()
     contradictory_signals: tuple[str, ...] = ()
+    provenance: Mapping[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -245,6 +246,7 @@ def _classify(
     completeness = signals.evidence_completeness
     if (
         signals.contradictory_signals
+        or not _CORE_SIGNALS <= available
         or len(available & _CORE_SIGNALS) < 3
         or completeness == 0
     ):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from importlib import metadata
 from pathlib import Path
 from typing import Literal, Mapping
@@ -91,6 +91,7 @@ class StructureV1Result:
     notes: tuple[str, ...]
     source: StructureV1Source
     reason_code: str | None = None
+    bar_features: Mapping[str, tuple[float, ...]] = field(default_factory=dict)
 
     def to_track_map_sections(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -205,7 +206,41 @@ class StructureV1Analyzer:
             notes=tuple(notes),
             source=self._source(inferred=inferred),
             reason_code=None if candidates else "NO_BOUNDARY_CANDIDATE",
+            bar_features=self._public_bar_features(usable, signal_strengths),
         )
+
+    def _public_bar_features(
+        self, features: Mapping[str, np.ndarray], strengths: Mapping[str, np.ndarray]
+    ) -> dict[str, tuple[float, ...]]:
+        """Expose normalized bar evidence for role consumers without role labels."""
+        result: dict[str, tuple[float, ...]] = {}
+        for name, values in features.items():
+            array = np.asarray(values, dtype=float)
+            if name == "self_similarity" and array.ndim == 2:
+                if len(array) < 2:
+                    public = np.zeros(len(array))
+                else:
+                    public = (np.sum(array, axis=1) - np.diag(array)) / (len(array) - 1)
+            elif array.ndim > 1:
+                public = _deltas(array)
+            else:
+                public = array
+            result[name] = tuple(float(value) for value in _relative_strength(public))
+        for name in ("neighbor_delta",):
+            if name in strengths:
+                result[name] = tuple(float(value) for value in strengths[name])
+        if "bar_energy_rms" in features:
+            energy = np.asarray(features["bar_energy_rms"], dtype=float)
+            trend = np.zeros(len(energy), dtype=float)
+            for window in self.config.trend_windows_bars:
+                for index in range(window - 1, len(energy)):
+                    trend[index] += float(energy[index] - energy[index - window + 1])
+            magnitude = float(np.max(np.abs(trend))) if trend.size else 0.0
+            result["multi_bar_trend"] = tuple(
+                float(value / magnitude) if magnitude > 1e-12 else 0.0
+                for value in trend
+            )
+        return result
 
     def _bar_starts(
         self, timebase: AudioTimebase, beat_grid: BeatGridResult
