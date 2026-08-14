@@ -160,6 +160,38 @@ def main():
         "--json", action="store_true", help="Emit deterministic Track Map v1 JSON."
     )
 
+    # deconstruct
+    p_deconstruct = sub.add_parser(
+        "deconstruct",
+        help="Track headless deconstructen und Pack-Artefakte erzeugen",
+    )
+    p_deconstruct.add_argument("path", help="Path to the local source track.")
+    p_deconstruct.add_argument(
+        "--pack-root",
+        required=True,
+        help="Output root for the Track Deconstruction run.",
+    )
+    p_deconstruct.add_argument(
+        "--skip-arrangement",
+        action="store_true",
+        help="Skip the optional arrangement step.",
+    )
+    p_deconstruct.add_argument(
+        "--skip-stems",
+        action="store_true",
+        help="Skip the optional stems step.",
+    )
+    p_deconstruct.add_argument(
+        "--beat-backend",
+        default="auto",
+        help="Beat backend passed to Track Deconstruction.",
+    )
+    p_deconstruct.add_argument(
+        "--bpm-normalization",
+        default="none",
+        help="BPM normalization passed to Track Deconstruction.",
+    )
+
     # autotype
     p_aut = sub.add_parser(
         "autotype", help="Audio-basierte Typisierung -> features.pred_type"
@@ -560,6 +592,45 @@ def main():
                 sys.exit(2)
             print(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False))
             return
+
+    if args.cmd == "deconstruct":
+        from .deconstruct import run_deconstruct
+
+        skip = set()
+        if args.skip_arrangement:
+            skip.add("arrangement")
+        if args.skip_stems:
+            skip.add("stems")
+
+        pack_root = Path(args.pack_root)
+        result = run_deconstruct(
+            Path(args.path),
+            pack_root,
+            bpm_normalization=args.bpm_normalization,
+            beat_backend=args.beat_backend,
+            skip=skip,
+)
+
+        pack_root.mkdir(parents=True, exist_ok=True)
+        payload = result.to_dict()
+        (pack_root / "deconstruct_run.json").write_text(
+            json.dumps(
+                payload,
+                indent=2,
+                sort_keys=True,
+                allow_nan=False,
+            ),
+            encoding="utf-8",
+        )
+        print(
+            json.dumps(
+                payload,
+                indent=2,
+                sort_keys=True,
+                allow_nan=False,
+            )
+        )
+        sys.exit(2 if result.status == "failed" else 0)
 
     if args.cmd == "autotype":
         cfg = _resolve_profile_or_exit(args)

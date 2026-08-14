@@ -447,7 +447,7 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
                 res = render_asset(req, loops_dir)
                 manifest = {
                     "document_type": "sample_brain.asset_manifest",
-                    "schema_version": "1.0.0",
+                    "schema_version": "1.1.0",
                     "asset_id": req.asset_id,
                     "asset_kind": "loop",
                     "track_ref": track_ref,
@@ -487,7 +487,7 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
                 res = render_asset(req, sections_dir)
                 manifest = {
                     "document_type": "sample_brain.asset_manifest",
-                    "schema_version": "1.0.0",
+                    "schema_version": "1.1.0",
                     "asset_id": cand.asset_id,
                     "asset_kind": "section",
                     **cand.as_manifest_dict(),
