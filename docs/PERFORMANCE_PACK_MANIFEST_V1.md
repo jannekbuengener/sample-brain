@@ -77,7 +77,7 @@ A Performance Pack is a **collection of references plus their traceable summarie
 All references in this contract are **portable**:
 
 - `pack_id`, `track_id`, `asset_id`, `stem_id` — portable, stable identities. No semantic meaning is required; a hash-derived or synthetic opaque value is acceptable.
-- `ref` fields (`source_track.track_ref`, `documents.*.ref`, `assets[].asset_ref`, `stems[].stem_ref`) — portable references to the referenced file, expressed as a **relative URI** relative to the Performance Pack manifest file (e.g. `track_map.json`, `arrangement/arrangement_map.json`, `assets/asset_loop_xxx.json`, `stems/stem_drums_01.json`). They follow the directory-layout convention being finalized in #258, but the pack does **not** implement that layout here.
+- `ref` fields (`source_track.track_ref`, `documents.*.ref`, `assets[].asset_ref`, `stems[].stem_ref`) — portable references to the referenced file, expressed as a **relative URI** relative to the Performance Pack manifest file (e.g. `analysis/track_map.json`, `analysis/arrangement_map.json`, `loops/loop_asset_loop_xxx.json`, `sections/section_asset_section_xxx.json`, `stems/stem_drums_01.json`). The concrete directory and file-naming standard for these relative URIs is defined in #258 (Performance Pack Layout v1).
 
 **Forbidden in any `ref` or identity field:** absolute filesystem paths, drive letters (`C:\`), UNC paths (`\\host`), `file://` URLs, and `..` path segments.
 
