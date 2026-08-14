@@ -324,7 +324,7 @@ def test_optional_failed_stem_downgrades_to_partial():
             "stem_id": "stem_drums_01",
             "stem_ref": "stems/stem_drums_01.json",
             "document_type": "sample_brain.stem_manifest",
-            "schema_version": "0.1.0-draft",
+            "schema_version": "1.0.0",
             "track_ref": pack["source_track"]["track_id"],
             "status": "failed",
         }

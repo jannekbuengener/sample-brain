@@ -70,7 +70,7 @@
           "stem_id": "stem_drums_01",
           "stem_ref": "stems/stem_drums_01.json",
           "document_type": "sample_brain.stem_manifest",
-          "schema_version": "0.1.0-draft",
+          "schema_version": "1.0.0",
           "track_ref": "track_9f8e7d6c5b4a",
           "status": "ok",
           "hash": { "algorithm": "sha1", "value": "ee55ff6677889900aabbcceedff11223344556677" }

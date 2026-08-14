@@ -139,7 +139,7 @@ The Arrangement Map is optional. Its absence (or `not_run` / `no_result` status)
 | Field | Value |
 |-------|-------|
 | `document_type` | `"sample_brain.stem_manifest"` (finalized in #229 / #244–#249) |
-| `schema_version` | Compatible v1 once #229 lands; provisional drafts use a `-draft` suffix. |
+| `schema_version` | Compatible v1 (`1.x.x`); current canonical version is `1.0.0`. |
 
 The Stem Manifest is optional. Absence means no technical stems were produced; this is a normal, valid state.
 
@@ -196,7 +196,7 @@ To make every asset traceable to its sample-time region from the pack alone (wit
 | `stem_id` | string | yes | Portable technical stem identity (e.g. `stem_drums_01`). |
 | `stem_ref` | string | yes | Portable relative reference to the Stem Manifest file. |
 | `document_type` | string | yes | Must be `"sample_brain.stem_manifest"`. |
-| `schema_version` | string | yes | Stem Manifest schema version (provisional until #229). |
+| `schema_version` | string | yes | Stem Manifest schema version. Current canonical version is `1.0.0`. |
 | `track_ref` | string | yes | Portable reference to the original track. Must equal `source_track.track_id`. |
 | `status` | string | yes | `ok`, `partial`, `not_run`, `failed`, or `no_result`. |
 | `hash` | object | no | Content hash of the referenced Stem Manifest file. Recommended. |
