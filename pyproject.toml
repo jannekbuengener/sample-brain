@@ -21,6 +21,9 @@ clap = [
 vec = [
     "sqlite-vec==0.1.9",
 ]
+stems = [
+    "audio-separator[cpu]==0.44.5",
+]
 
 [tool.setuptools]
 packages = ["src"]
