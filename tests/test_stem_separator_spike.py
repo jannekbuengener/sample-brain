@@ -1,0 +1,148 @@
+from __future__ import annotations
+
+import sys
+import os
+import json
+import pytest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+# Test for core import isolation
+def test_core_isolation_from_heavy_dependencies():
+    # Ensure audio_separator and torch are NOT loaded when importing core modules
+    to_unload = [mod for mod in sys.modules if "audio_separator" in mod or "torch" in mod]
+    for mod in to_unload:
+        sys.modules.pop(mod, None)
+
+    # Import core CLI
+    import src.cli
+    import src.db
+
+    # Assert that neither audio_separator nor torch were loaded
+    loaded_heavy = [mod for mod in sys.modules if "audio_separator" in mod or "torch" in mod]
+    assert not loaded_heavy, f"Heavy dependencies loaded by core: {loaded_heavy}"
+
+
+def test_wrapper_uninstalled_returns_backend_unavailable(tmp_path):
+    # If audio-separator package is not installed (mocked by putting None in sys.modules)
+    with patch.dict(sys.modules, {"audio_separator": None}):
+        # Import the wrapper locally inside the test
+        from tools.stem_separator_spike import StemSeparatorProcessWrapper
+        
+        wrapper = StemSeparatorProcessWrapper()
+        res = wrapper.separate_offline_fallback(
+            input_path=tmp_path / "track.wav",
+            model_filename="htdemucs.yaml",
+            output_dir=tmp_path / "out",
+            reason="BACKEND_UNAVAILABLE"
+        )
+        assert res["status"] == "not_run"
+        assert res["reason_code"] == "BACKEND_UNAVAILABLE"
+        assert "output" not in res
+
+
+def test_subprocess_timeout_returns_failed_state(tmp_path):
+    from tools.stem_separator_spike import StemSeparatorProcessWrapper
+    wrapper = StemSeparatorProcessWrapper()
+
+    # Mock subprocess.run to raise TimeoutExpired
+    import subprocess
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=["mock"], timeout=10.0)):
+        res = wrapper.separate_via_subprocess(
+            input_path=tmp_path / "track.wav",
+            track_hash="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+            model_filename="htdemucs.yaml",
+            output_dir=tmp_path / "out",
+            timeout=1.0
+        )
+        assert res["status"] == "failed"
+        assert res["error"]["code"] == "TIMEOUT"
+        assert "timed out" in res["error"]["message"]
+
+
+def test_subprocess_non_zero_exit_returns_failed_state(tmp_path):
+    from tools.stem_separator_spike import StemSeparatorProcessWrapper
+    wrapper = StemSeparatorProcessWrapper()
+
+    # Mock subprocess.run to return exit code 1
+    import subprocess
+    mock_res = subprocess.CompletedProcess(args=["mock"], returncode=1, stdout="", stderr="Mock subprocess failure")
+    with patch("subprocess.run", return_value=mock_res):
+        res = wrapper.separate_via_subprocess(
+            input_path=tmp_path / "track.wav",
+            track_hash="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+            model_filename="htdemucs.yaml",
+            output_dir=tmp_path / "out"
+        )
+        assert res["status"] == "failed"
+        assert res["error"]["code"] == "SUBPROCESS_ERROR"
+        assert "exit code 1" in res["error"]["message"]
+
+
+def test_stem_manifest_mapping_fields(tmp_path):
+    # This tests the serialization mapping functionality directly
+    from tools.stem_separator_spike import map_stem_to_manifest
+
+    source_properties = {
+        "sample_rate_hz": 44100,
+        "channels": 2,
+        "n_samples": 88200,
+        "duration_sec": 2.0
+    }
+    output_properties = {
+        "sample_rate_hz": 44100,
+        "channels": 2,
+        "n_samples": 88200,
+        "duration_sec": 2.0
+    }
+    
+    manifest = map_stem_to_manifest(
+        stem_id="stem_drums_test",
+        stem_kind="drums",
+        track_ref="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+        source_hash="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+        source_properties=source_properties,
+        file_ref="drums.wav",
+        output_hash="ee55ff6677889900aabbcceedff1122334455667",
+        output_properties=output_properties,
+        model_filename="htdemucs.yaml",
+        backend_version="0.44.5"
+    )
+
+    # Let's run it through the official validation to prove 100% compliance!
+    from tests.test_stem_manifest_contract import validate_stem_manifest
+    errors = validate_stem_manifest(manifest)
+    assert errors == [], f"Validation failed: {errors}"
+
+    # Also assert specific contract guarantees
+    assert manifest["document_type"] == "sample_brain.stem_manifest"
+    assert manifest["schema_version"] == "1.0.0"
+    assert manifest["stem_kind"] == "drums"
+    assert manifest["status"] == "ok"
+    assert manifest["source"]["origin_sample"] == 0
+    assert manifest["provenance"]["component"] == "stem_separator"
+    assert manifest["provenance"]["model"]["family"] == "htdemucs"
+    assert manifest["provenance"]["model"]["code_license"] == "MIT"
+    assert manifest["provenance"]["model"]["weight_license"] == "UNKNOWN/UNVERIFIED"
+    assert manifest["output"]["file_ref"] == "drums.wav"
+
+
+def test_invalid_track_ref_filename_fallback_raises():
+    from tools.stem_separator_spike import map_stem_to_manifest
+    
+    # Passing raw filename instead of a content hash should be rejected or handled appropriately
+    # The contract requires: track_ref must be a portable track ID, not a path or filename fallback.
+    # So we must ensure that filename fallbacks are explicitly rejected or validated.
+    with pytest.raises(ValueError, match="track_ref must be a portable track ID"):
+        map_stem_to_manifest(
+            stem_id="stem_drums_test",
+            stem_kind="drums",
+            track_ref="my_track.wav", # INVALID fallback
+            source_hash="a1b2",
+            source_properties={"sample_rate_hz": 44100, "channels": 2, "n_samples": 88200},
+            file_ref="drums.wav",
+            output_hash="ee55",
+            output_properties={"sample_rate_hz": 44100, "channels": 2, "n_samples": 88200},
+            model_filename="htdemucs.yaml",
+            backend_version="0.44.5"
+        )

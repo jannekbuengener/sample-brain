@@ -35,6 +35,9 @@ Die folgenden Angaben dienen der Transparenz:
 ### [audioread](https://github.com/beetbox/audioread)
 - License: MIT
 
+### [audio-separator](https://github.com/nomadkaraoke/python-audio-separator)
+- License: MIT
+
 ---
 
 ## Hinweis
