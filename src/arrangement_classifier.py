@@ -154,6 +154,8 @@ class ArrangementResult:
         return {
             "status": self.status,
             "source_ref": ARRANGEMENT_CLASSIFIER_COMPONENT,
+            "document_type": "sample_brain.arrangement_map",
+            "schema_version": "0.1.0-draft",
             "sections": [
                 {
                     "id": item.section_id,
