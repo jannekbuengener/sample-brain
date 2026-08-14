@@ -324,8 +324,11 @@ def _default_arrangement_adapter(ctx: StepContext) -> tuple[StepResult, object]:
         )
 
     out_path = work / "arrangement_map.json"
+    arrangement_dict = arrangement.to_arrangement_map()
+    arrangement_dict["document_type"] = "sample_brain.arrangement_map"
+    arrangement_dict["schema_version"] = "0.1.0-draft"
     out_path.write_text(
-        json.dumps(arrangement.to_arrangement_map(), indent=2, sort_keys=True, default=str),
+        json.dumps(arrangement_dict, indent=2, sort_keys=True, default=str),
         encoding="utf-8",
     )
 
@@ -410,7 +413,35 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
             None,
         )
 
-    track_ref = ctx.track_path.name
+    # Get authoritative track ID from Track Map content hash, not file name
+    track = ctx.artifacts.get("track_map")
+    if not isinstance(track, dict) or "source" not in track or "original" not in track["source"]:
+        return (
+            StepResult(
+                step_id="assets",
+                required=False,
+                status="failed",
+                reason_code="MISSING_TRACK_MAP_SOURCE",
+                adapter="loop_candidates+section_candidates",
+            ),
+            None,
+        )
+
+    hash_info = track["source"]["original"].get("hash", {})
+    if not hash_info or not hash_info.get("value"):
+        return (
+            StepResult(
+                step_id="assets",
+                required=False,
+                status="failed",
+                reason_code="MISSING_TRACK_HASH",
+                adapter="loop_candidates+section_candidates",
+            ),
+            None,
+        )
+
+    track_ref = hash_info["value"]
+
     loops_dir = ctx.pack_root / "loops"
     sections_dir = ctx.pack_root / "sections"
     loops_dir.mkdir(parents=True, exist_ok=True)

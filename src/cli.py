@@ -595,6 +595,7 @@ def main():
 
     if args.cmd == "deconstruct":
         from .deconstruct import run_deconstruct
+        from .performance_pack import finalize_performance_pack
 
         skip = set()
         if args.skip_arrangement:
@@ -609,7 +610,7 @@ def main():
             bpm_normalization=args.bpm_normalization,
             beat_backend=args.beat_backend,
             skip=skip,
-)
+        )
 
         pack_root.mkdir(parents=True, exist_ok=True)
         payload = result.to_dict()
@@ -630,6 +631,11 @@ def main():
                 allow_nan=False,
             )
         )
+
+        # #260: Assemble Performance Pack manifest after successful deconstruct
+        if result.status != "failed":
+            finalize_performance_pack(result, pack_root)
+
         sys.exit(2 if result.status == "failed" else 0)
 
     if args.cmd == "autotype":
