@@ -147,6 +147,19 @@ def main():
     # analyze
     sub.add_parser("analyze", help="Audio-Features (librosa) berechnen")
 
+    # context analyze (DB-free one-shot file analysis)
+    p_context = sub.add_parser(
+        "context", help="Lokale Kontextdatei ohne Katalog analysieren"
+    )
+    context_sub = p_context.add_subparsers(dest="context_cmd", required=True)
+    p_context_analyze = context_sub.add_parser(
+        "analyze", help="Eine WAV- oder FLAC-Datei als Track Map v1 analysieren"
+    )
+    p_context_analyze.add_argument("path", help="Path to a local WAV or FLAC file.")
+    p_context_analyze.add_argument(
+        "--json", action="store_true", help="Emit deterministic Track Map v1 JSON."
+    )
+
     # autotype
     p_aut = sub.add_parser(
         "autotype", help="Audio-basierte Typisierung -> features.pred_type"
@@ -526,6 +539,27 @@ def main():
         run_analyze(bpm_normalization=bpm_normalization)
         print("Analyze completed.")
         return
+
+    if args.cmd == "context":
+        if args.context_cmd == "analyze":
+            from .context_analyze import ContextAnalyzeError, analyze_context_file
+
+            try:
+                payload = analyze_context_file(Path(args.path))
+            except ContextAnalyzeError as exc:
+                print(
+                    json.dumps(
+                        {
+                            "status": "error",
+                            "error": {"code": exc.code, "message": exc.message},
+                        },
+                        sort_keys=True,
+                    ),
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+            print(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False))
+            return
 
     if args.cmd == "autotype":
         cfg = _resolve_profile_or_exit(args)

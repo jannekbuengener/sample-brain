@@ -120,6 +120,9 @@ python -m src.cli scan --root "<ROOT_A>" --root "<ROOT_B>"
 # Analyze audio features
 python -m src.cli analyze
 
+# Analyze one local WAV/FLAC without scanning or mutating the catalog
+python -m src.cli context analyze "<TRACK_PATH>" --json
+
 # Autotype samples (uses use_knn / knn_min_conf from profile)
 python -m src.cli autotype                                          # uses profile config
 python -m src.cli autotype --no-knn                                 # disable kNN for this run

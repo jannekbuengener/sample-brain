@@ -472,7 +472,7 @@ For `ok` or `partial`, the component's result-specific required fields are defin
 
 ## 12. Complete JSON Example
 
-This is a prospective contract example showing a valid Track Map v1 document. Current `main` does not yet emit this complete Track Map; runtime production is tracked separately in #233. The example uses realistic values from existing analysis capabilities, while unrequested timeline blocks are `not_run` with `*_NOT_REQUESTED` reasons; key has no mode; BPM has no confidence. The overall `analysis.status` is `ok` because those unrequested optional blocks do not degrade it.
+This is a valid Track Map v1 example. The #233 one-shot runtime emits the base-analysis subset for a local WAV/FLAC file without catalog access; unrequested timeline blocks are `not_run` with `*_NOT_REQUESTED` reasons. Key has no mode and BPM has no confidence. The overall `analysis.status` is `ok` when every requested base component succeeds.
 
 ```json
 {
