@@ -231,6 +231,10 @@ class StructureV1Analyzer:
                 result[name] = tuple(float(value) for value in strengths[name])
         if "bar_energy_rms" in features:
             energy = np.asarray(features["bar_energy_rms"], dtype=float)
+            result["bar_loudness_delta"] = tuple(
+                float(value)
+                for value in _relative_strength(_deltas(energy.reshape(-1, 1)))
+            )
             trend = np.zeros(len(energy), dtype=float)
             for window in self.config.trend_windows_bars:
                 for index in range(window - 1, len(energy)):
