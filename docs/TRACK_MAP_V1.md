@@ -654,11 +654,14 @@ The Track Map deliberately excludes the following. They have or will have their 
 | BeatGrid (#236) | Shipped (`src/beat_grid.py`, PR #276) | Feeds section 6.6 beats / 6.7 downbeats |
 | StructureV1 (#265) | Shipped (`src/structure_v1.py`) | Feeds neutral sections and public bar-synchronous evidence |
 | Energy timeline | Shipped as StructureV1 bar evidence | Feeds normalized per-bar energy/loudness evidence |
-| Track Deconstruction orchestrator (#227) | Not implemented | Assembles full Track Map |
+| Combined Track Map assembler (full BeatGrid + StructureV1 merge) | Future enhancement | Outside v1 acceptance scope of #227 |
 | Stem separation (#244-#249) | Not implemented | Stem Manifest (separate) |
 | Asset generation (#250-#256) | Not implemented | Asset Manifest (separate) |
 | Performance Pack (#257-#264) | Not implemented | Pack manifest (separate) |
 
-Current `main` produces neutral StructureV1 output and an Arrangement Map through
-`StructureV1 -> SectionSignalsAssembler -> ArrangementClassifier`. The full
-Track Deconstruction / Track Map assembler remains a separate issue (#233).
+Current `main` ships the one-shot Track Map v1 runtime (#233, `src/context_analyze.py`),
+which emits a base Track Map `1.0.0` (BPM, key, loudness, brightness) without catalog
+access, plus the BeatGrid (#236) and StructureV1 (#265) backends as separate
+status-based components on the shared #234 timebase. A single orchestrator that merges
+all timeline components into one Track Map document is a documented future enhancement
+and is outside the v1 acceptance scope of #227.
