@@ -4,7 +4,7 @@
 **Parent:** [#230](https://github.com/jannekbuengener/sample-brain/issues/230)
 **Depends on:** [#250](https://github.com/jannekbuengener/sample-brain/issues/250) (Asset Manifest v1), [#253](https://github.com/jannekbuengener/sample-brain/issues/253) (deterministic rendering)
 **Status on issue tracker:** `OPEN`
-**Schema relationship:** additive extension of `ASSET_MANIFEST_V1.md` `1.0.0` (a compatible `1.x` addendum; does **not** bump the frozen `schema_version`)
+**Schema relationship:** establishes `1.1.0` — an additive MINOR extension of `ASSET_MANIFEST_V1.md` `1.0.0` (a compatible `1.x` addendum). It raises the frozen `schema_version` from `1.0.0` to `1.1.0` per the manifest's own MINOR rule for new optional fields.
 
 This document defines the lightweight reanalysis of already rendered loop and
 section assets (#253) and how the resulting metadata is attached to the Asset
@@ -33,7 +33,7 @@ in Sample Brain without re-running heavy analysis on every short asset.
 | **No invented confidence** | No generic `confidence`. No BPM-confidence. No invented Dur/Moll mode. `key_root` is a root pitch class only. |
 | **Source integrity gate** | Before analysis, the render output is verified against the manifest (status, portable `file_ref`, existence, hash, audio properties). Fail-closed on any mismatch. |
 | **Provenance per asset** | The analysis records its component, version, backend, config, and a reference to the actually analyzed render output. |
-| **Additive evolution** | New analysis fields extend `1.0.0` without reinterpreting existing fields. `schema_version` stays `1.0.0`; v1 consumers accept `1.x`. |
+| **Additive evolution** | New analysis fields extend the manifest (added at `1.1.0`) without reinterpreting existing fields. `schema_version` is raised to `1.1.0` (MINOR); v1 consumers accept `1.x`. |
 
 ---
 
@@ -161,6 +161,6 @@ paths, no model-cache paths are ever stored.
 ## 9. Relationship to `ASSET_MANIFEST_V1.md`
 
 This is an **additive** `1.x` extension. `ASSET_MANIFEST_V1.md` §12 is updated to
-describe the reanalysis fields; `schema_version` remains `1.0.0`. Readers that
+describe the reanalysis fields; `schema_version` is `1.1.0`. Readers that
 accept compatible `1.x.x` documents consume the new `analysis` fields without
 change.

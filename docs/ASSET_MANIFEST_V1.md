@@ -4,7 +4,7 @@
 **Parent:** [#230](https://github.com/jannekbuengener/sample-brain/issues/230)
 **Depends on:** [#232](https://github.com/jannekbuengener/sample-brain/issues/232) (Track Map v1), [#234](https://github.com/jannekbuengener/sample-brain/issues/234) (Canonical Audio & Timebase)
 **Status on issue tracker:** `OPEN` / documented on branch `docs/asset-manifest-v1`
-**Schema version:** `1.0.0`
+**Schema version:** `1.1.0`
 **Document type:** `sample_brain.asset_manifest`
 
 This document defines the portable asset manifest contract for Loop and Section
@@ -63,7 +63,7 @@ A pack is a collection of such manifests plus the files they reference.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `document_type` | string | yes | Must be `"sample_brain.asset_manifest"`. |
-| `schema_version` | string | yes | SemVer `MAJOR.MINOR.PATCH`. This revision is `"1.0.0"`; compatible v1 documents may use `1.x.x`. |
+| `schema_version` | string | yes | SemVer `MAJOR.MINOR.PATCH`. This revision is `"1.1.0"` (a MINOR bump of `1.0.0` introduced by the #254 analysis extension, §12); compatible v1 documents may use `1.x.x`. Pre-analysis manifests without the §12 analysis fields remain valid as `1.0.0`. |
 | `asset_id` | string | yes | Portable, unique identity of this asset within the pipeline run. |
 | `track_ref` | string | yes | Portable reference to the originating Track Map (#232). Identifies the original track. Not a filesystem path. |
 | `asset_kind` | string | yes | `"loop"` or `"section"`. |
@@ -83,7 +83,8 @@ A pack is a collection of such manifests plus the files they reference.
 - **MAJOR** increments when a previously required field is removed or renamed in a breaking way, or when the status enum changes.
 - **MINOR** increments when new optional fields or additive structures are introduced, provided existing v1 fields and enums retain their meaning.
 - **PATCH** increments for non-breaking documentation or example corrections.
-- The current frozen revision is `1.0.0`; this document does not raise that version.
+- The current frozen revision is `1.1.0`. It was raised by #254's additive `analysis` extension (a MINOR bump of `1.0.0`); the MAJOR version is unchanged and the status enum (`ok`, `partial`, `not_run`, `failed`, `no_result`) is unchanged.
+- Version history: `1.0.0` is the base Asset Manifest contract. #254 added the optional `analysis` block (§12) as a backward-compatible MINOR bump to `1.1.0`; v1 consumers accept `1.x.x` and pre-analysis `1.0.0` manifests without `analysis` remain valid.
 - Readers must reject any Asset Manifest whose `schema_version` major number is unsupported. v1 consumers accept compatible `1.x.x` documents.
 - The status enum values (`ok`, `partial`, `not_run`, `failed`, `no_result`) are fixed for v1. New status values require a `MAJOR` increment.
 
@@ -299,7 +300,7 @@ assert that the asset was rendered.
 **Rules**
 
 - `analysis.status = "not_run"` is the expected state before asset reanalysis (#254) is implemented. No analysis values are fabricated.
-- This block records provenance for (re)analyzed assets. The reanalysis behavior, integrity gate, status model, and fail-closed codes are defined in `ASSET_REANALYSIS_V1.md` (#254) as an **additive `1.x` extension** of this frozen `1.0.0` contract.
+- This block records provenance for (re)analyzed assets. The reanalysis behavior, integrity gate, status model, and fail-closed codes are defined in `ASSET_REANALYSIS_V1.md` (#254) as an **additive `1.x` extension** of this contract; the analysis fields were introduced at `1.1.0` (a MINOR bump of `1.0.0`).
 - The reanalysis fields above are optional and only present when a meaningful value was produced. Absent fields never imply a low-quality result.
 - No generic confidence is invented for analyzed assets. No Dur/Moll mode is inferred. No BPM-confidence is invented.
 - `asset_kind` and `source.source_kind` are never reinterpreted by analysis. `source`, `range`, `loop`/`section`, `boundary`, `candidate`, and `rendering` blocks are preserved unchanged by reanalysis.
@@ -393,7 +394,7 @@ sample names, or absolute paths are used.
 ```json
 {
   "document_type": "sample_brain.asset_manifest",
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "asset_id": "asset_loop_8bar_master_01a2b3c4",
   "track_ref": "track_9f8e7d6c5b4a",
   "asset_kind": "loop",
@@ -480,7 +481,7 @@ sample names, or absolute paths are used.
 ```json
 {
   "document_type": "sample_brain.asset_manifest",
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "asset_id": "asset_section_stem_drop_05f6e7d8",
   "track_ref": "track_9f8e7d6c5b4a",
   "asset_kind": "section",
@@ -544,7 +545,7 @@ sample names, or absolute paths are used.
 ```json
 {
   "document_type": "sample_brain.asset_manifest",
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "asset_id": "asset_loop_pg_bridge_09a8b7c6",
   "track_ref": "track_9f8e7d6c5b4a",
   "asset_kind": "loop",
