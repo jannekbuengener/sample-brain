@@ -15,8 +15,9 @@ were already rendered by #253. It is intentionally lightweight and local:
   and a reference to the actually analyzed render output).
 
 The analysis block is an **additive** extension of ``ASSET_MANIFEST_V1.md``
-``1.0.0`` (see ``docs/ASSET_REANALYSIS_V1.md``). ``schema_version`` stays
-``1.0.0``; v1 consumers accept compatible ``1.x`` documents.
+that raises the Asset Manifest ``schema_version`` from ``1.0.0`` to ``1.1.0``
+(a MINOR bump for new optional fields; see ``docs/ASSET_REANALYSIS_V1.md``).
+v1 consumers accept compatible ``1.x`` documents.
 """
 
 from __future__ import annotations

@@ -119,7 +119,7 @@ def _base_manifest(
 
     manifest: dict[str, object] = {
         "document_type": "sample_brain.asset_manifest",
-        "schema_version": "1.0.0",
+        "schema_version": "1.1.0",
         "asset_id": asset_id,
         "track_ref": track_ref,
         "asset_kind": asset_kind,
@@ -427,6 +427,24 @@ def test_no_private_absolute_paths_in_result(tmp_path: Path) -> None:
 
 
 # --- manifest versioning ----------------------------------------------------
+
+
+def test_canonical_version_1_1_0_accepted(tmp_path: Path) -> None:
+    rendering, root = _render_to(tmp_path, start=0, end=176400)
+    manifest = _base_manifest(rendering)
+    # The canonical post-#254 version is 1.1.0 (MINOR bump for the analysis fields).
+    manifest["schema_version"] = "1.1.0"
+    analysis = _analyze_attached(manifest, root)["analysis"]
+    assert analysis["status"] == "ok"
+
+
+def test_legacy_version_1_0_0_still_accepted(tmp_path: Path) -> None:
+    # Pre-analysis manifests without the #254 fields remain valid v1 documents.
+    rendering, root = _render_to(tmp_path, start=0, end=176400)
+    manifest = _base_manifest(rendering)
+    manifest["schema_version"] = "1.0.0"
+    analysis = _analyze_attached(manifest, root)["analysis"]
+    assert analysis["status"] == "ok"
 
 
 def test_compatible_manifest_version_accepted(tmp_path: Path) -> None:
