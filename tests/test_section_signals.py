@@ -4,7 +4,12 @@ import pytest
 
 from src.arrangement_classifier import ArrangementClassifier
 from src.section_signals import SectionSignalsAssembler, build_arrangement_map
-from src.structure_v1 import StructureSection, StructureV1Result, StructureV1Source
+from src.structure_v1 import (
+    StructureBoundary,
+    StructureSection,
+    StructureV1Result,
+    StructureV1Source,
+)
 
 
 def _result(
@@ -102,3 +107,59 @@ def test_invalid_feature_alignment_fails_closed_without_boundary_or_role_changes
     )
     with pytest.raises(ValueError, match="bar feature"):
         SectionSignalsAssembler().assemble(invalid)
+
+
+@pytest.mark.parametrize("inferred", [False, True])
+def test_boundary_local_drop_onset_survives_section_aggregation(
+    inferred: bool,
+) -> None:
+    source = StructureV1Source(
+        backend="synthetic",
+        backend_version="1",
+        config={"bar_grid_inference": "beats_grouped_in_fours"} if inferred else {},
+    )
+    sections = (
+        StructureSection("section_1", 0, 100, 0.0, 1.0, 0, 1),
+        StructureSection("section_2", 100, 600, 1.0, 6.0, 1, 6),
+    )
+    transition = (0.0, 0.95, 0.0, 0.0, 0.0, 0.0)
+    values = {
+        "bar_energy_rms": (0.1, 0.9, 0.9, 0.9, 0.9, 0.9),
+        "bar_loudness_delta": transition,
+        "low_end_share": (0.1, 0.9, 0.9, 0.9, 0.9, 0.9),
+        "onset_density": (0.1, 0.9, 0.9, 0.9, 0.9, 0.9),
+        "rhythm_stability": (0.1, 0.9, 0.9, 0.9, 0.9, 0.9),
+        "timbre_delta": transition,
+        "spectral_delta": transition,
+        "self_similarity": (0.1, 0.9, 0.9, 0.9, 0.9, 0.9),
+        "recurrence": (0.1, 0.9, 0.9, 0.9, 0.9, 0.9),
+        "novelty": transition,
+        "neighbor_delta": transition,
+        "multi_bar_trend": (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+    }
+    result = StructureV1Result(
+        "partial" if inferred else "ok",
+        (StructureBoundary(100, 1.0, 1, 1, 0.9, ("novelty",)),),
+        sections,
+        {name: "ok" for name in values},
+        (),
+        source,
+        None,
+        values,
+    )
+
+    arrangement = build_arrangement_map(result)
+
+    assert len(arrangement.events) == 1
+    event = arrangement.events[0]
+    assert event.event == "drop_onset"
+    assert event.boundary_id == 100
+    assert event.boundary_sec == 1.0
+    assert event.status == ("uncertain" if inferred else "available")
+    assert arrangement.status == ("uncertain" if inferred else "available")
+    assert event.provenance["bar_grid_inference"] == (
+        "beats_grouped_in_fours" if inferred else None
+    )
+    assert arrangement.provenance["bar_grid_inference"] == (
+        "beats_grouped_in_fours" if inferred else None
+    )

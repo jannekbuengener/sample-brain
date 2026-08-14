@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Literal, Mapping
 
 from .structure_v1 import StructureBoundary, StructureSection, StructureV1Result
@@ -40,6 +40,13 @@ _CORE_SIGNALS = frozenset(
         "multi_bar_trend",
         "relative_track_position",
     }
+)
+_DROP_ONSET_SIGNALS = (
+    "bar_loudness_delta",
+    "novelty",
+    "timbre_delta",
+    "spectral_delta",
+    "neighbor_delta",
 )
 
 
@@ -128,6 +135,7 @@ class BoundaryEventClassification:
     role_after: SectionRole
     status: ArrangementStatus
     evidence: ArrangementEvidence
+    provenance: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -359,6 +367,9 @@ class ArrangementClassifier:
                 provenance={
                     "component": ARRANGEMENT_CLASSIFIER_COMPONENT,
                     "method": "deterministic_track_relative_heuristic_v1",
+                    "bar_grid_inference": (signals.provenance or {}).get(
+                        "bar_grid_inference"
+                    ),
                 },
                 scores=scores or None,
             )
@@ -415,12 +426,22 @@ class ArrangementClassifier:
         self,
         boundaries: list[StructureBoundary] | tuple[StructureBoundary, ...],
         sections: tuple[SectionClassification, ...],
+        structure_result: StructureV1Result | None = None,
     ) -> tuple[BoundaryEventClassification, ...]:
         by_bar = {section.start_bar: section for section in sections}
         events: list[BoundaryEventClassification] = []
         for boundary in boundaries:
             after = by_bar.get(boundary.bar_index)
-            if after and after.automatic_result.event == "drop_onset":
+            if structure_result is None:
+                event = after.automatic_result.event if after else None
+            else:
+                event = self._boundary_drop_onset_candidate(
+                    after, structure_result, boundary
+                )
+            if after and event == "drop_onset":
+                inferred = structure_result and structure_result.source.config.get(
+                    "bar_grid_inference"
+                )
                 events.append(
                     BoundaryEventClassification(
                         boundary.sample_index,
@@ -428,11 +449,38 @@ class ArrangementClassifier:
                         boundary.bar_index,
                         "drop_onset",
                         after.automatic_result.role,
-                        after.automatic_result.status,
+                        (
+                            "uncertain"
+                            if inferred or after.automatic_result.status != "available"
+                            else "available"
+                        ),
                         after.automatic_result.evidence,
+                        {
+                            "component": ARRANGEMENT_CLASSIFIER_COMPONENT,
+                            "bar_grid_inference": inferred,
+                        },
                     )
                 )
         return tuple(events)
+
+    @staticmethod
+    def _boundary_drop_onset_candidate(
+        after: SectionClassification | None,
+        structure_result: StructureV1Result,
+        boundary: StructureBoundary,
+    ) -> BoundaryEvent | None:
+        if after is None or after.automatic_result.role == "unknown":
+            return None
+        features = structure_result.bar_features
+        if any(
+            name not in features or boundary.bar_index >= len(features[name])
+            for name in _DROP_ONSET_SIGNALS
+        ):
+            return None
+        onset_evidence = sum(
+            float(features[name][boundary.bar_index]) for name in _DROP_ONSET_SIGNALS
+        ) / len(_DROP_ONSET_SIGNALS)
+        return "drop_onset" if onset_evidence >= 0.65 else None
 
     def classify_track(
         self,
@@ -463,10 +511,13 @@ class ArrangementClassifier:
         sections = self.classify_sections(
             structure_result.sections, section_signals, manual_overrides
         )
-        events = self.classify_events(structure_result.boundaries, sections)
+        events = self.classify_events(
+            structure_result.boundaries, sections, structure_result
+        )
         status: ArrangementStatus = (
             "available"
-            if all(item.automatic_result.status == "available" for item in sections)
+            if structure_result.status == "ok"
+            and all(item.automatic_result.status == "available" for item in sections)
             else "uncertain"
         )
         return ArrangementResult(
@@ -477,6 +528,9 @@ class ArrangementClassifier:
                 "component": ARRANGEMENT_CLASSIFIER_COMPONENT,
                 "structure_source_ref": "structure_v1",
                 "method": "deterministic_track_relative_heuristic_v1",
+                "bar_grid_inference": structure_result.source.config.get(
+                    "bar_grid_inference"
+                ),
             },
         )
 
