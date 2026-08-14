@@ -219,6 +219,20 @@ def test_track_relative_normalization_handles_amplitude_scaling() -> None:
     assert _boundary_samples(quiet) == _boundary_samples(loud)
 
 
+def test_public_bar_features_include_track_relative_loudness_delta() -> None:
+    timebase = _timebase()
+    samples = np.concatenate(
+        [_sine(110, 4 * BAR_SAMPLES) * 0.1, _sine(110, 4 * BAR_SAMPLES) * 0.8]
+    )
+
+    result = _analyzer().analyze(samples, timebase, _grid(timebase))
+
+    assert "bar_loudness_delta" in result.bar_features
+    assert len(result.bar_features["bar_loudness_delta"]) == len(
+        result.bar_features["bar_energy_rms"]
+    )
+
+
 def test_track_map_export_is_neutral_and_has_status_config_and_provenance() -> None:
     timebase = _timebase()
     samples = np.concatenate(
