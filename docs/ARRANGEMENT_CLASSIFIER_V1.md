@@ -28,9 +28,17 @@ reanalysis.
 
 ## Events and limits
 
-`drop_onset` is an event, never a section role. It is emitted only for a
-classified `drop` where the corresponding neutral StructureV1 boundary exists;
-the classifier creates no boundary. `transition` is never emitted.
+`drop_onset` is an event, never a section role. It is emitted only where the
+corresponding neutral StructureV1 boundary exists and all required public
+transition signals are available at that boundary. The following section must
+not be `unknown`; an uncertain or non-`drop` role leaves the event explicitly
+`uncertain`. The classifier creates no boundary. `transition` is never emitted.
+
+The event decision uses the boundary bar rather than the whole following
+section average, so a local onset is not diluted by a long section. Missing
+required evidence still suppresses the event. If StructureV1 used inferred
+4/4 bars, the event and track stay `uncertain` and retain
+`bar_grid_inference` provenance; inferred bars are never relabelled observed.
 
 This is not a quality claim or a universal statement about Techno. It uses no
 ML model, CLAP, stems, cloud service, or new dependency. Private-track pilots
