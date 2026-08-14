@@ -1,0 +1,475 @@
+{
+  "document_type": "sample_brain.stem_manifest_examples",
+  "schema_version": "1.0.0",
+  "issue": 244,
+  "note": "Synthetic examples only. No private track names, absolute paths, or audio content.",
+  "examples": {
+    "valid_drums": {
+      "document_type": "sample_brain.stem_manifest",
+      "schema_version": "1.0.0",
+      "stem_id": "stem_drums_01",
+      "stem_kind": "drums",
+      "track_ref": "9f8e7d6c5b4a3c2d1e0f11223344556677889900",
+      "status": "ok",
+      "source": {
+        "audio_ref": "/source/original",
+        "hash": {
+          "algorithm": "sha1",
+          "value": "9f8e7d6c5b4a3c2d1e0f11223344556677889900"
+        },
+        "audio_properties": {
+          "sample_rate_hz": 44100,
+          "channels": 2,
+          "n_samples": 10584000,
+          "duration_sec": 240.0
+        },
+        "origin_sample": 0
+      },
+      "output": {
+        "file_ref": "stem_drums_01.wav",
+        "hash": {
+          "algorithm": "sha1",
+          "value": "ee55ff6677889900aabbcceedff1122334455667"
+        },
+        "audio_properties": {
+          "sample_rate_hz": 44100,
+          "channels": 2,
+          "n_samples": 10584000,
+          "duration_sec": 240.0
+        }
+      },
+      "provenance": {
+        "component": "stem_separator",
+        "sample_brain_version": "0.9.0",
+        "backend": {
+          "name": "python-audio-separator",
+          "version": "0.15.1"
+        },
+        "model": {
+          "family": "htdemucs",
+          "name": "htdemucs_ft",
+          "checkpoint": "htdemucs_ft_v4",
+          "weight_hash": {
+            "algorithm": "sha1",
+            "value": "11223344556677889900aabbccddeeff00112233"
+          },
+          "code_license": "MIT",
+          "weight_license": "CC-BY-NC-4.0"
+        },
+        "configuration": {
+          "overlap": 0.25
+        }
+      },
+      "quality": {
+        "notes": []
+      }
+    },
+    "valid_bass": {
+      "document_type": "sample_brain.stem_manifest",
+      "schema_version": "1.0.0",
+      "stem_id": "stem_bass_01",
+      "stem_kind": "bass",
+      "track_ref": "9f8e7d6c5b4a3c2d1e0f11223344556677889900",
+      "status": "ok",
+      "source": {
+        "audio_ref": "/source/original",
+        "hash": {
+          "algorithm": "sha1",
+          "value": "9f8e7d6c5b4a3c2d1e0f11223344556677889900"
+        },
+        "audio_properties": {
+          "sample_rate_hz": 44100,
+          "channels": 2,
+          "n_samples": 10584000
+        },
+        "origin_sample": 0
+      },
+      "output": {
+        "file_ref": "stem_bass_01.wav",
+        "hash": {
+          "algorithm": "sha1",
+          "value": "11223344556677889900aabbcceedff112233445"
+        },
+        "audio_properties": {
+          "sample_rate_hz": 44100,
+          "channels": 2,
+          "n_samples": 10584000
+        }
+      },
+      "provenance": {
+        "component": "stem_separator",
+        "sample_brain_version": "0.9.0",
+        "model": {
+          "family": "htdemucs",
+          "name": "htdemucs",
+          "checkpoint": "htdemucs_v4",
+          "weight_hash": {
+            "algorithm": "sha1",
+            "value": "556677889900aabbccddeeff0011223344556677"
+          },
+          "code_license": "GPL-3.0",
+          "weight_license": "CC-BY-NC-4.0"
+        },
+        "configuration": {}
+      },
+      "quality": {
+        "notes": []
+      }
+    },
+    "valid_vocals": {
+      "document_type": "sample_brain.stem_manifest",
+      "schema_version": "1.0.0",
+      "stem_id": "stem_vocals_01",
+      "stem_kind": "vocals",
+      "track_ref": "9f8e7d6c5b4a3c2d1e0f11223344556677889900",
+      "status": "ok",
+      "source": {
+        "audio_ref": "/source/original",
+        "hash": {
+          "algorithm": "sha1",
+          "value": "9f8e7d6c5b4a3c2d1e0f11223344556677889900"
+        },
+        "audio_properties": {
+          "sample_rate_hz": 48000,
+          "channels": 1,
+          "n_samples": 11520000
+        },
+        "origin_sample": 0
+      },
+      "output": {
+        "file_ref": "stem_vocals_01.wav",
+        "hash": {
+          "algorithm": "sha1",
+          "value": "223344556677889900aabbcceedff11223344556"
+        },
+        "audio_properties": {
+          "sample_rate_hz": 48000,
+          "channels": 1,
+          "n_samples": 11520000
+        }
+      },
+      "provenance": {
+        "component": "stem_separator",
+        "sample_brain_version": "0.9.0",
+        "backend": {
+          "name": "python-audio-separator",
+          "version": "0.15.1"
+        },
+        "model": {
+          "family": "htdemucs",
+          "name": "htdemucs_ft",
+          "checkpoint": "htdemucs_ft_v4",
+          "weight_hash": {
+            "algorithm": "sha1",
+            "value": "11223344556677889900aabbccddeeff00112233"
+          },
+          "code_license": "MIT",
+          "weight_license": "CC-BY-NC-4.0"
+        },
+        "configuration": {
+          "overlap": 0.25
+        }
+      },
+      "quality": {
+        "notes": []
+      }
+    },
+    "valid_other": {
+      "document_type": "sample_brain.stem_manifest",
+      "schema_version": "1.0.0",
+      "stem_id": "stem_other_01",
+      "stem_kind": "other",
+      "track_ref": "9f8e7d6c5b4a3c2d1e0f11223344556677889900",
+      "status": "ok",
+      "source": {
+        "audio_ref": "/source/original",
+        "hash": {
+          "algorithm": "sha1",
+          "value": "9f8e7d6c5b4a3c2d1e0f11223344556677889900"
+        },
+        "audio_properties": {
+          "sample_rate_hz": 44100,
+          "channels": 2,
+          "n_samples": 10584000
+        },
+        "origin_sample": 0
+      },
+      "output": {
+        "file_ref": "stem_other_01.wav",
+        "hash": {
+          "algorithm": "sha1",
+          "value": "3344556677889900aabbcceedff1122334455667"
+        },
+        "audio_properties": {
+          "sample_rate_hz": 44100,
+          "channels": 2,
+          "n_samples": 10584000
+        }
+      },
+      "provenance": {
+        "component": "stem_separator",
+        "sample_brain_version": "0.9.0",
+        "backend": {
+          "name": "python-audio-separator",
+          "version": "0.15.1"
+        },
+        "model": {
+          "family": "htdemucs",
+          "name": "htdemucs_ft",
+          "checkpoint": "htdemucs_ft_v4",
+          "weight_hash": {
+            "algorithm": "sha1",
+            "value": "11223344556677889900aabbccddeeff00112233"
+          },
+          "code_license": "MIT",
+          "weight_license": "CC-BY-NC-4.0"
+        },
+        "configuration": {
+          "overlap": 0.25
+        }
+      },
+      "quality": {
+        "notes": []
+      }
+    },
+    "valid_partial": {
+      "document_type": "sample_brain.stem_manifest",
+      "schema_version": "1.0.0",
+      "stem_id": "stem_bass_01",
+      "stem_kind": "bass",
+      "track_ref": "9f8e7d6c5b4a3c2d1e0f11223344556677889900",
+      "status": "partial",
+      "source": {
+        "audio_ref": "/source/original",
+        "hash": {
+          "algorithm": "sha1",
+          "value": "9f8e7d6c5b4a3c2d1e0f11223344556677889900"
+        },
+        "audio_properties": {
+          "sample_rate_hz": 44100,
+          "channels": 2,
+          "n_samples": 10584000
+        },
+        "origin_sample": 0
+      },
+      "output": {
+        "file_ref": "stem_bass_01.wav",
+        "hash": {
+          "algorithm": "sha1",
+          "value": "11223344556677889900aabbcceedff112233445"
+        },
+        "audio_properties": {
+          "sample_rate_hz": 44100,
+          "channels": 2,
+          "n_samples": 10582000
+        }
+      },
+      "provenance": {
+        "component": "stem_separator",
+        "sample_brain_version": "0.9.0",
+        "model": {
+          "family": "htdemucs",
+          "name": "htdemucs",
+          "checkpoint": "htdemucs_v4",
+          "weight_hash": {
+            "algorithm": "sha1",
+            "value": "556677889900aabbccddeeff0011223344556677"
+          },
+          "code_license": "GPL-3.0",
+          "weight_license": "CC-BY-NC-4.0"
+        },
+        "configuration": {}
+      },
+      "quality": {
+        "notes": [
+          {
+            "code": "LENGTH_MISMATCH",
+            "severity": "warning",
+            "path": "/output/audio_properties/n_samples",
+            "message": "Output length (10582000) does not match input length (10584000)"
+          }
+        ]
+      }
+    },
+    "valid_not_run": {
+      "document_type": "sample_brain.stem_manifest",
+      "schema_version": "1.0.0",
+      "stem_id": "stem_vocals_01",
+      "stem_kind": "vocals",
+      "track_ref": "9f8e7d6c5b4a3c2d1e0f11223344556677889900",
+      "status": "not_run",
+      "reason_code": "STEM_NOT_REQUESTED",
+      "source": {
+        "audio_ref": "/source/original",
+        "hash": {
+          "algorithm": "sha1",
+          "value": "9f8e7d6c5b4a3c2d1e0f11223344556677889900"
+        },
+        "audio_properties": {
+          "sample_rate_hz": 44100,
+          "channels": 2,
+          "n_samples": 10584000
+        },
+        "origin_sample": 0
+      },
+      "provenance": {
+        "component": "stem_separator",
+        "sample_brain_version": "0.9.0",
+        "configuration": {}
+      },
+      "quality": {
+        "notes": []
+      }
+    },
+    "valid_no_result": {
+      "document_type": "sample_brain.stem_manifest",
+      "schema_version": "1.0.0",
+      "stem_id": "stem_other_01",
+      "stem_kind": "other",
+      "track_ref": "9f8e7d6c5b4a3c2d1e0f11223344556677889900",
+      "status": "no_result",
+      "reason_code": "EMPTY_STEM_OUTPUT",
+      "source": {
+        "audio_ref": "/source/original",
+        "hash": {
+          "algorithm": "sha1",
+          "value": "9f8e7d6c5b4a3c2d1e0f11223344556677889900"
+        },
+        "audio_properties": {
+          "sample_rate_hz": 44100,
+          "channels": 2,
+          "n_samples": 10584000
+        },
+        "origin_sample": 0
+      },
+      "provenance": {
+        "component": "stem_separator",
+        "sample_brain_version": "0.9.0",
+        "backend": {
+          "name": "python-audio-separator",
+          "version": "0.15.1"
+        },
+        "model": {
+          "family": "htdemucs",
+          "name": "htdemucs_ft",
+          "checkpoint": "htdemucs_ft_v4",
+          "weight_hash": {
+            "algorithm": "sha1",
+            "value": "11223344556677889900aabbccddeeff00112233"
+          },
+          "code_license": "MIT",
+          "weight_license": "CC-BY-NC-4.0"
+        },
+        "configuration": {
+          "overlap": 0.25
+        }
+      },
+      "quality": {
+        "notes": []
+      }
+    },
+    "valid_failed": {
+      "document_type": "sample_brain.stem_manifest",
+      "schema_version": "1.0.0",
+      "stem_id": "stem_drums_01",
+      "stem_kind": "drums",
+      "track_ref": "9f8e7d6c5b4a3c2d1e0f11223344556677889900",
+      "status": "failed",
+      "error": {
+        "code": "OUT_OF_MEMORY",
+        "message": "CUDA out of memory during FFT calculation",
+        "retryable": true
+      },
+      "source": {
+        "audio_ref": "/source/original",
+        "hash": {
+          "algorithm": "sha1",
+          "value": "9f8e7d6c5b4a3c2d1e0f11223344556677889900"
+        },
+        "audio_properties": {
+          "sample_rate_hz": 44100,
+          "channels": 2,
+          "n_samples": 10584000
+        },
+        "origin_sample": 0
+      },
+      "provenance": {
+        "component": "stem_separator",
+        "sample_brain_version": "0.9.0",
+        "backend": {
+          "name": "python-audio-separator",
+          "version": "0.15.1"
+        },
+        "model": {
+          "family": "htdemucs",
+          "name": "htdemucs_ft",
+          "checkpoint": "htdemucs_ft_v4",
+          "weight_hash": {
+            "algorithm": "sha1",
+            "value": "11223344556677889900aabbccddeeff00112233"
+          },
+          "code_license": "MIT",
+          "weight_license": "CC-BY-NC-4.0"
+        },
+        "configuration": {
+          "overlap": 0.25
+        }
+      },
+      "quality": {
+        "notes": []
+      }
+    },
+    "valid_no_wrapper": {
+      "document_type": "sample_brain.stem_manifest",
+      "schema_version": "1.0.0",
+      "stem_id": "stem_drums_01",
+      "stem_kind": "drums",
+      "track_ref": "9f8e7d6c5b4a3c2d1e0f11223344556677889900",
+      "status": "ok",
+      "source": {
+        "audio_ref": "/source/original",
+        "hash": {
+          "algorithm": "sha1",
+          "value": "9f8e7d6c5b4a3c2d1e0f11223344556677889900"
+        },
+        "audio_properties": {
+          "sample_rate_hz": 44100,
+          "channels": 2,
+          "n_samples": 10584000
+        },
+        "origin_sample": 0
+      },
+      "output": {
+        "file_ref": "stem_drums_01.wav",
+        "hash": {
+          "algorithm": "sha1",
+          "value": "ee55ff6677889900aabbcceedff1122334455667"
+        },
+        "audio_properties": {
+          "sample_rate_hz": 44100,
+          "channels": 2,
+          "n_samples": 10584000
+        }
+      },
+      "provenance": {
+        "component": "stem_separator",
+        "sample_brain_version": "0.9.0",
+        "model": {
+          "family": "htdemucs",
+          "name": "htdemucs_ft",
+          "checkpoint": "htdemucs_ft_v4",
+          "weight_hash": {
+            "algorithm": "sha1",
+            "value": "11223344556677889900aabbccddeeff00112233"
+          },
+          "code_license": "MIT",
+          "weight_license": "CC-BY-NC-4.0"
+        },
+        "configuration": {}
+      },
+      "quality": {
+        "notes": []
+      }
+    }
+  }
+}
