@@ -287,12 +287,22 @@ assert that the asset was rendered.
 | `analysis.components` | array of strings | no | Component IDs analyzed for this asset. |
 | `analysis.source_ref` | string | conditional | Key into `provenance.components`. Required when analysis produced data. |
 | `analysis.reason_code` | string | conditional | Stable code for `not_run` / `no_result`. |
+| `analysis.bpm` | number | no | Tempo in BPM. `None`/absent for short clips or when not determined. No invented BPM-confidence. |
+| `analysis.key_root` | string | no | Estimated tonal **root** pitch class (`C`…`B`). Root only — no invented mode. |
+| `analysis.sample_type` | string | no | Lightweight rules-only type (e.g. `Loop`, `Drum Loop`, `Drone`, `Bright`). No kNN/CLAP. |
+| `analysis.loudness` | number | no | RMS-based loudness in dBFS. |
+| `analysis.brightness` | number | no | Spectral centroid in Hz. |
+| `analysis.analyzed_output` | object | conditional | Reference to the actually analyzed render output: `{file_ref, hash, audio_properties}`. Required when analysis produced data. |
+| `analysis.config` | object | no | Analyzer config used (no secrets): `bpm_normalization`, `short_clip`, `duration_sec`. |
+| `analysis.error` | object | conditional | Present when `status` is `failed`: `{code, message}`. |
 
 **Rules**
 
 - `analysis.status = "not_run"` is the expected state before asset reanalysis (#254) is implemented. No analysis values are fabricated.
-- This block records provenance for (re)analyzed assets; it does not define reanalysis behavior (that is #254).
-- No generic confidence is invented for analyzed assets.
+- This block records provenance for (re)analyzed assets. The reanalysis behavior, integrity gate, status model, and fail-closed codes are defined in `ASSET_REANALYSIS_V1.md` (#254) as an **additive `1.x` extension** of this frozen `1.0.0` contract.
+- The reanalysis fields above are optional and only present when a meaningful value was produced. Absent fields never imply a low-quality result.
+- No generic confidence is invented for analyzed assets. No Dur/Moll mode is inferred. No BPM-confidence is invented.
+- `asset_kind` and `source.source_kind` are never reinterpreted by analysis. `source`, `range`, `loop`/`section`, `boundary`, `candidate`, and `rendering` blocks are preserved unchanged by reanalysis.
 
 ---
 
