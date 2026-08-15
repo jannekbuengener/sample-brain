@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -58,6 +59,8 @@ class StepResult:
     error: dict[str, str] | None = None
     adapter: str | None = None
     provenance: dict | None = None
+    execution: str | None = None
+    cache_key: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -74,6 +77,10 @@ class StepResult:
             payload["adapter"] = self.adapter
         if self.provenance is not None:
             payload["provenance"] = self.provenance
+        if self.execution is not None:
+            payload["execution"] = self.execution
+        if self.cache_key is not None:
+            payload["cache_key"] = self.cache_key
         return payload
 
 
@@ -84,8 +91,10 @@ class RunResult:
     pack_root: str
     steps: list[StepResult]
     reason_codes: list[str]
+    reused_steps: list[str] = field(default_factory=list)
+    computed_steps: list[str] = field(default_factory=list)
     document_type: str = "sample_brain.deconstruct_run"
-    schema_version: str = "1.0.0"
+    schema_version: str = "1.1.0"
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -96,6 +105,8 @@ class RunResult:
             "pack_root": self.pack_root,
             "steps": [step.to_dict() for step in self.steps],
             "reason_codes": list(self.reason_codes),
+            "reused_steps": list(self.reused_steps),
+            "computed_steps": list(self.computed_steps),
         }
 
 
@@ -605,23 +616,51 @@ def run_deconstruct(
     beat_backend: str = "auto",
     adapters: DeconstructAdapters | None = None,
     skip: set[str] | None = None,
+    resume: bool = True,
 ) -> RunResult:
     """Run the headless Track Deconstruction pipeline.
 
     ``track_path`` is a local audio file. ``pack_root`` is the (possibly new)
     Performance Pack output directory. Adapters may be injected for testing;
     otherwise the production adapters delegate to existing components.
+
+    When ``resume`` is True (default) and a compatible pack-local resume state
+    exists, valid step results are reused and only affected steps recomputed;
+    see ``src.deconstruct_resume`` and ``docs/PERFORMANCE_PACK_RESUME_V1.md``.
     """
+    from . import deconstruct_resume as _resume
+
     track_path = Path(track_path)
     pack_root = Path(pack_root)
     skip = set(skip or set())
     adapters = adapters or DeconstructAdapters()
+
+    source_hash = _resume.source_content_hash_sha256(track_path)
+    prior = _resume.load_resume_state(pack_root) if resume else None
+    # Source content changed -> discard entire prior state (full recompute).
+    if prior is not None and prior.get("source", {}).get("content_hash_sha256") != source_hash:
+        prior = None
 
     track = _track_identity(track_path)
     steps: list[StepResult] = []
     reason_codes: list[str] = []
     artifacts: dict[str, object] = {}
     aborted = False
+    upstream_cache_keys: dict[str, str] = {}
+    reused_ids: list[str] = []
+    computed_ids: list[str] = []
+
+    state: dict[str, object] = {
+        "document_type": _resume.RESUME_DOC_TYPE,
+        "schema_version": _resume.RESUME_SCHEMA_VERSION,
+        "source": {
+            "id": track.get("file_name"),
+            "content_hash_sha256": source_hash,
+            "pack_root_portable": ".",
+        },
+        "contract_versions": dict(_resume.CONTRACT_VERSIONS),
+        "steps": {},
+    }
 
     for step_id, required in STEP_ORDER:
         if aborted:
@@ -646,40 +685,111 @@ def run_deconstruct(
             )
             continue
 
-        adapter = adapters.get(step_id) or _DEFAULT_ADAPTERS[step_id]
-        ctx = StepContext(
-            track_path=track_path,
-            pack_root=pack_root,
-            bpm_normalization=bpm_normalization,
-            beat_backend=beat_backend,
-            artifacts=artifacts,
+        cache_key = _resume.compute_step_cache_key(
+            step_id,
+            source_content_hash=source_hash,
+            config=_resume._relevant_config(step_id, bpm_normalization, beat_backend),
+            upstream_cache_keys=upstream_cache_keys,
         )
 
-        try:
-            result, payload = adapter(ctx)
-        except Exception as exc:  # pragma: no cover - defensive
+        reusable = False
+        if prior is not None and step_id not in skip:
+            reusable = _resume.step_is_reusable(
+                prior, step_id, cache_key=cache_key, pack_root=pack_root
+            )
+            if step_id == "arrangement" and not (prior.get("steps", {}).get(step_id, {}) or {}).get("snapshot"):
+                reusable = False
+
+        if reusable:
+            entry = prior["steps"][step_id]  # type: ignore[index]
+            output_refs = tuple(entry.get("output_refs", []))
             result = StepResult(
                 step_id=step_id,
                 required=required,
-                status="failed",
-                error={
-                    "code": "ADAPTER_UNEXPECTED_ERROR",
-                    "message": str(exc)[:500],
-                },
+                status=entry.get("status", "ok"),
+                output_refs=output_refs,
+                reason_code=entry.get("reason_code"),
+                adapter=entry.get("adapter"),
+                provenance=entry.get("provenance"),
+                execution="reused",
+                cache_key=cache_key,
             )
-            payload = None
-
-        if not isinstance(result, StepResult):
-            result = StepResult(
-                step_id=step_id,
-                required=required,
-                status="failed",
-                error={"code": "BAD_ADAPTER_RESULT", "message": "no StepResult"},
+            payload = _reuse_payload(step_id, entry, pack_root)
+            # carry the stored step record forward verbatim
+            state["steps"][step_id] = dict(entry)  # type: ignore[arg-type]
+            reused_ids.append(step_id)
+        else:
+            # Best-effort cleanup: drop this step's prior inventoried files so a
+            # recompute does not leave stale outputs behind (Cleanup-Regel).
+            if prior is not None:
+                prior_entry = prior.get("steps", {}).get(step_id)
+                if isinstance(prior_entry, dict):
+                    for inv in prior_entry.get("output_inventory", []):
+                        ref = inv.get("ref")
+                        if ref:
+                            try:
+                                (pack_root / ref).unlink(missing_ok=True)
+                            except OSError:
+                                pass
+            adapter = adapters.get(step_id) or _DEFAULT_ADAPTERS[step_id]
+            ctx = StepContext(
+                track_path=track_path,
+                pack_root=pack_root,
+                bpm_normalization=bpm_normalization,
+                beat_backend=beat_backend,
+                artifacts=artifacts,
             )
-            payload = None
 
-        if result.adapter is None:
-            result.adapter = getattr(adapter, "__name__", "injected")
+            try:
+                result, payload = adapter(ctx)
+            except Exception as exc:  # pragma: no cover - defensive
+                result = StepResult(
+                    step_id=step_id,
+                    required=required,
+                    status="failed",
+                    error={
+                        "code": "ADAPTER_UNEXPECTED_ERROR",
+                        "message": str(exc)[:500],
+                    },
+                )
+                payload = None
+
+            if not isinstance(result, StepResult):
+                result = StepResult(
+                    step_id=step_id,
+                    required=required,
+                    status="failed",
+                    error={"code": "BAD_ADAPTER_RESULT", "message": "no StepResult"},
+                )
+                payload = None
+
+            if result.adapter is None:
+                result.adapter = getattr(adapter, "__name__", "injected")
+
+            result = dataclasses.replace(result, execution="computed", cache_key=cache_key)
+
+            inventory = _resume.build_output_inventory(
+                pack_root, step_id, result.output_refs
+            )
+            snapshot = (
+                _resume.snapshot_arrangement(payload)
+                if step_id == "arrangement" and isinstance(payload, dict)
+                else None
+            )
+            entry = {
+                "status": result.status,
+                "cache_key": cache_key,
+                "output_refs": list(result.output_refs),
+                "output_inventory": inventory,
+            }
+            if result.reason_code is not None:
+                entry["reason_code"] = result.reason_code
+            if result.adapter is not None:
+                entry["adapter"] = result.adapter
+            if snapshot is not None:
+                entry["snapshot"] = snapshot
+            state["steps"][step_id] = entry
+            computed_ids.append(step_id)
 
         steps.append(result)
         if payload is not None:
@@ -688,6 +798,11 @@ def run_deconstruct(
             reason_codes.append(f"{step_id}:{result.reason_code}")
         if result.error:
             reason_codes.append(f"{step_id}:{result.error.get('code')}")
+
+        upstream_cache_keys[step_id] = cache_key
+
+        # Atomic, per-step persist for crash safety (resume after interruption).
+        _resume.save_resume_state(pack_root, state)
 
         if required and result.status in ("failed", "no_result"):
             aborted = True
@@ -698,7 +813,25 @@ def run_deconstruct(
         pack_root=_portable_path(pack_root),
         steps=steps,
         reason_codes=reason_codes,
+        reused_steps=reused_ids,
+        computed_steps=computed_ids,
     )
+
+
+def _reuse_payload(step_id: str, entry: dict, pack_root: Path) -> object:
+    """Reconstruct the artifacts payload for a reused step."""
+    from . import deconstruct_resume as _resume
+
+    if step_id == "track_map":
+        try:
+            return json.loads((pack_root / "analysis" / "track_map.json").read_text(encoding="utf-8"))
+        except Exception:
+            return None
+    if step_id == "arrangement":
+        return _resume.resume_arrangement(entry.get("snapshot") or {}, pack_root)
+    if step_id == "assets":
+        return {"manifest_refs": list(entry.get("output_refs", []))}
+    return None
 
 
 __all__ = [

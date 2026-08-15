@@ -83,7 +83,7 @@ def _not_run(step_id, required, reason="NOT_RUN"):
     )
 
 
-def test_steps_run_in_defined_order(track_file):
+def test_steps_run_in_defined_order(track_file, tmp_path):
     calls = []
 
     def make(step_id, required):
@@ -99,12 +99,12 @@ def test_steps_run_in_defined_order(track_file):
         assets=make("assets", False),
         stems=make("stems", False),
     )
-    run = run_deconstruct(track_file, Path("pack"), adapters=adapters)
+    run = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     assert calls == ["track_map", "arrangement", "assets", "stems"]
     assert [s.step_id for s in run.steps] == [s[0] for s in STEP_ORDER]
 
 
-def test_orchestrator_delegates_to_injected_adapters(track_file):
+def test_orchestrator_delegates_to_injected_adapters(track_file, tmp_path):
     used = {}
 
     def make(step_id, required):
@@ -120,24 +120,24 @@ def test_orchestrator_delegates_to_injected_adapters(track_file):
         assets=make("assets", False),
         stems=make("stems", False),
     )
-    run = run_deconstruct(track_file, Path("pack"), adapters=adapters)
+    run = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     assert set(used) == {"track_map", "arrangement", "assets", "stems"}
     assert run.status == "complete"
 
 
-def test_required_track_map_success_allows_continuation(track_file):
+def test_required_track_map_success_allows_continuation(track_file, tmp_path):
     adapters = DeconstructAdapters(
         track_map=lambda c: _ok("track_map", True),
         arrangement=lambda c: _ok("arrangement", False),
         assets=lambda c: _ok("assets", False),
         stems=lambda c: _ok("stems", False),
     )
-    run = run_deconstruct(track_file, Path("pack"), adapters=adapters)
+    run = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     assert run.status == "complete"
     assert all(s.status == "ok" for s in run.steps)
 
 
-def test_required_track_map_failure_yields_overall_failed(track_file):
+def test_required_track_map_failure_yields_overall_failed(track_file, tmp_path):
     calls = []
 
     def track_map(c):
@@ -156,7 +156,7 @@ def test_required_track_map_failure_yields_overall_failed(track_file):
         assets=spy("assets"),
         stems=spy("stems"),
     )
-    run = run_deconstruct(track_file, Path("pack"), adapters=adapters)
+    run = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     assert run.status == "failed"
     assert run.steps[0].status == "failed"
     # No fake success: following steps must not run and must not be "ok".
@@ -167,46 +167,46 @@ def test_required_track_map_failure_yields_overall_failed(track_file):
     )
 
 
-def test_optional_arrangement_failure_is_partial_not_crash(track_file):
+def test_optional_arrangement_failure_is_partial_not_crash(track_file, tmp_path):
     adapters = DeconstructAdapters(
         track_map=lambda c: _ok("track_map", True),
         arrangement=lambda c: _failed("arrangement", False, code="ARR_FAIL"),
         assets=lambda c: _ok("assets", False),
         stems=lambda c: _ok("stems", False),
     )
-    run = run_deconstruct(track_file, Path("pack"), adapters=adapters)
+    run = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     assert run.status == "partial"
     assert run.steps[0].status == "ok"
     assert run.steps[1].status == "failed"
     assert run.steps[2].status == "ok"
 
 
-def test_optional_assets_no_result_keeps_run_usable(track_file):
+def test_optional_assets_no_result_keeps_run_usable(track_file, tmp_path):
     adapters = DeconstructAdapters(
         track_map=lambda c: _ok("track_map", True),
         arrangement=lambda c: _ok("arrangement", False),
         assets=lambda c: _no_result("assets", False, reason="INSUFFICIENT_DOWNBEATS"),
         stems=lambda c: _ok("stems", False),
     )
-    run = run_deconstruct(track_file, Path("pack"), adapters=adapters)
+    run = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     assert run.status == "partial"
     assert run.steps[2].status == "no_result"
 
 
-def test_missing_stems_not_run_and_no_overall_error(track_file):
+def test_missing_stems_not_run_and_no_overall_error(track_file, tmp_path):
     adapters = DeconstructAdapters(
         track_map=lambda c: _ok("track_map", True),
         arrangement=lambda c: _ok("arrangement", False),
         assets=lambda c: _ok("assets", False),
         # stems intentionally omitted -> default adapter reports not_run
     )
-    run = run_deconstruct(track_file, Path("pack"), adapters=adapters)
+    run = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     assert run.status == "complete"
     assert run.steps[3].step_id == "stems"
     assert run.steps[3].status == "not_run"
 
 
-def test_step_results_passed_forward(track_file):
+def test_step_results_passed_forward(track_file, tmp_path):
     received = {}
 
     def arrangement(c):
@@ -222,11 +222,11 @@ def test_step_results_passed_forward(track_file):
         assets=assets,
         stems=lambda c: _ok("stems", False),
     )
-    run_deconstruct(track_file, Path("pack"), adapters=adapters)
+    run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     assert received["arrangement"] == {"structure": "STUB"}
 
 
-def test_no_step_executed_twice(track_file):
+def test_no_step_executed_twice(track_file, tmp_path):
     counts = {}
 
     def make(step_id, required):
@@ -242,11 +242,11 @@ def test_no_step_executed_twice(track_file):
         assets=make("assets", False),
         stems=make("stems", False),
     )
-    run_deconstruct(track_file, Path("pack"), adapters=adapters)
+    run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     assert all(v == 1 for v in counts.values())
 
 
-def test_pack_root_follows_layout_prefixes(track_file):
+def test_pack_root_follows_layout_prefixes(track_file, tmp_path):
     adapters = DeconstructAdapters(
         track_map=lambda c: _ok(
             "track_map", True, refs=("analysis/track_map.json",)
@@ -261,7 +261,7 @@ def test_pack_root_follows_layout_prefixes(track_file):
         ),
         stems=lambda c: _not_run("stems", False, reason="STEMS_NOT_CONFIGURED"),
     )
-    run = run_deconstruct(track_file, Path("pack"), adapters=adapters)
+    run = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     ref_map = {s.step_id: s.output_refs for s in run.steps}
     assert ref_map["track_map"] == ("analysis/track_map.json",)
     assert ref_map["arrangement"] == ("analysis/arrangement_map.json",)
@@ -269,7 +269,7 @@ def test_pack_root_follows_layout_prefixes(track_file):
     assert ref_map["assets"][1].startswith("sections/")
 
 
-def test_output_refs_are_portable_relative(track_file):
+def test_output_refs_are_portable_relative(track_file, tmp_path):
     adapters = DeconstructAdapters(
         track_map=lambda c: _ok(
             "track_map", True, refs=("analysis/track_map.json",)
@@ -278,7 +278,7 @@ def test_output_refs_are_portable_relative(track_file):
         assets=lambda c: _ok("assets", False, refs=("loops/loop_x.json",)),
         stems=lambda c: _not_run("stems", False),
     )
-    run = run_deconstruct(track_file, Path("pack"), adapters=adapters)
+    run = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     for step in run.steps:
         for ref in step.output_refs:
             assert not ref.startswith("/")
@@ -286,19 +286,19 @@ def test_output_refs_are_portable_relative(track_file):
             assert ":" not in ref.replace("://", "")
 
 
-def test_serialized_run_has_no_absolute_paths(track_file):
+def test_serialized_run_has_no_absolute_paths(track_file, tmp_path):
     adapters = DeconstructAdapters(
         track_map=lambda c: _ok("track_map", True),
         arrangement=lambda c: _ok("arrangement", False),
         assets=lambda c: _ok("assets", False, refs=("loops/loop_x.json",)),
         stems=lambda c: _not_run("stems", False),
     )
-    run = run_deconstruct(track_file, Path("pack"), adapters=adapters)
+    run = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     text = json.dumps(run.to_dict(), default=str)
     assert not _abs_pattern(text)
 
 
-def test_original_input_not_mutated(track_file):
+def test_original_input_not_mutated(track_file, tmp_path):
     before = track_file.read_bytes()
 
     def arrangement(c):
@@ -313,26 +313,26 @@ def test_original_input_not_mutated(track_file):
         assets=assets,
         stems=lambda c: _not_run("stems", False),
     )
-    run_deconstruct(track_file, Path("pack"), adapters=adapters)
+    run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     after = track_file.read_bytes()
     assert before == after
 
 
-def test_deterministic_run_with_same_inputs_and_adapters(track_file):
+def test_deterministic_run_with_same_inputs_and_adapters(track_file, tmp_path):
     adapters = DeconstructAdapters(
         track_map=lambda c: _ok("track_map", True),
         arrangement=lambda c: _ok("arrangement", False),
         assets=lambda c: _no_result("assets", False, reason="INSUFFICIENT_DOWNBEATS"),
         stems=lambda c: _not_run("stems", False),
     )
-    run1 = run_deconstruct(track_file, Path("pack"), adapters=adapters)
-    run2 = run_deconstruct(track_file, Path("pack"), adapters=adapters)
+    run1 = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
+    run2 = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     assert json.dumps(run1.to_dict(), sort_keys=True, default=str) == json.dumps(
         run2.to_dict(), sort_keys=True, default=str
     )
 
 
-def test_skipped_optional_step_reports_not_run(track_file):
+def test_skipped_optional_step_reports_not_run(track_file, tmp_path):
     adapters = DeconstructAdapters(
         track_map=lambda c: _ok("track_map", True),
         arrangement=lambda c: _ok("arrangement", False),
@@ -340,7 +340,7 @@ def test_skipped_optional_step_reports_not_run(track_file):
         stems=lambda c: _ok("stems", False),
     )
     run = run_deconstruct(
-        track_file, Path("pack"), adapters=adapters, skip={"arrangement", "stems"}
+        track_file, tmp_path / "pack", adapters=adapters, skip={"arrangement", "stems"}
     )
     by_id = {s.step_id: s for s in run.steps}
     assert by_id["arrangement"].status == "not_run"
@@ -350,24 +350,24 @@ def test_skipped_optional_step_reports_not_run(track_file):
     assert run.status == "complete"
 
 
-def test_track_identity_present_even_on_failure(track_file):
+def test_track_identity_present_even_on_failure(track_file, tmp_path):
     adapters = DeconstructAdapters(
         track_map=lambda c: _failed("track_map", True, code="AUDIO_LOAD_FAILED"),
     )
-    run = run_deconstruct(track_file, Path("pack"), adapters=adapters)
+    run = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     assert run.track["file_name"] == track_file.name
     assert run.track["hash"]["algorithm"] == "sha1"
     assert run.track["hash"]["value"]
 
 
-def test_run_result_is_runresult_instance(track_file):
+def test_run_result_is_runresult_instance(track_file, tmp_path):
     adapters = DeconstructAdapters(
         track_map=lambda c: _ok("track_map", True),
         arrangement=lambda c: _ok("arrangement", False),
         assets=lambda c: _ok("assets", False),
         stems=lambda c: _not_run("stems", False),
     )
-    run = run_deconstruct(track_file, Path("pack"), adapters=adapters)
+    run = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     assert isinstance(run, RunResult)
 
 

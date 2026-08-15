@@ -140,3 +140,21 @@ def test_cli_no_db_required(tmp_path, monkeypatch, capsys):
         [str(tmp_path / "x.wav"), "--pack-root", str(tmp_path / "out")],
     )
     assert code == 0
+
+
+def test_cli_resume_enabled_by_default(tmp_path, monkeypatch, capsys):
+    _, cap, _ = _run_cli(
+        monkeypatch,
+        capsys,
+        [str(tmp_path / "x.wav"), "--pack-root", str(tmp_path / "out")],
+    )
+    assert cap["kwargs"].get("resume") is True
+
+
+def test_cli_no_resume_disables_resume(tmp_path, monkeypatch, capsys):
+    _, cap, _ = _run_cli(
+        monkeypatch,
+        capsys,
+        [str(tmp_path / "x.wav"), "--pack-root", str(tmp_path / "out"), "--no-resume"],
+    )
+    assert cap["kwargs"].get("resume") is False
