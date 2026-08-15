@@ -2,15 +2,26 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import Any, Optional
 
 import soundfile as sf
 
 from .analyze import Features, extract_features
 from .canon_audio import content_hash, probe_audio, render_canonical_wav
+from .track_analysis_cache import (
+    TRACK_ANALYSIS_CACHE_CONTRACT_VERSION,
+    build_cache_entry,
+    compute_analysis_fingerprint,
+    compute_cache_key,
+    get_cache_dir,
+    read_cache_entry,
+    validate_cache_entry,
+    write_cache_entry,
+)
 
 SUPPORTED_EXTENSIONS = frozenset({".wav", ".flac"})
 REQUESTED_COMPONENTS = ("bpm", "key", "loudness", "brightness")
@@ -225,6 +236,12 @@ def analyze_context_file(
                         "working_audio": "temporary_canonical_wav",
                         "canonical_sample_rate_hz": 44100,
                         "canonical_channels": 1,
+                        "parameter_fingerprint": compute_analysis_fingerprint(
+                            bpm_normalization=bpm_normalization,
+                            backend_name="librosa",
+                            backend_version=_package_version_for("librosa"),
+                            sample_brain_version=package_version,
+                        ),
                     },
                 },
             }
@@ -240,4 +257,128 @@ def _package_version_for(distribution: str) -> str:
         return "unknown"
 
 
-__all__ = ["ContextAnalyzeError", "analyze_context_file"]
+@dataclass
+class TrackAnalysisCacheResult:
+    """Result of :func:`analyze_context_file_cached`."""
+
+    track_map: dict[str, object]
+    cache_status: str  # "hit" | "miss" | "disabled"
+    cache_key: Optional[str]
+
+
+def _rebuild_track_map_with_current_source(
+    cached_map: dict[str, object], source_path: Path, source_sha1: str
+) -> dict[str, object]:
+    """Re-probe the current source and refresh the portable source identity block.
+
+    The expensive analysis blocks, provenance, and quality are reused verbatim from
+    the cache; only the source identity (file name, size, audio properties) is
+    refreshed for the current file. No absolute/private paths are introduced.
+    """
+    timebase = probe_audio(source_path)
+    if timebase is None:
+        raise ContextAnalyzeError("AUDIO_LOAD_FAILED", "Audio file could not be read.")
+    try:
+        info = sf.info(str(source_path))
+    except Exception as exc:
+        raise ContextAnalyzeError(
+            "AUDIO_LOAD_FAILED", "Audio file could not be read."
+        ) from exc
+
+    new_source: dict[str, object] = {
+        "file_name": source_path.name,
+        "size_bytes": source_path.stat().st_size,
+        "hash": {"algorithm": "sha1", "value": source_sha1},
+        "audio_properties": {
+            "duration_sec": timebase.duration_seconds,
+            "sample_rate_hz": int(info.samplerate),
+            "channels": int(info.channels),
+        },
+        "source_ref": "context_source",
+    }
+    new_map = dict(cached_map)
+    new_map["source"] = {"original": new_source}
+    return new_map
+
+
+def analyze_context_file_cached(
+    path: Path,
+    *,
+    bpm_normalization: str = "none",
+    cache_dir: Optional[Path] = None,
+    enabled: bool = True,
+) -> TrackAnalysisCacheResult:
+    """Analyze one WAV/FLAC file, reusing cached analysis when valid.
+
+    Returns the Track Map plus ``cache_status`` (``hit`` | ``miss`` | ``disabled``)
+    and the ``cache_key``. The Track Map never stores private/absolute paths; on a
+    cache hit the current source file is re-probed so the returned Track Map reflects
+    the current file name and audio properties while the expensive analysis values are
+    reused.
+
+    This function preserves the behavior of :func:`analyze_context_file` and adds the
+    cache layer on top. Disabling the cache (``enabled=False``) always recomputes and
+    never touches the cache directory.
+    """
+    source_path = Path(path)
+
+    if not enabled:
+        track_map = analyze_context_file(source_path, bpm_normalization=bpm_normalization)
+        return TrackAnalysisCacheResult(
+            track_map=track_map, cache_status="disabled", cache_key=None
+        )
+
+    _validate_path(source_path)
+    cache_dir = get_cache_dir(cache_dir)
+    source_sha1 = content_hash(source_path)
+    package_version = _package_version()
+    backend_version = _package_version_for("librosa")
+    analysis_fingerprint = compute_analysis_fingerprint(
+        bpm_normalization=bpm_normalization,
+        backend_name="librosa",
+        backend_version=backend_version,
+        sample_brain_version=package_version,
+    )
+    cache_key = compute_cache_key(
+        source_content_hash=source_sha1,
+        bpm_normalization=bpm_normalization,
+        backend_name="librosa",
+        backend_version=backend_version,
+        sample_brain_version=package_version,
+    )
+
+    entry = read_cache_entry(cache_dir, cache_key)
+    if entry is not None and validate_cache_entry(
+        entry,
+        expected_cache_key=cache_key,
+        expected_source_hash=source_sha1,
+        expected_analysis_fingerprint=analysis_fingerprint,
+    ):
+        track_map = _rebuild_track_map_with_current_source(
+            entry["track_map"], source_path, source_sha1
+        )
+        return TrackAnalysisCacheResult(
+            track_map=track_map, cache_status="hit", cache_key=cache_key
+        )
+
+    track_map = analyze_context_file(source_path, bpm_normalization=bpm_normalization)
+    entry = build_cache_entry(
+        cache_key=cache_key,
+        source_content_hash=source_sha1,
+        analysis_fingerprint=analysis_fingerprint,
+        track_map=track_map,
+        provenance_component=track_map["provenance"]["components"]["analyze"],
+        quality=track_map["quality"],
+    )
+    write_cache_entry(cache_dir, cache_key, entry)
+    return TrackAnalysisCacheResult(
+        track_map=track_map, cache_status="miss", cache_key=cache_key
+    )
+
+
+__all__ = [
+    "ContextAnalyzeError",
+    "analyze_context_file",
+    "analyze_context_file_cached",
+    "TrackAnalysisCacheResult",
+]

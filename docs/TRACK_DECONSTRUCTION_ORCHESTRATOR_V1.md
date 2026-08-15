@@ -70,6 +70,29 @@ Jeder Step-Result enthält:
 - `reason_code` – bei `not_run` / `no_result`
 - `error` – bei `failed` (`{code, message}`)
 - `adapter` / `provenance` – tatsächlich verwendeter Adapter + Versionen
+- `track_analysis_cache_status` – nur für den `track_map`-Step: `hit` | `miss` | `disabled` (siehe unten)
+
+### Track-Analyse-Cache-Evidence (#237)
+
+Der `track_map`-Step nutzt den globalen, user-lokalen Track-Analyse-Cache
+(`docs/TRACK_ANALYSIS_CACHE_V1.md`). Wenn der Step wegen #262 tatsächlich
+gerechnet wird (`execution = computed`), führt seine Evidence zusätzlich:
+
+```text
+track_analysis_cache_status: hit | miss | disabled
+```
+
+Dies ist **additive** Evidence, getrennt von #262 `execution = reused | computed`.
+Ein gültiger Zustand ist z. B.:
+
+```text
+execution = computed
+track_analysis_cache_status = hit
+```
+
+Der Cache-Status beschreibt nur, *wie die Analysewerte diesmal beschafft wurden*;
+er wird **nicht** in die portable Track Map geschrieben. Es wird niemals ein
+Cache-Pfad serialisiert — nur der Statuswert.
 
 ### Verhalten
 
@@ -131,7 +154,7 @@ ohne die schwere Echt-Audio-Pipeline auszuführen.
 python -m src.cli deconstruct <track> --pack-root <dir> \
     [--bpm-normalization none|...] [--beat-backend auto|librosa|beat_this] \
     [--skip-arrangement] [--skip-assets] [--skip-stems] \
-    [--no-resume] \
+    [--track-cache-dir <dir>] [--no-track-cache] \
     [--write-evidence/--no-write-evidence] [--json]
 ```
 

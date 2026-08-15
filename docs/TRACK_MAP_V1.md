@@ -303,7 +303,7 @@ The Track Map uses a **centralized** `provenance.components` registry. Each anal
 | `model.name` | string | conditional | Model identifier, if a model was used. Absent for algorithmic components. |
 | `model.version` | string | conditional | Model version, if a model was used. Either `model.version` or `model.revision` may be present. |
 | `model.revision` | string | conditional | Model revision / hash, if a model was used. Either `model.version` or `model.revision` may be present. |
-| `configuration` | object | yes | Relevant configuration values that affected the result. Must not contain secrets. If no special parameters are needed, use `{}`. |
+| `configuration` | object | yes | Relevant configuration values that affected the result. Must not contain secrets. If no special parameters are needed, use `{}`. The `analyze` component additionally includes `parameter_fingerprint` (SHA-256 of the effective analyzer parameters and analysis identity) for cache reproducibility and auditability — see `docs/TRACK_ANALYSIS_CACHE_V1.md`. |
 
 ### Rules
 

@@ -62,3 +62,90 @@ def test_context_analyze_help_is_available(
 
     assert exc_info.value.code == 0
     assert "--json" in capsys.readouterr().out
+
+
+def test_context_analyze_cli_uses_track_cache_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from src.cli import main
+
+    source = write_sine_wav(
+        tmp_path / "a.wav", duration_sec=2.0, frequency_hz=440.0
+    )
+    cache_dir = tmp_path / "cache"
+    argv = [
+        "sample-brain",
+        "context",
+        "analyze",
+        str(source),
+        "--json",
+        "--track-cache-dir",
+        str(cache_dir),
+    ]
+    monkeypatch.setattr(sys, "argv", argv)
+    main()
+    # first run writes exactly one cache entry (miss)
+    assert len(list(cache_dir.glob("*.json"))) == 1
+    capsys.readouterr()
+    monkeypatch.setattr(sys, "argv", argv)
+    main()
+    # second identical run hits the cache; no new entry written
+    assert len(list(cache_dir.glob("*.json"))) == 1
+
+
+def test_context_analyze_cli_no_track_cache_disables(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from src.cli import main
+
+    source = write_sine_wav(
+        tmp_path / "a.wav", duration_sec=2.0, frequency_hz=440.0
+    )
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "sample-brain",
+            "context",
+            "analyze",
+            str(source),
+            "--json",
+            "--no-track-cache",
+            "--track-cache-dir",
+            str(cache_dir),
+        ],
+    )
+    main()
+    # disabled cache writes nothing
+    assert len(list(cache_dir.glob("*.json"))) == 0
+
+
+def test_context_analyze_cli_stdout_valid_json_no_private_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from src.cli import main
+
+    source = write_sine_wav(
+        tmp_path / "a.wav", duration_sec=2.0, frequency_hz=440.0
+    )
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "sample-brain",
+            "context",
+            "analyze",
+            str(source),
+            "--json",
+            "--track-cache-dir",
+            str(cache_dir),
+        ],
+    )
+    main()
+    out = capsys.readouterr().out
+    payload = json.loads(out)
+    assert payload["document_type"] == "sample_brain.track_map"
+    assert str(tmp_path) not in out
+    assert str(cache_dir) not in out

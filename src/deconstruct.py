@@ -61,6 +61,7 @@ class StepResult:
     provenance: dict | None = None
     execution: str | None = None
     cache_key: str | None = None
+    track_analysis_cache_status: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -81,6 +82,8 @@ class StepResult:
             payload["execution"] = self.execution
         if self.cache_key is not None:
             payload["cache_key"] = self.cache_key
+        if self.track_analysis_cache_status is not None:
+            payload["track_analysis_cache_status"] = self.track_analysis_cache_status
         return payload
 
 
@@ -117,6 +120,8 @@ class StepContext:
     bpm_normalization: str
     beat_backend: str
     artifacts: dict[str, object]
+    track_cache_dir: Path | None = None
+    track_cache_enabled: bool = True
 
 
 StepAdapter = Callable[[StepContext], tuple[StepResult, object]]
@@ -202,11 +207,18 @@ def _overall_status(steps: list[StepResult]) -> str:
 
 
 def _default_track_map_adapter(ctx: StepContext) -> tuple[StepResult, object]:
-    from .context_analyze import ContextAnalyzeError, analyze_context_file
+    from .context_analyze import (
+        ContextAnalyzeError,
+        TrackAnalysisCacheResult,
+        analyze_context_file_cached,
+    )
 
     try:
-        track_map = analyze_context_file(
-            ctx.track_path, bpm_normalization=ctx.bpm_normalization
+        result = analyze_context_file_cached(
+            ctx.track_path,
+            bpm_normalization=ctx.bpm_normalization,
+            cache_dir=ctx.track_cache_dir,
+            enabled=ctx.track_cache_enabled,
         )
     except ContextAnalyzeError as exc:
         return (
@@ -215,7 +227,7 @@ def _default_track_map_adapter(ctx: StepContext) -> tuple[StepResult, object]:
                 required=True,
                 status="failed",
                 error={"code": exc.code, "message": exc.message},
-                adapter="context_analyze.analyze_context_file",
+                adapter="context_analyze.analyze_context_file_cached",
             ),
             None,
         )
@@ -226,10 +238,12 @@ def _default_track_map_adapter(ctx: StepContext) -> tuple[StepResult, object]:
                 required=True,
                 status="failed",
                 error={"code": "TRACK_MAP_ERROR", "message": str(exc)[:500]},
-                adapter="context_analyze.analyze_context_file",
+                adapter="context_analyze.analyze_context_file_cached",
             ),
             None,
         )
+
+    track_map = result.track_map
 
     out_dir = ctx.pack_root / "analysis"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -255,8 +269,9 @@ def _default_track_map_adapter(ctx: StepContext) -> tuple[StepResult, object]:
             required=True,
             status=step_status,
             output_refs=("analysis/track_map.json",),
-            adapter="context_analyze.analyze_context_file",
+            adapter="context_analyze.analyze_context_file_cached",
             provenance=track_map.get("provenance"),
+            track_analysis_cache_status=result.cache_status,
         ),
         track_map,
     )
@@ -617,6 +632,8 @@ def run_deconstruct(
     adapters: DeconstructAdapters | None = None,
     skip: set[str] | None = None,
     resume: bool = True,
+    track_cache_dir: Path | None = None,
+    track_cache_enabled: bool = True,
 ) -> RunResult:
     """Run the headless Track Deconstruction pipeline.
 
@@ -738,6 +755,8 @@ def run_deconstruct(
                 bpm_normalization=bpm_normalization,
                 beat_backend=beat_backend,
                 artifacts=artifacts,
+                track_cache_dir=track_cache_dir,
+                track_cache_enabled=track_cache_enabled,
             )
 
             try:
