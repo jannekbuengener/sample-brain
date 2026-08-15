@@ -130,10 +130,11 @@ def build_performance_pack_manifest(run_result: RunResult, pack_root: Path) -> P
                     if "track_ref" in asset_data:
                         asset_data["track_ref"] = manifest.source_track["track_id"]
 
-                    # Ensure track_id matches source_track.track_id for proper traceability
-                    if "asset_id" in asset_data:
-                        # Asset ID should already be correct from generation
-                        pass
+                    # The pack entry must carry the portable reference to the Asset
+                    # Manifest so re-importers (#263) can locate it. The deconstruction
+                    # pipeline writes the Asset Manifest content but drops asset_ref;
+                    # restore it here from the resolved output reference.
+                    asset_data["asset_ref"] = asset_ref
 
                     # Add the asset to our list
                     assets.append(asset_data)
