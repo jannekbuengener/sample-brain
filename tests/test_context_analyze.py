@@ -127,3 +127,51 @@ def test_analyze_context_file_is_deterministic_and_does_not_touch_db(
 
     assert first == second
     assert not list(tmp_path.glob("*.db"))
+
+
+def test_analyze_provenance_contains_parameter_fingerprint(
+    tmp_path: Path,
+) -> None:
+    from src.context_analyze import analyze_context_file
+
+    source = write_sine_wav(
+        tmp_path / "tone.wav", duration_sec=2.0, frequency_hz=330.0
+    )
+    result = analyze_context_file(source)
+    analyze_cfg = result["provenance"]["components"]["analyze"]["configuration"]
+    assert "parameter_fingerprint" in analyze_cfg
+    fp = analyze_cfg["parameter_fingerprint"]
+    assert isinstance(fp, str)
+    assert len(fp) == 64  # SHA-256 hex digest
+
+
+def test_analyze_context_file_cached_miss_then_hit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.context_analyze import analyze_context_file_cached
+
+    source = write_sine_wav(
+        tmp_path / "tone.wav", duration_sec=2.0, frequency_hz=330.0
+    )
+    cache_dir = tmp_path / "cache"
+    r1 = analyze_context_file_cached(source, cache_dir=cache_dir)
+    assert r1.cache_status == "miss"
+    assert (cache_dir / f"{r1.cache_key}.json").exists()
+    # second identical run hits the cache
+    r2 = analyze_context_file_cached(source, cache_dir=cache_dir)
+    assert r2.cache_status == "hit"
+    assert r1.track_map == r2.track_map
+
+
+def test_analyze_context_file_cached_preserves_parameter_fingerprint(
+    tmp_path: Path,
+) -> None:
+    from src.context_analyze import analyze_context_file_cached
+
+    source = write_sine_wav(tmp_path / "tone.wav", duration_sec=2.0, frequency_hz=330.0)
+    cache_dir = tmp_path / "cache"
+    analyze_context_file_cached(source, cache_dir=cache_dir)
+    r2 = analyze_context_file_cached(source, cache_dir=cache_dir)
+    assert r2.cache_status == "hit"
+    cfg = r2.track_map["provenance"]["components"]["analyze"]["configuration"]
+    assert "parameter_fingerprint" in cfg

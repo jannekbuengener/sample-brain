@@ -159,6 +159,16 @@ def main():
     p_context_analyze.add_argument(
         "--json", action="store_true", help="Emit deterministic Track Map v1 JSON."
     )
+    p_context_analyze.add_argument(
+        "--track-cache-dir",
+        default=None,
+        help="Override the Track Analysis cache directory (default: user-local, outside repo).",
+    )
+    p_context_analyze.add_argument(
+        "--no-track-cache",
+        action="store_true",
+        help="Disable the Track Analysis cache; always recompute.",
+    )
 
     # deconstruct
     p_deconstruct = sub.add_parser(
@@ -194,7 +204,17 @@ def main():
     p_deconstruct.add_argument(
         "--no-resume",
         action="store_true",
-        help="Disable pack-local resume/cache reuse; force a full recompute.",
+        help="Disable pack-level resume (overwrite existing step outputs).",
+    )
+    p_deconstruct.add_argument(
+        "--track-cache-dir",
+        default=None,
+        help="Override the Track Analysis cache directory (default: user-local, outside repo).",
+    )
+    p_deconstruct.add_argument(
+        "--no-track-cache",
+        action="store_true",
+        help="Disable the Track Analysis cache for the track_map step; always recompute.",
     )
 
     # autotype
@@ -588,10 +608,17 @@ def main():
 
     if args.cmd == "context":
         if args.context_cmd == "analyze":
-            from .context_analyze import ContextAnalyzeError, analyze_context_file
+            from .context_analyze import (
+                ContextAnalyzeError,
+                analyze_context_file_cached,
+            )
 
             try:
-                payload = analyze_context_file(Path(args.path))
+                result = analyze_context_file_cached(
+                    Path(args.path),
+                    cache_dir=args.track_cache_dir,
+                    enabled=not args.no_track_cache,
+                )
             except ContextAnalyzeError as exc:
                 print(
                     json.dumps(
@@ -604,7 +631,9 @@ def main():
                     file=sys.stderr,
                 )
                 sys.exit(2)
-            print(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False))
+            print(
+                json.dumps(result.track_map, indent=2, sort_keys=True, allow_nan=False)
+            )
             return
 
     if args.cmd == "deconstruct":
@@ -625,6 +654,8 @@ def main():
             beat_backend=args.beat_backend,
             skip=skip,
             resume=not args.no_resume,
+            track_cache_dir=args.track_cache_dir,
+            track_cache_enabled=not args.no_track_cache,
         )
 
         pack_root.mkdir(parents=True, exist_ok=True)
