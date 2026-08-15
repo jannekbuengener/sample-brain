@@ -504,6 +504,15 @@ def main():
         help="Lokale Werkbank starten (Playlist-Ansicht, tkinter)",
     )
 
+    p_pack_import = sub.add_parser(
+        "pack-import",
+        help="Performance-Pack in den Katalog re-importieren (#263)",
+    )
+    p_pack_import.add_argument(
+        "pack_root",
+        help="Performance-Pack Verzeichnis oder direkte manifest.json",
+    )
+
     args = parser.parse_args()
 
     # Imports hier drin, damit das Skript startet, auch wenn einzelne Module fehlen.
@@ -871,6 +880,28 @@ def main():
             )
             sys.exit(1)
         run_workbench()
+        return
+
+    if args.cmd == "pack-import":
+        cfg = _resolve_profile_or_exit(args)
+        _apply_runtime_db_path(cfg)
+        from .performance_pack_import import PackImportError, run_pack_import
+
+        try:
+            result = run_pack_import(Path(args.pack_root))
+        except PackImportError as exc:
+            print(
+                f"[ERROR] pack-import failed ({exc.code}): {exc.message}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        print(f"Performance Pack re-import: pack_id={result.pack_id}")
+        print(
+            f"  imported={result.imported} reused={result.reused} "
+            f"skipped={result.skipped} failed={len(result.errors)}"
+        )
+        if result.sample_ids:
+            print(f"  sample_ids={result.sample_ids}")
         return
 
 

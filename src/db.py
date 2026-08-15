@@ -389,6 +389,81 @@ def list_sample_tags(sample_id: int | None = None) -> list[dict]:
     ]
 
 
+def upsert_sample_tag(sample_id: int, tag: str, source: str) -> None:
+    """Add a sample tag idempotently (INSERT OR IGNORE on the unique triplet)."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+            INSERT OR IGNORE INTO sample_tags (sample_id, tag, source)
+            VALUES (:sample_id, :tag, :source)
+            """),
+            {"sample_id": sample_id, "tag": tag, "source": source},
+        )
+
+
+def find_sample_by_path(path: str) -> tuple[int, str] | None:
+    """Return (id, hash) for the sample row at the given path, or None."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT id, hash FROM samples WHERE path = :path"),
+            {"path": str(path)},
+        ).fetchone()
+    if row is None:
+        return None
+    return int(row[0]), row[1]
+
+
+def find_sample_id_by_hash(content_hash: str) -> int | None:
+    """Return the smallest sample id sharing the content hash, or None.
+
+    Deterministic tie-break: smallest id wins when several rows share a hash.
+    """
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                "SELECT id FROM samples WHERE hash = :h ORDER BY id ASC LIMIT 1"
+            ),
+            {"h": content_hash},
+        ).fetchone()
+    if row is None:
+        return None
+    return int(row[0])
+
+
+def insert_sample(
+    path: str,
+    relpath: str | None,
+    samplerate: int | None,
+    channels: int | None,
+    duration: float | None,
+    size_bytes: int,
+    content_hash: str,
+) -> int:
+    """Insert a new sample row (plain INSERT; path is UNIQUE)."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+            INSERT INTO samples (path, relpath, samplerate, channels, duration, size_bytes, hash)
+            VALUES (:path, :relpath, :sr, :ch, :dur, :size_bytes, :hash)
+            """),
+            dict(
+                path=str(path),
+                relpath=relpath,
+                sr=samplerate,
+                ch=channels,
+                dur=duration,
+                size_bytes=size_bytes,
+                hash=content_hash,
+            ),
+        )
+        row = conn.execute(text("SELECT id FROM samples WHERE path = :path"), {"path": str(path)}).fetchone()
+    return int(row[0])
+
+
 def load_sample_paths(sample_ids: list[int]) -> dict[int, str]:
     if not sample_ids:
         return {}
