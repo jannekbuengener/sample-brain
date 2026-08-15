@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
@@ -83,12 +84,17 @@ class NoopEmbeddingBackend(EmbeddingBackend):
         )
 
 
+CLAP_MODEL_NAME = "laion/clap-htsat-unfused"
+CLAP_EMBEDDING_DIM = 512
+CLAP_MODALITY = "audio_text"
+CLAP_PROVIDER = "laion"
+
 _CLAP_METADATA = EmbeddingModelInfo(
-    provider="laion",
-    model_name="laion/clap-htsat-unfused",
+    provider=CLAP_PROVIDER,
+    model_name=CLAP_MODEL_NAME,
     model_version="planned",
-    embedding_dim=512,
-    modality="audio_text",
+    embedding_dim=CLAP_EMBEDDING_DIM,
+    modality=CLAP_MODALITY,
 )
 
 
@@ -101,6 +107,19 @@ def _clap_available() -> bool:
         return False
 
 
+def _resolve_clap_cache_dir() -> Optional[str]:
+    """Return ``SAMPLE_BRAIN_MODEL_CACHE_DIR`` if set, else ``None``.
+
+    The value is forwarded as ``cache_dir`` to the CLAP model and processor
+    loaders so model weights stay outside the repo. ``HF_HOME`` is a documented
+    alternative but is never mutated here.
+    """
+    value = os.environ.get("SAMPLE_BRAIN_MODEL_CACHE_DIR")
+    if not value:
+        return None
+    return str(value)
+
+
 class ClapEmbeddingBackend(EmbeddingBackend):
     def __init__(self) -> None:
         self._model = None
@@ -110,6 +129,11 @@ class ClapEmbeddingBackend(EmbeddingBackend):
     def _load_model(self) -> None:
         if self._model is not None:
             return
+        if not _clap_available():
+            raise EmbeddingBackendUnavailableError(
+                "CLAP dependencies not available. "
+                "Install with: pip install -e .[clap]"
+            )
         try:
             import torch  # noqa: F811
             import transformers  # noqa: F811
@@ -119,9 +143,24 @@ class ClapEmbeddingBackend(EmbeddingBackend):
                 "Install with: pip install -e .[clap]"
             )
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
-        model_name = "laion/clap-htsat-unfused"
-        self._model = transformers.ClapModel.from_pretrained(model_name).to(self._device)
-        self._processor = transformers.ClapProcessor.from_pretrained(model_name)
+        load_kwargs: dict = {}
+        cache_dir = _resolve_clap_cache_dir()
+        if cache_dir is not None:
+            load_kwargs["cache_dir"] = cache_dir
+        try:
+            self._model = transformers.ClapModel.from_pretrained(
+                CLAP_MODEL_NAME, **load_kwargs
+            ).to(self._device)
+            self._processor = transformers.ClapProcessor.from_pretrained(
+                CLAP_MODEL_NAME, **load_kwargs
+            )
+        except Exception as exc:
+            raise EmbeddingBackendUnavailableError(
+                f"CLAP model {CLAP_MODEL_NAME} could not be loaded: {exc}. "
+                "Ensure the [clap] extra is installed and the model is available "
+                "(online first run downloads it, or use a populated "
+                "SAMPLE_BRAIN_MODEL_CACHE_DIR offline)."
+            ) from exc
         self._model.eval()
 
     def embed_text(self, text: str) -> np.ndarray:
