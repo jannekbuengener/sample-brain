@@ -27,7 +27,7 @@ Recommended build and documentation order:
 
 Context and Transform can be developed in parallel after Library + Matching; Workspace integrates all pillars.
 
-Runtime on `main` today: CLI scan → analyze → autotype → export (legacy FL); optional embed/index/search; partial matching via `sample-brain match`. VST3 plugin, track context, and transform engine are not implemented.
+Runtime on `main` today: CLI scan → analyze → autotype → export_fl (legacy FL); optional embed/index/search; matching via `sample-brain match`; track context analysis via `sample-brain context analyze` (Track Map v1 + Track Analysis Cache); track deconstruction via `sample-brain deconstruct` (Track Map, Arrangement, Loop/Section Assets, Performance Pack layout); pack import via `sample-brain pack-import`. VST3 plugin and transform engine are not implemented.
 
 ## Related documents
 
