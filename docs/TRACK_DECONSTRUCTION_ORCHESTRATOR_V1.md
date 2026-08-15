@@ -1,6 +1,7 @@
 # Track Deconstruction Orchestrator v1
 
 Issue: **#259** · Parent: **#231** · Depends on: **#257**, **#258**
+Resume/Cache: **#262** (siehe [`PERFORMANCE_PACK_RESUME_V1.md`](PERFORMANCE_PACK_RESUME_V1.md))
 
 Dieses Dokument beschreibt den headless Track-Deconstruction-Einstieg
 (`sample-brain deconstruct <track>`). Er koordiniert vorhandene Sample-Brain-
@@ -108,6 +109,13 @@ Felder: `status`, `track` (Quell-Track-Identität), `pack_root` (portabel),
 Keine absoluten Pfade, keine Wall-Clock-Timestamps → deterministisch bei
 gleichen Inputs + gleichen Adapterantworten.
 
+### Resume-Evidenz (additive Minor-Evolution auf 1.1.0, via #262)
+
+Jeder `StepResult` erhält zusätzlich `execution: "computed" | "reused"` und
+`cache_key`. Run-Ebene fügt `reused_steps` / `computed_steps` (portabel) hinzu.
+Der Run-Status (#259) bleibt unverändert. Detailregeln:
+[`PERFORMANCE_PACK_RESUME_V1.md`](PERFORMANCE_PACK_RESUME_V1.md).
+
 ## Adapter-Injektion
 
 Jeder Step wird über ein Adapter-Callable ausgeführt:
@@ -123,14 +131,22 @@ ohne die schwere Echt-Audio-Pipeline auszuführen.
 python -m src.cli deconstruct <track> --pack-root <dir> \
     [--bpm-normalization none|...] [--beat-backend auto|librosa|beat_this] \
     [--skip-arrangement] [--skip-assets] [--skip-stems] \
+    [--no-resume] \
     [--write-evidence/--no-write-evidence] [--json]
 ```
+
+`--no-resume` deaktiviert die Wiederverwendung für diesen Lauf (voller
+Recompute; Resume ist sonst standardmäßig EIN bei kompatiblem State, siehe
+[`PERFORMANCE_PACK_RESUME_V1.md`](PERFORMANCE_PACK_RESUME_V1.md)).
 
 Exit-Codes: `0` bei `complete`/`partial`, `2` bei `failed`.
 
 ## Nicht-Ziele (Non-Goals)
 
-#260 vollständiges Pack-Assembly · #261 Stem-Pack-Integration · #262 Resume/
-Cache · #263 Re-Import · #264 End-to-End-Privatpilot · #268 Producer Groups ·
-CLAP · neue Modelle · DB-Migration · Dependency-Änderungen · private
-Audio-Dateien · GUI/Workbench.
+#260 vollständiges Pack-Assembly · #261 Stem-Pack-Integration · #263 Re-Import
+· #264 End-to-End-Privatpilot · #268 Producer Groups · CLAP · neue Modelle ·
+DB-Migration · Dependency-Änderungen · private Audio-Dateien · GUI/Workbench.
+
+(Resume/Cache ist Gegenstand von **#262**, siehe
+[`PERFORMANCE_PACK_RESUME_V1.md`](PERFORMANCE_PACK_RESUME_V1.md) — kein
+Non-Goal mehr.)

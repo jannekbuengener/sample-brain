@@ -191,6 +191,11 @@ def main():
         default="none",
         help="BPM normalization passed to Track Deconstruction.",
     )
+    p_deconstruct.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="Disable pack-local resume/cache reuse; force a full recompute.",
+    )
 
     # autotype
     p_aut = sub.add_parser(
@@ -619,6 +624,7 @@ def main():
             bpm_normalization=args.bpm_normalization,
             beat_backend=args.beat_backend,
             skip=skip,
+            resume=not args.no_resume,
         )
 
         pack_root.mkdir(parents=True, exist_ok=True)
