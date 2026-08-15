@@ -99,7 +99,7 @@ Der Cache-Key ist ein **SHA-256** über ein **kanonisches deterministisches JSON
 |-------|--------------|
 | `source_content_hash` | Autoritative Content-Identity des Originalaudios (derzeit SHA-1, aus `canon_audio.content_hash`). |
 | `component` | Konstant `"analyze"`. |
-| `contract_version` | `TRACK_ANALYSIS_CACHE_CONTRACT_VERSION` (derzeit `1`). |
+| `contract_version` | `TRACK_ANALYSIS_CACHE_CONTRACT_VERSION` (derzeit `2`). |
 | `sample_brain_version` | Analyseversion von sample-brain (`metadata.version("sample-brain")`). |
 | `backend.name` | `"librosa"` (der aktuelle Context Analyzer verwendet librosa). |
 | `backend.version` | Installierte librosa-Version. |
@@ -134,8 +134,13 @@ mit Modellname/Version/Revision/Hash korrekt invalidieren kann.
 ### 3.5 Contract-Version-Konstante
 
 ```python
-TRACK_ANALYSIS_CACHE_CONTRACT_VERSION = 1
+TRACK_ANALYSIS_CACHE_CONTRACT_VERSION = 2
 ```
+
+`contract_version` `1 → 2` was bumped for issue #212: the analysis fingerprint now
+also includes `key_analysis_contract_version` (from `src.analyze
+.KEY_ANALYSIS_CONTRACT_VERSION`, currently `1`), so a change in the Dur/Moll mode
+analysis invalidates prior caches.
 
 ---
 

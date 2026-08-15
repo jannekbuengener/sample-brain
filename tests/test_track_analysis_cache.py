@@ -136,7 +136,7 @@ def test_contract_version_change_produces_different_key(monkeypatch):
         sample_brain_version="0.1.0",
     )
     k1 = compute_cache_key(**base)
-    monkeypatch.setattr(tac, "TRACK_ANALYSIS_CACHE_CONTRACT_VERSION", 2)
+    monkeypatch.setattr(tac, "TRACK_ANALYSIS_CACHE_CONTRACT_VERSION", 99)
     k2 = compute_cache_key(**base)
     assert k1 != k2
 

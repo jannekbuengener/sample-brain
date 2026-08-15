@@ -19,7 +19,7 @@ def test_analyze_context_file_returns_portable_track_map(tmp_path: Path) -> None
     result = analyze_context_file(source)
 
     assert result["document_type"] == "sample_brain.track_map"
-    assert result["schema_version"] == "1.0.0"
+    assert result["schema_version"] == "1.1.0"
     assert result["source"]["original"]["file_name"] == "outside library.wav"
     assert "path" not in result["source"]["original"]
     assert str(tmp_path) not in json.dumps(result)

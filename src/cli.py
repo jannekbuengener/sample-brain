@@ -145,7 +145,12 @@ def main():
     )
 
     # analyze
-    sub.add_parser("analyze", help="Audio-Features (librosa) berechnen")
+    p_analyze = sub.add_parser("analyze", help="Audio-Features (librosa) berechnen")
+    p_analyze.add_argument(
+        "--all",
+        action="store_true",
+        help="Alle Samples neu analysieren (nicht nur fehlende). Expliziter Reanalyse-Weg.",
+    )
 
     # context analyze (DB-free one-shot file analysis)
     p_context = sub.add_parser(
@@ -602,7 +607,7 @@ def main():
         except Exception as e:
             print(f"[ERROR] Analyze-Modul fehlt/fehlerhaft: {e}", file=sys.stderr)
             sys.exit(1)
-        run_analyze(bpm_normalization=bpm_normalization)
+        run_analyze(bpm_normalization=bpm_normalization, only_missing=not args.all)
         print("Analyze completed.")
         return
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .db import get_engine, text
+from .key_signature import parse_key_signature
 
 
 @dataclass(frozen=True)
@@ -47,17 +48,17 @@ def key_matches_scale(key: str | None, scale: str | None) -> bool:
     if key is None:
         return False
 
-    normalized_key = key.strip()
+    parsed = parse_key_signature(key)
+    if parsed is None or parsed.mode is None:
+        # Root-only key (mode unknown): matches neither major nor minor.
+        return False
+
     normalized_scale = scale.strip().casefold()
     if normalized_scale in {"minor", "min"}:
-        return normalized_key.endswith("m") or normalized_key.endswith("min")
+        return parsed.mode == "min"
     if normalized_scale in {"major", "maj"}:
-        return not (
-            normalized_key.endswith("m")
-            or normalized_key.endswith("min")
-            or normalized_key.endswith("min.")
-        )
-    return normalized_scale in normalized_key.casefold()
+        return parsed.mode == "maj"
+    return normalized_scale in f"{parsed.root}{parsed.mode}"
 
 
 def resolve_filtered_sample_ids(filters: SearchFilters | None) -> set[int] | None:
