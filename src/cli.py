@@ -874,6 +874,7 @@ def main():
                 print_search_quality_report,
                 run_search_quality_benchmark,
             )
+            from .embed import EmbeddingBackendUnavailableError
 
             suite_path = Path(args.suite) if args.suite else DEFAULT_SUITE_PATH
             work_dir = Path(args.work_dir) if args.work_dir else None
@@ -882,7 +883,7 @@ def main():
                     suite_path,
                     work_dir=work_dir,
                 )
-            except (OSError, ValueError) as exc:
+            except (OSError, ValueError, EmbeddingBackendUnavailableError) as exc:
                 print(f"[ERROR] {exc}", file=sys.stderr)
                 sys.exit(1)
             print_search_quality_report(result)

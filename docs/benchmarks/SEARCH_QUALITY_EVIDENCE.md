@@ -451,4 +451,32 @@ Campaign adds `tests/test_search_quality.py` (Tier A metrics + frozen P@5 baseli
 
 **Tier A regression gates PASS.** The harness proves filter compliance, hybrid reranking, and P@K/R@K aggregation on deterministic fixtures. **Tier B Phase 1** delivers first measured CLAP semantic evidence on synthetic fixtures (P@5=0.440, MRR=0.792). **Tier B Phase 2** extends to 4/6 query classes (P@5=0.287, MRR=0.544 on 24-sample catalog); default merge gate remains Tier A only.
 
+## CLAP Tier-B runtime reproducibility (Issue #218)
+
+Issue #218 makes the optional CLAP Tier-B runtime path reproducible without
+changing any measured quality numbers above. Details:
+[CLAP_TIER_B_RUNTIME.md](CLAP_TIER_B_RUNTIME.md).
+
+Runtime contract (no quality claims):
+
+- **Authoritative model identity:** `laion/clap-htsat-unfused`, 512-d,
+  `audio_text` modality — centralized as constants in `src/embed.py` and shared
+  by `model_info()`, the loader, the benchmark, and the runtime tests.
+- **Clean install:** base `requirements.txt` first, then the `[clap]` extra
+  (`pip install -e ".[clap]"` alone does **not** install the base runtime
+  because `pyproject.toml` declares `dependencies = []`).
+- **External artifacts only:** `SAMPLE_BRAIN_DB_PATH`, `--work-dir`, and
+  `SAMPLE_BRAIN_MODEL_CACHE_DIR` (passed as `cache_dir` to model + processor)
+  live outside the repo. No DB/index/WAV/model weights are committed.
+- **Skip behavior:** without `[clap]`, or offline with no cached model, the
+  `@pytest.mark.clap` path skips cleanly. Only a genuine model/processor **load**
+  failure maps to `EmbeddingBackendUnavailableError` → SKIP. Failures **after** a
+  successful model load (dimension, NaN/Inf, audio, assertion, benchmark) remain
+  real FAILs.
+- **No CI model download:** normal CI runs `-m "not clap"`; the CLAP path is
+  local/optional only.
+
+No new P@K/R@K values are introduced here. Quality interpretation and evidence
+publication remain #216 / #217 / #219.
+
 **Explicitly not measured here:** sqlite-vec latency, CLAP semantic accuracy on private samples, hybrid weight tuning. Tier-B **fixture foundation** for all six query classes is complete (#215); CLAP ranking evidence for `vocal_no_vocal` / `genre_mood` awaits #216/#217/#219.

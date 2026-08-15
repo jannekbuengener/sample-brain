@@ -47,8 +47,14 @@ python -m venv .venv
 pip install -r requirements.txt
 
 # For CLAP embedding backend (optional):
+# Install the base runtime FIRST, then the [clap] extra.
+# NOTE: `pip install -e ".[clap]"` alone does NOT install the base runtime
+# (pyproject.toml declares dependencies = []); requirements.txt must be
+# installed separately.
 pip install -r requirements.txt -r requirements-clap.txt
-# or: pip install -e ".[clap]"
+# or, equivalently:
+pip install -r requirements.txt
+pip install -e ".[clap]"
 
 # For sqlite-vec search backend (optional):
 pip install -e ".[vec]"
@@ -206,7 +212,7 @@ cp config/profiles.example.yaml config/profiles.local.yaml
 | `SAMPLE_BRAIN_EMBEDDING_BACKEND` | Embedding backend |
 | `SAMPLE_BRAIN_LIBRARY_ROOTS` | Library root paths |
 | `SAMPLE_BRAIN_FL_USER_DATA` | FL Studio user data path |
-| `SAMPLE_BRAIN_MODEL_CACHE_DIR` | Model cache directory |
+| `SAMPLE_BRAIN_MODEL_CACHE_DIR` | Model cache directory (passed as `cache_dir` to the CLAP model + processor loaders; keep outside the repo) |
 | `SAMPLE_BRAIN_DB_PATH` | SQLite database path |
 | `SAMPLE_BRAIN_SEARCH_BACKEND` | Vector search backend (`numpy` or `sqlite-vec`) |
 | `SAMPLE_BRAIN_MAX_TAGS` | Export max tags |
@@ -238,6 +244,7 @@ See [`docs/DATA_AND_ARTIFACT_POLICY.md`](./docs/DATA_AND_ARTIFACT_POLICY.md) for
 - [EPIC 2: Semantic Search Foundation](./docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md) — embedding, indexing, search contracts and milestones
 - [SQLite + sqlite-vec Roadmap](./docs/SQLITE_VEC_ROADMAP.md) — phased rollout (Phases 1–8 complete; default switch gated)
 - [sqlite-vec gate evidence](./docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md) — measured benchmark gates (default stays `numpy`)
+- [CLAP Tier-B Runtime](./docs/benchmarks/CLAP_TIER_B_RUNTIME.md) — reproducible optional CLAP install, model cache, and skip behavior (Issue #218)
 - [DAW Integration](./docs/DAW_INTEGRATION_SPEC.md) — FL Studio export, Ableton/Reaper research
 
 ### Project

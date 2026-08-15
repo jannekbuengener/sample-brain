@@ -10,7 +10,7 @@ from src.benchmark_search_quality import (
     load_search_quality_suite,
     run_search_quality_benchmark,
 )
-from src.embed import _clap_available
+from src.embed import EmbeddingBackendUnavailableError, _clap_available
 from src.search_eval import (
     aggregate_metric_summaries,
     aggregate_metric_summaries_by_group,
@@ -156,10 +156,13 @@ class TestGoldenTierBPhase1:
     def test_tier_b_phase1_benchmark(self, suite_path: Path, tmp_path: Path):
         if not _clap_available():
             pytest.skip("CLAP optional extra not installed")
-        result = run_search_quality_benchmark(
-            suite_path,
-            work_dir=tmp_path / "clap-quality",
-        )
+        try:
+            result = run_search_quality_benchmark(
+                suite_path,
+                work_dir=tmp_path / "clap-quality",
+            )
+        except EmbeddingBackendUnavailableError as exc:
+            pytest.skip(f"CLAP runtime unavailable: {exc}")
         assert result.tier == "B"
         assert result.summary.query_count >= 8
         for row in result.query_results:
@@ -215,10 +218,13 @@ class TestGoldenTierBPhase2:
     def test_tier_b_phase2_benchmark(self, suite_path: Path, tmp_path: Path):
         if not _clap_available():
             pytest.skip("CLAP optional extra not installed")
-        result = run_search_quality_benchmark(
-            suite_path,
-            work_dir=tmp_path / "clap-quality-p2",
-        )
+        try:
+            result = run_search_quality_benchmark(
+                suite_path,
+                work_dir=tmp_path / "clap-quality-p2",
+            )
+        except EmbeddingBackendUnavailableError as exc:
+            pytest.skip(f"CLAP runtime unavailable: {exc}")
         assert result.tier == "B"
         assert result.summary.query_count >= 20
         for row in result.query_results:

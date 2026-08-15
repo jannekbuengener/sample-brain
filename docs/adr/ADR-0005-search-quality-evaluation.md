@@ -133,6 +133,20 @@ Tier B Schwellw sind informativ bis kuratiertes CLAP-Set existiert.
 
 Tier B uses [`tests/fixtures/search_quality/golden_v2_clap.yaml`](../../tests/fixtures/search_quality/golden_v2_clap.yaml) with machine validation in [`src/search_quality_contract.py`](../../src/search_quality_contract.py). `load_search_quality_suite()` rejects invalid suites before benchmark runs.
 
+### Runtime reproducibility (Issue #218)
+
+The optional CLAP Tier-B runtime path is documented and tested separately from
+quality evidence: [CLAP_TIER_B_RUNTIME.md](../benchmarks/CLAP_TIER_B_RUNTIME.md).
+The model identity (`laion/clap-htsat-unfused`, 512-d, `audio_text`) is
+centralized as constants in `src/embed.py` and shared by `model_info()`, the
+model loader, the benchmark harness, and the runtime tests. A clean machine must
+install the base `requirements.txt` **and** the `[clap]` extra — `pip install -e
+".[clap]"` alone does not install the base runtime (`pyproject.toml` declares
+`dependencies = []`). The `@pytest.mark.clap` path skips cleanly without `[clap]`
+or when the model is offline and uncached; only a genuine model/processor load
+failure is treated as runtime-unavailable. Quality interpretation stays in
+#216 / #217 / #219.
+
 ### Tier A vs Tier B
 
 | Aspect | Tier A | Tier B |
