@@ -10,8 +10,9 @@ from typing import Any, Optional
 
 import soundfile as sf
 
-from .analyze import Features, extract_features
+from .analyze import KEY_ANALYSIS_CONTRACT_VERSION, Features, extract_features
 from .canon_audio import content_hash, probe_audio, render_canonical_wav
+from .key_signature import parse_key_signature
 from .track_analysis_cache import (
     TRACK_ANALYSIS_CACHE_CONTRACT_VERSION,
     build_cache_entry,
@@ -82,10 +83,22 @@ def _base_analysis(
     if features.key is None:
         key = _no_result("KEY_UNDETECTABLE")
     else:
-        key = {"status": "ok", "root": features.key, "source_ref": "analyze"}
+        parsed = parse_key_signature(features.key)
+        root = parsed.root if parsed is not None else features.key
+        key = {"status": "ok", "root": root, "source_ref": "analyze"}
         if features.key_conf is not None:
             key["key_conf"] = features.key_conf
             key["key_conf_kind"] = "chroma_peak_prominence"
+        # The major/minor mode is a SEPARATE statement from the root.
+        # mode_evidence is retained even when the mode is unresolved so it is
+        # auditable *why* no mode was guessed; only ``mode`` stays absent then.
+        if features.key_mode_evidence is not None:
+            key["mode_evidence"] = features.key_mode_evidence
+        if features.key_mode is not None:
+            key["mode"] = features.key_mode
+        else:
+            key["status"] = "partial"
+            key["reason_code"] = "MODE_UNRESOLVED"
 
     loudness: dict[str, object]
     if features.loudness is None:
@@ -197,7 +210,7 @@ def analyze_context_file(
     package_version = _package_version()
     return {
         "document_type": "sample_brain.track_map",
-        "schema_version": "1.0.0",
+        "schema_version": "1.1.0",
         "source": {
             "original": {
                 "file_name": source_path.name,
@@ -236,11 +249,13 @@ def analyze_context_file(
                         "working_audio": "temporary_canonical_wav",
                         "canonical_sample_rate_hz": 44100,
                         "canonical_channels": 1,
+                        "key_analysis_contract_version": KEY_ANALYSIS_CONTRACT_VERSION,
                         "parameter_fingerprint": compute_analysis_fingerprint(
                             bpm_normalization=bpm_normalization,
                             backend_name="librosa",
                             backend_version=_package_version_for("librosa"),
                             sample_brain_version=package_version,
+                            key_analysis_contract_version=KEY_ANALYSIS_CONTRACT_VERSION,
                         ),
                     },
                 },

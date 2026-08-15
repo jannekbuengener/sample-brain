@@ -32,6 +32,7 @@ import soundfile as sf
 
 from .analyze import SHORT_AUDIO_DURATION_SEC, extract_features
 from .classify import rule_type
+from .key_signature import parse_key_signature
 from .utils import file_hash
 
 AnalysisStatus = Literal["ok", "partial", "not_run", "failed", "no_result"]
@@ -210,7 +211,10 @@ def reanalyze_rendered_output(
     if feats.bpm is not None:
         analysis_fields["bpm"] = feats.bpm
     if feats.key is not None:
-        analysis_fields["key_root"] = feats.key
+        # Asset reanalysis (#254) records the ROOT pitch class only. It must not
+        # invent or store a Dur/Moll mode, even if the analyzer now emits one.
+        analysis_fields["key_root"] = asset_key_root(feats)
+
     if sample_type is not None:
         analysis_fields["sample_type"] = sample_type
     if feats.loudness is not None:
@@ -271,6 +275,18 @@ def reanalyze_rendered_output(
         provenance_entry=_provenance_entry(config, sample_brain_version),
         error=None,
     )
+
+
+def asset_key_root(feats: "Features | None") -> "str | None":
+    """Extract the pure root pitch class from analyzer features for an asset.
+
+    The analyzer may emit ``<ROOT>maj`` / ``<ROOT>min`` / ``<ROOT>``; the asset
+    manifest intentionally keeps only the root and never a Dur/Moll mode.
+    """
+    if feats is None or feats.key is None:
+        return None
+    parsed = parse_key_signature(feats.key)
+    return parsed.root if parsed is not None else feats.key
 
 
 def analyze_rendered_asset(

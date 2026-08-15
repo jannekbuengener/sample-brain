@@ -26,23 +26,36 @@ class TestBucketForConf:
 
 
 class TestKeyToTag:
-    def test_high_confidence_exports_key(self):
-        assert key_to_tag("A", 0.88) == "Amaj"
+    def test_high_confidence_canonical_major_exports_key(self):
+        assert key_to_tag("Amaj", 0.88) == "Amaj"
+
+    def test_high_confidence_canonical_minor_exports_key(self):
+        assert key_to_tag("Amin", 0.88) == "Amin"
+
+    def test_root_only_withheld_never_invents_major(self):
+        # Root-only key must NOT be exported as major; the tag is withheld.
+        assert key_to_tag("A", 0.88) is None
+        assert key_to_tag("C", CONF_KEY_MIN) is None
+
+    def test_legacy_spellings_normalized(self):
+        assert key_to_tag("A major", 0.88) == "Amaj"
+        assert key_to_tag("C minor", 0.88) == "Cmin"
+        assert key_to_tag("Cm", 0.88) == "Cmin"
 
     def test_below_threshold_withholds_key(self):
-        assert key_to_tag("A", 0.40) is None
+        assert key_to_tag("Amaj", 0.40) is None
 
-    def test_at_threshold_exports_key(self):
-        assert key_to_tag("C", CONF_KEY_MIN) == "Cmaj"
+    def test_at_threshold_exports_canonical_key(self):
+        assert key_to_tag("Cmaj", CONF_KEY_MIN) == "Cmaj"
 
     def test_missing_key_returns_none(self):
         assert key_to_tag(None, 0.90) is None
 
     def test_missing_confidence_withholds_key(self):
-        assert key_to_tag("A", None) is None
+        assert key_to_tag("Amaj", None) is None
 
     def test_sharp_key_preserved(self):
-        assert key_to_tag("C#", 0.80) == "C#"
+        assert key_to_tag("C#maj", 0.80) == "C#maj"
 
 
 class TestKeyConfEvidenceResult:

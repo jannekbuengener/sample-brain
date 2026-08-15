@@ -391,7 +391,7 @@ For `ok` or `partial`, the component's result-specific required fields are defin
 | Field (dotted path) | Required | Type | Notes |
 |---|---|---|---|
 | `document_type` | yes | string | `"sample_brain.track_map"` |
-| `schema_version` | yes | string | Compatible v1 SemVer (`1.x.x`); current contract revision is `"1.0.0"` |
+| `schema_version` | yes | string | Compatible v1 SemVer (`1.x.x`); current contract revision is `"1.0.0"`. The embedded `analyze` component result block uses its own `schema_version` `"1.1.0"` (issue #212: adds optional Dur/Moll `key` mode fields). |
 | `source.original.file_name` | yes | string | Base name |
 | `source.original.relative_uri` | no | string | Relative to Track Map file |
 | `source.original.size_bytes` | no | integer | File size |

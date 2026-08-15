@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .bpm_display import format_bpm_tag
 from .config import REGEX_MAP_PATH, SAMPLE_ROOTS
+from .key_signature import format_key_signature, parse_key_signature
 
 MAX_TAGS = 5
 CONF_KEY_MIN = 0.55
@@ -47,14 +48,12 @@ def bpm_to_tag(bpm: float | None):
 def key_to_tag(key: str | None, conf: float | None):
     if not key or conf is None or conf < CONF_KEY_MIN:
         return None
-    normalized = key.replace("min", "m").replace("maj", "").upper()
-    if len(normalized) == 1:
-        normalized = normalized + "maj"
-    if normalized.endswith("M"):
-        normalized = normalized[:-1] + "maj"
-    if normalized.endswith("m"):
-        normalized = normalized[:-1] + "min"
-    return normalized
+    parsed = parse_key_signature(key)
+    if parsed is None or parsed.mode is None:
+        # Root-only key: never invent a Dur/Moll mode. Withhold the key tag
+        # rather than falsely asserting a major key for the FL export.
+        return None
+    return format_key_signature(parsed.root, parsed.mode)
 
 
 def load_regex_map():

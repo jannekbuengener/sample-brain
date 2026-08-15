@@ -22,10 +22,14 @@ import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
+from .analyze import KEY_ANALYSIS_CONTRACT_VERSION
 from .canon_audio import CANONICAL_CHANNELS, CANONICAL_SAMPLE_RATE, content_hash
 from .config import ANALYZE_HOP_LENGTH, ANALYZE_SR
 
-TRACK_ANALYSIS_CACHE_CONTRACT_VERSION = 1
+# Bumped for #212: the analyzer now also emits a separate major/minor mode. Old
+# cached analysis results (without the key-analysis contract in their fingerprint)
+# must not be reused as current analyzer hits.
+TRACK_ANALYSIS_CACHE_CONTRACT_VERSION = 2
 CACHE_ENTRY_DOCUMENT_TYPE = "sample_brain.track_analysis_cache_entry"
 CACHE_ENTRY_SCHEMA_VERSION = "1.0.0"
 SCHEMA_MAJOR = 1
@@ -70,6 +74,7 @@ def _analysis_fingerprint_doc(
     backend_version: str,
     sample_brain_version: str,
     model_identity: Optional[dict],
+    key_analysis_contract_version: str | int = KEY_ANALYSIS_CONTRACT_VERSION,
 ) -> dict:
     return {
         "component": "analyze",
@@ -82,6 +87,7 @@ def _analysis_fingerprint_doc(
             "canonical_channels": CANONICAL_CHANNELS,
             "analyze_sr": ANALYZE_SR,
             "analyze_hop_length": ANALYZE_HOP_LENGTH,
+            "key_analysis_contract_version": key_analysis_contract_version,
         },
         "model_identity": model_identity,
     }
@@ -94,6 +100,7 @@ def compute_analysis_fingerprint(
     backend_version: str,
     sample_brain_version: str,
     model_identity: Optional[dict] = None,
+    key_analysis_contract_version: str | int = KEY_ANALYSIS_CONTRACT_VERSION,
 ) -> str:
     """Deterministic SHA-256 of the effective analyzer parameters + identity.
 
@@ -106,6 +113,7 @@ def compute_analysis_fingerprint(
         backend_version=backend_version,
         sample_brain_version=sample_brain_version,
         model_identity=model_identity,
+        key_analysis_contract_version=key_analysis_contract_version,
     )
     return hashlib.sha256(_canonical_json(doc).encode("utf-8")).hexdigest()
 
@@ -118,6 +126,7 @@ def compute_cache_key(
     backend_version: str,
     sample_brain_version: str,
     model_identity: Optional[dict] = None,
+    key_analysis_contract_version: str | int = KEY_ANALYSIS_CONTRACT_VERSION,
 ) -> str:
     """Deterministic SHA-256 cache key including the source content hash."""
     doc = _analysis_fingerprint_doc(
@@ -126,6 +135,7 @@ def compute_cache_key(
         backend_version=backend_version,
         sample_brain_version=sample_brain_version,
         model_identity=model_identity,
+        key_analysis_contract_version=key_analysis_contract_version,
     )
     doc["source_content_hash"] = {"algorithm": "sha1", "value": source_content_hash}
     return hashlib.sha256(_canonical_json(doc).encode("utf-8")).hexdigest()

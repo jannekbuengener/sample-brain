@@ -14,6 +14,7 @@ from tqdm import tqdm
 
 from .config import ANALYZE_HOP_LENGTH, ANALYZE_SR
 from .db import init_db
+from .key_signature import format_key_signature
 
 
 SEMITONES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -21,6 +22,21 @@ SEMITONES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 SHORT_AUDIO_DURATION_SEC = 0.5
 SHORT_AUDIO_QUALITY_NOTE = "Kurzclip — BPM/Key eingeschränkt verlässlich"
 SHORT_AUDIO_WARNING_CODE = "short_audio_warning"
+
+# Analyzer contract version for the separate major/minor mode decision (#212).
+# Bumped only when the mode-estimation semantics or evidence shape change.
+KEY_ANALYSIS_CONTRACT_VERSION = 1
+
+# Minimum Dur/Moll "third contrast" required to commit to a mode. The detector
+# compares the chroma energy at the major third (root + 4 semitones) against the
+# minor third (root + 3 semitones); see :func:`estimate_key_mode`.
+#
+# Threshold is derived from the deterministic synthetic fixtures in
+# tests/audio_fixtures.py: clear major/minor fixtures reach a contrast >= ~0.916,
+# while ambiguous fixtures (single note, octave, root+fifth, maj/min blend) stay
+# <= ~0.056. 0.30 sits with a wide safety margin between the two groups, so the
+# synthetic validation gate passes without overfitting. Frozen against that gate.
+MODE_CONTRAST_MIN = 0.30
 
 
 def safe_load(path: Path, target_sr: int = ANALYZE_SR) -> tuple[np.ndarray | None, int | None]:
@@ -58,7 +74,12 @@ def safe_load(path: Path, target_sr: int = ANALYZE_SR) -> tuple[np.ndarray | Non
 
 
 def estimate_key(y: np.ndarray, sr: int) -> tuple[str | None, float | None]:
-    """Rough key estimate (Krumhansl via chroma)."""
+    """Rough key estimate (Krumhansl via chroma).
+
+    Returns ``(root, key_conf)`` where ``key_conf`` is the normalized peak
+    prominence ``max(chroma_mean) / sum(chroma_mean)``. This is ROOT evidence
+    only and is deliberately independent of the separate major/minor decision.
+    """
     try:
         chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=ANALYZE_HOP_LENGTH)
         if chroma is None or chroma.size == 0:
@@ -74,6 +95,90 @@ def estimate_key(y: np.ndarray, sr: int) -> tuple[str | None, float | None]:
         return SEMITONES[idx], conf
     except Exception:
         return None, None
+
+
+_MAJOR_THIRD_OFFSET = 4  # semitones above the root
+_MINOR_THIRD_OFFSET = 3  # semitones above the root
+
+
+def _chroma_mean(y: np.ndarray, sr: int) -> np.ndarray | None:
+    try:
+        chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=ANALYZE_HOP_LENGTH)
+        if chroma is None or chroma.size == 0:
+            return None
+        chroma_mean = np.mean(chroma, axis=1)
+        if not np.isfinite(chroma_mean).all():
+            return None
+        return chroma_mean.astype(np.float64)
+    except Exception:
+        return None
+
+
+def estimate_key_mode(
+    y: np.ndarray,
+    sr: int,
+    *,
+    root: str | None = None,
+    chroma_mean: np.ndarray | None = None,
+) -> tuple[str | None, dict | None]:
+    """Separate major/minor (Dur/Moll) decision via third contrast.
+
+    The root is taken from :func:`estimate_key` unless supplied. For the detected
+    root, the chroma energy at the major third (root + 4 semitones) is compared to
+    the minor third (root + 3 semitones). The normalized contrast is::
+
+        contrast = |major_third - minor_third| / (major_third + minor_third + eps)
+
+    The mode is committed only when ``contrast >= MODE_CONTRAST_MIN``: a larger
+    third wins (major third -> "maj", minor third -> "min"). Below the threshold
+    the mode is ``None`` (unknown) and no mode is guessed. Single notes, octaves,
+    root+fifth, and equal maj/min blends all have a near-zero contrast and abstain.
+
+    Returns ``(mode, evidence)`` where ``mode`` is ``"maj"``/``"min"``/``None`` and
+    ``evidence`` is relative analysis evidence (NOT a calibrated probability).
+    """
+    evidence = {
+        "kind": "third_contrast",
+        "major_third_energy": None,
+        "minor_third_energy": None,
+        "contrast": None,
+        "threshold": MODE_CONTRAST_MIN,
+        "mode": None,
+    }
+    try:
+        if chroma_mean is None:
+            chroma_mean = _chroma_mean(y, sr)
+        if chroma_mean is None:
+            return None, evidence
+        if root is None:
+            root, _ = estimate_key(y, sr)
+        if root is None:
+            return None, evidence
+
+        idx = SEMITONES.index(root)
+        minor_idx = (idx + _MINOR_THIRD_OFFSET) % 12
+        major_idx = (idx + _MAJOR_THIRD_OFFSET) % 12
+        minor_energy = float(chroma_mean[minor_idx])
+        major_energy = float(chroma_mean[major_idx])
+
+        denom = major_energy + minor_energy + 1e-9
+        contrast = abs(major_energy - minor_energy) / denom
+
+        evidence["major_third_energy"] = round(major_energy, 6)
+        evidence["minor_third_energy"] = round(minor_energy, 6)
+        evidence["contrast"] = round(contrast, 6)
+
+        if contrast < MODE_CONTRAST_MIN:
+            evidence["mode"] = None
+            return None, evidence
+        if major_energy >= minor_energy:
+            mode = "maj"
+        else:
+            mode = "min"
+        evidence["mode"] = mode
+        return mode, evidence
+    except Exception:
+        return None, evidence
 
 
 def _rms_dbfs(y: np.ndarray) -> float | None:
@@ -173,6 +278,8 @@ class Features:
     chroma_std: bytes | None
     clazz: str | None
     quality_note: str | None = None
+    key_mode: str | None = None
+    key_mode_evidence: dict | None = None
 
 
 def extract_features(
@@ -205,8 +312,14 @@ def extract_features(
 
         if short_clip:
             key, key_conf = None, None
+            key_mode, key_mode_evidence = None, None
         else:
             key, key_conf = estimate_key(y, sr)
+            if key is not None:
+                key_mode, key_mode_evidence = estimate_key_mode(y, sr, root=key)
+                key = format_key_signature(key, key_mode)
+            else:
+                key_mode, key_mode_evidence = None, None
 
         loudness = _rms_dbfs(y)
 
@@ -255,6 +368,8 @@ def extract_features(
         chroma_std=chroma_std,
         clazz=_duration_class(duration),
         quality_note=quality_note,
+        key_mode=key_mode,
+        key_mode_evidence=key_mode_evidence,
     )
 
 
@@ -341,8 +456,11 @@ __all__ = [
     "SHORT_AUDIO_DURATION_SEC",
     "SHORT_AUDIO_QUALITY_NOTE",
     "SHORT_AUDIO_WARNING_CODE",
+    "KEY_ANALYSIS_CONTRACT_VERSION",
+    "MODE_CONTRAST_MIN",
     "run_analyze",
     "extract_features",
     "safe_load",
     "estimate_key",
+    "estimate_key_mode",
 ]
