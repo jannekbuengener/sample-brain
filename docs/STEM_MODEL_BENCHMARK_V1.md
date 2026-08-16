@@ -42,12 +42,14 @@ No original filenames, absolute paths, or private hashes appear in this document
 
 ## 3. Models & Exact Identity
 
-| Model | Config File | Weight Hash (representative) | Code License | Weight License |
-|-------|-------------|------------------------------|--------------|----------------|
-| htdemucs | `htdemucs.yaml` | `f7e0c4bcba3fe64a92cfc3b6ef3bcb9c04573f0d` | MIT | **UNKNOWN/UNVERIFIED** |
-| htdemucs_ft | `htdemucs_ft.yaml` | (same architecture, fine-tuned weights) | MIT | **UNKNOWN/UNVERIFIED** |
+| Model | Config File | Released Model Signature | Code License | Weight License |
+|-------|-------------|---------------------------|--------------|----------------|
+| htdemucs | `htdemucs.yaml` | `955717e8` (single model) | MIT | **RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED** (internal enum: `VERIFIED_NONCOMMERCIAL`) |
+| htdemucs_ft | `htdemucs_ft.yaml` | bag of 4 per-source sigs: `f7e0c4bc`, `d12395a8`, `92cfc3b6`, `04573f0d` | MIT | **RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED** (internal enum: `VERIFIED_NONCOMMERCIAL`) |
 
-> **License Note:** Upstream (Facebook Research / Demucs) does not publish a clear permissive license for the pre-trained weights. Discussions point to CC-BY-NC-4.0. Per #245 policy, weight license is marked `UNKNOWN/UNVERIFIED` until authoritative source confirms otherwise. This blocks commercial use and defers default selection to #247.
+> **Provenance correction (post-#247):** An earlier draft of this table recorded `f7e0c4bcba3fe64a92cfc3b6ef3bcb9c04573f0d` as a "representative weight hash" for **htdemucs**. That mapping was **wrong** and is retracted. The correct `htdemucs` signature is `955717e8` (single model). The four short signatures above belong to the **htdemucs_ft** bag; the long string is a concatenation/artifact of those source signatures and must not be propagated as an `htdemucs` identity. No full SHA-256 weight hash is asserted here unless verified from the actual weight files.
+>
+> **License Note:** The pretrained weights are **not** covered by the Demucs MIT code license. Per the model owner's explicit statement in `facebookresearch/demucs` issue **#327** (adefossez): *"The model weights are not covered by the MIT license, and are provided only for scientific purposes."* This is authoritative and applies to both candidates. We therefore record `WEIGHT_USAGE_STATUS = RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED`. The internal contract enum maps this to `VERIFIED_NONCOMMERCIAL`; we do **not** assert a specific `CC-BY-NC` license, because no authoritative source explicitly assigns one. The official Hugging Face model cards (`adefossez/HTDemucs`, `adefossez/HTDemucs-ft`) display `license: mit` — recorded as **conflicting published metadata**; Sample Brain conservatively follows the model author's weight-specific statement for production approval. This blocks commercial use and defers production default selection to #247.
 
 ---
 
@@ -152,10 +154,10 @@ Root cause: `audio-separator` requires `ffmpeg` for audio loading/decoding. Afte
 |-----------|---------|--------|
 | `python-audio-separator` (wrapper code) | MIT | ✅ Verified |
 | Demucs architecture (code) | MIT | ✅ Verified |
-| `htdemucs` weights | — | ❌ **UNKNOWN/UNVERIFIED** |
-| `htdemucs_ft` weights | — | ❌ **UNKNOWN/UNVERIFIED** |
+| `htdemucs` weights | not MIT; research-only (demucs #327) | ⚠️ **RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED** (`VERIFIED_NONCOMMERCIAL`) |
+| `htdemucs_ft` weights | not MIT; research-only (demucs #327) | ⚠️ **RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED** (`VERIFIED_NONCOMMERCIAL`) |
 
-> **Implication:** Weight license uncertainty blocks commercial deployment. #247 must resolve this before any default selection.
+> **Implication:** Authoritative upstream evidence (demucs #327, model owner statement) resolves the previously `UNKNOWN/UNVERIFIED` status: the weights are **not** MIT and are **provided only for scientific purposes**. Commercial use is therefore not granted. This blocks any production/commercial default selection; #247 records `PRODUCTION_DEFAULT = NO_GO` with `htdemucs.yaml` kept only as an experimental/non-commercial candidate. The Hugging Face model cards showing `license: mit` are treated as conflicting published metadata (see §3).
 
 ---
 
