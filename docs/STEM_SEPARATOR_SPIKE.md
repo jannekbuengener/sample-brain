@@ -86,9 +86,13 @@ Jeder erzeugte Stem (`drums`, `bass`, `vocals`, `other`) wird auf genau ein Stem
 
 - **Wrapper Code-Lizenz:** MIT
 - **Demucs Code-Lizenz:** MIT
-- **Weight-Lizenzen:**
-  - Da für die Gewichte von `htdemucs.yaml` und `htdemucs_ft.yaml` im Upstream-Repo keine eindeutige permissive Lizenz formal belegt ist (offene Lizenz-Diskussionen im offiziellen Facebook-Research-Repository weisen auf CC-BY-NC-4.0 hin), markiert der Spike die Weight-Lizenz explizit als **`UNKNOWN/UNVERIFIED`**.
-  - Dies blockiert die blinde Verwendung im kommerziellen Kontext und übergibt die finale Auswahl an das Nachfolge-Ticket #247.
+- **Weight-Lizenzen (Status #247):**
+  - Für die Gewichte von `htdemucs.yaml` und `htdemucs_ft.yaml` ist die kommerzielle Nutzung nicht freigegeben. Der autoritative Status aus #247 lautet: **`RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED`** (interne Policy-Klassifikation `VERIFIED_NONCOMMERCIAL`).
+  - `CC-BY-NC` wird **nicht** behauptet; die Hugging-Face-`license: mit`-Metadaten werden niemals still in eine kommerzielle Gewichtlizenz umgedeutet.
+  - Der Spike stampft **keine** erfundene Weight-Hash mehr. Die tatsächliche kryptographische Weight-Identity muss zur Laufzeit explizit geliefert werden (`--weight-hash`); ohne sie wird die Separation nicht ausgeführt und keine Provenance erfunden.
+  - Deklarierte Checkpoint-Identifier (keine vollständigen lokalen Weight-Hashes):
+    - `htdemucs.yaml` → `955717e8`
+    - `htdemucs_ft.yaml` → `f7e0c4bc,d12395a8,92cfc3b6,04573f0d`
 
 ---
 

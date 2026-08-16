@@ -174,7 +174,7 @@ Root cause: `audio-separator` requires `ffmpeg` for audio loading/decoding. Afte
 - Human preference strongly favors `htdemucs`
 - Runtime advantage favors `htdemucs`
 - `htdemucs_ft` shows a specific failure mode (leakage when target absent)
-- Weight license remains **UNKNOWN/UNVERIFIED** for both → blocks commercial default
+- Weight license status is **RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED** for both (resolved in #247) → blocks commercial default
 
 **Recommendation for #247:**
 - `htdemucs` is the evidence-backed candidate for default backend
@@ -208,7 +208,7 @@ This benchmark provides isolated `drums` and `bass` stems from both models. Huma
 2. `htdemucs` ~2× faster on CPU
 3. `htdemucs_ft` exhibits `TARGET_ABSENCE_LEAKAGE` on vocals stem when vocals absent
 4. No claim of universal superiority — sample size = 4 private tracks / benchmark excerpts
-5. Weight license remains **UNKNOWN/UNVERIFIED** for both models
+5. Weight license status is **RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED** for both models (resolved in #247)
 
 **Status → `DONE_MERGED_CLOSED`** (after PR merge and issue closure).
 
@@ -253,4 +253,4 @@ Evidence from #246 available for decision:
 - Human preference: `htdemucs` 4/4
 - Runtime: `htdemucs` significantly faster
 - `htdemucs_ft` showed `TARGET_ABSENCE_LEAKAGE` on track_01 vocals
-- Weight license: both UNKNOWN/UNVERIFIED
+- Weight license: both RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED (resolved in #247)
