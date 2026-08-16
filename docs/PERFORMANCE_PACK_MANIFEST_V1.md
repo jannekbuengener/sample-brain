@@ -351,7 +351,7 @@ See `examples.partial_optional_result` in the JSON fixture. The Track Map and on
 - [Asset Manifest v1](ASSET_MANIFEST_V1.md) (#250 / #230) — loop/section asset contract. Current `1.1.0`.
 - [Canonical Audio & Timebase](CANON_AUDIO_TIMEBASE.md) (#234) — authoritative sample timebase.
 - Arrangement Map (#228 / #238–#243) — referenced via `documents.arrangement`; contract finalized separately.
-- Stem Manifest (#229 / #244–#249) — referenced via `documents.stem_manifest` / `stems`; contract finalized separately.
+- Stem Manifest (#229 / #244–#249) — referenced via `documents.stem_manifest` / `stems`; contract finalized separately. Optional stem references are integrated via #261.
 - Standard pack directory and file naming (#258) — defines the relative-URI layout the pack `ref` fields assume.
 - Song to Sample / Performance Pack meta (#231) — parent issue and downstream aggregation scope.
 
@@ -360,7 +360,7 @@ See `examples.partial_optional_result` in the JSON fixture. The Track Map and on
 ## 17. Non-Goals (v1)
 
 - No pack directory/file naming implementation (#258).
-- No headless orchestrator (#259), runtime integration (#260), stem runtime (#261), resume/cache (#262), re-import (#263), or end-to-end pilot (#264).
+- No headless orchestrator (#259), runtime integration (#260), resume/cache (#262), re-import (#263), or end-to-end pilot (#264).
 - No stem separation, producer-group generation (#268), new audio analysis, or new dependencies.
 - No SQLite schema or migration.
 - No private tracks, samples, stems, or paths in the contract or its examples.
