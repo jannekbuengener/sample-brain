@@ -1,24 +1,29 @@
 # PROJECT_META
 
 - Projektname: Sample-Brain (sample-brain)
-- Ziel: VST3-first Sample-, Harmonie- und Producing-Assistent. CLI-Pipeline als Datenbasis, VST3-Browser-Plugin als erster Produktkörper, Standalone-App später aus gleichem Core. 5 Produktsäulen: Library Intelligence, Harmonic & Rhythmic Matching, Track Context Analysis, Realtime Fit & Transform Engine, Producing Workspace.
+- Ziel: Local-first Sample-, Harmonie- und Producing-Assistent. Die bestehende CLI-/Analyse-Pipeline bleibt Datenbasis. Die lokale Workbench darf zusätzlich einen schmalen nativen Echtzeit-Audiopfad für `TEMPO`, `SYNC`, Playback/Mixing, Recording, grid-gebundenes Schneiden und `HÄFTIG` nutzen. Ein VST3-Browser-/Plugin-Pfad bleibt ein separates späteres Integrationsvorhaben und ist kein Blocker für den Workbench-Cluster #318. 5 Produktsäulen bleiben: Library Intelligence, Harmonic & Rhythmic Matching, Track Context Analysis, Realtime Fit & Transform Engine, Producing Workspace.
+- Realtime-Workbench-Canon: `docs/REALTIME_WORKBENCH_SCOPE.md` (#318/#319).
 - Nicht-Ziele:
+  - Keine vollständige DAW.
+  - Kein VST-/VST3-/FL-Studio-Plugin als Bestandteil des Clusters #318.
   - Kein FL-native Reverse Engineering (kein FLP-Parsing, keine FL-Internals).
-  - Kein schweres Scanning/Indexing im Audio-Thread.
+  - Kein schweres Scanning/Indexing, DB-Zugriff oder ML-Inferenz im Echtzeit-Audiopfad.
   - Kein Upload/Cloud-Processing; läuft lokal auf deinem Rechner.
   - Kein Training eines großen Genre-Models im Repo-Default; nur Seeds/Regeln/Profiles.
   - Keine Distribution/Hosting von Sample-Audio (Repo enthält nur Code/Metadaten, nicht die Samples selbst).
 - Owner: @jannekbuengener
 - Risiken:
-  - Repo enthält/enthält leicht versehentlich Binärballast (.venv, Sample-Audio) → Push zu GitHub wird riesig; ggf. .gitignore + Git LFS nötig.
+  - Repo enthält/enthält leicht versehentlich Binärballast (.venv, Sample-Audio, Recordings, Renderings) → private und generierte Audio-Artefakte niemals committen.
   - Analyzer-Risiko: Half/Double-BPM (sichtbar: bpm_normalization.json), extreme BPM-Ausreißer bis ~304.
   - Key-Confidence: aktueller Analyzer nutzt peak/sum (0–1); Export-Threshold 0.55 ist dafür konsistent. Legacy-DB-Werte (~3.7–5.4, alte Krumhansl-Formel) und Profile/Tooling (require_confidence 1.5–3.0) sind nicht aligned — Evidence: docs/benchmarks/KEY_CONF_EVIDENCE.md (#72).
   - Hardcoded SAMPLE_ROOTS (<LOCAL_SAMPLE_ROOTS>) → muss konfigurierbar/profilbasiert werden.
   - Optionale Module (index/search) sind im CLI vorgesehen, können aber fehlen → Feature-Drift.
-  - Rechtlich: Samples nie mitpushen (Lizenz/Urheberrecht) – nur Hash/Features/Tags.
+  - Realtime-Risiko: Python/UI-Zeit darf nicht zur autoritativen Audio-Clock werden; der harte Audiopfad braucht einen klar abgegrenzten nativen Core.
+  - Rechtlich: Samples und Recordings nie mitpushen (Lizenz/Urheberrecht) – nur Code, öffentliche Specs und sichere Metadaten.
 - Definition of Done:
   - CLI läuft end-to-end: init → scan(root) → analyze → export_fl ohne Crash.
   - catalog.db konsistent: Anzahl samples == features (aktuell 218/218 im Beispiel-DB).
   - FL-Export erzeugt nachvollziehbare Tags (MAX_TAGS, Key/BPM/Type) in definierter User-Data-Location.
   - Genre-Profile vorhanden (z.B. Techno/Cinematic): eigene Seed-Listen + Thresholds + Regex-Tag-Maps; per Config wählbar.
   - Validation-Report vorhanden: BPM/Key Plausibilität + Autotype-Qualität gegen Weak-Labels (Ordner/Filename).
+  - Realtime Workbench nach #318 nutzt einen gemeinsamen Session-/Grid-Vertrag, verändert Originaldateien nicht und hält private Recordings/Runtime-Artefakte aus dem Repo.
