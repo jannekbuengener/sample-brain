@@ -16,7 +16,7 @@ makes those references stable, deterministic, and externally consumable without
 the Sample-Brain SQLite catalog.
 
 This is a **layout contract only**. It does not implement an orchestrator
-(#259), runtime integration (#260), stem runtime (#261), resume/cache (#262),
+(#259), runtime integration (#260), resume/cache (#262),
 re-import (#263), or end-to-end pilot (#264). It defines where files live and
 how they are named so that #259 and later slices can produce and consume them.
 
@@ -31,7 +31,7 @@ A Performance Pack is a portable collection of files for one original track:
 - portable analysis documents (`analysis/`),
 - rendered loop assets (`loops/`),
 - rendered section assets (`sections/`),
-- optional technical stem outputs (`stems/`, future, #229 / #261).
+- optional technical stem outputs (`stems/`, #229 / #261).
 
 This document makes the pack **self-describing and externally readable**: an
 external consumer needs only the pack root, the manifest, and the referenced
@@ -151,16 +151,16 @@ by #254) live in `analysis/` as well, named by a sanitized, stable identifier
 (e.g. `analysis/asset_analysis.json`). They are referenced from the manifest or
 asset manifests by their relative path.
 
-### 4.3 Stem documents (optional, future)
+### 4.3 Stem documents (optional)
 
 | File | Pattern |
 |------|---------|
 | Stem Manifest | `stems/<sanitized_stem_id>.json` |
 
 Technical stem audio outputs follow the Stem Manifest contract (#229) and are
-placed in `stems/`. This layout entry is defined now so the directory and
-naming are stable; the stem pipeline (#261) fills it later. No stem separation
-or stem audio generation is introduced by #258.
+placed in `stems/`. The pack assembler populates this directory when optional
+stems are produced (#261). No stem separation or stem audio generation is
+introduced by #258.
 
 ### 4.4 Pack manifest
 
@@ -393,7 +393,7 @@ filesystem location without SQLite or private knowledge.
 
 ## 11. Non-Goals (v1)
 
-- No headless orchestrator (#259), runtime integration (#260), stem runtime (#261), resume/cache (#262), re-import (#263), or end-to-end pilot (#264).
+- No headless orchestrator (#259), runtime integration (#260), resume/cache (#262), re-import (#263), or end-to-end pilot (#264).
 - No stem separation, producer-group generation (#268), audio rendering, or new analysis.
 - No SQLite schema or migration.
 - No new dependencies.
