@@ -540,3 +540,99 @@ def test_session_grid_tests_pass():
         cwd=str(Path(__file__).resolve().parents[1]),
     )
     assert result.returncode == 0, f"Session grid tests failed: {result.stdout}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# #323: SYNC playback-rate mode tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_compute_sync_rate_128_to_132():
+    """#323: 128 → 132 BPM → rate = 1.03125."""
+    from src.session_grid import compute_sync_playback_rate
+
+    rate, status = compute_sync_playback_rate(132.0, 128.0, sync_enabled=True)
+    assert rate == 1.03125, f"Expected 1.03125, got {rate}"
+    assert status == "sync"
+
+
+def test_compute_sync_rate_140_to_132():
+    """#323: 140 → 132 BPM → rate ≈ 0.942857."""
+    from src.session_grid import compute_sync_playback_rate
+
+    rate, status = compute_sync_playback_rate(132.0, 140.0, sync_enabled=True)
+    assert abs(rate - 132 / 140) < 1e-9, f"Expected ~{132/140}, got {rate}"
+    assert status == "sync"
+
+
+def test_compute_sync_rate_132_to_132():
+    """#323: 132 → 132 BPM → rate = 1.0."""
+    from src.session_grid import compute_sync_playback_rate
+
+    rate, status = compute_sync_playback_rate(132.0, 132.0, sync_enabled=True)
+    assert rate == 1.0, f"Expected 1.0, got {rate}"
+    assert status == "sync"
+
+
+def test_compute_sync_rate_sync_off():
+    """#323: SYNC off → rate = 1.0 regardless of BPM."""
+    from src.session_grid import compute_sync_playback_rate
+
+    rate, status = compute_sync_playback_rate(132.0, 128.0, sync_enabled=False)
+    assert rate == 1.0, f"Expected 1.0, got {rate}"
+    assert status == "sync"
+
+
+def test_compute_sync_rate_invalid_bpm_none():
+    """#323: None source BPM → rate = 1.0, not_syncable."""
+    from src.session_grid import compute_sync_playback_rate
+
+    rate, status = compute_sync_playback_rate(132.0, None, sync_enabled=True)
+    assert rate == 1.0, f"Expected 1.0, got {rate}"
+    assert status == "not_syncable"
+
+
+def test_compute_sync_rate_invalid_bpm_zero():
+    """#323: 0 source BPM → rate = 1.0, not_syncable."""
+    from src.session_grid import compute_sync_playback_rate
+
+    rate, status = compute_sync_playback_rate(132.0, 0, sync_enabled=True)
+    assert rate == 1.0, f"Expected 1.0, got {rate}"
+    assert status == "not_syncable"
+
+
+def test_compute_sync_rate_invalid_bpm_nan():
+    """#323: NaN source BPM → rate = 1.0, not_syncable."""
+    from src.session_grid import compute_sync_playback_rate
+
+    rate, status = compute_sync_playback_rate(132.0, float("nan"), sync_enabled=True)
+    assert rate == 1.0, f"Expected 1.0, got {rate}"
+    assert status == "not_syncable"
+
+
+def test_compute_sync_rate_invalid_bpm_negative():
+    """#323: negative source BPM → rate = 1.0, not_syncable."""
+    from src.session_grid import compute_sync_playback_rate
+
+    rate, status = compute_sync_playback_rate(132.0, -128.0, sync_enabled=True)
+    assert rate == 1.0, f"Expected 1.0, got {rate}"
+    assert status == "not_syncable"
+
+
+def test_compute_sync_rate_extreme_rate():
+    """#323: extreme rate (>4 or <0.25) → rate = 1.0, not_syncable."""
+    from src.session_grid import compute_sync_playback_rate
+
+    # 132 / 32 = 4.125 > 4.0 → not_syncable
+    rate, status = compute_sync_playback_rate(132.0, 32.0, sync_enabled=True)
+    assert rate == 1.0, f"Expected 1.0, got {rate}"
+    assert status == "not_syncable"
+
+    # 132 / 528 = 0.25 exactly → should be sync (boundary case)
+    # But 132 / 529 ≈ 0.2495 < 0.25 → not_syncable
+    rate2, status2 = compute_sync_playback_rate(132.0, 529.0, sync_enabled=True)
+    assert rate2 == 1.0, f"Expected 1.0, got {rate2}"
+    assert status2 == "not_syncable"
+
+
+from src.session_grid import MusicalPosition

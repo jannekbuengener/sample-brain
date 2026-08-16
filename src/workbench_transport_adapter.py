@@ -37,6 +37,7 @@ from src.session_grid import (
     TempoMap,
     TimeSignature,
     MusicalPosition,
+    compute_sync_playback_rate,
 )
 from src.native_audio import (
     NativeAudioEngine,
@@ -58,6 +59,63 @@ def _clamp_bpm(value: float) -> float:
     except (TypeError, ValueError):
         return 120.0  # default
     return max(v, 0.01)  # tiny positive floor; never exactly 0
+
+
+# ---------------------------------------------------------------------------
+# SYNC playback-rate logic
+# ---------------------------------------------------------------------------
+
+def _compute_sync_rate(
+    master_bpm: float,
+    source_bpm: float,
+    sync_enabled: bool,
+) -> tuple[float, str]:
+    """Compute the sync playback rate for a voice.
+
+    Parameters
+    ----------
+    master_bpm : float
+        The current session / master tempo in BPM.
+    source_bpm : float
+        The original BPM of the sample/voice.
+    sync_enabled : bool
+        Whether the global SYNC flag is active.
+
+    Returns
+    -------
+    rate : float
+        The playback rate to apply. Always >= 0. Returns 1.0 when
+        sync is off or source BPM is invalid.
+    status : str
+        One of: ``"sync"``, ``"tempo_only"``, ``"not_syncable"``.
+        Indicates whether the voice can be synchronised and why.
+    """
+    # --- Invalid or missing source BPM ---
+    try:
+        s_bpm = float(source_bpm)
+    except (TypeError, ValueError):
+        return 1.0, "not_syncable"
+    if not s_bpm or s_bpm != s_bpm:  # includes 0 and NaN
+        return 1.0, "not_syncable"
+
+    # --- SYNC off → original speed ---
+    if not sync_enabled:
+        return 1.0, "sync"
+
+    # --- SYNC on with valid source BPM ---
+    rate = master_bpm / s_bpm
+
+    # Clamp to reasonable range to avoid extreme rate jumps
+    # (extreme rates are treated as not_syncable per #323 spec)
+    if rate <= 0 or rate > 4.0 or rate < 0.25:
+        return 1.0, "not_syncable"
+
+    # Determine sync status kind
+    # If rate is exactly 1.0 the sample already matches master tempo
+    if rate == 1.0:
+        return 1.0, "sync"
+
+    return rate, "sync"
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +175,9 @@ class WorkbenchTransportAdapter:
         # --- Internal state ---
         self._sync_enabled = False  # Global SYNC flag; #323 will use it
         self._pending_tempo: Optional[float] = None  # Tempo change awaiting effect
+        self._pending_rate: float = 1.0  # Sync playback rate awaiting effect
+        self._source_bpm: Optional[float] = None  # Original BPM of the current voice/sample
+        self._sync_status: str = "sync"  # Current sync status kind
 
         # --- Exposed attributes via properties (tests / UI read-only access) ---
         # These delegate to the underlying SessionTransport so they always
@@ -232,6 +293,62 @@ class WorkbenchTransportAdapter:
             return self._sync_enabled
 
     # ------------------------------------------------------------------
+    # SYNC playback-rate control
+    # ------------------------------------------------------------------
+
+    def set_source_bpm(self, bpm: float) -> None:
+        """Set the original BPM of the current voice/sample.
+
+        This BPM is used as the denominator in the sync rate calculation:
+        ``rate = session_tempo / source_bpm``.
+
+        Parameters
+        ----------
+        bpm : float
+            The original BPM of the sample. Use ``None`` or ``0`` to indicate
+            that the BPM is unknown / the sample is not synchronisable.
+        """
+        with self._lock:
+            self._source_bpm = bpm
+            # Recompute rate immediately when source BPM changes
+            self._update_sync_rate()
+
+    def toggle_sync(self) -> bool:
+        """Toggle the global SYNC flag and recompute the playback rate.
+
+        Returns
+        -------
+        bool
+            The new SYNC state after the toggle.
+        """
+        with self._lock:
+            self._sync_enabled = not self._sync_enabled
+            self._update_sync_rate()
+            return self._sync_enabled
+
+    def _update_sync_rate(self) -> None:
+        """Recompute and apply the sync playback rate.
+
+        This is called whenever ``_sync_enabled`` or ``_source_bpm`` changes.
+        The rate is derived from the current session tempo and the source BPM.
+        If the native audio engine is available the rate is forwarded to the
+        voice via ``set_voice_rate``; otherwise the internal pending rate is
+        stored for later application.
+        """
+        with self._lock:
+            master_bpm = float(self._transport.tempo_map.segments[-1].bpm)
+            rate, status = _compute_sync_rate(master_bpm, self._source_bpm, self._sync_enabled)
+            self._pending_rate = rate
+            self._sync_status = status
+
+            # Apply to native voice if available
+            if self._native_engine is not None:
+                try:
+                    self._native_engine.set_voice_rate(0, rate)  # voice 0 as default
+                except Exception as exc:  # pylint: disable=broad-except
+                    warn(f"Failed to set native voice rate: {exc}")
+
+    # ------------------------------------------------------------------
     # Session position
     # ------------------------------------------------------------------
 
@@ -287,6 +404,8 @@ class WorkbenchTransportAdapter:
             * ``playing``        (bool)
             * ``current_tempo``  (float)   BPM
             * ``sync_enabled``   (bool)
+            * ``sync_rate``      (float | None)  computed playback rate, if applicable
+            * ``sync_status``    (str | None)    "sync", "tempo_only", "not_syncable"
             * ``bar``            (int)     current bar, derived from session_frame
             * ``beat``           (int)     current beat, derived from session_frame
             * ``next_tempo_bpm`` (float | None)  pending tempo change, if any
@@ -298,6 +417,8 @@ class WorkbenchTransportAdapter:
                 "playing": self._transport.playing,
                 "current_tempo": self.get_current_tempo(),
                 "sync_enabled": self._sync_enabled,
+                "sync_rate": self._pending_rate if self._sync_enabled else None,
+                "sync_status": self._sync_status if self._sync_enabled else None,
             }
 
             # Derive bar/beat from the SessionTransport/TempoMap — this is the
