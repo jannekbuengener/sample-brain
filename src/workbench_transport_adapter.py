@@ -1,18 +1,19 @@
 """Thin control adapter between the Workbench and the shared session transport.
 
 The adapter owns no musical clock. :class:`SessionTransport` remains the only
-session-time authority.  This module only translates Workbench control changes
-into transport state and, when explicit native voice ids are registered, into
-native playback-rate changes.
+session-time authority. This module translates Workbench control changes into
+transport state and, when explicit native voice ids are registered, into native
+playback-rate changes.
 
-The native audio callback never calls Python through this adapter.
+When the native engine is available, its integer ``engine_frame`` snapshot is
+the realtime clock source. GUI polling may sample that value, but wall-clock
+elapsed time is never accumulated into musical position.
 """
 
 from __future__ import annotations
 
 import logging
 import threading
-from pathlib import Path
 from typing import Optional
 
 from src import native_audio as _native_audio
@@ -42,10 +43,9 @@ def _compute_sync_rate(
 class WorkbenchTransportAdapter:
     """Workbench control surface for one authoritative ``SessionTransport``.
 
-    ``native_engine`` is an optional already-created engine handle.  It exists
-    mainly so callers that own native voice lifecycle can attach that engine
-    without the adapter inventing voice ids.  When omitted, the historical
-    best-effort native discovery/fallback behavior is preserved.
+    ``native_engine`` is an optional already-created engine handle. When the
+    adapter creates the native engine itself, it also owns open/close lifecycle.
+    An injected engine is treated as caller-managed and is only started/stopped.
     """
 
     def __init__(
@@ -56,9 +56,6 @@ class WorkbenchTransportAdapter:
         transport: Optional[SessionTransport] = None,
         native_engine: object | None = None,
     ) -> None:
-        # Some public operations legitimately compose private helpers while the
-        # state is locked.  RLock makes that composition explicit and prevents
-        # the self-deadlocks present in the original #323 adapter.
         self._lock = threading.RLock()
         self._transport = transport or SessionTransport(
             sample_rate=sample_rate,
@@ -67,7 +64,11 @@ class WorkbenchTransportAdapter:
         self._sample_rate = self._transport.sample_rate
 
         self._native_engine: object | None = native_engine
+        self._native_owned = native_engine is None
+        self._native_opened = native_engine is not None
         self._native_available = native_engine is not None
+        self._last_native_engine_frame: int | None = None
+
         if native_engine is None:
             self._native_available = _native_audio.is_available()
             if self._native_available:
@@ -83,17 +84,11 @@ class WorkbenchTransportAdapter:
         self._current_rate = 1.0
         self._sync_status = "sync"
 
-        # A running tempo change is scheduled on the shared transport.  Keep
-        # the target separate from the *currently effective* tempo shown to UI.
         self._pending_tempo: float | None = None
         self._pending_tempo_frame: int | None = None
 
-        # Native rate changes are only sent to real, explicit voice ids.  The
-        # old code silently used voice id 0, which was not a valid contract.
         self._voice_source_bpms: dict[int, float | None] = {}
         self._voice_sync_states: dict[int, tuple[float, str]] = {}
-
-        self._poll_id: str | None = None
 
     # ------------------------------------------------------------------
     # Internal state helpers
@@ -122,8 +117,22 @@ class WorkbenchTransportAdapter:
             self._pending_tempo = None
             self._pending_tempo_frame = None
 
+    def _ensure_owned_native_open_unlocked(self) -> None:
+        if (
+            self._native_engine is None
+            or not self._native_available
+            or not self._native_owned
+            or self._native_opened
+        ):
+            return
+        self._native_engine.open(
+            _native_audio.EngineConfig(sample_rate=self._sample_rate)
+        )
+        self._native_opened = True
+        self._last_native_engine_frame = 0
+
     def _apply_native_rate_unlocked(self, voice_id: int, rate: float) -> None:
-        if self._native_engine is None:
+        if self._native_engine is None or not self._native_available:
             return
         try:
             self._native_engine.set_voice_rate(voice_id, rate)
@@ -149,6 +158,46 @@ class WorkbenchTransportAdapter:
             self._apply_native_rate_unlocked(voice_id, rate)
         self._voice_sync_states = states
 
+    def _refresh_from_native_unlocked(self) -> None:
+        """Advance SessionTransport only from an observed native frame delta."""
+        engine = self._native_engine
+        if engine is None or not self._native_available or not hasattr(engine, "snapshot"):
+            return
+        if self._native_owned and not self._native_opened:
+            return
+        try:
+            native_snapshot = engine.snapshot()
+        except Exception as exc:  # pragma: no cover - device specific
+            warn("Native snapshot failed: %s", exc)
+            self._native_available = False
+            self._transport.stop()
+            return
+
+        native_frame = int(native_snapshot.engine_frame)
+        if native_frame < 0:
+            return
+
+        if self._last_native_engine_frame is None:
+            delta = max(0, native_frame - self._transport.engine_frame)
+        elif native_frame >= self._last_native_engine_frame:
+            delta = native_frame - self._last_native_engine_frame
+        else:
+            # Device/engine reset: establish a new baseline; never invent a
+            # negative session jump.
+            delta = 0
+        self._last_native_engine_frame = native_frame
+
+        if delta:
+            before_tempo = self._effective_tempo_unlocked()
+            self._transport.advance(delta)
+            after_tempo = self._effective_tempo_unlocked()
+            self._sync_pending_from_map_unlocked()
+            if after_tempo != before_tempo:
+                self._update_sync_rates_unlocked()
+
+        if not bool(getattr(native_snapshot, "running", True)) and self._transport.playing:
+            self._transport.stop()
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -156,24 +205,30 @@ class WorkbenchTransportAdapter:
     def play(self) -> None:
         with self._lock:
             self._transport.play()
-            if self._native_engine is not None:
+            if self._native_engine is not None and self._native_available:
                 try:
+                    self._ensure_owned_native_open_unlocked()
                     self._native_engine.start()
+                    if hasattr(self._native_engine, "snapshot"):
+                        try:
+                            snapshot = self._native_engine.snapshot()
+                            self._last_native_engine_frame = int(snapshot.engine_frame)
+                        except Exception:
+                            self._last_native_engine_frame = None
                 except Exception as exc:  # pragma: no cover - device specific
-                    # Native failure must degrade honestly instead of pretending
-                    # that the realtime path is still available.
                     warn("Native engine start failed: %s", exc)
                     self._native_available = False
 
     def stop(self) -> None:
         with self._lock:
             self._transport.stop()
-            if self._native_engine is not None:
-                try:
-                    self._native_engine.stop()
-                except Exception as exc:  # pragma: no cover - device specific
-                    warn("Native engine stop failed: %s", exc)
-                    self._native_available = False
+            if self._native_engine is not None and self._native_available:
+                if not self._native_owned or self._native_opened:
+                    try:
+                        self._native_engine.stop()
+                    except Exception as exc:  # pragma: no cover - device specific
+                        warn("Native engine stop failed: %s", exc)
+                        self._native_available = False
 
     def pause(self) -> None:
         self.stop()
@@ -185,6 +240,7 @@ class WorkbenchTransportAdapter:
     def set_tempo(self, bpm: float) -> int:
         bpm = _clamp_bpm(bpm)
         with self._lock:
+            self._refresh_from_native_unlocked()
             effective_frame = self._transport.set_tempo(bpm)
             if effective_frame > self._transport.session_frame:
                 self._pending_tempo = bpm
@@ -198,6 +254,7 @@ class WorkbenchTransportAdapter:
     def get_current_tempo(self) -> float:
         """Return the tempo effective *now*, never a future scheduled target."""
         with self._lock:
+            self._refresh_from_native_unlocked()
             return self._effective_tempo_unlocked()
 
     # ------------------------------------------------------------------
@@ -217,7 +274,7 @@ class WorkbenchTransportAdapter:
     def set_source_bpm(self, bpm: float | None) -> None:
         """Set BPM for the current Workbench source snapshot.
 
-        This compatibility method does not guess a native voice id.  Use
+        This compatibility method does not guess a native voice id. Use
         ``set_voice_source_bpm`` when a real native voice is known.
         """
         with self._lock:
@@ -256,13 +313,16 @@ class WorkbenchTransportAdapter:
 
     def get_session_frame(self) -> int:
         with self._lock:
+            self._refresh_from_native_unlocked()
             return self._transport.session_frame
 
     def get_engine_frame(self) -> int:
         with self._lock:
+            self._refresh_from_native_unlocked()
             return self._transport.engine_frame
 
     def advance(self, frames: int) -> None:
+        """Explicit simulation/test hook; production UI uses native snapshots."""
         with self._lock:
             before_tempo = self._effective_tempo_unlocked()
             self._transport.advance(frames)
@@ -277,6 +337,7 @@ class WorkbenchTransportAdapter:
 
     def get_snapshot(self) -> dict[str, object]:
         with self._lock:
+            self._refresh_from_native_unlocked()
             current_tempo = self._effective_tempo_unlocked()
             snap: dict[str, object] = {
                 "engine_frame": self._transport.engine_frame,
@@ -288,6 +349,7 @@ class WorkbenchTransportAdapter:
                 "sync_status": self._sync_status if self._sync_enabled else None,
                 "next_tempo_bpm": self._pending_tempo,
                 "next_tempo_frame": self._pending_tempo_frame,
+                "native_available": self._native_available,
             }
             try:
                 position = self._transport.tempo_map.frame_to_bar_beat(
@@ -346,10 +408,20 @@ class WorkbenchTransportAdapter:
 
     def close(self) -> None:
         with self._lock:
-            if self._native_engine is not None:
-                try:
-                    self._native_engine.close()
-                except Exception:  # pragma: no cover - native/device specific
-                    pass
+            engine = self._native_engine
+            if engine is None:
+                return
+            try:
+                if self._native_available and (not self._native_owned or self._native_opened):
+                    try:
+                        engine.stop()
+                    except Exception:
+                        pass
+                if not self._native_owned or self._native_opened:
+                    engine.close()
+            except Exception:  # pragma: no cover - native/device specific
+                pass
+            finally:
                 self._native_engine = None
                 self._native_available = False
+                self._native_opened = False
