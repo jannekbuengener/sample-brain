@@ -74,6 +74,16 @@ class QueryEvalResult:
 
 
 @dataclass(frozen=True)
+class ModeClassEvaluationSummary:
+    mode: str
+    query_class: str
+    summary: MetricSummary
+    query_count: int
+    failure_buckets: dict[str, int]
+    hard_negative_violations: int
+
+
+@dataclass(frozen=True)
 class SearchQualityBenchmarkResult:
     suite_path: Path
     tier: str
@@ -84,6 +94,7 @@ class SearchQualityBenchmarkResult:
     mode_summaries: tuple[GroupedMetricSummary, ...] = ()
     style_summaries: tuple[GroupedMetricSummary, ...] = ()
     failure_buckets: dict[str, int] | None = None
+    mode_class_summaries: tuple[ModeClassEvaluationSummary, ...] = ()
 
     def threshold_pass(self) -> dict[str, bool]:
         checks = {
@@ -401,6 +412,9 @@ def run_search_quality_benchmark(
     class_metric_rows: list[tuple[str, dict[str, float]]] = []
     mode_metric_rows: list[tuple[str, dict[str, float]]] = []
     style_metric_rows: list[tuple[str, dict[str, float]]] = []
+    mode_class_metric_rows: list[tuple[tuple[str, str], dict[str, float]]] = []
+    mode_class_buckets: dict[tuple[str, str], list[str]] = {}
+    mode_class_neg_violations: dict[tuple[str, str], int] = {}
     bucket_labels: list[str] = []
 
     for raw_query in suite.get("queries") or []:
@@ -539,6 +553,13 @@ def run_search_quality_benchmark(
         )
         bucket_labels.append(bucket)
 
+        if query_class:
+            mc_key = (mode, str(query_class))
+            mode_class_metric_rows.append((mc_key, metrics))
+            mode_class_buckets.setdefault(mc_key, []).append(bucket)
+            if neg_top5 > 0:
+                mode_class_neg_violations[mc_key] = mode_class_neg_violations.get(mc_key, 0) + 1
+
         query_results.append(
             QueryEvalResult(
                 query_id=query_id,
@@ -557,6 +578,28 @@ def run_search_quality_benchmark(
 
     summary = aggregate_metric_summaries(metric_rows)
     thresholds = suite.get("thresholds") or {}
+
+    # Build mode+class summaries
+    mode_class_summaries: list[ModeClassEvaluationSummary] = []
+    for grouped in aggregate_metric_summaries_by_group(mode_class_metric_rows):
+        mc_key = grouped.group_key
+        mode, query_class = mc_key
+        grouped_summary = grouped.summary
+        buckets = failure_bucket_counts(mode_class_buckets.get(mc_key, []))
+        hard_neg = mode_class_neg_violations.get(mc_key, 0)
+        mode_class_summaries.append(
+            ModeClassEvaluationSummary(
+                mode=mode,
+                query_class=query_class,
+                summary=grouped_summary,
+                query_count=grouped_summary.query_count,
+                failure_buckets=buckets,
+                hard_negative_violations=hard_neg,
+            )
+        )
+    # Sort deterministically: mode first, then query_class
+    mode_class_summaries.sort(key=lambda x: (x.mode, x.query_class))
+
     return SearchQualityBenchmarkResult(
         suite_path=suite_path,
         tier=tier,
@@ -567,6 +610,7 @@ def run_search_quality_benchmark(
         mode_summaries=tuple(aggregate_metric_summaries_by_group(mode_metric_rows)),
         style_summaries=tuple(aggregate_metric_summaries_by_group(style_metric_rows)),
         failure_buckets=failure_bucket_counts(bucket_labels),
+        mode_class_summaries=tuple(mode_class_summaries),
     )
 
 
@@ -611,6 +655,21 @@ def print_search_quality_report(result: SearchQualityBenchmarkResult) -> None:
                 f"mrr={row.summary.mrr:.3f} "
                 f"queries={row.summary.query_count}"
             )
+    if result.mode_class_summaries:
+        print("per_mode_query_class:")
+        for row in result.mode_class_summaries:
+            print(
+                f"  mode={row.mode} class={row.query_class} "
+                f"p@5={row.summary.precision_at_5:.3f} "
+                f"mrr={row.summary.mrr:.3f} "
+                f"queries={row.query_count} "
+                f"hard_negative_violations={row.hard_negative_violations}"
+            )
+            # Failure buckets per mode+class
+            for label in FAILURE_BUCKET_LABELS:
+                count = row.failure_buckets.get(label, 0)
+                if count:
+                    print(f"    {label}={count}")
     if result.failure_buckets:
         print("failure_buckets:")
         for label in FAILURE_BUCKET_LABELS:
