@@ -47,14 +47,23 @@ def test_subprocess_timeout_returns_failed_state(tmp_path):
 
     # Mock subprocess.run to raise TimeoutExpired
     import subprocess
-    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=["mock"], timeout=10.0)):
+    with patch("subprocess.run") as mock_run:
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd=["mock"], timeout=10.0)
         res = wrapper.separate_via_subprocess(
             input_path=tmp_path / "track.wav",
-            track_hash="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+            track_ref="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+            working_audio_hash="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
             model_filename="htdemucs.yaml",
+            weight_hash="a" * 64,
+            weight_hash_algo="sha256",
+            separation_fingerprint="fp_a1b2c3d4",
             output_dir=tmp_path / "out",
             timeout=1.0
         )
+        cmd = mock_run.call_args.args[0]
+        assert "--track-ref" in cmd and "--working-audio-hash" in cmd
+        assert "--weight-hash" in cmd and "--weight-hash-algo" in cmd
+        assert "--separation-fingerprint" in cmd
         assert res["status"] == "failed"
         assert res["error"]["code"] == "TIMEOUT"
         assert "timed out" in res["error"]["message"]
@@ -67,13 +76,20 @@ def test_subprocess_non_zero_exit_returns_failed_state(tmp_path):
     # Mock subprocess.run to return exit code 1
     import subprocess
     mock_res = subprocess.CompletedProcess(args=["mock"], returncode=1, stdout="", stderr="Mock subprocess failure")
-    with patch("subprocess.run", return_value=mock_res):
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = mock_res
         res = wrapper.separate_via_subprocess(
             input_path=tmp_path / "track.wav",
-            track_hash="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+            track_ref="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+            working_audio_hash="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
             model_filename="htdemucs.yaml",
+            weight_hash="a" * 64,
+            weight_hash_algo="sha256",
+            separation_fingerprint="fp_a1b2c3d4",
             output_dir=tmp_path / "out"
         )
+        cmd = mock_run.call_args.args[0]
+        assert "--weight-hash" in cmd and "a" * 64 in cmd
         assert res["status"] == "failed"
         assert res["error"]["code"] == "SUBPROCESS_ERROR"
         assert "exit code 1" in res["error"]["message"]

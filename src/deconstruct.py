@@ -41,7 +41,19 @@ STEP_ORDER: tuple[tuple[str, bool], ...] = (
 SKIPPED_REQUIRED = "SKIPPED_REQUIRED_STEP_FAILED"
 SKIPPED_REQUEST = "SKIPPED_BY_REQUEST"
 STEMS_NOT_CONFIGURED = "STEMS_NOT_CONFIGURED"
+STEMS_NOT_REQUESTED = "STEMS_NOT_REQUESTED"
+WEIGHT_IDENTITY_UNAVAILABLE = "WEIGHT_IDENTITY_UNAVAILABLE"
+BACKEND_UNAVAILABLE = "BACKEND_UNAVAILABLE"
+MODEL_UNAVAILABLE = "MODEL_UNAVAILABLE"
+MISSING_TRACK_MAP_SOURCE = "MISSING_TRACK_MAP_SOURCE"
 ARRANGEMENT_UNAVAILABLE = "ARRANGEMENT_UNAVAILABLE"
+
+# Known experimental Demucs baseline filenames (#247) and their released
+# checkpoints. These are checkpoint identifiers, NOT cryptographic weight hashes.
+_KNOWN_STEM_CHECKPOINTS: dict[str, str] = {
+    "htdemucs.yaml": "955717e8",
+    "htdemucs_ft.yaml": "f7e0c4bc,d12395a8,92cfc3b6,04573f0d",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +134,17 @@ class StepContext:
     artifacts: dict[str, object]
     track_cache_dir: Path | None = None
     track_cache_enabled: bool = True
+    # Optional stem separation config (issue #249). All optional; the stems step
+    # stays a no-op unless `stems_enabled` is set.
+    stems_enabled: bool = False
+    stem_model: str | None = None
+    stem_weight_hash: dict | None = None
+    stem_cache_dir: Path | None = None
+    stem_cache_enabled: bool = True
+    stem_model_cache_dir: Path | None = None
+    stem_separation_config: dict | None = None
+    stem_executor: object | None = None
+    stem_backend_version: str | None = None
 
 
 StepAdapter = Callable[[StepContext], tuple[StepResult, object]]
@@ -597,16 +620,221 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
 
 
 def _default_stems_adapter(ctx: StepContext) -> tuple[StepResult, object]:
-    del ctx
+    """Optional stem separation step (issue #249).
+
+    Opt-in only: when ``ctx.stems_enabled`` is False the step reports
+    ``not_run`` with ``STEMS_NOT_REQUESTED`` and nothing is launched (no heavy
+    dependency import, no subprocess). When enabled, truthful model/weight
+    provenance is required, the canonical working audio is used as the exact
+    separation input, and #248 ``separate_with_cache`` is consulted (pack-local
+    resume is checked earlier by the orchestrator). Stems remain optional: a
+    failure here never fails the whole Track Deconstruction.
+    """
+    if not ctx.stems_enabled:
+        return (
+            StepResult(
+                step_id="stems",
+                required=False,
+                status="not_run",
+                reason_code=STEMS_NOT_REQUESTED,
+                adapter="none",
+            ),
+            None,
+        )
+
+    # Authoritative portable track identity from the completed Track Map.
+    track_ref = _stem_track_ref(ctx.artifacts.get("track_map"))
+    if track_ref is None:
+        return (
+            _not_run_stems(MISSING_TRACK_MAP_SOURCE, adapter="stems.track_identity"),
+            None,
+        )
+
+    # Model + weight identity (truthful provenance, no fabrication).
+    if not ctx.stem_model:
+        return (_not_run_stems(WEIGHT_IDENTITY_UNAVAILABLE), None)
+    expected_algo = _KNOWN_STEM_CHECKPOINTS and _stem_expected_weight_algo(ctx.stem_model)
+    if expected_algo is None:
+        return (_not_run_stems(MODEL_UNAVAILABLE), None)
+    if not isinstance(ctx.stem_weight_hash, dict) or not ctx.stem_weight_hash.get("value"):
+        return (_not_run_stems(WEIGHT_IDENTITY_UNAVAILABLE), None)
+    supplied_algo = ctx.stem_weight_hash.get("algorithm")
+    if supplied_algo and supplied_algo != expected_algo:
+        # Algorithm must match the selected known model (#247/#248).
+        return (_not_run_stems(WEIGHT_IDENTITY_UNAVAILABLE), None)
+    weight_hash = {"algorithm": expected_algo, "value": ctx.stem_weight_hash["value"]}
+
+    # Exact bytes sent to the separator: prefer the canonical working audio.
+    sep_input = _stem_separation_input(ctx)
+    working_audio_hash = _sha256_of_file(sep_input)
+
+    from .stem_cache import (
+        known_htdemucs_ft_identity,
+        known_htdemucs_identity,
+    )
+
+    if ctx.stem_model == "htdemucs.yaml":
+        model_identity = known_htdemucs_identity(weight_hash=weight_hash)
+    elif ctx.stem_model == "htdemucs_ft.yaml":
+        model_identity = known_htdemucs_ft_identity(weight_hash=weight_hash)
+    else:
+        return (_not_run_stems(MODEL_UNAVAILABLE), None)
+
+    configuration = dict(ctx.stem_separation_config or {})
+    backend_name = "python-audio-separator"
+    backend_version = ctx.stem_backend_version or _resolve_stem_backend_version()
+
+    executor = ctx.stem_executor
+    if executor is None:
+        from .stem_runtime import build_subprocess_executor
+
+        executor = build_subprocess_executor(
+            model_cache_dir=ctx.stem_model_cache_dir,
+            backend_version=ctx.stem_backend_version,
+        )
+
+    from .stem_cache import separate_with_cache
+
+    result = separate_with_cache(
+        input_path=sep_input,
+        track_ref=track_ref,
+        working_audio_hash=working_audio_hash,
+        model_identity=model_identity,
+        configuration=configuration,
+        output_dir=ctx.pack_root,
+        cache_dir=ctx.stem_cache_dir,
+        cache_enabled=ctx.stem_cache_enabled,
+        backend_name=backend_name,
+        backend_version=backend_version,
+        executor=executor,
+    )
+
+    return _stem_result_from_cache(
+        result,
+        track_ref=track_ref,
+        working_audio_hash=working_audio_hash,
+        model_identity=model_identity,
+        backend_name=backend_name,
+        backend_version=backend_version,
+    )
+
+
+def _not_run_stems(reason_code: str, *, adapter: str = "stems.separate_with_cache") -> StepResult:
+    return StepResult(
+        step_id="stems",
+        required=False,
+        status="not_run",
+        reason_code=reason_code,
+        adapter=adapter,
+    )
+
+
+def _stem_track_ref(track_map: object) -> str | None:
+    """Authoritative portable track identity from the completed Track Map.
+
+    Uses ``track_map.source.original.hash.value``. Returns None if missing so the
+    step fails/not_runs safely (no filename/path/UUID fallback).
+    """
+    if not isinstance(track_map, dict):
+        return None
+    src = track_map.get("source")
+    if not isinstance(src, dict):
+        return None
+    original = src.get("original")
+    if not isinstance(original, dict):
+        return None
+    h = original.get("hash")
+    if not isinstance(h, dict):
+        return None
+    value = h.get("value")
+    if not isinstance(value, str) or not value:
+        return None
+    return value
+
+
+def _stem_separation_input(ctx: StepContext) -> Path:
+    """Return the exact audio bytes sent to the separator.
+
+    Prefers the canonical working audio already produced by the arrangement
+    step; otherwise renders it with the existing #234 ``canon_audio`` helpers so
+    no separate conversion path is invented.
+    """
+    from .canon_audio import render_canonical_wav
+
+    working = ctx.pack_root / "analysis" / "working_audio.wav"
+    if not working.exists():
+        render_canonical_wav(ctx.track_path, working)
+    return working
+
+
+def _sha256_of_file(path: Path) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _stem_expected_weight_algo(model_filename: str) -> str | None:
+    if model_filename == "htdemucs.yaml":
+        return "sha256"
+    if model_filename == "htdemucs_ft.yaml":
+        return "sha256-set-v1"
+    return None
+
+
+def _resolve_stem_backend_version() -> str:
+    from .stem_runtime import resolve_backend_version
+
+    return resolve_backend_version()
+
+
+def _stem_result_from_cache(
+    result: dict,
+    *,
+    track_ref: str,
+    working_audio_hash: str,
+    model_identity: object,
+    backend_name: str,
+    backend_version: str,
+) -> tuple[StepResult, object]:
+    """Translate a #248 ``separate_with_cache`` result into a stems StepResult."""
+    status = result.get("status")
+    reason_code = result.get("reason_code")
+    error = result.get("error")
+    cache_status = result.get("cache_status")
+    stems = result.get("stems") or []
+
+    output_refs = tuple(
+        f"stems/{st['manifest_ref']}" for st in stems if st.get("manifest_ref")
+    )
+
+    provenance = {
+        "component": "stem_separator",
+        "experimental": True,
+        "production_default": "NO_GO",
+        "backend": {"name": backend_name, "version": backend_version},
+        "model": model_identity.to_provenance(),
+        "stem_cache_status": cache_status,
+        "track_ref": track_ref,
+        "working_audio_hash": working_audio_hash,
+    }
+
+    step_status = status if status in ("ok", "partial", "failed", "not_run", "no_result") else "failed"
     return (
         StepResult(
             step_id="stems",
             required=False,
-            status="not_run",
-            reason_code=STEMS_NOT_CONFIGURED,
-            adapter="none",
+            status=step_status,
+            output_refs=output_refs,
+            reason_code=reason_code if step_status in ("not_run", "no_result") else None,
+            error=error if step_status == "failed" else None,
+            adapter="stems.separate_with_cache",
+            provenance=provenance,
         ),
-        None,
+        {"stems": stems, "track_ref": track_ref},
     )
 
 
@@ -634,6 +862,15 @@ def run_deconstruct(
     resume: bool = True,
     track_cache_dir: Path | None = None,
     track_cache_enabled: bool = True,
+    stems_enabled: bool = False,
+    stem_model: str | None = None,
+    stem_weight_hash: dict | None = None,
+    stem_cache_dir: Path | None = None,
+    stem_cache_enabled: bool = True,
+    stem_model_cache_dir: Path | None = None,
+    stem_separation_config: dict | None = None,
+    stem_executor: object | None = None,
+    stem_backend_version: str | None = None,
 ) -> RunResult:
     """Run the headless Track Deconstruction pipeline.
 
@@ -651,6 +888,24 @@ def run_deconstruct(
     pack_root = Path(pack_root)
     skip = set(skip or set())
     adapters = adapters or DeconstructAdapters()
+
+    # Stem resume fingerprint fields (output-affecting config only).
+    stem_options: dict[str, object] = (
+        {
+            "enabled": True,
+            "model": stem_model,
+            "checkpoint": _KNOWN_STEM_CHECKPOINTS.get(stem_model) if stem_model else None,
+            "weight_hash": stem_weight_hash.get("value")
+            if isinstance(stem_weight_hash, dict)
+            else None,
+            "weight_hash_algo": stem_weight_hash.get("algorithm")
+            if isinstance(stem_weight_hash, dict)
+            else None,
+            "separation": dict(stem_separation_config or {}),
+        }
+        if stems_enabled
+        else {"enabled": False}
+    )
 
     source_hash = _resume.source_content_hash_sha256(track_path)
     prior = _resume.load_resume_state(pack_root) if resume else None
@@ -705,7 +960,9 @@ def run_deconstruct(
         cache_key = _resume.compute_step_cache_key(
             step_id,
             source_content_hash=source_hash,
-            config=_resume._relevant_config(step_id, bpm_normalization, beat_backend),
+            config=_resume._relevant_config(
+                step_id, bpm_normalization, beat_backend, stem_options=stem_options
+            ),
             upstream_cache_keys=upstream_cache_keys,
         )
 
@@ -757,6 +1014,15 @@ def run_deconstruct(
                 artifacts=artifacts,
                 track_cache_dir=track_cache_dir,
                 track_cache_enabled=track_cache_enabled,
+                stems_enabled=stems_enabled,
+                stem_model=stem_model,
+                stem_weight_hash=stem_weight_hash,
+                stem_cache_dir=stem_cache_dir,
+                stem_cache_enabled=stem_cache_enabled,
+                stem_model_cache_dir=stem_model_cache_dir,
+                stem_separation_config=stem_separation_config,
+                stem_executor=stem_executor,
+                stem_backend_version=stem_backend_version,
             )
 
             try:
@@ -807,6 +1073,8 @@ def run_deconstruct(
                 entry["adapter"] = result.adapter
             if snapshot is not None:
                 entry["snapshot"] = snapshot
+            if result.provenance is not None:
+                entry["provenance"] = result.provenance
             state["steps"][step_id] = entry
             computed_ids.append(step_id)
 

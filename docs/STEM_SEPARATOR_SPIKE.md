@@ -100,4 +100,4 @@ Jeder erzeugte Stem (`drums`, `bass`, `vocals`, `other`) wird auf genau ein Stem
 
 - **LSTM-Limits:** DirectML kann für Demucs mangels Operatoren-Support nicht genutzt werden. CUDA-Beschleunigung bleibt CUDA-kompatiblen Grafikkarten vorbehalten.
 - **Qualitätsvergleich:** Es wurde kein musikalischer Hörvergleich vorgenommen, dies ist dedizierter Scope von **#246**.
-- **Produktives Wiring:** Es wurde keine automatische Separation in `src/deconstruct.py` eingehängt; der Spike verbleibt als isolierte technische Integrationsstudie. Die Übergabe für Benchmark-Hörtests erfolgt an **#246** bzw. die produktive Einbindung an **#249**.
+- **Produktives Wiring:** Die Separation ist seit **#249** opt-in in `src/deconstruct.py` eingehängt (nur bei `--stems`, research-only, kein Production-Default). Der Spike bleibt die isolierte Subprocess-Worker-Studie; `audio_separator`/`torch` werden nie vom Core importiert. Benchmark-Hörtests sind dedizierter Scope von **#246**.
