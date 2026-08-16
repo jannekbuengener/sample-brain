@@ -136,7 +136,7 @@ Tier B uses [`tests/fixtures/search_quality/golden_v2_clap.yaml`](../../tests/fi
 ### Runtime reproducibility (Issue #218)
 
 The optional CLAP Tier-B runtime path is documented and tested separately from
-quality evidence: [CLAP_TIER_B_RUNTIME.md](../benchmarks/CLAP_TIER_B_RUNTIME.md).
+quality evidence: [SEARCH_QUALITY_EVIDENCE.md](../benchmarks/SEARCH_QUALITY_EVIDENCE.md).
 The model identity (`laion/clap-htsat-unfused`, 512-d, `audio_text`) is
 centralized as constants in `src/embed.py` and shared by `model_info()`, the
 model loader, the benchmark harness, and the runtime tests. A clean machine must
@@ -185,7 +185,7 @@ Assigned by [`src/search_eval.py`](../../src/search_eval.py): `success`, `negati
 
 ### Informative Tier-B thresholds
 
-Documented in suite `thresholds:` (not CI-blocking): mean P@5, mean R@10. Full evidence publication is #219.
+Documented in suite `thresholds:` (not CI-blocking): mean P@5, mean R@10. Final Tier-B evidence is published in SEARCH_QUALITY_EVIDENCE.md; #216/#217 measured the two modes and #219 consolidated the campaign.
 
 ### Child issues using this contract
 
