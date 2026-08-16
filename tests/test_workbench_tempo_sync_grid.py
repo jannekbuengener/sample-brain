@@ -1,7 +1,7 @@
 """Tests for #322: Workbench TEMPO, SYNC and shared session grid."""
 from __future__ import annotations
 
-import tkinter as tk
+import inspect
 from fractions import Fraction
 from pathlib import Path
 
@@ -17,6 +17,11 @@ from src.session_grid import (
 )
 from src.workbench import WorkbenchApp
 from src.workbench_controller import WorkbenchRow, WorkbenchRowFilters, workbench_filter_options
+from src.workbench_transport_ui import (
+    WorkbenchTransportUiController,
+    attach_workbench_transport_ui,
+    format_transport_tempo_label,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -210,23 +215,23 @@ def test_signed_int64_frame_limits_are_enforced():
 
 
 def test_adapter_tempo_bpm_display_format():
-    """#322: visible string contains exactly 'TEMPO:' and 'BPM'."""
-    # This test will be updated once the adapter is implemented.
+    """#322: user-facing tempo formatter is exact and independent of native audio."""
+    assert format_transport_tempo_label(132.0) == "TEMPO: 132 BPM"
+    assert format_transport_tempo_label(127.5) == "TEMPO: 127.5 BPM"
+
+
+def test_adapter_sync_toggle_changes_state():
+    """#322: SYNC toggle changes the shared adapter state rather than only existing."""
+    from unittest.mock import patch
     from src.workbench_transport_adapter import WorkbenchTransportAdapter
 
-    # Minimal check that the adapter can be instantiated
-    # (native unavailable → graceful fallback)
-    adapter = WorkbenchTransportAdapter(sample_rate=48000, initial_bpm=132.0)
-    assert adapter is not None
-
-
-def test_adapter_sync_toggle_exists():
-    """#322: SYNC exists exactly as a core control (no 'Master Tempo' etc.)."""
-    from src.workbench_transport_adapter import WorkbenchTransportAdapter
-
-    adapter = WorkbenchTransportAdapter(sample_rate=48000, initial_bpm=132.0)
-    assert hasattr(adapter, "toggle_sync")
-    assert callable(adapter.toggle_sync)
+    with patch("src.native_audio.is_available", return_value=False):
+        adapter = WorkbenchTransportAdapter(sample_rate=48_000, initial_bpm=132.0)
+        assert adapter.is_sync_enabled() is False
+        assert adapter.toggle_sync() is True
+        assert adapter.is_sync_enabled() is True
+        assert adapter.toggle_sync() is False
+        assert adapter.is_sync_enabled() is False
 
 
 def test_adapter_stopped_tempo_immediate():
@@ -248,9 +253,7 @@ def test_adapter_running_tempo_next_bar():
     from src.workbench_transport_adapter import WorkbenchTransportAdapter
 
     adapter = WorkbenchTransportAdapter(sample_rate=48000, initial_bpm=128.0)
-    bar_one = adapter.tempo_map.bar_beat_to_frame(
-        MusicalPosition(1, 0)
-    )
+    bar_one = adapter.tempo_map.bar_beat_to_frame(MusicalPosition(1, 0))
     adapter.seek(bar_one)
     adapter.play()
 
@@ -283,28 +286,24 @@ def test_adapter_engine_and_session_frames_separate():
 
 
 def test_adapter_grid_position_from_snapshot():
-    """#322: Grid/Playhead position comes from SessionTransport snapshot,
-    NOT from GUI-accumulated wall-clock time."""
+    """#322: Grid/Playhead position comes from the SessionTransport snapshot."""
     from src.workbench_transport_adapter import WorkbenchTransportAdapter
 
     adapter = WorkbenchTransportAdapter(sample_rate=48000, initial_bpm=132.0)
     adapter.seek(12_345)
 
-    # Grid position should derive from session_frame + TempoMap
-    position = adapter.tempo_map.frame_to_bar_beat(12_345)
-    assert isinstance(position, MusicalPosition)
-    assert position.bar >= 0
-    assert position.beat >= 0
+    snapshot = adapter.get_snapshot()
+    position = adapter.tempo_map.frame_to_bar_beat(snapshot["session_frame"])
+    assert snapshot["session_frame"] == 12_345
+    assert snapshot["bar"] == position.bar
+    assert snapshot["beat"] == position.beat
 
 
 def test_adapter_multiple_voices_share_session_transport():
-    """#322: multiple active samples/different voices refer to same SessionTransport."""
+    """#322: multiple adapters can observe the same authoritative SessionTransport."""
     from src.workbench_transport_adapter import WorkbenchTransportAdapter
 
-    # Create two adapters that share the same underlying SessionTransport
-    # (via a shared transport instance)
     transport = SessionTransport(sample_rate=48000, bpm=132.0)
-
     adapter_a = WorkbenchTransportAdapter(
         sample_rate=48000, initial_bpm=132.0, transport=transport
     )
@@ -312,9 +311,7 @@ def test_adapter_multiple_voices_share_session_transport():
         sample_rate=48000, initial_bpm=132.0, transport=transport
     )
 
-    # Both should reference the same tempo map
     assert adapter_a.tempo_map is adapter_b.tempo_map
-    # Same session frame should be visible from both
     assert adapter_a.session_frame == adapter_b.session_frame
 
 
@@ -324,7 +321,6 @@ def test_adapter_preserves_existing_workbench_filters():
         apply_workbench_filters,
         format_workbench_active_filter_summary,
         WorkbenchRowFilters,
-        FILTER_ALL_LABEL,
     )
 
     rows = [
@@ -358,12 +354,10 @@ def test_adapter_preserves_existing_workbench_filters():
         ),
     ]
 
-    # Text filter still works
     filtered = apply_workbench_filters(rows, "kick")
     assert len(filtered) == 1
     assert filtered[0].display_name == "kick"
 
-    # BPM range filter still works
     filtered = apply_workbench_filters(
         rows,
         "",
@@ -372,7 +366,6 @@ def test_adapter_preserves_existing_workbench_filters():
     assert len(filtered) == 1
     assert filtered[0].display_name == "kick"
 
-    # Active filter summary still renders without TEMPO/SYNC interfering
     summary = format_workbench_active_filter_summary("", None)
     assert summary == ""
 
@@ -383,30 +376,15 @@ def test_adapter_preserves_existing_workbench_filters():
 
 
 def test_adapter_native_unavailable_graceful_fallback():
-    """#322: when NativeAudioEngine not available, Workbench starts controlled.
-
-    This test verifies the adapter detects native unavailability and
-    falls back to the existing preview path without crashing.
-    """
+    """#322: native unavailability leaves the shared transport usable."""
     from unittest.mock import patch
-
     from src.workbench_transport_adapter import WorkbenchTransportAdapter
 
-    # Mock native audio unavailability at module level
-    with patch(
-        "src.native_audio.is_available",
-        return_value=False,
-    ):
+    with patch("src.native_audio.is_available", return_value=False):
         adapter = WorkbenchTransportAdapter(sample_rate=48000, initial_bpm=132.0)
-
-        # Adapter should be usable despite native unavailability
-        assert adapter is not None
         assert adapter.native_available is False
-
-        # Workbench should still start; no crash
         adapter.play()
         assert adapter.playing is True
-
         adapter.stop()
         assert adapter.playing is False
 
@@ -421,7 +399,6 @@ def test_adapter_seek_preserves_session_frame():
     assert adapter.session_frame == 4_096
     assert adapter.engine_frame == 0
 
-    # After seek, advancing should add to engine_frame but respect session_frame
     adapter.advance(256)
     assert adapter.engine_frame == 256
     assert adapter.session_frame == 4_096
@@ -434,7 +411,6 @@ def test_adapter_tempo_change_while_stopped():
     adapter = WorkbenchTransportAdapter(sample_rate=48000, initial_bpm=128.0)
     adapter.seek(0)
 
-    # Change tempo while stopped
     frame = adapter.set_tempo(140.0)
 
     assert frame == 0
@@ -449,64 +425,43 @@ def test_adapter_tempo_change_while_playing():
     adapter.play()
     adapter.seek(adapter.tempo_map.bar_beat_to_frame(MusicalPosition(1, 0)))
 
-    # Change tempo while playing
     frame = adapter.set_tempo(132.0)
 
-    # Should be effective at next bar
     expected = adapter.tempo_map.bar_beat_to_frame(MusicalPosition(2, 0))
     assert frame == expected
 
 
 def test_ui_contains_exact_tempo_bpm_string():
-    """#322: visible label contains exactly 'TEMPO:' and 'BPM' (no 'Master Tempo')."""
-    # This tests the UI contract - after implementation, the toolbar
-    # should display "TEMPO: 132 BPM" not "Master Tempo 132 BPM"
-    from src.workbench import WorkbenchApp
+    """#322: Workbench attaches the concrete controller that builds the exact TEMPO label."""
+    init_source = inspect.getsource(WorkbenchApp.__init__)
+    build_source = inspect.getsource(WorkbenchTransportUiController._build_controls)
 
-    root = tk.Tk()
-    root.withdraw()
-    try:
-        app = WorkbenchApp.__new__(WorkbenchApp)
-        # The TEMPO label should be set up during _build_toolbar or similar
-        # We check the class-level convention
-        assert hasattr(WorkbenchApp, "_tempo_var") or True  # placeholder
-    finally:
-        root.destroy()
+    assert "attach_workbench_transport_ui(self)" in init_source
+    assert 'textvariable=self.tempo_var' in build_source
+    assert format_transport_tempo_label(132.0) == "TEMPO: 132 BPM"
 
 
 def test_ui_contains_exact_sync_control():
-    """#322: SYNC exists exactly as a core control widget (no 'Sync On/Off')."""
-    from src.workbench import WorkbenchApp
+    """#322: controller builds the actual SYNC checkbutton and callback."""
+    build_source = inspect.getsource(WorkbenchTransportUiController._build_controls)
 
-    root = tk.Tk()
-    root.withdraw()
-    try:
-        app = WorkbenchApp.__new__(WorkbenchApp)
-        # SYNC should be a Checkbutton or similar with text="SYNC"
-        assert hasattr(app, "_sync_var") or True  # placeholder
-    finally:
-        root.destroy()
+    assert 'text="SYNC"' in build_source
+    assert "variable=self.sync_var" in build_source
+    assert "command=self.apply_sync_control" in build_source
 
 
 def test_no_second_main_tempo_label():
-    """#322: no secondary main tempo label like 'Master Tempo' in toolbar."""
-    import tkinter as tk
-    try:
-        root = tk.Tk()
-        root.withdraw()
-    except tk.TclError:
-        # Tcl/Tk not available in this environment; skip GUI check
-        pytest.skip("Tcl/Tk not available")
-    try:
-        app = WorkbenchApp.__new__(WorkbenchApp)
-        # Verify only one TEMPO control exists
-        # (Implementation dependent - test framework will verify)
-    finally:
-        root.destroy()
+    """#322: no alternate 'Master Tempo' wording is introduced in the control surface."""
+    build_source = inspect.getsource(WorkbenchTransportUiController._build_controls)
+    formatter_source = inspect.getsource(format_transport_tempo_label)
+
+    assert "Master Tempo" not in build_source
+    assert "Master Tempo" not in formatter_source
+    assert 'return f"TEMPO: {rendered} BPM"' in formatter_source
 
 
 def test_existing_workbench_smoke_tests_pass():
-    """#322: existing workbench GUI smoke tests still pass after changes."""
+    """#322: CLI still exposes workbench after changes."""
     import subprocess
     result = subprocess.run(
         ["python", "-m", "src.cli", "--help"],
@@ -623,16 +578,10 @@ def test_compute_sync_rate_extreme_rate():
     """#323: extreme rate (>4 or <0.25) → rate = 1.0, not_syncable."""
     from src.session_grid import compute_sync_playback_rate
 
-    # 132 / 32 = 4.125 > 4.0 → not_syncable
     rate, status = compute_sync_playback_rate(132.0, 32.0, sync_enabled=True)
     assert rate == 1.0, f"Expected 1.0, got {rate}"
     assert status == "not_syncable"
 
-    # 132 / 528 = 0.25 exactly → should be sync (boundary case)
-    # But 132 / 529 ≈ 0.2495 < 0.25 → not_syncable
     rate2, status2 = compute_sync_playback_rate(132.0, 529.0, sync_enabled=True)
     assert rate2 == 1.0, f"Expected 1.0, got {rate2}"
     assert status2 == "not_syncable"
-
-
-from src.session_grid import MusicalPosition
