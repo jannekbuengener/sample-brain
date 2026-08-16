@@ -10,9 +10,18 @@ alwaysApply: true
 ## Source of truth
 - Prefer repository code (`src/`) and tests (`tests/`) over assumptions.
 - Keep command examples aligned with `src/cli.py`.
+- For the realtime Workbench cluster #318, `docs/REALTIME_WORKBENCH_SCOPE.md` is the canonical product boundary.
+
+## Product boundary
+- Offline/local-first means no mandatory cloud processing; it does not prohibit local real-time playback or recording.
+- The local Workbench may add shared `TEMPO`, `SYNC`, grid-bound playback, mixing, recording, non-destructive editing and `HÄFTIG`.
+- A narrow native audio core may own the hard real-time path; Python/Tkinter remains UI, analysis and control.
+- #318 is not a full DAW and does not require a VST/VST3/FL Studio plugin.
+- Existing analysis, Track Map, BeatGrid, Deconstruction, Packs and Stem contracts remain valid and must not be redefined as session time.
 
 ## Safety
 - Never write machine-local paths or secrets into tracked files.
+- Never commit private samples, tracks, recordings, generated audio, device dumps or runtime audio caches.
 - Preserve graceful fallback behavior for optional embedding backends.
 
 ## Change style
