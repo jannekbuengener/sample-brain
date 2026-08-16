@@ -66,7 +66,169 @@ query=scale_minor_filter p@1=1.000 p@5=0.600 r@10=1.000 filter=1.000 must_recall
 | Metadata filter | kick_pred_type_filter, kick_tag_filter, snare_bpm_range_filter, scale_minor_filter | 100% filter compliance |
 | Hybrid rerank | hybrid_bpm_promote_snare, hybrid_key_match_pad | BPM/key uplift vs semantic-only baseline |
 
-## Tier B Phase 1 — CLAP semantic evidence (optional, not CI-blocking)
+## Tier B Final Campaign — 6/6 Classes
+
+This is the **current canonical state** of CLAP Tier-B search-quality evidence (Issue #219, consolidating #216 text→sample and #217 audio→audio). All six canonical query classes are evaluated on synthetic fixtures with real `laion/clap-htsat-unfused` embeddings. Text and audio modes are measured separately. Runtime reproducibility follows #218 (external DB / work-dir / model cache, no committed artifacts).
+
+The sections **Tier B Phase 1 / Phase 2 / Phase 2b** below are retained as **historical development**; they do not represent the current coverage.
+
+### Run metadata (final canonical run)
+
+| Field | Value |
+|-------|-------|
+| Date | 2026-08-16 |
+| Branch | `docs/clap-tier-b-evidence-219` |
+| Base commit | `2ae8b1ea` (origin/main) |
+| OS | Windows 11 |
+| Python | 3.12.10 |
+| Torch | 2.13.0+cpu |
+| Transformers | 5.13.0 |
+| Device | CPU |
+| Model | `laion/clap-htsat-unfused` |
+| Embedding dim | 512-d |
+| Search backend | NumPy |
+| Catalog size | 37 synthetic samples |
+| Query count | 37 (26 text + 11 audio) |
+| Work dir | external temp dir (outside repo, not committed) |
+| Model cache | external Hugging Face model cache (reused, ~500 MB, not committed) |
+
+### Commands (reproduction)
+
+```powershell
+pip install -r requirements.txt
+pip install -e ".[clap]"
+pip install -e ".[vec]"
+
+$env:SAMPLE_BRAIN_DB_PATH = "<EXTERNAL_DB>"
+$env:SAMPLE_BRAIN_MODEL_CACHE_DIR = "<EXTERNAL_MODEL_CACHE>"
+
+python -m src.cli benchmark search-quality `
+  --suite tests/fixtures/search_quality/golden_v2_clap.yaml `
+  --work-dir <EXTERNAL_WORK_DIR>
+```
+
+Verification tests:
+
+```powershell
+python -m pytest -q tests/test_search_quality.py -m clap
+python -m pytest -q tests/test_clap_audio_evaluation.py -m clap
+```
+
+All artifacts (DB, generated WAVs, model cache) live outside the repo. No private samples, no absolute user paths, no audio binaries are committed.
+
+### Aggregate results — Text vs Audio (overall)
+
+The harness reports `mrr`; because Tier-B default `topk=10`, **MRR = MRR@10** throughout this report.
+
+| Mode | Query count | P@1 | P@5 | R@10 | MRR@10 |
+|------|-------------|-----|-----|------|---------|
+| **Text** | 26 | 0.269 | 0.185 | 0.731 | 0.420 |
+| **Audio** | 11 | 0.727 | 0.345 | 0.924 | 0.848 |
+
+Gate status (informative Tier-B thresholds `mean_precision_at_5 ≥ 0.20`, `mean_recall_at_10 ≥ 0.30`): both PASS at the overall level. `must_recall_queries` is **FAIL** (4/37 queries miss full recall within k=10) — reported, not CI-blocking. Audio mode strictly outperforms text mode on every aggregate metric, consistent with the synthetic fixtures favouring audio→audio cosine similarity.
+
+### Per class × mode (12 rows)
+
+| Class | Mode | Queries | P@5 | MRR@10 | R@10 | Hard-negative violations | Failure buckets |
+|-------|------|---------|-----|--------|------|--------------------------|----------------|
+| kick_snare_perc | text | 4 | 0.350 | 0.656 | 0.875 | 0 | success=3, must_recall_fail=1 |
+| kick_snare_perc | audio | 2 | 0.500 | 0.667 | 1.000 | 0 | success=2 |
+| pad_texture | text | 2 | 0.000 | 0.111 | 0.333 | 1 | negative_leak_top5=1, must_recall_fail=1 |
+| pad_texture | audio | 2 | 0.300 | 0.750 | 0.833 | 0 | success=1, must_recall_fail=1 |
+| riser_impact | text | 5 | 0.240 | 0.420 | 0.600 | 5 | negative_leak_top5=5 |
+| riser_impact | audio | 1 | 0.600 | 1.000 | 1.000 | 1 | negative_leak_top5=1 |
+| dry_wet | text | 5 | 0.120 | 0.233 | 1.000 | 5 | negative_leak_top5=5 |
+| dry_wet | audio | 2 | 0.200 | 0.750 | 1.000 | 2 | negative_leak_top5=2 |
+| vocal_no_vocal | text | 4 | 0.150 | 0.592 | 0.458 | 4 | negative_leak_top5=4 |
+| vocal_no_vocal | audio | 2 | 0.400 | 1.000 | 0.750 | 1 | negative_leak_top5=1, must_recall_fail=1 |
+| genre_mood | text | 6 | 0.167 | 0.408 | 0.833 | 6 | negative_leak_top5=6 |
+| genre_mood | audio | 2 | 0.200 | 1.000 | 1.000 | 2 | negative_leak_top5=2 |
+
+### Failure buckets
+
+Bucket taxonomy (from `src/search_eval.py`): `success`, `negative_leak_top5`, `zero_precision_at_5`, `zero_mrr`, `must_recall_fail`, `error`. Buckets are **reported evidence**, not merge gates.
+
+Global campaign summary (37 queries):
+
+| Bucket | Count |
+|--------|-------|
+| `success` | 6 |
+| `negative_leak_top5` | 27 |
+| `must_recall_fail` | 4 |
+| `zero_precision_at_5` | 0 |
+| `zero_mrr` | 0 |
+| `error` | 0 |
+
+Per-mode hard-negative totals: audio = 6, text = 21 (total 27, equal to `negative_leak_top5`). Text queries leak hard negatives far more often than audio queries on this synthetic catalog.
+
+### Hard negatives
+
+Hard negatives (`negative_sample_ids`) are documented, not enforced as a quality gate — they evidence cross-class confusion on minimal synthetic fixtures.
+
+- **Total hard-negative violations:** 27 (audio 6, text 21).
+- **Most leakage:** every text class leaks; `genre_mood` text leaks 6/6 queries, `dry_wet` / `riser_impact` / `vocal_no_vocal` text each leak 5 queries. Audio leakage is smaller (0–2 per class).
+- **Interpretive examples:**
+  - `singing_voice_text` (text, `vocal_no_vocal`) returns 5 hard negatives in top-5 (P@5=0.000) — CLAP text embeddings do not separate formant/vowel proxies from the instrumentals on this fixture set.
+  - `riser_audio_ref` (audio, `riser_impact`) has neg@5=2 but still ranks relevant first (MRR=1.000) — leakage present but ranking succeeds.
+  - `genre_mood` audio references (`dark_electronic_audio_ref`, `ambient_calm_audio_ref`) each leak 4 hard negatives in top-5 yet reach MRR=1.000 — synthetic scene labels are weak discriminators.
+
+Hard negatives are **evidence**, not a CI blocker.
+
+### Query style (text queries, reporting only)
+
+Optional `query_style` groups text queries for evidence. It has **no effect** on search ranking or gates.
+
+| Query style | Queries | P@5 | MRR@10 | R@10 |
+|-------------|---------|-----|--------|------|
+| `keyword` | 12 | 0.217 | 0.528 | 0.847 |
+| `natural_language` | 11 | 0.164 | 0.381 | 0.667 |
+| `exclusion` | 3 | 0.133 | 0.133 | 0.500 |
+
+Short keyword-style text queries slightly outperform natural-language phrasing; exclusion/negation queries score lowest (P@5=0.133). This is an observation on synthetic fixtures, **not** a claim about real libraries.
+
+### `vocal_no_vocal` status — HOLD
+
+`vocal_no_vocal` **is fully evaluated** in the canonical 6/6 golden set (4 text + 2 audio queries) and was measured completely in #216/#217. Final status: **HOLD for production claim**.
+
+Rationale:
+- Evaluation complete; audio→audio proxy shows usable rankings (audio P@5=0.400, MRR@10=1.000).
+- Text side remains materially weaker (text P@5=0.150, MRR@10=0.592) and leaks all 4 hard negatives.
+- Fixtures are formant/vowel **proxies only** — no real speech, singing, or vocal chops.
+- The historical isolated spike (`golden_v2_clap_vocal_proxy_spike.yaml`, `HOLD_VOCAL_PROXY_FAILED`) remains valid context: text margin gates failed.
+- **No production-claim is permitted.**
+
+`HOLD` = quality / transferability status — **not** "class not evaluated".
+
+### `genre_mood` status — HOLD
+
+`genre_mood` is also fully evaluated (6 text + 2 audio queries). Final status: **HOLD for production claim**.
+
+Rationale:
+- Evaluation complete; audio MRR can be strong (MRR@10=1.000) but P@5 stays limited (0.200).
+- Hard-negative leakage present (text 6/6, audio 2/2).
+- `electronic_scene` / `ambient_scene` / `cinematic_tension_scene` labels are **evaluation hypotheses**, not verified producer-library semantics.
+- No real producer library, no production-readiness proven.
+
+Not deferred (it was actually measured); held for production claim only.
+
+### Tier-B Campaign Verdict
+
+- **Coverage:** COMPLETE — 6/6 classes (`kick_snare_perc`, `pad_texture`, `riser_impact`, `dry_wet`, `vocal_no_vocal`, `genre_mood`).
+- **Runtime reproducibility:** PASS (external DB / work-dir / model cache; no committed artifacts).
+- **Text evaluation:** COMPLETE (26 queries).
+- **Audio evaluation:** COMPLETE (11 queries).
+- **Hard-negative evidence:** COMPLETE (27 violations documented, audio 6 / text 21).
+- **Private artifact safety:** PASS (no private samples, no absolute user paths, no audio binaries committed).
+- **Production-grade semantic search:** **NOT PROVEN.**
+- **`vocal_no_vocal`:** HOLD for production claim.
+- **`genre_mood`:** HOLD for production claim.
+- **Default CI:** Tier A remains blocking; Tier B remains optional/local.
+
+This campaign **measures and documents** CLAP Tier-B relevance on synthetic fixtures. It does **not** prove production-grade semantic search on real producer libraries.
+
+---
+
+## Tier B Phase 1 — CLAP semantic evidence (optional, not CI-blocking) (historical)
 
 Measured on synthetic fixtures with real CLAP embeddings (`laion/clap-htsat-unfused`). Phase 1 covers query classes **`kick_snare_perc`** and **`pad_texture`** only (Issue #73 partial).
 
@@ -174,7 +336,7 @@ failure_buckets:
 - vocal/no-vocal proxy and genre/mood curated set remain for Phase 2b/3
 - Tighten hard-negative gates once baseline is stable
 
-## Tier B Phase 2 — CLAP semantic evidence (optional, not CI-blocking)
+## Tier B Phase 2 — CLAP semantic evidence (optional, not CI-blocking) (historical)
 
 Measured on synthetic fixtures with real CLAP embeddings (`laion/clap-htsat-unfused`). Phase 2 adds query classes **`riser_impact`** and **`dry_wet`** to the Phase 1 golden set (Issue #73 partial — 4/6 classes).
 
@@ -335,7 +497,7 @@ failure_buckets:
 - Phase 3: genre/mood with curated public-domain mini-set (outside repo)
 - Consider split suites or catalog partitioning to reduce dilution regression
 
-## Tier B Phase 2b — vocal/no-vocal proxy spike (HOLD)
+## Tier B Phase 2b — vocal/no-vocal proxy spike (HOLD) (historical context)
 
 Isolated CLAP spike on synthetic formant/vowel fixtures vs instrumental controls. **Not merged into `golden_v2_clap.yaml`.** This is **not** evidence of real vocal discrimination.
 
@@ -449,13 +611,13 @@ Campaign adds `tests/test_search_quality.py` (Tier A metrics + frozen P@5 baseli
 
 ## Decision
 
-**Tier A regression gates PASS.** The harness proves filter compliance, hybrid reranking, and P@K/R@K aggregation on deterministic fixtures. **Tier B Phase 1** delivers first measured CLAP semantic evidence on synthetic fixtures (P@5=0.440, MRR=0.792). **Tier B Phase 2** extends to 4/6 query classes (P@5=0.287, MRR=0.544 on 24-sample catalog); default merge gate remains Tier A only.
+**Tier A regression gates PASS.** The harness proves filter compliance, hybrid reranking, and P@K/R@K aggregation on deterministic fixtures. **Tier B Final Campaign** evaluates all 6/6 query classes on synthetic fixtures (text P@5=0.185 / audio P@5=0.345, MRR@10 text=0.420 / audio=0.848, R@10 audio=0.924; see *Tier B Final Campaign — 6/6 Classes* above). `vocal_no_vocal` and `genre_mood` remain **HOLD** for any production claim; default merge gate remains Tier A only. **Production-grade semantic search is NOT proven** on real producer libraries.
 
 ## CLAP Tier-B runtime reproducibility (Issue #218)
 
 Issue #218 makes the optional CLAP Tier-B runtime path reproducible without
 changing any measured quality numbers above. Details:
-[CLAP_TIER_B_RUNTIME.md](CLAP_TIER_B_RUNTIME.md).
+the runtime contract is summarized inline below (no separate runtime doc is committed).
 
 Runtime contract (no quality claims):
 
@@ -479,4 +641,4 @@ Runtime contract (no quality claims):
 No new P@K/R@K values are introduced here. Quality interpretation and evidence
 publication remain #216 / #217 / #219.
 
-**Explicitly not measured here:** sqlite-vec latency, CLAP semantic accuracy on private samples, hybrid weight tuning. Tier-B **fixture foundation** for all six query classes is complete (#215); CLAP ranking evidence for `vocal_no_vocal` / `genre_mood` awaits #216/#217/#219.
+**Explicitly not measured here:** sqlite-vec latency, CLAP semantic accuracy on private samples, hybrid weight tuning. Tier-B **fixture foundation** for all six query classes is complete (#215); CLAP ranking evidence for all six classes, including `vocal_no_vocal` / `genre_mood`, is published via #216 / #217 / #219.
