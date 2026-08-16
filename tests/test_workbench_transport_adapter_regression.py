@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import inspect
 import threading
+from types import SimpleNamespace
 
 import pytest
 
@@ -23,6 +25,25 @@ class RecordingNativeEngine:
 
     def close(self) -> None:
         return None
+
+
+class SnapshotNativeEngine(RecordingNativeEngine):
+    def __init__(self) -> None:
+        super().__init__()
+        self.engine_frame = 0
+        self.running = False
+
+    def start(self) -> None:
+        self.running = True
+
+    def stop(self) -> None:
+        self.running = False
+
+    def snapshot(self):
+        return SimpleNamespace(
+            engine_frame=self.engine_frame,
+            running=self.running,
+        )
 
 
 def _run_without_deadlock(callable_) -> None:
@@ -64,8 +85,13 @@ def test_set_source_bpm_toggle_sync_and_snapshot_do_not_deadlock(monkeypatch):
     assert snapshot["sync_status"] == "sync"
 
 
-def test_running_tempo_label_stays_effective_until_scheduled_bar(monkeypatch):
-    adapter = _adapter_without_native(monkeypatch, bpm=128.0)
+def test_running_tempo_label_stays_effective_until_scheduled_bar():
+    native = SnapshotNativeEngine()
+    adapter = adapter_module.WorkbenchTransportAdapter(
+        sample_rate=48_000,
+        initial_bpm=128.0,
+        native_engine=native,
+    )
     bar_one = adapter.tempo_map.bar_beat_to_frame(MusicalPosition(1, 0))
     adapter.seek(bar_one)
     adapter.play()
@@ -124,6 +150,54 @@ def test_missing_voice_bpm_is_not_silently_stretched():
     assert adapter.voice_sync_state(7) == (1.0, "not_syncable")
 
 
+def test_native_snapshot_frames_advance_session_without_wall_clock_math():
+    native = SnapshotNativeEngine()
+    adapter = adapter_module.WorkbenchTransportAdapter(
+        sample_rate=48_000,
+        initial_bpm=132.0,
+        native_engine=native,
+    )
+
+    adapter.play()
+    native.engine_frame = 512
+    first = adapter.get_snapshot()
+    native.engine_frame = 768
+    second = adapter.get_snapshot()
+
+    assert first["engine_frame"] == 512
+    assert first["session_frame"] == 512
+    assert second["engine_frame"] == 768
+    assert second["session_frame"] == 768
+
+
+def test_stopped_native_snapshot_does_not_advance_session_position():
+    native = SnapshotNativeEngine()
+    adapter = adapter_module.WorkbenchTransportAdapter(
+        sample_rate=48_000,
+        initial_bpm=132.0,
+        native_engine=native,
+    )
+
+    native.engine_frame = 256
+    snapshot = adapter.get_snapshot()
+
+    assert snapshot["engine_frame"] == 256
+    assert snapshot["session_frame"] == 0
+    assert snapshot["playing"] is False
+
+
+def test_native_unavailable_preview_fallback_does_not_claim_running_clock(monkeypatch):
+    adapter = _adapter_without_native(monkeypatch, bpm=132.0)
+
+    adapter.play()
+    snapshot = adapter.get_snapshot()
+
+    assert snapshot["native_available"] is False
+    assert snapshot["playing"] is False
+    assert snapshot["engine_frame"] == 0
+    assert snapshot["session_frame"] == 0
+
+
 def test_adapter_has_one_toggle_sync_definition():
-    source = adapter_module.Path(adapter_module.__file__).read_text(encoding="utf-8")
-    assert source.count("    def toggle_sync(") == 1
+    source = inspect.getsource(adapter_module.WorkbenchTransportAdapter)
+    assert source.count("def toggle_sync(") == 1

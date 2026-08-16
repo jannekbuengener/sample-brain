@@ -84,7 +84,7 @@ from .workbench_controller import (
     WORKBENCH_VIEW_TOGGLE_HELP,
     WorkbenchViewSettings,
 )
-from .workbench_transport_adapter import WorkbenchTransportAdapter
+from .workbench_transport_ui import attach_workbench_transport_ui
 from .workbench_harmony import (
     HarmonyRelation,
     HarmonySuggestion as HarmonyFinderSuggestion,
@@ -208,6 +208,7 @@ class WorkbenchApp:
         self._build_styles()
         self._build_menubar()
         self._build_layout()
+        self._transport_ui = attach_workbench_transport_ui(self)
         self._restore_last_folder()
         self._refresh_library_list()
         self._refresh_playlist_list()
@@ -458,8 +459,6 @@ class WorkbenchApp:
 
         playlist_frame = ttk.Frame(body, style="Panel.TFrame", padding=8)
 
-        # Center column hosts a Notebook: tab 1 = Samples (existing playlist),
-        # tab 2 = Harmonie-Finder (issue #213).
         self._center_notebook = ttk.Notebook(body)
         self._center_notebook.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
         self._center_notebook.add(playlist_frame, text="Samples")
@@ -771,7 +770,6 @@ class WorkbenchApp:
         self._apply_view_visibility(notify=False)
 
     def _build_harmony_tab(self) -> None:
-        """Build the Harmonie-Finder tab (issue #213): reference, filter, override, results."""
         frame = self._harmony_frame
         self._harmony_suggestions: list[HarmonyFinderSuggestion] = []
         self._harmony_ref_map: dict[str, WorkbenchRow] = {}
@@ -875,7 +873,6 @@ class WorkbenchApp:
         ).pack(fill=tk.X, pady=(4, 0))
 
     def _refresh_harmony_reference_options(self) -> None:
-        """Rebuild the reference dropdown from currently loaded rows."""
         self._harmony_ref_map = {}
         labels: list[str] = []
         default_label = ""
@@ -2202,6 +2199,9 @@ class WorkbenchApp:
     def _on_close(self) -> None:
         self._persist_analysis_limit()
         self._stop_preview()
+        transport_ui = getattr(self, "_transport_ui", None)
+        if transport_ui is not None:
+            transport_ui.close()
         self.root.destroy()
 
     def _update_preview_state(self, row: WorkbenchRow | None) -> None:
@@ -2498,7 +2498,6 @@ class WorkbenchApp:
         self._play_preview(start_ms=start_ms, from_click_position=True)
 
     def _cue_start_ms_from_waveform_x(self, x: int) -> int | None:
-        """Map waveform canvas x to cue start ms, or None when duration is unknown."""
         row = self._detail_row
         if row is None or not row.path:
             return None
@@ -3003,6 +3002,9 @@ class WorkbenchApp:
 
     def _set_detail(self, row: WorkbenchRow | None) -> None:
         self._detail_row = row
+        transport_ui = getattr(self, "_transport_ui", None)
+        if transport_ui is not None:
+            transport_ui.set_source_bpm(row.bpm if row is not None else None)
         self._clear_attack_suggestion()
         self._update_similar_button_state(row)
         self._detail_text.configure(state=tk.NORMAL)
