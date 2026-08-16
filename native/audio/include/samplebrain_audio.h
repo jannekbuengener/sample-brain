@@ -1,0 +1,153 @@
+#ifndef SAMPLEBRAIN_AUDIO_H
+#define SAMPLEBRAIN_AUDIO_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Opaque handles
+typedef struct sb_engine* sb_engine_t;
+typedef struct sb_voice* sb_voice_t;
+typedef struct sb_recording* sb_recording_t;
+
+// Identifiers
+typedef uint64_t sb_voice_id_t;
+typedef uint64_t sb_recording_id_t;
+typedef int64_t sb_frame_t;
+
+// Result codes
+typedef enum {
+    SB_OK = 0,
+    SB_ERR_INVALID_ARG = -1,
+    SB_ERR_NOT_INITIALIZED = -2,
+    SB_ERR_ALREADY_RUNNING = -3,
+    SB_ERR_DEVICE_ERROR = -4,
+    SB_ERR_OUT_OF_MEMORY = -5,
+    SB_ERR_VOICE_NOT_FOUND = -6,
+    SB_ERR_RECORDING_NOT_FOUND = -7,
+    SB_ERR_INVALID_STATE = -8,
+    SB_ERR_UNSUPPORTED = -9
+} sb_result_t;
+
+// Device status
+typedef enum {
+    SB_DEVICE_OK = 0,
+    SB_DEVICE_LOST = 1,
+    SB_DEVICE_RECOVERING = 2,
+    SB_DEVICE_FAILED = 3
+} sb_device_status_t;
+
+// Voice state
+typedef enum {
+    SB_VOICE_IDLE = 0,
+    SB_VOICE_SCHEDULED = 1,
+    SB_VOICE_PLAYING = 2,
+    SB_VOICE_STOPPING = 3
+} sb_voice_state_t;
+
+// Source descriptor types
+typedef enum {
+    SB_SOURCE_SYNTHETIC_CLICK = 0,
+    SB_SOURCE_PCM_BUFFER = 1
+} sb_source_type_t;
+
+// Synthetic click configuration
+typedef struct {
+    double bpm;
+    float frequency_hz;
+    float duration_ms;
+    float amplitude;
+} sb_synthetic_click_config_t;
+
+// Source descriptor
+typedef struct {
+    sb_source_type_t type;
+    union {
+        sb_synthetic_click_config_t synthetic_click;
+    };
+} sb_source_descriptor_t;
+
+// Engine configuration
+typedef struct {
+    uint32_t sample_rate;
+    uint32_t buffer_frames;
+    uint32_t output_channels;
+    uint32_t input_channels;
+    const char* output_device;
+    const char* input_device;
+    void* user_data;
+} sb_engine_config_t;
+
+// Voice configuration
+typedef struct {
+    sb_voice_id_t id;
+    sb_source_descriptor_t source;
+    float initial_rate;
+    float gain;
+} sb_voice_config_t;
+
+// Snapshot/metrics
+typedef struct {
+    sb_frame_t engine_frame;
+    bool running;
+    uint32_t sample_rate;
+    uint32_t buffer_frames;
+    sb_device_status_t device_status;
+    uint32_t recovery_state;
+
+    uint32_t active_voice_count;
+    uint32_t total_voice_count;
+
+    sb_voice_id_t voice_ids[32];
+    sb_voice_state_t voice_states[32];
+    sb_frame_t requested_start_frame[32];
+    sb_frame_t actual_start_frame[32];
+    int32_t start_skew_frames[32];
+    float voice_rates[32];
+    float voice_gains[32];
+
+    double callback_mean_us;
+    double callback_p95_us;
+    double callback_p99_us;
+    double callback_max_us;
+
+    uint64_t underflow_count;
+    uint64_t overflow_count;
+    uint64_t xrun_count;
+
+    uint64_t recording_dropped_frames;
+    bool recording_active;
+
+    uint64_t reserved[16];
+} sb_snapshot_t;
+
+#define SB_MAX_VOICES 32
+#define SB_MAX_RECORDINGS 8
+#define SB_MAX_DEVICE_NAME 256
+
+// Engine lifecycle
+sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_engine);
+sb_result_t sb_engine_start(sb_engine_t engine);
+sb_result_t sb_engine_stop(sb_engine_t engine);
+sb_result_t sb_engine_close(sb_engine_t engine);
+
+// Voice lifecycle
+sb_result_t sb_voice_create(sb_engine_t engine, const sb_voice_config_t* config, sb_voice_id_t* out_id);
+sb_result_t sb_voice_remove(sb_engine_t engine, sb_voice_id_t id);
+sb_result_t sb_voice_schedule_start(sb_engine_t engine, sb_voice_id_t id, sb_frame_t engine_frame);
+sb_result_t sb_voice_stop(sb_engine_t engine, sb_voice_id_t id);
+sb_result_t sb_voice_set_rate(sb_engine_t engine, sb_voice_id_t id, float rate);
+
+// Recording
+sb_result_t sb_recording_start(sb_engine_t engine, sb_recording_id_t* out_id, sb_frame_t engine_frame);
+sb_result_t sb_recording_stop(sb_engine_t engine, sb_recording_id_t id, float** out_buffer, size_t* out_frames);
+void sb_recording_free_buffer(float* buffer);
+
+// Snapshot / Metrics
+sb_result_t sb_engine_snapshot(sb_engine_t engine, sb_snapshot_t* out_snapshot);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // SAMPLEBRAIN_AUDIO_H
