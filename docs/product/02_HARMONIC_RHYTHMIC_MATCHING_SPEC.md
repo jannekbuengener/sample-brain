@@ -176,7 +176,18 @@ Use a reference `sample_id` as context: copy its BPM/key/type as implicit target
 
 ---
 
-## 9. References
+## 9. Workbench Harmonie-Finder (issue #213, shipped UI)
+
+A second `ttk.Notebook` page in the Workbench (`src/workbench_harmony.py`, `find_harmony_matches`) finds **musically related already-loaded `WorkbenchRow`s** against a chosen reference. It is a local, similarity-style convenience feature — **not** the configurable target matching contract from §5.
+
+- Reuses the canonical key parser `src/key_signature.py` (`parse_key_signature`, `format_key_signature`).
+- Relation groups: **Direkt** (same root + known mode), **Verwandt** (relative major/minor, or fifth/fourth with same mode — both modes known), **Transpose** (±3 semitones, both modes known), **Unsicher** (missing/unknown mode).
+- Unknown mode stays cautious: same root with one or both modes unknown is **Unsicher**, never Direkt. No relative/fifth/fourth claim without both modes known.
+- Pitch-shift hint limited to `-3..+3` semitones, shown only when a defined harmony relationship exists. No rendering.
+- Scoring: `total_score = 0.75 * harmony + 0.25 * BPM`, reusing `src/matching.py` BPM scoring. Reference excluded from results; in-memory key override only (never mutates row/DB).
+- Similar-V1 (`src/matching.py` / `compute_workbench_similar_suggestions`) is unchanged.
+
+## 10. References
 
 - `src/matching.py`, `tests/test_matching.py`, CLI `match` in `src/cli.py`
 - [`01_LIBRARY_INTELLIGENCE_SPEC.md`](01_LIBRARY_INTELLIGENCE_SPEC.md)

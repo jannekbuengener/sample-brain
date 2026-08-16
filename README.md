@@ -17,7 +17,7 @@ Sample Brain ist ein lokales Werkzeug für Sample-Analyse, musikalisches Matchin
 | **Track Deconstruction** | ✅ verfügbar | `deconstruct <track> --pack-root <dir>` analysiert Track, erzeugt Track Map, Arrangement (optional), Loop-/Section-Kandidaten, Bewertung, Rendering, Asset-Reanalyse. Schreibt `deconstruct_run.json` als Zwischen-Evidence. Resume/Cache-Reuse (pack-lokal, #262). Track Analysis Cache Integration (#237). |
 | **Performance Packs** | ✅ verfügbar | Portable Pack-Struktur (`manifest.json`, `analysis/`, `loops/`, `sections/`, optional `stems/`). Pack-Import in Katalog (`pack-import`). Wiederaufnahme (pack-lokal #262) + wiederverwendbarer Track-Analyse-Cache (#237). |
 | **Stem Separation** | 🧪 optional / experimentell | Technisch validiert: `htdemucs` & `htdemucs_ft` getestet (8/8 Runs), blinder Hörvergleich: `htdemucs` 4/4 bevorzugt, ~2× schneller. Aber: Weight-Lizenz **UNKNOWN/UNVERIFIED** für beide Modelle. Noch **kein** Produktions-Default, **nicht** im Standard-Deconstruction/Pack-Flow. Issues #247/#248/#249/#261 offen. |
-| **Workbench** | ✅ verfügbar | Lokaler Tkinter-Workbench (`workbench`) für Playlist-Ansicht, Sample-Preview, Matching-Vorschläge. Kein VST3-Produkt. |
+| **Workbench** | ✅ verfügbar | Lokaler Tkinter-Workbench (`workbench`) für Playlist-Ansicht, Sample-Preview, Matching-Vorschläge und Harmonie-Finder (zweite Notebook-Seite: verwandte geladene Samples als Direkt/Verwandt/Transpose/Unsicher, siehe #213). Kein VST3-Produkt. |
 | **VST3 / Realtime Transform** | 🚧 noch nicht fertig | Produktziel, aber nicht implementiert. |
 
 ---

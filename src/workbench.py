@@ -1,4 +1,5 @@
 """Local workbench UI — tkinter playlist view for folder analysis."""
+
 from __future__ import annotations
 
 import threading
@@ -76,13 +77,17 @@ from .workbench_controller import (
     WorkbenchSuggestion,
     workbench_filter_options,
     workbench_rows_for_fl_export,
-    DEFAULT_WORKBENCH_VIEW_SETTINGS,
     VIEW_SECTION_FILTERS,
     VIEW_SECTION_LIBRARY_MANAGE,
     VIEW_SECTION_SEARCH,
     VIEW_SECTION_WAVEFORM_TOOLS,
     WORKBENCH_VIEW_TOGGLE_HELP,
     WorkbenchViewSettings,
+)
+from .workbench_harmony import (
+    HarmonyRelation,
+    HarmonySuggestion as HarmonyFinderSuggestion,
+    find_harmony_matches,
 )
 from .bpm_display import format_bpm_display
 from .workbench_attack_suggest import AttackSuggestion, suggest_attack_ms
@@ -116,9 +121,13 @@ CUE_MARKER = "#ffffff"
 LOOP_REGION_FILL = "#1a3d28"
 LOOP_MARKER = "#6fcf6f"
 ATTACK_MARKER = "#ffc857"
-WAVEFORM_USAGE_HINT = "Linksklick: Play · Rechtsklick: ab Stelle · Shift+Klick: Cue setzen"
+WAVEFORM_USAGE_HINT = (
+    "Linksklick: Play · Rechtsklick: ab Stelle · Shift+Klick: Cue setzen"
+)
 WAVEFORM_LOOP_EDIT_HINT = "Loop-Modus: 1. Klick Start · 2. Klick Ende · Loop löschen"
-WAVEFORM_ATTACK_EDIT_HINT = "Attack-Modus: Klick setzt Attack · Attack vorschlagen · Attack löschen"
+WAVEFORM_ATTACK_EDIT_HINT = (
+    "Attack-Modus: Klick setzt Attack · Attack vorschlagen · Attack löschen"
+)
 
 COLUMNS = (
     ("name", "Name", 180),
@@ -143,6 +152,23 @@ SUGGESTION_COLUMNS = (
     ("reason", "Grund", 180),
     ("score", "Score", 55),
 )
+
+HARMONY_COLUMNS = (
+    ("name", "Name", 150),
+    ("group", "Gruppe", 90),
+    ("bpm", "BPM", 50),
+    ("key", "Key", 45),
+    ("reason", "Grund", 180),
+    ("pitch", "Pitch", 55),
+    ("score", "Score", 55),
+)
+
+HARMONY_RELATION_LABELS = {
+    HarmonyRelation.DIRECT: "Direkt",
+    HarmonyRelation.RELATED: "Verwandt",
+    HarmonyRelation.TRANSPOSE: "Transpose",
+    HarmonyRelation.UNCERTAIN: "Unsicher",
+}
 
 
 def _fmt(value: float | None, *, digits: int = 2) -> str:
@@ -184,7 +210,9 @@ class WorkbenchApp:
         self._restore_last_folder()
         self._refresh_library_list()
         self._refresh_playlist_list()
-        self._set_status("Bereit — Ordnerpfad eingeben oder wählen, dann Analyse starten.")
+        self._set_status(
+            "Bereit — Ordnerpfad eingeben oder wählen, dann Analyse starten."
+        )
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _build_styles(self) -> None:
@@ -200,7 +228,12 @@ class WorkbenchApp:
         style.configure("TLabel", background=BG_DARK, foreground=TEXT)
         style.configure("Muted.TLabel", background=BG_DARK, foreground=TEXT_MUTED)
         style.configure("Panel.TLabel", background=PANEL, foreground=TEXT)
-        style.configure("Heading.TLabel", background=PANEL, foreground=ACCENT, font=("Segoe UI", 11, "bold"))
+        style.configure(
+            "Heading.TLabel",
+            background=PANEL,
+            foreground=ACCENT,
+            font=("Segoe UI", 11, "bold"),
+        )
         style.configure(
             "Accent.TButton",
             background=ACCENT,
@@ -208,8 +241,13 @@ class WorkbenchApp:
             padding=(12, 6),
             font=("Segoe UI", 10, "bold"),
         )
-        style.map("Accent.TButton", background=[("active", "#ff6a33"), ("disabled", "#555555")])
-        style.configure("TButton", background=PANEL_ALT, foreground=TEXT, padding=(10, 5))
+        style.map(
+            "Accent.TButton",
+            background=[("active", "#ff6a33"), ("disabled", "#555555")],
+        )
+        style.configure(
+            "TButton", background=PANEL_ALT, foreground=TEXT, padding=(10, 5)
+        )
         style.map("TButton", background=[("active", "#333333")])
         style.configure(
             "Treeview",
@@ -231,8 +269,12 @@ class WorkbenchApp:
             background=[("selected", ACCENT_DIM)],
             foreground=[("selected", "#ffffff")],
         )
-        style.configure("TEntry", fieldbackground=PANEL_ALT, foreground=TEXT, insertcolor=TEXT)
-        style.configure("Status.TLabel", background=PANEL_ALT, foreground=TEXT_MUTED, padding=(8, 4))
+        style.configure(
+            "TEntry", fieldbackground=PANEL_ALT, foreground=TEXT, insertcolor=TEXT
+        )
+        style.configure(
+            "Status.TLabel", background=PANEL_ALT, foreground=TEXT_MUTED, padding=(8, 4)
+        )
 
     def _build_menubar(self) -> None:
         menubar = tk.Menu(self.root)
@@ -260,9 +302,14 @@ class WorkbenchApp:
         self._folder_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
         self._folder_entry.bind("<Return>", self._on_folder_enter)
 
-        ttk.Button(toolbar, text="Ordner wählen", command=self._pick_folder).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(toolbar, text="Ordner wählen", command=self._pick_folder).pack(
+            side=tk.LEFT, padx=(0, 8)
+        )
         self._analyze_btn = ttk.Button(
-            toolbar, text="Analyse starten", style="Accent.TButton", command=self._start_analysis
+            toolbar,
+            text="Analyse starten",
+            style="Accent.TButton",
+            command=self._start_analysis,
         )
         self._analyze_btn.pack(side=tk.LEFT, padx=(0, 8))
         self._cancel_btn = ttk.Button(
@@ -279,11 +326,17 @@ class WorkbenchApp:
         view_bar = ttk.Frame(self.root, padding=(12, 0, 12, 6))
         self._view_bar = view_bar
         view_bar.pack(fill=tk.X)
-        ttk.Label(view_bar, text="Ansicht:", style="Muted.TLabel").pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Label(view_bar, text="Ansicht:", style="Muted.TLabel").pack(
+            side=tk.LEFT, padx=(0, 8)
+        )
         self._show_search_var = tk.BooleanVar(value=self._view_settings.show_search)
         self._show_filters_var = tk.BooleanVar(value=self._view_settings.show_filters)
-        self._show_library_manage_var = tk.BooleanVar(value=self._view_settings.show_library_manage)
-        self._show_waveform_tools_var = tk.BooleanVar(value=self._view_settings.show_waveform_tools)
+        self._show_library_manage_var = tk.BooleanVar(
+            value=self._view_settings.show_library_manage
+        )
+        self._show_waveform_tools_var = tk.BooleanVar(
+            value=self._view_settings.show_waveform_tools
+        )
         ttk.Checkbutton(
             view_bar,
             text="Suche",
@@ -342,9 +395,9 @@ class WorkbenchApp:
         ttk.Button(lib_btns, text="+", width=3, command=self._add_library_folder).pack(
             side=tk.LEFT, padx=(0, 4)
         )
-        ttk.Button(lib_btns, text="−", width=3, command=self._remove_library_folder).pack(
-            side=tk.LEFT
-        )
+        ttk.Button(
+            lib_btns, text="−", width=3, command=self._remove_library_folder
+        ).pack(side=tk.LEFT)
 
         lib_list_frame = ttk.Frame(library_frame, style="Panel.TFrame")
         lib_list_frame.pack(fill=tk.BOTH, expand=True)
@@ -361,7 +414,9 @@ class WorkbenchApp:
             font=("Segoe UI", 9),
             relief=tk.FLAT,
         )
-        lib_scroll = ttk.Scrollbar(lib_list_frame, orient=tk.VERTICAL, command=self._library_list.yview)
+        lib_scroll = ttk.Scrollbar(
+            lib_list_frame, orient=tk.VERTICAL, command=self._library_list.yview
+        )
         self._library_list.configure(yscrollcommand=lib_scroll.set)
         self._library_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         lib_scroll.pack(side=tk.RIGHT, fill=tk.Y)
@@ -401,12 +456,25 @@ class WorkbenchApp:
         self._playlist_list.bind("<Double-Button-1>", self._on_playlist_activate)
 
         playlist_frame = ttk.Frame(body, style="Panel.TFrame", padding=8)
-        playlist_frame.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
+
+        # Center column hosts a Notebook: tab 1 = Samples (existing playlist),
+        # tab 2 = Harmonie-Finder (issue #213).
+        self._center_notebook = ttk.Notebook(body)
+        self._center_notebook.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
+        self._center_notebook.add(playlist_frame, text="Samples")
+
+        self._harmony_frame = ttk.Frame(
+            self._center_notebook, style="Panel.TFrame", padding=8
+        )
+        self._center_notebook.add(self._harmony_frame, text="Harmonie-Finder")
+        self._build_harmony_tab()
 
         filter_bar = ttk.Frame(playlist_frame, style="Panel.TFrame")
         filter_bar.pack(fill=tk.X, pady=(0, 6))
         self._filter_bar = filter_bar
-        ttk.Label(filter_bar, text="Suche:", style="Panel.TLabel").pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Label(filter_bar, text="Suche:", style="Panel.TLabel").pack(
+            side=tk.LEFT, padx=(0, 6)
+        )
         self._filter_var = tk.StringVar(value="")
         filter_entry = ttk.Entry(filter_bar, textvariable=self._filter_var)
         filter_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -416,7 +484,10 @@ class WorkbenchApp:
             side=tk.RIGHT, padx=(8, 0)
         )
         self._fl_export_btn = ttk.Button(
-            filter_bar, text="FL exportieren", command=self._export_fl, state=tk.DISABLED
+            filter_bar,
+            text="FL exportieren",
+            command=self._export_fl,
+            state=tk.DISABLED,
         )
         self._fl_export_btn.pack(side=tk.RIGHT, padx=(8, 0))
         self._catalog_import_btn = ttk.Button(
@@ -502,7 +573,9 @@ class WorkbenchApp:
             anchor = tk.W if col_id in {"name", "playlist_action"} else tk.CENTER
             self._tree.column(col_id, width=width, anchor=anchor)
 
-        scroll_y = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self._tree.yview)
+        scroll_y = ttk.Scrollbar(
+            tree_frame, orient=tk.VERTICAL, command=self._tree.yview
+        )
         self._tree.configure(yscrollcommand=scroll_y.set)
         self._tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
@@ -540,7 +613,9 @@ class WorkbenchApp:
         for col_id, heading, width in SUGGESTION_COLUMNS:
             self._similar_tree.heading(col_id, text=heading)
             anchor = tk.W if col_id in {"name", "reason"} else tk.CENTER
-            self._similar_tree.column(col_id, width=width, anchor=anchor, stretch=(col_id == "reason"))
+            self._similar_tree.column(
+                col_id, width=width, anchor=anchor, stretch=(col_id == "reason")
+            )
         suggest_scroll = ttk.Scrollbar(
             suggest_frame,
             orient=tk.VERTICAL,
@@ -684,13 +759,306 @@ class WorkbenchApp:
         status_inner = ttk.Frame(status_bar, style="Panel.TFrame")
         status_inner.pack(fill=tk.X, padx=8, pady=4)
         self._status_var = tk.StringVar(value="")
-        self._status_label = ttk.Label(status_inner, textvariable=self._status_var, style="Status.TLabel")
+        self._status_label = ttk.Label(
+            status_inner, textvariable=self._status_var, style="Status.TLabel"
+        )
         self._status_label.pack(fill=tk.X, anchor=tk.W)
         self._progress = ttk.Progressbar(status_inner, mode="determinate", maximum=100)
         self._progress.pack(fill=tk.X, pady=(4, 0))
         self._progress.pack_forget()
         self._apply_view_toolbar_visibility(notify=False)
         self._apply_view_visibility(notify=False)
+
+    def _build_harmony_tab(self) -> None:
+        """Build the Harmonie-Finder tab (issue #213): reference, filter, override, results."""
+        frame = self._harmony_frame
+        self._harmony_suggestions: list[HarmonyFinderSuggestion] = []
+        self._harmony_ref_map: dict[str, WorkbenchRow] = {}
+
+        controls = ttk.Frame(frame, style="Panel.TFrame")
+        controls.pack(fill=tk.X, pady=(0, 6))
+
+        ttk.Label(controls, text="Referenz:", style="Panel.TLabel").pack(
+            side=tk.LEFT, padx=(0, 6)
+        )
+        self._harmony_ref_var = tk.StringVar(value="")
+        self._harmony_ref_combo = ttk.Combobox(
+            controls,
+            textvariable=self._harmony_ref_var,
+            values=(),
+            state="readonly",
+            width=26,
+        )
+        self._harmony_ref_combo.pack(side=tk.LEFT, padx=(0, 8))
+        self._harmony_ref_combo.bind(
+            "<<ComboboxSelected>>", self._on_harmony_ref_changed
+        )
+        ttk.Button(
+            controls,
+            text="Aus Auswahl",
+            command=self._set_harmony_ref_from_selection,
+        ).pack(side=tk.LEFT, padx=(0, 8))
+
+        ttk.Label(controls, text="Filter:", style="Panel.TLabel").pack(
+            side=tk.LEFT, padx=(0, 6)
+        )
+        self._harmony_query_var = tk.StringVar(value="")
+        harmony_query_entry = ttk.Entry(
+            controls, textvariable=self._harmony_query_var, width=14
+        )
+        harmony_query_entry.pack(side=tk.LEFT, padx=(0, 8))
+        self._harmony_query_var.trace_add("write", self._on_harmony_filter_changed)
+
+        ttk.Label(controls, text="Key-Override:", style="Panel.TLabel").pack(
+            side=tk.LEFT, padx=(0, 6)
+        )
+        self._harmony_override_var = tk.StringVar(value="")
+        harmony_override_entry = ttk.Entry(
+            controls, textvariable=self._harmony_override_var, width=10
+        )
+        harmony_override_entry.pack(side=tk.LEFT, padx=(0, 8))
+        self._harmony_override_var.trace_add("write", self._on_harmony_filter_changed)
+
+        ttk.Button(
+            controls,
+            text="Harmonie finden",
+            style="Accent.TButton",
+            command=self._refresh_harmony_matches,
+        ).pack(side=tk.LEFT, padx=(0, 8))
+
+        actions = ttk.Frame(frame, style="Panel.TFrame")
+        actions.pack(fill=tk.X, pady=(0, 4))
+        ttk.Button(actions, text="Preview", command=self._preview_harmony_row).pack(
+            side=tk.LEFT, padx=(0, 6)
+        )
+        ttk.Button(actions, text="Pfad kopieren", command=self._copy_harmony_path).pack(
+            side=tk.LEFT, padx=(0, 6)
+        )
+        ttk.Button(
+            actions, text="Als Referenz", command=self._set_harmony_ref_from_result
+        ).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(
+            actions, text="In Playlist", command=self._focus_harmony_in_playlist
+        ).pack(side=tk.LEFT, padx=(0, 6))
+
+        tree_frame = ttk.Frame(frame, style="Panel.TFrame")
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+        col_ids = [c[0] for c in HARMONY_COLUMNS]
+        self._harmony_tree = ttk.Treeview(
+            tree_frame,
+            columns=col_ids,
+            show="headings",
+            selectmode="browse",
+        )
+        for col_id, heading, width in HARMONY_COLUMNS:
+            self._harmony_tree.heading(col_id, text=heading)
+            anchor = tk.W if col_id in {"name", "reason", "group"} else tk.CENTER
+            self._harmony_tree.column(
+                col_id, width=width, anchor=anchor, stretch=(col_id == "reason")
+            )
+        harmony_scroll = ttk.Scrollbar(
+            tree_frame, orient=tk.VERTICAL, command=self._harmony_tree.yview
+        )
+        self._harmony_tree.configure(yscrollcommand=harmony_scroll.set)
+        self._harmony_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        harmony_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self._harmony_tree.bind("<Double-Button-1>", self._on_harmony_double_click)
+        self._harmony_tree.bind("<Return>", self._on_harmony_double_click)
+        self._harmony_tree.bind("<Button-3>", self._on_harmony_context_menu)
+
+        self._harmony_status_var = tk.StringVar(
+            value="Samples laden, dann Referenz wählen und „Harmonie finden“."
+        )
+        ttk.Label(
+            frame, textvariable=self._harmony_status_var, style="Muted.TLabel"
+        ).pack(fill=tk.X, pady=(4, 0))
+
+    def _refresh_harmony_reference_options(self) -> None:
+        """Rebuild the reference dropdown from currently loaded rows."""
+        self._harmony_ref_map = {}
+        labels: list[str] = []
+        default_label = ""
+        for row in self._rows:
+            if not row.path:
+                continue
+            label = catalog_row_display_name(row)
+            if label in self._harmony_ref_map:
+                continue
+            self._harmony_ref_map[label] = row
+            labels.append(label)
+            if not default_label and row.status == "ok" and row.bpm:
+                default_label = label
+        self._harmony_ref_combo["values"] = tuple(labels)
+        if default_label and not self._harmony_ref_var.get():
+            self._harmony_ref_var.set(default_label)
+        elif self._harmony_ref_var.get() not in self._harmony_ref_map:
+            self._harmony_ref_var.set(labels[0] if labels else "")
+
+    def _selected_harmony_reference(self) -> WorkbenchRow | None:
+        label = self._harmony_ref_var.get()
+        return self._harmony_ref_map.get(label)
+
+    def _on_harmony_ref_changed(self, _event: tk.Event | None = None) -> None:
+        self._refresh_harmony_matches()
+
+    def _on_harmony_filter_changed(self, *_args: object) -> None:
+        self._refresh_harmony_matches()
+
+    def _set_harmony_ref_from_selection(self) -> None:
+        row = self._selected_row()
+        if row is None:
+            self._set_status("Kein Sample in der Playlist ausgewählt.", tone="neutral")
+            return
+        label = catalog_row_display_name(row)
+        self._harmony_ref_map[label] = row
+        values = list(self._harmony_ref_combo["values"]) or []
+        if label not in values:
+            values.append(label)
+        self._harmony_ref_combo["values"] = tuple(values)
+        self._harmony_ref_var.set(label)
+        self._refresh_harmony_matches()
+
+    def _refresh_harmony_matches(self) -> None:
+        if self._busy:
+            return
+        reference = self._selected_harmony_reference()
+        self._harmony_tree.delete(*self._harmony_tree.get_children())
+        self._harmony_suggestions = []
+        if reference is None:
+            self._harmony_status_var.set(
+                "Keine Referenz verfügbar — zuerst Samples laden."
+            )
+            return
+        candidates = [row for row in self._rows if row.path != reference.path]
+        suggestions, status = find_harmony_matches(
+            reference,
+            candidates,
+            query=self._harmony_query_var.get(),
+            key_override=self._harmony_override_var.get().strip() or None,
+        )
+        self._harmony_suggestions = suggestions
+        for index, item in enumerate(suggestions):
+            display_name = catalog_row_display_name(item.row)
+            group_label = HARMONY_RELATION_LABELS.get(
+                item.relation, item.relation.value
+            )
+            pitch = (
+                f"{item.pitch_shift_semitones:+d}"
+                if item.pitch_shift_semitones is not None
+                else "—"
+            )
+            self._harmony_tree.insert(
+                "",
+                tk.END,
+                iid=str(index),
+                values=(
+                    display_name,
+                    group_label,
+                    format_bpm_display(item.row.bpm),
+                    item.row.key or "—",
+                    item.explanation,
+                    pitch,
+                    f"{item.total_score:.4f}",
+                ),
+            )
+        if status is not None:
+            self._harmony_status_var.set(status)
+            self._set_status(status, tone="neutral")
+        else:
+            counts = {
+                relation: sum(1 for s in suggestions if s.relation == relation)
+                for relation in HarmonyRelation
+            }
+            summary = " · ".join(
+                f"{HARMONY_RELATION_LABELS[relation]}: {counts[relation]}"
+                for relation in (
+                    HarmonyRelation.DIRECT,
+                    HarmonyRelation.RELATED,
+                    HarmonyRelation.TRANSPOSE,
+                    HarmonyRelation.UNCERTAIN,
+                )
+            )
+            self._harmony_status_var.set(f"{len(suggestions)} Treffer — {summary}")
+            self._set_status(
+                f"{len(suggestions)} harmonisch passende Samples gefunden.",
+                tone="success",
+            )
+
+    def _selected_harmony_suggestion(self) -> HarmonyFinderSuggestion | None:
+        selected = self._harmony_tree.selection()
+        if not selected:
+            return None
+        index = int(selected[0])
+        if 0 <= index < len(self._harmony_suggestions):
+            return self._harmony_suggestions[index]
+        return None
+
+    def _on_harmony_double_click(self, _event: tk.Event | None = None) -> str:
+        suggestion = self._selected_harmony_suggestion()
+        if suggestion is None:
+            return "break"
+        if not self._focus_playlist_row_by_path(suggestion.row.path):
+            self._preview_row_path = suggestion.row.path
+            self._play_preview()
+        return "break"
+
+    def _on_harmony_context_menu(self, event: tk.Event) -> None:
+        row_id = self._harmony_tree.identify_row(event.y)
+        if row_id:
+            self._harmony_tree.selection_set(row_id)
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label="Preview", command=self._preview_harmony_row)
+        menu.add_command(label="Pfad kopieren", command=self._copy_harmony_path)
+        menu.add_command(
+            label="Als Referenz", command=self._set_harmony_ref_from_result
+        )
+        menu.add_command(
+            label="In Playlist fokussieren", command=self._focus_harmony_in_playlist
+        )
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _preview_harmony_row(self) -> None:
+        if self._busy:
+            return
+        suggestion = self._selected_harmony_suggestion()
+        if suggestion is None or not suggestion.row.path:
+            self._set_status("Kein Harmonie-Treffer ausgewählt.", tone="neutral")
+            return
+        self._preview_row_path = suggestion.row.path
+        self._play_preview()
+
+    def _copy_harmony_path(self) -> None:
+        suggestion = self._selected_harmony_suggestion()
+        if suggestion is None:
+            self._set_status("Kein Harmonie-Treffer ausgewählt.", tone="neutral")
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(suggestion.row.path)
+        self._set_status("Pfad kopiert.", tone="success")
+
+    def _set_harmony_ref_from_result(self) -> None:
+        suggestion = self._selected_harmony_suggestion()
+        if suggestion is None:
+            self._set_status("Kein Harmonie-Treffer ausgewählt.", tone="neutral")
+            return
+        row = suggestion.row
+        label = catalog_row_display_name(row)
+        self._harmony_ref_map[label] = row
+        self._harmony_ref_var.set(label)
+        self._refresh_harmony_matches()
+
+    def _focus_harmony_in_playlist(self) -> None:
+        suggestion = self._selected_harmony_suggestion()
+        if suggestion is None:
+            return
+        if not self._focus_playlist_row_by_path(suggestion.row.path):
+            self._set_status(
+                "Treffer ist in der aktuellen Playlist-Ansicht nicht sichtbar.",
+                tone="neutral",
+            )
 
     def _current_view_settings(self) -> WorkbenchViewSettings:
         return WorkbenchViewSettings(
@@ -739,7 +1107,9 @@ class WorkbenchApp:
         self._loop_edit_pending_start_ms = None
         self._update_waveform_usage_hint()
 
-    def _apply_view_visibility(self, *, notify: bool, status_message: str | None = None) -> None:
+    def _apply_view_visibility(
+        self, *, notify: bool, status_message: str | None = None
+    ) -> None:
         settings = self._current_view_settings()
         if settings.show_search:
             self._filter_bar.pack(fill=tk.X, pady=(0, 6))
@@ -821,7 +1191,9 @@ class WorkbenchApp:
     ) -> ttk.Combobox:
         frame = ttk.Frame(parent, style="Panel.TFrame")
         frame.pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Label(frame, text=label, style="Panel.TLabel").pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Label(frame, text=label, style="Panel.TLabel").pack(
+            side=tk.LEFT, padx=(0, 4)
+        )
         combo = ttk.Combobox(
             frame,
             textvariable=variable,
@@ -841,7 +1213,9 @@ class WorkbenchApp:
     ) -> ttk.Entry:
         frame = ttk.Frame(parent, style="Panel.TFrame")
         frame.pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Label(frame, text=label, style="Panel.TLabel").pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Label(frame, text=label, style="Panel.TLabel").pack(
+            side=tk.LEFT, padx=(0, 4)
+        )
         entry = ttk.Entry(frame, textvariable=variable, width=6)
         entry.pack(side=tk.LEFT)
         variable.trace_add("write", self._on_structured_filter_changed)
@@ -872,7 +1246,10 @@ class WorkbenchApp:
         return filters if filters.active() else None
 
     def _playlist_filters_active(self) -> bool:
-        return bool(self._filter_var.get().strip()) or self._current_row_filters() is not None
+        return (
+            bool(self._filter_var.get().strip())
+            or self._current_row_filters() is not None
+        )
 
     def _update_structured_filter_options(self) -> None:
         options = workbench_filter_options(self._rows)
@@ -901,10 +1278,10 @@ class WorkbenchApp:
 
     def _refresh_library_list(self) -> None:
         folders = get_workbench_library_folders()
-        self._library_paths = (
-            [WORKBENCH_GLOBAL_LIBRARY_TOKEN, WORKBENCH_CATALOG_LIBRARY_TOKEN]
-            + [folder.path for folder in folders]
-        )
+        self._library_paths = [
+            WORKBENCH_GLOBAL_LIBRARY_TOKEN,
+            WORKBENCH_CATALOG_LIBRARY_TOKEN,
+        ] + [folder.path for folder in folders]
         self._library_list.delete(0, tk.END)
         self._library_list.insert(tk.END, f"★ {ALL_LIBRARY_VIEW_LABEL}")
         catalog_label = CATALOG_VIEW_LABEL
@@ -985,7 +1362,9 @@ class WorkbenchApp:
             return
         path = self._selected_library_path()
         if path is None:
-            messagebox.showinfo("Library", "Bitte zuerst einen Library-Ordner auswählen.")
+            messagebox.showinfo(
+                "Library", "Bitte zuerst einen Library-Ordner auswählen."
+            )
             return
         if path == WORKBENCH_GLOBAL_LIBRARY_TOKEN:
             messagebox.showinfo(
@@ -1013,7 +1392,9 @@ class WorkbenchApp:
         elif self._catalog_library_mode:
             self._load_catalog_samples()
         elif removed:
-            self._set_status("Ordner aus Library entfernt (Dateien unverändert).", tone="neutral")
+            self._set_status(
+                "Ordner aus Library entfernt (Dateien unverändert).", tone="neutral"
+            )
         else:
             self._set_status("Ordner war nicht in der Library.", tone="neutral")
 
@@ -1078,7 +1459,9 @@ class WorkbenchApp:
         rows = load_playlist_workbench_rows(playlist_name)
         if not rows:
             self._clear_playlist()
-            self._set_status(format_playlist_load_status(playlist_name, rows), tone="neutral")
+            self._set_status(
+                format_playlist_load_status(playlist_name, rows), tone="neutral"
+            )
             return
         summary = {
             "files_found": len(rows),
@@ -1088,7 +1471,9 @@ class WorkbenchApp:
             "cache_misses": 0,
         }
         self._populate_playlist(WorkbenchResult(summary=summary, rows=rows))
-        self._set_status(format_playlist_load_status(playlist_name, rows), tone="success")
+        self._set_status(
+            format_playlist_load_status(playlist_name, rows), tone="success"
+        )
 
     def _load_all_cached_samples(self) -> None:
         rows = load_all_cached_rows()
@@ -1167,7 +1552,9 @@ class WorkbenchApp:
             tone="success",
         )
 
-    def _load_cached_folder(self, folder: Path, *, announce_if_empty: bool = False) -> None:
+    def _load_cached_folder(
+        self, folder: Path, *, announce_if_empty: bool = False
+    ) -> None:
         self._global_library_mode = False
         self._catalog_library_mode = False
         self._playlist_library_mode = False
@@ -1277,7 +1664,9 @@ class WorkbenchApp:
         self._cancel_btn.state(["disabled"])
         self._set_status("Abbruch angefordert …", tone="active")
 
-    def _on_progress(self, current: int, total: int, display_name: str, phase: str) -> None:
+    def _on_progress(
+        self, current: int, total: int, display_name: str, phase: str
+    ) -> None:
         if phase == "scanning":
             self._set_status("Dateien werden gesammelt …", tone="active")
             return
@@ -1287,7 +1676,9 @@ class WorkbenchApp:
             return
         self._show_progress(current, total)
         if phase == "analyzing":
-            self._set_status(f"Analysiere {current}/{total}: {display_name}", tone="active")
+            self._set_status(
+                f"Analysiere {current}/{total}: {display_name}", tone="active"
+            )
         elif phase == "error":
             self._set_status(
                 f"Analysiere {current}/{total}: {display_name} (Fehler)",
@@ -1310,7 +1701,9 @@ class WorkbenchApp:
             self._progress.pack_forget()
 
     def _run_analysis(self, folder: Path, limit: int | None) -> None:
-        def progress_cb(current: int, total: int, display_name: str, phase: str) -> None:
+        def progress_cb(
+            current: int, total: int, display_name: str, phase: str
+        ) -> None:
             self.root.after(
                 0,
                 lambda: self._on_progress(current, total, display_name, phase),
@@ -1327,7 +1720,9 @@ class WorkbenchApp:
         except Exception as exc:
             self.root.after(0, lambda: self._on_analysis_done(None, exc))
 
-    def _on_analysis_done(self, result: WorkbenchResult | None, error: Exception | None) -> None:
+    def _on_analysis_done(
+        self, result: WorkbenchResult | None, error: Exception | None
+    ) -> None:
         self._busy = False
         self._cancel_event.clear()
         self._analyze_btn.state(["!disabled"])
@@ -1386,6 +1781,10 @@ class WorkbenchApp:
         self._update_sort_headings()
         self._clear_similar_suggestions()
         self._set_detail(None)
+        if hasattr(self, "_harmony_ref_var"):
+            self._harmony_ref_var.set("")
+            self._refresh_harmony_reference_options()
+            self._refresh_harmony_matches()
 
     def _clear_similar_suggestions(self) -> None:
         self._similar_suggestions = []
@@ -1594,9 +1993,7 @@ class WorkbenchApp:
             )
         )
         if self._rows and (
-            self._catalog_library_mode
-            or self._global_library_mode
-            or not self._busy
+            self._catalog_library_mode or self._global_library_mode or not self._busy
         ):
             filters_active = self._playlist_filters_active()
             folder_count: int | None = None
@@ -1620,7 +2017,9 @@ class WorkbenchApp:
                     visible_count=len(visible),
                     filters_active=filters_active,
                     catalog_total=(
-                        self._catalog_total_count if self._catalog_library_mode else None
+                        self._catalog_total_count
+                        if self._catalog_library_mode
+                        else None
                     ),
                     catalog_load_limit=(
                         self._catalog_load_limit if self._catalog_library_mode else None
@@ -1637,6 +2036,8 @@ class WorkbenchApp:
         self._rows = result.rows
         self._update_structured_filter_options()
         self._refresh_playlist_view()
+        self._refresh_harmony_reference_options()
+        self._refresh_harmony_matches()
 
     def _selected_row(self) -> WorkbenchRow | None:
         selected = self._tree.selection()
@@ -1774,10 +2175,12 @@ class WorkbenchApp:
             self._refresh_playlist_list()
             _close()
 
-        ttk.Button(actions, text="Hinzufügen", style="Accent.TButton", command=_submit).pack(
-            side=tk.RIGHT
+        ttk.Button(
+            actions, text="Hinzufügen", style="Accent.TButton", command=_submit
+        ).pack(side=tk.RIGHT)
+        ttk.Button(actions, text="Abbrechen", command=_close).pack(
+            side=tk.RIGHT, padx=(0, 8)
         )
-        ttk.Button(actions, text="Abbrechen", command=_close).pack(side=tk.RIGHT, padx=(0, 8))
         dialog.bind("<Escape>", lambda _event: _close())
         dialog.protocol("WM_DELETE_WINDOW", _close)
 
@@ -1831,11 +2234,15 @@ class WorkbenchApp:
                     tone="active",
                 )
             elif start_ms > 0:
-                self._set_status(f"Wiedergabe ab Cue ({start_ms} ms): {name}", tone="active")
+                self._set_status(
+                    f"Wiedergabe ab Cue ({start_ms} ms): {name}", tone="active"
+                )
             else:
                 self._set_status(f"Wiedergabe ab Anfang: {name}", tone="active")
         else:
-            self._set_status(result.message or "Wiedergabe fehlgeschlagen.", tone="error")
+            self._set_status(
+                result.message or "Wiedergabe fehlgeschlagen.", tone="error"
+            )
         self._update_preview_state(self._detail_row)
 
     def _stop_preview(self) -> None:
@@ -1858,7 +2265,9 @@ class WorkbenchApp:
             )
             return
         if cue.loop_start_ms is None or cue.loop_end_ms is None:
-            self._set_status("Kein Loop gesetzt — Loop-Region zuerst setzen.", tone="error")
+            self._set_status(
+                "Kein Loop gesetzt — Loop-Region zuerst setzen.", tone="error"
+            )
             return
         start_ms = int(cue.loop_start_ms)
         end_ms = int(cue.loop_end_ms)
@@ -1870,7 +2279,9 @@ class WorkbenchApp:
                 tone="active",
             )
         else:
-            self._set_status(result.message or "Loop-Preview fehlgeschlagen.", tone="error")
+            self._set_status(
+                result.message or "Loop-Preview fehlgeschlagen.", tone="error"
+            )
 
     def _play_loop_repeat(self) -> None:
         if self._busy:
@@ -1888,11 +2299,15 @@ class WorkbenchApp:
             )
             return
         if cue.loop_start_ms is None or cue.loop_end_ms is None:
-            self._set_status("Kein Loop gesetzt — Loop-Region zuerst setzen.", tone="error")
+            self._set_status(
+                "Kein Loop gesetzt — Loop-Region zuerst setzen.", tone="error"
+            )
             return
         start_ms = int(cue.loop_start_ms)
         end_ms = int(cue.loop_end_ms)
-        result = self._preview.play_region_loop(row.path, start_ms=start_ms, end_ms=end_ms)
+        result = self._preview.play_region_loop(
+            row.path, start_ms=start_ms, end_ms=end_ms
+        )
         name = Path(row.path).name
         if result.ok:
             self._set_status(
@@ -1900,7 +2315,9 @@ class WorkbenchApp:
                 tone="active",
             )
         else:
-            self._set_status(result.message or "Loop-Wiederholung fehlgeschlagen.", tone="error")
+            self._set_status(
+                result.message or "Loop-Wiederholung fehlgeschlagen.", tone="error"
+            )
 
     def _export_csv(self) -> None:
         rows = self._visible_rows if self._visible_rows else self._rows
@@ -2034,8 +2451,12 @@ class WorkbenchApp:
 
         result = export_workbench_rows_to_fl_tags(exportable, fl_user_data)
         if not result.ok:
-            messagebox.showerror("FL-Export", result.error_message or "FL-Export fehlgeschlagen.")
-            self._set_status(result.error_message or "FL-Export fehlgeschlagen.", tone="error")
+            messagebox.showerror(
+                "FL-Export", result.error_message or "FL-Export fehlgeschlagen."
+            )
+            self._set_status(
+                result.error_message or "FL-Export fehlgeschlagen.", tone="error"
+            )
             return
 
         status = f"FL-Tags exportiert ({result.exported_count} Samples)."
@@ -2135,7 +2556,9 @@ class WorkbenchApp:
             )
             return
         except WorkbenchCueValidationError as exc:
-            self._set_status(f"Cue konnte nicht gespeichert werden: {exc}", tone="error")
+            self._set_status(
+                f"Cue konnte nicht gespeichert werden: {exc}", tone="error"
+            )
             return
         self._draw_waveform(row)
         self._set_status(f"Cue dauerhaft gesetzt: {cue_start_ms} ms", tone="success")
@@ -2152,7 +2575,8 @@ class WorkbenchApp:
     def _on_loop_edit_mode_toggled(self) -> None:
         if self._loop_edit_mode_var.get():
             if self._catalog_library_mode or (
-                self._detail_row is not None and is_catalog_readonly_row(self._detail_row)
+                self._detail_row is not None
+                and is_catalog_readonly_row(self._detail_row)
             ):
                 self._loop_edit_mode_var.set(False)
                 self._show_catalog_edit_blocked()
@@ -2160,7 +2584,9 @@ class WorkbenchApp:
             self._attack_edit_mode_var.set(False)
             self._loop_edit_pending_start_ms = None
             self._update_waveform_usage_hint()
-            self._set_status("Loop bearbeiten aktiv — 1. Klick: Loop-Start", tone="active")
+            self._set_status(
+                "Loop bearbeiten aktiv — 1. Klick: Loop-Start", tone="active"
+            )
             return
         self._loop_edit_pending_start_ms = None
         self._update_waveform_usage_hint()
@@ -2169,7 +2595,8 @@ class WorkbenchApp:
     def _on_attack_edit_mode_toggled(self) -> None:
         if self._attack_edit_mode_var.get():
             if self._catalog_library_mode or (
-                self._detail_row is not None and is_catalog_readonly_row(self._detail_row)
+                self._detail_row is not None
+                and is_catalog_readonly_row(self._detail_row)
             ):
                 self._attack_edit_mode_var.set(False)
                 self._show_catalog_edit_blocked()
@@ -2177,7 +2604,9 @@ class WorkbenchApp:
             self._loop_edit_mode_var.set(False)
             self._loop_edit_pending_start_ms = None
             self._update_waveform_usage_hint()
-            self._set_status("Attack bearbeiten aktiv — Klick auf Waveform", tone="active")
+            self._set_status(
+                "Attack bearbeiten aktiv — Klick auf Waveform", tone="active"
+            )
             return
         self._update_waveform_usage_hint()
         self._set_status("Attack bearbeiten aus", tone="neutral")
@@ -2231,7 +2660,9 @@ class WorkbenchApp:
             )
             return
         except WorkbenchCueValidationError as exc:
-            self._set_status(f"Loop konnte nicht gespeichert werden: {exc}", tone="error")
+            self._set_status(
+                f"Loop konnte nicht gespeichert werden: {exc}", tone="error"
+            )
             return
 
         self._loop_edit_mode_var.set(False)
@@ -2276,7 +2707,9 @@ class WorkbenchApp:
             )
             return
         except WorkbenchCueValidationError as exc:
-            self._set_status(f"Attack konnte nicht gespeichert werden: {exc}", tone="error")
+            self._set_status(
+                f"Attack konnte nicht gespeichert werden: {exc}", tone="error"
+            )
             return
 
         self._attack_edit_mode_var.set(False)
@@ -2314,7 +2747,9 @@ class WorkbenchApp:
             )
             return
         except WorkbenchCueValidationError as exc:
-            self._set_status(f"Attack konnte nicht gelöscht werden: {exc}", tone="error")
+            self._set_status(
+                f"Attack konnte nicht gelöscht werden: {exc}", tone="error"
+            )
             return
 
         self._attack_edit_mode_var.set(False)
@@ -2323,7 +2758,9 @@ class WorkbenchApp:
         self._clear_attack_suggestion()
         self._set_status("Attack gelöscht", tone="success")
 
-    def _set_attack_suggestion_pending(self, suggestion: AttackSuggestion | None) -> None:
+    def _set_attack_suggestion_pending(
+        self, suggestion: AttackSuggestion | None
+    ) -> None:
         self._pending_attack_suggestion = suggestion
         btn = getattr(self, "_attack_suggest_apply_btn", None)
         if btn is None:
@@ -2393,7 +2830,9 @@ class WorkbenchApp:
             )
             return
         except WorkbenchCueValidationError as exc:
-            self._set_status(f"Attack konnte nicht gespeichert werden: {exc}", tone="error")
+            self._set_status(
+                f"Attack konnte nicht gespeichert werden: {exc}", tone="error"
+            )
             return
 
         self._attack_edit_mode_var.set(False)
@@ -2579,10 +3018,12 @@ class WorkbenchApp:
                 ]
             else:
                 lines = []
-            lines.extend([
-                f"Name:     {row.display_name}",
-                "Pfad:",
-            ])
+            lines.extend(
+                [
+                    f"Name:     {row.display_name}",
+                    "Pfad:",
+                ]
+            )
             lines.extend(format_path_display_lines(row.path))
             lines.append("Relativ:")
             lines.extend(format_path_display_lines(row.relative_path))
