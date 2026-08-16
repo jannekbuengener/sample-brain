@@ -203,21 +203,31 @@ class WorkbenchTransportAdapter:
     # ------------------------------------------------------------------
 
     def play(self) -> None:
+        """Start the authoritative transport only when a native clock starts.
+
+        The legacy preview may still play when native audio is unavailable, but
+        that fallback has no sample-accurate engine clock.  In that situation
+        the transport stays stopped instead of exposing a frozen/fake running
+        clock to the UI.
+        """
         with self._lock:
-            self._transport.play()
-            if self._native_engine is not None and self._native_available:
-                try:
-                    self._ensure_owned_native_open_unlocked()
-                    self._native_engine.start()
-                    if hasattr(self._native_engine, "snapshot"):
-                        try:
-                            snapshot = self._native_engine.snapshot()
-                            self._last_native_engine_frame = int(snapshot.engine_frame)
-                        except Exception:
-                            self._last_native_engine_frame = None
-                except Exception as exc:  # pragma: no cover - device specific
-                    warn("Native engine start failed: %s", exc)
-                    self._native_available = False
+            if self._native_engine is None or not self._native_available:
+                self._transport.stop()
+                return
+            try:
+                self._ensure_owned_native_open_unlocked()
+                self._native_engine.start()
+                self._transport.play()
+                if hasattr(self._native_engine, "snapshot"):
+                    try:
+                        snapshot = self._native_engine.snapshot()
+                        self._last_native_engine_frame = int(snapshot.engine_frame)
+                    except Exception:
+                        self._last_native_engine_frame = None
+            except Exception as exc:  # pragma: no cover - device specific
+                warn("Native engine start failed: %s", exc)
+                self._native_available = False
+                self._transport.stop()
 
     def stop(self) -> None:
         with self._lock:
@@ -417,11 +427,12 @@ class WorkbenchTransportAdapter:
                         engine.stop()
                     except Exception:
                         pass
-                if not self._native_owned or self._native_opened:
+                if self._native_owned and self._native_opened:
                     engine.close()
             except Exception:  # pragma: no cover - native/device specific
                 pass
             finally:
-                self._native_engine = None
+                if self._native_owned:
+                    self._native_engine = None
                 self._native_available = False
                 self._native_opened = False
