@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
-import pytest
-
 from src.workbench_transport_ui import (
     TransportAwarePreview,
     WorkbenchTransportUiController,
@@ -164,6 +162,7 @@ def _fake_ui_apis() -> _UiApis:
 def _fake_app():
     return SimpleNamespace(
         root=FakeRoot(),
+        _body=object(),
         _view_bar=object(),
         _preview=FakePreview(),
     )
@@ -189,8 +188,9 @@ def test_controller_builds_real_tempo_and_sync_controls():
     assert app._sync_control.kwargs["text"] == "SYNC"
     assert app._sync_control.kwargs["variable"] is app._sync_var
     assert "Master Tempo" not in app._tempo_var.get()
-    assert app._transport_bar.pack_kwargs["before"] is app._view_bar
+    assert app._transport_bar.pack_kwargs["before"] is app._body
     assert app.root.after_calls[0][0] == 50
+    assert app._transport_snapshot["current_tempo"] == 132.0
 
     controller.close()
 
