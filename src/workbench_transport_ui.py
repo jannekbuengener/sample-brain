@@ -8,9 +8,9 @@ The GUI poll only reads snapshots; it never advances time from wall-clock data.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 import tkinter as tk
 from tkinter import ttk
+from typing import Any
 
 from .workbench_transport_adapter import WorkbenchTransportAdapter
 
@@ -99,8 +99,6 @@ class WorkbenchTransportUiController:
         tk_api = self.ui.tk
         ttk_api = self.ui.ttk
         bar = ttk_api.Frame(self.app.root, padding=(12, 0, 12, 6))
-        # Controls are part of the main Workbench surface and stay above the
-        # optional view toolbar.
         bar.pack(fill=tk_api.X, before=self.app._view_bar)
         self.app._transport_bar = bar
 
@@ -113,9 +111,17 @@ class WorkbenchTransportUiController:
         self.tempo_label.pack(side=tk_api.LEFT, padx=(0, 8))
         self.app._tempo_label = self.tempo_label
 
-        self.tempo_down = ttk_api.Button(bar, text="−", command=lambda: self.adjust_tempo(-1.0))
+        self.tempo_down = ttk_api.Button(
+            bar,
+            text="−",
+            command=lambda: self.adjust_tempo(-1.0),
+        )
         self.tempo_down.pack(side=tk_api.LEFT, padx=(0, 4))
-        self.tempo_up = ttk_api.Button(bar, text="+", command=lambda: self.adjust_tempo(1.0))
+        self.tempo_up = ttk_api.Button(
+            bar,
+            text="+",
+            command=lambda: self.adjust_tempo(1.0),
+        )
         self.tempo_up.pack(side=tk_api.LEFT, padx=(0, 12))
 
         self.sync_var = tk_api.BooleanVar(value=bool(initial["sync_enabled"]))
@@ -150,6 +156,7 @@ class WorkbenchTransportUiController:
 
     def refresh_snapshot(self) -> dict[str, object]:
         snapshot = self.transport.get_snapshot()
+        self.app._transport_snapshot = snapshot
         self.tempo_var.set(format_transport_tempo_label(snapshot["current_tempo"]))
         self.sync_var.set(bool(snapshot["sync_enabled"]))
         return snapshot
