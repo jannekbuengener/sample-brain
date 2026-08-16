@@ -99,7 +99,9 @@ class WorkbenchTransportUiController:
         tk_api = self.ui.tk
         ttk_api = self.ui.ttk
         bar = ttk_api.Frame(self.app.root, padding=(12, 0, 12, 6))
-        bar.pack(fill=tk_api.X, before=self.app._view_bar)
+        # The optional view toolbar may be hidden by persisted settings.  The
+        # main body is always packed, so it is the stable insertion anchor.
+        bar.pack(fill=tk_api.X, before=self.app._body)
         self.app._transport_bar = bar
 
         initial = self.transport.get_snapshot()
