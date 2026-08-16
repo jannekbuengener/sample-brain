@@ -285,9 +285,15 @@ def build_entry_dict(
     configuration: Optional[dict],
     aggregate_status: str,
     stems: list,
+    reason_code: Optional[str] = None,
+    error: Optional[dict] = None,
 ) -> dict:
-    """Build a portable cache entry dict (no absolute private paths)."""
-    return {
+    """Build a portable cache entry dict (no absolute private paths).
+
+    ``reason_code`` / ``error`` preserve the truthful optional-step failure
+    reason from the executor so #249 can report it without re-deriving it.
+    """
+    entry: dict = {
         "document_type": STEM_CACHE_DOCUMENT_TYPE,
         "schema_version": STEM_CACHE_SCHEMA_VERSION,
         "cache_key": cache_key,
@@ -301,6 +307,11 @@ def build_entry_dict(
         "aggregate_status": aggregate_status,
         "stems": stems,
     }
+    if reason_code is not None:
+        entry["reason_code"] = reason_code
+    if error is not None:
+        entry["error"] = error
+    return entry
 
 
 # ---------------------------------------------------------------------------
@@ -525,7 +536,9 @@ def _copy_cached_outputs(entry_dir: Path, output_dir: Path, entry: dict) -> None
             continue
         src = entry_dir / "outputs" / stem["file_ref"]
         if src.is_file():
-            shutil.copyfile(src, output_dir / stem["file_ref"])
+            dst = output_dir / stem["file_ref"]
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, dst)
         manifest_ref = stem.get("manifest_ref")
         if manifest_ref:
             msrc = entry_dir / "manifests" / manifest_ref
@@ -636,6 +649,8 @@ def separate_with_cache(
             "backend": cached.get("backend"),
             "provenance": cached.get("model"),
             "reused": True,
+            "reason_code": cached.get("reason_code"),
+            "error": cached.get("error"),
         }
 
     return _run_executor(
@@ -704,6 +719,8 @@ def _run_executor(
                 or (
                     Path(st["manifest_path"]).name if st.get("manifest_path") else None
                 ),
+                "reason_code": st.get("reason_code"),
+                "error": st.get("error"),
             }
         )
 
@@ -726,6 +743,8 @@ def _run_executor(
             configuration=configuration,
             aggregate_status=status,
             stems=entry_stems,
+            reason_code=result.get("reason_code"),
+            error=result.get("error"),
         )
         publish_entry(
             cache_root=cache_root,
@@ -742,6 +761,8 @@ def _run_executor(
         "backend": backend,
         "provenance": model_identity.to_provenance(),
         "reused": False,
+        "reason_code": result.get("reason_code"),
+        "error": result.get("error"),
     }
 
 

@@ -191,10 +191,50 @@ def main():
         action="store_true",
         help="Skip the optional arrangement step.",
     )
-    p_deconstruct.add_argument(
+    stem_group = p_deconstruct.add_mutually_exclusive_group()
+    stem_group.add_argument(
+        "--stems",
+        action="store_true",
+        help=(
+            "EXPERIMENTAL / research-only: enable optional stem separation. "
+            "Demucs weights are RESEARCH_ONLY / commercial use NOT granted. "
+            "Requires --stem-model and --stem-weight-hash."
+        ),
+    )
+    stem_group.add_argument(
         "--skip-stems",
         action="store_true",
-        help="Skip the optional stems step.",
+        help="Skip the optional stems step (this is the default behavior).",
+    )
+    p_deconstruct.add_argument(
+        "--stem-model",
+        default=None,
+        help="Stem model filename, e.g. htdemucs.yaml or htdemucs_ft.yaml.",
+    )
+    p_deconstruct.add_argument(
+        "--stem-weight-hash",
+        default=None,
+        help="Actual cryptographic hash of the loaded weight file/set (truthful provenance).",
+    )
+    p_deconstruct.add_argument(
+        "--stem-weight-hash-algo",
+        default="sha256",
+        help="Hash algorithm for --stem-weight-hash (sha256 for htdemucs, sha256-set-v1 for htdemucs_ft).",
+    )
+    p_deconstruct.add_argument(
+        "--stem-cache-dir",
+        default=None,
+        help="Override the user-local stem cache directory.",
+    )
+    p_deconstruct.add_argument(
+        "--no-stem-cache",
+        action="store_true",
+        help="Disable the global stem cache; always run separation.",
+    )
+    p_deconstruct.add_argument(
+        "--stem-model-cache-dir",
+        default=None,
+        help="Optional model cache directory passed to the separation backend.",
     )
     p_deconstruct.add_argument(
         "--beat-backend",
@@ -651,6 +691,28 @@ def main():
         if args.skip_stems:
             skip.add("stems")
 
+        stems_enabled = bool(args.stems)
+        stem_model = args.stem_model if stems_enabled else None
+        stem_weight_hash = None
+        if stems_enabled and args.stem_weight_hash:
+            stem_weight_hash = {
+                "algorithm": args.stem_weight_hash_algo,
+                "value": args.stem_weight_hash,
+            }
+
+        if stems_enabled and not stem_model:
+            print(
+                "ERROR: --stems requires --stem-model (e.g. htdemucs.yaml).",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        if stems_enabled and not args.stem_weight_hash:
+            print(
+                "ERROR: --stems requires --stem-weight-hash (actual verified weight identity).",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
         pack_root = Path(args.pack_root)
         result = run_deconstruct(
             Path(args.path),
@@ -661,6 +723,12 @@ def main():
             resume=not args.no_resume,
             track_cache_dir=args.track_cache_dir,
             track_cache_enabled=not args.no_track_cache,
+            stems_enabled=stems_enabled,
+            stem_model=stem_model,
+            stem_weight_hash=stem_weight_hash,
+            stem_cache_dir=args.stem_cache_dir,
+            stem_cache_enabled=not args.no_stem_cache,
+            stem_model_cache_dir=args.stem_model_cache_dir,
         )
 
         pack_root.mkdir(parents=True, exist_ok=True)

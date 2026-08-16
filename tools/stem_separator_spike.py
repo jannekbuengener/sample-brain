@@ -83,6 +83,7 @@ def map_stem_to_manifest(
     output_properties: dict,
     model_identity: dict,
     backend_version: str,
+    audio_ref: str = "/source/original",
 ) -> dict:
     """Map one produced stem to a Stem Manifest v1 document.
 
@@ -126,7 +127,7 @@ def map_stem_to_manifest(
         "track_ref": track_ref,
         "status": "ok",
         "source": {
-            "audio_ref": "/source/original",
+            "audio_ref": audio_ref,
             "hash": {"algorithm": "sha1", "value": source_hash},
             "audio_properties": {
                 "sample_rate_hz": int(source_properties["sample_rate_hz"]),
@@ -214,14 +215,22 @@ class StemSeparatorProcessWrapper:
     def separate_via_subprocess(
         self,
         input_path: Path,
-        track_hash: str,
+        track_ref: str,
+        working_audio_hash: str,
         model_filename: str,
         output_dir: Path,
+        *,
+        weight_hash: str | None = None,
+        weight_hash_algo: str | None = None,
+        separation_fingerprint: str | None = None,
         model_cache_dir: Path | None = None,
         timeout: float = 600.0,
     ) -> dict:
         """
-        Executes the separate command inside a separate subprocess to isolate resources and errors.
+        Executes the separate command inside a separate subprocess to isolate
+        resources and errors. Forwards the exact provenance (track_ref,
+        working_audio_hash, model + weight hash) so no ambiguous single hash is
+        reused across identity and audio-input concepts.
         """
         cmd = [
             sys.executable,
@@ -229,13 +238,21 @@ class StemSeparatorProcessWrapper:
             "separate",
             "--input",
             str(input_path),
-            "--track-hash",
-            track_hash,
+            "--track-ref",
+            track_ref,
+            "--working-audio-hash",
+            working_audio_hash,
             "--model",
             model_filename,
             "--output-dir",
             str(output_dir),
         ]
+        if weight_hash:
+            cmd.extend(["--weight-hash", weight_hash])
+        if weight_hash_algo:
+            cmd.extend(["--weight-hash-algo", weight_hash_algo])
+        if separation_fingerprint:
+            cmd.extend(["--separation-fingerprint", separation_fingerprint])
         if model_cache_dir:
             cmd.extend(["--model-cache-dir", str(model_cache_dir)])
 
@@ -323,7 +340,9 @@ def cli_separate(args: argparse.Namespace) -> None:
     input_path = Path(args.input)
     output_dir = Path(args.output_dir)
     model_filename = args.model
-    track_hash = args.track_hash
+    track_ref = args.track_ref
+    working_audio_hash = args.working_audio_hash
+    separation_fingerprint = args.separation_fingerprint
 
     # Resolve declared model identity from #247. The actual cryptographic
     # weight hash must be supplied explicitly; we never fabricate it.
@@ -365,7 +384,6 @@ def cli_separate(args: argparse.Namespace) -> None:
         print(json.dumps({"status": "not_run", "reason_code": "BACKEND_UNAVAILABLE"}))
         return
 
-    # Check that ffmpeg is installed, otherwise handle gracefully
     try:
         # Initialize Separator
         model_file_dir = args.model_cache_dir if args.model_cache_dir else None
@@ -404,21 +422,33 @@ def cli_separate(args: argparse.Namespace) -> None:
                 "duration_sec": orig_info.duration,
             }
         except Exception:
-            orig_properties = {
-                "sample_rate_hz": 44100,
-                "channels": 2,
-                "n_samples": 88200,
-                "duration_sec": 2.0,
-            }
+            # No fabricated fallback: report explicit failure instead.
+            print(
+                json.dumps(
+                    {
+                        "status": "failed",
+                        "error": {
+                            "code": "SOURCE_PROBE_FAILED",
+                            "message": "could not probe source audio",
+                        },
+                    }
+                )
+            )
+            return
 
-        # Match stems to manifests
-        stems = {}
+        # Match stems to manifests. The separation fingerprint component makes
+        # the stem id change whenever the actual separation identity changes
+        # (model / checkpoint / weight / config), not just the track.
+        stems: dict = {}
         backend_version = get_backend_version()
+        if separation_fingerprint:
+            sep_hash = hashlib.sha256(separation_fingerprint.encode("utf-8")).hexdigest()[:8]
+        else:
+            sep_hash = track_ref[:8]
+        model_short = model_filename.replace(".yaml", "")
 
-        # The outputs generated will be written to output_dir with custom names
         stem_kinds = ["drums", "bass", "vocals", "other"]
         for stem_kind in stem_kinds:
-            # Look for the exact output file
             filename = f"{stem_kind}.wav"
             out_file_path = output_dir / filename
             if not out_file_path.exists():
@@ -428,9 +458,15 @@ def cli_separate(args: argparse.Namespace) -> None:
                     out_file_path = possible_matches[0]
                     filename = out_file_path.name
                 else:
+                    stems[stem_kind] = {
+                        "stem_kind": stem_kind,
+                        "status": "failed",
+                        "reason_code": "EMPTY_STEM_OUTPUT",
+                        "manifest_ref": None,
+                        "audio_ref": None,
+                    }
                     continue
 
-            # Compute output details
             out_hash = file_hash(out_file_path)
             try:
                 out_info = sf.info(out_file_path)
@@ -441,40 +477,54 @@ def cli_separate(args: argparse.Namespace) -> None:
                     "duration_sec": out_info.duration,
                 }
             except Exception:
-                out_properties = orig_properties
+                # No fabricated fallback: mark this stem failed, keep others.
+                stems[stem_kind] = {
+                    "stem_kind": stem_kind,
+                    "status": "failed",
+                    "reason_code": "OUTPUT_PROBE_FAILED",
+                    "manifest_ref": None,
+                    "audio_ref": None,
+                }
+                continue
 
-            # Map to v1 stem manifest schema
-            stem_id = f"stem_{stem_kind}_{track_hash[:8]}"
+            # Map to v1 stem manifest schema. The manifest is written as a
+            # sibling of the produced audio (relative output.file_ref).
+            stem_id = f"stem_{stem_kind}_{model_short}_{track_ref[:8]}_{sep_hash}"
             manifest = map_stem_to_manifest(
                 stem_id=stem_id,
                 stem_kind=stem_kind,
-                track_ref=track_hash,
-                source_hash=track_hash,
+                track_ref=track_ref,
+                source_hash=working_audio_hash,
                 source_properties=orig_properties,
                 file_ref=filename,
                 output_hash=out_hash,
                 output_properties=out_properties,
                 model_identity=model_identity,
                 backend_version=backend_version,
+                audio_ref="/source/working_audio",
             )
 
-            # Write the manifest file inside the output_dir/stems
-            stems_dir = output_dir / "stems"
-            stems_dir.mkdir(parents=True, exist_ok=True)
-            manifest_file = stems_dir / f"{stem_id}.json"
+            manifest_file = output_dir / f"{stem_id}.json"
             manifest_file.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
             stems[stem_kind] = {
-                "manifest_ref": f"stems/{stem_id}.json",
+                "manifest_ref": f"{stem_id}.json",
                 "audio_ref": filename,
                 "manifest_content": manifest,
+                "status": "ok",
             }
+
+        produced = [s for s in stems.values() if s.get("status") == "ok"]
+        if produced:
+            status = "partial" if len(produced) < len(stem_kinds) else "ok"
+        else:
+            status = "failed"
 
         # Return completion status
         print(
             json.dumps(
                 {
-                    "status": "ok",
+                    "status": status,
                     "model_filename": model_filename,
                     "backend_version": backend_version,
                     "stems": stems,
@@ -513,7 +563,14 @@ def main() -> None:
     sep_parser = subparsers.add_parser("separate", help="Separate an input audio file")
     sep_parser.add_argument("--input", required=True, help="Path to input audio file")
     sep_parser.add_argument(
-        "--track-hash", required=True, help="SHA-1 hash of the input audio file"
+        "--track-ref",
+        required=True,
+        help="Portable Track Map identity (content hash) of the source track.",
+    )
+    sep_parser.add_argument(
+        "--working-audio-hash",
+        required=True,
+        help="Cryptographic hash of the exact audio bytes sent to the separator.",
     )
     sep_parser.add_argument(
         "--model", required=True, help="Model filename, e.g. htdemucs.yaml"
@@ -527,13 +584,18 @@ def main() -> None:
     sep_parser.add_argument(
         "--weight-hash",
         required=False,
-        help="Actual cryptographic SHA-256 of the loaded weight file/set. Required for truthful provenance.",
+        help="Actual cryptographic hash of the loaded weight file/set. Required for truthful provenance.",
     )
     sep_parser.add_argument(
         "--weight-hash-algo",
         required=False,
         default="sha256",
-        help="Hash algorithm used for --weight-hash (default: sha256)",
+        help="Hash algorithm used for --weight-hash (sha256 or sha256-set-v1).",
+    )
+    sep_parser.add_argument(
+        "--separation-fingerprint",
+        required=False,
+        help="Canonical separation fingerprint; used to derive a deterministic stem id.",
     )
 
     args = parser.parse_args()

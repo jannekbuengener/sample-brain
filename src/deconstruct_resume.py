@@ -41,26 +41,40 @@ CONTRACT_VERSIONS: dict[str, int] = {
     "track_map": 1,
     "arrangement": 1,
     "assets": 1,
-    "stems": 1,
+    "stems": 2,
 }
 
 # Statuses that may be reused on resume.
 CACHEABLE_STATUSES: tuple[str, ...] = ("ok", "partial")
 
 # Step dependency order for upstream cache-key chaining.
+# NOTE (#249): the technical stem result is not semantically derived from the
+# produced assets; its identity is based on the original source content, the
+# actual separation input, and the stem config/model identity. The artificial
+# ``assets`` dependency is therefore removed so an unrelated asset change does
+# not force a stem recomputation unless the stem input actually changed.
 _UPSTREAM: dict[str, tuple[str, ...]] = {
     "track_map": (),
     "arrangement": ("track_map",),
     "assets": ("arrangement",),
-    "stems": ("assets",),
+    "stems": (),
 }
 
 # Config fields (subset) that influence each step's output.
+# For stems, only output-affecting separation config enters the fingerprint
+# (no cache dir / model cache dir / temp dir / absolute paths / timestamps).
 _CONFIG_FIELDS: dict[str, tuple[str, ...]] = {
     "track_map": ("bpm_normalization",),
     "arrangement": ("beat_backend", "bpm_normalization"),
     "assets": (),
-    "stems": (),
+    "stems": (
+        "enabled",
+        "model",
+        "checkpoint",
+        "weight_hash",
+        "weight_hash_algo",
+        "separation",
+    ),
 }
 
 
@@ -108,13 +122,20 @@ def compute_step_cache_key(
 
 
 def _relevant_config(
-    step_id: str, bpm_normalization: str, beat_backend: str
+    step_id: str,
+    bpm_normalization: str,
+    beat_backend: str,
+    stem_options: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     out: dict[str, Any] = {}
     if "bpm_normalization" in _CONFIG_FIELDS.get(step_id, ()):
         out["bpm_normalization"] = bpm_normalization
     if "beat_backend" in _CONFIG_FIELDS.get(step_id, ()):
         out["beat_backend"] = beat_backend
+    if step_id == "stems" and stem_options:
+        for field in _CONFIG_FIELDS.get("stems", ()):
+            if field in stem_options:
+                out[field] = stem_options[field]
     return out
 
 
@@ -144,6 +165,10 @@ def build_output_inventory(
         _add(ref)
         if step_id == "assets" and ref.endswith(".json"):
             _add_asset_wav(pack_root, ref, inventory)
+        # A stem manifest JSON alone is not enough: the referenced stem WAV must
+        # also be present and intact for pack-local resume to be valid (#249).
+        if step_id == "stems" and ref.endswith(".json"):
+            _add_stem_wav(pack_root, ref, inventory)
 
     if step_id == "arrangement":
         _add("analysis/working_audio.wav")
@@ -165,6 +190,29 @@ def _add_asset_wav(
     if not file_ref:
         return
     # file_ref is relative to the manifest's directory; make it pack-root-relative.
+    wav_path = (manifest_path.parent / file_ref).resolve()
+    try:
+        rel = wav_path.relative_to(pack_root.resolve()).as_posix()
+    except Exception:
+        return
+    if wav_path.exists():
+        inventory.append({"ref": rel, "sha1": file_hash(wav_path)})
+
+
+def _add_stem_wav(
+    pack_root: Path, manifest_ref: str, inventory: list[dict[str, str]]
+) -> None:
+    manifest_path = pack_root / manifest_ref
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    output = data.get("output") or {}
+    file_ref = output.get("file_ref")
+    if not file_ref:
+        return
+    # Stem Manifest output.file_ref is relative to the manifest's directory
+    # (which is <pack_root>/stems/); make it pack-root-relative.
     wav_path = (manifest_path.parent / file_ref).resolve()
     try:
         rel = wav_path.relative_to(pack_root.resolve()).as_posix()

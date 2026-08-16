@@ -248,3 +248,12 @@ Exit-Codes unverändert zu #259 (`0` bei `complete`/`partial`, `2` bei `failed`)
 (nur Resume-Metadaten, kein finales `manifest.json`) · #263 Re-Import · #264
 End-to-End-Privatpilot · CLAP · neue Modelle · DB-Migration · Dependency-
 Änderungen · private Audio-Dateien · GUI/Workbench.
+
+## Issue #249 — Stems-Step Resume
+
+- Der `stems`-Step führt jetzt ein echtes `output_inventory`: jedes Stem-Manifest
+  JSON (`stems/<stem_id>.json`) **und** die referenzierte WAV (`stems/<kind>.wav`).
+- Pack-lokales Resume rechnet den `stems`-Step neu, sobald eine inventarisierte
+  Datei fehlt oder verändert ist (analog zu `assets`/`arrangement`).
+- Der `stems`-Step bleibt optional (`required=False`); ein `not_run`-Eintrag ist
+  weiterhin resumable (leeres Inventory ist nie wiederverwendbar).

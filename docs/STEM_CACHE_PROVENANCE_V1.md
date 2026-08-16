@@ -345,14 +345,19 @@ contract, not Stem Manifest v2.
 
 ---
 
-## 17. Handoff To #249
+## 17. Handoff To #249 (DONE)
 
-#249 (Deconstruct stem integration) will:
+#249 (Deconstruct stem integration) is implemented:
 
-- supply the **actual** weight identity (resolve real weight file paths / hashes
-  from the loaded model set) and pass it into `separate_with_cache`,
-- wire `separate_with_cache` into the Deconstruct stems step,
-- pass `backend_name` / `backend_version` for correct fingerprinting.
-
-Until then, incomplete model identity degrades to uncached, truthful execution
-rather than a fabricated provenance hit.
+- `src/deconstruct.py` calls `separate_with_cache` (from this module) for the
+  optional `stems` step. The executor is `tools.stem_separator_spike` run in an
+  isolated subprocess; `stem_runtime.build_subprocess_executor` wires provenance.
+- The actual weight identity is supplied by the caller via `--stem-weight-hash`
+  (and validated against the model's expected algorithm); `backend_name` /
+  `backend_version` are passed for correct fingerprinting.
+- Cache order: (1) pack-local #262 resume (checked by the orchestrator before
+  the step runs), then (2) global #248 cache — a `hit` copies validated outputs
+  into `<pack_root>/stems/` without re-running separation. `cache_status` is
+  recorded in the stems StepResult provenance (`stem_cache_status`).
+- Incomplete model identity degrades to uncached, truthful execution (no
+  fabricated provenance hit), preserving the guarantees above.

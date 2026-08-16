@@ -173,3 +173,30 @@ DB-Migration · Dependency-Änderungen · private Audio-Dateien · GUI/Workbench
 (Resume/Cache ist Gegenstand von **#262**, siehe
 [`PERFORMANCE_PACK_RESUME_V1.md`](PERFORMANCE_PACK_RESUME_V1.md) — kein
 Non-Goal mehr.)
+
+## Issue #249 — Optionaler Stem-Step (Deconstruct-Integration)
+
+- `stems` ist ein **optionaler** Step (`required=False`). Er ist ein No-Op,
+  sofern nicht `--stems` übergeben wird; sonst meldet er `not_run` mit
+  `STEMS_NOT_REQUESTED`.
+- Opt-in verlangt wahrheitsgemäße Provenance: `--stem-model`
+  (z. B. `htdemucs.yaml`, `htdemucs_ft.yaml`) und `--stem-weight-hash`
+  (tatsächliche kryptografische Weight-Identity). Der Weight-Hash-Algorithmus
+  wird gegen das Modell validiert (`sha256` für `htdemucs`, `sha256-set-v1` für
+  `htdemucs_ft`); ein Missmatch wird mit `WEIGHT_IDENTITY_UNAVAILABLE`
+  abgewiesen, es läuft keine Separation.
+- Separation nutzt das **kanonische Working-Audio** (`analysis/working_audio.wav`)
+  als exakten Separation-Input; `track_ref` ist der Track-Map-Wert
+  `source.original.hash.value` (kein Pfad/UUID-Fallback).
+- Separation läuft in isoliertem Subprocess via `tools/stem_separator_spike`
+  (`audio_separator`/`torch` werden nie von Core importiert). Outputs landen in
+  `<pack_root>/stems/` (WAVs + signierte Stem-Manifests, #244).
+- Stem-Separation ist **research-only**: Demucs-Weights sind
+  `RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED`. Es gibt **keinen Production-
+  Default** (`production_default: NO_GO`); der Step ist experimentell.
+- Failure Isolation: ein Stem-Fehler (`not_run`/`failed`/`partial`) bricht die
+  gesamte Track Deconstruction nie ab. Der Run-Status wird `partial`, nicht
+  `failed`.
+- Cache-Ebenen: globaler #248 Stem-Cache (`separate_with_cache`) und pack-lokales
+  #262 Resume. Bei einem #248 `hit` werden die Outputs nach
+  `<pack_root>/stems/` kopiert, ohne Separation erneut auszuführen.
