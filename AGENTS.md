@@ -15,10 +15,14 @@
 - Stack: Python (3.12+), sqlite, librosa/soundfile, numpy/scipy, sqlalchemy.
 - CLI entrypoint: `src/cli.py`.
 - Main flow: `init -> scan -> analyze -> autotype -> export_fl` (optional: `embed -> index_build -> search`).
+- The existing offline analysis/data pipeline remains the foundation. Local real-time playback, mixing, recording, grid-bound editing, `TEMPO`, `SYNC`, and `HÄFTIG` are explicitly allowed inside the local Workbench under the boundary in `docs/REALTIME_WORKBENCH_SCOPE.md` (#318/#319).
+- A native audio core may own the hard real-time audio path. Python/Tkinter remains UI/analysis/control and must not become the authoritative real-time audio clock.
+- The #318 cluster is not a full DAW and does not require a VST/VST3/FL Studio plugin.
 
 ## Global Rules
 - Keep changes minimal, scoped, and reversible.
 - Do not commit machine-local paths, secrets, private keys, or credentials.
+- Never commit private samples, tracks, recordings, generated audio, device dumps, or runtime audio caches.
 - Respect config/profile indirection (`config/profiles.example.yaml` + optional local overrides) instead of hardcoding environment-specific values.
 - Preserve graceful behavior for optional dependencies (especially embedding backends).
 - Prefer updating tests together with behavior changes.
@@ -64,7 +68,8 @@ Benchmark harness (local only, work-dir outside repo): `python -m src.cli benchm
 ## Cursor Cloud specific instructions
 
 ### Product shape
-- **sample-brain** is a single-process Python CLI (no web server, no Docker). End-to-end testing is sequential CLI invocation, not service startup.
+- **sample-brain** is primarily a local Python CLI plus local Workbench (no web server, no Docker). End-to-end pipeline testing is sequential CLI invocation, not service startup.
+- The Workbench may use a narrow native audio core for hard real-time playback/recording while Python remains UI/analysis/control; see `docs/REALTIME_WORKBENCH_SCOPE.md`.
 - Entry point: `python -m src.cli` (or `.venv/bin/python -m src.cli` on Linux).
 
 ### One-time VM prerequisites (not in update script)
