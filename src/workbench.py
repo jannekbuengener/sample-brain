@@ -84,6 +84,7 @@ from .workbench_controller import (
     WORKBENCH_VIEW_TOGGLE_HELP,
     WorkbenchViewSettings,
 )
+from .workbench_transport_adapter import WorkbenchTransportAdapter
 from .workbench_harmony import (
     HarmonyRelation,
     HarmonySuggestion as HarmonyFinderSuggestion,

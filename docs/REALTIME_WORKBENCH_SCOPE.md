@@ -70,5 +70,10 @@ Die neue Audio-Workbench baut auf diesen Informationen auf, ohne deren Verträge
 
 - #320 definiert Session Transport, Tempo Map und Grid.
 - #321 baut den nativen miniaudio/WASAPI-Core als PoC.
-- #322–#327 hängen TEMPO/SYNC, Playback-Modi, Recording, Editing und `HÄFTIG` an denselben Zeitvertrag.
+- #322 — TEMPO / SYNC / gemeinsames Grid in der Workbench anbinden
+- #323 — SYNC-Modus: Playback-Rate ändern, Pitch folgt Tempo
+- #324 — SYNC-Key-Lock mit Signalsmith Stretch
+- #325 — Direkte Aufnahme + Recordings-Playlist
+- #326 — Nicht-destruktives, grid-gebundenes Waveform-Schneiden
+- #327 — 16-Takt `HÄFTIG` per Hotkey auf Source-Grid
 - #328 validiert Langzeit-SYNC, Latenz, Recording und Windows-Geräte.

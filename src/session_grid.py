@@ -363,6 +363,59 @@ class SessionTransport:
         return segment.start_frame
 
 
+def compute_sync_playback_rate(
+    master_bpm: float,
+    source_bpm: float,
+    sync_enabled: bool,
+) -> tuple[float, str]:
+    """Compute the sync playback rate for a voice.
+
+    Parameters
+    ----------
+    master_bpm : float
+        The current session / master tempo in BPM.
+    source_bpm : float
+        The original BPM of the sample/voice.
+    sync_enabled : bool
+        Whether the global SYNC flag is active.
+
+    Returns
+    -------
+    rate : float
+        The playback rate to apply. Always >= 0. Returns 1.0 when
+        sync is off or source BPM is invalid.
+    status : str
+        One of: ``"sync"``, ``"tempo_only"``, ``"not_syncable"``.
+        Indicates whether the voice can be synchronised and why.
+    """
+    # --- Invalid or missing source BPM ---
+    try:
+        s_bpm = float(source_bpm)
+    except (TypeError, ValueError):
+        return 1.0, "not_syncable"
+    if not s_bpm or s_bpm != s_bpm:  # includes 0 and NaN
+        return 1.0, "not_syncable"
+
+    # --- SYNC off → original speed ---
+    if not sync_enabled:
+        return 1.0, "sync"
+
+    # --- SYNC on with valid source BPM ---
+    rate = master_bpm / s_bpm
+
+    # Clamp to reasonable range to avoid extreme rate jumps
+    # (extreme rates are treated as not_syncable per #323 spec)
+    if rate <= 0 or rate > 4.0 or rate < 0.25:
+        return 1.0, "not_syncable"
+
+    # Determine sync status kind
+    # If rate is exactly 1.0 the sample already matches master tempo
+    if rate == 1.0:
+        return 1.0, "sync"
+
+    return rate, "sync"
+
+
 def schedule_events_in_buffer(
     *,
     buffer_start_frame: int,
