@@ -81,7 +81,10 @@ def test_subprocess_non_zero_exit_returns_failed_state(tmp_path):
 
 def test_stem_manifest_mapping_fields(tmp_path):
     # This tests the serialization mapping functionality directly
-    from tools.stem_separator_spike import map_stem_to_manifest
+    from tools.stem_separator_spike import (
+        WEIGHT_USAGE_RESEARCH_ONLY,
+        map_stem_to_manifest,
+    )
 
     source_properties = {
         "sample_rate_hz": 44100,
@@ -95,7 +98,17 @@ def test_stem_manifest_mapping_fields(tmp_path):
         "n_samples": 88200,
         "duration_sec": 2.0
     }
-    
+
+    # Real, test-supplied weight hash (NOT the debunked fake long hash).
+    model_identity = {
+        "family": "htdemucs",
+        "name": "htdemucs",
+        "checkpoint": "955717e8",
+        "weight_hash": {"algorithm": "sha256", "value": "a" * 64},
+        "code_license": "MIT",
+        "weight_license": WEIGHT_USAGE_RESEARCH_ONLY,
+    }
+
     manifest = map_stem_to_manifest(
         stem_id="stem_drums_test",
         stem_kind="drums",
@@ -105,7 +118,7 @@ def test_stem_manifest_mapping_fields(tmp_path):
         file_ref="drums.wav",
         output_hash="ee55ff6677889900aabbcceedff1122334455667",
         output_properties=output_properties,
-        model_filename="htdemucs.yaml",
+        model_identity=model_identity,
         backend_version="0.44.5"
     )
 
@@ -123,13 +136,28 @@ def test_stem_manifest_mapping_fields(tmp_path):
     assert manifest["provenance"]["component"] == "stem_separator"
     assert manifest["provenance"]["model"]["family"] == "htdemucs"
     assert manifest["provenance"]["model"]["code_license"] == "MIT"
-    assert manifest["provenance"]["model"]["weight_license"] == "UNKNOWN/UNVERIFIED"
+    # #247: research-only weight usage, never asserted as commercial grant.
+    assert manifest["provenance"]["model"]["weight_license"] == WEIGHT_USAGE_RESEARCH_ONLY
+    # The debunked fake long hash must never appear.
+    assert "f7e0c4bcba3fe64a92cfc3b6ef3bcb9c04573f0d" not in json.dumps(manifest)
     assert manifest["output"]["file_ref"] == "drums.wav"
 
 
 def test_invalid_track_ref_filename_fallback_raises():
-    from tools.stem_separator_spike import map_stem_to_manifest
-    
+    from tools.stem_separator_spike import (
+        WEIGHT_USAGE_RESEARCH_ONLY,
+        map_stem_to_manifest,
+    )
+
+    model_identity = {
+        "family": "htdemucs",
+        "name": "htdemucs",
+        "checkpoint": "955717e8",
+        "weight_hash": {"algorithm": "sha256", "value": "a" * 64},
+        "code_license": "MIT",
+        "weight_license": WEIGHT_USAGE_RESEARCH_ONLY,
+    }
+
     # Passing raw filename instead of a content hash should be rejected or handled appropriately
     # The contract requires: track_ref must be a portable track ID, not a path or filename fallback.
     # So we must ensure that filename fallbacks are explicitly rejected or validated.
@@ -143,6 +171,32 @@ def test_invalid_track_ref_filename_fallback_raises():
             file_ref="drums.wav",
             output_hash="ee55",
             output_properties={"sample_rate_hz": 44100, "channels": 2, "n_samples": 88200},
-            model_filename="htdemucs.yaml",
+            model_identity=model_identity,
+            backend_version="0.44.5"
+        )
+
+
+def test_map_stem_to_manifest_rejects_missing_weight_hash():
+    from tools.stem_separator_spike import map_stem_to_manifest
+
+    model_identity = {
+        "family": "htdemucs",
+        "name": "htdemucs",
+        "checkpoint": "955717e8",
+        "weight_hash": None,  # incomplete identity
+        "code_license": "MIT",
+        "weight_license": "RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED",
+    }
+    with pytest.raises(ValueError, match="weight_hash"):
+        map_stem_to_manifest(
+            stem_id="stem_drums_test",
+            stem_kind="drums",
+            track_ref="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+            source_hash="a1b2",
+            source_properties={"sample_rate_hz": 44100, "channels": 2, "n_samples": 88200},
+            file_ref="drums.wav",
+            output_hash="ee55",
+            output_properties={"sample_rate_hz": 44100, "channels": 2, "n_samples": 88200},
+            model_identity=model_identity,
             backend_version="0.44.5"
         )
