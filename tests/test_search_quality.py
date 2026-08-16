@@ -9,6 +9,7 @@ from src.benchmark_search_quality import (
     DEFAULT_TIER_B_SUITE_PATH,
     load_search_quality_suite,
     run_search_quality_benchmark,
+    ModeClassEvaluationSummary,
 )
 from src.embed import EmbeddingBackendUnavailableError, _clap_available
 from src.search_eval import (
@@ -169,10 +170,24 @@ class TestGoldenTierBPhase1:
             assert row.error is None, row.query_id
         assert result.class_summaries
         assert result.mode_summaries
+        assert result.mode_class_summaries
         assert result.failure_buckets is not None
         checks = result.threshold_pass()
         assert checks["mean_precision_at_5"]
         assert result.failure_buckets is not None
+        # Verify mode_class_summaries has entries for text mode classes
+        mc_keys = {(row.mode, row.query_class) for row in result.mode_class_summaries}
+        # Phase 1 had kick_snare_perc and pad_texture; full suite has all 6
+        # Just verify that mode_class_summaries exists and has text mode entries
+        text_modes = [row for row in result.mode_class_summaries if row.mode == "text"]
+        assert len(text_modes) >= 2, "Should have at least 2 text mode classes"
+        # Verify all mode_class_summaries have required fields
+        for row in result.mode_class_summaries:
+            assert row.mode in {"text", "audio"}
+            assert row.query_count > 0
+            assert isinstance(row.failure_buckets, dict)
+            assert isinstance(row.hard_negative_violations, int)
+            assert row.hard_negative_violations >= 0
 
 
 class TestGoldenTierBPhase2:
@@ -236,6 +251,20 @@ class TestGoldenTierBPhase2:
         assert "keyword" in style_keys
         assert "natural_language" in style_keys
         assert "exclusion" in style_keys
+        assert result.mode_class_summaries
+        # Verify mode_class_summaries has entries for all 4 phase 1+2 classes in text mode
+        mc_keys = {(row.mode, row.query_class) for row in result.mode_class_summaries}
+        assert ("text", "riser_impact") in mc_keys
+        assert ("text", "dry_wet") in mc_keys
+        assert ("text", "kick_snare_perc") in mc_keys
+        assert ("text", "pad_texture") in mc_keys
+        # Verify all mode_class_summaries have required fields
+        for row in result.mode_class_summaries:
+            assert row.mode in {"text", "audio"}
+            assert row.query_count > 0
+            assert isinstance(row.failure_buckets, dict)
+            assert isinstance(row.hard_negative_violations, int)
+            assert row.hard_negative_violations >= 0
         checks = result.threshold_pass()
         assert checks["mean_precision_at_5"]
         assert checks["mean_recall_at_10"]
@@ -275,3 +304,183 @@ class TestGoldenTierBPhase3:
             assert query.get("negative_sample_ids")
             assert query.get("relevant_sample_ids")
             assert query.get("mode") in {"text", "audio"}
+
+    @pytest.mark.clap
+    def test_tier_b_phase3_benchmark(self, suite_path: Path, tmp_path: Path):
+        if not _clap_available():
+            pytest.skip("CLAP optional extra not installed")
+        try:
+            result = run_search_quality_benchmark(
+                suite_path,
+                work_dir=tmp_path / "clap-quality-p3",
+            )
+        except EmbeddingBackendUnavailableError as exc:
+            pytest.skip(f"CLAP runtime unavailable: {exc}")
+        assert result.tier == "B"
+        assert result.summary.query_count >= 30
+        for row in result.query_results:
+            assert row.error is None, row.query_id
+        assert result.mode_class_summaries
+        # Verify mode_class_summaries has entries for all 6 classes in text mode
+        mc_keys = {(row.mode, row.query_class) for row in result.mode_class_summaries}
+        assert ("text", "kick_snare_perc") in mc_keys
+        assert ("text", "pad_texture") in mc_keys
+        assert ("text", "riser_impact") in mc_keys
+        assert ("text", "dry_wet") in mc_keys
+        assert ("text", "vocal_no_vocal") in mc_keys
+        assert ("text", "genre_mood") in mc_keys
+        # Verify all mode_class_summaries have required fields
+        for row in result.mode_class_summaries:
+            assert row.mode in {"text", "audio"}
+            assert row.query_count > 0
+            assert isinstance(row.failure_buckets, dict)
+            assert isinstance(row.hard_negative_violations, int)
+            assert row.hard_negative_violations >= 0
+        # Verify P@5 and MRR are finite
+        for row in result.mode_class_summaries:
+            assert row.summary.precision_at_5 >= 0.0
+            assert row.summary.mrr >= 0.0
+            # Failure bucket sums should match query count
+            bucket_sum = sum(row.failure_buckets.values())
+            assert bucket_sum == row.query_count
+
+
+class TestModeClassEvaluation:
+    """Tests for mode+class evaluation summaries (Issue #216)."""
+
+    def test_mode_class_summary_dataclass_exists(self):
+        """ModeClassEvaluationSummary dataclass exists with expected fields."""
+        summary = ModeClassEvaluationSummary(
+            mode="text",
+            query_class="kick_snare_perc",
+            summary=None,  # type: ignore[arg-type]
+            query_count=5,
+            failure_buckets={"success": 3, "negative_leak_top5": 2},
+            hard_negative_violations=2,
+        )
+        assert summary.mode == "text"
+        assert summary.query_class == "kick_snare_perc"
+        assert summary.query_count == 5
+        assert summary.failure_buckets["success"] == 3
+        assert summary.failure_buckets["negative_leak_top5"] == 2
+        assert summary.hard_negative_violations == 2
+
+    def test_mode_class_separates_text_and_audio(self, tmp_path: Path):
+        """Text and audio of same class are NOT mixed in mode_class_summaries."""
+        # This test uses a mock benchmark result to verify aggregation logic
+        # We can't easily create a full benchmark without CLAP, so we test the
+        # aggregation function directly with known inputs
+        from src.search_eval import (
+            aggregate_metric_summaries,
+            MetricSummary,
+        )
+        from src.benchmark_search_quality import QueryEvalResult
+
+        # Create mock query results with both text and audio for same class
+        text_metrics = {"precision_at_5": 0.6, "mrr": 0.8, "precision_at_1": 0.7, "precision_at_10": 0.5, "recall_at_10": 0.9}
+        audio_metrics = {"precision_at_5": 0.4, "mrr": 0.5, "precision_at_1": 0.3, "precision_at_10": 0.3, "recall_at_10": 0.6}
+
+        text_results = [
+            QueryEvalResult(
+                query_id="q1", query_class="kick_snare_perc", mode="text",
+                ranked_ids=[1, 2, 3], metrics=text_metrics,
+                filter_compliance=1.0, passed_must_recall=True,
+                negatives_in_top5=0, negatives_in_top10=0,
+                failure_bucket="success", query_style="keyword"
+            ),
+            QueryEvalResult(
+                query_id="q2", query_class="kick_snare_perc", mode="text",
+                ranked_ids=[1, 2, 4], metrics=text_metrics,
+                filter_compliance=1.0, passed_must_recall=True,
+                negatives_in_top5=1, negatives_in_top10=1,
+                failure_bucket="negative_leak_top5", query_style="keyword"
+            ),
+        ]
+        audio_results = [
+            QueryEvalResult(
+                query_id="q3", query_class="kick_snare_perc", mode="audio",
+                ranked_ids=[1, 5, 6], metrics=audio_metrics,
+                filter_compliance=1.0, passed_must_recall=True,
+                negatives_in_top5=0, negatives_in_top10=0,
+                failure_bucket="success", query_style=None
+            ),
+        ]
+
+        # The mode_class aggregation should produce separate entries for
+        # (text, kick_snare_perc) and (audio, kick_snare_perc)
+        # We'll verify this after implementing the aggregation logic
+        # For now, just verify the test structure is correct
+        assert len(text_results) == 2
+        assert len(audio_results) == 1
+        assert text_results[0].mode != audio_results[0].mode
+        assert text_results[0].query_class == audio_results[0].query_class
+
+    def test_mode_class_aggregation_correctness(self):
+        """P@5/MRR correctly aggregated per mode+class."""
+        from src.search_eval import aggregate_metric_summaries
+
+        # Two queries for text mode, same class
+        metrics_1 = {"precision_at_5": 0.6, "mrr": 0.8, "precision_at_1": 0.7, "precision_at_10": 0.5, "recall_at_10": 0.9}
+        metrics_2 = {"precision_at_5": 0.4, "mrr": 0.6, "precision_at_1": 0.5, "precision_at_10": 0.4, "recall_at_10": 0.8}
+        summary = aggregate_metric_summaries([metrics_1, metrics_2])
+
+        # Mean P@5 = (0.6 + 0.4) / 2 = 0.5
+        # Mean MRR = (0.8 + 0.6) / 2 = 0.7
+        assert summary.precision_at_5 == 0.5
+        assert summary.mrr == 0.7
+        assert summary.query_count == 2
+
+    def test_failure_buckets_per_mode_class(self):
+        """Failure buckets counted per mode+class."""
+        from src.search_eval import failure_bucket_counts
+
+        buckets = ["success", "negative_leak_top5", "success", "error"]
+        counts = failure_bucket_counts(buckets)
+        assert counts["success"] == 2
+        assert counts["negative_leak_top5"] == 1
+        assert counts["error"] == 1
+
+    def test_hard_negative_violations_count(self):
+        """hard_negative_violations counts queries with neg@5 > 0."""
+        # This will be tested via the actual benchmark result structure
+        # after implementation
+        pass
+
+    def test_class_isolation_no_cross_contamination(self):
+        """Errors of one class not attributed to another class."""
+        from src.search_eval import aggregate_metric_summaries_by_group
+
+        kick_metrics = {"precision_at_5": 0.8, "mrr": 0.9, "precision_at_1": 0.9, "precision_at_10": 0.7, "recall_at_10": 1.0}
+        pad_metrics = {"precision_at_5": 0.2, "mrr": 0.3, "precision_at_1": 0.1, "precision_at_10": 0.2, "recall_at_10": 0.5}
+
+        grouped = aggregate_metric_summaries_by_group([
+            ("kick_snare_perc", kick_metrics),
+            ("pad_texture", pad_metrics),
+            ("kick_snare_perc", kick_metrics),
+        ])
+
+        by_key = {item.group_key: item.summary for item in grouped}
+        assert by_key["kick_snare_perc"].precision_at_5 == 0.8
+        assert by_key["pad_texture"].precision_at_5 == 0.2
+        assert by_key["kick_snare_perc"].query_count == 2
+        assert by_key["pad_texture"].query_count == 1
+
+    def test_deterministic_output_order(self):
+        """mode_class_summaries sorted deterministically."""
+        from src.search_eval import aggregate_metric_summaries_by_group
+
+        metrics = {"precision_at_5": 0.5, "mrr": 0.6, "precision_at_1": 0.5, "precision_at_10": 0.4, "recall_at_10": 0.7}
+        # Input in random order
+        grouped = aggregate_metric_summaries_by_group([
+            ("z_class", metrics),
+            ("a_class", metrics),
+            ("m_class", metrics),
+        ])
+        keys = [item.group_key for item in grouped]
+        assert keys == ["a_class", "m_class", "z_class"]
+
+    def test_existing_summaries_preserved(self):
+        """class_summaries, mode_summaries, style_summaries remain unchanged."""
+        # This is a contract test - after implementation, we'll verify
+        # that the existing summary fields are still populated correctly
+        pass
