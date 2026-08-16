@@ -248,3 +248,14 @@ data/models/
 *.pt
 *.pth
 *.safetensors
+
+# Native audio build artifacts
+native/audio/build/
+native/audio/**/build/
+*.dll
+*.lib
+*.exp
+*.pdb
+*.obj
+*.exe
+!third_party/miniaudio.h
