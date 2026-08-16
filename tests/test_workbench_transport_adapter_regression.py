@@ -85,8 +85,13 @@ def test_set_source_bpm_toggle_sync_and_snapshot_do_not_deadlock(monkeypatch):
     assert snapshot["sync_status"] == "sync"
 
 
-def test_running_tempo_label_stays_effective_until_scheduled_bar(monkeypatch):
-    adapter = _adapter_without_native(monkeypatch, bpm=128.0)
+def test_running_tempo_label_stays_effective_until_scheduled_bar():
+    native = SnapshotNativeEngine()
+    adapter = adapter_module.WorkbenchTransportAdapter(
+        sample_rate=48_000,
+        initial_bpm=128.0,
+        native_engine=native,
+    )
     bar_one = adapter.tempo_map.bar_beat_to_frame(MusicalPosition(1, 0))
     adapter.seek(bar_one)
     adapter.play()
@@ -179,6 +184,18 @@ def test_stopped_native_snapshot_does_not_advance_session_position():
     assert snapshot["engine_frame"] == 256
     assert snapshot["session_frame"] == 0
     assert snapshot["playing"] is False
+
+
+def test_native_unavailable_preview_fallback_does_not_claim_running_clock(monkeypatch):
+    adapter = _adapter_without_native(monkeypatch, bpm=132.0)
+
+    adapter.play()
+    snapshot = adapter.get_snapshot()
+
+    assert snapshot["native_available"] is False
+    assert snapshot["playing"] is False
+    assert snapshot["engine_frame"] == 0
+    assert snapshot["session_frame"] == 0
 
 
 def test_adapter_has_one_toggle_sync_definition():
