@@ -86,4 +86,61 @@ def format_key_signature(root: str | None, mode: str | None) -> str | None:
     return root
 
 
-__all__ = ["ParsedKey", "parse_key_signature", "format_key_signature"]
+# Chromatic pitch classes for semitone distance (C=0, circular).
+_PITCH_CLASS = {
+    "C": 0,
+    "C#": 1,
+    "D": 2,
+    "D#": 3,
+    "E": 4,
+    "F": 5,
+    "F#": 6,
+    "G": 7,
+    "G#": 8,
+    "A": 9,
+    "A#": 10,
+    "B": 11,
+}
+
+
+def _pitch_class(root: str | None) -> int | None:
+    """Return the chromatic pitch class index for a normalized root, or None."""
+    if root is None:
+        return None
+    return _PITCH_CLASS.get(root)
+
+
+def is_same_root(a: ParsedKey | None, b: ParsedKey | None) -> bool:
+    """True when both parsed keys share the same (enharmonic) root."""
+    if a is None or b is None:
+        return False
+    return _pitch_class(a.root) == _pitch_class(b.root)
+
+
+def is_same_mode(a: ParsedKey | None, b: ParsedKey | None) -> bool:
+    """True when both parsed keys share the same mode (including both unknown)."""
+    if a is None or b is None:
+        return False
+    return a.mode == b.mode
+
+
+def key_distance_semitones(a: ParsedKey | None, b: ParsedKey | None) -> int:
+    """Signed chromatic distance from key *a* to key *b* (mod 12, C=0).
+
+    Returns 0 when either key is missing or unparseable.
+    """
+    pa = _pitch_class(a.root if a is not None else None)
+    pb = _pitch_class(b.root if b is not None else None)
+    if pa is None or pb is None:
+        return 0
+    return (pb - pa) % 12
+
+
+__all__ = [
+    "ParsedKey",
+    "parse_key_signature",
+    "format_key_signature",
+    "is_same_root",
+    "is_same_mode",
+    "key_distance_semitones",
+]

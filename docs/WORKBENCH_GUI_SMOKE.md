@@ -27,6 +27,8 @@
 | Edit menu toggles view toolbar | `_show_view_toolbar_var` + hide/show in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
 | View toolbar setting persists | `show_view_toolbar` in `workbench_view_settings.json` | ✅ PASS |
 | Similar samples button + panel | `_similar_btn` / `_similar_tree` in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
+| Harmonie-Finder tab (center Notebook) | `_center_notebook` / `_harmony_frame` / `_harmony_tree` / `_harmony_ref_combo` in `tests/test_workbench_gui_smoke.py` | ✅ PASS |
+| Harmonie-Finder match population | `test_workbench_harmony_finder_tab_populates` | ✅ PASS |
 
 ## Interactive manual smoke (producer workflow)
 
@@ -56,6 +58,17 @@ Not automated in CI. When running locally with a display:
 22. Re-enable **Ansichtsleiste anzeigen** → toolbar returns with all section controls and help text
 23. Click **Standardansicht wiederherstellen** → toolbar and all section toggles return to visible defaults
 24. Select a sample with analyzed BPM → click **Ähnliche Samples** → suggestion table lists scored matches from loaded rows (reference excluded); right-click a suggestion for **Pfad kopieren** or **Preview**
+
+## Harmonie-Finder (issue #213)
+
+The center column is a `ttk.Notebook` with two pages: **Samples** (existing playlist + Similar-V1 panel) and **Harmonie-Finder**. The Harmonie-Finder finds musically related already-loaded `WorkbenchRow`s against a chosen reference:
+
+- Reference picker (dropdown of loaded rows) plus **Aus Auswahl** to use the current playlist selection.
+- Optional local text filter and an in-memory **Key-Override** (never mutates the row or DB).
+- Results group into **Direkt / Verwandt / Transpose / Unsicher**, scored by `0.75 * harmony + 0.25 * BPM`, sorted by relation priority then score.
+- Pitch-shift hint is limited to `-3..+3` semitones and shown only when a defined harmony relationship exists.
+- Unknown mode stays cautious: same root with unknown mode is **Unsicher**, not Direkt. No relative/fifth/fourth claim without both modes known.
+- Reuses existing Preview, path-copy, "Als Referenz", and playlist-focus actions. Similar-V1 is unchanged.
 
 ## Limitations
 

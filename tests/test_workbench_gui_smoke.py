@@ -429,3 +429,62 @@ def test_workbench_restores_persisted_view_toolbar_setting(tmp_path: Path, monke
         assert not _widget_is_packed(app._view_bar)
     finally:
         root.destroy()
+
+
+def test_workbench_harmony_finder_tab_populates(tmp_path: Path, monkeypatch):
+    """Issue #213: Harmonie-Finder tab builds and finds matches from loaded rows."""
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+
+    ref = tmp_path / "ref.wav"
+    match = tmp_path / "match.wav"
+    ref.write_bytes(b"data")
+    match.write_bytes(b"data")
+    reference = WorkbenchRow(
+        display_name="ref",
+        relative_path="ref.wav",
+        path=str(ref),
+        bpm=128.0,
+        key="Cmaj",
+        key_conf=0.8,
+        loudness=-20.0,
+        brightness=2000.0,
+        sample_class="loop",
+        pred_type="kick",
+        status="ok",
+    )
+    direct = WorkbenchRow(
+        display_name="match",
+        relative_path="match.wav",
+        path=str(match),
+        bpm=128.0,
+        key="Cmaj",
+        key_conf=0.8,
+        loudness=-20.0,
+        brightness=2000.0,
+        sample_class="loop",
+        pred_type="kick",
+        status="ok",
+    )
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        root.update_idletasks()
+        assert hasattr(app, "_center_notebook"), "center notebook must exist"
+        assert hasattr(app, "_harmony_frame"), "harmony finder tab must exist"
+        assert hasattr(app, "_harmony_tree"), "harmony results tree must exist"
+        assert hasattr(app, "_harmony_ref_combo"), "harmony reference combo must exist"
+
+        app._populate_playlist(
+            WorkbenchResult(summary={"ok": 2}, rows=[reference, direct])
+        )
+        root.update_idletasks()
+        assert app._harmony_tree.get_children(), "harmony matches should populate"
+        values = app._harmony_tree.item("0", "values")
+        assert values[0] == "match"
+        assert values[1] == "Direkt"
+    finally:
+        root.destroy()
