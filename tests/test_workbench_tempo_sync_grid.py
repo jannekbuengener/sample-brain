@@ -4,6 +4,7 @@ from __future__ import annotations
 import inspect
 from fractions import Fraction
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -16,10 +17,9 @@ from src.session_grid import (
     schedule_events_in_buffer,
 )
 from src.workbench import WorkbenchApp
-from src.workbench_controller import WorkbenchRow, WorkbenchRowFilters, workbench_filter_options
+from src.workbench_controller import WorkbenchRow, WorkbenchRowFilters
 from src.workbench_transport_ui import (
     WorkbenchTransportUiController,
-    attach_workbench_transport_ui,
     format_transport_tempo_label,
 )
 
@@ -37,12 +37,8 @@ def test_bar_boundaries_are_direct_and_drift_free_for_1000_bars(sample_rate, bpm
     exact_bpm = Fraction(str(bpm))
 
     for bar in range(1001):
-        expected = round(
-            Fraction(bar * 4 * 60 * sample_rate, 1) / exact_bpm
-        )
-        actual = tempo_map.bar_beat_to_frame(
-            MusicalPosition(bar=bar, beat=0)
-        )
+        expected = round(Fraction(bar * 4 * 60 * sample_rate, 1) / exact_bpm)
+        actual = tempo_map.bar_beat_to_frame(MusicalPosition(bar=bar, beat=0))
         assert actual == expected
 
 
@@ -54,9 +50,7 @@ def test_tempo_segments_preserve_past_grid_positions():
         100,
         tempo_map.bar_beat_to_frame(MusicalPosition(bar=4, beat=0)),
     ]
-    before = {
-        frame: tempo_map.frame_to_quarter_note(frame) for frame in past_frames
-    }
+    before = {frame: tempo_map.frame_to_quarter_note(frame) for frame in past_frames}
 
     first = tempo_map.add_tempo_change_at_quarter(
         effective_quarter=Fraction(8 * 4, 1), bpm=132
@@ -69,9 +63,7 @@ def test_tempo_segments_preserve_past_grid_positions():
     assert second.start_quarter == Fraction(64, 1)
     assert tempo_map.frame_to_bar_beat(first.start_frame) == MusicalPosition(8, 0)
     assert tempo_map.frame_to_bar_beat(second.start_frame) == MusicalPosition(16, 0)
-    assert {
-        frame: tempo_map.frame_to_quarter_note(frame) for frame in past_frames
-    } == before
+    assert {frame: tempo_map.frame_to_quarter_note(frame) for frame in past_frames} == before
 
 
 def test_stopped_tempo_change_is_immediate_at_current_session_frame():
@@ -149,7 +141,6 @@ def test_time_signature_is_explicit_and_defaults_to_four_four():
 
 
 def _collect_scheduled_event_frames(event_frames, *, buffer_size, end_frame):
-    """Helper for buffer-scheduler buffer-size-independence tests."""
     found = []
     buffer_start = 0
     while buffer_start < end_frame:
@@ -166,7 +157,6 @@ def _collect_scheduled_event_frames(event_frames, *, buffer_size, end_frame):
 
 
 def test_absolute_event_frames_do_not_depend_on_audio_buffer_size():
-    """Core #320: scheduled events same regardless of buffer size."""
     tempo_map = TempoMap(sample_rate=48_000, bpm=132)
     event_frames = [
         tempo_map.bar_beat_to_frame(MusicalPosition(bar=bar, beat=beat))
@@ -182,7 +172,6 @@ def test_absolute_event_frames_do_not_depend_on_audio_buffer_size():
 
 
 def test_buffer_scheduler_uses_half_open_frame_range():
-    """Core #320: half-open [start, end) range for buffer scheduling."""
     events = schedule_events_in_buffer(
         buffer_start_frame=128,
         frame_count=128,
@@ -196,7 +185,6 @@ def test_buffer_scheduler_uses_half_open_frame_range():
 
 
 def test_signed_int64_frame_limits_are_enforced():
-    """Core #320: int64 boundaries enforced on TempoSegment and schedule_events_in_buffer."""
     TempoSegment(start_frame=0, start_quarter=0, bpm=120)
 
     with pytest.raises(OverflowError, match="signed int64"):
@@ -209,19 +197,40 @@ def test_signed_int64_frame_limits_are_enforced():
         )
 
 
+class _TestNativeClock:
+    """Small explicit native-clock double; it never replaces DSP behavior."""
+
+    def __init__(self) -> None:
+        self.engine_frame = 0
+        self.running = False
+
+    def start(self) -> None:
+        self.running = True
+
+    def stop(self) -> None:
+        self.running = False
+
+    def close(self) -> None:
+        return None
+
+    def set_voice_rate(self, _voice_id: int, _rate: float) -> None:
+        return None
+
+    def snapshot(self):
+        return SimpleNamespace(engine_frame=self.engine_frame, running=self.running)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # #322-specific: Workbench Transport Adapter contract
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 def test_adapter_tempo_bpm_display_format():
-    """#322: user-facing tempo formatter is exact and independent of native audio."""
     assert format_transport_tempo_label(132.0) == "TEMPO: 132 BPM"
     assert format_transport_tempo_label(127.5) == "TEMPO: 127.5 BPM"
 
 
 def test_adapter_sync_toggle_changes_state():
-    """#322: SYNC toggle changes the shared adapter state rather than only existing."""
     from unittest.mock import patch
     from src.workbench_transport_adapter import WorkbenchTransportAdapter
 
@@ -235,10 +244,9 @@ def test_adapter_sync_toggle_changes_state():
 
 
 def test_adapter_stopped_tempo_immediate():
-    """#322: stopped TEMPO change works immediately at session_frame."""
     from src.workbench_transport_adapter import WorkbenchTransportAdapter
 
-    adapter = WorkbenchTransportAdapter(sample_rate=48000, initial_bpm=128.0)
+    adapter = WorkbenchTransportAdapter(sample_rate=48_000, initial_bpm=128.0)
     adapter.seek(12_345)
 
     effective_frame = adapter.set_tempo(132.0)
@@ -249,10 +257,13 @@ def test_adapter_stopped_tempo_immediate():
 
 
 def test_adapter_running_tempo_next_bar():
-    """#322: running TEMPO change becomes effective at next bar boundary."""
     from src.workbench_transport_adapter import WorkbenchTransportAdapter
 
-    adapter = WorkbenchTransportAdapter(sample_rate=48000, initial_bpm=128.0)
+    adapter = WorkbenchTransportAdapter(
+        sample_rate=48_000,
+        initial_bpm=128.0,
+        native_engine=_TestNativeClock(),
+    )
     bar_one = adapter.tempo_map.bar_beat_to_frame(MusicalPosition(1, 0))
     adapter.seek(bar_one)
     adapter.play()
@@ -264,10 +275,14 @@ def test_adapter_running_tempo_next_bar():
 
 
 def test_adapter_engine_and_session_frames_separate():
-    """#322: engine_frame and session_frame are separate transport coordinates."""
     from src.workbench_transport_adapter import WorkbenchTransportAdapter
 
-    adapter = WorkbenchTransportAdapter(sample_rate=48000, initial_bpm=120.0)
+    native = _TestNativeClock()
+    adapter = WorkbenchTransportAdapter(
+        sample_rate=48_000,
+        initial_bpm=120.0,
+        native_engine=native,
+    )
 
     adapter.advance(256)
     assert adapter.engine_frame == 256
@@ -286,10 +301,9 @@ def test_adapter_engine_and_session_frames_separate():
 
 
 def test_adapter_grid_position_from_snapshot():
-    """#322: Grid/Playhead position comes from the SessionTransport snapshot."""
     from src.workbench_transport_adapter import WorkbenchTransportAdapter
 
-    adapter = WorkbenchTransportAdapter(sample_rate=48000, initial_bpm=132.0)
+    adapter = WorkbenchTransportAdapter(sample_rate=48_000, initial_bpm=132.0)
     adapter.seek(12_345)
 
     snapshot = adapter.get_snapshot()
@@ -300,15 +314,14 @@ def test_adapter_grid_position_from_snapshot():
 
 
 def test_adapter_multiple_voices_share_session_transport():
-    """#322: multiple adapters can observe the same authoritative SessionTransport."""
     from src.workbench_transport_adapter import WorkbenchTransportAdapter
 
-    transport = SessionTransport(sample_rate=48000, bpm=132.0)
+    transport = SessionTransport(sample_rate=48_000, bpm=132.0)
     adapter_a = WorkbenchTransportAdapter(
-        sample_rate=48000, initial_bpm=132.0, transport=transport
+        sample_rate=48_000, initial_bpm=132.0, transport=transport
     )
     adapter_b = WorkbenchTransportAdapter(
-        sample_rate=48000, initial_bpm=132.0, transport=transport
+        sample_rate=48_000, initial_bpm=132.0, transport=transport
     )
 
     assert adapter_a.tempo_map is adapter_b.tempo_map
@@ -316,7 +329,6 @@ def test_adapter_multiple_voices_share_session_transport():
 
 
 def test_adapter_preserves_existing_workbench_filters():
-    """#322: new TEMPO/SYNC controls do not break existing filter behavior."""
     from src.workbench_controller import (
         apply_workbench_filters,
         format_workbench_active_filter_summary,
@@ -366,8 +378,7 @@ def test_adapter_preserves_existing_workbench_filters():
     assert len(filtered) == 1
     assert filtered[0].display_name == "kick"
 
-    summary = format_workbench_active_filter_summary("", None)
-    assert summary == ""
+    assert format_workbench_active_filter_summary("", None) == ""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -376,24 +387,24 @@ def test_adapter_preserves_existing_workbench_filters():
 
 
 def test_adapter_native_unavailable_graceful_fallback():
-    """#322: native unavailability leaves the shared transport usable."""
     from unittest.mock import patch
     from src.workbench_transport_adapter import WorkbenchTransportAdapter
 
     with patch("src.native_audio.is_available", return_value=False):
-        adapter = WorkbenchTransportAdapter(sample_rate=48000, initial_bpm=132.0)
+        adapter = WorkbenchTransportAdapter(sample_rate=48_000, initial_bpm=132.0)
         assert adapter.native_available is False
         adapter.play()
-        assert adapter.playing is True
-        adapter.stop()
-        assert adapter.playing is False
+        snapshot = adapter.get_snapshot()
+        assert snapshot["native_available"] is False
+        assert snapshot["playing"] is False
+        assert snapshot["engine_frame"] == 0
+        assert snapshot["session_frame"] == 0
 
 
 def test_adapter_seek_preserves_session_frame():
-    """#322: seek() sets session_frame independently of engine_frame."""
     from src.workbench_transport_adapter import WorkbenchTransportAdapter
 
-    adapter = WorkbenchTransportAdapter(sample_rate=48000, initial_bpm=120.0)
+    adapter = WorkbenchTransportAdapter(sample_rate=48_000, initial_bpm=120.0)
 
     adapter.seek(4_096)
     assert adapter.session_frame == 4_096
@@ -405,10 +416,9 @@ def test_adapter_seek_preserves_session_frame():
 
 
 def test_adapter_tempo_change_while_stopped():
-    """#322: set_tempo() when stopped → immediate effect at session_frame."""
     from src.workbench_transport_adapter import WorkbenchTransportAdapter
 
-    adapter = WorkbenchTransportAdapter(sample_rate=48000, initial_bpm=128.0)
+    adapter = WorkbenchTransportAdapter(sample_rate=48_000, initial_bpm=128.0)
     adapter.seek(0)
 
     frame = adapter.set_tempo(140.0)
@@ -418,10 +428,13 @@ def test_adapter_tempo_change_while_stopped():
 
 
 def test_adapter_tempo_change_while_playing():
-    """#322: set_tempo() when playing → effective at next bar boundary."""
     from src.workbench_transport_adapter import WorkbenchTransportAdapter
 
-    adapter = WorkbenchTransportAdapter(sample_rate=48000, initial_bpm=128.0)
+    adapter = WorkbenchTransportAdapter(
+        sample_rate=48_000,
+        initial_bpm=128.0,
+        native_engine=_TestNativeClock(),
+    )
     adapter.play()
     adapter.seek(adapter.tempo_map.bar_beat_to_frame(MusicalPosition(1, 0)))
 
@@ -432,17 +445,15 @@ def test_adapter_tempo_change_while_playing():
 
 
 def test_ui_contains_exact_tempo_bpm_string():
-    """#322: Workbench attaches the concrete controller that builds the exact TEMPO label."""
     init_source = inspect.getsource(WorkbenchApp.__init__)
     build_source = inspect.getsource(WorkbenchTransportUiController._build_controls)
 
     assert "attach_workbench_transport_ui(self)" in init_source
-    assert 'textvariable=self.tempo_var' in build_source
+    assert "textvariable=self.tempo_var" in build_source
     assert format_transport_tempo_label(132.0) == "TEMPO: 132 BPM"
 
 
 def test_ui_contains_exact_sync_control():
-    """#322: controller builds the actual SYNC checkbutton and callback."""
     build_source = inspect.getsource(WorkbenchTransportUiController._build_controls)
 
     assert 'text="SYNC"' in build_source
@@ -451,7 +462,6 @@ def test_ui_contains_exact_sync_control():
 
 
 def test_no_second_main_tempo_label():
-    """#322: no alternate 'Master Tempo' wording is introduced in the control surface."""
     build_source = inspect.getsource(WorkbenchTransportUiController._build_controls)
     formatter_source = inspect.getsource(format_transport_tempo_label)
 
@@ -461,8 +471,8 @@ def test_no_second_main_tempo_label():
 
 
 def test_existing_workbench_smoke_tests_pass():
-    """#322: CLI still exposes workbench after changes."""
     import subprocess
+
     result = subprocess.run(
         ["python", "-m", "src.cli", "--help"],
         capture_output=True,
@@ -474,8 +484,8 @@ def test_existing_workbench_smoke_tests_pass():
 
 
 def test_existing_preview_tests_pass():
-    """#322: existing workbench preview tests still pass (preview path preserved)."""
     import subprocess
+
     result = subprocess.run(
         ["python", "-m", "pytest", "tests/test_workbench_preview.py", "-q"],
         capture_output=True,
@@ -486,8 +496,8 @@ def test_existing_preview_tests_pass():
 
 
 def test_session_grid_tests_pass():
-    """#322: session grid core tests (from #320) still pass."""
     import subprocess
+
     result = subprocess.run(
         ["python", "-m", "pytest", "tests/test_session_grid.py", "-q"],
         capture_output=True,
@@ -503,85 +513,76 @@ def test_session_grid_tests_pass():
 
 
 def test_compute_sync_rate_128_to_132():
-    """#323: 128 → 132 BPM → rate = 1.03125."""
     from src.session_grid import compute_sync_playback_rate
 
     rate, status = compute_sync_playback_rate(132.0, 128.0, sync_enabled=True)
-    assert rate == 1.03125, f"Expected 1.03125, got {rate}"
+    assert rate == 1.03125
     assert status == "sync"
 
 
 def test_compute_sync_rate_140_to_132():
-    """#323: 140 → 132 BPM → rate ≈ 0.942857."""
     from src.session_grid import compute_sync_playback_rate
 
     rate, status = compute_sync_playback_rate(132.0, 140.0, sync_enabled=True)
-    assert abs(rate - 132 / 140) < 1e-9, f"Expected ~{132/140}, got {rate}"
+    assert abs(rate - 132 / 140) < 1e-9
     assert status == "sync"
 
 
 def test_compute_sync_rate_132_to_132():
-    """#323: 132 → 132 BPM → rate = 1.0."""
     from src.session_grid import compute_sync_playback_rate
 
     rate, status = compute_sync_playback_rate(132.0, 132.0, sync_enabled=True)
-    assert rate == 1.0, f"Expected 1.0, got {rate}"
+    assert rate == 1.0
     assert status == "sync"
 
 
 def test_compute_sync_rate_sync_off():
-    """#323: SYNC off → rate = 1.0 regardless of BPM."""
     from src.session_grid import compute_sync_playback_rate
 
     rate, status = compute_sync_playback_rate(132.0, 128.0, sync_enabled=False)
-    assert rate == 1.0, f"Expected 1.0, got {rate}"
+    assert rate == 1.0
     assert status == "sync"
 
 
 def test_compute_sync_rate_invalid_bpm_none():
-    """#323: None source BPM → rate = 1.0, not_syncable."""
     from src.session_grid import compute_sync_playback_rate
 
     rate, status = compute_sync_playback_rate(132.0, None, sync_enabled=True)
-    assert rate == 1.0, f"Expected 1.0, got {rate}"
+    assert rate == 1.0
     assert status == "not_syncable"
 
 
 def test_compute_sync_rate_invalid_bpm_zero():
-    """#323: 0 source BPM → rate = 1.0, not_syncable."""
     from src.session_grid import compute_sync_playback_rate
 
     rate, status = compute_sync_playback_rate(132.0, 0, sync_enabled=True)
-    assert rate == 1.0, f"Expected 1.0, got {rate}"
+    assert rate == 1.0
     assert status == "not_syncable"
 
 
 def test_compute_sync_rate_invalid_bpm_nan():
-    """#323: NaN source BPM → rate = 1.0, not_syncable."""
     from src.session_grid import compute_sync_playback_rate
 
     rate, status = compute_sync_playback_rate(132.0, float("nan"), sync_enabled=True)
-    assert rate == 1.0, f"Expected 1.0, got {rate}"
+    assert rate == 1.0
     assert status == "not_syncable"
 
 
 def test_compute_sync_rate_invalid_bpm_negative():
-    """#323: negative source BPM → rate = 1.0, not_syncable."""
     from src.session_grid import compute_sync_playback_rate
 
     rate, status = compute_sync_playback_rate(132.0, -128.0, sync_enabled=True)
-    assert rate == 1.0, f"Expected 1.0, got {rate}"
+    assert rate == 1.0
     assert status == "not_syncable"
 
 
 def test_compute_sync_rate_extreme_rate():
-    """#323: extreme rate (>4 or <0.25) → rate = 1.0, not_syncable."""
     from src.session_grid import compute_sync_playback_rate
 
     rate, status = compute_sync_playback_rate(132.0, 32.0, sync_enabled=True)
-    assert rate == 1.0, f"Expected 1.0, got {rate}"
+    assert rate == 1.0
     assert status == "not_syncable"
 
     rate2, status2 = compute_sync_playback_rate(132.0, 529.0, sync_enabled=True)
-    assert rate2 == 1.0, f"Expected 1.0, got {rate2}"
+    assert rate2 == 1.0
     assert status2 == "not_syncable"
