@@ -47,30 +47,33 @@ void test_clock_monotonic() {
     sb_engine_t engine = create_test_engine();
 
     sb_frame_t last_frame = -1;
-    bool monotonic = true;
+    bool non_decreasing = true;
+    bool advanced = false;
 
+    // The authoritative clock advances per audio callback. Snapshots taken more
+    // frequently than one buffer may legitimately observe the same frame twice.
     for (int i = 0; i < 100; i++) {
         sb_snapshot_t snapshot = {};
         sb_engine_snapshot(engine, &snapshot);
-        if (snapshot.engine_frame <= last_frame) {
-            monotonic = false;
+        if (snapshot.engine_frame < last_frame) {
+            non_decreasing = false;
             break;
+        }
+        if (snapshot.engine_frame > last_frame && last_frame >= 0) {
+            advanced = true;
         }
         last_frame = snapshot.engine_frame;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    TEST_ASSERT(monotonic, "engine_frame is strictly monotonic");
-    TEST_ASSERT(last_frame > 0, "engine_frame advances");
+    TEST_ASSERT(non_decreasing, "engine_frame never moves backwards");
+    TEST_ASSERT(advanced && last_frame > 0, "engine_frame advances across callbacks");
 
     destroy_test_engine(engine);
 }
 
 void test_buffer_size_independence() {
     printf("test_buffer_size_independence...\n");
-    // Test that scheduling works regardless of buffer size
-    // This test runs with 512 frames but validates logic
-
     sb_engine_t engine = create_test_engine();
 
     sb_voice_config_t vconfig = {};
@@ -86,12 +89,11 @@ void test_buffer_size_independence() {
 
     sb_snapshot_t snapshot = {};
     sb_engine_snapshot(engine, &snapshot);
-    sb_frame_t start_frame = snapshot.engine_frame + 48000;  // 1s
+    sb_frame_t start_frame = snapshot.engine_frame + 48000;
 
     result = sb_voice_schedule_start(engine, 1, start_frame);
     TEST_ASSERT_EQ(result, SB_OK, "schedule succeeds");
 
-    // Wait
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
 
     sb_engine_snapshot(engine, &snapshot);
@@ -105,12 +107,11 @@ void test_multiple_voices_same_frame() {
     printf("test_multiple_voices_same_frame...\n");
     sb_engine_t engine = create_test_engine();
 
-    // Create 4 voices
     for (int i = 1; i <= 4; i++) {
         sb_voice_config_t vconfig = {};
         vconfig.id = i;
         vconfig.source.type = SB_SOURCE_SYNTHETIC_CLICK;
-        vconfig.source.synthetic_click.bpm = 120.0 + i * 10.0;  // 130, 140, 150, 160
+        vconfig.source.synthetic_click.bpm = 120.0 + i * 10.0;
         vconfig.initial_rate = 1.0f;
         vconfig.gain = 1.0f;
 
@@ -119,17 +120,15 @@ void test_multiple_voices_same_frame() {
         TEST_ASSERT_EQ(result, SB_OK, "voice create succeeds");
     }
 
-    // Schedule all at same frame
     sb_snapshot_t snapshot = {};
     sb_engine_snapshot(engine, &snapshot);
-    sb_frame_t start_frame = snapshot.engine_frame + 48000;  // 1s
+    sb_frame_t start_frame = snapshot.engine_frame + 48000;
 
     for (int i = 1; i <= 4; i++) {
         sb_result_t result = sb_voice_schedule_start(engine, i, start_frame);
         TEST_ASSERT_EQ(result, SB_OK, "schedule succeeds");
     }
 
-    // Wait
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
 
     sb_engine_snapshot(engine, &snapshot);
@@ -157,17 +156,14 @@ void test_schedule_at_buffer_boundary() {
     sb_result_t result = sb_voice_create(engine, &vconfig, &voice_id);
     TEST_ASSERT_EQ(result, SB_OK, "create succeeds");
 
-    // Schedule exactly at next buffer boundary
     sb_snapshot_t snapshot = {};
     sb_engine_snapshot(engine, &snapshot);
     sb_frame_t current = snapshot.engine_frame;
-    // Align to 512-frame boundary
     sb_frame_t aligned = ((current + 511) / 512) * 512 + 512;
 
     result = sb_voice_schedule_start(engine, 1, aligned);
     TEST_ASSERT_EQ(result, SB_OK, "schedule at boundary succeeds");
 
-    // Wait
     double wait_sec = (aligned - current) / 48000.0 + 0.1;
     std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(wait_sec * 1000)));
 
@@ -195,17 +191,15 @@ void test_stop_before_scheduled_start() {
 
     sb_snapshot_t snapshot = {};
     sb_engine_snapshot(engine, &snapshot);
-    sb_frame_t start_frame = snapshot.engine_frame + 48000;  // 1s
+    sb_frame_t start_frame = snapshot.engine_frame + 48000;
 
     result = sb_voice_schedule_start(engine, 1, start_frame);
     TEST_ASSERT_EQ(result, SB_OK, "schedule succeeds");
 
-    // Stop before scheduled start
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     result = sb_voice_stop(engine, 1);
     TEST_ASSERT_EQ(result, SB_OK, "stop before start succeeds");
 
-    // Wait past scheduled start time
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
     sb_engine_snapshot(engine, &snapshot);
@@ -232,24 +226,23 @@ void test_rate_change_during_playback() {
 
     sb_snapshot_t snapshot = {};
     sb_engine_snapshot(engine, &snapshot);
-    sb_frame_t start_frame = snapshot.engine_frame + 24000;  // 0.5s
+    sb_frame_t start_frame = snapshot.engine_frame + 24000;
 
     result = sb_voice_schedule_start(engine, 1, start_frame);
     TEST_ASSERT_EQ(result, SB_OK, "schedule succeeds");
 
-    // Wait for start
     std::this_thread::sleep_for(std::chrono::milliseconds(600));
 
-    // Change rate during playback
     result = sb_voice_set_rate(engine, 1, 2.0f);
     TEST_ASSERT_EQ(result, SB_OK, "set_rate during playback succeeds");
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
 
     sb_engine_snapshot(engine, &snapshot);
     TEST_ASSERT_EQ(snapshot.voice_rates[0], 2.0f, "rate updated to 2.0");
 
-    // Change again
     result = sb_voice_set_rate(engine, 1, 0.5f);
     TEST_ASSERT_EQ(result, SB_OK, "set_rate again succeeds");
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
 
     sb_engine_snapshot(engine, &snapshot);
     TEST_ASSERT_EQ(snapshot.voice_rates[0], 0.5f, "rate updated to 0.5");
