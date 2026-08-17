@@ -54,7 +54,9 @@ class FakeClapBackend(EmbeddingBackend):
 
 class MissingClapBackend(EmbeddingBackend):
     def embed_audio(self, audio_path: str) -> np.ndarray:
-        raise EmbeddingBackendUnavailableError("CLAP is not installed")
+        raise EmbeddingBackendUnavailableError(
+            f"CLAP unavailable for private path {audio_path}"
+        )
 
     def embed_text(self, text: str) -> np.ndarray:
         raise AssertionError("text embedding must not run after backend failure")
@@ -74,6 +76,7 @@ def test_clap_signal_reports_semantic_ranking_without_overriding_heuristic() -> 
     assert signal.top_role == "drop"
     assert signal.top_margin is not None and signal.top_margin > 0
     assert signal.ranked_roles[0].similarity >= signal.ranked_roles[1].similarity
+    assert signal.provenance is not None
     assert signal.provenance["decision_policy"] == (
         "observe_only_heuristic_remains_authoritative"
     )
@@ -91,7 +94,7 @@ def test_unknown_heuristic_is_not_replaced_by_clap_top_role() -> None:
     assert signal.effective_role == "unknown"
 
 
-def test_missing_clap_falls_back_to_heuristic_without_fake_label() -> None:
+def test_missing_clap_falls_back_without_leaking_private_path() -> None:
     signal = evaluate_clap_arrangement_signal(
         "private-section.wav", "breakdown", MissingClapBackend()
     )
@@ -100,16 +103,30 @@ def test_missing_clap_falls_back_to_heuristic_without_fake_label() -> None:
     assert signal.ranked_roles == ()
     assert signal.top_role is None
     assert signal.effective_role == "breakdown"
-    assert signal.limitation == "CLAP is not installed"
+    assert signal.limitation == (
+        "CLAP evaluation unavailable (EmbeddingBackendUnavailableError)"
+    )
+    assert "private-section.wav" not in repr(signal)
 
 
-def test_zero_or_invalid_embedding_is_rejected() -> None:
+def test_zero_or_invalid_embedding_fails_closed_to_heuristic() -> None:
     backend = FakeClapBackend()
     backend.text_vectors[ROLE_PROMPTS["drop"]] = np.zeros(2, dtype=np.float32)
 
+    signal = evaluate_clap_arrangement_signal(
+        "private-section.wav", "groove", backend
+    )
+
+    assert signal.status == "unavailable"
+    assert signal.effective_role == "groove"
+    assert signal.top_role is None
+    assert signal.limitation == "CLAP evaluation unavailable (ValueError)"
+
+
+def test_empty_path_is_rejected_before_backend_use() -> None:
     try:
-        evaluate_clap_arrangement_signal("private-section.wav", "groove", backend)
+        evaluate_clap_arrangement_signal("", "groove", FakeClapBackend())
     except ValueError as exc:
-        assert "finite non-zero norm" in str(exc)
+        assert "section_audio_path" in str(exc)
     else:
-        raise AssertionError("expected invalid CLAP embedding to fail")
+        raise AssertionError("expected empty section path to fail")
