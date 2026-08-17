@@ -2,6 +2,7 @@
 #include "metrics.h"
 #include <algorithm>
 #include <chrono>
+#include <vector>
 
 MetricsCollector::MetricsCollector() {
     reset();
