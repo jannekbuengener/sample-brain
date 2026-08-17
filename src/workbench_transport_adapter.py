@@ -132,6 +132,14 @@ class WorkbenchTransportAdapter:
         self._native_opened = True
         self._last_native_engine_frame = 0
 
+    def ensure_engine_open(self) -> bool:
+        """Ensure the owned native engine is opened. Returns True if engine is available and opened."""
+        with self._lock:
+            if not self._native_available or not self._native_owned:
+                return False
+            self._ensure_owned_native_open_unlocked()
+            return self._native_opened
+
     def _apply_native_rate_unlocked(self, voice_id: int, rate: float) -> None:
         if self._native_engine is None or not self._native_available:
             return

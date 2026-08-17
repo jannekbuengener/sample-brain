@@ -14,6 +14,8 @@ from typing import Any
 from .native_audio import NativeAudioEngine, is_available, Snapshot, SB_DEVICE_OK
 from .workbench_controller import start_native_recording, stop_native_recording
 from .workbench_transport_adapter import WorkbenchTransportAdapter
+from pathlib import Path
+from .workbench_controller import workbench_state_dir
 
 RECORDING_POLL_MS = 100
 
@@ -104,21 +106,18 @@ class WorkbenchRecordingUiController:
 
     def _on_record(self) -> None:
         """Start native recording when user presses Record."""
-        if self.engine is None or self.state.status != STATUS_IDLE:
+        if self._closed:
+            return
+        if self.state.status != STATUS_IDLE:
+            return
+        if self.engine is None:
+            self.app._show_toast("Native audio engine not available")
             return
 
-        # Capture current engine frame and session frame as start positions.
-        # We get the snapshot to capture the exact frame positions.
-        try:
-            snap: Snapshot = self.engine.snapshot()
-        except RuntimeError:
+        # Ensure the shared engine is opened before taking snapshots
+        if not self.app._transport_adapter.ensure_engine_open():
+            self.app._show_toast("Failed to open native audio engine")
             return
-
-        self.state.record_start_engine_frame = snap.engine_frame
-        # Session frame: approximate, derived from engine frame / tempo.
-        # For now use engine_frame as a proxy; the exact mapping is handled
-        # by the analysis pipeline later.
-        self.state.record_start_session_frame = snap.engine_frame
 
         # Get real frames from transport adapter snapshot
         snapshot = self.app._transport_adapter.get_snapshot()
@@ -158,17 +157,23 @@ class WorkbenchRecordingUiController:
         # Correction #1: native ringbuffer already counts dropped frames.
         # Correction #4: finalize_recording_take() already registers in "Recordings".
 
-        # Get current session frame from adapter
-        snapshot = self.app._transport_adapter.get_snapshot()
-        session_frame = snapshot["session_frame"]
+        # Use stored start session frame (not current)
+        start_session_frame = self.state.record_start_session_frame
+        
+        # Generate proper .wav destination path under workbench state folder
+        recordings_dir = workbench_state_dir() / "recordings"
+        recordings_dir.mkdir(parents=True, exist_ok=True)
+        import time
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        destination = recordings_dir / f"recording_{timestamp}.wav"
         
         try:
             take = stop_native_recording(
                 self.engine,
                 self.state.recording_id,
                 self.state.record_start_engine_frame,
-                session_frame,
-                destination="workbench://recording",
+                start_session_frame,
+                destination=str(destination),
                 db_path=self.db_path,
             )
         except RuntimeError as exc:

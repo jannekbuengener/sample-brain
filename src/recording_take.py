@@ -367,12 +367,14 @@ def finalize_native_recording(
 
         # Finalize the take. finalize_recording_take already registers in
         # "Recordings" playlist (correction #4).
+        # Treat dropped frames > 0 as interrupted (correction #1: ringbuffer counts drops)
+        interrupted = (device_status not in (SB_DEVICE_OK,)) or (dropped_frames > 0)
         take = finalize_recording_take(
             pcm_data,
             captured_frames=frames,
             context=context,
             destination=destination,
-            interrupted=device_status not in (SB_DEVICE_OK,),
+            interrupted=interrupted,
             db_path=db_path,
         )
         return take
