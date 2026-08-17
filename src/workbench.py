@@ -222,6 +222,7 @@ class WorkbenchApp:
         )
         self._editing_ui = attach_workbench_editing_ui(self)
         self._restore_last_folder()
+        self._quick_capture = None
         self._refresh_library_list()
         self._refresh_playlist_list()
         self._set_status(
@@ -336,6 +337,15 @@ class WorkbenchApp:
         self._limit_entry = ttk.Entry(toolbar, textvariable=self._limit_var, width=6)
         self._limit_entry.pack(side=tk.LEFT, padx=(6, 0))
         self._limit_entry.bind("<FocusOut>", self._on_limit_focus_out)
+
+        # Quick Capture — microphone button for voice-to-issue
+        self._quick_capture_btn = ttk.Button(
+            toolbar,
+            text="Mikrofon",
+            command=self._on_quick_capture_toggle,
+            state=tk.DISABLED,
+        )
+        self._quick_capture_btn.pack(side=tk.LEFT, padx=(8, 0))
 
         view_bar = ttk.Frame(self.root, padding=(12, 0, 12, 6))
         self._view_bar = view_bar
@@ -1642,6 +1652,75 @@ class WorkbenchApp:
     def _on_limit_focus_out(self, _event: object = None) -> None:
         self._persist_analysis_limit()
 
+    def _on_quick_capture_toggle(self) -> None:
+        """Toggle the quick capture workflow: record stop transcribe issue."""
+        if self._quick_capture is None:
+            from src.quick_issue_capture import QuickIssueCapture
+            self._quick_capture = QuickIssueCapture(
+                recordings_dir=self._working_dir
+                if hasattr(self, "_working_dir")
+                else None,
+            )
+        
+        # State machine: idle < recording < processed
+        if not hasattr(self, "_quick_capture_recording"):
+            self._quick_capture_recording = False
+        
+        if not self._quick_capture_recording:
+            # Start recording
+            self._quick_capture_recording = True
+            self._quick_capture.start_recording()
+            self._set_status("Quick Capture: Aufnahme laeuft...", tone="neutral")
+        else:
+            # Stop recording and process
+            self._quick_capture_recording = False
+            # Get recording info from the workbench recording UI
+            engine = getattr(self, "_recording_ui", None)
+            if engine is not None:
+                engine = getattr(engine, "engine", None)
+            recording_id = getattr(self, "_recording_ui", None)
+            if recording_id is not None:
+                recording_id = getattr(recording_id, "state", None)
+                if recording_id is not None:
+                    recording_id = getattr(recording_id, "recording_id", None)
+            start_engine_frame = getattr(self, "_recording_ui", None)
+            if start_engine_frame is not None:
+                start_engine_frame = getattr(start_engine_frame, "state", None)
+                if start_engine_frame is not None:
+                    start_engine_frame = getattr(start_engine_frame, "record_start_engine_frame", 0)
+            start_session_frame = getattr(self, "_recording_ui", None)
+            if start_session_frame is not None:
+                start_session_frame = getattr(start_session_frame, "state", None)
+                if start_session_frame is not None:
+                    start_session_frame = getattr(start_session_frame, "record_start_session_frame", 0)
+            end_engine_frame = getattr(engine, "engine_frame", 0) if engine else 0
+            end_session_frame = getattr(self, "_recording_ui", None)
+            if end_session_frame is not None:
+                end_session_frame = getattr(end_session_frame, "state", None)
+                if end_session_frame is not None:
+                    end_session_frame = getattr(end_session_frame, "engine_frame", 0)
+            
+            result = self._quick_capture.process_recording(
+                engine=engine,
+                recording_id=recording_id,
+                start_engine_frame=start_engine_frame,
+                start_session_frame=start_session_frame,
+                end_engine_frame=end_engine_frame,
+                end_session_frame=end_session_frame,
+            )
+            
+            if result.get("issue"):
+                issue_num = result["issue"]["number"]
+                issue_url = result["issue"]["html_url"]
+                self._set_status(
+                    f"Issue erstellt: #{issue_num} ({issue_url})", tone="neutral"
+                )
+            elif result.get("error"):
+                self._set_status(result["error"], tone="error")
+            else:
+                self._set_status(
+                    "Quick Capture: keine Sprache erkannt", tone="neutral"
+                )
     def _start_analysis(self) -> None:
         if self._busy:
             return
