@@ -60,7 +60,6 @@ void test_voice_create_remove() {
     TEST_ASSERT_EQ(result, SB_OK, "voice_create succeeds");
     TEST_ASSERT_EQ(voice_id, 1u, "voice_id matches config");
 
-    // Check snapshot
     sb_snapshot_t snapshot = {};
     sb_engine_snapshot(engine, &snapshot);
     TEST_ASSERT_EQ(snapshot.total_voice_count, 1u, "total_voice_count is 1");
@@ -111,20 +110,20 @@ void test_voice_schedule_start_stop() {
     sb_result_t result = sb_voice_create(engine, &vconfig, &voice_id);
     TEST_ASSERT_EQ(result, SB_OK, "create succeeds");
 
-    // Get current engine frame
     sb_snapshot_t snapshot = {};
     sb_engine_snapshot(engine, &snapshot);
-    sb_frame_t start_frame = snapshot.engine_frame + 48000;  // 1 second in future
+    sb_frame_t start_frame = snapshot.engine_frame + 48000;
 
     result = sb_voice_schedule_start(engine, 1, start_frame);
     TEST_ASSERT_EQ(result, SB_OK, "schedule_start succeeds");
 
+    // Voice control is delivered through the realtime command queue. Give the
+    // audio thread at least two 512-frame callbacks to publish SCHEDULED state.
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
     sb_engine_snapshot(engine, &snapshot);
-    // Voice should be scheduled
     TEST_ASSERT_EQ(snapshot.voice_states[0], SB_VOICE_SCHEDULED, "voice state is SCHEDULED");
     TEST_ASSERT_EQ(snapshot.requested_start_frame[0], start_frame, "requested_start_frame matches");
 
-    // Wait for scheduled start
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
 
     sb_engine_snapshot(engine, &snapshot);
@@ -160,7 +159,7 @@ void test_voice_schedule_past_frame() {
 
     sb_snapshot_t snapshot = {};
     sb_engine_snapshot(engine, &snapshot);
-    sb_frame_t past_frame = snapshot.engine_frame - 1000;  // Past frame
+    sb_frame_t past_frame = snapshot.engine_frame - 1000;
 
     result = sb_voice_schedule_start(engine, 1, past_frame);
     TEST_ASSERT_EQ(result, SB_ERR_INVALID_ARG, "schedule past frame returns INVALID_ARG");
@@ -185,16 +184,14 @@ void test_voice_set_rate() {
 
     sb_snapshot_t snapshot = {};
     sb_engine_snapshot(engine, &snapshot);
-    sb_frame_t start_frame = snapshot.engine_frame + 24000;  // 0.5s
+    sb_frame_t start_frame = snapshot.engine_frame + 24000;
 
     result = sb_voice_schedule_start(engine, 1, start_frame);
     TEST_ASSERT_EQ(result, SB_OK, "schedule succeeds");
 
-    // Change rate before start
-    result = sb_voice_set_rate(engine, 1, 1.5f);  // 132/128 = 1.03125, but test with 1.5
+    result = sb_voice_set_rate(engine, 1, 1.5f);
     TEST_ASSERT_EQ(result, SB_OK, "set_rate succeeds");
 
-    // Wait for start
     std::this_thread::sleep_for(std::chrono::milliseconds(600));
 
     sb_engine_snapshot(engine, &snapshot);
@@ -207,40 +204,36 @@ void test_voice_rate_sync_scenario() {
     printf("test_voice_rate_sync_scenario...\n");
     sb_engine_t engine = create_test_engine();
 
-    // Voice A: 128 BPM -> 132 BPM target
     sb_voice_config_t vconfig_a = {};
     vconfig_a.id = 1;
     vconfig_a.source.type = SB_SOURCE_SYNTHETIC_CLICK;
     vconfig_a.source.synthetic_click.bpm = 128.0;
-    vconfig_a.initial_rate = 132.0 / 128.0;  // rate_128_to_132
+    vconfig_a.initial_rate = 132.0 / 128.0;
     vconfig_a.gain = 1.0f;
 
     sb_voice_id_t voice_id = 0;
     sb_result_t result = sb_voice_create(engine, &vconfig_a, &voice_id);
     TEST_ASSERT_EQ(result, SB_OK, "voice A create succeeds");
 
-    // Voice B: 140 BPM -> 132 BPM target
     sb_voice_config_t vconfig_b = {};
     vconfig_b.id = 2;
     vconfig_b.source.type = SB_SOURCE_SYNTHETIC_CLICK;
     vconfig_b.source.synthetic_click.bpm = 140.0;
-    vconfig_b.initial_rate = 132.0 / 140.0;  // rate_140_to_132
+    vconfig_b.initial_rate = 132.0 / 140.0;
     vconfig_b.gain = 1.0f;
 
     result = sb_voice_create(engine, &vconfig_b, &voice_id);
     TEST_ASSERT_EQ(result, SB_OK, "voice B create succeeds");
 
-    // Schedule both at same frame
     sb_snapshot_t snapshot = {};
     sb_engine_snapshot(engine, &snapshot);
-    sb_frame_t start_frame = snapshot.engine_frame + 48000;  // 1s
+    sb_frame_t start_frame = snapshot.engine_frame + 48000;
 
     result = sb_voice_schedule_start(engine, 1, start_frame);
     TEST_ASSERT_EQ(result, SB_OK, "voice A schedule succeeds");
     result = sb_voice_schedule_start(engine, 2, start_frame);
     TEST_ASSERT_EQ(result, SB_OK, "voice B schedule succeeds");
 
-    // Wait for start
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
 
     sb_engine_snapshot(engine, &snapshot);
