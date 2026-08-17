@@ -2013,8 +2013,11 @@ def start_native_recording(
     session_frame: int,
 ) -> int:
     """Start native audio recording through the audio core."""
-    if engine is None or not engine.is_available():
+    # is_available() is module-level, not on engine instance
+    from .native_audio import is_available
+    if engine is None or not is_available():
         raise RuntimeError("Native audio engine not available")
+    # engine.start_recording only takes engine_frame
     return engine.start_recording(engine_frame)
 
 
@@ -2026,17 +2029,17 @@ def stop_native_recording(
     destination: str,
     db_path: Path | None = None,
 ):
-    """Stop native audio recording and finalize the take."""
-    if engine is None or not engine.is_available():
+    """Stop native audio recording and finalize the take via finalize_native_recording."""
+    from .native_audio import is_available
+    if engine is None or not is_available():
         raise RuntimeError("Native audio engine not available")
-    audio_data, frames = engine.stop_recording(recording_id)
-    # Import here to avoid circular imports
-    from .recording_take import finalize_recording_take
-    return finalize_recording_take(
-        audio_data=audio_data,
-        frames=frames,
-        engine_frame=engine_frame,
-        session_frame=session_frame,
+    # Use the dedicated finalize_native_recording which handles all edge cases
+    from .recording_take import finalize_native_recording
+    return finalize_native_recording(
+        engine=engine,
+        recording_id=recording_id,
+        record_start_engine_frame=engine_frame,
+        record_start_session_frame=session_frame,
         destination=destination,
         db_path=db_path,
     )

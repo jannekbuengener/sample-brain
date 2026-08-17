@@ -13,6 +13,7 @@ from typing import Any
 
 from .native_audio import NativeAudioEngine, is_available, Snapshot, SB_DEVICE_OK
 from .workbench_controller import start_native_recording, stop_native_recording
+from .workbench_transport_adapter import WorkbenchTransportAdapter
 
 RECORDING_POLL_MS = 100
 
@@ -39,11 +40,14 @@ class WorkbenchRecordingUiController:
         self,
         app: Any,
         *,
-        engine: NativeAudioEngine | None = None,
+        transport_adapter: "WorkbenchTransportAdapter | None" = None,
         db_path: Any = None,
     ) -> None:
         self.app = app
-        self.engine = engine or NativeAudioEngine() if is_available() else None
+        # Get the shared engine from the transport adapter
+        self.engine = None
+        if transport_adapter is not None:
+            self.engine = transport_adapter.get_native_engine()
         self.db_path = db_path
         self.state = RecordingState()
         self._poll_id: Any = None
@@ -116,12 +120,19 @@ class WorkbenchRecordingUiController:
         # by the analysis pipeline later.
         self.state.record_start_session_frame = snap.engine_frame
 
+        # Get real frames from transport adapter snapshot
+        snapshot = self.app._transport_adapter.get_snapshot()
+        engine_frame = snapshot["engine_frame"]
+        session_frame = snapshot["session_frame"]
+        self.state.record_start_engine_frame = engine_frame
+        self.state.record_start_session_frame = session_frame
+        
         # Start the native recording; returns a recording ID.
         try:
             recording_id = start_native_recording(
                 self.engine,
-                self.state.record_start_engine_frame,
-                self.state.record_start_session_frame,
+                engine_frame,
+                session_frame,
             )
         except RuntimeError as exc:
             # Engine not open or other error â€“ stay idle.
@@ -147,12 +158,16 @@ class WorkbenchRecordingUiController:
         # Correction #1: native ringbuffer already counts dropped frames.
         # Correction #4: finalize_recording_take() already registers in "Recordings".
 
+        # Get current session frame from adapter
+        snapshot = self.app._transport_adapter.get_snapshot()
+        session_frame = snapshot["session_frame"]
+        
         try:
             take = stop_native_recording(
                 self.engine,
                 self.state.recording_id,
                 self.state.record_start_engine_frame,
-                self.state.record_start_session_frame,
+                session_frame,
                 destination="workbench://recording",
                 db_path=self.db_path,
             )
@@ -235,13 +250,17 @@ class WorkbenchRecordingUiController:
 def attach_workbench_recording_ui(
     app: Any,
     *,
-    engine: Any = None,
+    transport_adapter: "WorkbenchTransportAdapter | None" = None,
     db_path: Any = None,
 ) -> WorkbenchRecordingUiController:
-    """Attach one RECORD/STOP controller to ``app`` and return it."""
+    """Attach one RECORD/STOP controller to ``app`` and return it.
+    
+    The transport_adapter provides the shared NativeAudioEngine and real-time
+    frame snapshots (engine_frame, session_frame) for recording.
+    """
     return WorkbenchRecordingUiController(
         app,
-        engine=engine,
+        transport_adapter=transport_adapter,
         db_path=db_path,
     )
 
