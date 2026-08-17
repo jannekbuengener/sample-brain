@@ -50,7 +50,6 @@ void test_snapshot_fields_populated() {
     sb_result_t result = sb_engine_snapshot(engine, &snapshot);
     TEST_ASSERT_EQ(result, SB_OK, "snapshot succeeds");
 
-    // Verify all fields are populated (non-zero/initialized)
     TEST_ASSERT(snapshot.sample_rate == 48000u, "sample_rate populated");
     TEST_ASSERT(snapshot.buffer_frames == 512u, "buffer_frames populated");
     TEST_ASSERT(snapshot.device_status == SB_DEVICE_OK, "device_status is OK");
@@ -73,20 +72,16 @@ void test_callback_timing_metrics() {
     printf("test_callback_timing_metrics...\n");
     sb_engine_t engine = create_test_engine();
 
-    // Let engine run for a bit to collect timing stats
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
     sb_snapshot_t snapshot = {};
     sb_result_t result = sb_engine_snapshot(engine, &snapshot);
     TEST_ASSERT_EQ(result, SB_OK, "snapshot succeeds");
 
-    // Timing metrics should be populated
     TEST_ASSERT(snapshot.callback_mean_us > 0.0, "callback_mean_us > 0");
     TEST_ASSERT(snapshot.callback_p95_us >= snapshot.callback_mean_us, "p95 >= mean");
     TEST_ASSERT(snapshot.callback_p99_us >= snapshot.callback_p95_us, "p99 >= p95");
     TEST_ASSERT(snapshot.callback_max_us >= snapshot.callback_p99_us, "max >= p99");
-
-    // Reasonable bounds for 512 frames at 48kHz = ~10.6ms budget
     TEST_ASSERT(snapshot.callback_mean_us < 5000.0, "mean < 5ms (reasonable)");
     TEST_ASSERT(snapshot.callback_max_us < 10000.0, "max < 10ms (reasonable)");
 
@@ -101,11 +96,9 @@ void test_xrun_counters() {
     sb_engine_snapshot(engine, &snapshot);
     uint64_t initial_xruns = snapshot.xrun_count;
 
-    // Run for a bit
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
     sb_engine_snapshot(engine, &snapshot);
-    // Xruns should not increase significantly in normal operation
     TEST_ASSERT(snapshot.xrun_count >= initial_xruns, "xrun_count non-decreasing");
     TEST_ASSERT(snapshot.xrun_count - initial_xruns < 10, "xruns minimal in normal op");
 
@@ -116,7 +109,6 @@ void test_snapshot_thread_safety() {
     printf("test_snapshot_thread_safety...\n");
     sb_engine_t engine = create_test_engine();
 
-    // Call snapshot from multiple threads simultaneously
     const int num_threads = 4;
     const int iterations = 100;
     std::atomic<int> errors{0};
@@ -128,7 +120,6 @@ void test_snapshot_thread_safety() {
             if (result != SB_OK) {
                 errors++;
             }
-            // Verify consistency
             if (snapshot.sample_rate != 48000u) errors++;
             if (snapshot.buffer_frames != 512u) errors++;
         }
@@ -152,7 +143,6 @@ void test_snapshot_during_voice_activity() {
     printf("test_snapshot_during_voice_activity...\n");
     sb_engine_t engine = create_test_engine();
 
-    // Create and start a voice
     sb_voice_config_t vconfig = {};
     vconfig.id = 1;
     vconfig.source.type = SB_SOURCE_SYNTHETIC_CLICK;
@@ -171,10 +161,8 @@ void test_snapshot_during_voice_activity() {
     result = sb_voice_schedule_start(engine, 1, start_frame);
     TEST_ASSERT_EQ(result, SB_OK, "schedule succeeds");
 
-    // Wait for voice to start
     std::this_thread::sleep_for(std::chrono::milliseconds(600));
 
-    // Snapshot during playback
     sb_engine_snapshot(engine, &snapshot);
     TEST_ASSERT_EQ(snapshot.active_voice_count, 1u, "active_voice_count is 1");
     TEST_ASSERT_EQ(snapshot.voice_states[0], SB_VOICE_PLAYING, "voice state is PLAYING");
