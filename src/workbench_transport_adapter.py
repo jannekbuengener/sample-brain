@@ -80,6 +80,7 @@ class WorkbenchTransportAdapter:
                     self._native_available = False
 
         self._sync_enabled = False
+        self._keylock_enabled = False
         self._source_bpm: float | None = None
         self._current_rate = 1.0
         self._sync_status = "sync"
@@ -280,6 +281,22 @@ class WorkbenchTransportAdapter:
     def is_sync_enabled(self) -> bool:
         with self._lock:
             return self._sync_enabled
+
+    def set_keylock_mode(self, enabled: bool) -> None:
+        """#324: Enable/disable Key-Lock (pitch-preserving) SYNC for native voices.
+
+        Key-Lock keeps the tempo ratio handled by the native DSP path
+        (Signalsmith time-stretch) while the playback RATE value stays the
+        same as Rate Sync. This is a state holder for the Workbench UI; the
+        per-voice sync mode is forwarded to the native engine on voice creation
+        and rate updates.
+        """
+        with self._lock:
+            self._keylock_enabled = bool(enabled)
+
+    def is_keylock_enabled(self) -> bool:
+        with self._lock:
+            return self._keylock_enabled
 
     def set_source_bpm(self, bpm: float | None) -> None:
         """Set BPM for the current Workbench source snapshot.

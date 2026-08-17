@@ -1,17 +1,14 @@
 cmake_minimum_required(VERSION 3.16)
 project(samplebrain_audio LANGUAGES CXX C)
 
-# C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Build configuration
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
-# Platform-specific settings
 if(WIN32)
     if(MSVC)
         add_compile_options(/MP)
@@ -42,6 +39,7 @@ include_directories(${MINIAUDIO_INCLUDE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/include
 set(SAMPLEBRAIN_AUDIO_SOURCES
     src/engine.cpp
     src/voice.cpp
+    src/keylock_voice.cpp
     src/ringbuffer.cpp
     src/metrics.cpp
     src/synthetic.cpp
@@ -54,6 +52,12 @@ add_library(samplebrain_audio SHARED ${SAMPLEBRAIN_AUDIO_SOURCES})
 # export the target's global symbols on Windows so ctypes can resolve the sb_* API.
 set_target_properties(samplebrain_audio PROPERTIES
     WINDOWS_EXPORT_ALL_SYMBOLS ON
+)
+
+target_include_directories(samplebrain_audio PRIVATE
+    ${MINIAUDIO_INCLUDE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 target_link_libraries(samplebrain_audio PRIVATE ${MINIAUDIO_SYSTEM_LIBS})
@@ -86,7 +90,6 @@ foreach(test_name IN LISTS SAMPLEBRAIN_AUDIO_TESTS)
     add_test(NAME ${test_target} COMMAND ${test_target})
 endforeach()
 
-# Installation (optional, for Python FFI)
 install(TARGETS samplebrain_audio
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib

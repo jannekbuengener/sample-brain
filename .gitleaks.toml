@@ -1,0 +1,12 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+  [[rules.allowlists]]
+  description = "Key-Lock DSP tests use numeric frequency_hz parameters, not secrets"
+  condition = "AND"
+  regexTarget = "line"
+  paths = ['''^tests/test_keylock_sync\.py$''']
+  regexes = ['''SyncMode\.KEY_LOCK_SYNC,\s+frequency_hz=\d+(?:\.\d+)?''']
