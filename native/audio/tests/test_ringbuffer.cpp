@@ -48,30 +48,29 @@ void test_recording_start_stop() {
 
     sb_snapshot_t snapshot = {};
     sb_engine_snapshot(engine, &snapshot);
-    sb_frame_t start_frame = snapshot.engine_frame + 24000;  // 0.5s
+    sb_frame_t start_frame = snapshot.engine_frame + 24000;  // 0.5s in future
 
     sb_recording_id_t rec_id = 0;
     sb_result_t result = sb_recording_start(engine, &rec_id, start_frame);
     TEST_ASSERT_EQ(result, SB_OK, "recording_start succeeds");
     TEST_ASSERT_EQ(rec_id, 1u, "recording_id is 1");
 
-    // Wait for recording to start
-    std::this_thread::sleep_for(std::chrono::milliseconds(600));
+    // Wait 0.5s until the scheduled start plus about 0.5s of capture.
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
     sb_engine_snapshot(engine, &snapshot);
     TEST_ASSERT_EQ(snapshot.recording_active, true, "recording_active is true");
 
     float* buffer = nullptr;
     size_t frames = 0;
-    result = sb_recording_stop(engine, 1, &buffer, &frames);
+    result = sb_recording_stop(engine, rec_id, &buffer, &frames);
     TEST_ASSERT_EQ(result, SB_OK, "recording_stop succeeds");
     TEST_ASSERT(buffer != nullptr, "buffer is non-null");
     TEST_ASSERT(frames > 0, "frames > 0");
 
-    // Verify buffer size (approximately 0.5s at 48kHz)
     size_t expected_frames = 24000;
     TEST_ASSERT(frames >= expected_frames * 0.9 && frames <= expected_frames * 1.1,
-                "frames approximately matches expected duration");
+                "frames approximately matches 0.5s capture duration");
 
     sb_recording_free_buffer(buffer);
 
@@ -86,22 +85,20 @@ void test_recording_dropped_frames_accounting() {
     sb_engine_t engine = create_test_engine();
 
     sb_recording_id_t rec_id = 0;
-    sb_result_t result = sb_recording_start(engine, &rec_id, 0);  // Start immediately
+    sb_result_t result = sb_recording_start(engine, &rec_id, 0);
     TEST_ASSERT_EQ(result, SB_OK, "recording_start succeeds");
 
-    // Let it record for a bit
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     sb_snapshot_t snapshot = {};
     sb_engine_snapshot(engine, &snapshot);
     uint64_t dropped_before = snapshot.recording_dropped_frames;
 
-    // In normal operation, dropped frames should be 0 or very low
     TEST_ASSERT(dropped_before < 100, "dropped_frames is low during normal operation");
 
     float* buffer = nullptr;
     size_t frames = 0;
-    result = sb_recording_stop(engine, 1, &buffer, &frames);
+    result = sb_recording_stop(engine, rec_id, &buffer, &frames);
     TEST_ASSERT_EQ(result, SB_OK, "recording_stop succeeds");
 
     sb_recording_free_buffer(buffer);
@@ -116,12 +113,13 @@ void test_multiple_recordings_sequential() {
         sb_recording_id_t rec_id = 0;
         sb_result_t result = sb_recording_start(engine, &rec_id, 0);
         TEST_ASSERT_EQ(result, SB_OK, "recording_start succeeds");
+        TEST_ASSERT_EQ(rec_id, static_cast<sb_recording_id_t>(i), "recording id is monotonic");
 
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
         float* buffer = nullptr;
         size_t frames = 0;
-        result = sb_recording_stop(engine, i, &buffer, &frames);
+        result = sb_recording_stop(engine, rec_id, &buffer, &frames);
         TEST_ASSERT_EQ(result, SB_OK, "recording_stop succeeds");
         TEST_ASSERT(buffer != nullptr, "buffer is non-null");
         TEST_ASSERT(frames > 0, "frames > 0");
@@ -149,7 +147,6 @@ void test_playback_and_recording_simultaneous() {
     printf("test_playback_and_recording_simultaneous...\n");
     sb_engine_t engine = create_test_engine();
 
-    // Create a voice
     sb_voice_config_t vconfig = {};
     vconfig.id = 1;
     vconfig.source.type = SB_SOURCE_SYNTHETIC_CLICK;
@@ -161,10 +158,9 @@ void test_playback_and_recording_simultaneous() {
     sb_result_t result = sb_voice_create(engine, &vconfig, &voice_id);
     TEST_ASSERT_EQ(result, SB_OK, "voice create succeeds");
 
-    // Schedule voice and start recording at same time
     sb_snapshot_t snapshot = {};
     sb_engine_snapshot(engine, &snapshot);
-    sb_frame_t start_frame = snapshot.engine_frame + 24000;  // 0.5s
+    sb_frame_t start_frame = snapshot.engine_frame + 24000;
 
     result = sb_voice_schedule_start(engine, 1, start_frame);
     TEST_ASSERT_EQ(result, SB_OK, "voice schedule succeeds");
@@ -173,17 +169,14 @@ void test_playback_and_recording_simultaneous() {
     result = sb_recording_start(engine, &rec_id, start_frame);
     TEST_ASSERT_EQ(result, SB_OK, "recording start succeeds");
 
-    // Wait for both
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
 
-    // Stop voice
     result = sb_voice_stop(engine, 1);
     TEST_ASSERT_EQ(result, SB_OK, "voice stop succeeds");
 
-    // Stop recording
     float* buffer = nullptr;
     size_t frames = 0;
-    result = sb_recording_stop(engine, 1, &buffer, &frames);
+    result = sb_recording_stop(engine, rec_id, &buffer, &frames);
     TEST_ASSERT_EQ(result, SB_OK, "recording stop succeeds");
     TEST_ASSERT(buffer != nullptr, "buffer is non-null");
     TEST_ASSERT(frames > 0, "frames > 0");
