@@ -214,7 +214,7 @@ sb_result_t sb_voice_create(sb_engine_t engine, const sb_voice_config_t* config,
     }
 
     // Create voice
-    Voice* voice = new (std::nothrow) Voice(engine, *config);
+    Voice* voice = new (std::nothrow) Voice(engine->config.sample_rate, *config);
     if (!voice) return SB_ERR_OUT_OF_MEMORY;
 
     {
@@ -374,7 +374,10 @@ sb_result_t sb_engine_snapshot(sb_engine_t engine, sb_snapshot_t* out_snapshot) 
 // Internal: miniaudio data callback
 static void ma_data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
     sb_engine_t engine = static_cast<sb_engine_t>(pDevice->pUserData);
-    if (!engine || !engine->running.load()) {
+    if (!engine) {
+        return;
+    }
+    if (!engine->running.load()) {
         if (pOutput) memset(pOutput, 0, frameCount * engine->config.output_channels * sizeof(float));
         return;
     }
@@ -426,7 +429,7 @@ static sb_result_t process_commands(sb_engine_t engine) {
 
         switch (cmd.type) {
             case sb_engine::Command::CMD_CREATE_VOICE: {
-                Voice* voice = new (std::nothrow) Voice(engine, cmd.create_voice.config);
+                Voice* voice = new (std::nothrow) Voice(engine->config.sample_rate, cmd.create_voice.config);
                 if (voice) {
                     std::lock_guard<std::mutex> lock(engine->voices_mutex);
                     engine->voices.push_back(voice);
@@ -452,7 +455,9 @@ static sb_result_t process_commands(sb_engine_t engine) {
             case sb_engine::Command::CMD_SCHEDULE_START: {
                 Voice* v = find_voice(engine, cmd.schedule_start.id);
                 if (v) {
-                    v->schedule_start(cmd.schedule_start.frame);
+                    v->schedule_start(
+                        cmd.schedule_start.frame,
+                        engine->engine_frame.load(std::memory_order_relaxed));
                 } else {
                     result = SB_ERR_VOICE_NOT_FOUND;
                 }
