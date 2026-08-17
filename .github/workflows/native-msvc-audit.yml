@@ -1,0 +1,38 @@
+name: Native MSVC audit
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-build:
+    name: Native audio MSVC build audit
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure VS 2022 x64
+        shell: pwsh
+        run: cmake -S native/audio -B native/audio/build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build Release
+        shell: pwsh
+        run: cmake --build native/audio/build --config Release --parallel
+
+      - name: Require Python FFI DLL artifact
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem native/audio/build -Recurse -Filter samplebrain_audio.dll | Select-Object -First 1
+          if (-not $dll) { throw "samplebrain_audio.dll was not produced by the repository CMake build" }
+          Write-Host "DLL=$($dll.FullName)"
+
+      - name: Run native CTest
+        shell: pwsh
+        run: ctest --test-dir native/audio/build -C Release --output-on-failure
