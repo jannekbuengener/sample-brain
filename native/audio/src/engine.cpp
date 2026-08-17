@@ -569,8 +569,8 @@ sb_result_t sb_engine_snapshot(sb_engine_t engine, sb_snapshot_t* out_snapshot) 
             out_snapshot->voice_input_latency_frames[i] = v->get_input_latency_frames();
             out_snapshot->voice_output_latency_frames[i] = v->get_output_latency_frames();
             out_snapshot->voice_grid_compensation_frames[i] = v->get_grid_compensation_frames();
-            out_snapshot->voice_rendered_click_count[i] = v->rendered_click_count.load(std::memory_order_relaxed);
-            out_snapshot->voice_last_click_engine_frame[i] = v->last_rendered_click_engine_frame.load(std::memory_order_acquire);
+            out_snapshot->voice_rendered_click_count[i] = v->get_rendered_click_count();
+            out_snapshot->voice_last_click_engine_frame[i] = v->get_last_rendered_click_engine_frame();
             if (v->get_state() == SB_VOICE_PLAYING) {
                 out_snapshot->active_voice_count++;
             }
