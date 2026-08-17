@@ -101,9 +101,16 @@ sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_en
     engine->config.output_device = config->output_device ? strdup(config->output_device) : nullptr;
     engine->config.input_device = config->input_device ? strdup(config->input_device) : nullptr;
 
-    // Initialize miniaudio context
+    // Initialize miniaudio context. Native CTest uses miniaudio's null backend so
+    // transport/voice logic can be exercised on hosted runners without changing
+    // production WASAPI/device behavior.
     ma_context_config ctx_config = ma_context_config_init();
+#ifdef SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND
+    ma_backend test_backends[] = {ma_backend_null};
+    ma_result ma_res = ma_context_init(test_backends, 1, &ctx_config, &engine->context);
+#else
     ma_result ma_res = ma_context_init(nullptr, 0, &ctx_config, &engine->context);
+#endif
     if (ma_res != MA_SUCCESS) {
         delete engine;
         return SB_ERR_DEVICE_ERROR;
@@ -244,6 +251,15 @@ sb_result_t sb_voice_remove(sb_engine_t engine, sb_voice_id_t id) {
 
 sb_result_t sb_voice_schedule_start(sb_engine_t engine, sb_voice_id_t id, sb_frame_t engine_frame) {
     if (!engine) return SB_ERR_NOT_INITIALIZED;
+    if (engine_frame < engine->engine_frame.load(std::memory_order_acquire)) {
+        return SB_ERR_INVALID_ARG;
+    }
+    {
+        std::lock_guard<std::mutex> lock(engine->voices_mutex);
+        auto it = std::find_if(engine->voices.begin(), engine->voices.end(),
+                               [id](Voice* v) { return v->id == id; });
+        if (it == engine->voices.end()) return SB_ERR_VOICE_NOT_FOUND;
+    }
 
     sb_engine::Command cmd{};
     cmd.type = sb_engine::Command::CMD_SCHEDULE_START;
@@ -382,6 +398,8 @@ static void ma_data_callback(ma_device* pDevice, void* pOutput, const void* pInp
         return;
     }
 
+    engine->metrics.on_callback_start();
+
     // Process pending commands
     process_commands(engine);
 
@@ -395,9 +413,9 @@ static void ma_data_callback(ma_device* pDevice, void* pOutput, const void* pInp
     const size_t num_frames = frameCount;
 
     // Clear output
-    std::fill(output, output + num_frames * num_channels, 0.0f);
+    if (output) {
+        std::fill(output, output + num_frames * num_channels, 0.0f);
 
-    {
         std::lock_guard<std::mutex> lock(engine->voices_mutex);
         for (auto* v : engine->voices) {
             v->process(output, num_frames, current_frame, num_channels);
