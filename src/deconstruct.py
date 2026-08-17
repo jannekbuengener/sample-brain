@@ -496,18 +496,112 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
     loops_dir.mkdir(parents=True, exist_ok=True)
     sections_dir.mkdir(parents=True, exist_ok=True)
 
-    loop_src = LoopSourceIdentity(
+    # --- master source (always available) ---
+    loop_src_master = LoopSourceIdentity(
         source_kind="master", track_audio_ref="/source/working_audio"
     )
-    loop_batch = generate_loop_candidates(
-        loop_src, beat_grid=beat_grid, structure=structure
+    loop_batch_master = generate_loop_candidates(
+        loop_src_master, beat_grid=beat_grid, structure=structure
     )
-    section_src = SectionSourceIdentity(
+    section_src_master = SectionSourceIdentity(
         source_kind="master", track_audio_ref="/source/working_audio"
     )
-    section_batch = generate_section_candidates(
-        structure, arrangement, source=section_src, track_ref=track_ref
+    section_batch_master = generate_section_candidates(
+        structure, arrangement, source=section_src_master, track_ref=track_ref
     )
+
+    # --- producer group / stem sources (optional; if stems are available) ---
+    loop_src_producer_groups: LoopSourceIdentity | None = None
+    loop_batch_producer_groups: LoopCandidateBatch | None = None
+    section_src_producer_groups: SectionSourceIdentity | None = None
+    section_batch_producer_groups: SectionCandidateBatch | None = None
+    loop_src_stems: LoopSourceIdentity | None = None
+    loop_batch_stems: LoopCandidateBatch | None = None
+    section_src_stems: SectionSourceIdentity | None = None
+    section_batch_stems: SectionCandidateBatch | None = None
+
+    stems_payload = ctx.artifacts.get("stems")
+    if stems_payload is not None and isinstance(stems_payload, dict):
+        stems_list = stems_payload.get("stems") or []
+        track_ref_artifacts = stems_payload.get("track_ref")
+        # Derive producer groups from technical stems using the #268 contract.
+        from src.producer_groups import derive_producer_groups, ProducerGroupParams
+
+        stem_dicts: dict[str, np.ndarray] = {}
+        for s in stems_list:
+            kind = s.get("stem_kind")
+            arr = s.get("audio") or s.get("output", {}).get("data") or None
+            if arr is not None and kind in ("drums", "bass", "vocals", "other"):
+                stem_dicts[kind] = np.asarray(arr, dtype=np.float32)
+
+        if stem_dicts:
+            params = ProducerGroupParams()
+            pg_groups = derive_producer_groups(stem_dicts, params=params, track_ref=track_ref_artifacts or "/source/working_audio")
+            # Select only groups with usable status (ok or partial documented in #268).
+            usable_kinds = [g.group_kind for g in pg_groups.values() if g.status in ("ok", "partial")]
+
+            if "kick_bass" in usable_kinds:
+                loop_src_producer_groups = LoopSourceIdentity(
+                    source_kind="producer_group",
+                    producer_group_id=pg_groups["kick_bass"].group_id,
+                    producer_group_ref=pg_groups["kick_bass"].group_ref,
+                )
+                loop_batch_producer_groups = generate_loop_candidates(
+                    loop_src_producer_groups, beat_grid=beat_grid, structure=structure
+                )
+                section_src_producer_groups = SectionSourceIdentity(
+                    source_kind="producer_group",
+                    producer_group_id=pg_groups["kick_bass"].group_id,
+                    producer_group_ref=pg_groups["kick_bass"].group_ref,
+                )
+                section_batch_producer_groups = generate_section_candidates(
+                    structure, arrangement, source=section_src_producer_groups, track_ref=track_ref_artifacts or "/source/working_audio"
+                )
+
+            # Generate stem-based loop/section candidates for the remaining technical stems.
+            for stem_kind in ("drums", "bass", "vocals", "other"):
+                if stem_kind in stem_dicts and stem_kind not in [g.group_kind for g in pg_groups.values()]:
+                    stem_id = f"stem_{stem_kind}"
+                    stem_ref = f"stemmanifest_{stem_kind}"
+                    loop_src_stems = LoopSourceIdentity(
+                        source_kind="stem", stem_id=stem_id, stem_ref=stem_ref
+                    )
+                    loop_batch_stems = generate_loop_candidates(
+                        loop_src_stems, beat_grid=beat_grid, structure=structure
+                    )
+                    section_src_stems = SectionSourceIdentity(
+                        source_kind="stem", stem_id=stem_id, stem_ref=stem_ref
+                    )
+                    section_batch_stems = generate_section_candidates(
+                        structure, arrangement, source=section_src_stems, track_ref=track_ref_artifacts or "/source/working_audio"
+                    )
+                    # Only one stem kind loop/section set is needed; break after first.
+                    break
+
+    # --- combine results: master first, then optional producer_group / stem ---
+    # Master candidates are always included; optional sources are merged if they
+    # produced candidates (master path stays fully independent when no stems/groups).
+    all_loop_batches: list[LoopCandidateBatch] = [loop_batch_master]
+    all_section_batches: list[SectionCandidateBatch] = [section_batch_master]
+
+    if loop_batch_producer_groups is not None and loop_batch_producer_groups.status != "no_result":
+        all_loop_batches.append(loop_batch_producer_groups)
+    if loop_batch_stems is not None and loop_batch_stems.status != "no_result":
+        all_loop_batches.append(loop_batch_stems)
+
+    if section_batch_producer_groups is not None and section_batch_producer_groups.status != "no_result":
+        all_section_batches.append(section_batch_producer_groups)
+    if section_batch_stems is not None and section_batch_stems.status != "no_result":
+        all_section_batches.append(section_batch_stems)
+
+    # Merge candidates from all batches; later batches do not overwrite earlier ones.
+    merged_loop_candidates: list[LoopCandidate] = []
+    for batch in all_loop_batches:
+        merged_loop_candidates.extend(batch.candidates)
+
+    merged_section_candidates: list[SectionCandidate] = []
+    for batch in all_section_batches:
+        merged_section_candidates.extend(batch.candidates)
 
     manifest_refs: list[str] = []
     bar_features = getattr(structure, "bar_features", {})
