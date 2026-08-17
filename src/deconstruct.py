@@ -34,8 +34,8 @@ from typing import Callable
 STEP_ORDER: tuple[tuple[str, bool], ...] = (
     ("track_map", True),
     ("arrangement", False),
-    ("assets", False),
     ("stems", False),
+    ("assets", False),
 )
 
 SKIPPED_REQUIRED = "SKIPPED_REQUIRED_STEP_FAILED"
@@ -304,7 +304,7 @@ def _default_arrangement_adapter(ctx: StepContext) -> tuple[StepResult, object]:
     from .beat_grid import BeatGridAdapter
     from .canon_audio import render_canonical_wav
     from .section_signals import build_arrangement_map
-    from .structure_v1 import StructureV1Analyzer, StructureV1Config
+    from .structure_v1 import StructureV1Analyzer
 
     work = ctx.pack_root / "analysis"
     work.mkdir(parents=True, exist_ok=True)
@@ -342,10 +342,9 @@ def _default_arrangement_adapter(ctx: StepContext) -> tuple[StepResult, object]:
         import numpy as np
         import soundfile as sf
 
-        samples, _sample_rate = sf.read(
-            str(canon), dtype="float32", always_2d=False
-        )
-        samples = np.asarray(samples, dtype=np.float32).reshape(-1)
+        samples = np.asarray(
+            sf.read(str(canon), dtype="float32", always_2d=False), dtype=np.float32
+        ).reshape(-1)
     except Exception as exc:
         return (
             StepResult(
@@ -359,9 +358,7 @@ def _default_arrangement_adapter(ctx: StepContext) -> tuple[StepResult, object]:
         )
 
     try:
-        structure = StructureV1Analyzer(
-            StructureV1Config(bar_grid_policy="infer_4_4_from_beats")
-        ).analyze(samples, timebase, beat_grid)
+        structure = StructureV1Analyzer().analyze(samples, timebase, beat_grid)
         arrangement = build_arrangement_map(structure)
     except Exception as exc:
         return (
@@ -523,25 +520,58 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
     section_src_stems: SectionSourceIdentity | None = None
     section_batch_stems: SectionCandidateBatch | None = None
 
+    # Track producer group audio paths for rendering/scoring
+    pg_audio_paths: dict[str, Path] = {}
+    stem_audio_paths: dict[str, Path] = {}
+
     stems_payload = ctx.artifacts.get("stems")
     if stems_payload is not None and isinstance(stems_payload, dict):
         stems_list = stems_payload.get("stems") or []
         track_ref_artifacts = stems_payload.get("track_ref")
         # Derive producer groups from technical stems using the #268 contract.
-        from src.producer_groups import derive_producer_groups, ProducerGroupParams
+        from src.producer_groups import derive_producer_groups, ProducerGroupParams, write_producer_group_audio
 
         stem_dicts: dict[str, np.ndarray] = {}
         for s in stems_list:
             kind = s.get("stem_kind")
-            arr = s.get("audio") or s.get("output", {}).get("data") or None
+            arr = s.get("audio")
+            if arr is None:
+                arr = s.get("output", {}).get("data")
+            # If still no audio data, try to load from the stem WAV file on disk
+            if arr is None:
+                file_ref = s.get("file_ref")
+                if file_ref:
+                    stem_path = ctx.pack_root / file_ref
+                    if stem_path.exists():
+                        try:
+                            arr, _ = sf.read(str(stem_path), dtype="float32", always_2d=False)
+                            arr = np.asarray(arr, dtype=np.float32)
+                        except Exception:
+                            arr = None
             if arr is not None and kind in ("drums", "bass", "vocals", "other"):
                 stem_dicts[kind] = np.asarray(arr, dtype=np.float32)
+
+        # Build stem audio paths from file_refs (stems step writes to pack_root/stems/)
+        for s in stems_list:
+            kind = s.get("stem_kind")
+            file_ref = s.get("file_ref")
+            if kind and file_ref and kind in ("drums", "bass", "vocals", "other"):
+                stem_audio_paths[kind] = ctx.pack_root / file_ref
 
         if stem_dicts:
             params = ProducerGroupParams()
             pg_groups = derive_producer_groups(stem_dicts, params=params, track_ref=track_ref_artifacts or "/source/working_audio")
             # Select only groups with usable status (ok or partial documented in #268).
             usable_kinds = [g.group_kind for g in pg_groups.values() if g.status in ("ok", "partial")]
+
+            # Write producer group audio to WAV files for rendering/scoring
+            pg_dir = ctx.pack_root / "producer_groups"
+            pg_dir.mkdir(parents=True, exist_ok=True)
+            for g in pg_groups.values():
+                if g.status in ("ok", "partial") and g.audio is not None:
+                    rel = write_producer_group_audio(g, ctx.pack_root)
+                    if rel:
+                        pg_audio_paths[g.group_kind] = ctx.pack_root / rel
 
             if "kick_bass" in usable_kinds:
                 loop_src_producer_groups = LoopSourceIdentity(
@@ -609,19 +639,50 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
     manifest_refs: list[str] = []
     bar_features = getattr(structure, "bar_features", {})
 
-    def _read_slice(start: int, n: int):
-        with sf.SoundFile(str(canon)) as f:
+    def _read_slice_from(path: Path, start: int, n: int):
+        with sf.SoundFile(str(path)) as f:
             f.seek(start)
             return np.asarray(
                 f.read(frames=n, dtype="float32", always_2d=False), dtype=np.float32
             ).reshape(-1)
 
+    def _get_source_audio_path(cand) -> Path | None:
+        """Resolve the actual source audio path for a candidate based on its source_kind."""
+        src_kind = cand.source.source_kind
+        if src_kind == "master":
+            return canon
+        elif src_kind == "stem":
+            # stem_id is like "stem_drums", extract kind
+            stem_id = cand.source.stem_id or ""
+            if stem_id.startswith("stem_"):
+                kind = stem_id[5:]
+                return stem_audio_paths.get(kind)
+            return None
+        elif src_kind == "producer_group":
+            # producer_group_ref is like "producergroup_kick_bass"
+            pg_ref = cand.source.producer_group_ref or ""
+            if pg_ref.startswith("producergroup_"):
+                kind = pg_ref[14:]
+                return pg_audio_paths.get(kind)
+            return None
+        return None
+
+    def _get_source_kind(cand) -> str:
+        return cand.source.source_kind
+
     # --- loops ---
-    if not any(batch.status == "failed" for batch in all_loop_batches):
+    if loop_batch_master.status != "failed":
         for cand in merged_loop_candidates:
             try:
-                req = render_request_from_loop_candidate(cand, canon)
-                res = render_asset(req, loops_dir)
+                aid = getattr(cand, 'asset_id', f"{cand.bar_count}bar_{cand.start_sample}_{cand.end_sample_exclusive}")
+                # Ensure unique asset_id per source_kind to avoid manifest overwrites
+                unique_asset_id = f"{cand.source.source_kind}_{aid}"
+                src_path = _get_source_audio_path(cand)
+                if src_path is None or not src_path.exists():
+                    # Missing source audio: fail closed, do not fall back to master
+                    continue
+                req = render_request_from_loop_candidate(cand, src_path, asset_id=unique_asset_id)
+                res = render_asset(req, ctx.pack_root)
                 manifest = {
                     "document_type": "sample_brain.asset_manifest",
                     "schema_version": "1.1.0",
@@ -631,12 +692,12 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
                     **cand.as_manifest_dict(),
                 }
                 try:
-                    wave = _read_slice(cand.start_sample, cand.n_samples)
+                    wave = _read_slice_from(src_path, cand.start_sample, cand.n_samples)
                     score = score_loop_candidate(
                         cand,
                         wave,
                         sample_rate=timebase.sample_rate,
-                        source_kind="master",
+                        source_kind=_get_source_kind(cand),
                         config=default_loop_scoring_config(),
                     )
                     manifest["candidate"] = score.as_candidate_dict()
@@ -645,7 +706,7 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
                 manifest["rendering"] = res.as_manifest_rendering()
                 if res.status == "rendered":
                     manifest = attach_rendered_asset_analysis(
-                        manifest, audio_root=loops_dir
+                        manifest, audio_root=ctx.pack_root
                     )
                 fname = f"loop_{_safe_name(req.asset_id)}.json"
                 (loops_dir / fname).write_text(
@@ -657,11 +718,18 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
                 continue
 
     # --- sections ---
-    if not any(batch.status == "failed" for batch in all_section_batches):
+    if section_batch_master.status != "failed":
         for cand in merged_section_candidates:
             try:
-                req = render_request_from_section_candidate(cand, canon)
-                res = render_asset(req, sections_dir)
+                aid = getattr(cand, 'asset_id', f"section_{cand.section_ref}")
+                # Ensure unique asset_id per source_kind to avoid manifest overwrites
+                unique_asset_id = f"{cand.source.source_kind}_{aid}"
+                src_path = _get_source_audio_path(cand)
+                if src_path is None or not src_path.exists():
+                    # Missing source audio: fail closed, do not fall back to master
+                    continue
+                req = render_request_from_section_candidate(cand, src_path, asset_id=unique_asset_id)
+                res = render_asset(req, ctx.pack_root)
                 manifest = {
                     "document_type": "sample_brain.asset_manifest",
                     "schema_version": "1.1.0",
@@ -670,7 +738,7 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
                     **cand.as_manifest_dict(),
                 }
                 try:
-                    wave = _read_slice(cand.start_sample, cand.n_samples)
+                    wave = _read_slice_from(src_path, cand.start_sample, cand.n_samples)
                     score = score_section_candidate(
                         cand,
                         bar_features=bar_features,
@@ -682,9 +750,9 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
                 manifest["rendering"] = res.as_manifest_rendering()
                 if res.status == "rendered":
                     manifest = attach_rendered_asset_analysis(
-                        manifest, audio_root=sections_dir
+                        manifest, audio_root=ctx.pack_root
                     )
-                fname = f"section_{_safe_name(cand.asset_id)}.json"
+                fname = f"section_{_safe_name(unique_asset_id)}.json"
                 (sections_dir / fname).write_text(
                     json.dumps(manifest, indent=2, sort_keys=True, default=str),
                     encoding="utf-8",
@@ -696,10 +764,7 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
     if manifest_refs:
         step_status = "ok"
         reason = None
-    elif any(
-        batch.status == "failed"
-        for batch in all_loop_batches + all_section_batches
-    ):
+    elif loop_batch_master.status == "failed" or section_batch_master.status == "failed":
         step_status = "partial"
         reason = "ASSET_GENERATION_PARTIAL"
     else:
