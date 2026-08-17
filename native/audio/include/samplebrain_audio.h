@@ -1,6 +1,12 @@
 #ifndef SAMPLEBRAIN_AUDIO_H
 #define SAMPLEBRAIN_AUDIO_H
 
+// The public C API is exported by the build system (WINDOWS_EXPORT_ALL_SYMBOLS on
+// Windows), so the SAMPLEBRAIN_EXPORT annotation is intentionally a no-op here.
+#ifndef SAMPLEBRAIN_EXPORT
+#define SAMPLEBRAIN_EXPORT
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #ifndef __cplusplus
