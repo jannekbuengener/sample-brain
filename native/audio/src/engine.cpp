@@ -38,11 +38,13 @@ struct sb_engine {
     std::mutex voices_mutex;
     std::vector<Voice*> voices;
 
-    // Recording management
+    // Recording management. Recording allocation/finalization intentionally
+    // happens on the control thread, never in the audio callback.
     std::mutex recordings_mutex;
     std::vector<Recording*> recordings;
+    std::atomic<sb_recording_id_t> next_recording_id{1};
 
-    // Command queue for realtime-safe control
+    // Command queue for realtime-safe voice control
     struct Command {
         enum Type {
             CMD_NONE,
@@ -50,9 +52,7 @@ struct sb_engine {
             CMD_REMOVE_VOICE,
             CMD_SCHEDULE_START,
             CMD_STOP_VOICE,
-            CMD_SET_RATE,
-            CMD_START_RECORDING,
-            CMD_STOP_RECORDING
+            CMD_SET_RATE
         } type;
 
         union {
@@ -61,8 +61,6 @@ struct sb_engine {
             struct { sb_voice_id_t id; sb_frame_t frame; } schedule_start;
             struct { sb_voice_id_t id; } stop_voice;
             struct { sb_voice_id_t id; float rate; } set_rate;
-            struct { sb_recording_id_t* out_id; sb_frame_t frame; } start_recording;
-            struct { sb_recording_id_t id; float** out_buffer; size_t* out_frames; } stop_recording;
         };
         std::atomic<sb_result_t>* result_ptr;
     };
@@ -83,7 +81,6 @@ struct sb_engine {
 static void ma_data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount);
 static sb_result_t process_commands(sb_engine_t engine);
 static Voice* find_voice(sb_engine_t engine, sb_voice_id_t id);
-static Recording* find_recording(sb_engine_t engine, sb_recording_id_t id);
 static sb_result_t enqueue_command(sb_engine_t engine, const sb_engine::Command& cmd);
 
 sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_engine) {
@@ -101,9 +98,16 @@ sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_en
     engine->config.output_device = config->output_device ? strdup(config->output_device) : nullptr;
     engine->config.input_device = config->input_device ? strdup(config->input_device) : nullptr;
 
-    // Initialize miniaudio context
+    // Initialize miniaudio context. Native CTest uses miniaudio's null backend so
+    // transport/voice logic can be exercised on hosted runners without changing
+    // production WASAPI/device behavior.
     ma_context_config ctx_config = ma_context_config_init();
+#ifdef SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND
+    ma_backend test_backends[] = {ma_backend_null};
+    ma_result ma_res = ma_context_init(test_backends, 1, &ctx_config, &engine->context);
+#else
     ma_result ma_res = ma_context_init(nullptr, 0, &ctx_config, &engine->context);
+#endif
     if (ma_res != MA_SUCCESS) {
         delete engine;
         return SB_ERR_DEVICE_ERROR;
@@ -123,8 +127,9 @@ sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_en
 
     if (config->output_device) {
         ma_device_id device_id;
-        // Note: miniaudio device ID handling would go here
-        // For now, use default device
+        (void)device_id;
+        // Note: miniaudio device ID handling would go here.
+        // For now, use the default device.
     }
 
     ma_res = ma_device_init(&engine->context, &dev_config, &engine->device);
@@ -213,8 +218,8 @@ sb_result_t sb_voice_create(sb_engine_t engine, const sb_voice_config_t* config,
         }
     }
 
-    // Create voice
-    Voice* voice = new (std::nothrow) Voice(engine, *config);
+    // Create voice outside the audio callback.
+    Voice* voice = new (std::nothrow) Voice(engine->config.sample_rate, *config);
     if (!voice) return SB_ERR_OUT_OF_MEMORY;
 
     {
@@ -234,9 +239,7 @@ sb_result_t sb_voice_remove(sb_engine_t engine, sb_voice_id_t id) {
                            [id](Voice* v) { return v->id == id; });
     if (it == engine->voices.end()) return SB_ERR_VOICE_NOT_FOUND;
 
-    // Stop if playing
     (*it)->stop();
-
     delete *it;
     engine->voices.erase(it);
     return SB_OK;
@@ -244,6 +247,15 @@ sb_result_t sb_voice_remove(sb_engine_t engine, sb_voice_id_t id) {
 
 sb_result_t sb_voice_schedule_start(sb_engine_t engine, sb_voice_id_t id, sb_frame_t engine_frame) {
     if (!engine) return SB_ERR_NOT_INITIALIZED;
+    if (engine_frame < engine->engine_frame.load(std::memory_order_acquire)) {
+        return SB_ERR_INVALID_ARG;
+    }
+    {
+        std::lock_guard<std::mutex> lock(engine->voices_mutex);
+        auto it = std::find_if(engine->voices.begin(), engine->voices.end(),
+                               [id](Voice* v) { return v->id == id; });
+        if (it == engine->voices.end()) return SB_ERR_VOICE_NOT_FOUND;
+    }
 
     sb_engine::Command cmd{};
     cmd.type = sb_engine::Command::CMD_SCHEDULE_START;
@@ -277,25 +289,54 @@ sb_result_t sb_voice_set_rate(sb_engine_t engine, sb_voice_id_t id, float rate) 
 
 sb_result_t sb_recording_start(sb_engine_t engine, sb_recording_id_t* out_id, sb_frame_t engine_frame) {
     if (!engine || !out_id) return SB_ERR_INVALID_ARG;
+    if (engine->config.input_channels == 0) return SB_ERR_UNSUPPORTED;
 
-    sb_engine::Command cmd{};
-    cmd.type = sb_engine::Command::CMD_START_RECORDING;
-    cmd.start_recording.out_id = out_id;
-    cmd.start_recording.frame = engine_frame;
+    const sb_frame_t current_frame = engine->engine_frame.load(std::memory_order_acquire);
+    const sb_frame_t effective_start = engine_frame == 0 ? current_frame : engine_frame;
+    if (effective_start < current_frame) return SB_ERR_INVALID_ARG;
 
-    return enqueue_command(engine, cmd);
+    Recording* recording = new (std::nothrow) Recording(
+        engine->config.sample_rate,
+        engine->config.input_channels,
+        effective_start);
+    if (!recording) return SB_ERR_OUT_OF_MEMORY;
+
+    sb_recording_id_t id = 0;
+    {
+        std::lock_guard<std::mutex> lock(engine->recordings_mutex);
+        if (engine->recordings.size() >= SB_MAX_RECORDINGS) {
+            delete recording;
+            return SB_ERR_OUT_OF_MEMORY;
+        }
+        id = engine->next_recording_id.fetch_add(1, std::memory_order_relaxed);
+        recording->id = id;
+        engine->recordings.push_back(recording);
+    }
+
+    *out_id = id;
+    return SB_OK;
 }
 
 sb_result_t sb_recording_stop(sb_engine_t engine, sb_recording_id_t id, float** out_buffer, size_t* out_frames) {
     if (!engine || !out_buffer || !out_frames) return SB_ERR_INVALID_ARG;
 
-    sb_engine::Command cmd{};
-    cmd.type = sb_engine::Command::CMD_STOP_RECORDING;
-    cmd.stop_recording.id = id;
-    cmd.stop_recording.out_buffer = out_buffer;
-    cmd.stop_recording.out_frames = out_frames;
+    *out_buffer = nullptr;
+    *out_frames = 0;
 
-    return enqueue_command(engine, cmd);
+    Recording* recording = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(engine->recordings_mutex);
+        auto it = std::find_if(engine->recordings.begin(), engine->recordings.end(),
+                               [id](Recording* r) { return r->id == id; });
+        if (it == engine->recordings.end()) return SB_ERR_RECORDING_NOT_FOUND;
+        recording = *it;
+        engine->recordings.erase(it);
+    }
+
+    // Finalization allocates/copies outside the realtime callback by contract.
+    recording->finalize(out_buffer, out_frames);
+    delete recording;
+    return SB_OK;
 }
 
 void sb_recording_free_buffer(float* buffer) {
@@ -374,12 +415,17 @@ sb_result_t sb_engine_snapshot(sb_engine_t engine, sb_snapshot_t* out_snapshot) 
 // Internal: miniaudio data callback
 static void ma_data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
     sb_engine_t engine = static_cast<sb_engine_t>(pDevice->pUserData);
-    if (!engine || !engine->running.load()) {
+    if (!engine) {
+        return;
+    }
+    if (!engine->running.load()) {
         if (pOutput) memset(pOutput, 0, frameCount * engine->config.output_channels * sizeof(float));
         return;
     }
 
-    // Process pending commands
+    engine->metrics.on_callback_start();
+
+    // Process pending voice-control commands.
     process_commands(engine);
 
     // Get current frame before processing
@@ -391,24 +437,22 @@ static void ma_data_callback(ma_device* pDevice, void* pOutput, const void* pInp
     const size_t num_channels = engine->config.output_channels;
     const size_t num_frames = frameCount;
 
-    // Clear output
-    std::fill(output, output + num_frames * num_channels, 0.0f);
+    if (output) {
+        std::fill(output, output + num_frames * num_channels, 0.0f);
 
-    {
         std::lock_guard<std::mutex> lock(engine->voices_mutex);
         for (auto* v : engine->voices) {
             v->process(output, num_frames, current_frame, num_channels);
         }
     }
 
-    // Process recording (capture input)
+    // Process recording (capture input). Scheduled recordings are called every
+    // callback; Recording::write applies the exact start-frame offset itself.
     if (pInput && engine->config.input_channels > 0) {
         const float* input = static_cast<const float*>(pInput);
         std::lock_guard<std::mutex> lock(engine->recordings_mutex);
         for (auto* r : engine->recordings) {
-            if (r->is_active()) {
-                r->write(input, num_frames, engine->config.input_channels);
-            }
+            r->write(input, num_frames, engine->config.input_channels, current_frame);
         }
     }
 
@@ -426,7 +470,7 @@ static sb_result_t process_commands(sb_engine_t engine) {
 
         switch (cmd.type) {
             case sb_engine::Command::CMD_CREATE_VOICE: {
-                Voice* voice = new (std::nothrow) Voice(engine, cmd.create_voice.config);
+                Voice* voice = new (std::nothrow) Voice(engine->config.sample_rate, cmd.create_voice.config);
                 if (voice) {
                     std::lock_guard<std::mutex> lock(engine->voices_mutex);
                     engine->voices.push_back(voice);
@@ -452,7 +496,9 @@ static sb_result_t process_commands(sb_engine_t engine) {
             case sb_engine::Command::CMD_SCHEDULE_START: {
                 Voice* v = find_voice(engine, cmd.schedule_start.id);
                 if (v) {
-                    v->schedule_start(cmd.schedule_start.frame);
+                    v->schedule_start(
+                        cmd.schedule_start.frame,
+                        engine->engine_frame.load(std::memory_order_relaxed));
                 } else {
                     result = SB_ERR_VOICE_NOT_FOUND;
                 }
@@ -473,32 +519,6 @@ static sb_result_t process_commands(sb_engine_t engine) {
                     v->set_rate(cmd.set_rate.rate);
                 } else {
                     result = SB_ERR_VOICE_NOT_FOUND;
-                }
-                break;
-            }
-            case sb_engine::Command::CMD_START_RECORDING: {
-                Recording* rec = new (std::nothrow) Recording(engine->config.sample_rate, engine->config.input_channels, cmd.start_recording.frame);
-                if (rec) {
-                    std::lock_guard<std::mutex> lock(engine->recordings_mutex);
-                    sb_recording_id_t id = static_cast<sb_recording_id_t>(engine->recordings.size() + 1);
-                    rec->id = id;
-                    engine->recordings.push_back(rec);
-                    *cmd.start_recording.out_id = id;
-                } else {
-                    result = SB_ERR_OUT_OF_MEMORY;
-                }
-                break;
-            }
-            case sb_engine::Command::CMD_STOP_RECORDING: {
-                std::lock_guard<std::mutex> lock(engine->recordings_mutex);
-                auto it = std::find_if(engine->recordings.begin(), engine->recordings.end(),
-                                       [&](Recording* r) { return r->id == cmd.stop_recording.id; });
-                if (it != engine->recordings.end()) {
-                    (*it)->finalize(cmd.stop_recording.out_buffer, cmd.stop_recording.out_frames);
-                    delete *it;
-                    engine->recordings.erase(it);
-                } else {
-                    result = SB_ERR_RECORDING_NOT_FOUND;
                 }
                 break;
             }
@@ -536,11 +556,4 @@ static Voice* find_voice(sb_engine_t engine, sb_voice_id_t id) {
     auto it = std::find_if(engine->voices.begin(), engine->voices.end(),
                            [id](Voice* v) { return v->id == id; });
     return (it != engine->voices.end()) ? *it : nullptr;
-}
-
-static Recording* find_recording(sb_engine_t engine, sb_recording_id_t id) {
-    std::lock_guard<std::mutex> lock(engine->recordings_mutex);
-    auto it = std::find_if(engine->recordings.begin(), engine->recordings.end(),
-                           [id](Recording* r) { return r->id == id; });
-    return (it != engine->recordings.end()) ? *it : nullptr;
 }

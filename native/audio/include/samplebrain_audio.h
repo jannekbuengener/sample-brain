@@ -1,6 +1,12 @@
 #ifndef SAMPLEBRAIN_AUDIO_H
 #define SAMPLEBRAIN_AUDIO_H
 
+#include <stddef.h>
+#include <stdint.h>
+#ifndef __cplusplus
+#include <stdbool.h>
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

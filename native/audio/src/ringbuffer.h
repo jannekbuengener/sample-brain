@@ -2,6 +2,7 @@
 #ifndef SAMPLEBRAIN_RINGBUFFER_H
 #define SAMPLEBRAIN_RINGBUFFER_H
 
+#include "samplebrain_audio.h"
 #include <atomic>
 #include <vector>
 #include <cstddef>
@@ -40,7 +41,7 @@ public:
     ~Recording();
 
     bool is_active() const { return active.load(); }
-    void write(const float* data, size_t num_frames, size_t num_channels);
+    void write(const float* data, size_t num_frames, size_t num_channels, sb_frame_t engine_frame);
     void finalize(float** out_buffer, size_t* out_frames);
     size_t dropped_frames() const { return ringbuf ? ringbuf->dropped_frames() : 0; }
 
