@@ -304,7 +304,7 @@ def _default_arrangement_adapter(ctx: StepContext) -> tuple[StepResult, object]:
     from .beat_grid import BeatGridAdapter
     from .canon_audio import render_canonical_wav
     from .section_signals import build_arrangement_map
-    from .structure_v1 import StructureV1Analyzer
+    from .structure_v1 import StructureV1Analyzer, StructureV1Config
 
     work = ctx.pack_root / "analysis"
     work.mkdir(parents=True, exist_ok=True)
@@ -342,9 +342,10 @@ def _default_arrangement_adapter(ctx: StepContext) -> tuple[StepResult, object]:
         import numpy as np
         import soundfile as sf
 
-        samples = np.asarray(
-            sf.read(str(canon), dtype="float32", always_2d=False), dtype=np.float32
-        ).reshape(-1)
+        samples, _sample_rate = sf.read(
+            str(canon), dtype="float32", always_2d=False
+        )
+        samples = np.asarray(samples, dtype=np.float32).reshape(-1)
     except Exception as exc:
         return (
             StepResult(
@@ -358,7 +359,9 @@ def _default_arrangement_adapter(ctx: StepContext) -> tuple[StepResult, object]:
         )
 
     try:
-        structure = StructureV1Analyzer().analyze(samples, timebase, beat_grid)
+        structure = StructureV1Analyzer(
+            StructureV1Config(bar_grid_policy="infer_4_4_from_beats")
+        ).analyze(samples, timebase, beat_grid)
         arrangement = build_arrangement_map(structure)
     except Exception as exc:
         return (
@@ -614,8 +617,8 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
             ).reshape(-1)
 
     # --- loops ---
-    if loop_batch.status != "failed":
-        for cand in loop_batch.candidates:
+    if not any(batch.status == "failed" for batch in all_loop_batches):
+        for cand in merged_loop_candidates:
             try:
                 req = render_request_from_loop_candidate(cand, canon)
                 res = render_asset(req, loops_dir)
@@ -654,8 +657,8 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
                 continue
 
     # --- sections ---
-    if section_batch.status != "failed":
-        for cand in section_batch.candidates:
+    if not any(batch.status == "failed" for batch in all_section_batches):
+        for cand in merged_section_candidates:
             try:
                 req = render_request_from_section_candidate(cand, canon)
                 res = render_asset(req, sections_dir)
@@ -693,7 +696,10 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
     if manifest_refs:
         step_status = "ok"
         reason = None
-    elif loop_batch.status == "failed" or section_batch.status == "failed":
+    elif any(
+        batch.status == "failed"
+        for batch in all_loop_batches + all_section_batches
+    ):
         step_status = "partial"
         reason = "ASSET_GENERATION_PARTIAL"
     else:

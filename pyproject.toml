@@ -24,6 +24,9 @@ vec = [
 stems = [
     "audio-separator[cpu]==0.44.5",
 ]
+beatgrid = [
+    "beat-this==1.1.0",
+]
 
 [tool.setuptools]
 packages = ["src"]
