@@ -2,7 +2,7 @@
 
 This module deliberately does not replace the deterministic arrangement classifier.
 It compares one rendered/local section against a small set of semantic role prompts
-and reports the CLAP ranking alongside the heuristic role.  The heuristic role
+and reports the CLAP ranking alongside the heuristic role. The heuristic role
 remains the effective role until pilot evidence justifies a future policy change.
 """
 
@@ -14,7 +14,7 @@ from typing import Mapping
 import numpy as np
 
 from .arrangement_classifier import SectionRole
-from .embed import EmbeddingBackend, EmbeddingBackendUnavailableError
+from .embed import EmbeddingBackend
 
 CLAP_ARRANGEMENT_COMPONENT = "arrangement_clap_signal"
 
@@ -57,6 +57,21 @@ def _unit_vector(vector: np.ndarray) -> np.ndarray:
     return arr / norm
 
 
+def _unavailable_signal(
+    heuristic_role: SectionRole, limitation: str
+) -> ClapArrangementSignal:
+    return ClapArrangementSignal(
+        status="unavailable",
+        heuristic_role=heuristic_role,
+        effective_role=heuristic_role,
+        provenance={
+            "component": CLAP_ARRANGEMENT_COMPONENT,
+            "method": "optional_clap_audio_text_similarity_v1",
+        },
+        limitation=limitation,
+    )
+
+
 def evaluate_clap_arrangement_signal(
     section_audio_path: str,
     heuristic_role: SectionRole,
@@ -64,9 +79,9 @@ def evaluate_clap_arrangement_signal(
 ) -> ClapArrangementSignal:
     """Compare a local section with role prompts using the existing CLAP backend.
 
-    ``section_audio_path`` is consumed only by the supplied embedding backend.  No
-    path is copied into the result/provenance so private local paths do not leak
-    into reports or GitHub evidence.
+    ``section_audio_path`` is consumed only by the supplied embedding backend. No
+    path or backend exception text is copied into the result/provenance so private
+    local paths cannot leak through evaluation evidence.
     """
 
     if not section_audio_path:
@@ -85,35 +100,26 @@ def evaluate_clap_arrangement_signal(
                     f"{audio_vector.shape} != {text_vector.shape}"
                 )
             scores.append(
-                ClapRoleScore(role=role, similarity=float(np.dot(audio_vector, text_vector)))
+                ClapRoleScore(
+                    role=role,
+                    similarity=float(np.dot(audio_vector, text_vector)),
+                )
             )
-    except (EmbeddingBackendUnavailableError, NotImplementedError) as exc:
-        return ClapArrangementSignal(
-            status="unavailable",
-            heuristic_role=heuristic_role,
-            effective_role=heuristic_role,
-            provenance={
-                "component": CLAP_ARRANGEMENT_COMPONENT,
-                "method": "optional_clap_audio_text_similarity_v1",
-            },
-            limitation=str(exc),
-        )
 
-    ranked = tuple(sorted(scores, key=lambda item: (-item.similarity, item.role)))
-    if not ranked:
-        return ClapArrangementSignal(
-            status="unavailable",
-            heuristic_role=heuristic_role,
-            effective_role=heuristic_role,
-            provenance={
-                "component": CLAP_ARRANGEMENT_COMPONENT,
-                "method": "optional_clap_audio_text_similarity_v1",
-            },
-            limitation="no CLAP role scores produced",
+        ranked = tuple(sorted(scores, key=lambda item: (-item.similarity, item.role)))
+        if not ranked:
+            return _unavailable_signal(heuristic_role, "no CLAP role scores produced")
+
+        model_info = backend.model_info()
+    except Exception as exc:
+        # CLAP is optional. Fail closed to the deterministic heuristic and expose
+        # only the exception type, never exception text that may contain a local path.
+        return _unavailable_signal(
+            heuristic_role,
+            f"CLAP evaluation unavailable ({type(exc).__name__})",
         )
 
     margin = ranked[0].similarity - ranked[1].similarity if len(ranked) > 1 else None
-    model_info = backend.model_info()
     return ClapArrangementSignal(
         status="available",
         heuristic_role=heuristic_role,
