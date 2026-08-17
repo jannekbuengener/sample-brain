@@ -39,14 +39,16 @@ add_definitions(-DMA_API=static)
 # Include directories
 include_directories(${MINIAUDIO_INCLUDE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-# Python loads this target through ctypes, so it must be a shared library.
-add_library(samplebrain_audio SHARED
+set(SAMPLEBRAIN_AUDIO_SOURCES
     src/engine.cpp
     src/voice.cpp
     src/ringbuffer.cpp
     src/metrics.cpp
     src/synthetic.cpp
 )
+
+# Python loads this target through ctypes, so it must be a shared library.
+add_library(samplebrain_audio SHARED ${SAMPLEBRAIN_AUDIO_SOURCES})
 
 # The public C API is declared without per-symbol dllexport annotations. Let CMake
 # export the target's global symbols on Windows so ctypes can resolve the sb_* API.
@@ -55,6 +57,16 @@ set_target_properties(samplebrain_audio PROPERTIES
 )
 
 target_link_libraries(samplebrain_audio PRIVATE ${MINIAUDIO_SYSTEM_LIBS})
+
+# Hosted CI runners do not provide a dependable physical duplex audio device.
+# Compile the same core a second time for native CTest with miniaudio's null
+# backend only. This keeps production runtime behavior on the real platform
+# backend while making transport/voice/recording logic deterministic headlessly.
+add_library(samplebrain_audio_test_backend STATIC ${SAMPLEBRAIN_AUDIO_SOURCES})
+target_compile_definitions(samplebrain_audio_test_backend PRIVATE
+    SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND=1
+)
+target_link_libraries(samplebrain_audio_test_backend PRIVATE ${MINIAUDIO_SYSTEM_LIBS})
 
 # Every native test file owns its own main(), so build them as independent
 # executables instead of linking all test translation units into one binary.
@@ -70,7 +82,7 @@ set(SAMPLEBRAIN_AUDIO_TESTS
 foreach(test_name IN LISTS SAMPLEBRAIN_AUDIO_TESTS)
     set(test_target samplebrain_audio_test_${test_name})
     add_executable(${test_target} tests/test_${test_name}.cpp)
-    target_link_libraries(${test_target} PRIVATE samplebrain_audio)
+    target_link_libraries(${test_target} PRIVATE samplebrain_audio_test_backend)
     add_test(NAME ${test_target} COMMAND ${test_target})
 endforeach()
 
