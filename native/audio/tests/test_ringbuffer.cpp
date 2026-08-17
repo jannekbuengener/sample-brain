@@ -49,17 +49,28 @@ void test_recording_start_stop() {
     sb_snapshot_t snapshot = {};
     sb_engine_snapshot(engine, &snapshot);
     sb_frame_t start_frame = snapshot.engine_frame + 24000;  // 0.5s in future
+    sb_frame_t target_end_frame = start_frame + 24000;       // capture at least 0.5s
 
     sb_recording_id_t rec_id = 0;
     sb_result_t result = sb_recording_start(engine, &rec_id, start_frame);
     TEST_ASSERT_EQ(result, SB_OK, "recording_start succeeds");
     TEST_ASSERT_EQ(rec_id, 1u, "recording_id is 1");
 
-    // Wait 0.5s until the scheduled start plus about 0.5s of capture.
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    // Drive by the authoritative engine clock, not wall time.
+    do {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        sb_engine_snapshot(engine, &snapshot);
+    } while (snapshot.engine_frame < target_end_frame);
 
-    sb_engine_snapshot(engine, &snapshot);
     TEST_ASSERT_EQ(snapshot.recording_active, true, "recording_active is true");
+
+    // Freeze the callback clock before finalization. With no callbacks after
+    // this point, the captured frame count must match the exact [start,end)
+    // interval on the authoritative engine timeline.
+    result = sb_engine_stop(engine);
+    TEST_ASSERT_EQ(result, SB_OK, "engine_stop freezes recording clock");
+    sb_engine_snapshot(engine, &snapshot);
+    const sb_frame_t frozen_end_frame = snapshot.engine_frame;
 
     float* buffer = nullptr;
     size_t frames = 0;
@@ -67,17 +78,17 @@ void test_recording_start_stop() {
     TEST_ASSERT_EQ(result, SB_OK, "recording_stop succeeds");
     TEST_ASSERT(buffer != nullptr, "buffer is non-null");
     TEST_ASSERT(frames > 0, "frames > 0");
-
-    size_t expected_frames = 24000;
-    TEST_ASSERT(frames >= expected_frames * 0.9 && frames <= expected_frames * 1.1,
-                "frames approximately matches 0.5s capture duration");
+    TEST_ASSERT_EQ(
+        frames,
+        static_cast<size_t>(frozen_end_frame - start_frame),
+        "captured frames equal exact frozen engine interval");
 
     sb_recording_free_buffer(buffer);
 
     sb_engine_snapshot(engine, &snapshot);
     TEST_ASSERT_EQ(snapshot.recording_active, false, "recording_active is false after stop");
 
-    destroy_test_engine(engine);
+    sb_engine_close(engine);
 }
 
 void test_recording_dropped_frames_accounting() {
