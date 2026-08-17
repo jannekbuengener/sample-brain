@@ -183,6 +183,58 @@ class TestHaeftigPlayheadTempoBoundaries:
         assert adapter.get_source_frame() == 777
         assert adapter.get_haeftig_trigger_context(path) == (777, 0)
 
+    def test_fixed_point_no_drift_over_many_single_frame_steps(self, tmp_path):
+        """Many tiny 1-frame steps at a fractional rate must not accumulate drift.
+
+        Rate 1.5 over 1000 single-frame advances == exactly 1500 source frames
+        (not 1000*round(1.5)=2000, and not 1000*int(1.5)=1000)."""
+        path = str(tmp_path / "s.wav")
+        adapter = WorkbenchTransportAdapter(initial_bpm=132)
+        adapter.toggle_sync()
+        adapter.set_source_bpm(88, source_ref=path, source_start_frame=0)  # rate 1.5
+        adapter.seek(0, source_frame=0)
+        adapter._transport.play()
+        for _ in range(1000):
+            adapter.advance(1)
+        context = adapter.get_haeftig_trigger_context(path)
+        assert context == (1500, 1000)
+        # Explicit guards against the two naive anti-patterns.
+        assert context[0] != 1000 * int(1.5)
+        assert context[0] != 1000 * round(1.5)
+
+    def test_sync_toggle_does_not_retroactively_rerate_elapsed_frames(self, tmp_path):
+        path = str(tmp_path / "s.wav")
+        adapter = WorkbenchTransportAdapter(initial_bpm=132)
+        adapter.toggle_sync()
+        adapter.set_source_bpm(66, source_ref=path, source_start_frame=0)  # rate 2.0
+        adapter.seek(0, source_frame=0)
+        adapter._transport.play()
+        adapter.advance(100)  # source 0 -> 200 at rate 2.0, session 0 -> 100
+
+        # Toggle SYNC OFF: the 200 already integrated at rate 2.0 must stay put;
+        # only future frames use rate 1.0.
+        adapter.toggle_sync()
+        assert adapter.get_source_frame() == 200
+        adapter.advance(100)  # +100 at rate 1.0 -> 300, session 200
+        assert adapter.get_haeftig_trigger_context(path) == (300, 200)
+
+    def test_switching_source_invalidates_old_playhead(self, tmp_path):
+        adapter = WorkbenchTransportAdapter(initial_bpm=132)
+        adapter.set_source_bpm(120, source_ref="a.wav", source_start_frame=0)
+        adapter.seek(0, source_frame=500)
+        assert adapter.get_source_frame() == 500
+
+        # Switching to a different source must NOT carry over the old playhead.
+        adapter.set_source_bpm(120, source_ref="b.wav", source_start_frame=0)
+        assert adapter.get_source_frame() is None
+
+        # Re-anchor on the new source; same-source bpm changes keep the anchor.
+        adapter.seek(0, source_frame=42)
+        assert adapter.get_source_frame() == 42
+        adapter.set_source_bpm(999, source_ref="b.wav")
+        assert adapter.get_source_frame() == 42
+        assert adapter.get_haeftig_trigger_context("b.wav") == (42, 0)
+
 
 class TestHaeftigFailClosed:
     def test_missing_grid_yields_no_result(self, tmp_path):
@@ -450,36 +502,27 @@ class TestHaeftigWaveformBounds:
 
 
 class TestHaeftigHotkeyHandler:
-    def test_ctrl_h_handler_creates_and_persists_region(self, tmp_path, monkeypatch):
-        import tkinter as tk
-
-        from src.workbench import WorkbenchApp
-
-        state_dir = tmp_path / "state"
-        state_dir.mkdir()
-        monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    def test_ctrl_h_handler_creates_and_persists_region(self, tmp_path):
+        # Headless: exercises the exact Ctrl+H core path (capture + persist)
+        # without a Tk window, so it runs reliably on the headless CI runner.
+        from src.workbench_editing import capture_haeftig_region_at_playhead
 
         wav = tmp_path / "s.wav"
         sr = 48000
         sf.write(str(wav), [0.0] * 4000, sr)  # enough frames for the region
 
-        root = tk.Tk()
-        root.withdraw()
-        try:
-            app = WorkbenchApp(root)
-            row = _make_row(str(wav))
-            app._detail_row = row
-            app._transport_adapter.set_source_bpm(
-                120, source_ref=str(wav), source_start_frame=0
-            )
-            app._transport_adapter.seek(0, source_frame=1600)
+        path = str(wav)
+        adapter = WorkbenchTransportAdapter(initial_bpm=132)
+        adapter.set_source_bpm(120, source_ref=path, source_start_frame=0)
+        adapter.seek(0, source_frame=1600)
 
-            app._on_haeftig_hotkey()
+        row = _make_row(path)
+        selection = capture_haeftig_region_at_playhead(adapter, row)
 
-            regions = load_haeftig_regions(str(wav))
-            assert len(regions) == 1
-            assert regions[0].source_start_frame == 0
-            assert regions[0].source_end_frame_exclusive == 1600
-            assert regions[0].region_type == HAEFTIG_REGION_TYPE
-        finally:
-            root.destroy()
+        assert selection is not None and selection.status == "ok"
+        assert selection.region is not None
+        regions = load_haeftig_regions(path)
+        assert len(regions) == 1
+        assert regions[0].source_start_frame == 0
+        assert regions[0].source_end_frame_exclusive == 1600
+        assert regions[0].region_type == HAEFTIG_REGION_TYPE

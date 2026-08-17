@@ -311,8 +311,12 @@ class WorkbenchTransportAdapter:
         unambiguously to a single nominal source frame: no anchor, source
         mismatch, polyphony, or an undefined sync rate. ``KEY_LOCK_SYNC`` is
         intentionally not discriminated — it shares ``RATE_SYNC``'s frame mapping.
+
+        The native clock is refreshed first so the returned position reflects the
+        live playhead rather than the last UI poll.
         """
         with self._lock:
+            self._refresh_from_native_unlocked()
             if self._source_frame is None:
                 return None
             normalized = str(Path(str(source_ref).strip()).expanduser().resolve())
@@ -410,6 +414,10 @@ class WorkbenchTransportAdapter:
 
     def toggle_sync(self) -> bool:
         with self._lock:
+            # Close out any engine/session progress accumulated so far at the
+            # CURRENT rate before the sync mode changes, so already-elapsed
+            # frames are never re-rated by the new mode.
+            self._refresh_from_native_unlocked()
             self._sync_enabled = not self._sync_enabled
             self._update_sync_rates_unlocked()
             return self._sync_enabled
@@ -454,13 +462,23 @@ class WorkbenchTransportAdapter:
         with self._lock:
             if source_ref is not None:
                 text = str(source_ref).strip()
-                self._source_ref = (
+                new_ref = (
                     str(Path(text).expanduser().resolve()) if text else None
                 )
+                # Switching to a different source invalidates the old playhead:
+                # the anchor belongs to the previous source and must not carry over.
+                if self._source_ref is not None and new_ref != self._source_ref:
+                    self._source_frame = None
+                    self._source_frac = 0.0
+                self._source_ref = new_ref
             if isinstance(source_start_frame, int) and not isinstance(
                 source_start_frame, bool
             ):
                 self._source_start_frame = source_start_frame
+            # Close out any engine/session progress accumulated so far at the
+            # CURRENT source BPM before it changes, so already-elapsed frames are
+            # never re-rated by the new BPM.
+            self._refresh_from_native_unlocked()
             self._source_bpm = bpm
             self._update_sync_rates_unlocked()
 

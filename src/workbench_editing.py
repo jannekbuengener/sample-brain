@@ -634,6 +634,37 @@ def trigger_haeftig_region(
     )
 
 
+def capture_haeftig_region_at_playhead(
+    adapter: object,
+    row: object,
+) -> HaeftigSelection | None:
+    """UI-independent core of the Ctrl+H handler (#327).
+
+    Maps the audible playhead to a nominal source frame via the adapter's
+    authoritative source playhead, selects the enclosing 16-bar HÄFTIG region,
+    and persists it. Returns the ``HaeftigSelection`` (or ``None`` when the
+    session->source mapping is not unambiguous / the grid is unreliable). This is
+    deliberately free of any tkinter dependency so it can be exercised headlessly.
+    """
+    from pathlib import Path as _Path
+
+    source_ref = _normalized_source_ref(getattr(row, "path", row))
+    downbeat_frames, grid_reliable, grid_source_ref = load_source_downbeats(
+        _Path(source_ref), details=getattr(row, "details", None)
+    )
+    selection = trigger_haeftig_region(
+        adapter,
+        row,
+        downbeat_frames=downbeat_frames,
+        grid_reliable=grid_reliable,
+        grid_source_ref=grid_source_ref,
+    )
+    if selection is None or selection.status != "ok" or selection.region is None:
+        return selection
+    save_haeftig_region(selection.region)
+    return selection
+
+
 def render_request_from_edit_region(
     region: WorkbenchEditRegion,
     *,
@@ -692,6 +723,7 @@ __all__ = [
     "frame_from_waveform_x",
     "load_haeftig_regions",
     "load_source_downbeats",
+    "capture_haeftig_region_at_playhead",
     "load_workbench_edit_region",
     "render_request_from_edit_region",
     "render_workbench_edit_region",

@@ -2497,11 +2497,7 @@ class WorkbenchApp:
         """Ctrl+H: capture a HÄFTIG region at the current audible playhead (#327)."""
         if getattr(self, "_busy", False):
             return
-        from .workbench_editing import (
-            load_source_downbeats,
-            save_haeftig_region,
-            trigger_haeftig_region,
-        )
+        from .workbench_editing import capture_haeftig_region_at_playhead
 
         row = self._detail_row
         if row is None or not row.path:
@@ -2512,16 +2508,13 @@ class WorkbenchApp:
             self._set_status("Kein Transport verfügbar.", tone="error")
             return
 
-        downbeat_frames, grid_reliable, grid_source_ref = load_source_downbeats(
-            row.path, details=row.details
-        )
-        selection = trigger_haeftig_region(
-            adapter,
-            row,
-            downbeat_frames=downbeat_frames,
-            grid_reliable=grid_reliable,
-            grid_source_ref=grid_source_ref,
-        )
+        # Refresh the native position immediately before capture so the HÄFTIG
+        # marker reflects the live playhead, not the last UI poll.
+        refresh = getattr(adapter, "_refresh_from_native_unlocked", None)
+        if refresh is not None:
+            refresh()
+
+        selection = capture_haeftig_region_at_playhead(adapter, row)
         if selection is None:
             self._set_status(
                 "HÄFTIG nicht möglich: keine eindeutige Source-Position "
@@ -2536,7 +2529,6 @@ class WorkbenchApp:
             )
             return
 
-        save_haeftig_region(selection.region)
         self._draw_waveform(row)
         self._set_status(
             "HÄFTIG-Region gespeichert "
