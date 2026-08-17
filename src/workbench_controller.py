@@ -2006,6 +2006,19 @@ def compute_workbench_similar_suggestions(
     return suggestions, None
 
 
+def start_native_recording() -> None:
+    """Start native audio recording through the audio core."""
+    # TODO: Implement native recording startup
+    pass
+
+
+def stop_native_recording() -> None:
+    """Stop native audio recording."""
+    # TODO: Implement native recording stop
+    pass
+
+
+
 __all__ = [
     "ALL_LIBRARY_VIEW_LABEL",
     "CATALOG_VIEW_LABEL",
