@@ -6,15 +6,13 @@
 #include <atomic>
 #include <vector>
 
-struct sb_engine;
-
 class Voice {
 public:
-    Voice(sb_engine_t engine, const sb_voice_config_t& config);
+    Voice(uint32_t sample_rate, const sb_voice_config_t& config);
     ~Voice();
 
     void process(float* output, size_t num_frames, sb_frame_t engine_frame, size_t output_channels);
-    void schedule_start(sb_frame_t frame);
+    void schedule_start(sb_frame_t frame, sb_frame_t current_engine_frame);
     void stop();
     void set_rate(float rate);
 
@@ -27,7 +25,7 @@ public:
     float gain = 1.0f;
 
 private:
-    sb_engine_t engine;
+    uint32_t sample_rate;
     std::atomic<sb_voice_state_t> state{SB_VOICE_IDLE};
     sb_frame_t scheduled_frame = 0;
 
@@ -38,7 +36,8 @@ private:
     sb_frame_t next_click_frame = 0;
 
     void generate_click_samples(const sb_synthetic_click_config_t& click_config);
-    void render_click(float* output, size_t offset, size_t num_frames, size_t output_channels);
+    void render_click(float* output, size_t offset, size_t num_frames,
+                      sb_frame_t engine_frame, size_t output_channels);
 };
 
 #endif
