@@ -32,6 +32,10 @@ public:
     int get_output_latency_frames() const;
     int get_grid_compensation_frames() const;
 
+    // Render-evidence accessors (used by engine snapshot)
+    uint64_t get_rendered_click_count() const { return rendered_click_count.load(std::memory_order_relaxed); }
+    sb_frame_t get_last_rendered_click_engine_frame() const { return last_rendered_click_engine_frame.load(std::memory_order_acquire); }
+
 private:
     uint32_t sample_rate;
     std::atomic<sb_voice_state_t> state{SB_VOICE_IDLE};
