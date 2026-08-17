@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <thread>
 #include <chrono>
+#include <vector>
 
 static int tests_passed = 0;
 static int tests_failed = 0;
