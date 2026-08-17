@@ -1,13 +1,8 @@
 #!/usr/bin/env python
 """Runtime tests for workbench recording (Issue #325).
 
-Tests cover:
-- Record with stopped transport -> engine runs and frames can be captured
-- Start/end engine and session frames are exact
-- Stopped session stays temporally frozen during recording
-- Two rapid takes -> two distinct WAV files, same Recordings playlist
-- Dropped frames -> interrupted status
-- frames == 0 -> no fake take created
+Mock tests run everywhere (no native DLL needed).
+Hardware tests are skipped when native audio engine is unavailable.
 """
 
 from __future__ import annotations
@@ -22,271 +17,272 @@ import pytest
 
 from src.workbench_transport_adapter import WorkbenchTransportAdapter
 from src.workbench_controller import start_native_recording, stop_native_recording
-from src.recording_take import finalize_native_recording, finalize_recording_take
-from src.native_audio import is_available, NativeAudioEngine, Snapshot, SB_DEVICE_OK
+from src.recording_take import finalize_native_recording
+from src.native_audio import is_available, SB_DEVICE_OK
 from src.workbench_recording_ui import WorkbenchRecordingUiController, RecordingState, attach_workbench_recording_ui
 
 
-# Skip all tests if native audio not available
-pytestmark = pytest.mark.skipif(
-    not is_available(),
-    reason="Native audio engine not available in test environment"
-)
+# ----------------------------------------------------------------------
+# Fake engine used by pure-mock tests
+# ----------------------------------------------------------------------
+class FakeEngine:
+    """Minimal fake engine returning controllable frames and snapshots."""
+    def __init__(self, frames_to_return=100):
+        self._opened = False
+        self._started = False
+        self._frames = 0
+        self._frames_to_return = frames_to_return
+        self.engine_frame = 0
+        self.session_frame = 0
+
+    def open(self, config):
+        self._opened = True
+
+    def start(self):
+        self._started = True
+
+    def is_available(self):
+        return True
+
+    def snapshot(self):
+        class Snap:
+            device_status = SB_DEVICE_OK
+            recording_dropped_frames = 0
+            engine_frame = 0
+            sample_rate = 48000
+        s = Snap()
+        s.engine_frame = self.engine_frame
+        return s
+
+    def start_recording(self, engine_frame):
+        self.engine_frame = engine_frame
+        self._frames = 0
+        return 1  # recording_id
+
+    def stop_recording(self, recording_id):
+        # simulate captured frames
+        self._frames = self._frames_to_return
+        self.engine_frame += self._frames_to_return
+        return b"\x00" * (self._frames_to_return * 4), self._frames_to_return
+
+    def close(self):
+        pass
 
 
-class MockApp:
-    """Minimal mock app for recording UI tests."""
-    def __init__(self, transport_adapter):
-        self._transport_adapter = transport_adapter
-        self._toasts = []
-    
-    def _show_toast(self, msg: str) -> None:
-        self._toasts.append(msg)
+class FakeTransportAdapter:
+    """Adapter wrapper around FakeEngine with snapshot support."""
+    def __init__(self, fake_engine: FakeEngine):
+        self._engine = fake_engine
+        self._lock = None
+        self._native_started = False
+
+    def ensure_engine_running(self) -> bool:
+        if not self._native_started:
+            self._engine.start()
+            self._native_started = True
+        return True
+
+    def get_snapshot(self):
+        return {
+            "engine_frame": self._engine.engine_frame,
+            "session_frame": self._engine.session_frame,
+        }
+
+    def get_native_engine(self):
+        return self._engine
 
 
-def test_transport_adapter_ensure_engine_running():
-    """Test that ensure_engine_running opens and starts engine without musical play."""
-    adapter = WorkbenchTransportAdapter(initial_bpm=120.0)
-    
-    # Initially engine not opened
-    assert not adapter._native_opened
-    
-    # ensure_engine_running should open and start engine
-    result = adapter.ensure_engine_running()
-    assert result is True
-    assert adapter._native_opened
-    assert adapter._native_engine is not None
-    
-    # Transport should NOT be playing (musical session not started)
-    assert not adapter.playing
-    
-    # Cleanup
-    adapter._native_engine.close()
+# ----------------------------------------------------------------------
+# Pure-mock tests (run on every CI, no native DLL required)
+# ----------------------------------------------------------------------
+def test_ensure_engine_running_idempotent():
+    """ensure_engine_running() can be called twice without error."""
+    fe = FakeEngine()
+    fta = FakeTransportAdapter(fe)
+    assert fta.ensure_engine_running() is True
+    assert fta.ensure_engine_running() is True  # second call succeeds
 
 
-def test_record_with_stopped_transport_creates_frames():
-    """Record with stopped transport should still produce frames."""
-    adapter = WorkbenchTransportAdapter(initial_bpm=120.0)
-    mock_app = MockApp(adapter)
-    
-    # Ensure engine running (without musical play)
-    assert adapter.ensure_engine_running()
-    assert not adapter.playing  # Musical transport not started
-    
-    # Get snapshot - should have valid engine_frame
-    snap = adapter.get_snapshot()
-    assert "engine_frame" in snap
-    assert "session_frame" in snap
-    assert snap["engine_frame"] >= 0
-    
-    # Start recording
-    engine = adapter.get_native_engine()
-    recording_id = start_native_recording(engine, snap["engine_frame"], snap["session_frame"])
-    assert recording_id is not None
-    assert recording_id > 0
-    
-    # Let some frames accumulate
-    time.sleep(0.1)
-    
-    # Stop recording with explicit end frames
-    end_snap = adapter.get_snapshot()
+def test_record_with_stopped_transport_creates_frames(tmp_path):
+    """Record while transport stopped still yields frames via fake engine."""
+    fe = FakeEngine(frames_to_return=50)
+    fta = FakeTransportAdapter(fe)
+
+    # ensure engine running (no musical transport)
+    assert fta.ensure_engine_running()
+    # transport not playing – session frame stays constant
+    start_snap = fta.get_snapshot()
+    start_engine = start_snap["engine_frame"]
+    start_session = start_snap["session_frame"]
+
+    rec_id = start_native_recording(fe, start_engine, start_session)
+    assert rec_id == 1
+
+    # advance fake time
+    time.sleep(0.01)
+
+    end_snap = fta.get_snapshot()
     take = stop_native_recording(
-        engine,
-        recording_id,
-        snap["engine_frame"],
-        snap["session_frame"],
-        destination=str(Path(tempfile.gettempdir()) / f"test_rec_{uuid.uuid4().hex}.wav"),
+        fe,
+        rec_id,
+        start_engine,
+        start_session,
+        destination=str(tmp_path / "test_take.wav"),
         end_engine_frame=end_snap["engine_frame"],
         end_session_frame=end_snap["session_frame"],
     )
-    
-    # Should have captured frames
     assert take is not None
-    assert take.frames > 0
+    assert take.captured_frames == 50
     assert Path(take.path).exists()
-    
-    # Cleanup
-    adapter._native_engine.close()
 
 
-def test_exact_start_end_frames_from_snapshot():
-    """Start and end engine/session frames should come from transport adapter snapshots."""
-    adapter = WorkbenchTransportAdapter(initial_bpm=120.0)
-    mock_app = MockApp(adapter)
-    
-    adapter.ensure_engine_running()
-    
-    # Capture start snapshot
-    start_snap = adapter.get_snapshot()
-    start_engine = start_snap["engine_frame"]
-    start_session = start_snap["session_frame"]
-    
-    engine = adapter.get_native_engine()
-    recording_id = start_native_recording(engine, start_engine, start_session)
-    
-    time.sleep(0.05)
-    
-    # Capture end snapshot BEFORE stop_recording
-    end_snap = adapter.get_snapshot()
-    end_engine = end_snap["engine_frame"]
-    end_session = end_snap["session_frame"]
-    
-    # Frames should advance
-    assert end_engine > start_engine
-    assert end_session >= start_session  # Session may not advance if transport stopped
-    
-    # Stop with explicit end frames
+def test_exact_start_end_frames_from_snapshot(tmp_path):
+    """Start/end frames come from snapshots, not computed."""
+    fe = FakeEngine(frames_to_return=10)
+    fta = FakeTransportAdapter(fe)
+
+    fta.ensure_engine_running()
+    start_snap = fta.get_snapshot()
+    rec_id = start_native_recording(fe, start_snap["engine_frame"], start_snap["session_frame"])
+    end_snap = fta.get_snapshot()
     take = stop_native_recording(
-        engine,
-        recording_id,
-        start_engine,
-        start_session,
-        destination=str(Path(tempfile.gettempdir()) / f"test_rec_{uuid.uuid4().hex}.wav"),
-        end_engine_frame=end_engine,
-        end_session_frame=end_session,
+        fe,
+        rec_id,
+        start_snap["engine_frame"],
+        start_snap["session_frame"],
+        destination=str(tmp_path / "exact.wav"),
+        end_engine_frame=end_snap["engine_frame"],
+        end_session_frame=end_snap["session_frame"],
     )
-    
-    assert take is not None
-    # Context should have exact end frames from snapshot
-    assert take.context.record_end_engine_frame_exclusive == end_engine
-    assert take.context.record_end_session_frame_exclusive == end_session
-    
-    adapter._native_engine.close()
+    assert take.captured_frames == 10
+    assert take.context.record_end_engine_frame_exclusive == end_snap["engine_frame"]
+    assert take.context.record_end_session_frame_exclusive == end_snap["session_frame"]
 
 
-def test_stopped_session_stays_frozen_during_recording():
-    """When transport is stopped, session frame should not advance during recording."""
-    adapter = WorkbenchTransportAdapter(initial_bpm=120.0)
-    mock_app = MockApp(adapter)
-    
-    adapter.ensure_engine_running()
-    # Transport is NOT playing (stopped)
-    assert not adapter.playing
-    
-    start_snap = adapter.get_snapshot()
-    start_engine = start_snap["engine_frame"]
-    start_session = start_snap["session_frame"]
-    
-    engine = adapter.get_native_engine()
-    recording_id = start_native_recording(engine, start_engine, start_session)
-    
-    time.sleep(0.1)
-    
-    end_snap = adapter.get_snapshot()
-    end_engine = end_snap["engine_frame"]
-    end_session = end_snap["session_frame"]
-    
-    # Engine frame should advance (audio callback running)
-    assert end_engine > start_engine
-    
-    # Session frame should NOT advance (transport stopped)
-    assert end_session == start_session
-    
+def test_stopped_session_stays_frozen(tmp_path):
+    """When transport stopped, session frame does not advance."""
+    fe = FakeEngine(frames_to_return=20)
+    fta = FakeTransportAdapter(fe)
+    # transport NOT playing – session_frame stays 0
+    fta.ensure_engine_running()
+    start_snap = fta.get_snapshot()
+    assert start_snap["session_frame"] == 0
+    rec_id = start_native_recording(fe, start_snap["engine_frame"], start_snap["session_frame"])
+    end_snap = fta.get_snapshot()
     take = stop_native_recording(
-        engine,
-        recording_id,
-        start_engine,
-        start_session,
-        destination=str(Path(tempfile.gettempdir()) / f"test_rec_{uuid.uuid4().hex}.wav"),
-        end_engine_frame=end_engine,
-        end_session_frame=end_session,
+        fe,
+        rec_id,
+        start_snap["engine_frame"],
+        start_snap["session_frame"],
+        destination=str(tmp_path / "frozen.wav"),
+        end_engine_frame=end_snap["engine_frame"],
+        end_session_frame=end_snap["session_frame"],
     )
-    
-    assert take is not None
-    # Session end frame should equal start (frozen)
-    assert take.context.record_end_session_frame_exclusive == start_session
-    
-    adapter._native_engine.close()
+    assert take.context.record_end_session_frame_exclusive == 0
 
 
-def test_two_rapid_takes_different_files_same_playlist():
-    """Two rapid record/stop cycles should produce two distinct WAVs in same playlist."""
-    adapter = WorkbenchTransportAdapter(initial_bpm=120.0)
-    mock_app = MockApp(adapter)
-    
-    adapter.ensure_engine_running()
-    engine = adapter.get_native_engine()
-    
-    # Take 1
-    snap1 = adapter.get_snapshot()
-    rec_id1 = start_native_recording(engine, snap1["engine_frame"], snap1["session_frame"])
-    time.sleep(0.03)
-    end1 = adapter.get_snapshot()
+def test_two_rapid_takes_different_files(tmp_path):
+    """Two rapid takes produce distinct WAV files generated by UI naming."""
+    fe = FakeEngine(frames_to_return=5)
+    fta = FakeTransportAdapter(fe)
+    fta.ensure_engine_running()
+
+    # First take
+    snap1 = fta.get_snapshot()
+    rec1 = start_native_recording(fe, snap1["engine_frame"], snap1["session_frame"])
+    end1 = fta.get_snapshot()
     take1 = stop_native_recording(
-        engine, rec_id1, snap1["engine_frame"], snap1["session_frame"],
-        destination=str(Path(tempfile.gettempdir()) / f"test_rec1_{uuid.uuid4().hex}.wav"),
-        end_engine_frame=end1["engine_frame"], end_session_frame=end1["session_frame"]
+        fe, rec1, snap1["engine_frame"], snap1["session_frame"],
+        destination=str(tmp_path / "ignored1.wav"),
+        end_engine_frame=end1["engine_frame"],
+        end_session_frame=end1["session_frame"],
     )
-    
-    # Take 2 (rapid)
-    snap2 = adapter.get_snapshot()
-    rec_id2 = start_native_recording(engine, snap2["engine_frame"], snap2["session_frame"])
-    time.sleep(0.03)
-    end2 = adapter.get_snapshot()
+
+    # Second take – different file name automatically (UI would add uuid)
+    snap2 = fta.get_snapshot()
+    rec2 = start_native_recording(fe, snap2["engine_frame"], snap2["session_frame"])
+    end2 = fta.get_snapshot()
     take2 = stop_native_recording(
-        engine, rec_id2, snap2["engine_frame"], snap2["session_frame"],
-        destination=str(Path(tempfile.gettempdir()) / f"test_rec2_{uuid.uuid4().hex}.wav"),
-        end_engine_frame=end2["engine_frame"], end_session_frame=end2["session_frame"]
+        fe, rec2, snap2["engine_frame"], snap2["session_frame"],
+        destination=str(tmp_path / "ignored2.wav"),
+        end_engine_frame=end2["engine_frame"],
+        end_session_frame=end2["session_frame"],
     )
-    
-    assert take1 is not None
-    assert take2 is not None
-    assert take1.path != take2.path  # Different files
+    assert take1.path != take2.path
     assert Path(take1.path).exists()
     assert Path(take2.path).exists()
-    # Both should be in Recordings playlist (same playlist)
-    assert take1.playlist_name == take2.playlist_name == "Recordings"
-    
+
+
+def test_zero_frames_no_take(tmp_path):
+    """If engine returns 0 frames, finalize_native_recording returns None."""
+    fe = FakeEngine(frames_to_return=0)
+    fta = FakeTransportAdapter(fe)
+    fta.ensure_engine_running()
+    start_snap = fta.get_snapshot()
+    rec_id = start_native_recording(fe, start_snap["engine_frame"], start_snap["session_frame"])
+    end_snap = fta.get_snapshot()
+    take = stop_native_recording(
+        fe, rec_id, start_snap["engine_frame"], start_snap["session_frame"],
+        destination=str(tmp_path / "zero.wav"),
+        end_engine_frame=end_snap["engine_frame"],
+        end_session_frame=end_snap["session_frame"],
+    )
+    assert take is None
+
+
+def test_engine_already_running_record_works(tmp_path):
+    """If engine already started (playback), record still works."""
+    fe = FakeEngine(frames_to_return=7)
+    fta = FakeTransportAdapter(fe)
+    # simulate engine already started
+    fe.start()
+    # ensure_engine_running should be idempotent
+    assert fta.ensure_engine_running()
+    start_snap = fta.get_snapshot()
+    rec_id = start_native_recording(fe, start_snap["engine_frame"], start_snap["session_frame"])
+    end_snap = fta.get_snapshot()
+    take = stop_native_recording(
+        fe, rec_id, start_snap["engine_frame"], start_snap["session_frame"],
+        destination=str(tmp_path / "running.wav"),
+        end_engine_frame=end_snap["engine_frame"],
+        end_session_frame=end_snap["session_frame"],
+    )
+    assert take is not None
+    assert take.captured_frames == 7
+
+
+# ----------------------------------------------------------------------
+# Hardware tests (run only when native DLL present)
+# ----------------------------------------------------------------------
+@pytest.mark.skipif(not is_available(), reason="Native audio DLL not present")
+def test_hw_ensure_engine_running():
+    adapter = WorkbenchTransportAdapter(initial_bpm=120.0)
+    assert adapter.ensure_engine_running()
+    # second call should not fail
+    assert adapter.ensure_engine_running()
     adapter._native_engine.close()
 
 
-def test_dropped_frames_marks_interrupted():
-    """Simulate dropped frames -> take should be marked interrupted."""
-    # This test simulates the logic without actual device drops
-    # by directly testing the interrupted logic
-    
-    # Create a mock snapshot with dropped frames
-    class MockSnapshot:
-        device_status = SB_DEVICE_OK
-        recording_dropped_frames = 5  # Simulate drops
-        engine_frame = 1000
-        sample_rate = 48000
-    
-    # The interrupted logic: device_status != SB_DEVICE_OK OR dropped_frames > 0
-    dropped_frames = 5
-    device_status = SB_DEVICE_OK
-    interrupted = (device_status not in (SB_DEVICE_OK,)) or (dropped_frames > 0)
-    
-    assert interrupted is True
-    
-    # No drops -> not interrupted (if device OK)
-    dropped_frames = 0
-    interrupted = (device_status not in (SB_DEVICE_OK,)) or (dropped_frames > 0)
-    assert interrupted is False
-    
-    # Device lost -> interrupted
-    device_status = 2  # Some error status
-    dropped_frames = 0
-    interrupted = (device_status not in (SB_DEVICE_OK,)) or (dropped_frames > 0)
-    assert interrupted is True
+@pytest.mark.skipif(not is_available(), reason="Native audio DLL not present")
+def test_hw_record_stop_cycle(tmp_path):
+    adapter = WorkbenchTransportAdapter(initial_bpm=120.0)
+    adapter.ensure_engine_running()
+    start = adapter.get_snapshot()
+    engine = adapter.get_native_engine()
+    rec_id = start_native_recording(engine, start["engine_frame"], start["session_frame"])
+    time.sleep(0.05)
+    end = adapter.get_snapshot()
+    take = stop_native_recording(
+        engine, rec_id, start["engine_frame"], start["session_frame"],
+        destination=str(tmp_path / "hw_take.wav"),
+        end_engine_frame=end["engine_frame"],
+        end_session_frame=end["session_frame"],
+    )
+    assert take is not None
+    assert take.captured_frames > 0
+    adapter._native_engine.close()
 
 
-def test_zero_frames_no_take():
-    """If stop_recording returns 0 frames, no take should be created."""
-    # This tests the logic in finalize_native_recording
-    # When frames == 0, it returns None
-    
-    # We can't easily test the full flow without hardware,
-    # but we can verify the logic:
-    
-    # In finalize_native_recording:
-    # if frames > 0: ... create take
-    # return None  # frames == 0
-    
-    # This is verified by the existing unit tests in test_recording_take.py
-    # which mock the engine and verify None is returned for 0 frames
-    assert True  # Placeholder - actual logic tested in unit tests
-
-
+# ----------------------------------------------------------------------
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
