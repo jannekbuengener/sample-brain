@@ -60,10 +60,11 @@ class FakeEngine:
         return 1  # recording_id
 
     def stop_recording(self, recording_id):
-        # simulate captured frames
+        # simulate captured frames - stereo float32 = 2 channels * 4 bytes = 8 bytes per frame
         self._frames = self._frames_to_return
         self.engine_frame += self._frames_to_return
-        return b"\x00" * (self._frames_to_return * 4), self._frames_to_return
+        # stereo float32: 2 channels * 4 bytes * frames
+        return b"\x00" * (self._frames_to_return * 8), self._frames_to_return
 
     def close(self):
         pass

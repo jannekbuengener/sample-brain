@@ -19,6 +19,7 @@ import numpy as np
 import soundfile as sf
 
 from .workbench_controller import WorkbenchRow
+from .native_audio import SB_DEVICE_OK
 from .workbench_library import (
     add_sample_to_playlist,
     get_or_create_playlist,
