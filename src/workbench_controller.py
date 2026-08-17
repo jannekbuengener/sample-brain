@@ -2028,6 +2028,8 @@ def stop_native_recording(
     session_frame: int,
     destination: str,
     db_path: Path | None = None,
+    end_engine_frame: int | None = None,
+    end_session_frame: int | None = None,
 ):
     """Stop native audio recording and finalize the take via finalize_native_recording."""
     from .native_audio import is_available
@@ -2040,6 +2042,8 @@ def stop_native_recording(
         recording_id=recording_id,
         record_start_engine_frame=engine_frame,
         record_start_session_frame=session_frame,
+        record_end_engine_frame_exclusive=end_engine_frame,
+        record_end_session_frame_exclusive=end_session_frame,
         destination=destination,
         db_path=db_path,
     )

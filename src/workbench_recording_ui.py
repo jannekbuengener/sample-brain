@@ -114,9 +114,10 @@ class WorkbenchRecordingUiController:
             self.app._show_toast("Native audio engine not available")
             return
 
-        # Ensure the shared engine is opened before taking snapshots
-        if not self.app._transport_adapter.ensure_engine_open():
-            self.app._show_toast("Failed to open native audio engine")
+        # Ensure the shared engine is RUNNING (started) before taking snapshots
+        # This starts the audio callback without auto-starting musical transport
+        if not self.app._transport_adapter.ensure_engine_running():
+            self.app._show_toast("Failed to start native audio engine")
             return
 
         # Get real frames from transport adapter snapshot

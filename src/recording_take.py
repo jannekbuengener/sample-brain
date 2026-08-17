@@ -309,6 +309,8 @@ def finalize_native_recording(
     record_start_session_frame: int,
     destination: Path | str,
     db_path: Path | None = None,
+    record_end_engine_frame_exclusive: int | None = None,
+    record_end_session_frame_exclusive: int | None = None,
 ) -> Optional[FinalizedRecordingTake]:
     """Finalize a native recording with proper device-lost handling.
 
@@ -334,6 +336,8 @@ def finalize_native_recording(
         record_start_session_frame: Session frame when recording started.
         destination: Path (or "workbench://...") where the .wav should be written.
         db_path: Optional path to the workbench library SQLite DB.
+        record_end_engine_frame_exclusive: Optional exact end engine frame from snapshot.
+        record_end_session_frame_exclusive: Optional exact end session frame from snapshot.
 
     Returns:
         ``FinalizedRecordingTake`` when a take was rescued, or ``None`` when
@@ -352,15 +356,15 @@ def finalize_native_recording(
 
     # 3. If frames > 0, we can rescue the take (correction #1).
     if frames > 0:
-        # Build context with exact frame positions.
-        # Session frame end: increment by captured frame count (mirrors existing test convention).
-        end_session_frame = record_start_session_frame + frames
+        # Use explicit end frames if provided, otherwise fall back to computed values
+        final_end_engine_frame = record_end_engine_frame_exclusive if record_end_engine_frame_exclusive is not None else end_engine_frame
+        final_end_session_frame = record_end_session_frame_exclusive if record_end_session_frame_exclusive is not None else (record_start_session_frame + frames)
 
         context = RecordingFrameContext(
             record_start_engine_frame=record_start_engine_frame,
             record_start_session_frame=record_start_session_frame,
-            record_end_engine_frame_exclusive=end_engine_frame,
-            record_end_session_frame_exclusive=end_session_frame,
+            record_end_engine_frame_exclusive=final_end_engine_frame,
+            record_end_session_frame_exclusive=final_end_session_frame,
             sample_rate=snap.sample_rate,
             channels=2,  # stereo native default; adjust if config differs
         )
