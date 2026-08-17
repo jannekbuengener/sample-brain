@@ -210,9 +210,13 @@ class WorkbenchApp:
         self._build_styles()
         self._build_menubar()
         self._build_layout()
-        self._recording_ui = attach_workbench_recording_ui(self)
-        self._editing_ui = attach_workbench_editing_ui(self)
+        # Initialize transport UI first (creates _transport_adapter)
         self._transport_ui = attach_workbench_transport_ui(self)
+        # Then recording UI with the transport adapter
+        self._recording_ui = attach_workbench_recording_ui(
+            self, transport_adapter=self._transport_adapter
+        )
+        self._editing_ui = attach_workbench_editing_ui(self)
         self._restore_last_folder()
         self._refresh_library_list()
         self._refresh_playlist_list()
@@ -2206,6 +2210,9 @@ class WorkbenchApp:
         recording_ui = getattr(self, "_recording_ui", None)
         if recording_ui is not None:
             recording_ui.close()
+        transport_ui = getattr(self, "_transport_ui", None)
+        if transport_ui is not None:
+            transport_ui.close()
         self.root.destroy()
 
     def _on_close(self) -> None:

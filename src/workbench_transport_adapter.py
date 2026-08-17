@@ -68,6 +68,7 @@ class WorkbenchTransportAdapter:
         self._native_opened = native_engine is not None
         self._native_available = native_engine is not None
         self._last_native_engine_frame: int | None = None
+        self._native_started = False
 
         if native_engine is None:
             self._native_available = _native_audio.is_available()
@@ -131,6 +132,28 @@ class WorkbenchTransportAdapter:
         )
         self._native_opened = True
         self._last_native_engine_frame = 0
+
+    def ensure_engine_running(self) -> bool:
+        """Ensure the owned native engine is opened AND running (started).
+        Does NOT start the musical transport if it was stopped - only starts the audio engine callback.
+        Idempotent: if engine already started, returns True without calling start() again.
+        Returns True if engine is available and running."""
+        with self._lock:
+            if not self._native_available or not self._native_owned:
+                return False
+            self._ensure_owned_native_open_unlocked()
+            if not self._native_opened:
+                return False
+            if self._native_started:
+                return True
+            # Start the engine callback without starting musical transport
+            try:
+                self._native_engine.start()
+                self._native_started = True
+                return True
+            except Exception as exc:  # pragma: no cover - machine specific
+                warn("Native audio engine start failed: %s", exc)
+                return False
 
     def _apply_native_rate_unlocked(self, voice_id: int, rate: float) -> None:
         if self._native_engine is None or not self._native_available:
@@ -218,6 +241,7 @@ class WorkbenchTransportAdapter:
             try:
                 self._ensure_owned_native_open_unlocked()
                 self._native_engine.start()
+                self._native_started = True
                 self._transport.play()
                 if hasattr(self._native_engine, "snapshot"):
                     try:
@@ -233,6 +257,7 @@ class WorkbenchTransportAdapter:
     def stop(self) -> None:
         with self._lock:
             self._transport.stop()
+            self._native_started = False
             if self._native_engine is not None and self._native_available:
                 if not self._native_owned or self._native_opened:
                     try:
@@ -435,6 +460,7 @@ class WorkbenchTransportAdapter:
 
     def close(self) -> None:
         with self._lock:
+            self._native_started = False
             engine = self._native_engine
             if engine is None:
                 return

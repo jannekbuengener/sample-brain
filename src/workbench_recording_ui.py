@@ -13,6 +13,9 @@ from typing import Any
 
 from .native_audio import NativeAudioEngine, is_available, Snapshot, SB_DEVICE_OK
 from .workbench_controller import start_native_recording, stop_native_recording
+from .workbench_transport_adapter import WorkbenchTransportAdapter
+from pathlib import Path
+from .workbench_controller import workbench_state_dir
 
 RECORDING_POLL_MS = 100
 
@@ -39,11 +42,14 @@ class WorkbenchRecordingUiController:
         self,
         app: Any,
         *,
-        engine: NativeAudioEngine | None = None,
+        transport_adapter: "WorkbenchTransportAdapter | None" = None,
         db_path: Any = None,
     ) -> None:
         self.app = app
-        self.engine = engine or NativeAudioEngine() if is_available() else None
+        # Get the shared engine from the transport adapter
+        self.engine = None
+        if transport_adapter is not None:
+            self.engine = transport_adapter.get_native_engine()
         self.db_path = db_path
         self.state = RecordingState()
         self._poll_id: Any = None
@@ -100,28 +106,33 @@ class WorkbenchRecordingUiController:
 
     def _on_record(self) -> None:
         """Start native recording when user presses Record."""
-        if self.engine is None or self.state.status != STATUS_IDLE:
+        if self._closed:
+            return
+        if self.state.status != STATUS_IDLE:
+            return
+        if self.engine is None:
+            self.app._show_toast("Native audio engine not available")
             return
 
-        # Capture current engine frame and session frame as start positions.
-        # We get the snapshot to capture the exact frame positions.
-        try:
-            snap: Snapshot = self.engine.snapshot()
-        except RuntimeError:
+        # Ensure the shared engine is RUNNING (started) before taking snapshots
+        # This starts the audio callback without auto-starting musical transport
+        if not self.app._transport_adapter.ensure_engine_running():
+            self.app._show_toast("Failed to start native audio engine")
             return
 
-        self.state.record_start_engine_frame = snap.engine_frame
-        # Session frame: approximate, derived from engine frame / tempo.
-        # For now use engine_frame as a proxy; the exact mapping is handled
-        # by the analysis pipeline later.
-        self.state.record_start_session_frame = snap.engine_frame
-
+        # Get real frames from transport adapter snapshot
+        snapshot = self.app._transport_adapter.get_snapshot()
+        engine_frame = snapshot["engine_frame"]
+        session_frame = snapshot["session_frame"]
+        self.state.record_start_engine_frame = engine_frame
+        self.state.record_start_session_frame = session_frame
+        
         # Start the native recording; returns a recording ID.
         try:
             recording_id = start_native_recording(
                 self.engine,
-                self.state.record_start_engine_frame,
-                self.state.record_start_session_frame,
+                engine_frame,
+                session_frame,
             )
         except RuntimeError as exc:
             # Engine not open or other error â€“ stay idle.
@@ -134,26 +145,39 @@ class WorkbenchRecordingUiController:
 
     def _on_stop(self) -> None:
         """Stop native recording and finalize the take when user presses Stop."""
+        if self._closed:
+            return
         if self.state.status != STATUS_RECORDING or self.state.recording_id is None:
             return
 
         self.state.status = STATUS_FINALIZING
         self._update_buttons()
 
-        # Stop recording and rescue the take if frames > 0.
-        # Correction #3 from Issue #325: snapshot already captured before stop,
-        # but we can get a fresh end-frame from the engine state if needed.
-        # Correction #2: truth is simply frames > 0 or == 0.
-        # Correction #1: native ringbuffer already counts dropped frames.
-        # Correction #4: finalize_recording_take() already registers in "Recordings".
+        # Capture end frames from transport adapter snapshot BEFORE stopping recording
+        end_snapshot = self.app._transport_adapter.get_snapshot()
+        end_engine_frame = end_snapshot["engine_frame"]
+        end_session_frame = end_snapshot["session_frame"]
+
+        # Use stored start session frame (not current)
+        start_session_frame = self.state.record_start_session_frame
+
+        # Generate collision-free .wav destination path (timestamp + UUID)
+        recordings_dir = workbench_state_dir() / "recordings"
+        recordings_dir.mkdir(parents=True, exist_ok=True)
+        import time, uuid
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        unique_id = uuid.uuid4().hex[:8]
+        destination = recordings_dir / f"recording_{timestamp}_{unique_id}.wav"
 
         try:
             take = stop_native_recording(
                 self.engine,
                 self.state.recording_id,
                 self.state.record_start_engine_frame,
-                self.state.record_start_session_frame,
-                destination="workbench://recording",
+                start_session_frame,
+                end_engine_frame=end_engine_frame,
+                end_session_frame=end_session_frame,
+                destination=str(destination),
                 db_path=self.db_path,
             )
         except RuntimeError as exc:
@@ -235,13 +259,17 @@ class WorkbenchRecordingUiController:
 def attach_workbench_recording_ui(
     app: Any,
     *,
-    engine: Any = None,
+    transport_adapter: "WorkbenchTransportAdapter | None" = None,
     db_path: Any = None,
 ) -> WorkbenchRecordingUiController:
-    """Attach one RECORD/STOP controller to ``app`` and return it."""
+    """Attach one RECORD/STOP controller to ``app`` and return it.
+    
+    The transport_adapter provides the shared NativeAudioEngine and real-time
+    frame snapshots (engine_frame, session_frame) for recording.
+    """
     return WorkbenchRecordingUiController(
         app,
-        engine=engine,
+        transport_adapter=transport_adapter,
         db_path=db_path,
     )
 

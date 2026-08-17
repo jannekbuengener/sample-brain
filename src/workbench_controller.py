@@ -14,6 +14,7 @@ from pathlib import Path, PurePath
 from typing import Any, Callable, Literal, Mapping
 
 from .matching import DEFAULT_LIMIT, MatchCandidate, MatchProfile, match_candidates
+from .native_audio import NativeAudioEngine
 
 from .analyze import (
     SHORT_AUDIO_WARNING_CODE,
@@ -2006,16 +2007,63 @@ def compute_workbench_similar_suggestions(
     return suggestions, None
 
 
-def start_native_recording() -> None:
+def start_native_recording(
+    engine: "NativeAudioEngine",
+    engine_frame: int,
+    session_frame: int,
+) -> int:
     """Start native audio recording through the audio core."""
-    # TODO: Implement native recording startup
-    pass
+    if engine is None:
+        raise RuntimeError("Native audio engine not available")
+    # Prefer engine's own is_available() for test fakes; fall back to module check
+    avail = getattr(engine, "is_available", None)
+    if callable(avail) and not avail():
+        raise RuntimeError("Native audio engine not available")
+    try:
+        from .native_audio import is_available as _mod_avail
+        if not _mod_avail():
+            raise RuntimeError("Native audio engine not available")
+    except Exception:
+        pass
+    # engine.start_recording only takes engine_frame
+    return engine.start_recording(engine_frame)
 
 
-def stop_native_recording() -> None:
-    """Stop native audio recording."""
-    # TODO: Implement native recording stop
-    pass
+def stop_native_recording(
+    engine: "NativeAudioEngine",
+    recording_id: int,
+    engine_frame: int,
+    session_frame: int,
+    destination: str,
+    db_path: Path | None = None,
+    end_engine_frame: int | None = None,
+    end_session_frame: int | None = None,
+):
+    """Stop native audio recording and finalize the take via finalize_native_recording."""
+    if engine is None:
+        raise RuntimeError("Native audio engine not available")
+    # Prefer engine's own is_available() for test fakes; fall back to module check
+    avail = getattr(engine, "is_available", None)
+    if callable(avail) and not avail():
+        raise RuntimeError("Native audio engine not available")
+    try:
+        from .native_audio import is_available as _mod_avail
+        if not _mod_avail():
+            raise RuntimeError("Native audio engine not available")
+    except Exception:
+        pass
+    # Use the dedicated finalize_native_recording which handles all edge cases
+    from .recording_take import finalize_native_recording
+    return finalize_native_recording(
+        engine=engine,
+        recording_id=recording_id,
+        record_start_engine_frame=engine_frame,
+        record_start_session_frame=session_frame,
+        record_end_engine_frame_exclusive=end_engine_frame,
+        record_end_session_frame_exclusive=end_session_frame,
+        destination=destination,
+        db_path=db_path,
+    )
 
 
 
