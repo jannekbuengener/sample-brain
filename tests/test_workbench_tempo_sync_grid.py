@@ -9,6 +9,8 @@ from types import SimpleNamespace
 import pytest
 
 from src.session_grid import (
+    INT64_MAX,
+    INT64_MIN,
     SessionTransport,
     TempoMap,
     TempoSegment,
@@ -185,15 +187,16 @@ def test_buffer_scheduler_uses_half_open_frame_range():
 
 
 def test_signed_int64_frame_limits_are_enforced():
-    TempoSegment(start_frame=0, start_quarter=0, bpm=120)
+    TempoSegment(start_frame=INT64_MIN, start_quarter=0, bpm=120)
+    TempoSegment(start_frame=INT64_MAX, start_quarter=0, bpm=120)
 
     with pytest.raises(OverflowError, match="signed int64"):
-        TempoSegment(start_frame=-1, start_quarter=0, bpm=120)
+        TempoSegment(start_frame=INT64_MIN - 1, start_quarter=0, bpm=120)
     with pytest.raises(OverflowError, match="signed int64"):
-        TempoSegment(start_frame=2**63, start_quarter=0, bpm=120)
+        TempoSegment(start_frame=INT64_MAX + 1, start_quarter=0, bpm=120)
     with pytest.raises(OverflowError, match="buffer end"):
         schedule_events_in_buffer(
-            buffer_start_frame=2**63, frame_count=2, event_frames=[]
+            buffer_start_frame=INT64_MAX, frame_count=2, event_frames=[]
         )
 
 
