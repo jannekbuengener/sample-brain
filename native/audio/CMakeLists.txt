@@ -13,28 +13,27 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # Platform-specific settings
 if(WIN32)
-    add_definitions(-DMA_WIN32=1)
     if(MSVC)
         add_compile_options(/MP)
     endif()
+    # Miniaudio runtime-loads the Windows backends; no extra link library is
+    # required here. Do not force MA_WIN32: miniaudio performs platform detection.
     set(MINIAUDIO_SYSTEM_LIBS "")
 elseif(APPLE)
-    add_definitions(-DMA_APPLE=1)
     find_library(COREAUDIO CoreAudio)
     find_library(AUDIOTOOLBOX AudioToolbox)
     find_library(COREFOUNDATION CoreFoundation)
     set(MINIAUDIO_SYSTEM_LIBS ${COREAUDIO} ${AUDIOTOOLBOX} ${COREFOUNDATION})
 elseif(UNIX)
-    add_definitions(-DMA_LINUX=1)
     find_library(PTHREAD pthread)
     find_library(DL dl)
     find_library(RT rt)
     set(MINIAUDIO_SYSTEM_LIBS ${PTHREAD} ${DL} ${RT})
 endif()
 
-# Miniaudio configuration
+# Miniaudio configuration. Runtime linking must stay enabled so optional
+# backends such as JACK do not become compile-time header dependencies.
 set(MINIAUDIO_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
-add_definitions(-DMA_NO_RUNTIME_LINKING=1)
 add_definitions(-DMA_API=static)
 
 # Include directories
