@@ -35,11 +35,11 @@ void MetricsCollector::on_callback_end() {
     total_callbacks.fetch_add(1, std::memory_order_relaxed);
 }
 
-void MetricsCollector::get_snapshot(double& mean_us, double& p95_us, double& p99_us, double& max_us,
+void MetricsCollector::get_snapshot(double& mean_us, double& p95_us, double& p99_us, double& max_us, double& p99_9_us,
                                     uint64_t& underflows, uint64_t& overflows, uint64_t& xruns) {
     size_t count = std::min(total_callbacks.load(std::memory_order_relaxed), SAMPLE_COUNT);
     if (count == 0) {
-        mean_us = p95_us = p99_us = max_us = 0.0;
+        mean_us = p95_us = p99_us = max_us = p99_9_us = 0.0;
         underflows = underflow_count.load();
         overflows = overflow_count.load();
         xruns = xrun_count.load();
@@ -59,8 +59,10 @@ void MetricsCollector::get_snapshot(double& mean_us, double& p95_us, double& p99
 
     size_t p95_idx = static_cast<size_t>(count * 0.95);
     size_t p99_idx = static_cast<size_t>(count * 0.99);
+    size_t p99_9_idx = static_cast<size_t>(count * 0.999);
     p95_us = samples[std::min(p95_idx, count - 1)];
     p99_us = samples[std::min(p99_idx, count - 1)];
+    p99_9_us = samples[std::min(p99_9_idx, count - 1)];
     max_us = samples[count - 1];
 
     underflows = underflow_count.load();

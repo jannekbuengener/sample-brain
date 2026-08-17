@@ -1,6 +1,31 @@
 cmake_minimum_required(VERSION 3.16)
 project(samplebrain_audio LANGUAGES CXX C)
 
+# Build version info
+execute_process(
+    COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..
+    OUTPUT_VARIABLE SB_GIT_SHA
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE GIT_RESULT
+)
+if(GIT_RESULT)
+    set(SB_GIT_SHA "unknown")
+endif()
+
+execute_process(
+    COMMAND git log -1 --format=%ci
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..
+    OUTPUT_VARIABLE SB_BUILD_TIMESTAMP
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE GIT_RESULT2
+)
+if(GIT_RESULT2)
+    string(TIMESTAMP SB_BUILD_TIMESTAMP UTC)
+endif()
+
+message(STATUS "SampleBrain Audio build: git=${SB_GIT_SHA} time=${SB_BUILD_TIMESTAMP}")
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -60,6 +85,11 @@ target_include_directories(samplebrain_audio PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
+target_compile_definitions(samplebrain_audio PRIVATE
+    -DSB_GIT_SHA="${SB_GIT_SHA}"
+    -DSB_BUILD_TIMESTAMP="${SB_BUILD_TIMESTAMP}"
+)
+
 target_link_libraries(samplebrain_audio PRIVATE ${MINIAUDIO_SYSTEM_LIBS})
 
 # Hosted CI runners do not provide a dependable physical duplex audio device.
@@ -69,6 +99,8 @@ target_link_libraries(samplebrain_audio PRIVATE ${MINIAUDIO_SYSTEM_LIBS})
 add_library(samplebrain_audio_test_backend STATIC ${SAMPLEBRAIN_AUDIO_SOURCES})
 target_compile_definitions(samplebrain_audio_test_backend PRIVATE
     SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND=1
+    -DSB_GIT_SHA="${SB_GIT_SHA}"
+    -DSB_BUILD_TIMESTAMP="${SB_BUILD_TIMESTAMP}"
 )
 target_link_libraries(samplebrain_audio_test_backend PRIVATE ${MINIAUDIO_SYSTEM_LIBS})
 

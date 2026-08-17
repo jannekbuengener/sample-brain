@@ -12,7 +12,7 @@ public:
     void reset();
     void on_callback_start();
     void on_callback_end();
-    void get_snapshot(double& mean_us, double& p95_us, double& p99_us, double& max_us,
+    void get_snapshot(double& mean_us, double& p95_us, double& p99_us, double& max_us, double& p99_9_us,
                       uint64_t& underflows, uint64_t& overflows, uint64_t& xruns);
 
 private:

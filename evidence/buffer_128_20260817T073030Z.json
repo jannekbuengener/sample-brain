@@ -1,0 +1,15 @@
+{
+  "suite": "buffer_perf",
+  "buffer_frames": 128,
+  "duration_sec": 5.0,
+  "engine_frame": 238336,
+  "device_status": 0,
+  "callback_mean_us": 2.16,
+  "callback_p95_us": 9.3,
+  "callback_p99_us": 15.9,
+  "callback_p99_9_us": 134.4,
+  "callback_max_us": 217.6,
+  "xrun_count": 0,
+  "underflow_count": 0,
+  "overflow_count": 0
+}

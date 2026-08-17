@@ -1,0 +1,27 @@
+{
+  "suite": "dsp",
+  "voices": [
+    {
+      "id": 1,
+      "bpm": 128.0
+    },
+    {
+      "id": 2,
+      "bpm": 130.0
+    },
+    {
+      "id": 3,
+      "bpm": 132.0
+    },
+    {
+      "id": 4,
+      "bpm": 135.0
+    }
+  ],
+  "sync_mode": "KEY_LOCK_SYNC",
+  "duration_sec": 10.0,
+  "active_voice_count": 0,
+  "device_status": 0,
+  "callback_p99_9_us": 39.0,
+  "xrun_count": 0
+}
