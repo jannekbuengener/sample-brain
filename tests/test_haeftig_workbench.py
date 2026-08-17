@@ -133,6 +133,57 @@ class TestHaeftigSourcePlayheadHonesty:
         assert context[0] == 300
 
 
+class TestHaeftigPlayheadTempoBoundaries:
+    def test_tempo_boundary_is_piecewise_not_retroactive(self, tmp_path):
+        """A tempo change inside one advance must NOT retroactively re-rate the
+        already-elapsed frames.
+
+        Master 132 for [0,100) -> rate 1.0 (source 132). Master jumps to 264 at
+        frame 100 -> rate 2.0 for [100,200). Honest source = 100 + 200 = 300.
+        The forbidden back-calculation would rate the whole 200 frames at 2.0
+        and yield 400."""
+        path = str(tmp_path / "s.wav")
+        adapter = WorkbenchTransportAdapter(initial_bpm=132)
+        adapter.toggle_sync()  # SYNC ON
+        adapter.set_source_bpm(132, source_ref=path, source_start_frame=0)  # rate 1.0
+        adapter.seek(0, source_frame=0)
+        # Inject a tempo boundary strictly inside the upcoming advance.
+        adapter._transport.tempo_map.add_tempo_change_at_frame(
+            effective_frame=100, bpm=264
+        )
+        adapter._transport.play()
+        adapter.advance(200)  # crosses the boundary in a single delta
+
+        context = adapter.get_haeftig_trigger_context(path)
+        assert context == (300, 200)
+        # The retroactive anti-pattern would yield 400.
+        assert context[0] != 400
+
+    def test_engine_runs_but_session_stopped_holds_source(self, tmp_path):
+        """When the engine is running but the transport is not advancing, the
+        source playhead must not move (engine delta != session delta)."""
+        path = str(tmp_path / "s.wav")
+        adapter = WorkbenchTransportAdapter(initial_bpm=132)
+        adapter.set_source_bpm(120, source_ref=path, source_start_frame=0)
+        adapter.seek(0, source_frame=500)
+        # Transport NOT started -> session does not advance on advance().
+        assert adapter.playing is False
+        adapter.advance(100)
+        assert adapter.get_source_frame() == 500
+
+    def test_play_preserves_explicit_seek_anchor(self, tmp_path):
+        """play() must not overwrite a source position established by an earlier
+        explicit seek."""
+        path = str(tmp_path / "s.wav")
+        adapter = WorkbenchTransportAdapter(initial_bpm=132)
+        adapter.set_source_bpm(120, source_ref=path, source_start_frame=0)
+        adapter.seek(0, source_frame=777)
+        adapter._transport.play()
+        adapter.play()
+        assert adapter.get_source_frame() == 777
+        assert adapter.get_haeftig_trigger_context(path) == (777, 0)
+
+
 class TestHaeftigFailClosed:
     def test_missing_grid_yields_no_result(self, tmp_path):
         path = str(tmp_path / "s.wav")
