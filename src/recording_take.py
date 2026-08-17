@@ -1,13 +1,15 @@
 """Finalize captured PCM outside the realtime callback and register the take.
 
 This module deliberately starts *after* the native callback/ringbuffer boundary.
-It receives already-captured float32 PCM, writes/finalizes a WAV, then reuses the
-existing Workbench library/playlist layer.  It never performs file or SQLite I/O
-from an audio callback.
+It receives already-captured float32 PCM, writes/finalizes a WAV, persists exact
+engine/session frame context in a portable sidecar, then reuses the existing
+Workbench library/playlist layer.  It never performs file or SQLite I/O from an
+audio callback.
 """
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +28,8 @@ from .workbench_library import (
 )
 
 RECORDINGS_PLAYLIST_NAME = "Recordings"
+RECORDING_METADATA_DOCUMENT_TYPE = "sample_brain.recording_take"
+RECORDING_METADATA_SCHEMA_VERSION = "1.0.0"
 RecordingTakeStatus = Literal["complete", "interrupted"]
 
 
@@ -49,7 +53,10 @@ class RecordingFrameContext:
             self.record_end_engine_frame_exclusive,
             self.record_end_session_frame_exclusive,
         )
-        if any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in values):
+        if any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+            for value in values
+        ):
             raise ValueError("recording frame positions must be non-negative integers")
         if self.record_end_engine_frame_exclusive < self.record_start_engine_frame:
             raise ValueError("record_end_engine_frame_exclusive precedes start")
@@ -65,16 +72,26 @@ class RecordingFrameContext:
 class FinalizedRecordingTake:
     status: RecordingTakeStatus
     path: Path
+    metadata_path: Path
     captured_frames: int
     context: RecordingFrameContext
     playlist_name: str = RECORDINGS_PLAYLIST_NAME
     playlist_assignment: Literal["added", "duplicate"] = "added"
 
 
+def recording_metadata_path(audio_path: Path | str) -> Path:
+    path = Path(audio_path)
+    return path.with_suffix(".recording.json")
+
+
 def _pcm_array(pcm_f32: bytes, *, captured_frames: int, channels: int) -> np.ndarray:
     if not isinstance(pcm_f32, (bytes, bytearray, memoryview)):
         raise RecordingFinalizeError("captured PCM must be bytes-like float32 data")
-    if not isinstance(captured_frames, int) or isinstance(captured_frames, bool) or captured_frames < 0:
+    if (
+        not isinstance(captured_frames, int)
+        or isinstance(captured_frames, bool)
+        or captured_frames < 0
+    ):
         raise RecordingFinalizeError("captured_frames must be a non-negative integer")
 
     expected_samples = captured_frames * channels
@@ -107,7 +124,9 @@ def _write_atomic_float_wav(
     if destination.suffix.lower() != ".wav":
         raise RecordingFinalizeError("recording destination must use .wav")
     if destination.exists():
-        raise RecordingFinalizeError("recording destination already exists; original take will not be overwritten")
+        raise RecordingFinalizeError(
+            "recording destination already exists; original take will not be overwritten"
+        )
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     temp_path = destination.with_name(f".{destination.stem}.part.wav")
@@ -134,10 +153,51 @@ def _write_atomic_float_wav(
         raise
 
 
+def _metadata_payload(
+    *,
+    audio_path: Path,
+    captured_frames: int,
+    context: RecordingFrameContext,
+    status: RecordingTakeStatus,
+) -> dict[str, object]:
+    return {
+        "document_type": RECORDING_METADATA_DOCUMENT_TYPE,
+        "schema_version": RECORDING_METADATA_SCHEMA_VERSION,
+        "status": status,
+        "audio_ref": audio_path.name,
+        "captured_frames": captured_frames,
+        "sample_rate": context.sample_rate,
+        "channels": context.channels,
+        "record_start_engine_frame": context.record_start_engine_frame,
+        "record_start_session_frame": context.record_start_session_frame,
+        "record_end_engine_frame_exclusive": context.record_end_engine_frame_exclusive,
+        "record_end_session_frame_exclusive": context.record_end_session_frame_exclusive,
+    }
+
+
+def _write_atomic_metadata(path: Path, payload: dict[str, object]) -> None:
+    if path.exists():
+        raise RecordingFinalizeError(
+            "recording metadata already exists; original take metadata will not be overwritten"
+        )
+    temp_path = path.with_name(f".{path.name}.part")
+    try:
+        temp_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temp_path, path)
+    except Exception:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
 def _register_recording(
     path: Path,
     *,
-    context: RecordingFrameContext,
     take_status: RecordingTakeStatus,
     db_path: Path | None,
 ) -> Literal["added", "duplicate"]:
@@ -157,12 +217,6 @@ def _register_recording(
         status="pending",
         details={
             "recording_status": take_status,
-            "record_start_engine_frame": context.record_start_engine_frame,
-            "record_start_session_frame": context.record_start_session_frame,
-            "record_end_engine_frame_exclusive": context.record_end_engine_frame_exclusive,
-            "record_end_session_frame_exclusive": context.record_end_session_frame_exclusive,
-            "samplerate": context.sample_rate,
-            "channels": context.channels,
             "tags": ["recording"],
         },
     )
@@ -187,13 +241,19 @@ def finalize_recording_take(
     interrupted: bool = False,
     db_path: Path | None = None,
 ) -> FinalizedRecordingTake:
-    """Write a valid take then register it in the existing ``Recordings`` playlist.
+    """Finalize a valid take, persist timing evidence, then register it.
 
-    The file is finalized before any library/playlist mutation.  If later DB
-    registration fails, the already-valid original recording is intentionally
-    left on disk rather than deleted.
+    File + portable sidecar are finalized before library/playlist mutation. If
+    later DB registration fails, the already-valid original recording and its
+    frame evidence are intentionally left on disk rather than deleted.
     """
     path = Path(destination).expanduser().resolve()
+    metadata_path = recording_metadata_path(path)
+    if metadata_path.exists():
+        raise RecordingFinalizeError(
+            "recording metadata already exists; refusing to overwrite take evidence"
+        )
+
     samples = _pcm_array(
         pcm_f32,
         captured_frames=captured_frames,
@@ -208,21 +268,34 @@ def finalize_recording_take(
     )
 
     take_status: RecordingTakeStatus = "interrupted" if interrupted else "complete"
+    payload = _metadata_payload(
+        audio_path=path,
+        captured_frames=captured_frames,
+        context=context,
+        status=take_status,
+    )
+    try:
+        _write_atomic_metadata(metadata_path, payload)
+    except Exception as exc:
+        raise RecordingFinalizeError(
+            f"recording WAV is valid but timing metadata finalization failed: {exc}"
+        ) from exc
+
     try:
         assignment = _register_recording(
             path,
-            context=context,
             take_status=take_status,
             db_path=db_path,
         )
     except Exception as exc:
         raise RecordingFinalizeError(
-            f"recording WAV is valid but Workbench registration failed: {exc}"
+            f"recording WAV and metadata are valid but Workbench registration failed: {exc}"
         ) from exc
 
     return FinalizedRecordingTake(
         status=take_status,
         path=path,
+        metadata_path=metadata_path,
         captured_frames=captured_frames,
         context=context,
         playlist_assignment=assignment,
@@ -232,7 +305,10 @@ def finalize_recording_take(
 __all__ = [
     "FinalizedRecordingTake",
     "RECORDINGS_PLAYLIST_NAME",
+    "RECORDING_METADATA_DOCUMENT_TYPE",
+    "RECORDING_METADATA_SCHEMA_VERSION",
     "RecordingFinalizeError",
     "RecordingFrameContext",
     "finalize_recording_take",
+    "recording_metadata_path",
 ]
