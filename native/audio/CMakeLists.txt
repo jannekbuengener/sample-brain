@@ -13,11 +13,11 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # Platform-specific settings
 if(WIN32)
-    # Windows: link against required system libraries
     add_definitions(-DMA_WIN32=1)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP")
-    # Miniaudio needs these on Windows
-    set(MINIAUDIO_SYSTEM_LIBS ole32 uuidpropsys)
+    if(MSVC)
+        add_compile_options(/MP)
+    endif()
+    set(MINIAUDIO_SYSTEM_LIBS "")
 elseif(APPLE)
     add_definitions(-DMA_APPLE=1)
     find_library(COREAUDIO CoreAudio)
@@ -40,30 +40,40 @@ add_definitions(-DMA_API=static)
 # Include directories
 include_directories(${MINIAUDIO_INCLUDE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-# Library target
-add_library(samplebrain_audio STATIC
+# Python loads this target through ctypes, so it must be a shared library.
+add_library(samplebrain_audio SHARED
     src/engine.cpp
     src/voice.cpp
     src/ringbuffer.cpp
-    src/scheduler.cpp
     src/metrics.cpp
     src/synthetic.cpp
 )
 
-target_link_libraries(samplebrain_audio ${MINIAUDIO_SYSTEM_LIBS})
-
-# Test executable
-enable_testing()
-add_executable(samplebrain_audio_tests
-    tests/test_engine.cpp
-    tests/test_voice.cpp
-    tests/test_ringbuffer.cpp
-    tests/test_scheduler.cpp
-    tests/test_metrics.cpp
+# The public C API is declared without per-symbol dllexport annotations. Let CMake
+# export the target's global symbols on Windows so ctypes can resolve the sb_* API.
+set_target_properties(samplebrain_audio PROPERTIES
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
-target_link_libraries(samplebrain_audio_tests samplebrain_audio)
-add_test(NAME samplebrain_audio_tests COMMAND samplebrain_audio_tests)
+target_link_libraries(samplebrain_audio PRIVATE ${MINIAUDIO_SYSTEM_LIBS})
+
+# Every native test file owns its own main(), so build them as independent
+# executables instead of linking all test translation units into one binary.
+enable_testing()
+set(SAMPLEBRAIN_AUDIO_TESTS
+    engine
+    voice
+    ringbuffer
+    scheduler
+    metrics
+)
+
+foreach(test_name IN LISTS SAMPLEBRAIN_AUDIO_TESTS)
+    set(test_target samplebrain_audio_test_${test_name})
+    add_executable(${test_target} tests/test_${test_name}.cpp)
+    target_link_libraries(${test_target} PRIVATE samplebrain_audio)
+    add_test(NAME ${test_target} COMMAND ${test_target})
+endforeach()
 
 # Installation (optional, for Python FFI)
 install(TARGETS samplebrain_audio
