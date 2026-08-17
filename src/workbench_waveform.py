@@ -1,4 +1,5 @@
 """Workbench waveform helpers — read-only envelope data for UI display."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,7 +8,9 @@ import numpy as np
 import soundfile as sf
 
 
-def compute_waveform_envelope(path: Path | str, *, max_points: int = 200) -> list[float]:
+def compute_waveform_envelope(
+    path: Path | str, *, max_points: int = 200
+) -> list[float]:
     """Return peak envelope samples in ``[0.0, 1.0]`` for read-only display.
 
     Reads audio via existing ``soundfile`` dependency; does not modify *path*.
@@ -122,6 +125,26 @@ def loop_region_x(
     return x_start, x_end
 
 
+def frame_region_x(
+    start_frame: int,
+    end_frame_exclusive: int,
+    total_frames: int,
+    width: int,
+) -> tuple[int, int] | None:
+    """Map exact source-frame bounds to canvas x coordinates for display."""
+    if width <= 0 or total_frames <= 0:
+        return None
+    if start_frame < 0 or end_frame_exclusive <= start_frame:
+        return None
+    if end_frame_exclusive > total_frames:
+        return None
+    x_start = (start_frame * width) // total_frames
+    x_end = (end_frame_exclusive * width) // total_frames
+    if x_end <= x_start:
+        x_end = min(width, x_start + 1)
+    return x_start, x_end
+
+
 def attack_marker_x(attack_ms: int | None, duration_ms: int, width: int) -> int | None:
     """Map attack time to canvas x coordinate, or None when unset/invalid."""
     if attack_ms is None or attack_ms < 0:
@@ -147,6 +170,7 @@ __all__ = [
     "compute_waveform_envelope",
     "cue_marker_x",
     "cue_ms_from_x",
+    "frame_region_x",
     "loop_region_x",
     "normalize_loop_bounds",
     "read_audio_duration_ms",
