@@ -22,6 +22,13 @@ typedef struct sb_engine* sb_engine_t;
 typedef struct sb_voice* sb_voice_t;
 typedef struct sb_recording* sb_recording_t;
 
+// Device info for enumeration
+typedef struct {
+    char name[256];
+    char id_hex[512];
+    int is_default;
+} sb_device_info_t;
+
 // Identifiers
 typedef uint64_t sb_voice_id_t;
 typedef uint64_t sb_recording_id_t;
@@ -38,7 +45,8 @@ typedef enum {
     SB_ERR_VOICE_NOT_FOUND = -6,
     SB_ERR_RECORDING_NOT_FOUND = -7,
     SB_ERR_INVALID_STATE = -8,
-    SB_ERR_UNSUPPORTED = -9
+    SB_ERR_UNSUPPORTED = -9,
+    SB_ERR_BUFFER_TOO_SMALL = -10
 } sb_result_t;
 
 // Device status
@@ -132,6 +140,7 @@ typedef struct {
     double callback_p95_us;
     double callback_p99_us;
     double callback_max_us;
+    double callback_p99_9_us;
 
     uint64_t underflow_count;
     uint64_t overflow_count;
@@ -146,6 +155,12 @@ typedef struct {
 #define SB_MAX_VOICES 32
 #define SB_MAX_RECORDINGS 8
 #define SB_MAX_DEVICE_NAME 256
+
+// Engine version / build info
+SAMPLEBRAIN_EXPORT sb_result_t sb_engine_version(char* out, size_t len);
+
+// Device enumeration
+SAMPLEBRAIN_EXPORT sb_result_t sb_enumerate_devices(int capture, sb_device_info_t* out_list, uint32_t max_count, uint32_t* out_count);
 
 // Engine lifecycle
 SAMPLEBRAIN_EXPORT sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_engine);

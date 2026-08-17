@@ -1,0 +1,10 @@
+{
+  "suite": "device_robustness",
+  "engine_start_frame": 0,
+  "engine_end_frame": 143872,
+  "device_status_before": 0,
+  "device_status_after": 0,
+  "xrun_count_delta": 0,
+  "underflow_delta": 0,
+  "overflow_delta": 0
+}

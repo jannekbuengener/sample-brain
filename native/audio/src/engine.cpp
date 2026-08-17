@@ -18,6 +18,105 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <cctype>
+#include <cstdio>
+
+// Hex encode/decode for ma_device_id
+static void device_id_to_hex(const ma_device_id* id, char* out_hex, size_t out_len) {
+    const uint8_t* bytes = reinterpret_cast<const uint8_t*>(id);
+    size_t id_size = sizeof(ma_device_id);
+    size_t i = 0, j = 0;
+    for (i = 0; i < id_size && j + 2 < out_len; ++i) {
+        int hi = (bytes[i] >> 4) & 0xF;
+        int lo = bytes[i] & 0xF;
+        out_hex[j++] = (hi < 10) ? '0' + hi : 'a' + hi - 10;
+        out_hex[j++] = (lo < 10) ? '0' + lo : 'a' + lo - 10;
+    }
+    out_hex[j] = '\0';
+}
+
+static int hex_char_to_val(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+static int hex_to_device_id(const char* hex, ma_device_id* out_id) {
+    if (!hex || !out_id) return 0;
+    size_t id_size = sizeof(ma_device_id);
+    size_t hex_len = strlen(hex);
+    if (hex_len != id_size * 2) return 0;
+    uint8_t* bytes = reinterpret_cast<uint8_t*>(out_id);
+    for (size_t i = 0; i < id_size; ++i) {
+        int hi = hex_char_to_val(hex[i * 2]);
+        int lo = hex_char_to_val(hex[i * 2 + 1]);
+        if (hi < 0 || lo < 0) return 0;
+        bytes[i] = static_cast<uint8_t>((hi << 4) | lo);
+    }
+    return 1;
+}
+
+// Engine version
+SAMPLEBRAIN_EXPORT sb_result_t sb_engine_version(char* out, size_t len) {
+    if (!out || len == 0) return SB_ERR_INVALID_ARG;
+    const char* version_str = "git:" SB_GIT_SHA " time:" SB_BUILD_TIMESTAMP;
+    size_t needed = strlen(version_str) + 1;
+    if (len < needed) return SB_ERR_BUFFER_TOO_SMALL;
+    memcpy(out, version_str, needed);
+    return SB_OK;
+}
+
+// Device enumeration
+SAMPLEBRAIN_EXPORT sb_result_t sb_enumerate_devices(int capture, sb_device_info_t* out_list, uint32_t max_count, uint32_t* out_count) {
+    if (!out_list || !out_count || max_count == 0) return SB_ERR_INVALID_ARG;
+
+    ma_context context;
+    ma_context_config ctx_config = ma_context_config_init();
+    ma_result ma_res = ma_context_init(nullptr, 0, &ctx_config, &context);
+    if (ma_res != MA_SUCCESS) return SB_ERR_DEVICE_ERROR;
+
+    ma_device_info* pPlaybackInfos = nullptr;
+    ma_device_info* pCaptureInfos = nullptr;
+    ma_uint32 playbackCount = 0;
+    ma_uint32 captureCount = 0;
+
+    ma_res = ma_context_get_devices(&context, &pPlaybackInfos, &playbackCount, &pCaptureInfos, &captureCount);
+    if (ma_res != MA_SUCCESS) {
+        ma_context_uninit(&context);
+        return SB_ERR_DEVICE_ERROR;
+    }
+
+    uint32_t count = 0;
+    if (capture) {
+        for (ma_uint32 i = 0; i < captureCount && count < max_count; ++i) {
+            ma_device_info* info = &pCaptureInfos[i];
+            strncpy(out_list[count].name, info->name, sizeof(out_list[count].name) - 1);
+            out_list[count].name[sizeof(out_list[count].name) - 1] = '\0';
+            device_id_to_hex(&info->id, out_list[count].id_hex, sizeof(out_list[count].id_hex));
+            out_list[count].is_default = info->isDefault ? 1 : 0;
+            count++;
+        }
+    } else {
+        for (ma_uint32 i = 0; i < playbackCount && count < max_count; ++i) {
+            ma_device_info* info = &pPlaybackInfos[i];
+            strncpy(out_list[count].name, info->name, sizeof(out_list[count].name) - 1);
+            out_list[count].name[sizeof(out_list[count].name) - 1] = '\0';
+            device_id_to_hex(&info->id, out_list[count].id_hex, sizeof(out_list[count].id_hex));
+            out_list[count].is_default = info->isDefault ? 1 : 0;
+            count++;
+        }
+    }
+
+    *out_count = count;
+
+    // Free device info arrays
+    if (pPlaybackInfos) free(pPlaybackInfos);
+    if (pCaptureInfos) free(pCaptureInfos);
+    ma_context_uninit(&context);
+
+    return SB_OK;
+}
 
 // Internal engine structure
 struct sb_engine {
@@ -84,6 +183,29 @@ struct sb_engine {
     void (*data_callback)(ma_device*, void*, const void*, ma_uint32);
 };
 
+// Miniaudio notification callback (defined after sb_engine struct for member access)
+static void ma_on_notification(const ma_device_notification* pNotification) {
+    if (!pNotification || !pNotification->pDevice) return;
+    sb_engine_t engine = static_cast<sb_engine_t>(pNotification->pDevice->pUserData);
+    if (!engine) return;
+
+    switch (pNotification->type) {
+        case ma_device_notification_type_rerouted:
+        case ma_device_notification_type_stopped:
+            engine->device_status.store(SB_DEVICE_LOST, std::memory_order_relaxed);
+            engine->recovery_state.store(1, std::memory_order_relaxed);
+            break;
+        case ma_device_notification_type_started:
+            if (engine->device_status.load(std::memory_order_relaxed) == SB_DEVICE_LOST) {
+                engine->device_status.store(SB_DEVICE_RECOVERING, std::memory_order_relaxed);
+                engine->recovery_state.store(2, std::memory_order_relaxed);
+            }
+            break;
+        default:
+            break;
+    }
+}
+
 // Forward declarations
 static void ma_data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount);
 static sb_result_t process_commands(sb_engine_t engine);
@@ -131,12 +253,22 @@ sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_en
     dev_config.capture.channels = config->input_channels;
     dev_config.dataCallback = ma_data_callback;
     dev_config.pUserData = engine;
+    dev_config.notificationCallback = ma_on_notification;
 
+    // Apply output device ID if provided
     if (config->output_device) {
         ma_device_id device_id;
-        (void)device_id;
-        // Note: miniaudio device ID handling would go here.
-        // For now, use the default device.
+        if (hex_to_device_id(config->output_device, &device_id)) {
+            dev_config.playback.pDeviceID = &device_id;
+        }
+    }
+
+    // Apply input device ID if provided
+    if (config->input_device) {
+        ma_device_id device_id;
+        if (hex_to_device_id(config->input_device, &device_id)) {
+            dev_config.capture.pDeviceID = &device_id;
+        }
     }
 
     ma_res = ma_device_init(&engine->context, &dev_config, &engine->device);
@@ -477,6 +609,7 @@ sb_result_t sb_engine_snapshot(sb_engine_t engine, sb_snapshot_t* out_snapshot) 
         out_snapshot->callback_p95_us,
         out_snapshot->callback_p99_us,
         out_snapshot->callback_max_us,
+        out_snapshot->callback_p99_9_us,
         out_snapshot->underflow_count,
         out_snapshot->overflow_count,
         out_snapshot->xrun_count

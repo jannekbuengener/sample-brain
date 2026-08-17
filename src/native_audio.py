@@ -66,6 +66,7 @@ SB_ERR_VOICE_NOT_FOUND = -6
 SB_ERR_RECORDING_NOT_FOUND = -7
 SB_ERR_INVALID_STATE = -8
 SB_ERR_UNSUPPORTED = -9
+SB_ERR_BUFFER_TOO_SMALL = -10
 
 SB_DEVICE_OK = 0
 SB_DEVICE_LOST = 1
@@ -147,6 +148,14 @@ class SbVoiceConfig(ctypes.Structure):
     ]
 
 
+class SbDeviceInfo(ctypes.Structure):
+    _fields_ = [
+        ("name", ctypes.c_char * 256),
+        ("id_hex", ctypes.c_char * 512),
+        ("is_default", ctypes.c_int),
+    ]
+
+
 class SbSnapshot(ctypes.Structure):
     _fields_ = [
         ("engine_frame", sb_frame_t),
@@ -173,6 +182,7 @@ class SbSnapshot(ctypes.Structure):
         ("callback_p95_us", ctypes.c_double),
         ("callback_p99_us", ctypes.c_double),
         ("callback_max_us", ctypes.c_double),
+        ("callback_p99_9_us", ctypes.c_double),
         ("underflow_count", ctypes.c_uint64),
         ("overflow_count", ctypes.c_uint64),
         ("xrun_count", ctypes.c_uint64),
@@ -235,6 +245,14 @@ if _lib:
 
     _lib.sb_engine_snapshot.argtypes = [sb_engine_t, ctypes.POINTER(SbSnapshot)]
     _lib.sb_engine_snapshot.restype = sb_result_t
+
+    # Engine version
+    _lib.sb_engine_version.argtypes = [ctypes.c_char_p, ctypes.c_size_t]
+    _lib.sb_engine_version.restype = sb_result_t
+
+    # Device enumeration
+    _lib.sb_enumerate_devices.argtypes = [ctypes.c_int, ctypes.POINTER(SbDeviceInfo), ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32)]
+    _lib.sb_enumerate_devices.restype = sb_result_t
 
     _lib.sb_engine_start.argtypes = [sb_engine_t]
     _lib.sb_engine_start.restype = sb_result_t
@@ -374,6 +392,7 @@ class Snapshot:
     callback_p95_us: float
     callback_p99_us: float
     callback_max_us: float
+    callback_p99_9_us: float
     underflow_count: int
     overflow_count: int
     xrun_count: int
@@ -407,6 +426,7 @@ class Snapshot:
             callback_p95_us=c_snap.callback_p95_us,
             callback_p99_us=c_snap.callback_p99_us,
             callback_max_us=c_snap.callback_max_us,
+            callback_p99_9_us=c_snap.callback_p99_9_us,
             underflow_count=c_snap.underflow_count,
             overflow_count=c_snap.overflow_count,
             xrun_count=c_snap.xrun_count,
@@ -456,6 +476,33 @@ class NativeAudioEngine:
             raise RuntimeError("Engine not open")
         _check_result(_lib.sb_engine_close(self._engine), "close")
         self._engine = None
+
+    def get_version(self) -> str:
+        """Get the native engine build version."""
+        if not self._engine:
+            raise RuntimeError("Engine not open")
+        buf = ctypes.create_string_buffer(256)
+        _check_result(_lib.sb_engine_version(buf, len(buf)), "get_version")
+        return buf.value.decode()
+
+    @staticmethod
+    def enumerate_devices(capture: bool = False) -> List[dict]:
+        """Enumerate audio devices."""
+        if not _lib:
+            raise RuntimeError("Native library not loaded")
+        max_count = 32
+        devices = (SbDeviceInfo * max_count)()
+        count = ctypes.c_uint32()
+        _check_result(_lib.sb_enumerate_devices(1 if capture else 0, devices, max_count, ctypes.byref(count)), "enumerate_devices")
+        result = []
+        for i in range(count.value):
+            d = devices[i]
+            result.append({
+                "name": d.name.decode().rstrip('\x00'),
+                "id_hex": d.id_hex.decode().rstrip('\x00'),
+                "is_default": bool(d.is_default),
+            })
+        return result
 
     def create_voice(self, config: VoiceConfig) -> int:
         """Create a voice."""

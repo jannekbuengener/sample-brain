@@ -1,0 +1,13 @@
+{
+  "suite": "recording",
+  "sample_rate": 48000,
+  "buffer_frames": 512,
+  "record_start_engine_frame": 0,
+  "record_end_engine_frame_exclusive": 245760,
+  "expected_frames_stereo": 480000,
+  "actual_frames": 240128,
+  "recorded_bytes": 1921024,
+  "drop_frames": 0,
+  "status": "complete",
+  "device_status": 0
+}

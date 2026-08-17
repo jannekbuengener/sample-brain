@@ -1,0 +1,19 @@
+{
+  "suite": "sync_grid",
+  "bpm_source_1": 128.0,
+  "bpm_source_2": 140.0,
+  "master_bpm": 132.0,
+  "sync_mode": "KEY_LOCK_SYNC",
+  "duration_sec": 30.0,
+  "engine_start_frame": 0,
+  "engine_end_frame": 1437696,
+  "active_voice_count": 2,
+  "callback_mean_us": 4935.13,
+  "callback_p95_us": 14572.8,
+  "callback_p99_us": 17017.9,
+  "callback_p99_9_us": 20003.8,
+  "xrun_count": 0,
+  "underflow_count": 0,
+  "overflow_count": 0,
+  "device_status": 0
+}
