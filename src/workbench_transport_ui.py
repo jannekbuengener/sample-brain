@@ -153,8 +153,18 @@ class WorkbenchTransportUiController:
         self.sync_var.set(actual)
         return actual
 
-    def set_source_bpm(self, bpm: float | None) -> None:
-        self.transport.set_source_bpm(bpm)
+    def set_source_bpm(
+        self,
+        bpm: float | None,
+        *,
+        source_ref: str | None = None,
+        source_start_frame: int = 0,
+    ) -> None:
+        self.transport.set_source_bpm(
+            bpm,
+            source_ref=source_ref,
+            source_start_frame=source_start_frame,
+        )
 
     def refresh_snapshot(self) -> dict[str, object]:
         snapshot = self.transport.get_snapshot()

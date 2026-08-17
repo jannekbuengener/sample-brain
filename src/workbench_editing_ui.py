@@ -14,6 +14,7 @@ from .workbench_editing import (
     build_edit_region,
     delete_workbench_edit_region,
     frame_from_waveform_x,
+    load_haeftig_regions,
     load_workbench_edit_region,
     render_workbench_edit_region,
     save_workbench_edit_region,
@@ -23,6 +24,8 @@ from .workbench_waveform import frame_region_x
 
 EDIT_REGION_FILL = "#16334a"
 EDIT_REGION_MARKER = "#58b7ff"
+HAEFTIG_REGION_FILL = "#3a1d52"
+HAEFTIG_MARKER = "#c77dff"
 EDIT_REGION_HINT = (
     "Bereich schneiden: 1. Klick Start · 2. Klick Ende · "
     "Grenzen werden als Source-Frames gespeichert"
@@ -408,6 +411,41 @@ class WorkbenchEditingUI:
                 fill=EDIT_REGION_MARKER,
                 width=2,
             )
+
+        # HÄFTIG regions (#327): persisted exact source-frame bounds, no
+        # seconds/BPM back-calculation. Drawn on top of the edit region.
+        try:
+            haeftig_regions = load_haeftig_regions(row.path)
+        except EditRegionValidationError:
+            haeftig_regions = ()
+        for region in haeftig_regions:
+            bounds = frame_region_x(
+                region.source_start_frame,
+                region.source_end_frame_exclusive,
+                total_frames,
+                width,
+            )
+            if bounds is None:
+                continue
+            x_start, x_end = bounds
+            canvas.create_rectangle(
+                x_start,
+                1,
+                x_end,
+                height - 1,
+                fill=HAEFTIG_REGION_FILL,
+                outline="",
+                stipple="gray25",
+            )
+            for marker_x in (x_start, x_end):
+                canvas.create_line(
+                    marker_x,
+                    2,
+                    marker_x,
+                    height - 2,
+                    fill=HAEFTIG_MARKER,
+                    width=2,
+                )
 
 
 def attach_workbench_editing_ui(app: Any) -> WorkbenchEditingUI:

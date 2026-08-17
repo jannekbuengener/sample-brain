@@ -99,11 +99,13 @@ from .workbench_library import (
     WorkbenchPlaylistValidationError,
 )
 from .workbench_editing_ui import attach_workbench_editing_ui
+from .workbench_editing import audio_source_frame_info, load_haeftig_regions
 from .workbench_preview import WorkbenchPreviewPlayer, preview_toggle_action
 from .workbench_waveform import (
     attack_marker_x,
     compute_waveform_envelope,
     cue_marker_x,
+    frame_region_x,
     loop_region_x,
     read_audio_duration_ms,
 )
@@ -124,6 +126,8 @@ CUE_MARKER = "#ffffff"
 LOOP_REGION_FILL = "#1a3d28"
 LOOP_MARKER = "#6fcf6f"
 ATTACK_MARKER = "#ffc857"
+HAEFTIG_REGION_FILL = "#3a1d52"
+HAEFTIG_MARKER = "#c77dff"
 WAVEFORM_USAGE_HINT = (
     "Linksklick: Play · Rechtsklick: ab Stelle · Shift+Klick: Cue setzen"
 )
@@ -747,6 +751,9 @@ class WorkbenchApp:
         self._waveform_canvas.bind("<Configure>", self._on_waveform_resize)
         self._waveform_canvas.bind("<Button-1>", self._on_waveform_click)
         self._waveform_canvas.bind("<Button-3>", self._on_waveform_right_click)
+        # Ctrl+H: mark the current audible position as a HÄFTIG region (#327).
+        self.root.bind("<Control-h>", self._on_haeftig_hotkey)
+        self.root.bind("<Control-H>", self._on_haeftig_hotkey)
         self._waveform_usage_var = tk.StringVar(value=WAVEFORM_USAGE_HINT)
         self._waveform_usage_label = ttk.Label(
             detail_frame,
@@ -2486,6 +2493,58 @@ class WorkbenchApp:
     def _on_waveform_resize(self, _event: tk.Event | None = None) -> None:
         self._draw_waveform(self._detail_row)
 
+    def _on_haeftig_hotkey(self, _event: tk.Event | None = None) -> None:
+        """Ctrl+H: capture a HÄFTIG region at the current audible playhead (#327)."""
+        if getattr(self, "_busy", False):
+            return
+        from .workbench_editing import (
+            load_source_downbeats,
+            save_haeftig_region,
+            trigger_haeftig_region,
+        )
+
+        row = self._detail_row
+        if row is None or not row.path:
+            self._set_status("Kein Sample ausgewählt.", tone="neutral")
+            return
+        adapter = getattr(self, "_transport_adapter", None)
+        if adapter is None:
+            self._set_status("Kein Transport verfügbar.", tone="error")
+            return
+
+        downbeat_frames, grid_reliable, grid_source_ref = load_source_downbeats(
+            row.path, details=row.details
+        )
+        selection = trigger_haeftig_region(
+            adapter,
+            row,
+            downbeat_frames=downbeat_frames,
+            grid_reliable=grid_reliable,
+            grid_source_ref=grid_source_ref,
+        )
+        if selection is None:
+            self._set_status(
+                "HÄFTIG nicht möglich: keine eindeutige Source-Position "
+                "oder kein gültiges Grid.",
+                tone="error",
+            )
+            return
+        if selection.status != "ok" or selection.region is None:
+            self._set_status(
+                f"HÄFTIG nicht möglich: {selection.reason_code}",
+                tone="error",
+            )
+            return
+
+        save_haeftig_region(selection.region)
+        self._draw_waveform(row)
+        self._set_status(
+            "HÄFTIG-Region gespeichert "
+            f"({selection.region.source_start_frame}–"
+            f"{selection.region.source_end_frame_exclusive} Source-Frames).",
+            tone="success",
+        )
+
     def _play_selected_from_waveform(self) -> None:
         if self._busy:
             return
@@ -3013,11 +3072,60 @@ class WorkbenchApp:
                     dash=(4, 2),
                 )
 
+            # HÄFTIG regions (#327): drawn from the persisted exact source-frame
+            # bounds only. No seconds/BPM back-calculation is involved.
+            try:
+                haeftig_regions = load_haeftig_regions(row.path)
+            except Exception:
+                haeftig_regions = ()
+            if haeftig_regions:
+                try:
+                    total_frames, _samplerate = audio_source_frame_info(row.path)
+                except Exception:
+                    total_frames = 0
+                for region in haeftig_regions:
+                    if total_frames <= 0:
+                        continue
+                    bounds = frame_region_x(
+                        region.source_start_frame,
+                        region.source_end_frame_exclusive,
+                        total_frames,
+                        width,
+                    )
+                    if bounds is None:
+                        continue
+                    x_start, x_end = bounds
+                    canvas.create_rectangle(
+                        x_start,
+                        1,
+                        x_end,
+                        height - 1,
+                        fill=HAEFTIG_REGION_FILL,
+                        outline="",
+                        stipple="gray25",
+                    )
+                    for marker_x in (x_start, x_end):
+                        canvas.create_line(
+                            marker_x,
+                            2,
+                            marker_x,
+                            height - 2,
+                            fill=HAEFTIG_MARKER,
+                            width=2,
+                        )
+
     def _set_detail(self, row: WorkbenchRow | None) -> None:
         self._detail_row = row
         transport_ui = getattr(self, "_transport_ui", None)
         if transport_ui is not None:
-            transport_ui.set_source_bpm(row.bpm if row is not None else None)
+            if row is not None:
+                transport_ui.set_source_bpm(
+                    row.bpm,
+                    source_ref=row.path,
+                    source_start_frame=0,
+                )
+            else:
+                transport_ui.set_source_bpm(None)
         self._clear_attack_suggestion()
         self._update_similar_button_state(row)
         self._detail_text.configure(state=tk.NORMAL)

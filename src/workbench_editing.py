@@ -15,13 +15,19 @@ from typing import Literal, Mapping, Sequence
 import soundfile as sf
 
 from .asset_renderer import RenderRequest, RenderResult, render_asset
+from .haeftig import (
+    HaeftigRegion,
+    HaeftigSelection,
+    add_haeftig_region,
+    select_haeftig_region,
+)
 from .workbench_library import workbench_library_db_path
 
 SnapMode = Literal["none", "beat", "bar"]
 SNAP_MODES: tuple[SnapMode, ...] = ("none", "beat", "bar")
 
 EDIT_REGION_STATE_FILE_NAME = "workbench_edit_regions.json"
-EDIT_REGION_STATE_VERSION = 1
+EDIT_REGION_STATE_VERSION = 2
 
 
 class EditRegionValidationError(ValueError):
@@ -309,6 +315,7 @@ def _load_state(path: Path) -> dict[str, object]:
         return {
             "version": EDIT_REGION_STATE_VERSION,
             "regions": {},
+            "haeftig_regions": {},
         }
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -318,12 +325,35 @@ def _load_state(path: Path) -> dict[str, object]:
         ) from exc
     if not isinstance(raw, dict):
         raise EditRegionValidationError("edit-region state root must be an object")
-    if raw.get("version") != EDIT_REGION_STATE_VERSION:
+
+    version = raw.get("version")
+    # Backward-compatible migration: version 1 carried only the #326 edit regions.
+    # HÄFTIG regions (#327) are added as a sibling key and never replace them.
+    if version == 1:
+        regions = raw.get("regions")
+        if not isinstance(regions, dict):
+            raise EditRegionValidationError(
+                "edit-region state regions must be an object"
+            )
+        return {
+            "version": EDIT_REGION_STATE_VERSION,
+            "regions": regions,
+            "haeftig_regions": {},
+        }
+    if version != EDIT_REGION_STATE_VERSION:
         raise EditRegionValidationError("unsupported edit-region state version")
+
     regions = raw.get("regions")
     if not isinstance(regions, dict):
         raise EditRegionValidationError("edit-region state regions must be an object")
-    return raw
+    haeftig_regions = raw.get("haeftig_regions")
+    if not isinstance(haeftig_regions, dict):
+        haeftig_regions = {}
+    return {
+        "version": EDIT_REGION_STATE_VERSION,
+        "regions": regions,
+        "haeftig_regions": haeftig_regions,
+    }
 
 
 def _write_state(path: Path, state: Mapping[str, object]) -> None:
@@ -405,6 +435,205 @@ def delete_workbench_edit_region(
     return True
 
 
+# ---------------------------------------------------------------------------
+# HÄFTIG regions (#327) — stored in the SAME user-local JSON file as the #326
+# edit regions, under a separate ``haeftig_regions`` key. Reuses the existing
+# atomic writer, source-ref normalization, and load/store helpers. HÄFTIG is the
+# only manual region type; no further manual categories are introduced.
+# ---------------------------------------------------------------------------
+
+
+def _haeftig_region_to_payload(region: HaeftigRegion) -> dict[str, object]:
+    return {
+        "region_type": region.region_type,
+        "source_ref": region.source_ref,
+        "source_start_frame": region.source_start_frame,
+        "source_end_frame_exclusive": region.source_end_frame_exclusive,
+        "source_start_bar_index": region.source_start_bar_index,
+        "source_end_bar_index_exclusive": region.source_end_bar_index_exclusive,
+        "trigger_source_frame": region.trigger_source_frame,
+        "trigger_session_frame": region.trigger_session_frame,
+        "grid_source_ref": region.grid_source_ref,
+    }
+
+
+def _haeftig_region_from_payload(payload: object) -> HaeftigRegion:
+    if not isinstance(payload, Mapping):
+        raise EditRegionValidationError("stored HÄFTIG region must be an object")
+    try:
+        trigger_session_frame = payload.get("trigger_session_frame")
+        return HaeftigRegion(
+            region_type=str(payload["region_type"]),
+            source_ref=str(payload["source_ref"]),
+            source_start_frame=int(payload["source_start_frame"]),
+            source_end_frame_exclusive=int(payload["source_end_frame_exclusive"]),
+            source_start_bar_index=int(payload["source_start_bar_index"]),
+            source_end_bar_index_exclusive=int(
+                payload["source_end_bar_index_exclusive"]
+            ),
+            trigger_source_frame=int(payload["trigger_source_frame"]),
+            trigger_session_frame=(
+                None
+                if trigger_session_frame is None
+                else int(trigger_session_frame)
+            ),
+            grid_source_ref=(
+                None
+                if payload.get("grid_source_ref") is None
+                else str(payload["grid_source_ref"])
+            ),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise EditRegionValidationError(
+            f"stored HÄFTIG region is invalid: {exc}"
+        ) from exc
+
+
+def load_haeftig_regions(
+    source_ref: Path | str,
+    *,
+    state_path: Path | None = None,
+) -> tuple[HaeftigRegion, ...]:
+    """Return all persisted HÄFTIG regions for ``source_ref`` (may be empty)."""
+    normalized = _normalized_source_ref(source_ref)
+    path = workbench_edit_region_state_path(state_path=state_path)
+    state = _load_state(path)
+    haeftig_regions = state["haeftig_regions"]
+    assert isinstance(haeftig_regions, dict)
+    payloads = haeftig_regions.get(normalized)
+    if not isinstance(payloads, list):
+        return ()
+    regions: list[HaeftigRegion] = []
+    for payload in payloads:
+        try:
+            region = _haeftig_region_from_payload(payload)
+        except EditRegionValidationError:
+            continue
+        if region.source_ref != normalized:
+            raise EditRegionValidationError("stored HÄFTIG source_ref mismatch")
+        regions.append(region)
+    return tuple(regions)
+
+
+def save_haeftig_region(
+    region: HaeftigRegion,
+    *,
+    state_path: Path | None = None,
+) -> tuple[HaeftigRegion, bool]:
+    """Persist a HÄFTIG region for its source_ref, deduplicating identical bounds.
+
+    Returns the (possibly de-duplicated) stored region and whether it was newly
+    added. Identical source-boundary regions are not stored twice.
+    """
+    normalized = _normalized_source_ref(region.source_ref)
+    stored = HaeftigRegion(
+        region_type=region.region_type,
+        source_ref=normalized,
+        source_start_frame=region.source_start_frame,
+        source_end_frame_exclusive=region.source_end_frame_exclusive,
+        source_start_bar_index=region.source_start_bar_index,
+        source_end_bar_index_exclusive=region.source_end_bar_index_exclusive,
+        trigger_source_frame=region.trigger_source_frame,
+        trigger_session_frame=region.trigger_session_frame,
+        grid_source_ref=region.grid_source_ref,
+    )
+    path = workbench_edit_region_state_path(state_path=state_path)
+    state = _load_state(path)
+    haeftig_regions = state["haeftig_regions"]
+    assert isinstance(haeftig_regions, dict)
+    existing = haeftig_regions.get(normalized)
+    current: tuple[HaeftigRegion, ...] = ()
+    if isinstance(existing, list):
+        loaded: list[HaeftigRegion] = []
+        for payload in existing:
+            try:
+                loaded.append(_haeftig_region_from_payload(payload))
+            except EditRegionValidationError:
+                continue
+        current = tuple(loaded)
+    updated, added = add_haeftig_region(current, stored)
+    haeftig_regions[normalized] = [
+        _haeftig_region_to_payload(region) for region in updated
+    ]
+    _write_state(path, state)
+    return stored, added
+
+
+def delete_haeftig_regions(
+    source_ref: Path | str,
+    *,
+    state_path: Path | None = None,
+) -> bool:
+    """Delete every persisted HÄFTIG region for ``source_ref``. Returns True if any existed."""
+    normalized = _normalized_source_ref(source_ref)
+    path = workbench_edit_region_state_path(state_path=state_path)
+    state = _load_state(path)
+    haeftig_regions = state["haeftig_regions"]
+    assert isinstance(haeftig_regions, dict)
+    if normalized not in haeftig_regions:
+        return False
+    del haeftig_regions[normalized]
+    _write_state(path, state)
+    return True
+
+
+def load_source_downbeats(
+    path: Path | str,
+    *,
+    details: Mapping[str, object] | None = None,
+) -> tuple[tuple[int, ...], bool, str | None]:
+    """Return ``(downbeat_frames, grid_reliable, grid_source_ref)`` for a source.
+
+    Prefers the row's existing analysis ``details`` (the only place where real
+    sample indices live). The helper deliberately refuses to invent grid points
+    from BPM or seconds: ``grid_reliable`` is True only when a status-"ok" source
+    downbeat series is present. A missing/unreliable grid yields an empty tuple
+    and ``grid_reliable=False`` so the HÄFTIG core fails closed.
+    """
+    if details is not None:
+        grid = source_edit_grid_from_details(details)
+        if grid.bar_frames:
+            return tuple(grid.bar_frames), True, grid.source_ref
+    # Fallback: tolerate a bare beat_grid payload passed directly.
+    if isinstance(path, (str, Path)):
+        pass
+    return (), False, None
+
+
+def trigger_haeftig_region(
+    adapter: object,
+    row: object,
+    *,
+    downbeat_frames: Sequence[int],
+    grid_reliable: bool,
+    grid_source_ref: str | None = None,
+) -> HaeftigSelection | None:
+    """Orchestrate a HÄFTIG selection at the current audible playhead (#327).
+
+    Returns the ``HaeftigSelection`` from the existing deterministic core, or
+    ``None`` when the session->source mapping is not unambiguous (fail closed:
+    no HÄFTIG region is produced). The audible position is mapped to a nominal
+    source frame via the adapter's authoritative, piecewise-integrated playhead
+    (never ``session_frame * rate``).
+    """
+    source_ref = _normalized_source_ref(getattr(row, "path", row))
+    get_context = getattr(adapter, "get_haeftig_trigger_context", None)
+    if get_context is None:
+        return None
+    context = get_context(source_ref)
+    if context is None:
+        return None
+    trigger_source_frame, trigger_session_frame = context
+    return select_haeftig_region(
+        downbeat_frames=downbeat_frames,
+        trigger_source_frame=trigger_source_frame,
+        source_ref=source_ref,
+        grid_reliable=grid_reliable,
+        trigger_session_frame=trigger_session_frame,
+        grid_source_ref=grid_source_ref,
+    )
+
+
 def render_request_from_edit_region(
     region: WorkbenchEditRegion,
     *,
@@ -461,10 +690,15 @@ __all__ = [
     "build_edit_region",
     "delete_workbench_edit_region",
     "frame_from_waveform_x",
+    "load_haeftig_regions",
+    "load_source_downbeats",
     "load_workbench_edit_region",
     "render_request_from_edit_region",
     "render_workbench_edit_region",
+    "save_haeftig_region",
     "save_workbench_edit_region",
+    "delete_haeftig_regions",
     "source_edit_grid_from_details",
+    "trigger_haeftig_region",
     "workbench_edit_region_state_path",
 ]

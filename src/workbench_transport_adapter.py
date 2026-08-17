@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from pathlib import Path
 from typing import Optional
 
 from src import native_audio as _native_audio
@@ -85,6 +86,16 @@ class WorkbenchTransportAdapter:
         self._source_bpm: float | None = None
         self._current_rate = 1.0
         self._sync_status = "sync"
+
+        # --- Authoritative source playhead for HÄFTIG (#327) -----------------
+        # ``_source_frame`` is integrated piecewise from the actual engine/session
+        # delta at the rate that was in effect during each interval. It is NEVER
+        # derived as ``session_frame * current_rate`` (that would retroactively
+        # apply one rate to the whole history). ``None`` means "no valid anchor"
+        # -> HÄFTIG must fail closed.
+        self._source_ref: str | None = None
+        self._source_start_frame: int = 0
+        self._source_frame: int | None = None
 
         self._pending_tempo: float | None = None
         self._pending_tempo_frame: int | None = None
@@ -218,9 +229,54 @@ class WorkbenchTransportAdapter:
             self._sync_pending_from_map_unlocked()
             if after_tempo != before_tempo:
                 self._update_sync_rates_unlocked()
+            self._advance_source_frame_unlocked(delta)
 
         if not bool(getattr(native_snapshot, "running", True)) and self._transport.playing:
             self._transport.stop()
+
+    def _advance_source_frame_unlocked(self, engine_frames: int) -> None:
+        """Honestly integrate the authoritative source playhead.
+
+        Accumulates the per-interval engine delta at the rate that was in effect
+        during that interval. This is piecewise integration from an explicit
+        anchor — it never applies one current rate to the whole history. When the
+        rate is undefined (SYNC on without a known source BPM) the anchor is
+        invalidated: the source position becomes unknowable, so HÄFTIG must fail
+        closed rather than guess.
+        """
+        if self._source_frame is None or engine_frames == 0:
+            return
+        if self._sync_enabled and self._source_bpm is None:
+            self._source_frame = None
+            return
+        rate, _status = _compute_sync_rate(
+            self._effective_tempo_unlocked(),
+            self._source_bpm,
+            self._sync_enabled,
+        )
+        self._source_frame += int(round(engine_frames * rate))
+
+    def get_haeftig_trigger_context(
+        self, source_ref: str
+    ) -> tuple[int, int] | None:
+        """Return ``(trigger_source_frame, trigger_session_frame)`` for HÄFTIG.
+
+        Fail closed (``None``) when the audible position does not map
+        unambiguously to a single nominal source frame: no anchor, source
+        mismatch, polyphony, or an undefined sync rate. ``KEY_LOCK_SYNC`` is
+        intentionally not discriminated — it shares ``RATE_SYNC``'s frame mapping.
+        """
+        with self._lock:
+            if self._source_frame is None:
+                return None
+            normalized = str(Path(str(source_ref).strip()).expanduser().resolve())
+            if not self._source_ref or normalized != self._source_ref:
+                return None
+            if len(self._voice_source_bpms) > 1:
+                return None
+            if self._sync_enabled and self._source_bpm is None:
+                return None
+            return (int(self._source_frame), int(self._transport.session_frame))
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -243,6 +299,7 @@ class WorkbenchTransportAdapter:
                 self._native_engine.start()
                 self._native_started = True
                 self._transport.play()
+                self._source_frame = self._source_start_frame
                 if hasattr(self._native_engine, "snapshot"):
                     try:
                         snapshot = self._native_engine.snapshot()
@@ -258,6 +315,9 @@ class WorkbenchTransportAdapter:
         with self._lock:
             self._transport.stop()
             self._native_started = False
+            # Invalidate the authoritative source playhead: after a stop there is
+            # no honest anchor until the next play/seek. HÄFTIG must fail closed.
+            self._source_frame = None
             if self._native_engine is not None and self._native_available:
                 if not self._native_owned or self._native_opened:
                     try:
@@ -323,15 +383,49 @@ class WorkbenchTransportAdapter:
         with self._lock:
             return self._keylock_enabled
 
-    def set_source_bpm(self, bpm: float | None) -> None:
+    def set_source_bpm(
+        self,
+        bpm: float | None,
+        *,
+        source_ref: str | None = None,
+        source_start_frame: int = 0,
+    ) -> None:
         """Set BPM for the current Workbench source snapshot.
 
         This compatibility method does not guess a native voice id. Use
         ``set_voice_source_bpm`` when a real native voice is known.
+
+        ``source_ref`` / ``source_start_frame`` establish the single source
+        context used by the authoritative HÄFTIG source playhead (#327). They do
+        not retroactively alter an already-integrated playhead; the start offset
+        only takes effect on the next ``play`` / ``seek`` anchor.
         """
         with self._lock:
+            if source_ref is not None:
+                text = str(source_ref).strip()
+                self._source_ref = (
+                    str(Path(text).expanduser().resolve()) if text else None
+                )
+            if isinstance(source_start_frame, int) and not isinstance(
+                source_start_frame, bool
+            ):
+                self._source_start_frame = source_start_frame
             self._source_bpm = bpm
             self._update_sync_rates_unlocked()
+
+    def set_source_start_frame(self, start_frame: int) -> None:
+        """Set the source-frame offset applied on the next play/seek anchor."""
+        if not isinstance(start_frame, int) or isinstance(start_frame, bool):
+            raise ValueError("source start frame must be a non-negative integer")
+        if start_frame < 0:
+            raise ValueError("source start frame must be non-negative")
+        with self._lock:
+            self._source_start_frame = start_frame
+
+    def get_source_frame(self) -> int | None:
+        """Return the authoritative source playhead, or None when not anchored."""
+        with self._lock:
+            return self._source_frame
 
     def set_voice_source_bpm(self, voice_id: int, bpm: float | None) -> None:
         """Register/update one explicit native voice and its source BPM."""
@@ -357,11 +451,20 @@ class WorkbenchTransportAdapter:
     # Session position
     # ------------------------------------------------------------------
 
-    def seek(self, frame: int) -> None:
+    def seek(self, frame: int, *, source_frame: int | None = None) -> None:
         with self._lock:
             self._transport.seek(frame)
             self._sync_pending_from_map_unlocked()
             self._update_sync_rates_unlocked()
+            if source_frame is not None:
+                # Explicit, unambiguous anchor: the engine jumped to a known source
+                # position. Establish a fresh, unique anchor.
+                self._source_frame = int(source_frame)
+            else:
+                # Seek without a known source position: we cannot honestly map the
+                # new playhead to a nominal source frame, so invalidate the anchor
+                # and let HÄFTIG fail closed until the next explicit anchor.
+                self._source_frame = None
 
     def get_session_frame(self) -> int:
         with self._lock:
@@ -382,6 +485,7 @@ class WorkbenchTransportAdapter:
             self._sync_pending_from_map_unlocked()
             if after_tempo != before_tempo:
                 self._update_sync_rates_unlocked()
+            self._advance_source_frame_unlocked(frames)
 
     # ------------------------------------------------------------------
     # UI snapshot
