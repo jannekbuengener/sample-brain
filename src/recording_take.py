@@ -302,6 +302,85 @@ def finalize_recording_take(
     )
 
 
+def finalize_native_recording(
+    engine: NativeAudioEngine,
+    recording_id: int,
+    record_start_engine_frame: int,
+    record_start_session_frame: int,
+    destination: Path | str,
+    db_path: Path | None = None,
+) -> Optional[FinalizedRecordingTake]:
+    """Finalize a native recording with proper device-lost handling.
+
+    Workflow (corrections #1-#4 from Issue #325):
+    1. Capture snapshot BEFORE stop_recording to get device_status and
+       recording_dropped_frames (after stop, the recording instance is removed
+       from the native core and snapshot values may reset).
+    2. Call stop_recording -- truth is simply frames > 0 or frames == 0
+       (no has_data()/reset_ringbuffer Python logic needed).
+    3. If frames > 0: rescue the take, finalize as ``interrupted`` when
+       device was lost/failed, otherwise ``complete``.
+       ``finalize_recording_take`` already registers the take in the
+       ``Recordings`` playlist (correction #4 -- no double ``add_sample_to_playlist``).
+    4. If frames == 0: no take is created.
+
+    The native Ringbuffer discards excess frames on overflow and counts them
+    in ``recording_dropped_frames`` (correction #1 -- not "drop-oldest").
+
+    Args:
+        engine: Active native audio engine instance.
+        recording_id: Recording ID returned by ``engine.start_recording()``.
+        record_start_engine_frame: Engine frame when recording started.
+        record_start_session_frame: Session frame when recording started.
+        destination: Path (or "workbench://...") where the .wav should be written.
+        db_path: Optional path to the workbench library SQLite DB.
+
+    Returns:
+        ``FinalizedRecordingTake`` when a take was rescued, or ``None`` when
+        no frames were captured (frames == 0).
+    """
+    # 1. Capture snapshot BEFORE stop_recording (correction #3).
+    #    After stop, the recording instance is removed from the native core,
+    #    and snapshot().recording_dropped_frames may already be 0 / stale.
+    snap: Snapshot = engine.snapshot()
+    device_status = snap.device_status
+    dropped_frames = snap.recording_dropped_frames
+    end_engine_frame = snap.engine_frame
+
+    # 2. Stop recording (correction #2: truth is frames > 0 or == 0).
+    pcm_data, frames = engine.stop_recording(recording_id)
+
+    # 3. If frames > 0, we can rescue the take (correction #1).
+    if frames > 0:
+        # Build context with exact frame positions.
+        # Session frame end: increment by captured frame count (mirrors existing test convention).
+        end_session_frame = record_start_session_frame + frames
+
+        context = RecordingFrameContext(
+            record_start_engine_frame=record_start_engine_frame,
+            record_start_session_frame=record_start_session_frame,
+            record_end_engine_frame_exclusive=end_engine_frame,
+            record_end_session_frame_exclusive=end_session_frame,
+            sample_rate=snap.sample_rate,
+            channels=2,  # stereo native default; adjust if config differs
+        )
+
+        # Finalize the take. finalize_recording_take already registers in
+        # "Recordings" playlist (correction #4).
+        take = finalize_recording_take(
+            pcm_data,
+            captured_frames=frames,
+            context=context,
+            destination=destination,
+            interrupted=device_status not in (SB_DEVICE_OK,),
+            db_path=db_path,
+        )
+        return take
+
+    # 4. frames == 0 â†’ no take created.
+    return None
+
+
 __all__ = [
     "FinalizedRecordingTake",
     "RECORDINGS_PLAYLIST_NAME",
@@ -310,5 +389,6 @@ __all__ = [
     "RecordingFinalizeError",
     "RecordingFrameContext",
     "finalize_recording_take",
+    "finalize_native_recording",
     "recording_metadata_path",
 ]

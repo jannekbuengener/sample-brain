@@ -84,6 +84,7 @@ from .workbench_controller import (
     WORKBENCH_VIEW_TOGGLE_HELP,
     WorkbenchViewSettings,
 )
+from .workbench_recording_ui import attach_workbench_recording_ui
 from .workbench_transport_ui import attach_workbench_transport_ui
 from .workbench_harmony import (
     HarmonyRelation,
@@ -209,6 +210,7 @@ class WorkbenchApp:
         self._build_styles()
         self._build_menubar()
         self._build_layout()
+        self._recording_ui = attach_workbench_recording_ui(self)
         self._editing_ui = attach_workbench_editing_ui(self)
         self._transport_ui = attach_workbench_transport_ui(self)
         self._restore_last_folder()
@@ -2198,14 +2200,16 @@ class WorkbenchApp:
             self._play_preview()
         return "break"
 
-    def _on_close(self) -> None:
+    def _close(self) -> None:
         self._persist_analysis_limit()
         self._stop_preview()
-        transport_ui = getattr(self, "_transport_ui", None)
-        if transport_ui is not None:
-            transport_ui.close()
+        recording_ui = getattr(self, "_recording_ui", None)
+        if recording_ui is not None:
+            recording_ui.close()
         self.root.destroy()
 
+    def _on_close(self) -> None:
+        self._close()
     def _update_preview_state(self, row: WorkbenchRow | None) -> None:
         has_path = row is not None and bool(row.path)
         self._preview_row_path = row.path if has_path else None
