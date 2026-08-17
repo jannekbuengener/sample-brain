@@ -145,35 +145,38 @@ class WorkbenchRecordingUiController:
 
     def _on_stop(self) -> None:
         """Stop native recording and finalize the take when user presses Stop."""
+        if self._closed:
+            return
         if self.state.status != STATUS_RECORDING or self.state.recording_id is None:
             return
 
         self.state.status = STATUS_FINALIZING
         self._update_buttons()
 
-        # Stop recording and rescue the take if frames > 0.
-        # Correction #3 from Issue #325: snapshot already captured before stop,
-        # but we can get a fresh end-frame from the engine state if needed.
-        # Correction #2: truth is simply frames > 0 or == 0.
-        # Correction #1: native ringbuffer already counts dropped frames.
-        # Correction #4: finalize_recording_take() already registers in "Recordings".
+        # Capture end frames from transport adapter snapshot BEFORE stopping recording
+        end_snapshot = self.app._transport_adapter.get_snapshot()
+        end_engine_frame = end_snapshot["engine_frame"]
+        end_session_frame = end_snapshot["session_frame"]
 
         # Use stored start session frame (not current)
         start_session_frame = self.state.record_start_session_frame
-        
-        # Generate proper .wav destination path under workbench state folder
+
+        # Generate collision-free .wav destination path (timestamp + UUID)
         recordings_dir = workbench_state_dir() / "recordings"
         recordings_dir.mkdir(parents=True, exist_ok=True)
-        import time
+        import time, uuid
         timestamp = time.strftime("%Y%m%d-%H%M%S")
-        destination = recordings_dir / f"recording_{timestamp}.wav"
-        
+        unique_id = uuid.uuid4().hex[:8]
+        destination = recordings_dir / f"recording_{timestamp}_{unique_id}.wav"
+
         try:
             take = stop_native_recording(
                 self.engine,
                 self.state.recording_id,
                 self.state.record_start_engine_frame,
                 start_session_frame,
+                end_engine_frame=end_engine_frame,
+                end_session_frame=end_session_frame,
                 destination=str(destination),
                 db_path=self.db_path,
             )
