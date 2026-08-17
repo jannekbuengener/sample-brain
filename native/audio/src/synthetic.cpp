@@ -3,6 +3,10 @@
 #include <cmath>
 #include <algorithm>
 
+namespace {
+constexpr double kPi = 3.141592653589793238462643383279502884;
+}
+
 namespace synthetic {
 
 void generate_click_track(std::vector<float>& output,
@@ -26,7 +30,7 @@ void generate_click_track(std::vector<float>& output,
         double t = static_cast<double>(i) / sample_rate;
         double envelope = 1.0 - t / (duration_ms / 1000.0);
         envelope = std::max(0.0, envelope * envelope);
-        click[i] = amplitude * std::sin(2.0 * M_PI * frequency_hz * t) * envelope;
+        click[i] = amplitude * std::sin(2.0 * kPi * frequency_hz * t) * envelope;
     }
 
     // Place clicks
@@ -49,7 +53,7 @@ void generate_sine(std::vector<float>& output,
     output.resize(num_frames * num_channels);
     for (size_t i = 0; i < num_frames; ++i) {
         double t = static_cast<double>(i) / sample_rate;
-        float sample = amplitude * std::sin(2.0 * M_PI * frequency_hz * t);
+        float sample = amplitude * std::sin(2.0 * kPi * frequency_hz * t);
         for (size_t ch = 0; ch < num_channels; ++ch) {
             output[i * num_channels + ch] = sample;
         }
