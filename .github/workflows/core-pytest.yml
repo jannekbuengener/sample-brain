@@ -43,6 +43,7 @@ jobs:
             tests/test_workbench_tempo_sync_grid.py \
             tests/test_workbench_preview.py \
             tests/test_haeftig.py \
+            tests/test_haeftig_workbench.py \
             tests/test_recording_take.py \
             tests/test_workbench_recording_runtime.py
 

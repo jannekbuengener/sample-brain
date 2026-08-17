@@ -13,7 +13,9 @@ elapsed time is never accumulated into musical position.
 from __future__ import annotations
 
 import logging
+import math
 import threading
+from pathlib import Path
 from typing import Optional
 
 from src import native_audio as _native_audio
@@ -85,6 +87,21 @@ class WorkbenchTransportAdapter:
         self._source_bpm: float | None = None
         self._current_rate = 1.0
         self._sync_status = "sync"
+
+        # --- Authoritative source playhead for HÄFTIG (#327) -----------------
+        # ``_source_frame`` is integrated piecewise from the actual engine/session
+        # delta at the rate that was in effect during each interval. It is NEVER
+        # derived as ``session_frame * current_rate`` (that would retroactively
+        # apply one rate to the whole history). ``None`` means "no valid anchor"
+        # -> HÄFTIG must fail closed.
+        self._source_ref: str | None = None
+        self._source_start_frame: int = 0
+        self._source_frame: int | None = None
+        # Fractional source-frame remainder. Integration accumulates the exact
+        # (rate * frames) product here and only the whole part is promoted to
+        # ``_source_frame``; the remainder is carried forward. This is fixed-point
+        # accumulation, so there is no per-callback ``round(...)`` drift.
+        self._source_frac: float = 0.0
 
         self._pending_tempo: float | None = None
         self._pending_tempo_frame: int | None = None
@@ -213,14 +230,103 @@ class WorkbenchTransportAdapter:
 
         if delta:
             before_tempo = self._effective_tempo_unlocked()
+            before_session = self._transport.session_frame
             self._transport.advance(delta)
             after_tempo = self._effective_tempo_unlocked()
             self._sync_pending_from_map_unlocked()
             if after_tempo != before_tempo:
                 self._update_sync_rates_unlocked()
+            # Integrate the authoritative source playhead over the ACTUAL session
+            # progress that just occurred, not the raw engine delta. If the
+            # transport was stopped (engine running, no audition), session did not
+            # advance and the source playhead must stay put.
+            session_delta = self._transport.session_frame - before_session
+            if session_delta:
+                self._advance_source_frame_unlocked(session_delta)
 
         if not bool(getattr(native_snapshot, "running", True)) and self._transport.playing:
             self._transport.stop()
+
+    def _advance_source_frame_unlocked(self, session_frames: int) -> None:
+        """Honestly integrate the authoritative source playhead.
+
+        ``session_frames`` is the session delta that ACTUALLY elapsed. The delta is
+        split at every tempo segment boundary it crosses, and each sub-range is
+        integrated at the rate that was genuinely in effect there. This is
+        piecewise integration from an explicit anchor — a later tempo/SYNC/BPM
+        change never retroactively touches already-integrated frames, because the
+        history is only ever extended, never recomputed from ``session * rate``.
+
+        When the rate is undefined (SYNC on without a known source BPM) the anchor
+        is invalidated: the source position becomes unknowable, so HÄFTIG must
+        fail closed rather than guess.
+        """
+        if self._source_frame is None or session_frames <= 0:
+            return
+        if self._sync_enabled and self._source_bpm is None:
+            self._source_frame = None
+            self._source_frac = 0.0
+            return
+
+        start = self._transport.session_frame - session_frames
+        end = self._transport.session_frame
+
+        # Collect every tempo boundary strictly inside (start, end]. Each boundary
+        # starts a new segment whose rate applies only to the frames after it.
+        boundaries = sorted(
+            seg.start_frame
+            for seg in self._transport.tempo_map.segments
+            if start < seg.start_frame <= end
+        )
+        cursor = start
+        for boundary in boundaries:
+            self._integrate_source_segment_unlocked(cursor, boundary)
+            cursor = boundary
+        self._integrate_source_segment_unlocked(cursor, end)
+
+    def _integrate_source_segment_unlocked(self, seg_start: int, seg_end: int) -> None:
+        """Integrate one tempo-homogeneous session sub-range into the anchor."""
+        frames = seg_end - seg_start
+        if frames <= 0:
+            return
+        segment = self._transport.tempo_map._segment_for_frame(seg_start)
+        rate, _status = _compute_sync_rate(
+            float(segment.bpm),
+            self._source_bpm,
+            self._sync_enabled,
+        )
+        # Fixed-point accumulation: carry the fractional remainder forward so the
+        # integral is exact across calls and callbacks (no per-step rounding).
+        self._source_frac += frames * rate
+        whole = int(math.floor(self._source_frac))
+        self._source_frame += whole
+        self._source_frac -= whole
+
+    def get_haeftig_trigger_context(
+        self, source_ref: str
+    ) -> tuple[int, int] | None:
+        """Return ``(trigger_source_frame, trigger_session_frame)`` for HÄFTIG.
+
+        Fail closed (``None``) when the audible position does not map
+        unambiguously to a single nominal source frame: no anchor, source
+        mismatch, polyphony, or an undefined sync rate. ``KEY_LOCK_SYNC`` is
+        intentionally not discriminated — it shares ``RATE_SYNC``'s frame mapping.
+
+        The native clock is refreshed first so the returned position reflects the
+        live playhead rather than the last UI poll.
+        """
+        with self._lock:
+            self._refresh_from_native_unlocked()
+            if self._source_frame is None:
+                return None
+            normalized = str(Path(str(source_ref).strip()).expanduser().resolve())
+            if not self._source_ref or normalized != self._source_ref:
+                return None
+            if len(self._voice_source_bpms) > 1:
+                return None
+            if self._sync_enabled and self._source_bpm is None:
+                return None
+            return (int(self._source_frame), int(self._transport.session_frame))
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -243,6 +349,12 @@ class WorkbenchTransportAdapter:
                 self._native_engine.start()
                 self._native_started = True
                 self._transport.play()
+                # Preserve a previously established explicit seek anchor. Only
+                # fall back to the configured source-start offset when nothing
+                # has been anchored yet (e.g. a plain play without a prior seek).
+                if self._source_frame is None:
+                    self._source_frame = self._source_start_frame
+                    self._source_frac = 0.0
                 if hasattr(self._native_engine, "snapshot"):
                     try:
                         snapshot = self._native_engine.snapshot()
@@ -258,6 +370,9 @@ class WorkbenchTransportAdapter:
         with self._lock:
             self._transport.stop()
             self._native_started = False
+            # Invalidate the authoritative source playhead: after a stop there is
+            # no honest anchor until the next play/seek. HÄFTIG must fail closed.
+            self._source_frame = None
             if self._native_engine is not None and self._native_available:
                 if not self._native_owned or self._native_opened:
                     try:
@@ -299,6 +414,10 @@ class WorkbenchTransportAdapter:
 
     def toggle_sync(self) -> bool:
         with self._lock:
+            # Close out any engine/session progress accumulated so far at the
+            # CURRENT rate before the sync mode changes, so already-elapsed
+            # frames are never re-rated by the new mode.
+            self._refresh_from_native_unlocked()
             self._sync_enabled = not self._sync_enabled
             self._update_sync_rates_unlocked()
             return self._sync_enabled
@@ -323,15 +442,59 @@ class WorkbenchTransportAdapter:
         with self._lock:
             return self._keylock_enabled
 
-    def set_source_bpm(self, bpm: float | None) -> None:
+    def set_source_bpm(
+        self,
+        bpm: float | None,
+        *,
+        source_ref: str | None = None,
+        source_start_frame: int = 0,
+    ) -> None:
         """Set BPM for the current Workbench source snapshot.
 
         This compatibility method does not guess a native voice id. Use
         ``set_voice_source_bpm`` when a real native voice is known.
+
+        ``source_ref`` / ``source_start_frame`` establish the single source
+        context used by the authoritative HÄFTIG source playhead (#327). They do
+        not retroactively alter an already-integrated playhead; the start offset
+        only takes effect on the next ``play`` / ``seek`` anchor.
         """
         with self._lock:
+            if source_ref is not None:
+                text = str(source_ref).strip()
+                new_ref = (
+                    str(Path(text).expanduser().resolve()) if text else None
+                )
+                # Switching to a different source invalidates the old playhead:
+                # the anchor belongs to the previous source and must not carry over.
+                if self._source_ref is not None and new_ref != self._source_ref:
+                    self._source_frame = None
+                    self._source_frac = 0.0
+                self._source_ref = new_ref
+            if isinstance(source_start_frame, int) and not isinstance(
+                source_start_frame, bool
+            ):
+                self._source_start_frame = source_start_frame
+            # Close out any engine/session progress accumulated so far at the
+            # CURRENT source BPM before it changes, so already-elapsed frames are
+            # never re-rated by the new BPM.
+            self._refresh_from_native_unlocked()
             self._source_bpm = bpm
             self._update_sync_rates_unlocked()
+
+    def set_source_start_frame(self, start_frame: int) -> None:
+        """Set the source-frame offset applied on the next play/seek anchor."""
+        if not isinstance(start_frame, int) or isinstance(start_frame, bool):
+            raise ValueError("source start frame must be a non-negative integer")
+        if start_frame < 0:
+            raise ValueError("source start frame must be non-negative")
+        with self._lock:
+            self._source_start_frame = start_frame
+
+    def get_source_frame(self) -> int | None:
+        """Return the authoritative source playhead, or None when not anchored."""
+        with self._lock:
+            return self._source_frame
 
     def set_voice_source_bpm(self, voice_id: int, bpm: float | None) -> None:
         """Register/update one explicit native voice and its source BPM."""
@@ -357,11 +520,22 @@ class WorkbenchTransportAdapter:
     # Session position
     # ------------------------------------------------------------------
 
-    def seek(self, frame: int) -> None:
+    def seek(self, frame: int, *, source_frame: int | None = None) -> None:
         with self._lock:
             self._transport.seek(frame)
             self._sync_pending_from_map_unlocked()
             self._update_sync_rates_unlocked()
+            if source_frame is not None:
+                # Explicit, unambiguous anchor: the engine jumped to a known source
+                # position. Establish a fresh, unique anchor.
+                self._source_frame = int(source_frame)
+                self._source_frac = 0.0
+            else:
+                # Seek without a known source position: we cannot honestly map the
+                # new playhead to a nominal source frame, so invalidate the anchor
+                # and let HÄFTIG fail closed until the next explicit anchor.
+                self._source_frame = None
+                self._source_frac = 0.0
 
     def get_session_frame(self) -> int:
         with self._lock:
@@ -377,11 +551,15 @@ class WorkbenchTransportAdapter:
         """Explicit simulation/test hook; production UI uses native snapshots."""
         with self._lock:
             before_tempo = self._effective_tempo_unlocked()
+            before_session = self._transport.session_frame
             self._transport.advance(frames)
             after_tempo = self._effective_tempo_unlocked()
             self._sync_pending_from_map_unlocked()
             if after_tempo != before_tempo:
                 self._update_sync_rates_unlocked()
+            session_delta = self._transport.session_frame - before_session
+            if session_delta:
+                self._advance_source_frame_unlocked(session_delta)
 
     # ------------------------------------------------------------------
     # UI snapshot
