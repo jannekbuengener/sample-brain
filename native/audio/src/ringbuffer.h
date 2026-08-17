@@ -12,13 +12,9 @@ public:
     RingBuffer(size_t capacity_frames, size_t num_channels);
     ~RingBuffer();
 
-    // Write from audio callback (single producer)
     bool write(const float* data, size_t num_frames, size_t num_channels);
-
-    // Read for finalization (single consumer, after recording stopped)
     bool read_all(float* out_buffer, size_t& out_frames);
 
-    // Query
     size_t available_frames() const;
     size_t capacity_frames() const { return capacity; }
     size_t num_channels() const { return channels; }

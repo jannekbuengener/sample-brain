@@ -37,7 +37,6 @@ void MetricsCollector::on_callback_end() {
 
 void MetricsCollector::get_snapshot(double& mean_us, double& p95_us, double& p99_us, double& max_us,
                                     uint64_t& underflows, uint64_t& overflows, uint64_t& xruns) {
-    // Copy samples for sorting
     size_t count = std::min(total_callbacks.load(std::memory_order_relaxed), SAMPLE_COUNT);
     if (count == 0) {
         mean_us = p95_us = p99_us = max_us = 0.0;
@@ -47,7 +46,6 @@ void MetricsCollector::get_snapshot(double& mean_us, double& p95_us, double& p99
         return;
     }
 
-    // Create sorted copy
     std::vector<double> samples;
     samples.reserve(count);
     for (size_t i = 0; i < count; ++i) {
@@ -55,12 +53,10 @@ void MetricsCollector::get_snapshot(double& mean_us, double& p95_us, double& p99
     }
     std::sort(samples.begin(), samples.end());
 
-    // Mean
     double sum = 0.0;
     for (double v : samples) sum += v;
     mean_us = sum / count;
 
-    // Percentiles
     size_t p95_idx = static_cast<size_t>(count * 0.95);
     size_t p99_idx = static_cast<size_t>(count * 0.99);
     p95_us = samples[std::min(p95_idx, count - 1)];
