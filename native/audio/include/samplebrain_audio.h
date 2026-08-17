@@ -135,6 +135,8 @@ typedef struct {
     int32_t voice_input_latency_frames[32];
     int32_t voice_output_latency_frames[32];
     int32_t voice_grid_compensation_frames[32];
+    uint64_t voice_rendered_click_count[32];
+    sb_frame_t voice_last_click_engine_frame[32];
 
     double callback_mean_us;
     double callback_p95_us;

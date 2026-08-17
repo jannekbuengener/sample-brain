@@ -40,8 +40,11 @@ private:
     // Synthetic click source
     std::vector<float> click_samples;
     size_t click_length = 0;
-    double click_interval_frames = 0;  // Frames between clicks
+    double source_click_interval_frames = 0.0;  // Stable beat spacing for the source BPM
+    double click_interval_frames = 0.0;          // Effective click spacing after RATE_SYNC
     sb_frame_t next_click_frame = 0;
+    std::atomic<uint64_t> rendered_click_count{0};
+    std::atomic<sb_frame_t> last_rendered_click_engine_frame{0};
 
     // Stored config for Key-Lock processing
     sb_synthetic_click_config_t click_config;
