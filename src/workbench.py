@@ -2206,6 +2206,9 @@ class WorkbenchApp:
         recording_ui = getattr(self, "_recording_ui", None)
         if recording_ui is not None:
             recording_ui.close()
+        transport_ui = getattr(self, "_transport_ui", None)
+        if transport_ui is not None:
+            transport_ui.close()
         self.root.destroy()
 
     def _on_close(self) -> None:

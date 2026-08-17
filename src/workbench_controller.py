@@ -14,6 +14,7 @@ from pathlib import Path, PurePath
 from typing import Any, Callable, Literal, Mapping
 
 from .matching import DEFAULT_LIMIT, MatchCandidate, MatchProfile, match_candidates
+from .native_audio import NativeAudioEngine
 
 from .analyze import (
     SHORT_AUDIO_WARNING_CODE,
@@ -2006,16 +2007,39 @@ def compute_workbench_similar_suggestions(
     return suggestions, None
 
 
-def start_native_recording() -> None:
+def start_native_recording(
+    engine: "NativeAudioEngine",
+    engine_frame: int,
+    session_frame: int,
+) -> int:
     """Start native audio recording through the audio core."""
-    # TODO: Implement native recording startup
-    pass
+    if engine is None or not engine.is_available():
+        raise RuntimeError("Native audio engine not available")
+    return engine.start_recording(engine_frame)
 
 
-def stop_native_recording() -> None:
-    """Stop native audio recording."""
-    # TODO: Implement native recording stop
-    pass
+def stop_native_recording(
+    engine: "NativeAudioEngine",
+    recording_id: int,
+    engine_frame: int,
+    session_frame: int,
+    destination: str,
+    db_path: Path | None = None,
+):
+    """Stop native audio recording and finalize the take."""
+    if engine is None or not engine.is_available():
+        raise RuntimeError("Native audio engine not available")
+    audio_data, frames = engine.stop_recording(recording_id)
+    # Import here to avoid circular imports
+    from .recording_take import finalize_recording_take
+    return finalize_recording_take(
+        audio_data=audio_data,
+        frames=frames,
+        engine_frame=engine_frame,
+        session_frame=session_frame,
+        destination=destination,
+        db_path=db_path,
+    )
 
 
 
