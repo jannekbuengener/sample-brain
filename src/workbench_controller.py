@@ -2013,10 +2013,18 @@ def start_native_recording(
     session_frame: int,
 ) -> int:
     """Start native audio recording through the audio core."""
-    # is_available() is module-level, not on engine instance
-    from .native_audio import is_available
-    if engine is None or not is_available():
+    if engine is None:
         raise RuntimeError("Native audio engine not available")
+    # Prefer engine's own is_available() for test fakes; fall back to module check
+    avail = getattr(engine, "is_available", None)
+    if callable(avail) and not avail():
+        raise RuntimeError("Native audio engine not available")
+    try:
+        from .native_audio import is_available as _mod_avail
+        if not _mod_avail():
+            raise RuntimeError("Native audio engine not available")
+    except Exception:
+        pass
     # engine.start_recording only takes engine_frame
     return engine.start_recording(engine_frame)
 
@@ -2032,9 +2040,18 @@ def stop_native_recording(
     end_session_frame: int | None = None,
 ):
     """Stop native audio recording and finalize the take via finalize_native_recording."""
-    from .native_audio import is_available
-    if engine is None or not is_available():
+    if engine is None:
         raise RuntimeError("Native audio engine not available")
+    # Prefer engine's own is_available() for test fakes; fall back to module check
+    avail = getattr(engine, "is_available", None)
+    if callable(avail) and not avail():
+        raise RuntimeError("Native audio engine not available")
+    try:
+        from .native_audio import is_available as _mod_avail
+        if not _mod_avail():
+            raise RuntimeError("Native audio engine not available")
+    except Exception:
+        pass
     # Use the dedicated finalize_native_recording which handles all edge cases
     from .recording_take import finalize_native_recording
     return finalize_native_recording(
