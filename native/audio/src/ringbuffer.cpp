@@ -83,32 +83,51 @@ void RingBuffer::reset() {
 
 Recording::Recording(uint32_t sample_rate_, uint32_t num_channels, sb_frame_t start_frame_)
     : start_frame(start_frame_), sample_rate(sample_rate_), channels(num_channels) {
-    // Allocate ring buffer for up to 30 minutes of recording
-    size_t max_frames = static_cast<size_t>(sample_rate * 60 * 30);  // 30 minutes
+    // Allocate ring buffer outside the audio callback for up to 30 minutes.
+    size_t max_frames = static_cast<size_t>(sample_rate * 60 * 30);
     ringbuf = new RingBuffer(max_frames, num_channels);
-    active.store(true);
 }
 
 Recording::~Recording() {
     delete ringbuf;
 }
 
-void Recording::write(const float* data, size_t num_frames, size_t num_channels) {
-    if (active.load(std::memory_order_relaxed) && ringbuf) {
-        ringbuf->write(data, num_frames, num_channels);
+void Recording::write(const float* data, size_t num_frames, size_t num_channels, sb_frame_t engine_frame) {
+    if (!ringbuf || num_channels != channels) return;
+
+    const sb_frame_t buffer_end = engine_frame + static_cast<sb_frame_t>(num_frames);
+    if (buffer_end <= start_frame) {
+        return;
     }
+
+    size_t first_frame = 0;
+    if (engine_frame < start_frame) {
+        first_frame = static_cast<size_t>(start_frame - engine_frame);
+    }
+    if (first_frame >= num_frames) return;
+
+    active.store(true, std::memory_order_release);
+    ringbuf->write(
+        data + first_frame * num_channels,
+        num_frames - first_frame,
+        num_channels);
 }
 
 void Recording::finalize(float** out_buffer, size_t* out_frames) {
     active.store(false, std::memory_order_release);
 
+    if (!out_buffer || !out_frames) return;
+    *out_buffer = nullptr;
+    *out_frames = 0;
+
     if (ringbuf) {
         size_t total_frames = ringbuf->available_frames();
-        *out_frames = total_frames;
-        *out_buffer = new float[total_frames * channels];
-        ringbuf->read_all(*out_buffer, *out_frames);
-    } else {
-        *out_buffer = nullptr;
-        *out_frames = 0;
+        if (total_frames == 0) return;
+
+        float* result = new float[total_frames * channels];
+        size_t read_frames = total_frames;
+        ringbuf->read_all(result, read_frames);
+        *out_buffer = result;
+        *out_frames = read_frames;
     }
 }
