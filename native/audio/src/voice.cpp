@@ -67,9 +67,12 @@ void Voice::process(float* output, size_t num_frames, sb_frame_t engine_frame, s
     sb_voice_state_t current_state = state.load(std::memory_order_acquire);
 
     if (current_state == SB_VOICE_SCHEDULED) {
-        if (engine_frame >= scheduled_frame) {
+        const sb_frame_t buffer_end = engine_frame + static_cast<sb_frame_t>(num_frames);
+        if (scheduled_frame < buffer_end) {
+            // The logical start may fall inside this callback buffer. Preserve the
+            // requested sample frame instead of snapping the event to the buffer edge.
             state.store(SB_VOICE_PLAYING, std::memory_order_release);
-            actual_start_frame = engine_frame;
+            actual_start_frame = scheduled_frame;
             current_state = SB_VOICE_PLAYING;
         }
     }
