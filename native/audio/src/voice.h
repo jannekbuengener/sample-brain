@@ -1,4 +1,3 @@
-// voice.h - Voice management
 #ifndef SAMPLEBRAIN_VOICE_H
 #define SAMPLEBRAIN_VOICE_H
 
@@ -23,6 +22,15 @@ public:
     sb_frame_t actual_start_frame = 0;
     float rate = 1.0f;
     float gain = 1.0f;
+    int sync_mode = 0;
+    float source_bpm = 128.0f;
+    float master_bpm = 132.0f;
+
+    // #324 Key-Lock accessors
+    bool is_key_lock_active() const;
+    int get_input_latency_frames() const;
+    int get_output_latency_frames() const;
+    int get_grid_compensation_frames() const;
 
 private:
     uint32_t sample_rate;
@@ -35,9 +43,16 @@ private:
     double click_interval_frames = 0;  // Frames between clicks
     sb_frame_t next_click_frame = 0;
 
+    // Stored config for Key-Lock processing
+    sb_synthetic_click_config_t click_config;
+
     void generate_click_samples(const sb_synthetic_click_config_t& click_config);
     void render_click(float* output, size_t offset, size_t num_frames,
                       sb_frame_t engine_frame, size_t output_channels);
+
+    // #324 Key-Lock Voice
+    class KeyLockVoiceImpl;
+    KeyLockVoiceImpl* kl_voice = nullptr;
 };
 
 #endif

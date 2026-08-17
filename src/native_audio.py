@@ -8,6 +8,7 @@ The native library must be built separately and placed in the library search pat
 from __future__ import annotations
 
 import ctypes
+import math
 import os
 import platform
 import sys
@@ -15,11 +16,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, List, Tuple
 
+import numpy as np
+
 # Load native library
 def _find_library() -> Path:
     """Find the native library."""
     # Check common locations
     candidates = [
+        Path(__file__).parent.parent.parent / "native" / "audio" / "build" / "lib" / "Release" / "samplebrain_audio.dll",
+        Path(__file__).parent.parent.parent / "native" / "audio" / "build" / "bin" / "Release" / "samplebrain_audio.dll",
+        Path(__file__).parent.parent / "native" / "audio" / "build" / "lib" / "Release" / "samplebrain_audio.dll",
+        Path(__file__).parent.parent / "native" / "audio" / "build" / "bin" / "Release" / "samplebrain_audio.dll",
         Path(__file__).parent.parent.parent / "native" / "audio" / "build" / "lib" / "samplebrain_audio.dll",
         Path(__file__).parent.parent.parent / "native" / "audio" / "build" / "bin" / "samplebrain_audio.dll",
         Path(__file__).parent.parent / "native" / "audio" / "build" / "lib" / "samplebrain_audio.dll",
@@ -72,6 +79,14 @@ SB_VOICE_STOPPING = 3
 
 SB_SOURCE_SYNTHETIC_CLICK = 0
 SB_SOURCE_PCM_BUFFER = 1
+
+# Sync mode constants (#324)
+SB_SYNC_MODE_RATE_SYNC = 0      # Rate = master/source, pitch follows tempo (#323)
+SB_SYNC_MODE_KEY_LOCK_SYNC = 1  # Tempo follows master, pitch preserved via Signalsmith (#324)
+
+class SyncMode:
+    RATE_SYNC = SB_SYNC_MODE_RATE_SYNC
+    KEY_LOCK_SYNC = SB_SYNC_MODE_KEY_LOCK_SYNC
 
 SB_MAX_VOICES = 32
 SB_MAX_RECORDINGS = 8
@@ -126,6 +141,9 @@ class SbVoiceConfig(ctypes.Structure):
         ("source", SbSourceDescriptor),
         ("initial_rate", ctypes.c_float),
         ("gain", ctypes.c_float),
+        ("sync_mode", ctypes.c_int),
+        ("source_bpm", ctypes.c_float),
+        ("master_bpm", ctypes.c_float),
     ]
 
 
@@ -146,6 +164,11 @@ class SbSnapshot(ctypes.Structure):
         ("start_skew_frames", ctypes.c_int32 * SB_MAX_VOICES),
         ("voice_rates", ctypes.c_float * SB_MAX_VOICES),
         ("voice_gains", ctypes.c_float * SB_MAX_VOICES),
+        ("voice_sync_modes", ctypes.c_int * SB_MAX_VOICES),
+        ("voice_key_lock_active", ctypes.c_bool * SB_MAX_VOICES),
+        ("voice_input_latency_frames", ctypes.c_int32 * SB_MAX_VOICES),
+        ("voice_output_latency_frames", ctypes.c_int32 * SB_MAX_VOICES),
+        ("voice_grid_compensation_frames", ctypes.c_int32 * SB_MAX_VOICES),
         ("callback_mean_us", ctypes.c_double),
         ("callback_p95_us", ctypes.c_double),
         ("callback_p99_us", ctypes.c_double),
@@ -155,7 +178,20 @@ class SbSnapshot(ctypes.Structure):
         ("xrun_count", ctypes.c_uint64),
         ("recording_dropped_frames", ctypes.c_uint64),
         ("recording_active", ctypes.c_bool),
-        ("reserved", ctypes.c_uint64 * 16),
+        ("reserved", ctypes.c_uint64 * 8),
+    ]
+
+
+# Test API for #324 offline KeyLockVoice processing
+class SbTestKeylockConfig(ctypes.Structure):
+    _fields_ = [
+        ("sample_rate", ctypes.c_int),
+        ("channels", ctypes.c_int),
+        ("sync_mode", ctypes.c_int),
+        ("source_bpm", ctypes.c_float),
+        ("master_bpm", ctypes.c_float),
+        ("frequency_hz", ctypes.c_float),
+        ("amplitude", ctypes.c_float),
     ]
 
 
@@ -163,6 +199,42 @@ class SbSnapshot(ctypes.Structure):
 if _lib:
     _lib.sb_engine_open.argtypes = [ctypes.POINTER(SbEngineConfig), ctypes.POINTER(sb_engine_t)]
     _lib.sb_engine_open.restype = sb_result_t
+
+    _lib.sb_voice_create.argtypes = [sb_engine_t, ctypes.POINTER(SbVoiceConfig), ctypes.POINTER(sb_voice_id_t)]
+    _lib.sb_voice_create.restype = sb_result_t
+
+    _lib.sb_voice_remove.argtypes = [sb_engine_t, sb_voice_id_t]
+    _lib.sb_voice_remove.restype = sb_result_t
+
+    _lib.sb_voice_schedule_start.argtypes = [sb_engine_t, sb_voice_id_t, sb_frame_t]
+    _lib.sb_voice_schedule_start.restype = sb_result_t
+
+    _lib.sb_voice_stop.argtypes = [sb_engine_t, sb_voice_id_t]
+    _lib.sb_voice_stop.restype = sb_result_t
+
+    _lib.sb_voice_set_rate.argtypes = [sb_engine_t, sb_voice_id_t, ctypes.c_float]
+    _lib.sb_voice_set_rate.restype = sb_result_t
+
+    _lib.sb_voice_set_sync_mode.argtypes = [sb_engine_t, sb_voice_id_t, ctypes.c_int]
+    _lib.sb_voice_set_sync_mode.restype = sb_result_t
+
+    _lib.sb_voice_set_source_bpm.argtypes = [sb_engine_t, sb_voice_id_t, ctypes.c_float]
+    _lib.sb_voice_set_source_bpm.restype = sb_result_t
+
+    _lib.sb_voice_set_master_bpm.argtypes = [sb_engine_t, sb_voice_id_t, ctypes.c_float]
+    _lib.sb_voice_set_master_bpm.restype = sb_result_t
+
+    _lib.sb_recording_start.argtypes = [sb_engine_t, ctypes.POINTER(sb_recording_id_t), sb_frame_t]
+    _lib.sb_recording_start.restype = sb_result_t
+
+    _lib.sb_recording_stop.argtypes = [sb_engine_t, sb_recording_id_t, ctypes.POINTER(ctypes.POINTER(ctypes.c_float)), ctypes.POINTER(ctypes.c_size_t)]
+    _lib.sb_recording_stop.restype = sb_result_t
+
+    _lib.sb_recording_free_buffer.argtypes = [ctypes.POINTER(ctypes.c_float)]
+    _lib.sb_recording_free_buffer.restype = None
+
+    _lib.sb_engine_snapshot.argtypes = [sb_engine_t, ctypes.POINTER(SbSnapshot)]
+    _lib.sb_engine_snapshot.restype = sb_result_t
 
     _lib.sb_engine_start.argtypes = [sb_engine_t]
     _lib.sb_engine_start.restype = sb_result_t
@@ -188,6 +260,16 @@ if _lib:
     _lib.sb_voice_set_rate.argtypes = [sb_engine_t, sb_voice_id_t, ctypes.c_float]
     _lib.sb_voice_set_rate.restype = sb_result_t
 
+    # #324 Key-Lock voice control
+    _lib.sb_voice_set_sync_mode.argtypes = [sb_engine_t, sb_voice_id_t, ctypes.c_int]
+    _lib.sb_voice_set_sync_mode.restype = sb_result_t
+
+    _lib.sb_voice_set_source_bpm.argtypes = [sb_engine_t, sb_voice_id_t, ctypes.c_float]
+    _lib.sb_voice_set_source_bpm.restype = sb_result_t
+
+    _lib.sb_voice_set_master_bpm.argtypes = [sb_engine_t, sb_voice_id_t, ctypes.c_float]
+    _lib.sb_voice_set_master_bpm.restype = sb_result_t
+
     _lib.sb_recording_start.argtypes = [sb_engine_t, ctypes.POINTER(sb_recording_id_t), sb_frame_t]
     _lib.sb_recording_start.restype = sb_result_t
 
@@ -199,6 +281,24 @@ if _lib:
 
     _lib.sb_engine_snapshot.argtypes = [sb_engine_t, ctypes.POINTER(SbSnapshot)]
     _lib.sb_engine_snapshot.restype = sb_result_t
+
+    # #324 Test API: Offline KeyLockVoice processing
+    _lib.sb_test_keylock_process.argtypes = [
+        ctypes.POINTER(SbTestKeylockConfig),
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.c_size_t,
+    ]
+    _lib.sb_test_keylock_process.restype = ctypes.c_int
+
+    _lib.sb_test_keylock_get_latency.argtypes = [
+        ctypes.POINTER(SbTestKeylockConfig),
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.POINTER(ctypes.c_int),
+    ]
+    _lib.sb_test_keylock_get_latency.restype = ctypes.c_int
 
 
 def _check_result(result: sb_result_t, operation: str) -> None:
@@ -240,6 +340,10 @@ class VoiceConfig:
     amplitude: float = 0.8
     initial_rate: float = 1.0
     gain: float = 1.0
+    # #324 Key-Lock extensions
+    sync_mode: int = SB_SYNC_MODE_RATE_SYNC
+    source_bpm: float = 128.0
+    master_bpm: float = 132.0
 
 
 @dataclass
@@ -260,6 +364,12 @@ class Snapshot:
     start_skew_frames: List[int]
     voice_rates: List[float]
     voice_gains: List[float]
+    # #324 Key-Lock extensions
+    voice_sync_modes: List[int]
+    voice_key_lock_active: List[bool]
+    voice_input_latency_frames: List[int]
+    voice_output_latency_frames: List[int]
+    voice_grid_compensation_frames: List[int]
     callback_mean_us: float
     callback_p95_us: float
     callback_p99_us: float
@@ -288,6 +398,11 @@ class Snapshot:
             start_skew_frames=[c_snap.start_skew_frames[i] for i in range(SB_MAX_VOICES)],
             voice_rates=[c_snap.voice_rates[i] for i in range(SB_MAX_VOICES)],
             voice_gains=[c_snap.voice_gains[i] for i in range(SB_MAX_VOICES)],
+            voice_sync_modes=[c_snap.voice_sync_modes[i] for i in range(SB_MAX_VOICES)],
+            voice_key_lock_active=[bool(c_snap.voice_key_lock_active[i]) for i in range(SB_MAX_VOICES)],
+            voice_input_latency_frames=[c_snap.voice_input_latency_frames[i] for i in range(SB_MAX_VOICES)],
+            voice_output_latency_frames=[c_snap.voice_output_latency_frames[i] for i in range(SB_MAX_VOICES)],
+            voice_grid_compensation_frames=[c_snap.voice_grid_compensation_frames[i] for i in range(SB_MAX_VOICES)],
             callback_mean_us=c_snap.callback_mean_us,
             callback_p95_us=c_snap.callback_p95_us,
             callback_p99_us=c_snap.callback_p99_us,
@@ -359,6 +474,9 @@ class NativeAudioEngine:
             source=source,
             initial_rate=config.initial_rate,
             gain=config.gain,
+            sync_mode=config.sync_mode,
+            source_bpm=config.source_bpm,
+            master_bpm=config.master_bpm,
         )
         voice_id = sb_voice_id_t()
         _check_result(_lib.sb_voice_create(self._engine, ctypes.byref(vconfig), ctypes.byref(voice_id)), "create_voice")
@@ -387,6 +505,24 @@ class NativeAudioEngine:
         if not self._engine:
             raise RuntimeError("Engine not open")
         _check_result(_lib.sb_voice_set_rate(self._engine, voice_id, rate), "set_voice_rate")
+
+    def set_voice_sync_mode(self, voice_id: int, sync_mode: int) -> None:
+        """Set voice sync mode (SB_SYNC_MODE_RATE_SYNC or SB_SYNC_MODE_KEY_LOCK_SYNC)."""
+        if not self._engine:
+            raise RuntimeError("Engine not open")
+        _check_result(_lib.sb_voice_set_sync_mode(self._engine, voice_id, sync_mode), "set_voice_sync_mode")
+
+    def set_voice_source_bpm(self, voice_id: int, source_bpm: float) -> None:
+        """Set voice source BPM for sync calculations."""
+        if not self._engine:
+            raise RuntimeError("Engine not open")
+        _check_result(_lib.sb_voice_set_source_bpm(self._engine, voice_id, source_bpm), "set_voice_source_bpm")
+
+    def set_voice_master_bpm(self, voice_id: int, master_bpm: float) -> None:
+        """Set voice master BPM for sync calculations."""
+        if not self._engine:
+            raise RuntimeError("Engine not open")
+        _check_result(_lib.sb_voice_set_master_bpm(self._engine, voice_id, master_bpm), "set_voice_master_bpm")
 
     def start_recording(self, engine_frame: int) -> int:
         """Start recording at engine frame."""
@@ -436,6 +572,297 @@ class NativeAudioEngine:
 def is_available() -> bool:
     """Check if native audio is available."""
     return _lib is not None
+
+
+class KeyLockVoice:
+    """Python wrapper for offline KeyLockVoice processing using native Signalsmith.
+    
+    This wrapper provides offline processing through the native KeyLockVoice C++ class,
+    which uses Signalsmith Stretch for pitch-preserving time-stretch (#324).
+    
+    Usage:
+        kv = KeyLockVoice(48000, 128.0, 132.0, SyncMode.KEY_LOCK_SYNC)
+        result = kv.process(input_buffer, num_frames)
+    """
+    
+    def __init__(self, sample_rate: int, source_bpm: float, master_bpm: float,
+                 sync_mode: int = SB_SYNC_MODE_KEY_LOCK_SYNC,
+                 frequency_hz: float = 800.0, amplitude: float = 0.8,
+                 channels: int = 1):
+        if not _lib:
+            raise RuntimeError("Native library not loaded")
+        self._sample_rate = sample_rate
+        self._channels = channels
+        self._sync_mode = sync_mode
+        self._source_bpm = source_bpm
+        self._master_bpm = master_bpm
+        self._frequency_hz = frequency_hz
+        self._amplitude = amplitude
+        self._tempo_ratio = master_bpm / source_bpm if source_bpm > 0 else 1.0
+    
+    def process(self, num_frames: int) -> Tuple[bytes, int]:
+        """Process audio through KeyLockVoice offline.
+
+        Generates a synthetic click at the source BPM interval, processes it
+        through the configured sync mode, and returns the output as bytes.
+
+        Args:
+            num_frames: Number of output frames to generate
+
+        Returns:
+            Tuple of (audio_bytes, frames_processed)
+        """
+        if not _lib:
+            raise RuntimeError("Native library not loaded")
+
+        config = SbTestKeylockConfig(
+            sample_rate=self._sample_rate,
+            channels=self._channels,
+            sync_mode=self._sync_mode,
+            source_bpm=self._source_bpm,
+            master_bpm=self._master_bpm,
+            frequency_hz=self._frequency_hz,
+            amplitude=self._amplitude,
+        )
+
+        # Generate input buffer: synthetic clicks at source BPM
+        input_duration_sec = 4.0  # Generate 4 seconds of source
+        input_frames = int(input_duration_sec * self._sample_rate)
+        input_buffer = (ctypes.c_float * input_frames)()
+
+        # Generate synthetic clicks
+        interval_sec = 60.0 / self._source_bpm
+        click_interval = int(interval_sec * self._sample_rate)
+        click_duration_ms = 5.0
+        click_samples = max(1, int(click_duration_ms / 1000.0 * self._sample_rate))
+
+        for frame in range(0, input_frames, click_interval):
+            for i in range(click_samples):
+                t = float(i) / self._sample_rate
+                envelope = 1.0 - t / (click_duration_ms / 1000.0)
+                if envelope <= 0:
+                    break
+                envelope = max(0.0, envelope * envelope)
+                val = self._amplitude * math.sin(2 * math.pi * self._frequency_hz * t) * envelope
+                if frame + i < input_frames:
+                    input_buffer[frame + i] += val
+
+        output_frames_expected = int(num_frames)
+        output_buffer = (ctypes.c_float * (output_frames_expected * self._channels))()
+
+        frames_written = int(_lib.sb_test_keylock_process(
+            ctypes.byref(config),
+            input_buffer,
+            input_frames,
+            output_buffer,
+            output_frames_expected
+        ))
+
+        if frames_written < 0:
+            raise RuntimeError("KeyLockVoice processing failed")
+
+        # Convert output to bytes
+        num_samples = frames_written * self._channels
+        data = ctypes.string_at(output_buffer, num_samples * ctypes.sizeof(ctypes.c_float))
+        return data, frames_written
+
+    def process_audio(self, input_signal: np.ndarray) -> Tuple[np.ndarray, dict]:
+        """Process external audio signal through KeyLockVoice offline.
+
+        This is the preferred method for testing pitch preservation, as it
+        processes the actual input signal through the native KeyLockVoice
+        (with Signalsmith for Key-Lock mode) rather than synthetic clicks.
+
+        Args:
+            input_signal: 1D numpy array of float32 audio samples
+
+        Returns:
+            Tuple of (processed_signal, metadata_dict)
+        """
+        if not _lib:
+            raise RuntimeError("Native library not loaded")
+
+        input_frames = len(input_signal)
+        # Ensure float32
+        if input_signal.dtype != np.float32:
+            input_signal = input_signal.astype(np.float32)
+
+        config = SbTestKeylockConfig(
+            sample_rate=self._sample_rate,
+            channels=self._channels,
+            sync_mode=self._sync_mode,
+            source_bpm=self._source_bpm,
+            master_bpm=self._master_bpm,
+            frequency_hz=self._frequency_hz,
+            amplitude=self._amplitude,
+        )
+
+        # Calculate expected output frames (time-stretched by tempo ratio)
+        ratio = self._master_bpm / self._source_bpm if self._source_bpm > 0 else 1.0
+        expected_output_frames = max(1, int(input_frames / ratio))
+
+        input_buffer = input_signal.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+        output_buffer = (ctypes.c_float * (expected_output_frames * self._channels))()
+
+        frames_written = int(_lib.sb_test_keylock_process(
+            ctypes.byref(config),
+            input_buffer,
+            input_frames,
+            output_buffer,
+            expected_output_frames
+        ))
+
+        if frames_written < 0:
+            raise RuntimeError("KeyLockVoice processing failed")
+
+        processed = np.ctypeslib.as_array(output_buffer[:frames_written * self._channels]).copy()
+        processed = processed.reshape(-1, self._channels)[:, 0]  # mono
+
+        in_lat, out_lat, grid_comp = self.get_latency()
+
+        metadata = {
+            "input_latency_frames": in_lat,
+            "output_latency_frames": out_lat,
+            "grid_compensation_frames": grid_comp,
+            "tempo_ratio": ratio,
+            "input_frames": input_frames,
+            "output_frames": frames_written,
+            "source_bpm": self._source_bpm,
+            "master_bpm": self._master_bpm,
+            "sync_mode": self._sync_mode,
+            "key_lock_active": self.is_key_lock_active(),
+            "input_frequency_hz": self._frequency_hz,
+        }
+
+        return processed, metadata
+    
+    def get_latency(self) -> Tuple[int, int, int]:
+        """Get latency values from the native KeyLockVoice.
+        
+        Returns:
+            Tuple of (input_latency_frames, output_latency_frames, grid_compensation_frames)
+        """
+        if not _lib:
+            raise RuntimeError("Native library not loaded")
+        
+        config = SbTestKeylockConfig(
+            sample_rate=self._sample_rate,
+            channels=self._channels,
+            sync_mode=self._sync_mode,
+            source_bpm=self._source_bpm,
+            master_bpm=self._master_bpm,
+            frequency_hz=self._frequency_hz,
+            amplitude=self._amplitude,
+        )
+        
+        in_lat = ctypes.c_int()
+        out_lat = ctypes.c_int()
+        grid_comp = ctypes.c_int()
+        
+        result = _lib.sb_test_keylock_get_latency(
+            ctypes.byref(config),
+            ctypes.byref(in_lat),
+            ctypes.byref(out_lat),
+            ctypes.byref(grid_comp)
+        )
+        
+        if result != SB_OK:
+            return (0, 0, 0)
+        
+        return (in_lat.value, out_lat.value, grid_comp.value)
+    
+    def is_key_lock_active(self) -> bool:
+        """Check if key-lock mode is active (Signalsmith initialized)."""
+        return self._sync_mode == SB_SYNC_MODE_KEY_LOCK_SYNC
+    
+    @property
+    def tempo_ratio(self) -> float:
+        """Get the tempo ratio (master_bpm / source_bpm)."""
+        return self._tempo_ratio
+
+
+def create_keylock_voice(sample_rate: int = 48000, source_bpm: float = 128.0,
+                         master_bpm: float = 132.0, sync_mode: int = SB_SYNC_MODE_KEY_LOCK_SYNC,
+                         frequency_hz: float = 800.0, amplitude: float = 0.8,
+                         channels: int = 1) -> Optional[KeyLockVoice]:
+    """Create a KeyLockVoice instance for offline processing.
+    
+    Returns None if native library is not available.
+    """
+    if not is_available():
+        return None
+    return KeyLockVoice(sample_rate, source_bpm, master_bpm, sync_mode,
+                       frequency_hz, amplitude, channels)
+
+
+def process_with_keylock(input_signal: np.ndarray, sample_rate: int,
+                         source_bpm: float, master_bpm: float,
+                         sync_mode: int = SB_SYNC_MODE_KEY_LOCK_SYNC,
+                         frequency_hz: float = 440.0, amplitude: float = 0.8) -> Tuple[np.ndarray, dict]:
+    """Process audio through native KeyLockVoice offline.
+    
+    This function generates synthetic clicks at the source BPM interval, processes
+    them through the native KeyLockVoice (with Signalsmith for Key-Lock mode or
+    simple rate change for Rate-Sync mode), and returns the processed audio.
+    
+    Args:
+        input_signal: Source audio signal (used for determining duration/frequency)
+        sample_rate: Audio sample rate
+        source_bpm: Source tempo in BPM
+        master_bpm: Master tempo in BPM
+        sync_mode: SB_SYNC_MODE_RATE_SYNC or SB_SYNC_MODE_KEY_LOCK_SYNC
+        frequency_hz: Click frequency for synthetic source
+        amplitude: Click amplitude
+        
+    Returns:
+        Tuple of (processed_signal as float32 numpy array, metadata dict with
+                  latency values and processing info)
+    """
+    if not is_available():
+        raise RuntimeError("Native audio not available")
+    
+    kv = create_keylock_voice(
+        sample_rate=sample_rate,
+        source_bpm=source_bpm,
+        master_bpm=master_bpm,
+        channels=1,
+        sync_mode=sync_mode,
+        frequency_hz=frequency_hz,
+        amplitude=amplitude
+    )
+    
+    if kv is None:
+        raise RuntimeError("Failed to create KeyLockVoice")
+    
+    # Get latency info
+    in_lat, out_lat, grid_comp = kv.get_latency()
+    
+    # Determine output frame count based on tempo ratio
+    ratio = master_bpm / source_bpm
+    input_frames = len(input_signal)
+    output_frames = int(input_frames / ratio)  # Time-stretched output
+    
+    # Process through native KeyLockVoice
+    processed_data, frames_processed = kv.process(output_frames)
+    
+    # Convert to numpy array
+    processed_signal = np.frombuffer(processed_data, dtype=np.float32)
+    
+    metadata = {
+        "input_latency_frames": in_lat,
+        "output_latency_frames": out_lat,
+        "grid_compensation_frames": grid_comp,
+        "tempo_ratio": ratio,
+        "input_frames": input_frames,
+        "output_frames": frames_processed,
+        "source_bpm": source_bpm,
+        "master_bpm": master_bpm,
+        "sync_mode": sync_mode,
+        "key_lock_active": kv.is_key_lock_active(),
+        "input_frequency_hz": frequency_hz,
+    }
+    
+    return processed_signal, metadata
 
 
 # Convenience function for quick testing

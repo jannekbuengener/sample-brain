@@ -1,0 +1,65 @@
+name: Native Key-Lock MSVC
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "native/audio/**"
+      - "src/native_audio.py"
+      - "tests/test_keylock_sync.py"
+      - ".github/workflows/native-keylock-msvc.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-keylock:
+    name: Build DLL and run real Signalsmith DSP tests
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Configure native audio
+        shell: pwsh
+        run: cmake -S native/audio -B native/audio/build -A x64
+
+      - name: Build Release DLL
+        shell: pwsh
+        run: cmake --build native/audio/build --config Release --parallel
+
+      - name: Require real DLL artifact
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem native/audio/build -Recurse -Filter samplebrain_audio.dll | Select-Object -First 1
+          if (-not $dll) { throw "samplebrain_audio.dll was not produced" }
+          Write-Host "DLL=$($dll.FullName)"
+
+      - name: Run native CTest executables
+        shell: pwsh
+        run: ctest --test-dir native/audio/build -C Release --output-on-failure
+
+      - name: Install Python test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install "pytest>=8,<10"
+
+      - name: Require Python to load the freshly built DLL
+        shell: pwsh
+        run: |
+          python -c "import src.native_audio as n; assert n._lib is not None, 'fresh samplebrain_audio.dll did not load through ctypes'; print(n._lib_path)"
+
+      - name: Run real Key-Lock DSP acceptance
+        shell: pwsh
+        run: python -m pytest -q -rs tests/test_keylock_sync.py

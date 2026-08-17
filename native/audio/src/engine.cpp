@@ -6,6 +6,7 @@
 #include "metrics.h"
 #include "synthetic.h"
 
+#include "keylock_voice.h"
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 
@@ -52,7 +53,10 @@ struct sb_engine {
             CMD_REMOVE_VOICE,
             CMD_SCHEDULE_START,
             CMD_STOP_VOICE,
-            CMD_SET_RATE
+            CMD_SET_RATE,
+            CMD_SET_SYNC_MODE,
+            CMD_SET_SOURCE_BPM,
+            CMD_SET_MASTER_BPM
         } type;
 
         union {
@@ -61,6 +65,9 @@ struct sb_engine {
             struct { sb_voice_id_t id; sb_frame_t frame; } schedule_start;
             struct { sb_voice_id_t id; } stop_voice;
             struct { sb_voice_id_t id; float rate; } set_rate;
+            struct { sb_voice_id_t id; int mode; } set_sync_mode;
+            struct { sb_voice_id_t id; float bpm; } set_source_bpm;
+            struct { sb_voice_id_t id; float bpm; } set_master_bpm;
         };
         std::atomic<sb_result_t>* result_ptr;
     };
@@ -207,6 +214,27 @@ sb_result_t sb_engine_close(sb_engine_t engine) {
     return SB_OK;
 }
 
+// Engine config accessors
+uint32_t sb_engine_get_sample_rate(sb_engine_t engine) {
+    return engine->config.sample_rate;
+}
+
+uint32_t sb_engine_get_buffer_frames(sb_engine_t engine) {
+    return engine->config.buffer_frames;
+}
+
+uint32_t sb_engine_get_output_channels(sb_engine_t engine) {
+    return engine->config.output_channels;
+}
+
+uint32_t sb_engine_get_input_channels(sb_engine_t engine) {
+    return engine->config.input_channels;
+}
+
+sb_frame_t sb_engine_get_frame(sb_engine_t engine) {
+    return engine->engine_frame.load(std::memory_order_relaxed);
+}
+
 sb_result_t sb_voice_create(sb_engine_t engine, const sb_voice_config_t* config, sb_voice_id_t* out_id) {
     if (!engine || !config || !out_id) return SB_ERR_INVALID_ARG;
 
@@ -283,6 +311,41 @@ sb_result_t sb_voice_set_rate(sb_engine_t engine, sb_voice_id_t id, float rate) 
     cmd.type = sb_engine::Command::CMD_SET_RATE;
     cmd.set_rate.id = id;
     cmd.set_rate.rate = rate;
+
+    return enqueue_command(engine, cmd);
+}
+
+SAMPLEBRAIN_EXPORT sb_result_t sb_voice_set_sync_mode(sb_engine_t engine, sb_voice_id_t id, int mode) {
+    if (!engine) return SB_ERR_NOT_INITIALIZED;
+
+    sb_engine::Command cmd{};
+    cmd.type = sb_engine::Command::CMD_SET_SYNC_MODE;
+    cmd.set_sync_mode.id = id;
+    cmd.set_sync_mode.mode = mode;
+
+    return enqueue_command(engine, cmd);
+}
+
+SAMPLEBRAIN_EXPORT sb_result_t sb_voice_set_source_bpm(sb_engine_t engine, sb_voice_id_t id, float bpm) {
+    if (!engine) return SB_ERR_NOT_INITIALIZED;
+    if (bpm <= 0.0f) return SB_ERR_INVALID_ARG;
+
+    sb_engine::Command cmd{};
+    cmd.type = sb_engine::Command::CMD_SET_SOURCE_BPM;
+    cmd.set_source_bpm.id = id;
+    cmd.set_source_bpm.bpm = bpm;
+
+    return enqueue_command(engine, cmd);
+}
+
+SAMPLEBRAIN_EXPORT sb_result_t sb_voice_set_master_bpm(sb_engine_t engine, sb_voice_id_t id, float bpm) {
+    if (!engine) return SB_ERR_NOT_INITIALIZED;
+    if (bpm <= 0.0f) return SB_ERR_INVALID_ARG;
+
+    sb_engine::Command cmd{};
+    cmd.type = sb_engine::Command::CMD_SET_MASTER_BPM;
+    cmd.set_master_bpm.id = id;
+    cmd.set_master_bpm.bpm = bpm;
 
     return enqueue_command(engine, cmd);
 }
@@ -369,6 +432,11 @@ sb_result_t sb_engine_snapshot(sb_engine_t engine, sb_snapshot_t* out_snapshot) 
             out_snapshot->start_skew_frames[i] = v->actual_start_frame - v->requested_start_frame;
             out_snapshot->voice_rates[i] = v->rate;
             out_snapshot->voice_gains[i] = v->gain;
+            out_snapshot->voice_sync_modes[i] = v->sync_mode;
+            out_snapshot->voice_key_lock_active[i] = v->is_key_lock_active();
+            out_snapshot->voice_input_latency_frames[i] = v->get_input_latency_frames();
+            out_snapshot->voice_output_latency_frames[i] = v->get_output_latency_frames();
+            out_snapshot->voice_grid_compensation_frames[i] = v->get_grid_compensation_frames();
             if (v->get_state() == SB_VOICE_PLAYING) {
                 out_snapshot->active_voice_count++;
             }
@@ -382,6 +450,11 @@ sb_result_t sb_engine_snapshot(sb_engine_t engine, sb_snapshot_t* out_snapshot) 
             out_snapshot->start_skew_frames[i] = 0;
             out_snapshot->voice_rates[i] = 1.0f;
             out_snapshot->voice_gains[i] = 1.0f;
+            out_snapshot->voice_sync_modes[i] = 0;
+            out_snapshot->voice_key_lock_active[i] = false;
+            out_snapshot->voice_input_latency_frames[i] = 0;
+            out_snapshot->voice_output_latency_frames[i] = 0;
+            out_snapshot->voice_grid_compensation_frames[i] = 0;
         }
     }
 
@@ -522,6 +595,31 @@ static sb_result_t process_commands(sb_engine_t engine) {
                 }
                 break;
             }
+            case sb_engine::Command::CMD_SET_SYNC_MODE: {
+                Voice* v = find_voice(engine, cmd.set_sync_mode.id);
+                if (v) {
+                    v->sync_mode = cmd.set_sync_mode.mode;
+                }
+                break;
+            }
+            case sb_engine::Command::CMD_SET_SOURCE_BPM: {
+                Voice* v = find_voice(engine, cmd.set_source_bpm.id);
+                if (v) {
+                    v->source_bpm = cmd.set_source_bpm.bpm;
+                } else {
+                    result = SB_ERR_VOICE_NOT_FOUND;
+                }
+                break;
+            }
+            case sb_engine::Command::CMD_SET_MASTER_BPM: {
+                Voice* v = find_voice(engine, cmd.set_master_bpm.id);
+                if (v) {
+                    v->master_bpm = cmd.set_master_bpm.bpm;
+                } else {
+                    result = SB_ERR_VOICE_NOT_FOUND;
+                }
+                break;
+            }
             default:
                 result = SB_ERR_INVALID_ARG;
         }
@@ -556,4 +654,92 @@ static Voice* find_voice(sb_engine_t engine, sb_voice_id_t id) {
     auto it = std::find_if(engine->voices.begin(), engine->voices.end(),
                            [id](Voice* v) { return v->id == id; });
     return (it != engine->voices.end()) ? *it : nullptr;
+}
+
+
+// =============================================================================
+// #324 Test API: Offline KeyLockVoice processing
+// =============================================================================
+
+static int compute_output_frames(const sb_test_keylock_config_t* config, size_t input_frames) {
+    float tempo_ratio = config->master_bpm / config->source_bpm;
+    if (tempo_ratio <= 0.0f) return 0;
+    // Output frames = input_frames * tempo_ratio (time-stretch)
+    return static_cast<int>(static_cast<float>(input_frames) * tempo_ratio);
+}
+
+SAMPLEBRAIN_EXPORT int sb_test_keylock_process(
+    const sb_test_keylock_config_t* config,
+    const float* input_buffer,
+    size_t input_frames,
+    float* output_buffer,
+    size_t output_frames
+) {
+    if (!config || !input_buffer || !output_buffer) return -1;
+    if (config->sample_rate <= 0 || config->channels <= 0) return -1;
+    if (config->source_bpm <= 0.0f || config->master_bpm <= 0.0f) return -1;
+
+    // Create KeyLockVoice
+    samplebrain::KeyLockVoice kv;
+    samplebrain::KeyLockVoiceConfig kv_config;
+    kv_config.sample_rate = config->sample_rate;
+    kv_config.channels = config->channels;
+    kv_config.source_bpm = config->source_bpm;
+    kv_config.master_bpm = config->master_bpm;
+    kv_config.sync_mode = (config->sync_mode == 1) ? samplebrain::SyncMode::KEY_LOCK_SYNC : samplebrain::SyncMode::RATE_SYNC;
+    kv_config.frequency_hz = config->frequency_hz;
+    kv_config.amplitude = config->amplitude;
+    kv_config.signalsmith_available = true;
+
+    if (!kv.init(kv_config)) return -1;
+
+    // Set PCM source (the input buffer)
+    kv.set_pcm_source(input_buffer, input_frames, config->channels);
+
+    // Schedule to start immediately
+    kv.schedule_start(0);
+
+    // Calculate expected output frames based on tempo ratio
+    // For BPM sync: when tempo increases, output should be shorter
+    float tempo_ratio = config->master_bpm / config->source_bpm;
+    int expected_output_frames = static_cast<int>(static_cast<float>(input_frames) / tempo_ratio);
+    size_t frames_to_process = static_cast<size_t>(expected_output_frames);
+    if (frames_to_process > output_frames) frames_to_process = output_frames;
+
+    // Process output
+    if (!kv.process(output_buffer, static_cast<size_t>(frames_to_process), static_cast<size_t>(config->channels))) {
+        // Voice not active - clear output
+        std::fill(output_buffer, output_buffer + frames_to_process * config->channels, 0.0f);
+    }
+
+    return frames_to_process;
+}
+
+SAMPLEBRAIN_EXPORT int sb_test_keylock_get_latency(
+    const sb_test_keylock_config_t* config,
+    int* input_latency_frames,
+    int* output_latency_frames,
+    int* grid_compensation_frames
+) {
+    if (!config || !input_latency_frames || !output_latency_frames || !grid_compensation_frames) return -1;
+    if (config->sample_rate <= 0 || config->channels <= 0) return -1;
+    if (config->source_bpm <= 0.0f || config->master_bpm <= 0.0f) return -1;
+
+    // Create KeyLockVoice to query latency
+    samplebrain::KeyLockVoice kv;
+    samplebrain::KeyLockVoiceConfig kv_config;
+    kv_config.sample_rate = config->sample_rate;
+    kv_config.channels = config->channels;
+    kv_config.source_bpm = config->source_bpm;
+    kv_config.master_bpm = config->master_bpm;
+    kv_config.sync_mode = (config->sync_mode == 1) ? samplebrain::SyncMode::KEY_LOCK_SYNC : samplebrain::SyncMode::RATE_SYNC;
+    kv_config.signalsmith_available = true;
+
+    if (!kv.init(kv_config)) return -1;
+
+    *input_latency_frames = kv.get_input_latency_frames();
+    *output_latency_frames = kv.get_output_latency_frames();
+    *grid_compensation_frames = kv.get_effective_grid_compensation_frames();
+
+    return 0;
 }
