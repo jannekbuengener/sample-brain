@@ -97,6 +97,7 @@ from .workbench_library import (
     WorkbenchCueValidationError,
     WorkbenchPlaylistValidationError,
 )
+from .workbench_editing_ui import attach_workbench_editing_ui
 from .workbench_preview import WorkbenchPreviewPlayer, preview_toggle_action
 from .workbench_waveform import (
     attack_marker_x,
@@ -208,6 +209,7 @@ class WorkbenchApp:
         self._build_styles()
         self._build_menubar()
         self._build_layout()
+        self._editing_ui = attach_workbench_editing_ui(self)
         self._transport_ui = attach_workbench_transport_ui(self)
         self._restore_last_folder()
         self._refresh_library_list()

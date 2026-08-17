@@ -1,4 +1,5 @@
 """Workbench audio preview — play selected samples without modifying originals."""
+
 from __future__ import annotations
 
 import os
@@ -44,13 +45,17 @@ def validate_preview_start_ms(path: Path | str, start_ms: int) -> PreviewResult:
         return PreviewResult(ok=True)
     duration_ms = read_audio_duration_ms(path)
     if duration_ms is None:
-        return PreviewResult(ok=False, message="Dauer unbekannt — Cue-Preview nicht möglich.")
+        return PreviewResult(
+            ok=False, message="Dauer unbekannt — Cue-Preview nicht möglich."
+        )
     if offset >= duration_ms:
         return PreviewResult(ok=False, message="Cue liegt außerhalb der Datei.")
     return PreviewResult(ok=True)
 
 
-def validate_preview_region_ms(path: Path | str, start_ms: int, end_ms: int) -> PreviewResult:
+def validate_preview_region_ms(
+    path: Path | str, start_ms: int, end_ms: int
+) -> PreviewResult:
     """Validate a bounded preview region ``[start_ms, end_ms)``."""
     start = normalize_preview_start_ms(start_ms)
     end = normalize_preview_start_ms(end_ms)
@@ -59,11 +64,43 @@ def validate_preview_region_ms(path: Path | str, start_ms: int, end_ms: int) -> 
         return start_check
     duration_ms = read_audio_duration_ms(path)
     if duration_ms is None:
-        return PreviewResult(ok=False, message="Dauer unbekannt — Loop-Preview nicht möglich.")
+        return PreviewResult(
+            ok=False, message="Dauer unbekannt — Loop-Preview nicht möglich."
+        )
     if end <= start:
         return PreviewResult(ok=False, message="Loop-Ende muss nach Loop-Start liegen.")
     if end > duration_ms:
         return PreviewResult(ok=False, message="Loop-Ende liegt außerhalb der Datei.")
+    return PreviewResult(ok=True)
+
+
+def validate_preview_region_frames(
+    path: Path | str,
+    start_frame: int,
+    end_frame_exclusive: int,
+) -> PreviewResult:
+    """Validate an exact source-frame preview region ``[start, end)``."""
+    if (
+        not isinstance(start_frame, int)
+        or isinstance(start_frame, bool)
+        or not isinstance(end_frame_exclusive, int)
+        or isinstance(end_frame_exclusive, bool)
+    ):
+        return PreviewResult(ok=False, message="Frame-Grenzen müssen Ganzzahlen sein.")
+    if start_frame < 0:
+        return PreviewResult(ok=False, message="Start-Frame darf nicht negativ sein.")
+    if end_frame_exclusive <= start_frame:
+        return PreviewResult(
+            ok=False, message="End-Frame muss nach Start-Frame liegen."
+        )
+    try:
+        info = sf.info(Path(path))
+    except Exception:
+        return PreviewResult(
+            ok=False, message="Audio-Frames konnten nicht gelesen werden."
+        )
+    if end_frame_exclusive > int(info.frames):
+        return PreviewResult(ok=False, message="End-Frame liegt außerhalb der Datei.")
     return PreviewResult(ok=True)
 
 
@@ -79,7 +116,9 @@ def _write_pcm_wav_temp(source: Path) -> Path:
     return temp
 
 
-def _write_pcm_wav_temp_from_offset(source: Path, start_ms: int, *, end_ms: int | None = None) -> Path:
+def _write_pcm_wav_temp_from_offset(
+    source: Path, start_ms: int, *, end_ms: int | None = None
+) -> Path:
     """Decode *source* from *start_ms* (optionally until *end_ms*) into a temp WAV."""
     start_sec = normalize_preview_start_ms(start_ms) / 1000.0
     info = sf.info(source)
@@ -104,6 +143,28 @@ def _write_pcm_wav_temp_from_offset(source: Path, start_ms: int, *, end_ms: int 
     return temp
 
 
+def _write_pcm_wav_temp_from_frames(
+    source: Path,
+    start_frame: int,
+    end_frame_exclusive: int,
+) -> Path:
+    """Decode exactly ``source[start_frame:end_frame_exclusive]`` to a temp WAV."""
+    data, sr = sf.read(
+        source,
+        dtype="float32",
+        always_2d=False,
+        start=start_frame,
+        stop=end_frame_exclusive,
+    )
+    if getattr(data, "size", 0) == 0:
+        raise ValueError("empty audio after frame-region slice")
+    fd, name = tempfile.mkstemp(suffix=".wav", prefix=_PREVIEW_TEMP_PREFIX)
+    os.close(fd)
+    temp = Path(name)
+    sf.write(temp, data, sr, subtype="PCM_16")
+    return temp
+
+
 def prepare_preview_playback_path(
     source: Path,
     start_ms: int = 0,
@@ -119,7 +180,11 @@ def prepare_preview_playback_path(
         try:
             temp = _write_pcm_wav_temp_from_offset(source, offset, end_ms=end_ms)
         except Exception as exc:
-            return None, None, PreviewResult(ok=False, message=f"Loop-Preview fehlgeschlagen: {exc}")
+            return (
+                None,
+                None,
+                PreviewResult(ok=False, message=f"Loop-Preview fehlgeschlagen: {exc}"),
+            )
         return temp, temp, PreviewResult(ok=True)
 
     offset_check = validate_preview_start_ms(source, offset)
@@ -130,7 +195,13 @@ def prepare_preview_playback_path(
         try:
             temp = _write_pcm_wav_temp_from_offset(source, offset)
         except Exception as exc:
-            return None, None, PreviewResult(ok=False, message=f"Preview-Vorbereitung fehlgeschlagen: {exc}")
+            return (
+                None,
+                None,
+                PreviewResult(
+                    ok=False, message=f"Preview-Vorbereitung fehlgeschlagen: {exc}"
+                ),
+            )
         return temp, temp, PreviewResult(ok=True)
 
     if source.suffix.lower() == ".wav":
@@ -139,7 +210,39 @@ def prepare_preview_playback_path(
     try:
         temp = _write_pcm_wav_temp(source)
     except Exception as exc:
-        return None, None, PreviewResult(ok=False, message=f"Konvertierung fehlgeschlagen: {exc}")
+        return (
+            None,
+            None,
+            PreviewResult(ok=False, message=f"Konvertierung fehlgeschlagen: {exc}"),
+        )
+    return temp, temp, PreviewResult(ok=True)
+
+
+def prepare_preview_playback_frame_region(
+    source: Path,
+    start_frame: int,
+    end_frame_exclusive: int,
+) -> tuple[Path | None, Path | None, PreviewResult]:
+    """Create a temporary preview from exact source-frame bounds."""
+    validation = validate_preview_region_frames(
+        source,
+        start_frame,
+        end_frame_exclusive,
+    )
+    if not validation.ok:
+        return None, None, validation
+    try:
+        temp = _write_pcm_wav_temp_from_frames(
+            source,
+            start_frame,
+            end_frame_exclusive,
+        )
+    except Exception as exc:
+        return (
+            None,
+            None,
+            PreviewResult(ok=False, message=f"Region-Preview fehlgeschlagen: {exc}"),
+        )
     return temp, temp, PreviewResult(ok=True)
 
 
@@ -378,6 +481,37 @@ class WorkbenchPreviewPlayer:
                 temp_path.unlink(missing_ok=True)
             return result
 
+    def play_frame_region(
+        self,
+        path: str | Path,
+        *,
+        start_frame: int,
+        end_frame_exclusive: int,
+    ) -> PreviewResult:
+        """Play one exact source-frame region; original file remains unchanged."""
+        validation = validate_preview_path(path)
+        if not validation.ok:
+            return validation
+        resolved = Path(path).resolve()
+        play_path, temp_path, prep = prepare_preview_playback_frame_region(
+            resolved,
+            start_frame,
+            end_frame_exclusive,
+        )
+        if not prep.ok or play_path is None:
+            return prep
+        with self._lock:
+            loop_thread, loop_temp = self._begin_stop_unlocked()
+        self._finalize_stop_side_effects(loop_thread, loop_temp)
+        with self._lock:
+            result = self._play_fn(play_path, 0)
+            if result.ok:
+                self._current_path = resolved
+                self._current_start_ms = 0
+            elif temp_path is not None:
+                temp_path.unlink(missing_ok=True)
+            return result
+
     def play_region_loop(
         self,
         path: str | Path,
@@ -413,6 +547,42 @@ class WorkbenchPreviewPlayer:
                 args=(play_path,),
                 daemon=True,
                 name="workbench-loop-repeat",
+            )
+            self._loop_thread.start()
+        return PreviewResult(ok=True)
+
+    def play_frame_region_loop(
+        self,
+        path: str | Path,
+        *,
+        start_frame: int,
+        end_frame_exclusive: int,
+    ) -> PreviewResult:
+        """Repeat an exact source-frame region until ``stop()``."""
+        validation = validate_preview_path(path)
+        if not validation.ok:
+            return validation
+        resolved = Path(path).resolve()
+        play_path, temp_path, prep = prepare_preview_playback_frame_region(
+            resolved,
+            start_frame,
+            end_frame_exclusive,
+        )
+        if not prep.ok or play_path is None:
+            return prep
+        with self._lock:
+            loop_thread, loop_temp = self._begin_stop_unlocked()
+        self._finalize_stop_side_effects(loop_thread, loop_temp)
+        self._loop_stop_event.clear()
+        with self._lock:
+            self._loop_temp_path = temp_path
+            self._current_path = resolved
+            self._current_start_ms = 0
+            self._loop_thread = threading.Thread(
+                target=self._loop_region_worker,
+                args=(play_path,),
+                daemon=True,
+                name="workbench-frame-region-repeat",
             )
             self._loop_thread.start()
         return PreviewResult(ok=True)
@@ -459,7 +629,11 @@ def preview_toggle_action(
     requested_path: Path,
 ) -> str:
     """Return ``stop`` when the same file is already playing, else ``play``."""
-    if is_playing and current_path is not None and current_path == requested_path.resolve():
+    if (
+        is_playing
+        and current_path is not None
+        and current_path == requested_path.resolve()
+    ):
         return "stop"
     return "play"
 
@@ -478,10 +652,12 @@ __all__ = [
     "PreviewResult",
     "WorkbenchPreviewPlayer",
     "normalize_preview_start_ms",
+    "prepare_preview_playback_frame_region",
     "prepare_preview_playback_path",
     "preview_platform_note",
     "preview_toggle_action",
     "validate_preview_path",
+    "validate_preview_region_frames",
     "validate_preview_region_ms",
     "validate_preview_start_ms",
 ]
