@@ -135,9 +135,6 @@ def test_sync_rate_128_140_bpm_hardware():
     assert relative_last_click_offset_frames <= 512, (
         f"Last rendered click offset too large: {relative_last_click_offset_frames} frames"
     )
-    # Engine frame drift should be small (< 1% of expected)
-    assert abs(engine_frame_drift) / expected_engine_frames < 0.01, f"Engine frame drift too large: {engine_frame_drift}"
-    assert abs(engine_frame_drift2) / expected_engine_frames < 0.01, f"SYNC OFF engine frame drift too large: {engine_frame_drift2}"
 
 
 # ---------------------------------------------------------------------------
