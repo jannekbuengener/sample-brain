@@ -2,6 +2,7 @@
 #ifndef SAMPLEBRAIN_RINGBUFFER_H
 #define SAMPLEBRAIN_RINGBUFFER_H
 
+#include "samplebrain_audio.h"
 #include <atomic>
 #include <vector>
 #include <cstddef>
