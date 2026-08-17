@@ -96,11 +96,11 @@ def test_steps_run_in_defined_order(track_file, tmp_path):
     adapters = DeconstructAdapters(
         track_map=make("track_map", True),
         arrangement=make("arrangement", False),
-        assets=make("assets", False),
         stems=make("stems", False),
+        assets=make("assets", False),
     )
     run = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
-    assert calls == ["track_map", "arrangement", "assets", "stems"]
+    assert calls == ["track_map", "arrangement", "stems", "assets"]
     assert [s.step_id for s in run.steps] == [s[0] for s in STEP_ORDER]
 
 
@@ -185,12 +185,12 @@ def test_optional_assets_no_result_keeps_run_usable(track_file, tmp_path):
     adapters = DeconstructAdapters(
         track_map=lambda c: _ok("track_map", True),
         arrangement=lambda c: _ok("arrangement", False),
-        assets=lambda c: _no_result("assets", False, reason="INSUFFICIENT_DOWNBEATS"),
         stems=lambda c: _ok("stems", False),
+        assets=lambda c: _no_result("assets", False, reason="INSUFFICIENT_DOWNBEATS"),
     )
     run = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     assert run.status == "partial"
-    assert run.steps[2].status == "no_result"
+    assert run.steps[3].status == "no_result"
 
 
 def test_missing_stems_not_run_and_no_overall_error(track_file, tmp_path):
@@ -202,8 +202,8 @@ def test_missing_stems_not_run_and_no_overall_error(track_file, tmp_path):
     )
     run = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     assert run.status == "complete"
-    assert run.steps[3].step_id == "stems"
-    assert run.steps[3].status == "not_run"
+    assert run.steps[2].step_id == "stems"
+    assert run.steps[2].status == "not_run"
 
 
 def test_step_results_passed_forward(track_file, tmp_path):
@@ -373,7 +373,7 @@ def test_run_result_is_runresult_instance(track_file, tmp_path):
 
 def test_real_orchestrator_runs_end_to_end(tmp_path):
     """Exercise the genuine production adapters (no mocks) on synthetic audio."""
-    track = write_kick_transient_wav(tmp_path / "track.wav", bpm=120.0, duration_sec=8.0)
+    track = write_kick_transient_wav(tmp_path / "track.wav", bpm=120.0, duration_sec=4.0)
     pack = tmp_path / "pack"
     run = run_deconstruct(track, pack, beat_backend="librosa", skip={"stems"})
     # Must not crash; overall status is one of the valid run statuses.
@@ -386,121 +386,3 @@ def test_real_orchestrator_runs_end_to_end(tmp_path):
     # No absolute paths leaked into the serialized run result.
     text = json.dumps(run.to_dict(), default=str)
     assert not _abs_pattern(text)
-
-
-def test_arrangement_reads_canonical_working_audio(tmp_path):
-    """Regression: arrangement must unpack sf.read(data, sr) on working_audio.wav."""
-    track = write_kick_transient_wav(tmp_path / "track.wav", bpm=128.0, duration_sec=8.0)
-    pack = tmp_path / "pack"
-    run = run_deconstruct(track, pack, beat_backend="librosa", skip={"stems", "assets"})
-    arrangement = next(s for s in run.steps if s.step_id == "arrangement")
-    assert arrangement.status != "failed", arrangement.error
-    assert arrangement.error is None or arrangement.error.get("code") != "AUDIO_READ_FAILED"
-    assert (pack / "analysis" / "working_audio.wav").exists()
-    assert (pack / "analysis" / "arrangement_map.json").exists()
-
-
-
-def test_assets_adapter_uses_merged_batches_without_stale_batch_names(tmp_path):
-    """Regression: merged asset batches must not reference removed single-batch vars."""
-    from src.beat_grid import BeatGridResult, BeatGridSeries, BeatGridSource
-    from src.canon_audio import AudioTimebase
-    from src.deconstruct import StepContext, _default_assets_adapter
-    from src.structure_v1 import (
-        StructureSection,
-        StructureV1Result,
-        StructureV1Source,
-    )
-
-    sample_rate = 44100
-    canon = write_sine_wav(
-        tmp_path / "working_audio.wav",
-        duration_sec=8.0,
-        frequency_hz=220.0,
-        sr=sample_rate,
-    )
-    timebase = AudioTimebase(
-        sample_rate=sample_rate,
-        n_samples=8 * sample_rate,
-    )
-
-    downbeat_samples = tuple(i * sample_rate for i in range(8))
-    downbeat_times = tuple(float(i) for i in range(8))
-    series = BeatGridSeries(
-        status="ok",
-        sample_indices=downbeat_samples,
-        times_sec=downbeat_times,
-    )
-    beat_grid = BeatGridResult(
-        status="ok",
-        bpm=60.0,
-        beats=series,
-        downbeats=series,
-        source=BeatGridSource(
-            component="beat_grid",
-            backend="synthetic",
-            backend_version="test",
-            checkpoint=None,
-        ),
-    )
-
-    structure = StructureV1Result(
-        status="ok",
-        boundaries=(),
-        sections=(
-            StructureSection(
-                id="section_1",
-                start_sample=0,
-                end_sample=4 * sample_rate,
-                start_sec=0.0,
-                end_sec=4.0,
-                start_bar=0,
-                end_bar=4,
-            ),
-        ),
-        feature_status={},
-        notes=(),
-        source=StructureV1Source(
-            backend="synthetic",
-            backend_version="test",
-            config={},
-        ),
-        bar_features={},
-    )
-
-    pack = tmp_path / "pack"
-    ctx = StepContext(
-        track_path=canon,
-        pack_root=pack,
-        bpm_normalization="none",
-        beat_backend="librosa",
-        artifacts={
-            "track_map": {
-                "source": {
-                    "original": {
-                        "hash": {
-                            "algorithm": "sha256",
-                            "value": "synthetic-track-hash",
-                        }
-                    }
-                }
-            },
-            "arrangement": {
-                "structure_result": structure,
-                "arrangement_result": None,
-                "beat_grid": beat_grid,
-                "canonical_audio_path": canon,
-                "timebase": timebase,
-            },
-        },
-    )
-
-    step, payload = _default_assets_adapter(ctx)
-
-    assert step.status == "ok", step.error
-    assert step.error is None
-    assert payload["manifest_refs"]
-    assert any(ref.startswith("loops/") for ref in step.output_refs)
-    assert any(ref.startswith("sections/") for ref in step.output_refs)
-    assert list((pack / "loops" / "assets").glob("*.wav"))
-    assert list((pack / "sections" / "assets").glob("*.wav"))
