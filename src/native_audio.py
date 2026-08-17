@@ -178,6 +178,8 @@ class SbSnapshot(ctypes.Structure):
         ("voice_input_latency_frames", ctypes.c_int32 * SB_MAX_VOICES),
         ("voice_output_latency_frames", ctypes.c_int32 * SB_MAX_VOICES),
         ("voice_grid_compensation_frames", ctypes.c_int32 * SB_MAX_VOICES),
+        ("voice_rendered_click_count", ctypes.c_uint64 * SB_MAX_VOICES),
+        ("voice_last_click_engine_frame", sb_frame_t * SB_MAX_VOICES),
         ("callback_mean_us", ctypes.c_double),
         ("callback_p95_us", ctypes.c_double),
         ("callback_p99_us", ctypes.c_double),
@@ -388,6 +390,8 @@ class Snapshot:
     voice_input_latency_frames: List[int]
     voice_output_latency_frames: List[int]
     voice_grid_compensation_frames: List[int]
+    voice_rendered_click_count: List[int]
+    voice_last_click_engine_frame: List[int]
     callback_mean_us: float
     callback_p95_us: float
     callback_p99_us: float
@@ -422,6 +426,8 @@ class Snapshot:
             voice_input_latency_frames=[c_snap.voice_input_latency_frames[i] for i in range(SB_MAX_VOICES)],
             voice_output_latency_frames=[c_snap.voice_output_latency_frames[i] for i in range(SB_MAX_VOICES)],
             voice_grid_compensation_frames=[c_snap.voice_grid_compensation_frames[i] for i in range(SB_MAX_VOICES)],
+            voice_rendered_click_count=[c_snap.voice_rendered_click_count[i] for i in range(SB_MAX_VOICES)],
+            voice_last_click_engine_frame=[c_snap.voice_last_click_engine_frame[i] for i in range(SB_MAX_VOICES)],
             callback_mean_us=c_snap.callback_mean_us,
             callback_p95_us=c_snap.callback_p95_us,
             callback_p99_us=c_snap.callback_p99_us,

@@ -37,9 +37,9 @@ Voice::~Voice() {
 }
 
 void Voice::generate_click_samples(const sb_synthetic_click_config_t& config) {
-    // Calculate click interval in frames.
-    double interval_sec = 60.0 / config.bpm;
-    click_interval_frames = interval_sec * sample_rate;
+    // Keep a stable source-based beat interval for the original source BPM.
+    source_click_interval_frames = (60.0 / config.bpm) * sample_rate;
+    click_interval_frames = source_click_interval_frames / rate;
 
     // Generate click waveform.
     size_t click_samples_count = static_cast<size_t>(config.duration_ms / 1000.0 * sample_rate);
@@ -77,9 +77,8 @@ void Voice::stop() {
 
 void Voice::set_rate(float new_rate) {
     rate = new_rate;
-    // Recalculate click interval with new rate.
-    if (click_interval_frames > 0) {
-        click_interval_frames = click_interval_frames * (1.0 / rate);
+    if (source_click_interval_frames > 0.0) {
+        click_interval_frames = source_click_interval_frames / rate;
     }
 }
 
@@ -192,6 +191,9 @@ void Voice::render_click(float* output, size_t offset, size_t num_frames,
         if (frame >= engine_frame) {
             size_t pos = offset + static_cast<size_t>(frame - engine_frame);
             if (pos < num_frames) {
+                rendered_click_count.fetch_add(1, std::memory_order_relaxed);
+                last_rendered_click_engine_frame.store(frame, std::memory_order_release);
+
                 // Mix click into all output channels.
                 for (size_t ch = 0; ch < output_channels; ++ch) {
                     for (size_t i = 0; i < click_length && (pos + i) < num_frames; ++i) {
