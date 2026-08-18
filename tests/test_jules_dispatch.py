@@ -299,12 +299,12 @@ def test_activities_pagination() -> None:
             "activities": [{"progressUpdated": {}}],
             "nextPageToken": "page2",
         },
-        {"activities": [{"planGenerated": {"planId": "plans/1"}}]},
+        {"activities": [{"planGenerated": {"plan": {"id": "plans/1"}}}]},
     ]
     transport = FakeTransport(activities_pages=pages)
     activities = get_activities(transport, "sessions/abc")
     assert len(activities) == 2
-    assert activities[1]["planGenerated"]["planId"] == "plans/1"
+    assert activities[1]["planGenerated"]["plan"]["id"] == "plans/1"
     # Two GETs: first page (with token) then second page.
     get_calls = [c for c in transport.calls if c[0] == "GET"]
     assert len(get_calls) == 2
@@ -312,27 +312,32 @@ def test_activities_pagination() -> None:
 
 def test_schema_compliant_activities_parsing() -> None:
     activities_list = [
-        {"planGenerated": {"planId": "plans/100"}},
-        {"progressUpdated": {"message": "Working..."}},
-        {
-            "sessionCompleted": {
-                "outputs": [
-                    {"pullRequest": {"url": "https://github.com/jannekbuengener/sample-brain/pull/42"}}
-                ]
-            }
-        },
+        {"planGenerated": {"plan": {"id": "plans/100", "steps": []}}},
+        {"progressUpdated": {"title": "Working", "description": "..."}},
+        {"sessionCompleted": {}},
     ]
-    transport = FakeTransport(activities_pages=[{"activities": activities_list}])
+    session = {
+        "name": "sessions/abc",
+        "state": "COMPLETED",
+        "outputs": [
+            {
+                "pullRequest": {
+                    "url": "https://github.com/example/example/pull/1"
+                }
+            }
+        ],
+    }
+    transport = FakeTransport(session=session, activities_pages=[{"activities": activities_list}])
     res = run_activities(transport, "sessions/abc")
     assert res["dispatch_status"] == "RESULT_READY"
     assert res["jules_state"] == "COMPLETED"
     assert res["plan_id"] == "plans/100"
-    assert res["pull_request_url"] == "https://github.com/jannekbuengener/sample-brain/pull/42"
+    assert res["pull_request_url"] == "https://github.com/example/example/pull/1"
 
 
 def test_schema_compliant_activities_failed() -> None:
     activities_list = [
-        {"planGenerated": {"planId": "plans/101"}},
+        {"planGenerated": {"plan": {"id": "plans/101"}}},
         {"sessionFailed": {"reason": "Error occurred"}},
     ]
     transport = FakeTransport(activities_pages=[{"activities": activities_list}])

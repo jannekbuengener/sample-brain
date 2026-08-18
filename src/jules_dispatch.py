@@ -616,28 +616,34 @@ def run_activities(transport: JulesTransport, session_id: str) -> dict:
 
         plan_gen = activity.get("planGenerated")
         if isinstance(plan_gen, dict):
-            plan_id = plan_gen.get("planId") or plan_gen.get("plan", {}).get("id") or plan_id
+            plan_obj = plan_gen.get("plan")
+            if isinstance(plan_obj, dict):
+                plan_id = plan_obj.get("id") or plan_id
+            else:
+                plan_id = plan_gen.get("planId") or plan_id
         elif atype == "planGenerated":
             plan_id = activity.get("planId") or plan_id
 
         sess_comp = activity.get("sessionCompleted")
-        if isinstance(sess_comp, dict) or atype == "sessionCompleted":
+        if "sessionCompleted" in activity or atype == "sessionCompleted":
             latest_state = "COMPLETED"
             comp_obj = sess_comp if isinstance(sess_comp, dict) else activity
-            # Extract PR URL from sessionCompleted or its outputs
+            # Support reading PR directly if present for legacy compatibility
             pr_candidate = comp_obj.get("pullRequest") or comp_obj.get("output", {}).get("pullRequest")
             if isinstance(pr_candidate, dict):
                 pr_url = pr_candidate.get("url") or pr_candidate.get("htmlUrl") or pr_url
-            elif not pr_url and "outputs" in comp_obj and isinstance(comp_obj["outputs"], list):
-                for out_item in comp_obj["outputs"]:
-                    if isinstance(out_item, dict) and "pullRequest" in out_item:
-                        pr_dict = out_item["pullRequest"]
-                        if isinstance(pr_dict, dict):
-                            pr_url = pr_dict.get("url") or pr_dict.get("htmlUrl") or pr_url
 
         sess_fail = activity.get("sessionFailed")
-        if isinstance(sess_fail, dict) or atype == "sessionFailed":
+        if "sessionFailed" in activity or atype == "sessionFailed":
             latest_state = "FAILED"
+
+    if latest_state == "COMPLETED" and not pr_url:
+        try:
+            sess_resp = get_session(transport, session_id)
+            pr_url = _extract_pr_url(sess_resp)
+        except JulesError:
+            pass
+
     if latest_state is None:
         latest_state = "IN_PROGRESS"
     result = normalize_dispatch(latest_state, pr_url, session_id, plan_id)
