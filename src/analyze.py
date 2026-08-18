@@ -373,83 +373,130 @@ def extract_features(
     )
 
 
+_FEATURE_UPSERT = text(
+    """
+    INSERT INTO features (
+        sample_id, bpm, key, key_conf, loudness, brightness,
+        mfcc_mean, mfcc_std, chroma_mean, chroma_std, "class"
+    ) VALUES (
+        :sample_id, :bpm, :key, :key_conf, :loudness, :brightness,
+        :mfcc_mean, :mfcc_std, :chroma_mean, :chroma_std, :clazz
+    )
+    ON CONFLICT(sample_id) DO UPDATE SET
+        bpm=excluded.bpm,
+        key=excluded.key,
+        key_conf=excluded.key_conf,
+        loudness=excluded.loudness,
+        brightness=excluded.brightness,
+        mfcc_mean=excluded.mfcc_mean,
+        mfcc_std=excluded.mfcc_std,
+        chroma_mean=excluded.chroma_mean,
+        chroma_std=excluded.chroma_std,
+        "class"=excluded."class"
+    """
+)
+
+
+def _load_analyze_batch(
+    engine,
+    *,
+    last_id: int,
+    batch_size: int,
+    only_missing: bool,
+) -> list[tuple]:
+    missing_clause = "AND f.sample_id IS NULL" if only_missing else ""
+    query = text(
+        f"""
+        SELECT s.id, s.path, s.duration, f.sample_id AS has_features
+        FROM samples s
+        LEFT JOIN features f ON f.sample_id = s.id
+        WHERE s.id > :last_id
+          {missing_clause}
+        ORDER BY s.id
+        LIMIT :batch_size
+        """
+    )
+    with engine.connect() as conn:
+        return conn.execute(
+            query,
+            {"last_id": int(last_id), "batch_size": int(batch_size)},
+        ).fetchall()
+
+
+def _flush_feature_batch(engine, rows: list[dict]) -> None:
+    if not rows:
+        return
+    with engine.begin() as conn:
+        conn.execute(_FEATURE_UPSERT, rows)
+
+
 def run_analyze(
     limit: int | None = None,
     only_missing: bool = True,
     bpm_normalization: str = "none",
+    batch_size: int = 100,
 ) -> None:
-    """Compute features for samples in the catalog.
+    """Compute features for samples in bounded batches.
 
     Safe by default:
     - reads sample paths from DB (does not scan filesystem roots)
-    - skips rows that already have a features row (unless only_missing=False)
+    - skips rows that already have a features row in SQL when only_missing=True
+    - performs expensive audio analysis outside DB write transactions
+    - keeps catalog reads bounded by primary-key pages
     """
-    engine = init_db()
-    with engine.begin() as conn:
-        rows = conn.execute(
-            text(
-                """
-                SELECT s.id, s.path, s.duration, f.sample_id AS has_features
-                FROM samples s
-                LEFT JOIN features f ON f.sample_id = s.id
-                ORDER BY s.id
-                """
-            )
-        ).fetchall()
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
 
+    engine = init_db()
     processed = 0
-    engine = init_db()
-    with engine.begin() as conn:
-        for sid, path_str, duration, has_features in tqdm(rows, desc="Analyzing", unit="file"):
-            if only_missing and has_features is not None:
-                continue
+    last_id = 0
+    done = False
 
-            feats = extract_features(Path(path_str), duration, bpm_normalization=bpm_normalization)
-            if feats is None:
-                continue
-
-            # Upsert into features. Note: column name is `class` (reserved word), so quote it.
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO features (
-                        sample_id, bpm, key, key_conf, loudness, brightness,
-                        mfcc_mean, mfcc_std, chroma_mean, chroma_std, "class"
-                    ) VALUES (
-                        :sample_id, :bpm, :key, :key_conf, :loudness, :brightness,
-                        :mfcc_mean, :mfcc_std, :chroma_mean, :chroma_std, :clazz
-                    )
-                    ON CONFLICT(sample_id) DO UPDATE SET
-                        bpm=excluded.bpm,
-                        key=excluded.key,
-                        key_conf=excluded.key_conf,
-                        loudness=excluded.loudness,
-                        brightness=excluded.brightness,
-                        mfcc_mean=excluded.mfcc_mean,
-                        mfcc_std=excluded.mfcc_std,
-                        chroma_mean=excluded.chroma_mean,
-                        chroma_std=excluded.chroma_std,
-                        "class"=excluded."class"
-                    """
-                ),
-                dict(
-                    sample_id=int(sid),
-                    bpm=feats.bpm,
-                    key=feats.key,
-                    key_conf=feats.key_conf,
-                    loudness=feats.loudness,
-                    brightness=feats.brightness,
-                    mfcc_mean=feats.mfcc_mean,
-                    mfcc_std=feats.mfcc_std,
-                    chroma_mean=feats.chroma_mean,
-                    chroma_std=feats.chroma_std,
-                    clazz=feats.clazz,
-                ),
+    with tqdm(desc="Analyzing", unit="file") as bar:
+        while not done:
+            rows = _load_analyze_batch(
+                engine,
+                last_id=last_id,
+                batch_size=batch_size,
+                only_missing=only_missing,
             )
-
-            processed += 1
-            if limit is not None and processed >= int(limit):
+            if not rows:
                 break
+
+            last_id = int(rows[-1][0])
+            writes: list[dict] = []
+
+            for sid, path_str, duration, _has_features in rows:
+                bar.update(1)
+                feats = extract_features(
+                    Path(path_str),
+                    duration,
+                    bpm_normalization=bpm_normalization,
+                )
+                if feats is None:
+                    continue
+
+                writes.append(
+                    dict(
+                        sample_id=int(sid),
+                        bpm=feats.bpm,
+                        key=feats.key,
+                        key_conf=feats.key_conf,
+                        loudness=feats.loudness,
+                        brightness=feats.brightness,
+                        mfcc_mean=feats.mfcc_mean,
+                        mfcc_std=feats.mfcc_std,
+                        chroma_mean=feats.chroma_mean,
+                        chroma_std=feats.chroma_std,
+                        clazz=feats.clazz,
+                    )
+                )
+                processed += 1
+                if limit is not None and processed >= int(limit):
+                    done = True
+                    break
+
+            _flush_feature_batch(engine, writes)
 
 
 __all__ = [
