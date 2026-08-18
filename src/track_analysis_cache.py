@@ -116,11 +116,11 @@ def compute_analysis_fingerprint(
 
 
 def _source_hash_record(source_content_hash: object) -> dict[str, str]:
-    """Normalize current records while preserving the pre-#417 string API.
+    """Normalize content identity for cache-entry storage and validation.
 
-    Historical callers passed a bare SHA-1 value. Keeping this compatibility
-    layer reproduces the exact legacy cache key so on-touch migration can still
-    find old entries. New code passes an explicit ``{algorithm, value}`` record.
+    Cache entries are algorithm-qualified. Historical callers may still pass a
+    bare SHA-1 value; stored-entry validation represents that value explicitly as
+    a legacy SHA-1 record rather than silently reinterpreting it.
     """
     if isinstance(source_content_hash, dict):
         return normalize_hash_record(source_content_hash)
@@ -130,6 +130,22 @@ def _source_hash_record(source_content_hash: object) -> dict[str, str]:
             "value": source_content_hash,
         }
     raise ValueError("source_content_hash must be a hash record or legacy string")
+
+
+def _source_hash_cache_key_value(source_content_hash: object) -> dict[str, str] | str:
+    """Return the exact source value used by current or historical cache keys.
+
+    Before #417 the key document serialized the source SHA-1 as a bare string.
+    To find those existing cache files during on-touch migration, both a legacy
+    bare string and an explicit ``sha1`` record must collapse to that historical
+    bare value. Current SHA-256 identities remain algorithm-qualified.
+    """
+    if isinstance(source_content_hash, str):
+        return source_content_hash
+    record = normalize_hash_record(source_content_hash)
+    if record["algorithm"] == LEGACY_CONTENT_HASH_ALGORITHM:
+        return record["value"]
+    return record
 
 
 def compute_cache_key(
@@ -142,7 +158,7 @@ def compute_cache_key(
     model_identity: Optional[dict] = None,
     key_analysis_contract_version: str | int = KEY_ANALYSIS_CONTRACT_VERSION,
 ) -> str:
-    """Deterministic SHA-256 cache key including algorithm-qualified content."""
+    """Deterministic SHA-256 cache key with exact legacy-key compatibility."""
     doc = _analysis_fingerprint_doc(
         bpm_normalization=bpm_normalization,
         backend_name=backend_name,
@@ -151,7 +167,7 @@ def compute_cache_key(
         model_identity=model_identity,
         key_analysis_contract_version=key_analysis_contract_version,
     )
-    doc["source_content_hash"] = _source_hash_record(source_content_hash)
+    doc["source_content_hash"] = _source_hash_cache_key_value(source_content_hash)
     return hashlib.sha256(_canonical_json(doc).encode("utf-8")).hexdigest()
 
 
