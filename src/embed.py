@@ -13,6 +13,7 @@ from .db import (
     iter_pending_samples,
     upsert_embedding_model,
 )
+from .model_readiness import CLAP_MODEL_NAME, CLAP_MODEL_REVISION
 
 
 @dataclass
@@ -86,7 +87,6 @@ class NoopEmbeddingBackend(EmbeddingBackend):
         )
 
 
-CLAP_MODEL_NAME = "laion/clap-htsat-unfused"
 CLAP_EMBEDDING_DIM = 512
 CLAP_MODALITY = "audio_text"
 CLAP_PROVIDER = "laion"
@@ -94,7 +94,7 @@ CLAP_PROVIDER = "laion"
 _CLAP_METADATA = EmbeddingModelInfo(
     provider=CLAP_PROVIDER,
     model_name=CLAP_MODEL_NAME,
-    model_version="planned",
+    model_version=CLAP_MODEL_REVISION,
     embedding_dim=CLAP_EMBEDDING_DIM,
     modality=CLAP_MODALITY,
 )
@@ -134,6 +134,37 @@ def _resolve_clap_cache_dir() -> Optional[str]:
     return str(value)
 
 
+def _clap_feature_vector(output) -> np.ndarray:
+    """Normalize supported Transformers CLAP feature-output shapes.
+
+    Transformers has returned direct tensors in 4.x and documents model-output
+    objects in current 5.x releases. Keep this boundary tolerant while retaining
+    the existing downstream 512-d validation.
+    """
+    value = output
+    if hasattr(value, "pooler_output"):
+        value = value.pooler_output
+    elif isinstance(value, (tuple, list)):
+        if not value:
+            raise ValueError("CLAP feature output is empty")
+        value = value[0]
+
+    if hasattr(value, "detach"):
+        value = value.detach()
+    if hasattr(value, "cpu"):
+        value = value.cpu()
+    if hasattr(value, "numpy"):
+        value = value.numpy()
+
+    try:
+        arr = np.asarray(value, dtype=np.float32)
+    except Exception as exc:
+        raise ValueError("Unsupported CLAP feature output") from exc
+    if arr.size == 0:
+        raise ValueError("CLAP feature output is empty")
+    return arr.flatten()
+
+
 class ClapEmbeddingBackend(EmbeddingBackend):
     def __init__(self) -> None:
         self._model = None
@@ -157,23 +188,25 @@ class ClapEmbeddingBackend(EmbeddingBackend):
                 "Install with: pip install -e .[clap]"
             )
         self._device = "cuda" if torch.cuda.is_available() else "cpu"
-        load_kwargs: dict = {}
+        common_load_kwargs: dict = {"revision": CLAP_MODEL_REVISION}
         cache_dir = _resolve_clap_cache_dir()
         if cache_dir is not None:
-            load_kwargs["cache_dir"] = cache_dir
+            common_load_kwargs["cache_dir"] = cache_dir
+        model_load_kwargs = dict(common_load_kwargs)
+        model_load_kwargs["use_safetensors"] = True
         try:
             self._model = transformers.ClapModel.from_pretrained(
-                CLAP_MODEL_NAME, **load_kwargs
+                CLAP_MODEL_NAME, **model_load_kwargs
             ).to(self._device)
             self._processor = transformers.ClapProcessor.from_pretrained(
-                CLAP_MODEL_NAME, **load_kwargs
+                CLAP_MODEL_NAME, **common_load_kwargs
             )
         except Exception as exc:
             raise EmbeddingBackendUnavailableError(
-                f"CLAP model {CLAP_MODEL_NAME} could not be loaded: {exc}. "
-                "Ensure the [clap] extra is installed and the model is available "
-                "(online first run downloads it, or use a populated "
-                "SAMPLE_BRAIN_MODEL_CACHE_DIR offline)."
+                f"CLAP model {CLAP_MODEL_NAME}@{CLAP_MODEL_REVISION} could not be loaded: {exc}. "
+                "Ensure the [clap] extra is installed and the pinned safetensors "
+                "snapshot is available (online first run downloads it, or use a "
+                "populated SAMPLE_BRAIN_MODEL_CACHE_DIR offline)."
             ) from exc
         self._model.eval()
 
@@ -186,8 +219,7 @@ class ClapEmbeddingBackend(EmbeddingBackend):
         inputs = {k: v.to(self._device) for k, v in inputs.items()}
         with torch.no_grad():
             output = self._model.get_text_features(**inputs)
-        vec = output.pooler_output.cpu().numpy().flatten()
-        return np.asarray(vec, dtype=np.float32)
+        return _clap_feature_vector(output)
 
     def embed_audio(self, audio_path: str) -> np.ndarray:
         self._load_model()
@@ -204,8 +236,7 @@ class ClapEmbeddingBackend(EmbeddingBackend):
         inputs = {k: v.to(self._device) for k, v in inputs.items()}
         with torch.no_grad():
             output = self._model.get_audio_features(**inputs)
-        vec = output.pooler_output.cpu().numpy().flatten()
-        return np.asarray(vec, dtype=np.float32)
+        return _clap_feature_vector(output)
 
     def model_info(self) -> EmbeddingModelInfo:
         return _CLAP_METADATA

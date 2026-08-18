@@ -7,9 +7,10 @@ import json
 import hashlib
 from pathlib import Path
 
-# #247 result: Demucs weights are research-only / commercial use not granted.
-# This is a LICENSE USAGE status, NOT a cryptographic weight hash.
-WEIGHT_USAGE_RESEARCH_ONLY = "RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED"
+# #423 correction: the exact pretrained-weight commercial grant is not verified.
+# Keep the historical symbol name for caller compatibility, but emit the neutral
+# current evidence state rather than the superseded research-only legal claim.
+WEIGHT_USAGE_RESEARCH_ONLY = "UNKNOWN_UNVERIFIED"
 
 # Declared metadata for the two #247 baseline candidates.
 # `checkpoint` is a released checkpoint/source identifier, NOT a cryptographic

@@ -1,164 +1,111 @@
 # Stem Backend Selection v1 — Default and Quality Mode
 
-**Status:** `DONE_247_MERGED_CLOSED` — provisional selection decided; production default rejected on license grounds.
-**Issue:** #247
-**Parent:** #229
-**Depends on:** #244, #245, #246
-**Date:** 2026-08-16
+**Status:** `DONE_247_MERGED_CLOSED` — technical selection evidence retained; license/readiness wording corrected by #423.  
+**Issue:** #247  
+**Readiness clarification:** #423 / `docs/MODEL_READINESS_V1.md`  
+**Date:** 2026-08-16; readiness clarification 2026-08-18
 
----
-
-## 1. Decision Status
+## 1. Current decision
 
 ```text
 PRODUCTION_DEFAULT:         NO_GO
 EXPERIMENTAL_CANDIDATE:     htdemucs.yaml
 QUALITY_BACKEND:            NONE
-WEIGHT_USAGE_STATUS:        RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED
-WEIGHT_LICENSE_STATUS:      VERIFIED_NONCOMMERCIAL   (internal enum mapping; see §4)
+WEIGHT_LICENSE_EVIDENCE:    UNKNOWN_UNVERIFIED
+COMMERCIAL_READINESS:       NOT_APPROVED
 ```
 
-> **Semantic note (technical vs production):** `htdemucs` is the evidence-backed *technical* candidate (best blind preference, fastest, fewest observed failures). It is **not** approved as a Sample Brain *production/commercial* default, because the pretrained weight license does not grant commercial use. These two statements are not contradictory.
+`htdemucs` remains the evidence-backed **technical** candidate from #246/#247. It is not approved as a commercial product default because Sample Brain does not currently have sufficient primary-source evidence for the exact pretrained-weight commercial grant. `NOT_APPROVED` is a product-policy state, not a claim that every commercial use is legally prohibited.
 
----
+This wording supersedes the earlier `RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED` and `VERIFIED_NONCOMMERCIAL` labels. Those historical strings may still exist only as a stem-cache-v1 fingerprint compatibility token; they are no longer the current license/readiness claim.
 
-## 2. Evidence Summary
+## 2. Technical evidence retained from #246/#247
 
 | Criterion | htdemucs | htdemucs_ft |
-|-----------|----------|-------------|
+|---|---|---|
 | Blind preference (4 private Techno tracks) | **preferred 4 / 4** | preferred 0 / 4 |
-| CPU runtime (mean, ~60 s slices) | **~121 s** | ~252 s (~2.1× slower; range 1.5–3.8×) |
+| CPU runtime (mean, ~60 s slices) | **~121 s** | ~252 s (~2.1× slower) |
 | Technical success | 4 / 4 runs ok | 4 / 4 runs ok |
-| Notable failure | none observed | `TARGET_ABSENCE_LEAKAGE` on track_01 vocals stem |
-| Exact model identity | `htdemucs.yaml`, single model sig `955717e8` | `htdemucs_ft.yaml`, bag of 4 per-source sigs (`f7e0c4bc`, `d12395a8`, `92cfc3b6`, `04573f0d`) |
-| Code license | MIT (verified) | MIT (verified) |
-| Weight license | **RESEARCH_ONLY / not granted for commercial** | **RESEARCH_ONLY / not granted for commercial** |
-| Commercial status | **Not granted** | **Not granted** |
+| Notable observed failure | none in pilot | `TARGET_ABSENCE_LEAKAGE` on one vocals stem |
+| Released identity | `htdemucs.yaml`, sig `955717e8` | `htdemucs_ft.yaml`, bag `f7e0c4bc,d12395a8,92cfc3b6,04573f0d` |
+| Code/package evidence | MIT code metadata | MIT code metadata |
+| Exact weight-license evidence used for commercial approval | `UNKNOWN_UNVERIFIED` | `UNKNOWN_UNVERIFIED` |
+| Commercial default | not approved | not approved |
 
-Source of quality/runtime/robustness evidence: `docs/STEM_MODEL_BENCHMARK_V1.md` (#246).
-Source of weight-license evidence: `facebookresearch/demucs` issue **#327** (model author adefossez, explicit weight-specific statement).
+The pilot is small and genre-specific. It proves only the observed technical preference/runtime/robustness results for those runs.
 
----
+## 3. Default decision
 
-## 3. Default Decision — REJECTED
+No production/commercial default stem backend is approved.
 
-**Selected: NO.** No production/commercial default backend is approved.
+Reasons:
 
-**Reason:**
-1. The decisive production gate is the **weight license**, not quality or speed.
-2. Both candidate weight sets are released *"only for scientific purposes"* and are *not covered by the Demucs MIT license* (upstream owner statement, demucs #327). Commercial use is therefore **not granted**.
-3. `htdemucs` remains the recommended **experimental/non-commercial** candidate because it wins on all three non-license dimensions: 4/4 blind preference, ~2.1× faster on CPU, and no observed leakage failure (`htdemucs_ft` showed `TARGET_ABSENCE_LEAKAGE`).
+1. technical quality and commercial readiness are separate gates;
+2. `htdemucs` won the limited technical pilot, but the exact pretrained-weight commercial grant has not been verified to Sample Brain's required standard;
+3. `htdemucs_ft` offered no quality benefit in the pilot and was slower, so there is no separate quality tier regardless of licensing;
+4. code/package license metadata is not promoted into a weight-license grant.
 
----
+`htdemucs` therefore remains optional/experimental only.
 
-## 4. Quality Decision — REJECTED
+## 4. Code versus weight boundary
 
-**Selected: NO.** No quality tier is approved.
+Sample Brain records code/package metadata and model-weight evidence separately.
 
-**Reason:**
-- A quality tier is only justified if it offers a meaningful quality benefit worth extra runtime.
-- #246 shows the opposite for `htdemucs_ft`: it was **preferred 0/4**, is **~2.1× slower**, and exhibited a specific leakage failure.
-- Therefore `htdemucs_ft` must **not** become a quality mode merely because its name contains `ft`. Quality backend = `NONE`.
+- Demucs / wrapper code metadata can be MIT without proving the legal status of separately distributed pretrained weights.
+- Hugging Face or package metadata is evidence only for the artifact to which it actually applies.
+- Where primary sources conflict or do not establish the exact commercial weight grant, Sample Brain records `UNKNOWN_UNVERIFIED` and fails closed for product-default approval.
+- A future primary-source permissive/commercial weight grant may upgrade readiness without changing the technical benchmark result.
 
-> The internal contract enum (`docs/STEM_MANIFEST_V1.md` §6) only allows `VERIFIED_PERMISSIVE`, `VERIFIED_NONCOMMERCIAL`, `UNKNOWN_UNVERIFIED`. We map the finding to **`VERIFIED_NONCOMMERCIAL`** internally. This is a conservative production-policy label only — it does **not** assert a specific `CC-BY-NC` license. Per upstream, no authoritative source explicitly assigns a named license (e.g. CC-BY-NC) to these weights; the only explicit statement is that they are *not MIT* and are *provided only for scientific purposes*. We record `WEIGHT_USAGE_STATUS = RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED` as the accurate primary wording.
+This is a conservative product policy, not legal advice or a fabricated named license.
 
----
-
-## 5. License Boundary
-
-- **MIT covers the code**, not the weights. `python-audio-separator` (wrapper) and `demucs` (architecture) are MIT. A code license does **not** grant a license to the pretrained model weights.
-- **Weights are released only for scientific purposes** (demucs #327, model owner adefossez):
-  > *"The model weights are not covered by the MIT license, and are provided only for scientific purposes."*
-- This statement is authoritative: it comes from the model owner, not a third party. It applies to all Demucs v4 pretrained weights, i.e. both `htdemucs` and `htdemucs_ft`.
-
-### Conflicting published metadata (Hugging Face)
-
-The official Hugging Face model cards `adefossez/HTDemucs` and `adefossez/HTDemucs-ft` currently display `license: mit`. Sample Brain records this as **conflicting published metadata**. We do **not** speculate on why the card shows `mit` (e.g. we do not assert it is an automatic Hugging Face default). We simply note the conflict and explain the conservative policy:
-
-> Sample Brain follows the **model author's explicit weight-specific statement** (demucs #327) for production approval, because code-license metadata (`MIT`) is not a grant over the weights. Until the model owner publishes an explicit permissive/commercial weight license, the weights remain RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED.
-
----
-
-## 6. Exact Model Identity (Corrected)
-
-Both candidates are Demucs v4 family, invoked via `python-audio-separator` 0.44.5. Exact released identities from the authoritative Demucs model zoo:
+## 5. Exact model identity
 
 | Model | Config / name | Released model signature | Composition |
-|-------|---------------|--------------------------|-------------|
+|---|---|---|---|
 | htdemucs | `htdemucs.yaml` | `955717e8` | single model |
-| htdemucs_ft | `htdemucs_ft.yaml` | `f7e0c4bc`, `d12395a8`, `92cfc3b6`, `04573f0d` | bag of four fine-tuned per-source models (outputs averaged) |
+| htdemucs_ft | `htdemucs_ft.yaml` | `f7e0c4bc`, `d12395a8`, `92cfc3b6`, `04573f0d` | bag of four fine-tuned per-source models |
 
-- `htdemucs` weights: representative signature `955717e8` (single checkpoint).
-- `htdemucs_ft` weights: **bag of four** per-source fine-tuned checkpoints; the four short signatures above are the authoritative identifiers. No full SHA-256 hash is asserted here unless verified from the actual weight files.
+These released signatures are checkpoint identifiers, not asserted full cryptographic hashes of locally loaded weight files. Real cache reuse still requires the actual weight-file/set hash recorded by the #248 provenance contract.
 
-### Provenance correction (retracts a #246 mislabel)
+### Provenance correction retained from #247
 
-`docs/STEM_MODEL_BENCHMARK_V1.md` (#246) recorded the long string
-`f7e0c4bcba3fe64a92cfc3b6ef3bcb9c04573f0d` as a *"representative weight hash"* for **htdemucs**. That mapping is **wrong** and is corrected in this slice:
+The historical long string `f7e0c4bcba3fe64a92cfc3b6ef3bcb9c04573f0d` is not an htdemucs weight hash. `955717e8` is the htdemucs released signature; the four short signatures belong to the `htdemucs_ft` bag. No downstream provenance should treat the concatenated long value as authoritative.
 
-- `f7e0c4bc…` is **not** the htdemucs weight hash. The correct htdemucs signature is `955717e8`.
-- The four short signatures `f7e0c4bc`, `d12395a8`, `92cfc3b6`, `04573f0d` belong to the **htdemucs_ft** bag. The #246 long string is a concatenation/artifact of those source signatures and must not be propagated as an htdemucs identity.
-- `tools/stem_separator_spike.py` still hardcodes the same debunked long string as a placeholder `weight_hash` (line ~99). That spike placeholder is **not** authoritative provenance and must be reconciled to the per-model signatures in a follow-up (out of scope for #247; the spike is an isolated study, not wired into production).
+## 6. Cache compatibility after #423
 
----
-
-## 7. Provisional Status
-
-- Pilot scope: **4 private Techno tracks / 60 s excerpts**. No universal superiority claim.
-- All findings are provisional with respect to:
-  - the small, genre-specific, private sample,
-  - the unresolved weight license (research-only),
-  - the absent `htdemucs_ft` exact weight hash in #246 (provenance gap, not fabricated here).
-
----
-
-## 8. What Can Proceed Next
-
-**#248 (stem cache / model provenance):** May build a model-agnostic cache and provenance layer. It **must** preserve the weight-license status explicitly on every cached artifact (no silent upgrade to "approved"). The `NO_GO` production default does not block #248 infrastructure work.
-
-**#249 (optional stem pipeline integration):** Must remain **experimental / opt-in**. It must **not** silently make an unapproved model the production default. If wired, it should reference `htdemucs.yaml` only as an experimental, non-commercial candidate and surface the license boundary to the user.
-
-**#268 (producer groups):** Uses the technical stems produced here; the quality finding (no quality tier) is independent of producer-group definition.
-
----
-
-## 9. Acceptance Criteria (#247)
-
-- [x] Default backend + exact checkpoint selected OR explicitly rejected → **rejected (NO_GO)**, `htdemucs.yaml` named as experimental candidate
-- [x] Quality backend + exact checkpoint selected OR explicitly rejected → **rejected (NONE)**
-- [x] Quality reasoning documented (§4)
-- [x] Runtime reasoning documented (§2, §3)
-- [x] Robustness reasoning documented (§2, §3 — `htdemucs_ft` leakage)
-- [x] Code license documented separately from weight license (§5)
-- [x] Weight license documented separately (§4, §5)
-- [x] Decision marked provisional where evidence is limited (§7)
-- [x] #244 adapter remains model-independent (no schema change; selection names a candidate only)
-- [x] No new hearing required (#246 evidence reused)
-- [x] No private artifacts committed (docs only)
-
----
-
-## 10. Final Verdict
+New known-Demucs provenance emits:
 
 ```text
-PRODUCTION_DEFAULT:        NO_GO
-EXPERIMENTAL_CANDIDATE:    htdemucs.yaml
-QUALITY_BACKEND:           NONE
-WEIGHT_USAGE_STATUS:       RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED
-WEIGHT_LICENSE_STATUS:     VERIFIED_NONCOMMERCIAL (internal enum; no CC-BY-NC asserted)
+weight_license = UNKNOWN_UNVERIFIED
+```
 
-HTDEMUCS_CHECKPOINT:       htdemucs.yaml  (sig 955717e8, single model)
-HTDEMUCS_WEIGHT_LICENSE:   RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED
+Stem cache v1 historically included the previous license-status label in its fingerprint even though that label does not change audio output. #423 therefore preserves the old token **only inside the v1 fingerprint compatibility path** for `htdemucs` and `htdemucs_ft`. This prevents a metadata clarification from forcing unnecessary re-separation while new manifests/cache entries expose the corrected neutral evidence state.
 
-HTDEMUCS_FT_CHECKPOINT:    htdemucs_ft.yaml  (bag: f7e0c4bc, d12395a8, 92cfc3b6, 04573f0d)
-HTDEMUCS_FT_WEIGHT_LICENSE: RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED
+Model/checkpoint/weight-hash/backend/configuration changes still invalidate the cache normally.
 
-QUALITY_EVIDENCE:   htdemucs preferred 4/4; htdemucs_ft 0/4; htdemucs_ft TARGET_ABSENCE_LEAKAGE
-RUNTIME_EVIDENCE:    htdemucs ~121 s mean; htdemucs_ft ~252 s mean (~2.1x slower)
-ROBUSTNESS_EVIDENCE: 8/8 technical runs ok; both produce drums/bass/vocals/other
+## 7. What can proceed
 
-PRIVATE_AUDIO_ADDED: NO
-WEIGHTS_ADDED:       NO
-ADAPTER_244_CHANGED: NO
-BLOCKERS:           NONE
+- Stem cache/provenance infrastructure may continue model-independently.
+- Stem separation remains explicit opt-in/experimental.
+- No unverified-weight model becomes a commercial default merely because it is technically available.
+- No model weights belong in the repository.
+- Any future commercial-readiness upgrade requires exact primary-source evidence for the actual weights/checkpoint.
+
+## 8. Final verdict
+
+```text
+PRODUCTION_DEFAULT:          NO_GO
+EXPERIMENTAL_CANDIDATE:      htdemucs.yaml
+QUALITY_BACKEND:             NONE
+WEIGHT_LICENSE_EVIDENCE:     UNKNOWN_UNVERIFIED
+COMMERCIAL_READINESS:        NOT_APPROVED
+
+HTDEMUCS_CHECKPOINT:         htdemucs.yaml (sig 955717e8)
+HTDEMUCS_FT_CHECKPOINTS:     f7e0c4bc,d12395a8,92cfc3b6,04573f0d
+
+QUALITY_EVIDENCE:            htdemucs preferred 4/4; htdemucs_ft 0/4
+RUNTIME_EVIDENCE:            htdemucs ~121 s; htdemucs_ft ~252 s
+ROBUSTNESS_EVIDENCE:         8/8 technical runs completed; one observed htdemucs_ft leakage case
+PRIVATE_AUDIO_ADDED:         NO
+WEIGHTS_ADDED:               NO
 ```
