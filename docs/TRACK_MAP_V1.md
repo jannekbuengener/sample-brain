@@ -485,7 +485,7 @@ This is a valid Track Map v1 example. The #233 one-shot runtime emits the base-a
       "size_bytes": 43218901,
       "hash": {
         "algorithm": "sha256",
-        "value": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f00112"
+        "value": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f00123"
       },
       "audio_properties": {
         "duration_sec": 312.04,
