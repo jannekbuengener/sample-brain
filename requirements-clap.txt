@@ -3,5 +3,7 @@
 #   pip install -r requirements.txt -r requirements-clap.txt
 # Or via pyproject.toml extra:
 #   pip install -e .[clap]
-torch
-transformers>=4.35
+#
+# #423 reproducibility matrix. Keep these exact pins in sync with pyproject.toml.
+torch==2.13.0
+transformers==5.14.1

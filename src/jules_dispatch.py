@@ -9,7 +9,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
+fix-jules-dispatch-security-424-6942130310261032080
 from pathlib import Path
+
+from pathlib import Path, PurePosixPath
+main
 from typing import Any, Dict, List, Optional
 
 # ---------------------------------------------------------------------------
@@ -72,7 +76,6 @@ _KNOWN_JULES_STATES = {
     "RUNNING",
     "COMPLETED",
     "FAILED",
-}
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +173,7 @@ class DispatchContext:
             constraints=list(data.get("constraints", []) or []),
             minimum_validation=list(data.get("minimum_validation", []) or []),
             allow_pr=bool(data.get("allow_pr", False)),
-        )
+        
 
 
 # ---------------------------------------------------------------------------
@@ -218,8 +221,44 @@ def _mentions_private_artifact(value: str) -> bool:
     return any(marker in low for marker in _FORBIDDEN_FILE_MARKERS)
 
 
+fix-jules-dispatch-security-424-6942130310261032080
 def _get_executing_checkout_root() -> Path:
     return Path(__file__).resolve().parent.parent
+=======
+def _canonical_repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _validated_repo_root(repo_root: Optional[str]) -> Path:
+    canonical = _canonical_repo_root()
+    if repo_root is None:
+        return canonical
+    try:
+        supplied = Path(repo_root).resolve(strict=False)
+    except (OSError, RuntimeError):
+        raise ContextRejected("repo_root rejected") from None
+    if supplied != canonical:
+        raise ContextRejected("repo_root rejected")
+    return canonical
+
+
+def _validate_relevant_file(value: str, root: Path) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise ContextRejected("relevant file rejected")
+
+    normalized = value.replace("\\", "/")
+    pure = PurePosixPath(normalized)
+    if _is_absolute_path(value) or pure.is_absolute() or ".." in pure.parts:
+        raise ContextRejected("relevant file rejected")
+    if _mentions_private_artifact(value):
+        raise ContextRejected("relevant file rejected")
+
+    try:
+        resolved = (root / Path(*pure.parts)).resolve(strict=False)
+        resolved.relative_to(root)
+    except (OSError, RuntimeError, ValueError):
+        raise ContextRejected("relevant file rejected") from None
+main
 
 
 def validate_context(ctx: DispatchContext, repo_root: Optional[str] = None) -> None:
@@ -268,7 +307,9 @@ def validate_context(ctx: DispatchContext, repo_root: Optional[str] = None) -> N
     if ctx.change_class != READ_ONLY_CHANGE_CLASS and ".." in ctx.base_branch:
         raise ContextRejected("base_branch must not escape repo")
 
+    root = _validated_repo_root(repo_root)
     for path in ctx.relevant_files:
+fix-jules-dispatch-security-424-6942130310261032080
         if not isinstance(path, str) or not path.strip():
             raise ContextRejected("relevant_files must be non-empty strings")
         if _is_absolute_path(path):
@@ -288,6 +329,8 @@ def validate_context(ctx: DispatchContext, repo_root: Optional[str] = None) -> N
             raise
         except Exception as exc:
             raise ContextRejected("invalid relevant_file path resolution") from exc
+        _validate_relevant_file(path, root)
+main
 
 
 def requires_plan_approval(ctx: DispatchContext) -> bool:
@@ -491,8 +534,6 @@ def get_activities(transport: JulesTransport, session_id: str) -> List[dict]:
         try:
             resp = transport.request("GET", path)
         except JulesHttpError as exc:
-            # A brand-new session with no activities yet returns 404 from the
-            # real API (the collection is empty). Treat that as "no activities".
             if exc.status == 404:
                 break
             raise
@@ -612,10 +653,14 @@ def run_dispatch(
 ) -> dict:
     try:
         validate_context(ctx, repo_root)
+fix-jules-dispatch-security-424-6942130310261032080
     except JulesError as exc:
         return _error_result(exc)
     except Exception as exc:
         return _error_result(ContextRejected("context validation failed"))
+    except ContextRejected as exc:
+        return _error_result(exc)
+main
     if not transport.api_key:
         return _error_result(JulesError("BLOCKED_AUTH", "API key not configured"))
     try:
@@ -630,7 +675,6 @@ def run_dispatch(
     state = resp.get("state")
     pr_url = _extract_pr_url(resp)
     plan_id = _extract_plan_id(resp)
-    # No automatic approval is performed here.
     return normalize_dispatch(state, pr_url, session_id, plan_id)
 
 
@@ -658,8 +702,6 @@ def run_activities(transport: JulesTransport, session_id: str) -> dict:
     pr_url = None
     plan_id = None
     for activity in activities:
-        # Support both schema-compliant activity objects (where the key is the activity type)
-        # and backward-compatible flat dicts with a top-level "type" field.
         atype = activity.get("type")
 
         plan_gen = activity.get("planGenerated")
@@ -676,12 +718,10 @@ def run_activities(transport: JulesTransport, session_id: str) -> dict:
         if "sessionCompleted" in activity or atype == "sessionCompleted":
             latest_state = "COMPLETED"
             comp_obj = sess_comp if isinstance(sess_comp, dict) else activity
-            # Support reading PR directly if present for legacy compatibility
             pr_candidate = comp_obj.get("pullRequest") or comp_obj.get("output", {}).get("pullRequest")
             if isinstance(pr_candidate, dict):
                 pr_url = pr_candidate.get("url") or pr_candidate.get("htmlUrl") or pr_url
 
-        sess_fail = activity.get("sessionFailed")
         if "sessionFailed" in activity or atype == "sessionFailed":
             latest_state = "FAILED"
 
@@ -751,7 +791,6 @@ def run_doctor(transport: Optional[JulesTransport] = None) -> dict:
             out["source_connected"] = True
             out["source"] = source_id
     except JulesError:
-        # Only safe status is reported; no body, key, or path leakage.
         out["source_connected"] = False
     return out
 

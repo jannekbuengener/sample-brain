@@ -1,0 +1,54 @@
+name: CLAP runtime matrix
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "requirements-clap.txt"
+      - "pyproject.toml"
+      - "src/embed.py"
+      - "src/model_readiness.py"
+      - "tests/test_model_readiness.py"
+      - "docs/MODEL_READINESS_V1.md"
+      - "docs/benchmarks/CLAP_TIER_B_RUNTIME.md"
+      - ".github/workflows/clap-runtime-matrix.yml"
+  push:
+    branches: [main]
+    paths:
+      - "requirements-clap.txt"
+      - "pyproject.toml"
+      - "src/embed.py"
+      - "src/model_readiness.py"
+      - "tests/test_model_readiness.py"
+      - ".github/workflows/clap-runtime-matrix.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  windows-cpu-no-model-download:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements-clap.txt
+
+      - name: Install pinned optional runtime only
+        run: |
+          python -m pip install --only-binary=:all: -r requirements-clap.txt
+
+      - name: Verify exact package and CLAP import matrix without model download
+        run: >-
+          python -c "import torch, transformers;
+          from transformers import ClapModel, ClapProcessor;
+          from src.model_readiness import CLAP_TORCH_VERSION, CLAP_TRANSFORMERS_VERSION;
+          assert torch.__version__.split('+')[0] == CLAP_TORCH_VERSION;
+          assert transformers.__version__ == CLAP_TRANSFORMERS_VERSION;
+          print('CLAP no-download matrix OK')"

@@ -23,8 +23,8 @@ sample-brain = "src.cli:main"
 
 [project.optional-dependencies]
 clap = [
-    "torch",
-    "transformers>=4.35",
+    "torch==2.13.0",
+    "transformers==5.14.1",
 ]
 vec = [
     "sqlite-vec==0.1.9",
@@ -38,3 +38,11 @@ beatgrid = [
 
 [tool.setuptools]
 packages = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+# First adoption is deliberately narrow: fatal/invalid Python constructs only.
+# Broader existing lint debt is tracked separately from the CI policy rollout.
+select = ["F63", "F7"]

@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 from pathlib import Path
+from typing import TextIO
 
 from .bpm_display import format_bpm_tag
 from .config import REGEX_MAP_PATH, SAMPLE_ROOTS
@@ -138,6 +140,36 @@ def _format_fl_tags_header(all_tags: set[str]) -> str:
     return header
 
 
+def _write_tags_payload(handle: TextIO, payload: str) -> None:
+    handle.write(payload)
+
+
+def _atomic_write_text(path: Path, payload: str) -> None:
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temp_path = Path(handle.name)
+            _write_tags_payload(handle, payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+        temp_path = None
+    finally:
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def write_fl_tags_from_sample_rows(
     sample_rows: list[tuple],
     fl_userdata: Path,
@@ -172,10 +204,10 @@ def write_fl_tags_from_sample_rows(
             warned_paths.add(path)
         lines.append(f'"{final_path}",' + ",".join(tags))
 
-    with open(tags_path, "w", encoding="utf-8") as handle:
-        handle.write(_format_fl_tags_header(all_tags) + "\n")
-        for line in lines:
-            handle.write(line + "\n")
+    payload = _format_fl_tags_header(all_tags) + "\n"
+    if lines:
+        payload += "\n".join(lines) + "\n"
+    _atomic_write_text(tags_path, payload)
     return tags_path, len(lines), warnings
 
 
