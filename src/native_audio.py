@@ -53,8 +53,18 @@ def _get_platform_lib_filename() -> str:
         return "libsamplebrain_audio.so"
 
 
+def _get_trusted_roots() -> List[Path]:
+    """Return explicit trusted root directories for native audio library resolution."""
+    module_dir = Path(__file__).resolve().parent
+    repo_root = module_dir.parent
+    return [
+        module_dir.resolve(),
+        (repo_root / "native" / "audio" / "build").resolve(),
+    ]
+
+
 def _get_trusted_candidates() -> List[Path]:
-    """Return trusted absolute candidate paths derived from package location."""
+    """Return trusted candidate paths derived from package location."""
     filename = _get_platform_lib_filename()
     module_dir = Path(__file__).resolve().parent
     repo_root = module_dir.parent
@@ -67,11 +77,11 @@ def _get_trusted_candidates() -> List[Path]:
         repo_root / "native" / "audio" / "build" / "bin" / filename,
     ]
 
-    # Deduplicate while preserving order and ensuring absolute path resolution
+    # Deduplicate while preserving order without resolving symlinks early
     seen = set()
     unique_candidates: List[Path] = []
     for c in raw_candidates:
-        abs_p = c.resolve() if c.exists() else c.absolute()
+        abs_p = c.absolute()
         if abs_p not in seen:
             seen.add(abs_p)
             unique_candidates.append(abs_p)
@@ -79,17 +89,21 @@ def _get_trusted_candidates() -> List[Path]:
 
 
 def _load_native_library() -> Tuple[Optional[ctypes.CDLL], Optional[Path]]:
-    """Find and load native library from trusted absolute paths, validating ABI symbols."""
+    """Find and load native library from trusted absolute paths, validating containment and ABI symbols."""
     candidates = _get_trusted_candidates()
+    roots = _get_trusted_roots()
     for candidate in candidates:
         if candidate.is_file():
             try:
-                lib = ctypes.CDLL(str(candidate))
+                resolved = candidate.resolve()
+                if not any(resolved.is_relative_to(root) for root in roots):
+                    continue
+                lib = ctypes.CDLL(str(resolved))
                 # Validate required symbols early
                 for sym in _REQUIRED_SB_SYMBOLS:
                     if not hasattr(lib, sym):
                         raise AttributeError(f"Missing required symbol: {sym}")
-                return lib, candidate
+                return lib, resolved
             except (OSError, AttributeError):
                 continue
     return None, None
