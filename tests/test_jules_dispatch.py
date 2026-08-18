@@ -117,6 +117,21 @@ def test_prompt_contains_goal_acceptance_and_relevant_paths() -> None:
     assert len(prompt) < 6000
 
 
+def test_read_only_prompt_contains_read_only_deliverable() -> None:
+    ctx = _ctx(
+        change_class="read_only",
+        goal="Read and summarize constraints.",
+    )
+    prompt = build_prompt(ctx)
+    assert "analyze/read only" in prompt
+    assert "do not modify files" in prompt
+    assert "do not create a branch" in prompt
+    assert "do not create a pull request" in prompt
+    assert "report findings only" in prompt
+    assert "implement the requested slice" not in prompt
+    assert "a branch and pull request are allowed" not in prompt
+
+
 # 2. JULES_API_KEY value never appears in prompt / stdout / stderr / result / exception.
 def test_api_key_value_never_leaks() -> None:
     secret = "SUPERSECRETKEY123"
@@ -271,6 +286,8 @@ def test_send_message_sanitizes_text() -> None:
     msg_calls = [c for c in transport.calls if c[1].endswith(":sendMessage")]
     assert len(msg_calls) == 1
     body = msg_calls[0][2]
+    assert "prompt" in body
+    assert "message" not in body
     assert "topsecret" not in json.dumps(body)
     assert "C:\\Users" not in json.dumps(body)
 
@@ -279,18 +296,55 @@ def test_send_message_sanitizes_text() -> None:
 def test_activities_pagination() -> None:
     pages = [
         {
-            "activities": [{"type": "progressUpdated"}],
+            "activities": [{"progressUpdated": {}}],
             "nextPageToken": "page2",
         },
-        {"activities": [{"type": "planGenerated", "planId": "plans/1"}]},
+        {"activities": [{"planGenerated": {"plan": {"id": "plans/1"}}}]},
     ]
     transport = FakeTransport(activities_pages=pages)
     activities = get_activities(transport, "sessions/abc")
     assert len(activities) == 2
-    assert activities[1]["planId"] == "plans/1"
+    assert activities[1]["planGenerated"]["plan"]["id"] == "plans/1"
     # Two GETs: first page (with token) then second page.
     get_calls = [c for c in transport.calls if c[0] == "GET"]
     assert len(get_calls) == 2
+
+
+def test_schema_compliant_activities_parsing() -> None:
+    activities_list = [
+        {"planGenerated": {"plan": {"id": "plans/100", "steps": []}}},
+        {"progressUpdated": {"title": "Working", "description": "..."}},
+        {"sessionCompleted": {}},
+    ]
+    session = {
+        "name": "sessions/abc",
+        "state": "COMPLETED",
+        "outputs": [
+            {
+                "pullRequest": {
+                    "url": "https://github.com/example/example/pull/1"
+                }
+            }
+        ],
+    }
+    transport = FakeTransport(session=session, activities_pages=[{"activities": activities_list}])
+    res = run_activities(transport, "sessions/abc")
+    assert res["dispatch_status"] == "RESULT_READY"
+    assert res["jules_state"] == "COMPLETED"
+    assert res["plan_id"] == "plans/100"
+    assert res["pull_request_url"] == "https://github.com/example/example/pull/1"
+
+
+def test_schema_compliant_activities_failed() -> None:
+    activities_list = [
+        {"planGenerated": {"plan": {"id": "plans/101"}}},
+        {"sessionFailed": {"reason": "Error occurred"}},
+    ]
+    transport = FakeTransport(activities_pages=[{"activities": activities_list}])
+    res = run_activities(transport, "sessions/abc")
+    assert res["dispatch_status"] == "FAILED"
+    assert res["jules_state"] == "FAILED"
+    assert res["plan_id"] == "plans/101"
 
 
 # 13. HTTP 401 / 403 -> BLOCKED_AUTH.
@@ -346,6 +400,24 @@ def test_completed_with_pr_is_result_ready() -> None:
     assert "DONE" not in result["dispatch_status"]
     assert "MERGED" not in result["dispatch_status"]
     assert result["pull_request_url"] == "https://github.com/x/y/pull/9"
+
+
+def test_completed_with_schema_outputs_pr_is_result_ready() -> None:
+    session = {
+        "name": "sessions/abc",
+        "state": "COMPLETED",
+        "outputs": [
+            {
+                "pullRequest": {
+                    "url": "https://github.com/example/example/pull/1"
+                }
+            }
+        ],
+    }
+    transport = FakeTransport(session=session)
+    result = run_status(transport, "sessions/abc")
+    assert result["dispatch_status"] == "RESULT_READY"
+    assert result["pull_request_url"] == "https://github.com/example/example/pull/1"
 
 
 # 18. No merge / issue-close code exists in the runtime helper.
