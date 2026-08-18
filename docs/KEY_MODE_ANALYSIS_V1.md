@@ -109,13 +109,11 @@ well below it.
 - combined root+mode accuracy >= 0.85
 - ambiguous abstention = 1.00
 
-Issue #418 adds a separate stress baseline in
-`tests/test_issue418_final_acceptance.py`: three clear tonal cases, one C-major
-case with a deliberately dominant **low G bass**, and three ambiguity cases. The
-current implementation scores 3/4 for root, mode, and combined correctness and
-3/3 for ambiguity abstention. The bass-dominant C-major fixture is currently
-observed as root `G` with mode `None`; that is a frozen known weakness, not a test
-that should be weakened until the current heuristic passes it.
+Issue #418 also freezes complementary bass-dominance cases in
+`tests/test_issue418_analysis_evidence.py`: a dominant bass on the actual C root
+remains correctly rooted at `C`, while a dominant low G (the fifth) under C-major
+material is currently observed as root `G`. The latter is a documented known
+weakness for a future key-root algorithm slice, not a reason to weaken the fixture.
 
 Canonical baseline/evidence report:
 `docs/validation/ISSUE_418_KEY_BASELINE.md`.

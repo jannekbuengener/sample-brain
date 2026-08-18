@@ -3,21 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import numpy as np
-import soundfile as sf
 from sqlalchemy import create_engine, text
 
 import src.config as config_module
 import src.db as db_module
-from src.analyze import SHORT_AUDIO_QUALITY_NOTE, extract_features, run_analyze
-from src.key_signature import parse_key_signature
-from tests.audio_fixtures import (
-    write_key_audio_wav,
-    write_major_chord_wav,
-    write_major_minor_blend_wav,
-    write_root_fifth_wav,
-    write_sine_wav,
-)
+from src.analyze import SHORT_AUDIO_QUALITY_NOTE, run_analyze
+from tests.audio_fixtures import write_major_chord_wav, write_sine_wav
 
 
 def _bind_db(monkeypatch, db_path: Path) -> None:
@@ -153,64 +144,3 @@ def test_run_analyze_persists_short_clip_quality_note(tmp_path: Path, monkeypatc
     assert row[1] == SHORT_AUDIO_QUALITY_NOTE
     assert row[2] is None
     assert row[3] is None
-
-
-def _write_bass_dominant_c_major(path: Path, *, sr: int = 44100) -> Path:
-    """C-major material with a deliberately dominant low G bass component."""
-    duration_sec = 2.0
-    n = int(sr * duration_sec)
-    t = np.linspace(0.0, duration_sec, n, endpoint=False, dtype=np.float32)
-    c = 261.63
-    e = c * 2.0 ** (4.0 / 12.0)
-    g = c * 2.0 ** (7.0 / 12.0)
-    low_g = g / 2.0
-    wave = (
-        0.75 * np.sin(2.0 * np.pi * low_g * t)
-        + 0.18 * np.sin(2.0 * np.pi * c * t)
-        + 0.18 * np.sin(2.0 * np.pi * e * t)
-        + 0.18 * np.sin(2.0 * np.pi * g * t)
-    )
-    peak = float(np.max(np.abs(wave))) or 1.0
-    sf.write(path, (0.8 * wave / peak).astype(np.float32), sr, subtype="PCM_16")
-    return path
-
-
-def test_key_quality_baseline_records_current_bass_dominance_weakness(
-    tmp_path: Path,
-) -> None:
-    tonal_cases = [
-        (write_key_audio_wav(tmp_path / "cmaj.wav", frequency_hz=261.63, mode="maj"), "C", "maj"),
-        (write_key_audio_wav(tmp_path / "emin.wav", frequency_hz=329.63, mode="min"), "E", "min"),
-        (write_key_audio_wav(tmp_path / "amaj.wav", frequency_hz=440.00, mode="maj"), "A", "maj"),
-        (_write_bass_dominant_c_major(tmp_path / "bass_dominant_cmaj.wav"), "C", "maj"),
-    ]
-    ambiguous = [
-        write_sine_wav(tmp_path / "single_c.wav", duration_sec=2.0, frequency_hz=261.63),
-        write_root_fifth_wav(tmp_path / "power_c.wav", frequency_hz=261.63),
-        write_major_minor_blend_wav(tmp_path / "blend_c.wav", frequency_hz=261.63),
-    ]
-
-    outcomes: list[tuple[str | None, str | None]] = []
-    root_correct = mode_correct = combined_correct = 0
-    for path, expected_root, expected_mode in tonal_cases:
-        feats = extract_features(path, 2.0)
-        assert feats is not None
-        parsed = parse_key_signature(feats.key)
-        root = parsed.root if parsed is not None else None
-        outcomes.append((root, feats.key_mode))
-        root_correct += int(root == expected_root)
-        mode_correct += int(feats.key_mode == expected_mode)
-        combined_correct += int(root == expected_root and feats.key_mode == expected_mode)
-
-    abstain_correct = 0
-    for path in ambiguous:
-        feats = extract_features(path, 2.0)
-        assert feats is not None
-        abstain_correct += int(feats.key_mode is None)
-
-    assert root_correct == 3
-    assert mode_correct == 3
-    assert combined_correct == 3
-    assert abstain_correct == 3
-    assert outcomes[:3] == [("C", "maj"), ("E", "min"), ("A", "maj")]
-    assert outcomes[3] == ("G", None)
