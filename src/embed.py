@@ -1,5 +1,7 @@
 from __future__ import annotations
 import os
+import subprocess
+import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
@@ -99,12 +101,24 @@ _CLAP_METADATA = EmbeddingModelInfo(
 
 
 def _clap_available() -> bool:
+    """Probe optional CLAP imports without risking the current process.
+
+    PyTorch's own installation verification begins with a real ``import torch``.
+    On Windows, a broken native runtime can terminate the interpreter before a
+    Python exception is raised, so the optional-dependency probe runs in a short
+    child Python process. A non-zero exit or timeout means CLAP is unavailable.
+    """
     try:
-        import torch  # noqa: F401
-        import transformers  # noqa: F401
-        return True
-    except ImportError:
+        result = subprocess.run(
+            [sys.executable, "-c", "import torch; import transformers"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
         return False
+    return result.returncode == 0
 
 
 def _resolve_clap_cache_dir() -> Optional[str]:
