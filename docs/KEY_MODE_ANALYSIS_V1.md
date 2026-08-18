@@ -102,18 +102,20 @@ well below it.
 
 ## 7. Synthetic validation baseline
 
-`tests/test_key_mode_analysis.py` freezes the pre-algorithm-change quality gate:
+`tests/test_key_mode_analysis.py` keeps the broad deterministic quality gate:
 
 - clear-root accuracy >= 0.90
 - clear-mode accuracy >= 0.90
 - combined root+mode accuracy >= 0.85
 - ambiguous abstention = 1.00
 
-The clear set contains six roots in both major and minor; the ambiguous set covers
-single note, octave, root+fifth, and an equal major/minor blend.
-
-Issue #418 adds a synthetic **bass-dominant** case with a much stronger low C2 than
-its upper C-major triad. The frozen expected root remains `C`.
+Issue #418 adds a separate stress baseline in
+`tests/test_issue418_final_acceptance.py`: three clear tonal cases, one C-major
+case with a deliberately dominant **low G bass**, and three ambiguity cases. The
+current implementation scores 3/4 for root, mode, and combined correctness and
+3/3 for ambiguity abstention. The bass-dominant C-major fixture is currently
+observed as root `G` with mode `None`; that is a frozen known weakness, not a test
+that should be weakened until the current heuristic passes it.
 
 Canonical baseline/evidence report:
 `docs/validation/ISSUE_418_KEY_BASELINE.md`.

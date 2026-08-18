@@ -28,21 +28,32 @@ abstains and retains the evidence with `mode = null`.
 
 ## Frozen synthetic baseline
 
-The existing `tests/test_key_mode_analysis.py` gate covers twelve clear fixtures
-(6 roots × major/minor) plus four deliberately ambiguous fixtures.
+The broad gate in `tests/test_key_mode_analysis.py` remains unchanged: twelve clear
+fixtures (6 roots × major/minor) must satisfy its root/mode accuracy thresholds and
+four deliberately ambiguous fixtures must abstain.
 
-| Case family | Count | Baseline contract |
-| --- | ---: | --- |
-| clear major/minor | 12 | root accuracy >= 0.90 |
-| clear major/minor | 12 | mode accuracy >= 0.90 |
-| clear major/minor | 12 | combined root+mode accuracy >= 0.85 |
-| ambiguous single-note/octave/root+fifth/major-minor blend | 4 | abstention = 1.00 |
-| bass-dominant C-major synthetic fixture | 1 | root = C |
+Issue #418 additionally freezes a smaller stress baseline in
+`tests/test_issue418_final_acceptance.py`. It contains three clear tonal cases plus
+one intentionally difficult C-major case whose **low G bass is much stronger than
+the upper C-major material**, along with three ambiguity cases.
 
-The current clear-fixture implementation has historically met the gate at 1.00
-for mode and combined accuracy, while all four ambiguous fixtures abstain. The
-bass-dominant fixture added by #418 intentionally makes the low C2 component much
-stronger than the upper C-major triad and freezes the expected root as C.
+Current measured stress baseline:
+
+| Metric | Result |
+| --- | ---: |
+| tonal cases | 4 |
+| root correct | 3 / 4 |
+| mode correct | 3 / 4 |
+| combined root + mode correct | 3 / 4 |
+| ambiguity abstentions | 3 / 3 |
+| bass-dominant C-major observed output | `G`, mode `None` |
+| bass-dominant C-major expected musical label | `Cmaj` |
+
+The bass-dominant case is deliberately a **known weakness**, not a target made easy
+enough for the current implementation to pass. The mean-chroma root heuristic is
+pulled toward the dominant G bass and then the mode detector abstains. Future root
+or mode changes must compare against this frozen evidence rather than replacing it
+with a fixture that already matches the current heuristic.
 
 ## Error categories for future comparisons
 
@@ -57,8 +68,8 @@ deterministic implementation.
 
 ## Persistence evidence
 
-Issue #418 also makes analysis uncertainty durable in SQLite. New/updated
-`features` rows persist:
+Issue #418 makes analysis uncertainty durable in SQLite. New/updated `features`
+rows persist:
 
 - `quality_note` as nullable text
 - `key_mode` as nullable `maj` / `min`
@@ -66,3 +77,7 @@ Issue #418 also makes analysis uncertainty durable in SQLite. New/updated
 
 Legacy databases are upgraded additively with nullable columns. Existing rows are
 left intact; no bulk rewrite and no invented evidence is performed.
+
+`tests/test_issue418_final_acceptance.py` verifies this through real `run_analyze()`
+paths for a known major chord, an ambiguous single-note abstention, and a short clip,
+and also proves that additive migration preserves an existing legacy feature row.
