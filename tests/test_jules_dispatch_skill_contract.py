@@ -88,3 +88,20 @@ def test_routing_is_additive_only() -> None:
         "sample-brain-test-first",
     ):
         assert prior in routing
+
+
+def test_skill_prefers_direct_mcp_jules_dispatch_when_host_ready() -> None:
+    text = CANON.read_text(encoding="utf-8").lower()
+    assert "jules_dispatch" in text
+    assert "preferred normal path" in text
+    assert "jules-cli: ok" in text
+    assert "target = sample_brain" in text
+
+
+def test_skill_keeps_rest_fallback_without_duplicate_create() -> None:
+    text = CANON.read_text(encoding="utf-8").lower()
+    assert "src/jules_dispatch.py" in text
+    assert "rest fallback" in text
+    assert "ambiguous create outcome" in text
+    assert "do not fall back to rest" in text
+    assert "duplicate session" in text
