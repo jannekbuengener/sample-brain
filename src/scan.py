@@ -1,8 +1,10 @@
 # src/scan.py  (STREAMING-VERSION)
 from __future__ import annotations
+
+import os
 from pathlib import Path
 from typing import Iterable, Iterator, Optional, Set
-import os
+
 import soundfile as sf
 from sqlalchemy import text
 from tqdm import tqdm
@@ -18,9 +20,23 @@ DEFAULT_IGNORE_DIRS: Set[str] = {
     "System Volume Information", "Cache", "Caches"
 }
 
+_SAMPLE_UPSERT = text("""
+    INSERT INTO samples (path, relpath, samplerate, channels, duration, size_bytes, hash)
+    VALUES (:path, :relpath, :sr, :ch, :dur, :size_bytes, :hash)
+    ON CONFLICT(path) DO UPDATE SET
+        relpath=excluded.relpath,
+        samplerate=excluded.samplerate,
+        channels=excluded.channels,
+        duration=excluded.duration,
+        size_bytes=excluded.size_bytes,
+        hash=excluded.hash
+""")
+
+
 def _should_ignore_dir(p: Path) -> bool:
     name = p.name.lower()
     return name in {d.lower() for d in DEFAULT_IGNORE_DIRS}
+
 
 def iter_audio_files_stream(roots: Iterable[Path]) -> Iterator[Path]:
     """Liefert Audio-Dateien als Stream (keine Vorab-Liste)."""
@@ -36,6 +52,7 @@ def iter_audio_files_stream(roots: Iterable[Path]) -> Iterator[Path]:
                 if p.suffix.lower() in AUDIO_EXTS:
                     yield p
 
+
 def safe_audio_info(path: Path):
     sr = ch = None
     dur = None
@@ -49,6 +66,7 @@ def safe_audio_info(path: Path):
         pass
     return sr, ch, dur
 
+
 def _relpath_against_any(p: Path, roots: list[Path]) -> Optional[str]:
     for r in roots:
         try:
@@ -57,15 +75,35 @@ def _relpath_against_any(p: Path, roots: list[Path]) -> Optional[str]:
             continue
     return None
 
-def run_scan(custom_roots: Optional[Iterable[Path]] = None,
-             limit: Optional[int] = None,
-             show_every: int = 200):
+
+def _flush_scan_batch(engine, rows: list[dict]) -> None:
+    """Write one prepared batch in a short transaction."""
+    if not rows:
+        return
+    with engine.begin() as conn:
+        conn.execute(_SAMPLE_UPSERT, rows)
+
+
+def run_scan(
+    custom_roots: Optional[Iterable[Path]] = None,
+    limit: Optional[int] = None,
+    show_every: int = 200,
+    batch_size: int = 100,
+):
     """
     Streamender Scan:
       - custom_roots: Liste von Pfaden; None -> SAMPLE_ROOTS aus config.py
-      - limit: brich nach X Dateien ab (Debug/Teillauf)
+      - limit: brich nach X erfolgreich vorbereiteten Dateien ab (Debug/Teillauf)
       - show_every: alle N Dateien einen kleinen Status ausgeben (zusätzlich zu tqdm)
+      - batch_size: Anzahl vorbereiteter Zeilen pro kurzer DB-Schreibtransaktion
+
+    Dateisystem-Probing und Hashing passieren außerhalb von SQLite-Schreibtransaktionen.
+    Dateien, die zwischen Discovery und Lesen verschwinden oder nicht lesbar sind,
+    werden übersprungen, ohne den restlichen Scan abzubrechen.
     """
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+
     selected_roots = SAMPLE_ROOTS if custom_roots is None else list(custom_roots)
     roots = [Path(r) for r in selected_roots]
     if not roots:
@@ -75,31 +113,42 @@ def run_scan(custom_roots: Optional[Iterable[Path]] = None,
 
     it = iter_audio_files_stream(roots)
     processed = 0
+    batch: list[dict] = []
 
     # tqdm ohne total (unbekannt) – zeigt laufenden Zähler
-    with engine.begin() as conn, tqdm(desc="Scanning", unit="file") as bar:
+    with tqdm(desc="Scanning", unit="file") as bar:
         for p in it:
             rel = _relpath_against_any(p, roots)
             sr, ch, dur = safe_audio_info(p)
-            size = p.stat().st_size
-            h = file_hash(p)
+            try:
+                size = p.stat().st_size
+                h = file_hash(p)
+            except OSError as exc:
+                print(f"[WARN] Skipping unreadable sample: {p} ({exc})")
+                continue
 
-            conn.execute(text("""
-                INSERT INTO samples (path, relpath, samplerate, channels, duration, size_bytes, hash)
-                VALUES (:path, :relpath, :sr, :ch, :dur, :size_bytes, :hash)
-                ON CONFLICT(path) DO UPDATE SET
-                    relpath=excluded.relpath,
-                    samplerate=excluded.samplerate,
-                    channels=excluded.channels,
-                    duration=excluded.duration,
-                    size_bytes=excluded.size_bytes,
-                    hash=excluded.hash
-            """), dict(path=str(p), relpath=rel, sr=sr, ch=ch, dur=dur, size_bytes=size, hash=h))
-
+            batch.append(
+                dict(
+                    path=str(p),
+                    relpath=rel,
+                    sr=sr,
+                    ch=ch,
+                    dur=dur,
+                    size_bytes=size,
+                    hash=h,
+                )
+            )
             processed += 1
             bar.update(1)
+
+            if len(batch) >= batch_size:
+                _flush_scan_batch(engine, batch)
+                batch.clear()
+
             if show_every and processed % show_every == 0:
                 bar.set_postfix_str(f"{processed} files | DB: {DB_PATH.name}")
 
             if limit and processed >= limit:
                 break
+
+        _flush_scan_batch(engine, batch)
