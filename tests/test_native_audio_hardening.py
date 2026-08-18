@@ -69,7 +69,37 @@ def test_valid_library_loads_and_verifies_symbols(tmp_path):
         setattr(mock_cdll, sym, MagicMock())
 
     with patch("src.native_audio._get_trusted_candidates", return_value=[fake_lib_path]):
-        with patch("ctypes.CDLL", return_value=mock_cdll):
-            lib, path = native_audio._load_native_library()
-            assert lib is mock_cdll
-            assert path == fake_lib_path
+        with patch("src.native_audio._get_trusted_roots", return_value=[tmp_path]):
+            with patch("ctypes.CDLL", return_value=mock_cdll):
+                lib, path = native_audio._load_native_library()
+                assert lib is mock_cdll
+                assert path == fake_lib_path
+
+
+def test_escaped_symlink_candidate_rejected_and_cdll_not_called(tmp_path):
+    """Verify symlink pointing outside trusted roots is rejected and ctypes.CDLL is never called."""
+    allowed_dir = tmp_path / "allowed"
+    allowed_dir.mkdir()
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+
+    outside_target = outside_dir / "libsamplebrain_audio.so"
+    outside_target.write_bytes(b"outside binary content")
+
+    escaped_candidate = allowed_dir / "libsamplebrain_audio.so"
+
+    if hasattr(os, "symlink"):
+        try:
+            os.symlink(outside_target, escaped_candidate)
+        except OSError:
+            pytest.skip("Symlinks not supported on this platform/permission level")
+    else:
+        pytest.skip("Symlinks not supported on this platform")
+
+    with patch("src.native_audio._get_trusted_candidates", return_value=[escaped_candidate]):
+        with patch("src.native_audio._get_trusted_roots", return_value=[allowed_dir]):
+            with patch("ctypes.CDLL") as mock_cdll:
+                lib, path = native_audio._load_native_library()
+                assert lib is None
+                assert path is None
+                mock_cdll.assert_not_called()
