@@ -38,3 +38,11 @@ beatgrid = [
 
 [tool.setuptools]
 packages = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+# First adoption is deliberately narrow: fatal/invalid Python constructs only.
+# Broader existing lint debt is tracked separately from the CI policy rollout.
+select = ["F63", "F7"]
