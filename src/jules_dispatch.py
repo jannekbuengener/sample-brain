@@ -405,13 +405,19 @@ def resolve_source(transport: JulesTransport) -> str:
 # ---------------------------------------------------------------------------
 
 
-def build_create_payload(ctx: DispatchContext, source_id: str) -> dict:
+def build_create_payload(
+    ctx: DispatchContext,
+    source_id: str,
+    *,
+    api_key: Optional[str] = None,
+) -> dict:
+    """Build the documented Jules create-session payload with a safe prompt."""
     payload: Dict[str, Any] = {
         "sourceContext": {
             "source": source_id,
             "githubRepoContext": {"startingBranch": ctx.base_branch},
         },
-        "prompt": build_prompt(ctx),
+        "prompt": redact(build_prompt(ctx), api_key=api_key),
         "requirePlanApproval": requires_plan_approval(ctx),
     }
     if ctx.allow_pr:
@@ -422,7 +428,11 @@ def build_create_payload(ctx: DispatchContext, source_id: str) -> dict:
 def create_session(
     transport: JulesTransport, ctx: DispatchContext, source_id: str
 ) -> dict:
-    return transport.request("POST", "/sessions", build_create_payload(ctx, source_id))
+    return transport.request(
+        "POST",
+        "/sessions",
+        build_create_payload(ctx, source_id, api_key=transport.api_key),
+    )
 
 
 def _session_id(session_id: str) -> str:
@@ -465,7 +475,7 @@ def approve_plan(transport: JulesTransport, session_id: str) -> dict:
 
 
 def send_message(transport: JulesTransport, session_id: str, text: str) -> dict:
-    clean = redact(text)
+    clean = redact(text, api_key=transport.api_key)
     return transport.request(
         "POST", f"/sessions/{_session_id(session_id)}:sendMessage", {"prompt": clean}
     )
