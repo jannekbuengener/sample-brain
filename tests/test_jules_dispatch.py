@@ -200,6 +200,30 @@ def test_auto_create_pr_only_when_allowed() -> None:
     assert "automationMode" not in without_pr
 
 
+# 8d. QUEUED/PLANNING/feedback/paused/completed normalize without drift.
+def test_session_states_normalize_clean() -> None:
+    assert normalize_dispatch("QUEUED")["dispatch_status"] == "CREATED"
+    assert normalize_dispatch("PLANNING")["dispatch_status"] == "IN_PROGRESS"
+    assert normalize_dispatch("AWAITING_USER_FEEDBACK")["dispatch_status"] == "IN_PROGRESS"
+    assert normalize_dispatch("PAUSED")["dispatch_status"] == "IN_PROGRESS"
+    assert normalize_dispatch("COMPLETED")["dispatch_status"] == "RESULT_READY"
+    assert normalize_dispatch("QUEUED")["error_code"] is None
+
+
+# 8e. Empty activities collection (HTTP 404) reads as an empty list.
+class _Activities404Transport:
+    api_key = "dummy-key"
+
+    def request(self, method: str, path: str, body=None):
+        if path.endswith("/activities"):
+            raise JulesHttpError(404, "not found", "BLOCKED_REMOTE")
+        return {"name": "sessions/x", "state": "QUEUED"}
+
+
+def test_get_activities_404_reads_as_empty() -> None:
+    assert get_activities(_Activities404Transport(), "sessions/x") == []
+
+
 # 8c. Session read endpoints strip the full resource name to the bare id.
 def test_session_read_paths_use_bare_id() -> None:
     transport = FakeTransport()
