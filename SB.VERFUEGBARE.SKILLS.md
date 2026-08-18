@@ -8,6 +8,7 @@ Skills werden empfohlen, nicht automatisch ausgeführt.
 | Situation | Skill |
 |-----------|-------|
 | Neues Feature oder Issue planen | `sample-brain-issue-to-session-plan` |
+| Klar abgegrenztes Issue explizit an Jules delegieren | `sample-brain-jules-dispatch` |
 | Unklare Fehlerursache | `sample-brain-root-cause` |
 | Bekannter Defekt / fehlender Schutz | `sample-brain-regression-gap` |
 | Bug oder Fehlverhalten | `jMerta/bug-triage` ergänzend |
