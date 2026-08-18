@@ -121,7 +121,7 @@ Ein Step ist nur dann wiederverwendbar (`reused`), wenn:
 3. sein `output_inventory` physisch vorhanden ist und die Content-Hashes
    übereinstimmen,
 4. bei `arrangement`: zusätzlich `analysis/working_audio.wav` existiert und
-   SHA-1 passt (siehe Arrangement-Resume).
+   der im Inventory deklarierte Content-Hash passt (siehe Arrangement-Resume).
 
 Wenn ein Step neu berechnet werden muss, werden alle nachgelagerten Steps
 ebenfalls neu berechnet (da deren Upstream-Cache-Key sich ändert).
@@ -144,7 +144,7 @@ Pfade oder externe Metadaten angewiesen zu sein.
 - `contract_version` dieses Steps erhöht ⇒ nur dieser Step + Downstream
   recompute (gezielte Invalidierung).
 - Upstream-Cache-Key geändert ⇒ dieser Step + Downstream recompute.
-- Output fehlt/SHA-1-Mismatch ⇒ betroffener Step + Downstream recompute.
+- Output fehlt/Content-Hash-Mismatch ⇒ betroffener Step + Downstream recompute.
 - `--no-resume` ⇒ kompletter Recompute, prior State wird ignoriert (nicht
   zwingend gelöscht; neuer State überschreibt).
 

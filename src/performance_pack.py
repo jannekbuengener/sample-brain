@@ -14,7 +14,6 @@ from typing import Any
 
 from src.deconstruct import RunResult
 from src.content_hash import compute_file_hash
-from src.utils import file_hash
 
 
 @dataclass
