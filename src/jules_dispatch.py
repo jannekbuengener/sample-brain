@@ -438,7 +438,14 @@ def get_activities(transport: JulesTransport, session_id: str) -> List[dict]:
         path = f"/sessions/{_session_id(session_id)}/activities"
         if page_token:
             path += f"?pageToken={urllib.parse.quote(page_token, safe='')}"
-        resp = transport.request("GET", path)
+        try:
+            resp = transport.request("GET", path)
+        except JulesHttpError as exc:
+            # A brand-new session with no activities yet returns 404 from the
+            # real API (the collection is empty). Treat that as "no activities".
+            if exc.status == 404:
+                break
+            raise
         out.extend(list(resp.get("activities", []) or []))
         page_token = resp.get("nextPageToken")
         if not page_token:
@@ -487,13 +494,20 @@ def normalize_dispatch(
     plan_id: Optional[str] = None,
 ) -> dict:
     state = (jules_state or "").upper()
-    if state == "COMPLETED" and pr_url:
+    if state in ("COMPLETED",):
         status = "RESULT_READY"
-    elif state in ("PENDING",):
+    elif state in ("PENDING", "QUEUED"):
         status = "CREATED"
     elif state == "AWAITING_PLAN_APPROVAL":
         status = "AWAITING_PLAN_APPROVAL"
-    elif state in ("PLAN_APPROVED", "IN_PROGRESS", "RUNNING"):
+    elif state in (
+        "PLANNING",
+        "PLAN_APPROVED",
+        "IN_PROGRESS",
+        "RUNNING",
+        "AWAITING_USER_FEEDBACK",
+        "PAUSED",
+    ):
         status = "IN_PROGRESS"
     elif state == "FAILED":
         status = "FAILED"
