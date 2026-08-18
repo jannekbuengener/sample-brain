@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
-import sqlite_vec
 
 from . import config
 from .db import get_embedding_model_by_id, get_engine, text, upsert_vector_index_state
@@ -40,6 +39,8 @@ def require_sqlite_vec() -> None:
 
 def enable_vec_extension(conn: sqlite3.Connection) -> None:
     require_sqlite_vec()
+    import sqlite_vec
+
     conn.enable_load_extension(True)
     sqlite_vec.load(conn)
     conn.enable_load_extension(False)
@@ -105,6 +106,8 @@ def rebuild_vec0_cache(
             INSERT INTO {VEC_SAMPLE_CURRENT_TABLE}(rowid, embedding)
             VALUES (?, ?)
         """
+        import sqlite_vec
+
         for sample_id, blob, _source_hash, dim in rows:
             vector = decode_embedding_blob(blob, dim)
             normalized = normalize_vectors(vector.reshape(1, -1))[0]
