@@ -186,7 +186,7 @@ def test_bass_dominant_root_baseline_uses_synthetic_audio(tmp_path: Path):
     t = np.linspace(0.0, duration, sample_count, endpoint=False, dtype=np.float32)
 
     # Tonal center C with a deliberately dominant C2 bass plus a quieter C-major
-    # upper triad. This covers bass dominance without committing private audio.
+    # upper triad. A strong bass on the actual root remains a passing baseline.
     components = (
         (65.406, 0.85),
         (261.626, 0.30),
@@ -202,5 +202,31 @@ def test_bass_dominant_root_baseline_uses_synthetic_audio(tmp_path: Path):
     root, evidence = estimate_key(wave, sr)
 
     assert root == "C"
+    assert evidence is not None
+    assert 0.0 < evidence <= 1.0
+
+
+def test_off_root_bass_dominance_freezes_known_root_failure(tmp_path: Path):
+    sr = 44100
+    duration = 2.0
+    sample_count = int(sr * duration)
+    t = np.linspace(0.0, duration, sample_count, endpoint=False, dtype=np.float32)
+
+    # Musical context: C-major upper triad, but the fifth (G2) dominates the low
+    # register. The current mean-chroma argmax is intentionally NOT corrected in
+    # #418; the observed G root is frozen as evidence for a future algorithm slice.
+    bass = 0.65 * np.sin(2.0 * np.pi * 98.00 * t)
+    triad = 0.35 * (
+        np.sin(2.0 * np.pi * 261.63 * t)
+        + np.sin(2.0 * np.pi * 329.63 * t)
+        + np.sin(2.0 * np.pi * 392.00 * t)
+    )
+    wave = np.clip(bass + triad, -1.0, 1.0).astype(np.float32)
+    path = tmp_path / "dominant_g_bass_under_c_major.wav"
+    sf.write(path, wave, sr, subtype="PCM_16")
+
+    root, evidence = estimate_key(wave, sr)
+
+    assert root == "G"
     assert evidence is not None
     assert 0.0 < evidence <= 1.0

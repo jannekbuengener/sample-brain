@@ -37,12 +37,22 @@ The existing `tests/test_key_mode_analysis.py` gate covers twelve clear fixtures
 | clear major/minor | 12 | mode accuracy >= 0.90 |
 | clear major/minor | 12 | combined root+mode accuracy >= 0.85 |
 | ambiguous single-note/octave/root+fifth/major-minor blend | 4 | abstention = 1.00 |
-| bass-dominant C-major synthetic fixture | 1 | root = C |
+| dominant root-bass under C-major | 1 | root = C |
+| dominant fifth-bass (G2) under C-major | 1 | observed root = G (known failure) |
 
-The current clear-fixture implementation has historically met the gate at 1.00
-for mode and combined accuracy, while all four ambiguous fixtures abstain. The
-bass-dominant fixture added by #418 intentionally makes the low C2 component much
-stronger than the upper C-major triad and freezes the expected root as C.
+The clear-fixture implementation meets the existing gate, while all four
+ambiguous fixtures abstain. #418 now freezes two complementary bass cases:
+
+1. A much stronger low **C2** under a quieter C-major upper triad still yields the
+   expected `C` root.
+2. A dominant low **G2** (the fifth) under a C-major upper triad makes the current
+   mean-chroma argmax select `G`. This is a measured baseline weakness, not a
+   result to hide or "fix" inside the persistence slice.
+
+The second case is intentionally kept as a failing-quality **observation that
+passes as a regression test of current behavior**. A future key-root algorithm
+proposal should demonstrate that it improves this case without weakening the
+clear-fixture or ambiguity-abstention contracts.
 
 ## Error categories for future comparisons
 
