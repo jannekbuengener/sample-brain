@@ -661,9 +661,6 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
         merged_loop_candidates: list[LoopCandidate] = []
         for batch in all_loop_batches:
             merged_loop_candidates.extend(batch.candidates)
-        merged_loop_candidates.sort(key=lambda c: (c.bar_count, c.start_sample))
-        if len(merged_loop_candidates) > 200:
-            merged_loop_candidates = merged_loop_candidates[:200]
 
         merged_section_candidates: list[SectionCandidate] = []
         for batch in all_section_batches:
