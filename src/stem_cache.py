@@ -32,6 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from .model_readiness import WEIGHT_LICENSE_UNKNOWN_UNVERIFIED
+
 # ---------------------------------------------------------------------------
 # Contract constants
 # ---------------------------------------------------------------------------
@@ -44,9 +46,15 @@ SAMPLE_BRAIN_VERSION = "0.1.0"
 
 CACHE_ENV_VAR = "SAMPLE_BRAIN_STEM_CACHE_DIR"
 
-# #247 result: Demucs weights are research-only / commercial use not granted.
-# This is a LICENSE USAGE status, NOT a cryptographic weight hash.
-WEIGHT_USAGE_RESEARCH_ONLY = "RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED"
+# #423 corrects the current legal/readiness evidence to UNKNOWN_UNVERIFIED.
+# The legacy string remains only as a v1 fingerprint-compatibility token so a
+# metadata clarification does not invalidate otherwise identical stem caches.
+LEGACY_DEMUCS_V1_FINGERPRINT_LICENSE_TOKEN = (
+    "RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED"
+)
+# Backward-compatible import alias for older callers/tests. New provenance must
+# use WEIGHT_LICENSE_UNKNOWN_UNVERIFIED instead.
+WEIGHT_USAGE_RESEARCH_ONLY = LEGACY_DEMUCS_V1_FINGERPRINT_LICENSE_TOKEN
 
 # Weight-hash algorithm labels (documented semantics).
 WEIGHT_HASH_ALGO_SINGLE = "sha256"
@@ -105,7 +113,9 @@ def known_htdemucs_identity(*, weight_hash: Optional[dict] = None) -> StemModelI
 
     The checkpoint identifier ``955717e8`` is a released model signature, NOT a
     full local weight hash. ``weight_hash`` must be supplied explicitly from the
-    actual loaded weight file/set.
+    actual loaded weight file/set. Commercial readiness is deliberately kept
+    separate from this technical identity; current weight-license evidence is
+    ``UNKNOWN_UNVERIFIED``.
     """
     return StemModelIdentity(
         family="htdemucs",
@@ -113,7 +123,7 @@ def known_htdemucs_identity(*, weight_hash: Optional[dict] = None) -> StemModelI
         checkpoint="955717e8",
         weight_hash=weight_hash,
         code_license="MIT",
-        weight_license=WEIGHT_USAGE_RESEARCH_ONLY,
+        weight_license=WEIGHT_LICENSE_UNKNOWN_UNVERIFIED,
     )
 
 
@@ -125,7 +135,9 @@ def known_htdemucs_ft_identity(
     The checkpoint representation is the canonical, stable bag of the four
     released source signatures:
         f7e0c4bc,d12395a8,92cfc3b6,04573f0d
-    These are checkpoint identifiers, NOT a full local weight hash.
+    These are checkpoint identifiers, NOT a full local weight hash. Commercial
+    readiness remains separate and fail-closed while weight-license evidence is
+    ``UNKNOWN_UNVERIFIED``.
     """
     return StemModelIdentity(
         family="htdemucs",
@@ -133,7 +145,7 @@ def known_htdemucs_ft_identity(
         checkpoint="f7e0c4bc,d12395a8,92cfc3b6,04573f0d",
         weight_hash=weight_hash,
         code_license="MIT",
-        weight_license=WEIGHT_USAGE_RESEARCH_ONLY,
+        weight_license=WEIGHT_LICENSE_UNKNOWN_UNVERIFIED,
     )
 
 
@@ -230,6 +242,26 @@ def _canonical_configuration(configuration: Optional[dict]) -> dict:
     return {k: configuration[k] for k in sorted(configuration)}
 
 
+def _fingerprint_model_provenance(model_identity: StemModelIdentity) -> dict:
+    """Return v1-compatible model provenance for separation fingerprints.
+
+    #423 corrects the current Demucs weight-license evidence from the historical
+    over-strong label to UNKNOWN_UNVERIFIED. The label is not output-affecting,
+    and changing it alone must not invalidate existing v1 cache keys. Therefore
+    only the two known Demucs identities normalize the corrected value back to
+    the historical token inside the v1 fingerprint. Emitted provenance remains
+    truthful via ``StemModelIdentity.to_provenance()``.
+    """
+    provenance = model_identity.to_provenance()
+    if (
+        model_identity.name in {"htdemucs", "htdemucs_ft"}
+        and provenance.get("weight_license") == WEIGHT_LICENSE_UNKNOWN_UNVERIFIED
+    ):
+        provenance = dict(provenance)
+        provenance["weight_license"] = LEGACY_DEMUCS_V1_FINGERPRINT_LICENSE_TOKEN
+    return provenance
+
+
 def build_separation_fingerprint(
     *,
     backend_name: str,
@@ -245,7 +277,7 @@ def build_separation_fingerprint(
         "stem_cache_contract_version": contract_version,
         "sample_brain_version": sample_brain_version,
         "backend": {"name": backend_name, "version": backend_version},
-        "model": model_identity.to_provenance(),
+        "model": _fingerprint_model_provenance(model_identity),
         "configuration": _canonical_configuration(configuration),
     }
     return _canonical_json(fp)
@@ -770,6 +802,8 @@ __all__ = [
     "STEM_CACHE_CONTRACT_VERSION",
     "STEM_CACHE_DOCUMENT_TYPE",
     "WEIGHT_USAGE_RESEARCH_ONLY",
+    "LEGACY_DEMUCS_V1_FINGERPRINT_LICENSE_TOKEN",
+    "WEIGHT_LICENSE_UNKNOWN_UNVERIFIED",
     "WEIGHT_HASH_ALGO_SET",
     "StemModelIdentity",
     "known_htdemucs_identity",
