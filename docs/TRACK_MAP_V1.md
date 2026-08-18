@@ -84,7 +84,7 @@ The Track Map must be portable: it must not embed absolute local paths, username
 | `size_bytes` | integer | no | File size in bytes, if available. |
 | `hash.algorithm` | string | yes | Hash algorithm name (`sha256` for new writes, legacy `sha1` supported). |
 | `hash.value` | string | yes | Hex digest of the file content. |
-| `audio_properties.duration_sec` | number | yes | Duration of the audio in seconds (float). |
+| `audio_properties.duration_sec` | number | yes | Duration of the audio file in seconds (float). |
 | `audio_properties.sample_rate_hz` | integer | yes | Sample rate in Hz. |
 | `audio_properties.channels` | integer | yes | Number of audio channels. |
 | `source_ref` | string | yes | Key into `provenance.components` for the component that computed the hash and audio properties. |
@@ -192,8 +192,8 @@ The `analysis` block holds the overall status plus musical, audio-summary, and t
 | `brightness.status` | string | yes | Individual status (Section 10). |
 | `brightness.value` | number | conditional | Mean spectral centroid in Hz (float). Present when status is `ok` or `partial`. |
 | `brightness.unit` | string | conditional | Must be `"Hz"` when `value` is present. |
-| `brightness.method` | string | conditional | Must be `"mean_spectral_centroid"` when `value` is present. Documents the measuring method. |
-| `brightness.source_ref` | string | conditional | Key into `provenance.components`. Required when a key value is present. |
+| `brightness.method` | string | conditional | Must be `"mean_spectral_centroid"` when `value` is present. |
+| `brightness.source_ref` | string | conditional | Key into `provenance.components`. Required when `value` is present. |
 
 **Rules:**
 
