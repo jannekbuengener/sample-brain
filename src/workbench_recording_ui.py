@@ -1,21 +1,27 @@
-"""Visible Workbench RECORD/STOP controls backed by the native audio engine.
+"""Visible Workbench recording controls backed by the native audio engine.
 
-This module is intentionally small: Tkinter owns presentation, while
-``workbench_controller.py`` provides the single session recording bridge.
-The GUI poll only reads snapshots; it never advances time from wall-clock data.
+Tkinter owns presentation while ``workbench_controller.py`` provides the shared
+recording bridge. Quick Capture is wired here as well because this controller
+already owns the authoritative native engine and transport snapshots.
 """
 
 from __future__ import annotations
 
+import time
 import tkinter as tk
+import uuid
+from pathlib import Path
 from tkinter import ttk
 from typing import Any
 
-from .native_audio import NativeAudioEngine, is_available, Snapshot, SB_DEVICE_OK
-from .workbench_controller import start_native_recording, stop_native_recording
+from .native_audio import NativeAudioEngine, Snapshot, SB_DEVICE_OK, is_available
+from .quick_issue_capture import QuickIssueCapture
+from .workbench_controller import (
+    start_native_recording,
+    stop_native_recording,
+    workbench_state_dir,
+)
 from .workbench_transport_adapter import WorkbenchTransportAdapter
-from pathlib import Path
-from .workbench_controller import workbench_state_dir
 
 RECORDING_POLL_MS = 100
 
@@ -28,7 +34,7 @@ class RecordingState:
     """Mutable state shared between UI and controller."""
 
     def __init__(self) -> None:
-        self.status: str = STATUS_IDLE  # idle | recording | finalizing
+        self.status: str = STATUS_IDLE
         self.recording_id: int | None = None
         self.record_start_engine_frame: int = 0
         self.record_start_session_frame: int = 0
@@ -36,7 +42,7 @@ class RecordingState:
 
 
 class WorkbenchRecordingUiController:
-    """Attach the exact RECORD/STOP controls to an existing WorkbenchApp."""
+    """Attach RECORD/STOP and Quick Capture to an existing WorkbenchApp."""
 
     def __init__(
         self,
@@ -46,88 +52,89 @@ class WorkbenchRecordingUiController:
         db_path: Any = None,
     ) -> None:
         self.app = app
-        # Get the shared engine from the transport adapter
-        self.engine = None
-        if transport_adapter is not None:
-            self.engine = transport_adapter.get_native_engine()
+        self.transport_adapter = transport_adapter
+        self.engine = (
+            transport_adapter.get_native_engine()
+            if transport_adapter is not None
+            else None
+        )
         self.db_path = db_path
         self.state = RecordingState()
         self._poll_id: Any = None
         self._closed = False
+        self._quick_capture = QuickIssueCapture()
+        self._quick_capture_recording = False
 
         self._build_controls()
+        self._wire_quick_capture_button()
         self._schedule_poll()
 
     def _build_controls(self) -> None:
-        tk_api = tk
-        ttk_api = ttk
-
-        # Choose a bar location: try the view bar right of the toolbar,
-        # otherwise add a compact bar below the toolbar.
-        # We insert after the view bar if it exists, else after the toolbar.
         if hasattr(self.app, "_view_bar") and self.app._view_bar is not None:
             parent = self.app._view_bar
-            side = tk_api.TOP
-            fill = tk_api.X
+            side = tk.TOP
+            fill = tk.X
         else:
             parent = self.app._toolbar
-            side = tk_api.BOTTOM
-            fill = tk_api.X
+            side = tk.BOTTOM
+            fill = tk.X
 
-        bar = ttk_api.Frame(parent, padding=(8, 4, 8, 4))
+        bar = ttk.Frame(parent, padding=(8, 4, 8, 4))
         bar.pack(side=side, fill=fill)
         self.app._recording_bar = bar
 
-        # State label
-        self.state_var = tk_api.StringVar(value=f"Status: {STATUS_IDLE}")
+        self.state_var = tk.StringVar(value=f"Status: {STATUS_IDLE}")
         self.app._recording_state_var = self.state_var
-        self.state_label = ttk_api.Label(bar, textvariable=self.state_var)
-        self.state_label.pack(side=tk_api.LEFT)
+        self.state_label = ttk.Label(bar, textvariable=self.state_var)
+        self.state_label.pack(side=tk.LEFT)
 
-        # Record button â€” enabled only when engine is available and not already recording
-        self.record_btn = ttk_api.Button(
+        self.record_btn = ttk.Button(
             bar,
             text="Record",
-            state=tk_api.NORMAL if self.engine is not None else tk_api.DISABLED,
+            state=tk.NORMAL if self.engine is not None else tk.DISABLED,
             command=self._on_record,
         )
         self.app._recording_record_btn = self.record_btn
-        self.record_btn.pack(side=tk_api.LEFT, padx=(0, 8))
+        self.record_btn.pack(side=tk.LEFT, padx=(0, 8))
 
-        # Stop button â€” initially hidden; shown during recording / finalizing
-        self.stop_btn = ttk_api.Button(
+        self.stop_btn = ttk.Button(
             bar,
             text="Stop",
-            state=tk_api.DISABLED,
+            state=tk.DISABLED,
             command=self._on_stop,
         )
         self.app._recording_stop_btn = self.stop_btn
-        self.stop_btn.pack(side=tk_api.LEFT)
+        self.stop_btn.pack(side=tk.LEFT)
+
+    def _wire_quick_capture_button(self) -> None:
+        button = getattr(self.app, "_quick_capture_btn", None)
+        if button is None:
+            return
+        button.configure(command=self._on_quick_capture_toggle)
+        if self.engine is not None:
+            button.state(["!disabled"])
+        else:
+            button.state(["disabled"])
 
     def _on_record(self) -> None:
-        """Start native recording when user presses Record."""
-        if self._closed:
+        """Start normal native recording when user presses Record."""
+        if self._closed or self._quick_capture_recording:
             return
         if self.state.status != STATUS_IDLE:
             return
         if self.engine is None:
             self.app._show_toast("Native audio engine not available")
             return
-
-        # Ensure the shared engine is RUNNING (started) before taking snapshots
-        # This starts the audio callback without auto-starting musical transport
-        if not self.app._transport_adapter.ensure_engine_running():
+        if self.transport_adapter is None or not self.transport_adapter.ensure_engine_running():
             self.app._show_toast("Failed to start native audio engine")
             return
 
-        # Get real frames from transport adapter snapshot
-        snapshot = self.app._transport_adapter.get_snapshot()
+        snapshot = self.transport_adapter.get_snapshot()
         engine_frame = snapshot["engine_frame"]
         session_frame = snapshot["session_frame"]
         self.state.record_start_engine_frame = engine_frame
         self.state.record_start_session_frame = session_frame
-        
-        # Start the native recording; returns a recording ID.
+
         try:
             recording_id = start_native_recording(
                 self.engine,
@@ -135,7 +142,6 @@ class WorkbenchRecordingUiController:
                 session_frame,
             )
         except RuntimeError as exc:
-            # Engine not open or other error â€“ stay idle.
             self.app._show_toast(str(exc))
             return
 
@@ -144,27 +150,24 @@ class WorkbenchRecordingUiController:
         self._update_buttons()
 
     def _on_stop(self) -> None:
-        """Stop native recording and finalize the take when user presses Stop."""
+        """Stop normal recording and finalize the take."""
         if self._closed:
             return
         if self.state.status != STATUS_RECORDING or self.state.recording_id is None:
+            return
+        if self.transport_adapter is None:
             return
 
         self.state.status = STATUS_FINALIZING
         self._update_buttons()
 
-        # Capture end frames from transport adapter snapshot BEFORE stopping recording
-        end_snapshot = self.app._transport_adapter.get_snapshot()
+        end_snapshot = self.transport_adapter.get_snapshot()
         end_engine_frame = end_snapshot["engine_frame"]
         end_session_frame = end_snapshot["session_frame"]
-
-        # Use stored start session frame (not current)
         start_session_frame = self.state.record_start_session_frame
 
-        # Generate collision-free .wav destination path (timestamp + UUID)
         recordings_dir = workbench_state_dir() / "recordings"
         recordings_dir.mkdir(parents=True, exist_ok=True)
-        import time, uuid
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         unique_id = uuid.uuid4().hex[:8]
         destination = recordings_dir / f"recording_{timestamp}_{unique_id}.wav"
@@ -180,32 +183,90 @@ class WorkbenchRecordingUiController:
                 destination=str(destination),
                 db_path=self.db_path,
             )
-        except RuntimeError as exc:
-            # Device lost / engine error â€“ try to rescue whatever we can.
+        except RuntimeError:
             take = None
 
-        # Reset recording state.
         self.state = RecordingState()
-        self.state.status = STATUS_IDLE
         self._update_buttons()
 
-        # Optional: show a toast with the result.
         if take is not None:
-            # Take was rescued (even if device was lost, as long as frames > 0).
             self.app._show_toast(
-                f"Take finalisiert: {take.status} ({take.context.record_end_engine_frame_exclusive - take.context.record_start_engine_frame} Frames)"
+                f"Take finalisiert: {take.status} "
+                f"({take.context.record_end_engine_frame_exclusive - take.context.record_start_engine_frame} Frames)"
             )
         else:
-            # frames == 0 â†’ no take created (no fake complete).
-            self.app._show_toast("Aufnahme abgebrochen â€“ keine Frames erfasst.")
+            self.app._show_toast("Aufnahme abgebrochen - keine Frames erfasst.")
+
+    def _on_quick_capture_toggle(self) -> None:
+        """Start/stop the one-click voice-to-public-GitHub-issue flow."""
+        if self._closed:
+            return
+        if self.engine is None or self.transport_adapter is None:
+            self.app._set_status("Quick Capture: Native Audio nicht verfügbar.", tone="error")
+            return
+
+        if not self._quick_capture_recording:
+            if self.state.status != STATUS_IDLE:
+                self.app._set_status(
+                    "Quick Capture ist während einer normalen Aufnahme nicht verfügbar.",
+                    tone="error",
+                )
+                return
+            if not self.transport_adapter.ensure_engine_running():
+                self.app._set_status(
+                    "Quick Capture: Native Audio konnte nicht gestartet werden.",
+                    tone="error",
+                )
+                return
+            snapshot = self.transport_adapter.get_snapshot()
+            try:
+                self._quick_capture.start_recording(
+                    self.engine,
+                    snapshot["engine_frame"],
+                    snapshot["session_frame"],
+                )
+            except RuntimeError as exc:
+                self.app._set_status(f"Quick Capture: {exc}", tone="error")
+                return
+            self._quick_capture_recording = True
+            self._update_buttons()
+            self.app._set_status(
+                "Quick Capture: Aufnahme läuft - erneut klicken zum Stoppen.",
+                tone="active",
+            )
+            return
+
+        end_snapshot = self.transport_adapter.get_snapshot()
+        self._quick_capture_recording = False
+        result = self._quick_capture.process_recording(
+            engine=self.engine,
+            end_engine_frame=end_snapshot["engine_frame"],
+            end_session_frame=end_snapshot["session_frame"],
+        )
+        self._update_buttons()
+
+        issue = result.get("issue")
+        if issue:
+            self.app._set_status(
+                f"Issue erstellt: #{issue['number']} ({issue['html_url']})",
+                tone="success",
+            )
+        else:
+            self.app._set_status(
+                result.get("error") or "Quick Capture fehlgeschlagen.",
+                tone="error",
+            )
 
     def _update_buttons(self) -> None:
-        """Update button states based on recording state."""
+        """Update normal and Quick Capture button states."""
+        normal_idle = self.state.status == STATUS_IDLE and not self._quick_capture_recording
         if self.state.status == STATUS_IDLE:
             self.state_var.set(f"Status: {STATUS_IDLE}")
-            self.record_btn.config(state=tk.NORMAL if self.engine is not None else tk.DISABLED)
+            self.record_btn.config(
+                state=tk.NORMAL if self.engine is not None and normal_idle else tk.DISABLED,
+                text="Record",
+            )
             self.stop_btn.config(state=tk.DISABLED)
-            self.record_btn.config(text="Record")
         elif self.state.status == STATUS_RECORDING:
             self.state_var.set(f"Status: {STATUS_RECORDING}")
             self.record_btn.config(state=tk.DISABLED, text="Recording...")
@@ -214,6 +275,16 @@ class WorkbenchRecordingUiController:
             self.state_var.set(f"Status: {STATUS_FINALIZING}")
             self.record_btn.config(state=tk.DISABLED, text="Finalizing...")
             self.stop_btn.config(state=tk.DISABLED)
+
+        quick_button = getattr(self.app, "_quick_capture_btn", None)
+        if quick_button is not None:
+            if self.engine is None or self.state.status != STATUS_IDLE:
+                quick_button.state(["disabled"])
+            else:
+                quick_button.state(["!disabled"])
+            quick_button.configure(
+                text="Mikrofon stoppen" if self._quick_capture_recording else "Mikrofon"
+            )
 
     def _schedule_poll(self) -> None:
         if self._closed:
@@ -228,17 +299,21 @@ class WorkbenchRecordingUiController:
             try:
                 snap: Snapshot = self.engine.snapshot()
                 self.state.last_snapshot = snap
-                # Update status label with device info.
-                dev_status = "OK" if snap.device_status == SB_DEVICE_OK else f"Lost/Failed({snap.device_status})"
+                dev_status = (
+                    "OK"
+                    if snap.device_status == SB_DEVICE_OK
+                    else f"Lost/Failed({snap.device_status})"
+                )
                 self.state_var.set(
-                    f"Status: {self.state.status} (Device: {dev_status}, Dropped: {snap.recording_dropped_frames})"
+                    f"Status: {self.state.status} "
+                    f"(Device: {dev_status}, Dropped: {snap.recording_dropped_frames})"
                 )
             except RuntimeError:
                 pass
         self._schedule_poll()
 
     def close(self) -> None:
-        """Clean up polling and release resources."""
+        """Clean up polling and stop owned recordings gently."""
         if self._closed:
             return
         self._closed = True
@@ -248,12 +323,18 @@ class WorkbenchRecordingUiController:
             except Exception:
                 pass
             self._poll_id = None
-        # Optionally stop any active recording gently.
         if self.state.recording_id is not None and self.engine is not None:
             try:
                 self.engine.stop_recording(self.state.recording_id)
             except Exception:
                 pass
+        if self._quick_capture_recording and self.engine is not None:
+            quick_id = getattr(self._quick_capture, "_recording_id", None)
+            if quick_id is not None:
+                try:
+                    self.engine.stop_recording(quick_id)
+                except Exception:
+                    pass
 
 
 def attach_workbench_recording_ui(
@@ -262,11 +343,7 @@ def attach_workbench_recording_ui(
     transport_adapter: "WorkbenchTransportAdapter | None" = None,
     db_path: Any = None,
 ) -> WorkbenchRecordingUiController:
-    """Attach one RECORD/STOP controller to ``app`` and return it.
-    
-    The transport_adapter provides the shared NativeAudioEngine and real-time
-    frame snapshots (engine_frame, session_frame) for recording.
-    """
+    """Attach one recording controller using the shared native transport."""
     return WorkbenchRecordingUiController(
         app,
         transport_adapter=transport_adapter,

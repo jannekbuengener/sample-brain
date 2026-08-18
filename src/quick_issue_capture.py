@@ -1,98 +1,153 @@
 """One-click Voice-to-Issue Quick Capture for the Sample-Brain Workbench.
 
-This module orchestrates the quick capture workflow:
-  1. Start/stop native recording via existing workbench recording path
-  2. Transcribe the recorded WAV using an external whisper.cpp executable
-  3. Create a GitHub issue via `gh issue create`
-  4. Display the issue number/URL and handle cleanup
-
-All external dependencies (whisper.cpp, gh CLI) are configured via
-paths and are optional ÔÇö the app starts normally even if they are
-missing; quick capture simply reports appropriate status messages.
+Quick Capture reuses the existing native recording path, transcribes locally with
+an explicitly configured whisper.cpp CLI, then creates a Sample-Brain GitHub
+issue with ``gh issue create``. Recordings stay in user-local Workbench state and
+are retained when transcription or issue creation fails so they can be retried.
 """
 
 from __future__ import annotations
 
+import json
+import os
+import re
 import subprocess
+import time
+import uuid
 from pathlib import Path
 from typing import Optional
 
-from .workbench_controller import start_native_recording, stop_native_recording
+import librosa
+import soundfile as sf
+
+from .jules_dispatch import redact
+from .workbench_controller import (
+    start_native_recording,
+    stop_native_recording,
+    workbench_state_dir,
+)
+
+WHISPER_EXE_ENV = "SAMPLE_BRAIN_WHISPER_CPP"
+WHISPER_MODEL_ENV = "SAMPLE_BRAIN_WHISPER_MODEL"
+WHISPER_LANGUAGE_ENV = "SAMPLE_BRAIN_WHISPER_LANGUAGE"
+DEFAULT_WHISPER_LANGUAGE = "auto"
+DEFAULT_REPO = "jannekbuengener/sample-brain"
+WHISPER_SAMPLE_RATE = 16000
 
 
-# ---------------------------------------------------------------------------
-# Transcription adapter ÔÇö external whisper.cpp
-# ---------------------------------------------------------------------------
+def _env_path(name: str) -> Path | None:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    return Path(raw).expanduser()
+
+
+def _render_whisper_wav(src_path: Path, dst_path: Path) -> Path:
+    """Render whisper.cpp's documented 16 kHz mono PCM16 WAV input."""
+    audio, _sr = librosa.load(
+        str(src_path),
+        sr=WHISPER_SAMPLE_RATE,
+        mono=True,
+    )
+    if audio is None or len(audio) == 0:
+        raise ValueError("empty audio")
+    dst_path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(
+        dst_path,
+        audio,
+        WHISPER_SAMPLE_RATE,
+        format="WAV",
+        subtype="PCM_16",
+    )
+    return dst_path
+
+
+# Compatibility/injection seam used by focused tests; unlike Sample Brain's normal
+# 44.1-kHz canonical renderer, this renderer follows whisper.cpp's 16-kHz contract.
+render_canonical_wav = _render_whisper_wav
 
 
 class WhisperCppAdapter:
-    """Thin adapter around an external ``whisper.cpp`` executable.
+    """Thin local adapter around the official whisper.cpp CLI."""
 
-    The executable and model path are configurable. If either is missing
-    or the command fails, ``transcribe()`` returns ``None`` so that the
-    calling code can gracefully fall back (no issue created, status
-    reported, retry possible).
-    """
+    def __init__(
+        self,
+        *,
+        executable: Optional[Path],
+        model_path: Optional[Path],
+        language: str = DEFAULT_WHISPER_LANGUAGE,
+    ) -> None:
+        self.executable = Path(executable) if executable is not None else None
+        self.model_path = Path(model_path) if model_path is not None else None
+        self.language = (
+            (language or DEFAULT_WHISPER_LANGUAGE).strip()
+            or DEFAULT_WHISPER_LANGUAGE
+        )
 
-    def __init__(self, *, executable: Optional[Path], model_path: Optional[Path]) -> None:
-        self.executable = executable
-        self.model_path = model_path
+    @classmethod
+    def from_environment(cls) -> "WhisperCppAdapter":
+        return cls(
+            executable=_env_path(WHISPER_EXE_ENV),
+            model_path=_env_path(WHISPER_MODEL_ENV),
+            language=os.environ.get(
+                WHISPER_LANGUAGE_ENV, DEFAULT_WHISPER_LANGUAGE
+            ).strip()
+            or DEFAULT_WHISPER_LANGUAGE,
+        )
+
+    def configured(self) -> bool:
+        return bool(
+            self.executable
+            and self.model_path
+            and self.executable.is_file()
+            and self.model_path.is_file()
+        )
 
     def transcribe(self, wav_path: Path) -> Optional[str]:
-        """Return the full transcript for *wav_path*, or ``None`` on error.
-
-        The transcript is the raw output of ``whisper.cpp``; callers may
-        slice it for a title later.
-        """
-        if not self.executable or not self.model_path:
+        """Return transcript text, ``""`` for no speech, or ``None`` on failure."""
+        if not self.configured():
             return None
 
-        exe = str(self.executable)
-        mdl = str(self.model_path)
-        wav = str(wav_path)
-
+        source = Path(wav_path)
+        prepared = source.with_name(f".{source.stem}.whisper.wav")
         try:
+            render_canonical_wav(source, prepared)
             result = subprocess.run(
-                [exe, "--model", mdl, "--language", "en", wav],
+                [
+                    str(self.executable),
+                    "--model",
+                    str(self.model_path),
+                    "--language",
+                    self.language,
+                    "--no-timestamps",
+                    "--no-prints",
+                    "--file",
+                    str(prepared),
+                ],
                 capture_output=True,
                 text=True,
                 timeout=60,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - external/local UI boundary
             return None
+        finally:
+            try:
+                prepared.unlink(missing_ok=True)
+            except Exception:
+                pass
 
         if result.returncode != 0:
             return None
-
-        transcript = result.stdout.strip()
-        if not transcript:
-            return None
-
-        return transcript
-
-
-# ---------------------------------------------------------------------------
-# GitHub issue adapter ÔÇö thin ``gh`` CLI wrapper
-# ---------------------------------------------------------------------------
+        return result.stdout.strip()
 
 
 class GhIssueAdapter:
-    """Thin wrapper around ``gh issue create``.
+    """Minimal wrapper around the documented ``gh issue create`` command."""
 
-    Only the essential flags are supported; no general GitHub client is
-    required. If ``gh`` is not installed or not authenticated, ``create()``
-    returns ``None`` so the UI can show a friendly status without crashing.
-    """
-
-    def __init__(self, repo: str = "jannekbuengener/sample-brain") -> None:
+    def __init__(self, repo: str = DEFAULT_REPO) -> None:
         self.repo = repo
 
     def create(self, title: str, body: str) -> Optional[dict]:
-        """Run ``gh issue create`` and return ``{"number": N, "html_url": URL}``.
-
-        Returns ``None`` when ``gh`` is missing, not authenticated, or the
-        command fails ÔÇö the caller must not crash.
-        """
         try:
             result = subprocess.run(
                 [
@@ -110,102 +165,63 @@ class GhIssueAdapter:
                 text=True,
                 timeout=30,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - external CLI boundary
             return None
 
         if result.returncode != 0:
-            # gh may print a helpful message to stderr; we swallow it.
             return None
 
-        # Parse gh output: "Created issue #N"
         stdout = result.stdout.strip()
-        # Heuristic: look for "#N" in output
-        import re
-        m = re.search(r"#(\d+)", stdout)
-        if not m:
-            # Some gh versions output JSON; try to parse it
-            try:
-                import json as _json
-                data = _json.loads(stdout)
-                number = data.get("number") or data.get("id")
-                url = data.get("html_url")
-                if number:
-                    return {"number": int(number), "html_url": url or ""}
-            except Exception:
-                pass
-            return None
-
-        number = int(m.group(1))
-        # Construct html_url if not in output
-        url = f"https://github.com/{self.repo}/issues/{number}"
-        # Also try to extract from output
-        url_match = re.search(r"https?://[^\s]+", stdout)
+        url_match = re.search(r"(https?://[^\s]+/issues/(\d+))\b", stdout)
         if url_match:
-            url = url_match.group(0)
+            return {
+                "number": int(url_match.group(2)),
+                "html_url": url_match.group(1),
+            }
 
-        return {"number": number, "html_url": url}
+        number_match = re.search(r"#(\d+)", stdout)
+        if number_match:
+            number = int(number_match.group(1))
+            return {
+                "number": number,
+                "html_url": f"https://github.com/{self.repo}/issues/{number}",
+            }
 
-
-# ---------------------------------------------------------------------------
-# Title extraction from transcript
-# ---------------------------------------------------------------------------
+        try:
+            data = json.loads(stdout)
+        except Exception:
+            return None
+        number = data.get("number") or data.get("id")
+        url = data.get("html_url") or data.get("url")
+        if not number:
+            return None
+        return {
+            "number": int(number),
+            "html_url": str(
+                url or f"https://github.com/{self.repo}/issues/{number}"
+            ),
+        }
 
 
 def _extract_title(transcript: str, max_chars: int = 80) -> str:
-    """Create a short title from the first meaningful sentence.
-
-    - Whitespace is normalised.
-    - The first sentence (up to the first period, exclamation or question
-      mark) is taken.
-    - The result is trimmed to *max_chars* characters.
-    - If no sentence boundary is found, the transcript is trimmed directly.
-    """
+    """Create a compact issue title from the first meaningful sentence."""
     if not transcript:
         return ""
-
-    # Normalise whitespace
     text = " ".join(transcript.split())
-
-    # Find first sentence boundary
+    title = text
     for sep in (".", "!", "?"):
         idx = text.find(sep)
         if idx != -1:
             title = text[: idx + 1].strip()
             break
-    else:
-        title = text
-
-    # Trim to max_chars
     if len(title) > max_chars:
-        title = title[:max_chars].rsplit(" ", 1)[0] + "ÔÇª"
-
+        shortened = title[:max_chars].rsplit(" ", 1)[0].strip()
+        title = (shortened or title[: max_chars - 1]).rstrip() + "…"
     return title
 
 
-# ---------------------------------------------------------------------------
-# Core quickÔÇæcapture orchestration
-# ---------------------------------------------------------------------------
-
-
 class QuickIssueCapture:
-    """Orchestrate one complete quickÔÇæcapture cycle.
-
-    Workflow:
-      1. Ensure native recording engine is running (reuses existing
-         workbench recording path).
-      2. User clicks Stop ÔåÆ WAV is finalised via the native path.
-      3. Transcribe the WAV via whisper.cpp adapter.
-      4. If transcript is empty ÔåÆ no issue, return.
-      5. Extract title from first sentence.
-      6. Build issue body = full transcript.
-      7. Create GitHub issue via gh CLI adapter.
-      8. On success: show number/URL, delete temp WAV.
-         On error: keep temp WAV for retry, show status.
-
-    The recording steps (start/stop) are delegated to the existing
-    workbench recording infrastructure; this class only owns the
-    postÔÇærecording processing pipeline.
-    """
+    """Own one complete native-recording -> transcript -> GitHub issue cycle."""
 
     def __init__(
         self,
@@ -214,28 +230,32 @@ class QuickIssueCapture:
         gh_adapter: Optional[GhIssueAdapter] = None,
         recordings_dir: Optional[Path] = None,
     ) -> None:
-        self.whisper = whisper_adapter or WhisperCppAdapter(
-            executable=None, model_path=None
-        )
+        self.whisper = whisper_adapter or WhisperCppAdapter.from_environment()
         self.gh = gh_adapter or GhIssueAdapter()
-        self.recordings_dir = recordings_dir or Path.cwd() / "recordings"
-        self._temp_wav: Optional[Path] = None
+        self.recordings_dir = (
+            Path(recordings_dir)
+            if recordings_dir is not None
+            else workbench_state_dir() / "recordings"
+        )
+        self._recording_id: int | None = None
+        self._record_start_engine_frame = 0
+        self._record_start_session_frame = 0
+        self._last_result: dict | None = None
 
-    # ------------------------------------------------------------------
-    # Recording lifecycle ÔÇö delegates to workbench native path
-    # ------------------------------------------------------------------
-
-    def start_recording(self) -> None:
-        """Initiate a new native recording session.
-
-        In the workbench context this starts the native recording via
-        the existing workbench recording path (``start_native_recording``).
-        The recording ID and frames are stored for later finalisation.
-        """
-        # No-op at this layer ÔÇö the UI controller handles engine startup.
-        # This method exists so the UI can call it and conceptually
-        # pair with a later ``stop_recording()``.
-        pass
+    def start_recording(
+        self,
+        engine,
+        engine_frame: int,
+        session_frame: int,
+    ) -> int:
+        """Start a real native recording and retain its authoritative frame state."""
+        if self._recording_id is not None:
+            raise RuntimeError("Quick Capture recording already active")
+        recording_id = start_native_recording(engine, engine_frame, session_frame)
+        self._recording_id = int(recording_id)
+        self._record_start_engine_frame = int(engine_frame)
+        self._record_start_session_frame = int(session_frame)
+        return self._recording_id
 
     def stop_recording(
         self,
@@ -246,22 +266,10 @@ class QuickIssueCapture:
         end_engine_frame: int,
         end_session_frame: int,
     ) -> Optional[Path]:
-        """Stop the native recording and finalise the WAV.
-
-        Delegates to the workbench native recording path
-        ``stop_native_recording`` / ``finalize_native_recording``.
-
-        Returns the path to the finalised WAV, or ``None`` if recording
-        was not in progress or the finalisation failed.
-        """
-        destination = self.recordings_dir / f"quick_capture_"
-        destination.mkdir(parents=True, exist_ok=True)
-        import time, uuid
+        self.recordings_dir.mkdir(parents=True, exist_ok=True)
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         unique_id = uuid.uuid4().hex[:8]
-        dest_path = str(
-            destination / f"recording_{timestamp}_{unique_id}.wav"
-        )
+        dest_path = self.recordings_dir / f"quick_capture_{timestamp}_{unique_id}.wav"
 
         try:
             take = stop_native_recording(
@@ -271,137 +279,127 @@ class QuickIssueCapture:
                 session_frame=start_session_frame,
                 end_engine_frame=end_engine_frame,
                 end_session_frame=end_session_frame,
-                destination=dest_path,
+                destination=str(dest_path),
             )
         except RuntimeError:
-            take = None
+            return None
+        return dest_path if take is not None else None
 
-        if take is not None:
-            # finalize_native_recording returns a Take-like object;
-            # the WAV is at take.context.record_path or we use dest_path
-            return Path(dest_path)
-        return None
-
-    # ------------------------------------------------------------------
-    # PostÔÇærecording pipeline
-    # ------------------------------------------------------------------
+    def _finish(self, result: dict) -> dict:
+        self._last_result = result
+        return result
 
     def process_recording(
         self,
+        *,
         engine,
-        recording_id: int,
-        start_engine_frame: int,
-        start_session_frame: int,
         end_engine_frame: int,
         end_session_frame: int,
     ) -> dict:
-        """Run the full postÔÇærecording pipeline.
+        """Stop the owned recording, transcribe locally, and create the issue."""
+        if self._recording_id is None:
+            return self._finish(
+                {
+                    "transcript": "",
+                    "title": "",
+                    "issue": None,
+                    "error": "Keine Quick-Capture-Aufnahme aktiv.",
+                    "wav_kept": False,
+                }
+            )
 
-        Delegates the stop to the native recording path;
-        all other steps (transcribe, title, gh issue) remain the same.
+        recording_id = self._recording_id
+        start_engine_frame = self._record_start_engine_frame
+        start_session_frame = self._record_start_session_frame
+        self._recording_id = None
 
-        Returns a dict with status information for the UI:
-          - ``"transcript"``: full transcript text (or ``""``)
-          - ``"title"``: extracted title
-          - ``"issue"``: ``{"number": N, "html_url": URL}`` or ``None``
-          - ``"error"``: humanÔÇæreadable error string (or ``None``)
-          - ``"wav_kept"``: ``True`` if temp WAV should be retained
-            (``True`` = error path, ``False`` = success cleanup)
-
-        The method is intentionally pure (no side effects other than
-        creating/deleting the temp WAV) so it can be called from UI
-        callbacks without hidden state.
-        """
-        error: Optional[str] = None
-        wav_kept = False
-
-        # Step 1: stop native recording & finalise WAV
         wav_path = self.stop_recording(
             engine=engine,
             recording_id=recording_id,
             start_engine_frame=start_engine_frame,
             start_session_frame=start_session_frame,
-            end_engine_frame=end_engine_frame,
-            end_session_frame=end_session_frame,
+            end_engine_frame=int(end_engine_frame),
+            end_session_frame=int(end_session_frame),
         )
         if wav_path is None:
-            return {
-                "transcript": "",
-                "title": "",
-                "issue": None,
-                "error": "Keine Aufnahme gefunden ÔÇö bitte Quick Capture starten und stoppen.",
-                "wav_kept": False,
-            }
+            return self._finish(
+                {
+                    "transcript": "",
+                    "title": "",
+                    "issue": None,
+                    "error": "Aufnahme konnte nicht finalisiert werden.",
+                    "wav_kept": False,
+                }
+            )
 
-        # Step 2: transcribe
-        transcript = self.whisper.transcribe(Path(wav_path)) or ""
+        transcript = self.whisper.transcribe(wav_path)
+        if transcript is None:
+            return self._finish(
+                {
+                    "transcript": "",
+                    "title": "",
+                    "issue": None,
+                    "error": (
+                        "Transkription fehlgeschlagen oder whisper.cpp ist nicht "
+                        "konfiguriert. Die Aufnahme bleibt für einen erneuten Versuch erhalten."
+                    ),
+                    "wav_kept": True,
+                }
+            )
+
         if not transcript.strip():
-            # Empty transcript ÔåÆ no issue, clean up, report status
             try:
-                Path(wav_path).unlink(missing_ok=True)
+                wav_path.unlink(missing_ok=True)
             except Exception:
                 pass
-            return {
-                "transcript": transcript,
-                "title": "",
-                "issue": None,
-                "error": "Transkript ist leer ÔÇö Issue wurde nicht erstellt.",
-                "wav_kept": False,
-            }
+            return self._finish(
+                {
+                    "transcript": "",
+                    "title": "",
+                    "issue": None,
+                    "error": "Keine Sprache erkannt; Issue wurde nicht erstellt.",
+                    "wav_kept": False,
+                }
+            )
 
-        # Step 3: extract title
-        title = _extract_title(transcript, max_chars=80)
-
-        # Step 4: create GitHub issue
-        issue_info = self.gh.create(title=title, body=transcript)
+        public_transcript = redact(transcript)
+        title = _extract_title(public_transcript, max_chars=80)
+        issue_info = self.gh.create(title=title, body=public_transcript)
 
         if issue_info is None:
-            # gh failed or not available ÔÇö keep WAV for retry, report status
-            wav_kept = True
-            error = (
-                "GitHub-Issue konnte nicht erstellt werden "
-                "(gh CLI nicht verf├╝gbar oder nicht authententisiert). "
-                "Die tempor├ñre Aufnahme bleibt erhalten zum erneuten Versuch."
+            return self._finish(
+                {
+                    "transcript": public_transcript,
+                    "title": title,
+                    "issue": None,
+                    "error": (
+                        "GitHub-Issue konnte nicht erstellt werden. Die Aufnahme "
+                        "bleibt für einen erneuten Versuch erhalten."
+                    ),
+                    "wav_kept": True,
+                }
             )
-        else:
-            # Success ÔÇö delete temp WAV
-            try:
-                Path(wav_path).unlink(missing_ok=True)
-            except Exception:
-                pass
 
-        return {
-            "transcript": transcript,
-            "title": title,
-            "issue": issue_info,  # type: ignore[return-value]
-            "error": error,
-            "wav_kept": wav_kept,
-        }
-
-    # ------------------------------------------------------------------
-    # Public state for UI
-    # ------------------------------------------------------------------
+        try:
+            wav_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return self._finish(
+            {
+                "transcript": public_transcript,
+                "title": title,
+                "issue": issue_info,
+                "error": None,
+                "wav_kept": False,
+            }
+        )
 
     def last_result(self) -> Optional[dict]:
-        """Return the most recent ``process_recording()`` result dict.
-
-        Convenience property for the UI to query after a capture cycle.
-        """
-        # We store the last result as an attribute set by the UI caller.
-        # The UI can also call process_recording() directly if it prefers.
-        return getattr(self, "_last_result", None)
-
-
-# ---------------------------------------------------------------------------
-# Helper ÔÇö trim transcript to first sentence (shared by _extract_title)
-# ---------------------------------------------------------------------------
+        return self._last_result
 
 
 def trim_to_first_sentence(transcript: str) -> str:
-    """Return the first sentence of *transcript*, whitespaceÔÇænormalised.
-
-    Used by the UI status display when a full transcript isn't needed.
-    """
+    """Return the first whitespace-normalized sentence from *transcript*."""
     if not transcript:
         return ""
     text = " ".join(transcript.split())
@@ -410,3 +408,15 @@ def trim_to_first_sentence(transcript: str) -> str:
         if idx != -1:
             return text[: idx + 1].strip()
     return text
+
+
+__all__ = [
+    "DEFAULT_WHISPER_LANGUAGE",
+    "GhIssueAdapter",
+    "QuickIssueCapture",
+    "WHISPER_EXE_ENV",
+    "WHISPER_LANGUAGE_ENV",
+    "WHISPER_MODEL_ENV",
+    "WhisperCppAdapter",
+    "trim_to_first_sentence",
+]
