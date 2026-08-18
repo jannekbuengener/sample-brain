@@ -167,13 +167,13 @@ This is a valid, portable Technical Stem Manifest.
   "schema_version": "1.0.0",
   "stem_id": "stem_drums_01",
   "stem_kind": "drums",
-  "track_ref": "9f8e7d6c5b4a3c2d1e0f11223344556677889900",
+  "track_ref": "9f8e7d6c5b4a3c2d1e0f11223344556677889900aabbccddeeff001122334455",
   "status": "ok",
   "source": {
     "audio_ref": "/source/original",
     "hash": {
       "algorithm": "sha256",
-      "value": "9f8e7d6c5b4a3c2d1e0f11223344556677889900"
+      "value": "9f8e7d6c5b4a3c2d1e0f11223344556677889900aabbccddeeff001122334455"
     },
     "audio_properties": {
       "sample_rate_hz": 44100,
