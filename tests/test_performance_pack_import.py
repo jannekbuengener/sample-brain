@@ -56,7 +56,10 @@ def _asset_manifest(
             "source_kind": source_kind,
             "audio": {
                 "file_name": wav_path.name,
-                "hash": {"algorithm": "sha1", "value": file_hash(wav_path)},
+                "hash": {
+                    "algorithm": "sha1",
+                    "value": file_hash(wav_path, algorithm="sha1"),
+                },
                 "audio_properties": {
                     "duration_sec": props["n_samples"] / props["sample_rate_hz"],
                     "sample_rate_hz": props["sample_rate_hz"],
@@ -91,7 +94,10 @@ def _asset_manifest(
             "output": {
                 "file_ref": file_ref,
                 "file_name": wav_path.name,
-                "hash": {"algorithm": "sha1", "value": file_hash(wav_path)},
+                "hash": {
+                    "algorithm": "sha1",
+                    "value": file_hash(wav_path, algorithm="sha1"),
+                },
                 "audio_properties": props,
                 "format": "wav/pcm_16",
             },
@@ -118,7 +124,10 @@ def _stem_manifest(
         "status": status,
         "source": {
             "audio_ref": "/source/original",
-            "hash": {"algorithm": "sha1", "value": file_hash(wav_path)},
+            "hash": {
+                "algorithm": "sha1",
+                "value": file_hash(wav_path, algorithm="sha1"),
+            },
             "audio_properties": {
                 "sample_rate_hz": props["sample_rate_hz"],
                 "channels": props["channels"],
@@ -130,7 +139,10 @@ def _stem_manifest(
         "quality": {"notes": []},
         "output": {
             "file_ref": file_ref,
-            "hash": {"algorithm": "sha1", "value": file_hash(wav_path)},
+            "hash": {
+                "algorithm": "sha1",
+                "value": file_hash(wav_path, algorithm="sha1"),
+            },
             "audio_properties": props,
         }
         if status in ("ok", "partial")

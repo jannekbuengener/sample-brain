@@ -1,6 +1,12 @@
 from sqlalchemy import create_engine, event, text
 from pathlib import Path
+
 from . import config
+from .content_hash import (
+    DEFAULT_CONTENT_HASH_ALGORITHM,
+    LEGACY_CONTENT_HASH_ALGORITHM,
+    hash_record,
+)
 
 
 def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
@@ -22,7 +28,8 @@ def get_engine():
 def init_db():
     engine = get_engine()
     with engine.begin() as conn:
-        # samples
+        # samples. hash_algorithm is additive in #417; NULL on a pre-v2 row is
+        # explicitly interpreted as the historical SHA-1 catalog contract.
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS samples (
             id INTEGER PRIMARY KEY,
@@ -32,9 +39,15 @@ def init_db():
             channels INT,
             duration REAL,
             size_bytes INT,
-            hash TEXT
+            hash TEXT,
+            hash_algorithm TEXT
         );
         """))
+        sample_cols = conn.execute(text("PRAGMA table_info(samples)")).fetchall()
+        sample_col_names = {column[1] for column in sample_cols}
+        if "hash_algorithm" not in sample_col_names:
+            conn.execute(text("ALTER TABLE samples ADD COLUMN hash_algorithm TEXT"))
+
         # features (mit pred_type!)
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS features (
@@ -416,7 +429,7 @@ def upsert_sample_tag(sample_id: int, tag: str, source: str) -> None:
 
 
 def find_sample_by_path(path: str) -> tuple[int, str] | None:
-    """Return (id, hash) for the sample row at the given path, or None."""
+    """Backward-compatible return of ``(id, bare_hash_value)``."""
     engine = get_engine()
     with engine.begin() as conn:
         row = conn.execute(
@@ -428,19 +441,57 @@ def find_sample_by_path(path: str) -> tuple[int, str] | None:
     return int(row[0]), row[1]
 
 
-def find_sample_id_by_hash(content_hash: str) -> int | None:
-    """Return the smallest sample id sharing the content hash, or None.
+def find_sample_identity_by_path(path: str) -> tuple[int, dict[str, str]] | None:
+    """Return an algorithm-qualified catalog content identity.
 
-    Deterministic tie-break: smallest id wins when several rows share a hash.
+    ``NULL`` algorithm is the explicit legacy pre-#417 catalog state and is
+    therefore interpreted as SHA-1 without mutating or rehashing the row.
     """
     engine = get_engine()
     with engine.begin() as conn:
         row = conn.execute(
-            text(
-                "SELECT id FROM samples WHERE hash = :h ORDER BY id ASC LIMIT 1"
-            ),
-            {"h": content_hash},
+            text("SELECT id, hash, hash_algorithm FROM samples WHERE path = :path"),
+            {"path": str(path)},
         ).fetchone()
+    if row is None or row[1] is None:
+        return None
+    algorithm = row[2] or LEGACY_CONTENT_HASH_ALGORITHM
+    return int(row[0]), hash_record(algorithm, row[1])
+
+
+def find_sample_id_by_hash(
+    content_hash: str,
+    *,
+    hash_algorithm: str | None = None,
+) -> int | None:
+    """Return the smallest sample id sharing an algorithm-qualified identity.
+
+    Callers that omit ``hash_algorithm`` retain the historical value-only lookup.
+    New provenance/dedupe paths must pass the algorithm explicitly.
+    """
+    engine = get_engine()
+    with engine.begin() as conn:
+        if hash_algorithm is None:
+            row = conn.execute(
+                text("SELECT id FROM samples WHERE hash = :h ORDER BY id ASC LIMIT 1"),
+                {"h": content_hash},
+            ).fetchone()
+        else:
+            # Pre-v2 rows have NULL algorithm and are explicitly legacy SHA-1.
+            row = conn.execute(
+                text("""
+                    SELECT id FROM samples
+                    WHERE hash = :h
+                      AND COALESCE(hash_algorithm, :legacy) = :algorithm
+                    ORDER BY id ASC
+                    LIMIT 1
+                """),
+                {
+                    "h": content_hash,
+                    "algorithm": hash_algorithm,
+                    "legacy": LEGACY_CONTENT_HASH_ALGORITHM,
+                },
+            ).fetchone()
     if row is None:
         return None
     return int(row[0])
@@ -454,14 +505,23 @@ def insert_sample(
     duration: float | None,
     size_bytes: int,
     content_hash: str,
+    content_hash_algorithm: str = DEFAULT_CONTENT_HASH_ALGORITHM,
 ) -> int:
     """Insert a new sample row (plain INSERT; path is UNIQUE)."""
+    # Validate the algorithm/value pair before persistence.
+    identity = hash_record(content_hash_algorithm, content_hash)
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(
             text("""
-            INSERT INTO samples (path, relpath, samplerate, channels, duration, size_bytes, hash)
-            VALUES (:path, :relpath, :sr, :ch, :dur, :size_bytes, :hash)
+            INSERT INTO samples (
+                path, relpath, samplerate, channels, duration, size_bytes, hash,
+                hash_algorithm
+            )
+            VALUES (
+                :path, :relpath, :sr, :ch, :dur, :size_bytes, :hash,
+                :hash_algorithm
+            )
             """),
             dict(
                 path=str(path),
@@ -470,10 +530,14 @@ def insert_sample(
                 ch=channels,
                 dur=duration,
                 size_bytes=size_bytes,
-                hash=content_hash,
+                hash=identity["value"],
+                hash_algorithm=identity["algorithm"],
             ),
         )
-        row = conn.execute(text("SELECT id FROM samples WHERE path = :path"), {"path": str(path)}).fetchone()
+        row = conn.execute(
+            text("SELECT id FROM samples WHERE path = :path"),
+            {"path": str(path)},
+        ).fetchone()
     return int(row[0])
 
 

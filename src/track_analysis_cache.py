@@ -23,8 +23,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .analyze import KEY_ANALYSIS_CONTRACT_VERSION
-from .canon_audio import CANONICAL_CHANNELS, CANONICAL_SAMPLE_RATE, content_hash
+from .canon_audio import CANONICAL_CHANNELS, CANONICAL_SAMPLE_RATE
 from .config import ANALYZE_HOP_LENGTH, ANALYZE_SR
+from .content_hash import LEGACY_CONTENT_HASH_ALGORITHM, normalize_hash_record
 
 # Bumped for #212: the analyzer now also emits a separate major/minor mode. Old
 # cached analysis results (without the key-analysis contract in their fingerprint)
@@ -102,11 +103,7 @@ def compute_analysis_fingerprint(
     model_identity: Optional[dict] = None,
     key_analysis_contract_version: str | int = KEY_ANALYSIS_CONTRACT_VERSION,
 ) -> str:
-    """Deterministic SHA-256 of the effective analyzer parameters + identity.
-
-    This is the analysis *method* identity (no source content). It is reused as the
-    Track Map provenance ``parameter_fingerprint``.
-    """
+    """Deterministic SHA-256 of the effective analyzer parameters + identity."""
     doc = _analysis_fingerprint_doc(
         bpm_normalization=bpm_normalization,
         backend_name=backend_name,
@@ -118,9 +115,26 @@ def compute_analysis_fingerprint(
     return hashlib.sha256(_canonical_json(doc).encode("utf-8")).hexdigest()
 
 
+def _source_hash_record(source_content_hash: object) -> dict[str, str]:
+    """Normalize current records while preserving the pre-#417 string API.
+
+    Historical callers passed a bare SHA-1 value. Keeping this compatibility
+    layer reproduces the exact legacy cache key so on-touch migration can still
+    find old entries. New code passes an explicit ``{algorithm, value}`` record.
+    """
+    if isinstance(source_content_hash, dict):
+        return normalize_hash_record(source_content_hash)
+    if isinstance(source_content_hash, str):
+        return {
+            "algorithm": LEGACY_CONTENT_HASH_ALGORITHM,
+            "value": source_content_hash,
+        }
+    raise ValueError("source_content_hash must be a hash record or legacy string")
+
+
 def compute_cache_key(
     *,
-    source_content_hash: str,
+    source_content_hash: object,
     bpm_normalization: str,
     backend_name: str,
     backend_version: str,
@@ -128,7 +142,7 @@ def compute_cache_key(
     model_identity: Optional[dict] = None,
     key_analysis_contract_version: str | int = KEY_ANALYSIS_CONTRACT_VERSION,
 ) -> str:
-    """Deterministic SHA-256 cache key including the source content hash."""
+    """Deterministic SHA-256 cache key including algorithm-qualified content."""
     doc = _analysis_fingerprint_doc(
         bpm_normalization=bpm_normalization,
         backend_name=backend_name,
@@ -137,14 +151,14 @@ def compute_cache_key(
         model_identity=model_identity,
         key_analysis_contract_version=key_analysis_contract_version,
     )
-    doc["source_content_hash"] = {"algorithm": "sha1", "value": source_content_hash}
+    doc["source_content_hash"] = _source_hash_record(source_content_hash)
     return hashlib.sha256(_canonical_json(doc).encode("utf-8")).hexdigest()
 
 
 def build_cache_entry(
     *,
     cache_key: str,
-    source_content_hash: str,
+    source_content_hash: object,
     analysis_fingerprint: str,
     track_map: dict,
     provenance_component: dict,
@@ -155,7 +169,7 @@ def build_cache_entry(
         "document_type": CACHE_ENTRY_DOCUMENT_TYPE,
         "schema_version": CACHE_ENTRY_SCHEMA_VERSION,
         "cache_key": cache_key,
-        "source_content_hash": {"algorithm": "sha1", "value": source_content_hash},
+        "source_content_hash": _source_hash_record(source_content_hash),
         "analysis_fingerprint": analysis_fingerprint,
         "track_map": track_map,
         "provenance_component": provenance_component,
@@ -168,12 +182,7 @@ def _entry_path(cache_dir: Path, cache_key: str) -> Path:
 
 
 def read_cache_entry(cache_dir: Path, cache_key: str) -> Optional[dict]:
-    """Read and structurally validate a cache entry from disk.
-
-    Returns ``None`` for any unreadable, malformed, wrong-type, wrong-schema-major,
-    or structurally incomplete entry. The caller must additionally run
-    :func:`validate_cache_entry` with the expected values.
-    """
+    """Read and structurally validate a cache entry from disk."""
     path = _entry_path(cache_dir, cache_key)
     try:
         with open(path, "r", encoding="utf-8") as fh:
@@ -208,7 +217,7 @@ def validate_cache_entry(
     entry: dict,
     *,
     expected_cache_key: str,
-    expected_source_hash: str,
+    expected_source_hash: object,
     expected_analysis_fingerprint: str,
 ) -> bool:
     """Deep validation of a structurally valid entry against current expectations."""
@@ -216,8 +225,11 @@ def validate_cache_entry(
         return False
     if entry.get("cache_key") != expected_cache_key:
         return False
-    source = entry.get("source_content_hash")
-    if not isinstance(source, dict) or source.get("value") != expected_source_hash:
+    try:
+        expected_record = _source_hash_record(expected_source_hash)
+    except ValueError:
+        return False
+    if entry.get("source_content_hash") != expected_record:
         return False
     if entry.get("analysis_fingerprint") != expected_analysis_fingerprint:
         return False

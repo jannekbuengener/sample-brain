@@ -40,6 +40,7 @@ from .loop_candidates import LoopCandidate
 from .section_candidates import (
     SectionCandidate,
 )
+from .content_hash import compute_file_hash
 from .utils import file_hash
 
 AssetKind = Literal["loop", "section"]
@@ -394,7 +395,7 @@ def render_asset(
     output_block: dict[str, object] = {
         "file_ref": f"{ASSETS_DIR_NAME}/{request.file_name}",
         "file_name": request.file_name,
-        "hash": {"algorithm": "sha1", "value": file_hash(out_path)},
+        "hash": compute_file_hash(out_path),
         "audio_properties": {
             "sample_rate_hz": int(out_sr),
             "channels": int(out_channels),

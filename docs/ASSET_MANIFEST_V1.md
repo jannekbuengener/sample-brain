@@ -264,7 +264,7 @@ assert that the asset was rendered.
 |-------|------|----------|-------------|
 | `file_ref` | string | yes | **Portable** reference to the rendered file (relative URI / portable asset name). Never an absolute private path. |
 | `file_name` | string | no | Base file name. Auxiliary only — not the sole source of truth. |
-| `hash.algorithm` | string | yes | Hash algorithm (e.g. `sha1`). |
+| `hash.algorithm` | string | yes | Hash algorithm (`sha256` for new writes, legacy `sha1` supported). |
 | `hash.value` | string | yes | Hex digest of the rendered file. |
 | `audio_properties.sample_rate_hz` | integer | yes | Sample rate of the rendered file. |
 | `audio_properties.channels` | integer | yes | Channel count. |
