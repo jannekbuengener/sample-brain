@@ -34,7 +34,6 @@ from .analyze import SHORT_AUDIO_DURATION_SEC, extract_features
 from .classify import rule_type
 from .content_hash import compute_file_hash, normalize_hash_record
 from .key_signature import parse_key_signature
-from .utils import file_hash
 
 AnalysisStatus = Literal["ok", "partial", "not_run", "failed", "no_result"]
 
