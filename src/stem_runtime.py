@@ -52,7 +52,7 @@ def build_subprocess_executor(
     *,
     script_path: Optional[Any] = None,
     model_cache_dir: Optional[Any] = None,
-    timeout: float = 600.0,
+    timeout: float = 1200.0,
     backend_version: Optional[str] = None,
 ) -> Callable:
     """Return an executor matching the ``separate_with_cache`` contract.
