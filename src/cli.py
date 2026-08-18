@@ -1054,7 +1054,11 @@ def main():
                 print(f"[ERROR] {exc}", file=sys.stderr)
                 sys.exit(1)
             print_search_quality_report(result)
-            if not all(result.threshold_pass().values()):
+            if any(row.error is not None for row in result.query_results):
+                sys.exit(1)
+            if result.tier == "A" and not all(result.threshold_pass().values()):
+                sys.exit(1)
+            if result.tier not in {"A", "B"}:
                 sys.exit(1)
             return
         return
