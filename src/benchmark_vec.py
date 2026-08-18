@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-import sqlite_vec
 
 from . import config
 from .db import get_embedding_model_by_id, get_engine, init_db, insert_sample_embedding, text, upsert_embedding_model
@@ -99,6 +98,8 @@ def _rebuild_int8_vec0_cache(
             INSERT INTO {VEC_SAMPLE_INT8_TABLE}(rowid, embedding)
             VALUES (?, vec_int8(?))
         """
+        import sqlite_vec
+
         for sample_id, blob, _source_hash, dim in rows:
             vector = decode_embedding_blob(blob, dim)
             normalized = normalize_vectors(vector.reshape(1, -1))[0]
@@ -125,6 +126,8 @@ def _int8_search(
     if model is None:
         raise ValueError(f"Unknown embedding model_id={model_id}")
     embedding_dim = model["embedding_dim"]
+
+    import sqlite_vec
 
     query_norm = normalize_vectors(query_vector.reshape(1, -1))[0]
     query_int8 = _quantize_float32_to_int8(query_norm)
@@ -540,6 +543,8 @@ def _rebuild_partition_tables(
     conn = open_vec_connection(db_path)
     try:
         table_names = []
+        import sqlite_vec
+
         for part_id in range(num_partitions):
             if not partition_rows[part_id]:
                 table_names.append("")
@@ -574,6 +579,8 @@ def _partition_timed_search_ms(
     db_path: Path,
     repeats: int = 5,
 ) -> tuple[float, float, float]:
+    import sqlite_vec
+
     query_norm = normalize_vectors(query_vector.reshape(1, -1))[0]
     serialized = sqlite_vec.serialize_float32(query_norm.astype(np.float32))
 
@@ -613,6 +620,8 @@ def _measure_partition_overlap(
         topk=topk,
         candidate_sample_ids=partition_candidate_ids,
     )
+    import sqlite_vec
+
     query_norm = normalize_vectors(query_vector.reshape(1, -1))[0]
     serialized = sqlite_vec.serialize_float32(query_norm.astype(np.float32))
 

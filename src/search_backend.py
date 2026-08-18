@@ -4,7 +4,6 @@ import sqlite3
 from typing import Protocol
 
 import numpy as np
-import sqlite_vec
 
 from .db import get_vector_index_state
 from .index import SearchHit, build_numpy_index, load_numpy_index, normalize_vectors, search_index
@@ -97,6 +96,8 @@ class SqliteVecSearchBackend:
             )
 
         require_sqlite_vec()
+        import sqlite_vec
+
         state = get_vector_index_state(model_id, SQLITE_VEC_BACKEND)
         if state is None:
             raise StaleVecCacheError(
