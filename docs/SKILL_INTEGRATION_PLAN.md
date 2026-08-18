@@ -18,6 +18,7 @@ Skill-Quellen:
 - `sample-brain-root-cause` – lokaler Nachweis einer unklaren Fehlerursache
 - `sample-brain-regression-gap` – lokaler fehlender Schutz fuer einen bekannten Defekt
 - `sample-brain-test-first` – lokaler Repo-Vertrag fuer wesentliche Produktivcode-Implementierung
+- `sample-brain-jules-dispatch` – expliziter Opt-in-Weg, ein klar abgegrenztes Issue sicher an Jules zu delegieren (Rückprüfung bleibt lokal bei Sample Brain)
 - `jMerta` – täglicher Agenten-Workflow (Priorität A)
 - `Anthropic-Cybersecurity-Skills` – Security-Hardening (Priorität B)
 
@@ -37,6 +38,7 @@ Routing-Details: [.cursor/rules/skill-routing.mdc](../.cursor/rules/skill-routin
 | `jMerta/create-pr` | PR öffnen, Beschreibung, Checks |
 | `jMerta/plan-work` | Implementierung planen, Scope klären |
 | `sample-brain-issue-to-session-plan` | Neues Feature oder Issue zuerst in einen kleinen aktuellen Arbeitsplan überführen |
+| `sample-brain-jules-dispatch` | Klar abgegrenztes Issue explizit an Jules delegieren (Opt-in, Rückprüfung lokal) |
 | `sample-brain-root-cause` | Unklare Fehlerursache erst mit Evidenz isolieren |
 | `sample-brain-regression-gap` | Für bekannten Defekt den kleinsten fehlenden Schutz bestimmen |
 | `sample-brain-test-first` | Vor jeder wesentlichen Produktivcode-Implementierung anwenden |
@@ -58,6 +60,7 @@ Unklarer Bug mit Produkt-/Verhaltensursache -> sample-brain-root-cause -> sample
 Unklarer Bug mit CI-/Tooling-/Infrastruktur-Ursache -> sample-brain-root-cause -> jMerta/ci-fix und sample-brain-ci-debugger
 Unklarer Bug mit Docs-/Contract-Ursache -> sample-brain-root-cause -> jMerta/docs-sync; sample-brain-test-first nur bei einer späteren genehmigten Produktcode-Aenderung
 Bekannter Defekt -> sample-brain-regression-gap -> sample-brain-test-first
+Issue geplant + expliziter Jules-Dispatch -> sample-brain-jules-dispatch -> unabhängige lokale Rückprüfung
 ```
 
 `sample-brain-test-first` fixiert DOCS -> TESTS -> TEST FREEZE ->

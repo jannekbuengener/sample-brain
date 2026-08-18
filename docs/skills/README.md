@@ -16,6 +16,7 @@ External skills remain routing references; their bodies are not copied here.
 - `sample-brain-root-cause`
 - `sample-brain-regression-gap`
 - `sample-brain-issue-to-session-plan`
+- `sample-brain-jules-dispatch`
 
 ## Skill Relationships
 
