@@ -14,6 +14,7 @@ from src.jules_dispatch import (
     build_create_payload,
     build_prompt,
     get_activities,
+    get_session,
     match_source,
     normalize_dispatch,
     redact,
@@ -197,6 +198,17 @@ def test_auto_create_pr_only_when_allowed() -> None:
 
     without_pr = build_create_payload(_ctx(allow_pr=False), "src/x")
     assert "automationMode" not in without_pr
+
+
+# 8c. Session read endpoints strip the full resource name to the bare id.
+def test_session_read_paths_use_bare_id() -> None:
+    transport = FakeTransport()
+    get_session(transport, "sessions/abc")
+    get_activities(transport, "sessions/abc")
+    paths = [c[1] for c in transport.calls]
+    assert "/sessions/abc" in paths
+    assert "/sessions/abc/activities" in paths
+    assert all(not p.startswith("/sessions/sessions/") for p in paths)
 
 
 # 8b. githubRepoContext must nest inside sourceContext (real Jules v1alpha schema).
