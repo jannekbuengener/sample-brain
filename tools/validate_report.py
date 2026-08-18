@@ -32,7 +32,7 @@ KEY_HINT_RE = re.compile(
 )
 
 _TYPE_PATTERNS = {
-    "oneshot": re.compile(r"\b(?:one\s*shot|oneshot|one-shot)\b", re.IGNORECASE),
+    "oneshot": re.compile(r"\b(?:one\s*shots?|oneshots?)\b", re.IGNORECASE),
     "loop": re.compile(r"\bloops?\b", re.IGNORECASE),
 }
 
