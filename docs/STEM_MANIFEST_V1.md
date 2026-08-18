@@ -58,7 +58,7 @@ To ensure sample-accurate alignment, the stem manifest contains full details of 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `source.audio_ref` | string | yes | JSON Pointer referencing the track audio, typically `"/source/original"` or `"/source/working_audio"`. |
-| `source.hash` | object | yes | Content hash of the separation input: `{ "algorithm": string, "value": string }`. |
+| `source.hash` | object | yes | Content hash of the separation input: `{ "algorithm": string, "value": string }`. New writes use `sha256`; explicitly declared legacy `sha1` remains readable for backward compatibility. |
 | `source.audio_properties` | object | yes | Audio properties of the input. |
 | `source.audio_properties.sample_rate_hz` | integer | yes | Input sample rate in Hz. Must be positive. |
 | `source.audio_properties.channels` | integer | yes | Input channel count. Must be positive. |
@@ -75,7 +75,7 @@ Required when `status` is `"ok"` or `"partial"`. Describes the generated technic
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `output.file_ref` | string | yes | **Portable, relative** reference to the rendered stem audio file (relative to this manifest file). |
-| `output.hash` | object | yes | Content hash of the output audio file: `{ "algorithm": string, "value": string }`. |
+| `output.hash` | object | yes | Content hash of the output audio file: `{ "algorithm": string, "value": string }`. New writes use `sha256`; explicitly declared legacy `sha1` remains readable for backward compatibility. |
 | `output.audio_properties` | object | yes | Audio properties of the output. |
 | `output.audio_properties.sample_rate_hz` | integer | yes | Output sample rate in Hz. Must be positive. |
 | `output.audio_properties.channels` | integer | yes | Output channel count. Must be positive. |
@@ -108,7 +108,7 @@ Every attempted run must document what was actually used. No fictional model or 
 | `provenance.model.family` | string | yes | Model family / architecture (e.g., `"htdemucs"`). |
 | `provenance.model.name` | string | yes | Concrete model identifier (e.g., `"htdemucs_ft"`). |
 | `provenance.model.checkpoint` | string | yes | Exact checkpoint/revision identifier. |
-| `provenance.model.weight_hash` | object | yes | Hash of the model weights: `{ "algorithm": string, "value": string }`. |
+| `provenance.model.weight_hash` | object | yes | Hash of the model weights: `{ "algorithm": string, "value": string }`. This is a separate weight/checkpoint contract and is not migrated by the audio-content SHA-256 policy. |
 | `provenance.model.code_license` | string | yes | License of the source code (e.g. `"MIT"`, `"GPL-3.0"`). |
 | `provenance.model.weight_license` | string | yes | License of the model weights/checkpoint (e.g. `"CC-BY-NC-4.0"`). |
 | `provenance.configuration` | object | yes | Separation parameters actually used (e.g., `{ "overlap": 0.25 }`). Use `{}` if none. |
@@ -173,7 +173,7 @@ This is a valid, portable Technical Stem Manifest.
     "audio_ref": "/source/original",
     "hash": {
       "algorithm": "sha256",
-      "value": "9f8e7d6c5b4a3c2d1e0f11223344556677889900"
+      "value": "9f8e7d6c5b4a3c2d1e0f11223344556677889900aabbccddeeff001122334455"
     },
     "audio_properties": {
       "sample_rate_hz": 44100,
@@ -186,8 +186,8 @@ This is a valid, portable Technical Stem Manifest.
   "output": {
     "file_ref": "stem_drums_01.wav",
     "hash": {
-      "algorithm": "sha1",
-      "value": "ee55ff6677889900aabbcceedff1122334455667"
+      "algorithm": "sha256",
+      "value": "ee55ff6677889900aabbcceedff11223344556677889900aabbccddeeff112233"
     },
     "audio_properties": {
       "sample_rate_hz": 44100,
