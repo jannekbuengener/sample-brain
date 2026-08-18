@@ -19,6 +19,7 @@ from src.search_filters import key_matches_scale
 from tests.audio_fixtures import (
     write_key_audio_wav,
     write_major_chord_wav,
+    write_minor_chord_wav,
     write_octave_wav,
     write_major_minor_blend_wav,
     write_root_fifth_wav,
@@ -241,12 +242,84 @@ class TestContextAnalyzeMode:
 
 
 # ---------------------------------------------------------------------------
-# 6. DB persistence (no migration; canonical features.key)
+# 6. DB persistence and migration acceptance cases (#418)
 # ---------------------------------------------------------------------------
 
 
 class TestDbPersistence:
-    def test_known_mode_persists_in_features_key(self, tmp_path: Path, monkeypatch):
+    def test_init_db_upgrades_legacy_features_table_without_data_loss(self, tmp_path: Path, monkeypatch):
+        import sqlite3
+        import src.config as config_module
+        import src.db as db_module
+        from sqlalchemy import text
+
+        db_path = tmp_path / "catalog.db"
+        monkeypatch.setenv("SAMPLE_BRAIN_DB_PATH", str(db_path))
+        config_module.DB_PATH = db_path
+        config_module.set_db_path(env={"SAMPLE_BRAIN_DB_PATH": str(db_path)})
+
+        # Manually create a legacy features table without quality_note, key_mode, key_mode_evidence
+        raw_conn = sqlite3.connect(str(db_path))
+        raw_conn.execute("""
+            CREATE TABLE samples (
+                id INTEGER PRIMARY KEY,
+                path TEXT UNIQUE NOT NULL,
+                relpath TEXT,
+                samplerate INT,
+                channels INT,
+                duration REAL,
+                size_bytes INT,
+                hash TEXT
+            );
+        """)
+        raw_conn.execute("""
+            CREATE TABLE features (
+                sample_id INTEGER PRIMARY KEY,
+                bpm REAL,
+                key TEXT,
+                key_conf REAL,
+                loudness REAL,
+                brightness REAL,
+                mfcc_mean BLOB,
+                mfcc_std BLOB,
+                chroma_mean BLOB,
+                chroma_std BLOB,
+                class TEXT,
+                pred_type TEXT
+            );
+        """)
+        raw_conn.execute(
+            "INSERT INTO samples (id, path, relpath, duration, hash) VALUES (1, '/tmp/a.wav', 'a.wav', 2.0, 'h1')"
+        )
+        raw_conn.execute(
+            "INSERT INTO features (sample_id, bpm, key, key_conf) VALUES (1, 120.0, 'Cmaj', 0.85)"
+        )
+        raw_conn.commit()
+        raw_conn.close()
+
+        # Call init_db and verify migration happened and data was preserved
+        db_module.init_db()
+
+        engine = db_module.get_engine()
+        with engine.begin() as conn:
+            cols = [c[1] for c in conn.execute(text("PRAGMA table_info(features)")).fetchall()]
+            assert "quality_note" in cols
+            assert "key_mode" in cols
+            assert "key_mode_evidence" in cols
+
+            row = conn.execute(
+                text("SELECT sample_id, bpm, key, key_conf, quality_note, key_mode, key_mode_evidence FROM features WHERE sample_id = 1")
+            ).fetchone()
+            assert row[0] == 1
+            assert row[1] == 120.0
+            assert row[2] == "Cmaj"
+            assert row[3] == 0.85
+            assert row[4] is None
+            assert row[5] is None
+            assert row[6] is None
+
+    def test_known_c_major_run_analyze_persists_key_mode_and_json_evidence(self, tmp_path: Path, monkeypatch):
+        import json
         import src.config as config_module
         import src.db as db_module
         from sqlalchemy import text
@@ -261,8 +334,8 @@ class TestDbPersistence:
 
         samples_dir = tmp_path / "samples"
         samples_dir.mkdir()
-        audio = write_key_audio_wav(
-            samples_dir / "cmaj.wav", frequency_hz=NOTE_HZ["C"], mode="maj"
+        audio = write_major_chord_wav(
+            samples_dir / "cmaj.wav", frequency_hz=NOTE_HZ["C"]
         )
         with db_module.get_engine().begin() as conn:
             conn.execute(
@@ -275,11 +348,21 @@ class TestDbPersistence:
         run_analyze(only_missing=True)
         with db_module.get_engine().begin() as conn:
             row = conn.execute(
-                text("SELECT key, key_conf FROM features WHERE sample_id = 1")
+                text("SELECT key, key_mode, key_mode_evidence, quality_note FROM features WHERE sample_id = 1")
             ).fetchone()
         assert row[0] == "Cmaj"
+        assert row[1] == "maj"
+        assert row[3] is None
 
-    def test_unknown_mode_persists_root_only(self, tmp_path: Path, monkeypatch):
+        ev = json.loads(row[2])
+        assert ev["kind"] == "third_contrast"
+        assert ev["mode"] == "maj"
+        assert "contrast" in ev
+        assert "major_third_energy" in ev
+        assert "minor_third_energy" in ev
+
+    def test_ambiguous_single_c_persists_root_only_and_json_abstention_evidence(self, tmp_path: Path, monkeypatch):
+        import json
         import src.config as config_module
         import src.db as db_module
         from sqlalchemy import text
@@ -308,9 +391,52 @@ class TestDbPersistence:
         run_analyze(only_missing=True)
         with db_module.get_engine().begin() as conn:
             row = conn.execute(
-                text("SELECT key FROM features WHERE sample_id = 1")
+                text("SELECT key, key_mode, key_mode_evidence, quality_note FROM features WHERE sample_id = 1")
             ).fetchone()
         assert row[0] == "C"
+        assert row[1] is None
+        assert row[3] is None
+
+        ev = json.loads(row[2])
+        assert ev["kind"] == "third_contrast"
+        assert ev["mode"] is None
+        assert "contrast" in ev
+
+    def test_short_clip_persists_short_audio_quality_note_and_null_key_fields(self, tmp_path: Path, monkeypatch):
+        import src.config as config_module
+        import src.db as db_module
+        from sqlalchemy import text
+
+        from src.analyze import SHORT_AUDIO_QUALITY_NOTE, run_analyze
+
+        db_path = tmp_path / "catalog.db"
+        monkeypatch.setenv("SAMPLE_BRAIN_DB_PATH", str(db_path))
+        config_module.DB_PATH = db_path
+        config_module.set_db_path(env={"SAMPLE_BRAIN_DB_PATH": str(db_path)})
+        db_module.init_db()
+
+        samples_dir = tmp_path / "samples"
+        samples_dir.mkdir()
+        audio = write_sine_wav(
+            samples_dir / "short.wav", duration_sec=0.2, frequency_hz=NOTE_HZ["C"]
+        )
+        with db_module.get_engine().begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO samples (id, path, relpath, duration, hash) "
+                    "VALUES (1, :p, 'short.wav', 0.2, 'h1')"
+                ),
+                {"p": str(audio)},
+            )
+        run_analyze(only_missing=True)
+        with db_module.get_engine().begin() as conn:
+            row = conn.execute(
+                text("SELECT key, key_mode, key_mode_evidence, quality_note FROM features WHERE sample_id = 1")
+            ).fetchone()
+        assert row[0] is None
+        assert row[1] is None
+        assert row[2] is None
+        assert row[3] == SHORT_AUDIO_QUALITY_NOTE
 
 
 # ---------------------------------------------------------------------------
@@ -362,8 +488,91 @@ class TestConsumers:
 
 
 # ---------------------------------------------------------------------------
-# 8. Synthetic validation gate (frozen MODE_CONTRAST_MIN)
+# 8. Synthetic validation gate and deterministic baseline probe (#418)
 # ---------------------------------------------------------------------------
+
+
+def write_bass_dominant_c_major_wav(
+    path: Path,
+    *,
+    duration_sec: float = 2.0,
+    sr: int = 44100,
+) -> Path:
+    """Generate a C major chord with an intentionally dominant fifth bass note (G2).
+
+    Illustrates the known bass-dominance weakness in mean-chroma argmax root estimation.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sample_count = max(1, int(sr * duration_sec))
+    t = np.linspace(0.0, duration_sec, sample_count, endpoint=False, dtype=np.float32)
+    # Bass G2 (98.0 Hz) + C4 major triad (261.63, 329.63, 392.00 Hz)
+    bass = 0.65 * np.sin(2.0 * np.pi * 98.00 * t)
+    triad = 0.35 * (
+        np.sin(2.0 * np.pi * 261.63 * t)
+        + np.sin(2.0 * np.pi * 329.63 * t)
+        + np.sin(2.0 * np.pi * 392.00 * t)
+    )
+    wave = np.clip(bass + triad, -1.0, 1.0).astype(np.float32)
+    sf.write(path, wave, sr, subtype="PCM_16")
+    return path
+
+
+class TestSyntheticBaselineProbe:
+    def test_deterministic_baseline_probe_metrics(self, tmp_path: Path):
+        """Baseline probe (#418): 3/4 tonal correct, 3/3 ambiguity abstentions.
+
+        Records evidence of current algorithm baseline and bass-dominance weakness.
+        """
+        # Tonal cases (4)
+        c_maj = write_major_chord_wav(tmp_path / "c_maj.wav", frequency_hz=261.63)
+        c_min = write_minor_chord_wav(tmp_path / "c_min.wav", frequency_hz=261.63)
+        a_min = write_minor_chord_wav(tmp_path / "a_min.wav", frequency_hz=440.00)
+        bass_c_maj = write_bass_dominant_c_major_wav(tmp_path / "bass_c_maj.wav")
+
+        tonal_cases = [
+            (c_maj, "C", "maj", "Cmaj"),
+            (c_min, "C", "min", "Cmin"),
+            (a_min, "A", "min", "Amin"),
+            (bass_c_maj, "C", "maj", "Cmaj"),  # Known failure due to bass dominance
+        ]
+
+        root_ok = 0
+        mode_ok = 0
+        combined_ok = 0
+
+        for path, expected_root, expected_mode, expected_key in tonal_cases:
+            feats = extract_features(path, 2.0)
+            assert feats is not None
+            parsed = parse_key_signature(feats.key) if feats.key else None
+            if parsed and parsed.root == expected_root:
+                root_ok += 1
+            if feats.key_mode == expected_mode:
+                mode_ok += 1
+            if feats.key == expected_key:
+                combined_ok += 1
+
+        # Ambiguous cases (3)
+        single_c = write_sine_wav(tmp_path / "single_c.wav", duration_sec=2.0, frequency_hz=261.63)
+        root_fifth = write_root_fifth_wav(tmp_path / "root_fifth.wav", frequency_hz=261.63)
+        blend = write_major_minor_blend_wav(tmp_path / "blend.wav", frequency_hz=261.63)
+
+        ambiguous_cases = [single_c, root_fifth, blend]
+        abstained = 0
+        for path in ambiguous_cases:
+            feats = extract_features(path, 2.0)
+            assert feats is not None
+            if feats.key_mode is None:
+                abstained += 1
+
+        # Measure baseline counts as recorded evidence (3/4 tonal, 3/3 ambiguous)
+        assert root_ok == 3, f"Expected 3/4 root_ok, got {root_ok}"
+        assert mode_ok == 3, f"Expected 3/4 mode_ok, got {mode_ok}"
+        assert combined_ok == 3, f"Expected 3/4 combined_ok, got {combined_ok}"
+        assert abstained == 3, f"Expected 3/3 abstained, got {abstained}"
+
+        # Verify explicit bass-dominance failure on case #4
+        feats_bass = extract_features(bass_c_maj, 2.0)
+        assert feats_bass.key != "Cmaj", "Bass-dominant C major unexpectedly succeeded; weakness changed"
 
 
 def _build_clear_fixtures(work_dir: Path) -> list[tuple[Path, str, str]]:

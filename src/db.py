@@ -48,7 +48,7 @@ def init_db():
         if "hash_algorithm" not in sample_col_names:
             conn.execute(text("ALTER TABLE samples ADD COLUMN hash_algorithm TEXT"))
 
-        # features (mit pred_type!)
+        # features (mit pred_type und #418 quality_note/key_mode/key_mode_evidence)
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS features (
             sample_id INTEGER PRIMARY KEY,
@@ -63,9 +63,17 @@ def init_db():
             chroma_std  BLOB,
             class TEXT,
             pred_type TEXT,
+            quality_note TEXT,
+            key_mode TEXT,
+            key_mode_evidence TEXT,
             FOREIGN KEY(sample_id) REFERENCES samples(id)
         );
         """))
+        feature_cols = conn.execute(text("PRAGMA table_info(features)")).fetchall()
+        feature_col_names = {column[1] for column in feature_cols}
+        for col_name in ("quality_note", "key_mode", "key_mode_evidence"):
+            if col_name not in feature_col_names:
+                conn.execute(text(f"ALTER TABLE features ADD COLUMN {col_name} TEXT"))
         # embedding models registry
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS embedding_models (

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import warnings
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
@@ -74,7 +75,7 @@ def safe_load(path: Path, target_sr: int = ANALYZE_SR) -> tuple[np.ndarray | Non
 
 
 def estimate_key(y: np.ndarray, sr: int) -> tuple[str | None, float | None]:
-    """Rough key estimate (Krumhansl via chroma).
+    """Rough key root estimate via mean-chroma peak/root heuristic.
 
     Returns ``(root, key_conf)`` where ``key_conf`` is the normalized peak
     prominence ``max(chroma_mean) / sum(chroma_mean)``. This is ROOT evidence
@@ -377,10 +378,12 @@ _FEATURE_UPSERT = text(
     """
     INSERT INTO features (
         sample_id, bpm, key, key_conf, loudness, brightness,
-        mfcc_mean, mfcc_std, chroma_mean, chroma_std, "class"
+        mfcc_mean, mfcc_std, chroma_mean, chroma_std, "class",
+        quality_note, key_mode, key_mode_evidence
     ) VALUES (
         :sample_id, :bpm, :key, :key_conf, :loudness, :brightness,
-        :mfcc_mean, :mfcc_std, :chroma_mean, :chroma_std, :clazz
+        :mfcc_mean, :mfcc_std, :chroma_mean, :chroma_std, :clazz,
+        :quality_note, :key_mode, :key_mode_evidence
     )
     ON CONFLICT(sample_id) DO UPDATE SET
         bpm=excluded.bpm,
@@ -392,7 +395,10 @@ _FEATURE_UPSERT = text(
         mfcc_std=excluded.mfcc_std,
         chroma_mean=excluded.chroma_mean,
         chroma_std=excluded.chroma_std,
-        "class"=excluded."class"
+        "class"=excluded."class",
+        quality_note=excluded.quality_note,
+        key_mode=excluded.key_mode,
+        key_mode_evidence=excluded.key_mode_evidence
     """
 )
 
@@ -476,6 +482,11 @@ def run_analyze(
                 if feats is None:
                     continue
 
+                ev_json = (
+                    json.dumps(feats.key_mode_evidence, sort_keys=True, separators=(",", ":"))
+                    if feats.key_mode_evidence is not None
+                    else None
+                )
                 writes.append(
                     dict(
                         sample_id=int(sid),
@@ -489,6 +500,9 @@ def run_analyze(
                         chroma_mean=feats.chroma_mean,
                         chroma_std=feats.chroma_std,
                         clazz=feats.clazz,
+                        quality_note=feats.quality_note,
+                        key_mode=feats.key_mode,
+                        key_mode_evidence=ev_json,
                     )
                 )
                 processed += 1
