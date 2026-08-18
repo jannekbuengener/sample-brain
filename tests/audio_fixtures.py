@@ -201,10 +201,9 @@ def write_octave_wav(
     return path
 
 
-# Krumhansl-Schmuckler profile weights, reused here only to synthesize a clean
-# "known key" signal (deterministic, no private audio). Detection uses the same
-# profiles in src.analyze; this is a functional correctness fixture, not a claim
-# about real-music accuracy.
+# Profile weights are retained only to synthesize deterministic tonal fixtures.
+# The current root detector does not use Krumhansl-Schmuckler profile matching;
+# it selects the strongest mean chroma pitch class.
 _MAJOR_SCALE_DEGREES = (0, 2, 4, 5, 7, 9, 11)
 _MINOR_SCALE_DEGREES = (0, 2, 3, 5, 7, 8, 10)
 _MAJOR_KEY_WEIGHTS = (6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88)
