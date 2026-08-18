@@ -28,7 +28,7 @@
 - Prefer updating tests together with behavior changes.
 
 ## Skill routing
-- Skill routing: For agent task-to-skill mapping, use `docs/SKILL_INTEGRATION_PLAN.md`, `.cursor/rules/skill-routing.mdc`, and `SB.VERFUEGBARE.SKILLS.md`. These files provide recommendation/routing guidance only; they do not authorize automatic tool, workflow, CI, or security changes.
+- Skill routing: For agent task-to-skill mapping, use `docs/SKILL_INTEGRATION_PLAN.md`, `.cursor/rules/skill-routing.mdc`, and `SB.VERFUEGBARE_SKILLS.md`. These files provide recommendation/routing guidance only; they do not authorize automatic tool, workflow, CI, or security changes.
 
 ## Quality Gates
 - Setup:
@@ -113,4 +113,5 @@ python -m src.cli export_fl --fl-user-data /tmp/sample-brain-demo/fl-user-data
 Place at least one `.wav` under the scan root (generate with `soundfile` if the repo has no bundled audio). Semantic search (`embed` / `index_build` / `search`) works with `--backend noop` without torch; CLAP is optional via `requirements-clap.txt`.
 
 ### Lint
-- No dedicated linter config in-repo. CI smoke = `py_compile` on core modules + CLI `--help` (see `.github/workflows/ci-smoke.yml`).
+- Ruff is configured in `pyproject.toml`; CI runs the pinned minimal static-correctness gate with `python -m ruff check .` in `.github/workflows/core-pytest.yml`.
+- CLI smoke still uses `py_compile` on core modules plus CLI `--help` in `.github/workflows/ci-smoke.yml`.
