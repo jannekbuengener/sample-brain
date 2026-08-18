@@ -10,8 +10,8 @@ from sqlalchemy import text
 from tqdm import tqdm
 
 from .config import SAMPLE_ROOTS, AUDIO_EXTS, DB_PATH  # AUDIO_EXTS stammt aus config.py
+from .content_hash import DEFAULT_CONTENT_HASH_ALGORITHM, compute_file_hash
 from .db import init_db
-from .utils import file_hash
 
 # Ordner, die wir beim rekursiven Scan überspringen (Case-insensitive)
 DEFAULT_IGNORE_DIRS: Set[str] = {
@@ -21,15 +21,22 @@ DEFAULT_IGNORE_DIRS: Set[str] = {
 }
 
 _SAMPLE_UPSERT = text("""
-    INSERT INTO samples (path, relpath, samplerate, channels, duration, size_bytes, hash)
-    VALUES (:path, :relpath, :sr, :ch, :dur, :size_bytes, :hash)
+    INSERT INTO samples (
+        path, relpath, samplerate, channels, duration, size_bytes, hash,
+        hash_algorithm
+    )
+    VALUES (
+        :path, :relpath, :sr, :ch, :dur, :size_bytes, :hash,
+        :hash_algorithm
+    )
     ON CONFLICT(path) DO UPDATE SET
         relpath=excluded.relpath,
         samplerate=excluded.samplerate,
         channels=excluded.channels,
         duration=excluded.duration,
         size_bytes=excluded.size_bytes,
-        hash=excluded.hash
+        hash=excluded.hash,
+        hash_algorithm=excluded.hash_algorithm
 """)
 
 
@@ -122,7 +129,7 @@ def run_scan(
             sr, ch, dur = safe_audio_info(p)
             try:
                 size = p.stat().st_size
-                h = file_hash(p)
+                identity = compute_file_hash(p)
             except OSError as exc:
                 print(f"[WARN] Skipping unreadable sample: {p} ({exc})")
                 continue
@@ -135,7 +142,8 @@ def run_scan(
                     ch=ch,
                     dur=dur,
                     size_bytes=size,
-                    hash=h,
+                    hash=identity["value"],
+                    hash_algorithm=DEFAULT_CONTENT_HASH_ALGORITHM,
                 )
             )
             processed += 1

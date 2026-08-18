@@ -11,7 +11,14 @@ from typing import Any, Optional
 import soundfile as sf
 
 from .analyze import KEY_ANALYSIS_CONTRACT_VERSION, Features, extract_features
-from .canon_audio import content_hash, probe_audio, render_canonical_wav
+from .canon_audio import probe_audio, render_canonical_wav
+from .content_hash import (
+    DEFAULT_CONTENT_HASH_ALGORITHM,
+    LEGACY_CONTENT_HASH_ALGORITHM,
+    compute_file_hash,
+    compute_file_hashes,
+    normalize_hash_record,
+)
 from .key_signature import parse_key_signature
 from .track_analysis_cache import (
     TRACK_ANALYSIS_CACHE_CONTRACT_VERSION,
@@ -42,6 +49,18 @@ def _package_version() -> str:
         return metadata.version("sample-brain")
     except metadata.PackageNotFoundError:
         return "unknown"
+
+
+def content_hash(path: Path) -> str:
+    """Return the historical SHA-1 digest used by pre-#417 cache-key callers.
+
+    New content identity must use :mod:`src.content_hash` and carry the algorithm
+    explicitly. This compatibility symbol exists only so legacy cache-key tests
+    and callers can reproduce old SHA-1 keys for on-touch migration.
+    """
+    return compute_file_hash(
+        Path(path), algorithm=LEGACY_CONTENT_HASH_ALGORITHM
+    )["value"]
 
 
 def _validate_path(path: Path) -> None:
@@ -89,9 +108,6 @@ def _base_analysis(
         if features.key_conf is not None:
             key["key_conf"] = features.key_conf
             key["key_conf_kind"] = "chroma_peak_prominence"
-        # The major/minor mode is a SEPARATE statement from the root.
-        # mode_evidence is retained even when the mode is unresolved so it is
-        # auditable *why* no mode was guessed; only ``mode`` stays absent then.
         if features.key_mode_evidence is not None:
             key["mode_evidence"] = features.key_mode_evidence
         if features.key_mode is not None:
@@ -156,11 +172,19 @@ def _overall_status(analysis: dict[str, object]) -> str:
 
 
 def analyze_context_file(
-    path: Path, *, bpm_normalization: str = "none"
+    path: Path,
+    *,
+    bpm_normalization: str = "none",
+    _source_hash: dict[str, str] | None = None,
 ) -> dict[str, object]:
     """Analyze one WAV/FLAC file without initializing or mutating the catalog DB."""
     source_path = Path(path)
     _validate_path(source_path)
+    source_hash = (
+        normalize_hash_record(_source_hash)
+        if _source_hash is not None
+        else compute_file_hash(source_path)
+    )
     timebase = probe_audio(source_path)
     if timebase is None:
         raise ContextAnalyzeError("AUDIO_LOAD_FAILED", "Audio file could not be read.")
@@ -215,7 +239,7 @@ def analyze_context_file(
             "original": {
                 "file_name": source_path.name,
                 "size_bytes": source_path.stat().st_size,
-                "hash": {"algorithm": "sha1", "value": content_hash(source_path)},
+                "hash": source_hash,
                 "audio_properties": {
                     "duration_sec": timebase.duration_seconds,
                     "sample_rate_hz": int(info.samplerate),
@@ -235,7 +259,7 @@ def analyze_context_file(
                 "context_source": {
                     "component": "context_source",
                     "sample_brain_version": package_version,
-                    "configuration": {"hash_algorithm": "sha1"},
+                    "configuration": {"hash_algorithm": source_hash["algorithm"]},
                 },
                 "analyze": {
                     "component": "analyze",
@@ -282,14 +306,12 @@ class TrackAnalysisCacheResult:
 
 
 def _rebuild_track_map_with_current_source(
-    cached_map: dict[str, object], source_path: Path, source_sha1: str
+    cached_map: dict[str, object],
+    source_path: Path,
+    source_hash: dict[str, str],
 ) -> dict[str, object]:
-    """Re-probe the current source and refresh the portable source identity block.
-
-    The expensive analysis blocks, provenance, and quality are reused verbatim from
-    the cache; only the source identity (file name, size, audio properties) is
-    refreshed for the current file. No absolute/private paths are introduced.
-    """
+    """Refresh portable source identity while reusing expensive analysis blocks."""
+    source_hash = normalize_hash_record(source_hash)
     timebase = probe_audio(source_path)
     if timebase is None:
         raise ContextAnalyzeError("AUDIO_LOAD_FAILED", "Audio file could not be read.")
@@ -303,7 +325,7 @@ def _rebuild_track_map_with_current_source(
     new_source: dict[str, object] = {
         "file_name": source_path.name,
         "size_bytes": source_path.stat().st_size,
-        "hash": {"algorithm": "sha1", "value": source_sha1},
+        "hash": source_hash,
         "audio_properties": {
             "duration_sec": timebase.duration_seconds,
             "sample_rate_hz": int(info.samplerate),
@@ -313,6 +335,16 @@ def _rebuild_track_map_with_current_source(
     }
     new_map = dict(cached_map)
     new_map["source"] = {"original": new_source}
+
+    provenance = dict(new_map.get("provenance") or {})
+    components = dict(provenance.get("components") or {})
+    context_source = dict(components.get("context_source") or {})
+    configuration = dict(context_source.get("configuration") or {})
+    configuration["hash_algorithm"] = source_hash["algorithm"]
+    context_source["configuration"] = configuration
+    components["context_source"] = context_source
+    provenance["components"] = components
+    new_map["provenance"] = provenance
     return new_map
 
 
@@ -323,18 +355,7 @@ def analyze_context_file_cached(
     cache_dir: Optional[Path] = None,
     enabled: bool = True,
 ) -> TrackAnalysisCacheResult:
-    """Analyze one WAV/FLAC file, reusing cached analysis when valid.
-
-    Returns the Track Map plus ``cache_status`` (``hit`` | ``miss`` | ``disabled``)
-    and the ``cache_key``. The Track Map never stores private/absolute paths; on a
-    cache hit the current source file is re-probed so the returned Track Map reflects
-    the current file name and audio properties while the expensive analysis values are
-    reused.
-
-    This function preserves the behavior of :func:`analyze_context_file` and adds the
-    cache layer on top. Disabling the cache (``enabled=False``) always recomputes and
-    never touches the cache directory.
-    """
+    """Analyze one WAV/FLAC file, reusing/migrating cached analysis when valid."""
     source_path = Path(path)
 
     if not enabled:
@@ -345,7 +366,12 @@ def analyze_context_file_cached(
 
     _validate_path(source_path)
     cache_dir = get_cache_dir(cache_dir)
-    source_sha1 = content_hash(source_path)
+    source_hashes = compute_file_hashes(
+        source_path,
+        algorithms=(DEFAULT_CONTENT_HASH_ALGORITHM, LEGACY_CONTENT_HASH_ALGORITHM),
+    )
+    current_hash = source_hashes[DEFAULT_CONTENT_HASH_ALGORITHM]
+    legacy_hash = source_hashes[LEGACY_CONTENT_HASH_ALGORITHM]
     package_version = _package_version()
     backend_version = _package_version_for("librosa")
     analysis_fingerprint = compute_analysis_fingerprint(
@@ -354,45 +380,77 @@ def analyze_context_file_cached(
         backend_version=backend_version,
         sample_brain_version=package_version,
     )
-    cache_key = compute_cache_key(
-        source_content_hash=source_sha1,
-        bpm_normalization=bpm_normalization,
-        backend_name="librosa",
-        backend_version=backend_version,
-        sample_brain_version=package_version,
+    cache_kwargs = {
+        "bpm_normalization": bpm_normalization,
+        "backend_name": "librosa",
+        "backend_version": backend_version,
+        "sample_brain_version": package_version,
+    }
+    current_key = compute_cache_key(
+        source_content_hash=current_hash,
+        **cache_kwargs,
     )
 
-    entry = read_cache_entry(cache_dir, cache_key)
+    entry = read_cache_entry(cache_dir, current_key)
     if entry is not None and validate_cache_entry(
         entry,
-        expected_cache_key=cache_key,
-        expected_source_hash=source_sha1,
+        expected_cache_key=current_key,
+        expected_source_hash=current_hash,
         expected_analysis_fingerprint=analysis_fingerprint,
     ):
         track_map = _rebuild_track_map_with_current_source(
-            entry["track_map"], source_path, source_sha1
+            entry["track_map"], source_path, current_hash
         )
         return TrackAnalysisCacheResult(
-            track_map=track_map, cache_status="hit", cache_key=cache_key
+            track_map=track_map, cache_status="hit", cache_key=current_key
         )
 
-    track_map = analyze_context_file(source_path, bpm_normalization=bpm_normalization)
+    legacy_key = compute_cache_key(source_content_hash=legacy_hash, **cache_kwargs)
+    legacy_entry = read_cache_entry(cache_dir, legacy_key)
+    if legacy_entry is not None and validate_cache_entry(
+        legacy_entry,
+        expected_cache_key=legacy_key,
+        expected_source_hash=legacy_hash,
+        expected_analysis_fingerprint=analysis_fingerprint,
+    ):
+        track_map = _rebuild_track_map_with_current_source(
+            legacy_entry["track_map"], source_path, current_hash
+        )
+        migrated = build_cache_entry(
+            cache_key=current_key,
+            source_content_hash=current_hash,
+            analysis_fingerprint=analysis_fingerprint,
+            track_map=track_map,
+            provenance_component=legacy_entry["provenance_component"],
+            quality=legacy_entry["quality"],
+        )
+        write_cache_entry(cache_dir, current_key, migrated)
+        return TrackAnalysisCacheResult(
+            track_map=track_map, cache_status="hit", cache_key=current_key
+        )
+
+    track_map = analyze_context_file(
+        source_path,
+        bpm_normalization=bpm_normalization,
+        _source_hash=current_hash,
+    )
     entry = build_cache_entry(
-        cache_key=cache_key,
-        source_content_hash=source_sha1,
+        cache_key=current_key,
+        source_content_hash=current_hash,
         analysis_fingerprint=analysis_fingerprint,
         track_map=track_map,
         provenance_component=track_map["provenance"]["components"]["analyze"],
         quality=track_map["quality"],
     )
-    write_cache_entry(cache_dir, cache_key, entry)
+    write_cache_entry(cache_dir, current_key, entry)
     return TrackAnalysisCacheResult(
-        track_map=track_map, cache_status="miss", cache_key=cache_key
+        track_map=track_map, cache_status="miss", cache_key=current_key
     )
 
 
 __all__ = [
     "ContextAnalyzeError",
+    "content_hash",
     "analyze_context_file",
     "analyze_context_file_cached",
     "TrackAnalysisCacheResult",
