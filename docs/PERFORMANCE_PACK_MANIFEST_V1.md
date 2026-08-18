@@ -101,6 +101,10 @@ The `source_track` block gives the portable identity and technical audio propert
 - No absolute path, private library root, or SQLite row id is serialized as the external identity.
 - `source_track.track_ref` and `documents.track_map.ref` must agree (same portable reference to the Track Map).
 
+### Content-hash compatibility (#417)
+
+New persisted content-hash writes use **SHA-256**. Readers must verify the algorithm declared by each `{algorithm, value}` record. Explicitly declared legacy **SHA-1** remains supported for read/verification compatibility; unknown or malformed algorithms fail closed. This digest migration does not require a Performance Pack schema-major bump by itself because the algorithm-qualified hash shape is unchanged.
+
 ---
 
 ## 6. Documents
