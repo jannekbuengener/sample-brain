@@ -41,7 +41,8 @@ jobs:
           cache-dependency-path: requirements-clap.txt
 
       - name: Install pinned optional runtime only
-        run: python -m pip install --only-binary=:all: -r requirements-clap.txt
+        run: |
+          python -m pip install --only-binary=:all: -r requirements-clap.txt
 
       - name: Verify exact package and CLAP import matrix without model download
         run: >-
