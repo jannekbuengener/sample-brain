@@ -418,15 +418,24 @@ def create_session(
     return transport.request("POST", "/sessions", build_create_payload(ctx, source_id))
 
 
+def _session_id(session_id: str) -> str:
+    """Return the bare session id the API path expects.
+
+    The create response uses the full resource name ``sessions/{id}``, but the
+    read/approve/message endpoints expect the bare ``{id}`` segment.
+    """
+    return session_id.split("/", 1)[1] if session_id.startswith("sessions/") else session_id
+
+
 def get_session(transport: JulesTransport, session_id: str) -> dict:
-    return transport.request("GET", f"/sessions/{session_id}")
+    return transport.request("GET", f"/sessions/{_session_id(session_id)}")
 
 
 def get_activities(transport: JulesTransport, session_id: str) -> List[dict]:
     out: List[dict] = []
     page_token: Optional[str] = None
     while True:
-        path = f"/sessions/{session_id}/activities"
+        path = f"/sessions/{_session_id(session_id)}/activities"
         if page_token:
             path += f"?pageToken={urllib.parse.quote(page_token, safe='')}"
         resp = transport.request("GET", path)
@@ -438,13 +447,13 @@ def get_activities(transport: JulesTransport, session_id: str) -> List[dict]:
 
 
 def approve_plan(transport: JulesTransport, session_id: str) -> dict:
-    return transport.request("POST", f"/sessions/{session_id}:approvePlan", {})
+    return transport.request("POST", f"/sessions/{_session_id(session_id)}:approvePlan", {})
 
 
 def send_message(transport: JulesTransport, session_id: str, text: str) -> dict:
     clean = redact(text)
     return transport.request(
-        "POST", f"/sessions/{session_id}:sendMessage", {"message": clean}
+        "POST", f"/sessions/{_session_id(session_id)}:sendMessage", {"message": clean}
     )
 
 
