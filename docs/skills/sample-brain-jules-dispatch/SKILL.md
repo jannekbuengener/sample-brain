@@ -185,7 +185,7 @@ the wrong repo.
 On create:
 
 - `sourceContext.source` = exactly the found Jules source
-- `githubRepoContext.startingBranch` = explicit base branch
+- `sourceContext.githubRepoContext.startingBranch` = explicit base branch (nested in `sourceContext`)
 - `prompt` = cleaned, standardized task envelope
 - for every task allowed to change repo files: `requirePlanApproval = true`
 - never rely on Jules default
