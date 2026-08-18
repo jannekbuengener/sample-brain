@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+import src.export_fl as export_fl
 from src.export_fl import resolve_export_path, run_export, write_fl_tags_from_sample_rows
 
 
@@ -62,12 +63,11 @@ def test_run_export_rejects_empty_fl_user_data():
         run_export(fl_user_data_folder="   ", roots=[])
 
 
-def test_write_fl_tags_from_sample_rows_writes_expected_file(tmp_path: Path):
-    root = tmp_path / "library"
+def _sample_rows(root: Path) -> list[tuple]:
     sample = root / "drums" / "kick.wav"
-    sample.parent.mkdir(parents=True)
+    sample.parent.mkdir(parents=True, exist_ok=True)
     sample.write_bytes(b"data")
-    rows = [
+    return [
         (
             str(sample),
             "drums/kick.wav",
@@ -81,6 +81,11 @@ def test_write_fl_tags_from_sample_rows_writes_expected_file(tmp_path: Path):
             "Kick",
         )
     ]
+
+
+def test_write_fl_tags_from_sample_rows_writes_expected_file(tmp_path: Path):
+    root = tmp_path / "library"
+    rows = _sample_rows(root)
     fl_user = tmp_path / "fl_user"
 
     tags_path, count, warnings = write_fl_tags_from_sample_rows(rows, fl_user, [root])
@@ -92,3 +97,43 @@ def test_write_fl_tags_from_sample_rows_writes_expected_file(tmp_path: Path):
     assert content.startswith("@TagCase=*")
     assert "kick.wav" in content
     assert "Kick" in content
+
+
+def test_write_fl_tags_replaces_existing_target_atomically(tmp_path: Path):
+    root = tmp_path / "library"
+    rows = _sample_rows(root)
+    fl_user = tmp_path / "fl_user"
+    tags_path = fl_user / "FL Studio" / "Settings" / "Browser" / "Tags"
+    tags_path.parent.mkdir(parents=True, exist_ok=True)
+    tags_path.write_text("OLD\n", encoding="utf-8")
+
+    written_path, count, warnings = write_fl_tags_from_sample_rows(rows, fl_user, [root])
+
+    assert written_path == tags_path
+    assert count == 1
+    assert warnings == []
+    assert tags_path.read_text(encoding="utf-8") != "OLD\n"
+    assert not list(tags_path.parent.glob(f".{tags_path.name}.*.tmp"))
+
+
+def test_write_fl_tags_keeps_existing_target_on_write_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    root = tmp_path / "library"
+    rows = _sample_rows(root)
+    fl_user = tmp_path / "fl_user"
+    tags_path = fl_user / "FL Studio" / "Settings" / "Browser" / "Tags"
+    tags_path.parent.mkdir(parents=True, exist_ok=True)
+    tags_path.write_text("KEEP-ME\n", encoding="utf-8")
+
+    def fail_write(handle, payload):
+        handle.write(payload[:5])
+        raise OSError("simulated write failure")
+
+    monkeypatch.setattr(export_fl, "_write_tags_payload", fail_write)
+
+    with pytest.raises(OSError, match="simulated write failure"):
+        write_fl_tags_from_sample_rows(rows, fl_user, [root])
+
+    assert tags_path.read_text(encoding="utf-8") == "KEEP-ME\n"
+    assert not list(tags_path.parent.glob(f".{tags_path.name}.*.tmp"))
