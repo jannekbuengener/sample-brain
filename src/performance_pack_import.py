@@ -346,9 +346,18 @@ def _import_asset(
         )
 
     asset_status = entry.get("status")
-    if asset_status not in USABLE_STATUSES:
+    if asset_status is None:
+        asset_status = entry.get("candidate", {}).get("status")
+
+    # Accept ok, partial, or candidate (pipeline normal output) as valid.
+    # USABLE_STATUSES = {"ok", "partial"} stays unchanged; candidate is the
+    # pipeline's normal status indicator for generated assets.
+    resolved_status = asset_status
+    if resolved_status in ("ok", "partial", "candidate"):
+        pass  # valid
+    elif resolved_status not in USABLE_STATUSES:
         # failed / not_run / no_result optional item: skip, no fake sample.
-        return None, False, f"asset_status:{asset_status}"
+        return None, False, f"asset_status:{resolved_status}"
 
     asset_path = _resolve_ref(asset_ref, pack_root, kind="asset")
     if not asset_path.exists():
