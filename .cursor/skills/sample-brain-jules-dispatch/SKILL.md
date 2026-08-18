@@ -21,13 +21,15 @@ Use this skill to delegate one already sufficiently scoped Sample Brain issue to
 Jules and return the result into the normal Sample Brain process. Jules is a
 controlled delegation gateway, not a Sample Brain authority.
 
-The dispatch loop is:
+The preferred dispatch loop is:
 
 ```text
 clearly scoped issue -> current Sample Brain canon -> minimal cleaned Jules task
--> Jules session -> plan review -> explicit plan approval -> status / activities
-/ follow-up -> Jules PR -> independent local handoff
+-> MCP jules_dispatch -> Jules session / PR -> independent local handoff
 ```
+
+The existing REST helper remains a compatibility fallback when the direct MCP
+transport is deterministically unavailable before any create attempt.
 
 Jules may:
 
@@ -83,10 +85,49 @@ The skill may only dispatch when at least all of the following are clear:
 | Issue is unclear / not scoped | `route_to = sample-brain-issue-to-session-plan` or `BLOCKED` |
 | Bug cause is unclear | `route_to = sample-brain-root-cause` |
 | Known defect with missing guard | respect existing `regression-gap` / `test-first` rules |
-| All required dispatch fields clear | dispatch to Jules via this skill |
+| All required dispatch fields clear + MCP host ready | direct MCP `jules_dispatch` via this skill |
+| Direct MCP unavailable before create | existing REST fallback via `src/jules_dispatch.py` |
 
 Do not build a second routing authority. Routing to another skill means
 "suggests next step", not "authorizes action".
+
+## Preferred Transport: Direct MCP Jules
+
+The preferred normal path is the first-class MCP tool `jules_dispatch`.
+
+Use the direct MCP path when:
+
+- the Required Dispatch Gate is complete
+- MCP exposes `jules_dispatch`
+- host preflight reports `jules-cli: OK`
+
+Direct MCP create:
+
+```text
+target = sample_brain
+prompt = cleaned Jules Task Envelope
+parallel = 1 unless parallel execution is explicitly required
+```
+
+Rules:
+
+- Dispatch directly when the fields are clear; do not ask the user to copy/paste
+  a Jules command or prompt.
+- The prompt remains MCP tool input and is passed to Jules on stdin. Never put
+  secrets or private local context into it.
+- A successful create proves only that a Jules session was created. It is not
+  DONE, MERGED, or CLOSED evidence.
+- If the MCP/CLI create returns a timeout, output overflow, transport drop, or
+  another ambiguous create outcome, treat the outcome as unknown / PARTIAL or
+  BLOCKED.
+- After an ambiguous create outcome, **do not fall back to REST** for a second
+  create. Do not create a duplicate session. Recover or inspect the existing
+  outcome if possible; otherwise stop clearly.
+- Never run both transports for the same create attempt.
+
+If direct MCP is absent or deterministically unavailable **before any create
+attempt**, the existing `src/jules_dispatch.py` REST fallback may be used for
+compatibility. The fallback does not replace or outrank the direct MCP path.
 
 ## Jules Task Envelope
 
@@ -120,7 +161,10 @@ DELIVERABLE for write tasks:
 
 ## Security / Redaction
 
-`JULES_API_KEY`:
+The preferred MCP path uses the Jules CLI's own login state. It must not receive
+GitHub/MCP/API credentials through the task prompt or tool arguments.
+
+For the REST fallback, `JULES_API_KEY`:
 
 - read exclusively from environment
 - never a CLI argument
@@ -131,7 +175,7 @@ DELIVERABLE for write tasks:
 - never in exceptions
 - never in evidence
 
-HTTP auth: `X-Goog-Api-Key: <runtime value>`. No header dump.
+REST HTTP auth: `X-Goog-Api-Key: <runtime value>`. No header dump.
 
 The sanitizer / validator must at least block or clean:
 
@@ -153,7 +197,11 @@ If a context file lies outside the repo: do not transfer it to Jules.
 
 When uncertain: fail closed.
 
-## Official Jules API
+## REST Fallback / Compatibility
+
+The REST fallback is implemented by the existing `src/jules_dispatch.py` helper.
+It remains a compatibility path and is not the preferred normal path when MCP
+`jules_dispatch` is host-ready.
 
 Use only the documented public API:
 
@@ -182,7 +230,7 @@ the wrong repo.
 
 ## Session Create
 
-On create:
+For the REST fallback create path:
 
 - `sourceContext.source` = exactly the found Jules source
 - `sourceContext.githubRepoContext.startingBranch` = explicit base branch (nested in `sourceContext`)
@@ -228,7 +276,7 @@ No approval loop.
 
 ## CLI / Module Interface
 
-`src/jules_dispatch.py` is usable as a module:
+The REST fallback helper `src/jules_dispatch.py` remains usable as a module:
 
 ```text
 python -m src.jules_dispatch doctor
@@ -261,7 +309,7 @@ Example:
 
 ## Normalized Result
 
-The helper outputs machine-readable JSON with at least:
+The compatibility helper outputs machine-readable JSON with at least:
 
 ```text
 dispatch_status
@@ -295,7 +343,9 @@ Jules may never authoritatively claim Sample Brain is finished.
 
 | Condition | Code |
 |-----------|------|
-| missing `JULES_API_KEY` | `BLOCKED_AUTH` |
+| direct MCP deterministically unavailable before create | REST fallback may be used |
+| ambiguous MCP/CLI create outcome | `PARTIAL` / `BLOCKED`; no second create |
+| missing `JULES_API_KEY` on REST fallback | `BLOCKED_AUTH` |
 | HTTP 401 / 403 | `BLOCKED_AUTH` |
 | Sample Brain source missing | `BLOCKED_SOURCE_NOT_CONNECTED` |
 | HTTP 429 | `BLOCKED_RATE_LIMIT` |
@@ -304,8 +354,8 @@ Jules may never authoritatively claim Sample Brain is finished.
 | Jules state `FAILED` | `FAILED` |
 | unknown Jules state / unexpected response | `PARTIAL_PROTOCOL_DRIFT` |
 
-No fake-green. Do not blindly auto-retry POSTs when that could create duplicate
-sessions / messages.
+No fake-green. Do not blindly auto-retry creates or POSTs when that could create
+duplicate sessions / messages.
 
 ## Activities / Follow-Up
 
@@ -380,7 +430,8 @@ optional context enhancements.
 | issue not scoped | `sample-brain-issue-to-session-plan` | Yes | Dispatch needs a clear slice first |
 | bug cause unclear | `sample-brain-root-cause` | Yes | Do not invent a cause |
 | known defect, missing guard | `sample-brain-regression-gap` -> `sample-brain-test-first` | No | Respect existing rules |
-| dispatch fields clear | Jules via this skill | No | Explicit opt-in only |
+| dispatch fields clear + MCP ready | direct MCP `jules_dispatch` | No | Preferred route; no user copy/paste |
+| MCP unavailable before create | `src/jules_dispatch.py` REST fallback | No | Compatibility only; never double-create |
 
 ### Next Recommended
 
@@ -392,7 +443,8 @@ then normal PR -> Merge -> Issue Close -> Live Verification.
 - `BLOCKED`: required dispatch field missing.
 - `BLOCKED_SOURCE_NOT_CONNECTED`: Sample Brain not connected to Jules.
 - `BLOCKED_PLAN_DRIFT`: plan repeatedly diverges from accepted scope.
-- `BLOCKED_AUTH`: API key missing or rejected.
+- `BLOCKED_AUTH`: API key missing or rejected on the REST fallback.
+- ambiguous create outcome where session existence cannot be resolved safely.
 
 ### Cycle Rules
 
