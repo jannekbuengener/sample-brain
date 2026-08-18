@@ -63,9 +63,18 @@ def init_db():
             chroma_std  BLOB,
             class TEXT,
             pred_type TEXT,
+            quality_note TEXT,
+            key_mode TEXT,
+            key_mode_evidence TEXT,
             FOREIGN KEY(sample_id) REFERENCES samples(id)
         );
         """))
+        feature_cols = conn.execute(text("PRAGMA table_info(features)")).fetchall()
+        feature_col_names = {column[1] for column in feature_cols}
+        for column_name in ("quality_note", "key_mode", "key_mode_evidence"):
+            if column_name not in feature_col_names:
+                conn.execute(text(f"ALTER TABLE features ADD COLUMN {column_name} TEXT"))
+
         # embedding models registry
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS embedding_models (
@@ -477,7 +486,6 @@ def find_sample_id_by_hash(
                 {"h": content_hash},
             ).fetchone()
         else:
-            # Pre-v2 rows have NULL algorithm and are explicitly legacy SHA-1.
             row = conn.execute(
                 text("""
                     SELECT id FROM samples
@@ -508,7 +516,6 @@ def insert_sample(
     content_hash_algorithm: str = DEFAULT_CONTENT_HASH_ALGORITHM,
 ) -> int:
     """Insert a new sample row (plain INSERT; path is UNIQUE)."""
-    # Validate the algorithm/value pair before persistence.
     identity = hash_record(content_hash_algorithm, content_hash)
     engine = get_engine()
     with engine.begin() as conn:
