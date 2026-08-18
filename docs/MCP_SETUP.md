@@ -2,8 +2,9 @@
 
 This document configures **local AI tooling** for the `sample-brain` repository:
 **Cursor** and **Codex** use the same read-only **`cdb_context`** stdio MCP as
-**Claire de Binare (CDB)**. The MCP server implementation stays in CDB; this repo
-only holds client config and docs.
+**Claire de Binare (CDB)**. ChatGPT repo reads use the separate **`gpt-mcp-server`**.
+This repo only holds client config and docs; the server implementations live outside
+`sample-brain`.
 
 ## Architecture
 
@@ -17,13 +18,17 @@ sample-brain (this repo)
               ▼
 Claire_de_Binare (canon server)
   └── python -m tools.mcp.server   (stdio, read-only context tools)
+
+ChatGPT
+  └── gpt-mcp-server               (repo read/search across registered roots)
+          └── sample_brain → D:/Dev/Workspaces/Repos/sample-brain
 ```
 
 | Layer | Role |
 |-------|------|
 | **CDB** | Canon for `tools.mcp.server`, SurrealDB context bridge, tool definitions |
 | **sample-brain** | Cross-repo client config; no MCP server code in this repo |
-| **npm `cdb-mcp-server`** | Separate ChatGPT/repo-read workflow (`sample_brain` root); not `cdb_context` |
+| **`gpt-mcp-server`** | Separate ChatGPT/repo-read workflow with registered `sample_brain` root; not `cdb_context` |
 
 ### Why stdio?
 
@@ -41,6 +46,7 @@ to Linux CI or other machines. Non-Windows setups must use the example templates
 | **sample-brain root** | `D:\Dev\Workspaces\Repos\sample-brain` |
 | **CDB root** (`cwd` for `cdb_context`) | `D:\Dev\Workspaces\Repos\Claire_de_Binare` |
 | **CDB Python (Windows venv)** | `D:\Dev\Workspaces\Repos\Claire_de_Binare\.venv\Scripts\python.exe` |
+| **ChatGPT MCP server** | `D:\Dev\Workspaces\Prompts\mcp\gpt-mcp-server` |
 
 Do **not** use `D:\Dev\Workspaces\sample-brain` (wrong tree).
 
@@ -99,12 +105,12 @@ in this repo.
 
 Reference (CDB template): `Claire_de_Binare/agents/templates/codex_mcp_config.md`.
 
-## `cdb_context` vs npm `cdb-mcp-server`
+## `cdb_context` vs `gpt-mcp-server`
 
-| | **`cdb_context` (stdio)** | **npm `cdb-mcp-server`** |
-|--|---------------------------|---------------------------|
+| | **`cdb_context` (stdio)** | **`gpt-mcp-server`** |
+|--|---------------------------|----------------------|
 | **Purpose** | CDB Context Intelligence (`context.briefing`, readiness, etc.) | ChatGPT repo read/search across registered roots |
-| **Server location** | CDB `tools.mcp.server` | `D:\Dev\Workspaces\Prompts\mcp\cdb-mcp-server` (local npm) |
+| **Server location** | CDB `tools.mcp.server` | `D:\Dev\Workspaces\Prompts\mcp\gpt-mcp-server` |
 | **sample-brain key** | N/A (cross-repo spawn) | `sample_brain` → this repo path |
 | **Config in sample-brain** | `.codex/config.toml`, `.cursor/mcp.json` | Documented only; no server code here |
 
@@ -135,30 +141,49 @@ Expect **26** tools from the bridge smoke line when SurrealDB/context prerequisi
 
 GitHub Actions (`ci-smoke.yml`) does not start MCP; it only runs `py_compile` and CLI `--help`.
 
-## npm / ChatGPT registration (optional)
+## ChatGPT / `gpt-mcp-server` registration
+
+The active ChatGPT MCP server is the external repository `jannekbuengener/gpt-mcp-server`.
+The live contract verified for issue #353 is:
+
+- server version: `1.2.0`
+- server build: `d76d64725e82`
+- MCP root key: `sample_brain`
+- root path: `D:/Dev/Workspaces/Repos/sample-brain`
+- GitHub target: `jannekbuengener/sample-brain`
+- expected preflight result: `sample-brain-read-smoke: PASS` and `root:sample_brain: OK`
 
 Local MCP server repo:
 
 ```text
-D:\Dev\Workspaces\Prompts\mcp\cdb-mcp-server
+D:\Dev\Workspaces\Prompts\mcp\gpt-mcp-server
 ```
 
-Planned MCP root key: `sample_brain`  
-Planned root path: `D:/Dev/Workspaces/Repos/sample-brain`  
-GitHub: `jannekbuengener/sample-brain`
-
 ```powershell
-cd D:\Dev\Workspaces\Prompts\mcp\cdb-mcp-server
+cd D:\Dev\Workspaces\Prompts\mcp\gpt-mcp-server
 npm run start
 ```
 
-In-session checks: `mcp_preflight`, then `repo_list_dir` with `"repo": "sample_brain"`.
+In a Developer-MCP-capable ChatGPT session, run `mcp_preflight` first. A valid
+Sample-Brain preflight must show the server version/build, `root:sample_brain: OK`,
+and `sample-brain-read-smoke: PASS`. Then run `repo_list_dir` with
+`"repo": "sample_brain"`; the root read must expose at least `SB.BOOTLOADER.md`,
+`src`, and `tests`.
+
+### Failure classes and fallback
+
+- **Server unavailable / health failure**: treat the local MCP as unavailable; do not claim local reads.
+- **`root:sample_brain` missing or wrong**: root-registration failure; fix server/root configuration before claiming Sample-Brain access.
+- **`FORBIDDEN: This conversation does not support developer MCPs`**: ChatGPT host/session capability blocker, not a Sample-Brain or server-code failure.
+- **Repo read fails after a healthy preflight**: treat as repo/root access failure; do not fake-green from preflight metadata alone.
+- **GitHub connector fallback**: may inspect and modify GitHub-visible repo state, but does not prove local tests, private-audio pilots, Windows device behavior, or local filesystem state.
 
 ## Safety notes
 
 - Do not index sample libraries as part of MCP setup.
 - Do not commit `.venv`, `data/catalog.db`, FAISS indexes, or cache outputs.
 - Agents without `cdb_context` in the tool list must report `brain_source=repo-only` and must not invent DB-backed memory claims.
+- GitHub-only sessions must explicitly distinguish remote evidence from local MCP evidence.
 - CDB live-readiness and trading gates are unchanged; this doc is tooling only.
 
 ## Related docs
