@@ -41,7 +41,6 @@ from .section_candidates import (
     SectionCandidate,
 )
 from .content_hash import compute_file_hash
-from .utils import file_hash
 
 AssetKind = Literal["loop", "section"]
 RenderSourceKind = Literal["master", "stem", "producer_group"]
