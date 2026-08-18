@@ -1,10 +1,23 @@
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from pathlib import Path
 from . import config
 
+
+def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+    """Enable SQLite foreign-key enforcement for every DB-API connection."""
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_keys=ON")
+    finally:
+        cursor.close()
+
+
 def get_engine():
     config.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    return create_engine(f"sqlite:///{config.DB_PATH}", future=True)
+    engine = create_engine(f"sqlite:///{config.DB_PATH}", future=True)
+    event.listen(engine, "connect", _enable_sqlite_foreign_keys)
+    return engine
+
 
 def init_db():
     engine = get_engine()
