@@ -9,6 +9,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # ---------------------------------------------------------------------------
@@ -217,8 +218,31 @@ def _mentions_private_artifact(value: str) -> bool:
     return any(marker in low for marker in _FORBIDDEN_FILE_MARKERS)
 
 
+def _get_executing_checkout_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
 def validate_context(ctx: DispatchContext, repo_root: Optional[str] = None) -> None:
     """Stop early if any required dispatch field or path is invalid."""
+    executing_root = _get_executing_checkout_root()
+
+    if repo_root is None:
+        canonical_root = executing_root
+    else:
+        if not isinstance(repo_root, str) or not repo_root.strip():
+            raise ContextRejected("repo_root must be a non-empty path string")
+        try:
+            supplied_root = Path(repo_root).resolve()
+            supplied_module = (supplied_root / "src" / "jules_dispatch.py").resolve()
+            executing_module = Path(__file__).resolve()
+            if supplied_module != executing_module:
+                raise ContextRejected("repo_root does not match executing checkout")
+            canonical_root = supplied_root
+        except ContextRejected:
+            raise
+        except Exception as exc:
+            raise ContextRejected("invalid repo_root supplied") from exc
+
     required = {
         "repo": ctx.repo,
         "issue_number": ctx.issue_number,
@@ -248,13 +272,22 @@ def validate_context(ctx: DispatchContext, repo_root: Optional[str] = None) -> N
         if not isinstance(path, str) or not path.strip():
             raise ContextRejected("relevant_files must be non-empty strings")
         if _is_absolute_path(path):
-            raise ContextRejected(f"absolute path not allowed: {path}")
+            raise ContextRejected("absolute path not allowed in relevant_files")
         if path.startswith("/") or re.match(r"[A-Za-z]:", path):
-            raise ContextRejected(f"absolute path not allowed: {path}")
-        if ".." in path.split("/"):
-            raise ContextRejected(f"path must stay inside repo: {path}")
+            raise ContextRejected("absolute path not allowed in relevant_files")
+        if ".." in path.replace("\\", "/").split("/"):
+            raise ContextRejected("path traversal not allowed in relevant_files")
         if _mentions_private_artifact(path):
-            raise ContextRejected(f"private artifact path not allowed: {path}")
+            raise ContextRejected("private artifact path not allowed in relevant_files")
+
+        try:
+            target_path = (canonical_root / path).resolve()
+            if not target_path.is_relative_to(canonical_root):
+                raise ContextRejected("relevant_file path escapes repository root")
+        except ContextRejected:
+            raise
+        except Exception as exc:
+            raise ContextRejected("invalid relevant_file path resolution") from exc
 
 
 def requires_plan_approval(ctx: DispatchContext) -> bool:
@@ -577,7 +610,12 @@ def _error_result(
 def run_dispatch(
     transport: JulesTransport, ctx: DispatchContext, repo_root: Optional[str] = None
 ) -> dict:
-    validate_context(ctx, repo_root)
+    try:
+        validate_context(ctx, repo_root)
+    except JulesError as exc:
+        return _error_result(exc)
+    except Exception as exc:
+        return _error_result(ContextRejected("context validation failed"))
     if not transport.api_key:
         return _error_result(JulesError("BLOCKED_AUTH", "API key not configured"))
     try:

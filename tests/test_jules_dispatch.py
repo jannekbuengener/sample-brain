@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
@@ -428,3 +431,69 @@ def test_no_merge_or_issue_close_code() -> None:
     forbidden = ["merge", "close", "merged", "closed"]
     for token in forbidden:
         assert token not in text, f"forbidden token present in helper: {token}"
+
+
+# 19. issue #424 containment and repo_root tests
+def test_repo_root_validation() -> None:
+    # Default (None) uses executing checkout
+    validate_context(_ctx(relevant_files=["src/cli.py"]), repo_root=None)
+
+    # Valid repo_root identifying executing checkout
+    executing_root = str(Path(jd.__file__).resolve().parent.parent)
+    validate_context(_ctx(relevant_files=["src/cli.py"]), repo_root=executing_root)
+
+    # Wrong repo_root fail-closed
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with pytest.raises(jd.ContextRejected) as exc_info:
+            validate_context(_ctx(relevant_files=["src/cli.py"]), repo_root=tmpdir)
+        assert exc_info.value.code == "BLOCKED"
+        assert tmpdir not in str(exc_info.value)
+
+
+def test_relevant_files_traversal_and_absolute_rejection() -> None:
+    # Absolute path
+    with pytest.raises(jd.ContextRejected) as exc_info:
+        validate_context(_ctx(relevant_files=["/etc/passwd"]))
+    assert exc_info.value.code == "BLOCKED"
+    assert "/etc/passwd" not in str(exc_info.value)
+
+    # Traversal path ..
+    with pytest.raises(jd.ContextRejected) as exc_info:
+        validate_context(_ctx(relevant_files=["src/../README.md"]))
+    assert exc_info.value.code == "BLOCKED"
+    assert "README.md" not in str(exc_info.value)
+
+
+def test_symlink_escape_rejection() -> None:
+    executing_root = Path(jd.__file__).resolve().parent.parent
+    with tempfile.TemporaryDirectory() as external_dir:
+        external_path = Path(external_dir).resolve()
+        symlink_in_repo = executing_root / "test_symlink_out_424"
+        try:
+            os.symlink(external_path, symlink_in_repo)
+            with pytest.raises(jd.ContextRejected) as exc_info:
+                validate_context(_ctx(relevant_files=["test_symlink_out_424/secret.txt"]))
+            assert exc_info.value.code == "BLOCKED"
+            assert str(external_path) not in str(exc_info.value)
+        finally:
+            if symlink_in_repo.is_symlink() or symlink_in_repo.exists():
+                symlink_in_repo.unlink()
+
+
+def test_nonexistent_file_in_repo_accepted() -> None:
+    validate_context(_ctx(relevant_files=["src/nonexistent_module_424.py"]))
+
+
+def test_run_dispatch_returns_blocked_on_validation_failure() -> None:
+    transport = FakeTransport()
+    # Wrong repo root
+    res1 = run_dispatch(transport, _ctx(), repo_root="/tmp/wrong_root")
+    assert res1["dispatch_status"] == "BLOCKED"
+    assert res1["error_code"] == "BLOCKED"
+    assert "wrong_root" not in json.dumps(res1)
+
+    # Symlink escape / bad path
+    res2 = run_dispatch(transport, _ctx(relevant_files=["/etc/passwd"]))
+    assert res2["dispatch_status"] == "BLOCKED"
+    assert res2["error_code"] == "BLOCKED"
+    assert "/etc/passwd" not in json.dumps(res2)
