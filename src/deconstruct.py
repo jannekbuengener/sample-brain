@@ -145,6 +145,10 @@ class StepContext:
     stem_separation_config: dict | None = None
     stem_executor: object | None = None
     stem_backend_version: str | None = None
+    # Optional #374 live-performance layout config. When set, the assets step
+    # emits a compact live layout (live/live_layout.json) instead of only the
+    # generic loop/section candidate flood.
+    live_profile_config: object | None = None
 
 
 StepAdapter = Callable[[StepContext], tuple[StepResult, object]]
@@ -431,127 +435,74 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
     import soundfile as sf
 
     arrangement_payload = ctx.artifacts.get("arrangement")
-    if not isinstance(arrangement_payload, dict) or "structure_result" not in (
-        arrangement_payload or {}
-    ):
-        return (
-            StepResult(
-                step_id="assets",
-                required=False,
-                status="no_result",
-                reason_code=ARRANGEMENT_UNAVAILABLE,
-                adapter="loop_candidates+section_candidates",
-            ),
-            None,
-        )
+    structure = None
+    arrangement = None
+    beat_grid = None
+    canon = None
+    timebase = None
+    if isinstance(arrangement_payload, dict) and "structure_result" in arrangement_payload:
+        structure = arrangement_payload.get("structure_result")
+        arrangement = arrangement_payload.get("arrangement_result")
+        beat_grid = arrangement_payload.get("beat_grid")
+        canon = arrangement_payload.get("canonical_audio_path")
+        timebase = arrangement_payload.get("timebase")
+    # A valid arrangement enables loop/section generation. The #374 live
+    # performance layout does NOT depend on this: full-length tracks come from
+    # stems directly and kick_bass from the #268 producer-group path, both with
+    # or without an arrangement.
+    have_arrangement = (
+        structure is not None and canon is not None and timebase is not None
+    )
 
-    structure = arrangement_payload["structure_result"]
-    arrangement = arrangement_payload.get("arrangement_result")
-    beat_grid = arrangement_payload.get("beat_grid")
-    canon = arrangement_payload.get("canonical_audio_path")
-    timebase = arrangement_payload.get("timebase")
-    if structure is None or canon is None or timebase is None:
-        return (
-            StepResult(
-                step_id="assets",
-                required=False,
-                status="no_result",
-                reason_code=ARRANGEMENT_UNAVAILABLE,
-                adapter="loop_candidates+section_candidates",
-            ),
-            None,
-        )
-
-    # Get authoritative track ID from Track Map content hash, not file name
+    # Authoritative track ID from Track Map content hash (not file name).
     track = ctx.artifacts.get("track_map")
-    if not isinstance(track, dict) or "source" not in track or "original" not in track["source"]:
-        return (
-            StepResult(
-                step_id="assets",
-                required=False,
-                status="failed",
-                reason_code="MISSING_TRACK_MAP_SOURCE",
-                adapter="loop_candidates+section_candidates",
-            ),
-            None,
+    track_ref: str | None = None
+    if isinstance(track, dict):
+        hash_info = (
+            track.get("source", {}).get("original", {}).get("hash", {})
         )
+        if hash_info.get("value"):
+            track_ref = hash_info["value"]
 
-    hash_info = track["source"]["original"].get("hash", {})
-    if not hash_info or not hash_info.get("value"):
-        return (
-            StepResult(
-                step_id="assets",
-                required=False,
-                status="failed",
-                reason_code="MISSING_TRACK_HASH",
-                adapter="loop_candidates+section_candidates",
-            ),
-            None,
-        )
-
-    track_ref = hash_info["value"]
-
-    loops_dir = ctx.pack_root / "loops"
-    sections_dir = ctx.pack_root / "sections"
-    loops_dir.mkdir(parents=True, exist_ok=True)
-    sections_dir.mkdir(parents=True, exist_ok=True)
-
-    # --- master source (always available) ---
-    loop_src_master = LoopSourceIdentity(
-        source_kind="master", track_audio_ref="/source/working_audio"
-    )
-    loop_batch_master = generate_loop_candidates(
-        loop_src_master, beat_grid=beat_grid, structure=structure
-    )
-    section_src_master = SectionSourceIdentity(
-        source_kind="master", track_audio_ref="/source/working_audio"
-    )
-    section_batch_master = generate_section_candidates(
-        structure, arrangement, source=section_src_master, track_ref=track_ref
-    )
-
-    # --- producer group / stem sources (optional; if stems are available) ---
-    loop_src_producer_groups: LoopSourceIdentity | None = None
-    loop_batch_producer_groups: LoopCandidateBatch | None = None
-    section_src_producer_groups: SectionSourceIdentity | None = None
-    section_batch_producer_groups: SectionCandidateBatch | None = None
-    loop_src_stems: LoopSourceIdentity | None = None
-    loop_batch_stems: LoopCandidateBatch | None = None
-    section_src_stems: SectionSourceIdentity | None = None
-    section_batch_stems: SectionCandidateBatch | None = None
-
-    # Track producer group audio paths for rendering/scoring
+    # --- stems / producer groups (independent of the arrangement step) ---
+    # The producer-group derivation (#268) is the authoritative kick_bass source
+    # and the basis for full-length melodic/atmos tracks. It only needs stems,
+    # never the arrangement result.
+    stems_payload = ctx.artifacts.get("stems")
+    pg_groups: dict[str, object] = {}
+    stem_dicts: dict[str, object] = {}
     pg_audio_paths: dict[str, Path] = {}
     stem_audio_paths: dict[str, Path] = {}
-
-    stems_payload = ctx.artifacts.get("stems")
     if stems_payload is not None and isinstance(stems_payload, dict):
         stems_list = stems_payload.get("stems") or []
         track_ref_artifacts = stems_payload.get("track_ref")
-        # Derive producer groups from technical stems using the #268 contract.
-        from src.producer_groups import derive_producer_groups, ProducerGroupParams, write_producer_group_audio
+        from src.producer_groups import (
+            ProducerGroupParams,
+            derive_producer_groups,
+            write_producer_group_audio,
+        )
 
-        stem_dicts: dict[str, np.ndarray] = {}
         for s in stems_list:
             kind = s.get("stem_kind")
             arr = s.get("audio")
             if arr is None:
                 arr = s.get("output", {}).get("data")
-            # If still no audio data, try to load from the stem WAV file on disk
+            # If still no audio data, try to load from the stem WAV on disk.
             if arr is None:
                 file_ref = s.get("file_ref")
                 if file_ref:
                     stem_path = ctx.pack_root / file_ref
                     if stem_path.exists():
                         try:
-                            arr, _ = sf.read(str(stem_path), dtype="float32", always_2d=False)
+                            arr, _ = sf.read(
+                                str(stem_path), dtype="float32", always_2d=False
+                            )
                             arr = np.asarray(arr, dtype=np.float32)
                         except Exception:
                             arr = None
             if arr is not None and kind in ("drums", "bass", "vocals", "other"):
                 stem_dicts[kind] = np.asarray(arr, dtype=np.float32)
 
-        # Build stem audio paths from file_refs (stems step writes to pack_root/stems/)
         for s in stems_list:
             kind = s.get("stem_kind")
             file_ref = s.get("file_ref")
@@ -560,11 +511,11 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
 
         if stem_dicts:
             params = ProducerGroupParams()
-            pg_groups = derive_producer_groups(stem_dicts, params=params, track_ref=track_ref_artifacts or "/source/working_audio")
-            # Select only groups with usable status (ok or partial documented in #268).
-            usable_kinds = [g.group_kind for g in pg_groups.values() if g.status in ("ok", "partial")]
-
-            # Write producer group audio to WAV files for rendering/scoring
+            pg_groups = derive_producer_groups(
+                stem_dicts,
+                params=params,
+                track_ref=track_ref_artifacts or "/source/working_audio",
+            )
             pg_dir = ctx.pack_root / "producer_groups"
             pg_dir.mkdir(parents=True, exist_ok=True)
             for g in pg_groups.values():
@@ -573,203 +524,286 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
                     if rel:
                         pg_audio_paths[g.group_kind] = ctx.pack_root / rel
 
-            if "kick_bass" in usable_kinds:
-                loop_src_producer_groups = LoopSourceIdentity(
-                    source_kind="producer_group",
-                    producer_group_id=pg_groups["kick_bass"].group_id,
-                    producer_group_ref=pg_groups["kick_bass"].group_ref,
-                )
-                loop_batch_producer_groups = generate_loop_candidates(
-                    loop_src_producer_groups, beat_grid=beat_grid, structure=structure
-                )
-                section_src_producer_groups = SectionSourceIdentity(
-                    source_kind="producer_group",
-                    producer_group_id=pg_groups["kick_bass"].group_id,
-                    producer_group_ref=pg_groups["kick_bass"].group_ref,
-                )
-                section_batch_producer_groups = generate_section_candidates(
-                    structure, arrangement, source=section_src_producer_groups, track_ref=track_ref_artifacts or "/source/working_audio"
-                )
+    # --- optional #374 live performance layout (independent of arrangement) ---
+    live_layout_ref: str | None = None
+    if ctx.live_profile_config is not None:
+        from . import live_profile as _lp
 
-            # Generate stem-based loop/section candidates for the remaining technical stems.
-            for stem_kind in ("drums", "bass", "vocals", "other"):
-                if stem_kind in stem_dicts and stem_kind not in [g.group_kind for g in pg_groups.values()]:
-                    stem_id = f"stem_{stem_kind}"
-                    stem_ref = f"stemmanifest_{stem_kind}"
-                    loop_src_stems = LoopSourceIdentity(
-                        source_kind="stem", stem_id=stem_id, stem_ref=stem_ref
-                    )
-                    loop_batch_stems = generate_loop_candidates(
-                        loop_src_stems, beat_grid=beat_grid, structure=structure
-                    )
-                    section_src_stems = SectionSourceIdentity(
-                        source_kind="stem", stem_id=stem_id, stem_ref=stem_ref
-                    )
-                    section_batch_stems = generate_section_candidates(
-                        structure, arrangement, source=section_src_stems, track_ref=track_ref_artifacts or "/source/working_audio"
-                    )
-                    # Only one stem kind loop/section set is needed; break after first.
-                    break
+        # Bar/beat grid is optional evidence for playable-loop slicing. Without a
+        # valid grid, loops are reported as truthful no_result (never invented).
+        _bars: list[int] | None = None
+        if beat_grid is not None and getattr(beat_grid, "downbeats", None) is not None:
+            _bs = getattr(beat_grid.downbeats, "sample_indices", ())
+            if _bs:
+                _bars = [int(b) for b in _bs]
 
-    # --- combine results: master first, then optional producer_group / stem ---
-    # Master candidates are always included; optional sources are merged if they
-    # produced candidates (master path stays fully independent when no stems/groups).
-    all_loop_batches: list[LoopCandidateBatch] = [loop_batch_master]
-    all_section_batches: list[SectionCandidateBatch] = [section_batch_master]
+        _sr = 44100
+        if pg_groups:
+            _sr = next(iter(pg_groups.values())).timebase.sample_rate
+        elif timebase is not None:
+            _sr = timebase.sample_rate
 
-    if loop_batch_producer_groups is not None and loop_batch_producer_groups.status != "no_result":
-        all_loop_batches.append(loop_batch_producer_groups)
-    if loop_batch_stems is not None and loop_batch_stems.status != "no_result":
-        all_loop_batches.append(loop_batch_stems)
+        _layout = _lp.build_live_layout(
+            pg_groups,
+            stem_dicts,
+            ctx.live_profile_config,
+            bars=_bars,
+            pack_root=ctx.pack_root,
+            sample_rate=_sr,
+            source_track_ref=track_ref,
+        )
+        live_layout_ref = _lp.write_live_layout(_layout, ctx.pack_root)
 
-    if section_batch_producer_groups is not None and section_batch_producer_groups.status != "no_result":
-        all_section_batches.append(section_batch_producer_groups)
-    if section_batch_stems is not None and section_batch_stems.status != "no_result":
-        all_section_batches.append(section_batch_stems)
-
-    # Merge candidates from all batches; later batches do not overwrite earlier ones.
-    merged_loop_candidates: list[LoopCandidate] = []
-    for batch in all_loop_batches:
-        merged_loop_candidates.extend(batch.candidates)
-
-    merged_section_candidates: list[SectionCandidate] = []
-    for batch in all_section_batches:
-        merged_section_candidates.extend(batch.candidates)
-
+    # --- loop/section candidate generation (requires a valid arrangement) ---
     manifest_refs: list[str] = []
-    bar_features = getattr(structure, "bar_features", {})
+    if have_arrangement and track_ref is not None:
+        loops_dir = ctx.pack_root / "loops"
+        sections_dir = ctx.pack_root / "sections"
+        loops_dir.mkdir(parents=True, exist_ok=True)
+        sections_dir.mkdir(parents=True, exist_ok=True)
 
-    def _read_slice_from(path: Path, start: int, n: int):
-        with sf.SoundFile(str(path)) as f:
-            f.seek(start)
-            return np.asarray(
-                f.read(frames=n, dtype="float32", always_2d=False), dtype=np.float32
-            ).reshape(-1)
+        # --- master source (always available) ---
+        loop_src_master = LoopSourceIdentity(
+            source_kind="master", track_audio_ref="/source/working_audio"
+        )
+        loop_batch_master = generate_loop_candidates(
+            loop_src_master, beat_grid=beat_grid, structure=structure
+        )
+        section_src_master = SectionSourceIdentity(
+            source_kind="master", track_audio_ref="/source/working_audio"
+        )
+        section_batch_master = generate_section_candidates(
+            structure, arrangement, source=section_src_master, track_ref=track_ref
+        )
 
-    def _get_source_audio_path(cand) -> Path | None:
-        """Resolve the actual source audio path for a candidate based on its source_kind."""
-        src_kind = cand.source.source_kind
-        if src_kind == "master":
-            return canon
-        elif src_kind == "stem":
-            # stem_id is like "stem_drums", extract kind
-            stem_id = cand.source.stem_id or ""
-            if stem_id.startswith("stem_"):
-                kind = stem_id[5:]
-                return stem_audio_paths.get(kind)
-            return None
-        elif src_kind == "producer_group":
-            # producer_group_ref is like "producergroup_kick_bass"
-            pg_ref = cand.source.producer_group_ref or ""
-            if pg_ref.startswith("producergroup_"):
-                kind = pg_ref[14:]
-                return pg_audio_paths.get(kind)
-            return None
-        return None
+        # --- producer group / stem sources (optional; if stems are available) ---
+        loop_src_producer_groups: LoopSourceIdentity | None = None
+        loop_batch_producer_groups: LoopCandidateBatch | None = None
+        section_src_producer_groups: SectionSourceIdentity | None = None
+        section_batch_producer_groups: SectionCandidateBatch | None = None
+        loop_src_stems: LoopSourceIdentity | None = None
+        loop_batch_stems: LoopCandidateBatch | None = None
+        section_src_stems: SectionSourceIdentity | None = None
+        section_batch_stems: SectionCandidateBatch | None = None
 
-    def _get_source_kind(cand) -> str:
-        return cand.source.source_kind
+        if "kick_bass" in pg_groups and pg_groups["kick_bass"].status in (
+            "ok",
+            "partial",
+        ):
+            loop_src_producer_groups = LoopSourceIdentity(
+                source_kind="producer_group",
+                producer_group_id=pg_groups["kick_bass"].group_id,
+                producer_group_ref=pg_groups["kick_bass"].group_ref,
+            )
+            loop_batch_producer_groups = generate_loop_candidates(
+                loop_src_producer_groups, beat_grid=beat_grid, structure=structure
+            )
+            section_src_producer_groups = SectionSourceIdentity(
+                source_kind="producer_group",
+                producer_group_id=pg_groups["kick_bass"].group_id,
+                producer_group_ref=pg_groups["kick_bass"].group_ref,
+            )
+            section_batch_producer_groups = generate_section_candidates(
+                structure,
+                arrangement,
+                source=section_src_producer_groups,
+                track_ref=track_ref_artifacts or "/source/working_audio",
+            )
 
-    # --- loops ---
-    if loop_batch_master.status != "failed":
-        for cand in merged_loop_candidates:
-            try:
-                aid = getattr(cand, 'asset_id', f"{cand.bar_count}bar_{cand.start_sample}_{cand.end_sample_exclusive}")
-                # Ensure unique asset_id per source_kind to avoid manifest overwrites
-                unique_asset_id = f"{cand.source.source_kind}_{aid}"
-                src_path = _get_source_audio_path(cand)
-                if src_path is None or not src_path.exists():
-                    # Missing source audio: fail closed, do not fall back to master
-                    continue
-                req = render_request_from_loop_candidate(cand, src_path, asset_id=unique_asset_id)
-                res = render_asset(req, ctx.pack_root)
-                manifest = {
-                    "document_type": "sample_brain.asset_manifest",
-                    "schema_version": "1.1.0",
-                    "asset_id": req.asset_id,
-                    "asset_kind": "loop",
-                    "track_ref": track_ref,
-                    **cand.as_manifest_dict(),
-                }
-                try:
-                    wave = _read_slice_from(src_path, cand.start_sample, cand.n_samples)
-                    score = score_loop_candidate(
-                        cand,
-                        wave,
-                        sample_rate=timebase.sample_rate,
-                        source_kind=_get_source_kind(cand),
-                        config=default_loop_scoring_config(),
-                    )
-                    manifest["candidate"] = score.as_candidate_dict()
-                except Exception:
-                    score = None
-                manifest["rendering"] = res.as_manifest_rendering()
-                if res.status == "rendered":
-                    manifest = attach_rendered_asset_analysis(
-                        manifest, audio_root=ctx.pack_root
-                    )
-                fname = f"loop_{_safe_name(req.asset_id)}.json"
-                (loops_dir / fname).write_text(
-                    json.dumps(manifest, indent=2, sort_keys=True, default=str),
-                    encoding="utf-8",
+        # Generate stem-based loop/section candidates for one technical stem.
+        for stem_kind in ("drums", "bass", "vocals", "other"):
+            if stem_kind in stem_dicts and stem_kind not in [
+                g.group_kind for g in pg_groups.values()
+            ]:
+                stem_id = f"stem_{stem_kind}"
+                stem_ref = f"stemmanifest_{stem_kind}"
+                loop_src_stems = LoopSourceIdentity(
+                    source_kind="stem", stem_id=stem_id, stem_ref=stem_ref
                 )
-                manifest_refs.append(f"loops/{fname}")
-            except Exception:
-                continue
-
-    # --- sections ---
-    if section_batch_master.status != "failed":
-        for cand in merged_section_candidates:
-            try:
-                aid = getattr(cand, 'asset_id', f"section_{cand.section_ref}")
-                # Ensure unique asset_id per source_kind to avoid manifest overwrites
-                unique_asset_id = f"{cand.source.source_kind}_{aid}"
-                src_path = _get_source_audio_path(cand)
-                if src_path is None or not src_path.exists():
-                    # Missing source audio: fail closed, do not fall back to master
-                    continue
-                req = render_request_from_section_candidate(cand, src_path, asset_id=unique_asset_id)
-                res = render_asset(req, ctx.pack_root)
-                manifest = {
-                    "document_type": "sample_brain.asset_manifest",
-                    "schema_version": "1.1.0",
-                    "asset_id": cand.asset_id,
-                    "asset_kind": "section",
-                    **cand.as_manifest_dict(),
-                }
-                try:
-                    wave = _read_slice_from(src_path, cand.start_sample, cand.n_samples)
-                    score = score_section_candidate(
-                        cand,
-                        bar_features=bar_features,
-                        config=default_section_scoring_config(),
-                    )
-                    manifest["candidate"] = score.as_candidate_dict()
-                except Exception:
-                    score = None
-                manifest["rendering"] = res.as_manifest_rendering()
-                if res.status == "rendered":
-                    manifest = attach_rendered_asset_analysis(
-                        manifest, audio_root=ctx.pack_root
-                    )
-                fname = f"section_{_safe_name(unique_asset_id)}.json"
-                (sections_dir / fname).write_text(
-                    json.dumps(manifest, indent=2, sort_keys=True, default=str),
-                    encoding="utf-8",
+                loop_batch_stems = generate_loop_candidates(
+                    loop_src_stems, beat_grid=beat_grid, structure=structure
                 )
-                manifest_refs.append(f"sections/{fname}")
-            except Exception:
-                continue
+                section_src_stems = SectionSourceIdentity(
+                    source_kind="stem", stem_id=stem_id, stem_ref=stem_ref
+                )
+                section_batch_stems = generate_section_candidates(
+                    structure,
+                    arrangement,
+                    source=section_src_stems,
+                    track_ref=track_ref_artifacts or "/source/working_audio",
+                )
+                break
 
+        all_loop_batches: list[LoopCandidateBatch] = [loop_batch_master]
+        all_section_batches: list[SectionCandidateBatch] = [section_batch_master]
+
+        if (
+            loop_batch_producer_groups is not None
+            and loop_batch_producer_groups.status != "no_result"
+        ):
+            all_loop_batches.append(loop_batch_producer_groups)
+        if loop_batch_stems is not None and loop_batch_stems.status != "no_result":
+            all_loop_batches.append(loop_batch_stems)
+
+        if (
+            section_batch_producer_groups is not None
+            and section_batch_producer_groups.status != "no_result"
+        ):
+            all_section_batches.append(section_batch_producer_groups)
+        if (
+            section_batch_stems is not None
+            and section_batch_stems.status != "no_result"
+        ):
+            all_section_batches.append(section_batch_stems)
+
+        merged_loop_candidates: list[LoopCandidate] = []
+        for batch in all_loop_batches:
+            merged_loop_candidates.extend(batch.candidates)
+
+        merged_section_candidates: list[SectionCandidate] = []
+        for batch in all_section_batches:
+            merged_section_candidates.extend(batch.candidates)
+
+        bar_features = getattr(structure, "bar_features", {})
+
+        def _read_slice_from(path: Path, start: int, n: int):
+            with sf.SoundFile(str(path)) as f:
+                f.seek(start)
+                return np.asarray(
+                    f.read(frames=n, dtype="float32", always_2d=False),
+                    dtype=np.float32,
+                ).reshape(-1)
+
+        def _get_source_audio_path(cand) -> Path | None:
+            src_kind = cand.source.source_kind
+            if src_kind == "master":
+                return canon
+            elif src_kind == "stem":
+                stem_id = cand.source.stem_id or ""
+                if stem_id.startswith("stem_"):
+                    return stem_audio_paths.get(stem_id[5:])
+                return None
+            elif src_kind == "producer_group":
+                pg_ref = cand.source.producer_group_ref or ""
+                if pg_ref.startswith("producergroup_"):
+                    return pg_audio_paths.get(pg_ref[14:])
+                return None
+            return None
+
+        def _get_source_kind(cand) -> str:
+            return cand.source.source_kind
+
+        if loop_batch_master.status != "failed":
+            for cand in merged_loop_candidates:
+                try:
+                    aid = getattr(
+                        cand,
+                        "asset_id",
+                        f"{cand.bar_count}bar_{cand.start_sample}_{cand.end_sample_exclusive}",
+                    )
+                    unique_asset_id = f"{cand.source.source_kind}_{aid}"
+                    src_path = _get_source_audio_path(cand)
+                    if src_path is None or not src_path.exists():
+                        continue
+                    req = render_request_from_loop_candidate(
+                        cand, src_path, asset_id=unique_asset_id
+                    )
+                    res = render_asset(req, ctx.pack_root)
+                    manifest = {
+                        "document_type": "sample_brain.asset_manifest",
+                        "schema_version": "1.1.0",
+                        "asset_id": req.asset_id,
+                        "asset_kind": "loop",
+                        "track_ref": track_ref,
+                        **cand.as_manifest_dict(),
+                    }
+                    try:
+                        wave = _read_slice_from(
+                            src_path, cand.start_sample, cand.n_samples
+                        )
+                        score = score_loop_candidate(
+                            cand,
+                            wave,
+                            sample_rate=timebase.sample_rate,
+                            source_kind=_get_source_kind(cand),
+                            config=default_loop_scoring_config(),
+                        )
+                        manifest["candidate"] = score.as_candidate_dict()
+                    except Exception:
+                        score = None
+                    manifest["rendering"] = res.as_manifest_rendering()
+                    if res.status == "rendered":
+                        manifest = attach_rendered_asset_analysis(
+                            manifest, audio_root=ctx.pack_root
+                        )
+                    fname = f"loop_{_safe_name(req.asset_id)}.json"
+                    (loops_dir / fname).write_text(
+                        json.dumps(manifest, indent=2, sort_keys=True, default=str),
+                        encoding="utf-8",
+                    )
+                    manifest_refs.append(f"loops/{fname}")
+                except Exception:
+                    continue
+
+        if section_batch_master.status != "failed":
+            for cand in merged_section_candidates:
+                try:
+                    aid = getattr(cand, "asset_id", f"section_{cand.section_ref}")
+                    unique_asset_id = f"{cand.source.source_kind}_{aid}"
+                    src_path = _get_source_audio_path(cand)
+                    if src_path is None or not src_path.exists():
+                        continue
+                    req = render_request_from_section_candidate(
+                        cand, src_path, asset_id=unique_asset_id
+                    )
+                    res = render_asset(req, ctx.pack_root)
+                    manifest = {
+                        "document_type": "sample_brain.asset_manifest",
+                        "schema_version": "1.1.0",
+                        "asset_id": cand.asset_id,
+                        "asset_kind": "section",
+                        **cand.as_manifest_dict(),
+                    }
+                    try:
+                        wave = _read_slice_from(
+                            src_path, cand.start_sample, cand.n_samples
+                        )
+                        score = score_section_candidate(
+                            cand,
+                            bar_features=bar_features,
+                            config=default_section_scoring_config(),
+                        )
+                        manifest["candidate"] = score.as_candidate_dict()
+                    except Exception:
+                        score = None
+                    manifest["rendering"] = res.as_manifest_rendering()
+                    if res.status == "rendered":
+                        manifest = attach_rendered_asset_analysis(
+                            manifest, audio_root=ctx.pack_root
+                        )
+                    fname = f"section_{_safe_name(unique_asset_id)}.json"
+                    (sections_dir / fname).write_text(
+                        json.dumps(manifest, indent=2, sort_keys=True, default=str),
+                        encoding="utf-8",
+                    )
+                    manifest_refs.append(f"sections/{fname}")
+                except Exception:
+                    continue
+
+    if live_layout_ref is not None:
+        manifest_refs.append(live_layout_ref)
+
+    # Determine step status. A produced live layout is a valid, complete asset
+    # output even when no loop/section candidates could be generated.
     if manifest_refs:
         step_status = "ok"
         reason = None
-    elif loop_batch_master.status == "failed" or section_batch_master.status == "failed":
-        step_status = "partial"
-        reason = "ASSET_GENERATION_PARTIAL"
-    else:
+    elif have_arrangement:
         step_status = "no_result"
         reason = "NO_ASSET_CANDIDATES"
+    else:
+        step_status = "no_result"
+        reason = ARRANGEMENT_UNAVAILABLE
 
     return (
         StepResult(
@@ -1036,6 +1070,7 @@ def run_deconstruct(
     stem_separation_config: dict | None = None,
     stem_executor: object | None = None,
     stem_backend_version: str | None = None,
+    live_profile_config: object | None = None,
 ) -> RunResult:
     """Run the headless Track Deconstruction pipeline.
 
@@ -1188,6 +1223,7 @@ def run_deconstruct(
                 stem_separation_config=stem_separation_config,
                 stem_executor=stem_executor,
                 stem_backend_version=stem_backend_version,
+                live_profile_config=live_profile_config,
             )
 
             try:

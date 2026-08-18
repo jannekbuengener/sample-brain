@@ -261,6 +261,91 @@ def main():
         action="store_true",
         help="Disable the Track Analysis cache for the track_map step; always recompute.",
     )
+    # --- #374 live performance layout (user-specified before deconstruction) ---
+    p_deconstruct.add_argument(
+        "--live-profile",
+        action="store_true",
+        help="Emit a compact live-performance layout (live/live_layout.json) instead of only generic candidates.",
+    )
+    p_deconstruct.add_argument(
+        "--live-kick-bass",
+        dest="live_kick_bass",
+        action="store_true",
+        default=True,
+        help="Include a kick_bass playable loop (default: on).",
+    )
+    p_deconstruct.add_argument(
+        "--no-live-kick-bass",
+        dest="live_kick_bass",
+        action="store_false",
+        help="Omit the kick_bass playable loop.",
+    )
+    p_deconstruct.add_argument(
+        "--live-drums-states",
+        type=int,
+        choices=(1, 2),
+        default=1,
+        help="Number of drum performance states (1 = drums_present; 2 adds an evidenced drums_reduced).",
+    )
+    p_deconstruct.add_argument(
+        "--live-vocals",
+        dest="live_vocals",
+        action="store_true",
+        default=True,
+        help="Include a full-length vocal arrangement track (default: on).",
+    )
+    p_deconstruct.add_argument(
+        "--no-live-vocals",
+        dest="live_vocals",
+        action="store_false",
+        help="Omit the full-length vocal arrangement track.",
+    )
+    p_deconstruct.add_argument(
+        "--live-melodic",
+        dest="live_melodic",
+        action="store_true",
+        default=True,
+        help="Include a full-length melodic/instrument arrangement track (default: on).",
+    )
+    p_deconstruct.add_argument(
+        "--no-live-melodic",
+        dest="live_melodic",
+        action="store_false",
+        help="Omit the full-length melodic/instrument arrangement track.",
+    )
+    p_deconstruct.add_argument(
+        "--live-fx",
+        dest="live_fx",
+        action="store_true",
+        default=True,
+        help="Include a full-length FX/atmos arrangement track (default: on).",
+    )
+    p_deconstruct.add_argument(
+        "--no-live-fx",
+        dest="live_fx",
+        action="store_false",
+        help="Omit the full-length FX/atmos arrangement track.",
+    )
+    p_deconstruct.add_argument(
+        "--live-other",
+        dest="live_other",
+        action="store_true",
+        default=False,
+        help="Include a full-length other arrangement track.",
+    )
+    p_deconstruct.add_argument(
+        "--no-live-other",
+        dest="live_other",
+        action="store_false",
+        help="Omit the full-length other arrangement track (default).",
+    )
+    p_deconstruct.add_argument(
+        "--live-8bars",
+        dest="live_8bars",
+        action="store_true",
+        default=False,
+        help="Allow 8-bar loops when at least 8 bars are available (default: 4-bar loops only).",
+    )
 
     # autotype
     p_aut = sub.add_parser(
@@ -714,6 +799,19 @@ def main():
             sys.exit(2)
 
         pack_root = Path(args.pack_root)
+        live_profile_config = None
+        if getattr(args, "live_profile", False):
+            from src.live_profile import LiveLayoutConfig
+
+            live_profile_config = LiveLayoutConfig(
+                kick_bass=args.live_kick_bass,
+                drums_states=args.live_drums_states,
+                vocals_full=args.live_vocals,
+                melodic_full=args.live_melodic,
+                fx_full=args.live_fx,
+                other_full=args.live_other,
+                allow_8_bars=args.live_8bars,
+            )
         result = run_deconstruct(
             Path(args.path),
             pack_root,
@@ -729,6 +827,7 @@ def main():
             stem_cache_dir=args.stem_cache_dir,
             stem_cache_enabled=not args.no_stem_cache,
             stem_model_cache_dir=args.stem_model_cache_dir,
+            live_profile_config=live_profile_config,
         )
 
         pack_root.mkdir(parents=True, exist_ok=True)
