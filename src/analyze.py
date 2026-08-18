@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import warnings
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
@@ -46,7 +47,6 @@ def safe_load(path: Path, target_sr: int = ANALYZE_SR) -> tuple[np.ndarray | Non
     - Never throws; returns (None, None) on failure.
     """
     try:
-        # For many formats, librosa (via soundfile/audioread) is the most robust.
         y, sr = librosa.load(str(path), sr=target_sr, mono=True)
         if y is None or sr is None:
             return None, None
@@ -55,7 +55,6 @@ def safe_load(path: Path, target_sr: int = ANALYZE_SR) -> tuple[np.ndarray | Non
             return None, None
         return y, int(sr)
     except Exception:
-        # As a fallback, try soundfile directly for wav/flac/etc.
         try:
             y, sr = sf.read(str(path), dtype="float32", always_2d=False)
             if y is None:
@@ -74,11 +73,12 @@ def safe_load(path: Path, target_sr: int = ANALYZE_SR) -> tuple[np.ndarray | Non
 
 
 def estimate_key(y: np.ndarray, sr: int) -> tuple[str | None, float | None]:
-    """Rough key estimate (Krumhansl via chroma).
+    """Estimate tonal root from the strongest mean chroma pitch class.
 
     Returns ``(root, key_conf)`` where ``key_conf`` is the normalized peak
-    prominence ``max(chroma_mean) / sum(chroma_mean)``. This is ROOT evidence
-    only and is deliberately independent of the separate major/minor decision.
+    prominence ``max(chroma_mean) / sum(chroma_mean)``. This is relative ROOT
+    evidence, not a calibrated probability, and is deliberately independent of
+    the separate major/minor decision.
     """
     try:
         chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=ANALYZE_HOP_LENGTH)
@@ -88,7 +88,6 @@ def estimate_key(y: np.ndarray, sr: int) -> tuple[str | None, float | None]:
         if not np.isfinite(chroma_mean).all():
             return None, None
         idx = int(np.argmax(chroma_mean))
-        # confidence: normalized peak prominence
         peak = float(chroma_mean[idx])
         s = float(np.sum(chroma_mean) + 1e-9)
         conf = float(peak / s)
@@ -97,8 +96,8 @@ def estimate_key(y: np.ndarray, sr: int) -> tuple[str | None, float | None]:
         return None, None
 
 
-_MAJOR_THIRD_OFFSET = 4  # semitones above the root
-_MINOR_THIRD_OFFSET = 3  # semitones above the root
+_MAJOR_THIRD_OFFSET = 4
+_MINOR_THIRD_OFFSET = 3
 
 
 def _chroma_mean(y: np.ndarray, sr: int) -> np.ndarray | None:
@@ -226,7 +225,6 @@ def normalize_bpm(bpm: float | None, mode: str = "none") -> float | None:
 def _duration_class(duration: float | None) -> str | None:
     if duration is None:
         return None
-    # Heuristic aligned with classify.rule_type thresholds.
     return "oneshot" if duration <= 1.2 else "loop"
 
 
@@ -280,6 +278,12 @@ class Features:
     quality_note: str | None = None
     key_mode: str | None = None
     key_mode_evidence: dict | None = None
+
+
+def _serialize_key_mode_evidence(evidence: dict | None) -> str | None:
+    if evidence is None:
+        return None
+    return json.dumps(evidence, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
 def extract_features(
@@ -377,10 +381,12 @@ _FEATURE_UPSERT = text(
     """
     INSERT INTO features (
         sample_id, bpm, key, key_conf, loudness, brightness,
-        mfcc_mean, mfcc_std, chroma_mean, chroma_std, "class"
+        mfcc_mean, mfcc_std, chroma_mean, chroma_std, "class",
+        quality_note, key_mode, key_mode_evidence
     ) VALUES (
         :sample_id, :bpm, :key, :key_conf, :loudness, :brightness,
-        :mfcc_mean, :mfcc_std, :chroma_mean, :chroma_std, :clazz
+        :mfcc_mean, :mfcc_std, :chroma_mean, :chroma_std, :clazz,
+        :quality_note, :key_mode, :key_mode_evidence
     )
     ON CONFLICT(sample_id) DO UPDATE SET
         bpm=excluded.bpm,
@@ -392,7 +398,10 @@ _FEATURE_UPSERT = text(
         mfcc_std=excluded.mfcc_std,
         chroma_mean=excluded.chroma_mean,
         chroma_std=excluded.chroma_std,
-        "class"=excluded."class"
+        "class"=excluded."class",
+        quality_note=excluded.quality_note,
+        key_mode=excluded.key_mode,
+        key_mode_evidence=excluded.key_mode_evidence
     """
 )
 
@@ -489,6 +498,9 @@ def run_analyze(
                         chroma_mean=feats.chroma_mean,
                         chroma_std=feats.chroma_std,
                         clazz=feats.clazz,
+                        quality_note=feats.quality_note,
+                        key_mode=feats.key_mode,
+                        key_mode_evidence=_serialize_key_mode_evidence(feats.key_mode_evidence),
                     )
                 )
                 processed += 1
