@@ -312,12 +312,19 @@ def build_prompt(ctx: DispatchContext) -> str:
     lines.append("- no private local paths are referenced")
     lines.append("")
     lines.append("DELIVERABLE")
-    lines.append("- implement the requested slice")
-    lines.append("- add or update the relevant tests")
-    lines.append("- a branch and pull request are allowed")
-    lines.append("- do not finalize the pull request")
-    lines.append("- do not conclude the linked issue")
-    lines.append("- report the pull request URL and a concise result")
+    if ctx.change_class == READ_ONLY_CHANGE_CLASS:
+        lines.append("- analyze/read only")
+        lines.append("- do not modify files")
+        lines.append("- do not create a branch")
+        lines.append("- do not create a pull request")
+        lines.append("- report findings only")
+    else:
+        lines.append("- implement the requested slice")
+        lines.append("- add or update the relevant tests")
+        lines.append("- a branch and pull request are allowed")
+        lines.append("- do not finalize the pull request")
+        lines.append("- do not conclude the linked issue")
+        lines.append("- report the pull request URL and a concise result")
     return "\n".join(lines)
 
 
@@ -460,7 +467,7 @@ def approve_plan(transport: JulesTransport, session_id: str) -> dict:
 def send_message(transport: JulesTransport, session_id: str, text: str) -> dict:
     clean = redact(text)
     return transport.request(
-        "POST", f"/sessions/{_session_id(session_id)}:sendMessage", {"message": clean}
+        "POST", f"/sessions/{_session_id(session_id)}:sendMessage", {"prompt": clean}
     )
 
 
@@ -475,6 +482,15 @@ def _extract_pr_url(resp: dict) -> Optional[str]:
         return pr.get("url") or pr.get("htmlUrl")
     if isinstance(resp.get("pullRequestUrl"), str):
         return resp["pullRequestUrl"]
+    outputs = resp.get("outputs")
+    if isinstance(outputs, list):
+        for item in outputs:
+            if isinstance(item, dict) and "pullRequest" in item:
+                pr_item = item["pullRequest"]
+                if isinstance(pr_item, dict):
+                    url = pr_item.get("url") or pr_item.get("htmlUrl")
+                    if url:
+                        return url
     return None
 
 
@@ -594,15 +610,33 @@ def run_activities(transport: JulesTransport, session_id: str) -> dict:
     pr_url = None
     plan_id = None
     for activity in activities:
+        # Support both schema-compliant activity objects (where the key is the activity type)
+        # and backward-compatible flat dicts with a top-level "type" field.
         atype = activity.get("type")
-        if atype == "planGenerated":
+
+        plan_gen = activity.get("planGenerated")
+        if isinstance(plan_gen, dict):
+            plan_id = plan_gen.get("planId") or plan_gen.get("plan", {}).get("id") or plan_id
+        elif atype == "planGenerated":
             plan_id = activity.get("planId") or plan_id
-        elif atype == "sessionCompleted":
+
+        sess_comp = activity.get("sessionCompleted")
+        if isinstance(sess_comp, dict) or atype == "sessionCompleted":
             latest_state = "COMPLETED"
-            pr = activity.get("pullRequest") or activity.get("output", {}).get("pullRequest")
-            if isinstance(pr, dict):
-                pr_url = pr.get("url") or pr_url
-        elif atype == "sessionFailed":
+            comp_obj = sess_comp if isinstance(sess_comp, dict) else activity
+            # Extract PR URL from sessionCompleted or its outputs
+            pr_candidate = comp_obj.get("pullRequest") or comp_obj.get("output", {}).get("pullRequest")
+            if isinstance(pr_candidate, dict):
+                pr_url = pr_candidate.get("url") or pr_candidate.get("htmlUrl") or pr_url
+            elif not pr_url and "outputs" in comp_obj and isinstance(comp_obj["outputs"], list):
+                for out_item in comp_obj["outputs"]:
+                    if isinstance(out_item, dict) and "pullRequest" in out_item:
+                        pr_dict = out_item["pullRequest"]
+                        if isinstance(pr_dict, dict):
+                            pr_url = pr_dict.get("url") or pr_dict.get("htmlUrl") or pr_url
+
+        sess_fail = activity.get("sessionFailed")
+        if isinstance(sess_fail, dict) or atype == "sessionFailed":
             latest_state = "FAILED"
     if latest_state is None:
         latest_state = "IN_PROGRESS"
