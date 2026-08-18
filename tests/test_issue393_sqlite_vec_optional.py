@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 import numpy as np
@@ -55,21 +56,26 @@ def test_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return db_path, model_id, vectors
 
 
-def test_search_and_vec_modules_importable_without_sqlite_vec(monkeypatch: pytest.MonkeyPatch):
-    """Verify that src.search_backend and src.vec_index import without error when sqlite_vec is not installed."""
-    monkeypatch.setitem(sys.modules, "sqlite_vec", None)
-
-    # Force re-import or module loading check
-    if "src.search_backend" in sys.modules:
-        monkeypatch.delitem(sys.modules, "src.search_backend", raising=False)
-    if "src.vec_index" in sys.modules:
-        monkeypatch.delitem(sys.modules, "src.vec_index", raising=False)
-
-    import src.search_backend as sb
-    import src.vec_index as vi
-
-    assert hasattr(sb, "get_search_backend")
-    assert hasattr(vi, "rebuild_vec0_cache")
+def test_search_and_vec_modules_importable_without_sqlite_vec():
+    """Verify optional imports without mutating this pytest process' module graph."""
+    repo_root = Path(__file__).resolve().parents[1]
+    code = """
+import sys
+sys.modules['sqlite_vec'] = None
+import src.search_backend as sb
+import src.vec_index as vi
+assert hasattr(sb, 'get_search_backend')
+assert hasattr(vi, 'rebuild_vec0_cache')
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
 
 
 def test_numpy_backend_works_without_sqlite_vec(test_db, monkeypatch: pytest.MonkeyPatch):
