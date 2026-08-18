@@ -110,6 +110,9 @@ def needs_conversion(path: Path) -> bool:
 
 
 def _load_audio_mono(path: Path, target_sr: int) -> tuple[np.ndarray, int]:
+    if not path.is_file():
+        raise FileNotFoundError(path)
+
     try:
         y, sr = sf.read(str(path), dtype="float32", always_2d=False)
         if y is None:
