@@ -18,41 +18,87 @@ from typing import Optional, List, Tuple
 
 import numpy as np
 
-# Load native library
-def _find_library() -> Path:
-    """Find the native library."""
-    # Check common locations
-    candidates = [
-        Path(__file__).parent.parent.parent / "native" / "audio" / "build" / "lib" / "Release" / "samplebrain_audio.dll",
-        Path(__file__).parent.parent.parent / "native" / "audio" / "build" / "bin" / "Release" / "samplebrain_audio.dll",
-        Path(__file__).parent.parent / "native" / "audio" / "build" / "lib" / "Release" / "samplebrain_audio.dll",
-        Path(__file__).parent.parent / "native" / "audio" / "build" / "bin" / "Release" / "samplebrain_audio.dll",
-        Path(__file__).parent.parent.parent / "native" / "audio" / "build" / "lib" / "samplebrain_audio.dll",
-        Path(__file__).parent.parent.parent / "native" / "audio" / "build" / "bin" / "samplebrain_audio.dll",
-        Path(__file__).parent.parent / "native" / "audio" / "build" / "lib" / "samplebrain_audio.dll",
-        Path(__file__).parent.parent / "native" / "audio" / "build" / "bin" / "samplebrain_audio.dll",
+# Required exported FFI symbols to verify ABI before function setup
+_REQUIRED_SB_SYMBOLS = (
+    "sb_engine_open",
+    "sb_engine_start",
+    "sb_engine_stop",
+    "sb_engine_close",
+    "sb_engine_version",
+    "sb_enumerate_devices",
+    "sb_voice_create",
+    "sb_voice_remove",
+    "sb_voice_schedule_start",
+    "sb_voice_stop",
+    "sb_voice_set_rate",
+    "sb_voice_set_sync_mode",
+    "sb_voice_set_source_bpm",
+    "sb_voice_set_master_bpm",
+    "sb_recording_start",
+    "sb_recording_stop",
+    "sb_recording_free_buffer",
+    "sb_engine_snapshot",
+    "sb_test_keylock_process",
+    "sb_test_keylock_get_latency",
+)
+
+def _get_platform_lib_filename() -> str:
+    """Return platform-specific library filename."""
+    system = platform.system()
+    if system == "Windows":
+        return "samplebrain_audio.dll"
+    elif system == "Darwin":
+        return "libsamplebrain_audio.dylib"
+    else:
+        return "libsamplebrain_audio.so"
+
+
+def _get_trusted_candidates() -> List[Path]:
+    """Return trusted absolute candidate paths derived from package location."""
+    filename = _get_platform_lib_filename()
+    module_dir = Path(__file__).resolve().parent
+    repo_root = module_dir.parent
+
+    raw_candidates = [
+        module_dir / filename,
+        repo_root / "native" / "audio" / "build" / "lib" / "Release" / filename,
+        repo_root / "native" / "audio" / "build" / "bin" / "Release" / filename,
+        repo_root / "native" / "audio" / "build" / "lib" / filename,
+        repo_root / "native" / "audio" / "build" / "bin" / filename,
     ]
 
-    if platform.system() == "Windows":
-        for c in candidates:
-            if c.exists():
-                return c
-        # Try system search
-        return Path("samplebrain_audio.dll")
-    else:
-        # Linux/macOS
-        for c in candidates:
-            if c.exists():
-                return c
-        return Path("libsamplebrain_audio.so")
+    # Deduplicate while preserving order and ensuring absolute path resolution
+    seen = set()
+    unique_candidates: List[Path] = []
+    for c in raw_candidates:
+        abs_p = c.resolve() if c.exists() else c.absolute()
+        if abs_p not in seen:
+            seen.add(abs_p)
+            unique_candidates.append(abs_p)
+    return unique_candidates
 
-_lib_path = _find_library()
-try:
-    _lib = ctypes.CDLL(str(_lib_path))
-except OSError:
-    _lib = None
+
+def _load_native_library() -> Tuple[Optional[ctypes.CDLL], Optional[Path]]:
+    """Find and load native library from trusted absolute paths, validating ABI symbols."""
+    candidates = _get_trusted_candidates()
+    for candidate in candidates:
+        if candidate.is_file():
+            try:
+                lib = ctypes.CDLL(str(candidate))
+                # Validate required symbols early
+                for sym in _REQUIRED_SB_SYMBOLS:
+                    if not hasattr(lib, sym):
+                        raise AttributeError(f"Missing required symbol: {sym}")
+                return lib, candidate
+            except (OSError, AttributeError):
+                continue
+    return None, None
+
+
+_lib, _lib_path = _load_native_library()
+if _lib is None:
     import warnings
-    warnings.warn(f"Could not load native library from {_lib_path}. Native audio unavailable.")
+    warnings.warn("Native audio library samplebrain_audio not found or invalid. Native audio unavailable.")
 
 
 # Constants
