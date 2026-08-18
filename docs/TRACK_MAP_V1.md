@@ -84,7 +84,7 @@ The Track Map must be portable: it must not embed absolute local paths, username
 | `size_bytes` | integer | no | File size in bytes, if available. |
 | `hash.algorithm` | string | yes | Hash algorithm name (`sha256` for new writes, legacy `sha1` supported). |
 | `hash.value` | string | yes | Hex digest of the file content. |
-| `audio_properties.duration_sec` | number | yes | Duration of the audio file in seconds (float). |
+| `audio_properties.duration_sec` | number | yes | Duration of the audio in seconds (float). |
 | `audio_properties.sample_rate_hz` | integer | yes | Sample rate in Hz. |
 | `audio_properties.channels` | integer | yes | Number of audio channels. |
 | `source_ref` | string | yes | Key into `provenance.components` for the component that computed the hash and audio properties. |
