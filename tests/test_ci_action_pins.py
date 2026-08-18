@@ -9,7 +9,9 @@ IMMUTABLE_ACTION_RE = re.compile(r"^[^@]+@[0-9a-f]{40}$")
 
 
 def test_third_party_workflow_actions_are_pinned_to_commit_shas() -> None:
-    workflow_files = sorted(WORKFLOWS_DIR.glob("*.yml"))
+    workflow_files = sorted(
+        [*WORKFLOWS_DIR.glob("*.yml"), *WORKFLOWS_DIR.glob("*.yaml")]
+    )
     assert workflow_files, "expected GitHub Actions workflow files"
 
     unpinned: list[str] = []
