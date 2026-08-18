@@ -70,3 +70,27 @@ jobs:
 
       - name: Run optional CLAP arrangement contract tests
         run: python -m pytest -q tests/test_arrangement_clap.py
+
+  search-quality-exit:
+    name: Search quality exit regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install runtime and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install "pytest>=8,<10"
+
+      - name: Run search-quality exit regression
+        run: python -m pytest -q tests/test_issue394_search_quality_exit.py
