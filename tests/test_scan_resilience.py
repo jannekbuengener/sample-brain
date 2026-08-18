@@ -34,7 +34,7 @@ def test_scan_skips_unreadable_file_and_continues(
     good = write_sine_wav(
         samples_dir / "good.wav", duration_sec=0.1, frequency_hz=440.0
     )
-    real_file_hash = scan_module.file_hash
+    real_compute_file_hash = scan_module.compute_file_hash
 
     monkeypatch.setattr(
         scan_module,
@@ -42,12 +42,12 @@ def test_scan_skips_unreadable_file_and_continues(
         lambda _roots: iter((bad, good)),
     )
 
-    def flaky_hash(path: Path) -> str:
+    def flaky_hash(path: Path) -> dict:
         if Path(path) == bad:
             raise PermissionError("simulated unreadable file")
-        return real_file_hash(path)
+        return real_compute_file_hash(path)
 
-    monkeypatch.setattr(scan_module, "file_hash", flaky_hash)
+    monkeypatch.setattr(scan_module, "compute_file_hash", flaky_hash)
 
     scan_module.run_scan(custom_roots=[samples_dir], show_every=0)
 
@@ -104,11 +104,11 @@ def test_scan_hashes_before_opening_write_transaction(
     )
     monkeypatch.setattr(scan_module, "safe_audio_info", lambda _path: (44100, 1, 0.1))
 
-    def assert_no_write_transaction(_path: Path) -> str:
+    def assert_no_write_transaction(_path: Path) -> dict:
         assert engine.in_transaction is False
-        return "hash"
+        return {"algorithm": "sha256", "value": "a" * 64}
 
-    monkeypatch.setattr(scan_module, "file_hash", assert_no_write_transaction)
+    monkeypatch.setattr(scan_module, "compute_file_hash", assert_no_write_transaction)
 
     scan_module.run_scan(custom_roots=[tmp_path], show_every=0, batch_size=10)
 

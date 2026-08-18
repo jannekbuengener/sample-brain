@@ -32,6 +32,7 @@ import soundfile as sf
 
 from .analyze import SHORT_AUDIO_DURATION_SEC, extract_features
 from .classify import rule_type
+from .content_hash import compute_file_hash, normalize_hash_record
 from .key_signature import parse_key_signature
 from .utils import file_hash
 
@@ -156,14 +157,16 @@ def reanalyze_rendered_output(
         return _failed(ERR_NOT_FOUND, f"rendered asset not found: {file_ref}")
 
     try:
-        actual_hash = file_hash(out_path)
+        norm_hash = normalize_hash_record(output.get("hash") if isinstance(output, dict) else None)
+    except ValueError as exc:
+        return _failed(ERR_HASH_MISMATCH, f"invalid rendering.output.hash: {exc}")
+
+    try:
+        actual_hash = compute_file_hash(out_path, algorithm=norm_hash["algorithm"])
     except Exception:
         return _failed(ERR_NOT_FOUND, f"cannot hash rendered asset: {file_ref}")
 
-    expected_hash = None
-    if isinstance(output.get("hash"), dict):
-        expected_hash = output["hash"].get("value")  # type: ignore[index]
-    if expected_hash is not None and actual_hash != expected_hash:
+    if actual_hash != norm_hash:
         return _failed(
             ERR_HASH_MISMATCH,
             "rendered asset hash does not match rendering.output.hash",
@@ -224,14 +227,7 @@ def reanalyze_rendered_output(
 
     analyzed_output = {
         "file_ref": file_ref,
-        "hash": {
-            "algorithm": (
-                output.get("hash", {}).get("algorithm", "sha1")  # type: ignore[union-attr]
-                if isinstance(output.get("hash"), dict)
-                else "sha1"
-            ),
-            "value": actual_hash,
-        },
+        "hash": actual_hash,
         "audio_properties": {
             "sample_rate_hz": act_sr,
             "channels": act_channels,

@@ -66,7 +66,7 @@ def get_backend_version() -> str:
 
 
 def file_hash(path: Path, blocksize: int = 65536) -> str:
-    h = hashlib.sha1()
+    h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(blocksize), b""):
             h.update(chunk)
@@ -129,7 +129,7 @@ def map_stem_to_manifest(
         "status": "ok",
         "source": {
             "audio_ref": audio_ref,
-            "hash": {"algorithm": "sha1", "value": source_hash},
+            "hash": {"algorithm": "sha256", "value": source_hash},
             "audio_properties": {
                 "sample_rate_hz": int(source_properties["sample_rate_hz"]),
                 "channels": int(source_properties["channels"]),
@@ -144,7 +144,7 @@ def map_stem_to_manifest(
         },
         "output": {
             "file_ref": file_ref,
-            "hash": {"algorithm": "sha1", "value": output_hash},
+            "hash": {"algorithm": "sha256", "value": output_hash},
             "audio_properties": {
                 "sample_rate_hz": int(output_properties["sample_rate_hz"]),
                 "channels": int(output_properties["channels"]),

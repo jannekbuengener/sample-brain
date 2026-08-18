@@ -172,7 +172,7 @@ This is a valid, portable Technical Stem Manifest.
   "source": {
     "audio_ref": "/source/original",
     "hash": {
-      "algorithm": "sha1",
+      "algorithm": "sha256",
       "value": "9f8e7d6c5b4a3c2d1e0f11223344556677889900"
     },
     "audio_properties": {

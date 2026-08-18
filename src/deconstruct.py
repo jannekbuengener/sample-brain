@@ -193,7 +193,7 @@ def _safe_name(value: str) -> str:
 
 def _track_identity(track_path: Path) -> dict[str, object]:
     from .canon_audio import probe_audio
-    from .utils import file_hash
+    from .content_hash import compute_file_hash
 
     track_path = Path(track_path)
     ident: dict[str, object] = {
@@ -203,7 +203,7 @@ def _track_identity(track_path: Path) -> dict[str, object]:
     if track_path.exists():
         try:
             ident["size_bytes"] = track_path.stat().st_size
-            ident["hash"] = {"algorithm": "sha1", "value": file_hash(track_path)}
+            ident["hash"] = compute_file_hash(track_path)
         except Exception:
             pass
         try:

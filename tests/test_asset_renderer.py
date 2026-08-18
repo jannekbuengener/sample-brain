@@ -400,4 +400,4 @@ def test_manifest_rendering_block_shape(tmp_path: Path) -> None:
     block = res.as_manifest_rendering()
     assert block["status"] == "rendered"
     assert "renderer" in block and "output" in block
-    assert block["output"]["hash"]["algorithm"] == "sha1"  # type: ignore[index]
+    assert block["output"]["hash"]["algorithm"] == "sha256"  # type: ignore[index]

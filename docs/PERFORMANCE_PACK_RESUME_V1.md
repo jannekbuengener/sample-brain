@@ -65,9 +65,9 @@ Pfad: `<pack-root>/deconstruct_resume.json`.
     "stems": 1
   },
   "steps": {
-    "track_map":   { "status": "ok",     "cache_key": "<sha256 hex>", "output_inventory": [ {"ref": "analysis/track_map.json", "sha1": "<hex>"} ] },
-    "arrangement": { "status": "ok",     "cache_key": "<sha256 hex>", "output_inventory": [ {"ref": "analysis/working_audio.wav", "sha1": "<hex>"}, {"ref": "analysis/arrangement_map.json", "sha1": "<hex>"} ], "snapshot": { "...": "portable arrangement runtime objects" } },
-    "assets":      { "status": "partial", "cache_key": "<sha256 hex>", "output_inventory": [ {"ref": "loops/loop_x.json", "sha1": "<hex>"}, {"ref": "loops/assets/loop_x.wav", "sha1": "<hex>"} ] },
+    "track_map":   { "status": "ok",     "cache_key": "<sha256 hex>", "output_inventory": [ {"ref": "analysis/track_map.json", "sha256": "<hex>"} ] },
+    "arrangement": { "status": "ok",     "cache_key": "<sha256 hex>", "output_inventory": [ {"ref": "analysis/working_audio.wav", "sha256": "<hex>"}, {"ref": "analysis/arrangement_map.json", "sha256": "<hex>"} ], "snapshot": { "...": "portable arrangement runtime objects" } },
+    "assets":      { "status": "partial", "cache_key": "<sha256 hex>", "output_inventory": [ {"ref": "loops/loop_x.json", "sha256": "<hex>"}, {"ref": "loops/assets/loop_x.wav", "sha256": "<hex>"} ] },
     "stems":       { "status": "not_run", "cache_key": null, "output_inventory": [] }
   }
 }
@@ -75,7 +75,7 @@ Pfad: `<pack-root>/deconstruct_resume.json`.
 
 Der Resume-State ist ein **regenerierbarer Index**: Er speichert keine
 Ergebnisse selbst, sondern nur Metadaten (Status, Cache-Keys, Output-Inventar
-mit SHA-1) plus ein portables Arrangement-Snapshot. Die eigentlichen
+mit SHA-256 / legacy SHA-1) plus ein portables Arrangement-Snapshot. Die eigentlichen
 Step-Ergebnisse liegen in den #258-Pack-Bereichen.
 
 Der State kann jederzeit aus den Pack-Inhalten neu erzeugt werden, sofern die
@@ -118,7 +118,7 @@ Ein Step ist nur dann wiederverwendbar (`reused`), wenn:
 1. sein gespeicherter `status` in `{ok, partial}` liegt (`failed`, `not_run`,
    `no_result` werden NICHT wiederverwendet),
 2. sein berechneter Cache-Key mit dem gespeicherten übereinstimmt,
-3. sein `output_inventory` physisch vorhanden ist und die SHA-1-Hashes
+3. sein `output_inventory` physisch vorhanden ist und die Content-Hashes
    übereinstimmen,
 4. bei `arrangement`: zusätzlich `analysis/working_audio.wav` existiert und
    SHA-1 passt (siehe Arrangement-Resume).
@@ -131,7 +131,7 @@ ebenfalls neu berechnet (da deren Upstream-Cache-Key sich ändert).
 Vor jeder Wiederverwendung werden alle `output_inventory`-Einträge geprüft:
 
 - Datei existiert unter `pack_root / ref`.
-- `file_hash(ref)` (SHA-1, siehe `src/utils.py`) == gespeicherter `sha1`.
+- `file_hash(ref)` == gespeicherter Content-Hash (`sha256` für neue, `sha1` für Legacy).
 
 Fehlschlag einer Integritätsprüfung ⇒ Step gilt als Cache-MISS ⇒ Recompute.
 Dies fängt gelöschte/überschriebene/ korrupte Outputs ab, ohne auf absolute
@@ -163,7 +163,7 @@ Zugehörigkeit: Output des `arrangement`-Steps (in dessen `output_inventory`).
 Vor der Arrangement-Wiederverwendung:
 
 1. Existenzprüfung `pack_root / "analysis/working_audio.wav"`.
-2. SHA-1-Abgleich mit dem `output_inventory`-Eintrag.
+2. Hash-Abgleich mit dem `output_inventory`-Eintrag.
 3. Bei Rehydrierung: `canonical_audio_path = pack_root / "analysis/working_audio.wav"`
    als Laufzeitpfad.
 

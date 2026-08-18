@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from src.deconstruct import RunResult
+from src.content_hash import compute_file_hash
 from src.utils import file_hash
 
 
@@ -407,7 +408,7 @@ def _collect_pack_stems(
                 continue
 
         try:
-            file_value = file_hash(stem_path_resolved)
+            file_value = compute_file_hash(stem_path_resolved)
         except Exception:
             file_value = None
 
@@ -420,7 +421,7 @@ def _collect_pack_stems(
             "status": data["status"],
         }
         if file_value is not None:
-            entry["hash"] = {"algorithm": "sha1", "value": file_value}
+            entry["hash"] = file_value
 
         order_key = _STEM_ORDER.get(data["stem_kind"], len(_STEM_ORDER))
         entries.append((order_key, data["stem_kind"], data["stem_id"], ref, entry))

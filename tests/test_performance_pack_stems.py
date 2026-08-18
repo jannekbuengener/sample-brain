@@ -56,15 +56,15 @@ def _make_stem_manifest(
     wav_path: Path,
     status: str = "ok",
 ) -> dict:
-    from src.utils import file_hash
+    from src.content_hash import compute_file_hash, hash_record
 
     if Path(wav_path).exists():
         props = _audio_props(wav_path)
-        wav_hash = file_hash(wav_path)
+        wav_hash = compute_file_hash(wav_path)
     else:
         # Used for negative tests where the referenced WAV is intentionally absent.
         props = {"sample_rate_hz": 44100, "channels": 1, "n_samples": 44100}
-        wav_hash = "0" * 40
+        wav_hash = hash_record("sha256", "0" * 64)
     manifest = {
         "document_type": "sample_brain.stem_manifest",
         "schema_version": "1.0.0",
@@ -74,7 +74,7 @@ def _make_stem_manifest(
         "status": status,
         "source": {
             "audio_ref": "/source/original",
-            "hash": {"algorithm": "sha1", "value": wav_hash},
+            "hash": wav_hash,
             "audio_properties": props,
             "origin_sample": 0,
         },
@@ -84,7 +84,7 @@ def _make_stem_manifest(
     if status in ("ok", "partial"):
         manifest["output"] = {
             "file_ref": wav_path.name,
-            "hash": {"algorithm": "sha1", "value": wav_hash},
+            "hash": wav_hash,
             "audio_properties": props,
         }
     elif status == "failed":
@@ -157,7 +157,7 @@ def test_four_valid_stems(tmp_path):
         assert entry["schema_version"] == "1.0.0"
         assert entry["track_ref"] == TRACK_ID
         assert entry["status"] == "ok"
-        assert entry["hash"]["algorithm"] == "sha1"
+        assert entry["hash"]["algorithm"] == "sha256"
         assert entry["hash"]["value"]
     assert m.status == "complete"
 

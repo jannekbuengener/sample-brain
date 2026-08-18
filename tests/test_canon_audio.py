@@ -417,11 +417,11 @@ def test_audio_range_raises_on_end_lt_start() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_content_hash_returns_sha1(tmp_path: Path) -> None:
+def test_content_hash_returns_sha256(tmp_path: Path) -> None:
     path = _write_canonical_wav(tmp_path / "test.wav", 44100)
     h = content_hash(path)
     assert isinstance(h, str)
-    assert len(h) == 40
+    assert len(h) == 64
 
 
 def test_content_hash_deterministic(tmp_path: Path) -> None:

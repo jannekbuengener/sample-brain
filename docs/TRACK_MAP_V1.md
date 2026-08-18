@@ -82,7 +82,7 @@ The Track Map must be portable: it must not embed absolute local paths, username
 | `file_name` | string | yes | Base name of the audio file (e.g. `my_track.wav`). Portable name only. |
 | `relative_uri` | string | no | Relative URI to the audio file, relative to the Track Map file on disk. May be omitted when emitted to stdout. Not part of stable identity. |
 | `size_bytes` | integer | no | File size in bytes, if available. |
-| `hash.algorithm` | string | yes | Hash algorithm name (e.g. `sha1`). The current sample-brain runtime uses **SHA-1**. |
+| `hash.algorithm` | string | yes | Hash algorithm name (`sha256` for new writes, legacy `sha1` supported). |
 | `hash.value` | string | yes | Hex digest of the file content. |
 | `audio_properties.duration_sec` | number | yes | Duration of the audio in seconds (float). |
 | `audio_properties.sample_rate_hz` | integer | yes | Sample rate in Hz. |
@@ -98,7 +98,7 @@ Present only when a re-rendered/re-mixed working WAV has been produced and is po
 - Absolute paths are never serialized in the identity block.
 - `hash` is the **authoritative** identity key; file name and audio params are descriptive.
 - `relative_uri`, if present, is for local resolution only and is not validated as stable identity.
-- SHA-1 is the hash algorithm used by the current sample-brain runtime. The contract allows later algorithm identifiers; readers must check `hash.algorithm`.
+- SHA-256 is the hash algorithm used for new writes by the sample-brain runtime (#417). Readers verify using `hash.algorithm` (`sha256` or legacy `sha1`).
 
 ---
 
@@ -395,7 +395,7 @@ For `ok` or `partial`, the component's result-specific required fields are defin
 | `source.original.file_name` | yes | string | Base name |
 | `source.original.relative_uri` | no | string | Relative to Track Map file |
 | `source.original.size_bytes` | no | integer | File size |
-| `source.original.hash.algorithm` | yes | string | e.g. `sha1` |
+| `source.original.hash.algorithm` | yes | string | e.g. `sha256` |
 | `source.original.hash.value` | yes | string | Hex digest |
 | `source.original.audio_properties.duration_sec` | yes | number | Seconds |
 | `source.original.audio_properties.sample_rate_hz` | yes | integer | Hz |
@@ -484,7 +484,7 @@ This is a valid Track Map v1 example. The #233 one-shot runtime emits the base-a
       "relative_uri": "./audio/my_track.wav",
       "size_bytes": 43218901,
       "hash": {
-        "algorithm": "sha1",
+        "algorithm": "sha256",
         "value": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
       },
       "audio_properties": {
@@ -565,7 +565,7 @@ This is a valid Track Map v1 example. The #233 one-shot runtime emits the base-a
         "component": "scan",
         "sample_brain_version": "0.9.0",
         "configuration": {
-          "hash_algorithm": "sha1"
+          "hash_algorithm": "sha256"
         }
       },
       "analyze": {

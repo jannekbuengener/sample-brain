@@ -357,7 +357,7 @@ def test_build_output_inventory_includes_wav_for_arrangement(tmp_path):
     assert "analysis/arrangement_map.json" in refs
     assert "analysis/working_audio.wav" in refs
     for entry in inv:
-        assert "sha1" in entry
+        assert "sha256" in entry
 
 
 def test_verify_output_inventory_missing_file_fails(tmp_path):

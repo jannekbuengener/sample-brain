@@ -356,7 +356,7 @@ def test_track_identity_present_even_on_failure(track_file, tmp_path):
     )
     run = run_deconstruct(track_file, tmp_path / "pack", adapters=adapters)
     assert run.track["file_name"] == track_file.name
-    assert run.track["hash"]["algorithm"] == "sha1"
+    assert run.track["hash"]["algorithm"] == "sha256"
     assert run.track["hash"]["value"]
 
 

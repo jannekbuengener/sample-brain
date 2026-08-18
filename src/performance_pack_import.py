@@ -8,17 +8,14 @@ Design contract
 ---------------
 * The Performance Pack manifest is the external truth. SQLite is only a local
   search/working index. No pack field becomes part of the schema.
-* No new table and no new ``samples`` column are introduced. Lineage lives in
-  ``sample_tags`` (source = ``performance_pack``).
+* Lineage lives in ``sample_tags`` (source = ``performance_pack``).
 * Every reference is validated as portable and resolved inside the pack root;
   anything escaping it is rejected fail-closed.
-* Audio is verified by content hash + audio properties before registration.
-* Deduplication is by content hash and never overwrites an existing row with new
-  content (same path + different hash fails closed).
+* Audio is verified by the hash algorithm declared by each manifest plus audio
+  properties before registration.
+* Deduplication is by algorithm-qualified content identity and never overwrites
+  an existing row with new content (same path + different identity fails closed).
 * No features are pre-filled; ``run_analyze`` computes them afterward.
-
-This module deliberately reuses the existing catalog, analyze, autotype, match,
-and search paths. It implements none of those.
 """
 
 from __future__ import annotations
@@ -28,17 +25,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import text
-
+from .content_hash import compute_file_hash, normalize_hash_record
 from .db import (
-    find_sample_by_path,
+    find_sample_identity_by_path,
     find_sample_id_by_hash,
-    get_engine,
     init_db,
     insert_sample,
     upsert_sample_tag,
 )
-from .utils import file_hash
 
 TAG_SOURCE = "performance_pack"
 SUPPORTED_MAJOR = 1
@@ -103,11 +97,7 @@ class PackImportError(Exception):
 
 
 def _is_portable_ref(raw: str) -> bool:
-    """True when ``raw`` is a safe, relative, in-pack reference.
-
-    Rejects: empty, ``..`` traversal, ``file://``, backslashes (Windows absolute
-    / UNC), leading ``/``, and drive-letter references (``C:``).
-    """
+    """True when ``raw`` is a safe, relative, in-pack reference."""
     if not isinstance(raw, str) or not raw:
         return False
     if ".." in raw:
@@ -125,18 +115,14 @@ def _is_portable_ref(raw: str) -> bool:
 
 
 def _resolve_ref(raw: str, base_dir: Path, *, kind: str) -> Path:
-    """Validate portability and resolve ``raw`` against ``base_dir``.
-
-    ``base_dir`` is the pack root for pack-level refs, or the referencing
-    manifest's own directory for in-manifest ``file_ref`` values.
-    """
+    """Validate portability and resolve ``raw`` against ``base_dir``."""
     if not _is_portable_ref(raw):
         raise PackImportError(
             _ref_code(kind, "PORTABLE"),
             f"{kind} reference is not portable: {raw!r}",
         )
     base = Path(base_dir).resolve()
-    candidate = (base / raw)
+    candidate = base / raw
     try:
         resolved = candidate.resolve()
     except Exception as exc:  # pragma: no cover - defensive
@@ -190,7 +176,7 @@ def _resolve_manifest_path(pack_root: Path) -> tuple[Path, Path]:
 
 def _verify_audio_integrity(
     audio_path: Path,
-    expected_hash: str,
+    expected_hash: object,
     expected_props: dict,
     *,
     audio_kind: str,
@@ -200,12 +186,20 @@ def _verify_audio_integrity(
             f"{audio_kind}_AUDIO_NOT_FOUND",
             f"Declared {audio_kind} audio not found: {audio_path}",
         )
-    actual_hash = file_hash(audio_path)
-    if actual_hash != expected_hash:
+    try:
+        expected = normalize_hash_record(expected_hash)
+    except ValueError as exc:
+        raise PackImportError(
+            f"{audio_kind}_HASH_MISMATCH",
+            f"{audio_kind} audio declares an unsupported/invalid content hash: {exc}",
+        ) from exc
+    actual = compute_file_hash(audio_path, algorithm=expected["algorithm"])
+    if actual != expected:
         raise PackImportError(
             f"{audio_kind}_HASH_MISMATCH",
             f"{audio_kind} audio hash mismatch at {audio_path}: "
-            f"expected {expected_hash}, got {actual_hash}",
+            f"expected {expected['algorithm']}:{expected['value']}, "
+            f"got {actual['algorithm']}:{actual['value']}",
         )
     try:
         import soundfile as sf
@@ -236,7 +230,8 @@ def _verify_audio_integrity(
         "n_samples": actual_n,
         "duration": duration,
         "size_bytes": audio_path.stat().st_size,
-        "hash": actual_hash,
+        "hash": actual["value"],
+        "hash_algorithm": actual["algorithm"],
     }
 
 
@@ -250,28 +245,27 @@ def _register_sample(
     item_id: str,
     source_kind: str | None,
 ) -> tuple[int, bool]:
-    """Register (or reuse) a sample row and attach lineage tags.
-
-    Returns (sample_id, reused). Never overwrites an existing row with new
-    content: same path + different hash fails closed.
-    """
+    """Register (or reuse) a sample row and attach lineage tags."""
     path = str(audio_path)
     content_hash = props["hash"]
+    hash_algorithm = props["hash_algorithm"]
 
-    by_path = find_sample_by_path(path)
+    by_path = find_sample_identity_by_path(path)
     if by_path is not None:
-        existing_id, existing_hash = by_path
-        if existing_hash == content_hash:
+        existing_id, existing_identity = by_path
+        if existing_identity == {"algorithm": hash_algorithm, "value": content_hash}:
             sample_id = existing_id
             reused = True
         else:
             raise PackImportError(
                 "SAME_PATH_DIFFERENT_HASH",
-                f"Existing sample at {path} has a different content hash; "
+                f"Existing sample at {path} has a different content identity; "
                 "refusing to reinterpret the identity.",
             )
     else:
-        by_hash = find_sample_id_by_hash(content_hash)
+        by_hash = find_sample_id_by_hash(
+            content_hash, hash_algorithm=hash_algorithm
+        )
         if by_hash is not None:
             sample_id = by_hash
             reused = True
@@ -289,6 +283,7 @@ def _register_sample(
                 duration=props["duration"],
                 size_bytes=props["size_bytes"],
                 content_hash=content_hash,
+                content_hash_algorithm=hash_algorithm,
             )
             reused = False
 
@@ -331,15 +326,9 @@ def _import_asset(
     pack_id: str,
     track_id: str,
 ) -> tuple[int | None, bool, str | None]:
-    """Validate + import one pack asset entry.
-
-    Returns (sample_id, reused, error_code). ``sample_id is None`` means the
-    item was skipped (optional/unusable) or failed integrity (error_code set).
-    """
+    """Validate + import one pack asset entry."""
     asset_ref = entry.get("asset_ref")
     if not isinstance(asset_ref, str) or not asset_ref:
-        # A missing asset_ref is a structural contract gap; treat as fail-closed
-        # so the pack cannot be silently partial.
         raise PackImportError(
             "ASSET_REF_MISSING",
             f"Asset entry missing asset_ref: {entry.get('asset_id')!r}",
@@ -348,15 +337,10 @@ def _import_asset(
     asset_status = entry.get("status")
     if asset_status is None:
         asset_status = entry.get("candidate", {}).get("status")
-
-    # Accept ok, partial, or candidate (pipeline normal output) as valid.
-    # USABLE_STATUSES = {"ok", "partial"} stays unchanged; candidate is the
-    # pipeline's normal status indicator for generated assets.
     resolved_status = asset_status
     if resolved_status in ("ok", "partial", "candidate"):
-        pass  # valid
+        pass
     elif resolved_status not in USABLE_STATUSES:
-        # failed / not_run / no_result optional item: skip, no fake sample.
         return None, False, f"asset_status:{resolved_status}"
 
     asset_path = _resolve_ref(asset_ref, pack_root, kind="asset")
@@ -397,7 +381,6 @@ def _import_asset(
 
     rendering = asset.get("rendering") or {}
     if rendering.get("status") != "rendered" or not rendering.get("output"):
-        # Declared but not actually rendered: cannot import audio.
         return None, False, "asset_not_rendered"
 
     output = rendering["output"]
@@ -410,7 +393,7 @@ def _import_asset(
     audio_path = _resolve_ref(file_ref, asset_path.parent, kind="asset_audio")
     audio_props = _verify_audio_integrity(
         audio_path,
-        expected_hash=output["hash"]["value"],
+        expected_hash=output["hash"],
         expected_props=output["audio_properties"],
         audio_kind="ASSET",
     )
@@ -479,7 +462,7 @@ def _import_stem(
     audio_path = _resolve_ref(file_ref, stem_path.parent, kind="stem_audio")
     audio_props = _verify_audio_integrity(
         audio_path,
-        expected_hash=output["hash"]["value"],
+        expected_hash=output["hash"],
         expected_props=output["audio_properties"],
         audio_kind="STEM",
     )
@@ -507,18 +490,7 @@ class ImportResult:
 
 
 def run_pack_import(pack_root: Path, engine: Any = None) -> ImportResult:
-    """Re-import a Performance Pack into the catalog.
-
-    Args:
-        pack_root: pack root directory or a direct ``manifest.json`` path.
-        engine: unused placeholder for API symmetry (catalog uses ``src.db``).
-
-    Returns:
-        ImportResult with deterministic counts and sample ids.
-
-    Raises:
-        PackImportError: fail-closed on any structural or integrity violation.
-    """
+    """Re-import a Performance Pack into the catalog."""
     init_db()
     manifest_path, pack_root_dir = _resolve_manifest_path(Path(pack_root))
 
@@ -543,7 +515,6 @@ def run_pack_import(pack_root: Path, engine: Any = None) -> ImportResult:
     track_id = source_track["track_id"]
     pack_id = manifest.get("pack_id", "")
 
-    # Track Map (required anchor)
     documents = manifest.get("documents") or {}
     track_map_entry = documents.get("track_map")
     if not isinstance(track_map_entry, dict) or not track_map_entry.get("ref"):

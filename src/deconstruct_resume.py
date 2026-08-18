@@ -147,8 +147,9 @@ def _relevant_config(
 def build_output_inventory(
     pack_root: Path, step_id: str, output_refs: Sequence[str]
 ) -> list[dict[str, str]]:
-    """Build a pack-relative output inventory with SHA-1 for a step's outputs.
+    """Build a pack-relative output inventory with content hash for a step's outputs.
 
+    New inventory items write SHA-256 (`sha256`).
     For ``arrangement`` the canonical working WAV is added if present.
     For ``assets`` each manifest JSON's referenced WAV is added (resolved
     relative to the manifest's directory).
@@ -159,7 +160,7 @@ def build_output_inventory(
     def _add(ref: str) -> None:
         p = pack_root / ref
         if p.exists():
-            inventory.append({"ref": ref, "sha1": file_hash(p)})
+            inventory.append({"ref": ref, "sha256": file_hash(p, algorithm="sha256")})
 
     for ref in output_refs:
         _add(ref)
@@ -196,7 +197,7 @@ def _add_asset_wav(
     except Exception:
         return
     if wav_path.exists():
-        inventory.append({"ref": rel, "sha1": file_hash(wav_path)})
+        inventory.append({"ref": rel, "sha256": file_hash(wav_path, algorithm="sha256")})
 
 
 def _add_stem_wav(
@@ -225,17 +226,24 @@ def _add_stem_wav(
 def verify_output_inventory(
     pack_root: Path, inventory: Sequence[dict[str, str]]
 ) -> bool:
-    """Return True iff every inventory entry exists and matches its SHA-1."""
+    """Return True iff every inventory entry exists and matches its declared hash."""
     pack_root = Path(pack_root)
     for entry in inventory:
         ref = entry.get("ref")
-        expected = entry.get("sha1")
-        if not ref or expected is None:
+        if not ref:
             return False
         p = pack_root / ref
         if not p.exists():
             return False
-        if file_hash(p) != expected:
+        if "sha256" in entry:
+            expected = entry["sha256"]
+            if file_hash(p, algorithm="sha256") != expected:
+                return False
+        elif "sha1" in entry:
+            expected = entry["sha1"]
+            if file_hash(p, algorithm="sha1") != expected:
+                return False
+        else:
             return False
     return True
 

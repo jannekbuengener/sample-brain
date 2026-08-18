@@ -97,7 +97,7 @@ Der Cache-Key ist ein **SHA-256** über ein **kanonisches deterministisches JSON
 
 | Input | Beschreibung |
 |-------|--------------|
-| `source_content_hash` | Autoritative Content-Identity des Originalaudios (derzeit SHA-1, aus `canon_audio.content_hash`). |
+| `source_content_hash` | Autoritative Content-Identity des Originalaudios (SHA-256 für neue Einträge, legacy SHA-1 wird für Lesekompatibilität unterstützt). |
 | `component` | Konstant `"analyze"`. |
 | `contract_version` | `TRACK_ANALYSIS_CACHE_CONTRACT_VERSION` (derzeit `2`). |
 | `sample_brain_version` | Analyseversion von sample-brain (`metadata.version("sample-brain")`). |
@@ -151,7 +151,7 @@ analysis invalidates prior caches.
 | `document_type` | string | ja | `"sample_brain.track_analysis_cache_entry"`. |
 | `schema_version` | string | ja | `"1.0.0"`. |
 | `cache_key` | string | ja | SHA-256-Key (Section 3). |
-| `source_content_hash` | object | ja | `{"algorithm": "sha1", "value": "..."}`. |
+| `source_content_hash` | object | ja | `{"algorithm": "sha256", "value": "..."}` (oder legacy `sha1`). |
 | `analysis_fingerprint` | string | ja | SHA-256 der Analyse-Methoden-Identität (Section 5). |
 | `track_map` | object | ja | Die wiederverwendbaren Analyseblöcke (Section 6). |
 | `provenance_component` | object | ja | Der `analyze`-Provenance-Eintrag (Section 7). |
