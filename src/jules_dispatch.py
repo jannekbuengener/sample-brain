@@ -400,8 +400,10 @@ def resolve_source(transport: JulesTransport) -> str:
 
 def build_create_payload(ctx: DispatchContext, source_id: str) -> dict:
     payload: Dict[str, Any] = {
-        "sourceContext": {"source": source_id},
-        "githubRepoContext": {"startingBranch": ctx.base_branch},
+        "sourceContext": {
+            "source": source_id,
+            "githubRepoContext": {"startingBranch": ctx.base_branch},
+        },
         "prompt": build_prompt(ctx),
         "requirePlanApproval": requires_plan_approval(ctx),
     }

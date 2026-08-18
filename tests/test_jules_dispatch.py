@@ -199,6 +199,14 @@ def test_auto_create_pr_only_when_allowed() -> None:
     assert "automationMode" not in without_pr
 
 
+# 8b. githubRepoContext must nest inside sourceContext (real Jules v1alpha schema).
+def test_github_repo_context_nested_in_source_context() -> None:
+    payload = build_create_payload(_ctx(base_branch="main"), "src/x")
+    assert "githubRepoContext" not in payload
+    assert payload["sourceContext"]["source"] == "src/x"
+    assert payload["sourceContext"]["githubRepoContext"] == {"startingBranch": "main"}
+
+
 # 9. AWAITING_PLAN_APPROVAL is normalized correctly.
 def test_awaiting_plan_approval_normalized() -> None:
     result = normalize_dispatch("AWAITING_PLAN_APPROVAL")
