@@ -346,9 +346,8 @@ def _default_arrangement_adapter(ctx: StepContext) -> tuple[StepResult, object]:
         import numpy as np
         import soundfile as sf
 
-        samples = np.asarray(
-            sf.read(str(canon), dtype="float32", always_2d=False), dtype=np.float32
-        ).reshape(-1)
+        _audio_data, _ = sf.read(str(canon), dtype="float32", always_2d=False)
+        samples = np.asarray(_audio_data, dtype=np.float32).reshape(-1)
     except Exception as exc:
         return (
             StepResult(
@@ -501,7 +500,10 @@ def _default_assets_adapter(ctx: StepContext) -> tuple[StepResult, object]:
                         except Exception:
                             arr = None
             if arr is not None and kind in ("drums", "bass", "vocals", "other"):
-                stem_dicts[kind] = np.asarray(arr, dtype=np.float32)
+                arr = np.asarray(arr, dtype=np.float32)
+                if arr.ndim == 2:
+                    arr = arr.mean(axis=1)
+                stem_dicts[kind] = arr
 
         for s in stems_list:
             kind = s.get("stem_kind")
@@ -1319,6 +1321,31 @@ def _reuse_payload(step_id: str, entry: dict, pack_root: Path) -> object:
         return _resume.resume_arrangement(entry.get("snapshot") or {}, pack_root)
     if step_id == "assets":
         return {"manifest_refs": list(entry.get("output_refs", []))}
+    if step_id == "stems":
+        stems_list: list[dict] = []
+        track_ref: str | None = None
+        for ref in entry.get("output_refs", []):
+            try:
+                meta = json.loads((pack_root / ref).read_text(encoding="utf-8"))
+                kind = meta.get("stem_kind")
+                file_ref = meta.get("output", {}).get("file_ref")
+                if kind and file_ref:
+                    stem_path = pack_root / "stems" / file_ref
+                    if stem_path.exists():
+                        arr, _ = sf.read(
+                            str(stem_path), dtype="float32", always_2d=False
+                        )
+                        stems_list.append({
+                            "stem_kind": kind,
+                            "file_ref": f"stems/{file_ref}",
+                            "audio": np.asarray(arr, dtype=np.float32),
+                        })
+                if not track_ref:
+                    track_ref = meta.get("track_ref")
+            except Exception:
+                continue
+        if stems_list:
+            return {"stems": stems_list, "track_ref": track_ref or ""}
     return None
 
 

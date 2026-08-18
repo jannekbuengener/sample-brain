@@ -253,6 +253,8 @@ def derive_producer_groups(
         if arr is None:
             return None
         a = np.asarray(arr, dtype=np.float32)
+        if a.ndim == 2:
+            a = a.mean(axis=1)
         if a.shape[0] == 0 or _rms(a) < params.min_rms:
             return None
         return a
