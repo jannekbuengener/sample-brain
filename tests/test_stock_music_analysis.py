@@ -114,6 +114,13 @@ class _InsufficientBackend(_SemanticBackend):
         return np.array([-1.0, 0.0], dtype=np.float32)
 
 
+class _MultiLabelBackend(_SemanticBackend):
+    def embed_text(self, text: str) -> np.ndarray:
+        if text in {"calm mood", "uplifting mood"}:
+            return np.array([1.0, 0.0], dtype=np.float32)
+        return np.array([0.0, 1.0], dtype=np.float32)
+
+
 class _BadBackend(_SemanticBackend):
     def embed_audio(self, audio_path: str) -> np.ndarray:
         return np.zeros(2, dtype=np.float32)
@@ -202,6 +209,24 @@ def test_proxy_and_clap_values_remain_partial_with_score_semantics() -> None:
     assert genre["score_kind"] == "clap_audio_text_cosine_similarity_v1"
     assert -1.0 <= genre["score"] <= 1.0
     assert "confidence" not in json.dumps(result).lower()
+
+
+def test_clap_collections_preserve_all_qualifying_controlled_labels() -> None:
+    result = produce_stock_music_analysis(
+        _track_map(),
+        audio_path="C:\\private\\input\\track.wav",
+        semantic_backend=_MultiLabelBackend(),
+    )
+
+    mood = result["semantic"]["mood"]
+    assert mood["status"] == "partial"
+    assert _item_values(mood) == {"calm", "uplifting"}
+    assert [item["value"] for item in mood["items"]] == ["calm", "uplifting"]
+    assert all(
+        item["score_kind"] == "clap_audio_text_cosine_similarity_v1"
+        and -1.0 <= item["score"] <= 1.0
+        for item in mood["items"]
+    )
 
 
 def test_missing_or_insufficient_evidence_is_not_invented() -> None:

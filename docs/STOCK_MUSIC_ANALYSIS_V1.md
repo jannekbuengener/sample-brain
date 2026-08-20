@@ -66,8 +66,10 @@ local JSON paths or filesystem locations.
   `usage_context` require an explicitly injected `EmbeddingBackend` and a
   runtime-only `audio_path`. Their fixed controlled prompts are evaluated
   deterministically. A candidate needs a cosine similarity of at least `0.5`;
-  its raw score is retained with the documented score kind. All CLAP-derived
-  values remain `partial` in v1.
+  its raw score is retained with the documented score kind. Every qualifying
+  candidate is retained for collection fields; `genre` and `subgenre` retain
+  only their deterministic top candidate. All CLAP-derived values remain
+  `partial` in v1.
 - Without an injected backend or audio path, model fields are `not_run`; an
   unavailable backend is `not_run`; insufficient scored evidence is
   `no_result`; an invalid backend response is `failed`.

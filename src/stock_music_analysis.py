@@ -619,6 +619,21 @@ def _model_field(field: str, candidates: list[tuple[str, float]]) -> dict[str, o
         if field in _MODEL_COLLECTION_FIELDS:
             return _collection("no_result", [], "clap_semantic_backend", "MODEL_EVIDENCE_INSUFFICIENT")
         return _empty_value("no_result", "clap_semantic_backend", "MODEL_EVIDENCE_INSUFFICIENT")
+    if field in _MODEL_COLLECTION_FIELDS:
+        return _collection(
+            "partial",
+            [
+                _value(
+                    value,
+                    "partial",
+                    [f"clap.prompts.{field}.{value}"],
+                    "clap_semantic_backend",
+                    score=score,
+                )
+                for value, score in candidates
+            ],
+            "clap_semantic_backend",
+        )
     value, score = candidates[0]
     item = _value(
         value,
@@ -627,8 +642,6 @@ def _model_field(field: str, candidates: list[tuple[str, float]]) -> dict[str, o
         "clap_semantic_backend",
         score=score,
     )
-    if field in _MODEL_COLLECTION_FIELDS:
-        return _collection("partial", [item], "clap_semantic_backend")
     return item
 
 
