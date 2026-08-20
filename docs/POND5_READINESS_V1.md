@@ -85,11 +85,26 @@ is not portable provenance and must not be serialized.
 
 ## 4. Source and technical analysis
 
-`source` is required and contains only portable identity copied from the
-selected Track Map v1 source: `file_name`, `hash`, `size_bytes` when available,
-and `audio_properties` (`duration_sec`, `sample_rate_hz`, `channels`, and bit
-depth when known). It carries `source_ref` to the Track Map/asset evidence.
-The original file is never renamed or modified.
+`source` is required. Its portable identity fields copied from the selected
+Track Map v1 source are `file_name`, `hash`, `size_bytes` when available, and
+`audio_properties` (`duration_sec`, `sample_rate_hz`, and `channels`); they
+carry `source_ref` to the Track Map/asset evidence. The original file is never
+renamed or modified.
+
+Track Map v1 is not the source of submission-container facts it does not
+define. For #451, `source.submission_technical` is the authorized portable
+technical-validation record for the selected submission file. It contains
+`format` and `bit_depth` and may repeat container-established
+`sample_rate_hz`, `channels`, or `duration_sec` only when needed to validate
+that file. Every populated field has `status`, `value`, `evidence_refs`, and
+`source_ref: "submission_file_header_probe"`. That source resolves in
+`provenance.sources` to a local container/header metadata probe of the selected
+submission file. The probe reads technical container/header metadata only: it
+is not musical, audio-feature, semantic, or arrangement re-analysis. Its
+portable provenance may identify the selected file by stable hash and file
+name, but must never serialize a local/absolute path, URI, source audio, or
+cache reference. If the probe cannot establish a required fact, it records the
+applicable non-`ok` status and #451 must HOLD; it must not guess.
 
 `analysis` is required and is an adapter view, never a reanalysis request. It
 contains a required `status` plus these optional value objects when their source
@@ -201,6 +216,14 @@ semantic evidence, missing composer, unresolved ownership/third-party
 clearance, unresolved sampling choice, invalid listing data, and unknown CSV
 support. It must not conflate `POND5_READY` with CSV completeness or with a
 legal conclusion.
+
+The required `audio` rule is evaluated deterministically from these evidence
+sources: `format` and `bit_depth` from `source.submission_technical`; duration,
+sample rate, and channels from the selected Track Map `source.audio_properties`
+unless the header probe supplies the corresponding selected-file fact. #451
+must HOLD when any required source is absent, non-`ok`, or cannot be bound to
+the selected submission file; it must not substitute a missing field from a
+different file or infer it from musical analysis.
 
 ## 10. Non-goals and validation boundary
 
