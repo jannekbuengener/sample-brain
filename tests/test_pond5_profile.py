@@ -208,7 +208,11 @@ def test_hold_reasons_classify_deserialized_rights_values(
     field: str, value: object, expected_reason: str | None
 ):
     result = resolve_pond5_profile(_config())
-    result["rights"][field] = {"status": "ok", "value": value}
+    result["rights"][field] = {
+        "status": "ok",
+        "value": value,
+        "source_ref": "pond5_profile_config",
+    }
 
     reasons = profile_hold_reasons(result)
 
@@ -224,6 +228,51 @@ def test_hold_reasons_classify_deserialized_rights_values(
         )
     else:
         assert expected_reason in reasons
+
+
+@pytest.mark.parametrize(
+    ("section", "field", "hold_reason"),
+    [
+        ("contributor", "composer", "COMPOSER_MISSING"),
+        ("rights", "ownership_authorized", "OWNERSHIP_AUTHORIZATION_UNRESOLVED"),
+        (
+            "rights",
+            "third_party_elements_cleared_for_resale",
+            "THIRD_PARTY_CLEARANCE_UNRESOLVED",
+        ),
+        ("rights", "cleared_for_sampling", "SAMPLING_POLICY_UNSET"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("source_ref", "source_origin", "should_hold"),
+    [
+        (None, None, True),
+        ("pond5_missing_source", None, True),
+        ("pond5_wrong_origin", "unknown", True),
+        ("pond5_profile_config", None, False),
+        ("pond5_per_track_override", None, False),
+    ],
+)
+def test_hold_reasons_require_resolved_allowed_manual_source(
+    section: str,
+    field: str,
+    hold_reason: str,
+    source_ref: str | None,
+    source_origin: str | None,
+    should_hold: bool,
+):
+    result = resolve_pond5_profile(_config())
+    item = result[section][field]
+    if source_ref is None:
+        item.pop("source_ref")
+    else:
+        item["source_ref"] = source_ref
+    if source_origin is not None:
+        result["provenance"]["sources"][source_ref] = {"origin": source_origin}
+
+    reasons = profile_hold_reasons(result)
+
+    assert (hold_reason in reasons) is should_hold
 
 
 def test_provenance_sources_are_portable_and_origin_explicit():

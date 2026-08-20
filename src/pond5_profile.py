@@ -34,6 +34,7 @@ _RIGHTS_FIELDS = (
 _PROFILE_SOURCE_REF = "pond5_profile_config"
 _OVERRIDE_SOURCE_REF = "pond5_per_track_override"
 _UNKNOWN_SOURCE_REF = "pond5_unknown"
+_ALLOWED_MANUAL_SOURCE_ORIGINS = frozenset({"profile", "per_track_override"})
 
 
 def resolve_pond5_profile(
@@ -127,6 +128,7 @@ def profile_hold_reasons(profile: Mapping[str, object]) -> list[str]:
         composer.get("status") != "ok"
         or not isinstance(composer_value, str)
         or not composer_value.strip()
+        or not _has_allowed_manual_source(profile, composer)
     ):
         reasons.append("COMPOSER_MISSING")
 
@@ -144,7 +146,11 @@ def profile_hold_reasons(profile: Mapping[str, object]) -> list[str]:
     ):
         item = _mapping_or_empty(rights.get(field), f"rights.{field}")
         value = item.get("value")
-        if item.get("status") != "ok" or not isinstance(value, bool):
+        if (
+            item.get("status") != "ok"
+            or not isinstance(value, bool)
+            or not _has_allowed_manual_source(profile, item)
+        ):
             reasons.append(missing_code)
         elif value is False:
             reasons.append(denied_code)
@@ -152,10 +158,34 @@ def profile_hold_reasons(profile: Mapping[str, object]) -> list[str]:
     sampling = _mapping_or_empty(
         rights.get("cleared_for_sampling"), "rights.cleared_for_sampling"
     )
-    if sampling.get("status") != "ok" or not isinstance(sampling.get("value"), bool):
+    if (
+        sampling.get("status") != "ok"
+        or not isinstance(sampling.get("value"), bool)
+        or not _has_allowed_manual_source(profile, sampling)
+    ):
         reasons.append("SAMPLING_POLICY_UNSET")
 
     return reasons
+
+
+def _has_allowed_manual_source(
+    profile: Mapping[str, object], item: Mapping[str, Any]
+) -> bool:
+    source_ref = item.get("source_ref")
+    if not isinstance(source_ref, str) or not source_ref:
+        return False
+
+    provenance = profile.get("provenance")
+    if not isinstance(provenance, Mapping):
+        return False
+    sources = provenance.get("sources")
+    if not isinstance(sources, Mapping):
+        return False
+    source = sources.get(source_ref)
+    return (
+        isinstance(source, Mapping)
+        and source.get("origin") in _ALLOWED_MANUAL_SOURCE_ORIGINS
+    )
 
 
 def _resolve_string_field(
