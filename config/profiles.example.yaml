@@ -29,6 +29,22 @@ profiles:
     search:
       backend: "numpy"
 
+    # Pond5 values are manual-only. Put real values only in the gitignored
+    # config/profiles.local.yaml, never in this example file.
+    pond5:
+      contributor:
+        composer: null
+        ipi: null
+        pro: null
+        publisher: null
+        copyright_owner: null
+      rights:
+        ownership_authorized: null
+        third_party_elements_cleared_for_resale: null
+        cleared_for_sampling: null
+      listing:
+        default_price_usd: null
+
   minimal-demo:
     library_roots:
       - "<DEMO_SAMPLE_ROOT>"
