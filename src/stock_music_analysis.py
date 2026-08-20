@@ -15,7 +15,8 @@ import re
 import numpy as np
 
 from .content_hash import normalize_hash_record
-from .embed import EmbeddingBackendUnavailableError
+from .embed import EmbeddingBackendUnavailableError, NoopEmbeddingBackend
+from .producer_groups import validate_producer_group_manifest
 
 
 STOCK_MUSIC_ANALYSIS_DOCUMENT_TYPE = "sample_brain.stock_music_analysis"
@@ -117,6 +118,18 @@ _SAFE_MODEL_NAME = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?:/[A-Za-z0-9][A-Za-z0-9_.-]*)?$"
 )
 _SAFE_MODEL_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+_SAFE_SCHEMA_VERSION = re.compile(r"^(?P<major>[0-9]+)\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?$")
+_UNSAFE_MODEL_ID_FRAGMENTS = (
+    "cache",
+    "index",
+    "file",
+    ".db",
+    ".sqlite",
+    ".npz",
+    ".pth",
+    ".pt",
+    ".safetensors",
+)
 
 
 def produce_stock_music_analysis(
@@ -195,7 +208,7 @@ def _track_identity(track_map: Mapping[str, object]) -> tuple[str, dict[str, obj
     if track_map.get("document_type") != "sample_brain.track_map":
         raise ValueError("track_map must use sample_brain.track_map")
     schema_version = track_map.get("schema_version")
-    if not isinstance(schema_version, str) or not schema_version.startswith("1."):
+    if not _is_safe_schema_version(schema_version, major=1):
         raise ValueError("track_map must use Track Map v1")
     hash_record = _mapping_at(track_map, "source", "original", "hash")
     normalized_hash = normalize_hash_record(dict(hash_record))
@@ -261,8 +274,13 @@ def _arrangement_descriptors(
         )
 
     schema_version = arrangement_map.get("schema_version")
-    if isinstance(schema_version, str):
-        sources["arrangement_map"]["schema_version"] = schema_version
+    if not _is_safe_schema_version(schema_version):
+        sources["arrangement_map"]["status"] = "failed"
+        return (
+            _empty_value("failed", "arrangement_map", "ARRANGEMENT_MAP_INVALID"),
+            _collection("failed", [], "arrangement_map", "ARRANGEMENT_MAP_INVALID"),
+        )
+    sources["arrangement_map"]["schema_version"] = schema_version
     records, producer_status = _automatic_arrangement_records(arrangement_map)
     sources["arrangement_map"]["status"] = producer_status
     if producer_status == "failed":
@@ -276,10 +294,11 @@ def _arrangement_descriptors(
             _collection("no_result", [], "arrangement_map", "ARRANGEMENT_UNAVAILABLE"),
         )
 
+    inherited_uncertainty = producer_status == "uncertain"
     arrangement_items = [
         _value(
             role,
-            "partial" if status == "uncertain" else "ok",
+            "partial" if inherited_uncertainty or status == "uncertain" else "ok",
             refs,
             "arrangement_map",
             vocabulary=ARRANGEMENT_ROLE_VOCABULARY,
@@ -289,12 +308,17 @@ def _arrangement_descriptors(
     ]
     arrangement_status = _aggregate_status(item["status"] for item in arrangement_items)
     energy_value, energy_status, energy_refs = _energy_from_arrangement(records)
-    energy = _value(
-        energy_value,
-        energy_status,
-        energy_refs,
-        "arrangement_map",
-    )
+    if energy_value is None:
+        energy = _empty_value(
+            "no_result", "arrangement_map", "ENERGY_EVIDENCE_INSUFFICIENT"
+        )
+    else:
+        energy = _value(
+            energy_value,
+            "partial" if inherited_uncertainty else energy_status,
+            energy_refs,
+            "arrangement_map",
+        )
     return energy, _collection(arrangement_status, arrangement_items, "arrangement_map")
 
 
@@ -303,6 +327,10 @@ def _automatic_arrangement_records(
 ) -> tuple[list[tuple[str, str, list[str]]], str]:
     root_status = arrangement_map.get("status")
     if root_status == "failed":
+        return [], "failed"
+    if root_status in {"unknown", "unavailable"}:
+        return [], "unavailable"
+    if root_status is not None and root_status not in _ARRANGEMENT_STATUSES:
         return [], "failed"
     sections = arrangement_map.get("sections")
     if not isinstance(sections, list):
@@ -342,7 +370,11 @@ def _automatic_arrangement_records(
         )
 
     if records:
-        return records, "uncertain" if any(item[1] == "uncertain" for item in records) else "available"
+        return records, (
+            "uncertain"
+            if root_status == "uncertain" or any(item[1] == "uncertain" for item in records)
+            else "available"
+        )
     if root_status in {"unknown", "unavailable"} or saw_unavailable:
         return [], "unavailable"
     return [], "unavailable"
@@ -369,7 +401,7 @@ def _collapse_arrangement_records(
 
 def _energy_from_arrangement(
     records: list[tuple[str, str, list[str]]],
-) -> tuple[str, str, list[str]]:
+) -> tuple[str | None, str, list[str]]:
     collapsed = {role: (status, refs) for role, status, refs in _collapse_arrangement_records(records)}
     if "drop" in collapsed and "breakdown" in collapsed:
         evidence = [collapsed["drop"], collapsed["breakdown"]]
@@ -384,8 +416,7 @@ def _energy_from_arrangement(
         evidence = [collapsed["build"]]
         value = "medium"
     else:
-        evidence = [collapsed["breakdown"]]
-        value = "low"
+        return None, "no_result", []
     status = "partial" if any(item[0] == "uncertain" for item in evidence) else "ok"
     refs = sorted({ref for _, item_refs in evidence for ref in item_refs})
     return value, status, refs
@@ -408,7 +439,8 @@ def _instrumentation(
         if not isinstance(manifest, Mapping):
             sources["producer_groups"]["status"] = "failed"
             return _collection("failed", [], "producer_groups", "PRODUCER_GROUP_INVALID")
-        if manifest.get("document_type") != "sample_brain.producer_group":
+        manifest_data = dict(manifest)
+        if validate_producer_group_manifest(manifest_data):
             sources["producer_groups"]["status"] = "failed"
             return _collection("failed", [], "producer_groups", "PRODUCER_GROUP_INVALID")
         group_kind = manifest.get("group_kind")
@@ -424,9 +456,7 @@ def _instrumentation(
             "document_type": "sample_brain.producer_group",
             "group_kind": group_kind,
         }
-        schema_version = manifest.get("schema_version")
-        if isinstance(schema_version, str):
-            source["schema_version"] = schema_version
+        source["schema_version"] = "1.0.0"
         sources[source_ref] = source
         if group_status == "failed":
             sources["producer_groups"]["status"] = "failed"
@@ -483,14 +513,18 @@ def _model_descriptors(
 ) -> dict[str, dict[str, object]]:
     if audio_path is None or semantic_backend is None:
         return _empty_model_fields("not_run", "SEMANTIC_BACKEND_NOT_SUPPLIED")
+    if isinstance(semantic_backend, NoopEmbeddingBackend):
+        return _empty_model_fields("not_run", "SEMANTIC_BACKEND_UNAVAILABLE")
     if not _looks_like_backend(semantic_backend):
         sources["clap_semantic_backend"]["status"] = "failed"
         return _empty_model_fields("failed", "SEMANTIC_BACKEND_INVALID")
 
     try:
-        audio_vector = _normalized_vector(semantic_backend.embed_audio(audio_path))
-        scored = _score_model_prompts(semantic_backend, audio_vector)
         source = _model_source(semantic_backend.model_info())
+        audio_vector = _normalized_vector(semantic_backend.embed_audio(audio_path))
+        if audio_vector.size != source["embedding_dim"]:
+            raise ValueError("semantic vector dimension differs from model contract")
+        scored = _score_model_prompts(semantic_backend, audio_vector)
     except EmbeddingBackendUnavailableError:
         return _empty_model_fields("not_run", "SEMANTIC_BACKEND_UNAVAILABLE")
     except Exception:
@@ -545,9 +579,9 @@ def _model_source(model_info: object) -> dict[str, object]:
         not isinstance(provider, str)
         or not _SAFE_PROVIDER.fullmatch(provider)
         or not isinstance(model_name, str)
-        or not _SAFE_MODEL_NAME.fullmatch(model_name)
+        or not _is_safe_model_name(provider, model_name)
         or not isinstance(model_version, str)
-        or not _SAFE_MODEL_VERSION.fullmatch(model_version)
+        or not _is_safe_model_version(model_version)
         or not isinstance(embedding_dim, int)
         or isinstance(embedding_dim, bool)
         or embedding_dim < 1
@@ -650,6 +684,28 @@ def _mapping_at(value: object, *keys: str) -> Mapping[str, object]:
             return {}
         current = current.get(key)
     return current if isinstance(current, Mapping) else {}
+
+
+def _is_safe_schema_version(value: object, *, major: int | None = None) -> bool:
+    if not isinstance(value, str):
+        return False
+    match = _SAFE_SCHEMA_VERSION.fullmatch(value)
+    return match is not None and (major is None or match.group("major") == str(major))
+
+
+def _is_safe_model_name(provider: str, model_name: str) -> bool:
+    if not _SAFE_MODEL_NAME.fullmatch(model_name):
+        return False
+    if any(fragment in model_name.lower() for fragment in _UNSAFE_MODEL_ID_FRAGMENTS):
+        return False
+    parts = model_name.split("/")
+    return len(parts) == 1 or parts[0] == provider
+
+
+def _is_safe_model_version(model_version: str) -> bool:
+    return _SAFE_MODEL_VERSION.fullmatch(model_version) is not None and not any(
+        fragment in model_version.lower() for fragment in _UNSAFE_MODEL_ID_FRAGMENTS
+    )
 
 
 def _finite_number(value: object) -> bool:

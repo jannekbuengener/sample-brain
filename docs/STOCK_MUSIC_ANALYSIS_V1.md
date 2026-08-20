@@ -52,6 +52,10 @@ local JSON paths or filesystem locations.
 - `energy_class` and `arrangement_character` use automatic Arrangement Map
   evidence only. Manual overrides never contribute. `arrangement_character`
   uses the existing `sample_brain.arrangement_role_vocabulary` v1.0.0 exactly.
+  A root-level `uncertain` status keeps both fields `partial`; an automatic map
+  without a supported energy-bearing role produces `energy_class: no_result`.
+  A lone `breakdown` never implies `low`: no energy value is emitted without
+  independent automatic energy-bearing role evidence.
 - `instrumentation` is derived only from confirmed Producer Group manifests.
   `melodic` and `atmos_fx` are HPSS proxies and remain `partial`.
 - `genre`, `subgenre`, `mood`, `sound_palette`, `production_character`, and

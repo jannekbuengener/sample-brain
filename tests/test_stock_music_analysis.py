@@ -4,8 +4,14 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
-from src.embed import EmbeddingBackend, EmbeddingBackendUnavailableError, EmbeddingModelInfo
+from src.embed import (
+    EmbeddingBackend,
+    EmbeddingBackendUnavailableError,
+    EmbeddingModelInfo,
+    NoopEmbeddingBackend,
+)
 from src.stock_music_analysis import produce_stock_music_analysis
 
 
@@ -38,11 +44,13 @@ def _track_map(*, bpm_status: str = "ok", bpm: float | None = 128.0) -> dict:
     }
 
 
-def _arrangement(*, role: str = "drop", status: str = "available") -> dict:
+def _arrangement(
+    *, role: str = "drop", status: str = "available", root_status: str | None = None
+) -> dict:
     return {
         "document_type": "sample_brain.arrangement_map",
         "schema_version": "0.1.0-draft",
-        "status": status,
+        "status": status if root_status is None else root_status,
         "sections": [
             {
                 "id": "section_01",
@@ -55,14 +63,30 @@ def _arrangement(*, role: str = "drop", status: str = "available") -> dict:
 
 
 def _group(kind: str, status: str) -> dict:
-    return {
+    technical_stems = {
+        "kick_bass": ["drums", "bass"],
+        "drums": ["drums"],
+        "vocal": ["vocals"],
+        "melodic": ["other"],
+        "atmos_fx": ["other"],
+    }
+    manifest: dict[str, object] = {
         "document_type": "sample_brain.producer_group",
         "schema_version": "1.0.0",
         "group_kind": kind,
+        "group_id": f"producer_group_id_{kind}",
         "group_ref": f"producer_group_{kind}",
         "status": status,
-        "technical_stems": ["other"] if kind in {"melodic", "atmos_fx"} else [kind],
+        "masks": "confirmed_test_mask",
+        "summation": "confirmed_test_sum",
+        "timebase": {"sample_rate_hz": 44100, "n_samples": 44100},
+        "technical_stems": technical_stems[kind],
+        "components": [{"source_kind": "test"}],
+        "processing": [],
     }
+    if status == "no_result":
+        manifest["reason_code"] = "NO_CONFIRMED_AUDIO"
+    return manifest
 
 
 class _SemanticBackend(EmbeddingBackend):
@@ -107,6 +131,28 @@ class _SecretProvenanceBackend(_SemanticBackend):
             model_name="C:\\model-cache\\private-model",
             model_version="test-v1",
             embedding_dim=2,
+            modality="audio_text",
+        )
+
+
+class _RelativeModelPathBackend(_SemanticBackend):
+    def model_info(self) -> EmbeddingModelInfo:
+        return EmbeddingModelInfo(
+            provider="fake",
+            model_name="fake/model-cache",
+            model_version="test-v1",
+            embedding_dim=2,
+            modality="audio_text",
+        )
+
+
+class _DimensionMismatchBackend(_SemanticBackend):
+    def model_info(self) -> EmbeddingModelInfo:
+        return EmbeddingModelInfo(
+            provider="fake",
+            model_name="fake-clap",
+            model_version="test-v1",
+            embedding_dim=512,
             modality="audio_text",
         )
 
@@ -256,6 +302,94 @@ def test_missing_producer_group_does_not_create_instrumentation() -> None:
     instrumentation = result["semantic"]["instrumentation"]
     assert instrumentation["status"] == "no_result"
     assert instrumentation["items"] == []
+
+
+def test_arrangement_without_energy_bearing_role_has_no_energy_result() -> None:
+    result = produce_stock_music_analysis(
+        _track_map(),
+        arrangement_map=_arrangement(role="intro"),
+    )
+
+    assert result["semantic"]["arrangement_character"]["status"] == "ok"
+    assert _item_values(result["semantic"]["arrangement_character"]) == {"intro"}
+    assert result["semantic"]["energy_class"]["status"] == "no_result"
+
+
+def test_root_arrangement_uncertainty_keeps_derived_descriptors_partial() -> None:
+    result = produce_stock_music_analysis(
+        _track_map(),
+        arrangement_map=_arrangement(root_status="uncertain"),
+    )
+
+    assert result["semantic"]["arrangement_character"]["status"] == "partial"
+    assert result["semantic"]["arrangement_character"]["items"][0]["status"] == "partial"
+    assert result["semantic"]["energy_class"]["status"] == "partial"
+
+
+def test_explicit_noop_backend_is_not_run() -> None:
+    result = produce_stock_music_analysis(
+        _track_map(),
+        audio_path="C:\\private\\input\\track.wav",
+        semantic_backend=NoopEmbeddingBackend(),
+    )
+
+    assert result["semantic"]["genre"]["status"] == "not_run"
+
+
+def test_unconfirmed_producer_group_manifest_cannot_create_instrumentation() -> None:
+    manifest = _group("drums", "ok")
+    manifest.pop("components")
+
+    result = produce_stock_music_analysis(
+        _track_map(),
+        producer_group_manifests=(manifest,),
+    )
+
+    assert result["semantic"]["instrumentation"]["status"] == "failed"
+    assert result["semantic"]["instrumentation"]["items"] == []
+
+
+def test_nonportable_schema_versions_are_failed_closed_or_rejected() -> None:
+    unsafe_track_map = _track_map()
+    unsafe_track_map["schema_version"] = "1.file://private"
+    with pytest.raises(ValueError):
+        produce_stock_music_analysis(unsafe_track_map)
+
+    unsafe_arrangement = _arrangement()
+    unsafe_arrangement["schema_version"] = "0.1.0-file://private"
+    result = produce_stock_music_analysis(_track_map(), arrangement_map=unsafe_arrangement)
+    assert result["semantic"]["energy_class"]["status"] == "failed"
+    assert "file://private" not in json.dumps(result)
+
+
+def test_relative_model_cache_name_is_not_serialized() -> None:
+    result = produce_stock_music_analysis(
+        _track_map(),
+        audio_path="C:\\private\\input\\track.wav",
+        semantic_backend=_RelativeModelPathBackend(),
+    )
+
+    assert result["semantic"]["genre"]["status"] == "failed"
+    assert "model-cache" not in json.dumps(result)
+
+
+def test_model_embedding_dimension_mismatch_is_failed() -> None:
+    result = produce_stock_music_analysis(
+        _track_map(),
+        audio_path="C:\\private\\input\\track.wav",
+        semantic_backend=_DimensionMismatchBackend(),
+    )
+
+    assert result["semantic"]["genre"]["status"] == "failed"
+
+
+def test_breakdown_alone_does_not_invent_low_energy() -> None:
+    result = produce_stock_music_analysis(
+        _track_map(),
+        arrangement_map=_arrangement(role="breakdown"),
+    )
+
+    assert result["semantic"]["energy_class"]["status"] == "no_result"
 
 
 def test_vocabulary_contract_is_versioned_and_has_no_prohibited_terms() -> None:
