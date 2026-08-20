@@ -1,8 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
+import types
 
 import pytest
+
+# Core CI intentionally does not install pandas. The security contract under
+# test only needs emit_rename_ps1(), which does not use pandas, so provide a
+# harmless import stub when the optional dependency is absent.
+try:
+    import pandas  # noqa: F401
+except ModuleNotFoundError:
+    sys.modules["pandas"] = types.ModuleType("pandas")
 
 from tools.title_pipeline import emit_rename_ps1
 
