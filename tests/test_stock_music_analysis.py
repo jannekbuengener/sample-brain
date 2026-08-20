@@ -392,6 +392,37 @@ def test_breakdown_alone_does_not_invent_low_energy() -> None:
     assert result["semantic"]["energy_class"]["status"] == "no_result"
 
 
+def test_missing_automatic_arrangement_result_is_failed_closed() -> None:
+    arrangement = _arrangement()
+    arrangement["sections"].append({"id": "section_02"})
+
+    result = produce_stock_music_analysis(_track_map(), arrangement_map=arrangement)
+
+    assert result["semantic"]["energy_class"]["status"] == "failed"
+    assert result["semantic"]["arrangement_character"]["status"] == "failed"
+
+
+def test_malformed_producer_group_values_are_failed_closed() -> None:
+    manifest = _group("drums", "ok")
+    manifest["group_kind"] = []
+
+    result = produce_stock_music_analysis(
+        _track_map(),
+        producer_group_manifests=(manifest,),
+    )
+
+    assert result["semantic"]["instrumentation"]["status"] == "failed"
+
+
+def test_unsupported_arrangement_schema_major_is_failed_closed() -> None:
+    arrangement = _arrangement()
+    arrangement["schema_version"] = "1.0.0"
+
+    result = produce_stock_music_analysis(_track_map(), arrangement_map=arrangement)
+
+    assert result["semantic"]["energy_class"]["status"] == "failed"
+
+
 def test_vocabulary_contract_is_versioned_and_has_no_prohibited_terms() -> None:
     vocabulary = json.loads(
         (ROOT / "docs" / "stock_music_descriptor_vocabulary_v1.json").read_text(

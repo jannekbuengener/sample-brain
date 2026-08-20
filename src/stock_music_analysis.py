@@ -274,7 +274,7 @@ def _arrangement_descriptors(
         )
 
     schema_version = arrangement_map.get("schema_version")
-    if not _is_safe_schema_version(schema_version):
+    if not _is_safe_schema_version(schema_version, major=0):
         sources["arrangement_map"]["status"] = "failed"
         return (
             _empty_value("failed", "arrangement_map", "ARRANGEMENT_MAP_INVALID"),
@@ -343,7 +343,7 @@ def _automatic_arrangement_records(
             return [], "failed"
         automatic = section.get("automatic_result")
         if not isinstance(automatic, Mapping):
-            continue
+            return [], "failed"
         role = automatic.get("role")
         status = automatic.get("status")
         if not isinstance(role, str) or not isinstance(status, str):
@@ -439,8 +439,11 @@ def _instrumentation(
         if not isinstance(manifest, Mapping):
             sources["producer_groups"]["status"] = "failed"
             return _collection("failed", [], "producer_groups", "PRODUCER_GROUP_INVALID")
-        manifest_data = dict(manifest)
-        if validate_producer_group_manifest(manifest_data):
+        try:
+            manifest_errors = validate_producer_group_manifest(dict(manifest))
+        except (TypeError, ValueError):
+            manifest_errors = ["PRODUCER_GROUP_INVALID"]
+        if manifest_errors:
             sources["producer_groups"]["status"] = "failed"
             return _collection("failed", [], "producer_groups", "PRODUCER_GROUP_INVALID")
         group_kind = manifest.get("group_kind")
