@@ -234,8 +234,24 @@ def render_pond5_csv(row: Mapping[str, object]) -> str:
     buffer = io.StringIO(newline="")
     writer = csv.DictWriter(buffer, fieldnames=list(POND5_CSV_COLUMNS), extrasaction="ignore")
     writer.writeheader()
-    writer.writerow({key: row.get(key, "") for key in POND5_CSV_COLUMNS})
+    writer.writerow(
+        {
+            key: _neutralize_spreadsheet_text(row.get(key, ""))
+            if key != "Price"
+            else row.get(key, "")
+            for key in POND5_CSV_COLUMNS
+        }
+    )
     return buffer.getvalue()
+
+
+def _neutralize_spreadsheet_text(value: object) -> object:
+    """Prevent spreadsheet formula evaluation without changing safe CSV values."""
+    if not isinstance(value, str) or not value:
+        return value
+    if value[0] in {"=", "+", "-", "@", "\t", "\r", "\n"}:
+        return "'" + value
+    return value
 
 
 def suggest_target_upload_filename(source_name: str) -> str:

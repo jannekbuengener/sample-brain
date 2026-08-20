@@ -272,6 +272,40 @@ def test_csv_uses_only_proven_columns_and_escapes_utf8() -> None:
     assert "Composer" not in rendered.splitlines()[0]
 
 
+@pytest.mark.parametrize("prefix", ["=", "+", "-", "@", "\t", "\r", "\n"])
+def test_csv_neutralizes_spreadsheet_formula_prefixes(prefix: str) -> None:
+    row = {
+        "OriginalFilename": f"{prefix}Track.wav",
+        "Title": f"{prefix}1+1",
+        "Description": f"{prefix}SUM(1+1)",
+        "Keywords": f"{prefix}music",
+        "Copyright": f"{prefix}Owner",
+        "Price": 19.0,
+    }
+
+    parsed = next(csv.DictReader(io.StringIO(render_pond5_csv(row))))
+
+    for field in ("OriginalFilename", "Title", "Description", "Keywords", "Copyright"):
+        assert parsed[field].startswith("'")
+        assert parsed[field][1:] == row[field]
+    assert parsed["Price"] == "19.0"
+
+
+def test_csv_does_not_modify_safe_text_cells() -> None:
+    row = {
+        "OriginalFilename": "Track.wav",
+        "Title": "Bright Music",
+        "Description": "Safe description",
+        "Keywords": "music,bright",
+        "Copyright": "Owner",
+        "Price": 19.0,
+    }
+
+    parsed = next(csv.DictReader(io.StringIO(render_pond5_csv(row))))
+
+    assert parsed == {key: str(value) for key, value in row.items()}
+
+
 def test_non_csv_manual_fields_remain_in_metadata(tmp_path: Path) -> None:
     source = _write_audio(tmp_path / "Track.wav")
     bundle = _bundle(source)
