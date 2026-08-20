@@ -13,7 +13,7 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 | #198 Workbench matching | 🔶 Open | Plan drafted — [`WORKBENCH_MATCHING_SUGGESTIONS_PLAN.md`](WORKBENCH_MATCHING_SUGGESTIONS_PLAN.md); implementation follow-up after merge-GO |
 | #196 numpy/numba | 🔶 HOLD | `numpy>=2.5` blocked by `numba` pin; supersedes closed Dependabot PR #103 |
 | #73 CLAP Tier-B | 🔶 4/6 on main | Phase 1+2 merged (#110, #111); vocal proxy spike **HOLD**; genre/mood pending |
-| #74 sqlite-vec ANN | 🔶 Tracking | Monitor ANN release readiness; default backend remains `numpy` |
+| #74 sqlite-vec ANN | 🔶 Tracking | Monitor ANN release readiness (rechecked 2026-08-20: v0.1.9 stable, v0.1.10-alpha.4 pre-release, no stable ANN contract); default backend remains `numpy` |
 | VST-first product target | ✅ Spec complete | PR #102 parent; PR #105 (#91/#94 closed); PR #106 (#92/#93/#95 closed); PR #107 (#90 closed); all 5 specs under `docs/product/` |
 | Open PRs | ✅ None | No open PRs on `main` |
 | `main` HEAD | ✅ Current | `9968c6d` — feat: add workbench playlist detail view (PR #206) |
@@ -74,7 +74,7 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 As of `main` at `9968c6d`:
 
 - **EPIC 2 runtime and E2E proof** — completed and documented (`CURRENT_STATUS.md`, `EPIC_2_SEMANTIC_SEARCH_SPEC.md`)
-- **sqlite-vec campaign** — Phases 1–8 closed (PRs #47–#53); default backend remains `numpy`; **#74** tracks ANN readiness
+- **sqlite-vec campaign** — Phases 1–8 closed (PRs #47–#53); default backend remains `numpy`; **#74** tracks ANN readiness (rechecked 2026-08-20; no stable upstream ANN contract)
 - **Search quality campaign** — Tier A gates PASS (PR #54); Tier B Phase 1+2 merged (#110, #111); vocal proxy spike HOLD; 4/6 #73 classes on main
 - **EPIC 3 foundation** — hybrid ranking score contract merged via PR #23
 - **VST-first product target** — PR #102 parent consolidated; PR #105 merged (#91/#94); PR #106 merged (#92/#93/#95); all 5 pillar specs under `docs/product/`; parent #90 closed via PR #107
