@@ -151,6 +151,20 @@ def test_profile_does_not_accept_track_map_or_semantic_fallbacks():
     assert result["contributor"]["copyright_owner"]["status"] == "unknown"
 
 
+def test_empty_non_mapping_overrides_are_rejected():
+    with pytest.raises(ConfigError, match="overrides must be a mapping"):
+        resolve_pond5_profile(_config(), per_track_overrides=[])  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_default_price_is_rejected(value: float):
+    cfg = _config()
+    cfg["pond5"]["listing"]["default_price_usd"] = value
+
+    with pytest.raises(ConfigError, match="finite"):
+        resolve_pond5_profile(cfg)
+
+
 def test_provenance_sources_are_portable_and_origin_explicit():
     result = resolve_pond5_profile(_config())
     sources = result["provenance"]["sources"]

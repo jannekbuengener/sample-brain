@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
+import math
 from typing import Any
 
 from .config_loader import ConfigError
@@ -55,7 +56,7 @@ def resolve_pond5_profile(
     if not isinstance(pond5, Mapping):
         raise ConfigError("pond5 config must be a mapping")
 
-    overrides = per_track_overrides or {}
+    overrides = {} if per_track_overrides is None else per_track_overrides
     if not isinstance(overrides, Mapping):
         raise ConfigError("per-track Pond5 overrides must be a mapping")
 
@@ -190,8 +191,8 @@ def _resolve_price_field(
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ConfigError("pond5 listing.default_price_usd must be numeric or null")
     normalized = float(value)
-    if normalized < 0:
-        raise ConfigError("pond5 listing.default_price_usd must be >= 0")
+    if not math.isfinite(normalized) or normalized < 0:
+        raise ConfigError("pond5 listing.default_price_usd must be finite and >= 0")
     return _manual_value(normalized, "ok", source_ref)
 
 
