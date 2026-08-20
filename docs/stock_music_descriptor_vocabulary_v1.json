@@ -1,0 +1,21 @@
+{
+  "document_type": "sample_brain.stock_music_descriptor_vocabulary",
+  "schema_version": "1.0.0",
+  "vocabulary_id": "sample_brain.stock_music_descriptor_v1",
+  "fields": {
+    "genre": ["acoustic", "ambient", "cinematic", "classical", "electronic", "hip_hop", "pop", "rock"],
+    "subgenre": ["ambient_electronic", "downtempo", "house", "techno", "trap"],
+    "mood": ["calm", "dark", "driving", "energetic", "hopeful", "mysterious", "tense", "uplifting"],
+    "energy_class": ["low", "medium", "high", "dynamic"],
+    "pace_character": ["slow", "moderate", "upbeat", "fast"],
+    "instrumentation": ["drums", "bass", "vocals", "melodic_elements", "atmospheric_fx"],
+    "sound_palette": ["atmospheric", "bright", "dark", "warm", "electronic", "acoustic"],
+    "production_character": ["dense", "minimal", "polished", "raw", "spacious"],
+    "usage_context": ["background", "corporate", "documentary", "fitness", "podcast", "promotion"]
+  },
+  "prohibited_reference_categories": ["artist", "brand", "film", "tv", "game", "rights", "contributor"],
+  "score": {
+    "kind": "clap_audio_text_cosine_similarity_v1",
+    "range": [-1.0, 1.0]
+  }
+}
