@@ -53,7 +53,9 @@ local JSON paths or filesystem locations.
   evidence only. Manual overrides never contribute. `arrangement_character`
   uses the existing `sample_brain.arrangement_role_vocabulary` v1.0.0 exactly.
   Only the supported Arrangement Map `0.x` schema family is accepted; every
-  supplied section must carry an automatic result.
+  supplied section must carry an automatic result and the root `status` is
+  required. A supplied map that combines usable automatic sections with an
+  `unknown` or `unavailable` section keeps derived values `partial`.
   A root-level `uncertain` status keeps both fields `partial`; an automatic map
   without a supported energy-bearing role produces `energy_class: no_result`.
   A lone `breakdown` never implies `low`: no energy value is emitted without

@@ -174,7 +174,7 @@ def produce_stock_music_analysis(
 
     pace = _pace_character(track_map)
     energy, arrangement = _arrangement_descriptors(arrangement_map, sources)
-    instrumentation = _instrumentation(producer_group_manifests, sources)
+    instrumentation = _instrumentation(producer_group_manifests, track_ref, sources)
     model_fields = _model_descriptors(audio_path, semantic_backend, sources)
 
     semantic: dict[str, object] = {
@@ -326,12 +326,12 @@ def _automatic_arrangement_records(
     arrangement_map: Mapping[str, object],
 ) -> tuple[list[tuple[str, str, list[str]]], str]:
     root_status = arrangement_map.get("status")
+    if not isinstance(root_status, str) or root_status not in _ARRANGEMENT_STATUSES:
+        return [], "failed"
     if root_status == "failed":
         return [], "failed"
     if root_status in {"unknown", "unavailable"}:
         return [], "unavailable"
-    if root_status is not None and root_status not in _ARRANGEMENT_STATUSES:
-        return [], "failed"
     sections = arrangement_map.get("sections")
     if not isinstance(sections, list):
         return [], "failed"
@@ -372,7 +372,11 @@ def _automatic_arrangement_records(
     if records:
         return records, (
             "uncertain"
-            if root_status == "uncertain" or any(item[1] == "uncertain" for item in records)
+            if (
+                root_status == "uncertain"
+                or saw_unavailable
+                or any(item[1] == "uncertain" for item in records)
+            )
             else "available"
         )
     if root_status in {"unknown", "unavailable"} or saw_unavailable:
@@ -423,7 +427,9 @@ def _energy_from_arrangement(
 
 
 def _instrumentation(
-    manifests: Iterable[Mapping[str, object]], sources: dict[str, dict[str, object]]
+    manifests: Iterable[Mapping[str, object]],
+    track_ref: str,
+    sources: dict[str, dict[str, object]],
 ) -> dict[str, object]:
     try:
         materialized = tuple(manifests)
@@ -446,6 +452,12 @@ def _instrumentation(
         if manifest_errors:
             sources["producer_groups"]["status"] = "failed"
             return _collection("failed", [], "producer_groups", "PRODUCER_GROUP_INVALID")
+        manifest_track_ref = manifest.get("track_ref")
+        if manifest_track_ref is not None and manifest_track_ref != track_ref:
+            sources["producer_groups"]["status"] = "failed"
+            return _collection(
+                "failed", [], "producer_groups", "PRODUCER_GROUP_TRACK_MISMATCH"
+            )
         group_kind = manifest.get("group_kind")
         group_status = manifest.get("status")
         if not isinstance(group_kind, str) or group_kind not in _GROUP_TERMS:

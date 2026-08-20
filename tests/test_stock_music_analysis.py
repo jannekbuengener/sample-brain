@@ -423,6 +423,43 @@ def test_unsupported_arrangement_schema_major_is_failed_closed() -> None:
     assert result["semantic"]["energy_class"]["status"] == "failed"
 
 
+def test_missing_arrangement_root_status_is_failed_closed() -> None:
+    arrangement = _arrangement()
+    arrangement.pop("status")
+
+    result = produce_stock_music_analysis(_track_map(), arrangement_map=arrangement)
+
+    assert result["semantic"]["energy_class"]["status"] == "failed"
+    assert result["semantic"]["arrangement_character"]["status"] == "failed"
+
+
+def test_mixed_unavailable_arrangement_sections_keep_descriptors_partial() -> None:
+    arrangement = _arrangement()
+    arrangement["sections"].append(
+        {
+            "id": "section_02",
+            "automatic_result": {"role": "unknown", "status": "unavailable"},
+        }
+    )
+
+    result = produce_stock_music_analysis(_track_map(), arrangement_map=arrangement)
+
+    assert result["semantic"]["energy_class"]["status"] == "partial"
+    assert result["semantic"]["arrangement_character"]["status"] == "partial"
+
+
+def test_foreign_producer_group_track_ref_is_failed_closed() -> None:
+    manifest = _group("drums", "ok")
+    manifest["track_ref"] = f"sha256:{'b' * 64}"
+
+    result = produce_stock_music_analysis(
+        _track_map(), producer_group_manifests=(manifest,)
+    )
+
+    assert result["semantic"]["instrumentation"]["status"] == "failed"
+    assert result["semantic"]["instrumentation"]["items"] == []
+
+
 def test_vocabulary_contract_is_versioned_and_has_no_prohibited_terms() -> None:
     vocabulary = json.loads(
         (ROOT / "docs" / "stock_music_descriptor_vocabulary_v1.json").read_text(
