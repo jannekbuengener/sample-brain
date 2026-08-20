@@ -165,6 +165,20 @@ def test_non_finite_default_price_is_rejected(value: float):
         resolve_pond5_profile(cfg)
 
 
+def test_hold_reasons_reject_malformed_ok_composer_value():
+    result = resolve_pond5_profile(_config())
+    result["contributor"]["composer"] = {"status": "ok", "value": None}
+
+    assert "COMPOSER_MISSING" in profile_hold_reasons(result)
+
+
+def test_hold_reasons_reject_malformed_ok_sampling_value():
+    result = resolve_pond5_profile(_config())
+    result["rights"]["cleared_for_sampling"] = {"status": "ok", "value": None}
+
+    assert "SAMPLING_POLICY_UNSET" in profile_hold_reasons(result)
+
+
 def test_provenance_sources_are_portable_and_origin_explicit():
     result = resolve_pond5_profile(_config())
     sources = result["provenance"]["sources"]

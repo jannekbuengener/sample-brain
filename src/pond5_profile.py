@@ -122,7 +122,12 @@ def profile_hold_reasons(profile: Mapping[str, object]) -> list[str]:
     reasons: list[str] = []
 
     composer = _mapping_or_empty(contributor.get("composer"), "contributor.composer")
-    if composer.get("status") != "ok":
+    composer_value = composer.get("value")
+    if (
+        composer.get("status") != "ok"
+        or not isinstance(composer_value, str)
+        or not composer_value.strip()
+    ):
         reasons.append("COMPOSER_MISSING")
 
     for field, missing_code, denied_code in (
@@ -146,7 +151,7 @@ def profile_hold_reasons(profile: Mapping[str, object]) -> list[str]:
     sampling = _mapping_or_empty(
         rights.get("cleared_for_sampling"), "rights.cleared_for_sampling"
     )
-    if sampling.get("status") != "ok":
+    if sampling.get("status") != "ok" or not isinstance(sampling.get("value"), bool):
         reasons.append("SAMPLING_POLICY_UNSET")
 
     return reasons
