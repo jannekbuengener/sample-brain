@@ -795,6 +795,7 @@ def main():
     if args.cmd == "pond5":
         if args.pond5_cmd == "prepare":
             from .context_analyze import ContextAnalyzeError, analyze_context_file_cached
+            from .config_loader import ConfigError
             from .pond5_profile import resolve_pond5_profile
             from .pond5_readiness import build_pond5_bundle, write_pond5_bundle
             from .stock_music_analysis import produce_stock_music_analysis
@@ -826,7 +827,7 @@ def main():
                     source_path=Path(args.path),
                 )
                 write_pond5_bundle(bundle, Path(args.output))
-            except (ContextAnalyzeError, OSError, ValueError) as exc:
+            except (ContextAnalyzeError, ConfigError, OSError, ValueError) as exc:
                 code = getattr(exc, "code", "POND5_PREPARE_FAILED")
                 print(
                     json.dumps(

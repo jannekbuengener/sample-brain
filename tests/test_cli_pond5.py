@@ -112,6 +112,55 @@ def test_pond5_prepare_cli_writes_ready_bundle(
     assert "Example Composer" in metadata_text
 
 
+def test_pond5_prepare_rejects_invalid_override_shape_without_traceback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from src import context_analyze, stock_music_analysis
+    from src.cli import main
+
+    source = _write_stereo_wav(tmp_path / "Track.wav")
+    config = tmp_path / "profiles.yaml"
+    config.write_text("profiles:\n  default: {}\n", encoding="utf-8")
+    overrides = tmp_path / "overrides.json"
+    overrides.write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(
+        context_analyze,
+        "analyze_context_file_cached",
+        lambda *args, **kwargs: SimpleNamespace(track_map=_track_map(source)),
+    )
+    monkeypatch.setattr(
+        stock_music_analysis,
+        "produce_stock_music_analysis",
+        lambda *args, **kwargs: _semantic(),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "sample-brain",
+            "--config",
+            str(config),
+            "pond5",
+            "prepare",
+            str(source),
+            "--output",
+            str(tmp_path / "bundle"),
+            "--overrides-json",
+            str(overrides),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert exc_info.value.code == 2
+    payload = json.loads(capsys.readouterr().err)
+    assert payload["status"] == "error"
+    assert payload["error"]["code"] == "POND5_PREPARE_FAILED"
+
+
 def test_pond5_prepare_help_is_available(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

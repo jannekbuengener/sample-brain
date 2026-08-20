@@ -490,9 +490,35 @@ def _csv_row(metadata: Mapping[str, object]) -> dict[str, object]:
 def _platform_snapshot() -> dict[str, object]:
     music_url = "https://contributor.pond5.com/getting-started/preparing-your-files-2/music/"
     files_url = "https://contributor.pond5.com/getting-started/preparing-your-files/"
+    snapshot_date = "2026-08-20"
+
+    def field(required: bool, rules: list[str], csv_supported: bool | None, source: str) -> dict[str, object]:
+        return {
+            "required": required,
+            "rules": rules,
+            "csv_supported": csv_supported,
+            "primary_source_url": source,
+            "snapshot_date": snapshot_date,
+        }
+
     return {
-        "snapshot_date": "2026-08-20",
+        "snapshot_date": snapshot_date,
         "primary_sources": [music_url, files_url],
+        "fields": {
+            "audio": field(True, ["WAV or AIFF", "16/24/32-bit", "44.1/48/96 kHz", "stereo", "duration under 10 minutes"], False, music_url),
+            "OriginalFilename": field(True, ["mandatory Apply CSV field"], True, files_url),
+            "target_upload_filename": field(True, ["no spaces/dashes or prohibited special/accented characters"], None, music_url),
+            "title": field(True, ["English", "maximum 80 characters"], True, files_url),
+            "description": field(False, ["English", "maximum 500 characters when present"], True, files_url),
+            "keywords": field(True, ["English", "relevant", "maximum 50", "no prohibited references"], True, files_url),
+            "copyright": field(False, ["documented Apply CSV metadata field"], True, files_url),
+            "price": field(False, ["documented Apply CSV metadata field"], True, files_url),
+            "composer": field(True, ["required at submission; IPI may accompany it"], None, music_url),
+            "pro": field(False, ["may be supplied"], None, music_url),
+            "publisher": field(False, ["may be supplied"], None, music_url),
+            "cleared_for_sampling": field(True, ["explicit per-file licensing choice"], None, music_url),
+            "rights_assertions": field(True, ["seller owns/controls rights and clears third-party elements for resale/commercial use"], False, music_url),
+        },
         "csv_supported_columns": list(POND5_CSV_COLUMNS),
         "non_csv_submission": {
             "composer": "ui/manual|unknown",
@@ -575,8 +601,32 @@ def _contains_prohibited_reference(value: str) -> bool:
     return any(term in lowered for term in (*_PROHIBITED_PHRASES, *_PROHIBITED_REFERENCES))
 
 
-def _finding(rule_id: str, field_ref: str, message: str, *, status: str = "missing") -> dict[str, object]:
-    return {"rule_id": rule_id, "field_ref": field_ref, "status": status, "evidence_refs": [field_ref], "message": message}
+_MISSING_RULE_IDS = frozenset({
+    "AUDIO_TECHNICAL_UNAVAILABLE",
+    "SEMANTIC_EVIDENCE_INSUFFICIENT",
+    "COMPOSER_MISSING",
+    "OWNERSHIP_AUTHORIZATION_UNRESOLVED",
+    "THIRD_PARTY_CLEARANCE_UNRESOLVED",
+    "SAMPLING_POLICY_UNSET",
+    "FILENAME_INVALID_NO_TARGET_NAME",
+})
+
+
+def _finding(
+    rule_id: str,
+    field_ref: str,
+    message: str,
+    *,
+    status: str | None = None,
+) -> dict[str, object]:
+    effective_status = status or ("missing" if rule_id in _MISSING_RULE_IDS else "blocking")
+    return {
+        "rule_id": rule_id,
+        "field_ref": field_ref,
+        "status": effective_status,
+        "evidence_refs": [field_ref],
+        "message": message,
+    }
 
 
 def _profile_field_ref(code: str) -> str:

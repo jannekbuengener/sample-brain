@@ -63,6 +63,21 @@ def test_analyze_context_file_supports_flac(tmp_path: Path) -> None:
     assert result["source"]["original"]["file_name"] == "outside-library.flac"
 
 
+def test_analyze_context_file_supports_aiff(tmp_path: Path) -> None:
+    from src.context_analyze import analyze_context_file
+
+    wav_path = write_sine_wav(
+        tmp_path / "source.wav", duration_sec=2.0, frequency_hz=220.0
+    )
+    samples, sample_rate = sf.read(str(wav_path), dtype="float32")
+    aiff_path = tmp_path / "outside-library.aiff"
+    sf.write(str(aiff_path), samples, sample_rate, format="AIFF", subtype="PCM_16")
+
+    result = analyze_context_file(aiff_path)
+
+    assert result["source"]["original"]["file_name"] == "outside-library.aiff"
+
+
 @pytest.mark.parametrize(
     ("name", "expected_code"),
     [

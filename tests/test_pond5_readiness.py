@@ -282,6 +282,29 @@ def test_non_csv_manual_fields_remain_in_metadata(tmp_path: Path) -> None:
     assert set(bundle["csv_row"]) == set(POND5_CSV_COLUMNS)
 
 
+def test_platform_snapshot_has_required_per_field_contract(tmp_path: Path) -> None:
+    source = _write_audio(tmp_path / "Track.wav")
+    fields = _bundle(source)["readiness"]["platform"]["fields"]
+    for name in ("audio", "OriginalFilename", "title", "keywords", "composer", "cleared_for_sampling", "rights_assertions"):
+        record = fields[name]
+        assert set(("required", "rules", "csv_supported", "primary_source_url", "snapshot_date")) <= set(record)
+
+
+def test_explicit_denial_is_blocking_but_not_missing(tmp_path: Path) -> None:
+    source = _write_audio(tmp_path / "Track.wav")
+    bundle = _bundle(
+        source,
+        profile=_profile(third_party_elements_cleared_for_resale=False),
+    )
+    readiness = bundle["readiness"]["readiness"]
+    assert "THIRD_PARTY_CLEARANCE_DENIED" in {
+        item["rule_id"] for item in readiness["blocking"]
+    }
+    assert "THIRD_PARTY_CLEARANCE_DENIED" not in {
+        item["rule_id"] for item in readiness["missing"]
+    }
+
+
 def test_same_inputs_produce_stable_portable_bundle(tmp_path: Path) -> None:
     source = _write_audio(tmp_path / "Track.wav")
     first = _bundle(source)

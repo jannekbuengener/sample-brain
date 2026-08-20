@@ -31,7 +31,7 @@ from .track_analysis_cache import (
     write_cache_entry,
 )
 
-SUPPORTED_EXTENSIONS = frozenset({".wav", ".flac"})
+SUPPORTED_EXTENSIONS = frozenset({".wav", ".flac", ".aif", ".aiff"})
 REQUESTED_COMPONENTS = ("bpm", "key", "loudness", "brightness")
 
 
