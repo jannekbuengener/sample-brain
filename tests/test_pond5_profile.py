@@ -179,6 +179,53 @@ def test_hold_reasons_reject_malformed_ok_sampling_value():
     assert "SAMPLING_POLICY_UNSET" in profile_hold_reasons(result)
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "expected_reason"),
+    [
+        ("ownership_authorized", None, "OWNERSHIP_AUTHORIZATION_UNRESOLVED"),
+        ("ownership_authorized", "yes", "OWNERSHIP_AUTHORIZATION_UNRESOLVED"),
+        ("ownership_authorized", False, "OWNERSHIP_NOT_AUTHORIZED"),
+        ("ownership_authorized", True, None),
+        (
+            "third_party_elements_cleared_for_resale",
+            None,
+            "THIRD_PARTY_CLEARANCE_UNRESOLVED",
+        ),
+        (
+            "third_party_elements_cleared_for_resale",
+            "yes",
+            "THIRD_PARTY_CLEARANCE_UNRESOLVED",
+        ),
+        (
+            "third_party_elements_cleared_for_resale",
+            False,
+            "THIRD_PARTY_CLEARANCE_DENIED",
+        ),
+        ("third_party_elements_cleared_for_resale", True, None),
+    ],
+)
+def test_hold_reasons_classify_deserialized_rights_values(
+    field: str, value: object, expected_reason: str | None
+):
+    result = resolve_pond5_profile(_config())
+    result["rights"][field] = {"status": "ok", "value": value}
+
+    reasons = profile_hold_reasons(result)
+
+    if expected_reason is None:
+        assert not any(
+            reason in reasons
+            for reason in (
+                "OWNERSHIP_AUTHORIZATION_UNRESOLVED",
+                "OWNERSHIP_NOT_AUTHORIZED",
+                "THIRD_PARTY_CLEARANCE_UNRESOLVED",
+                "THIRD_PARTY_CLEARANCE_DENIED",
+            )
+        )
+    else:
+        assert expected_reason in reasons
+
+
 def test_provenance_sources_are_portable_and_origin_explicit():
     result = resolve_pond5_profile(_config())
     sources = result["provenance"]["sources"]

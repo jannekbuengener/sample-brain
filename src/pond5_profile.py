@@ -143,9 +143,10 @@ def profile_hold_reasons(profile: Mapping[str, object]) -> list[str]:
         ),
     ):
         item = _mapping_or_empty(rights.get(field), f"rights.{field}")
-        if item.get("status") != "ok":
+        value = item.get("value")
+        if item.get("status") != "ok" or not isinstance(value, bool):
             reasons.append(missing_code)
-        elif item.get("value") is not True:
+        elif value is False:
             reasons.append(denied_code)
 
     sampling = _mapping_or_empty(
