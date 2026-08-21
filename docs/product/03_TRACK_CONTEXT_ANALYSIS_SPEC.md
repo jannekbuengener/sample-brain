@@ -1,145 +1,247 @@
 # Track Context Analysis — Product Spec
 
-**Issue:** [#95](https://github.com/jannekbuengener/sample-brain/issues/95)  
-**Parent:** [#90](https://github.com/jannekbuengener/sample-brain/issues/90)  
-**Depends on:** [`01_LIBRARY_INTELLIGENCE_SPEC.md`](01_LIBRARY_INTELLIGENCE_SPEC.md) (#94)  
-**Status:** Spec (docs-only); no dedicated runtime on `main`
+**Runtime issue:** [#467](https://github.com/jannekbuengener/sample-brain/issues/467)  
+**Origin spec:** [#95](https://github.com/jannekbuengener/sample-brain/issues/95)  
+**Consumes:** existing Track Map / `context_analyze` evidence  
+**Feeds:** Matching (#465) and Prepared Fit Variants (#466)  
+**Status:** Track Context Profile v1 runtime contract
 
-This document defines how Sample Brain derives a **track profile** from the current song context — a marked audio file, stem, or loop — and uses it as input for search, matching, and recommendations. It does not scan libraries, score fit, or render variants.
+Track Context Profile v1 is the VST-independent composition layer between existing Track Map evidence and downstream musical matching. It does **not** create a second analyzer, score candidates, render fit variants, or require a catalog DB.
 
 ---
 
 ## 1. Purpose
 
-Producers work from an **active musical context**: the loop they are building on, a stem from the arrangement, or a reference clip. Track Context Analysis turns that audio into a structured **track profile** so Matching and Workspace can suggest compatible samples and layers without manual re-entry of BPM, key, and role.
+A producer-selected audio source already has a portable Track Map contract from `src/context_analyze.py`. Track Context Profile v1 projects that evidence into a smaller machine-readable context object for matching and later producing workflows.
 
----
-
-## 2. Inputs
-
-| Input | MVP (target) | Later |
-|-------|--------------|-------|
-| Marked audio file (user-selected path) | ✅ primary | — |
-| Loop or one-shot from library | ✅ | — |
-| Stem / bounce from project folder | ✅ | — |
-| Host DAW context (transport BPM/key, playhead region) | ❌ | Host integration via VST3 |
-| MIDI or project file parsing | ❌ | Out of scope |
-
-Context sources must work **offline** and **local-first** — no cloud upload.
-
----
-
-## 3. Outputs
-
-### 3.1 Track profile (primary)
-
-Structured object consumed by Matching (#91) and Workspace (#93):
-
-| Field | Description | Source (target) |
-|-------|-------------|-----------------|
-| `bpm` | Tempo of context audio | Reuse Library analyze pipeline on context file |
-| `key` | Tonal centre | Reuse Library key extraction + confidence |
-| `energy` | Envelope / loudness dynamics (verse vs drop proxy) | RMS contour, segment stats |
-| `spectrum` | Spectral character summary | Brightness, band energy ratios |
-| `groove` | Rhythmic feel descriptor | Onset density, swing proxy (TBD in implementation) |
-| `arrangement_role` | Intro, verse, chorus, drop, bridge, fill, etc. | Heuristic / rules (MVP: optional or coarse) |
-| `desired_layers` | User-stated or inferred layers to find | UI selection + missing-layer hypotheses |
-
-### 3.2 Missing-layer hypotheses
-
-Ranked suggestions for what the track might still need, e.g.:
-
-- Toploop, atmos, fill, transition, bass, vocal, percussion layer, impact
-
-Hypotheses are **assistive**, not authoritative — the producer confirms or overrides in Workspace.
-
----
-
-## 4. Shipped vs target
-
-| Capability | Shipped on `main` | Target (product) |
-|------------|-------------------|------------------|
-| Analyze arbitrary audio file (BPM, key, features) | ✅ via `analyze` on catalog | ✅ reuse for context file |
-| Dedicated track-profile model / storage | ❌ | ✅ session or project-scoped profile |
-| Context from marked file in plugin UI | ❌ | ✅ VST3 Workspace |
-| Host transport BPM/key injection | ❌ | Later host API |
-| Missing-layer hypothesis engine | ❌ | ✅ rule/heuristic MVP |
-| Arrangement-role detection | ❌ | ✅ coarse MVP |
-
-CLI today can analyze samples already in the catalog; **ad-hoc context file analysis** without prior scan is a follow-up runtime slice.
-
----
-
-## 5. VST / realtime boundaries
-
-| Rule | Rationale |
-|------|-----------|
-| No heavy analysis in the audio thread | Product principle (#90, PRD §5.3) |
-| Context analysis runs **asynchronously** or **before** preview/session use | Background worker or pre-session step |
-| Plugin UI shows profile fields and lets user edit/confirm | Human override required for low-confidence fields |
-| Prepared profile only passed to Matching/Transform schedulers | Decouple analysis from playback |
-
-The audio thread may read **cached profile values** and play prepared previews — never run librosa, DB queries, or ML inference inline.
-
----
-
-## 6. Boundaries vs other pillars
-
-| Track Context | Not Track Context |
-|---------------|-------------------|
-| Derive BPM/key/energy/groove from context audio | Library-wide scan/index (#94) |
-| Build track profile for session | Compute fit scores (#91) |
-| Suggest missing layers (hypotheses) | Render pitch/time variants (#92) |
-| Feed search/ranking inputs | Browser UI, drag-drop (#93) |
-
-**Data flow (target):**
+Core flow:
 
 ```text
-Context audio  →  Track profile  →  Matching / Search / Workspace
-                         ↑
-              Library analyze primitives (reuse, not duplicate)
+selected audio
+    ↓
+existing cached Context Analyzer
+    ↓
+Track Map
+    ↓
+Track Context Profile v1
+    ↓
+Matching / later Prepared Fit Variants
 ```
 
----
-
-## 7. MVP context sources (realistic)
-
-1. **User picks a file** — loop, stem, or reference WAV/FLAC from disk (outside or inside library roots).
-2. **User picks a catalog sample** — `sample_id` from SQLite; features already in `features` table.
-3. **Manual overrides** — user sets BPM/key/role when analysis confidence is low.
-
-Host-driven context (FL transport, selected playlist clip) is **post-MVP** and documented as extension point only.
+The profile must remain deterministic, explainable, DB-free, host-independent, and safe to serialize without private absolute paths.
 
 ---
 
-## 8. Follow-up runtime slices
+## 2. Canonical v1 contract
 
-| Slice | Scope |
-|-------|-------|
-| `context analyze <path>` CLI | One-shot profile JSON for a file not in catalog |
-| Session profile store | Ephemeral or project-persisted profile (not committed to repo) |
-| Missing-layer rules v1 | Keyword + feature heuristics |
-| Plugin context picker | Workspace integrates profile into filter/match defaults |
-| Host API spike | FL Studio / VST3 host parameter read (research) |
+```text
+document_type: sample_brain.track_context_profile
+schema_version: 1.0.0
+
+source
+status
+
+bpm
+key
+energy
+spectrum
+groove
+arrangement
+desired_layers
+
+provenance
+```
+
+Each evidence-bearing component exposes:
+
+```text
+status
+value and/or evidence
+source_ref
+reason_code when partial/unavailable
+```
+
+Allowed status semantics are compatible with existing Track Map evidence: `ok`, `partial`, `no_result`, `not_run`, and `failed` where appropriate.
 
 ---
 
-## 9. Acceptance mapping (Issue #95)
+## 3. Evidence mapping
 
-| Acceptance criterion | This spec |
-|----------------------|-----------|
-| Track context as own product pillar | §1, §6 |
-| MVP context sources realistically described | §2, §7 |
-| Host/realtime boundaries documented | §5 |
-| Recommendation engine can derive follow-ups | §3, §8 |
+### 3.1 BPM
 
-**Implementation remains follow-up scope.**
+Reuse `analysis.musical.bpm` from Track Map without re-analysis.
+
+Canonical profile reference:
+
+```text
+track_map:/analysis/musical/bpm
+```
+
+### 3.2 Key
+
+Reuse `analysis.musical.key` exactly enough to preserve root, mode, confidence/evidence, and partial mode state. A `MODE_UNRESOLVED` source remains partial; the profile must not invent a mode.
+
+### 3.3 Energy
+
+V1 reuses current loudness evidence from `analysis.audio_summary.loudness`.
+
+Current Context Analyzer provides global RMS/loudness, not a complete arrangement-energy contour. Therefore an otherwise valid global loudness mapping is deliberately:
+
+```text
+status = partial
+reason_code = GLOBAL_LOUDNESS_ONLY
+```
+
+Timeline/section energy can extend the profile later only when explicit existing evidence is supplied; this issue does not add a new energy analyzer.
+
+### 3.4 Spectrum
+
+Reuse `analysis.audio_summary.brightness` / mean spectral centroid. No new broad spectral pipeline is introduced for v1.
+
+### 3.5 Groove
+
+Groove is populated only from explicitly supplied deterministic beat/onset/grid evidence. Without it:
+
+```text
+status = no_result
+reason_code = GROOVE_EVIDENCE_UNAVAILABLE
+```
+
+No groove score or new DB columns are created here.
+
+### 3.6 Arrangement
+
+Arrangement/section information is consumed only when existing evidence is explicitly supplied. Otherwise:
+
+```text
+status = no_result
+reason_code = ARRANGEMENT_EVIDENCE_UNAVAILABLE
+```
+
+No new deconstruction run is forced by the profile composer.
+
+### 3.7 Desired layers
+
+V1 does not create missing-layer hypotheses heuristically. It may carry explicit deterministic evidence supplied by another component; otherwise:
+
+```text
+status = no_result
+reason_code = DESIRED_LAYER_EVIDENCE_UNAVAILABLE
+```
+
+A future Missing-Layer engine requires its own evidence-backed scope.
+
+---
+
+## 4. Portable source identity and privacy
+
+The profile projects only portable source identity fields from Track Map, such as:
+
+- file name
+- size
+- content hash
+- audio properties
+- portable source reference
+
+Absolute local paths are never copied into the profile. Optional evidence containing absolute Windows, UNC, or POSIX filesystem paths fails closed with `NON_PORTABLE_EVIDENCE`.
+
+Canonical JSON-pointer-style evidence references such as `/analysis/timeline/beats` remain valid provenance references and are not treated as filesystem paths.
+
+No private sample audio, DB, index, cache, or model artifact belongs in the repository.
+
+---
+
+## 5. Runtime API
+
+The narrow runtime lives in `src/track_context.py`.
+
+Primary functions:
+
+```python
+build_track_context_profile(track_map, optional_evidence=None)
+analyze_track_context(path, optional_evidence=None, ...)
+```
+
+`build_track_context_profile(...)` is a pure composition step over existing evidence.
+
+`analyze_track_context(...)` delegates to `analyze_context_file_cached(...)`, then builds the profile. It does not initialize or mutate the catalog DB and does not introduce a second audio-analysis stack.
+
+Cache hit/miss/disabled evidence may be carried in profile provenance.
+
+---
+
+## 6. Profile status
+
+The top-level profile status is derived from the four core evidence groups:
+
+```text
+bpm
+key
+energy
+spectrum
+```
+
+Optional Groove/Arrangement/Desired-Layers `no_result` states do not make an otherwise usable core profile fail.
+
+Because global loudness is intentionally only partial Energy evidence, a normal v1 profile can correctly have top-level `partial` status even when BPM, Key, Loudness, and Brightness were successfully analyzed.
+
+---
+
+## 7. Boundaries
+
+Track Context Profile v1 does:
+
+- reuse Track Map/context analysis
+- expose machine-readable BPM/Key/Energy/Spectrum
+- preserve uncertainty and provenance
+- consume optional existing Groove/Arrangement/Layer evidence
+- fail closed on unavailable or non-portable evidence
+
+It does **not**:
+
+- compute candidate fit scores (#465)
+- generate prepared audio variants (#466)
+- add a DB schema
+- add a DSP dependency
+- build a Missing-Layer AI/heuristic engine
+- require plugin, DAW, host transport, or UI integration
+- run heavy analysis in an audio thread
+
+---
+
+## 8. Validation contract
+
+Focused tests use synthetic/fixture Track Maps and must cover at least:
+
+- BPM and Key mapping
+- Key mode partial preservation
+- global Loudness → partial Energy
+- Brightness → Spectrum
+- absent Groove/Arrangement/Desired Layers → honest `no_result`
+- optional existing evidence consumption
+- absolute-path redaction/fail-closed behavior
+- canonical JSON evidence references
+- deterministic serialization
+- malformed Track Map failure
+- delegation to cached Context Analyzer
+- propagation of analyzer failures
+
+No private audio fixture is required.
+
+---
+
+## 9. VST / host boundary
+
+VST3 and host integration are parked outside this campaign under #469. Track Context Profile v1 has no VST, plugin shell, browser UI, host-sync, preview, drag/drop, or packaging dependency.
+
+Any later workspace/plugin path consumes this Core contract rather than reimplementing its musical evidence logic.
 
 ---
 
 ## 10. References
 
-- [`01_LIBRARY_INTELLIGENCE_SPEC.md`](01_LIBRARY_INTELLIGENCE_SPEC.md) — feature extraction reuse
-- [`02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md`](02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md) — consumes profile as `MatchProfile` input
-- `src/analyze.py` — current analysis primitives
-- `docs/PRODUCT_REQUIREMENTS.md` §5.2 — track context marked “later” for product MVP
+- `src/context_analyze.py` — existing DB-free Track Map analysis and cache path
+- [`02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md`](02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md) — downstream Musical Fit contract
+- [`04_REALTIME_FIT_TRANSFORM_SPEC.md`](04_REALTIME_FIT_TRANSFORM_SPEC.md) — downstream prepared transform contract
+- [#467](https://github.com/jannekbuengener/sample-brain/issues/467) — Track Context Profile v1 runtime slice
+- [#469](https://github.com/jannekbuengener/sample-brain/issues/469) — parked VST3 meta scope
