@@ -3,7 +3,7 @@
 **Issue:** [#91](https://github.com/jannekbuengener/sample-brain/issues/91)  
 **Parent:** [#90](https://github.com/jannekbuengener/sample-brain/issues/90)  
 **Depends on:** [`01_LIBRARY_INTELLIGENCE_SPEC.md`](01_LIBRARY_INTELLIGENCE_SPEC.md) (#94)  
-**Status:** Spec (docs-only); **partial runtime** on `main` via `src/matching.py`
+**Status:** Fit v1 runtime via `src/matching.py`; advanced harmony/profile extensions remain follow-up scope
 
 This document defines how Sample Brain scores **musical fit** between catalog samples and a target context (track BPM, key, desired type). It does not perform audio analysis or variant rendering.
 
@@ -35,12 +35,14 @@ Future: groove character, loop length — **not on `main`**.
 | Output | Description |
 |--------|-------------|
 | Ranked match list | Samples ordered by fit |
-| Per-dimension scores | BPM, key, type (shipped) |
-| `total_score` | Weighted aggregate (shipped) |
-| `reasons` | Human-readable explanation strings (shipped) |
-| Semitone suggestion | Target — not shipped |
-| BPM adjustment hint (half/double) | Partial — scored via half/double paths, no explicit hint field |
-| Fit-score contract (configurable weights) | Partial — fixed weights in code |
+| Per-dimension breakdown | BPM, key, type plus fail-closed groove status; score, status, weight, active flag, reason, source ref |
+| `total_score` | Weighted aggregate over active dimensions only, clamped to `[0, 1]` |
+| `reasons` | Human-readable explanation strings |
+| `bpm_relation` | `direct`, `half_time`, `double_time`, or `no_result` |
+| `tempo_multiplier` | Musical BPM interpretation (`1.0`, `2.0`, `0.5`), not a DSP playback-rate instruction |
+| `semitone_hint` | Smallest deterministic pitch-class shift in `-5..+6`; tritone tie is `+6` |
+| Groove status | `no_result` with `GROOVE_EVIDENCE_UNAVAILABLE` until canonical groove evidence exists |
+| Fit-score weights | Fixed v1 weights: BPM `0.5`, key `0.3`, type `0.2` |
 
 ---
 
@@ -58,28 +60,38 @@ CLI: `sample-brain match --target-bpm <bpm> [--target-key <key>] [--desired-type
 | `limit` | 10 | Top-N results |
 | `bpm_tolerance` | 8.0 | Linear decay window (BPM units) |
 
-### 3.2 Scoring functions (shipped)
+### 3.2 Scoring functions (Fit v1)
 
 **BPM (`score_bpm_match`):**
 
 - Direct tempo: linear decay within `bpm_tolerance`.
 - Half-time fit: `sample_bpm * 2` vs target, score × `HALF_DOUBLE_PENALTY` (0.9).
 - Double-time fit: `sample_bpm / 2` vs target, score × 0.9.
-- Best of three paths wins; reason string documents which path matched.
+- Best positive path wins and is exposed as structured `bpm_relation` plus `tempo_multiplier`.
+- `tempo_multiplier` describes the musical interpretation of source BPM, not a DSP playback-rate instruction.
+- Missing/invalid BPM is `no_result` and does not enter the aggregate denominator.
 
 **Key (`score_key_match`):**
 
-- Parse roots and optional maj/min mode.
-- Same root → 1.0; mode mismatch when both modes known → 0.0 for mode but pitch-class match may still score (see `_score_key_details`).
-- **No** Camelot, relative key, or circle-of-fifths compatibility yet.
+- Reuses `src.key_signature.parse_key_signature` and `key_distance_semitones`; `matching.py` owns no second parser.
+- Same root remains the cautious v1 compatibility rule; known major/minor mismatch scores 0.
+- `semitone_hint` is the smallest signed pitch-class shift in `-5..+6`, with tritone deterministically `+6`.
+- Missing/unparseable keys and known major/minor mismatch produce no semitone hint.
+- **No** Camelot, relative key, or circle-of-fifths compatibility is activated.
 
 **Type (`score_type_match`):**
 
 - Exact case-insensitive match on `pred_type` vs `desired_type`.
 
+**Groove:**
+
+- No Library/DB schema is added in v1. Without canonical groove evidence the dimension is `no_result`, inactive, and carries `GROOVE_EVIDENCE_UNAVAILABLE`.
+
 **Total score:**
 
-- Fixed weights: BPM 0.5, key 0.3, type 0.2 — only dimensions with a target participate in the denominator.
+- Fixed weights remain BPM 0.5, key 0.3, type 0.2.
+- Only dimensions with usable candidate evidence are active and participate in the denominator; missing/invalid dimensions do not silently penalize the candidate.
+- Each dimension exposes score/status/weight/active/reason/source-ref so the aggregate remains explainable.
 
 ### 3.3 Data loading
 
@@ -91,15 +103,15 @@ CLI: `sample-brain match --target-bpm <bpm> [--target-key <key>] [--desired-type
 
 | #91 scope item | Spec status | Runtime (`matching.py`) | Gap |
 |----------------|-------------|-------------------------|-----|
-| Key compatibility | Defined | Root + optional mode exact match | No relative key / Camelot / open-key rules |
-| BPM compatibility | Defined | Linear decay + tolerance | OK for v1 |
-| Half-/double-time detection | Defined | Scored with 0.9 penalty | No explicit user-facing “use at 2×” hint field |
-| Semitone suggestions | Defined | ❌ | Not implemented |
-| Groove / loop-length fit | Defined | ❌ | No groove features in Library schema yet |
-| Harmony rules (Camelot, etc.) | Candidates only | ❌ | Research + spec extension needed |
-| Fit-score contract | Later contract | Partial fixed weights | Configurable weights + documented 0–1 semantics |
-| Fit-to-track **and** fit-to-sample | Required | fit-to-track via `MatchProfile` | fit-to-sample (reference sample as context) ❌ |
-| Explainability | Required | `reasons` tuple | ✅ |
+| Key compatibility | Defined | Canonical parser reuse; cautious same-root/mode behavior | No relative key / Camelot / open-key rules by design |
+| BPM compatibility | Defined | Linear decay + tolerance | ✅ v1 |
+| Half-/double-time detection | Defined | Structured relation + musical tempo multiplier | ✅ v1 |
+| Semitone suggestions | Defined | Deterministic `-5..+6`; fail-closed on mode mismatch | ✅ v1 |
+| Groove / loop-length fit | Defined | Explicit `no_result`, excluded from score | Blocked on canonical groove evidence |
+| Harmony rules (Camelot, etc.) | Candidates only | Not activated | Evidence/research required before productization |
+| Fit-score contract | v1 fixed weights | Per-dimension status/weight/active/source + bounded aggregate | Configurable profiles remain follow-up |
+| Fit-to-track **and** fit-to-sample | Required | fit-to-track via `MatchProfile` | fit-to-sample (reference sample as context) remains follow-up |
+| Explainability | Required | `reasons` + structured dimension breakdown + hints | ✅ v1 |
 
 ---
 
@@ -157,11 +169,10 @@ Use a reference `sample_id` as context: copy its BPM/key/type as implicit target
 | Slice | Scope |
 |-------|-------|
 | Configurable match weights | Profile keys + `MatchProfile` |
-| Relative key scoring | Extend `score_key_match` with rule table |
+| Relative key scoring | Extend `score_key_match` only after evidence-backed rule selection |
 | `--reference-sample` CLI | Fit-to-sample mode |
-| Groove/loop-length dimension | Blocked on Library feature columns |
-| Semitone hint field | Output alongside `reasons` |
-| Plugin integration | Workspace pillar consumes match API |
+| Groove/loop-length dimension | Blocked on canonical Library groove/bar evidence |
+| Plugin integration | Workspace pillar consumes the Fit v1 API |
 
 ---
 
