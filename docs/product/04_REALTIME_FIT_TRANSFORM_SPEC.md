@@ -1,160 +1,267 @@
-# Realtime Fit & Transform Engine — Product Spec
+# Prepared Fit Variants — Product Spec
 
-**Issue:** [#92](https://github.com/jannekbuengener/sample-brain/issues/92)  
-**Parent:** [#90](https://github.com/jannekbuengener/sample-brain/issues/90)  
-**Depends on:** [`01_LIBRARY_INTELLIGENCE_SPEC.md`](01_LIBRARY_INTELLIGENCE_SPEC.md) (#94), [`02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md`](02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md) (#91)  
-**Status:** Spec (docs-only); no transform runtime on `main`
+**Runtime issue:** [#466](https://github.com/jannekbuengener/sample-brain/issues/466)  
+**Origin spec:** [#92](https://github.com/jannekbuengener/sample-brain/issues/92)  
+**Consumes:** Musical Fit hints from #465 or explicit transform parameters  
+**Status:** Prepared Fit Variant v1 Core contract
 
-This document defines how Sample Brain turns catalog samples into **synchronised, playable variants** — not raw file paths alone. Matching decides *what* fits; Transform produces *how* it sounds in context.
+Prepared Fit Variants turn an existing local audio source plus explicit musical transform parameters into a deterministic, cacheable WAV variant. V1 is deliberately **VST-/Workspace-/DB-independent** and runs before playback, never in an audio thread.
 
 ---
 
 ## 1. Purpose
 
-A kick at 140 BPM in the library is not the same as a kick locked to the producer's 128 BPM track in C minor. The Transform pillar generates **variant-based recommendations**: pre-rendered or on-demand audio adapted to target BPM, key, and sync mode, ready for preview and drag-drop.
-
----
-
-## 2. Core principle: variant-based recommendation
-
-| Concept | Definition |
-|---------|------------|
-| **File-based** | Recommendation = original file path only |
-| **Variant-based** | Recommendation = `(sample_id, transform_params)` → playable audio buffer or cache file |
-
-Every sample may have **multiple variants** for the same session context (e.g. +2 semitones bar-locked, original BPM free preview).
-
----
-
-## 3. Variant parameters
-
-### 3.1 Target fields
-
-| Field | Range / values | Notes |
-|-------|----------------|-------|
-| `target_bpm` | From track profile or user | Sync tempo to context |
-| `semitone_shift` | **−12 to +12** | Product standard per #92 |
-| `pitch_mode` | See §4 | DSP algorithm selection |
-| `sync_mode` | See §4 | Grid/playback behaviour |
-| `source_sample_id` | Catalog reference | Immutable link to Library metadata |
-
-### 3.2 Preview / render / cache status
-
-| Status | UI behaviour |
-|--------|--------------|
-| `pending` | Placeholder; queue background render |
-| `rendering` | Progress indicator |
-| `ready` | Playback allowed |
-| `failed` | Show error; offer retry or fallback to dry file |
-| `cached` | Fast replay from local cache (outside repo) |
-
-Variants are **cacheable** under user-controlled paths per `docs/DATA_AND_ARTIFACT_POLICY.md` — never committed to git.
-
----
-
-## 4. Pitch modes and sync modes (target)
-
-### 4.1 Pitch modes
-
-| Mode | Use case |
-|------|----------|
-| **Repitch** | Speed and pitch change together (classic DJ repitch) |
-| **Time-Stretch** | Change tempo without pitch shift |
-| **Pitch-Shift** | Change pitch without tempo change |
-| **Formant-Safe** | Vocal/tonal material; preserve formants where possible |
-| **Percussive** | Drums/transients; minimise phasing artifacts |
-| **Tonal/Poly** | Harmonic loops and pads |
-| **Texture/Dirty** | Creative degradation acceptable |
-
-Technical library choice (rubberband, élastique, internal STFT, etc.) is **follow-up evaluation** — not decided in this spec.
-
-### 4.2 Sync modes
-
-| Mode | Behaviour |
-|------|-----------|
-| **Free Preview** | Original timing; no grid lock |
-| **Bar-Locked** | Aligned to bar grid at target BPM |
-| **Beat-Locked** | Aligned to beat grid |
-| **One-Shot** | Single trigger; no loop sync |
-
----
-
-## 5. Audio-thread safety
-
-| Allowed in audio thread | Forbidden in audio thread |
-|-------------------------|---------------------------|
-| Playback of **prepared** variant buffers | Library scan |
-| Read from render cache (mmap/file already open) | SQLite / DB queries |
-| Simple gain/mute/fade on prepared data | ML inference |
-| — | Heavy DSP render (pitch/time stretch) |
-| — | Network or cloud calls |
-
-**Rule:** Render and analyse **off the audio thread**; the plugin plays only finished or streaming-ready segments.
-
----
-
-## 6. Shipped vs target
-
-| Capability | Shipped on `main` | Target (product) |
-|------------|-------------------|------------------|
-| Variant model / cache schema | ❌ | ✅ |
-| Background render worker | ❌ | ✅ async job queue |
-| CLI variant preview | ❌ | Optional later (`variant render`) |
-| Pitch/time DSP integration | ❌ | ✅ evaluated library |
-| Plugin variant browser | ❌ | ✅ Workspace (#93) |
-| Match → variant suggestion pipeline | ❌ | Matching hints + Transform params |
-
-EPIC 6 “re-imagine” research in backlog overlaps conceptually; this pillar is the **product-facing** variant contract for VST-first delivery.
-
----
-
-## 7. Boundaries vs other pillars
-
-| Transform | Not Transform |
-|-----------|---------------|
-| Render playable variants from match results | Score BPM/key fit (#91) |
-| Manage cache lifecycle and status | Extract sample features (#94) |
-| Expose variant params to Workspace | Build track profile (#95) |
-| Apply DSP off audio thread | Host arrangement / mixer (#93 non-goals) |
-
-**Division of labour:**
+Matching decides what fits. Prepared Fit Variants render how a selected sample should be adapted for a target context.
 
 ```text
-Matching  →  fit score + hints (semitone, half/double BPM)
-Transform →  variant audio + cache state
-Workspace →  preview UI, variant picker, drag-drop
+source audio + explicit transform params
+                  ↓
+        Prepared Fit Variant v1
+                  ↓
+      local regenerable cache
+                  ↓
+      later preview / workspace
 ```
 
----
-
-## 8. Follow-up runtime slices
-
-| Slice | Scope |
-|-------|-------|
-| DSP library spike | Evaluate 1–2 local libraries for stretch/pitch |
-| Variant schema + cache API | In-memory + disk cache contract |
-| `variant render` CLI (narrow) | Single sample + params → WAV in temp dir |
-| Plugin integration | Workspace variant browser wired to cache |
-| Advanced pitch/sync modes | After MVP repitch + time-stretch |
+The runtime lives in `src/fit_variants.py` and reuses the repository's existing `librosa`, `soundfile`, SHA-256 content identity, and cache patterns. No new DSP dependency is introduced.
 
 ---
 
-## 9. Acceptance mapping (Issue #92)
+## 2. Canonical v1 contract
 
-| Acceptance criterion | This spec |
-|----------------------|-----------|
-| Variant-based recommendation as product standard | §2 |
-| −12/+12 semitone window documented | §3.1 |
-| Pitch/sync modes captured as target | §4 |
-| Technical library evaluation remains follow-up | §4.1, §8 |
+Portable manifest:
 
-**Implementation remains follow-up scope.**
+```text
+document_type: sample_brain.fit_variant
+schema_version: 1.0.0
+
+variant_id
+status
+source_hash
+transform
+backend
+audio_properties
+output
+provenance
+```
+
+Runtime result statuses:
+
+| Status | Meaning |
+|---|---|
+| `ready` | Variant was rendered successfully. |
+| `cached` | Existing variant passed identity + output-hash validation and was reused. |
+| `no_result` | Required musical evidence is unavailable; no render is attempted. |
+| `failed` | Invalid input, unreadable audio, invalid cache location, or render failure. |
+
+`output_path` may exist on the in-process result for immediate use, but absolute cache paths are never serialized into the portable manifest.
 
 ---
 
-## 10. References
+## 3. Transform parameters
 
-- [`02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md`](02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md) — semitone/BPM hints
-- [`05_VST_PRODUCING_WORKSPACE_SPEC.md`](05_VST_PRODUCING_WORKSPACE_SPEC.md) — variant browser UI
-- `docs/PRODUCT_REQUIREMENTS.md` §5.2 — simple variant preview in product MVP
-- `docs/TARGET_ARCHITECTURE.md` §10.5 — EPIC 6 re-imagine (related, narrower CLI research)
+V1 accepts:
+
+```text
+source_bpm: positive finite BPM or null
+target_bpm: positive finite BPM or null
+tempo_multiplier: positive finite number, default 1.0
+semitone_shift: integer -12..+12
+```
+
+`tempo_multiplier` consumes the machine-readable half/double-time evidence already emitted by Matching (#465).
+
+The effective source tempo is:
+
+```text
+effective_source_bpm = source_bpm * tempo_multiplier
+```
+
+When target tempo is present:
+
+```text
+render_rate = target_bpm / effective_source_bpm
+```
+
+This distinction matters for half/double-time matches. Example: a 64 BPM source with Matching `tempo_multiplier=2.0` already represents an effective 128 BPM interpretation, so targeting 128 BPM produces `render_rate=1.0`, not an accidental 2× speed-up.
+
+When no target BPM is requested, tempo rendering is bypassed with `render_rate=1.0`. A pitch-only variant therefore does not require BPM evidence.
+
+---
+
+## 4. DSP scope and order
+
+V1 deliberately implements one narrow prepared path:
+
+1. tempo adaptation via existing `librosa.effects.time_stretch`
+2. semitone pitch shift via existing `librosa.effects.pitch_shift`
+3. deterministic Float32 WAV output via `soundfile`
+
+DSP order is recorded in provenance as:
+
+```text
+[tempo_adaptation, pitch_shift]
+```
+
+The source file is never mutated.
+
+Advanced formant-safe, percussive, tonal/poly, dirty/texture, repitch-specific, beat-locked, bar-locked, and host-synchronised modes remain follow-up scope after evidence.
+
+---
+
+## 5. Deterministic variant identity
+
+`variant_id` is SHA-256 over canonical sorted JSON containing:
+
+- Prepared Fit Variant contract version
+- SHA-256 source-content identity
+- normalized transform parameters
+- concrete DSP backend identity/version
+
+No timestamp, absolute path, DB identifier, UI state, or runtime cache directory participates in identity.
+
+Equivalent source content + equivalent transform parameters + equivalent backend produce the same variant ID. A source-content change, parameter change, backend-version change, or contract-version change produces a different identity.
+
+---
+
+## 6. Local cache and idempotent reuse
+
+Default cache resolution follows the existing local/regenerable pattern:
+
+```text
+CLI/API override
+→ SAMPLE_BRAIN_FIT_VARIANT_CACHE_DIR
+→ platform user-local cache/sample-brain/fit-variants
+```
+
+Each variant owns one directory named by `variant_id`:
+
+```text
+<variant_id>/
+  prepared.wav
+  manifest.json
+```
+
+A cache hit is accepted only when all of the following match:
+
+- document type and schema version
+- variant ID
+- source hash
+- normalized transform parameters
+- backend identity/version
+- output file exists
+- actual output SHA-256 equals manifest output hash
+
+Missing, malformed, or stale cache evidence causes a safe re-render rather than silent reuse.
+
+A cache path inside any Git worktree fails closed with `CACHE_INSIDE_GIT_REPO`; generated audio/cache manifests must remain outside the repository.
+
+---
+
+## 7. Matching → Transform boundary
+
+`variant_params_from_match(...)` translates the already-shipped #465 `MatchResult` machine-readable fields:
+
+```text
+match.bpm             → source_bpm
+explicit target BPM   → target_bpm
+match.tempo_multiplier → tempo_multiplier
+match.semitone_hint    → semitone_shift
+```
+
+`prepare_fit_variant_from_match(...)` proves that boundary end-to-end without moving Matching logic into Transform.
+
+Transform does not rescore BPM, Key, Type, Groove, or total fit.
+
+---
+
+## 8. Fail-closed behavior
+
+Stable v1 reason/error codes include:
+
+- `SOURCE_NOT_FOUND`
+- `INVALID_SOURCE_BPM`
+- `INVALID_TARGET_BPM`
+- `SOURCE_BPM_UNAVAILABLE`
+- `INVALID_TEMPO_MULTIPLIER`
+- `INVALID_SEMITONE_SHIFT`
+- `CACHE_INSIDE_GIT_REPO`
+- `AUDIO_READ_FAILED`
+- `RENDER_FAILED`
+
+A target BPM without known source BPM returns `no_result` instead of inventing tempo evidence. Invalid finite/range constraints fail before rendering.
+
+---
+
+## 9. Privacy and artifact boundary
+
+Portable manifest evidence contains content hashes, transform parameters, backend identity, relative output reference, audio properties, and provenance only.
+
+It does not contain:
+
+- absolute source paths
+- absolute cache paths
+- private sample content
+- DB paths or catalog rows
+- model caches or weights
+- VST/DAW/host state
+
+Tests generate synthetic audio in temporary directories. No private audio fixture is required or committed.
+
+---
+
+## 10. Audio-thread and product boundary
+
+Prepared Fit Variants are an offline/prepared Core operation. Heavy time-stretch/pitch-shift work is explicitly outside an audio thread.
+
+V1 does **not** implement:
+
+- VST3/plugin shell
+- host transport sync
+- Workspace/browser UI
+- preview scheduling
+- drag/drop
+- DB schema or persistence requirement
+- background job framework
+- network/cloud render
+- Matching algorithm changes
+- complete pitch/sync mode catalog
+
+Those consumers may use the prepared file and portable manifest later without reimplementing identity/cache/DSP semantics.
+
+---
+
+## 11. Validation contract
+
+Focused synthetic-audio tests cover:
+
+- deterministic identity and cache hit
+- source/parameter changes changing identity
+- target-BPM frame-length behavior
+- correct half/double-time effective source BPM semantics
+- zero-shift/no-tempo sample preservation
+- semitone pitch evidence
+- channel/sample-rate preservation
+- invalid BPM/semitone paths
+- target BPM without source BPM → `no_result`
+- pitch-only path without BPM
+- missing source failure
+- no absolute paths in manifest
+- cache-inside-Git rejection
+- stale output-hash re-render
+- original source bytes unchanged
+- #465 `MatchResult` → prepared variant integration
+
+Broader repository CI remains authoritative for integration safety.
+
+---
+
+## 12. References
+
+- `src/fit_variants.py` — Prepared Fit Variant v1 runtime
+- `src/matching.py` — #465 machine-readable BPM relation, tempo multiplier and semitone hint
+- `src/content_hash.py` — SHA-256 content identity
+- `src/track_analysis_cache.py` — existing local/regenerable cache precedent
+- `src/asset_renderer.py` — existing deterministic render/provenance precedent
+- [#466](https://github.com/jannekbuengener/sample-brain/issues/466) — runtime slice
+- [#92](https://github.com/jannekbuengener/sample-brain/issues/92) — original product specification
