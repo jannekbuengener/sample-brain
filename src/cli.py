@@ -668,6 +668,22 @@ def main():
         help="Performance-Pack Verzeichnis oder direkte manifest.json",
     )
 
+    # pond5
+    p_pond5 = sub.add_parser("pond5", help="Pond5 readiness bundle and export tools (#451)")
+    pond5_sub = p_pond5.add_subparsers(dest="pond5_cmd", required=True)
+    p_pond5_prep = pond5_sub.add_parser("prepare", help="Prepare Pond5 readiness bundle and CSV")
+    p_pond5_prep.add_argument("path", help="Path to local source music track WAV/AIFF.")
+    p_pond5_prep.add_argument(
+        "--output",
+        required=True,
+        help="Output directory for Pond5 readiness bundle and CSV.",
+    )
+    p_pond5_prep.add_argument(
+        "--track-cache-dir",
+        default=None,
+        help="Override Track Analysis cache directory.",
+    )
+
     args = parser.parse_args()
 
     # Imports hier drin, damit das Skript startet, auch wenn einzelne Module fehlen.
@@ -1116,6 +1132,28 @@ def main():
         )
         if result.sample_ids:
             print(f"  sample_ids={result.sample_ids}")
+        return
+
+    if args.cmd == "pond5":
+        cfg = _resolve_profile_or_exit(args)
+        if args.pond5_cmd == "prepare":
+            from .pond5_prepare import prepare_pond5_bundle
+
+            track_cache_dir = Path(args.track_cache_dir) if args.track_cache_dir else None
+            try:
+                readiness_doc = prepare_pond5_bundle(
+                    Path(args.path),
+                    Path(args.output),
+                    cfg,
+                    track_cache_dir=track_cache_dir,
+                )
+            except Exception as exc:
+                print(f"[ERROR] Pond5 prepare failed: {exc}", file=sys.stderr)
+                sys.exit(2)
+
+            status = readiness_doc.get("readiness", {}).get("status", "HOLD")
+            print(f"Pond5 bundle generated: status={status} output={args.output}")
+            sys.exit(0 if status == "POND5_READY" else 1)
         return
 
 
