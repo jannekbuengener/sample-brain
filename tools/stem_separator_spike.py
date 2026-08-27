@@ -12,6 +12,17 @@ from pathlib import Path
 # current evidence state rather than the superseded research-only legal claim.
 WEIGHT_USAGE_RESEARCH_ONLY = "UNKNOWN_UNVERIFIED"
 
+# Stable stem-worker failure when a required native extension import is blocked
+# (for example Numba `_helperlib` under Windows application control). Must not
+# be collapsed into EMPTY_STEM_OUTPUT.
+NATIVE_IMPORT_BLOCKED = "NATIVE_IMPORT_BLOCKED"
+
+_NATIVE_IMPORT_BLOCKED_MESSAGE = (
+    "A required native extension import was blocked by the host "
+    "(for example Numba _helperlib under Windows application control). "
+    "Stem separation cannot proceed until the host allowlists that extension."
+)
+
 # Declared metadata for the two #247 baseline candidates.
 # `checkpoint` is a released checkpoint/source identifier, NOT a cryptographic
 # weight hash. The actual weight hash must be supplied explicitly at runtime.
@@ -27,6 +38,58 @@ KNOWN_DEMUCS_MODELS = {
         "checkpoint": "f7e0c4bc,d12395a8,92cfc3b6,04573f0d",
     },
 }
+
+
+def classify_native_import_failure(exc_or_text: object | None) -> dict | None:
+    """Return a stable NATIVE_IMPORT_BLOCKED error dict, or None.
+
+    Matches Numba/`_helperlib` DLL load failures and Windows application-control
+    style blocks. Always emits a path-free static message (never echoes the
+    original exception text, which may contain private absolute paths).
+    """
+    if exc_or_text is None:
+        return None
+    text = str(exc_or_text)
+    if not text:
+        return None
+    lowered = text.lower()
+    markers = (
+        "_helperlib",
+        "anwendungssteuerungsrichtlinie",
+        "application control policy",
+        "dll load failed while importing",
+        "blocked this file",
+    )
+    if not any(marker in lowered for marker in markers):
+        return None
+    # Require a native-import signal; avoid classifying unrelated "blocked" text.
+    native_signal = (
+        "_helperlib" in lowered
+        or "dll load failed" in lowered
+        or "numba" in lowered
+        or "anwendungssteuerungsrichtlinie" in lowered
+        or "application control policy" in lowered
+    )
+    if not native_signal:
+        return None
+    return {
+        "code": NATIVE_IMPORT_BLOCKED,
+        "message": _NATIVE_IMPORT_BLOCKED_MESSAGE,
+        "retryable": False,
+    }
+
+
+def probe_native_import_block() -> dict | None:
+    """Probe whether Numba's native helper is currently import-blocked.
+
+    Used when a separator returns no outputs without raising, which can hide a
+    host policy block inside the backend. Does not bypass or alter policy.
+    """
+    try:
+        from numba import _helperlib  # noqa: F401
+    except Exception as exc:  # noqa: BLE001 - classify any import failure
+        return classify_native_import_failure(exc)
+    return None
 
 
 def resolve_known_model_identity(
@@ -408,8 +471,29 @@ def cli_separate(args: argparse.Namespace) -> None:
         sep = Separator(**separator_params)
         sep.load_model(model_filename=model_filename)
 
-        # Perform separation
-        sep.separate(str(input_path), custom_names)
+        # Capture backend logs: audio-separator may swallow ImportError and
+        # return [] while logging the real native/policy failure.
+        import logging
+
+        log_records: list[str] = []
+
+        class _Capture(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                try:
+                    log_records.append(record.getMessage())
+                except Exception:
+                    return
+
+        capture = _Capture(level=logging.ERROR)
+        root_logger = logging.getLogger()
+        sep_logger = logging.getLogger("separator")
+        root_logger.addHandler(capture)
+        sep_logger.addHandler(capture)
+        try:
+            sep.separate(str(input_path), custom_names)
+        finally:
+            root_logger.removeHandler(capture)
+            sep_logger.removeHandler(capture)
 
         # Soundfile details for original input
         import soundfile as sf
@@ -449,6 +533,39 @@ def cli_separate(args: argparse.Namespace) -> None:
         model_short = model_filename.replace(".yaml", "")
 
         stem_kinds = ["drums", "bass", "vocals", "other"]
+
+        def _any_stem_audio_present() -> bool:
+            for stem_kind in stem_kinds:
+                if (output_dir / f"{stem_kind}.wav").exists():
+                    return True
+                if list(output_dir.glob(f"*{stem_kind}*")):
+                    return True
+            return False
+
+        if not _any_stem_audio_present():
+            # Prefer truthful native/policy classification over EMPTY_STEM_OUTPUT.
+            classified = None
+            for msg in log_records:
+                classified = classify_native_import_failure(msg)
+                if classified is not None:
+                    break
+            if classified is None:
+                classified = probe_native_import_block()
+            if classified is not None:
+                print(
+                    json.dumps(
+                        {
+                            "status": "failed",
+                            "error": classified,
+                            "model_filename": model_filename,
+                            "backend_version": backend_version,
+                            "stems": {},
+                        },
+                        indent=2,
+                    )
+                )
+                return
+
         for stem_kind in stem_kinds:
             filename = f"{stem_kind}.wav"
             out_file_path = output_dir / filename
@@ -535,13 +652,25 @@ def cli_separate(args: argparse.Namespace) -> None:
         )
 
     except Exception as e:
+        classified = classify_native_import_failure(e)
+        if classified is not None:
+            print(
+                json.dumps(
+                    {
+                        "status": "failed",
+                        "error": classified,
+                    },
+                    indent=2,
+                )
+            )
+            return
         print(
             json.dumps(
                 {
                     "status": "failed",
                     "error": {
                         "code": "LAUNCH_FAILURE",
-                        "message": f"Backend initialization or separation failed: {e}",
+                        "message": "Backend initialization or separation failed.",
                     },
                 },
                 indent=2,

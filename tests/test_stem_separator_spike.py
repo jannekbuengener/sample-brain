@@ -216,3 +216,249 @@ def test_map_stem_to_manifest_rejects_missing_weight_hash():
             model_identity=model_identity,
             backend_version="0.44.5"
         )
+
+
+def test_classify_native_import_blocked_from_policy_message():
+    from tools.stem_separator_spike import (
+        NATIVE_IMPORT_BLOCKED,
+        classify_native_import_failure,
+    )
+
+    err = classify_native_import_failure(
+        "DLL load failed while importing _helperlib: "
+        "Eine Anwendungssteuerungsrichtlinie hat diese Datei blockiert."
+    )
+    assert err is not None
+    assert err["code"] == NATIVE_IMPORT_BLOCKED
+    assert err.get("retryable") is False
+    # Stable message must not echo absolute paths from the triggering text.
+    assert ":" not in err["message"] or "Windows" in err["message"]
+    assert "D:\\" not in err["message"]
+    assert "/Users/" not in err["message"]
+    assert "_helperlib" in err["message"] or "native" in err["message"].lower()
+
+
+def test_classify_native_import_blocked_english_application_control():
+    from tools.stem_separator_spike import (
+        NATIVE_IMPORT_BLOCKED,
+        classify_native_import_failure,
+    )
+
+    err = classify_native_import_failure(
+        ImportError(
+            "DLL load failed while importing _helperlib: "
+            "An application control policy has blocked this file."
+        )
+    )
+    assert err is not None
+    assert err["code"] == NATIVE_IMPORT_BLOCKED
+
+
+def test_classify_native_import_ignores_unrelated_errors():
+    from tools.stem_separator_spike import classify_native_import_failure
+
+    assert classify_native_import_failure("CUDA out of memory") is None
+    assert classify_native_import_failure(ValueError("bad shape")) is None
+    assert classify_native_import_failure(None) is None
+
+
+def test_empty_stem_outputs_stay_empty_when_no_native_block(tmp_path, monkeypatch, capsys):
+    """EMPTY_STEM_OUTPUT remains only for genuine empty outputs after separation."""
+    import argparse
+    import tools.stem_separator_spike as spike
+
+    class _FakeSep:
+        def __init__(self, **_kwargs):
+            pass
+
+        def load_model(self, model_filename=None):
+            return None
+
+        def separate(self, *_args, **_kwargs):
+            return []
+
+    monkeypatch.setattr(
+        spike,
+        "resolve_known_model_identity",
+        lambda *_a, **_k: {
+            "family": "htdemucs",
+            "name": "htdemucs",
+            "checkpoint": "955717e8",
+            "code_license": "MIT",
+            "weight_license": spike.WEIGHT_USAGE_RESEARCH_ONLY,
+        },
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "audio_separator",
+        MagicMock(),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "audio_separator.separator",
+        MagicMock(Separator=_FakeSep),
+    )
+    monkeypatch.setattr(spike, "probe_native_import_block", lambda: None)
+    monkeypatch.setattr(
+        spike,
+        "get_backend_version",
+        lambda: "0.44.5",
+    )
+
+    inp = tmp_path / "in.wav"
+    inp.write_bytes(b"RIFF")
+    out = tmp_path / "out"
+    out.mkdir()
+
+    # soundfile.info for source probe
+    fake_info = MagicMock(samplerate=44100, channels=1, frames=100, duration=0.01)
+    monkeypatch.setitem(sys.modules, "soundfile", MagicMock(info=lambda *_a, **_k: fake_info))
+
+    args = argparse.Namespace(
+        input=str(inp),
+        output_dir=str(out),
+        model="htdemucs.yaml",
+        track_ref="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+        working_audio_hash="b" * 64,
+        separation_fingerprint="fp_test",
+        weight_hash="a" * 64,
+        weight_hash_algo="sha256",
+        model_cache_dir=None,
+    )
+    spike.cli_separate(args)
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "failed"
+    assert "error" not in payload or payload.get("error") is None
+    for kind in ("drums", "bass", "vocals", "other"):
+        assert payload["stems"][kind]["reason_code"] == "EMPTY_STEM_OUTPUT"
+
+
+def test_native_import_block_does_not_use_empty_stem_output(tmp_path, monkeypatch, capsys):
+    """Policy/native import failures must not collapse into EMPTY_STEM_OUTPUT."""
+    import argparse
+    import tools.stem_separator_spike as spike
+
+    class _FakeSep:
+        def __init__(self, **_kwargs):
+            pass
+
+        def load_model(self, model_filename=None):
+            return None
+
+        def separate(self, *_args, **_kwargs):
+            return []
+
+    monkeypatch.setattr(
+        spike,
+        "resolve_known_model_identity",
+        lambda *_a, **_k: {
+            "family": "htdemucs",
+            "name": "htdemucs",
+            "checkpoint": "955717e8",
+            "code_license": "MIT",
+            "weight_license": spike.WEIGHT_USAGE_RESEARCH_ONLY,
+        },
+    )
+    monkeypatch.setitem(sys.modules, "audio_separator", MagicMock())
+    monkeypatch.setitem(
+        sys.modules,
+        "audio_separator.separator",
+        MagicMock(Separator=_FakeSep),
+    )
+    blocked = {
+        "code": spike.NATIVE_IMPORT_BLOCKED,
+        "message": (
+            "A required native extension import was blocked by the host "
+            "(for example Numba _helperlib under Windows application control)."
+        ),
+        "retryable": False,
+    }
+    monkeypatch.setattr(spike, "probe_native_import_block", lambda: blocked)
+    monkeypatch.setattr(spike, "get_backend_version", lambda: "0.44.5")
+
+    inp = tmp_path / "in.wav"
+    inp.write_bytes(b"RIFF")
+    out = tmp_path / "out"
+    out.mkdir()
+    fake_info = MagicMock(samplerate=44100, channels=1, frames=100, duration=0.01)
+    monkeypatch.setitem(sys.modules, "soundfile", MagicMock(info=lambda *_a, **_k: fake_info))
+
+    args = argparse.Namespace(
+        input=str(inp),
+        output_dir=str(out),
+        model="htdemucs.yaml",
+        track_ref="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+        working_audio_hash="b" * 64,
+        separation_fingerprint="fp_test",
+        weight_hash="a" * 64,
+        weight_hash_algo="sha256",
+        model_cache_dir=None,
+    )
+    spike.cli_separate(args)
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "failed"
+    assert payload["error"]["code"] == spike.NATIVE_IMPORT_BLOCKED
+    assert "EMPTY_STEM_OUTPUT" not in json.dumps(payload)
+    assert "D:\\" not in json.dumps(payload)
+    assert "/Users/" not in json.dumps(payload)
+
+
+def test_raised_native_import_classified_instead_of_launch_failure(
+    tmp_path, monkeypatch, capsys
+):
+    import argparse
+    import tools.stem_separator_spike as spike
+
+    class _BoomSep:
+        def __init__(self, **_kwargs):
+            pass
+
+        def load_model(self, model_filename=None):
+            return None
+
+        def separate(self, *_args, **_kwargs):
+            raise ImportError(
+                "DLL load failed while importing _helperlib: "
+                "An application control policy has blocked this file. "
+                r"C:\Users\private\path\_helperlib.pyd"
+            )
+
+    monkeypatch.setattr(
+        spike,
+        "resolve_known_model_identity",
+        lambda *_a, **_k: {
+            "family": "htdemucs",
+            "name": "htdemucs",
+            "checkpoint": "955717e8",
+            "code_license": "MIT",
+            "weight_license": spike.WEIGHT_USAGE_RESEARCH_ONLY,
+        },
+    )
+    monkeypatch.setitem(sys.modules, "audio_separator", MagicMock())
+    monkeypatch.setitem(
+        sys.modules,
+        "audio_separator.separator",
+        MagicMock(Separator=_BoomSep),
+    )
+
+    args = argparse.Namespace(
+        input=str(tmp_path / "in.wav"),
+        output_dir=str(tmp_path / "out"),
+        model="htdemucs.yaml",
+        track_ref="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+        working_audio_hash="b" * 64,
+        separation_fingerprint="fp_test",
+        weight_hash="a" * 64,
+        weight_hash_algo="sha256",
+        model_cache_dir=None,
+    )
+    (tmp_path / "out").mkdir()
+    (tmp_path / "in.wav").write_bytes(b"RIFF")
+    spike.cli_separate(args)
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "failed"
+    assert payload["error"]["code"] == spike.NATIVE_IMPORT_BLOCKED
+    assert payload["error"]["code"] != "LAUNCH_FAILURE"
+    dumped = json.dumps(payload)
+    assert r"C:\Users\private" not in dumped
+    assert "EMPTY_STEM_OUTPUT" not in dumped
