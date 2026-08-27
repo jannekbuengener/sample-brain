@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -207,16 +208,20 @@ def _derive_bpm(beat_times_sec: tuple[float, ...]) -> float | None:
     return bpm if np.isfinite(bpm) and bpm > 0 else None
 
 
-def _run_beat_this_backend(
+def _beat_this_worker_launch(
     audio_path: Path,
     *,
     checkpoint: str,
     device: str,
-    config: Mapping[str, object],
-) -> _RawBeatGrid:
-    del config
-    command = [
-        sys.executable,
+) -> tuple[list[str], dict[str, str] | None]:
+    """Build the isolated worker command without inheriting CLI argv.
+
+    On Windows venvs, ``sys.executable`` is a launcher stub that re-executes the
+    base interpreter. Launch the worker with ``sys._base_executable`` and set
+    ``__PYVENV_LAUNCHER__`` so the child stays in the venv while the command
+    remains exclusively ``-m src.beat_this_worker`` (never ``src.cli deconstruct``).
+    """
+    module_args = [
         "-m",
         "src.beat_this_worker",
         "--input",
@@ -226,6 +231,32 @@ def _run_beat_this_backend(
         "--device",
         device,
     ]
+    base_executable = getattr(sys, "_base_executable", None)
+    if (
+        sys.platform == "win32"
+        and isinstance(base_executable, str)
+        and base_executable
+        and os.path.normcase(base_executable) != os.path.normcase(sys.executable)
+    ):
+        env = os.environ.copy()
+        env["__PYVENV_LAUNCHER__"] = sys.executable
+        return [base_executable, *module_args], env
+    return [sys.executable, *module_args], None
+
+
+def _run_beat_this_backend(
+    audio_path: Path,
+    *,
+    checkpoint: str,
+    device: str,
+    config: Mapping[str, object],
+) -> _RawBeatGrid:
+    del config
+    command, env = _beat_this_worker_launch(
+        audio_path,
+        checkpoint=checkpoint,
+        device=device,
+    )
     try:
         completed = subprocess.run(
             command,
@@ -233,6 +264,7 @@ def _run_beat_this_backend(
             text=True,
             check=False,
             timeout=300,
+            env=env,
         )
     except subprocess.TimeoutExpired as exc:
         raise BeatGridBackendUnavailable("beat_this worker timed out") from exc

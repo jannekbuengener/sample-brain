@@ -21,6 +21,19 @@ Use `backend="beat_this"` for strict primary-only execution or
 `beat-this` package, PyTorch, and model weights remain optional and are not
 added to the core requirements.
 
+## Process boundary (`beat_this` worker)
+
+The optional primary never loads inside the CLI/`deconstruct` process. Inference
+runs only as `python -m src.beat_this_worker` through a narrow JSON stdout
+protocol (`SAMPLE_BRAIN_BEAT_THIS_RESULT=`).
+
+On Windows virtual environments, `sys.executable` is a launcher stub that
+re-executes the base interpreter. The adapter therefore launches the worker
+with the resolved base executable and sets `__PYVENV_LAUNCHER__` to the venv
+launcher path so the child stays in the venv site-packages without inheriting
+a `src.cli deconstruct` command line. Non-Windows platforms keep using
+`sys.executable` directly.
+
 ## Result contract
 
 ```python

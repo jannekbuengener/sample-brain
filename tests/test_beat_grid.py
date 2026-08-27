@@ -26,6 +26,22 @@ def _audio_path(tmp_path: Path) -> Path:
     return path
 
 
+def _assert_worker_interpreter_contract(
+    command: list[str], env: dict[str, str] | None
+) -> None:
+    """Child must stay in the venv worker context and never re-enter CLI."""
+    assert command[1:3] == ["-m", "src.beat_this_worker"]
+    assert "deconstruct" not in command
+    assert "src.cli" not in command
+    base = getattr(sys, "_base_executable", None)
+    if sys.platform == "win32" and base and base != sys.executable:
+        assert command[0] == base
+        assert env is not None
+        assert env.get("__PYVENV_LAUNCHER__") == sys.executable
+    else:
+        assert command[0] == sys.executable
+
+
 def test_beat_this_primary_maps_positions_to_sample_grid(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -66,10 +82,10 @@ def test_beat_this_runs_in_dedicated_worker_not_deconstruct(
     tmp_path: Path, monkeypatch
 ) -> None:
     """The optional backend must never inherit the CLI/deconstruct process."""
-    calls: list[list[str]] = []
+    calls: list[tuple[list[str], dict | None]] = []
 
     def fake_run(cmd, **kwargs):
-        calls.append(cmd)
+        calls.append((list(cmd), kwargs.get("env")))
         return subprocess.CompletedProcess(
             cmd,
             0,
@@ -101,9 +117,81 @@ def test_beat_this_runs_in_dedicated_worker_not_deconstruct(
 
     assert result.status == "ok"
     assert len(calls) == 1
-    command = calls[0]
+    command, env = calls[0]
     assert command[1:3] == ["-m", "src.beat_this_worker"]
     assert "deconstruct" not in command
+    assert "src.cli" not in command
+    _assert_worker_interpreter_contract(command, env)
+
+
+def test_beat_this_worker_launch_skips_cli_reentry_on_windows_venv(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """#480: Windows venv launcher must not re-enter src.cli deconstruct."""
+    import src.beat_grid as beat_grid
+
+    venv_launcher = str(tmp_path / "venv" / "Scripts" / "python.exe")
+    base_python = str(tmp_path / "Python312" / "python.exe")
+    monkeypatch.setattr(beat_grid.sys, "executable", venv_launcher)
+    monkeypatch.setattr(beat_grid.sys, "_base_executable", base_python)
+    monkeypatch.setattr(beat_grid.sys, "platform", "win32")
+
+    command, env = beat_grid._beat_this_worker_launch(
+        _audio_path(tmp_path),
+        checkpoint="final0",
+        device="cpu",
+    )
+
+    assert command[0] == base_python
+    assert command[1:3] == ["-m", "src.beat_this_worker"]
+    assert "deconstruct" not in command
+    assert "src.cli" not in command
+    assert env is not None
+    assert env["__PYVENV_LAUNCHER__"] == venv_launcher
+
+
+def test_beat_this_worker_launch_real_child_is_not_cli_deconstruct(
+    tmp_path: Path,
+) -> None:
+    """Spawn through the real launch helper and inspect the child argv."""
+    import src.beat_grid as beat_grid
+
+    probe = tmp_path / "worker_probe.py"
+    probe.write_text(
+        "\n".join(
+            [
+                "import json",
+                "import sys",
+                "print(json.dumps({'argv': sys.argv, 'executable': sys.executable}), flush=True)",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    audio = _audio_path(tmp_path)
+    command, env = beat_grid._beat_this_worker_launch(
+        audio, checkpoint="final0", device="cpu"
+    )
+    # Replace the worker module invocation with a tiny probe while keeping the
+    # resolved interpreter + env from the production launch helper.
+    probe_cmd = [command[0], str(probe), *command[3:]]
+    completed = subprocess.run(
+        probe_cmd,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    child_argv = [str(part) for part in payload["argv"]]
+    assert "deconstruct" not in child_argv
+    assert "src.cli" not in child_argv
+    assert "-m" not in child_argv or "src.beat_this_worker" in child_argv
+    joined = " ".join(child_argv)
+    assert "deconstruct" not in joined
+    assert "src.cli" not in joined
+    _assert_worker_interpreter_contract(command, env)
 
 
 def test_auto_backend_falls_back_once_with_reason(tmp_path: Path, monkeypatch) -> None:
