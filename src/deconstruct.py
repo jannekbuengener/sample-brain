@@ -1023,7 +1023,13 @@ def _stem_result_from_cache(
         "working_audio_hash": working_audio_hash,
     }
 
-    step_status = status if status in ("ok", "partial", "failed", "not_run", "no_result") else "failed"
+    allowed_statuses = ("ok", "partial", "failed", "not_run", "no_result")
+    step_status = status if status in allowed_statuses else "failed"
+    if status not in allowed_statuses:
+        error = {
+            "code": "STEM_RUNTIME_UNKNOWN_STATUS",
+            "message": "Stem runtime returned an unknown status.",
+        }
     return (
         StepResult(
             step_id="stems",

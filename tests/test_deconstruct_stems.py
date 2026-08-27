@@ -286,6 +286,30 @@ def test_stems_failure_isolation_failed_yields_partial_not_aborted(
     assert run.status == "partial"  # optional failure => partial, never aborted
 
 
+def test_stems_unknown_runtime_status_has_stable_error_code(track_file, tmp_path):
+    def executor(**kwargs):
+        return {
+            "status": "unexpected_runtime_status",
+            "stems": [],
+            "backend": {"name": "python-audio-separator", "version": BACKEND_VERSION},
+        }
+
+    run = run_deconstruct(
+        track_file,
+        tmp_path / "pack",
+        stems_enabled=True,
+        stem_model="htdemucs.yaml",
+        stem_weight_hash={"algorithm": "sha256", "value": "a" * 64},
+        stem_executor=executor,
+        stem_cache_enabled=False,
+        adapters=_fake_adapters(),
+    )
+    stems = {s.step_id: s for s in run.steps}["stems"]
+    assert stems.status == "failed"
+    assert stems.error["code"] == "STEM_RUNTIME_UNKNOWN_STATUS"
+    assert run.status == "partial"
+
+
 def test_stems_partial_status_propagates(track_file, tmp_path):
     def executor(**kwargs):
         stems = []
