@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 from dataclasses import dataclass, field
 from importlib import metadata
 from pathlib import Path
@@ -212,20 +215,63 @@ def _run_beat_this_backend(
     config: Mapping[str, object],
 ) -> _RawBeatGrid:
     del config
+    command = [
+        sys.executable,
+        "-m",
+        "src.beat_this_worker",
+        "--input",
+        str(audio_path),
+        "--checkpoint",
+        checkpoint,
+        "--device",
+        device,
+    ]
     try:
-        from beat_this.inference import File2Beats
-    except (ImportError, ModuleNotFoundError) as exc:
-        raise BeatGridBackendUnavailable(
-            "beat_this is not installed; install the optional beat-this package"
-        ) from exc
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise BeatGridBackendUnavailable("beat_this worker timed out") from exc
+    except OSError as exc:
+        raise BeatGridBackendUnavailable("beat_this worker could not start") from exc
 
-    tracker = File2Beats(checkpoint_path=checkpoint, device=device, dbn=False)
-    beats_sec, downbeats_sec = tracker(str(audio_path))
+    if completed.returncode != 0:
+        raise BeatGridBackendUnavailable("beat_this worker failed")
+    try:
+        payload = _parse_beat_this_worker_output(completed.stdout)
+    except ValueError as exc:
+        raise BeatGridBackendUnavailable("beat_this worker returned invalid output") from exc
+    if payload.get("status") != "ok":
+        raise BeatGridBackendUnavailable(
+            f"beat_this worker failed: {payload.get('code', 'UNKNOWN')}"
+        )
+
+    beats_sec = payload.get("beats_sec")
+    downbeats_sec = payload.get("downbeats_sec")
     return _RawBeatGrid(
         bpm=None,
         beats_sec=_as_seconds(beats_sec),
         downbeats_sec=_as_seconds(downbeats_sec),
     )
+
+
+def _parse_beat_this_worker_output(stdout: str) -> dict[str, object]:
+    """Read the dedicated worker's final protocol record, ignoring worker logs."""
+    marker = "SAMPLE_BRAIN_BEAT_THIS_RESULT="
+    for line in reversed(stdout.splitlines()):
+        if line.startswith(marker):
+            payload = json.loads(line[len(marker) :])
+            if isinstance(payload, dict):
+                return payload
+            break
+    payload = json.loads(stdout)
+    if not isinstance(payload, dict):
+        raise ValueError("worker payload must be an object")
+    return payload
 
 
 def _run_librosa_backend(

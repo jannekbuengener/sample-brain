@@ -92,6 +92,14 @@ class ContextRejected(JulesError):
         super().__init__("BLOCKED", message)
 
 
+class OutboundRejected(JulesError):
+    def __init__(self) -> None:
+        super().__init__(
+            "BLOCKED_SENSITIVE_OUTBOUND",
+            "outbound content rejected",
+        )
+
+
 class JulesHttpError(JulesError):
     def __init__(self, status: int, body: str, path: str) -> None:
         super().__init__(_http_status_to_code(status), f"HTTP {status} on {path}")
@@ -177,13 +185,57 @@ class DispatchContext:
 # Redaction / validation
 # ---------------------------------------------------------------------------
 
-_ABS_WIN = re.compile(r"[A-Za-z]:\\[^\s\"'`]+")
-_ABS_UNC = re.compile(r"\\\\[^\s\"'`]+")
-_ABS_UNIX = re.compile(r"(?:/home/|/Users/|/root/|/etc/|/var/|/usr/|/opt/|/tmp/|/mnt/|/Volumes/)[^\s\"'`]*")
+_ABS_WIN = re.compile(r"(?<![A-Za-z0-9_])[A-Za-z]:[\\/][^\r\n\"'`|<>]*")
+_ABS_UNC = re.compile(r"\\\\[^\r\n\"'`|<>]+")
+_ABS_UNIX = re.compile(
+    r"(?:/home/|/Users/|/root/|/etc/|/var/|/usr/|/opt/|/tmp/|/mnt/|/Volumes/)"
+    r"[^\r\n\"'`|<>]*"
+)
 _ABS_GENERIC = re.compile(r"(?<=[\s\"'`])/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)+")
 _SECRET_ASSIGN = re.compile(
-    r"(?i)\b([A-Za-z0-9_]*?(?:KEY|TOKEN|SECRET)[A-Za-z0-9_]*)\s*[=:]\s*\S+"
+    r"(?i)\b("
+    r"[A-Za-z0-9_]*?(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|PWD)"
+    r"[A-Za-z0-9_]*"
+    r")\s*([=:])\s*(?:\"[^\"\r\n]*\"|'[^'\r\n]*'|\S+)"
 )
+_PASSWORD_VALUE = re.compile(
+    r"(?i)\b(password|passwd|passphrase|pwd)\s+"
+    r"(?:\"[^\"\r\n]*\"|'[^'\r\n]*'|\S+)"
+)
+_AUTHORIZATION_CREDENTIAL = re.compile(
+    r"(?i)\bAuthorization\s*:\s*(?:Bearer|Basic)\s+[^\s,;]+"
+)
+_BEARER_CREDENTIAL = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
+_JWT_CREDENTIAL = re.compile(
+    r"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{3,}\.[A-Za-z0-9_-]{3,}\b"
+)
+_GITHUB_CREDENTIAL = re.compile(
+    r"\b(?:gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{16,})\b"
+)
+_AWS_ACCESS_KEY = re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b")
+_GOOGLE_API_KEY = re.compile(r"\bAIza[A-Za-z0-9_-]{20,}\b")
+_PRIVATE_KEY_MARKER = re.compile(
+    r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",
+    re.IGNORECASE,
+)
+_RESIDUAL_SECRET_ASSIGN = re.compile(
+    r"(?i)\b("
+    r"[A-Za-z0-9_]*?(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|PWD)"
+    r"[A-Za-z0-9_]*"
+    r")\s*[=:]\s*(?!<REDACTED_SECRET>)(?:\"[^\"\r\n]*\"|'[^'\r\n]*'|\S+)"
+)
+_RESIDUAL_PASSWORD_VALUE = re.compile(
+    r"(?i)\b(?:password|passwd|passphrase|pwd)\s+"
+    r"(?!<REDACTED_SECRET>)(?:\"[^\"\r\n]*\"|'[^'\r\n]*'|\S+)"
+)
+
+
+def _redact_assignment(match: re.Match[str]) -> str:
+    return f"{match.group(1)}{match.group(2)}<REDACTED_SECRET>"
+
+
+def _redact_password_value(match: re.Match[str]) -> str:
+    return f"{match.group(1)} <REDACTED_SECRET>"
 
 
 def redact(text: str, api_key: Optional[str] = None) -> str:
@@ -193,12 +245,47 @@ def redact(text: str, api_key: Optional[str] = None) -> str:
     out = text
     if api_key:
         out = out.replace(api_key, "<REDACTED_SECRET>")
-    out = _SECRET_ASSIGN.sub(r"\1=<REDACTED_SECRET>", out)
+    out = _AUTHORIZATION_CREDENTIAL.sub("Authorization: <REDACTED_SECRET>", out)
+    out = _BEARER_CREDENTIAL.sub("Bearer <REDACTED_SECRET>", out)
+    out = _JWT_CREDENTIAL.sub("<REDACTED_SECRET>", out)
+    out = _GITHUB_CREDENTIAL.sub("<REDACTED_SECRET>", out)
+    out = _AWS_ACCESS_KEY.sub("<REDACTED_SECRET>", out)
+    out = _GOOGLE_API_KEY.sub("<REDACTED_SECRET>", out)
+    out = _SECRET_ASSIGN.sub(_redact_assignment, out)
+    out = _PASSWORD_VALUE.sub(_redact_password_value, out)
     out = _ABS_WIN.sub("<REDACTED_PATH>", out)
     out = _ABS_UNC.sub("<REDACTED_PATH>", out)
     out = _ABS_UNIX.sub("<REDACTED_PATH>", out)
     out = _ABS_GENERIC.sub("<REDACTED_PATH>", out)
     return out
+
+
+def validate_outbound_text(text: str) -> None:
+    """Reject sensitive content that remains after conservative redaction."""
+    residual_patterns = (
+        _PRIVATE_KEY_MARKER,
+        _AUTHORIZATION_CREDENTIAL,
+        _BEARER_CREDENTIAL,
+        _JWT_CREDENTIAL,
+        _GITHUB_CREDENTIAL,
+        _AWS_ACCESS_KEY,
+        _GOOGLE_API_KEY,
+        _RESIDUAL_SECRET_ASSIGN,
+        _RESIDUAL_PASSWORD_VALUE,
+        _ABS_WIN,
+        _ABS_UNC,
+        _ABS_UNIX,
+        _ABS_GENERIC,
+    )
+    if any(pattern.search(text) for pattern in residual_patterns):
+        raise OutboundRejected()
+
+
+def sanitize_outbound_text(text: str, api_key: Optional[str] = None) -> str:
+    """Redact known sensitive values and reject any known residual."""
+    cleaned = redact(text, api_key=api_key)
+    validate_outbound_text(cleaned)
+    return cleaned
 
 
 def _is_absolute_path(value: str) -> bool:
@@ -336,8 +423,8 @@ def build_prompt(ctx: DispatchContext) -> str:
         lines.append(f"- {check}")
     lines.append("")
     lines.append("SAFETY")
-    lines.append("- no secret values are present in this task")
-    lines.append("- no private local paths are referenced")
+    lines.append("- do not request, expose, or transmit secret values")
+    lines.append("- use repository-relative paths only")
     lines.append("")
     lines.append("DELIVERABLE")
     if ctx.change_class == READ_ONLY_CHANGE_CLASS:
@@ -445,7 +532,7 @@ def build_create_payload(
             "source": source_id,
             "githubRepoContext": {"startingBranch": ctx.base_branch},
         },
-        "prompt": redact(build_prompt(ctx), api_key=api_key),
+        "prompt": sanitize_outbound_text(build_prompt(ctx), api_key=api_key),
         "requirePlanApproval": requires_plan_approval(ctx),
     }
     if ctx.allow_pr:
@@ -501,7 +588,7 @@ def approve_plan(transport: JulesTransport, session_id: str) -> dict:
 
 
 def send_message(transport: JulesTransport, session_id: str, text: str) -> dict:
-    clean = redact(text, api_key=transport.api_key)
+    clean = sanitize_outbound_text(text, api_key=transport.api_key)
     return transport.request(
         "POST", f"/sessions/{_session_id(session_id)}:sendMessage", {"prompt": clean}
     )
@@ -583,7 +670,7 @@ def _error_result(
     status = exc.code
     if partial_if_session and session_id and exc.code == "BLOCKED_REMOTE":
         status = "PARTIAL"
-    elif exc.code == "BLOCKED":
+    elif exc.code in {"BLOCKED", "BLOCKED_SENSITIVE_OUTBOUND"}:
         status = "BLOCKED"
     return {
         "dispatch_status": status,
@@ -605,7 +692,8 @@ def run_dispatch(
 ) -> dict:
     try:
         validate_context(ctx, repo_root)
-    except ContextRejected as exc:
+        sanitize_outbound_text(build_prompt(ctx), api_key=transport.api_key)
+    except (ContextRejected, OutboundRejected) as exc:
         return _error_result(exc)
     if not transport.api_key:
         return _error_result(JulesError("BLOCKED_AUTH", "API key not configured"))

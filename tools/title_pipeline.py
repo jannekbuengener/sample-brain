@@ -310,7 +310,9 @@ def emit_rename_ps1(rows: List[dict], out_path: Path):
         # escape single quotes for PS
         src_ps = src.replace("'", "''")
         dst_ps = dst.replace("'", "''")
-        lines.append(f"# {r['relpath']}\n")
+        # Do not interpolate relpath into executable PowerShell. Catalog paths are
+        # untrusted data and may contain line breaks/control characters on
+        # non-Windows sources or in a crafted database row.
         lines.append(f"$src = '{src_ps}'\n")
         lines.append(f"$dst = '{dst_ps}'\n")
         lines.append("if (-not (Test-Path -LiteralPath $src)) { Write-Host \"MISSING: $src\"; $errors++; continue }\n")

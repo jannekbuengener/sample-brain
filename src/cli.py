@@ -175,6 +175,32 @@ def main():
         help="Disable the Track Analysis cache; always recompute.",
     )
 
+    # pond5 readiness bundle
+    p_pond5 = sub.add_parser("pond5", help="Pond5 readiness metadata locally prepare")
+    pond5_sub = p_pond5.add_subparsers(dest="pond5_cmd", required=True)
+    p_pond5_prepare = pond5_sub.add_parser(
+        "prepare", help="Build a local Pond5 readiness bundle for one track"
+    )
+    p_pond5_prepare.add_argument("path", help="Path to the local source track.")
+    p_pond5_prepare.add_argument(
+        "--output", required=True, help="Directory for the local readiness bundle."
+    )
+    p_pond5_prepare.add_argument(
+        "--track-cache-dir",
+        default=None,
+        help="Override the Track Analysis cache directory (default: user-local, outside repo).",
+    )
+    p_pond5_prepare.add_argument(
+        "--no-track-cache",
+        action="store_true",
+        help="Disable the Track Analysis cache; always recompute.",
+    )
+    p_pond5_prepare.add_argument(
+        "--overrides-json",
+        default=None,
+        help="Optional local JSON file containing per-track Pond5 contributor/rights overrides.",
+    )
+
     # deconstruct
     p_deconstruct = sub.add_parser(
         "deconstruct",
@@ -781,6 +807,55 @@ def main():
                 json.dumps(result.track_map, indent=2, sort_keys=True, allow_nan=False)
             )
             return
+
+    if args.cmd == "pond5":
+        if args.pond5_cmd == "prepare":
+            from .context_analyze import ContextAnalyzeError, analyze_context_file_cached
+            from .config_loader import ConfigError
+            from .pond5_profile import resolve_pond5_profile
+            from .pond5_readiness import build_pond5_bundle, write_pond5_bundle
+            from .stock_music_analysis import produce_stock_music_analysis
+
+            cfg = _resolve_profile_or_exit(args)
+            overrides = None
+            if args.overrides_json:
+                try:
+                    overrides = json.loads(
+                        Path(args.overrides_json).read_text(encoding="utf-8")
+                    )
+                except (OSError, json.JSONDecodeError) as exc:
+                    print(f"[ERROR] Invalid Pond5 overrides JSON: {exc}", file=sys.stderr)
+                    sys.exit(2)
+            try:
+                result = analyze_context_file_cached(
+                    Path(args.path),
+                    cache_dir=args.track_cache_dir,
+                    enabled=not args.no_track_cache,
+                )
+                semantic = produce_stock_music_analysis(result.track_map)
+                profile = resolve_pond5_profile(
+                    cfg, per_track_overrides=overrides
+                )
+                bundle = build_pond5_bundle(
+                    result.track_map,
+                    semantic,
+                    profile,
+                    source_path=Path(args.path),
+                )
+                write_pond5_bundle(bundle, Path(args.output))
+            except (ContextAnalyzeError, ConfigError, OSError, ValueError) as exc:
+                code = getattr(exc, "code", "POND5_PREPARE_FAILED")
+                print(
+                    json.dumps(
+                        {"status": "error", "error": {"code": code, "message": str(exc)}},
+                        sort_keys=True,
+                    ),
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+            readiness = bundle["readiness"]
+            print(json.dumps(readiness, indent=2, sort_keys=True, allow_nan=False))
+            sys.exit(0 if readiness["readiness"]["status"] == "POND5_READY" else 3)
 
     if args.cmd == "deconstruct":
         from .deconstruct import run_deconstruct
