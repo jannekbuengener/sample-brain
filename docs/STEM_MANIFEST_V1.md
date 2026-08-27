@@ -134,12 +134,22 @@ Must be a stable machine-readable string, such as:
 *   `BACKEND_UNAVAILABLE`
 *   `MODEL_UNAVAILABLE`
 *   `SILENT_INPUT_SKIPPED`
-*   `EMPTY_STEM_OUTPUT`
+*   `EMPTY_STEM_OUTPUT` — only when separation executed without a native-import /
+    host-policy failure and the stem output is genuinely missing or empty.
+    Do **not** use this code to mask ImportError / DLL / application-control
+    blocks (those are `failed` with `NATIVE_IMPORT_BLOCKED`).
 
 ### `error` Object (Required for `failed`)
 *   `error.code` (string): Stable error code.
 *   `error.message` (string): Human-readable error message.
 *   `error.retryable` (boolean): Optional flag indicating if retrying might succeed.
+
+Stable failure codes used by the experimental stem worker include:
+*   `NATIVE_IMPORT_BLOCKED` — a required native extension import failed or was
+    blocked by host application control (for example Numba `_helperlib` under
+    Windows WDAC/AppLocker). This is a truthful `failed` state; it is not
+    `EMPTY_STEM_OUTPUT`. Resolving it requires a legitimate host allowlist for
+    the installed Python/Numba native helper, not a Sample Brain policy bypass.
 
 ---
 
