@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+import json
+import subprocess
 from types import ModuleType, SimpleNamespace
 from pathlib import Path
 
@@ -27,23 +29,24 @@ def _audio_path(tmp_path: Path) -> Path:
 def test_beat_this_primary_maps_positions_to_sample_grid(
     tmp_path: Path, monkeypatch
 ) -> None:
-    inference = ModuleType("beat_this.inference")
+    import src.beat_grid as beat_grid
 
-    class FakeFile2Beats:
-        def __init__(self, *, checkpoint_path: str, device: str, dbn: bool) -> None:
-            assert checkpoint_path == "final0"
-            assert device == "cpu"
-            assert dbn is False
+    def fake_run(cmd, **kwargs):
+        assert cmd[1:3] == ["-m", "src.beat_this_worker"]
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps(
+                {
+                    "status": "ok",
+                    "beats_sec": [0.1, 0.6, 1.1],
+                    "downbeats_sec": [0.1],
+                }
+            ),
+            stderr="",
+        )
 
-        def __call__(self, path: str):
-            assert path.endswith("working.wav")
-            return np.array([0.1, 0.6, 1.1]), np.array([0.1])
-
-    inference.File2Beats = FakeFile2Beats
-    package = ModuleType("beat_this")
-    package.inference = inference
-    monkeypatch.setitem(sys.modules, "beat_this", package)
-    monkeypatch.setitem(sys.modules, "beat_this.inference", inference)
+    monkeypatch.setattr(beat_grid.subprocess, "run", fake_run)
 
     result = BeatGridAdapter(backend="beat_this").analyze(
         _audio_path(tmp_path), _timebase()
@@ -57,6 +60,50 @@ def test_beat_this_primary_maps_positions_to_sample_grid(
     assert result.source.checkpoint == "final0"
     assert result.source.config["backend_requested"] == "beat_this"
     assert result.to_track_map_timeline()["beats"]["times_sec"] == [0.1, 0.6, 1.1]
+
+
+def test_beat_this_runs_in_dedicated_worker_not_deconstruct(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The optional backend must never inherit the CLI/deconstruct process."""
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps(
+                {
+                    "status": "ok",
+                    "beats_sec": [0.1, 0.6, 1.1],
+                    "downbeats_sec": [0.1],
+                }
+            ),
+            stderr="",
+        )
+
+    # A direct import would make the old implementation pass without using the
+    # worker, so keep a valid fake backend available while asserting the process
+    # boundary itself.
+    inference = ModuleType("beat_this.inference")
+    package = ModuleType("beat_this")
+    package.inference = inference
+    monkeypatch.setitem(sys.modules, "beat_this", package)
+    monkeypatch.setitem(sys.modules, "beat_this.inference", inference)
+    import src.beat_grid as beat_grid
+
+    monkeypatch.setattr(beat_grid.subprocess, "run", fake_run)
+
+    result = BeatGridAdapter(backend="beat_this").analyze(
+        _audio_path(tmp_path), _timebase()
+    )
+
+    assert result.status == "ok"
+    assert len(calls) == 1
+    command = calls[0]
+    assert command[1:3] == ["-m", "src.beat_this_worker"]
+    assert "deconstruct" not in command
 
 
 def test_auto_backend_falls_back_once_with_reason(tmp_path: Path, monkeypatch) -> None:
