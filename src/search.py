@@ -225,6 +225,31 @@ def collect_search_hits(
     return SearchRunResult(hits=tuple(hits))
 
 
+_SEARCH_ERROR_EXAMPLES: dict[str, list[str]] = {
+    "search requires --model-id for now.": [
+        'sample-brain search "kick drum" --model-id 1',
+        "sample-brain search --query-audio reference.wav --model-id 1",
+    ],
+    "search requires a text query or --query-audio.": [
+        'sample-brain search "snare" --model-id 1',
+        "sample-brain search --query-audio reference.wav --model-id 1",
+    ],
+    "search accepts either a text query or --query-audio, not both.": [
+        'sample-brain search "kick" --model-id 1',
+        "sample-brain search --query-audio reference.wav --model-id 1",
+    ],
+}
+
+
+def _print_search_error(error: str) -> None:
+    print(f"[ERROR] {error}")
+    examples = _SEARCH_ERROR_EXAMPLES.get(error)
+    if examples:
+        print("Examples:")
+        for line in examples:
+            print(f"  {line}")
+
+
 def run_search(
     query: str | None = None,
     query_audio: str | None = None,
@@ -270,10 +295,10 @@ def run_search(
             print(f"[ERROR] {result.error}")
             return
         if "search requires" in result.error:
-            print(f"[ERROR] {result.error}")
+            _print_search_error(result.error)
             return
         if result.error.startswith("search accepts"):
-            print(f"[ERROR] {result.error}")
+            _print_search_error(result.error)
             return
         print(f"[ERROR] {result.error}")
         return
