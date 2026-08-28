@@ -7,6 +7,145 @@ import sys
 import time
 
 
+def _examples_epilog(*lines: str) -> str:
+    body = "\n".join(f"  {line}" for line in lines)
+    return f"\nExamples:\n{body}\n"
+
+
+def _agent_parser_kwargs(*examples: str) -> dict:
+    kwargs: dict = {"formatter_class": argparse.RawDescriptionHelpFormatter}
+    if examples:
+        kwargs["epilog"] = _examples_epilog(*examples)
+    return kwargs
+
+
+_COMMAND_EXAMPLES: dict[tuple[str, ...], list[str]] = {
+    (): [
+        "sample-brain init",
+        "sample-brain scan --root ./samples",
+    ],
+    ("init",): [
+        "sample-brain init",
+    ],
+    ("scan",): [
+        "sample-brain scan",
+        "sample-brain scan --root ./samples --root ./packs",
+    ],
+    ("analyze",): [
+        "sample-brain analyze",
+        "sample-brain analyze --all",
+    ],
+    ("context", "analyze"): [
+        "sample-brain context analyze track.wav",
+        "sample-brain context analyze track.wav --json",
+    ],
+    ("pond5", "prepare"): [
+        "sample-brain pond5 prepare track.wav --output ./pond5-bundle",
+        "sample-brain pond5 prepare track.wav --output ./out --overrides-json overrides.json",
+    ],
+    ("deconstruct",): [
+        "sample-brain deconstruct track.wav --pack-root ./pack-out",
+        "sample-brain deconstruct track.wav --pack-root ./pack-out --live-profile",
+    ],
+    ("autotype",): [
+        "sample-brain autotype",
+        "sample-brain autotype --no-knn",
+    ],
+    ("export_fl",): [
+        "sample-brain export_fl --fl-user-data ./fl-user-data",
+    ],
+    ("match",): [
+        "sample-brain match --target-bpm 128",
+        "sample-brain match --target-bpm 128 --target-key Cm --desired-type kick",
+    ],
+    ("embed",): [
+        "sample-brain embed",
+        "sample-brain embed --backend clap --limit 100",
+    ],
+    ("index_build",): [
+        "sample-brain index_build --model-id 1 --save",
+        "sample-brain index_build --model-id 1 --search-backend sqlite-vec",
+    ],
+    ("search",): [
+        'sample-brain search "kick drum" --model-id 1',
+        "sample-brain search --query-audio reference.wav --model-id 1 --topk 20",
+    ],
+    ("db", "doctor"): [
+        "sample-brain db doctor",
+    ],
+    ("vec", "status"): [
+        "sample-brain vec status",
+        "sample-brain vec status --json",
+    ],
+    ("vec", "smoke"): [
+        "sample-brain vec smoke",
+    ],
+    ("pack-import",): [
+        "sample-brain pack-import ./performance-pack",
+    ],
+}
+
+
+def _infer_command_path(argv: list[str]) -> tuple[str, ...]:
+    known = {
+        "init",
+        "scan",
+        "analyze",
+        "context",
+        "pond5",
+        "deconstruct",
+        "autotype",
+        "export_fl",
+        "match",
+        "embed",
+        "index_build",
+        "search",
+        "db",
+        "benchmark",
+        "vec",
+        "workbench",
+        "pack-import",
+    }
+    nested = {
+        "analyze",
+        "prepare",
+        "doctor",
+        "status",
+        "smoke",
+        "bpm-evidence",
+        "key-conf-evidence",
+        "vec",
+        "search-quality",
+    }
+    path: list[str] = []
+    i = 1
+    while i < len(argv):
+        token = argv[i]
+        if token.startswith("-"):
+            i += 1
+            continue
+        if token not in known and token not in nested:
+            break
+        path.append(token)
+        i += 1
+    return tuple(path)
+
+
+class AgentFriendlyArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        cmd_path = _infer_command_path(sys.argv)
+        examples = _COMMAND_EXAMPLES.get(cmd_path)
+        if examples and "required" in message:
+            print(f"Error: {message}", file=sys.stderr)
+            print("\nExamples:", file=sys.stderr)
+            for line in examples:
+                print(f"  {line}", file=sys.stderr)
+            self.exit(2)
+        self.print_usage(sys.stderr)
+        print(f"sample-brain: error: {message}", file=sys.stderr)
+        self.exit(2)
+
+
 def _resolve_profile_or_exit(args) -> dict:
     import os
     from .config_loader import resolve_profile, ConfigError, DEFAULT_EXAMPLE_CONFIG
@@ -116,9 +255,14 @@ def _apply_runtime_db_path(config: dict) -> Path:
 
 
 def main():
-    parser = argparse.ArgumentParser(
+    parser = AgentFriendlyArgumentParser(
         prog="sample-brain",
         description="Sample Brain CLI (argparse) – stabile Commands ohne Typer/Click.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=_examples_epilog(
+            "sample-brain init",
+            "sample-brain scan --root ./samples",
+        ),
     )
     parser.add_argument(
         "--profile",
@@ -130,13 +274,26 @@ def main():
         default=None,
         help="Path to base profile config. Defaults to config/profiles.example.yaml.",
     )
-    sub = parser.add_subparsers(dest="cmd", required=True)
+    sub = parser.add_subparsers(
+        dest="cmd", required=True, parser_class=AgentFriendlyArgumentParser
+    )
 
     # init
-    sub.add_parser("init", help="DB und Verzeichnisse initialisieren")
+    sub.add_parser(
+        "init",
+        help="DB und Verzeichnisse initialisieren",
+        **_agent_parser_kwargs("sample-brain init"),
+    )
 
     # scan
-    p_scan = sub.add_parser("scan", help="Samples scannen und in DB registrieren")
+    p_scan = sub.add_parser(
+        "scan",
+        help="Samples scannen und in DB registrieren",
+        **_agent_parser_kwargs(
+            "sample-brain scan",
+            "sample-brain scan --root ./samples --root ./packs",
+        ),
+    )
     p_scan.add_argument(
         "--root",
         action="append",
@@ -145,7 +302,14 @@ def main():
     )
 
     # analyze
-    p_analyze = sub.add_parser("analyze", help="Audio-Features (librosa) berechnen")
+    p_analyze = sub.add_parser(
+        "analyze",
+        help="Audio-Features (librosa) berechnen",
+        **_agent_parser_kwargs(
+            "sample-brain analyze",
+            "sample-brain analyze --all",
+        ),
+    )
     p_analyze.add_argument(
         "--all",
         action="store_true",
@@ -156,9 +320,16 @@ def main():
     p_context = sub.add_parser(
         "context", help="Lokale Kontextdatei ohne Katalog analysieren"
     )
-    context_sub = p_context.add_subparsers(dest="context_cmd", required=True)
+    context_sub = p_context.add_subparsers(
+        dest="context_cmd", required=True, parser_class=AgentFriendlyArgumentParser
+    )
     p_context_analyze = context_sub.add_parser(
-        "analyze", help="Eine WAV- oder FLAC-Datei als Track Map v1 analysieren"
+        "analyze",
+        help="Eine WAV- oder FLAC-Datei als Track Map v1 analysieren",
+        **_agent_parser_kwargs(
+            "sample-brain context analyze track.wav",
+            "sample-brain context analyze track.wav --json",
+        ),
     )
     p_context_analyze.add_argument("path", help="Path to a local WAV or FLAC file.")
     p_context_analyze.add_argument(
@@ -177,9 +348,16 @@ def main():
 
     # pond5 readiness bundle
     p_pond5 = sub.add_parser("pond5", help="Pond5 readiness metadata locally prepare")
-    pond5_sub = p_pond5.add_subparsers(dest="pond5_cmd", required=True)
+    pond5_sub = p_pond5.add_subparsers(
+        dest="pond5_cmd", required=True, parser_class=AgentFriendlyArgumentParser
+    )
     p_pond5_prepare = pond5_sub.add_parser(
-        "prepare", help="Build a local Pond5 readiness bundle for one track"
+        "prepare",
+        help="Build a local Pond5 readiness bundle for one track",
+        **_agent_parser_kwargs(
+            "sample-brain pond5 prepare track.wav --output ./pond5-bundle",
+            "sample-brain pond5 prepare track.wav --output ./out --overrides-json overrides.json",
+        ),
     )
     p_pond5_prepare.add_argument("path", help="Path to the local source track.")
     p_pond5_prepare.add_argument(
@@ -205,6 +383,10 @@ def main():
     p_deconstruct = sub.add_parser(
         "deconstruct",
         help="Track headless deconstructen und Pack-Artefakte erzeugen",
+        **_agent_parser_kwargs(
+            "sample-brain deconstruct track.wav --pack-root ./pack-out",
+            "sample-brain deconstruct track.wav --pack-root ./pack-out --live-profile",
+        ),
     )
     p_deconstruct.add_argument("path", help="Path to the local source track.")
     p_deconstruct.add_argument(
@@ -375,12 +557,23 @@ def main():
 
     # autotype
     p_aut = sub.add_parser(
-        "autotype", help="Audio-basierte Typisierung -> features.pred_type"
+        "autotype",
+        help="Audio-basierte Typisierung -> features.pred_type",
+        **_agent_parser_kwargs(
+            "sample-brain autotype",
+            "sample-brain autotype --no-knn",
+        ),
     )
     p_aut.add_argument("--no-knn", action="store_true", help="kNN/Seeds deaktivieren")
 
     # export_fl
-    p_exp = sub.add_parser("export_fl", help="FL Studio Browser Tags schreiben")
+    p_exp = sub.add_parser(
+        "export_fl",
+        help="FL Studio Browser Tags schreiben",
+        **_agent_parser_kwargs(
+            "sample-brain export_fl --fl-user-data ./fl-user-data",
+        ),
+    )
     p_exp.add_argument(
         "--fl-user-data",
         default=None,
@@ -394,7 +587,14 @@ def main():
     )
 
     # match
-    p_match = sub.add_parser("match", help="Katalogbasiertes Matching gegen Zielprofil")
+    p_match = sub.add_parser(
+        "match",
+        help="Katalogbasiertes Matching gegen Zielprofil",
+        **_agent_parser_kwargs(
+            "sample-brain match --target-bpm 128",
+            "sample-brain match --target-bpm 128 --target-key Cm --desired-type kick",
+        ),
+    )
     p_match.add_argument(
         "--target-bpm",
         type=float,
@@ -421,7 +621,14 @@ def main():
     )
 
     # (optional) embed
-    p_emb = sub.add_parser("embed", help="Embeddings berechnen (optional)")
+    p_emb = sub.add_parser(
+        "embed",
+        help="Embeddings berechnen (optional)",
+        **_agent_parser_kwargs(
+            "sample-brain embed",
+            "sample-brain embed --backend clap --limit 100",
+        ),
+    )
     p_emb.add_argument(
         "--limit", type=int, default=None, help="Nur X Dateien einbetten"
     )
@@ -434,7 +641,14 @@ def main():
     )
 
     # (optional) index_build
-    p_idx = sub.add_parser("index_build", help="Index aus Embeddings bauen (optional)")
+    p_idx = sub.add_parser(
+        "index_build",
+        help="Index aus Embeddings bauen (optional)",
+        **_agent_parser_kwargs(
+            "sample-brain index_build --model-id 1 --save",
+            "sample-brain index_build --model-id 1 --search-backend sqlite-vec",
+        ),
+    )
     p_idx.add_argument(
         "--model-id",
         type=int,
@@ -466,7 +680,14 @@ def main():
     )
 
     # (optional) search
-    p_src = sub.add_parser("search", help="Ähnlichkeitssuche (optional)")
+    p_src = sub.add_parser(
+        "search",
+        help="Ähnlichkeitssuche (optional)",
+        **_agent_parser_kwargs(
+            'sample-brain search "kick drum" --model-id 1',
+            "sample-brain search --query-audio reference.wav --model-id 1 --topk 20",
+        ),
+    )
     p_src.add_argument("query", nargs="?", default=None, help="Text Suchanfrage")
     p_src.add_argument(
         "--query-audio",
@@ -589,11 +810,19 @@ def main():
     )
 
     p_db = sub.add_parser("db", help="Database diagnostics")
-    db_sub = p_db.add_subparsers(dest="db_cmd", required=True)
-    db_sub.add_parser("doctor", help="Run SQLite integrity and catalog checks")
+    db_sub = p_db.add_subparsers(
+        dest="db_cmd", required=True, parser_class=AgentFriendlyArgumentParser
+    )
+    db_sub.add_parser(
+        "doctor",
+        help="Run SQLite integrity and catalog checks",
+        **_agent_parser_kwargs("sample-brain db doctor"),
+    )
 
     p_bench = sub.add_parser("benchmark", help="Performance harness (optional)")
-    bench_sub = p_bench.add_subparsers(dest="bench_cmd", required=True)
+    bench_sub = p_bench.add_subparsers(
+        dest="bench_cmd", required=True, parser_class=AgentFriendlyArgumentParser
+    )
     p_bench_vec = bench_sub.add_parser("vec", help="Benchmark sqlite-vec search paths")
     p_bench_vec.add_argument(
         "--samples",
@@ -668,8 +897,17 @@ def main():
 
     # sqlite-vec diagnostics
     p_vec = sub.add_parser("vec", help="sqlite-vec availability diagnostics (optional)")
-    vec_sub = p_vec.add_subparsers(dest="vec_cmd", required=True)
-    p_vec_status = vec_sub.add_parser("status", help="Report sqlite-vec availability")
+    vec_sub = p_vec.add_subparsers(
+        dest="vec_cmd", required=True, parser_class=AgentFriendlyArgumentParser
+    )
+    p_vec_status = vec_sub.add_parser(
+        "status",
+        help="Report sqlite-vec availability",
+        **_agent_parser_kwargs(
+            "sample-brain vec status",
+            "sample-brain vec status --json",
+        ),
+    )
     p_vec_status.add_argument(
         "--json",
         action="store_true",
@@ -678,6 +916,7 @@ def main():
     vec_sub.add_parser(
         "smoke",
         help="Exit 0 when sqlite-vec loads; exit 1 with diagnostics otherwise.",
+        **_agent_parser_kwargs("sample-brain vec smoke"),
     )
 
     sub.add_parser(
@@ -688,6 +927,7 @@ def main():
     p_pack_import = sub.add_parser(
         "pack-import",
         help="Performance-Pack in den Katalog re-importieren (#263)",
+        **_agent_parser_kwargs("sample-brain pack-import ./performance-pack"),
     )
     p_pack_import.add_argument(
         "pack_root",
