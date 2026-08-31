@@ -30,7 +30,7 @@ vec = [
     "sqlite-vec==0.1.9",
 ]
 stems = [
-    "audio-separator[cpu]==0.44.5",
+    "audio-separator[cpu]==0.47.0",
 ]
 beatgrid = [
     "beat-this==1.1.0",
