@@ -2,8 +2,9 @@
 
 ## Authority
 
-- Agents are helper roles — **no merge, release, security, workflow, or policy authority**
-- Parent agent / Jannek keep decision authority
+- Agents are helper roles by default — **no merge, release, security, workflow, or policy authority unless a repository-owned role contract explicitly grants one bounded authority**
+- A dedicated Merge Agent may hold merge-only authority when explicitly configured by repository policy; that authority does not extend to implementation, approval, repair, release, security, workflow, or policy mutation
+- Parent agent / Jannek keep decision authority outside explicitly delegated bounded role contracts
 - Return one consolidated result; stop when evidence, scope, or permission is missing
 
 ## Mandatory Bootstrap (every session)
@@ -22,8 +23,36 @@
 
 ## GitHub Mutation Rule
 
-- Use `gh` CLI for GitHub mutations when available
-- Do not silently replace `gh` mutations with GitHub API, MCP, connector, or IDE integration
+- Use `gh` CLI for normal GitHub mutations when available
+- Do not silently replace normal `gh` mutations with GitHub API, MCP, connector, or IDE integration
+- Exception: a repository-authorized dedicated Merge Agent may use an explicitly bounded merge capability instead of generic `gh` only when the capability enforces the repository merge predicate and exact expected head; this exception grants no other GitHub write authority
+
+## Dedicated Merge Agent Boundary
+
+A dedicated Merge Agent is an execution role, not a quality or repair role.
+
+Before merge it must re-read live GitHub state and require at least:
+
+- PR is open, non-draft, and targets the expected base
+- current PR head equals the exact head that was evaluated for merge readiness
+- all repository-required checks for that exact head are successful
+- repository-owned approval/review policy is satisfied
+- no active blocking review state or unresolved blocking thread remains where policy makes it material
+- mergeability/integration state is acceptable
+- no required evidence is pending
+- no security, authority, or governance blocker remains
+
+Hard boundaries:
+
+- no implementation or repair writes
+- no self-approval or substitution for an independent quality reviewer
+- no branch-protection/ruleset weakening
+- no admin/protection bypass
+- no force push or history rewrite
+- no blind retry after an ambiguous merge response; read and reconcile current state first
+- any new head invalidates previous head-bound merge-readiness evidence
+
+The dedicated Merge Agent exits after one bounded merge attempt plus read-after-write reconciliation. Post-merge acceptance belongs to the repository's normal acceptance owner.
 
 ## Repo Write Rules
 
