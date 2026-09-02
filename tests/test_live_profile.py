@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from src.canon_audio import AudioTimebase
 from src.live_profile import (
