@@ -24,14 +24,14 @@ from src.live_profile import (
     ELEM_VOCALS,
     REASON_NO_DISTINCT_REDUCED,
     REASON_NO_SOURCE,
+    REASON_SILENT_LOOP_WINDOW,
     LiveLayoutConfig,
-    LiveElement,
     build_live_layout,
     find_live_layout,
     read_live_layout,
     write_live_layout,
 )
-from src.producer_groups import ProducerGroupParams, derive_producer_groups
+from src.producer_groups import ProducerGroup, ProducerGroupParams, derive_producer_groups
 
 
 # ---------------------------------------------------------------------------
@@ -457,4 +457,143 @@ def test_live_layout_without_arrangement_but_with_stems(tmp_path: Path):
     # No element was silently rewired to a master fallback.
     for e in layout["playable_loops"] + layout["full_length_tracks"]:
         assert e.get("source_kind") != "master"
+
+
+# ---------------------------------------------------------------------------
+# #501 — silent drums_present must never be status=ok
+# ---------------------------------------------------------------------------
+
+
+def _make_drums_silent_then_active(sr: int, n: int, silent_bars: int = 4) -> np.ndarray:
+    """First ``silent_bars`` seconds all-zero; remaining bars have drum signal."""
+    out = np.zeros(n, dtype=np.float32)
+    active = _make_drums(sr, n)
+    cut = min(n, silent_bars * sr)
+    out[cut:] = active[cut:]
+    return out
+
+
+def test_drums_present_skips_silent_first_window_for_audible_later(tmp_path: Path):
+    """Silent first 4 bars + later signal -> audible window, status=ok, non-silent WAV."""
+    stems = {
+        "drums": _make_drums_silent_then_active(SR, N, silent_bars=4),
+        "bass": _make_bass(SR, N),
+        "vocals": _make_vocals(SR, N),
+        "other": _make_other(SR, N),
+    }
+    groups = _pg(stems)
+    layout = build_live_layout(
+        groups, stems, _default_config(drums_states=1),
+        bars=_bars(), pack_root=tmp_path, sample_rate=SR,
+    )
+    drums = next(e for e in layout.playable_loops if e.element == ELEM_DRUMS_PRESENT)
+    assert drums.status == "ok"
+    assert drums.bars == 4
+    assert drums.audio_ref == "live/drums_present.wav"
+    assert drums.reason_code is None
+
+    import soundfile as sf
+
+    data, sr = sf.read(str(tmp_path / drums.audio_ref))
+    assert sr == SR
+    assert data.shape[0] == 4 * SR
+    assert float(np.max(np.abs(data))) > 0.0
+    # Must not be the silent first window.
+    assert not np.allclose(data, 0.0)
+
+
+def test_drums_present_all_silent_group_is_truthful_no_result(tmp_path: Path):
+    """All-zero drums group audio -> no_result, never status=ok / no WAV."""
+    tb = AudioTimebase(sample_rate=SR, n_samples=N)
+    silent = np.zeros(N, dtype=np.float32)
+    # Bypass upstream min_rms filtering: a group that still carries zero PCM.
+    groups = {
+        "drums": ProducerGroup(
+            group_kind="drums",
+            group_id="pg_drums",
+            group_ref="producergroup_drums",
+            status="ok",
+            timebase=tb,
+            technical_stems=("drums",),
+            audio=silent,
+        )
+    }
+    stems = {"drums": silent}
+    layout = build_live_layout(
+        groups, stems, _default_config(drums_states=1),
+        bars=_bars(), pack_root=tmp_path, sample_rate=SR,
+    )
+    drums = next(e for e in layout.playable_loops if e.element == ELEM_DRUMS_PRESENT)
+    assert drums.status == "no_result"
+    assert drums.reason_code == REASON_SILENT_LOOP_WINDOW
+    assert drums.audio_ref is None
+    assert not (tmp_path / "live" / "drums_present.wav").exists()
+
+    payload = layout.as_dict()
+    nr = payload.get("no_result_elements") or []
+    # Contract may list element keys or element dicts; accept either.
+    if nr and isinstance(nr[0], dict):
+        assert any(
+            e.get("element") == ELEM_DRUMS_PRESENT and e.get("status") == "no_result"
+            for e in nr
+        )
+    else:
+        assert ELEM_DRUMS_PRESENT in nr
+
+
+def test_playable_loop_final_all_zero_never_ok(tmp_path: Path):
+    """Final all-zero PCM must not be reported as ok even with a bar grid."""
+    tb = AudioTimebase(sample_rate=SR, n_samples=N)
+    silent = np.zeros(N, dtype=np.float32)
+    groups = {
+        "drums": ProducerGroup(
+            group_kind="drums",
+            group_id="pg_drums",
+            group_ref="producergroup_drums",
+            status="ok",
+            timebase=tb,
+            technical_stems=("drums",),
+            audio=silent,
+        )
+    }
+    layout = build_live_layout(
+        groups, {}, _default_config(kick_bass=False, drums_states=1),
+        bars=_bars(), pack_root=tmp_path, sample_rate=SR,
+    )
+    drums = next(e for e in layout.playable_loops if e.element == ELEM_DRUMS_PRESENT)
+    assert drums.status != "ok"
+    assert drums.reason_code == REASON_SILENT_LOOP_WINDOW
+    assert drums.audio_ref is None
+
+
+def test_drums_states_1_does_not_emit_drums_reduced():
+    stems = _full_stems()
+    groups = _pg(stems)
+    layout = build_live_layout(
+        groups, stems, _default_config(drums_states=1), bars=_bars(), sample_rate=SR
+    )
+    keys = {e.element for e in layout.playable_loops}
+    assert ELEM_DRUMS_PRESENT in keys
+    assert ELEM_DRUMS_REDUCED not in keys
+
+
+def test_kick_bass_still_ok_when_drums_first_window_silent(tmp_path: Path):
+    """#501 fix must not break kick_bass when early drums bars are silent."""
+    stems = {
+        "drums": _make_drums_silent_then_active(SR, N, silent_bars=4),
+        "bass": _make_bass(SR, N),
+    }
+    groups = _pg(stems)
+    layout = build_live_layout(
+        groups, stems, _default_config(drums_states=1),
+        bars=_bars(), pack_root=tmp_path, sample_rate=SR,
+    )
+    kb = next(e for e in layout.playable_loops if e.element == ELEM_KICK_BASS)
+    drums = next(e for e in layout.playable_loops if e.element == ELEM_DRUMS_PRESENT)
+    assert kb.status == "ok"
+    assert drums.status == "ok"
+    import soundfile as sf
+
+    kb_data, _ = sf.read(str(tmp_path / kb.audio_ref))
+    assert float(np.max(np.abs(kb_data))) > 0.0
 
