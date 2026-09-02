@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 CLAP_TORCH_VERSION = "2.13.0"
-CLAP_TRANSFORMERS_VERSION = "5.14.1"
+CLAP_TRANSFORMERS_VERSION = "5.16.1"
 CLAP_MODEL_NAME = "laion/clap-htsat-unfused"
 # Official model-repository commit adding a safetensors variant on top of the
 # prior main snapshot. Runtime loading also enforces use_safetensors=True.
