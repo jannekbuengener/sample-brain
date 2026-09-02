@@ -245,7 +245,7 @@ def resolve_export_path(
     return str(sample_path), warning
 
 
-def write_fl_tags(fl_userdata: Path, roots, max_tags=MAX_TAGS):
+def _load_export_sample_rows():
     from sqlalchemy import text
     from .db import init_db
 
@@ -259,8 +259,48 @@ def write_fl_tags(fl_userdata: Path, roots, max_tags=MAX_TAGS):
                 LEFT JOIN features f ON f.sample_id = s.id
                 ORDER BY s.id
                 """)).fetchall()
+    return [tuple(row) for row in rows]
 
-    sample_rows = [tuple(row) for row in rows]
+
+def _count_export_sample_rows_readonly() -> int:
+    """Count catalog samples without creating DB dirs/files when absent."""
+    from . import config
+
+    db_path = Path(config.DB_PATH)
+    if not db_path.is_file():
+        return 0
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(f"sqlite:///{db_path}", future=True)
+    with engine.connect() as conn:
+        try:
+            return int(conn.execute(text("SELECT COUNT(*) FROM samples")).scalar() or 0)
+        except Exception:
+            return 0
+
+
+def plan_export(fl_user_data_folder: str, max_tags=MAX_TAGS, roots=None) -> dict:
+    """Plan FL Browser tag export without writing tags or creating FL dirs."""
+    if not str(fl_user_data_folder).strip():
+        raise ValueError(
+            "FL user data path is empty. Use --fl-user-data or configure fl_user_data_path."
+        )
+    if roots is None:
+        roots = SAMPLE_ROOTS
+    roots = [Path(root) for root in roots]
+    sample_rows = _count_export_sample_rows_readonly()
+    tags_relpath = "FL Studio/Settings/Browser/Tags"
+    return {
+        "fl_user_data_configured": True,
+        "max_tags": int(max_tags),
+        "roots_configured": len(roots),
+        "sample_rows": sample_rows,
+        "tags_relpath": tags_relpath,
+    }
+
+
+def write_fl_tags(fl_userdata: Path, roots, max_tags=MAX_TAGS):
+    sample_rows = _load_export_sample_rows()
     tags_path, count, warnings = write_fl_tags_from_sample_rows(
         sample_rows, fl_userdata, [Path(root) for root in roots], max_tags=max_tags
     )
@@ -269,7 +309,7 @@ def write_fl_tags(fl_userdata: Path, roots, max_tags=MAX_TAGS):
     print(f"Wrote FL Tags → {tags_path} ({count} samples)")
 
 
-def run_export(fl_user_data_folder: str, max_tags=MAX_TAGS, roots=None):
+def run_export(fl_user_data_folder: str, max_tags=MAX_TAGS, roots=None, *, dry_run: bool = False):
     if not str(fl_user_data_folder).strip():
         raise ValueError(
             "FL user data path is empty. Use --fl-user-data or configure fl_user_data_path."
@@ -278,6 +318,8 @@ def run_export(fl_user_data_folder: str, max_tags=MAX_TAGS, roots=None):
     if roots is None:
         roots = SAMPLE_ROOTS
     roots = [Path(root) for root in roots]
+    if dry_run:
+        return plan_export(fl_user_data_folder, max_tags=max_tags, roots=roots)
     if not roots:
         print(
             "[WARN] No sample roots configured for relative path resolution. "
