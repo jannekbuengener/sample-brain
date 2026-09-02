@@ -250,6 +250,18 @@ def _print_search_error(error: str) -> None:
             print(f"  {line}")
 
 
+def _search_validation_exit_code(error: str) -> int | None:
+    """Return exit 2 for user/input validation; None for other error classes."""
+    if (
+        "search requires" in error
+        or error.startswith("search accepts")
+        or error.startswith("query audio file not found:")
+        or error == "--index-path is only supported with --search-backend numpy."
+    ):
+        return 2
+    return None
+
+
 def run_search(
     query: str | None = None,
     query_audio: str | None = None,
@@ -260,7 +272,7 @@ def run_search(
     index_path: str | None = None,
     hybrid_query: HybridQuery | None = None,
     search_filters: SearchFilters | None = None,
-) -> None:
+) -> int:
     result = collect_search_hits(
         query=query,
         query_audio=query_audio,
@@ -280,32 +292,33 @@ def run_search(
                 "[INFO] Install torch + transformers and use "
                 "'sample-brain embed --backend clap' first."
             )
-            return
+            return 0
         if result.error == "No embedding backend configured.":
             print("[ERROR] No embedding backend configured.")
             print("[INFO] Use --backend clap or set embedding.backend in your profile.")
-            return
+            return 0
         if result.error.startswith("Search failed:"):
             print(f"[ERROR] {result.error}")
-            return
+            return 0
         if result.error.startswith("query audio file not found:"):
             print(f"[ERROR] {result.error}")
-            return
+            return 2
         if result.error == "--index-path is only supported with --search-backend numpy.":
             print(f"[ERROR] {result.error}")
-            return
+            return 2
         if "search requires" in result.error:
             _print_search_error(result.error)
-            return
+            return 2
         if result.error.startswith("search accepts"):
             _print_search_error(result.error)
-            return
+            return 2
         print(f"[ERROR] {result.error}")
-        return
+        validation_code = _search_validation_exit_code(result.error)
+        return 2 if validation_code is not None else 0
 
     if result.info:
         print(f"[INFO] {result.info}")
-        return
+        return 0
 
     sample_ids = [hit.sample_id for hit in result.hits]
     sample_paths = load_sample_paths(sample_ids)
@@ -328,3 +341,4 @@ def run_search(
                 ]
             )
         )
+    return 0

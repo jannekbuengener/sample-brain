@@ -652,7 +652,7 @@ def main():
     p_idx.add_argument(
         "--model-id",
         type=int,
-        default=None,
+        required=True,
         help="Embedding model ID (required).",
     )
     p_idx.add_argument(
@@ -1272,18 +1272,19 @@ def main():
                     "[WARN] sqlite-vec selected but unavailable; "
                     "install with: pip install -e .[vec]"
                 )
-        run_search(
-            query=args.query,
-            query_audio=args.query_audio,
-            model_id=args.model_id,
-            topk=args.topk,
-            backend_name=backend_name,
-            search_backend=search_backend,
-            index_path=args.index_path,
-            hybrid_query=hybrid_query_from_cli_args(args),
-            search_filters=search_filters_from_cli_args(args),
+        sys.exit(
+            run_search(
+                query=args.query,
+                query_audio=args.query_audio,
+                model_id=args.model_id,
+                topk=args.topk,
+                backend_name=backend_name,
+                search_backend=search_backend,
+                index_path=args.index_path,
+                hybrid_query=hybrid_query_from_cli_args(args),
+                search_filters=search_filters_from_cli_args(args),
+            )
         )
-        return
 
     if args.cmd == "match":
         cfg = _resolve_profile_or_exit(args)
