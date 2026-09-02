@@ -90,6 +90,12 @@ MISSING_ARG_CASES = [
         2,
         id="pack-import-missing-pack-root",
     ),
+    pytest.param(
+        ["sample-brain", "index_build"],
+        ("index_build",),
+        2,
+        id="index-build-missing-model-id",
+    ),
 ]
 
 
@@ -127,25 +133,49 @@ def test_agent_cli_missing_required_args_are_actionable(
     assert _COMMAND_EXAMPLES[cmd_path][0] in err
 
 
-def test_search_missing_model_id_shows_examples(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.setattr(sys, "argv", ["sample-brain", "search"])
-    main()
-    out = capsys.readouterr().out
-    assert "search requires --model-id" in out
-    assert "Examples:" in out
-    assert _COMMAND_EXAMPLES[("search",)][0] in out
+SEARCH_VALIDATION_CASES = [
+    pytest.param(
+        ["sample-brain", "search"],
+        "search requires --model-id",
+        _COMMAND_EXAMPLES[("search",)][0],
+        id="search-missing-model-id",
+    ),
+    pytest.param(
+        ["sample-brain", "search", "--model-id", "1"],
+        "search requires a text query or --query-audio.",
+        'sample-brain search "snare" --model-id 1',
+        id="search-missing-query",
+    ),
+    pytest.param(
+        [
+            "sample-brain",
+            "search",
+            "kick",
+            "--query-audio",
+            "tone.wav",
+            "--model-id",
+            "1",
+        ],
+        "either a text query or --query-audio, not both",
+        'sample-brain search "kick" --model-id 1',
+        id="search-both-query-modes",
+    ),
+]
 
 
-def test_search_missing_query_shows_examples(
+@pytest.mark.parametrize("argv,needle,example", SEARCH_VALIDATION_CASES)
+def test_search_validation_errors_exit_nonzero(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+    needle: str,
+    example: str,
 ) -> None:
-    monkeypatch.setattr(sys, "argv", ["sample-brain", "search", "--model-id", "1"])
-    main()
+    monkeypatch.setattr(sys, "argv", argv)
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 2
     out = capsys.readouterr().out
-    assert "search requires a text query or --query-audio." in out
+    assert needle in out
     assert "Examples:" in out
-    assert 'sample-brain search "snare" --model-id 1' in out
+    assert example in out

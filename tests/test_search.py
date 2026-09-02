@@ -71,26 +71,26 @@ def _stub_search_output_lookups(monkeypatch: pytest.MonkeyPatch):
 
 class TestRunSearchValidation:
     def test_requires_model_id(self, capsys):
-        run_search(query="test", model_id=None)
+        assert run_search(query="test", model_id=None) == 2
         captured = capsys.readouterr()
         assert "search requires --model-id" in captured.out
 
     def test_requires_query_string(self, capsys):
-        run_search(query=None, model_id=1)
+        assert run_search(query=None, model_id=1) == 2
         captured = capsys.readouterr()
         assert "search requires a text query or --query-audio" in captured.out
 
     def test_rejects_empty_query(self, capsys):
-        run_search(query="", model_id=1)
+        assert run_search(query="", model_id=1) == 2
         captured = capsys.readouterr()
         assert "search requires a text query or --query-audio" in captured.out
 
     def test_rejects_invalid_topk(self, capsys):
-        run_search(query="test", model_id=1, topk=0)
+        assert run_search(query="test", model_id=1, topk=0) == 2
         captured = capsys.readouterr()
         assert "search requires --topk > 0" in captured.out
 
-        run_search(query="test", model_id=1, topk=-1)
+        assert run_search(query="test", model_id=1, topk=-1) == 2
         captured = capsys.readouterr()
         assert "search requires --topk > 0" in captured.out
 
@@ -111,13 +111,13 @@ class TestRunSearchUnavailableBackend:
 
 class TestRunSearchAudioQuery:
     def test_rejects_both_text_and_audio(self, capsys):
-        run_search(query="kick", query_audio="tone.wav", model_id=1)
+        assert run_search(query="kick", query_audio="tone.wav", model_id=1) == 2
         captured = capsys.readouterr()
         assert "either a text query or --query-audio, not both" in captured.out
 
     def test_missing_audio_file(self, capsys, tmp_path):
         missing = tmp_path / "missing.wav"
-        run_search(query_audio=str(missing), model_id=1)
+        assert run_search(query_audio=str(missing), model_id=1) == 2
         captured = capsys.readouterr()
         assert "query audio file not found" in captured.out
         assert str(missing) in captured.out
