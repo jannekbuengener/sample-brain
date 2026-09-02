@@ -94,6 +94,32 @@ class TestRunSearchValidation:
         captured = capsys.readouterr()
         assert "search requires --topk > 0" in captured.out
 
+    def test_rejects_index_path_with_sqlite_vec_backend(
+        self, capsys, monkeypatch: pytest.MonkeyPatch,
+    ):
+        fake_vector = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+
+        class FakeBackend:
+            def embed_text(self, text: str):
+                return fake_vector
+
+        monkeypatch.setattr("src.search.get_backend", lambda name: FakeBackend())
+
+        assert (
+            run_search(
+                query="test",
+                model_id=1,
+                search_backend="sqlite-vec",
+                index_path="test.npz",
+            )
+            == 2
+        )
+        captured = capsys.readouterr()
+        assert (
+            "--index-path is only supported with --search-backend numpy."
+            in captured.out
+        )
+
 
 class TestRunSearchUnavailableBackend:
     def test_noop_backend_prints_configure_message(self, capsys):
@@ -211,7 +237,7 @@ class TestRunSearchWithFakes:
         )
         _patch_search_backend(monkeypatch, fake_index)
 
-        run_search(query="test", model_id=1, topk=5)
+        assert run_search(query="test", model_id=1, topk=5) == 0
         captured = capsys.readouterr()
         assert "rank=1" in captured.out
         assert "sample_id=10" in captured.out
