@@ -33,6 +33,10 @@ Loop length policy:
 
 Source/provenance truth is preserved on every element: each element records its
 exact source kind and reference. No private/local paths are emitted.
+
+Playable-loop integrity (#501): bar-aligned windows are scanned left-to-right for
+the first non-all-zero PCM region; ``status=ok`` is never emitted for all-zero
+loop audio (``SILENT_LOOP_WINDOW``).
 """
 
 from __future__ import annotations
@@ -67,6 +71,7 @@ ROLE_FULL_LENGTH = "full_length_track"
 REASON_NO_SOURCE = "NO_USABLE_SOURCE"
 REASON_NO_DISTINCT_REDUCED = "NO_DISTINCT_REDUCED_STATE"
 REASON_INSUFFICIENT_BARS = "INSUFFICIENT_BARS_FOR_LOOP"
+REASON_SILENT_LOOP_WINDOW = "SILENT_LOOP_WINDOW"
 
 
 # ---------------------------------------------------------------------------
@@ -316,11 +321,45 @@ def _slice_loop(
     """
     if bars is None or len(bars) < bar_count + 1:
         return None
+    if start_bar < 0 or start_bar + bar_count >= len(bars):
+        return None
     start = bars[start_bar]
     end = bars[start_bar + bar_count]
     if end <= start:
         return None
     return start, end, end - start
+
+
+def _is_all_zero_pcm(audio: object) -> bool:
+    """True iff ``audio`` has no non-zero samples (strict all-zero gate)."""
+    a = np.asarray(audio)
+    if a.size == 0:
+        return True
+    return bool(np.max(np.abs(a)) == 0)
+
+
+def _find_first_audible_loop_start(
+    audio: object, bars: Sequence[int], bar_count: int
+) -> Optional[int]:
+    """First bar-aligned window whose PCM is not all-zero.
+
+    Deterministic left-to-right scan. Returns ``None`` when every candidate
+    window is silent or the bar grid is too short.
+    """
+    if bars is None or len(bars) < bar_count + 1:
+        return None
+    a = np.asarray(audio, dtype=np.float32).reshape(-1)
+    max_start = len(bars) - bar_count - 1
+    for start_bar in range(0, max_start + 1):
+        region = _slice_loop(a, bars, bar_count, start_bar=start_bar)
+        if region is None:
+            continue
+        start, end, _ = region
+        if start < 0 or end > a.shape[0]:
+            continue
+        if not _is_all_zero_pcm(a[start:end]):
+            return start_bar
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -437,7 +476,26 @@ def _build_loop_element(
             audio_ref=None,
             reason_code=REASON_NO_SOURCE,
         )
-    region = _slice_loop(audio, bars, loop_bars)
+    start_bar = _find_first_audible_loop_start(audio, bars, loop_bars)
+    if start_bar is None:
+        # Distinguish "no bar grid / too short" from "every window silent".
+        if bars is None or len(bars) < loop_bars + 1:
+            reason = REASON_INSUFFICIENT_BARS
+        else:
+            reason = REASON_SILENT_LOOP_WINDOW
+        return LiveElement(
+            element=element_key,
+            role=ROLE_PLAYABLE_LOOP,
+            status="no_result",
+            source_kind=src["kind"],
+            source_ref=src.get("group_ref") or src.get("stem_kind"),
+            technical_stems=tuple(src.get("technical_stems", [])),
+            bars=loop_bars,
+            full_length=False,
+            audio_ref=None,
+            reason_code=reason,
+        )
+    region = _slice_loop(audio, bars, loop_bars, start_bar=start_bar)
     if region is None:
         return LiveElement(
             element=element_key,
@@ -452,9 +510,22 @@ def _build_loop_element(
             reason_code=REASON_INSUFFICIENT_BARS,
         )
     start, end, _ = region
-    import numpy as np
 
-    loop_audio = np.asarray(audio, dtype=np.float32)[start:end]
+    loop_audio = np.asarray(audio, dtype=np.float32).reshape(-1)[start:end]
+    # Final integrity gate: never emit status=ok for all-zero PCM.
+    if _is_all_zero_pcm(loop_audio):
+        return LiveElement(
+            element=element_key,
+            role=ROLE_PLAYABLE_LOOP,
+            status="no_result",
+            source_kind=src["kind"],
+            source_ref=src.get("group_ref") or src.get("stem_kind"),
+            technical_stems=tuple(src.get("technical_stems", [])),
+            bars=loop_bars,
+            full_length=False,
+            audio_ref=None,
+            reason_code=REASON_SILENT_LOOP_WINDOW,
+        )
     audio_ref = _write_audio(pack_root, element_key, loop_audio, sample_rate)
     return LiveElement(
         element=element_key,
@@ -522,7 +593,20 @@ def _build_drums_reduced(
     start, end, _ = region
     import numpy as np
 
-    loop_audio = np.asarray(audio, dtype=np.float32)[start:end]
+    loop_audio = np.asarray(audio, dtype=np.float32).reshape(-1)[start:end]
+    if _is_all_zero_pcm(loop_audio):
+        return LiveElement(
+            element=ELEM_DRUMS_REDUCED,
+            role=ROLE_PLAYABLE_LOOP,
+            status="no_result",
+            source_kind=src["kind"],
+            source_ref=src.get("group_ref") or src.get("stem_kind"),
+            technical_stems=tuple(src.get("technical_stems", [])),
+            bars=loop_bars,
+            full_length=False,
+            audio_ref=None,
+            reason_code=REASON_SILENT_LOOP_WINDOW,
+        )
     audio_ref = _write_audio(pack_root, ELEM_DRUMS_REDUCED, loop_audio, sample_rate)
     return LiveElement(
         element=ELEM_DRUMS_REDUCED,
@@ -557,9 +641,19 @@ def _build_full_length_element(
             audio_ref=None,
             reason_code=REASON_NO_SOURCE,
         )
-    import numpy as np
-
-    full_audio = np.asarray(audio, dtype=np.float32)
+    full_audio = np.asarray(audio, dtype=np.float32).reshape(-1)
+    if _is_all_zero_pcm(full_audio):
+        return LiveElement(
+            element=element_key,
+            role=ROLE_FULL_LENGTH,
+            status="no_result",
+            source_kind=src["kind"],
+            source_ref=src.get("group_ref") or src.get("stem_kind"),
+            technical_stems=tuple(src.get("technical_stems", [])),
+            full_length=True,
+            audio_ref=None,
+            reason_code=REASON_SILENT_LOOP_WINDOW,
+        )
     audio_ref = _write_audio(pack_root, element_key, full_audio, sample_rate)
     return LiveElement(
         element=element_key,
@@ -641,6 +735,7 @@ __all__ = [
     "REASON_NO_SOURCE",
     "REASON_NO_DISTINCT_REDUCED",
     "REASON_INSUFFICIENT_BARS",
+    "REASON_SILENT_LOOP_WINDOW",
     "LiveLayoutConfig",
     "LiveElement",
     "LiveLayout",
@@ -649,4 +744,6 @@ __all__ = [
     "read_live_layout",
     "find_live_layout",
     "_find_reduced_drum_window",
+    "_find_first_audible_loop_start",
+    "_is_all_zero_pcm",
 ]
