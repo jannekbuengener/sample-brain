@@ -30,6 +30,7 @@ _COMMAND_EXAMPLES: dict[tuple[str, ...], list[str]] = {
     ("scan",): [
         "sample-brain scan",
         "sample-brain scan --root ./samples --root ./packs",
+        "sample-brain scan --root ./samples --dry-run",
     ],
     ("analyze",): [
         "sample-brain analyze",
@@ -46,6 +47,7 @@ _COMMAND_EXAMPLES: dict[tuple[str, ...], list[str]] = {
     ("deconstruct",): [
         "sample-brain deconstruct track.wav --pack-root ./pack-out",
         "sample-brain deconstruct track.wav --pack-root ./pack-out --live-profile",
+        "sample-brain deconstruct track.wav --pack-root ./pack-out --dry-run",
     ],
     ("autotype",): [
         "sample-brain autotype",
@@ -53,6 +55,7 @@ _COMMAND_EXAMPLES: dict[tuple[str, ...], list[str]] = {
     ],
     ("export_fl",): [
         "sample-brain export_fl --fl-user-data ./fl-user-data",
+        "sample-brain export_fl --fl-user-data ./fl-user-data --dry-run",
     ],
     ("match",): [
         "sample-brain match --target-bpm 128",
@@ -82,6 +85,7 @@ _COMMAND_EXAMPLES: dict[tuple[str, ...], list[str]] = {
     ],
     ("pack-import",): [
         "sample-brain pack-import ./performance-pack",
+        "sample-brain pack-import ./performance-pack --dry-run",
     ],
 }
 
@@ -292,6 +296,7 @@ def main():
         **_agent_parser_kwargs(
             "sample-brain scan",
             "sample-brain scan --root ./samples --root ./packs",
+            "sample-brain scan --root ./samples --dry-run",
         ),
     )
     p_scan.add_argument(
@@ -299,6 +304,11 @@ def main():
         action="append",
         default=None,
         help="Library root to scan. Can be provided multiple times. Overrides configured library_roots.",
+    )
+    p_scan.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Discover/plan catalog upserts without writing to the SQLite catalog.",
     )
 
     # analyze
@@ -386,6 +396,7 @@ def main():
         **_agent_parser_kwargs(
             "sample-brain deconstruct track.wav --pack-root ./pack-out",
             "sample-brain deconstruct track.wav --pack-root ./pack-out --live-profile",
+            "sample-brain deconstruct track.wav --pack-root ./pack-out --dry-run",
         ),
     )
     p_deconstruct.add_argument("path", help="Path to the local source track.")
@@ -393,6 +404,11 @@ def main():
         "--pack-root",
         required=True,
         help="Output root for the Track Deconstruction run.",
+    )
+    p_deconstruct.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Plan deconstruct steps and artifacts without writing pack outputs.",
     )
     p_deconstruct.add_argument(
         "--skip-arrangement",
@@ -572,6 +588,7 @@ def main():
         help="FL Studio Browser Tags schreiben",
         **_agent_parser_kwargs(
             "sample-brain export_fl --fl-user-data ./fl-user-data",
+            "sample-brain export_fl --fl-user-data ./fl-user-data --dry-run",
         ),
     )
     p_exp.add_argument(
@@ -584,6 +601,11 @@ def main():
         type=int,
         default=None,
         help="Maximum tags per sample. Overrides configured export.max_tags.",
+    )
+    p_exp.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview FL Browser tag export without writing Tags files.",
     )
 
     # match
@@ -927,11 +949,19 @@ def main():
     p_pack_import = sub.add_parser(
         "pack-import",
         help="Performance-Pack in den Katalog re-importieren (#263)",
-        **_agent_parser_kwargs("sample-brain pack-import ./performance-pack"),
+        **_agent_parser_kwargs(
+            "sample-brain pack-import ./performance-pack",
+            "sample-brain pack-import ./performance-pack --dry-run",
+        ),
     )
     p_pack_import.add_argument(
         "pack_root",
         help="Performance-Pack Verzeichnis oder direkte manifest.json",
+    )
+    p_pack_import.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate pack and preview catalog imports without DB writes.",
     )
 
     args = parser.parse_args()
@@ -984,6 +1014,32 @@ def main():
         else:
             roots = [Path(r) for r in cfg.get("library_roots", [])]
         from .scan import run_scan
+
+        if args.dry_run:
+            from .cli_dry_run import build_dry_run_preview, emit_dry_run_preview
+
+            plan = run_scan(roots, dry_run=True)
+            preview = build_dry_run_preview(
+                command="scan",
+                action="catalog_sample_upsert",
+                target_kind="sqlite_catalog",
+                planned_mutations={
+                    "roots_configured": plan["roots_configured"],
+                    "sample_upserts": plan["sample_upserts"],
+                    "discovered_count": plan["sample_upserts"],
+                },
+                skipped_or_prevented_writes=[
+                    "init_db",
+                    "samples_table_upsert",
+                    "_flush_scan_batch",
+                ],
+                validation={
+                    "status": "ok",
+                    "warning": plan.get("warning"),
+                },
+            )
+            emit_dry_run_preview(preview)
+            return
 
         run_scan(roots)
         print("Scan completed.")
@@ -1082,7 +1138,7 @@ def main():
             sys.exit(0 if readiness["readiness"]["status"] == "POND5_READY" else 3)
 
     if args.cmd == "deconstruct":
-        from .deconstruct import run_deconstruct
+        from .deconstruct import plan_deconstruct, run_deconstruct
         from .performance_pack import finalize_performance_pack
 
         skip = set()
@@ -1114,6 +1170,45 @@ def main():
             sys.exit(2)
 
         pack_root = Path(args.pack_root)
+        if args.dry_run:
+            from .cli_dry_run import build_dry_run_preview, emit_dry_run_preview
+
+            plan = plan_deconstruct(
+                Path(args.path),
+                pack_root,
+                bpm_normalization=args.bpm_normalization,
+                beat_backend=args.beat_backend,
+                skip=skip,
+                stems_enabled=stems_enabled,
+                stem_model=stem_model,
+            )
+            preview = build_dry_run_preview(
+                command="deconstruct",
+                action="performance_pack_deconstruct",
+                target_kind="performance_pack",
+                planned_mutations={
+                    "steps": plan["steps"],
+                    "artifacts": plan["artifacts"],
+                    "stems_enabled": plan["stems_enabled"],
+                },
+                skipped_or_prevented_writes=[
+                    "pack_root_mkdir",
+                    "deconstruct_run.json",
+                    "analysis_and_asset_artifacts",
+                    "resume_state",
+                    "finalize_performance_pack",
+                    "run_deconstruct",
+                ],
+                validation={
+                    "status": "ok",
+                    "track_exists": plan["track"]["exists"],
+                },
+                track=plan["track"],
+                pack_root_name=plan["pack_root_name"],
+            )
+            emit_dry_run_preview(preview)
+            return
+
         live_profile_config = None
         if getattr(args, "live_profile", False):
             from src.live_profile import LiveLayoutConfig
@@ -1203,6 +1298,29 @@ def main():
         except Exception as e:
             print(f"[ERROR] Export-Modul fehlt/fehlerhaft: {e}", file=sys.stderr)
             sys.exit(1)
+        if args.dry_run:
+            from .cli_dry_run import build_dry_run_preview, emit_dry_run_preview
+
+            plan = run_export(fl_user_data, max_tags=max_tags, roots=roots, dry_run=True)
+            preview = build_dry_run_preview(
+                command="export_fl",
+                action="fl_browser_tags_export",
+                target_kind="fl_browser_tags",
+                planned_mutations={
+                    "sample_rows": plan["sample_rows"],
+                    "max_tags": plan["max_tags"],
+                    "roots_configured": plan["roots_configured"],
+                    "tags_relpath": plan["tags_relpath"],
+                },
+                skipped_or_prevented_writes=[
+                    "fl_browser_tags_mkdir",
+                    "FL Studio/Settings/Browser/Tags",
+                    "write_fl_tags_from_sample_rows",
+                    "_atomic_write_text",
+                ],
+            )
+            emit_dry_run_preview(preview)
+            return
         run_export(fl_user_data, max_tags=max_tags, roots=roots)
         print("FL Tags export completed.")
         return
@@ -1418,13 +1536,38 @@ def main():
         from .performance_pack_import import PackImportError, run_pack_import
 
         try:
-            result = run_pack_import(Path(args.pack_root))
+            result = run_pack_import(Path(args.pack_root), dry_run=bool(args.dry_run))
         except PackImportError as exc:
             print(
                 f"[ERROR] pack-import failed ({exc.code}): {exc.message}",
                 file=sys.stderr,
             )
             sys.exit(2)
+        if args.dry_run:
+            from .cli_dry_run import build_dry_run_preview, emit_dry_run_preview
+
+            preview = build_dry_run_preview(
+                command="pack-import",
+                action="performance_pack_catalog_import",
+                target_kind="sqlite_catalog",
+                planned_mutations={
+                    "pack_id": result["pack_id"],
+                    "source_track_id": result["source_track_id"],
+                    "assets_importable": result["assets_importable"],
+                    "assets_skipped": result["assets_skipped"],
+                    "stems_importable": result["stems_importable"],
+                    "stems_skipped": result["stems_skipped"],
+                    "errors": result["errors"],
+                },
+                skipped_or_prevented_writes=[
+                    "init_db",
+                    "_register_sample",
+                    "sample_tags_lineage",
+                    "filesystem_copies",
+                ],
+            )
+            emit_dry_run_preview(preview)
+            return
         print(f"Performance Pack re-import: pack_id={result.pack_id}")
         print(
             f"  imported={result.imported} reused={result.reused} "

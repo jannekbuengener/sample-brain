@@ -91,11 +91,46 @@ def _flush_scan_batch(engine, rows: list[dict]) -> None:
         conn.execute(_SAMPLE_UPSERT, rows)
 
 
+def plan_scan(
+    custom_roots: Optional[Iterable[Path]] = None,
+    limit: Optional[int] = None,
+) -> dict:
+    """Read-only filesystem discovery for scan ``--dry-run``.
+
+    Does not open or mutate the catalog DB. Skips hashing and audio probing so
+    the preview stays cheap while still counting discoverable audio files.
+    """
+    selected_roots = SAMPLE_ROOTS if custom_roots is None else list(custom_roots)
+    roots = [Path(r) for r in selected_roots]
+    if not roots:
+        return {
+            "roots_configured": 0,
+            "sample_upserts": 0,
+            "discovered_relpaths": [],
+            "warning": "no_sample_roots",
+        }
+
+    discovered: list[str] = []
+    for p in iter_audio_files_stream(roots):
+        rel = _relpath_against_any(p, roots)
+        discovered.append(rel or p.name)
+        if limit and len(discovered) >= limit:
+            break
+
+    return {
+        "roots_configured": len(roots),
+        "sample_upserts": len(discovered),
+        "discovered_relpaths": discovered,
+    }
+
+
 def run_scan(
     custom_roots: Optional[Iterable[Path]] = None,
     limit: Optional[int] = None,
     show_every: int = 200,
     batch_size: int = 100,
+    *,
+    dry_run: bool = False,
 ):
     """
     Streamender Scan:
@@ -103,11 +138,15 @@ def run_scan(
       - limit: brich nach X erfolgreich vorbereiteten Dateien ab (Debug/Teillauf)
       - show_every: alle N Dateien einen kleinen Status ausgeben (zusätzlich zu tqdm)
       - batch_size: Anzahl vorbereiteter Zeilen pro kurzer DB-Schreibtransaktion
+      - dry_run: discover/plan only; no catalog mutation
 
     Dateisystem-Probing und Hashing passieren außerhalb von SQLite-Schreibtransaktionen.
     Dateien, die zwischen Discovery und Lesen verschwinden oder nicht lesbar sind,
     werden übersprungen, ohne den restlichen Scan abzubrechen.
     """
+    if dry_run:
+        return plan_scan(custom_roots=custom_roots, limit=limit)
+
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
 

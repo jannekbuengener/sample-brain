@@ -1355,11 +1355,66 @@ def _reuse_payload(step_id: str, entry: dict, pack_root: Path) -> object:
     return None
 
 
+def plan_deconstruct(
+    track_path: Path,
+    pack_root: Path,
+    *,
+    bpm_normalization: str = "none",
+    beat_backend: str = "auto",
+    skip: set[str] | None = None,
+    stems_enabled: bool = False,
+    stem_model: str | None = None,
+) -> dict[str, object]:
+    """Build a dry-run plan without writing pack artifacts or resume state.
+
+    Performs lightweight track identity inspection (exists/name only; no
+    hashing) and projects the same STEP_ORDER the live orchestrator would run.
+    """
+    track_path = Path(track_path)
+    pack_root = Path(pack_root)
+    skip = set(skip or set())
+
+    planned_steps: list[dict[str, object]] = []
+    for step_id, required in STEP_ORDER:
+        if step_id in skip:
+            planned = "skip"
+        elif step_id == "stems" and not stems_enabled:
+            planned = "not_run"
+        else:
+            planned = "run"
+        planned_steps.append(
+            {
+                "step_id": step_id,
+                "required": required,
+                "planned": planned,
+            }
+        )
+
+    return {
+        "track": {
+            "file_name": track_path.name,
+            "exists": track_path.exists(),
+        },
+        "pack_root_name": pack_root.name,
+        "bpm_normalization": bpm_normalization,
+        "beat_backend": beat_backend,
+        "stems_enabled": bool(stems_enabled),
+        "stem_model": stem_model if stems_enabled else None,
+        "steps": planned_steps,
+        "artifacts": [
+            "analysis/track_map.json",
+            "deconstruct_run.json",
+            "manifest.json",
+        ],
+    }
+
+
 __all__ = [
     "STEP_ORDER",
     "DeconstructAdapters",
     "RunResult",
     "StepContext",
     "StepResult",
+    "plan_deconstruct",
     "run_deconstruct",
 ]

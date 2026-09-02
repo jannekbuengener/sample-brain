@@ -319,14 +319,13 @@ def _attach_lineage(
         upsert_sample_tag(sample_id, tag, TAG_SOURCE)
 
 
-def _import_asset(
+def _prepare_asset(
     entry: dict,
     pack_root: Path,
     *,
-    pack_id: str,
     track_id: str,
-) -> tuple[int | None, bool, str | None]:
-    """Validate + import one pack asset entry."""
+) -> tuple[Path, dict, dict] | tuple[None, None, str]:
+    """Validate one asset entry; return (audio_path, props, asset) or skip reason."""
     asset_ref = entry.get("asset_ref")
     if not isinstance(asset_ref, str) or not asset_ref:
         raise PackImportError(
@@ -341,7 +340,7 @@ def _import_asset(
     if resolved_status in ("ok", "partial", "candidate"):
         pass
     elif resolved_status not in USABLE_STATUSES:
-        return None, False, f"asset_status:{resolved_status}"
+        return None, None, f"asset_status:{resolved_status}"
 
     asset_path = _resolve_ref(asset_ref, pack_root, kind="asset")
     if not asset_path.exists():
@@ -381,7 +380,7 @@ def _import_asset(
 
     rendering = asset.get("rendering") or {}
     if rendering.get("status") != "rendered" or not rendering.get("output"):
-        return None, False, "asset_not_rendered"
+        return None, None, "asset_not_rendered"
 
     output = rendering["output"]
     file_ref = output.get("file_ref")
@@ -397,6 +396,21 @@ def _import_asset(
         expected_props=output["audio_properties"],
         audio_kind="ASSET",
     )
+    return audio_path, audio_props, asset
+
+
+def _import_asset(
+    entry: dict,
+    pack_root: Path,
+    *,
+    pack_id: str,
+    track_id: str,
+) -> tuple[int | None, bool, str | None]:
+    """Validate + import one pack asset entry."""
+    prepared = _prepare_asset(entry, pack_root, track_id=track_id)
+    if prepared[0] is None:
+        return None, False, prepared[2]
+    audio_path, audio_props, asset = prepared
     sample_id, reused = _register_sample(
         audio_path,
         audio_props,
@@ -409,13 +423,13 @@ def _import_asset(
     return sample_id, reused, None
 
 
-def _import_stem(
+def _prepare_stem(
     entry: dict,
     pack_root: Path,
     *,
-    pack_id: str,
     track_id: str,
-) -> tuple[int | None, bool, str | None]:
+) -> tuple[Path, dict, dict] | tuple[None, None, str]:
+    """Validate one stem entry; return (audio_path, props, stem) or skip reason."""
     stem_ref = entry.get("stem_ref")
     if not isinstance(stem_ref, str) or not stem_ref:
         raise PackImportError(
@@ -424,7 +438,7 @@ def _import_stem(
         )
     stem_status = entry.get("status")
     if stem_status not in USABLE_STATUSES:
-        return None, False, f"stem_status:{stem_status}"
+        return None, None, f"stem_status:{stem_status}"
 
     stem_path = _resolve_ref(stem_ref, pack_root, kind="stem")
     if not stem_path.exists():
@@ -452,7 +466,7 @@ def _import_stem(
 
     output = stem.get("output")
     if not output:
-        return None, False, "stem_not_rendered"
+        return None, None, "stem_not_rendered"
     file_ref = output.get("file_ref")
     if not isinstance(file_ref, str) or not file_ref:
         raise PackImportError(
@@ -466,6 +480,20 @@ def _import_stem(
         expected_props=output["audio_properties"],
         audio_kind="STEM",
     )
+    return audio_path, audio_props, stem
+
+
+def _import_stem(
+    entry: dict,
+    pack_root: Path,
+    *,
+    pack_id: str,
+    track_id: str,
+) -> tuple[int | None, bool, str | None]:
+    prepared = _prepare_stem(entry, pack_root, track_id=track_id)
+    if prepared[0] is None:
+        return None, False, prepared[2]
+    audio_path, audio_props, stem = prepared
     sample_id, reused = _register_sample(
         audio_path,
         audio_props,
@@ -489,9 +517,8 @@ class ImportResult:
     sample_ids: list[int] = field(default_factory=list)
 
 
-def run_pack_import(pack_root: Path, engine: Any = None) -> ImportResult:
-    """Re-import a Performance Pack into the catalog."""
-    init_db()
+def _validate_pack_documents(pack_root: Path) -> tuple[dict, Path, str, str]:
+    """Load and validate pack root + required Track Map (read-only)."""
     manifest_path, pack_root_dir = _resolve_manifest_path(Path(pack_root))
 
     if not manifest_path.exists():
@@ -546,6 +573,65 @@ def run_pack_import(pack_root: Path, engine: Any = None) -> ImportResult:
     if track_map_entry.get("status") == "failed":
         raise PackImportError("TRACK_MAP_FAILED", "Required Track Map has status failed")
 
+    return manifest, pack_root_dir, track_id, pack_id
+
+
+def plan_pack_import(pack_root: Path) -> dict[str, Any]:
+    """Validate a pack and preview catalog mutations without DB writes."""
+    manifest, pack_root_dir, track_id, pack_id = _validate_pack_documents(pack_root)
+    assets_importable = 0
+    assets_skipped = 0
+    stems_importable = 0
+    stems_skipped = 0
+    errors: list[dict[str, str]] = []
+
+    for entry in manifest.get("assets", []) or []:
+        prepared = _prepare_asset(entry, pack_root_dir, track_id=track_id)
+        if prepared[0] is None:
+            assets_skipped += 1
+            if prepared[2]:
+                errors.append(
+                    {"asset_id": str(entry.get("asset_id")), "reason": str(prepared[2])}
+                )
+            continue
+        assets_importable += 1
+
+    for entry in manifest.get("stems", []) or []:
+        prepared = _prepare_stem(entry, pack_root_dir, track_id=track_id)
+        if prepared[0] is None:
+            stems_skipped += 1
+            if prepared[2]:
+                errors.append(
+                    {"stem_id": str(entry.get("stem_id")), "reason": str(prepared[2])}
+                )
+            continue
+        stems_importable += 1
+
+    return {
+        "pack_id": pack_id,
+        "source_track_id": track_id,
+        "assets_importable": assets_importable,
+        "assets_skipped": assets_skipped,
+        "stems_importable": stems_importable,
+        "stems_skipped": stems_skipped,
+        "errors": errors,
+    }
+
+
+def run_pack_import(
+    pack_root: Path, engine: Any = None, *, dry_run: bool = False
+) -> ImportResult | dict[str, Any]:
+    """Re-import a Performance Pack into the catalog.
+
+    When ``dry_run`` is True, validate and preview only — no ``init_db``, no
+    sample registration, and no filesystem copies.
+    """
+    if dry_run:
+        return plan_pack_import(pack_root)
+
+    init_db()
+    manifest, pack_root_dir, track_id, pack_id = _validate_pack_documents(pack_root)
+
     result = ImportResult(pack_id=pack_id, source_track_id=track_id)
     seen_ids: set[int] = set()
 
@@ -593,5 +679,6 @@ def run_pack_import(pack_root: Path, engine: Any = None) -> ImportResult:
 __all__ = [
     "PackImportError",
     "ImportResult",
+    "plan_pack_import",
     "run_pack_import",
 ]

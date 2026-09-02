@@ -40,7 +40,7 @@ Sample Brain ist ein lokales Werkzeug für Sample-Analyse, musikalisches Matchin
 ### Sample Library
 
 ```text
-scan --root <SAMPLE_ROOT>
+scan --root <SAMPLE_ROOT> [--dry-run]
        ↓
 analyze [--all]
        ↓
@@ -50,7 +50,7 @@ match --target-bpm 128 [--target-key Cmaj] [--desired-type Kick]
    oder
 search "kick" --model-id 1 [--backend clap] [--search-backend numpy|sqlite-vec]
        ↓
-export_fl [--fl-user-data <PATH>] [--max-tags 3]
+export_fl [--fl-user-data <PATH>] [--max-tags 3] [--dry-run]
 ```
 
 ### Track Deconstruction → Performance Pack
@@ -58,9 +58,9 @@ export_fl [--fl-user-data <PATH>] [--max-tags 3]
 ```text
 context analyze <TRACK.wav> --json         # schnelle Track Map ohne Katalog
        ↓
-deconstruct <TRACK.wav> --pack-root <OUT>  # Track Map + Arrangement + Assets
+deconstruct <TRACK.wav> --pack-root <OUT> [--dry-run]  # Track Map + Arrangement + Assets
        ↓
-pack-import <OUT>                          # Loops/Sections in Katalog re-importieren
+pack-import <OUT> [--dry-run]                          # Loops/Sections in Katalog re-importieren
 ```
 
 ---
