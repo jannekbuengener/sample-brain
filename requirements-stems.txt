@@ -1,4 +1,4 @@
 # Optional stems dependency extra
 # Install with:
 #   pip install -e .[stems]
-audio-separator[cpu]==0.44.5
+audio-separator[cpu]==0.47.0
