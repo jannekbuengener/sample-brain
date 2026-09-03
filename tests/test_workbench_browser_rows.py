@@ -77,22 +77,25 @@ def _interaction(
 
 
 @pytest.mark.parametrize(
-    ("scroll_offset_px", "expected_first", "expected_last"),
+    ("scroll_offset_px", "expected_first_visible", "expected_first", "expected_last"),
     [
-        (0, 0, 11),
-        (50_000, 2_498, 2_511),
-        (99_800, 4_988, 4_999),
+        (0, 0, 0, 11),
+        (50_000, 2_500, 2_498, 2_511),
+        (99_800, 4_990, 4_988, 4_999),
     ],
 )
 def test_virtual_viewport_returns_only_visible_rows_and_explicit_overscan(
-    scroll_offset_px: int, expected_first: int, expected_last: int
+    scroll_offset_px: int,
+    expected_first_visible: int,
+    expected_first: int,
+    expected_last: int,
 ):
     """Removing range limiting would turn a 5,000-row scroll into full rendering."""
     surface = _browser_surface()
 
     layout = _viewport(surface).layout(_rows(), scroll_offset_px=scroll_offset_px)
 
-    assert layout.first_visible_index == expected_first + 2
+    assert layout.first_visible_index == expected_first_visible
     assert layout.renderable_rows[0].row.display_name == _row(expected_first).display_name
     assert layout.renderable_rows[-1].row.display_name == _row(expected_last).display_name
     assert len(layout.renderable_rows) <= 14
