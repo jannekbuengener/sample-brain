@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import sys
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from src import workbench_preview
 from src.workbench_preview import (
     PreviewResult,
     WorkbenchPreviewPlayer,
@@ -16,6 +19,20 @@ from src.workbench_preview import (
     validate_preview_start_ms,
 )
 from tests.audio_fixtures import write_sine_wav
+
+
+def test_windows_stop_uses_none_without_unsupported_purge_flag(monkeypatch):
+    calls: list[tuple[object, int]] = []
+    fake_winsound = SimpleNamespace(
+        SND_PURGE=0x0040,
+        PlaySound=lambda sound, flags: calls.append((sound, flags)),
+    )
+    monkeypatch.setitem(sys.modules, "winsound", fake_winsound)
+    monkeypatch.setattr(workbench_preview, "_cleanup_temp_wav", lambda: None)
+
+    workbench_preview._windows_stop()
+
+    assert calls == [(None, 0)]
 
 
 def test_validate_preview_path_rejects_empty():
@@ -106,6 +123,29 @@ def test_preview_player_play_passes_start_ms(tmp_path: Path):
 
 
 def test_preview_player_play_stops_previous(tmp_path: Path):
+    first = write_sine_wav(tmp_path / "first.wav", duration_sec=0.1, frequency_hz=440.0)
+    second = write_sine_wav(tmp_path / "second.wav", duration_sec=0.1, frequency_hz=220.0)
+    stop_count = 0
+    plays: list[Path] = []
+
+    def fake_play(path: Path, _start_ms: int = 0) -> PreviewResult:
+        plays.append(path)
+        return PreviewResult(ok=True)
+
+    def fake_stop() -> None:
+        nonlocal stop_count
+        stop_count += 1
+
+    player = WorkbenchPreviewPlayer(play_fn=fake_play, stop_fn=fake_stop)
+    assert player.play(first).ok
+    assert player.play(second).ok
+
+    assert plays == [first.resolve(), second.resolve()]
+    assert stop_count == 0
+    assert player.current_path == second.resolve()
+
+
+def test_preview_player_stop_clears_current_path(tmp_path: Path):
     wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.1, frequency_hz=440.0)
     stop_count = 0
 
@@ -117,42 +157,32 @@ def test_preview_player_play_stops_previous(tmp_path: Path):
         stop_count += 1
 
     player = WorkbenchPreviewPlayer(play_fn=fake_play, stop_fn=fake_stop)
-    player.play(wav)
-    player.play(wav)
-    assert stop_count >= 1
-
-
-def test_preview_player_stop_clears_current_path(tmp_path: Path):
-    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.1, frequency_hz=440.0)
-    stopped = False
-
-    def fake_play(_path: Path, _start_ms: int = 0) -> PreviewResult:
-        return PreviewResult(ok=True)
-
-    def fake_stop() -> None:
-        nonlocal stopped
-        stopped = True
-
-    player = WorkbenchPreviewPlayer(play_fn=fake_play, stop_fn=fake_stop)
     player.play(wav, start_ms=10)
     assert player.current_path is not None
     player.stop()
-    assert stopped
+    assert stop_count == 1
     assert player.current_path is None
     assert player.current_start_ms == 0
 
 
 def test_preview_player_returns_backend_error(tmp_path: Path):
-    wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.1, frequency_hz=440.0)
+    first = write_sine_wav(tmp_path / "first.wav", duration_sec=0.1, frequency_hz=440.0)
+    second = write_sine_wav(tmp_path / "second.wav", duration_sec=0.1, frequency_hz=220.0)
+    calls = 0
 
     def fake_play(_path: Path, _start_ms: int = 0) -> PreviewResult:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return PreviewResult(ok=True)
         return PreviewResult(ok=False, message="backend down")
 
     player = WorkbenchPreviewPlayer(play_fn=fake_play, stop_fn=lambda: None)
-    result = player.play(wav)
+    assert player.play(first).ok
+    result = player.play(second)
     assert not result.ok
     assert result.message == "backend down"
-    assert player.current_path is None
+    assert player.current_path == first.resolve()
 
 
 def test_preview_player_stop_invokes_cleanup_fn(tmp_path: Path):
@@ -267,14 +297,52 @@ def test_preview_player_play_stops_active_loop_repeat(tmp_path: Path):
         play_count += 1
         return PreviewResult(ok=True)
 
+    stop_count = 0
+
+    def fake_stop() -> None:
+        nonlocal stop_count
+        stop_count += 1
+
     player = WorkbenchPreviewPlayer(
         play_fn=lambda path, start_ms=0: PreviewResult(ok=True),
-        stop_fn=lambda: None,
+        stop_fn=fake_stop,
         loop_sync_play_fn=fake_sync_play,
     )
     assert player.play_region_loop(wav, start_ms=10, end_ms=100).ok
+    stop_count = 0
     player.play(wav)
+    assert stop_count == 1
     assert not player.is_loop_repeating
+
+
+def test_windows_play_replacement_cleans_old_temp_after_success(tmp_path: Path, monkeypatch):
+    previous_temp = tmp_path / "previous-preview.wav"
+    previous_temp.write_bytes(b"temp")
+    direct_wav = tmp_path / "next.wav"
+    direct_wav.write_bytes(b"wav")
+    calls: list[tuple[object, int]] = []
+    fake_winsound = SimpleNamespace(
+        SND_FILENAME=0x00020000,
+        SND_ASYNC=0x0001,
+        SND_NOSTOP=0x0010,
+        PlaySound=lambda sound, flags: calls.append((sound, flags)),
+    )
+    monkeypatch.setitem(sys.modules, "winsound", fake_winsound)
+    monkeypatch.setattr(
+        workbench_preview,
+        "prepare_preview_playback_path",
+        lambda _path, _start: (direct_wav, None, PreviewResult(ok=True)),
+    )
+    monkeypatch.setattr(workbench_preview, "_temp_wav", previous_temp)
+
+    result = workbench_preview._windows_play(direct_wav)
+
+    assert result.ok
+    assert calls == [
+        (str(direct_wav), fake_winsound.SND_FILENAME | fake_winsound.SND_ASYNC)
+    ]
+    assert not previous_temp.exists()
+    assert workbench_preview._temp_wav is None
 
 
 def test_preview_player_play_region_loop_rejects_invalid_bounds(tmp_path: Path):

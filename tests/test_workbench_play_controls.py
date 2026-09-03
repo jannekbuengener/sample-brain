@@ -307,15 +307,22 @@ def test_play_preview_status_for_click_position(tmp_path: Path):
 
 def test_waveform_click_handlers_delegate(monkeypatch):
     app = _playback_app()
-    left_called: list[bool] = []
-    right_called: list[int] = []
+    left_called: list[int] = []
+    right_called: list[tuple[int, int]] = []
     shift_called: list[int] = []
 
-    monkeypatch.setattr(app, "_play_selected_from_waveform", lambda: left_called.append(True))
+    monkeypatch.setattr(
+        _workbench_module(), "monotonic_ns", iter((101, 202, 303)).__next__
+    )
+    monkeypatch.setattr(
+        app,
+        "_play_selected_from_waveform",
+        lambda *, event_timestamp_ns: left_called.append(event_timestamp_ns),
+    )
     monkeypatch.setattr(
         app,
         "_play_selected_from_waveform_position",
-        lambda x: right_called.append(x),
+        lambda x, *, event_timestamp_ns: right_called.append((x, event_timestamp_ns)),
     )
     monkeypatch.setattr(
         app,
@@ -327,9 +334,9 @@ def test_waveform_click_handlers_delegate(monkeypatch):
     app._on_waveform_click(SimpleNamespace(state=0x0001, x=88))
     app._on_waveform_right_click(SimpleNamespace(x=42))
 
-    assert left_called == [True]
+    assert left_called == [101]
     assert shift_called == [88]
-    assert right_called == [42]
+    assert right_called == [(42, 303)]
 
 
 def test_shift_click_saves_cue_without_playing(tmp_path: Path):

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import threading
 import tkinter as tk
+from dataclasses import dataclass
 from pathlib import Path
+from time import monotonic_ns
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable
 
@@ -178,6 +180,23 @@ HARMONY_RELATION_LABELS = {
 }
 
 
+@dataclass(frozen=True)
+class BrowserNavigationOutcome:
+    """Result of one browser-local arrow-key navigation attempt."""
+
+    selected_index: int
+    event_result: str | None
+
+
+@dataclass(frozen=True)
+class BrowserPreviewDispatchMetric:
+    """UI-dispatch timing only; this is not an audio-output latency claim."""
+
+    event_timestamp_ns: int
+    dispatch_return_timestamp_ns: int
+    event_to_dispatch_return_ms: float
+
+
 def _fmt(value: float | None, *, digits: int = 2) -> str:
     if value is None:
         return "—"
@@ -199,6 +218,7 @@ class WorkbenchApp:
         self._cancel_event = threading.Event()
         self._preview = WorkbenchPreviewPlayer()
         self._preview_row_path: str | None = None
+        self._skip_next_browser_selection_preview: str | None = None
         self._detail_row: WorkbenchRow | None = None
         self._loop_edit_pending_start_ms: int | None = None
         self._pending_attack_suggestion: AttackSuggestion | None = None
@@ -605,6 +625,9 @@ class WorkbenchApp:
         self._tree.bind("<Button-1>", self._on_tree_click)
         self._tree.bind("<Double-Button-1>", self._on_tree_double_click)
         self._tree.bind("<space>", self._on_space_preview)
+        self._tree.bind("<Down>", self._on_browser_down)
+        self._tree.bind("<Up>", self._on_browser_up)
+        self._tree.bind("<Escape>", self._on_browser_escape)
 
         suggest_header = ttk.Frame(playlist_frame, style="Panel.TFrame")
         suggest_header.pack(fill=tk.X, pady=(8, 4))
@@ -2140,24 +2163,139 @@ class WorkbenchApp:
             return self._visible_rows[idx]
         return None
 
+    def _resolve_visible_browser_row(
+        self, selected_index: int, *, direction: str
+    ) -> WorkbenchRow | None:
+        """Return the adjacent visible row while keeping deterministic edges."""
+        if not self._visible_rows:
+            return None
+        if direction == "next":
+            target_index = min(selected_index + 1, len(self._visible_rows) - 1)
+        elif direction == "previous":
+            target_index = max(selected_index - 1, 0)
+        else:
+            raise ValueError(f"Unsupported browser direction: {direction}")
+        return self._visible_rows[target_index]
+
+    def _route_browser_navigation_key(
+        self,
+        *,
+        direction: str,
+        selected_index: int,
+        preview: Callable[[WorkbenchRow], None],
+        editable_focus: bool = False,
+    ) -> BrowserNavigationOutcome:
+        """Route a browser arrow key without taking over editable widgets."""
+        if editable_focus:
+            return BrowserNavigationOutcome(selected_index, None)
+        target = self._resolve_visible_browser_row(selected_index, direction=direction)
+        if target is None:
+            return BrowserNavigationOutcome(selected_index, "break")
+        target_index = self._visible_rows.index(target)
+        preview(target)
+        return BrowserNavigationOutcome(target_index, "break")
+
+    def _audition_browser_waveform_row(
+        self, row: WorkbenchRow, preview: Callable[[WorkbenchRow], None]
+    ) -> None:
+        """Keep waveform-first auditioning on the selected browser row."""
+        preview(row)
+
+    def _measure_browser_preview_dispatch(
+        self,
+        *,
+        event_timestamp_ns: int,
+        dispatch: Callable[[], object],
+        clock_ns: Callable[[], int] = monotonic_ns,
+    ) -> BrowserPreviewDispatchMetric:
+        dispatch()
+        dispatch_return_timestamp_ns = clock_ns()
+        return BrowserPreviewDispatchMetric(
+            event_timestamp_ns=event_timestamp_ns,
+            dispatch_return_timestamp_ns=dispatch_return_timestamp_ns,
+            event_to_dispatch_return_ms=(
+                dispatch_return_timestamp_ns - event_timestamp_ns
+            )
+            / 1_000_000,
+        )
+
+    def _audition_browser_row(
+        self, row: WorkbenchRow, *, event_timestamp_ns: int
+    ) -> None:
+        self._preview_row_path = row.path
+        self._set_detail(row)
+        self._measure_browser_preview_dispatch(
+            event_timestamp_ns=event_timestamp_ns, dispatch=self._play_preview
+        )
+
+    def _selected_browser_index(self) -> int:
+        selected = self._tree.selection()
+        if not selected:
+            return 0
+        try:
+            return int(selected[0])
+        except (TypeError, ValueError):
+            return 0
+
+    def _on_browser_navigation(self, direction: str, _event: tk.Event) -> str | None:
+        event_timestamp_ns = monotonic_ns()
+        if self._busy:
+            return None
+        selected_index = self._selected_browser_index()
+
+        def preview(row: WorkbenchRow) -> None:
+            target_index = self._visible_rows.index(row)
+            if target_index != selected_index:
+                self._skip_next_browser_selection_preview = row.path
+            self._tree.selection_set(str(target_index))
+            self._tree.see(str(target_index))
+            self._audition_browser_row(
+                row, event_timestamp_ns=event_timestamp_ns
+            )
+
+        outcome = self._route_browser_navigation_key(
+            direction=direction,
+            selected_index=selected_index,
+            preview=preview,
+        )
+        return outcome.event_result
+
+    def _on_browser_down(self, event: tk.Event) -> str | None:
+        return self._on_browser_navigation("next", event)
+
+    def _on_browser_up(self, event: tk.Event) -> str | None:
+        return self._on_browser_navigation("previous", event)
+
+    def _route_browser_escape(
+        self, *, preview_is_active: bool, stop_preview: Callable[[], None]
+    ) -> str | None:
+        if not preview_is_active:
+            return None
+        stop_preview()
+        return "break"
+
+    def _on_browser_escape(self, _event: tk.Event) -> str | None:
+        return self._route_browser_escape(
+            preview_is_active=self._preview.current_path is not None,
+            stop_preview=self._stop_preview,
+        )
+
     def _on_select(self, _event: tk.Event | None = None) -> None:
+        event_timestamp_ns = monotonic_ns()
         row = self._selected_row()
         if row is None:
             self._set_detail(None)
             return
-        if (
-            self._preview.current_path is not None
-            and row.path
-            and Path(row.path).resolve() != self._preview.current_path
-        ):
-            self._stop_preview()
-        self._set_detail(row)
+        if getattr(self, "_skip_next_browser_selection_preview", None) == row.path:
+            self._skip_next_browser_selection_preview = None
+            self._set_detail(row)
+            return
+        self._audition_browser_row(row, event_timestamp_ns=event_timestamp_ns)
 
     def _on_tree_double_click(self, _event: tk.Event | None = None) -> None:
-        if self._busy:
-            return
-        self._on_select()
-        self._play_preview()
+        # The preceding Treeview selection already auditioned the row.  A
+        # second dispatch here would replace the same preview twice.
+        return
 
     def _column_id_at_x(self, x: int) -> str | None:
         column = self._tree.identify_column(x)
@@ -2616,16 +2754,27 @@ class WorkbenchApp:
             tone="success",
         )
 
-    def _play_selected_from_waveform(self) -> None:
+    def _play_selected_from_waveform(
+        self, *, event_timestamp_ns: int | None = None
+    ) -> None:
         if self._busy:
             return
         row = self._detail_row
         if row is None or not row.path:
             self._set_status("Kein Sample ausgewählt.", tone="neutral")
             return
-        self._play_preview()
+        self._measure_browser_preview_dispatch(
+            event_timestamp_ns=(
+                event_timestamp_ns
+                if event_timestamp_ns is not None
+                else monotonic_ns()
+            ),
+            dispatch=self._play_preview,
+        )
 
-    def _play_selected_from_waveform_position(self, x: int) -> None:
+    def _play_selected_from_waveform_position(
+        self, x: int, *, event_timestamp_ns: int | None = None
+    ) -> None:
         if self._busy:
             return
         row = self._detail_row
@@ -2638,7 +2787,16 @@ class WorkbenchApp:
             return
         width = max(int(self._waveform_canvas.winfo_width()), 1)
         start_ms = preview_start_ms_from_waveform_x(int(x), width, duration_ms)
-        self._play_preview(start_ms=start_ms, from_click_position=True)
+        self._measure_browser_preview_dispatch(
+            event_timestamp_ns=(
+                event_timestamp_ns
+                if event_timestamp_ns is not None
+                else monotonic_ns()
+            ),
+            dispatch=lambda: self._play_preview(
+                start_ms=start_ms, from_click_position=True
+            ),
+        )
 
     def _cue_start_ms_from_waveform_x(self, x: int) -> int | None:
         row = self._detail_row
@@ -3026,6 +3184,7 @@ class WorkbenchApp:
         self._set_status("Loop gelöscht", tone="success")
 
     def _on_waveform_click(self, event: tk.Event) -> None:
+        event_timestamp_ns = monotonic_ns()
         if event.state & 0x0001:
             self._set_selected_cue_from_waveform_position(int(event.x))
             return
@@ -3035,10 +3194,12 @@ class WorkbenchApp:
         if self._attack_edit_mode_var.get():
             self._handle_attack_edit_waveform_click(int(event.x))
             return
-        self._play_selected_from_waveform()
+        self._play_selected_from_waveform(event_timestamp_ns=event_timestamp_ns)
 
     def _on_waveform_right_click(self, event: tk.Event) -> None:
-        self._play_selected_from_waveform_position(int(event.x))
+        self._play_selected_from_waveform_position(
+            int(event.x), event_timestamp_ns=monotonic_ns()
+        )
 
     def _update_metadata_provenance_display(
         self,
