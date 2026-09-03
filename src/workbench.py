@@ -2219,11 +2219,13 @@ class WorkbenchApp:
             / 1_000_000,
         )
 
-    def _audition_browser_row(self, row: WorkbenchRow) -> None:
+    def _audition_browser_row(
+        self, row: WorkbenchRow, *, event_timestamp_ns: int
+    ) -> None:
         self._preview_row_path = row.path
         self._set_detail(row)
         self._measure_browser_preview_dispatch(
-            event_timestamp_ns=monotonic_ns(), dispatch=self._play_preview
+            event_timestamp_ns=event_timestamp_ns, dispatch=self._play_preview
         )
 
     def _selected_browser_index(self) -> int:
@@ -2236,16 +2238,20 @@ class WorkbenchApp:
             return 0
 
     def _on_browser_navigation(self, direction: str, _event: tk.Event) -> str | None:
+        event_timestamp_ns = monotonic_ns()
         if self._busy:
             return None
         selected_index = self._selected_browser_index()
 
         def preview(row: WorkbenchRow) -> None:
             target_index = self._visible_rows.index(row)
-            self._skip_next_browser_selection_preview = row.path
+            if target_index != selected_index:
+                self._skip_next_browser_selection_preview = row.path
             self._tree.selection_set(str(target_index))
             self._tree.see(str(target_index))
-            self._audition_browser_row(row)
+            self._audition_browser_row(
+                row, event_timestamp_ns=event_timestamp_ns
+            )
 
         outcome = self._route_browser_navigation_key(
             direction=direction,
@@ -2275,6 +2281,7 @@ class WorkbenchApp:
         )
 
     def _on_select(self, _event: tk.Event | None = None) -> None:
+        event_timestamp_ns = monotonic_ns()
         row = self._selected_row()
         if row is None:
             self._set_detail(None)
@@ -2283,14 +2290,12 @@ class WorkbenchApp:
             self._skip_next_browser_selection_preview = None
             self._set_detail(row)
             return
-        self._set_detail(row)
-        self._play_preview()
+        self._audition_browser_row(row, event_timestamp_ns=event_timestamp_ns)
 
     def _on_tree_double_click(self, _event: tk.Event | None = None) -> None:
-        if self._busy:
-            return
-        self._on_select()
-        self._play_preview()
+        # The preceding Treeview selection already auditioned the row.  A
+        # second dispatch here would replace the same preview twice.
+        return
 
     def _column_id_at_x(self, x: int) -> str | None:
         column = self._tree.identify_column(x)
@@ -2749,16 +2754,27 @@ class WorkbenchApp:
             tone="success",
         )
 
-    def _play_selected_from_waveform(self) -> None:
+    def _play_selected_from_waveform(
+        self, *, event_timestamp_ns: int | None = None
+    ) -> None:
         if self._busy:
             return
         row = self._detail_row
         if row is None or not row.path:
             self._set_status("Kein Sample ausgewählt.", tone="neutral")
             return
-        self._play_preview()
+        self._measure_browser_preview_dispatch(
+            event_timestamp_ns=(
+                event_timestamp_ns
+                if event_timestamp_ns is not None
+                else monotonic_ns()
+            ),
+            dispatch=self._play_preview,
+        )
 
-    def _play_selected_from_waveform_position(self, x: int) -> None:
+    def _play_selected_from_waveform_position(
+        self, x: int, *, event_timestamp_ns: int | None = None
+    ) -> None:
         if self._busy:
             return
         row = self._detail_row
@@ -2771,7 +2787,16 @@ class WorkbenchApp:
             return
         width = max(int(self._waveform_canvas.winfo_width()), 1)
         start_ms = preview_start_ms_from_waveform_x(int(x), width, duration_ms)
-        self._play_preview(start_ms=start_ms, from_click_position=True)
+        self._measure_browser_preview_dispatch(
+            event_timestamp_ns=(
+                event_timestamp_ns
+                if event_timestamp_ns is not None
+                else monotonic_ns()
+            ),
+            dispatch=lambda: self._play_preview(
+                start_ms=start_ms, from_click_position=True
+            ),
+        )
 
     def _cue_start_ms_from_waveform_x(self, x: int) -> int | None:
         row = self._detail_row
@@ -3159,6 +3184,7 @@ class WorkbenchApp:
         self._set_status("Loop gelöscht", tone="success")
 
     def _on_waveform_click(self, event: tk.Event) -> None:
+        event_timestamp_ns = monotonic_ns()
         if event.state & 0x0001:
             self._set_selected_cue_from_waveform_position(int(event.x))
             return
@@ -3168,10 +3194,12 @@ class WorkbenchApp:
         if self._attack_edit_mode_var.get():
             self._handle_attack_edit_waveform_click(int(event.x))
             return
-        self._play_selected_from_waveform()
+        self._play_selected_from_waveform(event_timestamp_ns=event_timestamp_ns)
 
     def _on_waveform_right_click(self, event: tk.Event) -> None:
-        self._play_selected_from_waveform_position(int(event.x))
+        self._play_selected_from_waveform_position(
+            int(event.x), event_timestamp_ns=monotonic_ns()
+        )
 
     def _update_metadata_provenance_display(
         self,

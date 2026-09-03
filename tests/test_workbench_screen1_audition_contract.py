@@ -12,6 +12,7 @@ from types import MethodType, SimpleNamespace
 
 import pytest
 
+from src import workbench
 from src.workbench import WorkbenchApp
 from src.workbench_controller import WorkbenchRow
 from src.workbench_preview import PreviewResult
@@ -84,6 +85,49 @@ def test_browser_down_selects_next_visible_row_consumes_and_previews_once():
     assert previews == ["b"]
 
 
+def test_browser_navigation_carries_handler_entry_time_through_detail_work(
+    monkeypatch,
+):
+    app = _bare_browser_app([_row("a"), _row("b")])
+    app._tree = SimpleNamespace(
+        selection=lambda: ("0",),
+        selection_set=lambda _target: None,
+        see=lambda _target: None,
+    )
+    app._skip_next_browser_selection_preview = None
+    clock = {"now": 1_000_000_000}
+    elapsed_ms: list[float] = []
+    monkeypatch.setattr(workbench, "monotonic_ns", lambda: clock["now"])
+    app._set_detail = lambda _row: clock.update(now=1_012_000_000)
+    app._play_preview = lambda: None
+    app._measure_browser_preview_dispatch = lambda **kwargs: elapsed_ms.append(
+        (clock["now"] - kwargs["event_timestamp_ns"]) / 1_000_000
+    )
+
+    assert app._on_browser_navigation("next", SimpleNamespace()) == "break"
+
+    assert elapsed_ms == [12.0]
+
+
+def test_selection_carries_handler_entry_time_through_detail_work(monkeypatch):
+    app = _bare_browser_app([_row("a")])
+    app._tree = SimpleNamespace(selection=lambda: ("0",))
+    app._preview = SimpleNamespace(current_path=None)
+    app._skip_next_browser_selection_preview = None
+    captured: list[int] = []
+    monkeypatch.setattr(workbench, "monotonic_ns", lambda: 2_000_000_000)
+    app._set_detail = lambda _row: setattr(app, "_detail_updated", True)
+    app._play_preview = lambda: None
+    app._measure_browser_preview_dispatch = lambda **kwargs: captured.append(
+        kwargs["event_timestamp_ns"]
+    )
+
+    app._on_select()
+
+    assert app._detail_updated is True
+    assert captured == [2_000_000_000]
+
+
 def test_editable_focus_leaves_down_native_and_does_not_preview():
     app = _bare_browser_app([_row("a"), _row("b")])
     previews: list[str] = []
@@ -111,6 +155,25 @@ def test_browser_waveform_click_auditions_the_clicked_row_without_detail_play_bu
     assert previews == ["b"]
 
 
+def test_waveform_click_carries_handler_entry_time_to_preview_dispatch(monkeypatch):
+    row = _row("a")
+    app = _bare_browser_app([row])
+    app._detail_row = row
+    app._loop_edit_mode_var = SimpleNamespace(get=lambda: False)
+    app._attack_edit_mode_var = SimpleNamespace(get=lambda: False)
+    app._set_status = lambda *_args, **_kwargs: None
+    app._play_preview = lambda: None
+    captured: list[int] = []
+    monkeypatch.setattr(workbench, "monotonic_ns", lambda: 3_000_000_000)
+    app._measure_browser_preview_dispatch = lambda **kwargs: captured.append(
+        kwargs["event_timestamp_ns"]
+    )
+
+    app._on_waveform_click(SimpleNamespace(state=0, x=0))
+
+    assert captured == [3_000_000_000]
+
+
 def test_selection_a_to_b_requests_one_preview_replacement_without_app_stop():
     """Contract correction: replacement belongs to the preview owner, not the UI."""
     a, b = _row("a"), _row("b")
@@ -127,6 +190,38 @@ def test_selection_a_to_b_requests_one_preview_replacement_without_app_stop():
     app._on_select()
 
     assert calls == [("play", "b")]
+
+
+def test_tree_double_click_does_not_dispatch_after_selection_already_auditioned():
+    app = _bare_browser_app([_row("a")])
+    calls: list[str] = []
+    app._tree = SimpleNamespace(selection=lambda: ("0",))
+    app._preview = SimpleNamespace(current_path=None)
+    app._skip_next_browser_selection_preview = None
+    app._set_detail = lambda _row: None
+    app._play_preview = lambda: calls.append("play")
+    app._measure_browser_preview_dispatch = lambda **kwargs: kwargs["dispatch"]()
+
+    app._on_select()
+    app._on_tree_double_click()
+
+    assert calls == ["play"]
+
+
+def test_browser_edge_navigation_does_not_leave_stale_selection_suppression():
+    row = _row("a")
+    app = _bare_browser_app([row])
+    app._tree = SimpleNamespace(
+        selection=lambda: ("0",),
+        selection_set=lambda _target: None,
+        see=lambda _target: None,
+    )
+    app._skip_next_browser_selection_preview = None
+    app._audition_browser_row = lambda *_args, **_kwargs: None
+
+    assert app._on_browser_navigation("previous", SimpleNamespace()) == "break"
+
+    assert app._skip_next_browser_selection_preview is None
 
 
 def test_escape_stops_only_an_active_preview_and_consumes_that_browser_event():
