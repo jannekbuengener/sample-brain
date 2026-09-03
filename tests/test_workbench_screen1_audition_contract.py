@@ -111,14 +111,14 @@ def test_browser_waveform_click_auditions_the_clicked_row_without_detail_play_bu
     assert previews == ["b"]
 
 
-def test_selection_a_to_b_stops_a_before_starting_b_exactly_once():
-    """Existing selection changes stop; Screen 1 must additionally audition B."""
+def test_selection_a_to_b_requests_one_preview_replacement_without_app_stop():
+    """Contract correction: replacement belongs to the preview owner, not the UI."""
     a, b = _row("a"), _row("b")
     app = _bare_browser_app([a, b])
     calls: list[tuple[str, str]] = []
     app._tree = SimpleNamespace(selection=lambda: ("1",))
     app._preview = SimpleNamespace(current_path=Path(a.path).resolve())
-    app._stop_preview = lambda: calls.append(("stop", "a"))
+    app._stop_preview = lambda: calls.append(("unexpected_stop", "a"))
     app._set_detail = MethodType(
         lambda self, row: setattr(self, "_detail_row", row), app
     )
@@ -126,7 +126,7 @@ def test_selection_a_to_b_stops_a_before_starting_b_exactly_once():
 
     app._on_select()
 
-    assert calls == [("stop", "a"), ("play", "b")]
+    assert calls == [("play", "b")]
 
 
 def test_escape_stops_only_an_active_preview_and_consumes_that_browser_event():

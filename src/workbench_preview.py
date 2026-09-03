@@ -302,15 +302,19 @@ def _windows_play(path: Path, start_ms: int = 0) -> PreviewResult:
         if temp_wav is not None:
             temp_wav.unlink(missing_ok=True)
         return PreviewResult(ok=False, message=f"Wiedergabe fehlgeschlagen: {exc}")
-    if temp_wav is not None:
-        _set_temp_wav(temp_wav)
+    # A successful direct-WAV replacement must also retire a prior prepared
+    # temporary preview.  Keep it on a failed dispatch: the prior preview may
+    # still be the truthful active state.
+    _set_temp_wav(temp_wav)
     return PreviewResult(ok=True)
 
 
 def _windows_stop() -> None:
     import winsound
 
-    winsound.PlaySound(None, winsound.SND_PURGE)
+    # ``None`` stops the active waveform sound. ``SND_PURGE`` is unsupported
+    # on modern Windows and adds avoidable transition jitter.
+    winsound.PlaySound(None, 0)
     _cleanup_temp_wav()
 
 
@@ -428,6 +432,15 @@ class WorkbenchPreviewPlayer:
         self._current_start_ms = 0
         return loop_thread, loop_temp
 
+    def _stop_active_loop_for_replacement(
+        self,
+    ) -> tuple[threading.Thread | None, Path | None]:
+        """Stop a repeating preview before a normal replacement dispatch."""
+        with self._lock:
+            if self._loop_thread is None:
+                return None, None
+            return self._begin_stop_unlocked()
+
     def play(self, path: str | Path, *, start_ms: int = 0) -> PreviewResult:
         validation = validate_preview_path(path)
         if not validation.ok:
@@ -437,8 +450,7 @@ class WorkbenchPreviewPlayer:
         offset_validation = validate_preview_start_ms(resolved, offset)
         if not offset_validation.ok:
             return offset_validation
-        with self._lock:
-            loop_thread, loop_temp = self._begin_stop_unlocked()
+        loop_thread, loop_temp = self._stop_active_loop_for_replacement()
         self._finalize_stop_side_effects(loop_thread, loop_temp)
         with self._lock:
             result = self._play_fn(resolved, offset)
@@ -469,8 +481,7 @@ class WorkbenchPreviewPlayer:
         )
         if not prep.ok or play_path is None:
             return prep
-        with self._lock:
-            loop_thread, loop_temp = self._begin_stop_unlocked()
+        loop_thread, loop_temp = self._stop_active_loop_for_replacement()
         self._finalize_stop_side_effects(loop_thread, loop_temp)
         with self._lock:
             result = self._play_fn(play_path, 0)
@@ -500,8 +511,7 @@ class WorkbenchPreviewPlayer:
         )
         if not prep.ok or play_path is None:
             return prep
-        with self._lock:
-            loop_thread, loop_temp = self._begin_stop_unlocked()
+        loop_thread, loop_temp = self._stop_active_loop_for_replacement()
         self._finalize_stop_side_effects(loop_thread, loop_temp)
         with self._lock:
             result = self._play_fn(play_path, 0)
