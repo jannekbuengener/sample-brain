@@ -11,9 +11,11 @@ from __future__ import annotations
 import importlib
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from src import workbench
 from src.workbench_controller import WorkbenchRow
 from src.workbench import WorkbenchApp
 
@@ -315,3 +317,124 @@ def test_viewport_updates_request_waveforms_only_for_renderable_rows_never_the_f
     assert set(load_calls) == renderable_paths
     assert len(load_calls) <= 14
     assert len(load_calls) < len(rows)
+
+
+class _CanvasDouble:
+    def __init__(self, *, width: int = 200):
+        self.width = width
+        self.calls: list[object] = []
+
+    def canvasy(self, y: int) -> int:
+        self.calls.append("hit-test")
+        return y
+
+    def winfo_width(self) -> int:
+        return self.width
+
+    def focus_set(self) -> None:
+        self.calls.append("focus")
+
+    def yview(self, *args: str) -> None:
+        self.calls.append(("yview", args))
+
+
+def _canvas_app(rows: list[WorkbenchRow]) -> WorkbenchApp:
+    app = WorkbenchApp.__new__(WorkbenchApp)
+    app._visible_rows = rows
+    app._busy = False
+    app._browser_canvas = _CanvasDouble()
+    app._browser_row_height_px = 20
+    app._tree = SimpleNamespace(selection_set=lambda _index: None)
+    app._skip_next_browser_selection_preview = None
+    app._render_browser_rows = lambda: None
+    return app
+
+
+def test_canvas_click_starts_timing_at_handler_entry_before_hit_test_and_selection(monkeypatch):
+    app = _canvas_app([_row(1)])
+    events: list[object] = []
+    app._browser_canvas.calls = events
+    app._tree = SimpleNamespace(selection_set=lambda _index: events.append("select"))
+    monkeypatch.setattr(workbench, "monotonic_ns", lambda: events.append("clock") or 123)
+    app._audition_browser_row = lambda row, *, event_timestamp_ns: events.append(
+        ("audition", row.display_name, event_timestamp_ns)
+    )
+
+    app._on_browser_canvas_click(SimpleNamespace(x=10, y=0))
+
+    assert events[:5] == [
+        "clock",
+        "hit-test",
+        "focus",
+        "select",
+        ("audition", "sample-0001", 123),
+    ]
+
+
+def test_scrollbar_command_delegates_and_rerenders_virtual_rows():
+    app = _canvas_app([_row(1)])
+    renders: list[str] = []
+    app._render_browser_rows = lambda: renders.append("render")
+
+    handler = getattr(app, "_on_browser_scrollbar", None)
+    assert handler is not None, "missing virtual scrollbar rerender seam"
+    handler("moveto", "0.5")
+
+    assert app._browser_canvas.calls == [("yview", ("moveto", "0.5"))]
+    assert renders == ["render"]
+
+
+def test_canvas_add_hit_area_reuses_playlist_dialog_without_preview_dispatch():
+    app = _canvas_app([_row(1)])
+    opened: list[WorkbenchRow] = []
+    previews: list[WorkbenchRow] = []
+    app._open_add_to_playlist_dialog = opened.append
+    app._audition_browser_row = lambda row, **_kwargs: previews.append(row)
+
+    result = app._on_browser_canvas_click(SimpleNamespace(x=190, y=0))
+
+    assert result == "break"
+    assert opened == [app._visible_rows[0]]
+    assert previews == []
+
+
+def test_valid_canvas_waveform_click_sets_focus_and_auditions_once():
+    app = _canvas_app([_row(1)])
+    previews: list[WorkbenchRow] = []
+    app._audition_browser_row = lambda row, **_kwargs: previews.append(row)
+
+    app._on_browser_canvas_click(SimpleNamespace(x=10, y=0))
+
+    assert app._browser_canvas.calls.count("focus") == 1
+    assert previews == [app._visible_rows[0]]
+
+
+def test_visible_canvas_sort_action_reuses_existing_sort_callback_and_rerenders():
+    app = _canvas_app([_row(2), _row(1)])
+    calls: list[str] = []
+    app._on_sort_column = calls.append
+
+    action = getattr(app, "_on_browser_sort_column", None)
+    assert action is not None, "missing visible canvas sort action"
+    action("name")
+
+    assert calls == ["name"]
+
+
+def test_clear_playlist_rerenders_empty_canvas_state():
+    app = _canvas_app([_row(1)])
+    app._rows = list(app._visible_rows)
+    app._tree = SimpleNamespace(get_children=lambda: ("0",), delete=lambda *_ids: None)
+    app._stop_preview = lambda: None
+    app._filter_var = SimpleNamespace(set=lambda _value: None)
+    app._reset_structured_filters = lambda: None
+    app._update_sort_headings = lambda: None
+    app._clear_similar_suggestions = lambda: None
+    app._set_detail = lambda _row: None
+    renders: list[str] = []
+    app._render_browser_rows = lambda: renders.append("render")
+
+    app._clear_playlist()
+
+    assert app._visible_rows == []
+    assert renders == ["render"]

@@ -156,6 +156,7 @@ COLUMNS = (
 
 PLAYLIST_ACTION_COLUMN = "playlist_action"
 PLAYLIST_ACTION_LABEL = "+ Playlist"
+BROWSER_ADD_ACTION_WIDTH = 44
 
 SUGGESTION_COLUMNS = (
     ("name", "Name", 140),
@@ -526,6 +527,16 @@ class WorkbenchApp:
         filter_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self._filter_var.trace_add("write", self._on_filter_changed)
         filter_entry.bind("<Escape>", self._clear_filter)
+        self._browser_sort_menu = tk.Menu(filter_bar, tearoff=0)
+        for column, label in (("name", "Name"), ("bpm", "BPM"), ("key", "Key"), ("pred_type", "Typ")):
+            self._browser_sort_menu.add_command(
+                label=label,
+                command=lambda value=column: self._on_browser_sort_column(value),
+            )
+        self._browser_sort_btn = ttk.Menubutton(
+            filter_bar, text="Sortieren", menu=self._browser_sort_menu
+        )
+        self._browser_sort_btn.pack(side=tk.RIGHT, padx=(8, 0))
         ttk.Button(filter_bar, text="CSV exportieren", command=self._export_csv).pack(
             side=tk.RIGHT, padx=(8, 0)
         )
@@ -631,7 +642,7 @@ class WorkbenchApp:
             tree_frame, bg=PANEL, highlightthickness=0, yscrollincrement=62
         )
         self._browser_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scroll_y.configure(command=self._browser_canvas.yview)
+        scroll_y.configure(command=self._on_browser_scrollbar)
         self._browser_canvas.configure(yscrollcommand=scroll_y.set)
         scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
         self._browser_waveforms = BoundedLazyWaveformCache(
@@ -1920,6 +1931,7 @@ class WorkbenchApp:
         self._update_sort_headings()
         self._clear_similar_suggestions()
         self._set_detail(None)
+        self._render_browser_rows()
         if hasattr(self, "_harmony_ref_var"):
             self._harmony_ref_var.set("")
             self._refresh_harmony_reference_options()
@@ -2180,6 +2192,10 @@ class WorkbenchApp:
         self._refresh_harmony_reference_options()
         self._refresh_harmony_matches()
 
+    def _on_browser_sort_column(self, column: str) -> None:
+        """Expose the existing sort state through the visible Canvas surface."""
+        self._on_sort_column(column)
+
     def _browser_viewport(self) -> VirtualBrowserRowViewport:
         height = max(int(self._browser_canvas.winfo_height()), self._browser_row_height_px)
         return VirtualBrowserRowViewport(
@@ -2246,16 +2262,25 @@ class WorkbenchApp:
         self._render_browser_rows()
         return "break"
 
+    def _on_browser_scrollbar(self, *args: str) -> None:
+        self._browser_canvas.yview(*args)
+        self._render_browser_rows()
+
     def _on_browser_canvas_click(self, event: tk.Event) -> str | None:
+        event_timestamp_ns = monotonic_ns()
         if self._busy:
             return None
         index = int(self._browser_canvas.canvasy(event.y)) // self._browser_row_height_px
         if not 0 <= index < len(self._visible_rows):
             return "break"
         row = self._visible_rows[index]
+        self._browser_canvas.focus_set()
+        if event.x >= self._browser_canvas.winfo_width() - BROWSER_ADD_ACTION_WIDTH:
+            self._open_add_to_playlist_dialog(row)
+            return "break"
         self._skip_next_browser_selection_preview = row.path
         self._tree.selection_set(str(index))
-        self._audition_browser_row(row, event_timestamp_ns=monotonic_ns())
+        self._audition_browser_row(row, event_timestamp_ns=event_timestamp_ns)
         self._render_browser_rows()
         return "break"
 
