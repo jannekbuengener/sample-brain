@@ -1,4 +1,4 @@
-"""Visible Workbench TEMPO/SYNC controls backed by the shared transport.
+"""Visible Workbench MASTER/GRID/SYNC controls backed by the shared transport.
 
 This module is intentionally small: Tkinter owns presentation, while
 ``WorkbenchTransportAdapter`` remains the single session-time/control bridge.
@@ -12,6 +12,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Any
 
+from .session_grid import TimeSignature
 from .workbench_transport_adapter import WorkbenchTransportAdapter
 
 TRANSPORT_POLL_MS = 50
@@ -19,10 +20,15 @@ DEFAULT_TEMPO_BPM = 132.0
 
 
 def format_transport_tempo_label(bpm: float) -> str:
-    """Return the exact user-facing TEMPO label."""
+    """Return the exact user-facing MASTER tempo label."""
     value = float(bpm)
     rendered = f"{value:g}"
-    return f"TEMPO: {rendered} BPM"
+    return f"MASTER {rendered} BPM"
+
+
+def format_transport_grid_label(time_signature: TimeSignature) -> str:
+    """Return the canonical time-signature presentation for the transport bar."""
+    return f"GRID {time_signature.numerator}/{time_signature.denominator}"
 
 
 class TransportAwarePreview:
@@ -126,6 +132,14 @@ class WorkbenchTransportUiController:
         )
         self.tempo_up.pack(side=tk_api.LEFT, padx=(0, 12))
 
+        self.grid_var = tk_api.StringVar(
+            value=format_transport_grid_label(self.transport.tempo_map.time_signature)
+        )
+        self.app._grid_var = self.grid_var
+        self.grid_label = ttk_api.Label(bar, textvariable=self.grid_var)
+        self.grid_label.pack(side=tk_api.LEFT, padx=(0, 12))
+        self.app._grid_label = self.grid_label
+
         self.sync_var = tk_api.BooleanVar(value=bool(initial["sync_enabled"]))
         self.app._sync_var = self.sync_var
         self.sync_control = ttk_api.Checkbutton(
@@ -170,6 +184,9 @@ class WorkbenchTransportUiController:
         snapshot = self.transport.get_snapshot()
         self.app._transport_snapshot = snapshot
         self.tempo_var.set(format_transport_tempo_label(snapshot["current_tempo"]))
+        self.grid_var.set(
+            format_transport_grid_label(self.transport.tempo_map.time_signature)
+        )
         self.sync_var.set(bool(snapshot["sync_enabled"]))
         return snapshot
 
@@ -217,5 +234,6 @@ __all__ = [
     "TransportAwarePreview",
     "WorkbenchTransportUiController",
     "attach_workbench_transport_ui",
+    "format_transport_grid_label",
     "format_transport_tempo_label",
 ]
