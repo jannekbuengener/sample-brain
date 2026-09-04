@@ -229,8 +229,8 @@ class _TestNativeClock:
 
 
 def test_adapter_tempo_bpm_display_format():
-    assert format_transport_tempo_label(132.0) == "TEMPO: 132 BPM"
-    assert format_transport_tempo_label(127.5) == "TEMPO: 127.5 BPM"
+    assert format_transport_tempo_label(132.0) == "MASTER 132 BPM"
+    assert format_transport_tempo_label(127.5) == "MASTER 127.5 BPM"
 
 
 def test_adapter_sync_toggle_changes_state():
@@ -453,7 +453,7 @@ def test_ui_contains_exact_tempo_bpm_string():
 
     assert "attach_workbench_transport_ui(self)" in init_source
     assert "textvariable=self.tempo_var" in build_source
-    assert format_transport_tempo_label(132.0) == "TEMPO: 132 BPM"
+    assert format_transport_tempo_label(132.0) == "MASTER 132 BPM"
 
 
 def test_ui_contains_exact_sync_control():
@@ -470,7 +470,7 @@ def test_no_second_main_tempo_label():
 
     assert "Master Tempo" not in build_source
     assert "Master Tempo" not in formatter_source
-    assert 'return f"TEMPO: {rendered} BPM"' in formatter_source
+    assert 'return f"MASTER {rendered} BPM"' in formatter_source
 
 
 def test_existing_workbench_smoke_tests_pass():
