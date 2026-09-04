@@ -1098,11 +1098,11 @@ def save_workbench_analysis_limit(
 
 @dataclass(frozen=True)
 class WorkbenchViewSettings:
-    show_view_toolbar: bool = True
+    show_view_toolbar: bool = False
     show_search: bool = True
-    show_filters: bool = True
-    show_library_manage: bool = True
-    show_waveform_tools: bool = True
+    show_filters: bool = False
+    show_library_manage: bool = False
+    show_waveform_tools: bool = False
 
 
 DEFAULT_WORKBENCH_VIEW_SETTINGS = WorkbenchViewSettings()
@@ -1130,11 +1130,17 @@ def _view_settings_from_mapping(data: Mapping[str, Any]) -> WorkbenchViewSetting
         return default if not isinstance(value, bool) else value
 
     return WorkbenchViewSettings(
-        show_view_toolbar=_bool("show_view_toolbar", True),
-        show_search=_bool("show_search", True),
-        show_filters=_bool("show_filters", True),
-        show_library_manage=_bool("show_library_manage", True),
-        show_waveform_tools=_bool("show_waveform_tools", True),
+        show_view_toolbar=_bool(
+            "show_view_toolbar", DEFAULT_WORKBENCH_VIEW_SETTINGS.show_view_toolbar
+        ),
+        show_search=_bool("show_search", DEFAULT_WORKBENCH_VIEW_SETTINGS.show_search),
+        show_filters=_bool("show_filters", DEFAULT_WORKBENCH_VIEW_SETTINGS.show_filters),
+        show_library_manage=_bool(
+            "show_library_manage", DEFAULT_WORKBENCH_VIEW_SETTINGS.show_library_manage
+        ),
+        show_waveform_tools=_bool(
+            "show_waveform_tools", DEFAULT_WORKBENCH_VIEW_SETTINGS.show_waveform_tools
+        ),
     )
 
 
