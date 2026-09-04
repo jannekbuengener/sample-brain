@@ -345,6 +345,34 @@ def test_windows_play_replacement_cleans_old_temp_after_success(tmp_path: Path, 
     assert workbench_preview._temp_wav is None
 
 
+def test_windows_play_failure_preserves_prior_temp_preview_state(
+    tmp_path: Path, monkeypatch
+):
+    previous_temp = tmp_path / "previous-preview.wav"
+    previous_temp.write_bytes(b"temp")
+    direct_wav = tmp_path / "next.wav"
+    direct_wav.write_bytes(b"wav")
+    fake_winsound = SimpleNamespace(
+        SND_FILENAME=0x00020000,
+        SND_ASYNC=0x0001,
+        PlaySound=lambda _sound, _flags: (_ for _ in ()).throw(RuntimeError("busy")),
+    )
+    monkeypatch.setitem(sys.modules, "winsound", fake_winsound)
+    monkeypatch.setattr(
+        workbench_preview,
+        "prepare_preview_playback_path",
+        lambda _path, _start: (direct_wav, None, PreviewResult(ok=True)),
+    )
+    monkeypatch.setattr(workbench_preview, "_temp_wav", previous_temp)
+
+    result = workbench_preview._windows_play(direct_wav)
+
+    assert not result.ok
+    assert "fehlgeschlagen" in (result.message or "").lower()
+    assert previous_temp.exists()
+    assert workbench_preview._temp_wav == previous_temp
+
+
 def test_preview_player_play_region_loop_rejects_invalid_bounds(tmp_path: Path):
     wav = write_sine_wav(tmp_path / "tone.wav", duration_sec=0.3, frequency_hz=440.0)
     player = WorkbenchPreviewPlayer(
