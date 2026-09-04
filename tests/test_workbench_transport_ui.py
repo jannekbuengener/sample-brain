@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
+from src.session_grid import TimeSignature
 from src.workbench_transport_ui import (
     TransportAwarePreview,
     WorkbenchTransportUiController,
@@ -65,7 +68,7 @@ class FakeRoot:
 
 
 class FakeTransport:
-    def __init__(self) -> None:
+    def __init__(self, *, time_signature: TimeSignature | None = None) -> None:
         self.tempo = 132.0
         self.sync = False
         self.playing = False
@@ -73,8 +76,16 @@ class FakeTransport:
         self.closed = False
         self.play_calls = 0
         self.stop_calls = 0
+        self.get_snapshot_calls = 0
+        self.set_tempo_calls: list[float] = []
+        self.is_sync_enabled_calls = 0
+        self.toggle_sync_calls = 0
+        self.tempo_map = SimpleNamespace(
+            time_signature=time_signature or TimeSignature()
+        )
 
     def get_snapshot(self):
+        self.get_snapshot_calls += 1
         return {
             "engine_frame": 0,
             "session_frame": 0,
@@ -91,13 +102,16 @@ class FakeTransport:
         }
 
     def set_tempo(self, bpm: float) -> int:
+        self.set_tempo_calls.append(float(bpm))
         self.tempo = float(bpm)
         return 123
 
     def is_sync_enabled(self) -> bool:
+        self.is_sync_enabled_calls += 1
         return self.sync
 
     def toggle_sync(self) -> bool:
+        self.toggle_sync_calls += 1
         self.sync = not self.sync
         return self.sync
 
@@ -168,12 +182,19 @@ def _fake_app():
     )
 
 
+def _grid_header_text(app: Any) -> str:
+    grid_var = getattr(app, "_grid_var", None)
+    if grid_var is None:
+        pytest.fail("MISSING_PRODUCTION_SURFACE: grid header presentation")
+    return grid_var.get()
+
+
 def test_tempo_label_contract_is_exact():
-    assert format_transport_tempo_label(132) == "TEMPO: 132 BPM"
-    assert format_transport_tempo_label(127.5) == "TEMPO: 127.5 BPM"
+    assert format_transport_tempo_label(132) == "MASTER 132 BPM"
+    assert format_transport_tempo_label(127.5) == "MASTER 127.5 BPM"
 
 
-def test_controller_builds_real_tempo_and_sync_controls():
+def test_controller_initially_exposes_master_and_existing_transport_controls():
     app = _fake_app()
     transport = FakeTransport()
 
@@ -183,7 +204,7 @@ def test_controller_builds_real_tempo_and_sync_controls():
         ui_apis=_fake_ui_apis(),
     )
 
-    assert app._tempo_var.get() == "TEMPO: 132 BPM"
+    assert app._tempo_var.get() == "MASTER 132 BPM"
     assert app._tempo_label.kwargs["textvariable"] is app._tempo_var
     assert app._sync_control.kwargs["text"] == "SYNC"
     assert app._sync_control.kwargs["variable"] is app._sync_var
@@ -205,12 +226,14 @@ def test_tempo_buttons_change_the_shared_transport_and_refresh_label():
     )
 
     assert controller.tempo_up.invoke() == 123
+    assert transport.set_tempo_calls == [133.0]
     assert transport.tempo == 133.0
-    assert app._tempo_var.get() == "TEMPO: 133 BPM"
+    assert app._tempo_var.get() == "MASTER 133 BPM"
 
     assert controller.tempo_down.invoke() == 123
+    assert transport.set_tempo_calls == [133.0, 132.0]
     assert transport.tempo == 132.0
-    assert app._tempo_var.get() == "TEMPO: 132 BPM"
+    assert app._tempo_var.get() == "MASTER 132 BPM"
 
     controller.close()
 
@@ -231,6 +254,70 @@ def test_sync_control_updates_the_single_transport_state():
     app._sync_var.set(False)
     assert app._sync_control.invoke() is False
     assert transport.sync is False
+    assert transport.is_sync_enabled_calls == 2
+    assert transport.toggle_sync_calls == 2
+
+    controller.close()
+
+
+def test_controller_exposes_default_grid_from_canonical_time_signature():
+    app = _fake_app()
+    controller = WorkbenchTransportUiController(
+        app,
+        transport=FakeTransport(time_signature=TimeSignature(4, 4)),
+        ui_apis=_fake_ui_apis(),
+    )
+
+    assert _grid_header_text(app) == "GRID 4/4"
+
+    controller.close()
+
+
+def test_grid_header_is_derived_from_injected_canonical_time_signature():
+    app = _fake_app()
+    controller = WorkbenchTransportUiController(
+        app,
+        transport=FakeTransport(time_signature=TimeSignature(3, 4)),
+        ui_apis=_fake_ui_apis(),
+    )
+
+    assert _grid_header_text(app) == "GRID 3/4"
+
+    controller.close()
+
+
+def test_refresh_snapshot_reads_current_canonical_time_signature():
+    app = _fake_app()
+    transport = FakeTransport(time_signature=TimeSignature(4, 4))
+    controller = WorkbenchTransportUiController(
+        app,
+        transport=transport,
+        ui_apis=_fake_ui_apis(),
+    )
+    transport.get_snapshot_calls = 0
+    transport.sync = True
+    transport.tempo_map.time_signature = TimeSignature(3, 4)
+
+    controller.refresh_snapshot()
+
+    assert transport.get_snapshot_calls == 1
+    assert app._sync_var.get() is True
+    assert _grid_header_text(app) == "GRID 3/4"
+
+    controller.close()
+
+
+def test_compact_transport_bar_exposes_master_grid_and_sync():
+    app = _fake_app()
+    controller = WorkbenchTransportUiController(
+        app,
+        transport=FakeTransport(),
+        ui_apis=_fake_ui_apis(),
+    )
+
+    assert app._tempo_label.parent is app._transport_bar
+    assert _grid_header_text(app) == "GRID 4/4"
+    assert app._sync_control.parent is app._transport_bar
 
     controller.close()
 
