@@ -117,6 +117,11 @@ from .workbench_browser_rows import (
     VirtualBrowserRowViewport,
     schedule_renderable_waveforms,
 )
+from .workbench_live_kit import (
+    LiveKitPresentationState,
+    LiveKitState,
+    RightPanePresentation,
+)
 
 # Dark palette inspired by ui_mockup.png (functional, not pixel-perfect).
 BG_DARK = "#121212"
@@ -237,6 +242,8 @@ class WorkbenchApp:
         self._catalog_load_limit: int | None = None
         self._view_settings = load_workbench_view_settings()
         self._similar_suggestions: list[WorkbenchSuggestion] = []
+        self._live_kit_state = LiveKitState()
+        self._live_kit_presentation = LiveKitPresentationState(self._live_kit_state)
 
         self._build_styles()
         self._build_menubar()
@@ -725,8 +732,11 @@ class WorkbenchApp:
             style="Muted.TLabel",
         ).pack(fill=tk.X, pady=(0, 4))
 
-        detail_frame = ttk.Frame(body, style="Panel.TFrame", padding=10)
-        detail_frame.grid(row=0, column=2, sticky="nsew")
+        self._right_pane = ttk.Notebook(body)
+        self._right_pane.grid(row=0, column=2, sticky="nsew")
+
+        detail_frame = ttk.Frame(self._right_pane, style="Panel.TFrame", padding=10)
+        self._right_pane.add(detail_frame, text="Sample Details")
         detail_header = ttk.Frame(detail_frame, style="Panel.TFrame")
         detail_header.pack(fill=tk.X, pady=(0, 8))
         ttk.Label(detail_header, text="Sample-Details", style="Heading.TLabel").pack(
@@ -845,6 +855,18 @@ class WorkbenchApp:
         )
         self._provenance_label.pack(fill=tk.X, pady=(2, 0))
 
+        self._right_pane_presentation = RightPanePresentation(
+            detail_text=self._detail_text,
+            detail_waveform=self._waveform_canvas,
+            edit_controls=self._waveform_controls,
+        )
+        self._live_kit_frame = ttk.Frame(
+            self._right_pane, style="Panel.TFrame", padding=10
+        )
+        self._right_pane.add(self._live_kit_frame, text="Live Kit")
+        self._build_live_kit_view()
+        self._right_pane.bind("<<NotebookTabChanged>>", self._on_right_pane_tab_changed)
+
         status_bar = ttk.Frame(self.root, style="Panel.TFrame")
         status_bar.pack(fill=tk.X, side=tk.BOTTOM)
         status_inner = ttk.Frame(status_bar, style="Panel.TFrame")
@@ -859,6 +881,97 @@ class WorkbenchApp:
         self._progress.pack_forget()
         self._apply_view_toolbar_visibility(notify=False)
         self._apply_view_visibility(notify=False)
+
+    def _build_live_kit_view(self) -> None:
+        ttk.Label(
+            self._live_kit_frame,
+            text="Live Kit",
+            style="Heading.TLabel",
+        ).pack(anchor=tk.W, pady=(0, 2))
+        ttk.Label(
+            self._live_kit_frame,
+            text="Ausgewähltes Sample einem Drum-Slot zuweisen.",
+            style="Muted.TLabel",
+        ).pack(anchor=tk.W, pady=(0, 8))
+        self._live_kit_content = ttk.Frame(self._live_kit_frame, style="Panel.TFrame")
+        self._live_kit_content.pack(fill=tk.BOTH, expand=True)
+        self._refresh_live_kit_view()
+
+    def _refresh_live_kit_view(self) -> None:
+        if not hasattr(self, "_live_kit_content"):
+            return
+        for child in self._live_kit_content.winfo_children():
+            child.destroy()
+
+        for group in self._live_kit_presentation.visible_structure():
+            group_frame = ttk.Frame(self._live_kit_content, style="Panel.TFrame")
+            group_frame.pack(fill=tk.X, pady=(0, 6))
+            collapsed = self._live_kit_presentation.is_collapsed(group.name)
+            marker = "▸" if collapsed else "▾"
+            ttk.Button(
+                group_frame,
+                text=f"{marker} {group.name}",
+                command=lambda group_name=group.name: self._toggle_live_kit_group(
+                    group_name
+                ),
+            ).pack(fill=tk.X)
+            if collapsed:
+                continue
+
+            if not group.slots:
+                ttk.Label(
+                    group_frame,
+                    text="Keine Subslots",
+                    style="Muted.TLabel",
+                ).pack(anchor=tk.W, padx=8, pady=(4, 0))
+                continue
+
+            slots_frame = ttk.Frame(group_frame, style="Panel.TFrame")
+            slots_frame.pack(fill=tk.X, padx=8, pady=(4, 0))
+            for slot in group.slots:
+                slot_frame = ttk.Frame(slots_frame, style="Panel.TFrame")
+                slot_frame.pack(fill=tk.X, pady=2)
+                ttk.Label(slot_frame, text=slot.name, style="Panel.TLabel").pack(
+                    side=tk.LEFT
+                )
+                ttk.Button(
+                    slot_frame,
+                    text="Assign",
+                    command=lambda group_name=group.name, slot_name=slot.name: self._assign_selected_row_to_live_kit(
+                        group_name, slot_name
+                    ),
+                ).pack(side=tk.RIGHT)
+                assignment_name = slot.assignment.display_name if slot.assignment else "—"
+                ttk.Label(
+                    slot_frame,
+                    text=assignment_name,
+                    style="Muted.TLabel",
+                ).pack(side=tk.RIGHT, padx=(0, 8))
+
+    def _toggle_live_kit_group(self, group: str) -> None:
+        self._live_kit_presentation.toggle_group(group)
+        self._refresh_live_kit_view()
+
+    def _on_right_pane_tab_changed(self, _event: tk.Event | None = None) -> None:
+        active_tab = self._right_pane.tab(self._right_pane.select(), "text")
+        if active_tab == "Live Kit":
+            self._right_pane_presentation.show_live_kit()
+        else:
+            self._right_pane_presentation.show_sample_details()
+
+    def _assign_selected_row_to_live_kit(self, group: str, slot: str) -> bool:
+        row = self._selected_row()
+        if row is None:
+            self._set_status("Kein Sample für Live Kit ausgewählt.", tone="neutral")
+            return False
+
+        self._live_kit_state.assign(group, slot, row)
+        self._refresh_live_kit_view()
+        self._set_status(
+            f"Live Kit: {slot} ← {row.display_name}",
+            tone="success",
+        )
+        return True
 
     def _build_harmony_tab(self) -> None:
         frame = self._harmony_frame
