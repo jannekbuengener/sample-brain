@@ -75,7 +75,7 @@ def test_workbench_gui_startup_smoke_constructs_key_widgets(
         assert hasattr(app, "_show_search_var")
         assert hasattr(app, "_show_view_toolbar_var")
         assert hasattr(app, "_view_bar")
-        assert _widget_is_packed(app._view_bar)
+        assert not _widget_is_packed(app._view_bar)
         assert hasattr(app, "_filter_bar")
         assert not hasattr(app, "_copy_path_btn")
         assert WORKBENCH_VIEW_TOGGLE_HELP in app._view_help_var.get()
@@ -381,34 +381,7 @@ def test_workbench_playlist_select_loads_rows(tmp_path: Path, monkeypatch):
         root.destroy()
 
 
-def test_workbench_view_toolbar_hidden_via_edit_menu(tmp_path: Path, monkeypatch):
-    state_dir = tmp_path / "state"
-    state_dir.mkdir()
-    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
-    root = tk.Tk()
-    root.withdraw()
-    try:
-        app = WorkbenchApp(root)
-        root.update_idletasks()
-        assert _widget_is_packed(app._view_bar)
-
-        app._show_view_toolbar_var.set(False)
-        app._on_view_toolbar_toggled()
-        root.update_idletasks()
-        assert not _widget_is_packed(app._view_bar)
-        assert app._show_search_var.get() is True
-        assert _widget_is_packed(app._filter_bar)
-
-        app._show_view_toolbar_var.set(True)
-        app._on_view_toolbar_toggled()
-        root.update_idletasks()
-        assert _widget_is_packed(app._view_bar)
-        assert WORKBENCH_VIEW_TOGGLE_HELP in app._view_help_var.get()
-    finally:
-        root.destroy()
-
-
-def test_workbench_restore_default_view_shows_toolbar_and_sections(
+def test_workbench_fresh_start_hides_advanced_sections_and_edit_menu_restores_toolbar(
     tmp_path: Path, monkeypatch
 ):
     state_dir = tmp_path / "state"
@@ -419,18 +392,67 @@ def test_workbench_restore_default_view_shows_toolbar_and_sections(
     try:
         app = WorkbenchApp(root)
         root.update_idletasks()
-        app._show_view_toolbar_var.set(False)
+        assert not _widget_is_packed(app._view_bar)
+        assert app._show_search_var.get() is True
+        assert app._show_filters_var.get() is False
+        assert app._show_library_manage_var.get() is False
+        assert app._show_waveform_tools_var.get() is False
+        assert _widget_is_packed(app._filter_bar)
+        assert not _widget_is_packed(app._structured_bar)
+        assert not _widget_is_packed(app._lib_manage_btns)
+        assert not _widget_is_packed(app._waveform_controls)
+
+        app._show_view_toolbar_var.set(True)
+        app._on_view_toolbar_toggled()
+        root.update_idletasks()
+        assert _widget_is_packed(app._view_bar)
+        assert WORKBENCH_VIEW_TOGGLE_HELP in app._view_help_var.get()
+    finally:
+        root.destroy()
+
+
+def test_workbench_restore_default_view_restores_minimal_screen1_view(
+    tmp_path: Path, monkeypatch
+):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        root.update_idletasks()
+        app._show_view_toolbar_var.set(True)
         app._on_view_toolbar_toggled()
         app._show_search_var.set(False)
         app._on_view_section_toggled("search")
+        app._show_filters_var.set(True)
+        app._on_view_section_toggled("filters")
+        app._show_library_manage_var.set(True)
+        app._on_view_section_toggled("library_manage")
+        app._show_waveform_tools_var.set(True)
+        app._on_view_section_toggled("waveform_tools")
         root.update_idletasks()
-        assert not _widget_is_packed(app._view_bar)
+        assert _widget_is_packed(app._view_bar)
 
         app._restore_default_view()
         root.update_idletasks()
-        assert _widget_is_packed(app._view_bar)
+        assert not _widget_is_packed(app._view_bar)
         assert app._show_search_var.get() is True
+        assert app._show_filters_var.get() is False
+        assert app._show_library_manage_var.get() is False
+        assert app._show_waveform_tools_var.get() is False
         assert _widget_is_packed(app._filter_bar)
+        assert not _widget_is_packed(app._structured_bar)
+        assert not _widget_is_packed(app._lib_manage_btns)
+        assert not _widget_is_packed(app._waveform_controls)
+        assert load_workbench_view_settings(state_dir=state_dir) == WorkbenchViewSettings(
+            show_view_toolbar=False,
+            show_search=True,
+            show_filters=False,
+            show_library_manage=False,
+            show_waveform_tools=False,
+        )
     finally:
         root.destroy()
 

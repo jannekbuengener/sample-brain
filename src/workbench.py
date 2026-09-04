@@ -255,6 +255,8 @@ class WorkbenchApp:
             self, transport_adapter=self._transport_adapter
         )
         self._editing_ui = attach_workbench_editing_ui(self)
+        self._apply_view_toolbar_visibility(notify=False)
+        self._apply_view_visibility(notify=False)
         self._restore_last_folder()
         self._quick_capture = None
         self._refresh_library_list()
@@ -881,9 +883,6 @@ class WorkbenchApp:
         self._progress = ttk.Progressbar(status_inner, mode="determinate", maximum=100)
         self._progress.pack(fill=tk.X, pady=(4, 0))
         self._progress.pack_forget()
-        self._apply_view_toolbar_visibility(notify=False)
-        self._apply_view_visibility(notify=False)
-
     def _build_live_kit_view(self) -> None:
         ttk.Label(
             self._live_kit_frame,
@@ -1373,11 +1372,12 @@ class WorkbenchApp:
         self._apply_view_visibility(notify=True, status_message=status_message)
 
     def _restore_default_view(self) -> None:
-        self._show_view_toolbar_var.set(True)
-        self._show_search_var.set(True)
-        self._show_filters_var.set(True)
-        self._show_library_manage_var.set(True)
-        self._show_waveform_tools_var.set(True)
+        defaults = WorkbenchViewSettings()
+        self._show_view_toolbar_var.set(defaults.show_view_toolbar)
+        self._show_search_var.set(defaults.show_search)
+        self._show_filters_var.set(defaults.show_filters)
+        self._show_library_manage_var.set(defaults.show_library_manage)
+        self._show_waveform_tools_var.set(defaults.show_waveform_tools)
         self._apply_view_toolbar_visibility(notify=False)
         self._apply_view_visibility(
             notify=True,
