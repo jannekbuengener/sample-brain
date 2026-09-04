@@ -121,6 +121,81 @@ def test_workbench_gui_startup_smoke_constructs_key_widgets(
         root.destroy()
 
 
+def test_workbench_gui_startup_selects_live_kit_right_pane(tmp_path: Path, monkeypatch):
+    """Fresh Tk startup must agree with the Live Kit presentation default."""
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        root.update_idletasks()
+
+        assert app._right_pane.tab(app._right_pane.select(), "text") == "Live Kit"
+        assert app._right_pane_presentation.active_view() == "Live Kit"
+    finally:
+        root.destroy()
+
+
+def test_workbench_right_pane_round_trip_preserves_state_and_synchronizes_views(
+    tmp_path: Path, monkeypatch
+):
+    """Actual notebook changes preserve owned surfaces and the Live Kit assignment."""
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    row = WorkbenchRow(
+        display_name="closed_hat_01.wav",
+        relative_path="synthetic/closed_hat_01.wav",
+        path="synthetic/closed_hat_01.wav",
+        bpm=128.0,
+        key="Am",
+        key_conf=0.91,
+        loudness=-13.5,
+        brightness=3200.0,
+        sample_class="one_shot",
+        pred_type="Closed Hat",
+        status="ok",
+        details={"duration_sec": "0.25", "source": "synthetic"},
+    )
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        app._live_kit_state.assign("Drums", "Closed Hat", row)
+        detail_text = app._right_pane_presentation.detail_text
+        detail_waveform = app._right_pane_presentation.detail_waveform
+        edit_controls = app._right_pane_presentation.edit_controls
+        live_kit_state = app._live_kit_state
+        playlist_names = tuple(app._playlist_names)
+        preview = app._preview
+        transport_adapter = app._transport_adapter
+
+        for tab, expected_view in (
+            (app._live_kit_frame, "Live Kit"),
+            (app._right_pane.tabs()[0], "Sample Details"),
+            (app._live_kit_frame, "Live Kit"),
+        ):
+            app._right_pane.select(tab)
+            root.update()
+            assert app._right_pane.tab(app._right_pane.select(), "text") == expected_view
+            assert app._right_pane_presentation.active_view() == expected_view
+
+        assert app._right_pane_presentation.detail_text is detail_text
+        assert app._right_pane_presentation.detail_waveform is detail_waveform
+        assert app._right_pane_presentation.edit_controls is edit_controls
+        assert app._live_kit_state is live_kit_state
+        assert app._live_kit_state.assignment_for("Drums", "Closed Hat") is row
+        assert tuple(app._playlist_names) == playlist_names
+        assert app._preview is preview
+        assert app._transport_adapter is transport_adapter
+    finally:
+        root.destroy()
+
+
 def test_workbench_restores_persisted_analysis_limit(tmp_path: Path, monkeypatch):
     state_dir = tmp_path / "state"
     state_dir.mkdir()
