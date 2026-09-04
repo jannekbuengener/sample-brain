@@ -238,6 +238,15 @@ def test_both_right_pane_views_are_explicitly_reachable():
     assert _require_method(right_pane, "active_view", missing)() == "Sample Details"
 
 
+def test_right_pane_presentation_defaults_to_live_kit():
+    surface = _surface("Live Kit default right-pane presentation")
+    right_pane_type = _require(
+        surface, "RightPanePresentation", "Live Kit default right-pane presentation"
+    )
+
+    assert right_pane_type().active_view() == "Live Kit"
+
+
 def test_sample_details_surface_survives_a_live_kit_round_trip():
     surface = _surface("right-pane view preservation")
     right_pane_type = _require(

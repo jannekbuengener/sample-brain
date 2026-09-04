@@ -111,7 +111,7 @@ class RightPanePresentation:
         self.detail_text = detail_text
         self.detail_waveform = detail_waveform
         self.edit_controls = edit_controls
-        self._active_view = "Sample Details"
+        self._active_view = "Live Kit"
 
     def show_live_kit(self) -> str:
         self._active_view = "Live Kit"

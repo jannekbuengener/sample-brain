@@ -866,6 +866,8 @@ class WorkbenchApp:
         self._right_pane.add(self._live_kit_frame, text="Live Kit")
         self._build_live_kit_view()
         self._right_pane.bind("<<NotebookTabChanged>>", self._on_right_pane_tab_changed)
+        self._right_pane.select(self._live_kit_frame)
+        self._on_right_pane_tab_changed()
 
         status_bar = ttk.Frame(self.root, style="Panel.TFrame")
         status_bar.pack(fill=tk.X, side=tk.BOTTOM)
