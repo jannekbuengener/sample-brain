@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from queue import Empty, Full, Queue
 from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from threading import Event, Lock, Thread
 from time import monotonic_ns
 from typing import Generic, TypeVar
 
@@ -96,6 +98,112 @@ class BoundedLazyWaveformCache:
         while len(self._entries) > self._capacity:
             self._entries.popitem(last=False)
         return result
+
+    def put_result(self, path: str, result: WaveformCacheResult) -> None:
+        """Store a worker result from the UI thread while preserving the LRU bound."""
+        self._entries[path] = result
+        self._entries.move_to_end(path)
+        while len(self._entries) > self._capacity:
+            self._entries.popitem(last=False)
+
+
+class BoundedBackgroundWaveformLoader:
+    """Single-worker decode queue whose results are applied by the UI thread."""
+
+    def __init__(
+        self,
+        *,
+        cache: BoundedLazyWaveformCache,
+        loader: Callable[[str], Sequence[float]],
+        max_pending: int,
+    ) -> None:
+        if max_pending <= 0:
+            raise ValueError("max_pending must be positive")
+        self._cache = cache
+        self._loader = loader
+        self._max_pending = max_pending
+        self._tasks: Queue[str | None] = Queue(maxsize=max_pending)
+        self._results: Queue[tuple[str, WaveformCacheResult]] = Queue(
+            maxsize=max_pending
+        )
+        self._pending: OrderedDict[str, None] = OrderedDict()
+        self._pending_lock = Lock()
+        self._results_lock = Lock()
+        self._result_ready = Event()
+        self._closed = Event()
+        self._worker = Thread(
+            target=self._run, name="sample-brain-browser-waveform", daemon=True
+        )
+        self._worker.start()
+
+    @property
+    def pending_count(self) -> int:
+        with self._pending_lock:
+            return len(self._pending)
+
+    def pending_paths(self) -> tuple[str, ...]:
+        with self._pending_lock:
+            return tuple(self._pending)
+
+    def schedule(self, path: str) -> bool:
+        """Queue one uncached path without waiting for its decode."""
+        with self._pending_lock:
+            if (
+                self._closed.is_set()
+                or self._cache.get(path) is not None
+                or path in self._pending
+                or len(self._pending) >= self._max_pending
+            ):
+                return False
+            self._pending[path] = None
+            try:
+                self._tasks.put_nowait(path)
+            except Full:
+                self._pending.pop(path, None)
+                return False
+        return True
+
+    def wait_for_result(self, *, timeout: float) -> bool:
+        """Test/host seam: wait for a completed worker result without draining it."""
+        return self._result_ready.wait(timeout=timeout) and not self._results.empty()
+
+    def drain_results(self) -> int:
+        """Apply completed plain-Python results on the calling/UI thread."""
+        drained: list[tuple[str, WaveformCacheResult]] = []
+        with self._results_lock:
+            while True:
+                try:
+                    drained.append(self._results.get_nowait())
+                except Empty:
+                    break
+            if self._results.empty():
+                self._result_ready.clear()
+        for path, result in drained:
+            self._cache.put_result(path, result)
+            with self._pending_lock:
+                self._pending.pop(path, None)
+        return len(drained)
+
+    def close(self) -> None:
+        """Stop accepting work without waiting for an in-flight file decode."""
+        self._closed.set()
+        try:
+            self._tasks.put_nowait(None)
+        except Full:
+            pass
+
+    def _run(self) -> None:
+        while not self._closed.is_set():
+            path = self._tasks.get()
+            if path is None or self._closed.is_set():
+                return
+            try:
+                result = WaveformCacheResult("ready", tuple(self._loader(path)))
+            except Exception:
+                result = WaveformCacheResult("placeholder", (), "load_failed")
+            with self._results_lock:
+                self._results.put((path, result))
+                self._result_ready.set()
 
 
 @dataclass(frozen=True)
@@ -214,3 +322,14 @@ def request_renderable_waveforms(
     layout: VirtualBrowserRowLayout[object], *, cache: BoundedLazyWaveformCache
 ) -> tuple[WaveformCacheResult, ...]:
     return tuple(cache.request(str(item.row.path)) for item in layout.renderable_rows)
+
+
+def schedule_renderable_waveforms(
+    layout: VirtualBrowserRowLayout[object], *, loader: BoundedBackgroundWaveformLoader
+) -> tuple[str, ...]:
+    """Schedule only the virtual viewport's bounded renderable paths."""
+    return tuple(
+        path
+        for item in layout.renderable_rows
+        if loader.schedule(path := str(item.row.path))
+    )

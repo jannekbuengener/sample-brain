@@ -9,6 +9,7 @@ behaviour using only synthetic ``WorkbenchRow`` values and fake loaders.
 from __future__ import annotations
 
 import importlib
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -438,3 +439,154 @@ def test_clear_playlist_rerenders_empty_canvas_state():
 
     assert app._visible_rows == []
     assert renders == ["render"]
+
+
+def test_background_waveform_schedule_returns_before_decode_completes_and_uses_a_worker_thread():
+    """A blocking decode must never run on the UI caller that schedules it."""
+    surface = _browser_surface()
+    decode_started = threading.Event()
+    release_decode = threading.Event()
+    decoded_on: list[int] = []
+    ui_thread_id = threading.get_ident()
+    cache = surface.BoundedLazyWaveformCache(capacity=48, loader=lambda _path: ())
+
+    def blocking_loader(_path: str) -> tuple[float, ...]:
+        decoded_on.append(threading.get_ident())
+        decode_started.set()
+        assert release_decode.wait(timeout=1)
+        return (0.25, 0.75)
+
+    loader = surface.BoundedBackgroundWaveformLoader(
+        cache=cache, loader=blocking_loader, max_pending=2
+    )
+    try:
+        assert loader.schedule("a.wav") is True
+        assert decode_started.wait(timeout=1)
+        assert cache.get("a.wav") is None
+        assert decoded_on == [decoded_on[0]]
+        assert decoded_on[0] != ui_thread_id
+
+        release_decode.set()
+        assert loader.wait_for_result(timeout=1)
+        assert loader.drain_results() == 1
+        assert cache.get("a.wav").state == "ready"
+    finally:
+        release_decode.set()
+        loader.close()
+
+
+def test_background_waveform_loader_drains_failure_as_placeholder_without_tk_work():
+    """Worker exceptions become main-thread cache placeholders, not UI exceptions."""
+    surface = _browser_surface()
+    cache = surface.BoundedLazyWaveformCache(capacity=48, loader=lambda _path: ())
+
+    def broken_loader(_path: str) -> tuple[float, ...]:
+        raise OSError("synthetic corrupt waveform")
+
+    loader = surface.BoundedBackgroundWaveformLoader(
+        cache=cache, loader=broken_loader, max_pending=2
+    )
+    try:
+        assert loader.schedule("broken.wav") is True
+        assert loader.wait_for_result(timeout=1)
+        assert loader.drain_results() == 1
+        result = cache.get("broken.wav")
+        assert result is not None
+        assert result.state == "placeholder"
+        assert result.failure == "load_failed"
+    finally:
+        loader.close()
+
+
+def test_background_waveform_loader_deduplicates_and_bounds_rapid_renderable_scheduling():
+    """Rapid scrolling must not create duplicate or unbounded decode work."""
+    surface = _browser_surface()
+    decode_started = threading.Event()
+    release_decode = threading.Event()
+    release_second_decode = threading.Event()
+    calls: list[str] = []
+    cache = surface.BoundedLazyWaveformCache(capacity=48, loader=lambda _path: ())
+
+    def blocking_loader(path: str) -> tuple[float, ...]:
+        calls.append(path)
+        decode_started.set()
+        assert release_decode.wait(timeout=1)
+        if path == "b.wav":
+            assert release_second_decode.wait(timeout=1)
+        return (1.0,)
+
+    loader = surface.BoundedBackgroundWaveformLoader(
+        cache=cache, loader=blocking_loader, max_pending=2
+    )
+    try:
+        assert loader.schedule("a.wav") is True
+        assert decode_started.wait(timeout=1)
+        assert loader.schedule("a.wav") is False
+        assert loader.schedule("b.wav") is True
+        assert loader.schedule("c.wav") is False
+        assert loader.pending_paths() == ("a.wav", "b.wav")
+        assert loader.pending_count == 2
+
+        release_decode.set()
+        assert loader.wait_for_result(timeout=1)
+        assert loader.drain_results() == 1
+        release_second_decode.set()
+        assert loader.wait_for_result(timeout=1)
+        assert loader.drain_results() == 1
+        assert calls == ["a.wav", "b.wav"]
+        assert loader.pending_count == 0
+    finally:
+        release_decode.set()
+        release_second_decode.set()
+        loader.close()
+
+
+def test_background_waveform_scheduler_accepts_only_renderable_viewport_paths():
+    """The UI scheduling seam must not turn a 5,000-row layout into preload work."""
+    surface = _browser_surface()
+    rows = _rows()
+    cache = surface.BoundedLazyWaveformCache(capacity=48, loader=lambda _path: ())
+    loader = surface.BoundedBackgroundWaveformLoader(
+        cache=cache, loader=lambda _path: (0.0, 1.0), max_pending=14
+    )
+    try:
+        layout = _viewport(surface).layout(rows, scroll_offset_px=50_000)
+        scheduled = surface.schedule_renderable_waveforms(layout, loader=loader)
+
+        assert set(scheduled) == {item.row.path for item in layout.renderable_rows}
+        assert len(scheduled) <= 14
+        assert len(scheduled) < len(rows)
+    finally:
+        loader.close()
+
+
+def test_browser_render_schedule_seam_returns_before_a_blocking_decode_finishes():
+    """The Tk render path must only enqueue viewport work, never await audio I/O."""
+    surface = _browser_surface()
+    decode_started = threading.Event()
+    release_decode = threading.Event()
+    cache = surface.BoundedLazyWaveformCache(capacity=48, loader=lambda _path: ())
+
+    def blocking_loader(_path: str) -> tuple[float, ...]:
+        decode_started.set()
+        assert release_decode.wait(timeout=1)
+        return (0.5,)
+
+    loader = surface.BoundedBackgroundWaveformLoader(
+        cache=cache, loader=blocking_loader, max_pending=14
+    )
+    app = WorkbenchApp.__new__(WorkbenchApp)
+    app._browser_waveform_loader = loader
+    app._browser_waveform_drain_scheduled = False
+    after_calls: list[int] = []
+    app.root = SimpleNamespace(after=lambda milliseconds, _callback: after_calls.append(milliseconds))
+    layout = _viewport(surface).layout(_rows(), scroll_offset_px=50_000)
+    try:
+        app._schedule_browser_waveforms(layout)
+
+        assert decode_started.wait(timeout=1)
+        assert after_calls == [25]
+        assert cache.get(layout.renderable_rows[0].row.path) is None
+    finally:
+        release_decode.set()
+        loader.close()

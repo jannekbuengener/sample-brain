@@ -112,8 +112,10 @@ from .workbench_waveform import (
     read_audio_duration_ms,
 )
 from .workbench_browser_rows import (
+    BoundedBackgroundWaveformLoader,
     BoundedLazyWaveformCache,
     VirtualBrowserRowViewport,
+    schedule_renderable_waveforms,
 )
 
 # Dark palette inspired by ui_mockup.png (functional, not pixel-perfect).
@@ -649,7 +651,12 @@ class WorkbenchApp:
             capacity=48,
             loader=lambda path: compute_waveform_envelope(path, max_points=96),
         )
-        self._browser_load_scheduled = False
+        self._browser_waveform_loader = BoundedBackgroundWaveformLoader(
+            cache=self._browser_waveforms,
+            loader=lambda path: compute_waveform_envelope(path, max_points=96),
+            max_pending=14,
+        )
+        self._browser_waveform_drain_scheduled = False
         self._browser_canvas.bind("<Configure>", self._on_browser_canvas_configure)
         self._browser_canvas.bind("<Button-1>", self._on_browser_canvas_click)
         self._browser_canvas.bind("<MouseWheel>", self._on_browser_canvas_scroll)
@@ -2240,19 +2247,24 @@ class WorkbenchApp:
             canvas.create_text(width * 0.48, y0 + 21, text=catalog_row_display_name(row), anchor=tk.W, fill=TEXT, tags="browser-row")
             canvas.create_text(width * 0.48, y0 + 43, text=meta or "—", anchor=tk.W, fill=TEXT_MUTED, tags="browser-row")
             canvas.create_text(width - 18, y0 + 31, text="+", fill=ACCENT, font=("Segoe UI", 14), tags="browser-row")
-        missing_waveforms = any(
-            self._browser_waveforms.get(item.row.path) is None
-            for item in layout.renderable_rows
-        )
-        if missing_waveforms and not self._browser_load_scheduled:
-            self._browser_load_scheduled = True
-            self.root.after_idle(lambda current=layout: self._load_browser_waveforms(current))
+        self._schedule_browser_waveforms(layout)
 
-    def _load_browser_waveforms(self, layout) -> None:
-        self._browser_load_scheduled = False
-        for item in layout.renderable_rows:
-            self._browser_waveforms.request(item.row.path)
-        self._render_browser_rows()
+    def _schedule_browser_waveforms(self, layout) -> None:
+        scheduled = schedule_renderable_waveforms(
+            layout, loader=self._browser_waveform_loader
+        )
+        if scheduled and not self._browser_waveform_drain_scheduled:
+            self._browser_waveform_drain_scheduled = True
+            self.root.after(25, self._drain_browser_waveform_results)
+
+    def _drain_browser_waveform_results(self) -> None:
+        self._browser_waveform_drain_scheduled = False
+        drained = self._browser_waveform_loader.drain_results()
+        if drained:
+            self._render_browser_rows()
+        if self._browser_waveform_loader.pending_count:
+            self._browser_waveform_drain_scheduled = True
+            self.root.after(25, self._drain_browser_waveform_results)
 
     def _on_browser_canvas_configure(self, _event: tk.Event) -> None:
         self._render_browser_rows()
@@ -2574,6 +2586,9 @@ class WorkbenchApp:
     def _close(self) -> None:
         self._persist_analysis_limit()
         self._stop_preview()
+        browser_waveform_loader = getattr(self, "_browser_waveform_loader", None)
+        if browser_waveform_loader is not None:
+            browser_waveform_loader.close()
         recording_ui = getattr(self, "_recording_ui", None)
         if recording_ui is not None:
             recording_ui.close()
