@@ -111,6 +111,12 @@ from .workbench_waveform import (
     loop_region_x,
     read_audio_duration_ms,
 )
+from .workbench_browser_rows import (
+    BoundedBackgroundWaveformLoader,
+    BoundedLazyWaveformCache,
+    VirtualBrowserRowViewport,
+    schedule_renderable_waveforms,
+)
 
 # Dark palette inspired by ui_mockup.png (functional, not pixel-perfect).
 BG_DARK = "#121212"
@@ -152,6 +158,7 @@ COLUMNS = (
 
 PLAYLIST_ACTION_COLUMN = "playlist_action"
 PLAYLIST_ACTION_LABEL = "+ Playlist"
+BROWSER_ADD_ACTION_WIDTH = 44
 
 SUGGESTION_COLUMNS = (
     ("name", "Name", 140),
@@ -499,9 +506,10 @@ class WorkbenchApp:
         self._playlist_list.bind("<<ListboxSelect>>", self._on_playlist_select)
         self._playlist_list.bind("<Double-Button-1>", self._on_playlist_activate)
 
-        playlist_frame = ttk.Frame(body, style="Panel.TFrame", padding=8)
-
         self._center_notebook = ttk.Notebook(body)
+        playlist_frame = ttk.Frame(
+            self._center_notebook, style="Panel.TFrame", padding=8
+        )
         self._center_notebook.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
         self._center_notebook.add(playlist_frame, text="Samples")
 
@@ -522,6 +530,16 @@ class WorkbenchApp:
         filter_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self._filter_var.trace_add("write", self._on_filter_changed)
         filter_entry.bind("<Escape>", self._clear_filter)
+        self._browser_sort_menu = tk.Menu(filter_bar, tearoff=0)
+        for column, label in (("name", "Name"), ("bpm", "BPM"), ("key", "Key"), ("pred_type", "Typ")):
+            self._browser_sort_menu.add_command(
+                label=label,
+                command=lambda value=column: self._on_browser_sort_column(value),
+            )
+        self._browser_sort_btn = ttk.Menubutton(
+            filter_bar, text="Sortieren", menu=self._browser_sort_menu
+        )
+        self._browser_sort_btn.pack(side=tk.RIGHT, padx=(8, 0))
         ttk.Button(filter_bar, text="CSV exportieren", command=self._export_csv).pack(
             side=tk.RIGHT, padx=(8, 0)
         )
@@ -619,8 +637,33 @@ class WorkbenchApp:
             tree_frame, orient=tk.VERTICAL, command=self._tree.yview
         )
         self._tree.configure(yscrollcommand=scroll_y.set)
-        self._tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # Keep the Treeview as the existing selection/filter adapter, but make
+        # the Canvas the visible Samples presentation for Screen 1 Slice 2.
+        self._tree.pack_forget()
+        self._browser_row_height_px = 62
+        self._browser_canvas = tk.Canvas(
+            tree_frame, bg=PANEL, highlightthickness=0, yscrollincrement=62
+        )
+        self._browser_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll_y.configure(command=self._on_browser_scrollbar)
+        self._browser_canvas.configure(yscrollcommand=scroll_y.set)
         scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+        self._browser_waveforms = BoundedLazyWaveformCache(
+            capacity=48,
+            loader=lambda path: compute_waveform_envelope(path, max_points=96),
+        )
+        self._browser_waveform_loader = BoundedBackgroundWaveformLoader(
+            cache=self._browser_waveforms,
+            loader=lambda path: compute_waveform_envelope(path, max_points=96),
+            max_pending=14,
+        )
+        self._browser_waveform_drain_scheduled = False
+        self._browser_canvas.bind("<Configure>", self._on_browser_canvas_configure)
+        self._browser_canvas.bind("<Button-1>", self._on_browser_canvas_click)
+        self._browser_canvas.bind("<MouseWheel>", self._on_browser_canvas_scroll)
+        self._browser_canvas.bind("<Down>", self._on_browser_down)
+        self._browser_canvas.bind("<Up>", self._on_browser_up)
+        self._browser_canvas.bind("<Escape>", self._on_browser_escape)
         self._tree.bind("<<TreeviewSelect>>", self._on_select)
         self._tree.bind("<Button-1>", self._on_tree_click)
         self._tree.bind("<Double-Button-1>", self._on_tree_double_click)
@@ -1896,6 +1939,7 @@ class WorkbenchApp:
         self._update_sort_headings()
         self._clear_similar_suggestions()
         self._set_detail(None)
+        self._render_browser_rows()
         if hasattr(self, "_harmony_ref_var"):
             self._harmony_ref_var.set("")
             self._refresh_harmony_reference_options()
@@ -2093,12 +2137,14 @@ class WorkbenchApp:
                 tags=tags,
             )
         self._tree.tag_configure("error", foreground=ERROR)
+        self._render_browser_rows()
         if preserve_path:
             for idx, row in enumerate(self._visible_rows):
                 if row.path == preserve_path:
                     self._tree.selection_set(str(idx))
                     self._tree.see(str(idx))
                     self._set_detail(row)
+                    self._render_browser_rows()
                     return
         self._set_detail(None)
         self._active_filter_var.set(
@@ -2153,6 +2199,103 @@ class WorkbenchApp:
         self._refresh_playlist_view()
         self._refresh_harmony_reference_options()
         self._refresh_harmony_matches()
+
+    def _on_browser_sort_column(self, column: str) -> None:
+        """Expose the existing sort state through the visible Canvas surface."""
+        self._on_sort_column(column)
+
+    def _browser_viewport(self) -> VirtualBrowserRowViewport:
+        height = max(int(self._browser_canvas.winfo_height()), self._browser_row_height_px)
+        return VirtualBrowserRowViewport(
+            row_height_px=self._browser_row_height_px,
+            viewport_height_px=height,
+            overscan_rows=2,
+        )
+
+    def _render_browser_rows(self) -> None:
+        if not hasattr(self, "_browser_canvas"):
+            return
+        canvas = self._browser_canvas
+        width = max(int(canvas.winfo_width()), 1)
+        offset = int(canvas.canvasy(0))
+        layout = self._browser_viewport().layout(
+            self._visible_rows, scroll_offset_px=offset
+        )
+        canvas.delete("browser-row")
+        canvas.configure(scrollregion=(0, 0, width, len(self._visible_rows) * self._browser_row_height_px))
+        selected = self._selected_browser_index()
+        for item in layout.renderable_rows:
+            row = item.row
+            y0 = item.index * self._browser_row_height_px
+            y1 = y0 + self._browser_row_height_px
+            selected_fill = ACCENT_DIM if item.index == selected else PANEL
+            canvas.create_rectangle(0, y0, width, y1, fill=selected_fill, outline=BORDER, tags="browser-row")
+            waveform = self._browser_waveforms.get(row.path)
+            if waveform is None or waveform.state != "ready":
+                canvas.create_line(12, y0 + 31, width * 0.45, y0 + 31, fill=TEXT_MUTED, tags="browser-row")
+            else:
+                step = max((width * 0.42) / max(len(waveform.envelope), 1), 1)
+                for point, peak in enumerate(waveform.envelope):
+                    x = 12 + point * step
+                    amplitude = max(1, peak * 22)
+                    canvas.create_line(x, y0 + 31 - amplitude, x, y0 + 31 + amplitude, fill=ACCENT, tags="browser-row")
+            meta = " · ".join(value for value in (
+                row.pred_type or row.sample_class,
+                format_bpm_display(row.bpm) if row.bpm is not None else None,
+                row.key,
+                row.details.get("duration_sec"),
+            ) if value)
+            canvas.create_text(width * 0.48, y0 + 21, text=catalog_row_display_name(row), anchor=tk.W, fill=TEXT, tags="browser-row")
+            canvas.create_text(width * 0.48, y0 + 43, text=meta or "—", anchor=tk.W, fill=TEXT_MUTED, tags="browser-row")
+            canvas.create_text(width - 18, y0 + 31, text="+", fill=ACCENT, font=("Segoe UI", 14), tags="browser-row")
+        self._schedule_browser_waveforms(layout)
+
+    def _schedule_browser_waveforms(self, layout) -> None:
+        scheduled = schedule_renderable_waveforms(
+            layout, loader=self._browser_waveform_loader
+        )
+        if scheduled and not self._browser_waveform_drain_scheduled:
+            self._browser_waveform_drain_scheduled = True
+            self.root.after(25, self._drain_browser_waveform_results)
+
+    def _drain_browser_waveform_results(self) -> None:
+        self._browser_waveform_drain_scheduled = False
+        drained = self._browser_waveform_loader.drain_results()
+        if drained:
+            self._render_browser_rows()
+        if self._browser_waveform_loader.pending_count:
+            self._browser_waveform_drain_scheduled = True
+            self.root.after(25, self._drain_browser_waveform_results)
+
+    def _on_browser_canvas_configure(self, _event: tk.Event) -> None:
+        self._render_browser_rows()
+
+    def _on_browser_canvas_scroll(self, event: tk.Event) -> str:
+        self._browser_canvas.yview_scroll(-int(event.delta / 120), "units")
+        self._render_browser_rows()
+        return "break"
+
+    def _on_browser_scrollbar(self, *args: str) -> None:
+        self._browser_canvas.yview(*args)
+        self._render_browser_rows()
+
+    def _on_browser_canvas_click(self, event: tk.Event) -> str | None:
+        event_timestamp_ns = monotonic_ns()
+        if self._busy:
+            return None
+        index = int(self._browser_canvas.canvasy(event.y)) // self._browser_row_height_px
+        if not 0 <= index < len(self._visible_rows):
+            return "break"
+        row = self._visible_rows[index]
+        self._browser_canvas.focus_set()
+        if event.x >= self._browser_canvas.winfo_width() - BROWSER_ADD_ACTION_WIDTH:
+            self._open_add_to_playlist_dialog(row)
+            return "break"
+        self._skip_next_browser_selection_preview = row.path
+        self._tree.selection_set(str(index))
+        self._audition_browser_row(row, event_timestamp_ns=event_timestamp_ns)
+        self._render_browser_rows()
+        return "break"
 
     def _selected_row(self) -> WorkbenchRow | None:
         selected = self._tree.selection()
@@ -2249,6 +2392,19 @@ class WorkbenchApp:
                 self._skip_next_browser_selection_preview = row.path
             self._tree.selection_set(str(target_index))
             self._tree.see(str(target_index))
+            if hasattr(self, "_browser_canvas"):
+                max_offset = max(
+                    len(self._visible_rows) * self._browser_row_height_px
+                    - self._browser_canvas.winfo_height(),
+                    1,
+                )
+                desired = max(
+                    0,
+                    (target_index - self._browser_viewport().visible_row_count + 1)
+                    * self._browser_row_height_px,
+                )
+                self._browser_canvas.yview_moveto(min(desired / max_offset, 1.0))
+                self._render_browser_rows()
             self._audition_browser_row(
                 row, event_timestamp_ns=event_timestamp_ns
             )
@@ -2431,6 +2587,9 @@ class WorkbenchApp:
     def _close(self) -> None:
         self._persist_analysis_limit()
         self._stop_preview()
+        browser_waveform_loader = getattr(self, "_browser_waveform_loader", None)
+        if browser_waveform_loader is not None:
+            browser_waveform_loader.close()
         recording_ui = getattr(self, "_recording_ui", None)
         if recording_ui is not None:
             recording_ui.close()
