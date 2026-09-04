@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib
 import threading
+import tkinter as tk
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,7 +18,7 @@ from types import SimpleNamespace
 import pytest
 
 from src import workbench
-from src.workbench_controller import WorkbenchRow
+from src.workbench_controller import WorkbenchResult, WorkbenchRow
 from src.workbench import WorkbenchApp
 
 
@@ -40,6 +41,31 @@ def _row(index: int) -> WorkbenchRow:
 
 def _rows(count: int = 5_000) -> list[WorkbenchRow]:
     return [_row(index) for index in range(count)]
+
+
+def test_browser_canvas_owns_its_visible_center_after_rows_render(tmp_path, monkeypatch):
+    """The Samples notebook page must not remain behind its owning notebook."""
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    root = tk.Tk()
+    root.geometry("1600x900+100+100")
+    try:
+        app = WorkbenchApp(root)
+        root.deiconify()
+        app._populate_playlist(WorkbenchResult(summary={"ok": 24}, rows=_rows(24)))
+        root.update_idletasks()
+        root.update()
+
+        canvas = app._browser_canvas
+        center_owner = root.winfo_containing(
+            canvas.winfo_rootx() + canvas.winfo_width() // 2,
+            canvas.winfo_rooty() + canvas.winfo_height() // 2,
+        )
+
+        assert center_owner is canvas
+    finally:
+        root.destroy()
 
 
 def _browser_surface():

@@ -506,9 +506,10 @@ class WorkbenchApp:
         self._playlist_list.bind("<<ListboxSelect>>", self._on_playlist_select)
         self._playlist_list.bind("<Double-Button-1>", self._on_playlist_activate)
 
-        playlist_frame = ttk.Frame(body, style="Panel.TFrame", padding=8)
-
         self._center_notebook = ttk.Notebook(body)
+        playlist_frame = ttk.Frame(
+            self._center_notebook, style="Panel.TFrame", padding=8
+        )
         self._center_notebook.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
         self._center_notebook.add(playlist_frame, text="Samples")
 
