@@ -8,11 +8,14 @@ healthy and every RED names the exact missing #512 capability.
 from __future__ import annotations
 
 import importlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from types import SimpleNamespace
 
 import pytest
 
 from src.workbench import WorkbenchApp
+from src import workbench
+from src.workbench_live_kit import LiveKitState, LiveKitPresentationState, RightPanePresentation
 from src.workbench_controller import WorkbenchRow
 
 
@@ -288,3 +291,216 @@ def test_live_kit_presentation_exposes_canonical_visible_structure():
     _assign(state, "Drums", "Closed Hat", row, missing)
     assigned = _require_method(presentation, "visible_structure", missing)()
     assert assigned[1].slots[1].assignment is row
+
+
+class _ChooserWidget:
+    """Small Tk double: exercise production callbacks without opening a window."""
+
+    def __init__(self, parent=None, **options):
+        self.parent = parent
+        self.options = options
+        self.bindings = {}
+        self.protocols = {}
+        self.children = []
+        self.grabbed = False
+        self.destroyed = False
+        self.focused = False
+        if parent is not None:
+            parent.children.append(self)
+
+    def pack(self, **_options):
+        pass
+
+    def title(self, _text):
+        pass
+
+    def configure(self, **options):
+        self.options.update(options)
+
+    def transient(self, _parent):
+        pass
+
+    def resizable(self, *_args):
+        pass
+
+    def grab_set(self):
+        self.grabbed = True
+
+    def grab_release(self):
+        self.grabbed = False
+
+    def destroy(self):
+        self.destroyed = True
+
+    def winfo_exists(self):
+        return not self.destroyed
+
+    def focus_set(self):
+        self.focused = True
+
+    def bind(self, event, callback):
+        self.bindings[event] = callback
+
+    def protocol(self, event, callback):
+        self.protocols[event] = callback
+
+    def invoke(self):
+        return self.options["command"]()
+
+
+def _browser_kit_app(monkeypatch, *, state=None):
+    app = WorkbenchApp.__new__(WorkbenchApp)
+    row_a = replace(_row(), display_name="sample_a.wav", path="synthetic/a.wav")
+    row_b = replace(_row(), display_name="sample_b.wav", path="synthetic/b.wav")
+    app._visible_rows = [row_a, row_b]
+    app._busy = False
+    app._browser_row_height_px = 20
+    app.root = _ChooserWidget()
+    focused = []
+    app._browser_canvas = SimpleNamespace(
+        canvasy=lambda y: y, winfo_width=lambda: 200,
+        focus_set=lambda: focused.append("browser"),
+    )
+    selected = ["0"]
+    app._tree = SimpleNamespace(selection=lambda: tuple(selected))
+    app._live_kit_state = state if state is not None else LiveKitState()
+    app._live_kit_presentation = LiveKitPresentationState(app._live_kit_state)
+    app._right_pane_presentation = RightPanePresentation()
+    app._right_pane_presentation.show_sample_details()
+    app._live_kit_frame = object()
+    active = ["details"]
+
+    def select(frame=None):
+        if frame is not None:
+            active[0] = frame
+        return active[0]
+
+    app._right_pane = SimpleNamespace(
+        select=select,
+        tab=lambda frame, _option: "Live Kit" if frame is app._live_kit_frame else "Sample Details",
+    )
+    refreshes = []
+    app._refresh_live_kit_view = lambda: refreshes.append(app._live_kit_presentation.visible_structure())
+    app._set_status = lambda *_args, **_kwargs: None
+    playlists = []
+    side_effects = []
+    app._open_add_to_playlist_dialog = playlists.append
+    for name in ("_audition_browser_row", "_play_preview", "_stop_preview", "_set_tempo", "_toggle_sync"):
+        setattr(app, name, lambda *args, _name=name, **kwargs: side_effects.append(_name))
+    app._transport_adapter = _TransportSpy(side_effects)
+    monkeypatch.setattr(workbench, "add_workbench_row_to_playlist", lambda *args, **kwargs: side_effects.append("playlist-write"))
+    buttons = []
+
+    def button(parent, **options):
+        widget = _ChooserWidget(parent, **options)
+        buttons.append(widget)
+        return widget
+
+    monkeypatch.setattr(workbench.tk, "Toplevel", _ChooserWidget)
+    monkeypatch.setattr(workbench.ttk, "Frame", _ChooserWidget)
+    monkeypatch.setattr(workbench.ttk, "Label", _ChooserWidget)
+    monkeypatch.setattr(workbench.ttk, "Button", button)
+    return SimpleNamespace(
+        app=app, row_a=row_a, row_b=row_b, selected=selected,
+        playlists=playlists, side_effects=side_effects, buttons=buttons,
+        refreshes=refreshes, focused=focused,
+    )
+
+
+def _click_browser_add(harness):
+    assert harness.app._on_browser_canvas_click(SimpleNamespace(x=190, y=20)) == "break"
+    # Assert the existing product gap before looking for any new chooser API.
+    assert harness.playlists == [], "Browser Add still routes to Playlist instead of Live Kit"
+    assert harness.app.root.children, "Browser Add must expose a Live-Kit target chooser"
+    assert harness.side_effects == []
+    return harness.app.root.children[-1]
+
+
+def _target_button(harness, slot):
+    matches = [button for button in harness.buttons if slot in button.options.get("text", "")]
+    assert len(matches) == 1
+    return matches[0]
+
+
+@pytest.mark.parametrize("selection_after_open", ["0", "1"])
+def test_browser_add_uses_clicked_row_despite_stale_or_changed_selection(monkeypatch, selection_after_open):
+    harness = _browser_kit_app(monkeypatch)
+    assert harness.app._selected_row() is harness.row_a
+    dialog = _click_browser_add(harness)
+    harness.selected[:] = [selection_after_open]
+
+    _target_button(harness, "Closed Hat").invoke()
+
+    state = harness.app._live_kit_state
+    assert state.assignment_for("Drums", "Closed Hat") is harness.row_b
+    assert all(state.assignment_for("Drums", slot) is not harness.row_a for slot in state.slots_for("Drums"))
+    assert harness.refreshes[-1][1].slots[1].assignment is harness.row_b
+    assert harness.app._right_pane.select() is harness.app._live_kit_frame
+    assert harness.app._right_pane_presentation.active_view() == "Live Kit"
+    assert harness.playlists == []
+    assert harness.side_effects == []
+    assert dialog.destroyed and not dialog.grabbed
+
+
+@pytest.mark.parametrize("restricted", [False, True])
+def test_browser_add_targets_are_derived_from_current_state(monkeypatch, restricted):
+    class RestrictedState(LiveKitState):
+        def slots_for(self, group):
+            return ("Closed Hat",) if group == "Drums" else ()
+
+    state = RestrictedState() if restricted else LiveKitState()
+    harness = _browser_kit_app(monkeypatch, state=state)
+    _click_browser_add(harness)
+    expected = [(group, slot) for group in state.groups() for slot in state.slots_for(group)]
+    targets = [button for button in harness.buttons if button.options.get("text") != "Abbrechen"]
+    assert len(targets) == len(expected)
+    for button, (group, slot) in zip(targets, expected):
+        assert group in button.options["text"]
+        assert slot in button.options["text"]
+    assert all(state.assignment_for(group, slot) is None for group, slot in expected)
+
+
+@pytest.mark.parametrize("dismiss", ["cancel", "escape", "window-close"])
+def test_browser_add_dismiss_has_no_mutation_and_restores_browser(monkeypatch, dismiss):
+    harness = _browser_kit_app(monkeypatch)
+    dialog = _click_browser_add(harness)
+    assert dialog.grabbed
+    assert any(button.focused for button in harness.buttons) or dialog.focused
+    focus_count = len(harness.focused)
+    if dismiss == "cancel":
+        _target_button(harness, "Abbrechen").invoke()
+    elif dismiss == "escape":
+        assert dialog.bindings["<Escape>"](SimpleNamespace()) == "break"
+    else:
+        dialog.protocols["WM_DELETE_WINDOW"]()
+    assert dialog.destroyed and not dialog.grabbed
+    assert len(harness.focused) > focus_count
+    state = harness.app._live_kit_state
+    assert all(state.assignment_for("Drums", slot) is None for slot in state.slots_for("Drums"))
+    assert harness.refreshes == []
+    assert harness.playlists == []
+    assert harness.side_effects == []
+    assert harness.app._right_pane_presentation.active_view() == "Sample Details"
+    _click_browser_add(harness)
+
+
+def test_browser_add_replaces_only_the_explicit_existing_slot(monkeypatch):
+    harness = _browser_kit_app(monkeypatch)
+    state = harness.app._live_kit_state
+    state.assign("Drums", "Closed Hat", harness.row_a)
+    state.assign("Drums", "Main Drum", harness.row_a)
+    _click_browser_add(harness)
+    _target_button(harness, "Closed Hat").invoke()
+    assert state.assignment_for("Drums", "Closed Hat") is harness.row_b
+    assert state.assignment_for("Drums", "Main Drum") is harness.row_a
+    assert sum(state.assignment_for("Drums", slot) is harness.row_b for slot in state.slots_for("Drums")) == 1
+
+
+def test_direct_selected_live_kit_assignment_still_uses_current_selection(monkeypatch):
+    harness = _browser_kit_app(monkeypatch)
+    assert harness.app._assign_selected_row_to_live_kit("Drums", "Closed Hat")
+    harness.selected[:] = ["1"]
+    assert harness.app._assign_selected_row_to_live_kit("Drums", "Closed Hat")
+    assert harness.app._live_kit_state.assignment_for("Drums", "Closed Hat") is harness.row_b
+    assert len(harness.refreshes) == 2
+    assert harness.playlists == [] and harness.side_effects == []
