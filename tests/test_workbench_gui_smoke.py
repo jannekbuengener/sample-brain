@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import threading
 import tkinter as tk
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from src.workbench import (
@@ -192,6 +194,96 @@ def test_workbench_right_pane_round_trip_preserves_state_and_synchronizes_views(
         assert tuple(app._playlist_names) == playlist_names
         assert app._preview is preview
         assert app._transport_adapter is transport_adapter
+    finally:
+        root.destroy()
+
+
+def _descendants(widget):
+    for child in widget.winfo_children():
+        yield child
+        yield from _descendants(child)
+
+
+def test_browser_add_to_kit_reveals_clicked_row_and_preserves_right_pane(
+    tmp_path: Path, monkeypatch
+):
+    """Real Tk: stale selection, collapsed target, and Details -> Kit -> Details."""
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path / "state"))
+    row_a = WorkbenchRow(
+        display_name="sample_a.wav", relative_path="synthetic/sample_a.wav",
+        path="synthetic/sample_a.wav", bpm=128.0, key="Am", key_conf=0.9,
+        loudness=-12.0, brightness=1000.0, sample_class="one_shot",
+        pred_type="Closed Hat", status="ok", details={"duration_sec": "0.25"},
+    )
+    row_b = replace(
+        row_a, display_name="sample_b.wav", relative_path="synthetic/sample_b.wav",
+        path="synthetic/sample_b.wav",
+    )
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        # Keep this GUI routing contract independent of file/audio loading.
+        monkeypatch.setattr(app, "_render_browser_rows", lambda: None)
+        monkeypatch.setattr(app, "_selected_row", lambda: row_a)
+        app._visible_rows = [row_a, row_b]
+        app._live_kit_presentation.toggle_group("Drums")
+        app._refresh_live_kit_view()
+        details_tab = app._right_pane.tabs()[0]
+        app._right_pane.select(details_tab)
+        root.update()
+        surfaces = (
+            app._right_pane, app._live_kit_frame,
+            app._right_pane_presentation.detail_text,
+            app._right_pane_presentation.detail_waveform,
+            app._right_pane_presentation.edit_controls,
+        )
+        playlist_calls = []
+        previews = []
+        monkeypatch.setattr(app, "_open_add_to_playlist_dialog", playlist_calls.append)
+        monkeypatch.setattr(app, "_play_preview", lambda: previews.append("preview"))
+
+        app._on_browser_canvas_click(SimpleNamespace(
+            x=app._browser_canvas.winfo_width() - 1,
+            y=app._browser_row_height_px + 1,
+        ))
+        root.update_idletasks()
+        dialogs = [child for child in root.winfo_children() if isinstance(child, tk.Toplevel)]
+        assert playlist_calls == [], "Browser Add must route to Live Kit, not Playlist"
+        assert len(dialogs) == 1, "Browser Add must offer existing kit targets"
+        dialog = dialogs[0]
+        target = [
+            widget for widget in _descendants(dialog)
+            if widget.winfo_class() == "TButton"
+            and widget.cget("text") == "Drums → Closed Hat"
+        ]
+        assert len(target) == 1
+        target[0].invoke()
+        root.update()
+
+        assert not dialog.winfo_exists()
+        assert root.grab_current() is None
+        assert app._live_kit_state.assignment_for("Drums", "Closed Hat") is row_b
+        assert not app._live_kit_presentation.is_collapsed("Drums")
+        assert app._right_pane.tab(app._right_pane.select(), "text") == "Live Kit"
+        assert app._right_pane_presentation.active_view() == "Live Kit"
+        assert any(
+            widget.winfo_class() == "TLabel" and widget.cget("text") == row_b.display_name
+            for widget in _descendants(app._live_kit_frame)
+        )
+        assert previews == []
+        assert playlist_calls == []
+
+        app._right_pane.select(details_tab)
+        root.update()
+        assert app._right_pane_presentation.active_view() == "Sample Details"
+        assert surfaces == (
+            app._right_pane, app._live_kit_frame,
+            app._right_pane_presentation.detail_text,
+            app._right_pane_presentation.detail_waveform,
+            app._right_pane_presentation.edit_controls,
+        )
+        assert all(widget.winfo_exists() for widget in surfaces)
     finally:
         root.destroy()
 
