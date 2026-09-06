@@ -1004,9 +1004,9 @@ def test_cli_help_includes_workbench():
     assert "workbench" in proc.stdout
 
 
-def test_cli_import_does_not_load_tkinter():
+def test_cli_import_does_not_load_tkinter(monkeypatch: pytest.MonkeyPatch):
     for name in ("tkinter", "src.workbench"):
-        sys.modules.pop(name, None)
+        monkeypatch.delitem(sys.modules, name, raising=False)
 
     import src.cli  # noqa: F401
 
