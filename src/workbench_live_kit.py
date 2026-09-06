@@ -7,14 +7,23 @@ from dataclasses import dataclass
 from .workbench_controller import WorkbenchRow
 
 
-LIVE_KIT_GROUPS = ("Kick + Bass", "Drums", "Melodic", "Atmos / FX")
-DRUM_SLOTS = (
-    "Main Drum",
-    "Closed Hat",
-    "Open Hat",
-    "Percussion",
-    "Additional",
+LIVE_KIT_SLOT_MAPPING = (
+    ("Kick + Bass", ("Kick", "Bass")),
+    (
+        "Drums",
+        ("Main Drum", "Closed Hat", "Open Hat", "Percussion", "Additional"),
+    ),
+    ("Melodic", ("Lead", "Pad")),
+    ("Atmos / FX", ("Atmos", "FX")),
 )
+"""Canonical Live Kit taxonomy shared by state, presentation, and chooser."""
+
+LIVE_KIT_GROUPS = tuple(group for group, _slots in LIVE_KIT_SLOT_MAPPING)
+"""Compatibility projection of the canonical taxonomy's group order."""
+
+_SLOTS_BY_GROUP = dict(LIVE_KIT_SLOT_MAPPING)
+DRUM_SLOTS = _SLOTS_BY_GROUP["Drums"]
+"""Compatibility projection for existing callers that address drum slots."""
 
 
 class LiveKitState:
@@ -22,7 +31,8 @@ class LiveKitState:
 
     def __init__(self) -> None:
         self._assignments: dict[str, dict[str, WorkbenchRow | None]] = {
-            "Drums": {slot: None for slot in DRUM_SLOTS}
+            group: {slot: None for slot in slots}
+            for group, slots in LIVE_KIT_SLOT_MAPPING
         }
 
     def groups(self) -> tuple[str, ...]:
@@ -30,7 +40,7 @@ class LiveKitState:
 
     def slots_for(self, group: str) -> tuple[str, ...]:
         self._validate_group(group)
-        return DRUM_SLOTS if group == "Drums" else ()
+        return _SLOTS_BY_GROUP[group]
 
     def assignment_for(self, group: str, slot: str) -> WorkbenchRow | None:
         self._validate_slot(group, slot)
@@ -128,6 +138,7 @@ class RightPanePresentation:
 __all__ = [
     "DRUM_SLOTS",
     "LIVE_KIT_GROUPS",
+    "LIVE_KIT_SLOT_MAPPING",
     "LiveKitGroupView",
     "LiveKitPresentationState",
     "LiveKitSlotView",
