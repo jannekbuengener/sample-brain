@@ -966,6 +966,12 @@ class WorkbenchApp:
             self._set_status("Kein Sample für Live Kit ausgewählt.", tone="neutral")
             return False
 
+        return self._assign_row_to_live_kit(row, group, slot)
+
+    def _assign_row_to_live_kit(
+        self, row: WorkbenchRow, group: str, slot: str
+    ) -> bool:
+        """Assign an explicit source row without consulting Browser selection."""
         self._live_kit_state.assign(group, slot, row)
         self._refresh_live_kit_view()
         self._set_status(
@@ -2404,7 +2410,7 @@ class WorkbenchApp:
         row = self._visible_rows[index]
         self._browser_canvas.focus_set()
         if event.x >= self._browser_canvas.winfo_width() - BROWSER_ADD_ACTION_WIDTH:
-            self._open_add_to_playlist_dialog(row)
+            self._open_add_to_live_kit_dialog(row)
             return "break"
         self._skip_next_browser_selection_preview = row.path
         self._tree.selection_set(str(index))
@@ -2599,6 +2605,58 @@ class WorkbenchApp:
             return "break"
         self._open_add_to_playlist_dialog(row)
         return "break"
+
+    def _open_add_to_live_kit_dialog(self, row: WorkbenchRow) -> None:
+        """Choose an existing kit slot for the row captured by the Add hit-test."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Add to Kit")
+        dialog.configure(bg=BG_DARK)
+        dialog.transient(self.root)
+        dialog.resizable(False, False)
+
+        body = ttk.Frame(dialog, style="Panel.TFrame", padding=12)
+        body.pack(fill=tk.BOTH, expand=True)
+        ttk.Label(
+            body,
+            text=f"Sample: {catalog_row_display_name(row)}",
+            style="Panel.TLabel",
+            wraplength=360,
+        ).pack(anchor=tk.W, pady=(0, 8))
+
+        def close(_event: tk.Event | None = None) -> str:
+            dialog.grab_release()
+            dialog.destroy()
+            self._browser_canvas.focus_set()
+            return "break"
+
+        def assign(group: str, slot: str) -> None:
+            if self._assign_row_to_live_kit(row, group, slot):
+                if self._live_kit_presentation.is_collapsed(group):
+                    self._toggle_live_kit_group(group)
+                self._right_pane.select(self._live_kit_frame)
+                self._on_right_pane_tab_changed()
+                close()
+
+        first_target = None
+        for group in self._live_kit_state.groups():
+            for slot in self._live_kit_state.slots_for(group):
+                target = ttk.Button(
+                    body,
+                    text=f"{group} → {slot}",
+                    command=lambda group_name=group, slot_name=slot: assign(
+                        group_name, slot_name
+                    ),
+                )
+                target.pack(fill=tk.X, pady=2)
+                if first_target is None:
+                    first_target = target
+
+        cancel = ttk.Button(body, text="Abbrechen", command=close)
+        cancel.pack(anchor=tk.E, pady=(8, 0))
+        dialog.bind("<Escape>", close)
+        dialog.protocol("WM_DELETE_WINDOW", close)
+        dialog.grab_set()
+        (first_target if first_target is not None else cancel).focus_set()
 
     def _open_add_to_playlist_dialog(self, row: WorkbenchRow) -> None:
         dialog = tk.Toplevel(self.root)

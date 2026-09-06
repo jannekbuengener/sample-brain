@@ -411,17 +411,20 @@ def test_scrollbar_command_delegates_and_rerenders_virtual_rows():
     assert renders == ["render"]
 
 
-def test_canvas_add_hit_area_reuses_playlist_dialog_without_preview_dispatch():
+def test_canvas_add_hit_area_routes_to_live_kit_without_playlist_or_preview():
     app = _canvas_app([_row(1)])
     opened: list[WorkbenchRow] = []
+    playlists: list[WorkbenchRow] = []
     previews: list[WorkbenchRow] = []
-    app._open_add_to_playlist_dialog = opened.append
+    app._open_add_to_live_kit_dialog = opened.append
+    app._open_add_to_playlist_dialog = playlists.append
     app._audition_browser_row = lambda row, **_kwargs: previews.append(row)
 
     result = app._on_browser_canvas_click(SimpleNamespace(x=190, y=0))
 
     assert result == "break"
     assert opened == [app._visible_rows[0]]
+    assert playlists == []
     assert previews == []
 
 
