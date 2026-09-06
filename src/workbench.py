@@ -507,6 +507,7 @@ class WorkbenchApp:
 
         self._library_list = tk.Listbox(
             lib_list_frame,
+            exportselection=False,
             bg=PANEL_ALT,
             fg=TEXT,
             selectbackground=ACCENT_DIM,
@@ -538,6 +539,7 @@ class WorkbenchApp:
 
         self._playlist_list = tk.Listbox(
             playlist_list_frame,
+            exportselection=False,
             bg=PANEL_ALT,
             fg=TEXT,
             selectbackground=ACCENT_DIM,
