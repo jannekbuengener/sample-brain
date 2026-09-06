@@ -891,7 +891,7 @@ class WorkbenchApp:
         ).pack(anchor=tk.W, pady=(0, 2))
         ttk.Label(
             self._live_kit_frame,
-            text="Ausgewähltes Sample einem Drum-Slot zuweisen.",
+            text="Ausgewähltes Sample einem Live-Kit-Slot zuweisen.",
             style="Muted.TLabel",
         ).pack(anchor=tk.W, pady=(0, 8))
         self._live_kit_content = ttk.Frame(self._live_kit_frame, style="Panel.TFrame")

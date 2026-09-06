@@ -19,6 +19,17 @@ from src.workbench_live_kit import LiveKitState, LiveKitPresentationState, Right
 from src.workbench_controller import WorkbenchRow
 
 
+EXPECTED_SLOT_MAPPING = (
+    ("Kick + Bass", ("Kick", "Bass")),
+    (
+        "Drums",
+        ("Main Drum", "Closed Hat", "Open Hat", "Percussion", "Additional"),
+    ),
+    ("Melodic", ("Lead", "Pad")),
+    ("Atmos / FX", ("Atmos", "FX")),
+)
+
+
 def _surface(missing: str):
     try:
         return importlib.import_module("src.workbench_live_kit")
@@ -89,18 +100,27 @@ def test_live_kit_state_has_only_the_canonical_musical_structure():
     _surface_module, state = _state("canonical LiveKitState")
 
     missing = "canonical LiveKitState"
-    assert _groups(state, missing) == ("Kick + Bass", "Drums", "Melodic", "Atmos / FX")
-    assert _slots(state, "Drums", missing) == (
-        "Main Drum",
-        "Closed Hat",
-        "Open Hat",
-        "Percussion",
-        "Additional",
+    assert _groups(state, missing) == tuple(group for group, _slots in EXPECTED_SLOT_MAPPING)
+    for group, expected_slots in EXPECTED_SLOT_MAPPING:
+        assert _slots(state, group, missing) == expected_slots
+        for slot in expected_slots:
+            assert _assignment(state, group, slot, missing) is None
+
+
+def test_live_kit_slot_mapping_is_the_shared_taxonomy_source():
+    surface, state = _state("canonical Live Kit slot mapping")
+    mapping = _require(surface, "LIVE_KIT_SLOT_MAPPING", "canonical Live Kit slot mapping")
+
+    assert mapping == EXPECTED_SLOT_MAPPING
+    assert _groups(state, "canonical Live Kit slot mapping") == tuple(
+        group for group, _slots in mapping
     )
-    for slot in _slots(state, "Drums", missing):
-        assert _assignment(state, "Drums", slot, missing) is None
-    for group in ("Kick + Bass", "Melodic", "Atmos / FX"):
-        assert _slots(state, group, missing) == ()
+    presentation = LiveKitPresentationState(state)
+    visible = presentation.visible_structure()
+    assert tuple(group.name for group in visible) == tuple(group for group, _slots in mapping)
+    assert tuple(
+        (group.name, tuple(slot.name for slot in group.slots)) for group in visible
+    ) == mapping
 
 
 def test_closed_hat_assignment_preserves_the_workbench_row_identity():
