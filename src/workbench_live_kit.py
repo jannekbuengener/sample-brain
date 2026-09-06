@@ -78,19 +78,25 @@ class LiveKitPresentationState:
 
     def __init__(self, state: LiveKitState) -> None:
         self._state = state
-        self._collapsed_groups: set[str] = set()
+        self._active_group: str | None = "Drums"
+        self._collapsed_groups: set[str] = set(state.groups()) - {"Drums"}
 
     def toggle_group(self, group: str) -> bool:
         self._state.slots_for(group)
         if group in self._collapsed_groups:
-            self._collapsed_groups.remove(group)
+            self._collapsed_groups = set(self._state.groups()) - {group}
+            self._active_group = group
             return False
         self._collapsed_groups.add(group)
+        self._active_group = None
         return True
 
     def is_collapsed(self, group: str) -> bool:
         self._state.slots_for(group)
         return group in self._collapsed_groups
+
+    def active_group(self) -> str | None:
+        return self._active_group
 
     def visible_structure(self) -> tuple[LiveKitGroupView, ...]:
         return tuple(

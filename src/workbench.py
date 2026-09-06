@@ -121,17 +121,19 @@ from .workbench_live_kit import (
     RightPanePresentation,
 )
 
-# Dark palette inspired by ui_mockup.png (functional, not pixel-perfect).
-BG_DARK = "#121212"
-PANEL = "#1e1e1e"
-PANEL_ALT = "#252525"
-ACCENT = "#ff4500"
-ACCENT_DIM = "#3d1510"
-TEXT = "#e8e8e8"
-TEXT_MUTED = "#9a9a9a"
+# Producer-facing palette derived from ui_mockup.png (functional, not pixel-perfect).
+BG_DARK = "#08090a"
+PANEL = "#0e1012"
+PANEL_ALT = "#15181c"
+ACCENT = "#b1122b"
+ACCENT_HOVER = "#ce1837"
+ACCENT_DIM = "#2b0c15"
+TEXT = "#eceef1"
+TEXT_MUTED = "#8b9098"
 ERROR = "#ff3b30"
 SUCCESS = "#6fcf6f"
-BORDER = "#333333"
+BORDER = "#26292e"
+WAVEFORM_COLOR = "#7f858d"
 WAVEFORM_HEIGHT = 72
 CUE_MARKER = "#ffffff"
 LOOP_REGION_FILL = "#1a3d28"
@@ -262,7 +264,7 @@ class WorkbenchApp:
         self.root = root
         self.root.title("Sample Brain — Local Workbench")
         self.root.configure(bg=BG_DARK)
-        self.root.minsize(960, 560)
+        self.root.minsize(1120, 640)
 
         self._rows: list[WorkbenchRow] = []
         self._visible_rows: list[WorkbenchRow] = []
@@ -300,12 +302,13 @@ class WorkbenchApp:
         self._editing_ui = attach_workbench_editing_ui(self)
         self._apply_view_toolbar_visibility(notify=False)
         self._apply_view_visibility(notify=False)
+        self._apply_shell_presentation()
         self._restore_last_folder()
         self._quick_capture = None
         self._refresh_library_list()
         self._refresh_playlist_list()
         self._set_status(
-            "Bereit — Ordnerpfad eingeben oder wählen, dann Analyse starten."
+            "Bereit — Quelle wählen, Sample auditionieren und zum Live Kit hinzufügen."
         )
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -319,14 +322,23 @@ class WorkbenchApp:
         style.configure(".", background=BG_DARK, foreground=TEXT, fieldbackground=PANEL)
         style.configure("TFrame", background=BG_DARK)
         style.configure("Panel.TFrame", background=PANEL)
+        style.configure("Header.TFrame", background=BG_DARK)
+        style.configure("Card.TFrame", background=PANEL_ALT)
         style.configure("TLabel", background=BG_DARK, foreground=TEXT)
         style.configure("Muted.TLabel", background=BG_DARK, foreground=TEXT_MUTED)
         style.configure("Panel.TLabel", background=PANEL, foreground=TEXT)
+        style.configure("Card.TLabel", background=PANEL_ALT, foreground=TEXT_MUTED)
+        style.configure(
+            "Product.TLabel",
+            background=BG_DARK,
+            foreground=TEXT,
+            font=("Segoe UI Semibold", 13),
+        )
         style.configure(
             "Heading.TLabel",
             background=PANEL,
-            foreground=ACCENT,
-            font=("Segoe UI", 11, "bold"),
+            foreground=TEXT_MUTED,
+            font=("Segoe UI Semibold", 9),
         )
         style.configure(
             "Accent.TButton",
@@ -337,12 +349,54 @@ class WorkbenchApp:
         )
         style.map(
             "Accent.TButton",
-            background=[("active", "#ff6a33"), ("disabled", "#555555")],
+            background=[("active", ACCENT_HOVER), ("disabled", "#555555")],
         )
         style.configure(
-            "TButton", background=PANEL_ALT, foreground=TEXT, padding=(10, 5)
+            "Intent.TButton",
+            background=ACCENT,
+            foreground="#ffffff",
+            padding=(5, 2),
+            font=("Segoe UI", 10, "bold"),
+        )
+        style.map("Intent.TButton", background=[("active", ACCENT_HOVER)])
+        style.configure(
+            "Group.TButton",
+            background=PANEL_ALT,
+            foreground=TEXT,
+            padding=(8, 6),
+            anchor=tk.W,
+        )
+        style.configure(
+            "ActiveGroup.TButton",
+            background=ACCENT_DIM,
+            foreground=TEXT,
+            padding=(8, 6),
+            anchor=tk.W,
+        )
+        style.map(
+            "ActiveGroup.TButton",
+            background=[("active", ACCENT_DIM)],
+        )
+        style.configure(
+            "TButton",
+            background=PANEL_ALT,
+            foreground=TEXT,
+            padding=(10, 5),
+            bordercolor=BORDER,
+            lightcolor=BORDER,
+            darkcolor=BORDER,
+            relief=tk.FLAT,
         )
         style.map("TButton", background=[("active", "#333333")])
+        style.configure(
+            "TMenubutton",
+            background=PANEL_ALT,
+            foreground=TEXT,
+            bordercolor=BORDER,
+            lightcolor=BORDER,
+            darkcolor=BORDER,
+            relief=tk.FLAT,
+        )
         style.configure(
             "Treeview",
             background=PANEL,
@@ -364,11 +418,27 @@ class WorkbenchApp:
             foreground=[("selected", "#ffffff")],
         )
         style.configure(
-            "TEntry", fieldbackground=PANEL_ALT, foreground=TEXT, insertcolor=TEXT
+            "TEntry",
+            fieldbackground=PANEL_ALT,
+            foreground=TEXT,
+            insertcolor=TEXT,
+            bordercolor=BORDER,
+            lightcolor=BORDER,
+            darkcolor=BORDER,
         )
         style.configure(
             "Status.TLabel", background=PANEL_ALT, foreground=TEXT_MUTED, padding=(8, 4)
         )
+        style.configure(
+            "Shell.TNotebook",
+            background=PANEL,
+            borderwidth=1,
+            tabmargins=0,
+            bordercolor=BORDER,
+            lightcolor=BORDER,
+            darkcolor=BORDER,
+        )
+        style.layout("Shell.TNotebook.Tab", [])
 
     def _build_menubar(self) -> None:
         menubar = tk.Menu(self.root)
@@ -385,8 +455,53 @@ class WorkbenchApp:
             command=self._on_view_toolbar_toggled,
         )
 
+        self._show_legacy_toolbar_var = tk.BooleanVar(value=False)
+        self._show_center_tools_var = tk.BooleanVar(value=False)
+        self._show_similar_var = tk.BooleanVar(value=False)
+        tools_menu = tk.Menu(menubar, tearoff=0)
+        self._tools_menu = tools_menu
+        menubar.add_cascade(label="Tools", menu=tools_menu)
+        tools_menu.add_checkbutton(
+            label="Analyse & Aufnahme",
+            variable=self._show_legacy_toolbar_var,
+            command=self._on_shell_surface_toggled,
+        )
+        tools_menu.add_checkbutton(
+            label="Browser-Werkzeuge",
+            variable=self._show_center_tools_var,
+            command=self._on_shell_surface_toggled,
+        )
+        tools_menu.add_checkbutton(
+            label="Ähnliche Samples",
+            variable=self._show_similar_var,
+            command=self._on_shell_surface_toggled,
+        )
+        tools_menu.add_separator()
+        tools_menu.add_command(label="Sample Browser", command=self._show_sample_browser)
+        tools_menu.add_command(label="Harmonie-Finder", command=self._show_harmony_finder)
+        tools_menu.add_separator()
+        tools_menu.add_command(label="Live Kit", command=self._show_live_kit)
+        tools_menu.add_command(label="Sample Details", command=self._show_sample_details)
+
     def _build_layout(self) -> None:
-        toolbar = ttk.Frame(self.root, padding=(12, 10, 12, 6))
+        shell_header = ttk.Frame(
+            self.root, style="Header.TFrame", padding=(14, 10, 14, 8)
+        )
+        self._shell_header = shell_header
+        shell_header.pack(fill=tk.X)
+        self._product_title = ttk.Label(
+            shell_header, text="Sample Brain", style="Product.TLabel"
+        )
+        self._product_title.pack(side=tk.LEFT)
+        self._shell_header_controls = ttk.Frame(shell_header, style="Header.TFrame")
+        self._shell_header_controls.pack(side=tk.RIGHT)
+        ttk.Menubutton(
+            self._shell_header_controls,
+            text="Tools",
+            menu=self._tools_menu,
+        ).pack(side=tk.RIGHT, padx=(12, 0))
+
+        toolbar = ttk.Frame(self.root, padding=(12, 6, 12, 6))
         self._toolbar = toolbar
         toolbar.pack(fill=tk.X)
 
@@ -479,9 +594,9 @@ class WorkbenchApp:
         body = ttk.Frame(self.root, padding=(12, 0, 12, 8))
         self._body = body
         body.pack(fill=tk.BOTH, expand=True)
-        body.columnconfigure(0, weight=0, minsize=200)
-        body.columnconfigure(1, weight=3)
-        body.columnconfigure(2, weight=1)
+        body.columnconfigure(0, weight=0, minsize=220)
+        body.columnconfigure(1, weight=5, minsize=560)
+        body.columnconfigure(2, weight=2, minsize=300)
         body.rowconfigure(0, weight=1)
 
         library_frame = ttk.Frame(body, style="Panel.TFrame", padding=8)
@@ -558,10 +673,11 @@ class WorkbenchApp:
         self._playlist_list.bind("<<ListboxSelect>>", self._on_playlist_select)
         self._playlist_list.bind("<Double-Button-1>", self._on_playlist_activate)
 
-        self._center_notebook = ttk.Notebook(body)
+        self._center_notebook = ttk.Notebook(body, style="Shell.TNotebook")
         playlist_frame = ttk.Frame(
             self._center_notebook, style="Panel.TFrame", padding=8
         )
+        self._playlist_frame = playlist_frame
         self._center_notebook.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
         self._center_notebook.add(playlist_frame, text="Samples")
 
@@ -570,6 +686,18 @@ class WorkbenchApp:
         )
         self._center_notebook.add(self._harmony_frame, text="Harmonie-Finder")
         self._build_harmony_tab()
+
+        browser_context = ttk.Frame(playlist_frame, style="Panel.TFrame")
+        browser_context.pack(fill=tk.X, pady=(0, 6))
+        ttk.Label(
+            browser_context, text="SAMPLE BROWSER", style="Heading.TLabel"
+        ).pack(side=tk.LEFT)
+        self._browser_context_var = tk.StringVar(value="All Samples")
+        ttk.Label(
+            browser_context,
+            textvariable=self._browser_context_var,
+            style="Muted.TLabel",
+        ).pack(side=tk.RIGHT)
 
         filter_bar = ttk.Frame(playlist_frame, style="Panel.TFrame")
         filter_bar.pack(fill=tk.X, pady=(0, 6))
@@ -588,22 +716,25 @@ class WorkbenchApp:
                 label=label,
                 command=lambda value=column: self._on_browser_sort_column(value),
             )
+        center_tools_bar = ttk.Frame(playlist_frame, style="Panel.TFrame")
+        center_tools_bar.pack(fill=tk.X, pady=(0, 6))
+        self._center_tools_bar = center_tools_bar
         self._browser_sort_btn = ttk.Menubutton(
-            filter_bar, text="Sortieren", menu=self._browser_sort_menu
+            center_tools_bar, text="Sortieren", menu=self._browser_sort_menu
         )
         self._browser_sort_btn.pack(side=tk.RIGHT, padx=(8, 0))
-        ttk.Button(filter_bar, text="CSV exportieren", command=self._export_csv).pack(
+        ttk.Button(center_tools_bar, text="CSV exportieren", command=self._export_csv).pack(
             side=tk.RIGHT, padx=(8, 0)
         )
         self._fl_export_btn = ttk.Button(
-            filter_bar,
+            center_tools_bar,
             text="FL exportieren",
             command=self._export_fl,
             state=tk.DISABLED,
         )
         self._fl_export_btn.pack(side=tk.RIGHT, padx=(8, 0))
         self._catalog_import_btn = ttk.Button(
-            filter_bar,
+            center_tools_bar,
             text="Aus Catalog importieren",
             command=self._import_catalog_to_cache,
             state=tk.DISABLED,
@@ -724,7 +855,10 @@ class WorkbenchApp:
         self._tree.bind("<Up>", self._on_browser_up)
         self._tree.bind("<Escape>", self._on_browser_escape)
 
-        suggest_header = ttk.Frame(playlist_frame, style="Panel.TFrame")
+        similar_panel = ttk.Frame(playlist_frame, style="Panel.TFrame")
+        similar_panel.pack(fill=tk.X, pady=(8, 0))
+        self._similar_panel = similar_panel
+        suggest_header = ttk.Frame(similar_panel, style="Panel.TFrame")
         suggest_header.pack(fill=tk.X, pady=(8, 4))
         ttk.Label(
             suggest_header,
@@ -739,7 +873,7 @@ class WorkbenchApp:
         )
         self._similar_btn.pack(side=tk.RIGHT)
 
-        suggest_frame = ttk.Frame(playlist_frame, style="Panel.TFrame")
+        suggest_frame = ttk.Frame(similar_panel, style="Panel.TFrame")
         suggest_frame.pack(fill=tk.X, pady=(0, 4))
 
         suggest_col_ids = [column[0] for column in SUGGESTION_COLUMNS]
@@ -772,15 +906,16 @@ class WorkbenchApp:
             value="Sample auswählen und „Ähnliche Samples“ berechnen.",
         )
         ttk.Label(
-            playlist_frame,
+            similar_panel,
             textvariable=self._similar_status_var,
             style="Muted.TLabel",
         ).pack(fill=tk.X, pady=(0, 4))
 
-        self._right_pane = ttk.Notebook(body)
+        self._right_pane = ttk.Notebook(body, style="Shell.TNotebook")
         self._right_pane.grid(row=0, column=2, sticky="nsew")
 
         detail_frame = ttk.Frame(self._right_pane, style="Panel.TFrame", padding=10)
+        self._detail_frame = detail_frame
         self._right_pane.add(detail_frame, text="Sample Details")
         detail_header = ttk.Frame(detail_frame, style="Panel.TFrame")
         detail_header.pack(fill=tk.X, pady=(0, 8))
@@ -932,11 +1067,6 @@ class WorkbenchApp:
             text="Live Kit",
             style="Heading.TLabel",
         ).pack(anchor=tk.W, pady=(0, 2))
-        ttk.Label(
-            self._live_kit_frame,
-            text="Ausgewähltes Sample einem Live-Kit-Slot zuweisen.",
-            style="Muted.TLabel",
-        ).pack(anchor=tk.W, pady=(0, 8))
         self._live_kit_content = ttk.Frame(self._live_kit_frame, style="Panel.TFrame")
         self._live_kit_content.pack(fill=tk.BOTH, expand=True)
         self._refresh_live_kit_view()
@@ -955,6 +1085,11 @@ class WorkbenchApp:
             ttk.Button(
                 group_frame,
                 text=f"{marker} {group.name}",
+                style=(
+                    "ActiveGroup.TButton"
+                    if self._live_kit_presentation.active_group() == group.name
+                    else "Group.TButton"
+                ),
                 command=lambda group_name=group.name: self._toggle_live_kit_group(
                     group_name
                 ),
@@ -973,14 +1108,16 @@ class WorkbenchApp:
             slots_frame = ttk.Frame(group_frame, style="Panel.TFrame")
             slots_frame.pack(fill=tk.X, padx=8, pady=(4, 0))
             for slot in group.slots:
-                slot_frame = ttk.Frame(slots_frame, style="Panel.TFrame")
+                slot_frame = ttk.Frame(slots_frame, style="Card.TFrame", padding=(7, 5))
                 slot_frame.pack(fill=tk.X, pady=2)
-                ttk.Label(slot_frame, text=slot.name, style="Panel.TLabel").pack(
+                ttk.Label(slot_frame, text=slot.name, style="Card.TLabel").pack(
                     side=tk.LEFT
                 )
                 ttk.Button(
                     slot_frame,
-                    text="Assign",
+                    text="+",
+                    width=3,
+                    style="Intent.TButton",
                     command=lambda group_name=group.name, slot_name=slot.name: self._assign_selected_row_to_live_kit(
                         group_name, slot_name
                     ),
@@ -989,7 +1126,7 @@ class WorkbenchApp:
                 ttk.Label(
                     slot_frame,
                     text=assignment_name,
-                    style="Muted.TLabel",
+                    style="Card.TLabel",
                 ).pack(side=tk.RIGHT, padx=(0, 8))
 
     def _toggle_live_kit_group(self, group: str) -> None:
@@ -1400,6 +1537,46 @@ class WorkbenchApp:
         if notify and status_message:
             self._set_status(status_message, tone="neutral")
 
+    def _apply_shell_presentation(self) -> None:
+        """Apply Screen-1 disclosure without changing persisted view state."""
+        if self._show_legacy_toolbar_var.get():
+            self._toolbar.pack(fill=tk.X, before=self._body)
+        else:
+            self._toolbar.pack_forget()
+
+        if self._show_center_tools_var.get():
+            pack_options: dict[str, object] = {"fill": tk.X, "pady": (0, 6)}
+            if hasattr(self, "_structured_bar"):
+                pack_options["before"] = self._structured_bar
+            self._center_tools_bar.pack(**pack_options)
+        else:
+            self._center_tools_bar.pack_forget()
+
+        if self._show_similar_var.get():
+            self._similar_panel.pack(fill=tk.X, pady=(8, 0))
+        else:
+            self._similar_panel.pack_forget()
+
+    def _on_shell_surface_toggled(self) -> None:
+        self._apply_shell_presentation()
+
+    def _show_sample_browser(self) -> None:
+        self._center_notebook.select(self._playlist_frame)
+
+    def _show_harmony_finder(self) -> None:
+        self._center_notebook.select(self._harmony_frame)
+
+    def _show_live_kit(self) -> None:
+        self._right_pane.select(self._live_kit_frame)
+        self._on_right_pane_tab_changed()
+
+    def _show_sample_details(self) -> None:
+        self._right_pane.select(self._detail_frame)
+        self._on_right_pane_tab_changed()
+
+    def _set_browser_context(self, value: str) -> None:
+        self._browser_context_var.set(value)
+
     def _on_view_section_toggled(self, section: str) -> None:
         settings = self._current_view_settings()
         hidden_messages = {
@@ -1674,10 +1851,12 @@ class WorkbenchApp:
             return
         if path == WORKBENCH_GLOBAL_LIBRARY_TOKEN:
             self._current_source_path = path
+            self._set_browser_context("All Samples")
             self._load_all_cached_samples()
             return
         if path == WORKBENCH_CATALOG_LIBRARY_TOKEN:
             self._current_source_path = path
+            self._set_browser_context("Catalog · read-only")
             self._load_catalog_samples()
             return
         self._global_library_mode = False
@@ -1685,6 +1864,7 @@ class WorkbenchApp:
         self._current_source_path = path
         self._folder_var.set(path)
         save_workbench_last_folder(path)
+        self._set_browser_context(Path(path).name or "Library")
         self._load_cached_folder(path, announce_if_empty=True)
 
     def _on_library_activate(self, _event: tk.Event | None = None) -> None:
@@ -1700,6 +1880,7 @@ class WorkbenchApp:
         self._global_library_mode = False
         self._catalog_library_mode = False
         self._playlist_library_mode = True
+        self._set_browser_context(f"Collection · {name}")
         self._load_playlist_samples(name)
 
     def _on_playlist_activate(self, _event: tk.Event | None = None) -> None:
@@ -1840,6 +2021,7 @@ class WorkbenchApp:
         remembered = load_workbench_last_folder()
         if remembered:
             self._folder_var.set(remembered)
+            self._set_browser_context(Path(remembered).name or "Library")
 
     def _resolve_folder(self) -> Path | None:
         validation = validate_workbench_folder(self._folder_var.get())
@@ -2402,7 +2584,7 @@ class WorkbenchApp:
                 for point, peak in enumerate(waveform.envelope):
                     x = 12 + point * step
                     amplitude = max(1, peak * 22)
-                    canvas.create_line(x, y0 + 31 - amplitude, x, y0 + 31 + amplitude, fill=ACCENT, tags="browser-row")
+                    canvas.create_line(x, y0 + 31 - amplitude, x, y0 + 31 + amplitude, fill=WAVEFORM_COLOR, tags="browser-row")
             meta = " · ".join(value for value in (
                 row.pred_type or row.sample_class,
                 format_bpm_display(row.bpm) if row.bpm is not None else None,
