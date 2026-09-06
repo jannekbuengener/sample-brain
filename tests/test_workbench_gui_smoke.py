@@ -14,6 +14,7 @@ from src.workbench import (
     PLAYLIST_ACTION_LABEL,
     WAVEFORM_USAGE_HINT,
     WorkbenchApp,
+    build_workbench_library_sources,
 )
 from src.workbench_controller import (
     FILTER_ALL_LABEL,
@@ -37,6 +38,186 @@ def _widget_is_packed(widget: tk.Misc) -> bool:
         return True
     except tk.TclError:
         return False
+
+
+def _synthetic_row(name: str, *, pred_type: str = "Kick") -> WorkbenchRow:
+    return WorkbenchRow(
+        display_name=name,
+        relative_path=f"synthetic/{name}",
+        path=f"synthetic/{name}",
+        bpm=128.0,
+        key="Am",
+        key_conf=0.9,
+        loudness=-12.0,
+        brightness=1000.0,
+        sample_class="one_shot",
+        pred_type=pred_type,
+        status="ok",
+        details={"duration_sec": "0.25"},
+    )
+
+
+def test_library_source_model_keeps_all_library_and_registered_folders_deterministic():
+    """Source navigation exposes stable identities without host-specific paths."""
+    sources = build_workbench_library_sources(
+        ["synthetic/pack_a", "synthetic/pack_b"]
+    )
+
+    assert [(source.kind, source.path) for source in sources] == [
+        ("all_library", "__workbench_all_library__"),
+        ("catalog", "__workbench_catalog_readonly__"),
+        ("folder", "synthetic/pack_a"),
+        ("folder", "synthetic/pack_b"),
+    ]
+    assert sources[0].label == "Alle Samples"
+    assert sources[2].label == "…/synthetic/pack_a"
+
+
+def test_source_selection_uses_selected_folder_rows_without_preview_or_kit_mutation(
+    tmp_path: Path, monkeypatch
+):
+    """A registered source switch is cache-only and makes the selected source authoritative."""
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    folder_a = "synthetic/pack_a"
+    folder_b = "synthetic/pack_b"
+    rows_by_folder = {
+        folder_a: [_synthetic_row("kick.wav"), _synthetic_row("bass.wav")],
+        folder_b: [_synthetic_row("hat.wav")],
+    }
+    cached_loads: list[str] = []
+    preview_dispatches: list[str] = []
+
+    def load_cached(folder: Path) -> list[WorkbenchRow]:
+        cached_loads.append(str(folder))
+        return rows_by_folder[str(folder)]
+
+    monkeypatch.setattr("src.workbench.load_cached_folder_rows", load_cached)
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        app._library_paths = ["__workbench_all_library__", "__workbench_catalog_readonly__", folder_a, folder_b]
+        app._library_list.delete(0, tk.END)
+        for label in ("Alle Samples", "Catalog", "…/synthetic/pack_a", "…/synthetic/pack_b"):
+            app._library_list.insert(tk.END, label)
+        kit_state = app._live_kit_state
+        monkeypatch.setattr(app._preview, "play", lambda *_args, **_kwargs: preview_dispatches.append("preview"))
+
+        app._library_list.selection_set(2)
+        app._on_library_select()
+        app._library_list.selection_clear(0, tk.END)
+        app._library_list.selection_set(3)
+        app._on_library_select()
+        root.update_idletasks()
+
+        assert cached_loads == [folder_a, folder_b]
+        assert app._current_source_path == folder_b
+        assert app._folder_var.get() == folder_b
+        assert [row.display_name for row in app._rows] == ["hat.wav"]
+        assert [row.display_name for row in app._visible_rows] == ["hat.wav"]
+        assert app._live_kit_state is kit_state
+        assert preview_dispatches == []
+    finally:
+        root.destroy()
+
+
+def test_empty_source_selection_does_not_stop_an_active_preview(tmp_path: Path, monkeypatch):
+    """Navigation is non-auditioning even when the selected cache source is empty."""
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    empty_folder = "synthetic/empty_pack"
+    monkeypatch.setattr("src.workbench.load_cached_folder_rows", lambda _folder: [])
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        app._library_paths = ["__workbench_all_library__", "__workbench_catalog_readonly__", empty_folder]
+        app._library_list.delete(0, tk.END)
+        for label in ("Alle Samples", "Catalog", "…/synthetic/empty_pack"):
+            app._library_list.insert(tk.END, label)
+        stopped: list[bool] = []
+        monkeypatch.setattr(app, "_stop_preview", lambda: stopped.append(True))
+
+        app._library_list.selection_set(2)
+        app._on_library_select()
+
+        assert app._current_source_path == empty_folder
+        assert stopped == []
+    finally:
+        root.destroy()
+
+
+def test_all_library_source_loads_cached_rows_from_each_registered_folder(
+    tmp_path: Path, monkeypatch
+):
+    """All Library continues to use the existing aggregate cache seam."""
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    all_rows = [_synthetic_row("kick.wav"), _synthetic_row("hat.wav")]
+    monkeypatch.setattr("src.workbench.load_all_cached_rows", lambda: all_rows)
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        app._library_list.selection_set(0)
+        app._on_library_select()
+
+        assert app._current_source_path == "__workbench_all_library__"
+        assert [row.display_name for row in app._rows] == ["kick.wav", "hat.wav"]
+        assert [row.display_name for row in app._visible_rows] == ["kick.wav", "hat.wav"]
+    finally:
+        root.destroy()
+
+
+def test_source_switch_reapplies_search_without_stale_rows_or_browser_selection(
+    tmp_path: Path, monkeypatch
+):
+    """An active search is evaluated against B, not stale rows from source A."""
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    folder_a = "synthetic/pack_a"
+    folder_b = "synthetic/pack_b"
+    rows_by_folder = {
+        folder_a: [_synthetic_row("kick.wav")],
+        folder_b: [_synthetic_row("hat.wav", pred_type="Hat")],
+    }
+    monkeypatch.setattr(
+        "src.workbench.load_cached_folder_rows",
+        lambda folder: rows_by_folder[str(folder)],
+    )
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        app._library_paths = ["__workbench_all_library__", "__workbench_catalog_readonly__", folder_a, folder_b]
+        app._library_list.delete(0, tk.END)
+        for label in ("Alle Samples", "Catalog", "…/synthetic/pack_a", "…/synthetic/pack_b"):
+            app._library_list.insert(tk.END, label)
+
+        app._library_list.selection_set(2)
+        app._on_library_select()
+        app._filter_var.set("kick")
+        root.update_idletasks()
+        assert [row.display_name for row in app._visible_rows] == ["kick.wav"]
+        app._tree.selection_set("0")
+
+        app._library_list.selection_clear(0, tk.END)
+        app._library_list.selection_set(3)
+        app._on_library_select()
+        root.update_idletasks()
+
+        assert app._current_source_path == folder_b
+        assert [row.display_name for row in app._rows] == ["hat.wav"]
+        assert app._visible_rows == []
+        assert app._tree.get_children() == ()
+        assert app._tree.selection() == ()
+    finally:
+        root.destroy()
 
 
 def test_workbench_gui_startup_smoke_constructs_key_widgets(

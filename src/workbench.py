@@ -15,8 +15,6 @@ from .workbench_controller import (
     WorkbenchResult,
     WorkbenchRow,
     WorkbenchRowFilters,
-    ALL_LIBRARY_VIEW_LABEL,
-    CATALOG_VIEW_LABEL,
     WORKBENCH_CATALOG_LIBRARY_TOKEN,
     WORKBENCH_GLOBAL_LIBRARY_TOKEN,
     FILTER_ALL_LABEL,
@@ -209,6 +207,50 @@ class BrowserPreviewDispatchMetric:
     event_to_dispatch_return_ms: float
 
 
+@dataclass(frozen=True)
+class WorkbenchLibrarySource:
+    """One selectable left-pane source backed by existing library contracts."""
+
+    kind: str
+    path: str
+    label: str
+
+
+def _source_folder_label(path: str) -> str:
+    parts = Path(path).parts
+    if len(parts) <= 2:
+        normalized_path = path.replace("\\", "/")
+        return f"…/{normalized_path}"
+    return f"…/{'/'.join(parts[-2:])}"
+
+
+def build_workbench_library_sources(
+    folder_paths: list[str], *, catalog_is_available: bool = True
+) -> list[WorkbenchLibrarySource]:
+    """Build deterministic sources without opening, scanning, or analysing folders."""
+    catalog_label = "Catalog (read-only)"
+    if not catalog_is_available:
+        catalog_label = "Catalog (nicht verfügbar)"
+    return [
+        WorkbenchLibrarySource(
+            kind="all_library",
+            path=WORKBENCH_GLOBAL_LIBRARY_TOKEN,
+            label="Alle Samples",
+        ),
+        WorkbenchLibrarySource(
+            kind="catalog",
+            path=WORKBENCH_CATALOG_LIBRARY_TOKEN,
+            label=catalog_label,
+        ),
+        *[
+            WorkbenchLibrarySource(
+                kind="folder", path=path, label=_source_folder_label(path)
+            )
+            for path in folder_paths
+        ],
+    ]
+
+
 def _fmt(value: float | None, *, digits: int = 2) -> str:
     if value is None:
         return "—"
@@ -237,6 +279,7 @@ class WorkbenchApp:
         self._global_library_mode = False
         self._catalog_library_mode = False
         self._playlist_library_mode = False
+        self._current_source_path: str | None = None
         self._playlist_names: list[str] = []
         self._catalog_total_count = 0
         self._catalog_load_limit: int | None = None
@@ -446,7 +489,7 @@ class WorkbenchApp:
 
         lib_header = ttk.Frame(library_frame, style="Panel.TFrame")
         lib_header.pack(fill=tk.X, pady=(0, 6))
-        ttk.Label(lib_header, text="Library-Ordner", style="Heading.TLabel").pack(
+        ttk.Label(lib_header, text="SOURCES", style="Heading.TLabel").pack(
             side=tk.LEFT, anchor=tk.W
         )
         lib_btns = ttk.Frame(lib_header, style="Panel.TFrame")
@@ -486,7 +529,7 @@ class WorkbenchApp:
 
         playlist_header = ttk.Frame(library_frame, style="Panel.TFrame")
         playlist_header.pack(fill=tk.X, pady=(10, 6))
-        ttk.Label(playlist_header, text="Playlists", style="Heading.TLabel").pack(
+        ttk.Label(playlist_header, text="COLLECTIONS", style="Heading.TLabel").pack(
             side=tk.LEFT, anchor=tk.W
         )
 
@@ -1481,25 +1524,19 @@ class WorkbenchApp:
         self._bpm_max_var.set("")
 
     def _library_display_label(self, path: str) -> str:
-        parts = Path(path).parts
-        if len(parts) <= 2:
-            return path
-        return f"…/{'/'.join(parts[-2:])}"
+        return _source_folder_label(path)
 
     def _refresh_library_list(self) -> None:
         folders = get_workbench_library_folders()
-        self._library_paths = [
-            WORKBENCH_GLOBAL_LIBRARY_TOKEN,
-            WORKBENCH_CATALOG_LIBRARY_TOKEN,
-        ] + [folder.path for folder in folders]
+        sources = build_workbench_library_sources(
+            [folder.path for folder in folders],
+            catalog_is_available=catalog_available(),
+        )
+        self._library_paths = [source.path for source in sources]
         self._library_list.delete(0, tk.END)
-        self._library_list.insert(tk.END, f"★ {ALL_LIBRARY_VIEW_LABEL}")
-        catalog_label = CATALOG_VIEW_LABEL
-        if not catalog_available():
-            catalog_label = f"{CATALOG_VIEW_LABEL} (nicht verfügbar)"
-        self._library_list.insert(tk.END, f"⧉ {catalog_label}")
-        for folder_path in self._library_paths[2:]:
-            self._library_list.insert(tk.END, self._library_display_label(folder_path))
+        for source in sources:
+            prefix = "★ " if source.kind == "all_library" else "⧉ " if source.kind == "catalog" else ""
+            self._library_list.insert(tk.END, f"{prefix}{source.label}")
 
     def _refresh_playlist_list(self) -> None:
         self._playlist_names = list_workbench_playlists()
@@ -1636,16 +1673,19 @@ class WorkbenchApp:
         if path is None:
             return
         if path == WORKBENCH_GLOBAL_LIBRARY_TOKEN:
+            self._current_source_path = path
             self._load_all_cached_samples()
             return
         if path == WORKBENCH_CATALOG_LIBRARY_TOKEN:
+            self._current_source_path = path
             self._load_catalog_samples()
             return
         self._global_library_mode = False
         self._catalog_library_mode = False
+        self._current_source_path = path
         self._folder_var.set(path)
         save_workbench_last_folder(path)
-        self._load_cached_folder(Path(path), announce_if_empty=True)
+        self._load_cached_folder(path, announce_if_empty=True)
 
     def _on_library_activate(self, _event: tk.Event | None = None) -> None:
         self._on_library_select()
@@ -1686,6 +1726,7 @@ class WorkbenchApp:
         )
 
     def _load_all_cached_samples(self) -> None:
+        self._current_source_path = WORKBENCH_GLOBAL_LIBRARY_TOKEN
         rows = load_all_cached_rows()
         self._global_library_mode = True
         self._catalog_library_mode = False
@@ -1719,6 +1760,7 @@ class WorkbenchApp:
         )
 
     def _load_catalog_samples(self) -> None:
+        self._current_source_path = WORKBENCH_CATALOG_LIBRARY_TOKEN
         if not catalog_available():
             self._clear_playlist()
             self._global_library_mode = False
@@ -1763,14 +1805,14 @@ class WorkbenchApp:
         )
 
     def _load_cached_folder(
-        self, folder: Path, *, announce_if_empty: bool = False
+        self, folder: Path | str, *, announce_if_empty: bool = False
     ) -> None:
         self._global_library_mode = False
         self._catalog_library_mode = False
         self._playlist_library_mode = False
         rows = load_cached_folder_rows(folder)
         if not rows:
-            self._clear_playlist()
+            self._clear_playlist(stop_preview=False)
             if announce_if_empty:
                 self._set_status(
                     "Kein Cache für diesen Ordner — Analyse starten, um Samples zu laden.",
@@ -2048,8 +2090,9 @@ class WorkbenchApp:
                 tone=tone,
             )
 
-    def _clear_playlist(self) -> None:
-        self._stop_preview()
+    def _clear_playlist(self, *, stop_preview: bool = True) -> None:
+        if stop_preview:
+            self._stop_preview()
         self._tree.delete(*self._tree.get_children())
         self._rows = []
         self._visible_rows = []
