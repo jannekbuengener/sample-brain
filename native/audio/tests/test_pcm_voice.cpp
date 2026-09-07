@@ -117,7 +117,62 @@ static void test_pcm_stop_is_deterministic() {
     float output[4] = {1.0f, 1.0f, 1.0f, 1.0f};
     voice.process(output, 4, 0, 1);
     TEST_ASSERT_EQ(voice.get_state(), SB_VOICE_IDLE, "stopped PCM voice becomes IDLE");
-    TEST_ASSERT_EQ(output[0], 0.0f, "stopped PCM voice emits silence");
+    TEST_ASSERT_EQ(output[0], 1.0f, "stopped PCM voice preserves the existing mix");
+}
+
+static void test_inactive_voice_states_preserve_existing_mix() {
+    std::printf("test_inactive_voice_states_preserve_existing_mix...\n");
+    const float pcm[] = {0.5f, 0.25f, 0.125f, 0.0625f};
+
+    Voice idle_voice(48000, pcm_config(15, pcm, 4, 1));
+    float idle_mix[2] = {0.25f, -0.25f};
+    idle_voice.process(idle_mix, 2, 0, 1);
+    TEST_ASSERT_EQ(idle_mix[0], 0.25f, "IDLE voice preserves an existing mix");
+    TEST_ASSERT_EQ(idle_mix[1], -0.25f, "IDLE voice preserves all mixed frames");
+
+    Voice scheduled_voice(48000, pcm_config(16, pcm, 4, 1));
+    scheduled_voice.schedule_start(100, 0);
+    float scheduled_mix[2] = {0.25f, -0.25f};
+    scheduled_voice.process(scheduled_mix, 2, 0, 1);
+    TEST_ASSERT_EQ(scheduled_voice.get_state(), SB_VOICE_SCHEDULED,
+                   "future voice remains SCHEDULED");
+    TEST_ASSERT_EQ(scheduled_mix[0], 0.25f, "SCHEDULED voice preserves an existing mix");
+
+    Voice stopping_voice(48000, pcm_config(17, pcm, 4, 1));
+    stopping_voice.schedule_start(0, 0);
+    stopping_voice.stop();
+    float stopping_mix[2] = {0.25f, -0.25f};
+    stopping_voice.process(stopping_mix, 2, 0, 1);
+    TEST_ASSERT_EQ(stopping_voice.get_state(), SB_VOICE_IDLE,
+                   "STOPPING voice still transitions to IDLE");
+    TEST_ASSERT_EQ(stopping_mix[0], 0.25f, "STOPPING voice preserves an existing mix");
+}
+
+static void test_eof_pcm_voice_does_not_erase_active_voice() {
+    std::printf("test_eof_pcm_voice_does_not_erase_active_voice...\n");
+    const float active_pcm[] = {
+        0.25f, 0.25f, 0.25f, 0.25f,
+        0.25f, 0.25f, 0.25f, 0.25f,
+    };
+    const float finite_pcm[] = {0.5f};
+    Voice active_voice(48000, pcm_config(18, active_pcm, 8, 1));
+    Voice finite_voice(48000, pcm_config(19, finite_pcm, 1, 1));
+    active_voice.schedule_start(0, 0);
+    finite_voice.schedule_start(0, 0);
+
+    float first_callback[4] = {};
+    active_voice.process(first_callback, 4, 0, 1);
+    finite_voice.process(first_callback, 4, 0, 1);
+    TEST_ASSERT_EQ(first_callback[0], 0.75f, "voices mix additively before finite EOF");
+    TEST_ASSERT_EQ(finite_voice.get_state(), SB_VOICE_IDLE,
+                   "finite voice is IDLE after EOF");
+
+    float following_callback[4] = {};
+    active_voice.process(following_callback, 4, 4, 1);
+    finite_voice.process(following_callback, 4, 4, 1);
+    for (float sample : following_callback) {
+        TEST_ASSERT_EQ(sample, 0.25f, "EOF voice leaves the active voice audible");
+    }
 }
 
 static void expect_invalid_pcm(
@@ -184,6 +239,8 @@ int main() {
     test_pcm_deep_copy_scheduling_and_eof();
     test_pcm_stereo_and_rate_progression();
     test_pcm_stop_is_deterministic();
+    test_inactive_voice_states_preserve_existing_mix();
+    test_eof_pcm_voice_does_not_erase_active_voice();
     test_pcm_validation_is_fail_closed();
     test_pcm_public_create_remove_lifecycle();
     std::printf("\n=== Results ===\nPassed: %d\nFailed: %d\n", tests_passed, tests_failed);

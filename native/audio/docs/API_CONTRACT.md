@@ -196,6 +196,11 @@ sb_result_t sb_engine_close(sb_engine_t engine);
 
 ## Voice Lifecycle
 
+The engine clears each shared callback output buffer exactly once before
+processing voices. Voice processing is strictly additive: IDLE, SCHEDULED,
+STOPPING, and EOF-complete voices leave samples already mixed by other voices
+unchanged.
+
 ### sb_voice_create
 ```c
 sb_result_t sb_voice_create(sb_engine_t engine, const sb_voice_config_t* config, sb_voice_id_t* out_id);
