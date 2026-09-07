@@ -385,6 +385,51 @@ def _descendants(widget):
         yield from _descendants(child)
 
 
+def test_live_kit_slot_exposes_compact_audition_affordance(tmp_path, monkeypatch):
+    """Real Tk: the assigned slot button dispatches its exact row once."""
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path / "state"))
+    assigned = _synthetic_row("assigned.wav", pred_type="OneShot")
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        app._live_kit_state.assign("Drums", "Main Drum", assigned)
+        dispatched = []
+        monkeypatch.setattr(
+            app._preview,
+            "play_row",
+            lambda row, *, start_ms=0: (
+                dispatched.append((row, start_ms))
+                or SimpleNamespace(ok=True, message="")
+            ),
+        )
+        app._refresh_live_kit_view()
+        root.update_idletasks()
+
+        slot_frames = [
+            widget
+            for widget in _descendants(app._live_kit_frame)
+            if any(
+                child.winfo_class() == "TLabel"
+                and child.cget("text") == "Main Drum"
+                for child in widget.winfo_children()
+            )
+        ]
+        assert len(slot_frames) == 1
+        audition_buttons = [
+            child
+            for child in slot_frames[0].winfo_children()
+            if child.winfo_class() == "TButton" and child.cget("text") == "▶"
+        ]
+        assert len(audition_buttons) == 1
+
+        assert bool(audition_buttons[0].invoke()) is True
+        assert dispatched == [(assigned, 0)]
+        assert app._live_kit_state.assignment_for("Drums", "Main Drum") is assigned
+    finally:
+        root.destroy()
+
+
 def test_browser_add_to_kit_reveals_clicked_row_and_preserves_right_pane(
     tmp_path: Path, monkeypatch
 ):
