@@ -146,8 +146,6 @@ void Voice::process(float* output, size_t num_frames, sb_frame_t engine_frame, s
         if (current_state == SB_VOICE_STOPPING) {
             state.store(SB_VOICE_IDLE, std::memory_order_release);
         }
-        // Clear output
-        std::fill(output, output + num_frames * output_channels, 0.0f);
         return;
     }
 
