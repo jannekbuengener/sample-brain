@@ -121,6 +121,7 @@ from .workbench_live_kit import (
     LiveKitState,
     RightPanePresentation,
 )
+from .runtime_provenance import describe_runtime
 
 # Producer-facing palette derived from ui_mockup.png (functional, not pixel-perfect).
 BG_DARK = "#08090a"
@@ -487,6 +488,17 @@ class WorkbenchApp:
         tools_menu.add_separator()
         tools_menu.add_command(label="Live Kit", command=self._show_live_kit)
         tools_menu.add_command(label="Sample Details", command=self._show_sample_details)
+        tools_menu.add_separator()
+        tools_menu.add_command(
+            label="Runtime-Informationen", command=self._show_runtime_information
+        )
+
+    def _show_runtime_information(self) -> None:
+        messagebox.showinfo(
+            "Runtime-Informationen",
+            describe_runtime(Path(__file__).resolve().parents[1]),
+            parent=self.root,
+        )
 
     def _build_layout(self) -> None:
         shell_header = ttk.Frame(
