@@ -79,11 +79,20 @@ typedef struct {
     float amplitude;
 } sb_synthetic_click_config_t;
 
+// Finite interleaved float32 PCM, already at the engine sample rate.
+// sb_voice_create deep-copies data before returning.
+typedef struct {
+    const float* data;
+    uint64_t frame_count;
+    uint32_t channels;
+} sb_pcm_buffer_config_t;
+
 // Source descriptor
 typedef struct {
     sb_source_type_t type;
     union {
         sb_synthetic_click_config_t synthetic_click;
+        sb_pcm_buffer_config_t pcm_buffer;
     };
 } sb_source_descriptor_t;
 

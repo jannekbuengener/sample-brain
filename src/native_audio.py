@@ -177,10 +177,26 @@ class SbSyntheticClickConfig(ctypes.Structure):
     ]
 
 
+class SbPcmBufferConfig(ctypes.Structure):
+    _fields_ = [
+        ("data", ctypes.POINTER(ctypes.c_float)),
+        ("frame_count", ctypes.c_uint64),
+        ("channels", ctypes.c_uint32),
+    ]
+
+
+class SbSourcePayload(ctypes.Union):
+    _fields_ = [
+        ("synthetic_click", SbSyntheticClickConfig),
+        ("pcm_buffer", SbPcmBufferConfig),
+    ]
+
+
 class SbSourceDescriptor(ctypes.Structure):
+    _anonymous_ = ("payload",)
     _fields_ = [
         ("type", ctypes.c_int),
-        ("synthetic_click", SbSyntheticClickConfig),
+        ("payload", SbSourcePayload),
     ]
 
 
@@ -410,6 +426,13 @@ class EngineConfig:
 
 
 @dataclass
+class PcmBufferConfig:
+    """Caller-owned PCM input copied by the native voice at creation time."""
+    samples: np.ndarray
+    channels: int
+
+
+@dataclass
 class VoiceConfig:
     """Voice configuration."""
     id: int
@@ -418,6 +441,7 @@ class VoiceConfig:
     frequency_hz: float = 800.0
     duration_ms: float = 5.0
     amplitude: float = 0.8
+    pcm_buffer: Optional[PcmBufferConfig] = None
     initial_rate: float = 1.0
     gain: float = 1.0
     # #324 Key-Lock extensions
@@ -575,13 +599,48 @@ class NativeAudioEngine:
         if not self._engine:
             raise RuntimeError("Engine not open")
 
-        click_config = SbSyntheticClickConfig(
-            bpm=config.bpm,
-            frequency_hz=config.frequency_hz,
-            duration_ms=config.duration_ms,
-            amplitude=config.amplitude,
-        )
-        source = SbSourceDescriptor(type=config.source_type, synthetic_click=click_config)
+        if config.source_type == SB_SOURCE_SYNTHETIC_CLICK:
+            if config.pcm_buffer is not None:
+                raise ValueError("pcm_buffer is only valid for PCM sources")
+            click_config = SbSyntheticClickConfig(
+                bpm=config.bpm,
+                frequency_hz=config.frequency_hz,
+                duration_ms=config.duration_ms,
+                amplitude=config.amplitude,
+            )
+            source = SbSourceDescriptor(
+                type=config.source_type,
+                synthetic_click=click_config,
+            )
+        elif config.source_type == SB_SOURCE_PCM_BUFFER:
+            if config.pcm_buffer is None:
+                raise ValueError("pcm_buffer is required for PCM sources")
+            channels = config.pcm_buffer.channels
+            if channels not in (1, 2):
+                raise ValueError("PCM channels must be 1 or 2")
+            pcm_array = np.asarray(config.pcm_buffer.samples, dtype=np.float32)
+            if pcm_array.ndim not in (1, 2):
+                raise ValueError("PCM samples must be a 1D interleaved or 2D frame array")
+            if pcm_array.ndim == 2 and pcm_array.shape[1] != channels:
+                raise ValueError("PCM frame width must match channels")
+            pcm_array = np.ascontiguousarray(pcm_array.reshape(-1), dtype=np.float32)
+            if pcm_array.size == 0:
+                raise ValueError("PCM samples must not be empty")
+            if pcm_array.size % channels:
+                raise ValueError("PCM sample count must be divisible by channels")
+            if not np.isfinite(pcm_array).all():
+                raise ValueError("PCM samples must be finite")
+            pcm_config = SbPcmBufferConfig(
+                data=pcm_array.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+                frame_count=pcm_array.size // channels,
+                channels=channels,
+            )
+            source = SbSourceDescriptor(
+                type=config.source_type,
+                pcm_buffer=pcm_config,
+            )
+        else:
+            raise ValueError(f"unsupported source_type: {config.source_type}")
         vconfig = SbVoiceConfig(
             id=config.id,
             source=source,

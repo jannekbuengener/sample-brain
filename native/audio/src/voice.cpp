@@ -3,6 +3,7 @@
 #include "keylock_voice.h"
 #include <cmath>
 #include <algorithm>
+#include <limits>
 
 namespace {
 constexpr double kPi = 3.141592653589793238462643383279502884;
@@ -17,11 +18,51 @@ public:
     bool active = false;
 };
 
+bool Voice::validate_config(const sb_voice_config_t& config) {
+    if (!std::isfinite(config.initial_rate) || config.initial_rate <= 0.0f ||
+        config.initial_rate > 10.0f || !std::isfinite(config.gain)) {
+        return false;
+    }
+
+    if (config.source.type == SB_SOURCE_SYNTHETIC_CLICK) {
+        return true;
+    }
+    if (config.source.type != SB_SOURCE_PCM_BUFFER) {
+        return false;
+    }
+
+    const sb_pcm_buffer_config_t& pcm = config.source.pcm_buffer;
+    if (!pcm.data || pcm.frame_count == 0 || (pcm.channels != 1 && pcm.channels != 2)) {
+        return false;
+    }
+    if (pcm.frame_count > std::numeric_limits<size_t>::max() / pcm.channels) {
+        return false;
+    }
+
+    const size_t sample_count = static_cast<size_t>(pcm.frame_count) * pcm.channels;
+    if (sample_count > std::vector<float>().max_size()) {
+        return false;
+    }
+    for (size_t i = 0; i < sample_count; ++i) {
+        if (!std::isfinite(pcm.data[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 Voice::Voice(uint32_t sample_rate_, const sb_voice_config_t& config)
-    : id(config.id), rate(config.initial_rate), gain(config.gain), sample_rate(sample_rate_) {
+    : id(config.id), rate(config.initial_rate), gain(config.gain), sample_rate(sample_rate_),
+      source_type(config.source.type) {
     if (config.source.type == SB_SOURCE_SYNTHETIC_CLICK) {
         click_config = config.source.synthetic_click;
         generate_click_samples(config.source.synthetic_click);
+    } else if (config.source.type == SB_SOURCE_PCM_BUFFER) {
+        const sb_pcm_buffer_config_t& pcm = config.source.pcm_buffer;
+        const size_t sample_count = static_cast<size_t>(pcm.frame_count) * pcm.channels;
+        pcm_samples.assign(pcm.data, pcm.data + sample_count);
+        pcm_frame_count = pcm.frame_count;
+        pcm_channels = pcm.channels;
     }
 
     // #324: Initialize sync mode and BPM
@@ -57,6 +98,7 @@ void Voice::generate_click_samples(const sb_synthetic_click_config_t& config) {
 
 void Voice::schedule_start(sb_frame_t frame, sb_frame_t current_engine_frame) {
     requested_start_frame = frame;
+    pcm_position = 0.0;
     if (frame < current_engine_frame) {
         // Already past - start at the current authoritative engine frame.
         scheduled_frame = current_engine_frame;
@@ -84,6 +126,7 @@ void Voice::set_rate(float new_rate) {
 
 void Voice::process(float* output, size_t num_frames, sb_frame_t engine_frame, size_t output_channels) {
     sb_voice_state_t current_state = state.load(std::memory_order_acquire);
+    size_t render_offset = 0;
 
     if (current_state == SB_VOICE_SCHEDULED) {
         const sb_frame_t buffer_end = engine_frame + static_cast<sb_frame_t>(num_frames);
@@ -92,6 +135,9 @@ void Voice::process(float* output, size_t num_frames, sb_frame_t engine_frame, s
             // requested sample frame instead of snapping the event to the buffer edge.
             state.store(SB_VOICE_PLAYING, std::memory_order_release);
             actual_start_frame = scheduled_frame;
+            if (scheduled_frame > engine_frame) {
+                render_offset = static_cast<size_t>(scheduled_frame - engine_frame);
+            }
             current_state = SB_VOICE_PLAYING;
         }
     }
@@ -105,8 +151,10 @@ void Voice::process(float* output, size_t num_frames, sb_frame_t engine_frame, s
         return;
     }
 
-    // Process based on sync mode
-    if (sync_mode == 1) {  // KEY_LOCK_SYNC
+    if (source_type == SB_SOURCE_PCM_BUFFER) {
+        render_pcm(output, render_offset, num_frames - render_offset, output_channels);
+    // Process synthetic click based on sync mode.
+    } else if (sync_mode == 1) {  // KEY_LOCK_SYNC
         // Use KeyLockVoice for Signalsmith time-stretch
         if (!kl_voice) {
             kl_voice = new KeyLockVoiceImpl();
@@ -162,6 +210,29 @@ void Voice::process(float* output, size_t num_frames, sb_frame_t engine_frame, s
     } else {
         // Render clicks for this buffer
         render_click(output, 0, num_frames, engine_frame, output_channels);
+    }
+}
+
+void Voice::render_pcm(float* output, size_t offset, size_t num_frames,
+                       size_t output_channels) {
+    for (size_t output_frame = 0; output_frame < num_frames; ++output_frame) {
+        const uint64_t source_frame = static_cast<uint64_t>(pcm_position);
+        if (source_frame >= pcm_frame_count) {
+            state.store(SB_VOICE_IDLE, std::memory_order_release);
+            return;
+        }
+
+        const size_t source_base = static_cast<size_t>(source_frame) * pcm_channels;
+        const size_t output_base = (offset + output_frame) * output_channels;
+        for (size_t channel = 0; channel < output_channels; ++channel) {
+            const size_t source_channel = pcm_channels == 1 ? 0 : std::min<size_t>(channel, 1);
+            output[output_base + channel] += gain * pcm_samples[source_base + source_channel];
+        }
+        pcm_position += static_cast<double>(rate);
+    }
+
+    if (pcm_position >= static_cast<double>(pcm_frame_count)) {
+        state.store(SB_VOICE_IDLE, std::memory_order_release);
     }
 }
 
