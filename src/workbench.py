@@ -1122,6 +1122,14 @@ class WorkbenchApp:
                         group_name, slot_name
                     ),
                 ).pack(side=tk.RIGHT)
+                ttk.Button(
+                    slot_frame,
+                    text="▶",
+                    width=3,
+                    command=lambda group_name=group.name, slot_name=slot.name: self._audition_live_kit_slot(
+                        group_name, slot_name
+                    ),
+                ).pack(side=tk.RIGHT, padx=(0, 4))
                 assignment_name = slot.assignment.display_name if slot.assignment else "—"
                 ttk.Label(
                     slot_frame,
@@ -1159,6 +1167,26 @@ class WorkbenchApp:
             tone="success",
         )
         return True
+
+    def _audition_live_kit_slot(self, group: str, slot: str) -> bool:
+        """Audition the exact assigned row without re-reading Browser selection."""
+        row = self._live_kit_state.assignment_for(group, slot)
+        if row is None:
+            self._set_status(f"Live Kit: {slot} ist leer.", tone="neutral")
+            return False
+        result = self._preview.play_row(row, start_ms=0)
+        if result.ok:
+            self._set_status(
+                f"Live Kit Wiedergabe: {slot} — {row.display_name}",
+                tone="active",
+            )
+        else:
+            self._set_status(
+                result.message or "Live-Kit-Wiedergabe fehlgeschlagen.",
+                tone="error",
+            )
+        self._update_preview_state(self._detail_row)
+        return bool(result.ok)
 
     def _build_harmony_tab(self) -> None:
         frame = self._harmony_frame
@@ -3020,7 +3048,12 @@ class WorkbenchApp:
             return
         if start_ms is None:
             start_ms = get_preview_start_ms(self._preview_row_path)
-        result = self._preview.play(self._preview_row_path, start_ms=start_ms)
+        row = self._detail_row
+        play_row = getattr(self._preview, "play_row", None)
+        if row is not None and row.path == self._preview_row_path and callable(play_row):
+            result = play_row(row, start_ms=start_ms)
+        else:
+            result = self._preview.play(self._preview_row_path, start_ms=start_ms)
         name = Path(self._preview_row_path).name
         if result.ok:
             if from_click_position:
