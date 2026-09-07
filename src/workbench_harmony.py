@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple
 
 from .key_signature import (
     ParsedKey,
@@ -15,7 +15,7 @@ from .key_signature import (
     key_distance_semitones,
     format_key_signature as fmt_key,
 )
-from .workbench_controller import WorkbenchRow
+from .workbench_controller import WorkbenchRow, validate_workbench_matching_reference
 
 
 class HarmonyRelation(Enum):
@@ -356,3 +356,59 @@ def find_harmony_matches(
         results = results[:limit]
 
     return results, None
+
+
+class HarmonicMatchLibraryController:
+    """Own an explicit Screen-1 harmony anchor and its match-only results."""
+
+    def __init__(
+        self,
+        *,
+        finder: Callable[..., Tuple[list[HarmonySuggestion], Optional[str]]] = find_harmony_matches,
+    ) -> None:
+        self._finder = finder
+        self.anchor: WorkbenchRow | None = None
+        self.results: tuple[HarmonySuggestion, ...] = ()
+        self.status = "Harmonic Match ist ausgeschaltet."
+
+    def set_anchor(
+        self, anchor: WorkbenchRow, candidates: Sequence[WorkbenchRow]
+    ) -> None:
+        """Promote one explicit anchor and refresh exactly once."""
+        self.anchor = anchor
+        self.results = ()
+        matching_error = validate_workbench_matching_reference(anchor)
+        if matching_error is not None:
+            self.status = matching_error
+            return
+        parsed_key = parse_key_signature(anchor.key) if anchor.key else None
+        if parsed_key is None or parsed_key.mode is None:
+            self.status = "Harmonic Match benötigt einen auswertbaren Referenz-Key."
+            return
+
+        eligible = [row for row in candidates if row.path != anchor.path]
+        suggestions, finder_status = self._finder(anchor, eligible)
+        visible = tuple(
+            suggestion
+            for suggestion in suggestions
+            if suggestion.row.path != anchor.path
+            and suggestion.relation is not HarmonyRelation.UNCERTAIN
+            and not (
+                suggestion.relation is HarmonyRelation.TRANSPOSE
+                and (
+                    suggestion.pitch_shift_semitones is None
+                    or abs(suggestion.pitch_shift_semitones) > 3
+                )
+            )
+        )
+        self.results = visible
+        if visible:
+            self.status = f"{len(visible)} sichere Harmonic Matches."
+        else:
+            self.status = finder_status or "Keine sicheren Harmonic Matches gefunden."
+
+    def observe_selection(self, _row: WorkbenchRow) -> None:
+        """Ordinary selection intentionally leaves the explicit anchor untouched."""
+
+    def observe_audition(self, _row: WorkbenchRow) -> None:
+        """Ordinary audition intentionally leaves the explicit anchor untouched."""

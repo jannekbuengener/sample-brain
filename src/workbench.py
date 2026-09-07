@@ -87,6 +87,7 @@ from .workbench_controller import (
 from .workbench_recording_ui import attach_workbench_recording_ui
 from .workbench_transport_ui import attach_workbench_transport_ui
 from .workbench_harmony import (
+    HarmonicMatchLibraryController,
     HarmonyRelation,
     HarmonySuggestion as HarmonyFinderSuggestion,
     find_harmony_matches,
@@ -287,6 +288,10 @@ class WorkbenchApp:
         self._catalog_load_limit: int | None = None
         self._view_settings = load_workbench_view_settings()
         self._similar_suggestions: list[WorkbenchSuggestion] = []
+        self._harmonic_match_controller = HarmonicMatchLibraryController(
+            finder=find_harmony_matches
+        )
+        self._harmonic_match_selected_index = 0
         self._live_kit_state = LiveKitState()
         self._live_kit_presentation = LiveKitPresentationState(self._live_kit_state)
 
@@ -597,6 +602,7 @@ class WorkbenchApp:
         body.columnconfigure(0, weight=0, minsize=220)
         body.columnconfigure(1, weight=5, minsize=560)
         body.columnconfigure(2, weight=2, minsize=300)
+        body.columnconfigure(3, weight=0, minsize=0)
         body.rowconfigure(0, weight=1)
 
         library_frame = ttk.Frame(body, style="Panel.TFrame", padding=8)
@@ -687,11 +693,23 @@ class WorkbenchApp:
         self._center_notebook.add(self._harmony_frame, text="Harmonie-Finder")
         self._build_harmony_tab()
 
+        self._harmonic_match_frame = ttk.Frame(
+            body, style="Panel.TFrame", padding=8
+        )
+        self._build_harmonic_match_library()
+
         browser_context = ttk.Frame(playlist_frame, style="Panel.TFrame")
         browser_context.pack(fill=tk.X, pady=(0, 6))
         ttk.Label(
             browser_context, text="SAMPLE BROWSER", style="Heading.TLabel"
         ).pack(side=tk.LEFT)
+        self._harmonic_match_btn = ttk.Button(
+            browser_context,
+            text="Harmonic Match",
+            style="Intent.TButton",
+            command=self._set_harmonic_match_anchor_from_selection,
+        )
+        self._harmonic_match_btn.pack(side=tk.RIGHT, padx=(8, 0))
         self._browser_context_var = tk.StringVar(value="All Samples")
         ttk.Label(
             browser_context,
@@ -1070,6 +1088,281 @@ class WorkbenchApp:
         self._live_kit_content = ttk.Frame(self._live_kit_frame, style="Panel.TFrame")
         self._live_kit_content.pack(fill=tk.BOTH, expand=True)
         self._refresh_live_kit_view()
+
+    def _build_harmonic_match_library(self) -> None:
+        header = ttk.Frame(self._harmonic_match_frame, style="Panel.TFrame")
+        header.pack(fill=tk.X, pady=(0, 4))
+        ttk.Label(header, text="HARMONIC MATCHES", style="Heading.TLabel").pack(
+            side=tk.LEFT
+        )
+        ttk.Button(
+            header,
+            text="×",
+            width=3,
+            command=self._close_harmonic_match_library,
+        ).pack(side=tk.RIGHT)
+        self._harmonic_match_anchor_var = tk.StringVar(value="Reference: —")
+        ttk.Label(
+            self._harmonic_match_frame,
+            textvariable=self._harmonic_match_anchor_var,
+            style="Muted.TLabel",
+        ).pack(fill=tk.X, pady=(0, 6))
+
+        canvas_frame = ttk.Frame(self._harmonic_match_frame, style="Panel.TFrame")
+        canvas_frame.pack(fill=tk.BOTH, expand=True)
+        self._harmonic_match_canvas = tk.Canvas(
+            canvas_frame,
+            bg=PANEL,
+            highlightthickness=0,
+            yscrollincrement=74,
+        )
+        scroll = ttk.Scrollbar(
+            canvas_frame,
+            orient=tk.VERTICAL,
+            command=self._on_harmonic_match_scrollbar,
+        )
+        self._harmonic_match_canvas.configure(yscrollcommand=scroll.set)
+        self._harmonic_match_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self._harmonic_match_canvas.bind(
+            "<Configure>", lambda _event: self._render_harmonic_match_rows()
+        )
+        self._harmonic_match_canvas.bind(
+            "<Button-1>", self._on_harmonic_match_canvas_click
+        )
+        self._harmonic_match_canvas.bind(
+            "<MouseWheel>", self._on_harmonic_match_scroll
+        )
+        self._harmonic_match_canvas.bind(
+            "<Down>", lambda _event: self._route_harmonic_match_navigation("next")
+        )
+        self._harmonic_match_canvas.bind(
+            "<Up>", lambda _event: self._route_harmonic_match_navigation("previous")
+        )
+        self._harmonic_match_canvas.bind("<Escape>", self._on_harmonic_match_escape)
+        self._harmonic_match_status_var = tk.StringVar(
+            value="Harmonic Match ist ausgeschaltet."
+        )
+        ttk.Label(
+            self._harmonic_match_frame,
+            textvariable=self._harmonic_match_status_var,
+            style="Muted.TLabel",
+        ).pack(fill=tk.X, pady=(4, 0))
+
+    def _set_harmonic_match_anchor_from_selection(self) -> None:
+        row = self._selected_row()
+        if row is None:
+            self._set_status("Kein Sample als Harmonic-Match-Referenz ausgewählt.")
+            return
+        self._open_harmonic_match_library(row)
+
+    def _open_harmonic_match_library(self, anchor: WorkbenchRow) -> None:
+        self._harmonic_match_controller.set_anchor(anchor, self._rows)
+        self._harmonic_match_selected_index = 0
+        anchor_key = anchor.key or "—"
+        self._harmonic_match_anchor_var.set(
+            f"Reference: {catalog_row_display_name(anchor)} · {anchor_key}"
+        )
+        self._harmonic_match_status_var.set(self._harmonic_match_controller.status)
+        self._body.columnconfigure(1, weight=4, minsize=420)
+        self._body.columnconfigure(2, weight=3, minsize=360)
+        self._body.columnconfigure(3, weight=2, minsize=300)
+        self._harmonic_match_frame.grid(
+            row=0, column=2, sticky="nsew", padx=(0, 8)
+        )
+        self._right_pane.grid(row=0, column=3, sticky="nsew")
+        self._render_harmonic_match_rows()
+        self._set_status(self._harmonic_match_controller.status, tone="active")
+
+    def _close_harmonic_match_library(self) -> None:
+        self._harmonic_match_frame.grid_remove()
+        self._right_pane.grid(row=0, column=2, sticky="nsew")
+        self._body.columnconfigure(1, weight=5, minsize=560)
+        self._body.columnconfigure(2, weight=2, minsize=300)
+        self._body.columnconfigure(3, weight=0, minsize=0)
+        self._set_status("Harmonic Match geschlossen.", tone="neutral")
+
+    def _render_harmonic_match_rows(self) -> None:
+        if not hasattr(self, "_harmonic_match_canvas"):
+            return
+        canvas = self._harmonic_match_canvas
+        if not hasattr(canvas, "delete"):
+            return
+        canvas.delete("match-row")
+        width = max(int(canvas.winfo_width()), 1)
+        row_height = 74
+        results = self._harmonic_match_controller.results
+        canvas.configure(scrollregion=(0, 0, width, len(results) * row_height))
+        viewport = VirtualBrowserRowViewport(
+            row_height_px=row_height,
+            viewport_height_px=max(int(canvas.winfo_height()), row_height),
+            overscan_rows=2,
+        )
+        layout = viewport.layout(results, scroll_offset_px=int(canvas.canvasy(0)))
+        scheduled = False
+        for item in layout.renderable_rows:
+            index = item.index
+            suggestion = item.row
+            top = index * row_height
+            bottom = top + row_height
+            selected = index == self._harmonic_match_selected_index
+            canvas.create_rectangle(
+                0,
+                top,
+                width,
+                bottom,
+                fill=PANEL_ALT if selected else PANEL,
+                outline=ACCENT if selected else BORDER,
+                tags="match-row",
+            )
+            waveform_left, waveform_right = 8, min(104, max(width // 3, 60))
+            center_y = top + 35
+            cached = self._browser_waveforms.get(suggestion.row.path)
+            envelope = cached.envelope if cached is not None else ()
+            if envelope:
+                step = max((waveform_right - waveform_left) / len(envelope), 1)
+                points: list[float] = []
+                for point_index, value in enumerate(envelope):
+                    x = waveform_left + point_index * step
+                    amplitude = min(abs(float(value)), 1.0) * 20
+                    points.extend((x, center_y - amplitude if point_index % 2 else center_y + amplitude))
+                if len(points) >= 4:
+                    canvas.create_line(*points, fill=TEXT_MUTED, tags="match-row")
+            else:
+                canvas.create_line(
+                    waveform_left,
+                    center_y,
+                    waveform_right,
+                    center_y,
+                    fill=TEXT_MUTED,
+                    tags="match-row",
+                )
+            name_x = waveform_right + 10
+            relation = HARMONY_RELATION_LABELS.get(
+                suggestion.relation, suggestion.relation.value
+            )
+            pitch = (
+                f" · {suggestion.pitch_shift_semitones:+d} st"
+                if suggestion.pitch_shift_semitones is not None
+                else ""
+            )
+            canvas.create_text(
+                name_x,
+                top + 17,
+                text=catalog_row_display_name(suggestion.row),
+                fill=TEXT,
+                anchor=tk.W,
+                font=("Segoe UI Semibold", 9),
+                tags="match-row",
+            )
+            canvas.create_text(
+                name_x,
+                top + 38,
+                text=f"{suggestion.row.key or '—'} · {relation}{pitch}",
+                fill=TEXT_MUTED,
+                anchor=tk.W,
+                font=("Segoe UI", 8),
+                tags="match-row",
+            )
+            canvas.create_text(
+                width - 42,
+                top + 18,
+                text=f"{suggestion.total_score:.0%}",
+                fill=ACCENT,
+                anchor=tk.E,
+                font=("Segoe UI Semibold", 9),
+                tags="match-row",
+            )
+            canvas.create_text(
+                name_x,
+                top + 58,
+                text=suggestion.explanation,
+                fill=TEXT_MUTED,
+                anchor=tk.W,
+                width=max(width - name_x - 48, 40),
+                font=("Segoe UI", 7),
+                tags="match-row",
+            )
+            canvas.create_text(
+                width - 15,
+                center_y,
+                text="+",
+                fill=ACCENT,
+                font=("Segoe UI", 16),
+                tags="match-row",
+            )
+            scheduled = (
+                self._browser_waveform_loader.schedule(suggestion.row.path) or scheduled
+            )
+        if scheduled and not self._browser_waveform_drain_scheduled:
+            self._browser_waveform_drain_scheduled = True
+            self.root.after(25, self._drain_browser_waveform_results)
+
+    def _on_harmonic_match_canvas_click(
+        self,
+        event: tk.Event,
+        *,
+        canvas_width: int | None = None,
+        row_height: int = 74,
+    ) -> str:
+        results = self._harmonic_match_controller.results
+        y = (
+            self._harmonic_match_canvas.canvasy(event.y)
+            if hasattr(self._harmonic_match_canvas, "canvasy")
+            else event.y
+        )
+        index = int(y) // row_height
+        if not 0 <= index < len(results):
+            return "break"
+        self._harmonic_match_selected_index = index
+        self._harmonic_match_canvas.focus_set()
+        width = canvas_width or int(self._harmonic_match_canvas.winfo_width())
+        row = results[index].row
+        if event.x >= width - 36:
+            self._open_add_to_live_kit_dialog(
+                row,
+                focus_restore=self._harmonic_match_canvas.focus_set,
+            )
+        else:
+            self._audition_harmonic_match_row(row)
+        self._render_harmonic_match_rows()
+        return "break"
+
+    def _audition_harmonic_match_row(self, row: WorkbenchRow) -> None:
+        self._harmonic_match_controller.observe_audition(row)
+        self._preview_row_path = row.path
+        self._set_detail(row)
+        self._play_preview()
+
+    def _route_harmonic_match_navigation(
+        self, direction: str, *, editable_focus: bool = False
+    ) -> str | None:
+        if editable_focus:
+            return None
+        results = self._harmonic_match_controller.results
+        if not results:
+            return "break"
+        delta = 1 if direction == "next" else -1
+        self._harmonic_match_selected_index = min(
+            max(self._harmonic_match_selected_index + delta, 0), len(results) - 1
+        )
+        self._audition_harmonic_match_row(
+            results[self._harmonic_match_selected_index].row
+        )
+        self._render_harmonic_match_rows()
+        return "break"
+
+    def _on_harmonic_match_scroll(self, event: tk.Event) -> str:
+        self._harmonic_match_canvas.yview_scroll(-int(event.delta / 120), "units")
+        self._render_harmonic_match_rows()
+        return "break"
+
+    def _on_harmonic_match_scrollbar(self, *args: str) -> None:
+        self._harmonic_match_canvas.yview(*args)
+        self._render_harmonic_match_rows()
+
+    def _on_harmonic_match_escape(self, event: tk.Event) -> str | None:
+        return self._on_browser_escape(event)
 
     def _refresh_live_kit_view(self) -> None:
         if not hasattr(self, "_live_kit_content"):
@@ -2637,6 +2930,8 @@ class WorkbenchApp:
         drained = self._browser_waveform_loader.drain_results()
         if drained:
             self._render_browser_rows()
+            if self._harmonic_match_frame.winfo_manager():
+                self._render_harmonic_match_rows()
         if self._browser_waveform_loader.pending_count:
             self._browser_waveform_drain_scheduled = True
             self.root.after(25, self._drain_browser_waveform_results)
@@ -2859,8 +3154,14 @@ class WorkbenchApp:
         self._open_add_to_playlist_dialog(row)
         return "break"
 
-    def _open_add_to_live_kit_dialog(self, row: WorkbenchRow) -> None:
+    def _open_add_to_live_kit_dialog(
+        self,
+        row: WorkbenchRow,
+        *,
+        focus_restore: Callable[[], None] | None = None,
+    ) -> None:
         """Choose an existing kit slot for the row captured by the Add hit-test."""
+        restore_focus = focus_restore or self._browser_canvas.focus_set
         dialog = tk.Toplevel(self.root)
         dialog.title("Add to Kit")
         dialog.configure(bg=BG_DARK)
@@ -2879,7 +3180,7 @@ class WorkbenchApp:
         def close(_event: tk.Event | None = None) -> str:
             dialog.grab_release()
             dialog.destroy()
-            self._browser_canvas.focus_set()
+            restore_focus()
             return "break"
 
         def assign(group: str, slot: str) -> None:
