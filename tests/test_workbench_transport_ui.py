@@ -11,6 +11,7 @@ from src.workbench_transport_ui import (
     TransportAwarePreview,
     WorkbenchTransportUiController,
     _UiApis,
+    _row_is_one_shot,
     format_transport_tempo_label,
 )
 
@@ -192,6 +193,22 @@ def _grid_header_text(app: Any) -> str:
 def test_tempo_label_contract_is_exact():
     assert format_transport_tempo_label(132) == "MASTER 132 BPM"
     assert format_transport_tempo_label(127.5) == "MASTER 127.5 BPM"
+
+
+@pytest.mark.parametrize(
+    ("pred_type", "sample_class", "expected"),
+    [
+        ("OneShot", None, True),
+        (None, "one_shot", True),
+        ("Loop", "oneshot", False),
+    ],
+)
+def test_one_shot_semantics_follow_authoritative_pred_type(
+    pred_type, sample_class, expected
+):
+    row = SimpleNamespace(pred_type=pred_type, sample_class=sample_class)
+
+    assert _row_is_one_shot(row) is expected
 
 
 def test_controller_initially_exposes_master_and_existing_transport_controls():
