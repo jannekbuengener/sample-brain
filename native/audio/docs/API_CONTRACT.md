@@ -61,7 +61,7 @@ typedef enum {
 // Source descriptor types
 typedef enum {
     SB_SOURCE_SYNTHETIC_CLICK = 0,  // Generated click track at specified BPM
-    SB_SOURCE_PCM_BUFFER = 1        // Pre-loaded PCM buffer (future)
+    SB_SOURCE_PCM_BUFFER = 1        // Caller-decoded, finite PCM buffer
 } sb_source_type_t;
 
 // Synthetic click configuration
@@ -72,12 +72,19 @@ typedef struct {
     float amplitude;      // Click amplitude (default 0.8)
 } sb_synthetic_click_config_t;
 
+// Finite PCM source configuration
+typedef struct {
+    const float* data;      // Interleaved float32 samples, already at engine sample rate
+    uint64_t frame_count;   // Number of PCM frames, not scalar samples
+    uint32_t channels;      // Supported: mono (1) or stereo (2)
+} sb_pcm_buffer_config_t;
+
 // Source descriptor (discriminated union)
 typedef struct {
     sb_source_type_t type;
     union {
         sb_synthetic_click_config_t synthetic_click;
-        // Future: PCM buffer descriptor
+        sb_pcm_buffer_config_t pcm_buffer;
     };
 } sb_source_descriptor_t;
 
@@ -189,12 +196,27 @@ sb_result_t sb_engine_close(sb_engine_t engine);
 
 ## Voice Lifecycle
 
+The engine clears each shared callback output buffer exactly once before
+processing voices. Voice processing is strictly additive: IDLE, SCHEDULED,
+STOPPING, and EOF-complete voices leave samples already mixed by other voices
+unchanged.
+
 ### sb_voice_create
 ```c
 sb_result_t sb_voice_create(sb_engine_t engine, const sb_voice_config_t* config, sb_voice_id_t* out_id);
 ```
 - Creates a new voice with given configuration
 - For synthetic click sources, generates click pattern at specified BPM
+- For PCM sources, validates mono/stereo interleaved finite float32 samples that
+  are already at the engine sample rate, then deep-copies the complete buffer
+  before returning. The caller may release or mutate its buffer after success.
+- PCM validation is fail-closed: null/empty buffers, non-finite samples,
+  unsupported channel counts, size overflow, inconsistent descriptors, and
+  unknown source types return an error without registering a partial voice.
+- PCM voices are finite one-shots. Playback reaches `SB_VOICE_IDLE` at EOF;
+  no decoding, resampling, or looping occurs in the native core.
+- PCM playback uses the existing rate scalar (`initial_rate` / `sb_voice_set_rate`).
+  This slice does not activate or redesign Key Lock for PCM sources.
 - Voice starts in SB_VOICE_IDLE state
 - Returns SB_OK on success, `out_id` set to config->id
 
