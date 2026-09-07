@@ -15,7 +15,7 @@ from .key_signature import (
     key_distance_semitones,
     format_key_signature as fmt_key,
 )
-from .workbench_controller import WorkbenchRow
+from .workbench_controller import WorkbenchRow, validate_workbench_matching_reference
 
 
 class HarmonyRelation(Enum):
@@ -377,8 +377,9 @@ class HarmonicMatchLibraryController:
         """Promote one explicit anchor and refresh exactly once."""
         self.anchor = anchor
         self.results = ()
-        if anchor.bpm is None or anchor.bpm <= 0:
-            self.status = "Harmonic Match benötigt ein gültiges Referenz-BPM."
+        matching_error = validate_workbench_matching_reference(anchor)
+        if matching_error is not None:
+            self.status = matching_error
             return
         parsed_key = parse_key_signature(anchor.key) if anchor.key else None
         if parsed_key is None or parsed_key.mode is None:

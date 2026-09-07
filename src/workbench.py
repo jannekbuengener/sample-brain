@@ -1319,7 +1319,10 @@ class WorkbenchApp:
         width = canvas_width or int(self._harmonic_match_canvas.winfo_width())
         row = results[index].row
         if event.x >= width - 36:
-            self._open_add_to_live_kit_dialog(row)
+            self._open_add_to_live_kit_dialog(
+                row,
+                focus_restore=self._harmonic_match_canvas.focus_set,
+            )
         else:
             self._audition_harmonic_match_row(row)
         self._render_harmonic_match_rows()
@@ -3151,8 +3154,14 @@ class WorkbenchApp:
         self._open_add_to_playlist_dialog(row)
         return "break"
 
-    def _open_add_to_live_kit_dialog(self, row: WorkbenchRow) -> None:
+    def _open_add_to_live_kit_dialog(
+        self,
+        row: WorkbenchRow,
+        *,
+        focus_restore: Callable[[], None] | None = None,
+    ) -> None:
         """Choose an existing kit slot for the row captured by the Add hit-test."""
+        restore_focus = focus_restore or self._browser_canvas.focus_set
         dialog = tk.Toplevel(self.root)
         dialog.title("Add to Kit")
         dialog.configure(bg=BG_DARK)
@@ -3171,7 +3180,7 @@ class WorkbenchApp:
         def close(_event: tk.Event | None = None) -> str:
             dialog.grab_release()
             dialog.destroy()
-            self._browser_canvas.focus_set()
+            restore_focus()
             return "break"
 
         def assign(group: str, slot: str) -> None:

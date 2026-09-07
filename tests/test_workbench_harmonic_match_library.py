@@ -13,6 +13,7 @@ from src import workbench, workbench_harmony
 from src.workbench import WorkbenchApp
 from src.workbench_controller import WorkbenchResult, WorkbenchRow
 from src.workbench_harmony import HarmonyRelation, HarmonySuggestion
+from src.workbench_live_kit import LiveKitState
 
 
 def _row(
@@ -119,7 +120,14 @@ def test_match_only_policy_excludes_anchor_uncertain_and_out_of_contract_hints()
 
 @pytest.mark.parametrize(
     "anchor",
-    [_row("missing-bpm", bpm=None), _row("invalid-bpm", bpm=0), _row("bad-key", key="???")],
+    [
+        _row("missing-bpm", bpm=None),
+        _row("invalid-bpm", bpm=0),
+        _row("nan-bpm", bpm=float("nan")),
+        _row("positive-infinity-bpm", bpm=float("inf")),
+        _row("negative-infinity-bpm", bpm=float("-inf")),
+        _row("bad-key", key="???"),
+    ],
 )
 def test_missing_or_invalid_anchor_evidence_fails_closed_without_calling_finder(anchor):
     calls: list[str] = []
@@ -252,7 +260,13 @@ def test_match_add_routes_exact_result_through_existing_live_kit_path():
     result = _suggestion(_row("result"), HarmonyRelation.DIRECT, total=1.0)
     app = _interaction_app(anchor, [result])
     assigned: list[WorkbenchRow] = []
-    app._open_add_to_live_kit_dialog = assigned.append
+    focus_restores = []
+
+    def open_dialog(row, *, focus_restore=None):
+        assigned.append(row)
+        focus_restores.append(focus_restore)
+
+    app._open_add_to_live_kit_dialog = open_dialog
     app._audition_harmonic_match_row = lambda _row: pytest.fail("unexpected audition")
 
     app._on_harmonic_match_canvas_click(
@@ -260,6 +274,124 @@ def test_match_add_routes_exact_result_through_existing_live_kit_path():
     )
 
     assert assigned == [result.row]
+    assert focus_restores == [app._harmonic_match_canvas.focus_set]
+
+
+class _DialogWidget:
+    def __init__(self, parent=None, **options):
+        self.parent = parent
+        self.options = options
+        self.children = []
+        self.bindings = {}
+        self.protocols = {}
+        self.destroyed = False
+        if parent is not None:
+            parent.children.append(self)
+
+    def title(self, _text):
+        pass
+
+    def configure(self, **_options):
+        pass
+
+    def transient(self, _parent):
+        pass
+
+    def resizable(self, *_args):
+        pass
+
+    def pack(self, **_options):
+        pass
+
+    def grab_set(self):
+        pass
+
+    def grab_release(self):
+        pass
+
+    def destroy(self):
+        self.destroyed = True
+
+    def focus_set(self):
+        pass
+
+    def bind(self, event, callback):
+        self.bindings[event] = callback
+
+    def protocol(self, event, callback):
+        self.protocols[event] = callback
+
+    def invoke(self):
+        return self.options["command"]()
+
+
+def _dialog_app(monkeypatch):
+    app = WorkbenchApp.__new__(WorkbenchApp)
+    app.root = _DialogWidget()
+    app._live_kit_state = LiveKitState()
+    browser_focus: list[str] = []
+    app._browser_canvas = SimpleNamespace(
+        focus_set=lambda: browser_focus.append("browser")
+    )
+    buttons = []
+
+    def button(parent, **options):
+        widget = _DialogWidget(parent, **options)
+        buttons.append(widget)
+        return widget
+
+    monkeypatch.setattr(workbench.tk, "Toplevel", _DialogWidget)
+    monkeypatch.setattr(workbench.ttk, "Frame", _DialogWidget)
+    monkeypatch.setattr(workbench.ttk, "Label", _DialogWidget)
+    monkeypatch.setattr(workbench.ttk, "Button", button)
+    return app, browser_focus, buttons
+
+
+def _cancel_button(buttons):
+    return next(button for button in buttons if button.options.get("text") == "Abbrechen")
+
+
+def test_add_to_kit_dialog_defaults_focus_restore_to_browser(monkeypatch):
+    app, browser_focus, buttons = _dialog_app(monkeypatch)
+
+    app._open_add_to_live_kit_dialog(_row("browser-result"))
+    _cancel_button(buttons).invoke()
+
+    assert browser_focus == ["browser"]
+
+
+def test_match_add_dialog_restores_match_focus_and_keeps_arrow_navigation_local(
+    monkeypatch,
+):
+    app, browser_focus, buttons = _dialog_app(monkeypatch)
+    anchor = _row("anchor")
+    results = [
+        _suggestion(_row("first"), HarmonyRelation.DIRECT, total=1.0),
+        _suggestion(_row("second"), HarmonyRelation.RELATED, total=0.7),
+    ]
+    match_focus: list[str] = []
+    app._harmonic_match_controller = SimpleNamespace(
+        anchor=anchor, results=tuple(results)
+    )
+    app._harmonic_match_selected_index = 0
+    app._harmonic_match_canvas = SimpleNamespace(
+        focus_set=lambda: match_focus.append("match")
+    )
+    auditions: list[WorkbenchRow] = []
+    app._audition_harmonic_match_row = auditions.append
+    app._render_harmonic_match_rows = lambda: None
+
+    app._open_add_to_live_kit_dialog(
+        results[0].row,
+        focus_restore=app._harmonic_match_canvas.focus_set,
+    )
+    _cancel_button(buttons).invoke()
+    outcome = app._route_harmonic_match_navigation("next")
+
+    assert match_focus == ["match"]
+    assert browser_focus == []
+    assert outcome == "break"
+    assert auditions == [results[1].row]
 
 
 def test_match_arrow_navigation_is_local_deterministic_and_editable_safe():
