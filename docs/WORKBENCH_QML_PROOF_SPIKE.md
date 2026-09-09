@@ -13,12 +13,26 @@ python -m src.cli workbench --qml-proof-spike --qml-state screen1-harmonic-4pane
 python -m src.cli workbench --qml-proof-spike --qml-virtualization-probe
 ```
 
-Die beiden #538-Captures laufen nur aus einer `VALID` dedizierten Runtime:
+Die beiden #538-Captures laufen nur aus einer `VALID` dedizierten Runtime. Der
+Command muss aus dem Runtime-Root mit dessen eigenem Interpreter gestartet
+werden; ein beliebiger Checkout mit fremdem `--runtime-root` wird fail-closed
+abgewiesen:
 
 ```powershell
-python -m src.cli workbench --qml-proof-spike --visual-acceptance `
-  --runtime-root <runtime-root> --evidence-dir <lokaler-output-ordner>
+Push-Location <runtime-root>
+& .\.venv\Scripts\python.exe -m src.cli workbench --qml-proof-spike --visual-acceptance `
+  --runtime-root . --evidence-dir <lokaler-output-ordner>
+Pop-Location
 ```
 
 Die Capture-Dateien und das Manifest bleiben außerhalb des Repositories. Ein
 technischer Lauf ersetzt keine Owner-Visual-Acceptance.
+
+## Späteres Migrations-Follow-up
+
+Replace eager QVariant-list handoff with production-scale Qt model / lazy data
+adapter before full Screen-1 migration.
+
+Die 50k-Probe beweist die QML-Delegate-Virtualisierung, materialisiert den
+Python-Datenbestand für den Spike jedoch weiterhin vollständig. Das ist kein
+Blocker für diesen Spike und keine Migrationsentscheidung.

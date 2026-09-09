@@ -3,9 +3,75 @@
 from __future__ import annotations
 
 import importlib
+import json
+from pathlib import Path
 
+import pytest
+
+from src.runtime_provenance import RuntimeManifest, RuntimeStatus
 from src.workbench_controller import WorkbenchRow
-from src.workbench_visual_acceptance import build_screen1_visual_fixture_v1
+from src.workbench_visual_acceptance import (
+    CLIENT_HEIGHT,
+    CLIENT_WIDTH,
+    EvidenceError,
+    REQUIRED_STATE_IDS,
+    build_screen1_visual_fixture_v1,
+    build_visual_evidence_manifest,
+)
+
+
+PROVENANCE_COMMIT = "b" * 40
+
+
+def _renderer_runtime(tmp_path: Path) -> tuple[Path, Path, Path, RuntimeManifest]:
+    root = tmp_path / "runtime"
+    python = root / ".venv" / "Scripts" / "python.exe"
+    src = root / "src"
+    python.parent.mkdir(parents=True)
+    src.mkdir()
+    python.write_text("", encoding="utf-8")
+    for name in (
+        "cli.py",
+        "workbench.py",
+        "workbench_qml_spike.py",
+        "workbench_visual_acceptance.py",
+    ):
+        (src / name).write_text("", encoding="utf-8")
+    manifest = RuntimeManifest(
+        schema=1,
+        channel="spike",
+        commit=PROVENANCE_COMMIT,
+        runtime_root=str(root),
+        python_executable=str(python),
+        installed_at="2026-09-09T12:00:00Z",
+    )
+    return root, python, tmp_path / "runtime-manifest.json", manifest
+
+
+def _provenance_git(head: str = PROVENANCE_COMMIT):
+    def run(*args: str) -> str:
+        if args[-2:] == ("rev-parse", "HEAD"):
+            return head
+        if args[-2:] == ("status", "--porcelain"):
+            return ""
+        raise AssertionError(args)
+
+    return run
+
+
+def _write_manifest(path: Path, manifest: RuntimeManifest) -> None:
+    path.write_text(json.dumps(manifest.to_dict()), encoding="utf-8")
+
+
+def _renderer_paths(root: Path) -> dict[str, Path]:
+    return {
+        "src.cli": root / "src" / "cli.py",
+        "src.workbench": root / "src" / "workbench.py",
+        "src.workbench_qml_spike": root / "src" / "workbench_qml_spike.py",
+        "src.workbench_visual_acceptance": root
+        / "src"
+        / "workbench_visual_acceptance.py",
+    }
 
 
 def _surface():
@@ -90,3 +156,108 @@ def test_qml_source_declares_a_recycling_listview_without_importing_pyside_on_co
     assert "ListView" in surface.QML_SOURCE
     assert "reuseItems: true" in surface.QML_SOURCE
     assert surface.qml_runtime_available() in {True, False}
+
+
+def test_qml_capture_accepts_only_a_renderer_proven_from_the_validated_runtime(
+    tmp_path: Path,
+):
+    surface = _surface()
+    root, python, manifest_path, runtime_manifest = _renderer_runtime(tmp_path)
+    _write_manifest(manifest_path, runtime_manifest)
+
+    report = surface.validate_qml_renderer_provenance(
+        root,
+        manifest_path=manifest_path,
+        executable=python,
+        module_paths=_renderer_paths(root),
+        git_run=_provenance_git(),
+    )
+
+    captures = {}
+    for state_id in REQUIRED_STATE_IDS:
+        capture = tmp_path / f"{state_id}.png"
+        capture.write_bytes(b"synthetic-capture")
+        captures[state_id] = capture
+    evidence = build_visual_evidence_manifest(
+        runtime_report=report,
+        fixture=build_screen1_visual_fixture_v1(),
+        captures=captures,
+        os_name="Windows 11",
+        dpi_scale=100,
+        client_width=CLIENT_WIDTH,
+        client_height=CLIENT_HEIGHT,
+        sanity_results={},
+    )
+
+    assert report.status is RuntimeStatus.VALID
+    assert evidence["commit"] == PROVENANCE_COMMIT
+
+
+@pytest.mark.parametrize(
+    ("module_name", "expected_message"),
+    (
+        ("src.cli", "nicht VALID"),
+        ("src.workbench_qml_spike", "nicht aus dem Runtime-Root"),
+        ("src.workbench_visual_acceptance", "nicht aus dem Runtime-Root"),
+    ),
+)
+def test_qml_capture_rejects_renderer_imported_from_another_checkout(
+    tmp_path: Path, module_name: str, expected_message: str
+):
+    surface = _surface()
+    root, python, manifest_path, runtime_manifest = _renderer_runtime(tmp_path)
+    _write_manifest(manifest_path, runtime_manifest)
+    module_paths = _renderer_paths(root)
+    module_paths[module_name] = tmp_path / "other-checkout" / "src" / "foreign.py"
+
+    with pytest.raises(EvidenceError, match=expected_message):
+        surface.validate_qml_renderer_provenance(
+            root,
+            manifest_path=manifest_path,
+            executable=python,
+            module_paths=module_paths,
+            git_run=_provenance_git(),
+        )
+
+
+def test_qml_capture_rejects_an_interpreter_outside_the_runtime_venv(tmp_path: Path):
+    surface = _surface()
+    root, _python, manifest_path, runtime_manifest = _renderer_runtime(tmp_path)
+    foreign_python = tmp_path / "other-checkout" / ".venv" / "Scripts" / "python.exe"
+    foreign_python.parent.mkdir(parents=True)
+    foreign_python.write_text("", encoding="utf-8")
+    _write_manifest(
+        manifest_path,
+        RuntimeManifest(
+            schema=runtime_manifest.schema,
+            channel=runtime_manifest.channel,
+            commit=runtime_manifest.commit,
+            runtime_root=runtime_manifest.runtime_root,
+            python_executable=str(foreign_python),
+            installed_at=runtime_manifest.installed_at,
+        ),
+    )
+
+    with pytest.raises(EvidenceError, match="Runtime-.venv"):
+        surface.validate_qml_renderer_provenance(
+            root,
+            manifest_path=manifest_path,
+            executable=foreign_python,
+            module_paths=_renderer_paths(root),
+            git_run=_provenance_git(),
+        )
+
+
+def test_qml_capture_keeps_manifest_head_mismatch_fail_closed(tmp_path: Path):
+    surface = _surface()
+    root, python, manifest_path, runtime_manifest = _renderer_runtime(tmp_path)
+    _write_manifest(manifest_path, runtime_manifest)
+
+    with pytest.raises(EvidenceError, match="nicht VALID"):
+        surface.validate_qml_renderer_provenance(
+            root,
+            manifest_path=manifest_path,
+            executable=python,
+            module_paths=_renderer_paths(root),
+            git_run=_provenance_git("c" * 40),
+        )

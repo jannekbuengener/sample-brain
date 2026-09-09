@@ -7,13 +7,16 @@ PySide6 so the established CLI and Tk workbench stay dependency-compatible.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import importlib
 from pathlib import Path
+import sys
 from time import perf_counter
-from typing import Callable, Sequence
+from typing import Callable, Mapping, Sequence
 
 from .workbench_controller import WorkbenchRow
 from .workbench_live_kit import LiveKitPresentationState, LiveKitState
 from .workbench_visual_acceptance import (
+    EvidenceError,
     REQUIRED_STATE_IDS,
     Screen1VisualFixture,
     build_screen1_visual_fixture_v1,
@@ -453,11 +456,75 @@ def run_qml_virtualization_probe(*, row_count: int = 50_000) -> dict[str, object
     }
 
 
+def _module_file(module_name: str) -> Path:
+    module = importlib.import_module(module_name)
+    location = getattr(module, "__file__", None)
+    if location is None:
+        raise EvidenceError(f"Import-Provenance für {module_name} fehlt.")
+    return Path(location).resolve()
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def validate_qml_renderer_provenance(
+    runtime_root: Path,
+    *,
+    manifest_path: Path | None = None,
+    executable: Path | None = None,
+    module_paths: Mapping[str, Path] | None = None,
+    git_run=None,
+):
+    """Fail closed unless this QML process is the validated runtime build."""
+    from .runtime_provenance import evaluate_runtime
+    from .workbench_visual_acceptance import (
+        validate_runtime_for_visual_acceptance,
+    )
+
+    root = Path(runtime_root).resolve()
+    actual_executable = Path(executable or sys.executable).resolve()
+    paths = dict(module_paths) if module_paths is not None else {
+        "src.cli": _module_file("src.cli"),
+        "src.workbench": _module_file("src.workbench"),
+        "src.workbench_qml_spike": _module_file("src.workbench_qml_spike"),
+        "src.workbench_visual_acceptance": _module_file(
+            "src.workbench_visual_acceptance"
+        ),
+    }
+    report = evaluate_runtime(
+        root,
+        manifest_path=manifest_path,
+        executable=actual_executable,
+        module_paths=paths,
+        git_run=git_run,
+    )
+    validate_runtime_for_visual_acceptance(report)
+    if not _is_within(actual_executable, root / ".venv"):
+        raise EvidenceError(
+            "QML-Renderer-Interpreter liegt nicht unter Runtime-.venv; Capture wird blockiert."
+        )
+    for module_name in (
+        "src.cli",
+        "src.workbench_qml_spike",
+        "src.workbench_visual_acceptance",
+    ):
+        module_path = paths.get(module_name)
+        if module_path is None or not _is_within(module_path, root):
+            raise EvidenceError(
+                f"{module_name} stammt nicht aus dem Runtime-Root; Capture wird blockiert."
+            )
+    return report
+
+
 def run_qml_visual_acceptance(*, runtime_root: Path, evidence_dir: Path) -> dict[str, object]:
     """Capture the two #538 states from the opt-in QML renderer."""
     import platform
 
-    from .runtime_provenance import evaluate_runtime
     from .workbench_visual_acceptance import (
         CLIENT_HEIGHT,
         CLIENT_WIDTH,
@@ -466,12 +533,10 @@ def run_qml_visual_acceptance(*, runtime_root: Path, evidence_dir: Path) -> dict
         capture_windows_client_window,
         current_windows_dpi_scale,
         validate_capture_sanity,
-        validate_runtime_for_visual_acceptance,
         write_visual_evidence_manifest,
     )
 
-    report = evaluate_runtime(runtime_root)
-    validate_runtime_for_visual_acceptance(report)
+    report = validate_qml_renderer_provenance(runtime_root)
     fixture = build_screen1_visual_fixture_v1()
     evidence_dir.mkdir(parents=True, exist_ok=True)
     captures: dict[str, Path] = {}
@@ -529,5 +594,6 @@ __all__ = [
     "run_qml_proof_spike",
     "run_qml_visual_acceptance",
     "run_qml_virtualization_probe",
+    "validate_qml_renderer_provenance",
     "virtual_row_window",
 ]
