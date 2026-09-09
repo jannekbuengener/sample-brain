@@ -14,6 +14,7 @@ from time import perf_counter
 from typing import Callable, Mapping, Sequence
 
 from .workbench_controller import WorkbenchRow
+from .workbench_harmony import HarmonicMatchLibraryController
 from .workbench_live_kit import LiveKitPresentationState, LiveKitState
 from .workbench_visual_acceptance import (
     EvidenceError,
@@ -194,6 +195,69 @@ class Screen1QmlViewModel:
         }
 
 
+class Screen1QmlInteractionAdapter:
+    """Route renderer intent to the established Screen-1 Python contracts.
+
+    The adapter deliberately contains no catalog, audio, live-kit, or harmony
+    implementation.  Browser audition continues through the callback already
+    owned by the caller, while harmonic results remain owned by the existing
+    ``HarmonicMatchLibraryController``.
+    """
+
+    def __init__(
+        self,
+        *,
+        view_model: Screen1QmlViewModel,
+        harmony_controller: HarmonicMatchLibraryController | None = None,
+    ) -> None:
+        self.view_model = view_model
+        self.harmony_controller = harmony_controller
+        self.harmonic_match_open = view_model.panel_count == 4
+
+    @property
+    def selected_browser_index(self) -> int:
+        return self.view_model.selected_browser_index
+
+    def select_row(self, index: int) -> WorkbenchRow:
+        """Select exactly one authoritative row and dispatch its browse command."""
+        return self.view_model.select_browser_index(index)
+
+    def navigate_browser(
+        self, direction: str, *, browser_has_focus: bool
+    ) -> WorkbenchRow | None:
+        """Use browser-local arrows without capturing editable controls."""
+        if not browser_has_focus:
+            return None
+        if direction == "next":
+            target = min(
+                self.selected_browser_index + 1, len(self.view_model.browser_rows) - 1
+            )
+        elif direction == "previous":
+            target = max(self.selected_browser_index - 1, 0)
+        else:
+            raise ValueError(f"Unsupported browser direction: {direction}")
+        if target == self.selected_browser_index:
+            return self.view_model.browser_rows[target].source_row
+        return self.select_row(target)
+
+    def toggle_harmonic_match(self) -> bool:
+        """Open/close the existing harmony controller without mutating other state."""
+        if self.harmonic_match_open:
+            self.harmonic_match_open = False
+            return False
+        if self.harmony_controller is not None:
+            anchor = self.view_model.browser_rows[
+                self.selected_browser_index
+            ].source_row
+            candidates = tuple(row.source_row for row in self.view_model.browser_rows)
+            self.harmony_controller.set_anchor(anchor, candidates)
+            self.view_model.harmony_rows = tuple(
+                _qml_row(suggestion.row) for suggestion in self.harmony_controller.results
+            )
+        self.harmonic_match_open = True
+        return True
+
+
 def virtual_row_window(
     rows: Sequence[WorkbenchRow],
     *,
@@ -238,6 +302,7 @@ ApplicationWindow {
     color: "#08090a"
     title: "Sample Brain — Qt Quick proof spike"
     property var screenData: screenModel
+    property var interaction: interactionModel
     property color panel: "#0e1012"
     property color panelAlt: "#15181c"
     property color textColor: "#eceef1"
@@ -282,8 +347,12 @@ ApplicationWindow {
                 RowLayout { Layout.fillWidth: true
                     Label { text: "Samples  ›  Techno"; color: window.textColor; font.pixelSize: 16 }
                     Item { Layout.fillWidth: true }
-                    Button { text: "Harmonic Match"; visible: window.screenData.panelCount === 4 }
-                    TextField { placeholderText: "Search samples"; Layout.preferredWidth: 230 }
+                    Button {
+                        objectName: "harmonicMatchButton"
+                        text: window.interaction.harmonicMatchOpen ? "Close Harmonic Match" : "Harmonic Match"
+                        onClicked: window.interaction.toggleHarmonicMatch()
+                    }
+                    TextField { objectName: "browserSearch"; placeholderText: "Search samples"; Layout.preferredWidth: 230 }
                 }
                 RowLayout { Layout.fillWidth: true
                     Label { text: "WAVEFORM"; color: window.muted; Layout.preferredWidth: 44; font.pixelSize: 11 }
@@ -292,9 +361,14 @@ ApplicationWindow {
                     Label { text: "KEY"; color: window.muted; Layout.preferredWidth: 36; font.pixelSize: 11 }
                     Label { text: "LENGTH"; color: window.muted; Layout.preferredWidth: 55; font.pixelSize: 11 }
                 }
-                ListView { id: browser; objectName: "browserList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.browserRows; clip: true; reuseItems: true
-                    delegate: Rectangle { width: browser.width; height: 58; color: index === window.screenData.selectedBrowserIndex ? "#211014" : "transparent"; border.color: index === window.screenData.selectedBrowserIndex ? window.accent : window.border
+                ListView { id: browser; objectName: "browserList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true
+                    Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Down) { window.interaction.navigateBrowser(1); event.accepted = true }
+                        else if (event.key === Qt.Key_Up) { window.interaction.navigateBrowser(-1); event.accepted = true }
+                    }
+                    delegate: Rectangle { width: browser.width; height: 58; color: index === window.interaction.selectedBrowserIndex ? "#211014" : "transparent"; border.color: index === window.interaction.selectedBrowserIndex ? window.accent : window.border
                         Component.onCompleted: window.browserDelegateCreations += 1
+                        MouseArea { anchors.fill: parent; onClicked: { browser.forceActiveFocus(); window.interaction.selectRow(index) } }
                         RowLayout { anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12
                             Label { text: modelData.waveform; color: "#a7abb1"; Layout.preferredWidth: 190; font.pixelSize: 23 }
                             ColumnLayout { Layout.fillWidth: true
@@ -310,7 +384,7 @@ ApplicationWindow {
                 }
             }
         }
-        Rectangle { visible: window.screenData.panelCount === 4; Layout.preferredWidth: visible ? 300 : 0; Layout.fillHeight: true; color: window.panel; border.color: window.border
+        Rectangle { visible: window.interaction.harmonicMatchOpen; Layout.preferredWidth: visible ? 300 : 0; Layout.fillHeight: true; color: window.panel; border.color: window.border
             ColumnLayout { anchors.fill: parent; anchors.margins: 14
                 Label { text: "Harmonic Matches"; color: window.textColor; font.pixelSize: 18; font.bold: true }
                 Label { text: "Reference: TECH_BASS_01 · F#"; color: window.muted; font.pixelSize: 12 }
@@ -367,14 +441,61 @@ def _load_qt_modules():
     return QUrl, QGuiApplication, QQmlApplicationEngine
 
 
-def _qml_engine(view_model: Screen1QmlViewModel):
+def _qml_interaction_bridge(adapter: Screen1QmlInteractionAdapter):
+    """Expose the pure interaction adapter to QML only when Qt is installed."""
+    from PySide6.QtCore import QObject, Property, Signal, Slot
+
+    class QmlInteractionBridge(QObject):
+        state_changed = Signal()
+
+        @Property(int, notify=state_changed)
+        def selectedBrowserIndex(self) -> int:
+            return adapter.selected_browser_index
+
+        @Property(bool, notify=state_changed)
+        def harmonicMatchOpen(self) -> bool:
+            return adapter.harmonic_match_open
+
+        @Slot(int)
+        def selectRow(self, index: int) -> None:
+            adapter.select_row(index)
+            self.state_changed.emit()
+
+        @Slot(int)
+        def navigateBrowser(self, step: int) -> None:
+            direction = "next" if step > 0 else "previous"
+            adapter.navigate_browser(direction, browser_has_focus=True)
+            self.state_changed.emit()
+
+        @Slot()
+        def toggleHarmonicMatch(self) -> None:
+            adapter.toggle_harmonic_match()
+            self.state_changed.emit()
+
+    return QmlInteractionBridge()
+
+
+def _qml_engine(
+    view_model: Screen1QmlViewModel,
+    *,
+    interaction_adapter: Screen1QmlInteractionAdapter | None = None,
+):
     QUrl, QGuiApplication, QQmlApplicationEngine = _load_qt_modules()
     app = QGuiApplication.instance() or QGuiApplication([])
     engine = QQmlApplicationEngine()
+    adapter = interaction_adapter or Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        harmony_controller=HarmonicMatchLibraryController(),
+    )
+    bridge = _qml_interaction_bridge(adapter)
     engine.rootContext().setContextProperty("screenModel", view_model.qml_context())
+    engine.rootContext().setContextProperty("interactionModel", bridge)
     engine.loadData(QML_SOURCE.encode("utf-8"), QUrl("qrc:/screen1-qml-spike.qml"))
     if not engine.rootObjects():
         raise RuntimeError("Qt Quick Proof Spike konnte keine QML-Oberfläche laden.")
+    # Keep both Python objects alive for the complete Qt engine lifetime.
+    engine._screen1_interaction_adapter = adapter
+    engine._screen1_interaction_bridge = bridge
     return app, engine, engine.rootObjects()[0]
 
 
