@@ -946,9 +946,7 @@ def main():
         help="Lokale Werkbank starten (Playlist-Ansicht, tkinter)",
     )
     p_workbench.add_argument("--visual-acceptance", action="store_true")
-    qml_renderer = p_workbench.add_mutually_exclusive_group()
-    qml_renderer.add_argument("--qml-screen1", action="store_true")
-    qml_renderer.add_argument("--qml-proof-spike", action="store_true")
+    p_workbench.add_argument("--qml-proof-spike", action="store_true")
     p_workbench.add_argument("--qml-virtualization-probe", action="store_true")
     p_workbench.add_argument(
         "--qml-state",
@@ -1531,21 +1529,6 @@ def main():
             return
 
     if args.cmd == "workbench":
-        if args.qml_screen1:
-            try:
-                from .workbench_qml import run_qml_screen1
-            except ImportError as e:
-                print(
-                    f"[ERROR] Qt Quick Screen-1 Renderer nicht verfügbar: {e}",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            if args.qml_virtualization_probe or args.visual_acceptance:
-                parser.error(
-                    "--qml-screen1 kann nicht mit Proof-/Acceptance-Optionen kombiniert werden"
-                )
-            run_qml_screen1(state_id=args.qml_state)
-            return
         if args.qml_proof_spike:
             try:
                 from .workbench_qml_spike import (
