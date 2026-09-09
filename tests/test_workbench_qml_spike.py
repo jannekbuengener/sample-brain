@@ -88,10 +88,10 @@ def test_view_model_reuses_the_public_visual_fixture_for_both_required_states():
     surface = _surface()
     fixture = build_screen1_visual_fixture_v1()
 
-    default = surface.Screen1QmlViewModel.from_fixture(
+    default = surface.build_qml_view_model_from_fixture(
         fixture, "screen1-default-3panel"
     )
-    harmonic = surface.Screen1QmlViewModel.from_fixture(
+    harmonic = surface.build_qml_view_model_from_fixture(
         fixture, "screen1-harmonic-4panel"
     )
 
@@ -107,7 +107,7 @@ def test_view_model_routes_selection_once_to_the_existing_python_callback():
     surface = _surface()
     fixture = build_screen1_visual_fixture_v1()
     selected: list[WorkbenchRow] = []
-    view_model = surface.Screen1QmlViewModel.from_fixture(
+    view_model = surface.build_qml_view_model_from_fixture(
         fixture,
         "screen1-default-3panel",
         on_browser_selected=selected.append,

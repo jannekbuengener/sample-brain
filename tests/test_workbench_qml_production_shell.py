@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import types
+from pathlib import Path
 
 import pytest
 
@@ -53,3 +54,30 @@ def test_production_and_proof_flags_are_mutually_exclusive(monkeypatch):
         cli.main()
 
     assert error.value.code == 2
+
+
+def test_production_shell_has_no_fixture_or_acceptance_orchestration():
+    from src import workbench_qml
+
+    source = Path(workbench_qml.__file__).read_text(encoding="utf-8")
+
+    assert "workbench_visual_acceptance" not in source
+    for harness_name in (
+        "run_qml_visual_acceptance",
+        "run_qml_virtualization_probe",
+        "validate_qml_renderer_provenance",
+    ):
+        assert not hasattr(workbench_qml, harness_name)
+
+
+def test_spike_harness_owns_fixture_and_acceptance_operations():
+    from src import workbench_qml, workbench_qml_spike
+
+    for harness_name in (
+        "run_qml_proof_spike",
+        "run_qml_visual_acceptance",
+        "run_qml_virtualization_probe",
+        "validate_qml_renderer_provenance",
+    ):
+        assert hasattr(workbench_qml_spike, harness_name)
+    assert workbench_qml_spike.QML_SOURCE is workbench_qml.QML_SOURCE
