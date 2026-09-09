@@ -33,7 +33,7 @@ def _renderer_runtime(tmp_path: Path) -> tuple[Path, Path, Path, RuntimeManifest
     for name in (
         "cli.py",
         "workbench.py",
-        "workbench_qml_spike.py",
+        "workbench_qml.py",
         "workbench_visual_acceptance.py",
     ):
         (src / name).write_text("", encoding="utf-8")
@@ -67,7 +67,7 @@ def _renderer_paths(root: Path) -> dict[str, Path]:
     return {
         "src.cli": root / "src" / "cli.py",
         "src.workbench": root / "src" / "workbench.py",
-        "src.workbench_qml_spike": root / "src" / "workbench_qml_spike.py",
+        "src.workbench_qml": root / "src" / "workbench_qml.py",
         "src.workbench_visual_acceptance": root
         / "src"
         / "workbench_visual_acceptance.py",
@@ -197,7 +197,7 @@ def test_qml_capture_accepts_only_a_renderer_proven_from_the_validated_runtime(
     ("module_name", "expected_message"),
     (
         ("src.cli", "nicht VALID"),
-        ("src.workbench_qml_spike", "nicht aus dem Runtime-Root"),
+        ("src.workbench_qml", "nicht aus dem Runtime-Root"),
         ("src.workbench_visual_acceptance", "nicht aus dem Runtime-Root"),
     ),
 )
