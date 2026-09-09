@@ -38,7 +38,6 @@ All four steps are implemented and stable.
 | Embedding DB | `src/db.py` | Stable | `embedding_models` and `sample_embeddings` tables + helpers including `iter_pending_samples()`. |
 | Index | `src/index.py`, `src/vec_index.py`, `src/search_backend.py` | Stable | NumPy cosine index + optional sqlite-vec vec0 cache; `NumpySearchBackend` / `SqliteVecSearchBackend`; default `numpy` |
 | Search | `src/search.py` | Stable | `run_search()` → embedding backend → search backend adapter → ranked hits. NumPy + sqlite-vec paths. |
-| Screen-1 QML renderer | `src/workbench_qml.py` | Optional production baseline | PySide6/Qt Quick renderer with a thin ViewModel/command adapter over the Python-authoritative Workbench core. Starts only through `workbench --qml-screen1`; Tk remains the default and fallback. |
 
 ### 2.3 EPIC 2 capabilities on `main`
 
@@ -55,20 +54,7 @@ All four steps are implemented and stable.
 
 PR #10 (`spike/clap-embedding`) is **closed as superseded**. Historical reference only.
 
-### 2.4 Screen-1 renderer direction
-
-`LOCK_PYSIDE6_QML` is the locked direction for new Screen-1 rendering work.
-`src/workbench_qml.py` is the canonical QML shell; it reuses the existing
-Catalog, Search, Harmony, Preview/Audio, Live Kit, and Runtime-Provenance
-contracts instead of reimplementing them. The retained `workbench_qml_spike`
-module is only a compatibility, fixture, virtualization, and visual-acceptance
-harness over that same shell.
-
-Tkinter remains the functional default and legacy/fallback path while Screen 1
-migrates slice by slice. This does not decide packaging, distribution, or a
-complete Screen-1 migration.
-
-### 2.5 Known Technical Debt
+### 2.4 Known Technical Debt
 
 - Hardcoded `SAMPLE_ROOTS` in default config — mitigated by profile system; some export paths still reference defaults
 - No audio fixtures or test suite for pipeline steps
