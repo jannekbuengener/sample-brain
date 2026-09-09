@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import platform
 import threading
 import tkinter as tk
 from dataclasses import dataclass
@@ -4347,6 +4348,26 @@ def run_workbench(on_ready: Callable[[], None] | None = None) -> None:
     if on_ready is not None:
         on_ready()
     root.mainloop()
+
+
+def run_visual_acceptance(*, runtime_root: Path, evidence_dir: Path) -> dict[str, object]:
+    """Capture both required states from a verified dedicated runtime."""
+    import os
+    import tempfile
+    from .runtime_provenance import evaluate_runtime
+    from .workbench_visual_acceptance import (CLIENT_HEIGHT, CLIENT_WIDTH, REQUIRED_STATE_IDS, apply_screen1_visual_fixture, build_screen1_visual_fixture_v1, build_visual_evidence_manifest, capture_windows_client_window, current_windows_dpi_scale, validate_capture_sanity, validate_runtime_for_visual_acceptance, write_visual_evidence_manifest)
+    report=evaluate_runtime(runtime_root); validate_runtime_for_visual_acceptance(report); fixture=build_screen1_visual_fixture_v1(); evidence_dir.mkdir(parents=True,exist_ok=True); previous=os.environ.get("SAMPLE_BRAIN_WORKBENCH_STATE_DIR")
+    try:
+        with tempfile.TemporaryDirectory(prefix="sample-brain-visual-acceptance-") as state_dir:
+            os.environ["SAMPLE_BRAIN_WORKBENCH_STATE_DIR"]=state_dir; root=tk.Tk(); root.geometry(f"{CLIENT_WIDTH}x{CLIENT_HEIGHT}"); root.resizable(False,False); app=WorkbenchApp(root); root.deiconify(); root.lift(); root.focus_force(); root.attributes("-topmost",True); captures={}; sanity={}
+            try:
+                for state in REQUIRED_STATE_IDS:
+                    apply_screen1_visual_fixture(app,fixture,state); root.update_idletasks(); root.update(); target=evidence_dir/f"{state}.png"; capture_windows_client_window(root.winfo_id(),target); check=validate_capture_sanity(target,expected_width=CLIENT_WIDTH,expected_height=CLIENT_HEIGHT); check["panel_structure"]=(app._right_pane.grid_info().get("column")== (3 if state.endswith("4panel") else 2)); check["pass"]=bool(check["pass"] and check["panel_structure"]); sanity[state]=check; captures[state]=target
+                manifest=build_visual_evidence_manifest(runtime_report=report,fixture=fixture,captures=captures,os_name="Windows "+platform.release(),dpi_scale=current_windows_dpi_scale(root.winfo_id()),client_width=CLIENT_WIDTH,client_height=CLIENT_HEIGHT,sanity_results=sanity); write_visual_evidence_manifest(evidence_dir/"manifest.json",manifest); return manifest
+            finally: root.destroy()
+    finally:
+        if previous is None: os.environ.pop("SAMPLE_BRAIN_WORKBENCH_STATE_DIR",None)
+        else: os.environ["SAMPLE_BRAIN_WORKBENCH_STATE_DIR"]=previous
 
 
 __all__ = ["WorkbenchApp", "run_workbench"]
