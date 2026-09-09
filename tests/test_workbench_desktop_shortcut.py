@@ -13,19 +13,20 @@ def test_windows_helper_scripts_exist():
     assert (WIN_TOOLS / "README.md").is_file()
 
 
-def test_start_workbench_cmd_has_no_hardcoded_absolute_paths():
+def test_legacy_start_workbench_cmd_routes_to_verified_runtime_only():
     content = (WIN_TOOLS / "start_workbench.cmd").read_text(encoding="utf-8")
-    assert ".venv\\Scripts\\python.exe" in content
-    assert "src.cli workbench" in content
+    assert "%LOCALAPPDATA%\\SampleBrain\\runtime" in content
+    assert "start_runtime_workbench.cmd" in content
+    assert "src.cli workbench" not in content
+    assert "set \"PY=python\"" not in content
     assert not re.search(r"[A-Za-z]:\\", content)
 
 
-def test_create_shortcut_ps1_resolves_repo_relative():
+def test_legacy_shortcut_helper_targets_existing_verified_runtime():
     content = (WIN_TOOLS / "create_workbench_desktop_shortcut.ps1").read_text(encoding="utf-8")
-    assert "Sample Brain Workbench.lnk" in content
-    assert "start_workbench.cmd" in content
-    assert "Start Sample Brain Local Workbench" in content
-    assert "GetFolderPath('Desktop')" in content
+    assert "SampleBrain\\runtime" in content
+    assert "create_runtime_workbench_shortcut.ps1" in content
+    assert "start_workbench.cmd" not in content
     assert not re.search(r"[A-Za-z]:\\", content)
 
 

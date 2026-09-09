@@ -1,15 +1,17 @@
 @echo off
 setlocal
 
-REM Repo root: this script lives in tools\windows\
-cd /d "%~dp0..\.."
+REM Compatibility launcher: never start a mutable developer checkout as producer UI.
+set "RUNTIME_ROOT=%LOCALAPPDATA%\SampleBrain\runtime"
+set "RUNTIME_START=%RUNTIME_ROOT%\tools\windows\start_runtime_workbench.cmd"
 
-if exist ".venv\Scripts\python.exe" (
-    set "PY=.venv\Scripts\python.exe"
-) else (
-    set "PY=python"
+if not exist "%RUNTIME_START%" (
+    echo [ERROR] Verifizierte Sample-Brain-Runtime fehlt: "%RUNTIME_ROOT%"
+    echo Installieren: powershell -ExecutionPolicy Bypass -File ".\tools\windows\install_runtime_workbench.ps1" -CreateShortcut
+    exit /b 1
 )
 
-"%PY%" -m src.cli workbench
+call "%RUNTIME_START%"
+exit /b %errorlevel%
 
 endlocal
