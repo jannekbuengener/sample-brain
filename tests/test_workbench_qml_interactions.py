@@ -8,13 +8,14 @@ from src.workbench_harmony import HarmonicMatchLibraryController
 from src.workbench_qml_spike import (
     Screen1QmlInteractionAdapter,
     Screen1QmlViewModel,
+    build_qml_view_model_from_fixture,
 )
 from src.workbench_visual_acceptance import build_screen1_visual_fixture_v1
 
 
 def _adapter(*, browse_command=None, harmony_controller=None):
     fixture = build_screen1_visual_fixture_v1()
-    view_model = Screen1QmlViewModel.from_fixture(
+    view_model = build_qml_view_model_from_fixture(
         fixture,
         "screen1-default-3panel",
         on_browser_selected=browse_command,
@@ -107,7 +108,7 @@ def test_qml_real_interaction_smoke_click_arrows_focus_and_harmonic_toggle():
 
     dispatched = []
     fixture = build_screen1_visual_fixture_v1()
-    view_model = Screen1QmlViewModel.from_fixture(
+    view_model = build_qml_view_model_from_fixture(
         fixture,
         "screen1-default-3panel",
         on_browser_selected=dispatched.append,
