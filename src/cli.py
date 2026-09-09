@@ -941,10 +941,13 @@ def main():
         **_agent_parser_kwargs("sample-brain vec smoke"),
     )
 
-    sub.add_parser(
+    p_workbench = sub.add_parser(
         "workbench",
         help="Lokale Werkbank starten (Playlist-Ansicht, tkinter)",
     )
+    p_workbench.add_argument("--visual-acceptance", action="store_true")
+    p_workbench.add_argument("--runtime-root", type=Path)
+    p_workbench.add_argument("--evidence-dir", type=Path)
 
     p_pack_import = sub.add_parser(
         "pack-import",
@@ -1520,14 +1523,19 @@ def main():
 
     if args.cmd == "workbench":
         try:
-            from .workbench import run_workbench
+            from .workbench import run_visual_acceptance, run_workbench
         except ImportError as e:
             print(
                 f"[ERROR] Workbench UI nicht verfügbar (tkinter fehlt?): {e}",
                 file=sys.stderr,
             )
             sys.exit(1)
-        run_workbench()
+        if args.visual_acceptance:
+            if args.runtime_root is None or args.evidence_dir is None:
+                parser.error("workbench --visual-acceptance benötigt --runtime-root und --evidence-dir")
+            print(json.dumps(run_visual_acceptance(runtime_root=args.runtime_root, evidence_dir=args.evidence_dir), indent=2, sort_keys=True))
+        else:
+            run_workbench()
         return
 
     if args.cmd == "pack-import":
