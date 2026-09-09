@@ -35,6 +35,9 @@ stems = [
 beatgrid = [
     "beat-this==1.1.0",
 ]
+qtquick = [
+    "PySide6>=6.8,<6.12",
+]
 
 [tool.setuptools]
 packages = ["src"]

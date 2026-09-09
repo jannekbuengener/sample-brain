@@ -946,6 +946,13 @@ def main():
         help="Lokale Werkbank starten (Playlist-Ansicht, tkinter)",
     )
     p_workbench.add_argument("--visual-acceptance", action="store_true")
+    p_workbench.add_argument("--qml-proof-spike", action="store_true")
+    p_workbench.add_argument("--qml-virtualization-probe", action="store_true")
+    p_workbench.add_argument(
+        "--qml-state",
+        choices=("screen1-default-3panel", "screen1-harmonic-4panel"),
+        default="screen1-default-3panel",
+    )
     p_workbench.add_argument("--runtime-root", type=Path)
     p_workbench.add_argument("--evidence-dir", type=Path)
 
@@ -1522,6 +1529,44 @@ def main():
             return
 
     if args.cmd == "workbench":
+        if args.qml_proof_spike:
+            try:
+                from .workbench_qml_spike import (
+                    run_qml_proof_spike,
+                    run_qml_visual_acceptance,
+                    run_qml_virtualization_probe,
+                )
+            except ImportError as e:
+                print(
+                    f"[ERROR] Qt Quick Proof Spike nicht verfügbar: {e}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            if args.qml_virtualization_probe:
+                if args.visual_acceptance:
+                    parser.error(
+                        "--qml-virtualization-probe kann nicht mit --visual-acceptance kombiniert werden"
+                    )
+                print(json.dumps(run_qml_virtualization_probe(), indent=2, sort_keys=True))
+            elif args.visual_acceptance:
+                if args.runtime_root is None or args.evidence_dir is None:
+                    parser.error(
+                        "workbench --qml-proof-spike --visual-acceptance benötigt "
+                        "--runtime-root und --evidence-dir"
+                    )
+                print(
+                    json.dumps(
+                        run_qml_visual_acceptance(
+                            runtime_root=args.runtime_root,
+                            evidence_dir=args.evidence_dir,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+            else:
+                run_qml_proof_spike(state_id=args.qml_state)
+            return
         try:
             from .workbench import run_visual_acceptance, run_workbench
         except ImportError as e:
