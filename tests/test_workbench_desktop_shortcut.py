@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -177,3 +178,115 @@ try {
         )
         assert missing_probe.returncode == 23, missing_probe.stderr
         assert "REACHED_STAGING" in missing_probe.stdout
+
+
+def test_runtime_installer_parent_gate_powershell_smoke():
+    if _powershell() is None:
+        return
+
+    installer = WIN_TOOLS / "install_runtime_workbench.ps1"
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        temporary_root = Path(temporary_directory)
+        environment = dict(os.environ)
+        environment["INSTALLER_PATH"] = str(installer)
+
+        existing_parent = temporary_root / "existing-parent"
+        existing_parent.mkdir()
+        environment["SYNTHETIC_RUNTIME_ROOT"] = str(existing_parent / "runtime")
+        existing_parent_probe = _run_powershell(
+            """
+function New-Item {
+    throw 'EXISTING_PARENT_NEW_ITEM_CALLED'
+}
+function git {
+    param([Parameter(ValueFromRemainingArguments = $true)] $Arguments)
+    if ($Arguments -contains 'rev-parse') {
+        '0123456789012345678901234567890123456789'
+        $global:LASTEXITCODE = 0
+        return
+    }
+    if ($Arguments -contains 'worktree') {
+        Write-Output 'REACHED_STAGING'
+        throw 'STOP_AFTER_GATE'
+    }
+    throw "Unexpected git invocation: $Arguments"
+}
+try {
+    & $env:INSTALLER_PATH -RuntimeRoot $env:SYNTHETIC_RUNTIME_ROOT
+    throw 'Installer did not reach the staging probe.'
+} catch {
+    if ($_.Exception.Message -match 'STOP_AFTER_GATE') { exit 23 }
+    throw
+}
+""",
+            environment=environment,
+        )
+        assert existing_parent_probe.returncode == 23, existing_parent_probe.stderr
+        assert "REACHED_STAGING" in existing_parent_probe.stdout
+
+        missing_parent = temporary_root / "missing-parent"
+        environment["SYNTHETIC_RUNTIME_ROOT"] = str(missing_parent / "runtime")
+        missing_parent_probe = _run_powershell(
+            """
+function git {
+    param([Parameter(ValueFromRemainingArguments = $true)] $Arguments)
+    if ($Arguments -contains 'rev-parse') {
+        '0123456789012345678901234567890123456789'
+        $global:LASTEXITCODE = 0
+        return
+    }
+    if ($Arguments -contains 'worktree') {
+        Write-Output 'REACHED_STAGING'
+        throw 'STOP_AFTER_GATE'
+    }
+    throw "Unexpected git invocation: $Arguments"
+}
+try {
+    & $env:INSTALLER_PATH -RuntimeRoot $env:SYNTHETIC_RUNTIME_ROOT
+    throw 'Installer did not reach the staging probe.'
+} catch {
+    if ($_.Exception.Message -match 'STOP_AFTER_GATE') { exit 23 }
+    throw
+}
+""",
+            environment=environment,
+        )
+        assert missing_parent_probe.returncode == 23, missing_parent_probe.stderr
+        assert missing_parent.is_dir()
+        assert "REACHED_STAGING" in missing_parent_probe.stdout
+
+        if os.name == "nt":
+            root_parent = Path(temporary_root.anchor)
+            environment["SYNTHETIC_RUNTIME_ROOT"] = str(
+                root_parent / f"samplebrain-root-parent-{uuid.uuid4().hex}"
+            )
+            root_parent_probe = _run_powershell(
+                """
+function New-Item {
+    throw 'ROOT_PARENT_NEW_ITEM_CALLED'
+}
+function git {
+    param([Parameter(ValueFromRemainingArguments = $true)] $Arguments)
+    if ($Arguments -contains 'rev-parse') {
+        '0123456789012345678901234567890123456789'
+        $global:LASTEXITCODE = 0
+        return
+    }
+    if ($Arguments -contains 'worktree') {
+        Write-Output 'REACHED_STAGING'
+        throw 'STOP_AFTER_GATE'
+    }
+    throw "Unexpected git invocation: $Arguments"
+}
+try {
+    & $env:INSTALLER_PATH -RuntimeRoot $env:SYNTHETIC_RUNTIME_ROOT
+    throw 'Installer did not reach the staging probe.'
+} catch {
+    if ($_.Exception.Message -match 'STOP_AFTER_GATE') { exit 23 }
+    throw
+}
+""",
+                environment=environment,
+            )
+            assert root_parent_probe.returncode == 23, root_parent_probe.stderr
+            assert "REACHED_STAGING" in root_parent_probe.stdout
