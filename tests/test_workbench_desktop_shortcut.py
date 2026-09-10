@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -463,3 +464,50 @@ def test_runtime_installer_rewrites_provenance_after_activation_before_shortcut(
     assert content.index(activation) < content.index(runtime_python)
     assert content.index(runtime_python) < content.index(final_manifest) < content.index(final_check)
     assert content.index(final_check) < content.index(shortcut)
+
+
+def test_runtime_provenance_manifest_is_refreshed_after_worktree_move():
+    if os.name != "nt" or _powershell() is None:
+        return
+    with tempfile.TemporaryDirectory(dir=ROOT.parent) as temporary_directory:
+        root = Path(temporary_directory)
+        repo, staging, final = root / "repo", root / "staging", root / "final"
+        source = repo / "src"
+        source.mkdir(parents=True)
+        (repo / ".gitignore").write_text(".venv/\n__pycache__/\n", encoding="utf-8")
+        shutil.copyfile(ROOT / "src" / "runtime_provenance.py", source / "runtime_provenance.py")
+        for name in ("__init__.py", "cli.py", "workbench.py"):
+            (source / name).write_text("", encoding="utf-8")
+        def git(*args: str, cwd: Path = repo) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(["git", *args], cwd=cwd, check=True, text=True, capture_output=True)
+        git("init")
+        git("config", "user.email", "synthetic@example.invalid")
+        git("config", "user.name", "Synthetic Runtime")
+        git("add", ".")
+        git("commit", "-m", "synthetic runtime")
+        head = git("rev-parse", "HEAD").stdout.strip()
+        git("worktree", "add", "--detach", str(staging), head)
+        subprocess.run([sys.executable, "-m", "venv", ".venv"], cwd=staging, check=True)
+        staging_python = staging / ".venv" / "Scripts" / "python.exe"
+        def provenance(python: Path, root_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run([str(python), "-m", "src.runtime_provenance", *arguments], cwd=root_path, text=True, capture_output=True)
+        write = provenance(staging_python, staging, "--write-manifest", "--runtime-root", str(staging), "--channel", "main", "--commit", head)
+        check = provenance(staging_python, staging, "--check", "--runtime-root", str(staging))
+        assert write.returncode == check.returncode == 0
+        manifest = Path(git("rev-parse", "--git-path", "sample-brain-runtime.json", cwd=staging).stdout.strip())
+        staging_manifest = json.loads(manifest.read_text(encoding="utf-8"))
+        assert staging_manifest["runtime_root"] == str(staging)
+        assert staging_manifest["python_executable"] == str(staging_python)
+        git("worktree", "move", str(staging), str(final))
+        final_python = final / ".venv" / "Scripts" / "python.exe"
+        assert json.loads(manifest.read_text(encoding="utf-8")) == staging_manifest
+        stale = provenance(final_python, final, "--check", "--runtime-root", str(final))
+        assert stale.returncode != 0
+        final_write = provenance(final_python, final, "--write-manifest", "--runtime-root", str(final), "--channel", "main", "--commit", head)
+        final_check = provenance(final_python, final, "--check", "--runtime-root", str(final))
+        assert final_write.returncode == final_check.returncode == 0
+        final_manifest = Path(git("rev-parse", "--git-path", "sample-brain-runtime.json", cwd=final).stdout.strip())
+        value = json.loads(final_manifest.read_text(encoding="utf-8"))
+        assert value["runtime_root"] == str(final)
+        assert value["python_executable"] == str(final_python)
+        assert value["commit"] == head and value["channel"] == "main"
