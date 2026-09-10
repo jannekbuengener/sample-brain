@@ -306,3 +306,56 @@ def test_runtime_installer_scopes_staging_provenance_to_staging_cwd():
         check_call
     )
     assert "finally {\n        Pop-Location\n    }" in content
+
+    if _powershell() is None:
+        return
+
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        caller_cwd = Path(temporary_directory) / "caller"
+        staging_cwd = Path(temporary_directory) / "staging"
+        caller_cwd.mkdir()
+        staging_cwd.mkdir()
+        environment = dict(os.environ)
+        environment["SYNTHETIC_CALLER_CWD"] = str(caller_cwd)
+        environment["SYNTHETIC_STAGING_CWD"] = str(staging_cwd)
+
+        success = _run_powershell(
+            """
+Set-Location -LiteralPath $env:SYNTHETIC_CALLER_CWD
+Push-Location -LiteralPath $env:SYNTHETIC_STAGING_CWD
+try {
+    "PROVENANCE_CWD=$((Get-Location).Path)"
+}
+finally {
+    Pop-Location
+}
+"CALLER_CWD=$((Get-Location).Path)"
+""",
+            environment=environment,
+        )
+        assert success.returncode == 0, success.stderr
+        assert f"PROVENANCE_CWD={staging_cwd}" in success.stdout
+        assert f"CALLER_CWD={caller_cwd}" in success.stdout
+
+        failure = _run_powershell(
+            """
+Set-Location -LiteralPath $env:SYNTHETIC_CALLER_CWD
+try {
+    Push-Location -LiteralPath $env:SYNTHETIC_STAGING_CWD
+    try {
+        "PROVENANCE_CWD=$((Get-Location).Path)"
+        throw 'SYNTHETIC_PROVENANCE_FAILURE'
+    }
+    finally {
+        Pop-Location
+    }
+} catch {
+    if ($_.Exception.Message -ne 'SYNTHETIC_PROVENANCE_FAILURE') { throw }
+}
+"CALLER_CWD=$((Get-Location).Path)"
+""",
+            environment=environment,
+        )
+        assert failure.returncode == 0, failure.stderr
+        assert f"PROVENANCE_CWD={staging_cwd}" in failure.stdout
+        assert f"CALLER_CWD={caller_cwd}" in failure.stdout
