@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -358,4 +359,93 @@ try {
         )
         assert failure.returncode == 0, failure.stderr
         assert f"PROVENANCE_CWD={staging_cwd}" in failure.stdout
+        assert f"CALLER_CWD={caller_cwd}" in failure.stdout
+
+
+def test_runtime_installer_provenance_processes_use_staging_cwd():
+    if _powershell() is None:
+        return
+
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        temporary_root = Path(temporary_directory)
+        staging_root = temporary_root / "staging"
+        caller_cwd = temporary_root / "caller"
+        staging_src = staging_root / "src"
+        caller_src = caller_cwd / "src"
+        staging_src.mkdir(parents=True)
+        caller_src.mkdir(parents=True)
+        (staging_root / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+        shutil.copyfile(ROOT / "src" / "runtime_provenance.py", staging_src / "runtime_provenance.py")
+        for source_root, marker in ((staging_src, "staging"), (caller_src, "caller")):
+            (source_root / "__init__.py").write_text("", encoding="utf-8")
+            (source_root / "cli.py").write_text(f"MARKER = {marker!r}\n", encoding="utf-8")
+            (source_root / "workbench.py").write_text(f"MARKER = {marker!r}\n", encoding="utf-8")
+
+        for arguments in (
+            ("init",),
+            ("config", "user.email", "synthetic@example.invalid"),
+            ("config", "user.name", "Synthetic Runtime"),
+            ("add", "."),
+            ("commit", "-m", "synthetic runtime"),
+        ):
+            subprocess.run(["git", *arguments], cwd=staging_root, check=True, capture_output=True)
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=staging_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        environment = dict(os.environ)
+        environment.update(
+            {
+                "SYNTHETIC_CALLER_CWD": str(caller_cwd),
+                "SYNTHETIC_STAGING_CWD": str(staging_root),
+                "SYNTHETIC_PYTHON": sys.executable,
+                "SYNTHETIC_COMMIT": commit,
+            }
+        )
+
+        success = _run_powershell(
+            """
+Set-Location -LiteralPath $env:SYNTHETIC_CALLER_CWD
+Push-Location -LiteralPath $env:SYNTHETIC_STAGING_CWD
+try {
+    & $env:SYNTHETIC_PYTHON -m src.runtime_provenance --write-manifest --runtime-root $env:SYNTHETIC_STAGING_CWD --channel main --commit $env:SYNTHETIC_COMMIT
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    & $env:SYNTHETIC_PYTHON -m src.runtime_provenance --check --runtime-root $env:SYNTHETIC_STAGING_CWD
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    & $env:SYNTHETIC_PYTHON -c "import src.cli, src.workbench; print('CLI=' + src.cli.__file__); print('WORKBENCH=' + src.workbench.__file__)"
+} finally {
+    Pop-Location
+}
+"CALLER_CWD=$((Get-Location).Path)"
+""",
+            environment=environment,
+        )
+        assert success.returncode == 0, success.stderr
+        assert "Verifizierte Runtime: main@" in success.stdout
+        assert f"CLI={staging_src / 'cli.py'}" in success.stdout
+        assert f"WORKBENCH={staging_src / 'workbench.py'}" in success.stdout
+        assert f"CALLER_CWD={caller_cwd}" in success.stdout
+
+        failure = _run_powershell(
+            """
+Set-Location -LiteralPath $env:SYNTHETIC_CALLER_CWD
+Push-Location -LiteralPath $env:SYNTHETIC_STAGING_CWD
+try {
+    & $env:SYNTHETIC_PYTHON -m src.runtime_provenance --write-manifest --runtime-root $env:SYNTHETIC_STAGING_CWD --channel main --commit ('0' * 40)
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    & $env:SYNTHETIC_PYTHON -m src.runtime_provenance --check --runtime-root $env:SYNTHETIC_STAGING_CWD
+    if ($LASTEXITCODE -eq 0) { exit 99 }
+    "CHECK_FAILURE=$LASTEXITCODE"
+} finally {
+    Pop-Location
+}
+"CALLER_CWD=$((Get-Location).Path)"
+""",
+            environment=environment,
+        )
+        assert failure.returncode == 0, failure.stderr
+        assert "CHECK_FAILURE=1" in failure.stdout
         assert f"CALLER_CWD={caller_cwd}" in failure.stdout
