@@ -290,3 +290,19 @@ try {
             )
             assert root_parent_probe.returncode == 23, root_parent_probe.stderr
             assert "REACHED_STAGING" in root_parent_probe.stdout
+
+
+def test_runtime_installer_scopes_staging_provenance_to_staging_cwd():
+    content = (WIN_TOOLS / "install_runtime_workbench.ps1").read_text(encoding="utf-8")
+
+    push_location = "Push-Location -LiteralPath $StagingRoot"
+    manifest_call = "& $Python -m src.runtime_provenance --write-manifest"
+    check_call = "& $Python -m src.runtime_provenance --check --runtime-root $StagingRoot"
+
+    assert push_location in content
+    assert manifest_call in content
+    assert check_call in content
+    assert content.index(push_location) < content.index(manifest_call) < content.index(
+        check_call
+    )
+    assert "finally {\n        Pop-Location\n    }" in content

@@ -34,10 +34,16 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not install runtime requirements.' }
     & $Python -m pip install -e $StagingRoot
     if ($LASTEXITCODE -ne 0) { throw 'Could not install the runtime package.' }
-    & $Python -m src.runtime_provenance --write-manifest --runtime-root $StagingRoot --channel $Channel --commit $Commit
-    if ($LASTEXITCODE -ne 0) { throw 'Could not write runtime manifest.' }
-    & $Python -m src.runtime_provenance --check --runtime-root $StagingRoot
-    if ($LASTEXITCODE -ne 0) { throw 'Staging runtime provenance validation failed.' }
+    Push-Location -LiteralPath $StagingRoot
+    try {
+        & $Python -m src.runtime_provenance --write-manifest --runtime-root $StagingRoot --channel $Channel --commit $Commit
+        if ($LASTEXITCODE -ne 0) { throw 'Could not write runtime manifest.' }
+        & $Python -m src.runtime_provenance --check --runtime-root $StagingRoot
+        if ($LASTEXITCODE -ne 0) { throw 'Staging runtime provenance validation failed.' }
+    }
+    finally {
+        Pop-Location
+    }
 
     if (Test-Path -LiteralPath $RuntimeRoot) {
         & git -C $RepoRoot worktree move $RuntimeRoot $BackupRoot
