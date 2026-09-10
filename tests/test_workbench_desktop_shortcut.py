@@ -255,12 +255,13 @@ try {
         assert missing_parent.is_dir()
         assert "REACHED_STAGING" in missing_parent_probe.stdout
 
-        root_parent = Path(temporary_root.anchor)
-        environment["SYNTHETIC_RUNTIME_ROOT"] = str(
-            root_parent / f"samplebrain-root-parent-{uuid.uuid4().hex}"
-        )
-        root_parent_probe = _run_powershell(
-            """
+        if os.name == "nt":
+            root_parent = Path(temporary_root.anchor)
+            environment["SYNTHETIC_RUNTIME_ROOT"] = str(
+                root_parent / f"samplebrain-root-parent-{uuid.uuid4().hex}"
+            )
+            root_parent_probe = _run_powershell(
+                """
 function New-Item {
     throw 'ROOT_PARENT_NEW_ITEM_CALLED'
 }
@@ -285,7 +286,7 @@ try {
     throw
 }
 """,
-            environment=environment,
-        )
-        assert root_parent_probe.returncode == 23, root_parent_probe.stderr
-        assert "REACHED_STAGING" in root_parent_probe.stdout
+                environment=environment,
+            )
+            assert root_parent_probe.returncode == 23, root_parent_probe.stderr
+            assert "REACHED_STAGING" in root_parent_probe.stdout
