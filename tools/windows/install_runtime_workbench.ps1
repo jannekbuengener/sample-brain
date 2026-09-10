@@ -23,6 +23,7 @@ if (-not (Test-Path -LiteralPath $Parent)) {
 }
 $StagingRoot = "$RuntimeRoot.staging-$PID"
 $BackupRoot = "$RuntimeRoot.previous-$PID"
+$ActivationComplete = $false
 
 try {
     & git -C $RepoRoot worktree add --detach $StagingRoot $Commit
@@ -34,10 +35,16 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not install runtime requirements.' }
     & $Python -m pip install -e $StagingRoot
     if ($LASTEXITCODE -ne 0) { throw 'Could not install the runtime package.' }
-    & $Python -m src.runtime_provenance --write-manifest --runtime-root $StagingRoot --channel $Channel --commit $Commit
-    if ($LASTEXITCODE -ne 0) { throw 'Could not write runtime manifest.' }
-    & $Python -m src.runtime_provenance --check --runtime-root $StagingRoot
-    if ($LASTEXITCODE -ne 0) { throw 'Staging runtime provenance validation failed.' }
+    Push-Location -LiteralPath $StagingRoot
+    try {
+        & $Python -m src.runtime_provenance --write-manifest --runtime-root $StagingRoot --channel $Channel --commit $Commit
+        if ($LASTEXITCODE -ne 0) { throw 'Could not write runtime manifest.' }
+        & $Python -m src.runtime_provenance --check --runtime-root $StagingRoot
+        if ($LASTEXITCODE -ne 0) { throw 'Staging runtime provenance validation failed.' }
+    }
+    finally {
+        Pop-Location
+    }
 
     if (Test-Path -LiteralPath $RuntimeRoot) {
         & git -C $RepoRoot worktree move $RuntimeRoot $BackupRoot
@@ -47,6 +54,36 @@ try {
     if ($LASTEXITCODE -ne 0) {
         if (Test-Path -LiteralPath $BackupRoot) { & git -C $RepoRoot worktree move $BackupRoot $RuntimeRoot }
         throw 'Could not activate staged runtime worktree.'
+    }
+    $ActivationComplete = $true
+    $RuntimePython = Join-Path $RuntimeRoot '.venv\Scripts\python.exe'
+    try {
+        Push-Location -LiteralPath $RuntimeRoot
+        try {
+            & $RuntimePython -m src.runtime_provenance --write-manifest --runtime-root $RuntimeRoot --channel $Channel --commit $Commit
+            if ($LASTEXITCODE -ne 0) { throw 'Could not write final runtime manifest.' }
+            & $RuntimePython -m src.runtime_provenance --check --runtime-root $RuntimeRoot
+            if ($LASTEXITCODE -ne 0) { throw 'Final runtime provenance validation failed.' }
+        }
+        finally {
+            Pop-Location
+        }
+    }
+    catch {
+        $FinalProvenanceFailure = $_
+        $RollbackFailures = @()
+        if ($ActivationComplete -and (Test-Path -LiteralPath $RuntimeRoot)) {
+            & git -C $RepoRoot worktree move $RuntimeRoot $StagingRoot
+            if ($LASTEXITCODE -ne 0) { $RollbackFailures += 'Could not preserve failed runtime candidate.' }
+        }
+        if ((Test-Path -LiteralPath $BackupRoot) -and -not (Test-Path -LiteralPath $RuntimeRoot)) {
+            & git -C $RepoRoot worktree move $BackupRoot $RuntimeRoot
+            if ($LASTEXITCODE -ne 0) { $RollbackFailures += 'Could not restore previous runtime worktree.' }
+        }
+        if ($RollbackFailures.Count -gt 0) {
+            throw "Final runtime provenance failed: $($FinalProvenanceFailure.Exception.Message) Rollback failed: $($RollbackFailures -join ' ')"
+        }
+        throw $FinalProvenanceFailure
     }
     if ($CreateShortcut) {
         & (Join-Path $RuntimeRoot 'tools\windows\create_runtime_workbench_shortcut.ps1') -RuntimeRoot $RuntimeRoot
