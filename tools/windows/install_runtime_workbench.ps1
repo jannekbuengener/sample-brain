@@ -12,7 +12,7 @@ $RepoRoot = (Resolve-Path (Join-Path $ScriptDir '..\..')).Path
 $Commit = (& git -C $RepoRoot rev-parse "origin/$Channel").Trim()
 if ($Commit -notmatch '^[0-9a-f]{40}$') { throw "Could not resolve origin/$Channel to a full commit SHA." }
 
-if (Test-Path -LiteralPath $RuntimeRoot -and -not $ReplaceExisting) {
+if ((Test-Path -LiteralPath $RuntimeRoot) -and -not $ReplaceExisting) {
     Write-Host "Runtime already exists and was left unchanged: $RuntimeRoot"
     exit 0
 }

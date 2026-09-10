@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,3 +57,123 @@ def test_runtime_installer_uses_detached_staging_without_developer_cleanup():
     assert "worktree move" in content
     assert "git clean" not in content
     assert "git reset" not in content
+
+
+def test_runtime_installer_groups_existing_runtime_gate_before_test_path():
+    content = (WIN_TOOLS / "install_runtime_workbench.ps1").read_text(encoding="utf-8")
+
+    assert "if ((Test-Path -LiteralPath $RuntimeRoot) -and -not $ReplaceExisting)" in content
+    assert "Test-Path -LiteralPath $RuntimeRoot -and" not in content
+
+
+def _powershell() -> str | None:
+    return shutil.which("pwsh") or shutil.which("powershell")
+
+
+def _run_powershell(command: str, *, environment: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    executable = _powershell()
+    assert executable is not None
+    return subprocess.run(
+        [
+            executable,
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            command,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+
+def test_runtime_installer_existing_runtime_gate_powershell_smoke():
+    if _powershell() is None:
+        return
+
+    installer = WIN_TOOLS / "install_runtime_workbench.ps1"
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        runtime_root = Path(temporary_directory) / "existing-runtime"
+        runtime_root.mkdir()
+        environment = dict(os.environ)
+        environment["INSTALLER_PATH"] = str(installer)
+        environment["SYNTHETIC_RUNTIME_ROOT"] = str(runtime_root)
+
+        unchanged = _run_powershell(
+            """
+function git {
+    param([Parameter(ValueFromRemainingArguments = $true)] $Arguments)
+    if ($Arguments -contains 'rev-parse') {
+        '0123456789012345678901234567890123456789'
+        $global:LASTEXITCODE = 0
+        return
+    }
+    throw "Unexpected git invocation: $Arguments"
+}
+& $env:INSTALLER_PATH -RuntimeRoot $env:SYNTHETIC_RUNTIME_ROOT
+""",
+            environment=environment,
+        )
+        assert unchanged.returncode == 0, unchanged.stderr
+        assert "was left unchanged" in unchanged.stdout
+
+        staging_probe = _run_powershell(
+            """
+function git {
+    param([Parameter(ValueFromRemainingArguments = $true)] $Arguments)
+    if ($Arguments -contains 'rev-parse') {
+        '0123456789012345678901234567890123456789'
+        $global:LASTEXITCODE = 0
+        return
+    }
+    if ($Arguments -contains 'worktree') {
+        Write-Output 'REACHED_STAGING'
+        throw 'STOP_AFTER_GATE'
+    }
+    throw "Unexpected git invocation: $Arguments"
+}
+try {
+    & $env:INSTALLER_PATH -RuntimeRoot $env:SYNTHETIC_RUNTIME_ROOT -ReplaceExisting
+    throw 'Installer did not reach the staging probe.'
+} catch {
+    if ($_.Exception.Message -match 'STOP_AFTER_GATE') { exit 23 }
+    throw
+}
+""",
+            environment=environment,
+        )
+        assert staging_probe.returncode == 23, staging_probe.stderr
+        assert "REACHED_STAGING" in staging_probe.stdout
+
+        missing_root = Path(temporary_directory) / "missing-runtime"
+        environment["SYNTHETIC_RUNTIME_ROOT"] = str(missing_root)
+        missing_probe = _run_powershell(
+            """
+function git {
+    param([Parameter(ValueFromRemainingArguments = $true)] $Arguments)
+    if ($Arguments -contains 'rev-parse') {
+        '0123456789012345678901234567890123456789'
+        $global:LASTEXITCODE = 0
+        return
+    }
+    if ($Arguments -contains 'worktree') {
+        Write-Output 'REACHED_STAGING'
+        throw 'STOP_AFTER_GATE'
+    }
+    throw "Unexpected git invocation: $Arguments"
+}
+try {
+    & $env:INSTALLER_PATH -RuntimeRoot $env:SYNTHETIC_RUNTIME_ROOT
+    throw 'Installer did not reach the staging probe.'
+} catch {
+    if ($_.Exception.Message -match 'STOP_AFTER_GATE') { exit 23 }
+    throw
+}
+""",
+            environment=environment,
+        )
+        assert missing_probe.returncode == 23, missing_probe.stderr
+        assert "REACHED_STAGING" in missing_probe.stdout
