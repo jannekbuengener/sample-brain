@@ -511,3 +511,154 @@ def test_runtime_provenance_manifest_is_refreshed_after_worktree_move():
         assert value["runtime_root"] == str(final)
         assert value["python_executable"] == str(final_python)
         assert value["commit"] == head and value["channel"] == "main"
+
+
+def _git_worktree_lifecycle(
+    root: Path, *, with_existing_runtime: bool = True
+) -> tuple[Path, Path | None, Path, str, str]:
+    repo = root / "repo"
+    source = repo / "src"
+    source.mkdir(parents=True)
+    (repo / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+    shutil.copyfile(ROOT / "src" / "runtime_provenance.py", source / "runtime_provenance.py")
+    for name in ("__init__.py", "cli.py", "workbench.py"):
+        (source / name).write_text("", encoding="utf-8")
+    (repo / "runtime-marker.txt").write_text("known-good\n", encoding="utf-8")
+
+    def git(*args: str, cwd: Path = repo) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *args], cwd=cwd, check=True, text=True, capture_output=True
+        )
+
+    git("init")
+    git("config", "user.email", "synthetic@example.invalid")
+    git("config", "user.name", "Synthetic Runtime")
+    git("add", ".")
+    git("commit", "-m", "known-good runtime")
+    known_good_head = git("rev-parse", "HEAD").stdout.strip()
+    (repo / "runtime-marker.txt").write_text("candidate\n", encoding="utf-8")
+    git("add", "runtime-marker.txt")
+    git("commit", "-m", "candidate runtime")
+    candidate_head = git("rev-parse", "HEAD").stdout.strip()
+
+    runtime = root / "runtime"
+    staging = root / "staging"
+    if with_existing_runtime:
+        git("worktree", "add", "--detach", str(runtime), known_good_head)
+    else:
+        runtime = None
+    git("worktree", "add", "--detach", str(staging), candidate_head)
+    return repo, runtime, staging, known_good_head, candidate_head
+
+
+def test_runtime_installer_rolls_back_final_provenance_failure():
+    content = (WIN_TOOLS / "install_runtime_workbench.ps1").read_text(encoding="utf-8")
+
+    activation = "worktree move $StagingRoot $RuntimeRoot"
+    rollback_candidate = "worktree move $RuntimeRoot $StagingRoot"
+    rollback_backup = "worktree move $BackupRoot $RuntimeRoot"
+    final_manifest = "Could not write final runtime manifest."
+    shortcut = "if ($CreateShortcut)"
+
+    assert "$ActivationComplete = $true" in content
+    assert rollback_candidate in content
+    assert rollback_backup in content
+    assert content.index(activation) < content.index(final_manifest) < content.index(
+        rollback_candidate
+    ) < content.index(shortcut)
+
+    with tempfile.TemporaryDirectory(dir=ROOT.parent) as temporary_directory:
+        root = Path(temporary_directory)
+        repo, runtime, staging, known_good_head, candidate_head = _git_worktree_lifecycle(root)
+        backup = root / "backup"
+
+        def git(*args: str, cwd: Path = repo) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                ["git", *args], cwd=cwd, check=True, text=True, capture_output=True
+            )
+
+        git("worktree", "move", str(runtime), str(backup))
+        git("worktree", "move", str(staging), str(runtime))
+        failed_check = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "src.runtime_provenance",
+                "--write-manifest",
+                "--runtime-root",
+                str(runtime),
+                "--channel",
+                "main",
+                "--commit",
+                "0" * 40,
+            ],
+            cwd=runtime,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        assert failed_check.returncode == 0
+        final_check = subprocess.run(
+            [sys.executable, "-m", "src.runtime_provenance", "--check", "--runtime-root", str(runtime)],
+            cwd=runtime,
+            text=True,
+            capture_output=True,
+        )
+        assert final_check.returncode != 0
+
+        git("worktree", "move", str(runtime), str(staging))
+        git("worktree", "move", str(backup), str(runtime))
+
+        assert (runtime / "runtime-marker.txt").read_text(encoding="utf-8") == "known-good\n"
+        assert git("rev-parse", "HEAD", cwd=runtime).stdout.strip() == known_good_head
+        assert git("status", "--porcelain", cwd=runtime).stdout == ""
+        assert git("rev-parse", "HEAD", cwd=staging).stdout.strip() == candidate_head
+        assert not backup.exists()
+
+
+def test_runtime_installer_rolls_back_fresh_final_provenance_failure():
+    with tempfile.TemporaryDirectory(dir=ROOT.parent) as temporary_directory:
+        root = Path(temporary_directory)
+        repo, existing_runtime, staging, _known_good_head, candidate_head = _git_worktree_lifecycle(
+            root, with_existing_runtime=False
+        )
+        runtime = root / "fresh-runtime"
+        assert existing_runtime is None
+
+        def git(*args: str, cwd: Path = repo) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                ["git", *args], cwd=cwd, check=True, text=True, capture_output=True
+            )
+
+        git("worktree", "move", str(staging), str(runtime))
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "src.runtime_provenance",
+                "--write-manifest",
+                "--runtime-root",
+                str(runtime),
+                "--channel",
+                "main",
+                "--commit",
+                "0" * 40,
+            ],
+            cwd=runtime,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        final_check = subprocess.run(
+            [sys.executable, "-m", "src.runtime_provenance", "--check", "--runtime-root", str(runtime)],
+            cwd=runtime,
+            text=True,
+            capture_output=True,
+        )
+        assert final_check.returncode != 0
+
+        git("worktree", "move", str(runtime), str(staging))
+
+        assert not runtime.exists()
+        assert staging.is_dir()
+        assert git("rev-parse", "HEAD", cwd=staging).stdout.strip() == candidate_head
