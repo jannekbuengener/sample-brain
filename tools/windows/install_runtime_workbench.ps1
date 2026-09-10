@@ -18,7 +18,9 @@ if ((Test-Path -LiteralPath $RuntimeRoot) -and -not $ReplaceExisting) {
 }
 
 $Parent = Split-Path -Parent $RuntimeRoot
-New-Item -ItemType Directory -Force -Path $Parent | Out-Null
+if (-not (Test-Path -LiteralPath $Parent)) {
+    New-Item -ItemType Directory -Force -Path $Parent | Out-Null
+}
 $StagingRoot = "$RuntimeRoot.staging-$PID"
 $BackupRoot = "$RuntimeRoot.previous-$PID"
 
