@@ -54,6 +54,17 @@ try {
         if (Test-Path -LiteralPath $BackupRoot) { & git -C $RepoRoot worktree move $BackupRoot $RuntimeRoot }
         throw 'Could not activate staged runtime worktree.'
     }
+    $RuntimePython = Join-Path $RuntimeRoot '.venv\Scripts\python.exe'
+    Push-Location -LiteralPath $RuntimeRoot
+    try {
+        & $RuntimePython -m src.runtime_provenance --write-manifest --runtime-root $RuntimeRoot --channel $Channel --commit $Commit
+        if ($LASTEXITCODE -ne 0) { throw 'Could not write final runtime manifest.' }
+        & $RuntimePython -m src.runtime_provenance --check --runtime-root $RuntimeRoot
+        if ($LASTEXITCODE -ne 0) { throw 'Final runtime provenance validation failed.' }
+    }
+    finally {
+        Pop-Location
+    }
     if ($CreateShortcut) {
         & (Join-Path $RuntimeRoot 'tools\windows\create_runtime_workbench_shortcut.ps1') -RuntimeRoot $RuntimeRoot
     }

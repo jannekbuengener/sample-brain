@@ -449,3 +449,17 @@ try {
         assert failure.returncode == 0, failure.stderr
         assert "CHECK_FAILURE=1" in failure.stdout
         assert f"CALLER_CWD={caller_cwd}" in failure.stdout
+
+
+def test_runtime_installer_rewrites_provenance_after_activation_before_shortcut():
+    content = (WIN_TOOLS / "install_runtime_workbench.ps1").read_text(encoding="utf-8")
+
+    activation = "worktree move $StagingRoot $RuntimeRoot"
+    runtime_python = "$RuntimePython = Join-Path $RuntimeRoot '.venv\\Scripts\\python.exe'"
+    final_manifest = "--write-manifest --runtime-root $RuntimeRoot"
+    final_check = "--check --runtime-root $RuntimeRoot"
+    shortcut = "if ($CreateShortcut)"
+
+    assert content.index(activation) < content.index(runtime_python)
+    assert content.index(runtime_python) < content.index(final_manifest) < content.index(final_check)
+    assert content.index(final_check) < content.index(shortcut)
