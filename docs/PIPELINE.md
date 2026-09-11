@@ -16,12 +16,12 @@ Rules:
 
 ## Run
 ```powershell
-pwsh -File .\make_title_suggestions.ps1
+pwsh -File .\tools\make_title_suggestions.ps1
 ```
 
 ## Apply renames (optional)
 ```powershell
-pwsh -File .\make_title_suggestions.ps1 -Apply
+pwsh -File .\tools\make_title_suggestions.ps1 -Apply
 ```
 
 **Tip:** Run once without Apply, inspect the CSV, then decide.

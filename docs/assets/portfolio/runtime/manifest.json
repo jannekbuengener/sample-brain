@@ -1,0 +1,37 @@
+{
+  "channel": "main",
+  "client_height": 900,
+  "client_width": 1600,
+  "commit": "2f63d94fe5e2e0528da71b24cf56d6ee7903500b",
+  "created_at": "2026-09-11T16:56:37.452544+00:00",
+  "dpi": 100,
+  "fixture": "screen1_visual_fixture_v1",
+  "os": "Windows 11",
+  "python": "CPython 3.12.10",
+  "runtime_status": "valid",
+  "sanity_results": {
+    "screen1-default-3panel": {
+      "dimensions": true,
+      "exists": true,
+      "non_black": true,
+      "panel_structure": true,
+      "pass": true
+    },
+    "screen1-harmonic-4panel": {
+      "dimensions": true,
+      "exists": true,
+      "non_black": true,
+      "panel_structure": true,
+      "pass": true
+    }
+  },
+  "schema": 1,
+  "screenshot_hashes": {
+    "screen1-default-3panel": "1da49fc093c91005de520860fa8298cadea9ebcc71aa5695f0e1768658938085",
+    "screen1-harmonic-4panel": "b00cce02d1e5493d4d97d26882e825e8db8af542b51c4f70535aecbdbfaafe54"
+  },
+  "states": [
+    "screen1-default-3panel",
+    "screen1-harmonic-4panel"
+  ]
+}
