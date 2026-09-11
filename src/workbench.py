@@ -393,6 +393,23 @@ class WorkbenchApp:
             background=[("active", ACCENT_HOVER)],
         )
         style.configure(
+            "SyncInactive.TButton",
+            background=PANEL,
+            foreground=TEXT_MUTED,
+            padding=(5, 2),
+            font=("Segoe UI", 10, "bold"),
+            bordercolor=BORDER,
+        )
+        style.map("SyncInactive.TButton", background=[("active", PANEL_ALT)])
+        style.configure(
+            "SyncActive.TButton",
+            background=ACCENT,
+            foreground="#ffffff",
+            padding=(5, 2),
+            font=("Segoe UI", 10, "bold"),
+        )
+        style.map("SyncActive.TButton", background=[("active", ACCENT_HOVER)])
+        style.configure(
             "Group.TButton",
             background=PANEL_ALT,
             foreground=TEXT,

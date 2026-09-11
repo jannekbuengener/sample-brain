@@ -36,6 +36,12 @@ class FakeWidget:
     def pack(self, **kwargs) -> None:
         self.pack_kwargs = kwargs
 
+    def configure(self, **kwargs) -> None:
+        self.kwargs.update(kwargs)
+
+    def cget(self, name: str):
+        return self.kwargs[name]
+
 
 class FakeFrame(FakeWidget):
     pass
@@ -48,10 +54,6 @@ class FakeLabel(FakeWidget):
 class FakeButton(FakeWidget):
     def invoke(self):
         return self.kwargs["command"]()
-
-
-class FakeCheckbutton(FakeButton):
-    pass
 
 
 class FakeRoot:
@@ -169,7 +171,6 @@ def _fake_ui_apis() -> _UiApis:
         Frame=FakeFrame,
         Label=FakeLabel,
         Button=FakeButton,
-        Checkbutton=FakeCheckbutton,
     )
     return _UiApis(tk=tk_api, ttk=ttk_api)
 
@@ -211,9 +212,11 @@ def test_one_shot_semantics_follow_authoritative_pred_type(
     assert _row_is_one_shot(row) is expected
 
 
-def test_controller_initially_exposes_master_and_existing_transport_controls():
+@pytest.mark.parametrize("initial_sync", [False, True])
+def test_controller_initially_exposes_master_grid_and_single_sync_button(initial_sync):
     app = _fake_app()
     transport = FakeTransport()
+    transport.sync = initial_sync
 
     controller = WorkbenchTransportUiController(
         app,
@@ -224,7 +227,9 @@ def test_controller_initially_exposes_master_and_existing_transport_controls():
     assert app._tempo_var.get() == "MASTER 132 BPM"
     assert app._tempo_label.kwargs["textvariable"] is app._tempo_var
     assert app._sync_control.kwargs["text"] == "SYNC"
-    assert app._sync_control.kwargs["variable"] is app._sync_var
+    assert app._sync_control.kwargs["style"] == (
+        "SyncActive.TButton" if initial_sync else "SyncInactive.TButton"
+    )
     assert "Master Tempo" not in app._tempo_var.get()
     assert app._transport_bar.pack_kwargs["before"] is app._body
     assert app.root.after_calls[0][0] == 50
@@ -255,7 +260,7 @@ def test_tempo_buttons_change_the_shared_transport_and_refresh_label():
     controller.close()
 
 
-def test_sync_control_updates_the_single_transport_state():
+def test_sync_button_toggles_authoritative_transport_once_per_invoke():
     app = _fake_app()
     transport = FakeTransport()
     controller = WorkbenchTransportUiController(
@@ -264,14 +269,16 @@ def test_sync_control_updates_the_single_transport_state():
         ui_apis=_fake_ui_apis(),
     )
 
-    app._sync_var.set(True)
     assert app._sync_control.invoke() is True
     assert transport.sync is True
+    assert app._sync_var.get() is True
+    assert app._sync_control.cget("style") == "SyncActive.TButton"
+    assert transport.toggle_sync_calls == 1
 
-    app._sync_var.set(False)
     assert app._sync_control.invoke() is False
     assert transport.sync is False
-    assert transport.is_sync_enabled_calls == 2
+    assert app._sync_var.get() is False
+    assert app._sync_control.cget("style") == "SyncInactive.TButton"
     assert transport.toggle_sync_calls == 2
 
     controller.close()
@@ -319,6 +326,8 @@ def test_refresh_snapshot_reads_current_canonical_time_signature():
 
     assert transport.get_snapshot_calls == 1
     assert app._sync_var.get() is True
+    assert app._sync_control.cget("style") == "SyncActive.TButton"
+    assert transport.toggle_sync_calls == 0
     assert _grid_header_text(app) == "GRID 3/4"
 
     controller.close()
