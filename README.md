@@ -4,6 +4,96 @@ Sample Brain ist ein lokales Werkzeug für Sample-Analyse, musikalisches Matchin
 
 ---
 
+## Portfolio-Überblick
+
+**Sample Brain** löst ein Problem aus meiner eigenen Musikproduktion: Große lokale Sample-Libraries enthalten viel musikalisches Potenzial, aber Dateinamen und Ordnerstrukturen helfen nur begrenzt dabei, im richtigen Moment den passenden Sound zu finden.
+
+Das Projekt übersetzt dieses Problem in ein **local-first Producing-System**: Samples werden lokal analysiert, katalogisiert, musikalisch verglichen und in einem Workbench-Workflow nutzbar gemacht. Private Audiodateien bleiben auf dem Rechner; die Kernfunktionen benötigen keine Cloud.
+
+### Was heute tatsächlich funktioniert
+
+Auf `main` sind unter anderem verfügbar:
+
+- lokaler Sample-Katalog mit Audioanalyse und Metadaten,
+- BPM-/Key-/Typ-basierte Matching-Logik,
+- Track-Context-Analyse ohne Katalog-Mutation,
+- NumPy-basierte Suche sowie optionale experimentelle CLAP-/sqlite-vec-Pfade,
+- Track-Deconstruction und portable Performance Packs,
+- lokaler Workbench mit Library, Preview, Matching und Live-Kit-Funktionen.
+
+**Nicht als fertig dargestellt werden:** VST3, Realtime Fit & Transform und alle Funktionen, deren Evidence noch nicht für einen Produktionsclaim reicht. Die detaillierte Statusmatrix steht direkt im nächsten Abschnitt.
+
+### Meine Rolle / AI-assisted Development Model
+
+Meine Kernleistung in diesem Projekt liegt nicht darin, möglichst viel Python manuell zu schreiben. Ich entwickle Sample Brain **AI-native**:
+
+- Problem- und Produktdefinition aus realem Producer-Workflow,
+- Zerlegung in Features, Systemgrenzen und Acceptance Criteria,
+- Architektur- und Schnittstellenentscheidungen,
+- Orchestrierung spezialisierter Coding-/Review-Agenten,
+- Review, Fehlersuche, Teststrategie und Evidence,
+- iterative Entscheidung darüber, was shipped, experimentell oder noch nicht belastbar ist.
+
+Ein erheblicher Teil der Implementierung entsteht AI-assisted. Dieses Repository soll deshalb **nicht** als Nachweis klassischer eigenständiger Python-Entwicklung gelesen werden, sondern als Nachweis für Product/System Thinking, Agenten-Orchestrierung, technische Spezifikation und Validation.
+
+### Produktfluss
+
+```mermaid
+flowchart LR
+    A[Lokale Sample Library] --> B[Scan & Analyse]
+    B --> C[Katalog & Metadaten]
+    C --> D[Search & Matching]
+    D --> E[Workbench]
+    E --> F[Live Kit / Producer Workflow]
+    B --> G[Track Context]
+    G --> H[Deconstruction]
+    H --> I[Performance Packs]
+```
+
+### Visuelle Produkt-Richtung
+
+Die folgenden Bilder sind **freigegebene UI-Mockups / Designziele**, keine als Live-Runtime ausgegebenen Screenshots:
+
+![Sample Brain Screen-1 Designziel](ui_mockup.png)
+
+![Sample Brain Harmonic Match Library Designziel](ui_mockup_matching.png)
+
+Runtime-Screenshots werden nur aus einem verifizierten Build als Evidence erzeugt; der dafür vorhandene Visual-Acceptance-Pfad ist unter [WORKBENCH_VISUAL_ACCEPTANCE.md](docs/WORKBENCH_VISUAL_ACCEPTANCE.md) dokumentiert. So bleibt klar getrennt, was Designziel und was tatsächlich ausgeführter Produktzustand ist.
+
+### Was dieses Projekt belegt
+
+| Kompetenz | Konkrete Evidence im Projekt |
+|---|---|
+| **Product Thinking** | Zielgruppe, Problem Statement, MVP-/Target-Trennung und Product Principles |
+| **System Thinking** | getrennte Pipeline-Schritte, klare Artefakte, Cache-/Pack-/Runtime-Verträge |
+| **AI-/Agenten-Orchestrierung** | agent-shepherded Delivery mit spezialisierter Implementation, Review und Validation |
+| **Requirements & Spezifikation** | Product-/System-Requirements, Acceptance Criteria und shipped-vs-target-Verträge |
+| **Evaluation / QA** | Search-Evidence, Visual Acceptance, Regressionstests und explizite HOLD-/NO-CLAIM-Entscheidungen |
+| **Creative Tech / Audio** | MIR-basierte Analyse, Matching, Producer-Workflow und eigene Musik-Domain |
+| **Local-first / Privacy** | lokale Analyse, keine verpflichtende Cloud, keine privaten Samples im Repo |
+
+### Drei Beispiele für bewusste Nicht-Claims
+
+1. **CLAP Search:** auf synthetischen Fixtures gemessen, aber keine Produktionsreife auf echten Producer-Libraries behauptet.
+2. **sqlite-vec:** Performance-Vorteile dokumentiert, Default-Wechsel aber wegen Qualitäts-/Gate-Abwägungen blockiert.
+3. **Stem Separation:** technisch getestet, aber wegen ungeklärter Weight-Lizenz kein Produktions-Default.
+
+Diese Entscheidungen sind Teil des Produkts: Sample Brain soll Unsicherheit sichtbar machen, statt Zielvision und belegte Realität zu vermischen.
+
+### Technischer Reviewer – schneller Einstieg
+
+```bash
+python -m venv .venv
+. .venv\Scripts\activate
+pip install -r requirements.txt
+pip install -e .
+python -m src.cli --help
+```
+
+Für die Produktstory und Entscheidungen siehe [Case Study](docs/CASE_STUDY.md). Für den vollständigen Setup- und Feature-Quickstart siehe die technischen Abschnitte weiter unten.
+
+---
+
 ## Was Sample Brain heute kann
 
 | Bereich | Status | Was funktioniert |

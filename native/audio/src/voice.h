@@ -7,6 +7,8 @@
 
 class Voice {
 public:
+    static bool validate_config(const sb_voice_config_t& config);
+
     Voice(uint32_t sample_rate, const sb_voice_config_t& config);
     ~Voice();
 
@@ -38,8 +40,18 @@ public:
 
 private:
     uint32_t sample_rate;
+    sb_source_type_t source_type;
     std::atomic<sb_voice_state_t> state{SB_VOICE_IDLE};
     sb_frame_t scheduled_frame = 0;
+
+    // Finite PCM source (owned deep copy; allocated on the control thread).
+    std::vector<float> pcm_samples;
+    uint64_t pcm_frame_count = 0;
+    uint32_t pcm_channels = 0;
+    double pcm_position = 0.0;
+
+    void render_pcm(float* output, size_t offset, size_t num_frames,
+                    size_t output_channels);
 
     // Synthetic click source
     std::vector<float> click_samples;

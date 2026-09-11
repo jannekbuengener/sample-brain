@@ -1105,7 +1105,18 @@ class WorkbenchViewSettings:
     show_waveform_tools: bool = False
 
 
+@dataclass(frozen=True)
+class WorkbenchViewSettingsLoadResult:
+    """Loaded view settings plus whether this session may replace its file."""
+
+    settings: WorkbenchViewSettings
+    persistable: bool
+
+
 DEFAULT_WORKBENCH_VIEW_SETTINGS = WorkbenchViewSettings()
+WORKBENCH_VIEW_SETTINGS_SCHEMA_VERSION = 2
+_WORKBENCH_VIEW_SETTINGS_FIELDS = tuple(asdict(DEFAULT_WORKBENCH_VIEW_SETTINGS))
+_MISSING_VIEW_SETTINGS_SCHEMA_VERSION = object()
 
 VIEW_SECTION_SEARCH = "search"
 VIEW_SECTION_FILTERS = "filters"
@@ -1124,23 +1135,66 @@ def workbench_view_settings_file(
     return base / "workbench_view_settings.json"
 
 
-def _view_settings_from_mapping(data: Mapping[str, Any]) -> WorkbenchViewSettings:
-    def _bool(key: str, default: bool) -> bool:
-        value = data.get(key, default)
-        return default if not isinstance(value, bool) else value
+def _is_complete_view_settings_mapping(data: Mapping[str, Any]) -> bool:
+    return all(
+        key in data and isinstance(data[key], bool)
+        for key in _WORKBENCH_VIEW_SETTINGS_FIELDS
+    )
 
+
+def _view_settings_from_complete_mapping(data: Mapping[str, Any]) -> WorkbenchViewSettings:
     return WorkbenchViewSettings(
-        show_view_toolbar=_bool(
-            "show_view_toolbar", DEFAULT_WORKBENCH_VIEW_SETTINGS.show_view_toolbar
-        ),
-        show_search=_bool("show_search", DEFAULT_WORKBENCH_VIEW_SETTINGS.show_search),
-        show_filters=_bool("show_filters", DEFAULT_WORKBENCH_VIEW_SETTINGS.show_filters),
-        show_library_manage=_bool(
-            "show_library_manage", DEFAULT_WORKBENCH_VIEW_SETTINGS.show_library_manage
-        ),
-        show_waveform_tools=_bool(
-            "show_waveform_tools", DEFAULT_WORKBENCH_VIEW_SETTINGS.show_waveform_tools
-        ),
+        **{key: data[key] for key in _WORKBENCH_VIEW_SETTINGS_FIELDS}
+    )
+
+
+def load_workbench_view_settings_result(
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> WorkbenchViewSettingsLoadResult:
+    """Load view visibility and retain unsupported state until explicit reset."""
+    path_file = workbench_view_settings_file(state_dir=state_dir, env=env)
+    if not path_file.is_file():
+        return WorkbenchViewSettingsLoadResult(
+            DEFAULT_WORKBENCH_VIEW_SETTINGS, persistable=True
+        )
+    try:
+        raw = json.loads(path_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return WorkbenchViewSettingsLoadResult(
+            DEFAULT_WORKBENCH_VIEW_SETTINGS, persistable=False
+        )
+    if not isinstance(raw, dict):
+        return WorkbenchViewSettingsLoadResult(
+            DEFAULT_WORKBENCH_VIEW_SETTINGS, persistable=False
+        )
+    schema_version = raw.get(
+        "schema_version", _MISSING_VIEW_SETTINGS_SCHEMA_VERSION
+    )
+    if (
+        type(schema_version) is int
+        and schema_version == WORKBENCH_VIEW_SETTINGS_SCHEMA_VERSION
+    ):
+        if _is_complete_view_settings_mapping(raw):
+            return WorkbenchViewSettingsLoadResult(
+                _view_settings_from_complete_mapping(raw), persistable=True
+            )
+        return WorkbenchViewSettingsLoadResult(
+            DEFAULT_WORKBENCH_VIEW_SETTINGS, persistable=False
+        )
+    if (
+        schema_version is _MISSING_VIEW_SETTINGS_SCHEMA_VERSION
+        or (type(schema_version) is int and schema_version == 1)
+    ) and _is_complete_view_settings_mapping(raw):
+        migrated = save_workbench_view_settings(
+            DEFAULT_WORKBENCH_VIEW_SETTINGS, state_dir=state_dir, env=env
+        )
+        return WorkbenchViewSettingsLoadResult(
+            DEFAULT_WORKBENCH_VIEW_SETTINGS, persistable=migrated
+        )
+    return WorkbenchViewSettingsLoadResult(
+        DEFAULT_WORKBENCH_VIEW_SETTINGS, persistable=False
     )
 
 
@@ -1150,16 +1204,7 @@ def load_workbench_view_settings(
     env: Mapping[str, str] | None = None,
 ) -> WorkbenchViewSettings:
     """Load persisted view visibility; invalid files fall back to defaults."""
-    path_file = workbench_view_settings_file(state_dir=state_dir, env=env)
-    if not path_file.is_file():
-        return DEFAULT_WORKBENCH_VIEW_SETTINGS
-    try:
-        raw = json.loads(path_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, TypeError):
-        return DEFAULT_WORKBENCH_VIEW_SETTINGS
-    if not isinstance(raw, dict):
-        return DEFAULT_WORKBENCH_VIEW_SETTINGS
-    return _view_settings_from_mapping(raw)
+    return load_workbench_view_settings_result(state_dir=state_dir, env=env).settings
 
 
 def save_workbench_view_settings(
@@ -1173,7 +1218,15 @@ def save_workbench_view_settings(
     try:
         path_file.parent.mkdir(parents=True, exist_ok=True)
         path_file.write_text(
-            json.dumps(asdict(settings), indent=2, sort_keys=True) + "\n",
+            json.dumps(
+                {
+                    "schema_version": WORKBENCH_VIEW_SETTINGS_SCHEMA_VERSION,
+                    **asdict(settings),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
             encoding="utf-8",
         )
     except OSError:
@@ -2106,6 +2159,7 @@ __all__ = [
     "DEFAULT_CATALOG_LOAD_LIMIT",
     "DEFAULT_WORKBENCH_ANALYSIS_LIMIT_TEXT",
     "DEFAULT_WORKBENCH_VIEW_SETTINGS",
+    "WORKBENCH_VIEW_SETTINGS_SCHEMA_VERSION",
     "error_message_for_code",
     "effective_workbench_row_filters",
     "effective_workbench_text_query",
@@ -2160,6 +2214,7 @@ __all__ = [
     "load_workbench_analysis_limit",
     "load_workbench_last_folder",
     "load_workbench_view_settings",
+    "load_workbench_view_settings_result",
     "load_workbench_sample_cue",
     "normalize_workbench_analysis_limit_text",
     "parse_workbench_bpm_bound",
@@ -2185,4 +2240,5 @@ __all__ = [
     "VIEW_SECTION_SEARCH",
     "VIEW_SECTION_WAVEFORM_TOOLS",
     "WorkbenchViewSettings",
+    "WorkbenchViewSettingsLoadResult",
 ]

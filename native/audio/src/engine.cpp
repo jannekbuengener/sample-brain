@@ -369,6 +369,7 @@ sb_frame_t sb_engine_get_frame(sb_engine_t engine) {
 
 sb_result_t sb_voice_create(sb_engine_t engine, const sb_voice_config_t* config, sb_voice_id_t* out_id) {
     if (!engine || !config || !out_id) return SB_ERR_INVALID_ARG;
+    if (!Voice::validate_config(*config)) return SB_ERR_INVALID_ARG;
 
     // Check for duplicate ID
     {
@@ -379,12 +380,21 @@ sb_result_t sb_voice_create(sb_engine_t engine, const sb_voice_config_t* config,
     }
 
     // Create voice outside the audio callback.
-    Voice* voice = new (std::nothrow) Voice(engine->config.sample_rate, *config);
-    if (!voice) return SB_ERR_OUT_OF_MEMORY;
+    Voice* voice = nullptr;
+    try {
+        voice = new Voice(engine->config.sample_rate, *config);
+    } catch (const std::bad_alloc&) {
+        return SB_ERR_OUT_OF_MEMORY;
+    } catch (const std::length_error&) {
+        return SB_ERR_OUT_OF_MEMORY;
+    }
 
-    {
+    try {
         std::lock_guard<std::mutex> lock(engine->voices_mutex);
         engine->voices.push_back(voice);
+    } catch (const std::bad_alloc&) {
+        delete voice;
+        return SB_ERR_OUT_OF_MEMORY;
     }
 
     *out_id = config->id;
@@ -437,7 +447,7 @@ sb_result_t sb_voice_stop(sb_engine_t engine, sb_voice_id_t id) {
 
 sb_result_t sb_voice_set_rate(sb_engine_t engine, sb_voice_id_t id, float rate) {
     if (!engine) return SB_ERR_NOT_INITIALIZED;
-    if (rate <= 0.0f || rate > 10.0f) return SB_ERR_INVALID_ARG;
+    if (!std::isfinite(rate) || rate <= 0.0f || rate > 10.0f) return SB_ERR_INVALID_ARG;
 
     sb_engine::Command cmd{};
     cmd.type = sb_engine::Command::CMD_SET_RATE;

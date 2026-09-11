@@ -110,6 +110,7 @@ enable_testing()
 set(SAMPLEBRAIN_AUDIO_TESTS
     engine
     voice
+    pcm_voice
     ringbuffer
     scheduler
     metrics

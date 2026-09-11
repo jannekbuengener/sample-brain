@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import csv
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -1114,34 +1115,139 @@ def test_workbench_view_settings_round_trip(tmp_path: Path):
     assert save_workbench_view_settings(custom, state_dir=state_dir) is True
     loaded = load_workbench_view_settings(state_dir=state_dir)
     assert loaded == custom
+    assert json.loads(workbench_view_settings_file(state_dir=state_dir).read_text(encoding="utf-8")) == {
+        "schema_version": 2,
+        "show_filters": True,
+        "show_library_manage": False,
+        "show_search": False,
+        "show_view_toolbar": False,
+        "show_waveform_tools": True,
+    }
 
 
 def test_workbench_view_settings_missing_state_uses_minimal_screen1_default(tmp_path: Path):
-    assert load_workbench_view_settings(state_dir=tmp_path / "missing") == WorkbenchViewSettings(
+    state_dir = tmp_path / "missing"
+    assert load_workbench_view_settings(state_dir=state_dir) == WorkbenchViewSettings(
         show_view_toolbar=False,
         show_search=True,
         show_filters=False,
         show_library_manage=False,
         show_waveform_tools=False,
     )
+    assert not workbench_view_settings_file(state_dir=state_dir).exists()
 
 
-def test_workbench_view_settings_missing_keys_use_minimal_screen1_default(
+def test_workbench_view_settings_partial_state_uses_minimal_default_without_overwrite(
     tmp_path: Path,
 ):
     state_dir = tmp_path / "state"
     state_dir.mkdir()
-    workbench_view_settings_file(state_dir=state_dir).write_text(
-        '{"show_search": false}', encoding="utf-8"
-    )
+    path_file = workbench_view_settings_file(state_dir=state_dir)
+    original = '{"show_search": false}'
+    path_file.write_text(original, encoding="utf-8")
 
     assert load_workbench_view_settings(state_dir=state_dir) == WorkbenchViewSettings(
         show_view_toolbar=False,
-        show_search=False,
+        show_search=True,
         show_filters=False,
         show_library_manage=False,
         show_waveform_tools=False,
     )
+    assert path_file.read_text(encoding="utf-8") == original
+
+
+def test_unversioned_complete_view_settings_migrate_once_to_minimal_v2(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    path_file = workbench_view_settings_file(state_dir=state_dir)
+    path_file.write_text(
+        json.dumps(
+            {
+                "show_view_toolbar": True,
+                "show_search": True,
+                "show_filters": True,
+                "show_library_manage": True,
+                "show_waveform_tools": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert load_workbench_view_settings(state_dir=state_dir) == DEFAULT_WORKBENCH_VIEW_SETTINGS
+    assert json.loads(path_file.read_text(encoding="utf-8")) == {
+        "schema_version": 2,
+        "show_filters": False,
+        "show_library_manage": False,
+        "show_search": True,
+        "show_view_toolbar": False,
+        "show_waveform_tools": False,
+    }
+
+
+def test_version_one_view_settings_migrate_once_to_minimal_v2(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    path_file = workbench_view_settings_file(state_dir=state_dir)
+    path_file.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "show_view_toolbar": True,
+                "show_search": False,
+                "show_filters": True,
+                "show_library_manage": True,
+                "show_waveform_tools": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert load_workbench_view_settings(state_dir=state_dir) == DEFAULT_WORKBENCH_VIEW_SETTINGS
+    assert json.loads(path_file.read_text(encoding="utf-8"))["schema_version"] == 2
+
+
+def test_complete_version_two_view_settings_remain_authoritative(tmp_path: Path):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    settings = WorkbenchViewSettings(
+        show_view_toolbar=True,
+        show_search=False,
+        show_filters=True,
+        show_library_manage=True,
+        show_waveform_tools=True,
+    )
+    path_file = workbench_view_settings_file(state_dir=state_dir)
+    path_file.write_text(
+        json.dumps({"schema_version": 2, **settings.__dict__}, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    assert load_workbench_view_settings(state_dir=state_dir) == settings
+    assert load_workbench_view_settings(state_dir=state_dir) == settings
+
+
+@pytest.mark.parametrize(
+    "original",
+    (
+        "{not-json",
+        "[]",
+        '{"schema_version": 2, "show_view_toolbar": false}',
+        '{"schema_version": 2, "show_view_toolbar": false, "show_search": true, '
+        '"show_filters": "yes", "show_library_manage": false, "show_waveform_tools": false}',
+        '{"schema_version": 3, "show_view_toolbar": true, "show_search": false, '
+        '"show_filters": true, "show_library_manage": true, "show_waveform_tools": true}',
+    ),
+)
+def test_invalid_partial_or_future_view_settings_fall_back_without_overwrite(
+    tmp_path: Path, original: str
+):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    path_file = workbench_view_settings_file(state_dir=state_dir)
+    path_file.write_text(original, encoding="utf-8")
+
+    assert load_workbench_view_settings(state_dir=state_dir) == DEFAULT_WORKBENCH_VIEW_SETTINGS
+    assert path_file.read_text(encoding="utf-8") == original
 
 
 def test_workbench_view_settings_invalid_json_falls_back_to_defaults(tmp_path: Path):

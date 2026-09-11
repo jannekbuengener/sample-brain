@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import platform
 import threading
 import tkinter as tk
 from dataclasses import dataclass
@@ -61,7 +63,7 @@ from .workbench_controller import (
     load_workbench_analysis_limit,
     load_workbench_last_folder,
     load_workbench_sample_cue,
-    load_workbench_view_settings,
+    load_workbench_view_settings_result,
     parse_workbench_bpm_bound,
     preview_catalog_import,
     preview_start_ms_from_waveform_x,
@@ -87,6 +89,7 @@ from .workbench_controller import (
 from .workbench_recording_ui import attach_workbench_recording_ui
 from .workbench_transport_ui import attach_workbench_transport_ui
 from .workbench_harmony import (
+    HarmonicMatchLibraryController,
     HarmonyRelation,
     HarmonySuggestion as HarmonyFinderSuggestion,
     find_harmony_matches,
@@ -120,6 +123,7 @@ from .workbench_live_kit import (
     LiveKitState,
     RightPanePresentation,
 )
+from .runtime_provenance import describe_runtime
 
 # Producer-facing palette derived from ui_mockup.png (functional, not pixel-perfect).
 BG_DARK = "#08090a"
@@ -285,8 +289,15 @@ class WorkbenchApp:
         self._playlist_names: list[str] = []
         self._catalog_total_count = 0
         self._catalog_load_limit: int | None = None
-        self._view_settings = load_workbench_view_settings()
+        view_settings_result = load_workbench_view_settings_result()
+        self._view_settings = view_settings_result.settings
+        self._view_settings_persistable = view_settings_result.persistable
         self._similar_suggestions: list[WorkbenchSuggestion] = []
+        self._harmonic_match_controller = HarmonicMatchLibraryController(
+            finder=find_harmony_matches
+        )
+        self._harmonic_match_selected_index = 0
+        self._harmonic_match_context_fingerprint: tuple[object, ...] | None = None
         self._live_kit_state = LiveKitState()
         self._live_kit_presentation = LiveKitPresentationState(self._live_kit_state)
 
@@ -300,8 +311,8 @@ class WorkbenchApp:
             self, transport_adapter=self._transport_adapter
         )
         self._editing_ui = attach_workbench_editing_ui(self)
-        self._apply_view_toolbar_visibility(notify=False)
-        self._apply_view_visibility(notify=False)
+        self._apply_view_toolbar_visibility(notify=False, persist=False)
+        self._apply_view_visibility(notify=False, persist=False)
         self._apply_shell_presentation()
         self._restore_last_folder()
         self._quick_capture = None
@@ -359,6 +370,45 @@ class WorkbenchApp:
             font=("Segoe UI", 10, "bold"),
         )
         style.map("Intent.TButton", background=[("active", ACCENT_HOVER)])
+        style.configure(
+            "HarmonicMatchInactive.TButton",
+            background=PANEL_ALT,
+            foreground=TEXT_MUTED,
+            padding=(5, 2),
+            font=("Segoe UI", 10, "bold"),
+        )
+        style.map(
+            "HarmonicMatchInactive.TButton",
+            background=[("active", BORDER)],
+        )
+        style.configure(
+            "HarmonicMatchActive.TButton",
+            background=ACCENT,
+            foreground="#ffffff",
+            padding=(5, 2),
+            font=("Segoe UI", 10, "bold"),
+        )
+        style.map(
+            "HarmonicMatchActive.TButton",
+            background=[("active", ACCENT_HOVER)],
+        )
+        style.configure(
+            "SyncInactive.TButton",
+            background=PANEL,
+            foreground=TEXT_MUTED,
+            padding=(5, 2),
+            font=("Segoe UI", 10, "bold"),
+            bordercolor=BORDER,
+        )
+        style.map("SyncInactive.TButton", background=[("active", PANEL_ALT)])
+        style.configure(
+            "SyncActive.TButton",
+            background=ACCENT,
+            foreground="#ffffff",
+            padding=(5, 2),
+            font=("Segoe UI", 10, "bold"),
+        )
+        style.map("SyncActive.TButton", background=[("active", ACCENT_HOVER)])
         style.configure(
             "Group.TButton",
             background=PANEL_ALT,
@@ -482,6 +532,17 @@ class WorkbenchApp:
         tools_menu.add_separator()
         tools_menu.add_command(label="Live Kit", command=self._show_live_kit)
         tools_menu.add_command(label="Sample Details", command=self._show_sample_details)
+        tools_menu.add_separator()
+        tools_menu.add_command(
+            label="Runtime-Informationen", command=self._show_runtime_information
+        )
+
+    def _show_runtime_information(self) -> None:
+        messagebox.showinfo(
+            "Runtime-Informationen",
+            describe_runtime(Path(__file__).resolve().parents[1]),
+            parent=self.root,
+        )
 
     def _build_layout(self) -> None:
         shell_header = ttk.Frame(
@@ -495,11 +556,6 @@ class WorkbenchApp:
         self._product_title.pack(side=tk.LEFT)
         self._shell_header_controls = ttk.Frame(shell_header, style="Header.TFrame")
         self._shell_header_controls.pack(side=tk.RIGHT)
-        ttk.Menubutton(
-            self._shell_header_controls,
-            text="Tools",
-            menu=self._tools_menu,
-        ).pack(side=tk.RIGHT, padx=(12, 0))
 
         toolbar = ttk.Frame(self.root, padding=(12, 6, 12, 6))
         self._toolbar = toolbar
@@ -597,6 +653,7 @@ class WorkbenchApp:
         body.columnconfigure(0, weight=0, minsize=220)
         body.columnconfigure(1, weight=5, minsize=560)
         body.columnconfigure(2, weight=2, minsize=300)
+        body.columnconfigure(3, weight=0, minsize=0)
         body.rowconfigure(0, weight=1)
 
         library_frame = ttk.Frame(body, style="Panel.TFrame", padding=8)
@@ -687,11 +744,23 @@ class WorkbenchApp:
         self._center_notebook.add(self._harmony_frame, text="Harmonie-Finder")
         self._build_harmony_tab()
 
+        self._harmonic_match_frame = ttk.Frame(
+            body, style="Panel.TFrame", padding=8
+        )
+        self._build_harmonic_match_library()
+
         browser_context = ttk.Frame(playlist_frame, style="Panel.TFrame")
         browser_context.pack(fill=tk.X, pady=(0, 6))
         ttk.Label(
             browser_context, text="SAMPLE BROWSER", style="Heading.TLabel"
         ).pack(side=tk.LEFT)
+        self._harmonic_match_btn = ttk.Button(
+            browser_context,
+            text="Harmonic Match",
+            style="HarmonicMatchInactive.TButton",
+            command=self._toggle_harmonic_match_library,
+        )
+        self._harmonic_match_btn.pack(side=tk.RIGHT, padx=(8, 0))
         self._browser_context_var = tk.StringVar(value="All Samples")
         ttk.Label(
             browser_context,
@@ -1071,6 +1140,375 @@ class WorkbenchApp:
         self._live_kit_content.pack(fill=tk.BOTH, expand=True)
         self._refresh_live_kit_view()
 
+    def _build_harmonic_match_library(self) -> None:
+        header = ttk.Frame(self._harmonic_match_frame, style="Panel.TFrame")
+        header.pack(fill=tk.X, pady=(0, 4))
+        ttk.Label(header, text="HARMONIC MATCHES", style="Heading.TLabel").pack(
+            side=tk.LEFT
+        )
+        self._harmonic_match_anchor_var = tk.StringVar(value="Reference: —")
+        ttk.Label(
+            self._harmonic_match_frame,
+            textvariable=self._harmonic_match_anchor_var,
+            style="Muted.TLabel",
+        ).pack(fill=tk.X, pady=(0, 6))
+
+        canvas_frame = ttk.Frame(self._harmonic_match_frame, style="Panel.TFrame")
+        canvas_frame.pack(fill=tk.BOTH, expand=True)
+        self._harmonic_match_canvas = tk.Canvas(
+            canvas_frame,
+            bg=PANEL,
+            highlightthickness=0,
+            yscrollincrement=74,
+        )
+        scroll = ttk.Scrollbar(
+            canvas_frame,
+            orient=tk.VERTICAL,
+            command=self._on_harmonic_match_scrollbar,
+        )
+        self._harmonic_match_canvas.configure(yscrollcommand=scroll.set)
+        self._harmonic_match_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self._harmonic_match_canvas.bind(
+            "<Configure>", lambda _event: self._render_harmonic_match_rows()
+        )
+        self._harmonic_match_canvas.bind(
+            "<Button-1>", self._on_harmonic_match_canvas_click
+        )
+        self._harmonic_match_canvas.bind(
+            "<MouseWheel>", self._on_harmonic_match_scroll
+        )
+        self._harmonic_match_canvas.bind(
+            "<Down>", lambda _event: self._route_harmonic_match_navigation("next")
+        )
+        self._harmonic_match_canvas.bind(
+            "<Up>", lambda _event: self._route_harmonic_match_navigation("previous")
+        )
+        self._harmonic_match_canvas.bind("<Escape>", self._on_harmonic_match_escape)
+        self._harmonic_match_status_var = tk.StringVar(
+            value="Harmonic Match ist ausgeschaltet."
+        )
+        ttk.Label(
+            self._harmonic_match_frame,
+            textvariable=self._harmonic_match_status_var,
+            style="Muted.TLabel",
+        ).pack(fill=tk.X, pady=(4, 0))
+
+    @staticmethod
+    def _harmonic_match_bpm_fingerprint(bpm: float | None) -> tuple[str, object]:
+        if bpm is None:
+            return ("none", "")
+        try:
+            value = float(bpm)
+        except (TypeError, ValueError):
+            return ("invalid", repr(bpm))
+        if math.isnan(value):
+            return ("nan", "")
+        if math.isinf(value):
+            return ("positive-infinity" if value > 0 else "negative-infinity", "")
+        return ("finite", value)
+
+    @classmethod
+    def _harmonic_match_row_fingerprint(
+        cls, row: WorkbenchRow
+    ) -> tuple[str, str | None, tuple[str, object], str]:
+        return (
+            row.path,
+            row.key,
+            cls._harmonic_match_bpm_fingerprint(row.bpm),
+            row.display_name,
+        )
+
+    def _current_harmonic_match_fingerprint(
+        self, anchor: WorkbenchRow
+    ) -> tuple[object, ...]:
+        candidates = tuple(
+            sorted(
+                self._harmonic_match_row_fingerprint(row)
+                for row in self._rows
+                if row.path != anchor.path
+            )
+        )
+        return (self._harmonic_match_row_fingerprint(anchor), candidates)
+
+    def _rebind_harmonic_match_rows(self, anchor: WorkbenchRow) -> bool:
+        current_by_path: dict[str, WorkbenchRow] = {}
+        ambiguous_paths: set[str] = set()
+        for row in self._rows:
+            if row.path in current_by_path:
+                ambiguous_paths.add(row.path)
+            else:
+                current_by_path[row.path] = row
+
+        current_result_rows: list[WorkbenchRow] = []
+        for suggestion in self._harmonic_match_controller.results:
+            path = suggestion.row.path
+            if path in ambiguous_paths or path not in current_by_path:
+                return False
+            current_result_rows.append(current_by_path[path])
+
+        self._harmonic_match_controller.anchor = anchor
+        for suggestion, row in zip(
+            self._harmonic_match_controller.results,
+            current_result_rows,
+            strict=True,
+        ):
+            suggestion.row = row
+        return True
+
+    def _toggle_harmonic_match_library(self) -> None:
+        if self._harmonic_match_frame.winfo_manager():
+            self._close_harmonic_match_library()
+            return
+
+        row = self._selected_row()
+        if row is None:
+            self._set_status("Kein Sample als Harmonic-Match-Referenz ausgewählt.")
+            return
+
+        fingerprint = self._current_harmonic_match_fingerprint(row)
+        if fingerprint != self._harmonic_match_context_fingerprint:
+            self._open_harmonic_match_library(row, fingerprint=fingerprint)
+            return
+
+        if not self._rebind_harmonic_match_rows(row):
+            self._open_harmonic_match_library(row, fingerprint=fingerprint)
+            return
+        self._show_harmonic_match_library(row)
+
+    def _open_harmonic_match_library(
+        self,
+        anchor: WorkbenchRow,
+        *,
+        fingerprint: tuple[object, ...] | None = None,
+    ) -> None:
+        self._harmonic_match_controller.set_anchor(anchor, self._rows)
+        self._harmonic_match_context_fingerprint = (
+            fingerprint
+            if fingerprint is not None
+            else self._current_harmonic_match_fingerprint(anchor)
+        )
+        self._harmonic_match_selected_index = 0
+        self._harmonic_match_canvas.yview_moveto(0.0)
+        self._show_harmonic_match_library(anchor)
+
+    def _apply_harmonic_match_layout(self, *, open_panel: bool) -> None:
+        if open_panel:
+            self._body.columnconfigure(1, weight=4, minsize=420)
+            self._body.columnconfigure(2, weight=3, minsize=360)
+            self._body.columnconfigure(3, weight=2, minsize=300)
+            self._harmonic_match_frame.grid(
+                row=0, column=2, sticky="nsew", padx=(0, 8)
+            )
+            self._right_pane.grid(row=0, column=3, sticky="nsew")
+            return
+
+        self._harmonic_match_frame.grid_remove()
+        self._right_pane.grid(row=0, column=2, sticky="nsew")
+        self._body.columnconfigure(1, weight=5, minsize=560)
+        self._body.columnconfigure(2, weight=2, minsize=300)
+        self._body.columnconfigure(3, weight=0, minsize=0)
+
+    def _show_harmonic_match_library(self, anchor: WorkbenchRow) -> None:
+        anchor_key = anchor.key or "—"
+        self._harmonic_match_anchor_var.set(
+            f"Reference: {catalog_row_display_name(anchor)} · {anchor_key}"
+        )
+        self._harmonic_match_status_var.set(self._harmonic_match_controller.status)
+        self._apply_harmonic_match_layout(open_panel=True)
+        self._harmonic_match_btn.configure(style="HarmonicMatchActive.TButton")
+        self._render_harmonic_match_rows()
+        self._harmonic_match_canvas.focus_set()
+        self._set_status(self._harmonic_match_controller.status, tone="active")
+
+    def _close_harmonic_match_library(self) -> None:
+        self._apply_harmonic_match_layout(open_panel=False)
+        self._harmonic_match_btn.configure(style="HarmonicMatchInactive.TButton")
+        self._browser_canvas.focus_set()
+        self._set_status("Harmonic Match geschlossen.", tone="neutral")
+
+    def _render_harmonic_match_rows(self) -> None:
+        if not hasattr(self, "_harmonic_match_canvas"):
+            return
+        canvas = self._harmonic_match_canvas
+        if not hasattr(canvas, "delete"):
+            return
+        canvas.delete("match-row")
+        width = max(int(canvas.winfo_width()), 1)
+        row_height = 74
+        results = self._harmonic_match_controller.results
+        canvas.configure(scrollregion=(0, 0, width, len(results) * row_height))
+        viewport = VirtualBrowserRowViewport(
+            row_height_px=row_height,
+            viewport_height_px=max(int(canvas.winfo_height()), row_height),
+            overscan_rows=2,
+        )
+        layout = viewport.layout(results, scroll_offset_px=int(canvas.canvasy(0)))
+        scheduled = False
+        for item in layout.renderable_rows:
+            index = item.index
+            suggestion = item.row
+            top = index * row_height
+            bottom = top + row_height
+            selected = index == self._harmonic_match_selected_index
+            canvas.create_rectangle(
+                0,
+                top,
+                width,
+                bottom,
+                fill=PANEL_ALT if selected else PANEL,
+                outline=ACCENT if selected else BORDER,
+                tags="match-row",
+            )
+            waveform_left, waveform_right = 8, min(104, max(width // 3, 60))
+            center_y = top + 35
+            cached = self._browser_waveforms.get(suggestion.row.path)
+            envelope = cached.envelope if cached is not None else ()
+            if envelope:
+                step = max((waveform_right - waveform_left) / len(envelope), 1)
+                points: list[float] = []
+                for point_index, value in enumerate(envelope):
+                    x = waveform_left + point_index * step
+                    amplitude = min(abs(float(value)), 1.0) * 20
+                    points.extend((x, center_y - amplitude if point_index % 2 else center_y + amplitude))
+                if len(points) >= 4:
+                    canvas.create_line(*points, fill=TEXT_MUTED, tags="match-row")
+            else:
+                canvas.create_line(
+                    waveform_left,
+                    center_y,
+                    waveform_right,
+                    center_y,
+                    fill=TEXT_MUTED,
+                    tags="match-row",
+                )
+            name_x = waveform_right + 10
+            relation = HARMONY_RELATION_LABELS.get(
+                suggestion.relation, suggestion.relation.value
+            )
+            pitch = (
+                f" · {suggestion.pitch_shift_semitones:+d} st"
+                if suggestion.pitch_shift_semitones is not None
+                else ""
+            )
+            canvas.create_text(
+                name_x,
+                top + 17,
+                text=catalog_row_display_name(suggestion.row),
+                fill=TEXT,
+                anchor=tk.W,
+                font=("Segoe UI Semibold", 9),
+                tags="match-row",
+            )
+            canvas.create_text(
+                name_x,
+                top + 38,
+                text=f"{suggestion.row.key or '—'} · {relation}{pitch}",
+                fill=TEXT_MUTED,
+                anchor=tk.W,
+                font=("Segoe UI", 8),
+                tags="match-row",
+            )
+            canvas.create_text(
+                width - 42,
+                top + 18,
+                text=f"{suggestion.total_score:.0%}",
+                fill=ACCENT,
+                anchor=tk.E,
+                font=("Segoe UI Semibold", 9),
+                tags="match-row",
+            )
+            canvas.create_text(
+                name_x,
+                top + 58,
+                text=suggestion.explanation,
+                fill=TEXT_MUTED,
+                anchor=tk.W,
+                width=max(width - name_x - 48, 40),
+                font=("Segoe UI", 7),
+                tags="match-row",
+            )
+            canvas.create_text(
+                width - 15,
+                center_y,
+                text="+",
+                fill=ACCENT,
+                font=("Segoe UI", 16),
+                tags="match-row",
+            )
+            scheduled = (
+                self._browser_waveform_loader.schedule(suggestion.row.path) or scheduled
+            )
+        if scheduled and not self._browser_waveform_drain_scheduled:
+            self._browser_waveform_drain_scheduled = True
+            self.root.after(25, self._drain_browser_waveform_results)
+
+    def _on_harmonic_match_canvas_click(
+        self,
+        event: tk.Event,
+        *,
+        canvas_width: int | None = None,
+        row_height: int = 74,
+    ) -> str:
+        results = self._harmonic_match_controller.results
+        y = (
+            self._harmonic_match_canvas.canvasy(event.y)
+            if hasattr(self._harmonic_match_canvas, "canvasy")
+            else event.y
+        )
+        index = int(y) // row_height
+        if not 0 <= index < len(results):
+            return "break"
+        self._harmonic_match_selected_index = index
+        self._harmonic_match_canvas.focus_set()
+        width = canvas_width or int(self._harmonic_match_canvas.winfo_width())
+        row = results[index].row
+        if event.x >= width - 36:
+            self._open_add_to_live_kit_dialog(
+                row,
+                focus_restore=self._harmonic_match_canvas.focus_set,
+            )
+        else:
+            self._audition_harmonic_match_row(row)
+        self._render_harmonic_match_rows()
+        return "break"
+
+    def _audition_harmonic_match_row(self, row: WorkbenchRow) -> None:
+        self._harmonic_match_controller.observe_audition(row)
+        self._preview_row_path = row.path
+        self._set_detail(row)
+        self._play_preview()
+
+    def _route_harmonic_match_navigation(
+        self, direction: str, *, editable_focus: bool = False
+    ) -> str | None:
+        if editable_focus:
+            return None
+        results = self._harmonic_match_controller.results
+        if not results:
+            return "break"
+        delta = 1 if direction == "next" else -1
+        self._harmonic_match_selected_index = min(
+            max(self._harmonic_match_selected_index + delta, 0), len(results) - 1
+        )
+        self._audition_harmonic_match_row(
+            results[self._harmonic_match_selected_index].row
+        )
+        self._render_harmonic_match_rows()
+        return "break"
+
+    def _on_harmonic_match_scroll(self, event: tk.Event) -> str:
+        self._harmonic_match_canvas.yview_scroll(-int(event.delta / 120), "units")
+        self._render_harmonic_match_rows()
+        return "break"
+
+    def _on_harmonic_match_scrollbar(self, *args: str) -> None:
+        self._harmonic_match_canvas.yview(*args)
+        self._render_harmonic_match_rows()
+
+    def _on_harmonic_match_escape(self, event: tk.Event) -> str | None:
+        return self._on_browser_escape(event)
+
     def _refresh_live_kit_view(self) -> None:
         if not hasattr(self, "_live_kit_content"):
             return
@@ -1122,6 +1560,14 @@ class WorkbenchApp:
                         group_name, slot_name
                     ),
                 ).pack(side=tk.RIGHT)
+                ttk.Button(
+                    slot_frame,
+                    text="▶",
+                    width=3,
+                    command=lambda group_name=group.name, slot_name=slot.name: self._audition_live_kit_slot(
+                        group_name, slot_name
+                    ),
+                ).pack(side=tk.RIGHT, padx=(0, 4))
                 assignment_name = slot.assignment.display_name if slot.assignment else "—"
                 ttk.Label(
                     slot_frame,
@@ -1159,6 +1605,26 @@ class WorkbenchApp:
             tone="success",
         )
         return True
+
+    def _audition_live_kit_slot(self, group: str, slot: str) -> bool:
+        """Audition the exact assigned row without re-reading Browser selection."""
+        row = self._live_kit_state.assignment_for(group, slot)
+        if row is None:
+            self._set_status(f"Live Kit: {slot} ist leer.", tone="neutral")
+            return False
+        result = self._preview.play_row(row, start_ms=0)
+        if result.ok:
+            self._set_status(
+                f"Live Kit Wiedergabe: {slot} — {row.display_name}",
+                tone="active",
+            )
+        else:
+            self._set_status(
+                result.message or "Live-Kit-Wiedergabe fehlgeschlagen.",
+                tone="error",
+            )
+        self._update_preview_state(self._detail_row)
+        return bool(result.ok)
 
     def _build_harmony_tab(self) -> None:
         frame = self._harmony_frame
@@ -1459,6 +1925,8 @@ class WorkbenchApp:
         )
 
     def _persist_view_settings(self) -> None:
+        if not self._view_settings_persistable:
+            return
         self._view_settings = self._current_view_settings()
         save_workbench_view_settings(self._view_settings)
 
@@ -1469,7 +1937,9 @@ class WorkbenchApp:
         except tk.TclError:
             return False
 
-    def _apply_view_toolbar_visibility(self, *, notify: bool) -> None:
+    def _apply_view_toolbar_visibility(
+        self, *, notify: bool, persist: bool = True
+    ) -> None:
         visible = bool(self._show_view_toolbar_var.get())
         if visible:
             if not self._view_bar_is_packed():
@@ -1478,7 +1948,8 @@ class WorkbenchApp:
             self._view_bar.pack_forget()
         settings = self._current_view_settings()
         self._view_settings = settings
-        self._persist_view_settings()
+        if persist:
+            self._persist_view_settings()
         if notify:
             status_message = (
                 format_workbench_view_toolbar_shown_status()
@@ -1497,7 +1968,11 @@ class WorkbenchApp:
         self._update_waveform_usage_hint()
 
     def _apply_view_visibility(
-        self, *, notify: bool, status_message: str | None = None
+        self,
+        *,
+        notify: bool,
+        status_message: str | None = None,
+        persist: bool = True,
     ) -> None:
         settings = self._current_view_settings()
         if settings.show_search:
@@ -1532,7 +2007,8 @@ class WorkbenchApp:
             self._provenance_label.pack_forget()
 
         self._view_settings = settings
-        self._persist_view_settings()
+        if persist:
+            self._persist_view_settings()
         self._refresh_playlist_view()
         if notify and status_message:
             self._set_status(status_message, tone="neutral")
@@ -1604,11 +2080,14 @@ class WorkbenchApp:
         self._show_filters_var.set(defaults.show_filters)
         self._show_library_manage_var.set(defaults.show_library_manage)
         self._show_waveform_tools_var.set(defaults.show_waveform_tools)
-        self._apply_view_toolbar_visibility(notify=False)
+        self._apply_view_toolbar_visibility(notify=False, persist=False)
         self._apply_view_visibility(
             notify=True,
             status_message=format_workbench_view_restore_status(),
+            persist=False,
         )
+        self._view_settings_persistable = True
+        self._persist_view_settings()
 
     def _add_structured_filter_combo(
         self,
@@ -2609,6 +3088,8 @@ class WorkbenchApp:
         drained = self._browser_waveform_loader.drain_results()
         if drained:
             self._render_browser_rows()
+            if self._harmonic_match_frame.winfo_manager():
+                self._render_harmonic_match_rows()
         if self._browser_waveform_loader.pending_count:
             self._browser_waveform_drain_scheduled = True
             self.root.after(25, self._drain_browser_waveform_results)
@@ -2831,8 +3312,14 @@ class WorkbenchApp:
         self._open_add_to_playlist_dialog(row)
         return "break"
 
-    def _open_add_to_live_kit_dialog(self, row: WorkbenchRow) -> None:
+    def _open_add_to_live_kit_dialog(
+        self,
+        row: WorkbenchRow,
+        *,
+        focus_restore: Callable[[], None] | None = None,
+    ) -> None:
         """Choose an existing kit slot for the row captured by the Add hit-test."""
+        restore_focus = focus_restore or self._browser_canvas.focus_set
         dialog = tk.Toplevel(self.root)
         dialog.title("Add to Kit")
         dialog.configure(bg=BG_DARK)
@@ -2851,7 +3338,7 @@ class WorkbenchApp:
         def close(_event: tk.Event | None = None) -> str:
             dialog.grab_release()
             dialog.destroy()
-            self._browser_canvas.focus_set()
+            restore_focus()
             return "break"
 
         def assign(group: str, slot: str) -> None:
@@ -3020,7 +3507,12 @@ class WorkbenchApp:
             return
         if start_ms is None:
             start_ms = get_preview_start_ms(self._preview_row_path)
-        result = self._preview.play(self._preview_row_path, start_ms=start_ms)
+        row = self._detail_row
+        play_row = getattr(self._preview, "play_row", None)
+        if row is not None and row.path == self._preview_row_path and callable(play_row):
+            result = play_row(row, start_ms=start_ms)
+        else:
+            result = self._preview.play(self._preview_row_path, start_ms=start_ms)
         name = Path(self._preview_row_path).name
         if result.ok:
             if from_click_position:
@@ -4001,6 +4493,26 @@ def run_workbench(on_ready: Callable[[], None] | None = None) -> None:
     if on_ready is not None:
         on_ready()
     root.mainloop()
+
+
+def run_visual_acceptance(*, runtime_root: Path, evidence_dir: Path) -> dict[str, object]:
+    """Capture both required states from a verified dedicated runtime."""
+    import os
+    import tempfile
+    from .runtime_provenance import evaluate_runtime
+    from .workbench_visual_acceptance import (CLIENT_HEIGHT, CLIENT_WIDTH, REQUIRED_STATE_IDS, apply_screen1_visual_fixture, build_screen1_visual_fixture_v1, build_visual_evidence_manifest, capture_windows_client_window, current_windows_dpi_scale, validate_capture_sanity, validate_runtime_for_visual_acceptance, write_visual_evidence_manifest)
+    report=evaluate_runtime(runtime_root); validate_runtime_for_visual_acceptance(report); fixture=build_screen1_visual_fixture_v1(); evidence_dir.mkdir(parents=True,exist_ok=True); previous=os.environ.get("SAMPLE_BRAIN_WORKBENCH_STATE_DIR")
+    try:
+        with tempfile.TemporaryDirectory(prefix="sample-brain-visual-acceptance-") as state_dir:
+            os.environ["SAMPLE_BRAIN_WORKBENCH_STATE_DIR"]=state_dir; root=tk.Tk(); root.geometry(f"{CLIENT_WIDTH}x{CLIENT_HEIGHT}"); root.resizable(False,False); app=WorkbenchApp(root); root.deiconify(); root.lift(); root.focus_force(); root.attributes("-topmost",True); captures={}; sanity={}
+            try:
+                for state in REQUIRED_STATE_IDS:
+                    apply_screen1_visual_fixture(app,fixture,state); root.update_idletasks(); root.update(); target=evidence_dir/f"{state}.png"; capture_windows_client_window(root.winfo_id(),target); check=validate_capture_sanity(target,expected_width=CLIENT_WIDTH,expected_height=CLIENT_HEIGHT); check["panel_structure"]=(app._right_pane.grid_info().get("column")== (3 if state.endswith("4panel") else 2)); check["pass"]=bool(check["pass"] and check["panel_structure"]); sanity[state]=check; captures[state]=target
+                manifest=build_visual_evidence_manifest(runtime_report=report,fixture=fixture,captures=captures,os_name="Windows "+platform.release(),dpi_scale=current_windows_dpi_scale(root.winfo_id()),client_width=CLIENT_WIDTH,client_height=CLIENT_HEIGHT,sanity_results=sanity); write_visual_evidence_manifest(evidence_dir/"manifest.json",manifest); return manifest
+            finally: root.destroy()
+    finally:
+        if previous is None: os.environ.pop("SAMPLE_BRAIN_WORKBENCH_STATE_DIR",None)
+        else: os.environ["SAMPLE_BRAIN_WORKBENCH_STATE_DIR"]=previous
 
 
 __all__ = ["WorkbenchApp", "run_workbench"]

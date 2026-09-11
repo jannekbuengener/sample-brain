@@ -1,23 +1,30 @@
 # Windows helpers — Local Workbench
 
-Start the Local Workbench from the CLI:
+For source development, start the checkout explicitly:
 
 ```powershell
 python -m src.cli workbench
 ```
 
-## Desktop shortcut
+This is intentionally a developer command: it runs the code in that checkout.
 
-From the repository root (with a local `.venv` recommended):
+## Producer runtime and desktop shortcut
+
+Install the dedicated, provenance-checked runtime from a current `main` ref:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\windows\create_workbench_desktop_shortcut.ps1
+git fetch origin --prune
+powershell -ExecutionPolicy Bypass -File .\tools\windows\install_runtime_workbench.ps1 -CreateShortcut
 ```
 
-This creates **Sample Brain Workbench** on your desktop. Double-click it to launch the workbench.
+This creates **Sample Brain Runtime Workbench** on your desktop. It uses the
+runtime's dedicated `.venv` and checks its manifest, Git HEAD, working-tree
+state, interpreter, and import root before starting the Workbench.
 
-- The shortcut runs `tools\windows\start_workbench.cmd`.
-- Working directory is the repo root (resolved relative to the script — no hardcoded paths in the repo).
-- Python: `.venv\Scripts\python.exe` when present, otherwise `python` on `PATH`.
+- A known older valid runtime may start as `STALE`; it never updates itself.
+- Missing, dirty, or contradictory runtime provenance blocks the launch.
+- The legacy `create_workbench_desktop_shortcut.ps1` helper now only creates
+  this verified shortcut when the default runtime already exists.
 
-No installer or packaged EXE — local shortcut only.
+No packaged EXE is provided. Runtime installation is local and preserves
+developer checkouts without `reset`, `clean`, or branch switching.

@@ -460,8 +460,9 @@ def test_ui_contains_exact_sync_control():
     build_source = inspect.getsource(WorkbenchTransportUiController._build_controls)
 
     assert 'text="SYNC"' in build_source
-    assert "variable=self.sync_var" in build_source
-    assert "command=self.apply_sync_control" in build_source
+    assert "ttk_api.Button(" in build_source
+    assert "Checkbutton" not in build_source
+    assert "command=self.toggle_sync_control" in build_source
 
 
 def test_no_second_main_tempo_label():

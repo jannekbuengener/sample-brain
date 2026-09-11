@@ -156,9 +156,10 @@ class WorkbenchTransportAdapter:
         Idempotent: if engine already started, returns True without calling start() again.
         Returns True if engine is available and running."""
         with self._lock:
-            if not self._native_available or not self._native_owned:
+            if not self._native_available or self._native_engine is None:
                 return False
-            self._ensure_owned_native_open_unlocked()
+            if self._native_owned:
+                self._ensure_owned_native_open_unlocked()
             if not self._native_opened:
                 return False
             if self._native_started:
@@ -346,8 +347,9 @@ class WorkbenchTransportAdapter:
                 return
             try:
                 self._ensure_owned_native_open_unlocked()
-                self._native_engine.start()
-                self._native_started = True
+                if not self._native_started:
+                    self._native_engine.start()
+                    self._native_started = True
                 self._transport.play()
                 # Preserve a previously established explicit seek anchor. Only
                 # fall back to the configured source-start offset when nothing
