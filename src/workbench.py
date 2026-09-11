@@ -307,8 +307,8 @@ class WorkbenchApp:
             self, transport_adapter=self._transport_adapter
         )
         self._editing_ui = attach_workbench_editing_ui(self)
-        self._apply_view_toolbar_visibility(notify=False)
-        self._apply_view_visibility(notify=False)
+        self._apply_view_toolbar_visibility(notify=False, persist=False)
+        self._apply_view_visibility(notify=False, persist=False)
         self._apply_shell_presentation()
         self._restore_last_folder()
         self._quick_capture = None
@@ -1798,7 +1798,9 @@ class WorkbenchApp:
         except tk.TclError:
             return False
 
-    def _apply_view_toolbar_visibility(self, *, notify: bool) -> None:
+    def _apply_view_toolbar_visibility(
+        self, *, notify: bool, persist: bool = True
+    ) -> None:
         visible = bool(self._show_view_toolbar_var.get())
         if visible:
             if not self._view_bar_is_packed():
@@ -1807,7 +1809,8 @@ class WorkbenchApp:
             self._view_bar.pack_forget()
         settings = self._current_view_settings()
         self._view_settings = settings
-        self._persist_view_settings()
+        if persist:
+            self._persist_view_settings()
         if notify:
             status_message = (
                 format_workbench_view_toolbar_shown_status()
@@ -1826,7 +1829,11 @@ class WorkbenchApp:
         self._update_waveform_usage_hint()
 
     def _apply_view_visibility(
-        self, *, notify: bool, status_message: str | None = None
+        self,
+        *,
+        notify: bool,
+        status_message: str | None = None,
+        persist: bool = True,
     ) -> None:
         settings = self._current_view_settings()
         if settings.show_search:
@@ -1861,7 +1868,8 @@ class WorkbenchApp:
             self._provenance_label.pack_forget()
 
         self._view_settings = settings
-        self._persist_view_settings()
+        if persist:
+            self._persist_view_settings()
         self._refresh_playlist_view()
         if notify and status_message:
             self._set_status(status_message, tone="neutral")

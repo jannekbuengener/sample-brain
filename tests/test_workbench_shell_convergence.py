@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import replace
+import json
 from pathlib import Path
 from types import SimpleNamespace
 import tkinter as tk
@@ -14,6 +15,7 @@ from src.workbench_controller import (
     WorkbenchRow,
     WorkbenchViewSettings,
     save_workbench_view_settings,
+    workbench_view_settings_file,
 )
 from src.workbench_live_kit import (
     LIVE_KIT_SLOT_MAPPING,
@@ -187,6 +189,38 @@ def test_complete_persisted_view_settings_remain_authoritative(
         assert _packed(app._lib_manage_btns)
         assert _packed(app._waveform_controls)
         assert not _packed(app._toolbar)
+
+
+def test_future_view_settings_survive_startup_without_v2_overwrite(
+    tmp_path: Path, monkeypatch
+):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    path_file = workbench_view_settings_file(state_dir=state_dir)
+    original = json.dumps(
+        {
+            "schema_version": 3,
+            "show_view_toolbar": True,
+            "show_search": False,
+            "show_filters": True,
+            "show_library_manage": True,
+            "show_waveform_tools": True,
+        },
+        sort_keys=True,
+    )
+    path_file.write_text(original, encoding="utf-8")
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        root.update_idletasks()
+        assert app._current_view_settings() == WorkbenchViewSettings()
+        assert not _packed(app._view_bar)
+        assert path_file.read_text(encoding="utf-8") == original
+    finally:
+        root.destroy()
 
 
 def test_live_kit_default_uses_one_clear_active_group():
