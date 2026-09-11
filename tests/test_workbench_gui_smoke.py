@@ -725,6 +725,7 @@ def test_workbench_fresh_start_hides_advanced_sections_and_edit_menu_restores_to
         root.update_idletasks()
         assert _widget_is_packed(app._view_bar)
         assert WORKBENCH_VIEW_TOGGLE_HELP in app._view_help_var.get()
+        assert load_workbench_view_settings(state_dir=state_dir).show_view_toolbar is True
     finally:
         root.destroy()
 

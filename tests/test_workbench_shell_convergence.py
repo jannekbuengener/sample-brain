@@ -12,6 +12,8 @@ import tkinter as tk
 from src import workbench
 from src.workbench import WorkbenchApp
 from src.workbench_controller import (
+    DEFAULT_WORKBENCH_VIEW_SETTINGS,
+    WORKBENCH_VIEW_SETTINGS_SCHEMA_VERSION,
     WorkbenchRow,
     WorkbenchViewSettings,
     save_workbench_view_settings,
@@ -190,6 +192,10 @@ def test_complete_persisted_view_settings_remain_authoritative(
         assert _packed(app._waveform_controls)
         assert not _packed(app._toolbar)
 
+        app._show_filters_var.set(False)
+        app._on_view_section_toggled("filters")
+        assert json.loads(workbench_view_settings_file().read_text(encoding="utf-8"))["show_filters"] is False
+
 
 def test_future_view_settings_survive_startup_without_v2_overwrite(
     tmp_path: Path, monkeypatch
@@ -218,6 +224,82 @@ def test_future_view_settings_survive_startup_without_v2_overwrite(
         root.update_idletasks()
         assert app._current_view_settings() == WorkbenchViewSettings()
         assert not _packed(app._view_bar)
+        assert path_file.read_text(encoding="utf-8") == original
+    finally:
+        root.destroy()
+
+
+def test_future_view_settings_remain_non_persistable_until_explicit_reset(
+    tmp_path: Path, monkeypatch
+):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    path_file = workbench_view_settings_file(state_dir=state_dir)
+    original = json.dumps(
+        {
+            "schema_version": 3,
+            "show_view_toolbar": True,
+            "show_search": False,
+            "show_filters": True,
+            "show_library_manage": True,
+            "show_waveform_tools": True,
+            "future_only_layout": "wide",
+        },
+        sort_keys=True,
+    )
+    path_file.write_text(original, encoding="utf-8")
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        root.update_idletasks()
+        assert app._current_view_settings() == DEFAULT_WORKBENCH_VIEW_SETTINGS
+        assert path_file.read_text(encoding="utf-8") == original
+
+        app._show_view_toolbar_var.set(True)
+        app._on_view_toolbar_toggled()
+        app._show_filters_var.set(True)
+        app._on_view_section_toggled("filters")
+        assert app._current_view_settings().show_view_toolbar is True
+        assert app._current_view_settings().show_filters is True
+        assert _packed(app._view_bar)
+        assert _packed(app._structured_bar)
+        assert path_file.read_text(encoding="utf-8") == original
+
+        app._restore_default_view()
+        assert json.loads(path_file.read_text(encoding="utf-8")) == {
+            "schema_version": WORKBENCH_VIEW_SETTINGS_SCHEMA_VERSION,
+            **DEFAULT_WORKBENCH_VIEW_SETTINGS.__dict__,
+        }
+
+        app._show_view_toolbar_var.set(True)
+        app._on_view_toolbar_toggled()
+        assert (
+            json.loads(path_file.read_text(encoding="utf-8"))["show_view_toolbar"]
+            is True
+        )
+    finally:
+        root.destroy()
+
+
+def test_partial_view_settings_remain_non_persistable_during_session(
+    tmp_path: Path, monkeypatch
+):
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+    path_file = workbench_view_settings_file(state_dir=state_dir)
+    original = '{"schema_version": 2, "show_view_toolbar": true}'
+    path_file.write_text(original, encoding="utf-8")
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = WorkbenchApp(root)
+        app._show_view_toolbar_var.set(True)
+        app._on_view_toolbar_toggled()
         assert path_file.read_text(encoding="utf-8") == original
     finally:
         root.destroy()

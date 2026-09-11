@@ -62,7 +62,7 @@ from .workbench_controller import (
     load_workbench_analysis_limit,
     load_workbench_last_folder,
     load_workbench_sample_cue,
-    load_workbench_view_settings,
+    load_workbench_view_settings_result,
     parse_workbench_bpm_bound,
     preview_catalog_import,
     preview_start_ms_from_waveform_x,
@@ -288,7 +288,9 @@ class WorkbenchApp:
         self._playlist_names: list[str] = []
         self._catalog_total_count = 0
         self._catalog_load_limit: int | None = None
-        self._view_settings = load_workbench_view_settings()
+        view_settings_result = load_workbench_view_settings_result()
+        self._view_settings = view_settings_result.settings
+        self._view_settings_persistable = view_settings_result.persistable
         self._similar_suggestions: list[WorkbenchSuggestion] = []
         self._harmonic_match_controller = HarmonicMatchLibraryController(
             finder=find_harmony_matches
@@ -1788,6 +1790,8 @@ class WorkbenchApp:
         )
 
     def _persist_view_settings(self) -> None:
+        if not self._view_settings_persistable:
+            return
         self._view_settings = self._current_view_settings()
         save_workbench_view_settings(self._view_settings)
 
@@ -1941,11 +1945,14 @@ class WorkbenchApp:
         self._show_filters_var.set(defaults.show_filters)
         self._show_library_manage_var.set(defaults.show_library_manage)
         self._show_waveform_tools_var.set(defaults.show_waveform_tools)
-        self._apply_view_toolbar_visibility(notify=False)
+        self._apply_view_toolbar_visibility(notify=False, persist=False)
         self._apply_view_visibility(
             notify=True,
             status_message=format_workbench_view_restore_status(),
+            persist=False,
         )
+        self._view_settings_persistable = True
+        self._persist_view_settings()
 
     def _add_structured_filter_combo(
         self,
