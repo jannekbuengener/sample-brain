@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 import tkinter as tk
+from tkinter import ttk
 
 import pytest
 
@@ -14,6 +15,10 @@ from src.workbench import WorkbenchApp
 from src.workbench_controller import WorkbenchResult, WorkbenchRow
 from src.workbench_harmony import HarmonyRelation, HarmonySuggestion
 from src.workbench_live_kit import LiveKitState
+from src.workbench_visual_acceptance import (
+    apply_screen1_visual_fixture,
+    build_screen1_visual_fixture_v1,
+)
 
 
 def _row(
@@ -175,6 +180,46 @@ def _widget_visible(widget) -> bool:
     return bool(widget.winfo_manager())
 
 
+def _select_browser_row(app: WorkbenchApp, index: int) -> None:
+    app._tree.selection_set(str(index))
+
+
+def _column_contract(app: WorkbenchApp) -> tuple[tuple[int, int], ...]:
+    return tuple(
+        (
+            int(app._body.grid_columnconfigure(index)["weight"]),
+            int(app._body.grid_columnconfigure(index)["minsize"]),
+        )
+        for index in range(1, 4)
+    )
+
+
+def _descendants(widget):
+    for child in widget.winfo_children():
+        yield child
+        yield from _descendants(child)
+
+
+def _button_texts(widget) -> tuple[str, ...]:
+    return tuple(
+        str(child.cget("text"))
+        for child in _descendants(widget)
+        if isinstance(child, ttk.Button)
+    )
+
+
+def _recording_finder(calls):
+    def finder(reference, candidates, **_kwargs):
+        candidates = list(candidates)
+        calls.append((reference, tuple(candidates)))
+        return [
+            _suggestion(row, HarmonyRelation.DIRECT, total=1.0 - index * 0.01)
+            for index, row in enumerate(candidates)
+        ], None
+
+    return finder
+
+
 @contextmanager
 def _fresh_app(tmp_path: Path, monkeypatch):
     state_dir = tmp_path / "state"
@@ -228,6 +273,227 @@ def test_close_restores_three_panel_layout_without_losing_browser_or_live_kit(
         assert app._right_pane.grid_info()["column"] == 2
         assert app._browser_canvas.winfo_manager() == "pack"
         assert app._right_pane.tab(app._right_pane.select(), "text") == "Live Kit"
+
+
+def test_harmonic_match_button_is_the_single_toggle_and_restores_layout_and_focus(
+    tmp_path: Path, monkeypatch
+):
+    with _fresh_app(tmp_path, monkeypatch) as (root, app):
+        rows = [_row("anchor"), _row("direct")]
+        calls = []
+        match_focus = []
+        browser_focus = []
+        app._harmonic_match_controller._finder = _recording_finder(calls)
+        app._populate_playlist(WorkbenchResult(summary={"ok": 2}, rows=rows))
+        _select_browser_row(app, 0)
+        app._harmonic_match_canvas.focus_set = lambda: match_focus.append("match")
+        app._browser_canvas.focus_set = lambda: browser_focus.append("browser")
+        root.update_idletasks()
+
+        assert app._harmonic_match_btn.cget("text") == "Harmonic Match"
+        assert app._harmonic_match_btn.cget("style") == "HarmonicMatchInactive.TButton"
+        assert _column_contract(app) == ((5, 560), (2, 300), (0, 0))
+
+        app._harmonic_match_btn.invoke()
+        root.update_idletasks()
+
+        assert _widget_visible(app._harmonic_match_frame)
+        assert app._harmonic_match_btn.cget("style") == "HarmonicMatchActive.TButton"
+        assert app._harmonic_match_controller.anchor is rows[0]
+        assert len(calls) == 1
+        assert match_focus == ["match"]
+        assert _column_contract(app) == ((4, 420), (3, 360), (2, 300))
+
+        app._harmonic_match_btn.invoke()
+        root.update_idletasks()
+
+        assert not _widget_visible(app._harmonic_match_frame)
+        assert app._harmonic_match_btn.cget("style") == "HarmonicMatchInactive.TButton"
+        assert app._harmonic_match_controller.anchor is rows[0]
+        assert len(calls) == 1
+        assert browser_focus == ["browser"]
+        assert _column_contract(app) == ((5, 560), (2, 300), (0, 0))
+        assert app._right_pane.grid_info()["column"] == 2
+
+
+def test_same_context_reopen_preserves_results_selection_and_scroll_without_refresh(
+    tmp_path: Path, monkeypatch
+):
+    with _fresh_app(tmp_path, monkeypatch) as (root, app):
+        rows = [_row("anchor"), *[_row(f"match-{index}") for index in range(12)]]
+        calls = []
+        app._harmonic_match_controller._finder = _recording_finder(calls)
+        app._populate_playlist(WorkbenchResult(summary={"ok": len(rows)}, rows=rows))
+        _select_browser_row(app, 0)
+
+        app._harmonic_match_btn.invoke()
+        root.update_idletasks()
+        results = app._harmonic_match_controller.results
+        app._harmonic_match_selected_index = 7
+        app._harmonic_match_canvas.yview_moveto(0.5)
+        root.update_idletasks()
+        scroll = app._harmonic_match_canvas.yview()
+
+        app._harmonic_match_btn.invoke()
+        app._harmonic_match_btn.invoke()
+        root.update_idletasks()
+
+        assert len(calls) == 1
+        assert app._harmonic_match_controller.results is results
+        assert app._harmonic_match_selected_index == 7
+        assert app._harmonic_match_canvas.yview() == pytest.approx(scroll)
+
+
+def test_new_selected_anchor_recomputes_once_and_resets_match_view(
+    tmp_path: Path, monkeypatch
+):
+    with _fresh_app(tmp_path, monkeypatch) as (root, app):
+        rows = [_row("first"), _row("second"), _row("candidate")]
+        calls = []
+        app._harmonic_match_controller._finder = _recording_finder(calls)
+        app._populate_playlist(WorkbenchResult(summary={"ok": 3}, rows=rows))
+        _select_browser_row(app, 0)
+        app._harmonic_match_btn.invoke()
+        app._harmonic_match_selected_index = 1
+        app._harmonic_match_canvas.yview_moveto(1.0)
+        app._harmonic_match_btn.invoke()
+
+        _select_browser_row(app, 1)
+        app._harmonic_match_btn.invoke()
+        root.update_idletasks()
+
+        assert len(calls) == 2
+        assert app._harmonic_match_controller.anchor is rows[1]
+        assert app._harmonic_match_selected_index == 0
+        assert app._harmonic_match_canvas.yview()[0] == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize("target", ["anchor", "candidate"])
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("key", "Dmaj"), ("bpm", 130.0), ("display_name", "renamed")],
+)
+def test_matching_metadata_change_at_same_path_recomputes_once(
+    tmp_path: Path, monkeypatch, target: str, field: str, value
+):
+    with _fresh_app(tmp_path, monkeypatch) as (_root, app):
+        anchor = _row("anchor")
+        candidate = _row("candidate")
+        rows = [anchor, candidate]
+        calls = []
+        app._harmonic_match_controller._finder = _recording_finder(calls)
+        app._populate_playlist(WorkbenchResult(summary={"ok": 2}, rows=rows))
+        _select_browser_row(app, 0)
+        app._harmonic_match_btn.invoke()
+        app._harmonic_match_btn.invoke()
+
+        setattr(anchor if target == "anchor" else candidate, field, value)
+        app._harmonic_match_btn.invoke()
+
+        assert len(calls) == 2
+
+
+def test_nonfinite_bpm_fingerprint_is_stable_and_distinct(tmp_path: Path, monkeypatch):
+    with _fresh_app(tmp_path, monkeypatch) as (_root, app):
+        anchor = _row("anchor", bpm=float("nan"))
+        candidate = _row("candidate")
+        set_anchor_calls = []
+        original = app._harmonic_match_controller.set_anchor
+
+        def record_set_anchor(selected, candidates):
+            set_anchor_calls.append(selected.bpm)
+            original(selected, candidates)
+
+        app._harmonic_match_controller.set_anchor = record_set_anchor
+        app._populate_playlist(WorkbenchResult(summary={"ok": 2}, rows=[anchor, candidate]))
+        _select_browser_row(app, 0)
+
+        app._harmonic_match_btn.invoke()
+        app._harmonic_match_btn.invoke()
+        app._harmonic_match_btn.invoke()
+        assert len(set_anchor_calls) == 1
+
+        app._harmonic_match_btn.invoke()
+        anchor.bpm = float("inf")
+        app._harmonic_match_btn.invoke()
+        assert len(set_anchor_calls) == 2
+
+        app._harmonic_match_btn.invoke()
+        anchor.bpm = float("-inf")
+        app._harmonic_match_btn.invoke()
+        assert len(set_anchor_calls) == 3
+
+
+def test_candidate_reorder_does_not_refresh_same_context(tmp_path: Path, monkeypatch):
+    with _fresh_app(tmp_path, monkeypatch) as (_root, app):
+        rows = [_row("anchor"), _row("first"), _row("second")]
+        calls = []
+        app._harmonic_match_controller._finder = _recording_finder(calls)
+        app._populate_playlist(WorkbenchResult(summary={"ok": 3}, rows=rows))
+        _select_browser_row(app, 0)
+        app._harmonic_match_btn.invoke()
+        app._harmonic_match_btn.invoke()
+
+        app._rows = [rows[0], rows[2], rows[1]]
+        app._harmonic_match_btn.invoke()
+
+        assert len(calls) == 1
+        assert app._harmonic_match_controller.anchor is rows[0]
+
+
+def test_no_browser_selection_keeps_match_closed_and_inactive(tmp_path: Path, monkeypatch):
+    with _fresh_app(tmp_path, monkeypatch) as (_root, app):
+        calls = []
+        app._harmonic_match_controller._finder = _recording_finder(calls)
+        app._populate_playlist(WorkbenchResult(summary={"ok": 1}, rows=[_row("row")]))
+        app._tree.selection_remove(app._tree.selection())
+
+        app._harmonic_match_btn.invoke()
+
+        assert not _widget_visible(app._harmonic_match_frame)
+        assert app._harmonic_match_btn.cget("style") == "HarmonicMatchInactive.TButton"
+        assert calls == []
+
+
+def test_match_panel_has_no_second_close_or_on_off_control(tmp_path: Path, monkeypatch):
+    with _fresh_app(tmp_path, monkeypatch) as (_root, app):
+        assert _button_texts(app._harmonic_match_frame) == ()
+
+
+def test_repeated_toggles_keep_widget_identity_and_layout_stable(tmp_path: Path, monkeypatch):
+    with _fresh_app(tmp_path, monkeypatch) as (root, app):
+        rows = [_row("anchor"), _row("candidate")]
+        app._populate_playlist(WorkbenchResult(summary={"ok": 2}, rows=rows))
+        _select_browser_row(app, 0)
+        widget_ids = tuple(str(widget) for widget in _descendants(app._harmonic_match_frame))
+
+        for _ in range(4):
+            app._harmonic_match_btn.invoke()
+            root.update_idletasks()
+            assert _column_contract(app) == ((4, 420), (3, 360), (2, 300))
+            app._harmonic_match_btn.invoke()
+            root.update_idletasks()
+            assert _column_contract(app) == ((5, 560), (2, 300), (0, 0))
+
+        assert tuple(str(widget) for widget in _descendants(app._harmonic_match_frame)) == widget_ids
+
+
+def test_visual_fixture_opens_harmonic_state_through_real_button(tmp_path: Path, monkeypatch):
+    with _fresh_app(tmp_path, monkeypatch) as (_root, app):
+        fixture = build_screen1_visual_fixture_v1()
+        invokes = []
+        original = app._harmonic_match_btn.invoke
+
+        def invoke():
+            invokes.append("invoke")
+            return original()
+
+        app._harmonic_match_btn.invoke = invoke
+
+        apply_screen1_visual_fixture(app, fixture, "screen1-harmonic-4panel")
+
+        assert invokes == ["invoke"]
+        assert _widget_visible(app._harmonic_match_frame)
 
 
 def _interaction_app(anchor: WorkbenchRow, results: list[HarmonySuggestion]):

@@ -64,7 +64,7 @@ def apply_screen1_visual_fixture(app, fixture: Screen1VisualFixture, state_id: s
         for slot, row in slots.items(): app._assign_row_to_live_kit(row, group, slot)
     if state_id.endswith("4panel"):
         app._harmonic_match_controller._finder = lambda *_a, **_k: (list(fixture.harmony_results), None)
-        app._open_harmonic_match_library(fixture.browser_rows[2])
+        app._harmonic_match_btn.invoke()
     else: app._close_harmonic_match_library()
 
 def _sha(path: Path) -> str: return hashlib.sha256(path.read_bytes()).hexdigest()

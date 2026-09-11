@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import platform
 import threading
 import tkinter as tk
@@ -296,6 +297,7 @@ class WorkbenchApp:
             finder=find_harmony_matches
         )
         self._harmonic_match_selected_index = 0
+        self._harmonic_match_context_fingerprint: tuple[object, ...] | None = None
         self._live_kit_state = LiveKitState()
         self._live_kit_presentation = LiveKitPresentationState(self._live_kit_state)
 
@@ -368,6 +370,28 @@ class WorkbenchApp:
             font=("Segoe UI", 10, "bold"),
         )
         style.map("Intent.TButton", background=[("active", ACCENT_HOVER)])
+        style.configure(
+            "HarmonicMatchInactive.TButton",
+            background=PANEL_ALT,
+            foreground=TEXT_MUTED,
+            padding=(5, 2),
+            font=("Segoe UI", 10, "bold"),
+        )
+        style.map(
+            "HarmonicMatchInactive.TButton",
+            background=[("active", BORDER)],
+        )
+        style.configure(
+            "HarmonicMatchActive.TButton",
+            background=ACCENT,
+            foreground="#ffffff",
+            padding=(5, 2),
+            font=("Segoe UI", 10, "bold"),
+        )
+        style.map(
+            "HarmonicMatchActive.TButton",
+            background=[("active", ACCENT_HOVER)],
+        )
         style.configure(
             "Group.TButton",
             background=PANEL_ALT,
@@ -716,8 +740,8 @@ class WorkbenchApp:
         self._harmonic_match_btn = ttk.Button(
             browser_context,
             text="Harmonic Match",
-            style="Intent.TButton",
-            command=self._set_harmonic_match_anchor_from_selection,
+            style="HarmonicMatchInactive.TButton",
+            command=self._toggle_harmonic_match_library,
         )
         self._harmonic_match_btn.pack(side=tk.RIGHT, padx=(8, 0))
         self._browser_context_var = tk.StringVar(value="All Samples")
@@ -1105,12 +1129,6 @@ class WorkbenchApp:
         ttk.Label(header, text="HARMONIC MATCHES", style="Heading.TLabel").pack(
             side=tk.LEFT
         )
-        ttk.Button(
-            header,
-            text="×",
-            width=3,
-            command=self._close_harmonic_match_library,
-        ).pack(side=tk.RIGHT)
         self._harmonic_match_anchor_var = tk.StringVar(value="Reference: —")
         ttk.Label(
             self._harmonic_match_frame,
@@ -1159,37 +1177,110 @@ class WorkbenchApp:
             style="Muted.TLabel",
         ).pack(fill=tk.X, pady=(4, 0))
 
-    def _set_harmonic_match_anchor_from_selection(self) -> None:
+    @staticmethod
+    def _harmonic_match_bpm_fingerprint(bpm: float | None) -> tuple[str, object]:
+        if bpm is None:
+            return ("none", "")
+        try:
+            value = float(bpm)
+        except (TypeError, ValueError):
+            return ("invalid", repr(bpm))
+        if math.isnan(value):
+            return ("nan", "")
+        if math.isinf(value):
+            return ("positive-infinity" if value > 0 else "negative-infinity", "")
+        return ("finite", value)
+
+    @classmethod
+    def _harmonic_match_row_fingerprint(
+        cls, row: WorkbenchRow
+    ) -> tuple[str, str | None, tuple[str, object], str]:
+        return (
+            row.path,
+            row.key,
+            cls._harmonic_match_bpm_fingerprint(row.bpm),
+            row.display_name,
+        )
+
+    def _current_harmonic_match_fingerprint(
+        self, anchor: WorkbenchRow
+    ) -> tuple[object, ...]:
+        candidates = tuple(
+            sorted(
+                self._harmonic_match_row_fingerprint(row)
+                for row in self._rows
+                if row.path != anchor.path
+            )
+        )
+        return (self._harmonic_match_row_fingerprint(anchor), candidates)
+
+    def _toggle_harmonic_match_library(self) -> None:
+        if self._harmonic_match_frame.winfo_manager():
+            self._close_harmonic_match_library()
+            return
+
         row = self._selected_row()
         if row is None:
             self._set_status("Kein Sample als Harmonic-Match-Referenz ausgewählt.")
             return
-        self._open_harmonic_match_library(row)
 
-    def _open_harmonic_match_library(self, anchor: WorkbenchRow) -> None:
+        fingerprint = self._current_harmonic_match_fingerprint(row)
+        if fingerprint != self._harmonic_match_context_fingerprint:
+            self._open_harmonic_match_library(row, fingerprint=fingerprint)
+            return
+
+        self._harmonic_match_controller.anchor = row
+        self._show_harmonic_match_library(row)
+
+    def _open_harmonic_match_library(
+        self,
+        anchor: WorkbenchRow,
+        *,
+        fingerprint: tuple[object, ...] | None = None,
+    ) -> None:
         self._harmonic_match_controller.set_anchor(anchor, self._rows)
+        self._harmonic_match_context_fingerprint = (
+            fingerprint
+            if fingerprint is not None
+            else self._current_harmonic_match_fingerprint(anchor)
+        )
         self._harmonic_match_selected_index = 0
-        anchor_key = anchor.key or "—"
-        self._harmonic_match_anchor_var.set(
-            f"Reference: {catalog_row_display_name(anchor)} · {anchor_key}"
-        )
-        self._harmonic_match_status_var.set(self._harmonic_match_controller.status)
-        self._body.columnconfigure(1, weight=4, minsize=420)
-        self._body.columnconfigure(2, weight=3, minsize=360)
-        self._body.columnconfigure(3, weight=2, minsize=300)
-        self._harmonic_match_frame.grid(
-            row=0, column=2, sticky="nsew", padx=(0, 8)
-        )
-        self._right_pane.grid(row=0, column=3, sticky="nsew")
-        self._render_harmonic_match_rows()
-        self._set_status(self._harmonic_match_controller.status, tone="active")
+        self._harmonic_match_canvas.yview_moveto(0.0)
+        self._show_harmonic_match_library(anchor)
 
-    def _close_harmonic_match_library(self) -> None:
+    def _apply_harmonic_match_layout(self, *, open_panel: bool) -> None:
+        if open_panel:
+            self._body.columnconfigure(1, weight=4, minsize=420)
+            self._body.columnconfigure(2, weight=3, minsize=360)
+            self._body.columnconfigure(3, weight=2, minsize=300)
+            self._harmonic_match_frame.grid(
+                row=0, column=2, sticky="nsew", padx=(0, 8)
+            )
+            self._right_pane.grid(row=0, column=3, sticky="nsew")
+            return
+
         self._harmonic_match_frame.grid_remove()
         self._right_pane.grid(row=0, column=2, sticky="nsew")
         self._body.columnconfigure(1, weight=5, minsize=560)
         self._body.columnconfigure(2, weight=2, minsize=300)
         self._body.columnconfigure(3, weight=0, minsize=0)
+
+    def _show_harmonic_match_library(self, anchor: WorkbenchRow) -> None:
+        anchor_key = anchor.key or "—"
+        self._harmonic_match_anchor_var.set(
+            f"Reference: {catalog_row_display_name(anchor)} · {anchor_key}"
+        )
+        self._harmonic_match_status_var.set(self._harmonic_match_controller.status)
+        self._apply_harmonic_match_layout(open_panel=True)
+        self._harmonic_match_btn.configure(style="HarmonicMatchActive.TButton")
+        self._render_harmonic_match_rows()
+        self._harmonic_match_canvas.focus_set()
+        self._set_status(self._harmonic_match_controller.status, tone="active")
+
+    def _close_harmonic_match_library(self) -> None:
+        self._apply_harmonic_match_layout(open_panel=False)
+        self._harmonic_match_btn.configure(style="HarmonicMatchInactive.TButton")
+        self._browser_canvas.focus_set()
         self._set_status("Harmonic Match geschlossen.", tone="neutral")
 
     def _render_harmonic_match_rows(self) -> None:
