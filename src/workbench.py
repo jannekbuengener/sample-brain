@@ -62,7 +62,7 @@ from .workbench_controller import (
     load_workbench_analysis_limit,
     load_workbench_last_folder,
     load_workbench_sample_cue,
-    load_workbench_view_settings,
+    load_workbench_view_settings_result,
     parse_workbench_bpm_bound,
     preview_catalog_import,
     preview_start_ms_from_waveform_x,
@@ -288,7 +288,9 @@ class WorkbenchApp:
         self._playlist_names: list[str] = []
         self._catalog_total_count = 0
         self._catalog_load_limit: int | None = None
-        self._view_settings = load_workbench_view_settings()
+        view_settings_result = load_workbench_view_settings_result()
+        self._view_settings = view_settings_result.settings
+        self._view_settings_persistable = view_settings_result.persistable
         self._similar_suggestions: list[WorkbenchSuggestion] = []
         self._harmonic_match_controller = HarmonicMatchLibraryController(
             finder=find_harmony_matches
@@ -307,8 +309,8 @@ class WorkbenchApp:
             self, transport_adapter=self._transport_adapter
         )
         self._editing_ui = attach_workbench_editing_ui(self)
-        self._apply_view_toolbar_visibility(notify=False)
-        self._apply_view_visibility(notify=False)
+        self._apply_view_toolbar_visibility(notify=False, persist=False)
+        self._apply_view_visibility(notify=False, persist=False)
         self._apply_shell_presentation()
         self._restore_last_folder()
         self._quick_capture = None
@@ -513,11 +515,6 @@ class WorkbenchApp:
         self._product_title.pack(side=tk.LEFT)
         self._shell_header_controls = ttk.Frame(shell_header, style="Header.TFrame")
         self._shell_header_controls.pack(side=tk.RIGHT)
-        ttk.Menubutton(
-            self._shell_header_controls,
-            text="Tools",
-            menu=self._tools_menu,
-        ).pack(side=tk.RIGHT, padx=(12, 0))
 
         toolbar = ttk.Frame(self.root, padding=(12, 6, 12, 6))
         self._toolbar = toolbar
@@ -1793,6 +1790,8 @@ class WorkbenchApp:
         )
 
     def _persist_view_settings(self) -> None:
+        if not self._view_settings_persistable:
+            return
         self._view_settings = self._current_view_settings()
         save_workbench_view_settings(self._view_settings)
 
@@ -1803,7 +1802,9 @@ class WorkbenchApp:
         except tk.TclError:
             return False
 
-    def _apply_view_toolbar_visibility(self, *, notify: bool) -> None:
+    def _apply_view_toolbar_visibility(
+        self, *, notify: bool, persist: bool = True
+    ) -> None:
         visible = bool(self._show_view_toolbar_var.get())
         if visible:
             if not self._view_bar_is_packed():
@@ -1812,7 +1813,8 @@ class WorkbenchApp:
             self._view_bar.pack_forget()
         settings = self._current_view_settings()
         self._view_settings = settings
-        self._persist_view_settings()
+        if persist:
+            self._persist_view_settings()
         if notify:
             status_message = (
                 format_workbench_view_toolbar_shown_status()
@@ -1831,7 +1833,11 @@ class WorkbenchApp:
         self._update_waveform_usage_hint()
 
     def _apply_view_visibility(
-        self, *, notify: bool, status_message: str | None = None
+        self,
+        *,
+        notify: bool,
+        status_message: str | None = None,
+        persist: bool = True,
     ) -> None:
         settings = self._current_view_settings()
         if settings.show_search:
@@ -1866,7 +1872,8 @@ class WorkbenchApp:
             self._provenance_label.pack_forget()
 
         self._view_settings = settings
-        self._persist_view_settings()
+        if persist:
+            self._persist_view_settings()
         self._refresh_playlist_view()
         if notify and status_message:
             self._set_status(status_message, tone="neutral")
@@ -1938,11 +1945,14 @@ class WorkbenchApp:
         self._show_filters_var.set(defaults.show_filters)
         self._show_library_manage_var.set(defaults.show_library_manage)
         self._show_waveform_tools_var.set(defaults.show_waveform_tools)
-        self._apply_view_toolbar_visibility(notify=False)
+        self._apply_view_toolbar_visibility(notify=False, persist=False)
         self._apply_view_visibility(
             notify=True,
             status_message=format_workbench_view_restore_status(),
+            persist=False,
         )
+        self._view_settings_persistable = True
+        self._persist_view_settings()
 
     def _add_structured_filter_combo(
         self,
