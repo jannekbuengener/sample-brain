@@ -102,6 +102,17 @@ def test_fresh_default_exposes_compact_product_and_transport_header(
         assert app._transport_bar.master is app._shell_header_controls
 
 
+def test_fresh_default_header_has_no_redundant_tools_menubutton(
+    tmp_path: Path, monkeypatch
+):
+    with _fresh_app(tmp_path, monkeypatch) as app:
+        assert "Tools" not in {
+            child.cget("text")
+            for child in app._shell_header_controls.winfo_children()
+            if "text" in child.keys()
+        }
+
+
 def test_fresh_default_keeps_sources_browser_and_live_kit_visible(
     tmp_path: Path, monkeypatch
 ):

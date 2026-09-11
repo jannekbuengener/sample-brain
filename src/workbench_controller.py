@@ -1106,6 +1106,9 @@ class WorkbenchViewSettings:
 
 
 DEFAULT_WORKBENCH_VIEW_SETTINGS = WorkbenchViewSettings()
+WORKBENCH_VIEW_SETTINGS_SCHEMA_VERSION = 2
+_WORKBENCH_VIEW_SETTINGS_FIELDS = tuple(asdict(DEFAULT_WORKBENCH_VIEW_SETTINGS))
+_MISSING_VIEW_SETTINGS_SCHEMA_VERSION = object()
 
 VIEW_SECTION_SEARCH = "search"
 VIEW_SECTION_FILTERS = "filters"
@@ -1124,23 +1127,16 @@ def workbench_view_settings_file(
     return base / "workbench_view_settings.json"
 
 
-def _view_settings_from_mapping(data: Mapping[str, Any]) -> WorkbenchViewSettings:
-    def _bool(key: str, default: bool) -> bool:
-        value = data.get(key, default)
-        return default if not isinstance(value, bool) else value
+def _is_complete_view_settings_mapping(data: Mapping[str, Any]) -> bool:
+    return all(
+        key in data and isinstance(data[key], bool)
+        for key in _WORKBENCH_VIEW_SETTINGS_FIELDS
+    )
 
+
+def _view_settings_from_complete_mapping(data: Mapping[str, Any]) -> WorkbenchViewSettings:
     return WorkbenchViewSettings(
-        show_view_toolbar=_bool(
-            "show_view_toolbar", DEFAULT_WORKBENCH_VIEW_SETTINGS.show_view_toolbar
-        ),
-        show_search=_bool("show_search", DEFAULT_WORKBENCH_VIEW_SETTINGS.show_search),
-        show_filters=_bool("show_filters", DEFAULT_WORKBENCH_VIEW_SETTINGS.show_filters),
-        show_library_manage=_bool(
-            "show_library_manage", DEFAULT_WORKBENCH_VIEW_SETTINGS.show_library_manage
-        ),
-        show_waveform_tools=_bool(
-            "show_waveform_tools", DEFAULT_WORKBENCH_VIEW_SETTINGS.show_waveform_tools
-        ),
+        **{key: data[key] for key in _WORKBENCH_VIEW_SETTINGS_FIELDS}
     )
 
 
@@ -1159,7 +1155,22 @@ def load_workbench_view_settings(
         return DEFAULT_WORKBENCH_VIEW_SETTINGS
     if not isinstance(raw, dict):
         return DEFAULT_WORKBENCH_VIEW_SETTINGS
-    return _view_settings_from_mapping(raw)
+    schema_version = raw.get(
+        "schema_version", _MISSING_VIEW_SETTINGS_SCHEMA_VERSION
+    )
+    if (
+        type(schema_version) is int
+        and schema_version == WORKBENCH_VIEW_SETTINGS_SCHEMA_VERSION
+    ):
+        if _is_complete_view_settings_mapping(raw):
+            return _view_settings_from_complete_mapping(raw)
+        return DEFAULT_WORKBENCH_VIEW_SETTINGS
+    if (
+        schema_version is _MISSING_VIEW_SETTINGS_SCHEMA_VERSION
+        or (type(schema_version) is int and schema_version == 1)
+    ) and _is_complete_view_settings_mapping(raw):
+        save_workbench_view_settings(DEFAULT_WORKBENCH_VIEW_SETTINGS, state_dir=state_dir, env=env)
+    return DEFAULT_WORKBENCH_VIEW_SETTINGS
 
 
 def save_workbench_view_settings(
@@ -1173,7 +1184,15 @@ def save_workbench_view_settings(
     try:
         path_file.parent.mkdir(parents=True, exist_ok=True)
         path_file.write_text(
-            json.dumps(asdict(settings), indent=2, sort_keys=True) + "\n",
+            json.dumps(
+                {
+                    "schema_version": WORKBENCH_VIEW_SETTINGS_SCHEMA_VERSION,
+                    **asdict(settings),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
             encoding="utf-8",
         )
     except OSError:
@@ -2106,6 +2125,7 @@ __all__ = [
     "DEFAULT_CATALOG_LOAD_LIMIT",
     "DEFAULT_WORKBENCH_ANALYSIS_LIMIT_TEXT",
     "DEFAULT_WORKBENCH_VIEW_SETTINGS",
+    "WORKBENCH_VIEW_SETTINGS_SCHEMA_VERSION",
     "error_message_for_code",
     "effective_workbench_row_filters",
     "effective_workbench_text_query",

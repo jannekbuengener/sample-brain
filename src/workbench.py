@@ -513,11 +513,6 @@ class WorkbenchApp:
         self._product_title.pack(side=tk.LEFT)
         self._shell_header_controls = ttk.Frame(shell_header, style="Header.TFrame")
         self._shell_header_controls.pack(side=tk.RIGHT)
-        ttk.Menubutton(
-            self._shell_header_controls,
-            text="Tools",
-            menu=self._tools_menu,
-        ).pack(side=tk.RIGHT, padx=(12, 0))
 
         toolbar = ttk.Frame(self.root, padding=(12, 6, 12, 6))
         self._toolbar = toolbar
