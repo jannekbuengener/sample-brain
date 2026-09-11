@@ -1214,6 +1214,31 @@ class WorkbenchApp:
         )
         return (self._harmonic_match_row_fingerprint(anchor), candidates)
 
+    def _rebind_harmonic_match_rows(self, anchor: WorkbenchRow) -> bool:
+        current_by_path: dict[str, WorkbenchRow] = {}
+        ambiguous_paths: set[str] = set()
+        for row in self._rows:
+            if row.path in current_by_path:
+                ambiguous_paths.add(row.path)
+            else:
+                current_by_path[row.path] = row
+
+        current_result_rows: list[WorkbenchRow] = []
+        for suggestion in self._harmonic_match_controller.results:
+            path = suggestion.row.path
+            if path in ambiguous_paths or path not in current_by_path:
+                return False
+            current_result_rows.append(current_by_path[path])
+
+        self._harmonic_match_controller.anchor = anchor
+        for suggestion, row in zip(
+            self._harmonic_match_controller.results,
+            current_result_rows,
+            strict=True,
+        ):
+            suggestion.row = row
+        return True
+
     def _toggle_harmonic_match_library(self) -> None:
         if self._harmonic_match_frame.winfo_manager():
             self._close_harmonic_match_library()
@@ -1229,7 +1254,9 @@ class WorkbenchApp:
             self._open_harmonic_match_library(row, fingerprint=fingerprint)
             return
 
-        self._harmonic_match_controller.anchor = row
+        if not self._rebind_harmonic_match_rows(row):
+            self._open_harmonic_match_library(row, fingerprint=fingerprint)
+            return
         self._show_harmonic_match_library(row)
 
     def _open_harmonic_match_library(

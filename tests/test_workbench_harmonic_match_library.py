@@ -344,6 +344,100 @@ def test_same_context_reopen_preserves_results_selection_and_scroll_without_refr
         assert app._harmonic_match_canvas.yview() == pytest.approx(scroll)
 
 
+def test_same_fingerprint_rebinds_cached_suggestions_to_current_rows(
+    tmp_path: Path, monkeypatch
+):
+    with _fresh_app(tmp_path, monkeypatch) as (root, app):
+        rows_a = [_row("anchor"), *[_row(f"match-{index}") for index in range(12)]]
+        for row in rows_a:
+            row.details = {"source": "catalog-read-only"}
+        calls = []
+        app._harmonic_match_controller._finder = _recording_finder(calls)
+        app._populate_playlist(
+            WorkbenchResult(summary={"ok": len(rows_a)}, rows=rows_a)
+        )
+        _select_browser_row(app, 0)
+
+        app._harmonic_match_btn.invoke()
+        root.update_idletasks()
+        app._harmonic_match_selected_index = 7
+        app._harmonic_match_canvas.yview_moveto(0.5)
+        root.update_idletasks()
+        scroll = app._harmonic_match_canvas.yview()
+        app._harmonic_match_btn.invoke()
+
+        rows_b = [_row("anchor"), *[_row(f"match-{index}") for index in range(12)]]
+        for row in rows_b:
+            row.details = {"source": "imported-cache"}
+        current_by_path = {row.path: row for row in rows_b}
+        app._populate_playlist(
+            WorkbenchResult(summary={"ok": len(rows_b)}, rows=rows_b)
+        )
+        _select_browser_row(app, 0)
+
+        assigned = []
+        app._open_add_to_live_kit_dialog = (
+            lambda row, *, focus_restore=None: assigned.append(row)
+        )
+        app._harmonic_match_btn.invoke()
+        root.update_idletasks()
+
+        assert len(calls) == 1
+        assert app._harmonic_match_controller.anchor is rows_b[0]
+        assert all(
+            suggestion.row is current_by_path[suggestion.row.path]
+            for suggestion in app._harmonic_match_controller.results
+        )
+        assert all(
+            suggestion.row.details["source"] == "imported-cache"
+            for suggestion in app._harmonic_match_controller.results
+        )
+        assert app._harmonic_match_selected_index == 7
+        assert app._harmonic_match_canvas.yview() == pytest.approx(scroll)
+
+        clicked_index = int(app._harmonic_match_canvas.canvasy(5)) // 74
+        expected_row = app._harmonic_match_controller.results[clicked_index].row
+        app._on_harmonic_match_canvas_click(
+            SimpleNamespace(x=295, y=5), canvas_width=300, row_height=74
+        )
+
+        assert assigned == [expected_row]
+        assert assigned[0] is current_by_path[assigned[0].path]
+        assert assigned[0].details["source"] == "imported-cache"
+
+
+def test_same_fingerprint_recomputes_when_suggestion_path_is_ambiguous(
+    tmp_path: Path, monkeypatch
+):
+    with _fresh_app(tmp_path, monkeypatch) as (_root, app):
+        rows_a = [_row("anchor"), _row("duplicate"), _row("duplicate")]
+        calls = []
+        app._harmonic_match_controller._finder = _recording_finder(calls)
+        app._populate_playlist(
+            WorkbenchResult(summary={"ok": len(rows_a)}, rows=rows_a)
+        )
+        _select_browser_row(app, 0)
+        app._harmonic_match_btn.invoke()
+        app._harmonic_match_btn.invoke()
+
+        rows_b = [_row("anchor"), _row("duplicate"), _row("duplicate")]
+        for row in rows_b:
+            row.details = {"source": "current"}
+        app._populate_playlist(
+            WorkbenchResult(summary={"ok": len(rows_b)}, rows=rows_b)
+        )
+        _select_browser_row(app, 0)
+        app._harmonic_match_btn.invoke()
+
+        assert len(calls) == 2
+        assert app._harmonic_match_controller.anchor is rows_b[0]
+        assert all(
+            suggestion.row in rows_b
+            and suggestion.row.details["source"] == "current"
+            for suggestion in app._harmonic_match_controller.results
+        )
+
+
 def test_new_selected_anchor_recomputes_once_and_resets_match_view(
     tmp_path: Path, monkeypatch
 ):
