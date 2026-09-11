@@ -345,11 +345,11 @@ class WorkbenchTransportUiController:
 
         self.sync_var = tk_api.BooleanVar(value=bool(initial["sync_enabled"]))
         self.app._sync_var = self.sync_var
-        self.sync_control = ttk_api.Checkbutton(
+        self.sync_control = ttk_api.Button(
             bar,
             text="SYNC",
-            variable=self.sync_var,
-            command=self.apply_sync_control,
+            style=self._sync_style(bool(initial["sync_enabled"])),
+            command=self.toggle_sync_control,
         )
         self.sync_control.pack(side=tk_api.LEFT)
         self.app._sync_control = self.sync_control
@@ -362,13 +362,23 @@ class WorkbenchTransportUiController:
         self.refresh_snapshot()
         return effective_frame
 
-    def apply_sync_control(self) -> bool:
-        desired = bool(self.sync_var.get())
-        actual = self.transport.is_sync_enabled()
-        if desired != actual:
-            actual = self.transport.toggle_sync()
-        self.sync_var.set(actual)
+    @staticmethod
+    def _sync_style(sync_enabled: bool) -> str:
+        return "SyncActive.TButton" if sync_enabled else "SyncInactive.TButton"
+
+    def _set_sync_presentation(self, sync_enabled: bool) -> None:
+        self.sync_var.set(sync_enabled)
+        self.sync_control.configure(style=self._sync_style(sync_enabled))
+
+    def toggle_sync_control(self) -> bool:
+        """Toggle the authoritative transport state once and present its result."""
+        actual = self.transport.toggle_sync()
+        self._set_sync_presentation(actual)
         return actual
+
+    def apply_sync_control(self) -> bool:
+        """Compatibility alias for callers of the former checkbox callback."""
+        return self.toggle_sync_control()
 
     def set_source_bpm(
         self,
@@ -390,7 +400,7 @@ class WorkbenchTransportUiController:
         self.grid_var.set(
             format_transport_grid_label(self.transport.tempo_map.time_signature)
         )
-        self.sync_var.set(bool(snapshot["sync_enabled"]))
+        self._set_sync_presentation(bool(snapshot["sync_enabled"]))
         return snapshot
 
     def _schedule_poll(self) -> None:
