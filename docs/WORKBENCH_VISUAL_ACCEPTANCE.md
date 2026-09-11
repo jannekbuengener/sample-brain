@@ -15,8 +15,8 @@ Automated checks cover provenance, both required states, dimensions, PNG
 presence, non-black pixels, panel position, hashes, and public manifest data.
 They do not assess visual product quality.
 
-The Owner must mark `PASS` or `FAIL` against `ui_mockup.png` and
-`ui_mockup_matching.png` for hierarchy, spacing/density, typography, controls,
+The Owner must mark `PASS` or `FAIL` against `docs/assets/portfolio/mockups/ui_mockup.png` and
+`docs/assets/portfolio/mockups/ui_mockup_matching.png` for hierarchy, spacing/density, typography, controls,
 color/intent, discoverability, clipping/overflow, populated/empty states, and
 overall producer-tool quality. Agent attestation is not an Owner PASS.
 
