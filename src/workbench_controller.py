@@ -37,6 +37,7 @@ from .workbench_library import (
     WORKBENCH_ANALYZER_VERSION,
     CachedWorkbenchRow,
     LibraryFolder,
+    LibraryFolderRemovalPreview,
     PlaylistSampleAddResult,
     WorkbenchCueMetadata,
     WorkbenchPlaylistValidationError,
@@ -53,9 +54,11 @@ from .workbench_library import (
     lookup_sample,
     mark_folder_opened,
     normalize_display_name,
+    preview_library_folder_removal,
     register_library_folder,
     remove_library_folder,
     save_sample_cue,
+    resolve_workbench_state_dir,
     upsert_folder,
     upsert_sample,
     workbench_library_db_path,
@@ -969,11 +972,7 @@ def export_workbench_rows_to_fl_tags(
 
 def workbench_state_dir(*, env: Mapping[str, str] | None = None) -> Path:
     """Return the user-local directory for workbench UI state."""
-    env_map = os.environ if env is None else env
-    override = env_map.get("SAMPLE_BRAIN_WORKBENCH_STATE_DIR")
-    if override:
-        return Path(override).expanduser().resolve()
-    return (Path.home() / ".sample-brain").resolve()
+    return resolve_workbench_state_dir(env=env)
 
 
 def workbench_last_folder_file(
@@ -1302,6 +1301,16 @@ def remove_workbench_library_folder(
     """Remove folder metadata and cached samples from the workbench library."""
     db = library_db_path if library_db_path is not None else workbench_library_db_path()
     return remove_library_folder(folder_id_or_path, db_path=db)
+
+
+def preview_workbench_library_folder_removal(
+    folder_id_or_path: int | str | Path,
+    *,
+    library_db_path: Path | None = None,
+) -> LibraryFolderRemovalPreview | None:
+    """Preview a single metadata-only Library source removal."""
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    return preview_library_folder_removal(folder_id_or_path, db_path=db)
 
 
 def load_cached_folder_rows(
@@ -2205,6 +2214,7 @@ __all__ = [
     "get_workbench_library_folders",
     "get_preview_start_ms",
     "preview_catalog_import",
+    "preview_workbench_library_folder_removal",
     "preview_start_ms_from_waveform_x",
     "list_workbench_playlists",
     "load_all_cached_rows",
