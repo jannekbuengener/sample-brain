@@ -49,6 +49,7 @@ from .workbench_library import (
     list_playlists,
     load_all_cached_samples,
     load_folder_samples,
+    load_folder_subtree_samples,
     load_sample_by_path,
     load_sample_cue,
     lookup_sample,
@@ -1325,6 +1326,20 @@ def load_cached_folder_rows(
     return [row.to_workbench_row() for row in cached]
 
 
+def load_cached_subfolder_rows(
+    folder_id: int,
+    relative_path_prefix: str,
+    *,
+    library_db_path: Path | None = None,
+) -> list[WorkbenchRow]:
+    """Load cached rows for one registered folder subtree without rescanning."""
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    cached = load_folder_subtree_samples(
+        folder_id, relative_path_prefix, db_path=db
+    )
+    return [row.to_workbench_row() for row in cached]
+
+
 def load_all_cached_rows(
     *,
     library_db_path: Path | None = None,
@@ -2219,6 +2234,7 @@ __all__ = [
     "list_workbench_playlists",
     "load_all_cached_rows",
     "load_cached_folder_rows",
+    "load_cached_subfolder_rows",
     "load_catalog_rows",
     "load_playlist_workbench_rows",
     "load_workbench_analysis_limit",

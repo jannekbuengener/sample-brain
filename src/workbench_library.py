@@ -797,6 +797,45 @@ def load_folder_samples(
     return [_cached_row_from_sqlite_row(row, library_folder_path=path) for row in rows]
 
 
+def load_folder_subtree_samples(
+    folder_id: int,
+    relative_path_prefix: str,
+    *,
+    db_path: Path | None = None,
+) -> list[CachedWorkbenchRow]:
+    """Load cached descendants for one registered folder and relative subtree.
+
+    Stored ``relative_path`` values predate this helper and may use either
+    Windows or POSIX separators. Normalize separators only in the SELECT
+    expression; existing cache rows are deliberately left untouched.
+    """
+    normalized_prefix = str(relative_path_prefix).replace("\\", "/").strip("/")
+    if not normalized_prefix:
+        return []
+
+    escaped_prefix = (
+        normalized_prefix.replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+    pattern = f"{escaped_prefix}/%"
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT s.*, f.path AS library_folder_path
+            FROM samples s
+            JOIN folders f ON f.id = s.folder_id
+            WHERE s.folder_id = ?
+              AND REPLACE(COALESCE(s.relative_path, ''), char(92), '/')
+                    LIKE ? ESCAPE char(92)
+            ORDER BY s.relative_path, s.display_name
+            """,
+            (folder_id, pattern),
+        ).fetchall()
+    return [_cached_row_from_sqlite_row(row) for row in rows]
+
+
 def load_all_cached_samples(*, db_path: Path | None = None) -> list[CachedWorkbenchRow]:
     """Load cached samples from every registered workbench library folder."""
     init_workbench_library(db_path)
@@ -1009,6 +1048,7 @@ __all__ = [
     "list_playlists",
     "load_all_cached_samples",
     "load_folder_samples",
+    "load_folder_subtree_samples",
     "load_sample_by_path",
     "load_sample_cue",
     "lookup_sample",

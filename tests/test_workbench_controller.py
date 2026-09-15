@@ -31,6 +31,7 @@ from src.workbench_controller import (
     load_playlist_workbench_rows,
     is_catalog_readonly_row,
     load_cached_folder_rows,
+    load_cached_subfolder_rows,
     load_workbench_analysis_limit,
     load_workbench_last_folder,
     load_workbench_sample_cue,
@@ -1052,6 +1053,41 @@ def test_load_cached_folder_rows_empty_when_not_analyzed(tmp_path: Path):
     add_workbench_library_folder(folder)
 
     assert load_cached_folder_rows(folder) == []
+
+
+def test_load_cached_subfolder_rows_delegates_to_cached_subtree_loader(
+    tmp_path: Path,
+) -> None:
+    from src.workbench_library import (
+        upsert_folder,
+        upsert_sample,
+        workbench_library_db_path,
+    )
+
+    state_dir = tmp_path / "state"
+    db_path = workbench_library_db_path(state_dir=state_dir)
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    folder_id = upsert_folder(folder, db_path=db_path)
+    row = WorkbenchRow(
+        display_name="kick",
+        relative_path="Drums\\Kicks\\kick.wav",
+        path=str(folder / "kick.wav"),
+        bpm=None,
+        key=None,
+        key_conf=None,
+        loudness=None,
+        brightness=None,
+        sample_class=None,
+        pred_type=None,
+        status="ok",
+    )
+    upsert_sample(folder_id, row, size_bytes=1, mtime_ns=1, db_path=db_path)
+
+    rows = load_cached_subfolder_rows(
+        folder_id, "Drums/Kicks", library_db_path=db_path
+    )
+    assert [loaded.display_name for loaded in rows] == ["kick"]
 
 
 def test_save_and_load_workbench_sample_cue_via_controller(sample_folder: Path):

@@ -25,6 +25,7 @@ from src.workbench_library import (
     list_playlists,
     load_folder_samples,
     load_all_cached_samples,
+    load_folder_subtree_samples,
     load_sample_cue,
     lookup_sample,
     normalize_display_name,
@@ -738,6 +739,54 @@ def test_load_all_cached_samples_to_workbench_row_includes_library_folder(
     wb_row = load_all_cached_samples(db_path=library_db)[0].to_workbench_row()
     assert wb_row.details.get("library_folder") == str(folder.resolve())
     assert wb_row.relative_path.startswith("pack/")
+
+
+def test_load_folder_subtree_samples_matches_legacy_separators_and_escapes_prefixes(
+    library_db: Path,
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "pack"
+    folder.mkdir()
+    folder_id = upsert_folder(folder, db_path=library_db)
+
+    rows = [
+        ("Drums\\Kicks\\kick.wav", "windows-kick.wav"),
+        ("Drums/Snares/snare.wav", "posix-snare.wav"),
+        ("Drums2/Kicks/not-a-drum.wav", "sibling.wav"),
+        ("Drums%/Kicks/percent.wav", "percent.wav"),
+        ("DrumsX/Kicks/not-percent.wav", "not-percent.wav"),
+        ("Drums_/Kicks/underscore.wav", "underscore.wav"),
+        ("DrumsA/Kicks/not-underscore.wav", "not-underscore.wav"),
+    ]
+    for relative_path, filename in rows:
+        sample = folder / filename
+        row = WorkbenchRow(
+            display_name=filename,
+            relative_path=relative_path,
+            path=str(sample),
+            bpm=None,
+            key=None,
+            key_conf=None,
+            loudness=None,
+            brightness=None,
+            sample_class=None,
+            pred_type=None,
+            status="ok",
+        )
+        upsert_sample(folder_id, row, size_bytes=1, mtime_ns=1, db_path=library_db)
+
+    assert {row.display_name for row in load_folder_subtree_samples(
+        folder_id, "Drums", db_path=library_db
+    )} == {"windows-kick.wav", "posix-snare.wav"}
+    assert [row.display_name for row in load_folder_subtree_samples(
+        folder_id, "Drums/Kicks", db_path=library_db
+    )] == ["windows-kick.wav"]
+    assert [row.display_name for row in load_folder_subtree_samples(
+        folder_id, "Drums%", db_path=library_db
+    )] == ["percent.wav"]
+    assert [row.display_name for row in load_folder_subtree_samples(
+        folder_id, "Drums_", db_path=library_db
+    )] == ["underscore.wav"]
 
 
 def test_new_library_db_has_playlist_tables(library_db: Path):
