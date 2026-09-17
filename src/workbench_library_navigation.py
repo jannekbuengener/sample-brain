@@ -153,6 +153,31 @@ def _is_link_or_junction(entry: os.DirEntry[str]) -> bool:
     return bool(is_junction and is_junction())
 
 
+def _is_link_or_junction_path(path: Path) -> bool:
+    try:
+        if path.is_symlink():
+            return True
+        is_junction = getattr(path, "is_junction", None)
+        return bool(is_junction and is_junction())
+    except OSError:
+        return True
+
+
+def _directory_is_safe(folder_path: str, relative_path: str | None) -> bool:
+    current = Path(folder_path)
+    if _is_link_or_junction_path(current):
+        return False
+    if not relative_path:
+        return True
+    for component in relative_path.replace("\\", "/").split("/"):
+        if not component:
+            continue
+        current /= component
+        if _is_link_or_junction_path(current):
+            return False
+    return True
+
+
 class WorkbenchLibraryNavigation:
     """Expose cached Library navigation without owning any renderer or loader."""
 
@@ -224,6 +249,8 @@ class WorkbenchLibraryNavigation:
         path = Path(folder.path)
         if relative_path:
             path = path.joinpath(*relative_path.replace("\\", "/").split("/"))
+        if not _directory_is_safe(folder.path, relative_path):
+            return ()
         if not path.is_dir():
             return ()
         try:

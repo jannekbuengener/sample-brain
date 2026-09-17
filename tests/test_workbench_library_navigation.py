@@ -196,7 +196,8 @@ def test_expansion_returns_only_direct_non_symlink_children_without_side_effects
     library_db: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = tmp_path / "source"
-    (root / "direct").mkdir(parents=True)
+    direct = root / "direct"
+    direct.mkdir(parents=True)
     (root / "nested" / "child").mkdir(parents=True)
     (root / "audio.wav").write_bytes(b"not audio")
     link_target = root / "link-target"
@@ -227,6 +228,15 @@ def test_expansion_returns_only_direct_non_symlink_children_without_side_effects
 
     children = navigation.children(f"root:{folder_id}")
     assert [child.label for child in children] == ["direct", "link-target", "nested"]
+    assert scandir_calls == [root]
+
+    direct_node = _node(children, "folder:{}:{}".format(
+        folder_id,
+        base64.urlsafe_b64encode("direct".encode()).decode().rstrip("="),
+    ))
+    direct.rmdir()
+    direct.symlink_to(link_target, target_is_directory=True)
+    assert navigation.children(direct_node.node_id) == ()
     assert scandir_calls == [root]
 
 

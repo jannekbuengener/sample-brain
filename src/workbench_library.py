@@ -797,6 +797,12 @@ def load_folder_samples(
     return [_cached_row_from_sqlite_row(row, library_folder_path=path) for row in rows]
 
 
+def _normalize_relative_path_for_query(value: str | None) -> str:
+    """Normalize a cached relative path with the host's case semantics."""
+    native_path = str(value or "").replace("/", os.sep).replace("\\", os.sep)
+    return os.path.normcase(native_path).replace(os.sep, "/")
+
+
 def load_folder_subtree_samples(
     folder_id: int,
     relative_path_prefix: str,
@@ -809,29 +815,33 @@ def load_folder_subtree_samples(
     Windows or POSIX separators. Normalize separators only in the SELECT
     expression; existing cache rows are deliberately left untouched.
     """
-    normalized_prefix = str(relative_path_prefix).replace("\\", "/").strip("/")
+    normalized_prefix = _normalize_relative_path_for_query(relative_path_prefix).strip(
+        "/"
+    )
     if not normalized_prefix:
         return []
 
-    escaped_prefix = (
-        normalized_prefix.replace("\\", "\\\\")
-        .replace("%", "\\%")
-        .replace("_", "\\_")
-    )
-    pattern = f"{escaped_prefix}/%"
     init_workbench_library(db_path)
     with connect_workbench_library(db_path) as conn:
+        conn.create_function(
+            "sample_brain_normcase", 1, _normalize_relative_path_for_query
+        )
         rows = conn.execute(
             """
             SELECT s.*, f.path AS library_folder_path
             FROM samples s
             JOIN folders f ON f.id = s.folder_id
             WHERE s.folder_id = ?
-              AND REPLACE(COALESCE(s.relative_path, ''), char(92), '/')
-                    LIKE ? ESCAPE char(92)
+              AND substr(
+                    sample_brain_normcase(
+                        REPLACE(COALESCE(s.relative_path, ''), char(92), '/')
+                    ),
+                    1,
+                    length(?) + 1
+                  ) = ? || '/'
             ORDER BY s.relative_path, s.display_name
             """,
-            (folder_id, pattern),
+            (folder_id, normalized_prefix, normalized_prefix),
         ).fetchall()
     return [_cached_row_from_sqlite_row(row) for row in rows]
 
