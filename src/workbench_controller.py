@@ -37,6 +37,7 @@ from .workbench_library import (
     WORKBENCH_ANALYZER_VERSION,
     CachedWorkbenchRow,
     LibraryFolder,
+    LibraryFolderRemovalPreview,
     PlaylistSampleAddResult,
     WorkbenchCueMetadata,
     WorkbenchPlaylistValidationError,
@@ -48,14 +49,17 @@ from .workbench_library import (
     list_playlists,
     load_all_cached_samples,
     load_folder_samples,
+    load_folder_subtree_samples,
     load_sample_by_path,
     load_sample_cue,
     lookup_sample,
     mark_folder_opened,
     normalize_display_name,
+    preview_library_folder_removal,
     register_library_folder,
     remove_library_folder,
     save_sample_cue,
+    resolve_workbench_state_dir,
     upsert_folder,
     upsert_sample,
     workbench_library_db_path,
@@ -969,11 +973,7 @@ def export_workbench_rows_to_fl_tags(
 
 def workbench_state_dir(*, env: Mapping[str, str] | None = None) -> Path:
     """Return the user-local directory for workbench UI state."""
-    env_map = os.environ if env is None else env
-    override = env_map.get("SAMPLE_BRAIN_WORKBENCH_STATE_DIR")
-    if override:
-        return Path(override).expanduser().resolve()
-    return (Path.home() / ".sample-brain").resolve()
+    return resolve_workbench_state_dir(env=env)
 
 
 def workbench_last_folder_file(
@@ -1304,6 +1304,16 @@ def remove_workbench_library_folder(
     return remove_library_folder(folder_id_or_path, db_path=db)
 
 
+def preview_workbench_library_folder_removal(
+    folder_id_or_path: int | str | Path,
+    *,
+    library_db_path: Path | None = None,
+) -> LibraryFolderRemovalPreview | None:
+    """Preview a single metadata-only Library source removal."""
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    return preview_library_folder_removal(folder_id_or_path, db_path=db)
+
+
 def load_cached_folder_rows(
     folder: Path | str,
     *,
@@ -1313,6 +1323,20 @@ def load_cached_folder_rows(
     db = library_db_path if library_db_path is not None else workbench_library_db_path()
     mark_folder_opened(folder, db_path=db)
     cached = load_folder_samples(folder, db_path=db)
+    return [row.to_workbench_row() for row in cached]
+
+
+def load_cached_subfolder_rows(
+    folder_id: int,
+    relative_path_prefix: str,
+    *,
+    library_db_path: Path | None = None,
+) -> list[WorkbenchRow]:
+    """Load cached rows for one registered folder subtree without rescanning."""
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    cached = load_folder_subtree_samples(
+        folder_id, relative_path_prefix, db_path=db
+    )
     return [row.to_workbench_row() for row in cached]
 
 
@@ -2205,10 +2229,12 @@ __all__ = [
     "get_workbench_library_folders",
     "get_preview_start_ms",
     "preview_catalog_import",
+    "preview_workbench_library_folder_removal",
     "preview_start_ms_from_waveform_x",
     "list_workbench_playlists",
     "load_all_cached_rows",
     "load_cached_folder_rows",
+    "load_cached_subfolder_rows",
     "load_catalog_rows",
     "load_playlist_workbench_rows",
     "load_workbench_analysis_limit",

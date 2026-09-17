@@ -57,6 +57,81 @@ def _synthetic_row(name: str, *, pred_type: str = "Kick") -> WorkbenchRow:
     )
 
 
+def test_remove_library_folder_previews_metadata_only_and_honors_cancel(
+    monkeypatch,
+) -> None:
+    path = "X:/offline/sample-library"
+    preview = SimpleNamespace(
+        folder_id=7,
+        path=path,
+        cached_sample_count=3,
+        availability="unavailable_or_missing",
+        metadata_only=True,
+    )
+    app = WorkbenchApp.__new__(WorkbenchApp)
+    app._busy = False
+    app._global_library_mode = False
+    app._catalog_library_mode = False
+    app._selected_library_path = lambda: path
+    prompts: list[tuple[str, str]] = []
+    removed: list[str] = []
+    monkeypatch.setattr(
+        "src.workbench.preview_workbench_library_folder_removal",
+        lambda selected: preview,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "src.workbench.messagebox.askyesno",
+        lambda title, message: prompts.append((title, message)) or False,
+    )
+    monkeypatch.setattr(
+        "src.workbench.remove_workbench_library_folder",
+        lambda selected: removed.append(selected) or True,
+    )
+
+    WorkbenchApp._remove_library_folder(app)
+
+    assert removed == []
+    assert len(prompts) == 1
+    assert path in prompts[0][1]
+    assert "3 Cache-Metadaten" in prompts[0][1]
+    assert "nicht erreichbar oder nicht vorhanden" in prompts[0][1]
+    assert "Originaldateien und Ordner bleiben unverändert" in prompts[0][1]
+
+
+def test_remove_library_folder_confirmation_removes_previewed_metadata_only(
+    monkeypatch,
+) -> None:
+    preview = SimpleNamespace(
+        folder_id=11,
+        path="X:/available/sample-library",
+        cached_sample_count=2,
+        availability="available",
+        metadata_only=True,
+    )
+    app = WorkbenchApp.__new__(WorkbenchApp)
+    app._busy = False
+    app._global_library_mode = False
+    app._catalog_library_mode = False
+    app._selected_library_path = lambda: preview.path
+    app._refresh_library_list = lambda: None
+    app._set_status = lambda *_args, **_kwargs: None
+    removed: list[int] = []
+    monkeypatch.setattr(
+        "src.workbench.preview_workbench_library_folder_removal",
+        lambda selected: preview,
+    )
+    monkeypatch.setattr("src.workbench.messagebox.askyesno", lambda *_args: True)
+    monkeypatch.setattr(
+        "src.workbench.remove_workbench_library_folder",
+        lambda selected: removed.append(selected) or True,
+    )
+
+    WorkbenchApp._remove_library_folder(app)
+
+    assert removed == [preview.folder_id]
+
+
 def test_library_source_model_keeps_all_library_and_registered_folders_deterministic():
     """Source navigation exposes stable identities without host-specific paths."""
     sources = build_workbench_library_sources(

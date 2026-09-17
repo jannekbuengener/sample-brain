@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
 import pytest
 
+import src.workbench_library as workbench_library
 from src.workbench_library import (
     WORKBENCH_ANALYZER_VERSION,
     WORKBENCH_LIBRARY_SCHEMA_VERSION,
@@ -24,6 +26,7 @@ from src.workbench_library import (
     list_playlists,
     load_folder_samples,
     load_all_cached_samples,
+    load_folder_subtree_samples,
     load_sample_cue,
     lookup_sample,
     normalize_display_name,
@@ -205,6 +208,103 @@ def test_list_library_folders_orders_by_last_opened(library_db: Path, tmp_path: 
     assert folders[0].path == str(first.resolve())
 
 
+def test_global_pytest_fixture_keeps_default_producer_db_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    synthetic_home = tmp_path / "synthetic-user-home"
+    synthetic_default_db = synthetic_home / ".sample-brain" / "workbench_library.db"
+    monkeypatch.setattr(Path, "home", lambda: synthetic_home)
+    folder = tmp_path / "normal-test-library"
+    folder.mkdir()
+
+    active_db = workbench_library_db_path()
+    register_library_folder(folder)
+
+    assert active_db.is_file()
+    assert active_db != synthetic_default_db
+    assert not synthetic_default_db.exists()
+
+
+def test_workbench_state_resolver_precedence_is_framework_neutral(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    explicit_state = tmp_path / "explicit-state"
+    environment_state = tmp_path / "environment-state"
+    synthetic_home = tmp_path / "synthetic-home"
+    monkeypatch.setattr(Path, "home", lambda: synthetic_home)
+    env = {"SAMPLE_BRAIN_WORKBENCH_STATE_DIR": str(environment_state)}
+
+    assert hasattr(workbench_library, "resolve_workbench_state_dir")
+    assert workbench_library.resolve_workbench_state_dir(
+        state_dir=explicit_state, env=env
+    ) == explicit_state.resolve()
+    assert workbench_library.resolve_workbench_state_dir(env=env) == environment_state.resolve()
+    assert workbench_library.resolve_workbench_state_dir(env={}) == (
+        synthetic_home / ".sample-brain"
+    ).resolve()
+
+
+def test_explicit_workbench_state_roots_remain_isolated(tmp_path: Path) -> None:
+    first_db = workbench_library_db_path(state_dir=tmp_path / "first-state")
+    second_db = workbench_library_db_path(state_dir=tmp_path / "second-state")
+    first_folder = tmp_path / "first-library"
+    second_folder = tmp_path / "second-library"
+    first_folder.mkdir()
+    second_folder.mkdir()
+
+    register_library_folder(first_folder, db_path=first_db)
+    register_library_folder(second_folder, db_path=second_db)
+
+    assert [folder.path for folder in list_library_folders(db_path=first_db)] == [
+        str(first_folder.resolve())
+    ]
+    assert [folder.path for folder in list_library_folders(db_path=second_db)] == [
+        str(second_folder.resolve())
+    ]
+
+
+def test_removal_preview_reports_unavailable_registration_without_mutation(
+    library_db: Path, tmp_path: Path
+) -> None:
+    missing = tmp_path / "offline-library"
+    folder_id = register_library_folder(missing, db_path=library_db)
+
+    assert hasattr(workbench_library, "preview_library_folder_removal")
+    preview = workbench_library.preview_library_folder_removal(
+        folder_id, db_path=library_db
+    )
+
+    assert preview is not None
+    assert preview.folder_id == folder_id
+    assert preview.path == str(missing.resolve())
+    assert preview.cached_sample_count == 0
+    assert preview.availability == "unavailable_or_missing"
+    assert preview.metadata_only is True
+    assert [folder.id for folder in list_library_folders(db_path=library_db)] == [folder_id]
+
+
+def test_temp_like_legitimate_folder_is_not_removed_or_flagged_by_preview(
+    library_db: Path, tmp_path: Path
+) -> None:
+    folder = tmp_path / "my_pytest_tmp_samples"
+    folder.mkdir()
+    sentinel = folder / "keep.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    folder_id = register_library_folder(folder, db_path=library_db)
+
+    assert hasattr(workbench_library, "preview_library_folder_removal")
+    preview = workbench_library.preview_library_folder_removal(
+        folder, db_path=library_db
+    )
+
+    assert preview is not None
+    assert preview.folder_id == folder_id
+    assert preview.availability == "available"
+    assert preview.cached_sample_count == 0
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+    assert [item.id for item in list_library_folders(db_path=library_db)] == [folder_id]
+
+
 def test_remove_library_folder_deletes_folder_and_samples(library_db: Path, tmp_path: Path):
     folder = tmp_path / "samples"
     folder.mkdir()
@@ -226,6 +326,11 @@ def test_remove_library_folder_deletes_folder_and_samples(library_db: Path, tmp_
         status="ok",
     )
     upsert_sample(folder_id, row, size_bytes=4, mtime_ns=100, db_path=library_db)
+
+    preview = workbench_library.preview_library_folder_removal(folder_id, db_path=library_db)
+    assert preview is not None
+    assert preview.cached_sample_count == 1
+    assert preview.availability == "available"
 
     assert remove_library_folder(folder_id, db_path=library_db)
     assert list_library_folders(db_path=library_db) == []
@@ -635,6 +740,103 @@ def test_load_all_cached_samples_to_workbench_row_includes_library_folder(
     wb_row = load_all_cached_samples(db_path=library_db)[0].to_workbench_row()
     assert wb_row.details.get("library_folder") == str(folder.resolve())
     assert wb_row.relative_path.startswith("pack/")
+
+
+def test_load_folder_subtree_samples_matches_legacy_separators_and_escapes_prefixes(
+    library_db: Path,
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "pack"
+    folder.mkdir()
+    folder_id = upsert_folder(folder, db_path=library_db)
+
+    rows = [
+        ("Drums\\Kicks\\kick.wav", "windows-kick.wav"),
+        ("Drums/Snares/snare.wav", "posix-snare.wav"),
+        ("Drums2/Kicks/not-a-drum.wav", "sibling.wav"),
+        ("Drums%/Kicks/percent.wav", "percent.wav"),
+        ("DrumsX/Kicks/not-percent.wav", "not-percent.wav"),
+        ("Drums_/Kicks/underscore.wav", "underscore.wav"),
+        ("DrumsA/Kicks/not-underscore.wav", "not-underscore.wav"),
+    ]
+    for relative_path, filename in rows:
+        sample = folder / filename
+        row = WorkbenchRow(
+            display_name=filename,
+            relative_path=relative_path,
+            path=str(sample),
+            bpm=None,
+            key=None,
+            key_conf=None,
+            loudness=None,
+            brightness=None,
+            sample_class=None,
+            pred_type=None,
+            status="ok",
+        )
+        upsert_sample(folder_id, row, size_bytes=1, mtime_ns=1, db_path=library_db)
+
+    assert {row.display_name for row in load_folder_subtree_samples(
+        folder_id, "Drums", db_path=library_db
+    )} == {"windows-kick.wav", "posix-snare.wav"}
+    assert [row.display_name for row in load_folder_subtree_samples(
+        folder_id, "Drums/Kicks", db_path=library_db
+    )] == ["windows-kick.wav"]
+    assert [row.display_name for row in load_folder_subtree_samples(
+        folder_id, "Drums%", db_path=library_db
+    )] == ["percent.wav"]
+    assert [row.display_name for row in load_folder_subtree_samples(
+        folder_id, "Drums_", db_path=library_db
+    )] == ["underscore.wav"]
+
+
+def test_load_folder_subtree_samples_uses_platform_case_semantics(
+    library_db: Path,
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "pack"
+    folder.mkdir()
+    folder_id = upsert_folder(folder, db_path=library_db)
+
+    rows = [
+        ("Drums/Kicks/upper.wav", "drums-upper.wav"),
+        ("drums/Snares/lower.wav", "drums-lower.wav"),
+        ("Äudio/Kicks/upper.wav", "audio-upper.wav"),
+        ("äudio/Snares/lower.wav", "audio-lower.wav"),
+    ]
+    for relative_path, filename in rows:
+        sample = folder / filename
+        row = WorkbenchRow(
+            display_name=filename,
+            relative_path=relative_path,
+            path=str(sample),
+            bpm=None,
+            key=None,
+            key_conf=None,
+            loudness=None,
+            brightness=None,
+            sample_class=None,
+            pred_type=None,
+            status="ok",
+        )
+        upsert_sample(folder_id, row, size_bytes=1, mtime_ns=1, db_path=library_db)
+
+    drums = {
+        row.display_name
+        for row in load_folder_subtree_samples(folder_id, "Drums", db_path=library_db)
+    }
+    audio = {
+        row.display_name
+        for row in load_folder_subtree_samples(folder_id, "Äudio", db_path=library_db)
+    }
+    expected_drums = {"drums-upper.wav"}
+    expected_audio = {"audio-upper.wav"}
+    if os.path.normcase("Drums") == os.path.normcase("drums"):
+        expected_drums.add("drums-lower.wav")
+    if os.path.normcase("Äudio") == os.path.normcase("äudio"):
+        expected_audio.add("audio-lower.wav")
+    assert drums == expected_drums
+    assert audio == expected_audio
 
 
 def test_new_library_db_has_playlist_tables(library_db: Path):

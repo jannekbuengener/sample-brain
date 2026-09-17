@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 from dataclasses import dataclass
@@ -62,9 +63,14 @@ _SAMPLES_CREATE_SQL = """
 """
 
 
-def _workbench_state_dir(*, env: Mapping[str, str] | None = None) -> Path:
-    import os
-
+def resolve_workbench_state_dir(
+    *,
+    state_dir: Path | str | None = None,
+    env: Mapping[str, str] | None = None,
+) -> Path:
+    """Resolve Workbench state: explicit path, environment override, then user default."""
+    if state_dir is not None:
+        return Path(state_dir).expanduser().resolve()
     env_map = os.environ if env is None else env
     override = env_map.get("SAMPLE_BRAIN_WORKBENCH_STATE_DIR")
     if override:
@@ -77,7 +83,7 @@ def workbench_library_db_path(
     state_dir: Path | None = None,
     env: Mapping[str, str] | None = None,
 ) -> Path:
-    base = state_dir if state_dir is not None else _workbench_state_dir(env=env)
+    base = resolve_workbench_state_dir(state_dir=state_dir, env=env)
     return base / _LIBRARY_DB_NAME
 
 
@@ -360,6 +366,18 @@ class LibraryFolder:
     last_opened_at: str | None
 
 
+LibraryFolderAvailability = Literal["available", "unavailable_or_missing"]
+
+
+@dataclass(frozen=True)
+class LibraryFolderRemovalPreview:
+    folder_id: int
+    path: str
+    cached_sample_count: int
+    availability: LibraryFolderAvailability
+    metadata_only: bool = True
+
+
 @dataclass
 class CachedWorkbenchRow:
     original_path: str
@@ -532,6 +550,42 @@ def list_library_folders(*, db_path: Path | None = None) -> list[LibraryFolder]:
         )
         for row in rows
     ]
+
+
+def preview_library_folder_removal(
+    folder_id_or_path: int | str | Path,
+    *,
+    db_path: Path | None = None,
+) -> LibraryFolderRemovalPreview | None:
+    """Describe one metadata-only removal without changing DB or filesystem content."""
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        folder_id = _resolve_folder_id(folder_id_or_path, conn)
+        if folder_id is None:
+            return None
+        row = conn.execute(
+            "SELECT path FROM folders WHERE id = ?",
+            (folder_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        cached_sample_count = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM samples WHERE folder_id = ?",
+                (folder_id,),
+            ).fetchone()[0]
+        )
+
+    path = str(row["path"])
+    availability: LibraryFolderAvailability = (
+        "available" if Path(path).is_dir() else "unavailable_or_missing"
+    )
+    return LibraryFolderRemovalPreview(
+        folder_id=folder_id,
+        path=path,
+        cached_sample_count=cached_sample_count,
+        availability=availability,
+    )
 
 
 def remove_library_folder(
@@ -743,6 +797,55 @@ def load_folder_samples(
     return [_cached_row_from_sqlite_row(row, library_folder_path=path) for row in rows]
 
 
+def _normalize_relative_path_for_query(value: str | None) -> str:
+    """Normalize a cached relative path with the host's case semantics."""
+    native_path = str(value or "").replace("/", os.sep).replace("\\", os.sep)
+    return os.path.normcase(native_path).replace(os.sep, "/")
+
+
+def load_folder_subtree_samples(
+    folder_id: int,
+    relative_path_prefix: str,
+    *,
+    db_path: Path | None = None,
+) -> list[CachedWorkbenchRow]:
+    """Load cached descendants for one registered folder and relative subtree.
+
+    Stored ``relative_path`` values predate this helper and may use either
+    Windows or POSIX separators. Normalize separators only in the SELECT
+    expression; existing cache rows are deliberately left untouched.
+    """
+    normalized_prefix = _normalize_relative_path_for_query(relative_path_prefix).strip(
+        "/"
+    )
+    if not normalized_prefix:
+        return []
+
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        conn.create_function(
+            "sample_brain_normcase", 1, _normalize_relative_path_for_query
+        )
+        rows = conn.execute(
+            """
+            SELECT s.*, f.path AS library_folder_path
+            FROM samples s
+            JOIN folders f ON f.id = s.folder_id
+            WHERE s.folder_id = ?
+              AND substr(
+                    sample_brain_normcase(
+                        REPLACE(COALESCE(s.relative_path, ''), char(92), '/')
+                    ),
+                    1,
+                    length(?) + 1
+                  ) = ? || '/'
+            ORDER BY s.relative_path, s.display_name
+            """,
+            (folder_id, normalized_prefix, normalized_prefix),
+        ).fetchall()
+    return [_cached_row_from_sqlite_row(row) for row in rows]
+
+
 def load_all_cached_samples(*, db_path: Path | None = None) -> list[CachedWorkbenchRow]:
     """Load cached samples from every registered workbench library folder."""
     init_workbench_library(db_path)
@@ -935,6 +1038,8 @@ __all__ = [
     "WORKBENCH_LIBRARY_SCHEMA_VERSION",
     "CachedWorkbenchRow",
     "LibraryFolder",
+    "LibraryFolderAvailability",
+    "LibraryFolderRemovalPreview",
     "PlaylistSampleAddResult",
     "WorkbenchCueMetadata",
     "WorkbenchCueNotFoundError",
@@ -953,13 +1058,16 @@ __all__ = [
     "list_playlists",
     "load_all_cached_samples",
     "load_folder_samples",
+    "load_folder_subtree_samples",
     "load_sample_by_path",
     "load_sample_cue",
     "lookup_sample",
     "mark_folder_opened",
     "normalize_display_name",
     "normalize_playlist_name",
+    "preview_library_folder_removal",
     "register_library_folder",
+    "resolve_workbench_state_dir",
     "remove_library_folder",
     "save_sample_cue",
     "upsert_folder",

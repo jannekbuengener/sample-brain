@@ -66,6 +66,7 @@ from .workbench_controller import (
     load_workbench_view_settings_result,
     parse_workbench_bpm_bound,
     preview_catalog_import,
+    preview_workbench_library_folder_removal,
     preview_start_ms_from_waveform_x,
     resolve_workbench_fl_user_data_path,
     remove_workbench_library_folder,
@@ -2281,14 +2282,27 @@ class WorkbenchApp:
                 "Catalog-Eintrag ist read-only und kann nicht entfernt werden.",
             )
             return
+        preview = preview_workbench_library_folder_removal(path)
+        if preview is None:
+            self._refresh_library_list()
+            self._set_status("Ordner war nicht in der Library.", tone="neutral")
+            return
+        availability = (
+            "aktuell erreichbar"
+            if preview.availability == "available"
+            else "aktuell nicht erreichbar oder nicht vorhanden"
+        )
         confirmed = messagebox.askyesno(
             "Library entfernen",
-            "Nur aus Sample Brain entfernen?\n\n"
-            "Cache-Metadaten werden gelöscht. Originaldateien bleiben erhalten.",
+            f"Registrierte Quelle:\n{preview.path}\n\n"
+            f"Status: {availability}\n"
+            f"{preview.cached_sample_count} Cache-Metadaten werden gelöscht.\n\n"
+            "Nur aus Sample Brain entfernen?\n"
+            "Originaldateien und Ordner bleiben unverändert.",
         )
         if not confirmed:
             return
-        removed = remove_workbench_library_folder(path)
+        removed = remove_workbench_library_folder(preview.folder_id)
         self._refresh_library_list()
         if self._global_library_mode:
             self._load_all_cached_samples()
