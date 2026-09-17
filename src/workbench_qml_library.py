@@ -224,22 +224,8 @@ def create_qt_library_tree_model(state: WorkbenchLibraryTreeState, parent=None):
             )
             if item is None:
                 return QModelIndex()
-            parent_id = self._parent_id(item)
-            if parent_id is None:
-                return QModelIndex()
-            parent_item = next(
-                (
-                    child
-                    for children in self._items.values()
-                    for child in children
-                    if child.get("node_id") == parent_id
-                ),
-                None,
-            )
-            if parent_item is None:
-                return QModelIndex()
-            siblings = self._items.get(self._parent_id(parent_item), [])
-            return self.createIndex(siblings.index(parent_item), 0, parent_item)
+            siblings = self._items.get(self._parent_id(item), [])
+            return self.createIndex(siblings.index(item), 0, item)
 
         def _sync_children(self, parent_id: str) -> None:
             existing = self._items.setdefault(parent_id, [])
@@ -328,6 +314,7 @@ def create_qt_library_tree_model(state: WorkbenchLibraryTreeState, parent=None):
 
         def roleNames(self):
             return {
+                self.DisplayRole: b"display",
                 self.NodeIdRole: b"nodeId",
                 self.ParentNodeIdRole: b"parentNodeId",
                 self.KindRole: b"kind",
