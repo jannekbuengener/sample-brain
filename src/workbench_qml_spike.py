@@ -12,6 +12,7 @@ from typing import Callable, Mapping, Sequence
 from . import workbench_qml as production
 from .workbench_controller import WorkbenchRow
 from .workbench_live_kit import LiveKitPresentationState, LiveKitState
+from .workbench_qml_library import WorkbenchLibraryTreeState
 from .workbench_visual_acceptance import (
     CLIENT_HEIGHT,
     CLIENT_WIDTH,
@@ -53,6 +54,7 @@ def build_qml_view_model_from_fixture(
     state_id: str,
     *,
     on_browser_selected: Callable[[WorkbenchRow], None] | None = None,
+    library_tree: WorkbenchLibraryTreeState | None = None,
 ) -> Screen1QmlViewModel:
     """Map the public #538 fixture onto the production renderer types."""
     state = LiveKitState()
@@ -80,6 +82,7 @@ def build_qml_view_model_from_fixture(
         ),
         live_kit_groups=groups,
         on_browser_selected=on_browser_selected,
+        library_tree=library_tree,
     )
 
 

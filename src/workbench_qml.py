@@ -12,6 +12,10 @@ from typing import Callable
 
 from .workbench_controller import WorkbenchRow
 from .workbench_harmony import HarmonicMatchLibraryController
+from .workbench_qml_library import (
+    WorkbenchLibraryTreeState,
+    create_qt_library_tree_model,
+)
 
 SCREEN1_QML_STATE_IDS = ("screen1-default-3panel", "screen1-harmonic-4panel")
 
@@ -86,6 +90,7 @@ class Screen1QmlViewModel:
         harmony_rows: tuple[QmlBrowserRow, ...],
         live_kit_groups: tuple[QmlLiveKitGroup, ...],
         on_browser_selected: Callable[[WorkbenchRow], None] | None = None,
+        library_tree: WorkbenchLibraryTreeState | None = None,
     ) -> None:
         if state_id not in SCREEN1_QML_STATE_IDS:
             raise ValueError("Unbekannter Screen-1-QML-State.")
@@ -96,6 +101,7 @@ class Screen1QmlViewModel:
         self.harmony_rows = harmony_rows
         self.live_kit_groups = live_kit_groups
         self._on_browser_selected = on_browser_selected
+        self.library_tree = library_tree or WorkbenchLibraryTreeState()
 
     @property
     def panel_count(self) -> int:
@@ -149,7 +155,6 @@ class Screen1QmlViewModel:
     def qml_context(self) -> dict[str, object]:
         return {
             "panelCount": self.panel_count,
-            "libraryLabels": list(self.library_labels),
             "selectedBrowserIndex": self.selected_browser_index,
             "browserRows": [
                 {
@@ -293,15 +298,69 @@ ApplicationWindow {
     }
 
     RowLayout { anchors.fill: parent; spacing: 0
-        Rectangle { Layout.preferredWidth: 282; Layout.fillHeight: true; color: window.panel; border.color: window.border
+        Rectangle { id: libraryPane; objectName: "libraryPane"; Layout.preferredWidth: 300; Layout.minimumWidth: 230; Layout.fillHeight: true; color: window.panel; border.color: window.border
             ColumnLayout { anchors.fill: parent; anchors.margins: 16
                 Label { text: "LIBRARY"; color: window.muted; font.pixelSize: 12 }
-                Repeater { model: window.screenData.libraryLabels
-                    delegate: Label { text: "⌁  " + modelData; color: index === 2 ? window.accent : window.textColor; font.pixelSize: 15; Layout.topMargin: 10 }
+                TreeView {
+                    id: libraryTree
+                    objectName: "libraryTree"
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    model: libraryTreeModel
+                    clip: true
+                    focus: true
+                    activeFocusOnTab: true
+                    boundsBehavior: Flickable.StopAtBounds
+                    delegate: TreeViewDelegate {
+                        id: libraryDelegate
+                        implicitHeight: 34
+                        indentation: 16
+                        background: Rectangle {
+                            color: libraryInteraction.selectedLibraryNodeId === model.nodeId ? "#211014" : "transparent"
+                            border.color: libraryInteraction.selectedLibraryNodeId === model.nodeId ? window.accent : "transparent"
+                        }
+                        contentItem: Item {
+                            implicitHeight: 34
+                            implicitWidth: libraryTree.width
+                            TapHandler {
+                                onTapped: {
+                                    if (model.error) {
+                                        libraryInteraction.retryLibraryNode(model.parentNodeId)
+                                    } else if (model.selectable) {
+                                        libraryTree.forceActiveFocus()
+                                        libraryInteraction.selectLibraryNode(model.nodeId)
+                                    }
+                                }
+                            }
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 4
+                                anchors.rightMargin: 8
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: model.loading ? "Loading…" : model.display
+                                    color: model.availability === "offline" ? window.muted : window.textColor
+                                    opacity: model.error ? 0.72 : 1.0
+                                    elide: Text.ElideRight
+                                    font.pixelSize: 14
+                                }
+                                Label {
+                                    visible: model.error
+                                    text: "Retry"
+                                    color: window.muted
+                                    font.pixelSize: 11
+                                }
+                            }
+                        }
+                    }
+                    Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                            browser.forceActiveFocus()
+                            event.accepted = true
+                        }
+                    }
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
                 }
-                Item { Layout.fillHeight: true }
-                Label { text: "COLLECTIONS"; color: window.muted; font.pixelSize: 12 }
-                Label { text: "All Samples\nMy Kits\nFavorites"; color: window.textColor; lineHeight: 1.8; font.pixelSize: 14 }
             }
         }
         Rectangle { Layout.fillWidth: true; Layout.fillHeight: true; color: "#0a0b0c"; border.color: window.border
@@ -434,6 +493,29 @@ def _qml_interaction_bridge(adapter: Screen1QmlInteractionAdapter):
     return QmlInteractionBridge()
 
 
+def _qml_library_interaction_bridge(library_model):
+    """Expose only tree selection intent and retry to QML."""
+    from PySide6.QtCore import QObject, Property, Signal, Slot
+
+    class QmlLibraryInteractionBridge(QObject):
+        state_changed = Signal()
+
+        @Property(str, notify=state_changed)
+        def selectedLibraryNodeId(self) -> str:
+            return library_model.state.selected_node_id or ""
+
+        @Slot(str)
+        def selectLibraryNode(self, node_id: str) -> None:
+            if library_model.selectNode(node_id):
+                self.state_changed.emit()
+
+        @Slot(str)
+        def retryLibraryNode(self, node_id: str) -> None:
+            if library_model.retryNode(node_id):
+                self.state_changed.emit()
+
+    return QmlLibraryInteractionBridge()
+
 def _qml_engine(
     view_model: Screen1QmlViewModel,
     *,
@@ -447,14 +529,20 @@ def _qml_engine(
         harmony_controller=HarmonicMatchLibraryController(),
     )
     bridge = _qml_interaction_bridge(adapter)
+    library_model = create_qt_library_tree_model(view_model.library_tree)
+    library_bridge = _qml_library_interaction_bridge(library_model)
     engine.rootContext().setContextProperty("screenModel", view_model.qml_context())
     engine.rootContext().setContextProperty("interactionModel", bridge)
+    engine.rootContext().setContextProperty("libraryTreeModel", library_model)
+    engine.rootContext().setContextProperty("libraryInteraction", library_bridge)
     engine.loadData(QML_SOURCE.encode("utf-8"), QUrl("qrc:/screen1.qml"))
     if not engine.rootObjects():
         raise RuntimeError("Qt Quick Screen-1 Renderer konnte keine QML-Oberfläche laden.")
     # Keep both Python objects alive for the complete Qt engine lifetime.
     engine._screen1_interaction_adapter = adapter
     engine._screen1_interaction_bridge = bridge
+    engine._screen1_library_model = library_model
+    engine._screen1_library_bridge = library_bridge
     return app, engine, engine.rootObjects()[0]
 
 
