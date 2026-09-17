@@ -5,5 +5,5 @@
 #   pip install -e .[clap]
 #
 # #423 reproducibility matrix. Keep these exact pins in sync with pyproject.toml.
-torch==2.13.0
+torch==2.14.0
 transformers==5.16.1
