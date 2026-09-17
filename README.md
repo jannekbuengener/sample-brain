@@ -50,15 +50,19 @@ flowchart LR
     H --> I[Performance Packs]
 ```
 
-### Visuelle Produkt-Richtung
+### Visuelle Produkt-Evidence
 
-Die folgenden Bilder sind **freigegebene UI-Mockups / Designziele**, keine als Live-Runtime ausgegebenen Screenshots:
+**CURRENT PRODUCT / RUNTIME** — Screen-1 des lokalen Workbench, aufgenommen aus einem verifizierten Build (Runtime-Provenance `VALID`, deterministisches Screen-1-Acceptance-Fixture). Erzeugt über den [Visual-Acceptance-Pfad](docs/WORKBENCH_VISUAL_ACCEPTANCE.md); Provenance inkl. Commit in [runtime/manifest.json](docs/assets/portfolio/runtime/manifest.json):
 
-![Sample Brain Screen-1 Designziel](ui_mockup.png)
+![Sample Brain Workbench — Library/Browser & Live Kit (CURRENT PRODUCT / RUNTIME)](docs/assets/portfolio/runtime/screen1-default-3panel.png)
 
-![Sample Brain Harmonic Match Library Designziel](ui_mockup_matching.png)
+![Sample Brain Workbench — Harmonic Match Library (CURRENT PRODUCT / RUNTIME)](docs/assets/portfolio/runtime/screen1-harmonic-4panel.png)
 
-Runtime-Screenshots werden nur aus einem verifizierten Build als Evidence erzeugt; der dafür vorhandene Visual-Acceptance-Pfad ist unter [WORKBENCH_VISUAL_ACCEPTANCE.md](docs/WORKBENCH_VISUAL_ACCEPTANCE.md) dokumentiert. So bleibt klar getrennt, was Designziel und was tatsächlich ausgeführter Produktzustand ist.
+**DESIGN TARGET / MOCKUP** — freigegebene UI-Mockups / Designziele, keine Runtime-Behauptung:
+
+![Sample Brain Screen-1 Designziel (DESIGN TARGET / MOCKUP)](docs/assets/portfolio/mockups/ui_mockup.png)
+
+![Sample Brain Harmonic Match Library Designziel (DESIGN TARGET / MOCKUP)](docs/assets/portfolio/mockups/ui_mockup_matching.png)
 
 ### Was dieses Projekt belegt
 
@@ -296,6 +300,10 @@ python -m src.cli pack-import "<OUTPUT_DIR>"
 
 ## Dokumentation (wichtigste Einstiege)
 
+Der vollständige Navigations-Index liegt in [docs/README.md](docs/README.md).
+
+- [Portfolio Case Study](docs/CASE_STUDY.md) — Produktstory, Rolle, Product Decisions, Evidence
+- [Screen-1 Visual Acceptance](docs/WORKBENCH_VISUAL_ACCEPTANCE.md) — Runtime-Capture-Pfad für UI-Evidence
 - [Product Requirements](docs/PRODUCT_REQUIREMENTS.md) — Vision, Audience, MVP Scope
 - [System Requirements](docs/SYSTEM_REQUIREMENTS.md) — funktionale / nicht-funktionale Requirements
 - [Target Architecture](docs/TARGET_ARCHITECTURE.md) — Modulgrenzen, Pipeline-Verträge
