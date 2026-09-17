@@ -24,7 +24,7 @@ sample-brain = "src.cli:main"
 [project.optional-dependencies]
 clap = [
     "torch==2.14.0",
-    "transformers==5.16.1",
+    "transformers==5.17.0",
 ]
 vec = [
     "sqlite-vec==0.1.9",
