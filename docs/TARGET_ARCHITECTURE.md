@@ -215,7 +215,7 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 | Component | EPIC | Purpose |
 |-----------|------|---------|
 | FastAPI Service | EPIC 4 | Local HTTP API around pipeline operations |
-| Desktop UI | EPIC 4 | React/Tauri local desktop application |
+| Desktop UI | EPIC 4 | React/Tauri concept superseded; standalone app follows the VST3-first target (see §10.3) |
 | Recommendation Engine | EPIC 3 | Hybrid ranking combining vector similarity + structured metadata |
 | DAW Workflow | EPIC 5 | Integration paths for Ableton, Reaper beyond FL Studio |
 | Re-imagine Engine | EPIC 6 | DSP-based variant generation (pitch, time, stretch, reverse, slice) |

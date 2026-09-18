@@ -77,11 +77,17 @@ The following are no longer roadmap work and should not be represented as open e
 
 ### Workbench / realtime foundation
 
-- local tkinter Workbench.
+- local Tkinter Workbench as the shipped functional default and legacy/fallback path.
 - preview/waveform/cue/loop/attack workflows.
 - playlists/library views/matching helpers.
 - native audio transport and recording path.
 - Quick Capture local voice-to-GitHub-issue flow.
+
+### Screen-1 renderer migration (active)
+
+- `LOCK_PYSIDE6_QML` is the decided renderer contract for new Screen-1 visual/product work.
+- `src/workbench_qml.py` is the optional production QML shell; it remains a thin renderer/intent layer over the Python-authoritative Core/Controller/Audio/Catalog contracts.
+- Migration proceeds slice by slice under #503 and its scoped child issues. Tkinter remains available as legacy/fallback and behavioral reference, not as the target for new Screen-1 visuals.
 
 ### Track deconstruction / performance packs
 

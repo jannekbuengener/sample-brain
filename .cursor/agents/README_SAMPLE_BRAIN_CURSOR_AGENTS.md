@@ -18,7 +18,7 @@ These agents are intentionally lighter than the original CDB agents. They keep t
 
 They are optimized for SampleBrain's current workflow:
 
-- small Python CLI/project maintenance
+- small Python CLI/core/project maintenance and bounded PySide6 / Qt Quick / QML Screen-1 implementation
 - docs-first bootstrap and backlog hygiene
 - GitHub Actions checks: Python smoke, CodeQL, dependency-review, gitleaks, Cursor Bugbot
 - SkillForge routing via `docs/SKILL_INTEGRATION_PLAN.md` and `.cursor/rules/skill-routing.mdc`
@@ -36,6 +36,7 @@ For concrete work:
 - PR review: `sample-brain-code-reviewer`
 - docs drift: `sample-brain-docs-sync-maintainer`
 - implementation: `sample-brain-implementation-engineer`
+- Screen-1/UI work: first read the locked renderer canon in `docs/TARGET_ARCHITECTURE.md` and `docs/WORKBENCH_QML_PROOF_SPIKE.md`, then verify live #579 / #503 state
 - security audit: `sample-brain-security-triage`
 - dependency bump: `sample-brain-dependency-upgrader`
 - release/PR packaging: `sample-brain-pr-packager`

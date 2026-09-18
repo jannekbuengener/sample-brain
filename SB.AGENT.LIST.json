@@ -1,12 +1,12 @@
 {
   "_comment": "Sample Brain — verfügbare Cursor Sub-Agents. Routing via SKILL_INTEGRATION_PLAN.md und skill-routing.mdc.",
   "version": 1,
-  "updated": "2026-06-09",
+  "updated": "2026-09-18",
   "agents": [
     {
       "id": "sample-brain-control-orchestrator",
       "name": "Control Orchestrator",
-      "description": "Orchestriert Workflows, delegiert an spezialisierte Agents, koordiniert PR-Queue und Board-Zustand",
+      "description": "Orchestriert Workflows, delegiert an spezialisierte Agents, koordiniert PR-Queue und Board-Zustand; erzwingt bei Screen-1/UI-Arbeit die Route über den LOCK_PYSIDE6_QML-Canon",
       "default": true,
       "readonly": true
     },
@@ -25,13 +25,13 @@
     {
       "id": "sample-brain-docs-sync-maintainer",
       "name": "Docs Sync Maintainer",
-      "description": "Erkennt Canon-Drift zwischen Docs und Code/CLI, synchronisiert Status-Dokumente",
+      "description": "Erkennt Canon-Drift zwischen Docs, Code/CLI und Screen-1-Renderer-Harness, synchronisiert Status-Dokumente",
       "readonly": false
     },
     {
       "id": "sample-brain-implementation-engineer",
       "name": "Implementation Engineer",
-      "description": "Setzt spezifizierte Features um: Code, Tests, Docs gemäß ADR-Vorgaben",
+      "description": "Setzt spezifizierte Features um: Python-Core/CLI, Tests und Docs; für entsprechend gescopte Screen-1-Slices auch PySide6/Qt Quick/QML über den autoritativen Python-Core",
       "readonly": false
     },
     {

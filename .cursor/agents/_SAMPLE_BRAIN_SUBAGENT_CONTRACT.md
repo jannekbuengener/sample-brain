@@ -29,6 +29,20 @@ Before analysis, planning, implementation, review, or GitHub work:
 
 If a required file is missing, report it exactly and continue only with an explicit limitation.
 
+### Screen-1/UI renderer gate
+
+When a task touches Screen-1 visuals, Workbench UI, QML, or Tkinter UI:
+
+1. Read `docs/TARGET_ARCHITECTURE.md` and `docs/WORKBENCH_QML_PROOF_SPIKE.md` before planning or implementation.
+2. Fetch live `main`, Issue #579, Parent #503, and the relevant scoped child issue before making a plan or status claim.
+3. Apply the locked contract: `SCREEN1_RENDERER = LOCK_PYSIDE6_QML`; new visual/product work uses PySide6 / Qt Quick / QML.
+4. Treat Tkinter as the functional legacy/fallback path and behavioral/integration reference only. Keep Python Core/Controller/Audio/Catalog contracts authoritative and reused through thin renderer adapters.
+
+Do not reopen the renderer decision, duplicate domain logic in QML, or interpret
+existing Tkinter UI as authorization for new Screen-1 product visuals. A Tkinter
+change is in scope only when it fixes a specifically scoped legacy/fallback
+defect.
+
 ## Default operating mode
 
 Default is read-only until Jannek gives a precise GO for the scoped action.
