@@ -8,14 +8,18 @@ probe orchestration deliberately live in :mod:`src.workbench_qml_spike`.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 from .workbench_controller import WorkbenchRow
 from .workbench_harmony import HarmonicMatchLibraryController
+from .workbench_live_kit import LiveKitPresentationState, LiveKitState
+from .workbench_library_navigation import LibraryNodeKind
 from .workbench_qml_library import (
     WorkbenchLibraryTreeState,
     create_qt_library_tree_model,
 )
+from .workbench_qml_runtime import Screen1QmlRuntimeComposition
 
 SCREEN1_QML_STATE_IDS = ("screen1-default-3panel", "screen1-harmonic-4panel")
 
@@ -91,6 +95,8 @@ class Screen1QmlViewModel:
         live_kit_groups: tuple[QmlLiveKitGroup, ...],
         on_browser_selected: Callable[[WorkbenchRow], None] | None = None,
         library_tree: WorkbenchLibraryTreeState | None = None,
+        browser_context: str = "No library selected",
+        browser_error: str | None = None,
     ) -> None:
         if state_id not in SCREEN1_QML_STATE_IDS:
             raise ValueError("Unbekannter Screen-1-QML-State.")
@@ -102,6 +108,8 @@ class Screen1QmlViewModel:
         self.live_kit_groups = live_kit_groups
         self._on_browser_selected = on_browser_selected
         self.library_tree = library_tree or WorkbenchLibraryTreeState()
+        self.browser_context = browser_context
+        self.browser_error = browser_error
 
     @property
     def panel_count(self) -> int:
@@ -152,10 +160,25 @@ class Screen1QmlViewModel:
             self._on_browser_selected(row)
         return row
 
+    def set_browser_state(
+        self,
+        *,
+        rows: tuple[WorkbenchRow, ...],
+        selected_index: int,
+        browser_context: str,
+        error: str | None,
+    ) -> None:
+        self.browser_rows = tuple(_qml_row(row) for row in rows)
+        self.selected_browser_index = selected_index
+        self.browser_context = browser_context
+        self.browser_error = error
+
     def qml_context(self) -> dict[str, object]:
         return {
             "panelCount": self.panel_count,
             "selectedBrowserIndex": self.selected_browser_index,
+            "browserContext": self.browser_context,
+            "errorMessage": self.browser_error or "",
             "browserRows": [
                 {
                     "name": row.display_name,
@@ -183,6 +206,74 @@ class Screen1QmlViewModel:
                 for group in self.live_kit_groups
             ],
         }
+
+
+def _empty_live_kit_groups() -> tuple[QmlLiveKitGroup, ...]:
+    """Project the canonical empty Live Kit into the renderer shape."""
+    state = LiveKitState()
+    presentation = LiveKitPresentationState(state)
+    return tuple(
+        QmlLiveKitGroup(
+            name=group.name,
+            slots=tuple(QmlLiveKitSlot(slot.name, slot.assignment) for slot in group.slots),
+            active=not presentation.is_collapsed(group.name),
+        )
+        for group in presentation.visible_structure()
+    )
+
+
+def _qml_screen_data_bridge(view_model: Screen1QmlViewModel):
+    """Expose renderer state through notifyable Qt properties."""
+    from PySide6.QtCore import QObject, Property, Signal, Slot
+
+    class QmlScreenDataBridge(QObject):
+        browserRowsChanged = Signal()
+        selectedBrowserIndexChanged = Signal()
+        browserContextChanged = Signal()
+        errorMessageChanged = Signal()
+        harmonyRowsChanged = Signal()
+        liveKitGroupsChanged = Signal()
+        panelCountChanged = Signal()
+
+        @Property(list, notify=browserRowsChanged)
+        def browserRows(self) -> list[dict[str, str]]:
+            return view_model.qml_context()["browserRows"]
+
+        @Property(int, notify=selectedBrowserIndexChanged)
+        def selectedBrowserIndex(self) -> int:
+            return view_model.selected_browser_index
+
+        @Property(str, notify=browserContextChanged)
+        def browserContext(self) -> str:
+            return view_model.browser_context
+
+        @Property(str, notify=errorMessageChanged)
+        def errorMessage(self) -> str:
+            return view_model.browser_error or ""
+
+        @Property(list, notify=harmonyRowsChanged)
+        def harmonyRows(self) -> list[dict[str, str]]:
+            return view_model.qml_context()["harmonyRows"]
+
+        @Property(list, notify=liveKitGroupsChanged)
+        def liveKitGroups(self) -> list[dict[str, object]]:
+            return view_model.qml_context()["liveKitGroups"]
+
+        @Property(int, notify=panelCountChanged)
+        def panelCount(self) -> int:
+            return view_model.panel_count
+
+        @Slot()
+        def refresh(self) -> None:
+            self.browserRowsChanged.emit()
+            self.selectedBrowserIndexChanged.emit()
+            self.browserContextChanged.emit()
+            self.errorMessageChanged.emit()
+            self.harmonyRowsChanged.emit()
+            self.liveKitGroupsChanged.emit()
+            self.panelCountChanged.emit()
+
+    return QmlScreenDataBridge()
 
 
 class Screen1QmlInteractionAdapter:
@@ -216,7 +307,7 @@ class Screen1QmlInteractionAdapter:
         self, direction: str, *, browser_has_focus: bool
     ) -> WorkbenchRow | None:
         """Use browser-local arrows without capturing editable controls."""
-        if not browser_has_focus:
+        if not browser_has_focus or not self.view_model.browser_rows:
             return None
         if direction == "next":
             target = min(
@@ -234,6 +325,10 @@ class Screen1QmlInteractionAdapter:
         """Open/close the existing harmony controller without mutating other state."""
         if self.harmonic_match_open:
             self.harmonic_match_open = False
+            return False
+        if not self.view_model.browser_rows:
+            return False
+        if not 0 <= self.view_model.selected_browser_index < len(self.view_model.browser_rows):
             return False
         if self.harmony_controller is not None:
             anchor = self.view_model.browser_rows[
@@ -259,6 +354,7 @@ def qml_runtime_available() -> bool:
 QML_SOURCE = r'''
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 
 ApplicationWindow {
@@ -277,6 +373,32 @@ ApplicationWindow {
     property color border: "#26292e"
     property color accent: "#b1122b"
     property int browserDelegateCreations: 0
+
+    FolderDialog {
+        id: addSourceDialog
+        title: "Sample Source hinzufügen"
+        onAccepted: libraryInteraction.registerSourceUrl(selectedFolder.toString())
+    }
+
+    Dialog {
+        id: removeSourceDialog
+        title: "Sample Source entfernen"
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        onAccepted: libraryInteraction.confirmRemoveSource()
+        onRejected: libraryInteraction.cancelRemoveSource()
+        contentItem: ColumnLayout {
+            Label { text: "Registrierte Quelle: " + libraryInteraction.removalPath; wrapMode: Text.Wrap; Layout.preferredWidth: 420 }
+            Label { text: "Status: " + libraryInteraction.removalAvailability }
+            Label { text: libraryInteraction.removalCachedSampleCount + " Cache-Metadaten werden gelöscht." }
+            Label { text: "Nur aus Sample Brain entfernen. Originaldateien bleiben unverändert."; wrapMode: Text.Wrap; Layout.preferredWidth: 420 }
+        }
+    }
+
+    Connections {
+        target: libraryInteraction
+        function onRemovalRequested() { removeSourceDialog.open() }
+    }
 
     header: Rectangle {
         height: 68; color: "#090a0b"; border.color: window.border
@@ -300,7 +422,11 @@ ApplicationWindow {
     RowLayout { anchors.fill: parent; spacing: 0
         Rectangle { id: libraryPane; objectName: "libraryPane"; Layout.preferredWidth: 300; Layout.minimumWidth: 230; Layout.fillHeight: true; color: window.panel; border.color: window.border
             ColumnLayout { anchors.fill: parent; anchors.margins: 16
-                Label { text: "LIBRARY"; color: window.muted; font.pixelSize: 12 }
+                RowLayout { Layout.fillWidth: true
+                    Label { text: "LIBRARY"; color: window.muted; font.pixelSize: 12; Layout.fillWidth: true }
+                    Button { text: "Add Source"; onClicked: addSourceDialog.open() }
+                    Button { visible: libraryInteraction.canRemoveSelectedSource; text: "Remove"; onClicked: libraryInteraction.prepareRemoveSource() }
+                }
                 TreeView {
                     id: libraryTree
                     objectName: "libraryTree"
@@ -326,6 +452,8 @@ ApplicationWindow {
                                 onTapped: {
                                     if (model.error) {
                                         libraryInteraction.retryLibraryNode(model.parentNodeId)
+                                    } else if (model.kind === "add_source" && model.nodeId === "action:add-source") {
+                                        addSourceDialog.open()
                                     } else if (model.selectable) {
                                         libraryTree.forceActiveFocus()
                                         libraryInteraction.selectLibraryNode(model.nodeId)
@@ -366,7 +494,10 @@ ApplicationWindow {
         Rectangle { Layout.fillWidth: true; Layout.fillHeight: true; color: "#0a0b0c"; border.color: window.border
             ColumnLayout { anchors.fill: parent; anchors.margins: 18; spacing: 10
                 RowLayout { Layout.fillWidth: true
-                    Label { text: "Samples  ›  Techno"; color: window.textColor; font.pixelSize: 16 }
+                    ColumnLayout { Layout.fillWidth: true; spacing: 2
+                        Label { text: window.screenData.browserContext; color: window.textColor; font.pixelSize: 16 }
+                        Label { visible: window.screenData.errorMessage.length > 0; text: window.screenData.errorMessage; color: window.accent; font.pixelSize: 11 }
+                    }
                     Item { Layout.fillWidth: true }
                     Button {
                         objectName: "harmonicMatchButton"
@@ -459,12 +590,21 @@ def _load_qt_modules():
     return QUrl, QGuiApplication, QQmlApplicationEngine
 
 
-def _qml_interaction_bridge(adapter: Screen1QmlInteractionAdapter):
+def _qml_interaction_bridge(
+    adapter: Screen1QmlInteractionAdapter,
+    *,
+    on_state_changed: Callable[[], None] | None = None,
+):
     """Expose the pure interaction adapter to QML only when Qt is installed."""
     from PySide6.QtCore import QObject, Property, Signal, Slot
 
     class QmlInteractionBridge(QObject):
         state_changed = Signal()
+
+        def _refresh(self) -> None:
+            if on_state_changed is not None:
+                on_state_changed()
+            self.state_changed.emit()
 
         @Property(int, notify=state_changed)
         def selectedBrowserIndex(self) -> int:
@@ -477,36 +617,74 @@ def _qml_interaction_bridge(adapter: Screen1QmlInteractionAdapter):
         @Slot(int)
         def selectRow(self, index: int) -> None:
             adapter.select_row(index)
-            self.state_changed.emit()
+            self._refresh()
 
         @Slot(int)
         def navigateBrowser(self, step: int) -> None:
             direction = "next" if step > 0 else "previous"
             adapter.navigate_browser(direction, browser_has_focus=True)
-            self.state_changed.emit()
+            self._refresh()
 
         @Slot()
         def toggleHarmonicMatch(self) -> None:
             adapter.toggle_harmonic_match()
-            self.state_changed.emit()
+            self._refresh()
 
     return QmlInteractionBridge()
 
 
-def _qml_library_interaction_bridge(library_model):
-    """Expose only tree selection intent and retry to QML."""
-    from PySide6.QtCore import QObject, Property, Signal, Slot
+def _qml_library_interaction_bridge(
+    library_model,
+    *,
+    on_selection: Callable[[], None] | None = None,
+    on_add_source: Callable[[str], bool] | None = None,
+    on_prepare_remove: Callable[[int], object | None] | None = None,
+    on_confirm_remove: Callable[[int], bool] | None = None,
+):
+    """Expose tree intent and source actions without owning domain logic."""
+    from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
 
     class QmlLibraryInteractionBridge(QObject):
         state_changed = Signal()
+        removalRequested = Signal()
+
+        def __init__(self) -> None:
+            super().__init__()
+            self._removal_folder_id: int | None = None
+            self._removal_path = ""
+            self._removal_availability = ""
+            self._removal_cached_sample_count = 0
 
         @Property(str, notify=state_changed)
         def selectedLibraryNodeId(self) -> str:
             return library_model.state.selected_node_id or ""
 
+        @Property(bool, notify=state_changed)
+        def canRemoveSelectedSource(self) -> bool:
+            node = library_model.state.node(library_model.state.selected_node_id or "")
+            return bool(
+                node is not None
+                and node.kind is LibraryNodeKind.REGISTERED_ROOT
+                and node.folder_id is not None
+            )
+
+        @Property(str, notify=state_changed)
+        def removalPath(self) -> str:
+            return self._removal_path
+
+        @Property(str, notify=state_changed)
+        def removalAvailability(self) -> str:
+            return self._removal_availability
+
+        @Property(int, notify=state_changed)
+        def removalCachedSampleCount(self) -> int:
+            return self._removal_cached_sample_count
+
         @Slot(str)
         def selectLibraryNode(self, node_id: str) -> None:
             if library_model.selectNode(node_id):
+                if on_selection is not None:
+                    on_selection()
                 self.state_changed.emit()
 
         @Slot(str)
@@ -514,12 +692,60 @@ def _qml_library_interaction_bridge(library_model):
             if library_model.retryNode(node_id):
                 self.state_changed.emit()
 
+        @Slot(str)
+        def registerSourceUrl(self, url: str) -> None:
+            candidate = QUrl(url)
+            path = candidate.toLocalFile() if candidate.isLocalFile() else url
+            if on_add_source is not None and on_add_source(path):
+                self.state_changed.emit()
+
+        @Slot()
+        def prepareRemoveSource(self) -> None:
+            node = library_model.state.node(library_model.state.selected_node_id or "")
+            if (
+                node is None
+                or node.kind is not LibraryNodeKind.REGISTERED_ROOT
+                or node.folder_id is None
+                or on_prepare_remove is None
+            ):
+                return
+            preview = on_prepare_remove(node.folder_id)
+            if preview is None:
+                return
+            self._removal_folder_id = node.folder_id
+            self._removal_path = str(preview.path)
+            self._removal_availability = str(preview.availability)
+            self._removal_cached_sample_count = int(preview.cached_sample_count)
+            self.state_changed.emit()
+            self.removalRequested.emit()
+
+        @Slot()
+        def confirmRemoveSource(self) -> None:
+            folder_id = self._removal_folder_id
+            if folder_id is None or on_confirm_remove is None:
+                return
+            if on_confirm_remove(folder_id):
+                self._clear_removal()
+                self.state_changed.emit()
+
+        @Slot()
+        def cancelRemoveSource(self) -> None:
+            self._clear_removal()
+            self.state_changed.emit()
+
+        def _clear_removal(self) -> None:
+            self._removal_folder_id = None
+            self._removal_path = ""
+            self._removal_availability = ""
+            self._removal_cached_sample_count = 0
+
     return QmlLibraryInteractionBridge()
 
 def _qml_engine(
     view_model: Screen1QmlViewModel,
     *,
     interaction_adapter: Screen1QmlInteractionAdapter | None = None,
+    runtime_composition: Screen1QmlRuntimeComposition | None = None,
 ):
     QUrl, QGuiApplication, QQmlApplicationEngine = _load_qt_modules()
     app = QGuiApplication.instance() or QGuiApplication([])
@@ -528,10 +754,68 @@ def _qml_engine(
         view_model=view_model,
         harmony_controller=HarmonicMatchLibraryController(),
     )
-    bridge = _qml_interaction_bridge(adapter)
     library_model = create_qt_library_tree_model(view_model.library_tree)
-    library_bridge = _qml_library_interaction_bridge(library_model)
-    engine.rootContext().setContextProperty("screenModel", view_model.qml_context())
+
+    screen_model = _qml_screen_data_bridge(view_model)
+
+    def refresh_screen_model() -> None:
+        screen_model.refresh()
+
+    def dispatch_library_selection() -> None:
+        if runtime_composition is None:
+            return
+        intent = library_model.state.selection_intent
+        if intent is None:
+            runtime_composition.clear_no_scope()
+            view_model.set_browser_state(
+                rows=(),
+                selected_index=-1,
+                browser_context="No library selected",
+                error="Library-Auswahl konnte nicht aufgelöst werden.",
+            )
+        else:
+            state = runtime_composition.dispatch_selection(intent)
+            view_model.set_browser_state(
+                rows=state.rows,
+                selected_index=state.selected_index,
+                browser_context=state.browser_context,
+                error=state.error,
+            )
+        refresh_screen_model()
+
+    def register_source(path: str) -> bool:
+        if runtime_composition is None:
+            return False
+        registered = runtime_composition.add_source(Path(path))
+        if registered:
+            library_model.replaceBranch("container:sample-sources")
+        refresh_screen_model()
+        return registered
+
+    def prepare_remove(folder_id: int) -> object | None:
+        if runtime_composition is None:
+            return None
+        return runtime_composition.preview_remove_source(folder_id)
+
+    def confirm_remove(folder_id: int) -> bool:
+        if runtime_composition is None:
+            return False
+        removed = runtime_composition.remove_source(folder_id)
+        if removed:
+            library_model.replaceBranch("container:sample-sources")
+            library_model.clearSelection()
+            refresh_screen_model()
+        return removed
+
+    bridge = _qml_interaction_bridge(adapter, on_state_changed=refresh_screen_model)
+    library_bridge = _qml_library_interaction_bridge(
+        library_model,
+        on_selection=dispatch_library_selection,
+        on_add_source=register_source,
+        on_prepare_remove=prepare_remove,
+        on_confirm_remove=confirm_remove,
+    )
+    engine.rootContext().setContextProperty("screenModel", screen_model)
     engine.rootContext().setContextProperty("interactionModel", bridge)
     engine.rootContext().setContextProperty("libraryTreeModel", library_model)
     engine.rootContext().setContextProperty("libraryInteraction", library_bridge)
@@ -543,6 +827,8 @@ def _qml_engine(
     engine._screen1_interaction_bridge = bridge
     engine._screen1_library_model = library_model
     engine._screen1_library_bridge = library_bridge
+    engine._screen1_screen_model = screen_model
+    engine._screen1_runtime_composition = runtime_composition
     return app, engine, engine.rootObjects()[0]
 
 
@@ -558,7 +844,20 @@ def _settle_qml_frame(app: object) -> None:
 
 def run_qml_screen1(*, state_id: str = "screen1-default-3panel") -> int:
     """Open the optional production Screen-1 renderer without changing Tk defaults."""
-    app, _engine, _window = _qml_engine(Screen1QmlViewModel.baseline(state_id))
+    composition = Screen1QmlRuntimeComposition()
+    view_model = Screen1QmlViewModel(
+        state_id=state_id,
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=_empty_live_kit_groups(),
+        library_tree=composition.library_tree,
+    )
+    app, _engine, _window = _qml_engine(
+        view_model,
+        runtime_composition=composition,
+    )
     return app.exec()
 
 

@@ -1,0 +1,500 @@
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+import pytest
+
+from src.workbench_controller import WorkbenchRow
+from src.workbench_library_navigation import (
+    LibraryAvailability,
+    LibraryNode,
+    LibraryNodeKind,
+    LibraryScope,
+    LibraryScopeKind,
+)
+from src.workbench_qml_library import LibrarySelectionIntent, WorkbenchLibraryTreeState
+
+
+SAMPLE_SOURCES = "container:sample-sources"
+ROOT_ID = "root:1"
+SUBFOLDER_ID = "folder:1:RHJ1bXM"
+COLLECTION_ID = "collection:7"
+PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
+
+
+def _row(name: str) -> WorkbenchRow:
+    return WorkbenchRow(
+        display_name=name,
+        relative_path=f"{name}.wav",
+        path=f"C:/samples/{name}.wav",
+        bpm=132.0,
+        key=None,
+        key_conf=None,
+        loudness=None,
+        brightness=None,
+        sample_class="one_shot",
+        pred_type="Kick",
+        status="ok",
+    )
+
+
+class FakeNavigation:
+    def __init__(self) -> None:
+        self.root = LibraryNode(
+            ROOT_ID,
+            LibraryNodeKind.REGISTERED_ROOT,
+            "Samples",
+            SAMPLE_SOURCES,
+            True,
+            True,
+            LibraryAvailability.AVAILABLE,
+            folder_id=1,
+        )
+        self.subfolder = LibraryNode(
+            SUBFOLDER_ID,
+            LibraryNodeKind.SUBFOLDER,
+            "Drums",
+            ROOT_ID,
+            True,
+            True,
+            LibraryAvailability.AVAILABLE,
+            folder_id=1,
+            relative_path="Drums",
+        )
+        self.collection = LibraryNode(
+            COLLECTION_ID,
+            LibraryNodeKind.COLLECTION,
+            "Set A",
+            "container:collections",
+            True,
+            False,
+            LibraryAvailability.AVAILABLE,
+            playlist_id=7,
+        )
+        self.top = (
+            LibraryNode(
+                SAMPLE_SOURCES,
+                LibraryNodeKind.SAMPLE_SOURCES,
+                "Sample Sources",
+                None,
+                False,
+                True,
+                LibraryAvailability.AVAILABLE,
+            ),
+            LibraryNode(
+                "scope:all-library",
+                LibraryNodeKind.ALL_SAMPLES,
+                "All Samples",
+                None,
+                True,
+                False,
+                LibraryAvailability.AVAILABLE,
+            ),
+            LibraryNode(
+                "scope:catalog-readonly",
+                LibraryNodeKind.CATALOG,
+                "Catalog",
+                None,
+                True,
+                False,
+                LibraryAvailability.AVAILABLE,
+            ),
+            LibraryNode(
+                "container:collections",
+                LibraryNodeKind.COLLECTIONS,
+                "Collections",
+                None,
+                False,
+                True,
+                LibraryAvailability.AVAILABLE,
+            ),
+        )
+        self.sample_roots = [self.root]
+        self.root_children_enabled = True
+
+    def top_level_nodes(self):
+        return self.top
+
+    def children(self, node_id: str):
+        if node_id == SAMPLE_SOURCES:
+            return tuple(self.sample_roots) + (
+                LibraryNode(
+                    "action:add-source",
+                    LibraryNodeKind.ADD_SOURCE,
+                    "Add Source…",
+                    SAMPLE_SOURCES,
+                    False,
+                    False,
+                    LibraryAvailability.AVAILABLE,
+                ),
+            )
+        if node_id == ROOT_ID:
+            return (self.subfolder,) if self.root_children_enabled else ()
+        if node_id == "container:collections":
+            return (self.collection,)
+        return ()
+
+    def resolve_scope(self, node_id: str):
+        return {
+            ROOT_ID: LibraryScope(LibraryScopeKind.ROOT, folder_id=1, folder_path="C:/samples"),
+            SUBFOLDER_ID: LibraryScope(
+                LibraryScopeKind.SUBFOLDER,
+                folder_id=1,
+                folder_path="C:/samples",
+                relative_path="Drums",
+            ),
+            "scope:all-library": LibraryScope(LibraryScopeKind.ALL_SAMPLES),
+            "scope:catalog-readonly": LibraryScope(
+                LibraryScopeKind.CATALOG,
+                catalog_limit=17,
+            ),
+            COLLECTION_ID: LibraryScope(
+                LibraryScopeKind.COLLECTION,
+                playlist_id=7,
+                playlist_name="Set A",
+            ),
+        }.get(node_id)
+
+
+def _composition(monkeypatch):
+    from src import workbench_qml_runtime as runtime
+
+    state = WorkbenchLibraryTreeState(FakeNavigation())
+    composition = runtime.Screen1QmlRuntimeComposition(tree_state=state)
+    return runtime, composition
+
+
+def _intent(node: LibraryNode, scope: LibraryScope) -> LibrarySelectionIntent:
+    return LibrarySelectionIntent(node=node, scope=scope)
+
+
+def test_scope_dispatch_uses_each_existing_loader_once_and_sets_visual_selection(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime, composition = _composition(monkeypatch)
+    calls: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(
+        runtime,
+        "load_cached_folder_rows",
+        lambda folder: calls.append(("root", folder)) or [_row("root")],
+    )
+    monkeypatch.setattr(
+        runtime,
+        "load_cached_subfolder_rows",
+        lambda folder_id, relative: calls.append(("subfolder", (folder_id, relative)))
+        or [_row("subfolder")],
+    )
+    monkeypatch.setattr(
+        runtime,
+        "load_all_cached_rows",
+        lambda: calls.append(("all", None)) or [_row("all")],
+    )
+    monkeypatch.setattr(
+        runtime,
+        "load_catalog_rows",
+        lambda *, limit: calls.append(("catalog", limit)) or [_row("catalog")],
+    )
+    monkeypatch.setattr(
+        runtime,
+        "load_playlist_workbench_rows",
+        lambda name: calls.append(("collection", name)) or [_row("collection")],
+    )
+
+    nav = composition.library_tree.navigation
+    cases = (
+        (nav.root, nav.resolve_scope(ROOT_ID), "root"),
+        (nav.subfolder, nav.resolve_scope(SUBFOLDER_ID), "subfolder"),
+        (nav.top[1], nav.resolve_scope("scope:all-library"), "all"),
+        (nav.top[2], nav.resolve_scope("scope:catalog-readonly"), "catalog"),
+        (nav.collection, nav.resolve_scope(COLLECTION_ID), "collection"),
+    )
+
+    for node, scope, expected_kind in cases:
+        result = composition.dispatch_selection(_intent(node, scope))
+        assert result.error is None
+        assert result.selected_index == 0
+        assert calls[-1][0] == expected_kind
+
+    assert calls == [
+        ("root", "C:/samples"),
+        ("subfolder", (1, "Drums")),
+        ("all", None),
+        ("catalog", 17),
+        ("collection", "Set A"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "scope",
+    (
+        LibraryScope(LibraryScopeKind.ROOT, folder_id=1),
+        LibraryScope(LibraryScopeKind.SUBFOLDER, folder_id=1),
+        LibraryScope(LibraryScopeKind.SUBFOLDER, relative_path="Drums"),
+        LibraryScope(LibraryScopeKind.COLLECTION, playlist_id=7),
+        LibraryScope(LibraryScopeKind.CATALOG, catalog_limit=None),
+    ),
+)
+def test_incomplete_scope_is_fail_closed_without_loader_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+    scope: LibraryScope,
+):
+    runtime, composition = _composition(monkeypatch)
+    calls: list[str] = []
+    for name in (
+        "load_cached_folder_rows",
+        "load_cached_subfolder_rows",
+        "load_all_cached_rows",
+        "load_catalog_rows",
+        "load_playlist_workbench_rows",
+    ):
+        monkeypatch.setattr(runtime, name, lambda *args, _name=name, **kwargs: calls.append(_name))
+
+    node = LibraryNode(
+        "invalid",
+        LibraryNodeKind.CATALOG,
+        "Invalid",
+        None,
+        True,
+        False,
+        LibraryAvailability.AVAILABLE,
+    )
+    result = composition.dispatch_selection(_intent(node, scope))
+
+    assert result.error
+    assert result.rows == ()
+    assert result.selected_index == -1
+    assert calls == []
+
+
+def test_empty_scope_load_is_no_scope_and_non_empty_load_does_not_audition(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime, composition = _composition(monkeypatch)
+    nav = composition.library_tree.navigation
+    monkeypatch.setattr(runtime, "load_all_cached_rows", lambda: [])
+    empty = composition.dispatch_selection(
+        _intent(nav.top[1], nav.resolve_scope("scope:all-library"))
+    )
+    assert empty.rows == ()
+    assert empty.selected_index == -1
+    assert empty.error is None
+
+    monkeypatch.setattr(runtime, "load_all_cached_rows", lambda: [_row("first")])
+    loaded = composition.dispatch_selection(
+        _intent(nav.top[1], nav.resolve_scope("scope:all-library"))
+    )
+    assert [row.display_name for row in loaded.rows] == ["first"]
+    assert loaded.selected_index == 0
+    assert composition.audition_dispatches == []
+
+
+def test_removing_active_root_clears_scope_and_tree_selection(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime, composition = _composition(monkeypatch)
+    nav = composition.library_tree.navigation
+    monkeypatch.setattr(runtime, "load_cached_folder_rows", lambda _folder: [_row("root")])
+    intent = _intent(nav.root, nav.resolve_scope(ROOT_ID))
+    composition.library_tree.select(ROOT_ID)
+    composition.dispatch_selection(intent)
+    removed: list[int] = []
+    monkeypatch.setattr(
+        runtime,
+        "remove_workbench_library_folder",
+        lambda folder_id: removed.append(int(folder_id)) or True,
+    )
+
+    assert composition.remove_source(1) is True
+    assert removed == [1]
+    assert composition.browser_state.rows == ()
+    assert composition.browser_state.selected_index == -1
+    assert composition.library_tree.selected_node_id is None
+    assert composition.library_tree.selection_intent is None
+
+
+def test_removing_active_subfolder_clears_root_scoped_selection(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    runtime, composition = _composition(monkeypatch)
+    nav = composition.library_tree.navigation
+    composition.library_tree.expand(SAMPLE_SOURCES)
+    composition.library_tree.expand(ROOT_ID)
+    monkeypatch.setattr(runtime, "load_cached_subfolder_rows", lambda *_args: [_row("subfolder")])
+    composition.library_tree.select(SUBFOLDER_ID)
+    composition.dispatch_selection(_intent(nav.subfolder, nav.resolve_scope(SUBFOLDER_ID)))
+    monkeypatch.setattr(runtime, "remove_workbench_library_folder", lambda _folder_id: True)
+
+    assert composition.remove_source(1) is True
+    assert composition.browser_state.rows == ()
+    assert composition.browser_state.selected_index == -1
+    assert composition.library_tree.selected_node_id is None
+    assert composition.library_tree.selection_intent is None
+
+
+def test_empty_browser_is_fail_closed_for_arrows_and_harmony():
+    from src.workbench_qml import Screen1QmlInteractionAdapter, Screen1QmlViewModel
+
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    adapter = Screen1QmlInteractionAdapter(view_model=view_model)
+
+    assert adapter.navigate_browser("next", browser_has_focus=True) is None
+    assert adapter.navigate_browser("previous", browser_has_focus=True) is None
+    assert adapter.toggle_harmonic_match() is False
+    assert view_model.selected_browser_index == -1
+
+
+def test_add_source_uses_existing_validation_and_registration_seams(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    runtime, composition = _composition(monkeypatch)
+    registered: list[Path] = []
+    monkeypatch.setattr(runtime, "add_workbench_library_folder", lambda path: registered.append(Path(path)) or 9)
+
+    assert composition.add_source(tmp_path) is True
+    assert registered == [tmp_path.resolve()]
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_add_source_node_is_an_action_and_replace_refresh_has_no_stale_children():
+    from PySide6.QtCore import QCoreApplication
+
+    from src.workbench_qml_library import create_qt_library_tree_model
+
+    app = QCoreApplication.instance() or QCoreApplication([])
+    del app
+    navigation = FakeNavigation()
+    state = WorkbenchLibraryTreeState(navigation)
+    model = create_qt_library_tree_model(state)
+    sample_index = model.index(0, 0)
+    model.fetchMore(sample_index)
+    initial_root_index = model.index(0, 0, sample_index)
+    model.fetchMore(initial_root_index)
+    assert model.rowCount(initial_root_index) == 1
+
+    assert model.data(model.index(0, 0, sample_index), model.SelectableRole) is True
+    action_index = model.index(model.rowCount(sample_index) - 1, 0, sample_index)
+    assert model.data(action_index, model.KindRole) == LibraryNodeKind.ADD_SOURCE.value
+    assert model.data(action_index, model.SelectableRole) is False
+    assert model.selectNode("action:add-source") is False
+
+    navigation.sample_roots.clear()
+    navigation.root_children_enabled = False
+    assert model.replaceBranch(SAMPLE_SOURCES) is True
+    assert model.rowCount(sample_index) == 1
+    assert model.data(model.index(0, 0, sample_index), model.KindRole) == LibraryNodeKind.ADD_SOURCE.value
+
+    navigation.sample_roots.append(navigation.root)
+    assert model.replaceBranch(SAMPLE_SOURCES) is True
+    root_index = model.index(0, 0, sample_index)
+    model.fetchMore(root_index)
+    assert model.rowCount(root_index) == 0
+    assert model.rowCount(sample_index) == 2
+    assert [
+        model.data(model.index(index, 0, sample_index), model.NodeIdRole)
+        for index in range(model.rowCount(sample_index))
+    ] == [ROOT_ID, "action:add-source"]
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_library_bridge_dispatches_selection_callback_once_without_signal_wiring():
+    from PySide6.QtCore import QCoreApplication
+
+    from src.workbench_qml import _qml_library_interaction_bridge
+    from src.workbench_qml_library import create_qt_library_tree_model
+
+    app = QCoreApplication.instance() or QCoreApplication([])
+    del app
+    state = WorkbenchLibraryTreeState(FakeNavigation())
+    state.expand(SAMPLE_SOURCES)
+    model = create_qt_library_tree_model(state)
+    dispatches: list[str] = []
+    bridge = _qml_library_interaction_bridge(
+        model,
+        on_selection=lambda: dispatches.append(state.selection_intent.node.node_id),
+    )
+
+    bridge.selectLibraryNode(ROOT_ID)
+
+    assert dispatches == [ROOT_ID]
+    assert state.selection_intent is not None
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_screen_data_bridge_notifies_dynamic_browser_properties():
+    from PySide6.QtCore import QCoreApplication
+
+    from src.workbench_qml import Screen1QmlViewModel, _qml_screen_data_bridge
+
+    app = QCoreApplication.instance() or QCoreApplication([])
+    del app
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    bridge = _qml_screen_data_bridge(view_model)
+    notifications: list[bool] = []
+    bridge.browserRowsChanged.connect(lambda: notifications.append(True))
+
+    view_model.set_browser_state(
+        rows=(_row("dynamic"),),
+        selected_index=0,
+        browser_context="Samples",
+        error=None,
+    )
+    bridge.refresh()
+
+    assert notifications == [True]
+    assert bridge.selectedBrowserIndex == 0
+    assert bridge.browserContext == "Samples"
+    assert bridge.browserRows[0]["name"] == "dynamic"
+
+
+def test_production_route_constructs_no_scope_without_baseline(monkeypatch: pytest.MonkeyPatch):
+    from src import workbench_qml
+
+    def fail_baseline(cls, _state_id):
+        raise AssertionError("Production-QML darf baseline() nicht aufrufen")
+
+    monkeypatch.setattr(workbench_qml.Screen1QmlViewModel, "baseline", classmethod(fail_baseline))
+    captured: dict[str, object] = {}
+
+    class FakeApp:
+        def exec(self) -> int:
+            return 23
+
+    def fake_engine(view_model, *, runtime_composition):
+        captured["view_model"] = view_model
+        captured["composition"] = runtime_composition
+        return FakeApp(), object(), object()
+
+    monkeypatch.setattr(workbench_qml, "_qml_engine", fake_engine)
+
+    assert workbench_qml.run_qml_screen1() == 23
+    view_model = captured["view_model"]
+    assert view_model.browser_rows == ()
+    assert view_model.selected_browser_index == -1
+    assert captured["composition"].browser_state.rows == ()
+
+
+def test_production_qml_contract_has_observable_screen_state_and_action_path():
+    from src import workbench_qml
+
+    source = workbench_qml.QML_SOURCE
+    assert "browserRowsChanged" in source or "screenModel" in source
+    assert "addSource" in source
+    assert "removeSource" in source
+    assert "action:add-source" in source
