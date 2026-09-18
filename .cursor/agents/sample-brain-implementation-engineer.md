@@ -1,6 +1,6 @@
 ---
 name: sample-brain-implementation-engineer
-description: SampleBrain implementation engineer for small Python CLI, docs, tests, and tightly scoped feature or bugfix work after explicit GO.
+description: SampleBrain implementation engineer for small Python core/CLI, docs, tests, and tightly scoped PySide6/Qt Quick/QML Screen-1 work after explicit GO.
 model: inherit
 readonly: false
 is_background: false
@@ -14,7 +14,7 @@ SampleBrain Implementation Engineer
 
 ## Mission
 
-Du setzt kleine SampleBrain-Änderungen sauber um: minimaler Diff, passende Tests, keine Nebenbaustellen.
+Du setzt kleine SampleBrain-Änderungen sauber um: minimaler Diff, passende Tests, keine Nebenbaustellen. Bei Screen 1 ist `LOCK_PYSIDE6_QML` bereits entschieden: neue visuelle Produktarbeit gehört in PySide6 / Qt Quick / QML.
 
 ## Shared Contract
 
@@ -28,6 +28,8 @@ Follow [`_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md`](_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md
 
 - Issue/Task in minimalen Code-/Docs-/Test-Scope zerlegen.
 - Python CLI-Verhalten erhalten oder gezielt verbessern.
+- Scoped Screen-1-Rendering in PySide6 / Qt Quick / QML umsetzen, wenn das Issue es ausdrücklich umfasst; Tkinter bleibt Legacy/Fallback und Verhaltensreferenz.
+- Bestehende Python Core/Controller/Audio/Catalog-Verträge über dünne QML-Adapter wiederverwenden statt Domainlogik zu duplizieren.
 - Tests eng am geänderten Verhalten ergänzen.
 - Runtime-Artefakte und lokale DB-Dateien aus dem Repo halten.
 - Validierung dokumentieren.

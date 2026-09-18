@@ -111,7 +111,7 @@ Für die Produktstory und Entscheidungen siehe [Case Study](docs/CASE_STUDY.md).
 | **Track Deconstruction** | ✅ verfügbar | `deconstruct <track> --pack-root <dir>` analysiert Track, erzeugt Track Map, Arrangement (optional), Loop-/Section-Kandidaten, Bewertung, Rendering, Asset-Reanalyse. Schreibt `deconstruct_run.json` als Zwischen-Evidence. Resume/Cache-Reuse (pack-lokal, #262). Track Analysis Cache Integration (#237). |
 | **Performance Packs** | ✅ verfügbar | Portable Pack-Struktur (`manifest.json`, `analysis/`, `loops/`, `sections/`, optional `stems/`). Pack-Import in Katalog (`pack-import`). Wiederaufnahme (pack-lokal #262) + wiederverwendbarer Track-Analyse-Cache (#237). |
 | **Stem Separation** | 🧪 optional / experimentell | Technisch validiert: `htdemucs` & `htdemucs_ft` getestet (8/8 Runs), blinder Hörvergleich: `htdemucs` 4/4 bevorzugt, ~2× schneller. Aber: Weight-Lizenz **UNKNOWN/UNVERIFIED** für beide Modelle. Noch **kein** Produktions-Default, **nicht** im Standard-Deconstruction/Pack-Flow. Issues #247/#248/#249/#261 offen. |
-| **Workbench** | ✅ verfügbar | Lokaler Tkinter-Workbench (`workbench`) für Playlist-Ansicht, Sample-Preview, Matching-Vorschläge und Harmonie-Finder (zweite Notebook-Seite: verwandte geladene Samples als Direkt/Verwandt/Transpose/Unsicher, siehe #213). Kein VST3-Produkt. |
+| **Workbench** | ✅ verfügbar | Lokaler Tkinter-Workbench (`workbench`) für Playlist-Ansicht, Sample-Preview, Matching-Vorschläge und Harmonie-Finder (zweite Notebook-Seite: verwandte geladene Samples als Direkt/Verwandt/Transpose/Unsicher, siehe #213). Tkinter bleibt der funktionale Legacy-/Fallback-Pfad; die optionale QML-Screen-1-Shell ist die Produktionsrichtung. Kein VST3-Produkt. |
 | **VST3 / Realtime Transform** | 🚧 noch nicht fertig | Produktziel, aber nicht implementiert. |
 
 ---
@@ -126,6 +126,26 @@ Für die Produktstory und Entscheidungen siehe [Case Study](docs/CASE_STUDY.md).
 - Groove / Loop-Length Fit im Matching
 - Producer Groups / Kick-Bass Rekonstruktion (#268)
 - End-to-End-Privatpilot (#264)
+
+---
+
+## Screen-1-Renderer-Contract
+
+Für neue visuelle Produktarbeit in Screen 1 gilt der bereits entschiedene
+Renderer-Canon:
+
+```text
+SCREEN1_RENDERER = LOCK_PYSIDE6_QML
+Neue Screen-1-Visual-/Produktimplementierung -> PySide6 / Qt Quick / QML
+Tkinter -> funktionierender Legacy-/Fallback-Pfad und Verhaltensreferenz
+Python Core/Controller/Audio/Catalog -> autoritativ und wiederzuverwenden
+```
+
+`src/workbench_qml.py` ist die optionale kanonische QML-Shell. Die laufende
+Migration erfolgt sliceweise unter #503; neue Screen-1-Slices prüfen vor der
+Planung den aktuellen Renderer-Canon und den GitHub-Live-State. Diese
+Festlegung entfernt Tkinter nicht und dupliziert keine bestehende Python- oder
+Audio-Logik in QML.
 
 ---
 

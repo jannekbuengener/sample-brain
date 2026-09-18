@@ -16,7 +16,8 @@
 - CLI entrypoint: `src/cli.py`.
 - Main flow: `init -> scan -> analyze -> autotype -> export_fl` (optional: `embed -> index_build -> search`).
 - The existing offline analysis/data pipeline remains the foundation. Local real-time playback, mixing, recording, grid-bound editing, `TEMPO`, `SYNC`, and `HÄFTIG` are explicitly allowed inside the local Workbench under the boundary in `docs/REALTIME_WORKBENCH_SCOPE.md` (#318/#319).
-- A native audio core may own the hard real-time audio path. Python/Tkinter remains UI/analysis/control and must not become the authoritative real-time audio clock.
+- For Screen 1, `LOCK_PYSIDE6_QML` is the decided renderer contract: new visual/product implementation belongs in PySide6 / Qt Quick / QML. Tkinter remains the functional default and legacy/fallback path, plus a source of existing behavior and integration contracts; it does not authorize new Screen-1 product visuals. Python Core/Controller/Audio/Catalog contracts remain authoritative and must be reused rather than duplicated in QML.
+- A native audio core may own the hard real-time audio path; Python remains the authoritative analysis/control/core integration layer and must not become the authoritative real-time audio clock.
 - The #318 cluster is not a full DAW and does not require a VST/VST3/FL Studio plugin.
 
 ## Global Rules

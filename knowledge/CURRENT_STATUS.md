@@ -46,7 +46,9 @@ Transient PRs are intentionally not frozen into this document. Query GitHub live
 
 ### Workbench and native audio
 
-- local tkinter Workbench with library browsing, analysis, preview, waveform, cue/loop/attack editing, playlists, matching helpers, recording, and native transport integration.
+- local Tkinter Workbench with library browsing, analysis, preview, waveform, cue/loop/attack editing, playlists, matching helpers, recording, and native transport integration. It remains the shipped functional default and legacy/fallback path during Screen-1 migration.
+- The optional `src/workbench_qml.py` production shell is the canonical Screen-1 renderer surface. `LOCK_PYSIDE6_QML` is locked for new Screen-1 visual/product work; the shell reuses the Python-authoritative Core/Controller/Audio/Catalog contracts through thin adapters.
+- Screen-1 migration is active slice by slice under #503. Existing Tkinter UI remains useful as behavior/integration reference, but is not the target for new Screen-1 product visuals.
 - native audio core and deterministic transport/key-lock test surface.
 - Quick Capture voice-to-issue flow using local recording + local whisper.cpp + GitHub CLI. Private/local path and obvious secret redaction is applied before public issue creation; see [`docs/QUICK_CAPTURE.md`](../docs/QUICK_CAPTURE.md).
 

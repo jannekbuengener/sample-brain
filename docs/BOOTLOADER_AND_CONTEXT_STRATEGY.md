@@ -22,6 +22,7 @@ The following documents must be read at the start of every new session before an
 | `docs/PRODUCT_REQUIREMENTS.md` | Every session | Product vision, target audience, MVP scope, non-goals, product principles |
 | `docs/SYSTEM_REQUIREMENTS.md` | Every session | Functional and non-functional requirements, system constraints, data model, testing strategy |
 | `docs/TARGET_ARCHITECTURE.md` | Every session | Current and target architecture, component boundaries, dependency direction, local-first rules |
+| `docs/WORKBENCH_QML_PROOF_SPIKE.md` | Every session | Locked Screen-1 QML renderer, production-shell/proof boundary, and runtime-evidence constraints |
 | `docs/DATA_AND_ARTIFACT_POLICY.md` | Every session | What is committed vs untracked, gitignore reference, enforcement checklist |
 | `knowledge/ACTIVE_ROADMAP.md` | Every session | Completed work, current focus, next priorities, future documentation strands |
 | `knowledge/CURRENT_STATUS.md` | Every session | Branch state, what works, what exists on main, what is not done, next steps |
@@ -56,6 +57,22 @@ These documents are loaded depending on the task category.
 - `agents/CODEX.md` — template role: deterministic execution
 - `agents/GEMINI.md` — template role: review, audit, drift detection
 
+### Screen 1 / UI Renderer Gate
+
+For any Screen-1 or Workbench visual/product task, load the current renderer
+canon before planning or implementation and fetch GitHub live state first:
+
+1. `docs/TARGET_ARCHITECTURE.md`
+2. `docs/WORKBENCH_QML_PROOF_SPIKE.md`
+3. live `main`, Issue #579, Parent #503, and the relevant scoped child issue
+
+The decision is already closed: `SCREEN1_RENDERER = LOCK_PYSIDE6_QML`.
+New Screen-1 visual/product work belongs in PySide6 / Qt Quick / QML. Tkinter
+remains the functional legacy/fallback path and a source of existing behavior
+and integration contracts. Python Core/Controller/Audio/Catalog contracts stay
+authoritative and are reused through thin renderer adapters; the renderer must
+not duplicate domain logic or reopen the technology choice.
+
 ### Repository Hygiene
 
 - `docs/ISSUE_BACKLOG.md` — planned work across all epics, status of open items
@@ -84,20 +101,21 @@ The following sources must never be read automatically during session startup. T
 1. `git status --short --branch` — verify branch and working tree state
 2. Check current branch — confirm it matches the intended work target
 3. Read mandatory context documents (Section 3)
-4. Classify the task:
+4. If the task is Screen-1/UI work, fetch live `main`, #579, #503, and the relevant child issue before planning or implementation
+5. Classify the task:
    - Documentation
    - Architecture / Design
    - EPIC 2 — Semantic Search
    - DAW / Export
    - Repository Hygiene
    - Skill / Bootloader
-5. Load task-specific documents (Section 4)
-6. Check risks:
+6. Load task-specific documents (Section 4)
+7. Check risks:
    - No private files opened
    - No generated artifacts touched
    - Branch / PR context is understood
    - Code vs documentation-only distinction is clear
-7. Begin work
+8. Begin work
 
 ## 7. Context Priority Order
 
