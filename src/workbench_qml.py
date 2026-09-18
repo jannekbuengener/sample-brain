@@ -384,14 +384,15 @@ ApplicationWindow {
         id: removeSourceDialog
         title: "Sample Source entfernen"
         modal: true
+        width: 520
         standardButtons: Dialog.Ok | Dialog.Cancel
         onAccepted: libraryInteraction.confirmRemoveSource()
         onRejected: libraryInteraction.cancelRemoveSource()
         contentItem: ColumnLayout {
-            Label { text: "Registrierte Quelle: " + libraryInteraction.removalPath; wrapMode: Text.Wrap; Layout.preferredWidth: 420 }
+            Label { text: "Registrierte Quelle: " + libraryInteraction.removalPath; wrapMode: Text.Wrap; Layout.fillWidth: true }
             Label { text: "Status: " + libraryInteraction.removalAvailability }
             Label { text: libraryInteraction.removalCachedSampleCount + " Cache-Metadaten werden gelöscht." }
-            Label { text: "Nur aus Sample Brain entfernen. Originaldateien bleiben unverändert."; wrapMode: Text.Wrap; Layout.preferredWidth: 420 }
+            Label { text: "Nur aus Sample Brain entfernen. Originaldateien bleiben unverändert."; wrapMode: Text.Wrap; Layout.fillWidth: true }
         }
     }
 
