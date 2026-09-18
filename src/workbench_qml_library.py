@@ -134,11 +134,23 @@ class WorkbenchLibraryTreeState:
         node = self.node(node_id)
         if node is None or not node.expandable:
             return False
+        for child_id in self._children.get(node_id, ()):
+            self._discard_subtree(child_id)
         self._loaded.discard(node_id)
         self._loading.discard(node_id)
         self._expanded.discard(node_id)
-        self._children.pop(node_id, None)
+        self._children[node_id] = ()
         return True
+
+    def _discard_subtree(self, node_id: str) -> None:
+        for child_id in self._children.pop(node_id, ()):
+            self._discard_subtree(child_id)
+        self._nodes.pop(node_id, None)
+        self._loaded.discard(node_id)
+        self._loading.discard(node_id)
+        self._expanded.discard(node_id)
+        if self.selected_node_id == node_id:
+            self.clear_selection()
 
     def retry(self, node_id: str) -> bool:
         if not self.reset_branch(node_id):
@@ -158,6 +170,11 @@ class WorkbenchLibraryTreeState:
         self.selected_node_id = node_id
         self.selection_intent = intent
         return intent
+
+    def clear_selection(self) -> None:
+        """Clear selection state after a source is removed or invalidated."""
+        self.selected_node_id = None
+        self.selection_intent = None
 
 
 def qt_library_model_available() -> bool:
@@ -233,6 +250,13 @@ def create_qt_library_tree_model(state: WorkbenchLibraryTreeState, parent=None):
             for node in self.state.visible_children(parent_id):
                 if node.node_id not in existing_ids:
                     existing.append({"node_id": node.node_id, "parent_id": parent_id})
+
+        def _clear_qt_descendants(self, parent_id: str) -> None:
+            children = self._items.get(parent_id, [])
+            for child in children:
+                child_id = str(child["node_id"])
+                self._clear_qt_descendants(child_id)
+            self._items[parent_id] = []
 
         def index(self, row, column, parent=QModelIndex()):
             if column != 0 or row < 0:
@@ -355,8 +379,11 @@ def create_qt_library_tree_model(state: WorkbenchLibraryTreeState, parent=None):
 
         @Slot(str, result=bool)
         def retryNode(self, node_id: str) -> bool:
-            if not self.state.reset_branch(node_id):
-                return False
+            return self.replaceBranch(node_id)
+
+        @Slot(str, result=bool)
+        def replaceBranch(self, node_id: str) -> bool:
+            """Replace one branch from authoritative navigation state."""
             item = next(
                 (
                     child
@@ -368,14 +395,29 @@ def create_qt_library_tree_model(state: WorkbenchLibraryTreeState, parent=None):
             )
             if item is None:
                 return False
+            if not self.state.reset_branch(node_id):
+                return False
             parent_index = self._parent_index(node_id)
-            children = self._items.get(node_id, [])
+            children = list(self._items.get(node_id, []))
             if children:
                 self.beginRemoveRows(parent_index, 0, len(children) - 1)
                 self._items[node_id] = []
                 self.endRemoveRows()
+            for child in children:
+                self._clear_qt_descendants(str(child["node_id"]))
             self.fetchMore(parent_index)
             return True
+
+        @Slot(result=bool)
+        def clearSelection(self) -> bool:
+            had_selection = self.state.selected_node_id is not None
+            self.state.clear_selection()
+            if self.rowCount() > 0:
+                top_left = self.index(0, 0)
+                bottom_right = self.index(self.rowCount() - 1, 0)
+                self.dataChanged.emit(top_left, bottom_right, [self.SelectedRole])
+            self.selection_changed.emit()
+            return had_selection
 
         @Slot(str, result=bool)
         def toggleExpanded(self, node_id: str) -> bool:
