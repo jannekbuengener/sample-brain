@@ -492,7 +492,7 @@ ApplicationWindow {
                 }
             }
         }
-        Rectangle { Layout.fillWidth: true; Layout.fillHeight: true; color: "#0a0b0c"; border.color: window.border
+        Rectangle { id: browserPane; objectName: "browserPane"; Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.fillHeight: true; color: "#0a0b0c"; border.color: window.border
             ColumnLayout { anchors.fill: parent; anchors.margins: 18; spacing: 10
                 RowLayout { Layout.fillWidth: true
                     ColumnLayout { Layout.fillWidth: true; spacing: 2
@@ -505,7 +505,7 @@ ApplicationWindow {
                         text: window.interaction.harmonicMatchOpen ? "Close Harmonic Match" : "Harmonic Match"
                         onClicked: window.interaction.toggleHarmonicMatch()
                     }
-                    TextField { objectName: "browserSearch"; placeholderText: "Search samples"; Layout.preferredWidth: 230 }
+                    TextField { objectName: "browserSearch"; placeholderText: "Search samples"; Layout.preferredWidth: 230; Layout.minimumWidth: 120 }
                 }
                 RowLayout { Layout.fillWidth: true
                     Label { text: "WAVEFORM"; color: window.muted; Layout.preferredWidth: 44; font.pixelSize: 11 }
