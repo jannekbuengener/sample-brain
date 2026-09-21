@@ -609,6 +609,8 @@ class Screen1QmlInteractionAdapter:
         return row
 
     def set_harmonic_match_scroll_y(self, value: float) -> None:
+        if not self.harmonic_match_open:
+            return
         self._harmonic_match_scroll_y = max(0.0, float(value))
 
     def toggle_harmonic_match(self) -> bool:
@@ -618,9 +620,14 @@ class Screen1QmlInteractionAdapter:
             self.view_model.state_id = "screen1-default-3panel"
             return False
         if not self.view_model.browser_rows:
+            self.view_model.harmony_rows = ()
+            self.view_model.harmony_anchor = ""
             self.view_model.harmony_status = "Kein Sample als Harmonic-Match-Referenz ausgewählt."
             return False
         if not 0 <= self.view_model.selected_browser_index < len(self.view_model.browser_rows):
+            self.view_model.harmony_rows = ()
+            self.view_model.harmony_anchor = ""
+            self.view_model.harmony_status = "Kein Sample als Harmonic-Match-Referenz ausgewählt."
             return False
         anchor = self.view_model.browser_rows[self.selected_browser_index].source_row
         fingerprint = self._current_harmonic_match_fingerprint(anchor)
@@ -923,6 +930,18 @@ ApplicationWindow {
             }
         }
         Rectangle { visible: window.interaction.harmonicMatchOpen; Layout.preferredWidth: visible ? 360 : 0; Layout.minimumWidth: visible ? 360 : 0; Layout.fillHeight: true; color: window.panel; border.color: window.border
+            onVisibleChanged: {
+                if (visible) {
+                    harmonicMatchList.forceActiveFocus()
+                    Qt.callLater(function() {
+                        if (window.interaction.harmonyScrollY > 0) {
+                            harmonicMatchList.contentY = window.interaction.harmonyScrollY
+                        }
+                    })
+                } else {
+                    browser.forceActiveFocus()
+                }
+            }
             ColumnLayout { anchors.fill: parent; anchors.margins: 14
                 Label { text: "Harmonic Matches"; color: window.textColor; font.pixelSize: 18; font.bold: true }
                 Label { text: window.screenData.harmonyAnchor; color: window.muted; font.pixelSize: 12 }

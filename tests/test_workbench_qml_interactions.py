@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import importlib.util
+from dataclasses import replace
 
 import pytest
 
-from src.workbench_harmony import HarmonicMatchLibraryController
+from src.workbench_harmony import (
+    HarmonicMatchLibraryController,
+    HarmonyRelation,
+    HarmonySuggestion,
+)
 from src.workbench_controller import WorkbenchRow
 from src.workbench_qml_spike import (
     Screen1QmlInteractionAdapter,
@@ -35,6 +40,34 @@ def _adapter(
         on_preview_stopped=preview_stop,
         on_add_to_kit_requested=add_to_kit_command,
     )
+
+
+def _stub_harmony_finder(anchor, candidates):
+    return (
+        [
+            HarmonySuggestion(
+                row=candidate,
+                relation=HarmonyRelation.DIRECT,
+                harmony_score=1.0,
+                bpm_score=1.0,
+                total_score=round(1.0 - index * 0.01, 3),
+                explanation="stub",
+            )
+            for index, candidate in enumerate(candidates)
+        ],
+        None,
+    )
+
+
+def _set_mode_keys(fixture, view_model, *indices):
+    targets = {id(fixture.browser_rows[index]) for index in indices}
+    rows = []
+    for qml_row in view_model.browser_rows:
+        source = qml_row.source_row
+        if id(source) in targets and source.key:
+            qml_row = replace(qml_row, source_row=replace(source, key=f"{source.key}min"))
+        rows.append(qml_row)
+    return tuple(rows)
 
 
 def test_row_click_selects_exact_row_updates_view_state_and_dispatches_once():
@@ -253,14 +286,16 @@ def test_harmonic_no_browser_selection_stays_closed_without_finder_call():
 def test_harmonic_match_row_actions_are_local_preview_and_existing_add_intent_only():
     previews = []
     added = []
-    _fixture, view_model, adapter = _adapter(
-        harmony_controller=HarmonicMatchLibraryController(),
+    fixture, view_model, adapter = _adapter(
+        harmony_controller=HarmonicMatchLibraryController(finder=_stub_harmony_finder),
         preview_command=previews.append,
         add_to_kit_command=added.append,
     )
+    view_model.browser_rows = _set_mode_keys(
+        fixture, view_model, fixture.selected_browser_index
+    )
     assert adapter.toggle_harmonic_match() is True
-    if not view_model.harmony_rows:
-        pytest.skip("Fixture has no safe harmonic suggestion.")
+    assert view_model.harmony_rows
     live_kit_before = view_model.live_kit_groups
     row = adapter.select_harmonic_match(0)
     assert previews == []
@@ -269,6 +304,285 @@ def test_harmonic_match_row_actions_are_local_preview_and_existing_add_intent_on
     assert adapter.request_add_harmonic_match_to_kit(0) is row
     assert added == [row]
     assert view_model.live_kit_groups is live_kit_before
+
+
+def test_harmonic_scroll_is_ignored_while_panel_closed():
+    fixture, view_model, adapter = _adapter()
+
+    adapter.set_harmonic_match_scroll_y(42)
+    assert adapter.harmonic_match_scroll_y == 0.0
+
+    assert adapter.toggle_harmonic_match() is True
+    adapter.set_harmonic_match_scroll_y(42)
+    assert adapter.harmonic_match_scroll_y == 42.0
+
+
+def test_harmonic_toggle_cycles_between_3_and_4_panels_without_state_drift():
+    fixture, view_model, adapter = _adapter(
+        harmony_controller=HarmonicMatchLibraryController(finder=_stub_harmony_finder),
+    )
+    view_model.browser_rows = _set_mode_keys(
+        fixture, view_model, fixture.selected_browser_index
+    )
+    live_kit_before = view_model.live_kit_groups
+
+    for cycle in range(4):
+        assert view_model.panel_count == 3
+        assert adapter.toggle_harmonic_match() is True
+        assert view_model.panel_count == 4
+        assert adapter.harmonic_match_open is True
+        assert adapter.toggle_harmonic_match() is False
+        assert view_model.panel_count == 3
+        assert adapter.harmonic_match_open is False
+    assert view_model.live_kit_groups is live_kit_before
+
+
+def test_harmonic_toggle_different_anchor_recomputes_exactly_once_per_open():
+    calls = []
+
+    def finder(anchor, candidates):
+        calls.append(anchor)
+        return _stub_harmony_finder(anchor, candidates)
+
+    fixture, view_model, adapter = _adapter(
+        harmony_controller=HarmonicMatchLibraryController(finder=finder),
+    )
+    view_model.browser_rows = _set_mode_keys(
+        fixture, view_model, fixture.selected_browser_index, 0
+    )
+
+    assert adapter.toggle_harmonic_match() is True
+    assert len(calls) == 1
+    adapter.set_harmonic_match_scroll_y(41)
+    adapter.select_harmonic_match(2)
+
+    assert adapter.toggle_harmonic_match() is False
+    view_model.select_browser_index(0)
+    assert adapter.toggle_harmonic_match() is True
+    assert len(calls) == 2
+    assert adapter.selected_harmonic_match_index == 0
+    assert adapter.harmonic_match_scroll_y == 0.0
+    assert view_model.harmony_rows
+
+
+def test_harmonic_same_fingerprint_survives_browser_reorder_without_refetch():
+    calls = []
+
+    def finder(anchor, candidates):
+        calls.append(anchor)
+        return _stub_harmony_finder(anchor, candidates)
+
+    fixture, view_model, adapter = _adapter(
+        harmony_controller=HarmonicMatchLibraryController(finder=finder),
+    )
+    view_model.browser_rows = _set_mode_keys(
+        fixture, view_model, fixture.selected_browser_index
+    )
+
+    assert adapter.toggle_harmonic_match() is True
+    assert len(calls) == 1
+    adapter.set_harmonic_match_scroll_y(31)
+    adapter.select_harmonic_match(1)
+
+    assert adapter.toggle_harmonic_match() is False
+    rows = list(view_model.browser_rows)
+    rows[0], rows[3] = rows[3], rows[0]
+    view_model.browser_rows = tuple(rows)
+
+    assert adapter.toggle_harmonic_match() is True
+    assert len(calls) == 1
+    assert adapter.selected_harmonic_match_index == 1
+    assert adapter.harmonic_match_scroll_y == 31.0
+
+
+def test_harmonic_fingerprint_ignores_candidate_order_but_tracks_anchor_metadata():
+    fixture, view_model, adapter = _adapter()
+    anchor = view_model.browser_rows[2].source_row
+    forward = adapter._current_harmonic_match_fingerprint(anchor)
+
+    view_model.browser_rows = tuple(reversed(view_model.browser_rows))
+    assert adapter._current_harmonic_match_fingerprint(anchor) == forward
+
+    assert (
+        adapter._current_harmonic_match_fingerprint(replace(anchor, key="Bmin"))
+        != forward
+    )
+    assert (
+        adapter._current_harmonic_match_fingerprint(replace(anchor, bpm=110.0))
+        != forward
+    )
+    assert (
+        adapter._current_harmonic_match_fingerprint(
+            replace(anchor, display_name="OTHER")
+        )
+        != forward
+    )
+
+
+def test_harmonic_row_fingerprint_tracks_path_key_bpm_and_name():
+    fixture, view_model, adapter = _adapter()
+    row = fixture.browser_rows[2]
+
+    fingerprint = adapter._harmonic_match_row_fingerprint(row)
+
+    assert fingerprint == (
+        row.path,
+        row.key,
+        ("finite", 132.0),
+        row.display_name,
+    )
+    assert fingerprint != adapter._harmonic_match_row_fingerprint(
+        replace(row, key="Bmin")
+    )
+    assert fingerprint != adapter._harmonic_match_row_fingerprint(
+        replace(row, bpm=110.0)
+    )
+    assert fingerprint != adapter._harmonic_match_row_fingerprint(
+        replace(row, display_name="OTHER")
+    )
+
+
+@pytest.mark.parametrize(
+    ("bpm", "expected"),
+    [
+        (None, ("none", "")),
+        (132.0, ("finite", 132.0)),
+        (float("nan"), ("nan", "")),
+        (float("inf"), ("positive-infinity", "")),
+        (float("-inf"), ("negative-infinity", "")),
+        ("garbage", ("invalid", "'garbage'")),
+    ],
+)
+def test_harmonic_bpm_fingerprint_normalizes_edge_values(bpm, expected):
+    fixture, _view_model, adapter = _adapter()
+
+    assert adapter._harmonic_match_bpm_fingerprint(bpm) == expected
+
+
+def test_harmonic_single_control_button_without_secondary_close_and_on_off_controls():
+    from src.workbench_qml import QML_SOURCE
+
+    assert QML_SOURCE.count('objectName: "harmonicMatchButton"') == 1
+    assert QML_SOURCE.count("toggleHarmonicMatch()") == 1
+    assert "onVisibleChanged" in QML_SOURCE
+    assert "Qt.callLater" in QML_SOURCE
+    assert "harmonyScrollY" in QML_SOURCE
+    for forbidden in ('text: "✕"', 'text: "X"', 'text: "OFF"'):
+        assert forbidden not in QML_SOURCE
+
+
+def test_harmonic_panel_layout_is_derived_from_a_single_visible_state():
+    from src.workbench_qml import QML_SOURCE
+
+    assert QML_SOURCE.count("visible: window.interaction.harmonicMatchOpen") == 1
+    assert "Layout.preferredWidth: visible ? 360 : 0" in QML_SOURCE
+    assert "screen1-default-3panel" not in QML_SOURCE
+    assert "screen1-harmonic-4panel" not in QML_SOURCE
+
+
+def test_harmonic_qml_forwards_only_controller_data_without_music_theory():
+    from src.workbench_qml import QML_SOURCE
+
+    for forbidden in (
+        "Halbton",
+        "semitones",
+        "determine_relation",
+        "Quinte",
+        "Quarte",
+        "pitchShift",
+    ):
+        assert forbidden not in QML_SOURCE
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
+)
+def test_qml_harmonic_toggle_roundtrip_restores_focus_and_scroll_without_refetch():
+    from PySide6.QtCore import QPointF, Qt
+    from PySide6.QtQuick import QQuickItem
+    from PySide6.QtTest import QTest
+
+    from src.workbench_qml_spike import _qml_engine, _settle_qml_frame
+
+    finder_calls = []
+
+    def finder(anchor, candidates):
+        finder_calls.append(anchor)
+        return _stub_harmony_finder(anchor, candidates)
+
+    fixture = build_screen1_visual_fixture_v1()
+    view_model = build_qml_view_model_from_fixture(
+        fixture,
+        "screen1-default-3panel",
+    )
+    view_model.browser_rows = _set_mode_keys(
+        fixture, view_model, fixture.selected_browser_index
+    )
+    anchor = view_model.browser_rows[fixture.selected_browser_index].source_row
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        harmony_controller=HarmonicMatchLibraryController(finder=finder),
+    )
+    app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+    window.show()
+    _settle_qml_frame(app)
+    try:
+        browser = window.findChild(QQuickItem, "browserList")
+        toggle = window.findChild(QQuickItem, "harmonicMatchButton")
+        harmony = window.findChild(QQuickItem, "harmonicMatchList")
+        assert browser is not None and toggle is not None and harmony is not None
+
+        def click_toggle():
+            point = toggle.mapToScene(QPointF(8, 8)).toPoint()
+            QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
+            app.processEvents()
+
+        click_toggle()
+        assert adapter.harmonic_match_open is True
+        assert adapter.harmony_controller.anchor is anchor
+        assert len(finder_calls) == 1
+        assert len(view_model.harmony_rows) == 11
+        _settle_qml_frame(app)
+        assert harmony.property("activeFocus") is True
+
+        QTest.keyClick(window, Qt.Key_Down)
+        app.processEvents()
+        assert adapter.selected_harmonic_match_index == 1
+        QTest.keyClick(window, Qt.Key_Up)
+        app.processEvents()
+        assert adapter.selected_harmonic_match_index == 0
+
+        harmony.setProperty("contentY", 30.0)
+        app.processEvents()
+        assert adapter.harmonic_match_scroll_y > 1.0
+
+        click_toggle()
+        assert adapter.harmonic_match_open is False
+        _settle_qml_frame(app)
+        assert browser.property("activeFocus") is True
+
+        before = view_model.selected_browser_index
+        QTest.keyClick(window, Qt.Key_Up)
+        app.processEvents()
+        assert view_model.selected_browser_index == max(before - 1, 0)
+
+        click_toggle()
+        assert adapter.harmonic_match_open is True
+        assert len(finder_calls) == 1
+        _settle_qml_frame(app)
+        assert harmony.property("activeFocus") is True
+        restored = float(harmony.property("contentY"))
+        assert abs(restored - adapter.harmonic_match_scroll_y) <= 2.0
+    finally:
+        window.close()
+        app.processEvents()
+        timer = getattr(engine, "_screen1_waveform_timer", None)
+        if timer is not None:
+            timer.stop()
+        loader = getattr(engine, "_screen1_waveform_loader", None)
+        if loader is not None:
+            loader.close()
 
 
 @pytest.mark.skipif(
@@ -354,3 +668,9 @@ def test_qml_real_interaction_smoke_click_arrows_focus_and_harmonic_toggle():
     finally:
         window.close()
         app.processEvents()
+        timer = getattr(engine, "_screen1_waveform_timer", None)
+        if timer is not None:
+            timer.stop()
+        loader = getattr(engine, "_screen1_waveform_loader", None)
+        if loader is not None:
+            loader.close()
