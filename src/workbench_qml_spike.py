@@ -78,7 +78,7 @@ def build_qml_view_model_from_fixture(
         browser_rows=tuple(production._qml_row(row) for row in fixture.browser_rows),
         selected_browser_index=fixture.selected_browser_index,
         harmony_rows=tuple(
-            production._qml_row(match.row) for match in fixture.harmony_results
+            production._qml_harmony_row(match) for match in fixture.harmony_results
         ),
         live_kit_groups=groups,
         on_browser_selected=on_browser_selected,
@@ -246,12 +246,31 @@ def run_qml_visual_acceptance(*, runtime_root: Path, evidence_dir: Path) -> dict
     engines: list[object] = []
     try:
         for state_id in REQUIRED_STATE_IDS:
-            app, engine, window = _qml_engine(
-                build_qml_view_model_from_fixture(fixture, state_id)
+            view_model = build_qml_view_model_from_fixture(
+                fixture, "screen1-default-3panel" if state_id.endswith("4panel") else state_id
             )
+            adapter = Screen1QmlInteractionAdapter(
+                view_model=view_model,
+                harmony_controller=production.HarmonicMatchLibraryController(
+                    finder=lambda _anchor, _candidates: (list(fixture.harmony_results), None)
+                ),
+            )
+            app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
             engines.append(engine)
             window.show()
             _settle_qml_frame(app)
+            if state_id.endswith("4panel"):
+                from PySide6.QtCore import QPointF, Qt
+                from PySide6.QtQuick import QQuickItem
+                from PySide6.QtTest import QTest
+
+                control = window.findChild(QQuickItem, "harmonicMatchButton")
+                if control is None:
+                    raise RuntimeError("Harmonic-Match-Control fehlt in der Production-QML-Shell.")
+                QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, control.mapToScene(QPointF(8, 8)).toPoint())
+                _settle_qml_frame(app)
+                if not adapter.harmonic_match_open:
+                    raise RuntimeError("Harmonic-Match-Control konnte den Pane nicht öffnen.")
             target = evidence_dir / f"{state_id}.png"
             capture_windows_client_window(int(window.winId()), target)
             check = validate_capture_sanity(

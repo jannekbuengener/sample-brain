@@ -8,6 +8,7 @@ probe orchestration deliberately live in :mod:`src.workbench_qml_spike`.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import math
 from pathlib import Path
 from typing import Callable
 
@@ -16,7 +17,7 @@ from .workbench_browser_rows import (
     BoundedBackgroundWaveformLoader,
     BoundedLazyWaveformCache,
 )
-from .workbench_harmony import HarmonicMatchLibraryController
+from .workbench_harmony import HarmonicMatchLibraryController, HarmonySuggestion
 from .workbench_live_kit import LiveKitPresentationState, LiveKitState
 from .workbench_library import workbench_library_db_path
 from .workbench_library_navigation import LibraryNodeKind
@@ -42,6 +43,20 @@ class QmlBrowserRow:
     key: str
     duration: str
     waveform_envelope: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class QmlHarmonyRow:
+    """Pure renderer projection of a controller-owned harmony suggestion."""
+
+    source_row: WorkbenchRow
+    display_name: str
+    sample_type: str
+    key: str
+    waveform_envelope: tuple[float, ...]
+    fit: str
+    relation: str
+    explanation: str
 
 
 @dataclass(frozen=True)
@@ -98,6 +113,20 @@ def _qml_row(row: WorkbenchRow) -> QmlBrowserRow:
     )
 
 
+def _qml_harmony_row(suggestion: HarmonySuggestion) -> QmlHarmonyRow:
+    row = suggestion.row
+    return QmlHarmonyRow(
+        source_row=row,
+        display_name=row.display_name,
+        sample_type=row.pred_type or "—",
+        key=row.key or "—",
+        waveform_envelope=_waveform_envelope(row),
+        fit=f"{suggestion.total_score:.0%}",
+        relation=suggestion.relation.value.replace("_", " ").title(),
+        explanation=suggestion.explanation,
+    )
+
+
 class Screen1QmlViewModel:
     """Small renderer adapter over existing fixture and state contracts."""
 
@@ -108,7 +137,7 @@ class Screen1QmlViewModel:
         library_labels: tuple[str, ...],
         browser_rows: tuple[QmlBrowserRow, ...],
         selected_browser_index: int,
-        harmony_rows: tuple[QmlBrowserRow, ...],
+        harmony_rows: tuple[QmlHarmonyRow, ...],
         live_kit_groups: tuple[QmlLiveKitGroup, ...],
         on_browser_selected: Callable[[WorkbenchRow], None] | None = None,
         library_tree: WorkbenchLibraryTreeState | None = None,
@@ -122,6 +151,8 @@ class Screen1QmlViewModel:
         self.browser_rows = browser_rows
         self.selected_browser_index = selected_browser_index
         self.harmony_rows = harmony_rows
+        self.harmony_anchor = ""
+        self.harmony_status = "Harmonic Match ist ausgeschaltet."
         self.live_kit_groups = live_kit_groups
         self._on_browser_selected = on_browser_selected
         self.library_tree = library_tree or WorkbenchLibraryTreeState()
@@ -207,6 +238,14 @@ class Screen1QmlViewModel:
             updated.append(row)
         if changed:
             self.browser_rows = tuple(updated)
+        harmony_updated: list[QmlHarmonyRow] = []
+        for row in self.harmony_rows:
+            if str(row.source_row.path) == path and row.waveform_envelope != envelope:
+                row = replace(row, waveform_envelope=envelope)
+                changed = True
+            harmony_updated.append(row)
+        if changed:
+            self.harmony_rows = tuple(harmony_updated)
         return changed
 
     def set_analysis_state(self, state: AnalysisUiState) -> None:
@@ -228,6 +267,8 @@ class Screen1QmlViewModel:
             "analysisTotal": self.analysis_total,
             "analysisSource": self.analysis_source,
             "analysisError": self.analysis_error or "",
+            "harmonyAnchor": self.harmony_anchor,
+            "harmonyStatus": self.harmony_status,
             "browserRows": [
                 {
                     "name": row.display_name,
@@ -247,6 +288,10 @@ class Screen1QmlViewModel:
                     "type": row.sample_type,
                     "key": row.key,
                     "waveform": list(row.waveform_envelope),
+                    "fit": row.fit,
+                    "relation": row.relation,
+                    "explanation": row.explanation,
+                    "path": str(row.source_row.path),
                 }
                 for row in self.harmony_rows
             ],
@@ -296,6 +341,8 @@ def _qml_screen_data_bridge(
         analysisSourceChanged = Signal()
         analysisErrorChanged = Signal()
         harmonyRowsChanged = Signal()
+        harmonyAnchorChanged = Signal()
+        harmonyStatusChanged = Signal()
         liveKitGroupsChanged = Signal()
         panelCountChanged = Signal()
 
@@ -339,6 +386,14 @@ def _qml_screen_data_bridge(
         def harmonyRows(self) -> list[dict[str, object]]:
             return view_model.qml_context()["harmonyRows"]
 
+        @Property(str, notify=harmonyAnchorChanged)
+        def harmonyAnchor(self) -> str:
+            return view_model.harmony_anchor
+
+        @Property(str, notify=harmonyStatusChanged)
+        def harmonyStatus(self) -> str:
+            return view_model.harmony_status
+
         @Property(list, notify=liveKitGroupsChanged)
         def liveKitGroups(self) -> list[dict[str, object]]:
             return view_model.qml_context()["liveKitGroups"]
@@ -358,6 +413,8 @@ def _qml_screen_data_bridge(
             self.analysisSourceChanged.emit()
             self.analysisErrorChanged.emit()
             self.harmonyRowsChanged.emit()
+            self.harmonyAnchorChanged.emit()
+            self.harmonyStatusChanged.emit()
             self.liveKitGroupsChanged.emit()
             self.panelCountChanged.emit()
 
@@ -394,6 +451,9 @@ class Screen1QmlInteractionAdapter:
         self._on_preview_stopped = on_preview_stopped
         self._on_add_to_kit_requested = on_add_to_kit_requested
         self._preview_active = False
+        self._harmonic_match_context_fingerprint: tuple[object, ...] | None = None
+        self._harmonic_match_selected_index = 0
+        self._harmonic_match_scroll_y = 0.0
 
     @property
     def selected_browser_index(self) -> int:
@@ -406,6 +466,14 @@ class Screen1QmlInteractionAdapter:
     @property
     def preview_active(self) -> bool:
         return self._preview_active
+
+    @property
+    def selected_harmonic_match_index(self) -> int:
+        return self._harmonic_match_selected_index
+
+    @property
+    def harmonic_match_scroll_y(self) -> float:
+        return self._harmonic_match_scroll_y
 
     def preview_row(self, index: int) -> WorkbenchRow:
         """Select a row and emit exactly one preview intent."""
@@ -455,25 +523,116 @@ class Screen1QmlInteractionAdapter:
             return self.view_model.browser_rows[target].source_row
         return self.preview_row(target)
 
+    @staticmethod
+    def _harmonic_match_bpm_fingerprint(bpm: float | None) -> tuple[str, object]:
+        if bpm is None:
+            return ("none", "")
+        try:
+            value = float(bpm)
+        except (TypeError, ValueError):
+            return ("invalid", repr(bpm))
+        if math.isnan(value):
+            return ("nan", "")
+        if math.isinf(value):
+            return ("positive-infinity" if value > 0 else "negative-infinity", "")
+        return ("finite", value)
+
+    @classmethod
+    def _harmonic_match_row_fingerprint(cls, row: WorkbenchRow) -> tuple[object, ...]:
+        return (row.path, row.key, cls._harmonic_match_bpm_fingerprint(row.bpm), row.display_name)
+
+    def _current_harmonic_match_fingerprint(self, anchor: WorkbenchRow) -> tuple[object, ...]:
+        candidates = tuple(sorted(
+            self._harmonic_match_row_fingerprint(row.source_row)
+            for row in self.view_model.browser_rows if row.source_row.path != anchor.path
+        ))
+        return (self._harmonic_match_row_fingerprint(anchor), candidates)
+
+    def _rebind_harmonic_match_rows(self, anchor: WorkbenchRow) -> bool:
+        if self.harmony_controller is None:
+            return True
+        current_by_path: dict[str, WorkbenchRow] = {}
+        ambiguous_paths: set[str] = set()
+        for qml_row in self.view_model.browser_rows:
+            row = qml_row.source_row
+            if row.path in current_by_path:
+                ambiguous_paths.add(row.path)
+            else:
+                current_by_path[row.path] = row
+        rebound: list[WorkbenchRow] = []
+        for suggestion in self.harmony_controller.results:
+            path = suggestion.row.path
+            if path in ambiguous_paths or path not in current_by_path:
+                return False
+            rebound.append(current_by_path[path])
+        self.harmony_controller.anchor = anchor
+        for suggestion, row in zip(self.harmony_controller.results, rebound, strict=True):
+            suggestion.row = row
+        return True
+
+    def _project_harmonic_match(self, anchor: WorkbenchRow) -> None:
+        if self.harmony_controller is None:
+            return
+        self.view_model.harmony_rows = tuple(_qml_harmony_row(item) for item in self.harmony_controller.results)
+        self.view_model.harmony_anchor = f"Reference: {anchor.display_name} · {anchor.key or '—'}"
+        self.view_model.harmony_status = self.harmony_controller.status
+
+    def select_harmonic_match(self, index: int) -> WorkbenchRow:
+        if not 0 <= index < len(self.view_model.harmony_rows):
+            raise IndexError("Harmonic-Match-Zeilenindex außerhalb des sichtbaren Modells.")
+        self._harmonic_match_selected_index = index
+        return self.view_model.harmony_rows[index].source_row
+
+    def preview_harmonic_match(self, index: int) -> WorkbenchRow:
+        row = self.select_harmonic_match(index)
+        result = self._on_preview_requested(row) if self._on_preview_requested else None
+        self._preview_active = bool(result is None or getattr(result, "ok", result is not False))
+        return row
+
+    def navigate_harmonic_match(self, direction: str, *, match_has_focus: bool) -> WorkbenchRow | None:
+        if not match_has_focus or not self.view_model.harmony_rows:
+            return None
+        if direction == "next":
+            index = min(self._harmonic_match_selected_index + 1, len(self.view_model.harmony_rows) - 1)
+        elif direction == "previous":
+            index = max(self._harmonic_match_selected_index - 1, 0)
+        else:
+            raise ValueError(f"Unsupported harmonic direction: {direction}")
+        if index == self._harmonic_match_selected_index:
+            return self.view_model.harmony_rows[index].source_row
+        return self.preview_harmonic_match(index)
+
+    def request_add_harmonic_match_to_kit(self, index: int) -> WorkbenchRow:
+        row = self.select_harmonic_match(index)
+        if self._on_add_to_kit_requested is not None:
+            self._on_add_to_kit_requested(row)
+        return row
+
+    def set_harmonic_match_scroll_y(self, value: float) -> None:
+        self._harmonic_match_scroll_y = max(0.0, float(value))
+
     def toggle_harmonic_match(self) -> bool:
         """Open/close the existing harmony controller without mutating other state."""
         if self.harmonic_match_open:
             self.harmonic_match_open = False
+            self.view_model.state_id = "screen1-default-3panel"
             return False
         if not self.view_model.browser_rows:
+            self.view_model.harmony_status = "Kein Sample als Harmonic-Match-Referenz ausgewählt."
             return False
         if not 0 <= self.view_model.selected_browser_index < len(self.view_model.browser_rows):
             return False
-        if self.harmony_controller is not None:
-            anchor = self.view_model.browser_rows[
-                self.selected_browser_index
-            ].source_row
-            candidates = tuple(row.source_row for row in self.view_model.browser_rows)
-            self.harmony_controller.set_anchor(anchor, candidates)
-            self.view_model.harmony_rows = tuple(
-                _qml_row(suggestion.row) for suggestion in self.harmony_controller.results
-            )
+        anchor = self.view_model.browser_rows[self.selected_browser_index].source_row
+        fingerprint = self._current_harmonic_match_fingerprint(anchor)
+        if fingerprint != self._harmonic_match_context_fingerprint or not self._rebind_harmonic_match_rows(anchor):
+            if self.harmony_controller is not None:
+                self.harmony_controller.set_anchor(anchor, tuple(row.source_row for row in self.view_model.browser_rows))
+            self._harmonic_match_context_fingerprint = fingerprint
+            self._harmonic_match_selected_index = 0
+            self._harmonic_match_scroll_y = 0.0
+        self._project_harmonic_match(anchor)
         self.harmonic_match_open = True
+        self.view_model.state_id = "screen1-harmonic-4panel"
         return True
 
 
@@ -636,7 +795,9 @@ ApplicationWindow {
                     Item { Layout.fillWidth: true }
                     Button {
                         objectName: "harmonicMatchButton"
-                        text: window.interaction.harmonicMatchOpen ? "Close Harmonic Match" : "Harmonic Match"
+                        text: "Harmonic Match"
+                        palette.button: window.interaction.harmonicMatchOpen ? window.accent : window.panelAlt
+                        palette.buttonText: window.textColor
                         onClicked: window.interaction.toggleHarmonicMatch()
                     }
                     TextField { objectName: "browserSearch"; placeholderText: "Search samples"; Layout.preferredWidth: 230; Layout.minimumWidth: 120 }
@@ -761,12 +922,18 @@ ApplicationWindow {
                 }
             }
         }
-        Rectangle { visible: window.interaction.harmonicMatchOpen; Layout.preferredWidth: visible ? 300 : 0; Layout.fillHeight: true; color: window.panel; border.color: window.border
+        Rectangle { visible: window.interaction.harmonicMatchOpen; Layout.preferredWidth: visible ? 360 : 0; Layout.minimumWidth: visible ? 360 : 0; Layout.fillHeight: true; color: window.panel; border.color: window.border
             ColumnLayout { anchors.fill: parent; anchors.margins: 14
                 Label { text: "Harmonic Matches"; color: window.textColor; font.pixelSize: 18; font.bold: true }
-                Label { text: "Reference: TECH_BASS_01 · F#"; color: window.muted; font.pixelSize: 12 }
-                ListView { Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.harmonyRows; clip: true; reuseItems: true
-                    delegate: Rectangle { width: parent.width; height: 64; color: "transparent"; border.color: window.border
+                Label { text: window.screenData.harmonyAnchor; color: window.muted; font.pixelSize: 12 }
+                Label { text: window.screenData.harmonyStatus; color: window.muted; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                ListView { id: harmonicMatchList; objectName: "harmonicMatchList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.harmonyRows; clip: true; reuseItems: true; focus: window.interaction.harmonicMatchOpen
+                    Keys.onUpPressed: window.interaction.navigateHarmony(-1)
+                    Keys.onDownPressed: window.interaction.navigateHarmony(1)
+                    Keys.onEscapePressed: window.interaction.stopPreview()
+                    onContentYChanged: window.interaction.setHarmonyScrollY(contentY)
+                    delegate: Rectangle { width: parent.width; height: 72; color: index === window.interaction.selectedHarmonyIndex ? window.panelAlt : "transparent"; border.color: window.border
+                        MouseArea { anchors.fill: parent; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.selectHarmonyRow(index) } }
                         RowLayout { anchors.fill: parent; anchors.margins: 9
                             Canvas { Layout.preferredWidth: 100; Layout.fillHeight: true; property var envelope: modelData.waveform
                                 onPaint: {
@@ -788,12 +955,16 @@ ApplicationWindow {
                                     }
                                     context.stroke()
                                 }
+                                MouseArea { anchors.fill: parent; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.previewHarmonyRow(index) } }
                             }
                             ColumnLayout { Layout.fillWidth: true
                                 Label { text: modelData.name; color: window.textColor }
-                                Label { text: modelData.type; color: window.muted; font.pixelSize: 11 }
+                                Label { text: modelData.type + " · " + modelData.relation + " · " + modelData.fit; color: window.muted; font.pixelSize: 11 }
                             }
                             Label { text: modelData.key; color: window.accent }
+                            Text { text: "+ Add"; color: window.muted; font.pixelSize: 11
+                                MouseArea { anchors.fill: parent; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.addHarmonyToKit(index) } }
+                            }
                         }
                     }
                 }
@@ -865,6 +1036,14 @@ def _qml_interaction_bridge(
         def previewActive(self) -> bool:
             return adapter.preview_active
 
+        @Property(int, notify=state_changed)
+        def selectedHarmonyIndex(self) -> int:
+            return adapter.selected_harmonic_match_index
+
+        @Property(float, notify=state_changed)
+        def harmonyScrollY(self) -> float:
+            return adapter.harmonic_match_scroll_y
+
         @Slot(int)
         def selectRow(self, index: int) -> None:
             adapter.select_row(index)
@@ -884,6 +1063,30 @@ def _qml_interaction_bridge(
         def addToKit(self, index: int) -> None:
             row = adapter.request_add_to_kit(index)
             self.addToKitIntent.emit(row.relative_path or str(row.path))
+
+        @Slot(int)
+        def selectHarmonyRow(self, index: int) -> None:
+            adapter.select_harmonic_match(index)
+            self._refresh()
+
+        @Slot(int)
+        def previewHarmonyRow(self, index: int) -> None:
+            adapter.preview_harmonic_match(index)
+            self._refresh()
+
+        @Slot(int)
+        def addHarmonyToKit(self, index: int) -> None:
+            row = adapter.request_add_harmonic_match_to_kit(index)
+            self.addToKitIntent.emit(row.relative_path or str(row.path))
+
+        @Slot(int)
+        def navigateHarmony(self, step: int) -> None:
+            adapter.navigate_harmonic_match("next" if step > 0 else "previous", match_has_focus=True)
+            self._refresh()
+
+        @Slot(float)
+        def setHarmonyScrollY(self, value: float) -> None:
+            adapter.set_harmonic_match_scroll_y(value)
 
         @Slot(int, int)
         def requestWaveforms(self, start: int, count: int) -> None:

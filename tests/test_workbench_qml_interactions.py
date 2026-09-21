@@ -212,6 +212,65 @@ def test_harmonic_toggle_reuses_controller_and_preserves_browser_and_live_kit_st
     assert view_model.live_kit_groups is live_kit_before
 
 
+def test_harmonic_reopen_same_fingerprint_reuses_results_selection_and_scroll():
+    calls = []
+    controller = HarmonicMatchLibraryController()
+    original = controller.set_anchor
+
+    def record(anchor, candidates):
+        calls.append((anchor, tuple(candidates)))
+        original(anchor, candidates)
+
+    controller.set_anchor = record
+    _fixture, view_model, adapter = _adapter(harmony_controller=controller)
+
+    assert adapter.toggle_harmonic_match() is True
+    adapter.set_harmonic_match_scroll_y(42)
+    if view_model.harmony_rows:
+        adapter.select_harmonic_match(min(1, len(view_model.harmony_rows) - 1))
+    selected = adapter.selected_harmonic_match_index
+    assert adapter.toggle_harmonic_match() is False
+    assert adapter.toggle_harmonic_match() is True
+    assert len(calls) == 1
+    assert adapter.selected_harmonic_match_index == selected
+    assert adapter.harmonic_match_scroll_y == 42
+
+
+def test_harmonic_no_browser_selection_stays_closed_without_finder_call():
+    calls = []
+    controller = HarmonicMatchLibraryController(finder=lambda *_args: calls.append(True))
+    _fixture, view_model, adapter = _adapter(harmony_controller=controller)
+    view_model.browser_rows = ()
+    view_model.selected_browser_index = -1
+
+    assert adapter.toggle_harmonic_match() is False
+    assert adapter.harmonic_match_open is False
+    assert calls == []
+    assert view_model.harmony_rows == ()
+    assert "Kein Sample" in view_model.harmony_status
+
+
+def test_harmonic_match_row_actions_are_local_preview_and_existing_add_intent_only():
+    previews = []
+    added = []
+    _fixture, view_model, adapter = _adapter(
+        harmony_controller=HarmonicMatchLibraryController(),
+        preview_command=previews.append,
+        add_to_kit_command=added.append,
+    )
+    assert adapter.toggle_harmonic_match() is True
+    if not view_model.harmony_rows:
+        pytest.skip("Fixture has no safe harmonic suggestion.")
+    live_kit_before = view_model.live_kit_groups
+    row = adapter.select_harmonic_match(0)
+    assert previews == []
+    assert adapter.preview_harmonic_match(0) is row
+    assert previews == [row]
+    assert adapter.request_add_harmonic_match_to_kit(0) is row
+    assert added == [row]
+    assert view_model.live_kit_groups is live_kit_before
+
+
 @pytest.mark.skipif(
     importlib.util.find_spec("PySide6") is None,
     reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
