@@ -188,9 +188,16 @@ class WorkbenchLibraryNavigation:
         catalog_path: Path | str | None = None,
     ) -> None:
         self._library_db_path = (
-            library_db_path if library_db_path is not None else workbench_library_db_path()
+            Path(library_db_path).expanduser().resolve()
+            if library_db_path is not None
+            else workbench_library_db_path().expanduser().resolve()
         )
         self._catalog_path = catalog_path
+
+    @property
+    def library_db_path(self) -> Path:
+        """Return the explicit Workbench library DB used by this navigation."""
+        return self._library_db_path
 
     def top_level_nodes(self) -> tuple[LibraryNode, ...]:
         catalog_state = (

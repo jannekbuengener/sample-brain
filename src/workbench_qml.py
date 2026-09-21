@@ -14,7 +14,9 @@ from typing import Callable
 from .workbench_controller import WorkbenchRow
 from .workbench_harmony import HarmonicMatchLibraryController
 from .workbench_live_kit import LiveKitPresentationState, LiveKitState
+from .workbench_library import workbench_library_db_path
 from .workbench_library_navigation import LibraryNodeKind
+from .workbench_qml_analysis import AnalysisUiState, create_qt_analysis_coordinator
 from .workbench_qml_library import (
     WorkbenchLibraryTreeState,
     create_qt_library_tree_model,
@@ -110,6 +112,12 @@ class Screen1QmlViewModel:
         self.library_tree = library_tree or WorkbenchLibraryTreeState()
         self.browser_context = browser_context
         self.browser_error = browser_error
+        self.analysis_status = "idle"
+        self.analysis_folder_id: int | None = None
+        self.analysis_current = 0
+        self.analysis_total = 0
+        self.analysis_source = ""
+        self.analysis_error: str | None = None
 
     @property
     def panel_count(self) -> int:
@@ -173,12 +181,25 @@ class Screen1QmlViewModel:
         self.browser_context = browser_context
         self.browser_error = error
 
+    def set_analysis_state(self, state: AnalysisUiState) -> None:
+        self.analysis_status = state.phase
+        self.analysis_folder_id = state.folder_id
+        self.analysis_current = state.current
+        self.analysis_total = state.total
+        self.analysis_source = state.display_name
+        self.analysis_error = state.error
+
     def qml_context(self) -> dict[str, object]:
         return {
             "panelCount": self.panel_count,
             "selectedBrowserIndex": self.selected_browser_index,
             "browserContext": self.browser_context,
             "errorMessage": self.browser_error or "",
+            "analysisStatus": self.analysis_status,
+            "analysisCurrent": self.analysis_current,
+            "analysisTotal": self.analysis_total,
+            "analysisSource": self.analysis_source,
+            "analysisError": self.analysis_error or "",
             "browserRows": [
                 {
                     "name": row.display_name,
@@ -222,7 +243,11 @@ def _empty_live_kit_groups() -> tuple[QmlLiveKitGroup, ...]:
     )
 
 
-def _qml_screen_data_bridge(view_model: Screen1QmlViewModel):
+def _qml_screen_data_bridge(
+    view_model: Screen1QmlViewModel,
+    *,
+    on_cancel_analysis: Callable[[], None] | None = None,
+):
     """Expose renderer state through notifyable Qt properties."""
     from PySide6.QtCore import QObject, Property, Signal, Slot
 
@@ -231,6 +256,10 @@ def _qml_screen_data_bridge(view_model: Screen1QmlViewModel):
         selectedBrowserIndexChanged = Signal()
         browserContextChanged = Signal()
         errorMessageChanged = Signal()
+        analysisStatusChanged = Signal()
+        analysisProgressChanged = Signal()
+        analysisSourceChanged = Signal()
+        analysisErrorChanged = Signal()
         harmonyRowsChanged = Signal()
         liveKitGroupsChanged = Signal()
         panelCountChanged = Signal()
@@ -251,6 +280,26 @@ def _qml_screen_data_bridge(view_model: Screen1QmlViewModel):
         def errorMessage(self) -> str:
             return view_model.browser_error or ""
 
+        @Property(str, notify=analysisStatusChanged)
+        def analysisStatus(self) -> str:
+            return view_model.analysis_status
+
+        @Property(int, notify=analysisProgressChanged)
+        def analysisCurrent(self) -> int:
+            return view_model.analysis_current
+
+        @Property(int, notify=analysisProgressChanged)
+        def analysisTotal(self) -> int:
+            return view_model.analysis_total
+
+        @Property(str, notify=analysisSourceChanged)
+        def analysisSource(self) -> str:
+            return view_model.analysis_source
+
+        @Property(str, notify=analysisErrorChanged)
+        def analysisError(self) -> str:
+            return view_model.analysis_error or ""
+
         @Property(list, notify=harmonyRowsChanged)
         def harmonyRows(self) -> list[dict[str, str]]:
             return view_model.qml_context()["harmonyRows"]
@@ -269,9 +318,18 @@ def _qml_screen_data_bridge(view_model: Screen1QmlViewModel):
             self.selectedBrowserIndexChanged.emit()
             self.browserContextChanged.emit()
             self.errorMessageChanged.emit()
+            self.analysisStatusChanged.emit()
+            self.analysisProgressChanged.emit()
+            self.analysisSourceChanged.emit()
+            self.analysisErrorChanged.emit()
             self.harmonyRowsChanged.emit()
             self.liveKitGroupsChanged.emit()
             self.panelCountChanged.emit()
+
+        @Slot()
+        def cancelAnalysis(self) -> None:
+            if on_cancel_analysis is not None:
+                on_cancel_analysis()
 
     return QmlScreenDataBridge()
 
@@ -506,6 +564,39 @@ ApplicationWindow {
                         onClicked: window.interaction.toggleHarmonicMatch()
                     }
                     TextField { objectName: "browserSearch"; placeholderText: "Search samples"; Layout.preferredWidth: 230; Layout.minimumWidth: 120 }
+                }
+                RowLayout {
+                    visible: window.screenData.analysisStatus !== "idle"
+                    Layout.fillWidth: true
+                    Label {
+                        Layout.fillWidth: true
+                        text: window.screenData.analysisStatus === "scanning" ? "Analysiere Quelle …" :
+                              window.screenData.analysisStatus === "analyzing" ? "Analysiere " + window.screenData.analysisSource :
+                              window.screenData.analysisStatus === "done" ? "Analyse abgeschlossen" :
+                              window.screenData.analysisStatus === "cancelled" ? "Analyse abgebrochen" :
+                              window.screenData.analysisStatus === "error" ? window.screenData.analysisError : ""
+                        color: window.screenData.analysisStatus === "error" ? window.accent : window.muted
+                        font.pixelSize: 11
+                    }
+                    Label {
+                        visible: window.screenData.analysisTotal > 0
+                        text: window.screenData.analysisCurrent + " / " + window.screenData.analysisTotal
+                        color: window.textColor
+                        font.pixelSize: 11
+                    }
+                    ProgressBar {
+                        visible: window.screenData.analysisStatus === "scanning" || window.screenData.analysisStatus === "analyzing"
+                        indeterminate: window.screenData.analysisTotal === 0
+                        from: 0
+                        to: Math.max(window.screenData.analysisTotal, 1)
+                        value: window.screenData.analysisCurrent
+                        Layout.preferredWidth: 120
+                    }
+                    Button {
+                        visible: window.screenData.analysisStatus === "scanning" || window.screenData.analysisStatus === "analyzing"
+                        text: "Cancel"
+                        onClicked: window.screenData.cancelAnalysis()
+                    }
                 }
                 RowLayout { Layout.fillWidth: true
                     Label { text: "WAVEFORM"; color: window.muted; Layout.preferredWidth: 44; font.pixelSize: 11 }
@@ -757,10 +848,14 @@ def _qml_engine(
     )
     library_model = create_qt_library_tree_model(view_model.library_tree)
 
-    screen_model = _qml_screen_data_bridge(view_model)
-
     def refresh_screen_model() -> None:
         screen_model.refresh()
+
+    analysis_coordinator = None
+
+    def apply_analysis_state(state: AnalysisUiState) -> None:
+        view_model.set_analysis_state(state)
+        refresh_screen_model()
 
     def dispatch_library_selection() -> None:
         if runtime_composition is None:
@@ -784,14 +879,36 @@ def _qml_engine(
             )
         refresh_screen_model()
 
+    def finish_analysis(folder_id: int, _result: object) -> None:
+        library_model.replaceBranch("container:sample-sources")
+        if library_model.selectNode(f"root:{folder_id}"):
+            dispatch_library_selection()
+        else:
+            refresh_screen_model()
+
+    def finish_remove(folder_id: int) -> None:
+        if runtime_composition is None:
+            return
+        if runtime_composition.remove_source(folder_id):
+            library_model.replaceBranch("container:sample-sources")
+            library_model.clearSelection()
+            dispatch_library_selection()
+
     def register_source(path: str) -> bool:
         if runtime_composition is None:
             return False
-        registered = runtime_composition.add_source(Path(path))
-        if registered:
+        registration = runtime_composition.register_source_for_analysis(Path(path))
+        if registration is not None:
             library_model.replaceBranch("container:sample-sources")
+            library_model.selectNode(f"root:{registration.folder_id}")
+            dispatch_library_selection()
+            if analysis_coordinator is not None:
+                analysis_coordinator.start(
+                    registration.folder_id,
+                    str(registration.normalized_path),
+                )
         refresh_screen_model()
-        return registered
+        return registration is not None
 
     def prepare_remove(folder_id: int) -> object | None:
         if runtime_composition is None:
@@ -801,13 +918,28 @@ def _qml_engine(
     def confirm_remove(folder_id: int) -> bool:
         if runtime_composition is None:
             return False
-        removed = runtime_composition.remove_source(folder_id)
-        if removed:
-            library_model.replaceBranch("container:sample-sources")
-            library_model.clearSelection()
-            refresh_screen_model()
-        return removed
+        if analysis_coordinator is not None:
+            return analysis_coordinator.remove(folder_id)
+        return runtime_composition.remove_source(folder_id)
 
+    def cancel_analysis() -> None:
+        if analysis_coordinator is None:
+            return
+        if view_model.analysis_folder_id is not None:
+            analysis_coordinator.cancel(view_model.analysis_folder_id)
+
+    if runtime_composition is not None:
+        analysis_coordinator = create_qt_analysis_coordinator(
+            library_db_path=runtime_composition.library_db_path,
+            on_state=apply_analysis_state,
+            on_complete=finish_analysis,
+            on_remove=finish_remove,
+        )
+
+    screen_model = _qml_screen_data_bridge(
+        view_model,
+        on_cancel_analysis=cancel_analysis,
+    )
     bridge = _qml_interaction_bridge(adapter, on_state_changed=refresh_screen_model)
     library_bridge = _qml_library_interaction_bridge(
         library_model,
@@ -820,6 +952,11 @@ def _qml_engine(
     engine.rootContext().setContextProperty("interactionModel", bridge)
     engine.rootContext().setContextProperty("libraryTreeModel", library_model)
     engine.rootContext().setContextProperty("libraryInteraction", library_bridge)
+    if analysis_coordinator is not None:
+        engine.rootContext().setContextProperty(
+            "_screen1AnalysisCoordinator",
+            analysis_coordinator,
+        )
     engine.loadData(QML_SOURCE.encode("utf-8"), QUrl("qrc:/screen1.qml"))
     if not engine.rootObjects():
         raise RuntimeError("Qt Quick Screen-1 Renderer konnte keine QML-Oberfläche laden.")
@@ -830,6 +967,9 @@ def _qml_engine(
     engine._screen1_library_bridge = library_bridge
     engine._screen1_screen_model = screen_model
     engine._screen1_runtime_composition = runtime_composition
+    engine._screen1_analysis_coordinator = analysis_coordinator
+    if analysis_coordinator is not None:
+        app.aboutToQuit.connect(analysis_coordinator.shutdown)
     return app, engine, engine.rootObjects()[0]
 
 
@@ -845,7 +985,9 @@ def _settle_qml_frame(app: object) -> None:
 
 def run_qml_screen1(*, state_id: str = "screen1-default-3panel") -> int:
     """Open the optional production Screen-1 renderer without changing Tk defaults."""
-    composition = Screen1QmlRuntimeComposition()
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=workbench_library_db_path(),
+    )
     view_model = Screen1QmlViewModel(
         state_id=state_id,
         library_labels=(),
@@ -859,7 +1001,18 @@ def run_qml_screen1(*, state_id: str = "screen1-default-3panel") -> int:
         view_model,
         runtime_composition=composition,
     )
-    return app.exec()
+    try:
+        return app.exec()
+    finally:
+        root_context = getattr(_engine, "rootContext", None)
+        if callable(root_context):
+            coordinator = root_context().contextProperty(
+                "_screen1AnalysisCoordinator"
+            )
+        else:
+            coordinator = getattr(_engine, "_screen1_analysis_coordinator", None)
+        if coordinator is not None:
+            coordinator.close()
 
 
 __all__ = [

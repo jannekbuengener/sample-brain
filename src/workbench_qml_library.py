@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import importlib.util
+from pathlib import Path
 from typing import Any
 
 from .workbench_library_navigation import (
@@ -60,6 +61,11 @@ class WorkbenchLibraryTreeState:
         self.selection_intent: LibrarySelectionIntent | None = None
         self._remember_nodes(top_level)
         self._children[None] = tuple(node.node_id for node in top_level)
+
+    @property
+    def library_db_path(self) -> Path | None:
+        """Expose the navigation DB so runtime composition can enforce identity."""
+        return getattr(self.navigation, "library_db_path", None)
 
     def _remember_nodes(self, nodes: tuple[LibraryNode, ...]) -> None:
         for node in nodes:
