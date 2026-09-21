@@ -261,3 +261,36 @@ def test_qml_capture_keeps_manifest_head_mismatch_fail_closed(tmp_path: Path):
             module_paths=_renderer_paths(root),
             git_run=_provenance_git("c" * 40),
         )
+
+
+def test_qml_modal_harmony_fixture_gives_the_anchor_an_evaluable_modal_key():
+    from src.workbench_harmony import parse_key_signature
+    from src.workbench_qml_spike import _modal_harmony_acceptance_fixture
+
+    fixture = _modal_harmony_acceptance_fixture(build_screen1_visual_fixture_v1())
+    anchor = fixture.browser_rows[fixture.selected_browser_index]
+    assert anchor.key == "Cmaj"
+    assert anchor.bpm and anchor.bpm > 0
+    parsed = parse_key_signature(anchor.key)
+    assert parsed is not None and parsed.mode is not None
+
+
+def test_qml_real_matcher_shows_direct_related_and_transpose_for_modal_fixture():
+    from src.workbench_harmony import HarmonicMatchLibraryController, HarmonyRelation
+    from src.workbench_qml_spike import _modal_harmony_acceptance_fixture
+
+    fixture = _modal_harmony_acceptance_fixture(build_screen1_visual_fixture_v1())
+    anchor = fixture.browser_rows[fixture.selected_browser_index]
+    controller = HarmonicMatchLibraryController()
+    controller.set_anchor(anchor, tuple(fixture.browser_rows))
+    assert controller.anchor is not None
+    assert controller.results
+    relations = {suggestion.relation for suggestion in controller.results}
+    for expected in (
+        HarmonyRelation.DIRECT,
+        HarmonyRelation.RELATED,
+        HarmonyRelation.TRANSPOSE,
+    ):
+        assert expected in relations, expected
+    assert HarmonyRelation.UNCERTAIN in relations or len(controller.results) > 6
+    assert all(suggestion.row.path != anchor.path for suggestion in controller.results)
