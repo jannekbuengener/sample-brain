@@ -481,3 +481,34 @@ def test_qt_bridge_projects_analysis_progress_and_cancel_safely() -> None:
     assert bridge.analysisTotal == 4
     assert bridge.analysisSource == "Kick.wav"
     assert cancelled == [True]
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 ist in dieser Testumgebung nicht installiert.",
+)
+def test_qt_coordinator_closes_after_worker_finished_without_event_loop(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from PySide6.QtCore import QCoreApplication
+
+    import src.workbench_qml_analysis as analysis_module
+    from src.workbench_controller import WorkbenchResult
+
+    app = QCoreApplication.instance() or QCoreApplication([])
+    del app
+    monkeypatch.setattr(
+        analysis_module,
+        "analyze_folder_for_workbench",
+        lambda *args, **kwargs: WorkbenchResult(summary={}, rows=[]),
+    )
+
+    coordinator = analysis_module.create_qt_analysis_coordinator(
+        library_db_path=(tmp_path / "library.db").resolve(),
+    )
+    assert coordinator.start(41, str(tmp_path)) is True
+
+    coordinator.close()
+
+    assert coordinator._core.current_token(41) is None

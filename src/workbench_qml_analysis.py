@@ -308,7 +308,7 @@ def create_qt_analysis_coordinator(
     """Create the optional Qt-backed coordinator without importing Qt globally."""
 
     try:
-        from PySide6.QtCore import QObject, QThread, Signal, Slot
+        from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
     except ModuleNotFoundError as exc:
         raise RuntimeError(
             "Die QML-Analyse benötigt die optionale Abhängigkeit: pip install -e '.[qtquick]'"
@@ -358,7 +358,10 @@ def create_qt_analysis_coordinator(
             self.worker = AnalysisWorker(spec)
             self.worker.moveToThread(self.thread)
             self.thread.started.connect(self.worker.run)
-            self.worker.finished.connect(self.thread.quit)
+            self.worker.finished.connect(
+                self.thread.quit,
+                Qt.ConnectionType.DirectConnection,
+            )
             self.worker.finished.connect(self.worker.deleteLater)
             self.thread.finished.connect(self.thread.deleteLater)
 
