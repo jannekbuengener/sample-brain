@@ -1345,12 +1345,37 @@ def _qml_engine(
                 browser_context=state.browser_context,
                 error=state.error,
             )
+            if analysis_coordinator is not None:
+                refresh_target = runtime_composition.refresh_target(intent.scope)
+                if refresh_target is not None:
+                    analysis_coordinator.start(
+                        refresh_target.folder_id,
+                        str(refresh_target.normalized_path),
+                    )
         request_waveforms(0, 20)
         refresh_screen_model()
 
     def finish_analysis(folder_id: int, _result: object) -> None:
+        previous_selected = (
+            runtime_composition.selected_node_id
+            if runtime_composition is not None
+            else None
+        )
         library_model.replaceBranch("container:sample-sources")
-        if library_model.selectNode(f"root:{folder_id}"):
+        target_node_id = (
+            runtime_composition.post_analysis_node_id(
+                folder_id,
+                previous_selected=previous_selected,
+            )
+            if runtime_composition is not None
+            else f"root:{folder_id}"
+        )
+        if (
+            target_node_id.startswith(f"folder:{folder_id}:")
+            and library_model.state.node(f"root:{folder_id}") is not None
+        ):
+            library_model.state.fetch_children(f"root:{folder_id}")
+        if library_model.selectNode(target_node_id):
             dispatch_library_selection()
         else:
             refresh_screen_model()

@@ -785,3 +785,252 @@ def test_qml_harmonic_button_background_uses_accent_when_open_and_panel_alt_when
         loader = getattr(engine, "_screen1_waveform_loader", None)
         if loader is not None:
             loader.close()
+
+
+def _seed_v1_library_root(tmp_path, db):
+    """Create real files and seed matching ``workbench_v1`` cache rows."""
+    from src.workbench_controller import WorkbenchRow
+    from src.workbench_library import upsert_folder, upsert_sample
+    from tests.audio_fixtures import write_kick_transient_wav, write_major_chord_wav
+
+    root = tmp_path / "sources"
+    (root / "Drums").mkdir(parents=True)
+    folder_id = upsert_folder(root, db_path=db)
+    written = [
+        write_major_chord_wav(root / "chord_root.wav"),
+        write_kick_transient_wav(root / "kick_b.wav", bpm=120.0, duration_sec=2.0),
+        write_major_chord_wav(root / "Drums" / "chord.wav"),
+    ]
+    for audio in written:
+        st = audio.stat()
+        row = WorkbenchRow(
+            display_name=audio.name,
+            relative_path=str(audio.relative_to(root)).replace("\\", "/"),
+            path=str(audio),
+            bpm=None,
+            key="C",
+            key_conf=0.8,
+            loudness=-12.0,
+            brightness=1500.0,
+            sample_class="loop",
+            pred_type="Keys",
+            status="ok",
+            details={"path": str(audio)},
+        )
+        upsert_sample(
+            folder_id,
+            row,
+            size_bytes=st.st_size,
+            mtime_ns=st.st_mtime_ns,
+            db_path=db,
+            analyzer_version="workbench_v1",
+        )
+    return root, folder_id
+
+
+def _wait_for_analysis(app, coordinator, folder_id, view_model, timeout_sec=90):
+    import time
+
+    deadline = time.monotonic() + timeout_sec
+    while time.monotonic() < deadline:
+        app.processEvents()
+        if (
+            coordinator._core.current_token(folder_id) is None
+            and view_model.browser_rows
+        ):
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def _stop_engine(app, engine, window, coordinator=None):
+    window.close()
+    app.processEvents()
+    timer = getattr(engine, "_screen1_waveform_timer", None)
+    if timer is not None:
+        timer.stop()
+    loader = getattr(engine, "_screen1_waveform_loader", None)
+    if loader is not None:
+        loader.close()
+    if coordinator is not None:
+        coordinator.close()
+
+
+def test_qml_stale_v1_root_selection_starts_one_refresh_and_reloads_v2(tmp_path):
+    from src.workbench_library import workbench_library_db_path
+    from src.workbench_library_navigation import WorkbenchLibraryNavigation
+    from src.workbench_qml import Screen1QmlRuntimeComposition, Screen1QmlViewModel
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+    from src.workbench_qml_spike import _qml_engine
+
+    db = workbench_library_db_path()
+    _root, folder_id = _seed_v1_library_root(tmp_path, db)
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    app, engine, window = _qml_engine(view_model, runtime_composition=composition)
+    window.show()
+    coordinator = engine._screen1_analysis_coordinator
+    bridge = engine._screen1_library_bridge
+    library_model = engine._screen1_library_model
+    root_id = f"root:{folder_id}"
+
+    try:
+        library_model.state.fetch_children("container:sample-sources")
+        bridge.selectLibraryNode(root_id)
+        assert composition.selected_node_id == root_id
+        token1 = coordinator._core.current_token(folder_id)
+        assert token1 is not None
+
+        bridge.selectLibraryNode(root_id)
+        assert composition.selected_node_id == root_id
+        assert coordinator._core.current_token(folder_id) == token1
+
+        assert _wait_for_analysis(app, coordinator, folder_id, view_model)
+        app.processEvents()
+
+        assert coordinator._core.current_token(folder_id) is None
+        assert len(view_model.browser_rows) == 3
+        assert all(row.source_row.key for row in view_model.browser_rows)
+        assert "Cmaj" in {row.source_row.key for row in view_model.browser_rows}
+
+        bridge.selectLibraryNode(root_id)
+        assert composition.selected_node_id == root_id
+        assert coordinator._core.current_token(folder_id) is None
+    finally:
+        _stop_engine(app, engine, window, coordinator)
+
+
+def test_qml_refresh_finishes_back_on_active_subfolder_scope(tmp_path):
+    from src.workbench_library import workbench_library_db_path
+    from src.workbench_library_navigation import (
+        LibraryNodeKind,
+        LibraryScopeKind,
+        WorkbenchLibraryNavigation,
+    )
+    from src.workbench_qml import Screen1QmlRuntimeComposition, Screen1QmlViewModel
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+    from src.workbench_qml_spike import _qml_engine
+
+    db = workbench_library_db_path()
+    _root, folder_id = _seed_v1_library_root(tmp_path, db)
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    app, engine, window = _qml_engine(view_model, runtime_composition=composition)
+    window.show()
+    coordinator = engine._screen1_analysis_coordinator
+    bridge = engine._screen1_library_bridge
+    library_model = engine._screen1_library_model
+
+    root_node = next(
+        node
+        for node in navigation.children("container:sample-sources")
+        if node.kind is LibraryNodeKind.REGISTERED_ROOT
+    )
+    subfolder_node = next(
+        node
+        for node in navigation.children(root_node.node_id)
+        if node.kind is LibraryNodeKind.SUBFOLDER
+    )
+    subfolder_id = subfolder_node.node_id
+
+    try:
+        library_model.state.fetch_children("container:sample-sources")
+        library_model.state.fetch_children(root_node.node_id)
+        bridge.selectLibraryNode(subfolder_id)
+        assert composition.selected_node_id == subfolder_id
+        token1 = coordinator._core.current_token(folder_id)
+        assert token1 is not None
+
+        assert _wait_for_analysis(app, coordinator, folder_id, view_model)
+        app.processEvents()
+
+        assert coordinator._core.current_token(folder_id) is None
+        assert composition.selected_node_id == subfolder_id
+        scope = composition.browser_state.scope
+        assert scope is not None
+        assert scope.kind is LibraryScopeKind.SUBFOLDER
+        assert scope.relative_path == "drums"
+        rels = [
+            row.source_row.relative_path.replace("\\", "/")
+            for row in view_model.browser_rows
+        ]
+        assert len(rels) == 1
+        assert rels[0] == "sources/Drums/chord.wav"
+        assert "Cmaj" in {row.source_row.key for row in view_model.browser_rows}
+    finally:
+        _stop_engine(app, engine, window, coordinator)
+
+
+def test_qml_fresh_v2_root_selection_starts_no_analysis_job(tmp_path):
+    from src.workbench_controller import analyze_folder_for_workbench
+    from src.workbench_library import upsert_folder, workbench_library_db_path
+    from src.workbench_library_navigation import (
+        LibraryNodeKind,
+        WorkbenchLibraryNavigation,
+    )
+    from src.workbench_qml import Screen1QmlRuntimeComposition, Screen1QmlViewModel
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+    from src.workbench_qml_spike import _qml_engine
+    from tests.audio_fixtures import write_major_chord_wav
+
+    db = workbench_library_db_path()
+    root = tmp_path / "sources"
+    root.mkdir()
+    write_major_chord_wav(root / "chord.wav")
+    analyze_folder_for_workbench(root, library_db_path=db)
+    folder_id = upsert_folder(root, db_path=db)
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    app, engine, window = _qml_engine(view_model, runtime_composition=composition)
+    window.show()
+    coordinator = engine._screen1_analysis_coordinator
+    bridge = engine._screen1_library_bridge
+    root_node = next(
+        node
+        for node in navigation.children("container:sample-sources")
+        if node.kind is LibraryNodeKind.REGISTERED_ROOT
+    )
+    try:
+        engine._screen1_library_model.state.fetch_children(
+            "container:sample-sources"
+        )
+        bridge.selectLibraryNode(root_node.node_id)
+        assert composition.selected_node_id == root_node.node_id
+        assert coordinator._core.current_token(folder_id) is None
+        assert len(view_model.browser_rows) == 1
+        assert view_model.browser_rows[0].source_row.key == "Cmaj"
+    finally:
+        _stop_engine(app, engine, window, coordinator)

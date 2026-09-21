@@ -1340,6 +1340,39 @@ def load_cached_subfolder_rows(
     return [row.to_workbench_row() for row in cached]
 
 
+def workbench_scope_requires_refresh(
+    *,
+    folder_id: int | None,
+    folder_path: Path | str | None,
+    relative_path: str | None = None,
+    library_db_path: Path | None = None,
+) -> bool:
+    """Return True when a workbench scope still carries cache rows behind
+    WORKBENCH_ANALYZER_VERSION for audio files that exist on disk.
+
+    ``relative_path`` selects the SUBFOLDER subtree of ``folder_id``; otherwise
+    ``folder_path`` selects the whole ROOT folder.  Rows whose source file no
+    longer exists on disk are deliberately ignored: a refresh cannot renew them,
+    and skipping them keeps the probe deterministic without any cache deletion.
+    """
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    if relative_path:
+        if not isinstance(folder_id, int) or isinstance(folder_id, bool):
+            return False
+        cached = load_folder_subtree_samples(folder_id, relative_path, db_path=db)
+    else:
+        if folder_path is None:
+            return False
+        cached = load_folder_samples(folder_path, db_path=db)
+    for row in cached:
+        if row.analyzer_version == WORKBENCH_ANALYZER_VERSION:
+            continue
+        if not os.path.isfile(row.original_path):
+            continue
+        return True
+    return False
+
+
 def load_all_cached_rows(
     *,
     library_db_path: Path | None = None,

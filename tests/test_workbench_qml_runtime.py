@@ -749,3 +749,197 @@ def test_real_library_scope_switch_swaps_candidate_pool(tmp_path: Path):
     } == {
         "Drums/chord.wav"
     }
+
+
+def _seed_freshness_root(
+    tmp_path: Path,
+    *,
+    analyzer_version: str | None,
+    relative_path: str = "Drums/chord.wav",
+    key: str = "C",
+    bpm: float | None = None,
+    source_exists: bool = True,
+) -> tuple[Path, Path]:
+    """Register a real root and seed one cached row with exactly *version*."""
+    from src.workbench_library import upsert_folder, upsert_sample, workbench_library_db_path
+    from src.workbench_qml import Screen1QmlRuntimeComposition
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+    from src.workbench_library_navigation import WorkbenchLibraryNavigation
+    from tests.audio_fixtures import write_major_chord_wav
+
+    root = tmp_path / "sources"
+    (root / "Drums").mkdir(parents=True)
+    db = workbench_library_db_path()
+    folder_id = upsert_folder(root, db_path=db)
+    chord = write_major_chord_wav(root / "Drums" / "chord.wav")
+    st = chord.stat()
+    row = WorkbenchRow(
+        display_name=chord.name,
+        relative_path=relative_path,
+        path=str(chord),
+        bpm=bpm,
+        key=key,
+        key_conf=0.8 if key else None,
+        loudness=-12.0,
+        brightness=1500.0,
+        sample_class="loop",
+        pred_type="Keys",
+        status="ok",
+        details={"path": str(chord)},
+    )
+    upsert_sample(
+        folder_id,
+        row,
+        size_bytes=st.st_size,
+        mtime_ns=st.st_mtime_ns,
+        db_path=db,
+        analyzer_version=analyzer_version,
+    )
+    if not source_exists:
+        chord.unlink()
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    return composition, root, db
+
+
+def _registered_root_node(composition):
+    from src.workbench_library_navigation import LibraryNodeKind
+
+    navigation = composition.library_tree.navigation
+    return next(
+        node
+        for node in navigation.children("container:sample-sources")
+        if node.kind is LibraryNodeKind.REGISTERED_ROOT
+    )
+
+
+def test_refresh_target_reports_stale_v1_root_with_existing_source(tmp_path: Path):
+    from src.workbench_qml import Screen1QmlRuntimeComposition  # noqa: F401
+
+    composition, root, _db = _seed_freshness_root(tmp_path, analyzer_version="workbench_v1")
+    root_node = _registered_root_node(composition)
+    scope = composition.library_tree.navigation.resolve_scope(root_node.node_id)
+
+    target = composition.refresh_target(scope)
+
+    assert target is not None
+    assert target.folder_id == root_node.folder_id
+    assert str(target.normalized_path) == str(root)
+
+
+def test_refresh_target_fresh_v2_root_needs_no_refresh(tmp_path: Path):
+    from src.workbench_library import WORKBENCH_ANALYZER_VERSION
+
+    composition, _root, _db = _seed_freshness_root(
+        tmp_path, analyzer_version=WORKBENCH_ANALYZER_VERSION
+    )
+    root_node = _registered_root_node(composition)
+    scope = composition.library_tree.navigation.resolve_scope(root_node.node_id)
+
+    assert composition.refresh_target(scope) is None
+
+
+def test_refresh_target_stale_subfolder_reports_target(tmp_path: Path):
+    from src.workbench_library_navigation import LibraryNodeKind
+
+    composition, _root, _db = _seed_freshness_root(
+        tmp_path, analyzer_version="workbench_v1"
+    )
+    navigation = composition.library_tree.navigation
+    root_node = _registered_root_node(composition)
+    subfolder_node = next(
+        node
+        for node in navigation.children(root_node.node_id)
+        if node.kind is LibraryNodeKind.SUBFOLDER
+    )
+    scope = navigation.resolve_scope(subfolder_node.node_id)
+
+    target = composition.refresh_target(scope)
+
+    assert target is not None
+    assert target.folder_id == root_node.folder_id
+
+
+def test_refresh_target_ignores_stale_rows_whose_source_was_deleted(tmp_path: Path):
+    composition, _root, _db = _seed_freshness_root(
+        tmp_path, analyzer_version="workbench_v1", source_exists=False
+    )
+    root_node = _registered_root_node(composition)
+    scope = composition.library_tree.navigation.resolve_scope(root_node.node_id)
+
+    assert composition.refresh_target(scope) is None
+
+
+def test_refresh_target_treats_null_version_rows_as_stale(tmp_path: Path):
+    composition, _root, _db = _seed_freshness_root(
+        tmp_path, analyzer_version=None
+    )
+    root_node = _registered_root_node(composition)
+    scope = composition.library_tree.navigation.resolve_scope(root_node.node_id)
+
+    assert composition.refresh_target(scope) is not None
+
+
+def test_refresh_target_never_targets_non_folder_scopes(tmp_path: Path):
+    from src.workbench_qml import Screen1QmlRuntimeComposition  # noqa: F401
+
+    composition, _root, _db = _seed_freshness_root(
+        tmp_path, analyzer_version="workbench_v1"
+    )
+    all_samples = LibraryScope(LibraryScopeKind.ALL_SAMPLES)
+    collection = LibraryScope(
+        LibraryScopeKind.COLLECTION, playlist_name="Set A"
+    )
+    catalog = LibraryScope(LibraryScopeKind.CATALOG, catalog_limit=17)
+    incomplete_subfolder = LibraryScope(LibraryScopeKind.SUBFOLDER, folder_id=1)
+
+    assert composition.refresh_target(all_samples) is None
+    assert composition.refresh_target(collection) is None
+    assert composition.refresh_target(catalog) is None
+    assert composition.refresh_target(incomplete_subfolder) is None
+
+
+def test_post_analysis_node_id_preserves_active_subfolder_and_root(tmp_path: Path):
+    from src.workbench_qml import Screen1QmlRuntimeComposition
+    from src.workbench_library import workbench_library_db_path
+
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=workbench_library_db_path()
+    )
+
+    assert (
+        composition.post_analysis_node_id(
+            1, previous_selected="folder:1:RHJ1bXM"
+        )
+        == "folder:1:RHJ1bXM"
+    )
+    assert (
+        composition.post_analysis_node_id(1, previous_selected="root:1")
+        == "root:1"
+    )
+    assert (
+        composition.post_analysis_node_id(
+            1, previous_selected="folder:2:RHJ1bXM"
+        )
+        == "root:1"
+    )
+    assert (
+        composition.post_analysis_node_id(
+            1, previous_selected="scope:all-library"
+        )
+        == "root:1"
+    )
+    assert composition.post_analysis_node_id(1) == "root:1"
+
+
+def test_dispatch_selection_tracks_active_node_id(monkeypatch: pytest.MonkeyPatch):
+    runtime, composition = _composition(monkeypatch)
+    monkeypatch.setattr(runtime, "load_cached_folder_rows", lambda _folder: [_row("root")])
+    nav = composition.library_tree.navigation
+
+    composition.dispatch_selection(_intent(nav.root, nav.resolve_scope(ROOT_ID)))
+
+    assert composition.selected_node_id == ROOT_ID
