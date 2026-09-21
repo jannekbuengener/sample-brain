@@ -856,6 +856,10 @@ def _stop_engine(app, engine, window, coordinator=None):
         coordinator.close()
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
+)
 def test_qml_stale_v1_root_selection_starts_one_refresh_and_reloads_v2(tmp_path):
     from src.workbench_library import workbench_library_db_path
     from src.workbench_library_navigation import WorkbenchLibraryNavigation
@@ -911,6 +915,10 @@ def test_qml_stale_v1_root_selection_starts_one_refresh_and_reloads_v2(tmp_path)
         _stop_engine(app, engine, window, coordinator)
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
+)
 def test_qml_refresh_finishes_back_on_active_subfolder_scope(tmp_path):
     from src.workbench_library import workbench_library_db_path
     from src.workbench_library_navigation import (
@@ -983,6 +991,10 @@ def test_qml_refresh_finishes_back_on_active_subfolder_scope(tmp_path):
         _stop_engine(app, engine, window, coordinator)
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
+)
 def test_qml_fresh_v2_root_selection_starts_no_analysis_job(tmp_path):
     from src.workbench_controller import analyze_folder_for_workbench
     from src.workbench_library import upsert_folder, workbench_library_db_path
