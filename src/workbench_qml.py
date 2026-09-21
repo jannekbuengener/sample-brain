@@ -7,11 +7,15 @@ probe orchestration deliberately live in :mod:`src.workbench_qml_spike`.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
 from .workbench_controller import WorkbenchRow
+from .workbench_browser_rows import (
+    BoundedBackgroundWaveformLoader,
+    BoundedLazyWaveformCache,
+)
 from .workbench_harmony import HarmonicMatchLibraryController
 from .workbench_live_kit import LiveKitPresentationState, LiveKitState
 from .workbench_library import workbench_library_db_path
@@ -22,6 +26,7 @@ from .workbench_qml_library import (
     create_qt_library_tree_model,
 )
 from .workbench_qml_runtime import Screen1QmlRuntimeComposition
+from .workbench_waveform import compute_waveform_envelope
 
 SCREEN1_QML_STATE_IDS = ("screen1-default-3panel", "screen1-harmonic-4panel")
 
@@ -36,7 +41,7 @@ class QmlBrowserRow:
     bpm: str
     key: str
     duration: str
-    waveform_pattern: str
+    waveform_envelope: tuple[float, ...]
 
 
 @dataclass(frozen=True)
@@ -62,13 +67,23 @@ def _row_details(row: WorkbenchRow) -> dict[str, object]:
 
 
 def _duration(row: WorkbenchRow) -> str:
-    return str(_row_details(row).get("duration_sec", "—"))
+    value = _row_details(row).get("duration_sec")
+    if value is None or value == "":
+        return "—"
+    try:
+        return f"{float(value):.2f}s"
+    except (TypeError, ValueError):
+        return str(value)
 
 
-def _pattern(row: WorkbenchRow) -> str:
-    seed = int(_row_details(row).get("waveform_seed", "0"))
-    patterns = ("▁▃▆▂▇▃▁", "▁▅▂▆▁▃▁", "▁▂▄▇▄▂▁", "▁▇▂▅▃▆▁")
-    return patterns[seed % len(patterns)]
+def _waveform_envelope(row: WorkbenchRow) -> tuple[float, ...]:
+    raw = _row_details(row).get("waveform_envelope")
+    if raw is None or isinstance(raw, (str, bytes)):
+        return ()
+    try:
+        return tuple(max(0.0, min(1.0, float(value))) for value in raw)
+    except (TypeError, ValueError):
+        return ()
 
 
 def _qml_row(row: WorkbenchRow) -> QmlBrowserRow:
@@ -79,7 +94,7 @@ def _qml_row(row: WorkbenchRow) -> QmlBrowserRow:
         bpm="—" if row.bpm is None else f"{row.bpm:g}",
         key=row.key or "—",
         duration=_duration(row),
-        waveform_pattern=_pattern(row),
+        waveform_envelope=_waveform_envelope(row),
     )
 
 
@@ -181,6 +196,19 @@ class Screen1QmlViewModel:
         self.browser_context = browser_context
         self.browser_error = error
 
+    def set_browser_waveform(self, path: str, envelope: tuple[float, ...]) -> bool:
+        """Apply one cached waveform without changing browser selection."""
+        changed = False
+        updated: list[QmlBrowserRow] = []
+        for row in self.browser_rows:
+            if str(row.source_row.path) == path and row.waveform_envelope != envelope:
+                row = replace(row, waveform_envelope=envelope)
+                changed = True
+            updated.append(row)
+        if changed:
+            self.browser_rows = tuple(updated)
+        return changed
+
     def set_analysis_state(self, state: AnalysisUiState) -> None:
         self.analysis_status = state.phase
         self.analysis_folder_id = state.folder_id
@@ -207,12 +235,19 @@ class Screen1QmlViewModel:
                     "bpm": row.bpm,
                     "key": row.key,
                     "duration": row.duration,
-                    "waveform": row.waveform_pattern,
+                    "waveform": list(row.waveform_envelope),
+                    "path": str(row.source_row.path),
+                    "relativePath": row.source_row.relative_path,
                 }
                 for row in self.browser_rows
             ],
             "harmonyRows": [
-                {"name": row.display_name, "type": row.sample_type, "key": row.key, "waveform": row.waveform_pattern}
+                {
+                    "name": row.display_name,
+                    "type": row.sample_type,
+                    "key": row.key,
+                    "waveform": list(row.waveform_envelope),
+                }
                 for row in self.harmony_rows
             ],
             "liveKitGroups": [
@@ -265,7 +300,7 @@ def _qml_screen_data_bridge(
         panelCountChanged = Signal()
 
         @Property(list, notify=browserRowsChanged)
-        def browserRows(self) -> list[dict[str, str]]:
+        def browserRows(self) -> list[dict[str, object]]:
             return view_model.qml_context()["browserRows"]
 
         @Property(int, notify=selectedBrowserIndexChanged)
@@ -301,7 +336,7 @@ def _qml_screen_data_bridge(
             return view_model.analysis_error or ""
 
         @Property(list, notify=harmonyRowsChanged)
-        def harmonyRows(self) -> list[dict[str, str]]:
+        def harmonyRows(self) -> list[dict[str, object]]:
             return view_model.qml_context()["harmonyRows"]
 
         @Property(list, notify=liveKitGroupsChanged)
@@ -348,18 +383,59 @@ class Screen1QmlInteractionAdapter:
         *,
         view_model: Screen1QmlViewModel,
         harmony_controller: HarmonicMatchLibraryController | None = None,
+        on_preview_requested: Callable[[WorkbenchRow], object] | None = None,
+        on_preview_stopped: Callable[[], object] | None = None,
+        on_add_to_kit_requested: Callable[[WorkbenchRow], object] | None = None,
     ) -> None:
         self.view_model = view_model
         self.harmony_controller = harmony_controller
         self.harmonic_match_open = view_model.panel_count == 4
+        self._on_preview_requested = on_preview_requested
+        self._on_preview_stopped = on_preview_stopped
+        self._on_add_to_kit_requested = on_add_to_kit_requested
+        self._preview_active = False
 
     @property
     def selected_browser_index(self) -> int:
         return self.view_model.selected_browser_index
 
     def select_row(self, index: int) -> WorkbenchRow:
-        """Select exactly one authoritative row and dispatch its browse command."""
+        """Select exactly one authoritative row without starting a preview."""
         return self.view_model.select_browser_index(index)
+
+    @property
+    def preview_active(self) -> bool:
+        return self._preview_active
+
+    def preview_row(self, index: int) -> WorkbenchRow:
+        """Select a row and emit exactly one preview intent."""
+        if index == self.selected_browser_index:
+            row = self.view_model.browser_rows[index].source_row
+        else:
+            row = self.select_row(index)
+        result = None
+        if self._on_preview_requested is not None:
+            result = self._on_preview_requested(row)
+        self._preview_active = bool(
+            result is None or getattr(result, "ok", result is not False)
+        )
+        return row
+
+    def stop_preview(self) -> bool:
+        """Stop only an active preview and leave selection untouched."""
+        if not self._preview_active:
+            return False
+        self._preview_active = False
+        if self._on_preview_stopped is not None:
+            self._on_preview_stopped()
+        return True
+
+    def request_add_to_kit(self, index: int) -> WorkbenchRow:
+        """Emit an Add-to-Kit intent without assigning the row."""
+        row = self.view_model.browser_rows[index].source_row
+        if self._on_add_to_kit_requested is not None:
+            self._on_add_to_kit_requested(row)
+        return row
 
     def navigate_browser(
         self, direction: str, *, browser_has_focus: bool
@@ -377,7 +453,7 @@ class Screen1QmlInteractionAdapter:
             raise ValueError(f"Unsupported browser direction: {direction}")
         if target == self.selected_browser_index:
             return self.view_model.browser_rows[target].source_row
-        return self.select_row(target)
+        return self.preview_row(target)
 
     def toggle_harmonic_match(self) -> bool:
         """Open/close the existing harmony controller without mutating other state."""
@@ -598,32 +674,89 @@ ApplicationWindow {
                         onClicked: window.screenData.cancelAnalysis()
                     }
                 }
-                RowLayout { Layout.fillWidth: true
-                    Label { text: "WAVEFORM"; color: window.muted; Layout.preferredWidth: 44; font.pixelSize: 11 }
+                RowLayout { Layout.fillWidth: true; spacing: 12
+                    Item { Layout.preferredWidth: 180; Layout.minimumWidth: 150 }
                     Label { text: "SAMPLE NAME"; color: window.muted; Layout.fillWidth: true; font.pixelSize: 11 }
-                    Label { text: "BPM"; color: window.muted; Layout.preferredWidth: 42; font.pixelSize: 11 }
-                    Label { text: "KEY"; color: window.muted; Layout.preferredWidth: 36; font.pixelSize: 11 }
-                    Label { text: "LENGTH"; color: window.muted; Layout.preferredWidth: 55; font.pixelSize: 11 }
+                    Label { text: "BPM"; color: window.muted; Layout.preferredWidth: 48; horizontalAlignment: Text.AlignRight; font.pixelSize: 11 }
+                    Label { text: "KEY"; color: window.muted; Layout.preferredWidth: 48; horizontalAlignment: Text.AlignRight; font.pixelSize: 11 }
+                    Label { text: "LENGTH"; color: window.muted; Layout.preferredWidth: 62; horizontalAlignment: Text.AlignRight; font.pixelSize: 11 }
+                    Item { Layout.preferredWidth: 96 }
                 }
-                ListView { id: browser; objectName: "browserList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true
+                ListView { id: browser; objectName: "browserList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: 66
                     Keys.onPressed: function(event) {
                         if (event.key === Qt.Key_Down) { window.interaction.navigateBrowser(1); event.accepted = true }
                         else if (event.key === Qt.Key_Up) { window.interaction.navigateBrowser(-1); event.accepted = true }
+                        else if (event.key === Qt.Key_Escape) { window.interaction.stopPreview(); event.accepted = true }
                     }
-                    delegate: Rectangle { width: browser.width; height: 58; color: index === window.interaction.selectedBrowserIndex ? "#211014" : "transparent"; border.color: index === window.interaction.selectedBrowserIndex ? window.accent : window.border
+                    delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.interaction.selectedBrowserIndex ? "#211014" : (rowSelection.containsMouse ? "#15181c" : "transparent"); border.width: index === window.interaction.selectedBrowserIndex ? 1 : 0; border.color: window.accent
                         Component.onCompleted: window.browserDelegateCreations += 1
-                        MouseArea { anchors.fill: parent; onClicked: { browser.forceActiveFocus(); window.interaction.selectRow(index) } }
-                        RowLayout { anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12
-                            Label { text: modelData.waveform; color: "#a7abb1"; Layout.preferredWidth: 190; font.pixelSize: 23 }
-                            ColumnLayout { Layout.fillWidth: true
-                                Label { text: modelData.name; color: window.textColor; font.pixelSize: 14 }
-                                Label { text: modelData.type; color: window.muted; font.pixelSize: 11 }
+                        MouseArea { id: rowSelection; anchors.fill: parent; z: 0; hoverEnabled: true; onClicked: { browser.forceActiveFocus(); window.interaction.selectRow(index) } }
+                        RowLayout { anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 12; z: 1
+                            Item { id: waveformSurface; Layout.preferredWidth: 180; Layout.minimumWidth: 150; Layout.fillHeight: true
+                                Canvas { id: waveformCanvas; anchors.fill: parent; property var envelope: modelData.waveform
+                                    onEnvelopeChanged: requestPaint()
+                                    onPaint: {
+                                        var context = getContext("2d")
+                                        context.clearRect(0, 0, width, height)
+                                        context.strokeStyle = index === window.interaction.selectedBrowserIndex ? window.accent : "#6d737c"
+                                        context.lineWidth = 1.4
+                                        context.beginPath()
+                                        var points = envelope || []
+                                        var center = height / 2
+                                        if (points.length === 0) {
+                                            context.moveTo(0, center)
+                                            context.lineTo(width, center)
+                                        } else {
+                                            var step = width / points.length
+                                            for (var point = 0; point < points.length; point++) {
+                                                var value = Math.max(0, Math.min(1, Number(points[point]) || 0))
+                                                var x = Math.min(width, point * step + step / 2)
+                                                var amplitude = Math.max(2, height * 0.42 * value)
+                                                context.moveTo(x, center - amplitude)
+                                                context.lineTo(x, center + amplitude)
+                                            }
+                                        }
+                                        context.stroke()
+                                    }
+                                }
+                                MouseArea { anchors.fill: parent; z: 2; onClicked: { browser.forceActiveFocus(); window.interaction.previewRow(index) } }
                             }
-                            Label { text: modelData.bpm; color: window.textColor; Layout.preferredWidth: 42 }
-                            Label { text: modelData.key; color: window.textColor; Layout.preferredWidth: 36 }
-                            Label { text: modelData.duration; color: window.textColor; Layout.preferredWidth: 55 }
-                            Label { text: "+"; color: window.accent; font.pixelSize: 24 }
+                            ColumnLayout { Layout.fillWidth: true
+                                spacing: 3
+                                Label { text: modelData.name; color: window.textColor; font.pixelSize: 14; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
+                                Label { text: modelData.type; color: window.muted; font.pixelSize: 11; elide: Text.ElideRight; Layout.fillWidth: true }
+                            }
+                            Label { text: modelData.bpm; color: window.textColor; Layout.preferredWidth: 48; horizontalAlignment: Text.AlignRight }
+                            Label { text: modelData.key; color: window.textColor; Layout.preferredWidth: 48; horizontalAlignment: Text.AlignRight }
+                            Label { text: modelData.duration; color: window.textColor; Layout.preferredWidth: 62; horizontalAlignment: Text.AlignRight }
+                            Rectangle {
+                                id: addButton
+                                Layout.preferredWidth: 96
+                                Layout.preferredHeight: 28
+                                radius: 3
+                                property bool hovered: addButtonMouse.containsMouse
+                                color: addButtonMouse.pressed ? "#3a1720" : (addButtonMouse.containsMouse ? "#24151a" : "transparent")
+                                border.color: addButtonMouse.containsMouse || index === window.interaction.selectedBrowserIndex ? "#5b1d2a" : "transparent"
+                                Label {
+                                    anchors.fill: parent
+                                    text: "+ Add to Kit"
+                                    color: addButtonMouse.pressed || addButtonMouse.containsMouse || index === window.interaction.selectedBrowserIndex ? window.accent : window.muted
+                                    horizontalAlignment: Text.AlignRight
+                                    verticalAlignment: Text.AlignVCenter
+                                    font.pixelSize: 11
+                                }
+                                MouseArea {
+                                    id: addButtonMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: {
+                                        browser.forceActiveFocus()
+                                        window.interaction.addToKit(index)
+                                    }
+                                }
+                            }
                         }
+                        Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: window.border; opacity: index === window.interaction.selectedBrowserIndex ? 0.35 : 0.8 }
                     }
                 }
             }
@@ -635,7 +768,27 @@ ApplicationWindow {
                 ListView { Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.harmonyRows; clip: true; reuseItems: true
                     delegate: Rectangle { width: parent.width; height: 64; color: "transparent"; border.color: window.border
                         RowLayout { anchors.fill: parent; anchors.margins: 9
-                            Label { text: modelData.waveform; color: "#a7abb1"; font.pixelSize: 18 }
+                            Canvas { Layout.preferredWidth: 100; Layout.fillHeight: true; property var envelope: modelData.waveform
+                                onPaint: {
+                                    var context = getContext("2d")
+                                    context.clearRect(0, 0, width, height)
+                                    context.strokeStyle = "#6d737c"
+                                    context.lineWidth = 1.2
+                                    context.beginPath()
+                                    var points = envelope || []
+                                    var center = height / 2
+                                    var step = points.length > 0 ? width / points.length : width
+                                    if (points.length === 0) { context.moveTo(0, center); context.lineTo(width, center) }
+                                    for (var point = 0; point < points.length; point++) {
+                                        var value = Math.max(0, Math.min(1, Number(points[point]) || 0))
+                                        var x = Math.min(width, point * step + step / 2)
+                                        var amplitude = Math.max(2, height * 0.38 * value)
+                                        context.moveTo(x, center - amplitude)
+                                        context.lineTo(x, center + amplitude)
+                                    }
+                                    context.stroke()
+                                }
+                            }
                             ColumnLayout { Layout.fillWidth: true
                                 Label { text: modelData.name; color: window.textColor }
                                 Label { text: modelData.type; color: window.muted; font.pixelSize: 11 }
@@ -686,12 +839,14 @@ def _qml_interaction_bridge(
     adapter: Screen1QmlInteractionAdapter,
     *,
     on_state_changed: Callable[[], None] | None = None,
+    on_waveform_request: Callable[[int, int], None] | None = None,
 ):
     """Expose the pure interaction adapter to QML only when Qt is installed."""
     from PySide6.QtCore import QObject, Property, Signal, Slot
 
     class QmlInteractionBridge(QObject):
         state_changed = Signal()
+        addToKitIntent = Signal(str)
 
         def _refresh(self) -> None:
             if on_state_changed is not None:
@@ -706,10 +861,34 @@ def _qml_interaction_bridge(
         def harmonicMatchOpen(self) -> bool:
             return adapter.harmonic_match_open
 
+        @Property(bool, notify=state_changed)
+        def previewActive(self) -> bool:
+            return adapter.preview_active
+
         @Slot(int)
         def selectRow(self, index: int) -> None:
             adapter.select_row(index)
             self._refresh()
+
+        @Slot(int)
+        def previewRow(self, index: int) -> None:
+            adapter.preview_row(index)
+            self._refresh()
+
+        @Slot()
+        def stopPreview(self) -> None:
+            adapter.stop_preview()
+            self._refresh()
+
+        @Slot(int)
+        def addToKit(self, index: int) -> None:
+            row = adapter.request_add_to_kit(index)
+            self.addToKitIntent.emit(row.relative_path or str(row.path))
+
+        @Slot(int, int)
+        def requestWaveforms(self, start: int, count: int) -> None:
+            if on_waveform_request is not None:
+                on_waveform_request(start, count)
 
         @Slot(int)
         def navigateBrowser(self, step: int) -> None:
@@ -842,14 +1021,69 @@ def _qml_engine(
     QUrl, QGuiApplication, QQmlApplicationEngine = _load_qt_modules()
     app = QGuiApplication.instance() or QGuiApplication([])
     engine = QQmlApplicationEngine()
-    adapter = interaction_adapter or Screen1QmlInteractionAdapter(
-        view_model=view_model,
-        harmony_controller=HarmonicMatchLibraryController(),
-    )
+    preview_player = None
+    if interaction_adapter is None:
+        from .workbench_controller import get_preview_start_ms
+        from .workbench_preview import WorkbenchPreviewPlayer
+
+        preview_player = WorkbenchPreviewPlayer()
+        preview_db_path = (
+            runtime_composition.library_db_path
+            if runtime_composition is not None
+            else workbench_library_db_path()
+        )
+
+        def preview_row(row: WorkbenchRow) -> object:
+            return preview_player.play(
+                row.path,
+                start_ms=get_preview_start_ms(row.path, library_db_path=preview_db_path),
+            )
+
+        adapter = Screen1QmlInteractionAdapter(
+            view_model=view_model,
+            harmony_controller=HarmonicMatchLibraryController(),
+            on_preview_requested=preview_row,
+            on_preview_stopped=preview_player.stop,
+        )
+    else:
+        adapter = interaction_adapter
     library_model = create_qt_library_tree_model(view_model.library_tree)
 
     def refresh_screen_model() -> None:
         screen_model.refresh()
+
+    waveform_cache = BoundedLazyWaveformCache(
+        capacity=48,
+        loader=lambda path: compute_waveform_envelope(path, max_points=96),
+    )
+    waveform_loader = BoundedBackgroundWaveformLoader(
+        cache=waveform_cache,
+        loader=lambda path: compute_waveform_envelope(path, max_points=96),
+        max_pending=14,
+    )
+
+    def request_waveforms(start: int, count: int) -> None:
+        if count <= 0:
+            return
+        first = max(0, start)
+        last = min(len(view_model.browser_rows), first + count)
+        for row in view_model.browser_rows[first:last]:
+            if row.waveform_envelope:
+                continue
+            waveform_loader.schedule(str(row.source_row.path))
+
+    def drain_waveforms() -> None:
+        if waveform_loader.drain_results() == 0:
+            return
+        changed = False
+        for row in view_model.browser_rows:
+            cached = waveform_cache.get(str(row.source_row.path))
+            if cached is not None and cached.state == "ready":
+                changed = view_model.set_browser_waveform(
+                    str(row.source_row.path), cached.envelope
+                ) or changed
+        if changed:
+            refresh_screen_model()
 
     analysis_coordinator = None
 
@@ -877,6 +1111,7 @@ def _qml_engine(
                 browser_context=state.browser_context,
                 error=state.error,
             )
+        request_waveforms(0, 20)
         refresh_screen_model()
 
     def finish_analysis(folder_id: int, _result: object) -> None:
@@ -940,7 +1175,11 @@ def _qml_engine(
         view_model,
         on_cancel_analysis=cancel_analysis,
     )
-    bridge = _qml_interaction_bridge(adapter, on_state_changed=refresh_screen_model)
+    bridge = _qml_interaction_bridge(
+        adapter,
+        on_state_changed=refresh_screen_model,
+        on_waveform_request=request_waveforms,
+    )
     library_bridge = _qml_library_interaction_bridge(
         library_model,
         on_selection=dispatch_library_selection,
@@ -968,6 +1207,20 @@ def _qml_engine(
     engine._screen1_screen_model = screen_model
     engine._screen1_runtime_composition = runtime_composition
     engine._screen1_analysis_coordinator = analysis_coordinator
+    engine._screen1_waveform_cache = waveform_cache
+    engine._screen1_waveform_loader = waveform_loader
+    engine._screen1_waveform_timer = None
+    if preview_player is not None:
+        engine._screen1_preview_player = preview_player
+    from PySide6.QtCore import QTimer
+
+    waveform_timer = QTimer()
+    waveform_timer.setInterval(50)
+    waveform_timer.timeout.connect(drain_waveforms)
+    waveform_timer.start()
+    engine._screen1_waveform_timer = waveform_timer
+    request_waveforms(0, 20)
+    app.aboutToQuit.connect(waveform_loader.close)
     if analysis_coordinator is not None:
         app.aboutToQuit.connect(analysis_coordinator.shutdown)
     return app, engine, engine.rootObjects()[0]
