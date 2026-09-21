@@ -500,3 +500,252 @@ def test_production_qml_contract_has_observable_screen_state_and_action_path():
     assert "action:add-source" in source
     assert 'objectName: "browserPane"' in source
     assert "Layout.minimumWidth: 0" in source
+
+
+class _RecordingHarmonyController:
+    """Record set_anchor calls so a test can assert the exact candidate pool."""
+
+    def __init__(self) -> None:
+        self.set_anchor_calls: list[tuple[object, tuple[object, ...]]] = []
+        self.anchor = None
+        self.results = ()
+        self.status = ""
+
+    def set_anchor(self, anchor, candidates):
+        self.set_anchor_calls.append((anchor, tuple(candidates)))
+        self.anchor = anchor
+        self.results = ()
+        self.status = "Harmonic Match ist ausgeschaltet."
+
+
+def _register_analyzed_root(
+    tmp_path: Path,
+) -> tuple[Path, Path]:
+    """Create a real root with one nested source folder and cache its rows."""
+    from src.workbench_controller import analyze_folder_for_workbench
+    from src.workbench_library import workbench_library_db_path
+    from tests.audio_fixtures import write_kick_transient_wav, write_major_chord_wav
+
+    root = tmp_path / "sources"
+    (root / "Drums").mkdir(parents=True)
+    write_kick_transient_wav(root / "kick_b.wav", bpm=120.0, duration_sec=2.0)
+    write_major_chord_wav(root / "Drums" / "chord.wav")
+    write_major_chord_wav(root / "chord_root.wav")
+    db = workbench_library_db_path()
+    analyze_folder_for_workbench(root, library_db_path=db)
+    return root, db
+
+
+def test_real_library_root_scope_loads_exact_root_rows_and_candidate_pool(
+    tmp_path: Path,
+):
+    from src.workbench_qml import (
+        Screen1QmlInteractionAdapter,
+        Screen1QmlRuntimeComposition,
+        Screen1QmlViewModel,
+    )
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+    from src.workbench_library_navigation import (
+        LibraryNodeKind,
+        WorkbenchLibraryNavigation,
+    )
+
+    _root, db = _register_analyzed_root(tmp_path)
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    nodes = navigation.children("container:sample-sources")
+    root_node = next(
+        node for node in nodes if node.kind is LibraryNodeKind.REGISTERED_ROOT
+    )
+    scope = navigation.resolve_scope(root_node.node_id)
+    intent = _intent(root_node, scope)
+
+    state = composition.dispatch_selection(intent)
+
+    assert state.error is None
+    assert state.selected_index == 0
+    rels = sorted(
+        row.details["relative_path"].replace("\\", "/") for row in state.rows
+    )
+    assert rels == sorted(["kick_b.wav", "Drums/chord.wav", "chord_root.wav"])
+
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    view_model.set_browser_state(
+        rows=tuple(state.rows),
+        selected_index=0,
+        browser_context="Samples",
+        error=None,
+    )
+    recording = _RecordingHarmonyController()
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        harmony_controller=recording,
+    )
+
+    assert adapter.toggle_harmonic_match() is True
+    assert len(recording.set_anchor_calls) == 1
+    _, candidates = recording.set_anchor_calls[0]
+    assert candidates == tuple(row.source_row for row in view_model.browser_rows)
+    assert {row.details["relative_path"].replace("\\", "/") for row in candidates} == {
+        "kick_b.wav",
+        "Drums/chord.wav",
+        "chord_root.wav",
+    }
+
+
+def test_real_library_subfolder_scope_loads_exact_subtree_rows_and_candidate_pool(
+    tmp_path: Path,
+):
+    from src.workbench_qml import (
+        Screen1QmlInteractionAdapter,
+        Screen1QmlRuntimeComposition,
+        Screen1QmlViewModel,
+    )
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+    from src.workbench_library_navigation import (
+        LibraryNodeKind,
+        WorkbenchLibraryNavigation,
+    )
+
+    _root, db = _register_analyzed_root(tmp_path)
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    nodes = navigation.children("container:sample-sources")
+    root_node = next(
+        node for node in nodes if node.kind is LibraryNodeKind.REGISTERED_ROOT
+    )
+    subfolder_node = next(
+        node
+        for node in navigation.children(root_node.node_id)
+        if node.kind is LibraryNodeKind.SUBFOLDER
+    )
+
+    scope = navigation.resolve_scope(subfolder_node.node_id)
+    state = composition.dispatch_selection(_intent(subfolder_node, scope))
+
+    assert state.error is None
+    assert state.selected_index == 0
+    rels = sorted(
+        row.details["relative_path"].replace("\\", "/") for row in state.rows
+    )
+    assert rels == ["Drums/chord.wav"]
+
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    view_model.set_browser_state(
+        rows=tuple(state.rows),
+        selected_index=0,
+        browser_context="Samples",
+        error=None,
+    )
+    recording = _RecordingHarmonyController()
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        harmony_controller=recording,
+    )
+
+    assert adapter.toggle_harmonic_match() is True
+    assert len(recording.set_anchor_calls) == 1
+    _, candidates = recording.set_anchor_calls[0]
+    assert candidates == tuple(row.source_row for row in view_model.browser_rows)
+    assert {row.details["relative_path"].replace("\\", "/") for row in candidates} == {
+        "Drums/chord.wav"
+    }
+
+
+def test_real_library_scope_switch_swaps_candidate_pool(tmp_path: Path):
+    from src.workbench_qml import (
+        Screen1QmlInteractionAdapter,
+        Screen1QmlRuntimeComposition,
+        Screen1QmlViewModel,
+    )
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+    from src.workbench_library_navigation import (
+        LibraryNodeKind,
+        WorkbenchLibraryNavigation,
+    )
+
+    _root, db = _register_analyzed_root(tmp_path)
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    recording = _RecordingHarmonyController()
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        harmony_controller=recording,
+    )
+
+    nodes = navigation.children("container:sample-sources")
+    root_node = next(
+        node for node in nodes if node.kind is LibraryNodeKind.REGISTERED_ROOT
+    )
+    root_state = composition.dispatch_selection(
+        _intent(root_node, navigation.resolve_scope(root_node.node_id))
+    )
+    view_model.set_browser_state(
+        rows=tuple(root_state.rows),
+        selected_index=0,
+        browser_context="Samples",
+        error=None,
+    )
+    adapter.toggle_harmonic_match()
+    root_candidates = recording.set_anchor_calls[-1][1]
+    assert {
+        row.details["relative_path"].replace("\\", "/") for row in root_candidates
+    } == {
+        "kick_b.wav",
+        "Drums/chord.wav",
+        "chord_root.wav",
+    }
+    assert adapter.toggle_harmonic_match() is False
+
+    subfolder_node = next(
+        node
+        for node in navigation.children(root_node.node_id)
+        if node.kind is LibraryNodeKind.SUBFOLDER
+    )
+    sub_state = composition.dispatch_selection(
+        _intent(subfolder_node, navigation.resolve_scope(subfolder_node.node_id))
+    )
+    view_model.set_browser_state(
+        rows=tuple(sub_state.rows),
+        selected_index=0,
+        browser_context="Samples",
+        error=None,
+    )
+    adapter.toggle_harmonic_match()
+    sub_candidates = recording.set_anchor_calls[-1][1]
+    assert {
+        row.details["relative_path"].replace("\\", "/") for row in sub_candidates
+    } == {
+        "Drums/chord.wav"
+    }

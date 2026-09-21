@@ -803,8 +803,20 @@ ApplicationWindow {
                     Button {
                         objectName: "harmonicMatchButton"
                         text: "Harmonic Match"
-                        palette.button: window.interaction.harmonicMatchOpen ? window.accent : window.panelAlt
-                        palette.buttonText: window.textColor
+                        background: Rectangle {
+                            color: window.interaction.harmonicMatchOpen ? window.accent : window.panelAlt
+                            border.width: window.interaction.harmonicMatchOpen ? 1 : 0
+                            border.color: window.accent
+                            radius: 4
+                        }
+                        contentItem: Text {
+                            text: "Harmonic Match"
+                            color: window.textColor
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            rightPadding: 16
+                            leftPadding: 16
+                        }
                         onClicked: window.interaction.toggleHarmonicMatch()
                     }
                     TextField { objectName: "browserSearch"; placeholderText: "Search samples"; Layout.preferredWidth: 230; Layout.minimumWidth: 120 }

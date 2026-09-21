@@ -10,7 +10,10 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePath
 from typing import Any, Literal, Mapping
 
-WORKBENCH_ANALYZER_VERSION = "workbench_v1"
+# v2: mode-aware key analysis (KEY_ANALYSIS_CONTRACT_VERSION) is part of the
+# persisted analysis contract. Cache rows written before this bump (root-only
+# keys without mode) must be re-analyzed, not served as fresh cache hits.
+WORKBENCH_ANALYZER_VERSION = "workbench_v2"
 WORKBENCH_LIBRARY_SCHEMA_VERSION = 4
 _LIBRARY_DB_NAME = "workbench_library.db"
 

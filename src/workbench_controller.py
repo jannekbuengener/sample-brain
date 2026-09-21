@@ -637,7 +637,7 @@ def analyze_folder_for_workbench(
         if use_cache and folder_id is not None and stat is not None:
             size_bytes, mtime_ns = stat
             cached = lookup_sample(audio_path, size_bytes, mtime_ns, db_path=cache_db)
-            if cached is not None:
+            if cached is not None and cached.analyzer_version == WORKBENCH_ANALYZER_VERSION:
                 row = cached.to_workbench_row()
                 rows.append(row)
                 cache_hits += 1

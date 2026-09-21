@@ -821,6 +821,128 @@ def test_analyze_folder_cache_disabled(sample_folder: Path):
     assert second.summary["cache_misses"] == 0
 
 
+def _seed_cached_row(
+    root: Path,
+    audio: Path,
+    *,
+    relative_path: str,
+    key: str,
+    bpm: float | None,
+    analyzer_version: str,
+) -> tuple[int, int, int]:
+    """Insert a pre-fix cache row (v1 metadata) matching *audio* exactly."""
+    from src.workbench_library import upsert_folder, upsert_sample
+
+    st = audio.stat()
+    size_bytes = st.st_size
+    mtime_ns = st.st_mtime_ns
+    folder_id = upsert_folder(root)
+    row = WorkbenchRow(
+        display_name=audio.name,
+        relative_path=relative_path,
+        path=str(audio),
+        bpm=bpm,
+        key=key,
+        key_conf=0.8 if key else None,
+        loudness=-12.0,
+        brightness=1500.0,
+        sample_class="loop",
+        pred_type="Keys",
+        status="ok",
+        details={"path": str(audio)},
+    )
+    upsert_sample(
+        folder_id,
+        row,
+        size_bytes=size_bytes,
+        mtime_ns=mtime_ns,
+        analyzer_version=analyzer_version,
+    )
+    return folder_id, size_bytes, mtime_ns
+
+
+def test_stale_v1_cache_row_is_reanalyzed_with_modeaware_key(tmp_path: Path):
+    from tests.audio_fixtures import write_major_chord_wav
+
+    from src.workbench_library import (
+        WORKBENCH_ANALYZER_VERSION,
+        lookup_sample,
+        workbench_library_db_path,
+    )
+
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    chord = write_major_chord_wav(folder / "chord.wav")
+    _, size_bytes, mtime_ns = _seed_cached_row(
+        folder,
+        chord,
+        relative_path="chord.wav",
+        key="C",
+        bpm=None,
+        analyzer_version="workbench_v1",
+    )
+
+    first = analyze_folder_for_workbench(folder)
+
+    assert first.summary["cache_hits"] == 0
+    assert first.summary["cache_misses"] == 1
+    assert first.rows[0].key == "Cmaj"
+
+    cached = lookup_sample(
+        chord,
+        size_bytes,
+        mtime_ns,
+        db_path=workbench_library_db_path(),
+    )
+    assert cached is not None
+    assert cached.analyzer_version == WORKBENCH_ANALYZER_VERSION
+    assert cached.key == "Cmaj"
+
+    second = analyze_folder_for_workbench(folder)
+    assert second.summary["cache_hits"] == 1
+    assert second.summary["cache_misses"] == 0
+
+
+def test_stale_v1_row_without_bpm_renews_bpm_on_reanalysis(tmp_path: Path):
+    from tests.audio_fixtures import write_kick_transient_wav
+
+    from src.workbench_library import (
+        WORKBENCH_ANALYZER_VERSION,
+        lookup_sample,
+        workbench_library_db_path,
+    )
+
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    kick = write_kick_transient_wav(
+        folder / "kick_b.wav", bpm=120.0, duration_sec=2.0
+    )
+    _, size_bytes, mtime_ns = _seed_cached_row(
+        folder,
+        kick,
+        relative_path="kick_b.wav",
+        key="A#",
+        bpm=None,
+        analyzer_version="workbench_v1",
+    )
+
+    first = analyze_folder_for_workbench(folder)
+
+    assert first.summary["cache_hits"] == 0
+    assert first.summary["cache_misses"] == 1
+    assert first.rows[0].bpm is not None
+
+    cached = lookup_sample(
+        kick,
+        size_bytes,
+        mtime_ns,
+        db_path=workbench_library_db_path(),
+    )
+    assert cached is not None
+    assert cached.analyzer_version == WORKBENCH_ANALYZER_VERSION
+    assert cached.bpm is not None
+
+
 def test_invalid_folder_raises(tmp_path: Path):
     missing = tmp_path / "does_not_exist"
     with pytest.raises(ValueError, match="Not a directory"):

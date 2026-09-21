@@ -10,7 +10,7 @@ from src.workbench_harmony import (
     HarmonyRelation,
     HarmonySuggestion,
 )
-from src.workbench_controller import WorkbenchRow
+from src.workbench_controller import MATCHING_NO_BPM_MESSAGE, WorkbenchRow
 from src.workbench_qml_spike import (
     Screen1QmlInteractionAdapter,
     Screen1QmlViewModel,
@@ -281,6 +281,59 @@ def test_harmonic_no_browser_selection_stays_closed_without_finder_call():
     assert calls == []
     assert view_model.harmony_rows == ()
     assert "Kein Sample" in view_model.harmony_status
+
+
+def test_harmonic_open_without_reference_bpm_is_fail_closed_without_finder_call():
+    calls = []
+
+    def finder(anchor, candidates):
+        calls.append(anchor)
+        return _stub_harmony_finder(anchor, candidates)
+
+    fixture, view_model, adapter = _adapter(
+        harmony_controller=HarmonicMatchLibraryController(finder=finder)
+    )
+    selected = fixture.selected_browser_index
+    view_model.browser_rows = _set_mode_keys(fixture, view_model, selected)
+    anchor = view_model.browser_rows[selected].source_row
+    view_model.browser_rows = tuple(
+        replace(
+            qml_row,
+            source_row=(
+                replace(anchor, bpm=None)
+                if qml_row.source_row.path == anchor.path
+                else qml_row.source_row
+            ),
+        )
+        for qml_row in view_model.browser_rows
+    )
+
+    assert adapter.toggle_harmonic_match() is True
+    assert view_model.harmony_status == MATCHING_NO_BPM_MESSAGE
+    assert view_model.harmony_rows == ()
+    assert calls == []
+
+
+def test_harmonic_open_without_key_mode_is_fail_closed_without_finder_call():
+    calls = []
+
+    def finder(anchor, candidates):
+        calls.append(anchor)
+        return _stub_harmony_finder(anchor, candidates)
+
+    fixture, view_model, adapter = _adapter(
+        harmony_controller=HarmonicMatchLibraryController(finder=finder)
+    )
+    selected = fixture.selected_browser_index
+    view_model.browser_rows = tuple(
+        replace(qml_row, source_row=replace(qml_row.source_row, key="C"))
+        for qml_row in view_model.browser_rows
+    )
+
+    assert adapter.toggle_harmonic_match() is True
+    assert "Referenz-Key" in view_model.harmony_status
+    assert view_model.harmony_rows == ()
+    assert calls == []
 
 
 def test_harmonic_match_row_actions_are_local_preview_and_existing_add_intent_only():
@@ -665,6 +718,64 @@ def test_qml_real_interaction_smoke_click_arrows_focus_and_harmonic_toggle():
         app.processEvents()
         assert window.property("interaction").property("harmonicMatchOpen") is True
         assert engine._screen1_interaction_adapter.harmony_controller.anchor is fixture.browser_rows[3]
+    finally:
+        window.close()
+        app.processEvents()
+        timer = getattr(engine, "_screen1_waveform_timer", None)
+        if timer is not None:
+            timer.stop()
+        loader = getattr(engine, "_screen1_waveform_loader", None)
+        if loader is not None:
+            loader.close()
+
+
+def _click_item(app, window, item):
+    from PySide6.QtCore import QPointF, Qt
+    from PySide6.QtTest import QTest
+
+    point = item.mapToScene(QPointF(8, 8)).toPoint()
+    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
+    app.processEvents()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
+)
+def test_qml_harmonic_button_background_uses_accent_when_open_and_panel_alt_when_closed():
+    from PySide6.QtQuick import QQuickItem
+
+    from src.workbench_qml_spike import _qml_engine, _settle_qml_frame
+
+    fixture = build_screen1_visual_fixture_v1()
+    view_model = build_qml_view_model_from_fixture(
+        fixture,
+        "screen1-default-3panel",
+    )
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        harmony_controller=HarmonicMatchLibraryController(finder=_stub_harmony_finder),
+    )
+    app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+    window.show()
+    _settle_qml_frame(app)
+    try:
+        toggle = window.findChild(QQuickItem, "harmonicMatchButton")
+        assert toggle is not None
+        background = toggle.property("background")
+        assert background is not None
+        closed_color = background.property("color").name()
+        assert closed_color == "#15181c"
+
+        _click_item(app, window, toggle)
+        _settle_qml_frame(app)
+        assert window.property("interaction").property("harmonicMatchOpen") is True
+        assert background.property("color").name() == "#b1122b"
+
+        _click_item(app, window, toggle)
+        _settle_qml_frame(app)
+        assert window.property("interaction").property("harmonicMatchOpen") is False
+        assert background.property("color").name() == "#15181c"
     finally:
         window.close()
         app.processEvents()
