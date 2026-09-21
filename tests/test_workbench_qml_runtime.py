@@ -943,3 +943,272 @@ def test_dispatch_selection_tracks_active_node_id(monkeypatch: pytest.MonkeyPatc
     composition.dispatch_selection(_intent(nav.root, nav.resolve_scope(ROOT_ID)))
 
     assert composition.selected_node_id == ROOT_ID
+
+
+class _ReturningHarmonyController(_RecordingHarmonyController):
+    """Record set_anchor calls and produce actionable suggestions for the pool."""
+
+    def set_anchor(self, anchor, candidates):
+        from src.workbench_harmony import HarmonyRelation, HarmonySuggestion
+
+        super().set_anchor(anchor, candidates)
+        rows = tuple(candidates)
+        self.results = tuple(
+            HarmonySuggestion(
+                row=row,
+                relation=HarmonyRelation.UNCERTAIN,
+                harmony_score=0.5,
+                bpm_score=0.5,
+                total_score=0.5,
+                pitch_shift_semitones=None,
+                explanation="test",
+            )
+            for row in rows
+        )
+        self.status = f"{len(rows)} sicher."
+
+
+def _register_root_at(tmp_path: Path, folder_name: str) -> tuple[Path, Path]:
+    from src.workbench_controller import analyze_folder_for_workbench
+    from src.workbench_library import workbench_library_db_path
+    from tests.audio_fixtures import write_kick_transient_wav, write_major_chord_wav
+
+    root = tmp_path / folder_name
+    root.mkdir(parents=True)
+    write_kick_transient_wav(root / "kit.wav", bpm=120.0, duration_sec=2.0)
+    write_major_chord_wav(root / "pad.wav")
+    db = workbench_library_db_path()
+    analyze_folder_for_workbench(root, library_db_path=db)
+    return root, db
+
+
+def _qml_adapter_for_state(state, *, recording: bool = True):
+    from src.workbench_qml import (
+        Screen1QmlInteractionAdapter,
+        Screen1QmlViewModel,
+    )
+
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    view_model.set_browser_state(
+        rows=tuple(state.rows),
+        selected_index=0,
+        browser_context="Samples",
+        error=None,
+    )
+    controller = _ReturningHarmonyController() if recording else _RecordingHarmonyController()
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        harmony_controller=controller,
+    )
+    return view_model, adapter, controller
+
+
+def test_harmonic_session_invalidated_across_root_scope_switch(tmp_path: Path):
+    from src.workbench_qml import Screen1QmlRuntimeComposition
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+    from src.workbench_library_navigation import (
+        LibraryNodeKind,
+        WorkbenchLibraryNavigation,
+    )
+
+    _root_a, db = _register_analyzed_root(tmp_path)
+    _root_b, same_db = _register_root_at(tmp_path, "bmore")
+    assert same_db == db
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    roots = [
+        node
+        for node in navigation.children("container:sample-sources")
+        if node.kind is LibraryNodeKind.REGISTERED_ROOT
+    ]
+    assert len(roots) == 2
+    root_a, root_b = roots
+
+    scope_a = navigation.resolve_scope(root_a.node_id)
+    state_a = composition.dispatch_selection(_intent(root_a, scope_a))
+    view_model, adapter, controller = _qml_adapter_for_state(state_a)
+    adapter.replace_browser_scope(scope_a)
+
+    assert adapter.toggle_harmonic_match() is True
+    assert len(controller.set_anchor_calls) == 1
+    assert adapter.harmonic_match_open is True
+    adapter.select_harmonic_match(min(1, len(view_model.harmony_rows) - 1))
+    adapter.set_harmonic_match_scroll_y(50)
+
+    scope_b = navigation.resolve_scope(root_b.node_id)
+    state_b = composition.dispatch_selection(_intent(root_b, scope_b))
+    assert state_b.error is None and state_b.rows
+    view_model.set_browser_state(
+        rows=tuple(state_b.rows),
+        selected_index=0,
+        browser_context="Root B",
+        error=None,
+    )
+    adapter.replace_browser_scope(scope_b)
+
+    assert adapter.harmonic_match_open is False
+    assert view_model.state_id == "screen1-default-3panel"
+    assert view_model.browser_context == "Root B"
+    assert view_model.harmony_rows == ()
+    assert view_model.harmony_anchor == ""
+    assert controller.anchor is None
+    assert controller.results == ()
+    b_paths = {str(row.path) for row in state_b.rows}
+    assert {str(row.source_row.path) for row in view_model.browser_rows} == b_paths
+    with pytest.raises(IndexError):
+        adapter.preview_harmonic_match(0)
+    with pytest.raises(IndexError):
+        adapter.request_add_harmonic_match_to_kit(0)
+    assert adapter.navigate_harmonic_match("next", match_has_focus=True) is None
+    assert adapter.selected_harmonic_match_index == 0
+    assert adapter.harmonic_match_scroll_y == 0.0
+
+    assert adapter.toggle_harmonic_match() is True
+    assert len(controller.set_anchor_calls) == 2
+    anchor_b, b_candidates = controller.set_anchor_calls[-1]
+    assert str(anchor_b.path) in b_paths
+    assert {str(row.path) for row in b_candidates} == b_paths
+    assert adapter.selected_harmonic_match_index == 0
+    assert adapter.harmonic_match_scroll_y == 0.0
+
+
+def test_harmonic_session_invalidated_across_subfolder_scope_switch(tmp_path: Path):
+    from src.workbench_qml import Screen1QmlRuntimeComposition
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+    from src.workbench_library_navigation import (
+        LibraryNodeKind,
+        WorkbenchLibraryNavigation,
+    )
+
+    _root, db = _register_analyzed_root(tmp_path)
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    nodes = navigation.children("container:sample-sources")
+    root_node = next(
+        node for node in nodes if node.kind is LibraryNodeKind.REGISTERED_ROOT
+    )
+    subfolder_node = next(
+        node
+        for node in navigation.children(root_node.node_id)
+        if node.kind is LibraryNodeKind.SUBFOLDER
+    )
+
+    root_scope = navigation.resolve_scope(root_node.node_id)
+    root_state = composition.dispatch_selection(_intent(root_node, root_scope))
+    view_model, adapter, controller = _qml_adapter_for_state(root_state)
+    adapter.replace_browser_scope(root_scope)
+    assert adapter.toggle_harmonic_match() is True
+    assert len(controller.set_anchor_calls) == 1
+
+    sub_scope = navigation.resolve_scope(subfolder_node.node_id)
+    sub_state = composition.dispatch_selection(_intent(subfolder_node, sub_scope))
+    assert sub_state.error is None and sub_state.rows
+    view_model.set_browser_state(
+        rows=tuple(sub_state.rows),
+        selected_index=0,
+        browser_context="Subfolder",
+        error=None,
+    )
+    adapter.replace_browser_scope(sub_scope)
+
+    assert adapter.harmonic_match_open is False
+    assert view_model.harmony_rows == ()
+    sub_paths = {str(row.path) for row in sub_state.rows}
+    assert {str(row.source_row.path) for row in view_model.browser_rows} == sub_paths
+
+    assert adapter.toggle_harmonic_match() is True
+    assert len(controller.set_anchor_calls) == 2
+    _, sub_candidates = controller.set_anchor_calls[-1]
+    assert {str(row.path) for row in sub_candidates} == sub_paths
+
+
+def test_harmonic_same_scope_reload_and_reopen_reuse_stays_intact(tmp_path: Path):
+    from src.workbench_qml import Screen1QmlRuntimeComposition
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+    from src.workbench_library_navigation import (
+        LibraryNodeKind,
+        WorkbenchLibraryNavigation,
+    )
+
+    _root, db = _register_analyzed_root(tmp_path)
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    nodes = navigation.children("container:sample-sources")
+    root_node = next(
+        node for node in nodes if node.kind is LibraryNodeKind.REGISTERED_ROOT
+    )
+    scope = navigation.resolve_scope(root_node.node_id)
+    state = composition.dispatch_selection(_intent(root_node, scope))
+    view_model, adapter, controller = _qml_adapter_for_state(state)
+    adapter.replace_browser_scope(scope)
+
+    assert adapter.toggle_harmonic_match() is True
+    assert len(controller.set_anchor_calls) == 1
+    assert adapter.toggle_harmonic_match() is False
+
+    adapter.replace_browser_scope(scope)
+    assert adapter.harmonic_match_open is False
+
+    assert adapter.toggle_harmonic_match() is True
+    assert len(controller.set_anchor_calls) == 1
+    assert view_model.harmony_rows
+
+    adapter.replace_browser_scope(scope)
+    assert adapter.harmonic_match_open is True
+    assert view_model.harmony_rows
+    assert len(controller.set_anchor_calls) == 1
+
+
+def test_harmonic_session_closes_when_browser_scope_becomes_unresolved():
+    from src.workbench_qml import (
+        Screen1QmlInteractionAdapter,
+        Screen1QmlViewModel,
+    )
+
+    rows = (_row("A1"), _row("A2"), _row("A3"))
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    view_model.set_browser_state(
+        rows=rows,
+        selected_index=0,
+        browser_context="A",
+        error=None,
+    )
+    controller = _ReturningHarmonyController()
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        harmony_controller=controller,
+    )
+    adapter.replace_browser_scope(LibraryScope(LibraryScopeKind.ROOT, folder_id=1))
+
+    assert adapter.toggle_harmonic_match() is True
+    assert len(controller.set_anchor_calls) == 1
+
+    adapter.replace_browser_scope(None)
+
+    assert adapter.harmonic_match_open is False
+    assert view_model.state_id == "screen1-default-3panel"
+    assert view_model.harmony_rows == ()
+    assert controller.anchor is None

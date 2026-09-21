@@ -1046,3 +1046,118 @@ def test_qml_fresh_v2_root_selection_starts_no_analysis_job(tmp_path):
         assert view_model.browser_rows[0].source_row.key == "Cmaj"
     finally:
         _stop_engine(app, engine, window, coordinator)
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
+)
+def test_qml_scope_switch_closes_harmonic_panel_and_reopens_with_new_scope(tmp_path):
+    from src.workbench_controller import WorkbenchRow
+    from src.workbench_library import (
+        upsert_folder,
+        upsert_sample,
+        workbench_library_db_path,
+    )
+    from src.workbench_library_navigation import (
+        LibraryNodeKind,
+        WorkbenchLibraryNavigation,
+    )
+    from src.workbench_qml import Screen1QmlRuntimeComposition, Screen1QmlViewModel
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+    from src.workbench_qml_spike import _qml_engine, _settle_qml_frame
+    from tests.audio_fixtures import write_major_chord_wav
+
+    def seed_root(folder_name: str, samples: list[str]) -> tuple[Path, int]:
+        root = tmp_path / folder_name
+        root.mkdir(parents=True)
+        folder_id = upsert_folder(root, db_path=db)
+        for name in samples:
+            audio = write_major_chord_wav(root / name)
+            st = audio.stat()
+            upsert_sample(
+                folder_id,
+                WorkbenchRow(
+                    display_name=audio.name,
+                    relative_path=str(audio.relative_to(root)).replace("\\", "/"),
+                    path=str(audio),
+                    bpm=132.0,
+                    key="Cmaj",
+                    key_conf=0.9,
+                    loudness=-12.0,
+                    brightness=1500.0,
+                    sample_class="loop",
+                    pred_type="Keys",
+                    status="ok",
+                    details={"path": str(audio)},
+                ),
+                size_bytes=st.st_size,
+                mtime_ns=st.st_mtime_ns,
+                db_path=db,
+                analyzer_version="workbench_v2",
+            )
+        return root, folder_id
+
+    db = workbench_library_db_path()
+    _root_a, folder_id_a = seed_root("sources", ["lead_a.wav", "bass_a.wav"])
+    _root_b, folder_id_b = seed_root("bmore", ["pad_b.wav", "bell_b.wav"])
+
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    app, engine, window = _qml_engine(view_model, runtime_composition=composition)
+    window.show()
+    adapter = engine._screen1_interaction_adapter
+    coordinator = engine._screen1_analysis_coordinator
+    bridge = engine._screen1_library_bridge
+    library_model = engine._screen1_library_model
+    try:
+        library_model.state.fetch_children("container:sample-sources")
+        roots = [
+            node
+            for node in navigation.children("container:sample-sources")
+            if node.kind is LibraryNodeKind.REGISTERED_ROOT
+        ]
+        assert len(roots) == 2
+        root_x, root_y = roots
+
+        bridge.selectLibraryNode(root_x.node_id)
+        assert composition.selected_node_id == root_x.node_id
+        assert view_model.browser_rows
+        assert coordinator._core.current_token(folder_id_a) is None
+        a_paths = {str(row.source_row.path) for row in view_model.browser_rows}
+
+        assert adapter.toggle_harmonic_match() is True
+        assert adapter.harmonic_match_open is True
+        assert view_model.state_id == "screen1-harmonic-4panel"
+
+        bridge.selectLibraryNode(root_y.node_id)
+        _settle_qml_frame(app)
+        assert composition.selected_node_id == root_y.node_id
+        assert coordinator._core.current_token(folder_id_b) is None
+        assert adapter.harmonic_match_open is False
+        assert view_model.state_id == "screen1-default-3panel"
+        assert view_model.harmony_rows == ()
+        assert adapter.harmony_controller.anchor is None
+        assert window.property("interaction").property("harmonicMatchOpen") is False
+        b_paths = {str(row.source_row.path) for row in view_model.browser_rows}
+        assert b_paths and a_paths != b_paths
+
+        assert adapter.toggle_harmonic_match() is True
+        assert view_model.state_id == "screen1-harmonic-4panel"
+        assert adapter.harmony_controller.anchor is not None
+        assert str(adapter.harmony_controller.anchor.path) in b_paths
+        assert view_model.harmony_rows
+        assert {str(row.source_row.path) for row in view_model.harmony_rows} <= b_paths
+    finally:
+        _stop_engine(app, engine, window, coordinator)

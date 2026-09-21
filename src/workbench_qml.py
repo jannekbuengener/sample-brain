@@ -454,6 +454,8 @@ class Screen1QmlInteractionAdapter:
         self._harmonic_match_context_fingerprint: tuple[object, ...] | None = None
         self._harmonic_match_selected_index = 0
         self._harmonic_match_scroll_y = 0.0
+        self._harmonic_match_browser_scope: object | None = None
+        self._harmonic_match_session_scope: object | None = None
 
     @property
     def selected_browser_index(self) -> int:
@@ -613,6 +615,37 @@ class Screen1QmlInteractionAdapter:
             return
         self._harmonic_match_scroll_y = max(0.0, float(value))
 
+    def replace_browser_scope(self, scope: object) -> None:
+        """Central hook after a successful browser-scope replacement.
+
+        When *scope* differs from the scope the current harmonic-match session
+        was computed against, the session is deterministically invalidated:
+        the panel closes, old harmony rows stop being actionable, and the next
+        open computes the new scope's anchor and candidate pool exactly once.
+        Same-scope reloads keep the existing close/reopen reuse intact.
+        """
+        self._harmonic_match_browser_scope = scope
+        if scope is not None and scope == self._harmonic_match_session_scope:
+            return
+        self._invalidate_harmonic_session()
+
+    def _invalidate_harmonic_session(self) -> None:
+        if self.harmonic_match_open:
+            self.harmonic_match_open = False
+            self.view_model.state_id = "screen1-default-3panel"
+        self.view_model.harmony_rows = ()
+        self.view_model.harmony_anchor = ""
+        self.view_model.harmony_status = "Harmonic Match geschlossen – Browser-Scope wurde ersetzt."
+        self._harmonic_match_context_fingerprint = None
+        self._harmonic_match_selected_index = 0
+        self._harmonic_match_scroll_y = 0.0
+        self._preview_active = False
+        if self.harmony_controller is not None:
+            self.harmony_controller.anchor = None
+            self.harmony_controller.results = ()
+            self.harmony_controller.status = "Harmonic Match ist ausgeschaltet."
+        self._harmonic_match_session_scope = None
+
     def toggle_harmonic_match(self) -> bool:
         """Open/close the existing harmony controller without mutating other state."""
         if self.harmonic_match_open:
@@ -637,6 +670,7 @@ class Screen1QmlInteractionAdapter:
             self._harmonic_match_context_fingerprint = fingerprint
             self._harmonic_match_selected_index = 0
             self._harmonic_match_scroll_y = 0.0
+        self._harmonic_match_session_scope = self._harmonic_match_browser_scope
         self._project_harmonic_match(anchor)
         self.harmonic_match_open = True
         self.view_model.state_id = "screen1-harmonic-4panel"
@@ -1330,6 +1364,7 @@ def _qml_engine(
             return
         intent = library_model.state.selection_intent
         if intent is None:
+            adapter.replace_browser_scope(None)
             runtime_composition.clear_no_scope()
             view_model.set_browser_state(
                 rows=(),
@@ -1345,6 +1380,7 @@ def _qml_engine(
                 browser_context=state.browser_context,
                 error=state.error,
             )
+            adapter.replace_browser_scope(intent.scope)
             if analysis_coordinator is not None:
                 refresh_target = runtime_composition.refresh_target(intent.scope)
                 if refresh_target is not None:
