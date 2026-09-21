@@ -381,13 +381,13 @@ def test_qabstract_item_model_fetches_only_the_expanded_branch() -> None:
     assert navigation.calls == [SAMPLE_SOURCES]
 
 
-def test_focus_contract_is_explicit_and_tree_does_not_bind_escape() -> None:
+def test_focus_contract_is_explicit_and_browser_owns_escape() -> None:
     from src import workbench_qml
 
     source = workbench_qml.QML_SOURCE
     assert "Key_Return" in source or "Key_Enter" in source
     assert "browser.forceActiveFocus()" in source
-    assert "Key_Escape" not in source
+    assert "Key_Escape" in source
     assert "elide: Text.ElideRight" in source
     assert "ScrollBar.vertical" in source
     assert "minimumWidth: 1120" in source

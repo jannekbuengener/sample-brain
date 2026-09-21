@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import platform
 import struct
@@ -32,8 +33,24 @@ class Screen1VisualFixture:
     assignments: Mapping[str, Mapping[str, WorkbenchRow]]
     state_ids: tuple[str, ...]
 
+def _synthetic_envelope(seed: int) -> tuple[float, ...]:
+    """Return deterministic envelope data for screenshot fixtures, not glyphs."""
+    return tuple(
+        round(
+            min(
+                1.0,
+                0.12
+                + 0.72
+                * abs(math.sin((index + 1) * (0.19 + seed * 0.003))),
+            ),
+            3,
+        )
+        for index in range(72)
+    )
+
+
 def _row(name: str, kind: str, key: str | None, duration: str, seed: int) -> WorkbenchRow:
-    return WorkbenchRow(name, f"fixture/{name}.wav", f"fixture/{name}.wav", 132.0, key, .91 if key else None, -14.0, 2000.0 + seed, "loop" if "LOOP" in name else "one_shot", kind, "ok", {"duration_sec": duration, "waveform_seed": str(seed)})
+    return WorkbenchRow(name, f"fixture/{name}.wav", f"fixture/{name}.wav", 132.0, key, .91 if key else None, -14.0, 2000.0 + seed, "loop" if "LOOP" in name else "one_shot", kind, "ok", {"duration_sec": duration, "waveform_envelope": _synthetic_envelope(seed)})
 
 def _match(row: WorkbenchRow, relation: HarmonyRelation, score: float, pitch: int | None = None) -> HarmonySuggestion:
     return HarmonySuggestion(row, relation, {HarmonyRelation.DIRECT: 1., HarmonyRelation.RELATED: .7, HarmonyRelation.TRANSPOSE: .5}[relation], 1., score, pitch, relation.value)
