@@ -952,6 +952,11 @@ def _qml_engine(
     engine.rootContext().setContextProperty("interactionModel", bridge)
     engine.rootContext().setContextProperty("libraryTreeModel", library_model)
     engine.rootContext().setContextProperty("libraryInteraction", library_bridge)
+    if analysis_coordinator is not None:
+        engine.rootContext().setContextProperty(
+            "_screen1AnalysisCoordinator",
+            analysis_coordinator,
+        )
     engine.loadData(QML_SOURCE.encode("utf-8"), QUrl("qrc:/screen1.qml"))
     if not engine.rootObjects():
         raise RuntimeError("Qt Quick Screen-1 Renderer konnte keine QML-Oberfläche laden.")
@@ -999,7 +1004,13 @@ def run_qml_screen1(*, state_id: str = "screen1-default-3panel") -> int:
     try:
         return app.exec()
     finally:
-        coordinator = getattr(_engine, "_screen1_analysis_coordinator", None)
+        root_context = getattr(_engine, "rootContext", None)
+        if callable(root_context):
+            coordinator = root_context().contextProperty(
+                "_screen1AnalysisCoordinator"
+            )
+        else:
+            coordinator = getattr(_engine, "_screen1_analysis_coordinator", None)
         if coordinator is not None:
             coordinator.close()
 
