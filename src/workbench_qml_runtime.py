@@ -8,6 +8,7 @@ from pathlib import Path
 from .workbench_controller import (
     WorkbenchRow,
     add_workbench_library_folder,
+    get_workbench_library_folders,
     load_all_cached_rows,
     load_cached_folder_rows,
     load_cached_subfolder_rows,
@@ -17,8 +18,16 @@ from .workbench_controller import (
     remove_workbench_library_folder,
     validate_workbench_folder,
 )
+from .workbench_library import workbench_library_db_path
+from .workbench_library_navigation import WorkbenchLibraryNavigation
 from .workbench_qml_library import LibrarySelectionIntent, WorkbenchLibraryTreeState
 from .workbench_library_navigation import LibraryScope, LibraryScopeKind
+
+
+@dataclass(frozen=True)
+class SourceRegistration:
+    folder_id: int
+    normalized_path: Path
 
 
 @dataclass(frozen=True)
@@ -38,8 +47,35 @@ class Screen1QmlRuntimeComposition:
     and exposes an immutable browser projection for the QML adapter.
     """
 
-    def __init__(self, *, tree_state: WorkbenchLibraryTreeState | None = None) -> None:
-        self.library_tree = tree_state or WorkbenchLibraryTreeState()
+    def __init__(
+        self,
+        *,
+        library_db_path: Path | str | None = None,
+        tree_state: WorkbenchLibraryTreeState | None = None,
+    ) -> None:
+        explicit_db_path = (
+            Path(library_db_path).expanduser().resolve()
+            if library_db_path is not None
+            else None
+        )
+        tree_db_path = (
+            Path(tree_state.library_db_path).expanduser().resolve()
+            if tree_state is not None and tree_state.library_db_path is not None
+            else None
+        )
+        if explicit_db_path is not None and tree_state is not None:
+            if tree_db_path is None or tree_db_path != explicit_db_path:
+                raise ValueError("Runtime, Navigation und Tree müssen dieselbe Library-DB verwenden.")
+        self.library_db_path = (
+            explicit_db_path or tree_db_path or workbench_library_db_path()
+        ).expanduser().resolve()
+        self._explicit_library_db_path = (
+            explicit_db_path is not None or tree_db_path is not None
+        )
+        if tree_state is None:
+            navigation = WorkbenchLibraryNavigation(library_db_path=self.library_db_path)
+            tree_state = WorkbenchLibraryTreeState(navigation)
+        self.library_tree = tree_state
         self.browser_state = Screen1BrowserState()
         self.audition_dispatches: list[WorkbenchRow] = []
 
@@ -66,15 +102,18 @@ class Screen1QmlRuntimeComposition:
         return self.browser_state
 
     def add_source(self, folder: Path | str) -> bool:
+        return self.register_source_for_analysis(folder) is not None
+
+    def register_source_for_analysis(self, folder: Path | str) -> SourceRegistration | None:
         validation = validate_workbench_folder(str(folder))
         if not validation.ok or validation.normalized_path is None:
             self._set_no_scope(validation.error_message or "Ungültiger Library-Ordner.")
-            return False
+            return None
         try:
-            add_workbench_library_folder(validation.normalized_path)
+            folder_id = self._register_library_folder(validation.normalized_path)
         except Exception:
             self._set_no_scope("Library-Quelle konnte nicht registriert werden.")
-            return False
+            return None
         self.browser_state = Screen1BrowserState(
             rows=self.browser_state.rows,
             selected_index=self.browser_state.selected_index,
@@ -82,11 +121,51 @@ class Screen1QmlRuntimeComposition:
             scope=self.browser_state.scope,
             error=None,
         )
-        return True
+        return SourceRegistration(
+            folder_id=int(folder_id),
+            normalized_path=validation.normalized_path,
+        )
+
+    def _register_library_folder(self, folder: Path) -> int:
+        if self._explicit_library_db_path:
+            result = add_workbench_library_folder(
+                folder,
+                library_db_path=self.library_db_path,
+            )
+            if isinstance(result, bool):
+                if not result:
+                    raise LookupError("Library-Quelle wurde nicht registriert.")
+                folders = get_workbench_library_folders(
+                    library_db_path=self.library_db_path,
+                )
+                return self._lookup_registered_folder_id(folder, folders)
+            return int(result)
+        result = add_workbench_library_folder(folder)
+        if isinstance(result, bool):
+            if not result:
+                raise LookupError("Library-Quelle wurde nicht registriert.")
+            return self._lookup_registered_folder_id(folder, get_workbench_library_folders())
+        return int(result)
+
+    @staticmethod
+    def _lookup_registered_folder_id(folder: Path, folders) -> int:
+        normalized = str(folder.expanduser().resolve())
+        for registered in folders:
+            if str(Path(registered.path).expanduser().resolve()) == normalized:
+                return int(registered.id)
+        raise LookupError("Registrierte Library-Quelle konnte nicht aufgelöst werden.")
 
     def remove_source(self, folder_id: int) -> bool:
         try:
-            removed = bool(remove_workbench_library_folder(folder_id))
+            if self._explicit_library_db_path:
+                removed = bool(
+                    remove_workbench_library_folder(
+                        folder_id,
+                        library_db_path=self.library_db_path,
+                    )
+                )
+            else:
+                removed = bool(remove_workbench_library_folder(folder_id))
         except Exception:
             self._set_no_scope("Library-Quelle konnte nicht entfernt werden.")
             return False
@@ -113,6 +192,11 @@ class Screen1QmlRuntimeComposition:
     def preview_remove_source(self, folder_id: int):
         """Return the existing metadata-only removal confirmation seam."""
         try:
+            if self._explicit_library_db_path:
+                return preview_workbench_library_folder_removal(
+                    folder_id,
+                    library_db_path=self.library_db_path,
+                )
             return preview_workbench_library_folder_removal(folder_id)
         except Exception:
             return None
@@ -147,22 +231,39 @@ class Screen1QmlRuntimeComposition:
             return "Unbekannter Library-Scope."
         return None
 
-    @staticmethod
-    def _load_scope(scope: LibraryScope) -> list[WorkbenchRow]:
+    def _load_scope(self, scope: LibraryScope) -> list[WorkbenchRow]:
         if scope.kind is LibraryScopeKind.ROOT:
             assert scope.folder_path is not None
+            if self._explicit_library_db_path:
+                return load_cached_folder_rows(
+                    scope.folder_path,
+                    library_db_path=self.library_db_path,
+                )
             return load_cached_folder_rows(scope.folder_path)
         if scope.kind is LibraryScopeKind.SUBFOLDER:
             assert scope.folder_id is not None
             assert scope.relative_path is not None
+            if self._explicit_library_db_path:
+                return load_cached_subfolder_rows(
+                    scope.folder_id,
+                    scope.relative_path,
+                    library_db_path=self.library_db_path,
+                )
             return load_cached_subfolder_rows(scope.folder_id, scope.relative_path)
         if scope.kind is LibraryScopeKind.ALL_SAMPLES:
+            if self._explicit_library_db_path:
+                return load_all_cached_rows(library_db_path=self.library_db_path)
             return load_all_cached_rows()
         if scope.kind is LibraryScopeKind.CATALOG:
             assert scope.catalog_limit is not None
             return load_catalog_rows(limit=scope.catalog_limit)
         if scope.kind is LibraryScopeKind.COLLECTION:
             assert scope.playlist_name is not None
+            if self._explicit_library_db_path:
+                return load_playlist_workbench_rows(
+                    scope.playlist_name,
+                    library_db_path=self.library_db_path,
+                )
             return load_playlist_workbench_rows(scope.playlist_name)
         raise ValueError("Unbekannter Library-Scope.")
 
@@ -182,4 +283,8 @@ class Screen1QmlRuntimeComposition:
         return self.browser_state
 
 
-__all__ = ["Screen1BrowserState", "Screen1QmlRuntimeComposition"]
+__all__ = [
+    "Screen1BrowserState",
+    "Screen1QmlRuntimeComposition",
+    "SourceRegistration",
+]
