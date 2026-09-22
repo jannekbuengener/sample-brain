@@ -290,14 +290,16 @@ def _group_token(username: str) -> str:
 def _apply_metadata_groups(records: list[dict[str, Any]], metadata: object | None) -> bool:
     if not isinstance(metadata, dict):
         return False
-    applied = False
+    group_tokens: dict[str, str] = {}
     for record in records:
         row = metadata.get(record["public_sample_id"])
         username = row.get("username") if isinstance(row, dict) else None
-        if isinstance(username, str) and username.strip():
-            record["source_group_id"] = _group_token(username.strip())
-            applied = True
-    return applied
+        if not isinstance(username, str) or not username.strip():
+            return False
+        group_tokens[record["public_sample_id"]] = _group_token(username.strip())
+    for record in records:
+        record["source_group_id"] = group_tokens[record["public_sample_id"]]
+    return bool(records)
 
 
 def _allocate_grouped(records: list[dict[str, Any]], target: int) -> set[str]:

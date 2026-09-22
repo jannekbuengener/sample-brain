@@ -264,6 +264,25 @@ def test_metadata_without_matching_rows_keeps_the_exact_ungrouped_split(tmp_path
     assert manifest["split_summary"] == {"CALIBRATION": 2, "TEST": 6}
 
 
+def test_partial_metadata_disables_grouping_without_leaking_a_partial_group(tmp_path: Path) -> None:
+    entries = {
+        "annotations/1/sound-100.json": _annotation(),
+        "annotations/1/sound-101.json": _annotation(key="d", mode="min"),
+        "annotations/1/sound-102.json": _annotation(key="none", mode="none"),
+        "annotations/1/sound-103.json": _annotation(key="none", mode="none"),
+    }
+    manifest = _build(
+        tmp_path,
+        entries,
+        metadata={"100": {"username": "uploader-a"}},
+    )
+
+    assert manifest["provenance"]["source_grouping"] == "unavailable_annotations_only"
+    assert manifest["selection"]["ungrouped_split_is_exact"] is True
+    assert manifest["split_summary"] == {"CALIBRATION": 1, "TEST": 3}
+    assert all(record["source_group_id"] is None for record in manifest["records"])
+
+
 def test_canonical_files_verify_and_do_not_contain_absolute_paths(tmp_path: Path) -> None:
     manifest = _build(
         tmp_path,

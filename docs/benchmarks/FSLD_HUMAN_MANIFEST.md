@@ -66,8 +66,11 @@ einem namensraumgebundenen SHA256-Ranking aufgelöst. Bei 500 Records sind es
 `floor(N * 0.20 + 0.5)`, mindestens eins bei `N > 1`.
 
 Ohne Metadaten ist der Split exakt. Optional kann ein lokal bereitgestelltes
-FSLD-`metadata.json` die uploader-basierte Gruppierung aktivieren. Dann haben
-vollständige Gruppen Vorrang; der Builder verwendet ausschließlich
+FSLD-`metadata.json` die uploader-basierte Gruppierung nur aktivieren, wenn
+für jeden gewählten Record ein nichtleerer `username` vorliegt. Bei einer
+partiellen Abdeckung bleibt der komplette Split ungruppiert, damit keine
+unbekannte Uploader-Gruppe über Splits verteilt wird. Bei aktiver Gruppierung
+haben vollständige Gruppen Vorrang; der Builder verwendet ausschließlich
 `fsld-uploader-sha256:<digest>` und serialisiert weder Uploadernamen noch
 lokale Pfade. Da `metadata.json` nur im 8,8-GB-FSL10K-Archiv liegt, nutzt das
 versionierte Manifest keine Gruppierung (`source_group_id: null`).
