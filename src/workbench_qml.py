@@ -639,7 +639,7 @@ class Screen1QmlInteractionAdapter:
         self._harmonic_match_context_fingerprint = None
         self._harmonic_match_selected_index = 0
         self._harmonic_match_scroll_y = 0.0
-        self._preview_active = False
+        self.stop_preview()
         if self.harmony_controller is not None:
             self.harmony_controller.anchor = None
             self.harmony_controller.results = ()
@@ -983,6 +983,10 @@ ApplicationWindow {
                         if (window.interaction.harmonyScrollY > 0) {
                             harmonicMatchList.contentY = window.interaction.harmonyScrollY
                         }
+                        window.interaction.requestHarmonyWaveforms(
+                            Math.max(0, Math.floor(harmonicMatchList.contentY / 72)),
+                            Math.ceil(harmonicMatchList.height / 72) + 2
+                        )
                     })
                 } else {
                     browser.forceActiveFocus()
@@ -996,7 +1000,21 @@ ApplicationWindow {
                     Keys.onUpPressed: window.interaction.navigateHarmony(-1)
                     Keys.onDownPressed: window.interaction.navigateHarmony(1)
                     Keys.onEscapePressed: window.interaction.stopPreview()
-                    onContentYChanged: window.interaction.setHarmonyScrollY(contentY)
+                    onContentYChanged: {
+                        window.interaction.setHarmonyScrollY(contentY)
+                        window.interaction.requestHarmonyWaveforms(
+                            Math.max(0, Math.floor(contentY / 72)),
+                            Math.ceil(height / 72) + 2
+                        )
+                    }
+                    onHeightChanged: {
+                        if (visible) {
+                            window.interaction.requestHarmonyWaveforms(
+                                Math.max(0, Math.floor(contentY / 72)),
+                                Math.ceil(height / 72) + 2
+                            )
+                        }
+                    }
                     delegate: Rectangle { width: parent.width; height: 72; color: index === window.interaction.selectedHarmonyIndex ? window.panelAlt : "transparent"; border.color: window.border
                         MouseArea { anchors.fill: parent; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.selectHarmonyRow(index) } }
                         RowLayout { anchors.fill: parent; anchors.margins: 9
@@ -1076,6 +1094,7 @@ def _qml_interaction_bridge(
     *,
     on_state_changed: Callable[[], None] | None = None,
     on_waveform_request: Callable[[int, int], None] | None = None,
+    on_harmony_waveform_request: Callable[[int, int], None] | None = None,
 ):
     """Expose the pure interaction adapter to QML only when Qt is installed."""
     from PySide6.QtCore import QObject, Property, Signal, Slot
@@ -1157,6 +1176,11 @@ def _qml_interaction_bridge(
         def requestWaveforms(self, start: int, count: int) -> None:
             if on_waveform_request is not None:
                 on_waveform_request(start, count)
+
+        @Slot(int, int)
+        def requestHarmonyWaveforms(self, start: int, count: int) -> None:
+            if on_harmony_waveform_request is not None:
+                on_harmony_waveform_request(start, count)
 
         @Slot(int)
         def navigateBrowser(self, step: int) -> None:
@@ -1340,6 +1364,16 @@ def _qml_engine(
                 continue
             waveform_loader.schedule(str(row.source_row.path))
 
+    def request_harmony_waveforms(start: int, count: int) -> None:
+        if count <= 0:
+            return
+        first = max(0, start)
+        last = min(len(view_model.harmony_rows), first + count)
+        for row in view_model.harmony_rows[first:last]:
+            if row.waveform_envelope:
+                continue
+            waveform_loader.schedule(str(row.source_row.path))
+
     def drain_waveforms() -> None:
         if waveform_loader.drain_results() == 0:
             return
@@ -1381,8 +1415,11 @@ def _qml_engine(
                 error=state.error,
             )
             adapter.replace_browser_scope(intent.scope)
-            if analysis_coordinator is not None:
-                refresh_target = runtime_composition.refresh_target(intent.scope)
+            if analysis_coordinator is not None and state.error is None:
+                try:
+                    refresh_target = runtime_composition.refresh_target(intent.scope)
+                except Exception:
+                    refresh_target = None
                 if refresh_target is not None:
                     analysis_coordinator.start(
                         refresh_target.folder_id,
@@ -1474,6 +1511,7 @@ def _qml_engine(
         adapter,
         on_state_changed=refresh_screen_model,
         on_waveform_request=request_waveforms,
+        on_harmony_waveform_request=request_harmony_waveforms,
     )
     library_bridge = _qml_library_interaction_bridge(
         library_model,
