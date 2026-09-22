@@ -1212,3 +1212,78 @@ def test_harmonic_session_closes_when_browser_scope_becomes_unresolved():
     assert view_model.state_id == "screen1-default-3panel"
     assert view_model.harmony_rows == ()
     assert controller.anchor is None
+
+
+def test_refresh_target_reuses_already_loaded_rows_without_second_db_probe(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    runtime, composition = _composition(monkeypatch)
+    nav = composition.library_tree.navigation
+    scope = nav.resolve_scope(ROOT_ID)
+    audio = tmp_path / "fresh.wav"
+    audio.write_bytes(b"RIFF")
+    fresh = WorkbenchRow(
+        display_name="fresh",
+        relative_path="fresh.wav",
+        path=str(audio),
+        bpm=120.0,
+        key="Cmaj",
+        key_conf=0.8,
+        loudness=None,
+        brightness=None,
+        sample_class="loop",
+        pred_type="Loop",
+        status="ok",
+        details={"analyzer_version": runtime.WORKBENCH_ANALYZER_VERSION},
+    )
+    monkeypatch.setattr(runtime, "load_cached_folder_rows", lambda _folder: [fresh])
+    composition.dispatch_selection(_intent(nav.root, scope))
+    monkeypatch.setattr(
+        runtime,
+        "workbench_scope_requires_refresh",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("already-loaded scope must not be reloaded for freshness")
+        ),
+    )
+
+    assert composition.refresh_target(scope) is None
+
+
+def test_refresh_target_detects_stale_loaded_row_without_second_db_probe(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    runtime, composition = _composition(monkeypatch)
+    nav = composition.library_tree.navigation
+    scope = nav.resolve_scope(ROOT_ID)
+    audio = tmp_path / "stale.wav"
+    audio.write_bytes(b"RIFF")
+    stale = WorkbenchRow(
+        display_name="stale",
+        relative_path="stale.wav",
+        path=str(audio),
+        bpm=120.0,
+        key="C",
+        key_conf=0.8,
+        loudness=None,
+        brightness=None,
+        sample_class="loop",
+        pred_type="Loop",
+        status="ok",
+        details={"analyzer_version": "workbench_v1"},
+    )
+    monkeypatch.setattr(runtime, "load_cached_folder_rows", lambda _folder: [stale])
+    composition.dispatch_selection(_intent(nav.root, scope))
+    monkeypatch.setattr(
+        runtime,
+        "workbench_scope_requires_refresh",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("already-loaded scope must not be reloaded for freshness")
+        ),
+    )
+
+    target = composition.refresh_target(scope)
+
+    assert target is not None
+    assert target.folder_id == 1
