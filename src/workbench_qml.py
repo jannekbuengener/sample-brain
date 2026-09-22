@@ -82,7 +82,8 @@ def _row_details(row: WorkbenchRow) -> dict[str, object]:
 
 
 def _duration(row: WorkbenchRow) -> str:
-    value = _row_details(row).get("duration_sec")
+    details = _row_details(row)
+    value = details.get("duration_sec", details.get("duration"))
     if value is None or value == "":
         return "—"
     try:
@@ -227,6 +228,7 @@ class Screen1QmlViewModel:
         self.browser_context = browser_context
         self.browser_error = error
 
+
     def set_browser_waveform(self, path: str, envelope: tuple[float, ...]) -> bool:
         """Apply one cached waveform without changing browser selection."""
         changed = False
@@ -307,6 +309,22 @@ class Screen1QmlViewModel:
                 for group in self.live_kit_groups
             ],
         }
+
+
+def _sync_runtime_browser_state(
+    view_model: Screen1QmlViewModel,
+    adapter: "Screen1QmlInteractionAdapter",
+    runtime_composition: Screen1QmlRuntimeComposition,
+) -> None:
+    """Project the authoritative runtime browser state into the QML adapter."""
+    state = runtime_composition.browser_state
+    view_model.set_browser_state(
+        rows=state.rows,
+        selected_index=state.selected_index,
+        browser_context=state.browser_context,
+        error=state.error,
+    )
+    adapter.replace_browser_scope(state.scope)
 
 
 def _empty_live_kit_groups() -> tuple[QmlLiveKitGroup, ...]:
@@ -404,7 +422,6 @@ def _qml_screen_data_bridge(
 
         @Slot()
         def refresh(self) -> None:
-            self.browserRowsChanged.emit()
             self.selectedBrowserIndexChanged.emit()
             self.browserContextChanged.emit()
             self.errorMessageChanged.emit()
@@ -417,6 +434,15 @@ def _qml_screen_data_bridge(
             self.harmonyStatusChanged.emit()
             self.liveKitGroupsChanged.emit()
             self.panelCountChanged.emit()
+
+        @Slot()
+        def refresh_browser_rows(self) -> None:
+            self.browserRowsChanged.emit()
+
+        @Slot()
+        def refresh_browser_scope(self) -> None:
+            self.browserRowsChanged.emit()
+            self.refresh()
 
         @Slot()
         def cancelAnalysis(self) -> None:
@@ -924,7 +950,7 @@ ApplicationWindow {
                         else if (event.key === Qt.Key_Up) { window.interaction.navigateBrowser(-1); event.accepted = true }
                         else if (event.key === Qt.Key_Escape) { window.interaction.stopPreview(); event.accepted = true }
                     }
-                    delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.interaction.selectedBrowserIndex ? "#211014" : (rowSelection.containsMouse ? "#15181c" : "transparent"); border.width: index === window.interaction.selectedBrowserIndex ? 1 : 0; border.color: window.accent
+                    delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.screenData.selectedBrowserIndex ? "#211014" : (rowSelection.containsMouse ? "#15181c" : "transparent"); border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0; border.color: window.accent
                         Component.onCompleted: window.browserDelegateCreations += 1
                         MouseArea { id: rowSelection; anchors.fill: parent; z: 0; hoverEnabled: true; onClicked: { browser.forceActiveFocus(); window.interaction.selectRow(index) } }
                         RowLayout { anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 12; z: 1
@@ -934,7 +960,7 @@ ApplicationWindow {
                                     onPaint: {
                                         var context = getContext("2d")
                                         context.clearRect(0, 0, width, height)
-                                        context.strokeStyle = index === window.interaction.selectedBrowserIndex ? window.accent : "#6d737c"
+                                        context.strokeStyle = index === window.screenData.selectedBrowserIndex ? window.accent : "#6d737c"
                                         context.lineWidth = 1.4
                                         context.beginPath()
                                         var points = envelope || []
@@ -972,11 +998,11 @@ ApplicationWindow {
                                 radius: 3
                                 property bool hovered: addButtonMouse.containsMouse
                                 color: addButtonMouse.pressed ? "#3a1720" : (addButtonMouse.containsMouse ? "#24151a" : "transparent")
-                                border.color: addButtonMouse.containsMouse || index === window.interaction.selectedBrowserIndex ? "#5b1d2a" : "transparent"
+                                border.color: addButtonMouse.containsMouse || index === window.screenData.selectedBrowserIndex ? "#5b1d2a" : "transparent"
                                 Label {
                                     anchors.fill: parent
                                     text: "+ Add to Kit"
-                                    color: addButtonMouse.pressed || addButtonMouse.containsMouse || index === window.interaction.selectedBrowserIndex ? window.accent : window.muted
+                                    color: addButtonMouse.pressed || addButtonMouse.containsMouse || index === window.screenData.selectedBrowserIndex ? window.accent : window.muted
                                     horizontalAlignment: Text.AlignRight
                                     verticalAlignment: Text.AlignVCenter
                                     font.pixelSize: 11
@@ -992,7 +1018,7 @@ ApplicationWindow {
                                 }
                             }
                         }
-                        Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: window.border; opacity: index === window.interaction.selectedBrowserIndex ? 0.35 : 0.8 }
+                        Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: window.border; opacity: index === window.screenData.selectedBrowserIndex ? 0.35 : 0.8 }
                     }
                 }
             }
@@ -1137,6 +1163,10 @@ def _qml_interaction_bridge(
             if on_state_changed is not None:
                 on_state_changed()
             self.state_changed.emit()
+
+        @Slot()
+        def refreshState(self) -> None:
+            self._refresh()
 
         @Property(int, notify=state_changed)
         def selectedBrowserIndex(self) -> int:
@@ -1374,6 +1404,12 @@ def _qml_engine(
     def refresh_screen_model() -> None:
         screen_model.refresh()
 
+    def refresh_browser_rows() -> None:
+        screen_model.refresh_browser_rows()
+
+    def refresh_browser_scope() -> None:
+        screen_model.refresh_browser_scope()
+
     waveform_cache = BoundedLazyWaveformCache(
         capacity=48,
         loader=lambda path: compute_waveform_envelope(path, max_points=96),
@@ -1415,7 +1451,7 @@ def _qml_engine(
                     str(row.source_row.path), cached.envelope
                 ) or changed
         if changed:
-            refresh_screen_model()
+            refresh_browser_rows()
 
     analysis_coordinator = None
 
@@ -1428,23 +1464,11 @@ def _qml_engine(
             return
         intent = library_model.state.selection_intent
         if intent is None:
-            adapter.replace_browser_scope(None)
-            runtime_composition.clear_no_scope()
-            view_model.set_browser_state(
-                rows=(),
-                selected_index=-1,
-                browser_context="No library selected",
-                error="Library-Auswahl konnte nicht aufgelöst werden.",
+            runtime_composition.clear_no_scope(
+                "Library-Auswahl konnte nicht aufgelöst werden."
             )
         else:
             state = runtime_composition.dispatch_selection(intent)
-            view_model.set_browser_state(
-                rows=state.rows,
-                selected_index=state.selected_index,
-                browser_context=state.browser_context,
-                error=state.error,
-            )
-            adapter.replace_browser_scope(intent.scope)
             if analysis_coordinator is not None and state.error is None:
                 try:
                     refresh_target = runtime_composition.refresh_target(intent.scope)
@@ -1455,8 +1479,10 @@ def _qml_engine(
                         refresh_target.folder_id,
                         str(refresh_target.normalized_path),
                     )
+        _sync_runtime_browser_state(view_model, adapter, runtime_composition)
         request_waveforms(0, 20)
-        refresh_screen_model()
+        refresh_browser_scope()
+        bridge.refreshState()
 
     def finish_analysis(folder_id: int, _result: object) -> None:
         previous_selected = (
@@ -1497,14 +1523,18 @@ def _qml_engine(
         registration = runtime_composition.register_source_for_analysis(Path(path))
         if registration is not None:
             library_model.replaceBranch("container:sample-sources")
-            library_model.selectNode(f"root:{registration.folder_id}")
+            if library_model.state.selected_node_id is None:
+                library_model.selectNode(f"root:{registration.folder_id}")
             dispatch_library_selection()
             if analysis_coordinator is not None:
                 analysis_coordinator.start(
                     registration.folder_id,
                     str(registration.normalized_path),
                 )
-        refresh_screen_model()
+        else:
+            _sync_runtime_browser_state(view_model, adapter, runtime_composition)
+            refresh_browser_scope()
+            bridge.refreshState()
         return registration is not None
 
     def prepare_remove(folder_id: int) -> object | None:
@@ -1550,6 +1580,8 @@ def _qml_engine(
         on_prepare_remove=prepare_remove,
         on_confirm_remove=confirm_remove,
     )
+    if runtime_composition is not None:
+        library_model.selection_invalidated.connect(dispatch_library_selection)
     engine.rootContext().setContextProperty("screenModel", screen_model)
     engine.rootContext().setContextProperty("interactionModel", bridge)
     engine.rootContext().setContextProperty("libraryTreeModel", library_model)
