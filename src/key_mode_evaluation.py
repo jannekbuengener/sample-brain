@@ -15,8 +15,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path, PurePath
 from typing import Any, Iterable
 
+import numpy as np
+
 from .analyze import extract_features
 from .key_signature import format_key_signature, parse_key_signature
+from .key_profile_analysis import characterize_synthetic_margins, rank_key_profiles
 
 
 _OPEN_KEY_TO_CANONICAL = {
@@ -162,6 +165,123 @@ def _comparison(sample_brain_key: str | None, traktor_key: str | None) -> dict[s
     }
 
 
+def _candidate_from_features(features: Any) -> dict[str, Any]:
+    chroma_blob = getattr(features, "chroma_mean", None)
+    chroma = np.frombuffer(chroma_blob, dtype=np.float32) if chroma_blob else ()
+    ranking = rank_key_profiles(chroma)
+    return {
+        "status": ranking.status,
+        "root": ranking.root,
+        "mode": ranking.mode,
+        "canonical_key": ranking.canonical_key,
+        "best_score": ranking.best_score,
+        "runner_up_score": ranking.runner_up_score,
+        "score_margin": ranking.margin,
+        "next_distinct_root_score": ranking.next_distinct_root_score,
+        "next_distinct_root_margin": ranking.next_distinct_root_margin,
+        "evidence_kind": ranking.evidence_kind,
+        "evidence_version": ranking.evidence_version,
+    }
+
+
+def _agreement(count: int, comparable: int) -> dict[str, int | None]:
+    return {"agreement_count": count, "comparable_count": comparable}
+
+
+def _margin_distribution(records: Iterable[dict[str, Any]]) -> dict[str, float | int | None]:
+    margins = [
+        float(record["candidate"]["score_margin"])
+        for record in records
+        if record.get("candidate") is not None
+        and record["candidate"]["score_margin"] is not None
+    ]
+    if not margins:
+        return {"count": 0, "min": None, "median": None, "p90": None, "max": None}
+    values = np.asarray(margins, dtype=np.float64)
+    return {
+        "count": int(values.size),
+        "min": float(np.min(values)),
+        "median": float(np.median(values)),
+        "p90": float(np.percentile(values, 90)),
+        "max": float(np.max(values)),
+    }
+
+
+def _ab_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    resolved = [
+        record
+        for record in records
+        if record["resolution"] == "resolved"
+        and record["sample_brain"] is not None
+        and record["candidate"] is not None
+    ]
+    keyed = [record for record in resolved if not record["traktor"]["abstained"]]
+    baseline_root = [record["comparison"]["root_match"] for record in keyed]
+    candidate_root = [record["candidate_comparison"]["root_match"] for record in keyed]
+    baseline_mode = [record["comparison"]["mode_match"] for record in keyed]
+    candidate_mode_resolved = [
+        record["candidate_comparison"]["mode_match"]
+        for record in keyed
+        if record["candidate"]["status"] == "resolved"
+    ]
+    baseline_full = [record["comparison"]["full_key_match"] for record in keyed]
+    candidate_full_resolved = [
+        record["candidate_comparison"]["full_key_match"]
+        for record in keyed
+        if record["candidate"]["status"] == "resolved"
+    ]
+    candidate_ranked_full = [record["candidate_comparison"]["full_key_match"] for record in keyed]
+    baseline_root_count = sum(item is True for item in baseline_root)
+    candidate_root_count = sum(item is True for item in candidate_root)
+    baseline_full_count = sum(item is True for item in baseline_full)
+    candidate_ranked_full_count = sum(item is True for item in candidate_ranked_full)
+    negative_controls = [record for record in resolved if record["traktor"]["abstained"]]
+    return {
+        "baseline": {
+            "root_agreement": _agreement(baseline_root_count, len(baseline_root)),
+            "mode_agreement": _agreement(sum(item is True for item in baseline_mode), sum(item is not None for item in baseline_mode)),
+            "full_key_agreement": _agreement(baseline_full_count, len(baseline_full)),
+            "abstention_count": sum(record["sample_brain"]["abstained"] for record in resolved if record["sample_brain"] is not None),
+        },
+        "candidate": {
+            "root_agreement_ranked": _agreement(candidate_root_count, len(candidate_root)),
+            "mode_agreement_resolved": _agreement(sum(item is True for item in candidate_mode_resolved), len(candidate_mode_resolved)),
+            "full_key_agreement_resolved": _agreement(sum(item is True for item in candidate_full_resolved), len(candidate_full_resolved)),
+            "full_key_agreement_ranked": _agreement(candidate_ranked_full_count, len(candidate_ranked_full)),
+            "status_counts": {
+                "resolved": sum(record["candidate"]["status"] == "resolved" for record in resolved),
+                "abstained": sum(record["candidate"]["status"] == "abstained" for record in resolved),
+                "ranked_only": sum(record["candidate"]["status"] == "ranked_only" for record in resolved),
+            },
+        },
+        "delta": {
+            "root_agreement_ranked": candidate_root_count - baseline_root_count,
+            "full_key_agreement_ranked": candidate_ranked_full_count - baseline_full_count,
+            "baseline_correct_to_candidate_wrong_root": sum(
+                baseline is True and candidate is False
+                for baseline, candidate in zip(baseline_root, candidate_root)
+            ),
+            "baseline_wrong_to_candidate_correct_root": sum(
+                baseline is False and candidate is True
+                for baseline, candidate in zip(baseline_root, candidate_root)
+            ),
+        },
+        "negative_controls": {
+            "resolved_reference_abstentions": len(negative_controls),
+            "candidate_resolved_when_reference_abstained": sum(
+                record["candidate"]["status"] == "resolved" for record in negative_controls
+            ),
+            "candidate_ranked_only_when_reference_abstained": sum(
+                record["candidate"]["status"] == "ranked_only" for record in negative_controls
+            ),
+            "candidate_abstained_when_reference_abstained": sum(
+                record["candidate"]["status"] == "abstained" for record in negative_controls
+            ),
+        },
+        "candidate_margin_distribution": _margin_distribution(resolved),
+    }
+
+
 def evaluate_reference_library(
     references: Iterable[ReferenceSample], library_samples: Iterable[LibrarySample]
 ) -> dict[str, Any]:
@@ -177,12 +297,15 @@ def evaluate_reference_library(
                 "resolution": item.reason,
                 "traktor": {"canonical_key": traktor_key, "abstained": traktor_key is None},
                 "sample_brain": None,
+                "baseline": None,
+                "candidate": None,
                 "bpm": {
                     "sample_brain_bpm": None,
                     "traktor_bpm": reference.traktor_bpm,
                     **best_bpm_relation(None, reference.traktor_bpm),
                 },
                 "comparison": {"root_match": None, "mode_match": None, "full_key_match": False},
+                "candidate_comparison": {"root_match": None, "mode_match": None, "full_key_match": False},
                 "reason": item.reason,
             })
             continue
@@ -195,12 +318,15 @@ def evaluate_reference_library(
                 "resolution": "resolved",
                 "traktor": {"canonical_key": traktor_key, "abstained": traktor_key is None},
                 "sample_brain": None,
+                "baseline": None,
+                "candidate": None,
                 "bpm": {
                     "sample_brain_bpm": None,
                     "traktor_bpm": reference.traktor_bpm,
                     **best_bpm_relation(None, reference.traktor_bpm),
                 },
                 "comparison": {"root_match": None, "mode_match": None, "full_key_match": False},
+                "candidate_comparison": {"root_match": None, "mode_match": None, "full_key_match": False},
                 "reason": "ANALYSIS_FAILED",
             })
             continue
@@ -210,6 +336,16 @@ def evaluate_reference_library(
             format_key_signature(parsed.root, parsed.mode) if parsed is not None else None
         )
         comparison = _comparison(canonical_key, traktor_key)
+        baseline = {
+            "root": parsed.root if parsed is not None else None,
+            "mode": parsed.mode if parsed is not None else None,
+            "canonical_key": canonical_key,
+            "abstained": parsed is None or parsed.mode is None,
+            "key_confidence": features.key_conf,
+            "mode_evidence": features.key_mode_evidence,
+        }
+        candidate = _candidate_from_features(features)
+        candidate_comparison = _comparison(candidate["canonical_key"], traktor_key)
         abstained = parsed is None or parsed.mode is None
         reason = (
             "TRAKTOR_ABSTAINED" if traktor_key is None else
@@ -223,20 +359,16 @@ def evaluate_reference_library(
             "file_identity": item.library_sample.path.name,
             "resolution": "resolved",
             "traktor": {"canonical_key": traktor_key, "abstained": traktor_key is None},
-            "sample_brain": {
-                "root": parsed.root if parsed is not None else None,
-                "mode": parsed.mode if parsed is not None else None,
-                "canonical_key": canonical_key,
-                "abstained": abstained,
-                "key_confidence": features.key_conf,
-                "mode_evidence": features.key_mode_evidence,
-            },
+            "sample_brain": baseline,
+            "baseline": baseline,
+            "candidate": candidate,
             "bpm": {
                 "sample_brain_bpm": features.bpm,
                 "traktor_bpm": reference.traktor_bpm,
                 **best_bpm_relation(features.bpm, reference.traktor_bpm),
             },
             "comparison": comparison,
+            "candidate_comparison": candidate_comparison,
             "reason": reason,
         })
 
@@ -252,6 +384,21 @@ def evaluate_reference_library(
                 for record in records
             ),
             "full_key_match_count": sum(record["comparison"]["full_key_match"] for record in records),
+        },
+        "ab_comparison": {
+            "overall": _ab_summary(records),
+            "tier_a": _ab_summary([
+                record for record in records if (record["reference"].get("tier") or "").casefold() == "a"
+            ]),
+            "candidate_synthetic_margin_distribution": characterize_synthetic_margins(),
+            "real_candidate_margin_distribution": {
+                "tier_a": _margin_distribution([
+                    record for record in records if (record["reference"].get("tier") or "").casefold() == "a"
+                ]),
+                "negative_controls": _margin_distribution([
+                    record for record in records if record["traktor"]["abstained"]
+                ]),
+            },
         },
     }
 
@@ -316,16 +463,46 @@ def sanitize_report(report: dict[str, Any]) -> dict[str, Any]:
             "resolution": record["resolution"],
             "traktor": record["traktor"],
             "sample_brain": record["sample_brain"],
+            "baseline": record["baseline"],
+            "candidate": record["candidate"],
             "bpm": record["bpm"],
             "comparison": record["comparison"],
+            "candidate_comparison": record["candidate_comparison"],
             "reason": record["reason"],
         })
     return {
         "schema_version": report["schema_version"],
         "selection": report.get("selection", {}),
         "summary": report["summary"],
+        "ab_comparison": report.get("ab_comparison", {}),
         "records": sanitized_records,
     }
+
+
+def format_ab_handoff(report: dict[str, Any]) -> str:
+    """Format aggregate-only A/B evidence for the Codex handoff."""
+    overall = report["ab_comparison"]["overall"]
+    tier_a = report["ab_comparison"]["tier_a"]
+
+    def agreement(value: dict[str, int | None]) -> str:
+        return f"{value['agreement_count']}/{value['comparable_count']}"
+
+    return "\n".join([
+        "KEY_PROFILE_AB_HANDOFF_V1",
+        f"reference_count={report['summary']['reference_count']}",
+        f"resolved_count={report['summary']['resolved_count']}",
+        f"baseline_root_agreement={agreement(overall['baseline']['root_agreement'])}",
+        f"candidate_ranked_root_agreement={agreement(overall['candidate']['root_agreement_ranked'])}",
+        f"ranked_root_agreement_delta={overall['delta']['root_agreement_ranked']}",
+        f"tier_a_baseline_root_agreement={agreement(tier_a['baseline']['root_agreement'])}",
+        f"tier_a_candidate_ranked_root_agreement={agreement(tier_a['candidate']['root_agreement_ranked'])}",
+        f"candidate_status_counts={json.dumps(overall['candidate']['status_counts'], sort_keys=True)}",
+        f"negative_controls={json.dumps(overall['negative_controls'], sort_keys=True)}",
+        f"synthetic_margins={json.dumps(report['ab_comparison']['candidate_synthetic_margin_distribution'], sort_keys=True)}",
+        f"real_tier_a_margins={json.dumps(report['ab_comparison']['real_candidate_margin_distribution']['tier_a'], sort_keys=True)}",
+        "candidate_is_evaluation_only=ranked_only_is_not_a_production_key_claim",
+        "",
+    ])
 
 
 def run_local_evaluation(
@@ -334,6 +511,7 @@ def run_local_evaluation(
     workbench_db: Path,
     output_json: Path,
     sanitized_output_json: Path | None = None,
+    handoff_text: Path | None = None,
     tier_a_only: bool = False,
     reference_names: Iterable[str] = (),
 ) -> dict[str, Any]:
@@ -347,6 +525,8 @@ def run_local_evaluation(
     ]
     if sanitized_output_json is not None:
         paths.append(("sanitized output JSON", sanitized_output_json))
+    if handoff_text is not None:
+        paths.append(("handoff text", handoff_text))
     for label, path in paths:
         if not _outside_checkout(path, checkout):
             raise ValueError(f"{label} must be outside the repository checkout")
@@ -366,6 +546,8 @@ def run_local_evaluation(
             json.dumps(sanitize_report(report), indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
+    if handoff_text is not None:
+        handoff_text.write_text(format_ab_handoff(report), encoding="utf-8")
     return report
 
 
@@ -378,6 +560,11 @@ def main(argv: list[str] | None = None) -> int:
         "--sanitized-output-json",
         type=Path,
         help="Optional path for a report without local sample identities; safe to return to Codex.",
+    )
+    parser.add_argument(
+        "--handoff-text",
+        type=Path,
+        help="Optional aggregate-only, path-free text summary for the Codex handoff.",
     )
     parser.add_argument("--tier-a-only", action="store_true")
     parser.add_argument(
@@ -392,6 +579,7 @@ def main(argv: list[str] | None = None) -> int:
         workbench_db=args.workbench_db,
         output_json=args.output_json,
         sanitized_output_json=args.sanitized_output_json,
+        handoff_text=args.handoff_text,
         tier_a_only=args.tier_a_only,
         reference_names=args.reference_name,
     )

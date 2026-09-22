@@ -4,17 +4,21 @@ import json
 import sqlite3
 from pathlib import Path
 
+import numpy as np
+
 from src.key_mode_evaluation import (
     LibrarySample,
     ReferenceSample,
     best_bpm_relation,
     evaluate_reference_library,
+    format_ab_handoff,
     normalize_open_key,
     resolve_reference_samples,
     run_local_evaluation,
     sanitize_report,
     select_references,
 )
+from src.key_profile_analysis import MAJOR_KEY_PROFILE
 
 
 def test_normalize_open_key_uses_canonical_parser_enharmonics() -> None:
@@ -63,6 +67,7 @@ def test_evaluation_reports_mode_abstention_without_claiming_key_match(monkeypat
         key_conf = 0.24
         key_mode = None
         key_mode_evidence = {"kind": "third_contrast", "contrast": 0.12}
+        chroma_mean = np.asarray(MAJOR_KEY_PROFILE, dtype=np.float32).tobytes()
 
     monkeypatch.setattr("src.key_mode_evaluation.extract_features", lambda *_, **__: Features())
 
@@ -73,10 +78,16 @@ def test_evaluation_reports_mode_abstention_without_claiming_key_match(monkeypat
     assert record["bpm"]["traktor_bpm"] == 100.0
     assert record["bpm"]["relation"] == "double_time"
     assert record["sample_brain"]["canonical_key"] == "C"
+    assert record["baseline"] == record["sample_brain"]
     assert record["sample_brain"]["abstained"] is True
     assert record["comparison"]["root_match"] is True
     assert record["comparison"]["mode_match"] is None
     assert record["comparison"]["full_key_match"] is False
+    assert record["candidate"]["status"] == "ranked_only"
+    assert record["candidate"]["canonical_key"] == "Cmaj"
+    assert record["candidate_comparison"]["root_match"] is True
+    assert record["candidate_comparison"]["full_key_match"] is True
+    assert report["ab_comparison"]["overall"]["candidate"]["status_counts"]["ranked_only"] == 1
 
 
 def test_run_local_evaluation_uses_explicit_external_inputs_and_writes_no_paths(
@@ -102,18 +113,21 @@ def test_run_local_evaluation_uses_explicit_external_inputs_and_writes_no_paths(
         encoding="utf-8",
     )
     output_path = tmp_path / "report.json"
+    handoff_path = tmp_path / "handoff.txt"
 
     class Features:
         bpm = 100.0
         key = "Cmaj"
         key_conf = 0.42
         key_mode_evidence = {"kind": "third_contrast", "contrast": 0.4}
+        chroma_mean = np.asarray(MAJOR_KEY_PROFILE, dtype=np.float32).tobytes()
 
     monkeypatch.setattr("src.key_mode_evaluation.extract_features", lambda *_, **__: Features())
     report = run_local_evaluation(
         reference_json=reference_path,
         workbench_db=db_path,
         output_json=output_path,
+        handoff_text=handoff_path,
         tier_a_only=True,
     )
 
@@ -121,6 +135,9 @@ def test_run_local_evaluation_uses_explicit_external_inputs_and_writes_no_paths(
     assert report["summary"]["reference_count"] == 1
     saved = output_path.read_text(encoding="utf-8")
     assert str(tmp_path) not in saved
+    handoff = handoff_path.read_text(encoding="utf-8")
+    assert "KEY_PROFILE_AB_HANDOFF_V1" in handoff
+    assert "Tier A" not in handoff
 
 
 def test_sanitized_report_has_aliases_but_no_private_names_or_paths(monkeypatch) -> None:
@@ -132,6 +149,7 @@ def test_sanitized_report_has_aliases_but_no_private_names_or_paths(monkeypatch)
         key = "Cmaj"
         key_conf = 0.42
         key_mode_evidence = {"kind": "third_contrast", "contrast": 0.4}
+        chroma_mean = np.asarray(MAJOR_KEY_PROFILE, dtype=np.float32).tobytes()
 
     monkeypatch.setattr("src.key_mode_evaluation.extract_features", lambda *_, **__: Features())
     sanitized = sanitize_report(evaluate_reference_library([reference], library))
@@ -140,4 +158,25 @@ def test_sanitized_report_has_aliases_but_no_private_names_or_paths(monkeypatch)
     assert record["sample_alias"] == "sample_001"
     assert "name" not in record["reference"]
     assert "file_identity" not in record
+    assert record["candidate"]["canonical_key"] == "Cmaj"
+    assert "ab_comparison" in sanitized
     assert "Private" not in json.dumps(sanitized)
+
+
+def test_ab_handoff_is_aggregate_only(monkeypatch) -> None:
+    reference = ReferenceSample(name="Private Sample", traktor_bpm=100.0, open_key="1d", tier="A")
+    library = [LibrarySample(path=Path("C:/private/Private Sample.wav"), display_name="Private Sample")]
+
+    class Features:
+        bpm = 100.0
+        key = "Cmaj"
+        key_conf = 0.42
+        key_mode_evidence = {"kind": "third_contrast", "contrast": 0.4}
+        chroma_mean = np.asarray(MAJOR_KEY_PROFILE, dtype=np.float32).tobytes()
+
+    monkeypatch.setattr("src.key_mode_evaluation.extract_features", lambda *_, **__: Features())
+    handoff = format_ab_handoff(evaluate_reference_library([reference], library))
+
+    assert "Private" not in handoff
+    assert "C:/private" not in handoff
+    assert "candidate_is_evaluation_only" in handoff
