@@ -113,6 +113,27 @@ def _chroma_mean(y: np.ndarray, sr: int) -> np.ndarray | None:
         return None
 
 
+def extract_chroma_statistics(y: np.ndarray, sr: int) -> tuple[np.ndarray, np.ndarray] | None:
+    """Return the exact CQT chroma mean/std pair stored by ``extract_features``.
+
+    This is intentionally evidence-only: callers must not infer a production
+    key result from it.  Keeping the aggregation here lets evaluation helpers
+    use the same sample-rate, hop length, CQT, mean, and standard-deviation
+    path as the persisted feature blobs.
+    """
+    try:
+        chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=ANALYZE_HOP_LENGTH)
+        if chroma is None or chroma.size == 0:
+            return None
+        chroma_mean = np.mean(chroma, axis=1)
+        chroma_std = np.std(chroma, axis=1)
+        if not np.isfinite(chroma_mean).all() or not np.isfinite(chroma_std).all():
+            return None
+        return chroma_mean, chroma_std
+    except Exception:
+        return None
+
+
 def estimate_key_mode(
     y: np.ndarray,
     sr: int,
@@ -352,13 +373,15 @@ def extract_features(
             mfcc_mean = None
             mfcc_std = None
 
-        try:
-            chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=ANALYZE_HOP_LENGTH)
-            chroma_mean = np.mean(chroma, axis=1).astype(np.float32).tobytes() if chroma.size else None
-            chroma_std = np.std(chroma, axis=1).astype(np.float32).tobytes() if chroma.size else None
-        except Exception:
-            chroma_mean = None
-            chroma_std = None
+        chroma_statistics = extract_chroma_statistics(y, sr)
+        chroma_mean = (
+            chroma_statistics[0].astype(np.float32).tobytes()
+            if chroma_statistics is not None else None
+        )
+        chroma_std = (
+            chroma_statistics[1].astype(np.float32).tobytes()
+            if chroma_statistics is not None else None
+        )
 
     return Features(
         bpm=bpm,

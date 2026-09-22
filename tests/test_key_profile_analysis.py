@@ -6,6 +6,7 @@ import numpy as np
 
 from src.key_profile_analysis import (
     DEFAULT_PROFILE_GATE,
+    IDEALIZED_VECTOR_PROFILE_GATE,
     MAJOR_KEY_PROFILE,
     MINOR_KEY_PROFILE,
     PROFILE_GATE_VERSION,
@@ -89,7 +90,9 @@ def test_synthetic_gate_resolves_every_clear_major_and_minor_fixture() -> None:
     assert len({fixture.root for fixture in clear if fixture.mode == "maj"}) >= 6
     assert len({fixture.root for fixture in clear if fixture.mode == "min"}) >= 6
     for fixture in clear:
-        result = gate_ranked_key_profile(fixture.chroma_mean, fixture.chroma_std)
+        result = gate_ranked_key_profile(
+            fixture.chroma_mean, fixture.chroma_std, config=IDEALIZED_VECTOR_PROFILE_GATE
+        )
         assert result.status == "resolved"
         assert result.root == fixture.root
         assert result.mode == fixture.mode
@@ -109,7 +112,9 @@ def test_synthetic_gate_abstains_for_ambiguous_and_percussive_fixtures() -> None
         "hihat_noise",
     }
     for fixture in non_tonal:
-        result = gate_ranked_key_profile(fixture.chroma_mean, fixture.chroma_std)
+        result = gate_ranked_key_profile(
+            fixture.chroma_mean, fixture.chroma_std, config=IDEALIZED_VECTOR_PROFILE_GATE
+        )
         assert result.status == "abstained", fixture.name
         assert result.abstention_reasons
 
@@ -119,13 +124,19 @@ def test_gate_evidence_is_finite_deterministic_and_transposition_safe() -> None:
         item for item in synthetic_profile_gate_fixtures()
         if item.group == "clear" and item.root == "C" and item.mode == "maj"
     )
-    first = gate_ranked_key_profile(fixture.chroma_mean, fixture.chroma_std)
-    second = gate_ranked_key_profile(fixture.chroma_mean, fixture.chroma_std)
-    transposed = gate_ranked_key_profile(np.roll(fixture.chroma_mean, 5), np.roll(fixture.chroma_std, 5))
+    first = gate_ranked_key_profile(
+        fixture.chroma_mean, fixture.chroma_std, config=IDEALIZED_VECTOR_PROFILE_GATE
+    )
+    second = gate_ranked_key_profile(
+        fixture.chroma_mean, fixture.chroma_std, config=IDEALIZED_VECTOR_PROFILE_GATE
+    )
+    transposed = gate_ranked_key_profile(
+        np.roll(fixture.chroma_mean, 5), np.roll(fixture.chroma_std, 5), config=IDEALIZED_VECTOR_PROFILE_GATE
+    )
 
     assert first == second
     assert first.gate_version == PROFILE_GATE_VERSION
-    assert first.gate_name == DEFAULT_PROFILE_GATE.name
+    assert first.gate_name == IDEALIZED_VECTOR_PROFILE_GATE.name
     assert transposed.status == "resolved"
     assert transposed.root_index == 5
     assert all(math.isfinite(value) for value in (
@@ -147,8 +158,9 @@ def test_synthetic_gate_characterization_and_selection_are_public_and_bounded() 
     assert characterization["ambiguous"]["count"] == 4
     assert characterization["percussive"]["count"] == 4
     assert set(characterization["gate_candidates"]) == {"G0", "G1", "G2", "G3", "G4"}
-    assert DEFAULT_PROFILE_GATE.name in {"G0", "G1", "G2", "G3", "G4"}
-    assert characterization["gate_candidates"][DEFAULT_PROFILE_GATE.name]["viable"] is True
+    assert IDEALIZED_VECTOR_PROFILE_GATE.name in {"G0", "G1", "G2", "G3", "G4"}
+    assert characterization["gate_candidates"][IDEALIZED_VECTOR_PROFILE_GATE.name]["viable"] is True
+    assert DEFAULT_PROFILE_GATE.name == "G0"
 
 
 def test_noise_fixtures_are_seeded_and_deterministic(tmp_path) -> None:

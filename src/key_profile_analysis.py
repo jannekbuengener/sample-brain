@@ -20,7 +20,7 @@ MINOR_KEY_PROFILE = (6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69,
 
 PROFILE_EVIDENCE_KIND = "krumhansl_kessler_pearson_ranking"
 PROFILE_EVIDENCE_VERSION = 1
-PROFILE_GATE_VERSION = "synthetic-v1-1pct"
+PROFILE_GATE_VERSION = "audio-domain-v1-1pct"
 PROFILE_GATE_SAFETY_FRACTION = 0.01
 _EPSILON = 1e-12
 _CHROMA_EPSILON = 1e-8
@@ -268,8 +268,9 @@ def _threshold_from_clear(values: list[float], *, lower: float, upper: float, va
     return max(lower, min(upper, min(values) - value_range * PROFILE_GATE_SAFETY_FRACTION))
 
 
-def _calibration_configurations() -> tuple[ProfileGateConfig, ...]:
-    fixtures = synthetic_profile_gate_fixtures()
+def _calibration_configurations(
+    fixtures: tuple[SyntheticProfileFixture, ...],
+) -> tuple[ProfileGateConfig, ...]:
     probe = ProfileGateConfig("probe", (), -1.0, -1.0, 0.0, 0.0)
     clear_evidence = [
         evidence for fixture in fixtures if fixture.group == "clear"
@@ -295,8 +296,8 @@ def _calibration_configurations() -> tuple[ProfileGateConfig, ...]:
     )
 
 
-def _is_viable_synthetic_gate(config: ProfileGateConfig) -> bool:
-    for fixture in synthetic_profile_gate_fixtures():
+def _is_viable_gate(config: ProfileGateConfig, fixtures: tuple[SyntheticProfileFixture, ...]) -> bool:
+    for fixture in fixtures:
         result = _gate_with_config(fixture.chroma_mean, fixture.chroma_std, config)
         if fixture.group == "clear":
             if result.status != "resolved" or result.root != fixture.root or result.mode != fixture.mode:
@@ -306,28 +307,73 @@ def _is_viable_synthetic_gate(config: ProfileGateConfig) -> bool:
     return True
 
 
-def _select_synthetic_gate() -> ProfileGateConfig:
-    for config in _calibration_configurations():
-        if _is_viable_synthetic_gate(config):
+def calibrate_profile_gate(fixtures: tuple[SyntheticProfileFixture, ...]) -> ProfileGateConfig:
+    """Derive the bounded gate family from public audio or vector evidence only."""
+    for config in _calibration_configurations(fixtures):
+        if _is_viable_gate(config, fixtures):
             return config
     return ProfileGateConfig("NO_DEFENSIBLE_SYNTHETIC_GATE", (), 2.0, 1.0, 1.0, 1.0)
 
 
-DEFAULT_PROFILE_GATE = _select_synthetic_gate()
+IDEALIZED_VECTOR_PROFILE_GATE = calibrate_profile_gate(synthetic_profile_gate_fixtures())
+# Frozen from the public deterministic WAV corpus in
+# tests/test_key_profile_audio_calibration.py.  The verification contract
+# recomputes this from generated audio through the analyzer CQT helper; runtime
+# code never imports test fixtures.
+DEFAULT_PROFILE_GATE = ProfileGateConfig(
+    "G0",
+    ("margin",),
+    margin_threshold=0.16432003592686353,
+    best_score_threshold=0.8350225396361285,
+    concentration_threshold=0.3505447488736721,
+    stability_threshold=0.3548875696901258,
+)
+
+
+def audio_domain_calibration_reference() -> dict[str, object]:
+    """Frozen public WAV-CQT calibration envelope for evaluator handoff output."""
+    return {
+        "source": "public_deterministic_wav_cqt",
+        "selected_gate": DEFAULT_PROFILE_GATE.name,
+        "thresholds": {
+            "margin": DEFAULT_PROFILE_GATE.margin_threshold,
+            "best_profile_score": DEFAULT_PROFILE_GATE.best_score_threshold,
+            "chroma_concentration": DEFAULT_PROFILE_GATE.concentration_threshold,
+            "temporal_stability": DEFAULT_PROFILE_GATE.stability_threshold,
+        },
+        "clear": {
+            "count": 12,
+            "margin": {"min": 0.18432003592686352, "median": 0.28624766380590927, "p90": 0.37944626497118444, "max": 0.3805464098328807},
+            "temporal_stability": {"min": 0.3648875696901258, "median": 0.4067439866319387, "p90": 0.4402038842853932, "max": 0.44616750883721773},
+        },
+        "ambiguous": {
+            "count": 4,
+            "margin": {"min": 0.0014303491880615082, "median": 0.030954842993763332, "p90": 0.07687600334832993, "max": 0.08396014804698926},
+            "temporal_stability": {"min": 0.2994473086444848, "median": 0.33429368863171594, "p90": 0.3999573429872204, "max": 0.41731841201863645},
+        },
+        "percussive": {
+            "count": 4,
+            "margin": {"min": 0.027498045189349674, "median": 0.051928726131289044, "p90": 0.08190282663531909, "max": 0.09317475792345759},
+            "temporal_stability": {"min": 0.8337058632911342, "median": 0.8708261642375736, "p90": 0.8826969986887959, "max": 0.8861465230909632},
+        },
+    }
 
 
 def gate_ranked_key_profile(
     chroma_mean: np.ndarray | tuple[float, ...] | list[float],
     chroma_std: np.ndarray | tuple[float, ...] | list[float],
+    *,
+    config: ProfileGateConfig | None = None,
 ) -> GatedKeyProfileResult:
     """Resolve a raw ranking only when the selected synthetic gate passes."""
-    if DEFAULT_PROFILE_GATE.name == "NO_DEFENSIBLE_SYNTHETIC_GATE":
-        _, evidence = _evidence_for(chroma_mean, chroma_std, DEFAULT_PROFILE_GATE)
+    selected = config or DEFAULT_PROFILE_GATE
+    if selected.name == "NO_DEFENSIBLE_SYNTHETIC_GATE":
+        _, evidence = _evidence_for(chroma_mean, chroma_std, selected)
         return GatedKeyProfileResult(
             "abstained", None, None, None, None, ("no_defensible_synthetic_gate",),
-            DEFAULT_PROFILE_GATE.name, DEFAULT_PROFILE_GATE.version, evidence,
+            selected.name, selected.version, evidence,
         )
-    return _gate_with_config(chroma_mean, chroma_std, DEFAULT_PROFILE_GATE)
+    return _gate_with_config(chroma_mean, chroma_std, selected)
 
 
 def _distribution(values: list[float]) -> dict[str, float | int | None]:
@@ -393,17 +439,58 @@ def characterize_synthetic_gate() -> dict[str, dict]:
                 "best_score_threshold": config.best_score_threshold,
                 "concentration_threshold": config.concentration_threshold,
                 "stability_threshold": config.stability_threshold,
-                "viable": _is_viable_synthetic_gate(config),
+                "viable": _is_viable_gate(config, synthetic_profile_gate_fixtures()),
             }
-            for config in _calibration_configurations()
+            for config in _calibration_configurations(synthetic_profile_gate_fixtures())
+        },
+    }
+
+
+def characterize_profile_gate_fixtures(
+    fixtures: tuple[SyntheticProfileFixture, ...],
+) -> dict[str, dict]:
+    """Characterize any public fixture corpus with the gate's exact evidence."""
+    grouped: dict[str, list[ProfileGateEvidence]] = {"clear": [], "ambiguous": [], "percussive": []}
+    probe = ProfileGateConfig("probe", (), -1.0, -1.0, 0.0, 0.0)
+    for fixture in fixtures:
+        _, evidence = _evidence_for(fixture.chroma_mean, fixture.chroma_std, probe)
+        if evidence is not None:
+            grouped[fixture.group].append(evidence)
+
+    def describe(items: list[ProfileGateEvidence]) -> dict:
+        return {
+            "count": len(items),
+            "best_score": _distribution([item.best_score for item in items]),
+            "margin": _distribution([item.margin for item in items]),
+            "normalized_entropy": _distribution([item.normalized_entropy for item in items]),
+            "dominant_pitch_class_concentration": _distribution([item.dominant_pitch_class_concentration for item in items]),
+            "temporal_stability": _distribution([item.temporal_stability for item in items]),
+        }
+
+    configurations = _calibration_configurations(fixtures)
+    return {
+        "clear": describe(grouped["clear"]),
+        "ambiguous": describe(grouped["ambiguous"]),
+        "percussive": describe(grouped["percussive"]),
+        "gate_candidates": {
+            config.name: {
+                "required_conditions": list(config.required_conditions),
+                "margin_threshold": config.margin_threshold,
+                "best_score_threshold": config.best_score_threshold,
+                "concentration_threshold": config.concentration_threshold,
+                "stability_threshold": config.stability_threshold,
+                "viable": _is_viable_gate(config, fixtures),
+            }
+            for config in configurations
         },
     }
 
 
 __all__ = [
-    "DEFAULT_PROFILE_GATE", "GatedKeyProfileResult", "KeyProfileHypothesis", "KeyProfileRanking",
+    "DEFAULT_PROFILE_GATE", "IDEALIZED_VECTOR_PROFILE_GATE", "GatedKeyProfileResult", "KeyProfileHypothesis", "KeyProfileRanking",
     "MAJOR_KEY_PROFILE", "MINOR_KEY_PROFILE", "PROFILE_EVIDENCE_KIND", "PROFILE_EVIDENCE_VERSION",
     "PROFILE_GATE_VERSION", "PITCH_CLASSES", "ProfileGateConfig", "ProfileGateEvidence",
-    "SyntheticProfileFixture", "characterize_synthetic_gate", "characterize_synthetic_margins",
-    "gate_ranked_key_profile", "rank_key_profiles", "synthetic_profile_gate_fixtures",
+    "SyntheticProfileFixture", "calibrate_profile_gate", "characterize_profile_gate_fixtures",
+    "characterize_synthetic_gate", "characterize_synthetic_margins", "gate_ranked_key_profile",
+    "rank_key_profiles", "synthetic_profile_gate_fixtures",
 ]

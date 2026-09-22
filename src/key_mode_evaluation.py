@@ -20,6 +20,7 @@ import numpy as np
 from .analyze import extract_features
 from .key_signature import format_key_signature, parse_key_signature
 from .key_profile_analysis import (
+    audio_domain_calibration_reference,
     characterize_synthetic_gate,
     characterize_synthetic_margins,
     gate_ranked_key_profile,
@@ -473,6 +474,7 @@ def evaluate_reference_library(
             ]),
             "candidate_synthetic_margin_distribution": characterize_synthetic_margins(),
             "candidate_synthetic_gate_characterization": characterize_synthetic_gate(),
+            "candidate_audio_domain_gate_characterization": audio_domain_calibration_reference(),
             "real_candidate_margin_distribution": {
                 "tier_a": _margin_distribution([
                     record for record in records if (record["reference"].get("tier") or "").casefold() == "a"
@@ -588,6 +590,7 @@ def format_ab_handoff(report: dict[str, Any]) -> str:
         f"negative_controls={json.dumps(overall['negative_controls'], sort_keys=True)}",
         f"synthetic_margins={json.dumps(report['ab_comparison']['candidate_synthetic_margin_distribution'], sort_keys=True)}",
         f"synthetic_gate={json.dumps(report['ab_comparison']['candidate_synthetic_gate_characterization']['gate_candidates'], sort_keys=True)}",
+        f"audio_domain_gate={json.dumps(report['ab_comparison']['candidate_audio_domain_gate_characterization'], sort_keys=True)}",
         f"real_tier_a_margins={json.dumps(report['ab_comparison']['real_candidate_margin_distribution']['tier_a'], sort_keys=True)}",
         "candidate_is_evaluation_only=ranked_only_is_not_a_production_key_claim",
         "",
