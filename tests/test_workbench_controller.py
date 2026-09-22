@@ -1639,3 +1639,116 @@ def test_format_playlist_load_status():
         status="ok",
     )
     assert format_playlist_load_status("Song A", [row]) == 'Playlist "Song A" geladen: 1 Samples'
+
+
+def test_all_library_excludes_stale_analyzer_cache_rows(tmp_path: Path):
+    from src.workbench_controller import load_all_cached_rows
+    from src.workbench_library import (
+        upsert_folder,
+        upsert_sample,
+        workbench_library_db_path,
+    )
+
+    db_path = workbench_library_db_path()
+    folder = tmp_path / "aggregate"
+    folder.mkdir()
+    current_file = folder / "current.wav"
+    stale_file = folder / "stale.wav"
+    current_file.write_bytes(b"wav")
+    stale_file.write_bytes(b"wav")
+    folder_id = upsert_folder(folder, db_path=db_path)
+
+    current = WorkbenchRow(
+        display_name="current",
+        relative_path="current.wav",
+        path=str(current_file),
+        bpm=128.0,
+        key="Cmaj",
+        key_conf=0.9,
+        loudness=-12.0,
+        brightness=1200.0,
+        sample_class="loop",
+        pred_type="Melodic",
+        status="ok",
+    )
+    stale = WorkbenchRow(
+        display_name="stale",
+        relative_path="stale.wav",
+        path=str(stale_file),
+        bpm=128.0,
+        key="C",
+        key_conf=0.9,
+        loudness=-12.0,
+        brightness=1200.0,
+        sample_class="loop",
+        pred_type="Melodic",
+        status="ok",
+    )
+    upsert_sample(
+        folder_id,
+        current,
+        size_bytes=current_file.stat().st_size,
+        mtime_ns=current_file.stat().st_mtime_ns,
+        db_path=db_path,
+    )
+    upsert_sample(
+        folder_id,
+        stale,
+        size_bytes=stale_file.stat().st_size,
+        mtime_ns=stale_file.stat().st_mtime_ns,
+        db_path=db_path,
+        analyzer_version="workbench_v1",
+    )
+
+    rows = load_all_cached_rows(library_db_path=db_path)
+
+    assert [Path(row.path).name for row in rows] == ["current.wav"]
+    assert rows[0].key == "Cmaj"
+
+
+def test_playlist_does_not_surface_stale_analyzer_metadata(tmp_path: Path):
+    from src.workbench_library import (
+        add_sample_to_playlist,
+        create_playlist,
+        upsert_folder,
+        upsert_sample,
+        workbench_library_db_path,
+    )
+
+    db_path = workbench_library_db_path()
+    folder = tmp_path / "playlist-stale"
+    folder.mkdir()
+    sample = folder / "stale.wav"
+    sample.write_bytes(b"wav")
+    folder_id = upsert_folder(folder, db_path=db_path)
+
+    stale = WorkbenchRow(
+        display_name="stale",
+        relative_path="stale.wav",
+        path=str(sample),
+        bpm=128.0,
+        key="C",
+        key_conf=0.9,
+        loudness=-12.0,
+        brightness=1200.0,
+        sample_class="loop",
+        pred_type="Melodic",
+        status="ok",
+    )
+    upsert_sample(
+        folder_id,
+        stale,
+        size_bytes=sample.stat().st_size,
+        mtime_ns=sample.stat().st_mtime_ns,
+        db_path=db_path,
+        analyzer_version="workbench_v1",
+    )
+    playlist = create_playlist("Stale Set", db_path=db_path)
+    add_sample_to_playlist(playlist.id, sample, db_path=db_path)
+
+    rows = load_playlist_workbench_rows("Stale Set", library_db_path=db_path)
+
+    assert len(rows) == 1
+    assert rows[0].bpm is None
+    assert rows[0].key is None
+    assert rows[0].details["song_playlist"] == "Stale Set"
