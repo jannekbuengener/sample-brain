@@ -301,18 +301,53 @@ def _outside_checkout(path: Path, checkout: Path) -> bool:
     return not path.resolve().is_relative_to(checkout)
 
 
+def sanitize_report(report: dict[str, Any]) -> dict[str, Any]:
+    """Remove local file identities before a report leaves the operator host."""
+    sanitized_records: list[dict[str, Any]] = []
+    for index, record in enumerate(report["records"], start=1):
+        reference = record["reference"]
+        sanitized_records.append({
+            "sample_alias": f"sample_{index:03d}",
+            "reference": {
+                "traktor_bpm": reference["traktor_bpm"],
+                "open_key": reference["open_key"],
+                "tier": reference["tier"],
+            },
+            "resolution": record["resolution"],
+            "traktor": record["traktor"],
+            "sample_brain": record["sample_brain"],
+            "bpm": record["bpm"],
+            "comparison": record["comparison"],
+            "reason": record["reason"],
+        })
+    return {
+        "schema_version": report["schema_version"],
+        "selection": report.get("selection", {}),
+        "summary": report["summary"],
+        "records": sanitized_records,
+    }
+
+
 def run_local_evaluation(
     *,
     reference_json: Path,
     workbench_db: Path,
     output_json: Path,
+    sanitized_output_json: Path | None = None,
     tier_a_only: bool = False,
     reference_names: Iterable[str] = (),
 ) -> dict[str, Any]:
     """Run the evaluation using only explicit external local paths."""
     selected_names = tuple(reference_names)
     checkout = Path.cwd().resolve()
-    for label, path in (("reference JSON", reference_json), ("Workbench library database", workbench_db), ("output JSON", output_json)):
+    paths = [
+        ("reference JSON", reference_json),
+        ("Workbench library database", workbench_db),
+        ("output JSON", output_json),
+    ]
+    if sanitized_output_json is not None:
+        paths.append(("sanitized output JSON", sanitized_output_json))
+    for label, path in paths:
         if not _outside_checkout(path, checkout):
             raise ValueError(f"{label} must be outside the repository checkout")
     selected = select_references(
@@ -326,6 +361,11 @@ def run_local_evaluation(
         "reference_names": sorted({name.casefold() for name in selected_names}),
     }
     output_json.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    if sanitized_output_json is not None:
+        sanitized_output_json.write_text(
+            json.dumps(sanitize_report(report), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
     return report
 
 
@@ -334,6 +374,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--reference-json", type=Path, required=True)
     parser.add_argument("--workbench-db", type=Path, required=True)
     parser.add_argument("--output-json", type=Path, required=True)
+    parser.add_argument(
+        "--sanitized-output-json",
+        type=Path,
+        help="Optional path for a report without local sample identities; safe to return to Codex.",
+    )
     parser.add_argument("--tier-a-only", action="store_true")
     parser.add_argument(
         "--reference-name",
@@ -346,6 +391,7 @@ def main(argv: list[str] | None = None) -> int:
         reference_json=args.reference_json,
         workbench_db=args.workbench_db,
         output_json=args.output_json,
+        sanitized_output_json=args.sanitized_output_json,
         tier_a_only=args.tier_a_only,
         reference_names=args.reference_name,
     )

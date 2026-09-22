@@ -12,6 +12,7 @@ from src.key_mode_evaluation import (
     normalize_open_key,
     resolve_reference_samples,
     run_local_evaluation,
+    sanitize_report,
     select_references,
 )
 
@@ -120,3 +121,23 @@ def test_run_local_evaluation_uses_explicit_external_inputs_and_writes_no_paths(
     assert report["summary"]["reference_count"] == 1
     saved = output_path.read_text(encoding="utf-8")
     assert str(tmp_path) not in saved
+
+
+def test_sanitized_report_has_aliases_but_no_private_names_or_paths(monkeypatch) -> None:
+    reference = ReferenceSample(name="Private Sample", traktor_bpm=100.0, open_key="1d", tier="A")
+    library = [LibrarySample(path=Path("C:/private/Private Sample.wav"), display_name="Private Sample")]
+
+    class Features:
+        bpm = 100.0
+        key = "Cmaj"
+        key_conf = 0.42
+        key_mode_evidence = {"kind": "third_contrast", "contrast": 0.4}
+
+    monkeypatch.setattr("src.key_mode_evaluation.extract_features", lambda *_, **__: Features())
+    sanitized = sanitize_report(evaluate_reference_library([reference], library))
+    record = sanitized["records"][0]
+
+    assert record["sample_alias"] == "sample_001"
+    assert "name" not in record["reference"]
+    assert "file_identity" not in record
+    assert "Private" not in json.dumps(sanitized)
