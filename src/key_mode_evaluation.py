@@ -258,6 +258,14 @@ def _margin_distribution(records: Iterable[dict[str, Any]]) -> dict[str, float |
     }
 
 
+def _distribution(values: Iterable[float | None]) -> dict[str, float | int | None]:
+    finite = [float(value) for value in values if value is not None and math.isfinite(float(value))]
+    if not finite:
+        return {"count": 0, "min": None, "median": None, "p90": None, "max": None}
+    array = np.asarray(finite, dtype=np.float64)
+    return {"count": int(array.size), "min": float(np.min(array)), "median": float(np.median(array)), "p90": float(np.percentile(array, 90)), "max": float(np.max(array))}
+
+
 def _ab_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     resolved = [
         record
@@ -282,6 +290,9 @@ def _ab_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
         if record["candidate"]["status"] == "resolved"
     ]
     candidate_ranked_full = [record["candidate_comparison"]["full_key_match"] for record in keyed]
+    harmonic_root = [_comparison(record["candidate_harmonic_profile"]["canonical_key"], record["traktor"]["canonical_key"])["root_match"] for record in keyed]
+    harmonic_mode = [_comparison(record["candidate_harmonic_profile"]["canonical_key"], record["traktor"]["canonical_key"])["mode_match"] for record in keyed]
+    harmonic_full = [_comparison(record["candidate_harmonic_profile"]["canonical_key"], record["traktor"]["canonical_key"])["full_key_match"] for record in keyed]
     gated_resolved = [record for record in keyed if record["candidate_gated"]["status"] == "resolved"]
     gated_root = [record["candidate_gated_comparison"]["root_match"] for record in gated_resolved]
     gated_mode = [record["candidate_gated_comparison"]["mode_match"] for record in gated_resolved]
@@ -308,6 +319,12 @@ def _ab_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
                 "abstained": sum(record["candidate"]["status"] == "abstained" for record in resolved),
                 "ranked_only": sum(record["candidate"]["status"] == "ranked_only" for record in resolved),
             },
+        },
+        "candidate_harmonic_profile": {
+            "root_agreement_ranked": _agreement(sum(item is True for item in harmonic_root), len(harmonic_root)),
+            "mode_agreement_ranked": _agreement(sum(item is True for item in harmonic_mode), sum(item is not None for item in harmonic_mode)),
+            "full_key_agreement_ranked": _agreement(sum(item is True for item in harmonic_full), len(harmonic_full)),
+            "status_counts": {"ranked_only": sum(record["candidate_harmonic_profile"]["status"] == "ranked_only" for record in resolved), "abstained": sum(record["candidate_harmonic_profile"]["status"] == "abstained" for record in resolved)},
         },
         "candidate_gated": {
             "root_agreement_resolved": _agreement(sum(item is True for item in gated_root), len(gated_root)),
@@ -346,6 +363,10 @@ def _ab_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
                 and record["candidate_gated"]["status"] == "abstained"
                 for record in keyed
             ),
+            "full_correct_to_harmonic_correct_root": sum(full is True and harmonic is True for full, harmonic in zip(candidate_root, harmonic_root)),
+            "full_correct_to_harmonic_wrong_root": sum(full is True and harmonic is False for full, harmonic in zip(candidate_root, harmonic_root)),
+            "full_wrong_to_harmonic_correct_root": sum(full is False and harmonic is True for full, harmonic in zip(candidate_root, harmonic_root)),
+            "full_wrong_to_harmonic_wrong_root": sum(full is False and harmonic is False for full, harmonic in zip(candidate_root, harmonic_root)),
         },
         "negative_controls": {
             "resolved_reference_abstentions": len(negative_controls),
@@ -364,6 +385,15 @@ def _ab_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
             "candidate_gated_abstained_when_reference_abstained": sum(
                 record["candidate_gated"]["status"] == "abstained" for record in negative_controls
             ),
+            "full_profile_margin_distribution": _margin_distribution(negative_controls),
+            "harmonic_profile_margin_distribution": _distribution([
+                record["candidate_harmonic_profile"]["margin"] for record in negative_controls
+                if record["candidate_harmonic_profile"] is not None and record["candidate_harmonic_profile"]["margin"] is not None
+            ]),
+            "harmonic_energy_fraction_distribution": _distribution([
+                record["candidate_harmonic_profile"]["harmonic_energy_fraction"] for record in negative_controls
+                if record["candidate_harmonic_profile"] is not None
+            ]),
         },
         "candidate_margin_distribution": _margin_distribution(resolved),
     }
