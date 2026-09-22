@@ -19,7 +19,7 @@ from .workbench_controller import (
     validate_workbench_folder,
     workbench_scope_requires_refresh,
 )
-from .workbench_library import workbench_library_db_path
+from .workbench_library import WORKBENCH_ANALYZER_VERSION, workbench_library_db_path
 from .workbench_library_navigation import WorkbenchLibraryNavigation
 from .workbench_qml_library import LibrarySelectionIntent, WorkbenchLibraryTreeState
 from .workbench_library_navigation import LibraryScope, LibraryScopeKind
@@ -309,7 +309,7 @@ class Screen1QmlRuntimeComposition:
                 return None
         if self.browser_state.scope == scope and self.browser_state.error is None:
             needs_refresh = any(
-                row.details.get("analyzer_version") != "workbench_v2"
+                row.details.get("analyzer_version") != WORKBENCH_ANALYZER_VERSION
                 and Path(row.path).is_file()
                 for row in self.browser_state.rows
             )
