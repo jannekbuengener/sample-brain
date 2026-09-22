@@ -10,6 +10,7 @@ import pytest
 from src.fsld_current_analyzer_eval import (
     FsldCurrentAnalyzerEvalError,
     evaluate_current_analyzer,
+    main,
     run_current_analyzer_evaluation,
 )
 from src.fsld_human_manifest import canonical_manifest_bytes
@@ -125,9 +126,42 @@ def test_runner_uses_only_id_wav_mapping_and_keeps_missing_audio_without_paths(
     assert [record["public_sample_id"] for record in result["records"]] == ["2", "10"]
     assert result["records"][1]["status"] == "missing_audio"
     assert result["records"][1]["exclusion_reason"] == "audio_missing"
+    assert result["run_status"] == "EVALUATED"
     encoded = json.dumps(result, sort_keys=True)
     assert str(audio_root) not in encoded
     assert "2.wav" not in encoded
+
+
+@pytest.mark.parametrize("audio_root_name", ("missing-audio", "empty-audio"))
+def test_zero_audio_is_explicitly_non_baseline_and_cli_is_non_success(
+    tmp_path: Path, audio_root_name: str
+) -> None:
+    manifest_path, sidecar_path = _write_manifest(tmp_path, [_record("10"), _record("11")])
+    audio_root = tmp_path / audio_root_name
+    if audio_root_name == "empty-audio":
+        audio_root.mkdir()
+    output_path = tmp_path.parent / f"{audio_root_name}-result.json"
+
+    result = evaluate_current_analyzer(
+        audio_root=audio_root,
+        split="TEST",
+        manifest_path=manifest_path,
+        sha256_path=sidecar_path,
+    )
+
+    assert result["run_status"] == "PUBLIC_AUDIO_NOT_AVAILABLE_LOCALLY"
+    assert result["metrics"] is None
+    assert [record["status"] for record in result["records"]] == ["missing_audio", "missing_audio"]
+    assert main([
+        "--audio-root", str(audio_root),
+        "--split", "TEST",
+        "--output", str(output_path),
+        "--manifest", str(manifest_path),
+        "--sha256", str(sidecar_path),
+    ]) != 0
+    written = json.loads(output_path.read_text(encoding="utf-8"))
+    assert written["run_status"] == "PUBLIC_AUDIO_NOT_AVAILABLE_LOCALLY"
+    assert written["metrics"] is None
 
 
 def test_runner_rejects_output_inside_repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -181,6 +215,7 @@ def test_metrics_remain_separate_by_annotation_tier_and_follow_evidence(
     )
 
     ma = result["metrics"]["ma"]
+    assert result["run_status"] == "EVALUATED"
     assert ma["key_root"] == {"eligible": 2, "predicted": 2, "exact": 2, "exact_rate": 1.0}
     assert ma["full_key"] == {"eligible": 2, "predicted": 1, "exact": 1, "exact_rate": 0.5}
     assert ma["tempo"]["relation_counts"]["correct"] == 1

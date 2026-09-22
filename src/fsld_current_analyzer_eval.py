@@ -37,6 +37,8 @@ DEFAULT_SHA256_PATH = REPOSITORY_ROOT / "data" / "benchmarks" / "fsld_human_mani
 DOCUMENT_TYPE = "sample_brain.fsld_current_analyzer_eval"
 SCHEMA_VERSION = "1.0.0"
 ANALYZER_ID = "sample_brain.analyze.extract_features"
+EVALUATED_RUN_STATUS = "EVALUATED"
+PUBLIC_AUDIO_NOT_AVAILABLE_LOCALLY = "PUBLIC_AUDIO_NOT_AVAILABLE_LOCALLY"
 RUNTIME_DISTRIBUTIONS = ("librosa", "numpy", "soundfile")
 RELATION_CLASSES = ("correct", "half", "double", "ambiguous", "outlier")
 
@@ -288,13 +290,19 @@ def evaluate_current_analyzer(
     selected.sort(key=_record_key)
     libraries = _runtime_libraries()
     records = [_analyze_record(record, Path(audio_root), libraries) for record in selected]
+    has_successful_analysis = any(record["status"] == "ok" for record in records)
     return {
         "document_type": DOCUMENT_TYPE,
         "schema_version": SCHEMA_VERSION,
         "split": split,
+        "run_status": (
+            EVALUATED_RUN_STATUS
+            if has_successful_analysis
+            else PUBLIC_AUDIO_NOT_AVAILABLE_LOCALLY
+        ),
         "manifest_sha256": hashlib.sha256(canonical_manifest_bytes(manifest)).hexdigest(),
         "records": records,
-        "metrics": _metrics(records),
+        "metrics": _metrics(records) if has_successful_analysis else None,
     }
 
 
@@ -338,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     try:
-        run_current_analyzer_evaluation(
+        result = run_current_analyzer_evaluation(
             audio_root=args.audio_root,
             split=args.split,
             output_path=args.output,
@@ -347,6 +355,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     except FsldCurrentAnalyzerEvalError as exc:
         parser.error(str(exc))
+    if result["run_status"] == PUBLIC_AUDIO_NOT_AVAILABLE_LOCALLY:
+        return 3
     return 0
 
 

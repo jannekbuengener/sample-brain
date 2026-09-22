@@ -36,6 +36,14 @@ Jeder Record des gewählten Splits erscheint genau einmal in numerischer
 als statusbehaftete Records erhalten. Der Output enthält keine lokalen Pfade,
 Dateinamen, Audioinhalte, Dateihashes, Host- oder Hardwaredaten.
 
+Wenn kein einziger Record erfolgreich analysiert werden konnte, ist
+`run_status` zwingend `PUBLIC_AUDIO_NOT_AVAILABLE_LOCALLY`, `metrics` ist
+`null` und die CLI endet mit einem Non-Success-Exitcode. Das verhindert, dass
+ein leerer, falscher oder fehlender Audio-Root als 0%-Dataset-Baseline gelesen
+wird. Sobald mindestens ein Record `status=ok` erreicht, lautet der Status
+`EVALUATED`; fehlende weitere Audios bleiben weiterhin einzelne Records und
+die normalen Metriken gelten unverändert.
+
 Pro Record enthält der Report die unveränderte Manifest-Ground-Truth,
 Analyzer-/Runtime-Provenance, Predictions, native Key-/Mode-Evidence,
 Laufzeit sowie Status und Exclusion Reason. `predicted_key_root` wird aus dem
