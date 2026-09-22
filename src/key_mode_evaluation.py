@@ -18,6 +18,7 @@ from typing import Any, Iterable
 import numpy as np
 
 from .analyze import extract_features
+from .key_profile_audio_calibration import extract_harmonic_chroma_evidence
 from .key_signature import format_key_signature, parse_key_signature
 from .key_profile_analysis import (
     audio_domain_calibration_reference,
@@ -219,6 +220,21 @@ def _gated_candidate_from_features(features: Any) -> dict[str, Any]:
     }
 
 
+def _harmonic_candidate(path: Path) -> dict[str, Any]:
+    evidence = extract_harmonic_chroma_evidence(path)
+    ranking = rank_key_profiles(evidence.chroma_mean if evidence.chroma_mean is not None else ())
+    return {
+        "status": ranking.status, "root": ranking.root, "mode": ranking.mode,
+        "canonical_key": ranking.canonical_key, "best_score": ranking.best_score,
+        "runner_up_score": ranking.runner_up_score, "margin": ranking.margin,
+        "next_distinct_root_margin": ranking.next_distinct_root_margin,
+        "harmonic_rms": evidence.harmonic_rms, "percussive_rms": evidence.percussive_rms,
+        "harmonic_energy_fraction": evidence.harmonic_energy_fraction,
+        "evidence_kind": "hpss_harmonic_" + ranking.evidence_kind,
+        "evidence_version": ranking.evidence_version,
+    }
+
+
 def _agreement(count: int, comparable: int) -> dict[str, int | None]:
     return {"agreement_count": count, "comparable_count": comparable}
 
@@ -371,6 +387,7 @@ def evaluate_reference_library(
                 "baseline": None,
                 "candidate": None,
                 "candidate_profile": None,
+                "candidate_harmonic_profile": None,
                 "candidate_gated": None,
                 "bpm": {
                     "sample_brain_bpm": None,
@@ -395,6 +412,7 @@ def evaluate_reference_library(
                 "baseline": None,
                 "candidate": None,
                 "candidate_profile": None,
+                "candidate_harmonic_profile": None,
                 "candidate_gated": None,
                 "bpm": {
                     "sample_brain_bpm": None,
@@ -422,6 +440,7 @@ def evaluate_reference_library(
             "mode_evidence": features.key_mode_evidence,
         }
         candidate = _candidate_from_features(features)
+        harmonic_candidate = _harmonic_candidate(item.library_sample.path)
         candidate_gated = _gated_candidate_from_features(features)
         candidate_comparison = _comparison(candidate["canonical_key"], traktor_key)
         candidate_gated_comparison = _comparison(candidate_gated["canonical_key"], traktor_key)
@@ -442,6 +461,7 @@ def evaluate_reference_library(
             "baseline": baseline,
             "candidate": candidate,
             "candidate_profile": candidate,
+            "candidate_harmonic_profile": harmonic_candidate,
             "candidate_gated": candidate_gated,
             "bpm": {
                 "sample_brain_bpm": features.bpm,
@@ -550,6 +570,7 @@ def sanitize_report(report: dict[str, Any]) -> dict[str, Any]:
             "baseline": record["baseline"],
             "candidate": record["candidate"],
             "candidate_profile": record["candidate_profile"],
+            "candidate_harmonic_profile": record["candidate_harmonic_profile"],
             "candidate_gated": record["candidate_gated"],
             "bpm": record["bpm"],
             "comparison": record["comparison"],
