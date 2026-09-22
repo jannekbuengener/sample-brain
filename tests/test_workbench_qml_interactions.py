@@ -159,6 +159,22 @@ def test_escape_stops_only_an_active_preview():
     assert fixture.browser_rows[2] is not None
 
 
+def test_scope_invalidation_stops_active_preview_before_clearing_state():
+    stops = []
+    _fixture, _view_model, adapter = _adapter(
+        preview_command=lambda _row: None,
+        preview_stop=lambda: stops.append("stop"),
+    )
+
+    adapter.preview_row(2)
+    assert adapter.preview_active is True
+
+    adapter.replace_browser_scope(object())
+
+    assert stops == ["stop"]
+    assert adapter.preview_active is False
+
+
 def test_add_to_kit_emits_intent_without_assigning_live_kit():
     added = []
     fixture, view_model, adapter = _adapter(add_to_kit_command=added.append)
