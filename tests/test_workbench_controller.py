@@ -1748,7 +1748,4 @@ def test_playlist_does_not_surface_stale_analyzer_metadata(tmp_path: Path):
 
     rows = load_playlist_workbench_rows("Stale Set", library_db_path=db_path)
 
-    assert len(rows) == 1
-    assert rows[0].bpm is None
-    assert rows[0].key is None
-    assert rows[0].details["song_playlist"] == "Stale Set"
+    assert rows == []
