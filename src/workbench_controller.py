@@ -1380,7 +1380,11 @@ def load_all_cached_rows(
     """Load cached analysis rows from every registered workbench library folder."""
     db = library_db_path if library_db_path is not None else workbench_library_db_path()
     cached = load_all_cached_samples(db_path=db)
-    return [row.to_workbench_row() for row in cached]
+    return [
+        row.to_workbench_row()
+        for row in cached
+        if row.analyzer_version == WORKBENCH_ANALYZER_VERSION
+    ]
 
 
 def is_catalog_readonly_row(row: WorkbenchRow) -> bool:
@@ -1931,7 +1935,7 @@ def _workbench_row_for_playlist_sample_path(
 ) -> WorkbenchRow:
     """Resolve a playlist sample path to a workbench row without raising."""
     cached = load_sample_by_path(sample_path, db_path=library_db_path)
-    if cached is not None:
+    if cached is not None and cached.analyzer_version == WORKBENCH_ANALYZER_VERSION:
         row = cached.to_workbench_row()
         details = dict(row.details)
         details["song_playlist"] = playlist_name
