@@ -1177,3 +1177,44 @@ def test_qml_scope_switch_closes_harmonic_panel_and_reopens_with_new_scope(tmp_p
         assert {str(row.source_row.path) for row in view_model.harmony_rows} <= b_paths
     finally:
         _stop_engine(app, engine, window, coordinator)
+
+
+def test_same_scope_reload_recomputes_open_harmony_when_loaded_rows_change():
+    calls = []
+
+    def finder(anchor, candidates):
+        calls.append((anchor, tuple(candidates)))
+        return _stub_harmony_finder(anchor, candidates)
+
+    fixture, view_model, adapter = _adapter(
+        harmony_controller=HarmonicMatchLibraryController(finder=finder),
+    )
+    view_model.browser_rows = _set_mode_keys(
+        fixture, view_model, fixture.selected_browser_index
+    )
+    scope = ("root", 1)
+    adapter.replace_browser_scope(scope)
+    assert adapter.toggle_harmonic_match() is True
+    assert len(calls) == 1
+
+    selected = view_model.selected_browser_index
+    changed = list(view_model.browser_rows)
+    changed[selected] = replace(
+        changed[selected],
+        source_row=replace(changed[selected].source_row, key="Dmin"),
+    )
+    view_model.browser_rows = tuple(changed)
+
+    adapter.replace_browser_scope(scope)
+
+    assert adapter.harmonic_match_open is True
+    assert len(calls) == 2
+    assert calls[-1][0].key == "Dmin"
+
+
+def test_harmonic_keyboard_navigation_contract_keeps_selected_row_visible():
+    from src.workbench_qml import QML_SOURCE
+
+    assert "harmonicMatchList.currentIndex = window.interaction.selectedHarmonyIndex" in QML_SOURCE
+    assert "harmonicMatchList.positionViewAtIndex(" in QML_SOURCE
+    assert "ListView.Contain" in QML_SOURCE
