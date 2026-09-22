@@ -626,6 +626,28 @@ class Screen1QmlInteractionAdapter:
         """
         self._harmonic_match_browser_scope = scope
         if scope is not None and scope == self._harmonic_match_session_scope:
+            if not self.harmonic_match_open:
+                return
+            if not self.view_model.browser_rows:
+                self._invalidate_harmonic_session()
+                return
+            if not 0 <= self.view_model.selected_browser_index < len(self.view_model.browser_rows):
+                self._invalidate_harmonic_session()
+                return
+            anchor = self.view_model.browser_rows[self.selected_browser_index].source_row
+            fingerprint = self._current_harmonic_match_fingerprint(anchor)
+            if fingerprint == self._harmonic_match_context_fingerprint and self._rebind_harmonic_match_rows(anchor):
+                self._project_harmonic_match(anchor)
+                return
+            if self.harmony_controller is not None:
+                self.harmony_controller.set_anchor(
+                    anchor,
+                    tuple(row.source_row for row in self.view_model.browser_rows),
+                )
+            self._harmonic_match_context_fingerprint = fingerprint
+            self._harmonic_match_selected_index = 0
+            self._harmonic_match_scroll_y = 0.0
+            self._project_harmonic_match(anchor)
             return
         self._invalidate_harmonic_session()
 
@@ -997,8 +1019,16 @@ ApplicationWindow {
                 Label { text: window.screenData.harmonyAnchor; color: window.muted; font.pixelSize: 12 }
                 Label { text: window.screenData.harmonyStatus; color: window.muted; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true }
                 ListView { id: harmonicMatchList; objectName: "harmonicMatchList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.harmonyRows; clip: true; reuseItems: true; focus: window.interaction.harmonicMatchOpen
-                    Keys.onUpPressed: window.interaction.navigateHarmony(-1)
-                    Keys.onDownPressed: window.interaction.navigateHarmony(1)
+                    Keys.onUpPressed: {
+                        window.interaction.navigateHarmony(-1)
+                        harmonicMatchList.currentIndex = window.interaction.selectedHarmonyIndex
+                        harmonicMatchList.positionViewAtIndex(harmonicMatchList.currentIndex, ListView.Contain)
+                    }
+                    Keys.onDownPressed: {
+                        window.interaction.navigateHarmony(1)
+                        harmonicMatchList.currentIndex = window.interaction.selectedHarmonyIndex
+                        harmonicMatchList.positionViewAtIndex(harmonicMatchList.currentIndex, ListView.Contain)
+                    }
                     Keys.onEscapePressed: window.interaction.stopPreview()
                     onContentYChanged: {
                         window.interaction.setHarmonyScrollY(contentY)
