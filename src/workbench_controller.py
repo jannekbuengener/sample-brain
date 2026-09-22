@@ -1932,10 +1932,12 @@ def _workbench_row_for_playlist_sample_path(
     *,
     playlist_name: str,
     library_db_path: Path,
-) -> WorkbenchRow:
-    """Resolve a playlist sample path to a workbench row without raising."""
+) -> WorkbenchRow | None:
+    """Resolve a playlist sample path without exposing stale analysis metadata."""
     cached = load_sample_by_path(sample_path, db_path=library_db_path)
-    if cached is not None and cached.analyzer_version == WORKBENCH_ANALYZER_VERSION:
+    if cached is not None and cached.analyzer_version != WORKBENCH_ANALYZER_VERSION:
+        return None
+    if cached is not None:
         row = cached.to_workbench_row()
         details = dict(row.details)
         details["song_playlist"] = playlist_name
@@ -1994,14 +1996,16 @@ def load_playlist_workbench_rows(
     if playlist is None:
         return []
     paths = list_playlist_sample_paths(playlist.id, db_path=db)
-    return [
-        _workbench_row_for_playlist_sample_path(
+    rows: list[WorkbenchRow] = []
+    for sample_path in paths:
+        row = _workbench_row_for_playlist_sample_path(
             sample_path,
             playlist_name=playlist.name,
             library_db_path=db,
         )
-        for sample_path in paths
-    ]
+        if row is not None:
+            rows.append(row)
+    return rows
 
 
 def format_playlist_load_status(playlist_name: str, rows: list[WorkbenchRow]) -> str:
