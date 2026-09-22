@@ -312,13 +312,16 @@ def run_qml_visual_acceptance(*, runtime_root: Path, evidence_dir: Path) -> dict
                 results = adapter.harmony_controller.results
                 real_relations = tuple(sorted({s.relation.value for s in results}))
                 check["harmonic_relations"] = list(real_relations)
+                expected_relations = {
+                    HarmonyRelation.DIRECT,
+                    HarmonyRelation.RELATED,
+                    HarmonyRelation.TRANSPOSE,
+                }
                 check["real_harmony_matches"] = bool(
                     results
-                    and {
-                        HarmonyRelation.DIRECT,
-                        HarmonyRelation.RELATED,
-                        HarmonyRelation.TRANSPOSE,
-                    }.intersection(s.relation for s in results)
+                    and expected_relations.issubset(
+                        {suggestion.relation for suggestion in results}
+                    )
                 )
             else:
                 check["real_harmony_matches"] = True
