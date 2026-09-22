@@ -637,7 +637,7 @@ def analyze_folder_for_workbench(
         if use_cache and folder_id is not None and stat is not None:
             size_bytes, mtime_ns = stat
             cached = lookup_sample(audio_path, size_bytes, mtime_ns, db_path=cache_db)
-            if cached is not None:
+            if cached is not None and cached.analyzer_version == WORKBENCH_ANALYZER_VERSION:
                 row = cached.to_workbench_row()
                 rows.append(row)
                 cache_hits += 1
@@ -1340,6 +1340,39 @@ def load_cached_subfolder_rows(
     return [row.to_workbench_row() for row in cached]
 
 
+def workbench_scope_requires_refresh(
+    *,
+    folder_id: int | None,
+    folder_path: Path | str | None,
+    relative_path: str | None = None,
+    library_db_path: Path | None = None,
+) -> bool:
+    """Return True when a workbench scope still carries cache rows behind
+    WORKBENCH_ANALYZER_VERSION for audio files that exist on disk.
+
+    ``relative_path`` selects the SUBFOLDER subtree of ``folder_id``; otherwise
+    ``folder_path`` selects the whole ROOT folder.  Rows whose source file no
+    longer exists on disk are deliberately ignored: a refresh cannot renew them,
+    and skipping them keeps the probe deterministic without any cache deletion.
+    """
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    if relative_path:
+        if not isinstance(folder_id, int) or isinstance(folder_id, bool):
+            return False
+        cached = load_folder_subtree_samples(folder_id, relative_path, db_path=db)
+    else:
+        if folder_path is None:
+            return False
+        cached = load_folder_samples(folder_path, db_path=db)
+    for row in cached:
+        if row.analyzer_version == WORKBENCH_ANALYZER_VERSION:
+            continue
+        if not os.path.isfile(row.original_path):
+            continue
+        return True
+    return False
+
+
 def load_all_cached_rows(
     *,
     library_db_path: Path | None = None,
@@ -1347,7 +1380,11 @@ def load_all_cached_rows(
     """Load cached analysis rows from every registered workbench library folder."""
     db = library_db_path if library_db_path is not None else workbench_library_db_path()
     cached = load_all_cached_samples(db_path=db)
-    return [row.to_workbench_row() for row in cached]
+    return [
+        row.to_workbench_row()
+        for row in cached
+        if row.analyzer_version == WORKBENCH_ANALYZER_VERSION
+    ]
 
 
 def is_catalog_readonly_row(row: WorkbenchRow) -> bool:
@@ -1895,9 +1932,11 @@ def _workbench_row_for_playlist_sample_path(
     *,
     playlist_name: str,
     library_db_path: Path,
-) -> WorkbenchRow:
-    """Resolve a playlist sample path to a workbench row without raising."""
+) -> WorkbenchRow | None:
+    """Resolve a playlist sample path without exposing stale analysis metadata."""
     cached = load_sample_by_path(sample_path, db_path=library_db_path)
+    if cached is not None and cached.analyzer_version != WORKBENCH_ANALYZER_VERSION:
+        return None
     if cached is not None:
         row = cached.to_workbench_row()
         details = dict(row.details)
@@ -1957,14 +1996,16 @@ def load_playlist_workbench_rows(
     if playlist is None:
         return []
     paths = list_playlist_sample_paths(playlist.id, db_path=db)
-    return [
-        _workbench_row_for_playlist_sample_path(
+    rows: list[WorkbenchRow] = []
+    for sample_path in paths:
+        row = _workbench_row_for_playlist_sample_path(
             sample_path,
             playlist_name=playlist.name,
             library_db_path=db,
         )
-        for sample_path in paths
-    ]
+        if row is not None:
+            rows.append(row)
+    return rows
 
 
 def format_playlist_load_status(playlist_name: str, rows: list[WorkbenchRow]) -> str:

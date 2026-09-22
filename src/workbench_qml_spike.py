@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import importlib
 from pathlib import Path
 import sys
@@ -11,6 +11,7 @@ from typing import Callable, Mapping, Sequence
 
 from . import workbench_qml as production
 from .workbench_controller import WorkbenchRow
+from .workbench_harmony import HarmonyRelation
 from .workbench_live_kit import LiveKitPresentationState, LiveKitState
 from .workbench_qml_library import WorkbenchLibraryTreeState
 from .workbench_visual_acceptance import (
@@ -78,7 +79,7 @@ def build_qml_view_model_from_fixture(
         browser_rows=tuple(production._qml_row(row) for row in fixture.browser_rows),
         selected_browser_index=fixture.selected_browser_index,
         harmony_rows=tuple(
-            production._qml_row(match.row) for match in fixture.harmony_results
+            production._qml_harmony_row(match) for match in fixture.harmony_results
         ),
         live_kit_groups=groups,
         on_browser_selected=on_browser_selected,
@@ -233,25 +234,71 @@ def validate_qml_renderer_provenance(
     return report
 
 
+def _modal_harmony_acceptance_fixture(fixture: Screen1VisualFixture) -> Screen1VisualFixture:
+    """Derive a fixture whose anchor and candidates carry explicit modal keys.
+
+    The base fixture stores mode-less keys so the production ``set_anchor`` gate
+    fails closed; the acceptance harness needs a modal anchor (Cmaj) plus modal
+    candidates with real DIRECT/RELATED/TRANSPOSE relations so the 4-panel
+    capture shows matches computed by the real matcher, not a stub.
+    """
+    overrides = {
+        "TECH_BASS_01": "Cmaj",  # anchor
+        "TECH_KICK_01": "Cmaj",  # DIRECT
+        "TECH_BASS_02": "Cmaj",  # DIRECT
+        "TECH_TOP_LOOP_01": "Am",  # RELATED relative minor
+        "TECH_ATMOS_01": "Fmaj",  # RELATED fourth
+        "TECH_VOX_LOOP_01": "Gmaj",  # RELATED fifth
+        "TECH_PERC_LOOP_01": "Dmaj",  # TRANSPOSE +2
+        "TECH_OPEN_HAT_01": "Bm",  # TRANSPOSE +1
+    }
+    rows = tuple(
+        replace(row, key=overrides.get(row.display_name, row.key))
+        for row in fixture.browser_rows
+    )
+    if rows[fixture.selected_browser_index].key is None:
+        raise EvidenceError(
+            "Modal-Harmony-Acceptance-Fixture braucht einen auswertbaren Anchor-Key."
+        )
+    return replace(fixture, browser_rows=rows)
+
+
 def run_qml_visual_acceptance(*, runtime_root: Path, evidence_dir: Path) -> dict[str, object]:
     """Capture the #538 fixture states through the production QML shell."""
     import platform
 
     report = validate_qml_renderer_provenance(runtime_root)
-    fixture = build_screen1_visual_fixture_v1()
+    fixture = _modal_harmony_acceptance_fixture(build_screen1_visual_fixture_v1())
     evidence_dir.mkdir(parents=True, exist_ok=True)
     captures: dict[str, Path] = {}
-    sanity: dict[str, dict[str, bool]] = {}
+    sanity: dict[str, dict[str, bool | list[object]]] = {}
     app = None
     engines: list[object] = []
     try:
         for state_id in REQUIRED_STATE_IDS:
-            app, engine, window = _qml_engine(
-                build_qml_view_model_from_fixture(fixture, state_id)
+            view_model = build_qml_view_model_from_fixture(
+                fixture, "screen1-default-3panel" if state_id.endswith("4panel") else state_id
             )
+            adapter = Screen1QmlInteractionAdapter(
+                view_model=view_model,
+                harmony_controller=production.HarmonicMatchLibraryController(),
+            )
+            app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
             engines.append(engine)
             window.show()
             _settle_qml_frame(app)
+            if state_id.endswith("4panel"):
+                from PySide6.QtCore import QPointF, Qt
+                from PySide6.QtQuick import QQuickItem
+                from PySide6.QtTest import QTest
+
+                control = window.findChild(QQuickItem, "harmonicMatchButton")
+                if control is None:
+                    raise RuntimeError("Harmonic-Match-Control fehlt in der Production-QML-Shell.")
+                QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, control.mapToScene(QPointF(8, 8)).toPoint())
+                _settle_qml_frame(app)
+                if not adapter.harmonic_match_open:
+                    raise RuntimeError("Harmonic-Match-Control konnte den Pane nicht öffnen.")
             target = evidence_dir / f"{state_id}.png"
             capture_windows_client_window(int(window.winId()), target)
             check = validate_capture_sanity(
@@ -261,7 +308,28 @@ def run_qml_visual_acceptance(*, runtime_root: Path, evidence_dir: Path) -> dict
                 build_qml_view_model_from_fixture(fixture, state_id).panel_count
                 == (4 if state_id.endswith("4panel") else 3)
             )
-            check["pass"] = bool(check["pass"] and check["panel_structure"])
+            if state_id.endswith("4panel"):
+                results = adapter.harmony_controller.results
+                real_relations = tuple(sorted({s.relation.value for s in results}))
+                check["harmonic_relations"] = list(real_relations)
+                expected_relations = {
+                    HarmonyRelation.DIRECT,
+                    HarmonyRelation.RELATED,
+                    HarmonyRelation.TRANSPOSE,
+                }
+                check["real_harmony_matches"] = bool(
+                    results
+                    and expected_relations.issubset(
+                        {suggestion.relation for suggestion in results}
+                    )
+                )
+            else:
+                check["real_harmony_matches"] = True
+            check["pass"] = bool(
+                check["pass"]
+                and check["panel_structure"]
+                and check["real_harmony_matches"]
+            )
             sanity[state_id] = check
             captures[state_id] = target
             window.close()

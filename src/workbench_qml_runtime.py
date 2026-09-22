@@ -17,8 +17,9 @@ from .workbench_controller import (
     preview_workbench_library_folder_removal,
     remove_workbench_library_folder,
     validate_workbench_folder,
+    workbench_scope_requires_refresh,
 )
-from .workbench_library import workbench_library_db_path
+from .workbench_library import WORKBENCH_ANALYZER_VERSION, workbench_library_db_path
 from .workbench_library_navigation import WorkbenchLibraryNavigation
 from .workbench_qml_library import LibrarySelectionIntent, WorkbenchLibraryTreeState
 from .workbench_library_navigation import LibraryScope, LibraryScopeKind
@@ -78,6 +79,12 @@ class Screen1QmlRuntimeComposition:
         self.library_tree = tree_state
         self.browser_state = Screen1BrowserState()
         self.audition_dispatches: list[WorkbenchRow] = []
+        self._selected_node_id: str | None = None
+
+    @property
+    def selected_node_id(self) -> str | None:
+        """Node id of the last successfully dispatched selection."""
+        return self._selected_node_id
 
     def dispatch_selection(self, intent: LibrarySelectionIntent) -> Screen1BrowserState:
         """Load exactly once for a valid intent, or fail closed."""
@@ -99,6 +106,7 @@ class Screen1QmlRuntimeComposition:
             scope=scope,
             error=None,
         )
+        self._selected_node_id = intent.node.node_id
         return self.browser_state
 
     def add_source(self, folder: Path | str) -> bool:
@@ -266,6 +274,77 @@ class Screen1QmlRuntimeComposition:
                 )
             return load_playlist_workbench_rows(scope.playlist_name)
         raise ValueError("Unbekannter Library-Scope.")
+
+    def refresh_target(self, scope: LibraryScope) -> SourceRegistration | None:
+        """Return the registered source a ROOT/SUBFOLDER scope must refresh.
+
+        Returns ``None`` when the scope is not a library folder scope or when all
+        relevant cached rows already match ``WORKBENCH_ANALYZER_VERSION``.  The
+        caller decides whether to start exactly one analysis job.
+        """
+        if scope.kind is LibraryScopeKind.ROOT:
+            folder_id = scope.folder_id
+            folder_path = scope.folder_path
+            relative_path = None
+        elif scope.kind is LibraryScopeKind.SUBFOLDER:
+            if not isinstance(scope.relative_path, str) or not scope.relative_path.strip():
+                return None
+            folder_id = scope.folder_id
+            folder_path = scope.folder_path
+            relative_path = scope.relative_path
+        else:
+            return None
+        if folder_id is None:
+            if folder_path is None:
+                return None
+            try:
+                if self._explicit_library_db_path:
+                    folders = get_workbench_library_folders(
+                        library_db_path=self.library_db_path
+                    )
+                else:
+                    folders = get_workbench_library_folders()
+                folder_id = self._lookup_registered_folder_id(Path(folder_path), folders)
+            except LookupError:
+                return None
+        if self.browser_state.scope == scope and self.browser_state.error is None:
+            needs_refresh = any(
+                row.details.get("analyzer_version") != WORKBENCH_ANALYZER_VERSION
+                and Path(row.path).is_file()
+                for row in self.browser_state.rows
+            )
+        else:
+            needs_refresh = workbench_scope_requires_refresh(
+                folder_id=folder_id,
+                folder_path=folder_path,
+                relative_path=relative_path,
+                library_db_path=self.library_db_path,
+            )
+        if not needs_refresh:
+            return None
+        return SourceRegistration(
+            folder_id=int(folder_id),
+            normalized_path=Path(folder_path),
+        )
+
+    def post_analysis_node_id(
+        self,
+        folder_id: int,
+        *,
+        previous_selected: str | None = None,
+    ) -> str:
+        """Deterministic reload target for a completed analysis job.
+
+        Keeps an active subfolder scope of the analyzed root selected and falls
+        back to that root when nothing (or another source) was selected.
+        """
+        if previous_selected:
+            folder_prefix = f"{folder_id}:"
+            if previous_selected == f"root:{folder_id}":
+                return previous_selected
+            if previous_selected.startswith(f"folder:{folder_prefix}"):
+                return previous_selected
+        return f"root:{folder_id}"
 
     @staticmethod
     def _browser_context(intent: LibrarySelectionIntent) -> str:

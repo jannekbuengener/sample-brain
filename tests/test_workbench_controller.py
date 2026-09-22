@@ -821,6 +821,128 @@ def test_analyze_folder_cache_disabled(sample_folder: Path):
     assert second.summary["cache_misses"] == 0
 
 
+def _seed_cached_row(
+    root: Path,
+    audio: Path,
+    *,
+    relative_path: str,
+    key: str,
+    bpm: float | None,
+    analyzer_version: str,
+) -> tuple[int, int, int]:
+    """Insert a pre-fix cache row (v1 metadata) matching *audio* exactly."""
+    from src.workbench_library import upsert_folder, upsert_sample
+
+    st = audio.stat()
+    size_bytes = st.st_size
+    mtime_ns = st.st_mtime_ns
+    folder_id = upsert_folder(root)
+    row = WorkbenchRow(
+        display_name=audio.name,
+        relative_path=relative_path,
+        path=str(audio),
+        bpm=bpm,
+        key=key,
+        key_conf=0.8 if key else None,
+        loudness=-12.0,
+        brightness=1500.0,
+        sample_class="loop",
+        pred_type="Keys",
+        status="ok",
+        details={"path": str(audio)},
+    )
+    upsert_sample(
+        folder_id,
+        row,
+        size_bytes=size_bytes,
+        mtime_ns=mtime_ns,
+        analyzer_version=analyzer_version,
+    )
+    return folder_id, size_bytes, mtime_ns
+
+
+def test_stale_v1_cache_row_is_reanalyzed_with_modeaware_key(tmp_path: Path):
+    from tests.audio_fixtures import write_major_chord_wav
+
+    from src.workbench_library import (
+        WORKBENCH_ANALYZER_VERSION,
+        lookup_sample,
+        workbench_library_db_path,
+    )
+
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    chord = write_major_chord_wav(folder / "chord.wav")
+    _, size_bytes, mtime_ns = _seed_cached_row(
+        folder,
+        chord,
+        relative_path="chord.wav",
+        key="C",
+        bpm=None,
+        analyzer_version="workbench_v1",
+    )
+
+    first = analyze_folder_for_workbench(folder)
+
+    assert first.summary["cache_hits"] == 0
+    assert first.summary["cache_misses"] == 1
+    assert first.rows[0].key == "Cmaj"
+
+    cached = lookup_sample(
+        chord,
+        size_bytes,
+        mtime_ns,
+        db_path=workbench_library_db_path(),
+    )
+    assert cached is not None
+    assert cached.analyzer_version == WORKBENCH_ANALYZER_VERSION
+    assert cached.key == "Cmaj"
+
+    second = analyze_folder_for_workbench(folder)
+    assert second.summary["cache_hits"] == 1
+    assert second.summary["cache_misses"] == 0
+
+
+def test_stale_v1_row_without_bpm_renews_bpm_on_reanalysis(tmp_path: Path):
+    from tests.audio_fixtures import write_kick_transient_wav
+
+    from src.workbench_library import (
+        WORKBENCH_ANALYZER_VERSION,
+        lookup_sample,
+        workbench_library_db_path,
+    )
+
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    kick = write_kick_transient_wav(
+        folder / "kick_b.wav", bpm=120.0, duration_sec=2.0
+    )
+    _, size_bytes, mtime_ns = _seed_cached_row(
+        folder,
+        kick,
+        relative_path="kick_b.wav",
+        key="A#",
+        bpm=None,
+        analyzer_version="workbench_v1",
+    )
+
+    first = analyze_folder_for_workbench(folder)
+
+    assert first.summary["cache_hits"] == 0
+    assert first.summary["cache_misses"] == 1
+    assert first.rows[0].bpm is not None
+
+    cached = lookup_sample(
+        kick,
+        size_bytes,
+        mtime_ns,
+        db_path=workbench_library_db_path(),
+    )
+    assert cached is not None
+    assert cached.analyzer_version == WORKBENCH_ANALYZER_VERSION
+    assert cached.bpm is not None
+
+
 def test_invalid_folder_raises(tmp_path: Path):
     missing = tmp_path / "does_not_exist"
     with pytest.raises(ValueError, match="Not a directory"):
@@ -1517,3 +1639,113 @@ def test_format_playlist_load_status():
         status="ok",
     )
     assert format_playlist_load_status("Song A", [row]) == 'Playlist "Song A" geladen: 1 Samples'
+
+
+def test_all_library_excludes_stale_analyzer_cache_rows(tmp_path: Path):
+    from src.workbench_controller import load_all_cached_rows
+    from src.workbench_library import (
+        upsert_folder,
+        upsert_sample,
+        workbench_library_db_path,
+    )
+
+    db_path = workbench_library_db_path()
+    folder = tmp_path / "aggregate"
+    folder.mkdir()
+    current_file = folder / "current.wav"
+    stale_file = folder / "stale.wav"
+    current_file.write_bytes(b"wav")
+    stale_file.write_bytes(b"wav")
+    folder_id = upsert_folder(folder, db_path=db_path)
+
+    current = WorkbenchRow(
+        display_name="current",
+        relative_path="current.wav",
+        path=str(current_file),
+        bpm=128.0,
+        key="Cmaj",
+        key_conf=0.9,
+        loudness=-12.0,
+        brightness=1200.0,
+        sample_class="loop",
+        pred_type="Melodic",
+        status="ok",
+    )
+    stale = WorkbenchRow(
+        display_name="stale",
+        relative_path="stale.wav",
+        path=str(stale_file),
+        bpm=128.0,
+        key="C",
+        key_conf=0.9,
+        loudness=-12.0,
+        brightness=1200.0,
+        sample_class="loop",
+        pred_type="Melodic",
+        status="ok",
+    )
+    upsert_sample(
+        folder_id,
+        current,
+        size_bytes=current_file.stat().st_size,
+        mtime_ns=current_file.stat().st_mtime_ns,
+        db_path=db_path,
+    )
+    upsert_sample(
+        folder_id,
+        stale,
+        size_bytes=stale_file.stat().st_size,
+        mtime_ns=stale_file.stat().st_mtime_ns,
+        db_path=db_path,
+        analyzer_version="workbench_v1",
+    )
+
+    rows = load_all_cached_rows(library_db_path=db_path)
+
+    assert [Path(row.path).name for row in rows] == ["current.wav"]
+    assert rows[0].key == "Cmaj"
+
+
+def test_playlist_does_not_surface_stale_analyzer_metadata(tmp_path: Path):
+    from src.workbench_library import (
+        add_sample_to_playlist,
+        create_playlist,
+        upsert_folder,
+        upsert_sample,
+        workbench_library_db_path,
+    )
+
+    db_path = workbench_library_db_path()
+    folder = tmp_path / "playlist-stale"
+    folder.mkdir()
+    sample = folder / "stale.wav"
+    sample.write_bytes(b"wav")
+    folder_id = upsert_folder(folder, db_path=db_path)
+
+    stale = WorkbenchRow(
+        display_name="stale",
+        relative_path="stale.wav",
+        path=str(sample),
+        bpm=128.0,
+        key="C",
+        key_conf=0.9,
+        loudness=-12.0,
+        brightness=1200.0,
+        sample_class="loop",
+        pred_type="Melodic",
+        status="ok",
+    )
+    upsert_sample(
+        folder_id,
+        stale,
+        size_bytes=sample.stat().st_size,
+        mtime_ns=sample.stat().st_mtime_ns,
+        db_path=db_path,
+        analyzer_version="workbench_v1",
+    )
+    playlist = create_playlist("Stale Set", db_path=db_path)
+    add_sample_to_playlist(playlist.id, sample, db_path=db_path)
+
+    rows = load_playlist_workbench_rows("Stale Set", library_db_path=db_path)
+
+    assert rows == []
