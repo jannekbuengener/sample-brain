@@ -19,6 +19,7 @@ from src.key_mode_evaluation import (
     select_references,
 )
 from src.key_profile_analysis import MAJOR_KEY_PROFILE
+from src.key_profile_audio_calibration import HarmonicChromaEvidence
 
 
 def test_normalize_open_key_uses_canonical_parser_enharmonics() -> None:
@@ -191,3 +192,54 @@ def test_ab_handoff_is_aggregate_only(monkeypatch) -> None:
     assert "Private" not in handoff
     assert "C:/private" not in handoff
     assert "candidate_is_evaluation_only" in handoff
+
+
+def test_harmonic_evaluator_metrics_transitions_and_negative_controls_are_reported(monkeypatch) -> None:
+    references = [
+        ReferenceSample(name="Tonal Anchor", traktor_bpm=100.0, open_key="1d", tier="A"),
+        ReferenceSample(name="No Key Control", traktor_bpm=100.0, open_key=None, tier="B"),
+    ]
+    library = [
+        LibrarySample(path=Path("C:/private/Tonal Anchor.wav"), display_name="Tonal Anchor"),
+        LibrarySample(path=Path("C:/private/No Key Control.wav"), display_name="No Key Control"),
+    ]
+
+    class Features:
+        bpm = 100.0
+        key = "Cmaj"
+        key_conf = 0.42
+        key_mode_evidence = {"kind": "third_contrast", "contrast": 0.4}
+        chroma_mean = np.asarray(MAJOR_KEY_PROFILE, dtype=np.float32).tobytes()
+        chroma_std = (np.asarray(MAJOR_KEY_PROFILE, dtype=np.float32) * 0.01).tobytes()
+
+    evidence = HarmonicChromaEvidence(
+        chroma_mean=np.asarray(MAJOR_KEY_PROFILE, dtype=np.float32),
+        chroma_std=np.zeros(12, dtype=np.float32),
+        harmonic_rms=0.2,
+        percussive_rms=0.1,
+        harmonic_energy_fraction=0.8,
+    )
+    monkeypatch.setattr("src.key_mode_evaluation.extract_features", lambda *_, **__: Features())
+    monkeypatch.setattr("src.key_mode_evaluation.extract_harmonic_chroma_evidence", lambda *_: evidence)
+
+    report = evaluate_reference_library(references, library)
+    overall = report["ab_comparison"]["overall"]
+    tier_a = report["ab_comparison"]["tier_a"]
+
+    assert overall["candidate_harmonic_profile"]["root_agreement_ranked"] == {
+        "agreement_count": 1, "comparable_count": 1,
+    }
+    assert tier_a["candidate_harmonic_profile"]["full_key_agreement_ranked"] == {
+        "agreement_count": 1, "comparable_count": 1,
+    }
+    transitions = overall["delta"]
+    assert transitions["full_correct_to_harmonic_correct_root"] == 1
+    assert sum(transitions[key] for key in (
+        "full_correct_to_harmonic_correct_root", "full_correct_to_harmonic_wrong_root",
+        "full_wrong_to_harmonic_correct_root", "full_wrong_to_harmonic_wrong_root",
+    )) == 1
+    negative_controls = overall["negative_controls"]
+    assert negative_controls["full_profile_margin_distribution"]["count"] == 1
+    assert negative_controls["harmonic_profile_margin_distribution"]["count"] == 1
+    assert negative_controls["harmonic_energy_fraction_distribution"]["count"] == 1
+    assert sanitize_report(report)["records"][0]["candidate_harmonic_profile"]["canonical_key"] == "Cmaj"

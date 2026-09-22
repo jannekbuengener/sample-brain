@@ -315,17 +315,28 @@ def write_hihat_noise_wav(
     return path
 
 
-def write_mixed_key_audio_wav(path: Path, *, frequency_hz: float, mode: str, mix: str, strength: str) -> Path:
+def write_mixed_key_audio_wav(
+    path: Path,
+    *,
+    frequency_hz: float,
+    mode: str,
+    mix: str,
+    strength: str,
+    duration_sec: float = 2.0,
+) -> Path:
     """Public deterministic tonal/percussive mix; light=0.15, strong=0.45."""
     import tempfile
 
     gain = 0.15 if strength == "light" else 0.45
     with tempfile.TemporaryDirectory() as directory:
         base = Path(directory)
-        tonal = write_key_audio_wav(base / "tonal.wav", frequency_hz=frequency_hz, mode=mode)
+        tonal = write_key_audio_wav(
+            base / "tonal.wav", frequency_hz=frequency_hz, mode=mode, duration_sec=duration_sec
+        )
         layer = (
-            write_kick_transient_wav(base / "layer.wav", bpm=120.0, duration_sec=2.0)
-            if mix == "kick" else write_hihat_noise_wav(base / "layer.wav", duration_sec=2.0)
+            write_kick_transient_wav(base / "layer.wav", bpm=120.0, duration_sec=duration_sec)
+            if mix == "kick"
+            else write_hihat_noise_wav(base / "layer.wav", duration_sec=duration_sec)
         )
         y_tonal, sr = sf.read(tonal, dtype="float32")
         y_layer, _ = sf.read(layer, dtype="float32")
