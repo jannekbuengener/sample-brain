@@ -409,6 +409,7 @@ class CachedWorkbenchRow:
         details: dict[str, Any] = {
             "path": self.original_path,
             "relative_path": self.relative_path,
+            "analyzer_version": self.analyzer_version,
         }
         if self.library_folder_path:
             details["library_folder"] = self.library_folder_path
