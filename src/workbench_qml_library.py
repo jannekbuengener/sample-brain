@@ -202,6 +202,7 @@ def create_qt_library_tree_model(state: WorkbenchLibraryTreeState, parent=None):
 
     class LibraryTreeQtModel(QAbstractItemModel):
         selection_changed = Signal()
+        selection_invalidated = Signal()
 
         DisplayRole = int(Qt.ItemDataRole.DisplayRole)
         NodeIdRole = int(Qt.ItemDataRole.UserRole) + 1
@@ -390,6 +391,7 @@ def create_qt_library_tree_model(state: WorkbenchLibraryTreeState, parent=None):
         @Slot(str, result=bool)
         def replaceBranch(self, node_id: str) -> bool:
             """Replace one branch from authoritative navigation state."""
+            previous_selected = self.state.selected_node_id
             item = next(
                 (
                     child
@@ -412,6 +414,15 @@ def create_qt_library_tree_model(state: WorkbenchLibraryTreeState, parent=None):
             for child in children:
                 self._clear_qt_descendants(str(child["node_id"]))
             self.fetchMore(parent_index)
+            if previous_selected is not None:
+                if self.state.select(previous_selected):
+                    self.selection_changed.emit()
+                    if self.rowCount() > 0:
+                        top_left = self.index(0, 0)
+                        bottom_right = self.index(self.rowCount() - 1, 0)
+                        self.dataChanged.emit(top_left, bottom_right, [self.SelectedRole])
+                else:
+                    self.selection_invalidated.emit()
             return True
 
         @Slot(result=bool)

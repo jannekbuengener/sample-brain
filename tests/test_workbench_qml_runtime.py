@@ -333,6 +333,43 @@ def test_removing_active_subfolder_clears_root_scoped_selection(
     assert composition.library_tree.selection_intent is None
 
 
+def test_runtime_browser_state_sync_clears_view_model_after_active_source_removal(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from src.workbench_qml import (
+        Screen1QmlInteractionAdapter,
+        Screen1QmlViewModel,
+        _sync_runtime_browser_state,
+    )
+
+    runtime, composition = _composition(monkeypatch)
+    nav = composition.library_tree.navigation
+    monkeypatch.setattr(runtime, "load_cached_folder_rows", lambda _folder: [_row("root")])
+    composition.library_tree.select(ROOT_ID)
+    composition.dispatch_selection(_intent(nav.root, nav.resolve_scope(ROOT_ID)))
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    adapter = Screen1QmlInteractionAdapter(view_model=view_model)
+
+    _sync_runtime_browser_state(view_model, adapter, composition)
+    assert [row.display_name for row in view_model.browser_rows] == ["root"]
+
+    monkeypatch.setattr(runtime, "remove_workbench_library_folder", lambda _folder_id: True)
+    assert composition.remove_source(1) is True
+
+    _sync_runtime_browser_state(view_model, adapter, composition)
+    assert view_model.browser_rows == ()
+    assert view_model.selected_browser_index == -1
+    assert view_model.browser_context == "No library selected"
+    assert adapter.harmonic_match_open is False
+
+
 def test_empty_browser_is_fail_closed_for_arrows_and_harmony():
     from src.workbench_qml import Screen1QmlInteractionAdapter, Screen1QmlViewModel
 
@@ -387,9 +424,16 @@ def test_add_source_node_is_an_action_and_replace_refresh_has_no_stale_children(
     assert model.data(action_index, model.SelectableRole) is False
     assert model.selectNode("action:add-source") is False
 
+    assert model.selectNode(ROOT_ID) is True
+    assert model.replaceBranch(SAMPLE_SOURCES) is True
+    assert state.selected_node_id == ROOT_ID
+    assert state.selection_intent is not None
+
     navigation.sample_roots.clear()
     navigation.root_children_enabled = False
     assert model.replaceBranch(SAMPLE_SOURCES) is True
+    assert state.selected_node_id is None
+    assert state.selection_intent is None
     assert model.rowCount(sample_index) == 1
     assert model.data(model.index(0, 0, sample_index), model.KindRole) == LibraryNodeKind.ADD_SOURCE.value
 
@@ -455,12 +499,121 @@ def test_screen_data_bridge_notifies_dynamic_browser_properties():
         browser_context="Samples",
         error=None,
     )
-    bridge.refresh()
+    bridge.refresh_browser_scope()
 
     assert notifications == [True]
     assert bridge.selectedBrowserIndex == 0
     assert bridge.browserContext == "Samples"
     assert bridge.browserRows[0]["name"] == "dynamic"
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_selection_only_interaction_notifies_selection_without_rebuilding_browser_rows():
+    from PySide6.QtCore import QCoreApplication
+
+    from src.workbench_qml import (
+        Screen1QmlInteractionAdapter,
+        Screen1QmlViewModel,
+        _qml_interaction_bridge,
+        _qml_screen_data_bridge,
+    )
+
+    app = QCoreApplication.instance() or QCoreApplication([])
+    del app
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    view_model.set_browser_state(
+        rows=(_row("one"), _row("two")),
+        selected_index=0,
+        browser_context="Samples",
+        error=None,
+    )
+    screen = _qml_screen_data_bridge(view_model)
+    adapter = Screen1QmlInteractionAdapter(view_model=view_model)
+    interaction = _qml_interaction_bridge(adapter, on_state_changed=screen.refresh)
+    row_notifications: list[bool] = []
+    selection_notifications: list[bool] = []
+    screen.browserRowsChanged.connect(lambda: row_notifications.append(True))
+    screen.selectedBrowserIndexChanged.connect(lambda: selection_notifications.append(True))
+
+    interaction.selectRow(1)
+
+    assert view_model.selected_browser_index == 1
+    assert row_notifications == []
+    assert selection_notifications == [True]
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_qml_branch_refresh_clears_browser_when_active_source_disappears(
+    tmp_path: Path,
+):
+    from src.workbench_controller import remove_workbench_library_folder
+    from src.workbench_library_navigation import (
+        LibraryNodeKind,
+        WorkbenchLibraryNavigation,
+    )
+    from src.workbench_qml import (
+        Screen1QmlRuntimeComposition,
+        Screen1QmlViewModel,
+        _qml_engine,
+    )
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+
+    _root, db = _register_analyzed_root(tmp_path)
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    app, engine, window = _qml_engine(view_model, runtime_composition=composition)
+    window.show()
+    try:
+        library_model = engine._screen1_library_model
+        library_bridge = engine._screen1_library_bridge
+        library_model.state.fetch_children(SAMPLE_SOURCES)
+        root_node = next(
+            node
+            for node in navigation.children(SAMPLE_SOURCES)
+            if node.kind is LibraryNodeKind.REGISTERED_ROOT
+        )
+        library_bridge.selectLibraryNode(root_node.node_id)
+        assert view_model.browser_rows
+
+        assert root_node.folder_id is not None
+        assert remove_workbench_library_folder(root_node.folder_id, library_db_path=db)
+        assert library_model.replaceBranch(SAMPLE_SOURCES) is True
+        app.processEvents()
+
+        assert library_model.state.selected_node_id is None
+        assert composition.browser_state.rows == ()
+        assert view_model.browser_rows == ()
+        assert view_model.selected_browser_index == -1
+    finally:
+        window.close()
+        app.processEvents()
+        timer = getattr(engine, "_screen1_waveform_timer", None)
+        if timer is not None:
+            timer.stop()
+        loader = getattr(engine, "_screen1_waveform_loader", None)
+        if loader is not None:
+            loader.close()
+        coordinator = getattr(engine, "_screen1_analysis_coordinator", None)
+        if coordinator is not None:
+            coordinator.close()
 
 
 def test_production_route_constructs_no_scope_without_baseline(monkeypatch: pytest.MonkeyPatch):
@@ -498,6 +651,7 @@ def test_production_qml_contract_has_observable_screen_state_and_action_path():
     assert "addSource" in source
     assert "removeSource" in source
     assert "action:add-source" in source
+    assert "window.screenData.selectedBrowserIndex" in source
     assert 'objectName: "browserPane"' in source
     assert "Layout.minimumWidth: 0" in source
 

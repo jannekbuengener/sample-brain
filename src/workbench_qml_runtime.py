@@ -209,8 +209,8 @@ class Screen1QmlRuntimeComposition:
         except Exception:
             return None
 
-    def clear_no_scope(self) -> Screen1BrowserState:
-        return self._set_no_scope()
+    def clear_no_scope(self, error: str | None = None) -> Screen1BrowserState:
+        return self._set_no_scope(error)
 
     @staticmethod
     def _validate_scope(scope: LibraryScope) -> str | None:

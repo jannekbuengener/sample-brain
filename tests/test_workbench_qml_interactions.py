@@ -199,6 +199,24 @@ def test_browser_row_projects_real_metadata_and_empty_values_neutrally():
     assert row.waveform_envelope
     assert all(0.0 <= point <= 1.0 for point in row.waveform_envelope)
 
+    catalog_row = WorkbenchRow(
+        display_name="CATALOG_LOOP",
+        relative_path="catalog-loop.wav",
+        path="catalog-loop.wav",
+        bpm=120.0,
+        key="Cmaj",
+        key_conf=0.9,
+        loudness=None,
+        brightness=None,
+        sample_class="loop",
+        pred_type="Loop",
+        status="ok",
+        details={"duration": 3.5},
+    )
+    from src.workbench_qml import _qml_row
+
+    assert _qml_row(catalog_row).duration == "3.50s"
+
     missing = WorkbenchRow(
         display_name="UNKNOWN",
         relative_path="unknown.wav",
@@ -213,8 +231,6 @@ def test_browser_row_projects_real_metadata_and_empty_values_neutrally():
         status="ok",
         details={},
     )
-    from src.workbench_qml import _qml_row
-
     projected = _qml_row(missing)
     assert projected.sample_type == "—"
     assert projected.bpm == "—"
