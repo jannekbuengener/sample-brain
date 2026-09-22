@@ -19,7 +19,12 @@ import numpy as np
 
 from .analyze import extract_features
 from .key_signature import format_key_signature, parse_key_signature
-from .key_profile_analysis import characterize_synthetic_margins, rank_key_profiles
+from .key_profile_analysis import (
+    characterize_synthetic_gate,
+    characterize_synthetic_margins,
+    gate_ranked_key_profile,
+    rank_key_profiles,
+)
 
 
 _OPEN_KEY_TO_CANONICAL = {
@@ -184,6 +189,35 @@ def _candidate_from_features(features: Any) -> dict[str, Any]:
     }
 
 
+def _gated_candidate_from_features(features: Any) -> dict[str, Any]:
+    chroma_mean_blob = getattr(features, "chroma_mean", None)
+    chroma_std_blob = getattr(features, "chroma_std", None)
+    chroma_mean = np.frombuffer(chroma_mean_blob, dtype=np.float32) if chroma_mean_blob else ()
+    chroma_std = np.frombuffer(chroma_std_blob, dtype=np.float32) if chroma_std_blob else ()
+    result = gate_ranked_key_profile(chroma_mean, chroma_std)
+    evidence = result.evidence
+    return {
+        "status": result.status,
+        "root": result.root,
+        "mode": result.mode,
+        "canonical_key": result.canonical_key,
+        "abstention_reasons": list(result.abstention_reasons),
+        "gate_evidence": {
+            "best_score": evidence.best_score if evidence is not None else None,
+            "runner_up_score": evidence.runner_up_score if evidence is not None else None,
+            "margin": evidence.margin if evidence is not None else None,
+            "normalized_entropy": evidence.normalized_entropy if evidence is not None else None,
+            "dominant_pitch_class_concentration": (
+                evidence.dominant_pitch_class_concentration if evidence is not None else None
+            ),
+            "temporal_stability": evidence.temporal_stability if evidence is not None else None,
+            "conditions": dict(evidence.conditions) if evidence is not None else {},
+            "gate_name": result.gate_name,
+            "gate_version": result.gate_version,
+        },
+    }
+
+
 def _agreement(count: int, comparable: int) -> dict[str, int | None]:
     return {"agreement_count": count, "comparable_count": comparable}
 
@@ -231,6 +265,10 @@ def _ab_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
         if record["candidate"]["status"] == "resolved"
     ]
     candidate_ranked_full = [record["candidate_comparison"]["full_key_match"] for record in keyed]
+    gated_resolved = [record for record in keyed if record["candidate_gated"]["status"] == "resolved"]
+    gated_root = [record["candidate_gated_comparison"]["root_match"] for record in gated_resolved]
+    gated_mode = [record["candidate_gated_comparison"]["mode_match"] for record in gated_resolved]
+    gated_full = [record["candidate_gated_comparison"]["full_key_match"] for record in gated_resolved]
     baseline_root_count = sum(item is True for item in baseline_root)
     candidate_root_count = sum(item is True for item in candidate_root)
     baseline_full_count = sum(item is True for item in baseline_full)
@@ -254,6 +292,17 @@ def _ab_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
                 "ranked_only": sum(record["candidate"]["status"] == "ranked_only" for record in resolved),
             },
         },
+        "candidate_gated": {
+            "root_agreement_resolved": _agreement(sum(item is True for item in gated_root), len(gated_root)),
+            "mode_agreement_resolved": _agreement(
+                sum(item is True for item in gated_mode), sum(item is not None for item in gated_mode)
+            ),
+            "full_key_agreement_resolved": _agreement(sum(item is True for item in gated_full), len(gated_full)),
+            "status_counts": {
+                "resolved": sum(record["candidate_gated"]["status"] == "resolved" for record in resolved),
+                "abstained": sum(record["candidate_gated"]["status"] == "abstained" for record in resolved),
+            },
+        },
         "delta": {
             "root_agreement_ranked": candidate_root_count - baseline_root_count,
             "full_key_agreement_ranked": candidate_ranked_full_count - baseline_full_count,
@@ -264,6 +313,21 @@ def _ab_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
             "baseline_wrong_to_candidate_correct_root": sum(
                 baseline is False and candidate is True
                 for baseline, candidate in zip(baseline_root, candidate_root)
+            ),
+            "baseline_correct_to_gated_wrong_root": sum(
+                record["comparison"]["root_match"] is True
+                and record["candidate_gated_comparison"]["root_match"] is False
+                for record in gated_resolved
+            ),
+            "baseline_wrong_to_gated_correct_root": sum(
+                record["comparison"]["root_match"] is False
+                and record["candidate_gated_comparison"]["root_match"] is True
+                for record in gated_resolved
+            ),
+            "baseline_correct_to_gated_abstained": sum(
+                record["comparison"]["root_match"] is True
+                and record["candidate_gated"]["status"] == "abstained"
+                for record in keyed
             ),
         },
         "negative_controls": {
@@ -276,6 +340,12 @@ def _ab_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
             ),
             "candidate_abstained_when_reference_abstained": sum(
                 record["candidate"]["status"] == "abstained" for record in negative_controls
+            ),
+            "candidate_gated_resolved_when_reference_abstained": sum(
+                record["candidate_gated"]["status"] == "resolved" for record in negative_controls
+            ),
+            "candidate_gated_abstained_when_reference_abstained": sum(
+                record["candidate_gated"]["status"] == "abstained" for record in negative_controls
             ),
         },
         "candidate_margin_distribution": _margin_distribution(resolved),
@@ -299,6 +369,8 @@ def evaluate_reference_library(
                 "sample_brain": None,
                 "baseline": None,
                 "candidate": None,
+                "candidate_profile": None,
+                "candidate_gated": None,
                 "bpm": {
                     "sample_brain_bpm": None,
                     "traktor_bpm": reference.traktor_bpm,
@@ -306,6 +378,7 @@ def evaluate_reference_library(
                 },
                 "comparison": {"root_match": None, "mode_match": None, "full_key_match": False},
                 "candidate_comparison": {"root_match": None, "mode_match": None, "full_key_match": False},
+                "candidate_gated_comparison": {"root_match": None, "mode_match": None, "full_key_match": False},
                 "reason": item.reason,
             })
             continue
@@ -320,6 +393,8 @@ def evaluate_reference_library(
                 "sample_brain": None,
                 "baseline": None,
                 "candidate": None,
+                "candidate_profile": None,
+                "candidate_gated": None,
                 "bpm": {
                     "sample_brain_bpm": None,
                     "traktor_bpm": reference.traktor_bpm,
@@ -327,6 +402,7 @@ def evaluate_reference_library(
                 },
                 "comparison": {"root_match": None, "mode_match": None, "full_key_match": False},
                 "candidate_comparison": {"root_match": None, "mode_match": None, "full_key_match": False},
+                "candidate_gated_comparison": {"root_match": None, "mode_match": None, "full_key_match": False},
                 "reason": "ANALYSIS_FAILED",
             })
             continue
@@ -345,7 +421,9 @@ def evaluate_reference_library(
             "mode_evidence": features.key_mode_evidence,
         }
         candidate = _candidate_from_features(features)
+        candidate_gated = _gated_candidate_from_features(features)
         candidate_comparison = _comparison(candidate["canonical_key"], traktor_key)
+        candidate_gated_comparison = _comparison(candidate_gated["canonical_key"], traktor_key)
         abstained = parsed is None or parsed.mode is None
         reason = (
             "TRAKTOR_ABSTAINED" if traktor_key is None else
@@ -362,6 +440,8 @@ def evaluate_reference_library(
             "sample_brain": baseline,
             "baseline": baseline,
             "candidate": candidate,
+            "candidate_profile": candidate,
+            "candidate_gated": candidate_gated,
             "bpm": {
                 "sample_brain_bpm": features.bpm,
                 "traktor_bpm": reference.traktor_bpm,
@@ -369,6 +449,7 @@ def evaluate_reference_library(
             },
             "comparison": comparison,
             "candidate_comparison": candidate_comparison,
+            "candidate_gated_comparison": candidate_gated_comparison,
             "reason": reason,
         })
 
@@ -391,6 +472,7 @@ def evaluate_reference_library(
                 record for record in records if (record["reference"].get("tier") or "").casefold() == "a"
             ]),
             "candidate_synthetic_margin_distribution": characterize_synthetic_margins(),
+            "candidate_synthetic_gate_characterization": characterize_synthetic_gate(),
             "real_candidate_margin_distribution": {
                 "tier_a": _margin_distribution([
                     record for record in records if (record["reference"].get("tier") or "").casefold() == "a"
@@ -465,9 +547,12 @@ def sanitize_report(report: dict[str, Any]) -> dict[str, Any]:
             "sample_brain": record["sample_brain"],
             "baseline": record["baseline"],
             "candidate": record["candidate"],
+            "candidate_profile": record["candidate_profile"],
+            "candidate_gated": record["candidate_gated"],
             "bpm": record["bpm"],
             "comparison": record["comparison"],
             "candidate_comparison": record["candidate_comparison"],
+            "candidate_gated_comparison": record["candidate_gated_comparison"],
             "reason": record["reason"],
         })
     return {
@@ -497,8 +582,12 @@ def format_ab_handoff(report: dict[str, Any]) -> str:
         f"tier_a_baseline_root_agreement={agreement(tier_a['baseline']['root_agreement'])}",
         f"tier_a_candidate_ranked_root_agreement={agreement(tier_a['candidate']['root_agreement_ranked'])}",
         f"candidate_status_counts={json.dumps(overall['candidate']['status_counts'], sort_keys=True)}",
+        f"gated_status_counts={json.dumps(overall['candidate_gated']['status_counts'], sort_keys=True)}",
+        f"gated_root_agreement={agreement(overall['candidate_gated']['root_agreement_resolved'])}",
+        f"tier_a_gated_root_agreement={agreement(tier_a['candidate_gated']['root_agreement_resolved'])}",
         f"negative_controls={json.dumps(overall['negative_controls'], sort_keys=True)}",
         f"synthetic_margins={json.dumps(report['ab_comparison']['candidate_synthetic_margin_distribution'], sort_keys=True)}",
+        f"synthetic_gate={json.dumps(report['ab_comparison']['candidate_synthetic_gate_characterization']['gate_candidates'], sort_keys=True)}",
         f"real_tier_a_margins={json.dumps(report['ab_comparison']['real_candidate_margin_distribution']['tier_a'], sort_keys=True)}",
         "candidate_is_evaluation_only=ranked_only_is_not_a_production_key_claim",
         "",

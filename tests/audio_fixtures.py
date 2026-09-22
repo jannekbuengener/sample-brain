@@ -266,3 +266,50 @@ def write_major_minor_blend_wav(
     )
     sf.write(path, np.clip(wave, -1.0, 1.0), sr, subtype="PCM_16")
     return path
+
+
+def write_seeded_noise_wav(
+    path: Path,
+    *,
+    duration_sec: float = 2.0,
+    sr: int = 44100,
+    amplitude: float = 0.35,
+    seed: int = 594,
+) -> Path:
+    """Write deterministic broadband noise for abstention characterization."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sample_count = max(1, int(sr * duration_sec))
+    rng = np.random.default_rng(seed)
+    wave = rng.standard_normal(sample_count).astype(np.float32)
+    peak = float(np.max(np.abs(wave))) or 1.0
+    sf.write(path, amplitude * wave / peak, sr, subtype="PCM_16")
+    return path
+
+
+def write_hihat_noise_wav(
+    path: Path,
+    *,
+    bpm: float = 120.0,
+    duration_sec: float = 2.0,
+    sr: int = 44100,
+    amplitude: float = 0.4,
+    seed: int = 594,
+) -> Path:
+    """Write deterministic, high-passed noise bursts resembling closed hi-hats."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sample_count = max(1, int(sr * duration_sec))
+    rng = np.random.default_rng(seed)
+    noise = rng.standard_normal(sample_count).astype(np.float32)
+    high_passed = np.empty_like(noise)
+    high_passed[0] = noise[0]
+    high_passed[1:] = noise[1:] - 0.97 * noise[:-1]
+    wave = np.zeros(sample_count, dtype=np.float32)
+    interval_samples = max(1, int((60.0 / bpm) * sr))
+    burst_samples = max(1, int(0.035 * sr))
+    envelope = np.exp(-np.linspace(0.0, 7.0, burst_samples, dtype=np.float32))
+    for start in range(0, sample_count, interval_samples):
+        end = min(sample_count, start + burst_samples)
+        wave[start:end] += high_passed[start:end] * envelope[: end - start]
+    peak = float(np.max(np.abs(wave))) or 1.0
+    sf.write(path, amplitude * wave / peak, sr, subtype="PCM_16")
+    return path

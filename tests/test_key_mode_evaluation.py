@@ -68,6 +68,7 @@ def test_evaluation_reports_mode_abstention_without_claiming_key_match(monkeypat
         key_mode = None
         key_mode_evidence = {"kind": "third_contrast", "contrast": 0.12}
         chroma_mean = np.asarray(MAJOR_KEY_PROFILE, dtype=np.float32).tobytes()
+        chroma_std = (np.asarray(MAJOR_KEY_PROFILE, dtype=np.float32) * 0.01).tobytes()
 
     monkeypatch.setattr("src.key_mode_evaluation.extract_features", lambda *_, **__: Features())
 
@@ -85,6 +86,10 @@ def test_evaluation_reports_mode_abstention_without_claiming_key_match(monkeypat
     assert record["comparison"]["full_key_match"] is False
     assert record["candidate"]["status"] == "ranked_only"
     assert record["candidate"]["canonical_key"] == "Cmaj"
+    assert record["candidate_profile"] == record["candidate"]
+    assert record["candidate_gated"]["status"] == "resolved"
+    assert record["candidate_gated"]["canonical_key"] == "Cmaj"
+    assert record["candidate_gated"]["gate_evidence"]["gate_version"]
     assert record["candidate_comparison"]["root_match"] is True
     assert record["candidate_comparison"]["full_key_match"] is True
     assert report["ab_comparison"]["overall"]["candidate"]["status_counts"]["ranked_only"] == 1
@@ -121,6 +126,7 @@ def test_run_local_evaluation_uses_explicit_external_inputs_and_writes_no_paths(
         key_conf = 0.42
         key_mode_evidence = {"kind": "third_contrast", "contrast": 0.4}
         chroma_mean = np.asarray(MAJOR_KEY_PROFILE, dtype=np.float32).tobytes()
+        chroma_std = (np.asarray(MAJOR_KEY_PROFILE, dtype=np.float32) * 0.01).tobytes()
 
     monkeypatch.setattr("src.key_mode_evaluation.extract_features", lambda *_, **__: Features())
     report = run_local_evaluation(
@@ -150,6 +156,7 @@ def test_sanitized_report_has_aliases_but_no_private_names_or_paths(monkeypatch)
         key_conf = 0.42
         key_mode_evidence = {"kind": "third_contrast", "contrast": 0.4}
         chroma_mean = np.asarray(MAJOR_KEY_PROFILE, dtype=np.float32).tobytes()
+        chroma_std = (np.asarray(MAJOR_KEY_PROFILE, dtype=np.float32) * 0.01).tobytes()
 
     monkeypatch.setattr("src.key_mode_evaluation.extract_features", lambda *_, **__: Features())
     sanitized = sanitize_report(evaluate_reference_library([reference], library))
@@ -159,6 +166,9 @@ def test_sanitized_report_has_aliases_but_no_private_names_or_paths(monkeypatch)
     assert "name" not in record["reference"]
     assert "file_identity" not in record
     assert record["candidate"]["canonical_key"] == "Cmaj"
+    assert record["candidate_profile"] == record["candidate"]
+    assert record["candidate_gated"]["status"] == "resolved"
+    assert "gate_evidence" in record["candidate_gated"]
     assert "ab_comparison" in sanitized
     assert "Private" not in json.dumps(sanitized)
 
@@ -173,6 +183,7 @@ def test_ab_handoff_is_aggregate_only(monkeypatch) -> None:
         key_conf = 0.42
         key_mode_evidence = {"kind": "third_contrast", "contrast": 0.4}
         chroma_mean = np.asarray(MAJOR_KEY_PROFILE, dtype=np.float32).tobytes()
+        chroma_std = (np.asarray(MAJOR_KEY_PROFILE, dtype=np.float32) * 0.01).tobytes()
 
     monkeypatch.setattr("src.key_mode_evaluation.extract_features", lambda *_, **__: Features())
     handoff = format_ab_handoff(evaluate_reference_library([reference], library))
