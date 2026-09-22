@@ -307,12 +307,19 @@ class Screen1QmlRuntimeComposition:
                 folder_id = self._lookup_registered_folder_id(Path(folder_path), folders)
             except LookupError:
                 return None
-        needs_refresh = workbench_scope_requires_refresh(
-            folder_id=folder_id,
-            folder_path=folder_path,
-            relative_path=relative_path,
-            library_db_path=self.library_db_path,
-        )
+        if self.browser_state.scope == scope and self.browser_state.error is None:
+            needs_refresh = any(
+                row.details.get("analyzer_version") != "workbench_v2"
+                and Path(row.path).is_file()
+                for row in self.browser_state.rows
+            )
+        else:
+            needs_refresh = workbench_scope_requires_refresh(
+                folder_id=folder_id,
+                folder_path=folder_path,
+                relative_path=relative_path,
+                library_db_path=self.library_db_path,
+            )
         if not needs_refresh:
             return None
         return SourceRegistration(
