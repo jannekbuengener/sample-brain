@@ -72,6 +72,53 @@ class QmlLiveKitGroup:
     active: bool
 
 
+class LiveKitPresenter:
+    """Thin runtime-owned projection adapter over the canonical Live Kit contracts.
+
+    Owns exactly one :class:`LiveKitState` and :class:`LiveKitPresentationState`
+    and renders their current truth into the renderer-only group shape.  QML
+    never owns musical or disclosure state; it only reads this projection.
+    """
+
+    def __init__(self, state: LiveKitState | None = None) -> None:
+        self._state = state if state is not None else LiveKitState()
+        self._presentation = LiveKitPresentationState(self._state)
+        self._groups = self._project()
+
+    @property
+    def state(self) -> LiveKitState:
+        return self._state
+
+    @property
+    def presentation(self) -> LiveKitPresentationState:
+        return self._presentation
+
+    def _project(self) -> tuple[QmlLiveKitGroup, ...]:
+        return tuple(
+            QmlLiveKitGroup(
+                name=group.name,
+                slots=tuple(
+                    QmlLiveKitSlot(slot.name, slot.assignment) for slot in group.slots
+                ),
+                active=not self._presentation.is_collapsed(group.name),
+            )
+            for group in self._presentation.visible_structure()
+        )
+
+    @property
+    def groups(self) -> tuple[QmlLiveKitGroup, ...]:
+        return self._groups
+
+    def toggle_group(self, group: str) -> bool:
+        self._presentation.toggle_group(group)
+        self._groups = self._project()
+        return self._presentation.is_collapsed(group)
+
+    def assign(self, group: str, slot: str, row: WorkbenchRow) -> None:
+        self._state.assign(group, slot, row)
+        self._groups = self._project()
+
+
 def _row_details(row: WorkbenchRow) -> dict[str, object]:
     """Read the public renderer details attached to a Workbench row."""
     if row.details:
@@ -302,7 +349,15 @@ class Screen1QmlViewModel:
                     "name": group.name,
                     "active": group.active,
                     "slots": [
-                        {"name": slot.name, "assignment": slot.assignment.display_name if slot.assignment else "Empty"}
+                        {
+                            "name": slot.name,
+                            "assignment": (
+                                slot.assignment.display_name
+                                if slot.assignment
+                                else "Empty · Slot wählen"
+                            ),
+                            "assigned": slot.assignment is not None,
+                        }
                         for slot in group.slots
                     ],
                 }
@@ -416,6 +471,19 @@ def _qml_screen_data_bridge(
         def liveKitGroups(self) -> list[dict[str, object]]:
             return view_model.qml_context()["liveKitGroups"]
 
+        @Property(int, notify=liveKitGroupsChanged)
+        def liveKitAssignedCount(self) -> int:
+            return sum(
+                1
+                for group in view_model.live_kit_groups
+                for slot in group.slots
+                if slot.assignment is not None
+            )
+
+        @Property(int, notify=liveKitGroupsChanged)
+        def liveKitTotalSlotCount(self) -> int:
+            return sum(len(group.slots) for group in view_model.live_kit_groups)
+
         @Property(int, notify=panelCountChanged)
         def panelCount(self) -> int:
             return view_model.panel_count
@@ -469,6 +537,7 @@ class Screen1QmlInteractionAdapter:
         on_preview_requested: Callable[[WorkbenchRow], object] | None = None,
         on_preview_stopped: Callable[[], object] | None = None,
         on_add_to_kit_requested: Callable[[WorkbenchRow], object] | None = None,
+        live_kit: LiveKitPresenter | None = None,
     ) -> None:
         self.view_model = view_model
         self.harmony_controller = harmony_controller
@@ -476,6 +545,8 @@ class Screen1QmlInteractionAdapter:
         self._on_preview_requested = on_preview_requested
         self._on_preview_stopped = on_preview_stopped
         self._on_add_to_kit_requested = on_add_to_kit_requested
+        self._live_kit = live_kit
+        self._pending_live_kit_row: WorkbenchRow | None = None
         self._preview_active = False
         self._harmonic_match_context_fingerprint: tuple[object, ...] | None = None
         self._harmonic_match_selected_index = 0
@@ -527,11 +598,70 @@ class Screen1QmlInteractionAdapter:
         return True
 
     def request_add_to_kit(self, index: int) -> WorkbenchRow:
-        """Emit an Add-to-Kit intent without assigning the row."""
+        """Emit an Add-to-Kit intent without assigning the row.
+
+        The row is remembered as the pending Live Kit target; the actual slot
+        assignment happens only through :meth:`assign_live_kit_slot`.
+        """
         row = self.view_model.browser_rows[index].source_row
+        self._pending_live_kit_row = row
         if self._on_add_to_kit_requested is not None:
             self._on_add_to_kit_requested(row)
         return row
+
+    @property
+    def pending_live_kit_add(self) -> str:
+        return (
+            self._pending_live_kit_row.display_name
+            if self._pending_live_kit_row is not None
+            else ""
+        )
+
+    def _sync_live_kit_projection(self) -> None:
+        if self._live_kit is not None:
+            self.view_model.live_kit_groups = self._live_kit.groups
+
+    def toggle_live_kit_group(self, group: str) -> bool:
+        if self._live_kit is None:
+            return False
+        try:
+            self._live_kit.state.slots_for(group)
+        except ValueError:
+            return False
+        self._live_kit.toggle_group(group)
+        self._sync_live_kit_projection()
+        return self._live_kit.presentation.is_collapsed(group)
+
+    def assign_live_kit_slot(self, group: str, slot: str) -> bool:
+        """Assign the pending (or selected) row through the existing seam.
+
+        Add and Replace both resolve to :meth:`LiveKitState.assign`, which
+        overwrites exactly the explicit target slot.
+        """
+        if self._live_kit is None:
+            return False
+        try:
+            self._live_kit.state.slots_for(group)
+        except ValueError:
+            return False
+        row = self._pending_live_kit_row
+        if row is None:
+            if not 0 <= self.selected_browser_index < len(self.view_model.browser_rows):
+                return False
+            row = self.view_model.browser_rows[self.selected_browser_index].source_row
+        try:
+            self._live_kit.assign(group, slot, row)
+        except ValueError:
+            return False
+        self._pending_live_kit_row = None
+        self._sync_live_kit_projection()
+        return True
+
+    def cancel_live_kit_add(self) -> bool:
+        if self._pending_live_kit_row is None:
+            return False
+        self._pending_live_kit_row = None
+        return True
 
     def navigate_browser(
         self, direction: str, *, browser_has_focus: bool
@@ -632,6 +762,7 @@ class Screen1QmlInteractionAdapter:
 
     def request_add_harmonic_match_to_kit(self, index: int) -> WorkbenchRow:
         row = self.select_harmonic_match(index)
+        self._pending_live_kit_row = row
         if self._on_add_to_kit_requested is not None:
             self._on_add_to_kit_requested(row)
         return row
@@ -1130,17 +1261,82 @@ ApplicationWindow {
                 }
             }
         }
-        Rectangle { Layout.preferredWidth: 300; Layout.fillHeight: true; color: window.panel; border.color: window.border
-            ColumnLayout { anchors.fill: parent; anchors.margins: 14
-                Label { text: "LIVE KIT"; color: window.muted; font.pixelSize: 12 }
+        Rectangle { id: liveKitPane; objectName: "liveKitPane"; Layout.preferredWidth: 300; Layout.fillHeight: true; color: window.panel; border.color: window.border
+            ColumnLayout { anchors.fill: parent; anchors.margins: 14; spacing: 8
+                RowLayout { Layout.fillWidth: true
+                    Label { text: "LIVE KIT"; color: window.muted; font.pixelSize: 12; Layout.fillWidth: true }
+                    Label { text: window.screenData.liveKitAssignedCount + " / " + window.screenData.liveKitTotalSlotCount; color: window.muted; font.pixelSize: 11 }
+                }
+                Rectangle {
+                    id: liveKitPendingBanner
+                    objectName: "liveKitPendingBanner"
+                    visible: window.interaction.liveKitPendingAdd !== ""
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 30
+                    radius: 4
+                    color: "#211014"
+                    border.color: window.accent
+                    focus: visible
+                    Keys.onEscapePressed: window.interaction.cancelLiveKitAdd()
+                    Label {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        text: "Add " + window.interaction.liveKitPendingAdd + " · Slot + · Esc"
+                        color: "#f2a0ab"
+                        font.pixelSize: 11
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                }
                 Repeater { model: window.screenData.liveKitGroups
-                    delegate: Rectangle { Layout.fillWidth: true; implicitHeight: modelData.active ? 212 : 52; color: "transparent"; border.color: modelData.active ? window.accent : window.border
-                        ColumnLayout { anchors.fill: parent; anchors.margins: 10
-                            Label { text: (index + 1) + "  " + modelData.name; color: window.textColor; font.pixelSize: 16 }
-                            Repeater { model: modelData.active ? modelData.slots : []
-                                delegate: RowLayout { Layout.fillWidth: true
-                                    Label { text: modelData.name; color: window.textColor; Layout.fillWidth: true }
-                                    Label { text: modelData.assignment; color: modelData.assignment === "Empty" ? window.muted : window.accent; font.pixelSize: 11 }
+                    delegate: Rectangle {
+                        property int kitGroupIndex: index
+                        Layout.fillWidth: true
+                        implicitHeight: 44 + (modelData.active ? modelData.slots.length * 26 + 14 : 0)
+                        radius: 6
+                        color: modelData.active ? window.panelAlt : "transparent"
+                        border.color: modelData.active ? window.accent : window.border
+                        ColumnLayout { anchors.fill: parent; spacing: 0
+                            Item { Layout.fillWidth: true; Layout.preferredHeight: 44; Layout.leftMargin: 12; Layout.rightMargin: 10
+                                RowLayout { anchors.fill: parent; spacing: 6
+                                    Label { text: (index + 1) + "  "; color: modelData.active ? window.accent : window.muted; font.pixelSize: 13; font.bold: true }
+                                    Label { text: modelData.name; color: window.textColor; font.pixelSize: 14; font.bold: modelData.active; elide: Text.ElideRight; Layout.fillWidth: true }
+                                    Label { text: modelData.active ? "▾" : "▸"; color: modelData.active ? window.accent : window.muted; font.pixelSize: 12 }
+                                }
+                                MouseArea {
+                                    id: liveKitGroupHeader
+                                    objectName: "liveKitGroupHeader" + index
+                                    anchors.fill: parent
+                                    onClicked: window.interaction.toggleLiveKitGroup(kitGroupIndex)
+                                }
+                            }
+                            ColumnLayout { visible: modelData.active; Layout.fillWidth: true; Layout.leftMargin: 12; Layout.rightMargin: 10; Layout.topMargin: 2
+                                Repeater { model: modelData.active ? modelData.slots : []
+                                    delegate: RowLayout { Layout.fillWidth: true; Layout.preferredHeight: 26
+                                        Label { text: modelData.name; color: window.muted; font.pixelSize: 11; Layout.fillWidth: true; elide: Text.ElideRight }
+                                        Label { text: modelData.assignment; color: modelData.assigned ? window.textColor : window.muted; font.pixelSize: 11; elide: Text.ElideRight }
+                                        Rectangle {
+                                            id: slotAdd
+                                            Layout.preferredWidth: 22
+                                            Layout.preferredHeight: 22
+                                            radius: 3
+                                            color: slotAddMouse.containsMouse ? "#24151a" : "transparent"
+                                            border.color: window.interaction.liveKitPendingAdd !== "" ? window.accent : "transparent"
+                                            Label {
+                                                anchors.centerIn: parent
+                                                text: "+"
+                                                color: slotAddMouse.containsMouse || window.interaction.liveKitPendingAdd !== "" ? window.accent : window.muted
+                                                font.pixelSize: 13
+                                            }
+                                            MouseArea {
+                                                id: slotAddMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                onClicked: window.interaction.addLiveKitSlot(kitGroupIndex, index)
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1228,6 +1424,7 @@ def _qml_interaction_bridge(
         def addToKit(self, index: int) -> None:
             row = adapter.request_add_to_kit(index)
             self.addToKitIntent.emit(row.relative_path or str(row.path))
+            self._refresh()
 
         @Slot(int)
         def selectHarmonyRow(self, index: int) -> None:
@@ -1243,6 +1440,47 @@ def _qml_interaction_bridge(
         def addHarmonyToKit(self, index: int) -> None:
             row = adapter.request_add_harmonic_match_to_kit(index)
             self.addToKitIntent.emit(row.relative_path or str(row.path))
+            self._refresh()
+
+        @Property(str, notify=state_changed)
+        def liveKitPendingAdd(self) -> str:
+            return adapter.pending_live_kit_add
+
+        def _live_kit_group_name(self, index: int) -> str | None:
+            groups = adapter.view_model.live_kit_groups
+            if not 0 <= index < len(groups):
+                return None
+            return groups[index].name
+
+        def _live_kit_slot_target(self, group_index: int, slot_index: int) -> tuple[str, str] | None:
+            groups = adapter.view_model.live_kit_groups
+            if not 0 <= group_index < len(groups):
+                return None
+            slots = groups[group_index].slots
+            if not 0 <= slot_index < len(slots):
+                return None
+            return (groups[group_index].name, slots[slot_index].name)
+
+        @Slot(int)
+        def toggleLiveKitGroup(self, index: int) -> None:
+            name = self._live_kit_group_name(index)
+            if name is None:
+                return
+            adapter.toggle_live_kit_group(name)
+            self._refresh()
+
+        @Slot(int, int)
+        def addLiveKitSlot(self, group_index: int, slot_index: int) -> None:
+            target = self._live_kit_slot_target(group_index, slot_index)
+            if target is None:
+                return
+            if adapter.assign_live_kit_slot(*target):
+                self._refresh()
+
+        @Slot()
+        def cancelLiveKitAdd(self) -> None:
+            adapter.cancel_live_kit_add()
+            self._refresh()
 
         @Slot(int)
         def navigateHarmony(self, step: int) -> None:
@@ -1412,14 +1650,18 @@ def _qml_engine(
                 start_ms=get_preview_start_ms(row.path, library_db_path=preview_db_path),
             )
 
+        live_kit = LiveKitPresenter()
         adapter = Screen1QmlInteractionAdapter(
             view_model=view_model,
             harmony_controller=HarmonicMatchLibraryController(),
             on_preview_requested=preview_row,
             on_preview_stopped=preview_player.stop,
+            live_kit=live_kit,
         )
+        view_model.live_kit_groups = live_kit.groups
     else:
         adapter = interaction_adapter
+        live_kit = getattr(interaction_adapter, "_live_kit", None)
     library_model = create_qt_library_tree_model(view_model.library_tree)
 
     def refresh_screen_model() -> None:
@@ -1621,6 +1863,7 @@ def _qml_engine(
     engine._screen1_library_model = library_model
     engine._screen1_library_bridge = library_bridge
     engine._screen1_screen_model = screen_model
+    engine._screen1_live_kit = live_kit
     engine._screen1_runtime_composition = runtime_composition
     engine._screen1_analysis_coordinator = analysis_coordinator
     engine._screen1_waveform_cache = waveform_cache
@@ -1685,6 +1928,7 @@ def run_qml_screen1(*, state_id: str = "screen1-default-3panel") -> int:
 
 
 __all__ = [
+    "LiveKitPresenter",
     "QML_SOURCE",
     "QmlBrowserRow",
     "QmlLiveKitGroup",
