@@ -321,6 +321,27 @@ def test_live_kit_audition_requests_zero_offset_while_browser_keeps_cue():
     assert adapter.auditioning_live_kit_slot == ("Drums", "Main Drum")
 
 
+def test_browser_preview_failure_stops_prior_playback_and_clears_projection():
+    stops = []
+    fixture, view_model, adapter, live_kit = _production_adapter(
+        on_preview_requested=_rejecting_probe(rejected_name="TECH_KICK_02.wav"),
+        on_preview_stopped=lambda: stops.append("stop"),
+    )
+    _assign(adapter, live_kit, "Drums", "Main Drum", _row("main.wav"))
+
+    assert adapter.audition_live_kit_slot("Drums", "Main Drum") is True
+    assert adapter.preview_active is True
+    assert stops == []
+
+    failing_index = 1
+    assert adapter.preview_row(failing_index) is fixture.browser_rows[failing_index]
+    assert stops == ["stop"]
+    assert adapter.preview_active is False
+    assert adapter.auditioning_live_kit_slot is None
+    assert view_model.auditioning_live_kit_slot is None
+    assert adapter.stop_preview() is False
+
+
 def _rejecting_probe(*, rejected_name: str):
     def probe(row, *, start_ms=None) -> object:
         if row.relative_path.endswith(rejected_name):

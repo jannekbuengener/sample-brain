@@ -623,15 +623,24 @@ class Screen1QmlInteractionAdapter:
         return self._harmonic_match_scroll_y
 
     def preview_row(self, index: int) -> WorkbenchRow:
-        """Select a row and emit exactly one preview intent."""
+        """Select a row and emit exactly one preview intent.
+
+        A rejected dispatch stops any prior playback through the authoritative
+        stop seam (mirroring the Live Kit audition failure branch), so audio
+        can never stay orphaned while the UI claims idle.
+        """
         if index == self.selected_browser_index:
             row = self.view_model.browser_rows[index].source_row
         else:
             row = self.select_row(index)
+        was_active = self._preview_active
         result = self._dispatch_preview(row)
-        self._preview_active = bool(
+        accepted = bool(
             result is None or getattr(result, "ok", result is not False)
         )
+        if not accepted and was_active:
+            self._stop_preview_authoritative()
+        self._preview_active = accepted
         self._clear_live_kit_audition_projection()
         return row
 
