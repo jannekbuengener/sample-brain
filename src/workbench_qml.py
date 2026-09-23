@@ -1448,12 +1448,26 @@ ApplicationWindow {
                                         objectName: "liveKitSlot" + kitGroupIndex + "_" + index
                                         Layout.fillWidth: true
                                         Layout.preferredHeight: 26
+                                        // This is renderer-only intent, derived from the authoritative
+                                        // pending Add property and the current read-only slot projection.
+                                        // It deliberately does not retain a second Live-Kit target state.
+                                        property bool liveKitSlotTarget: window.interaction.liveKitPendingAdd !== "" && (slotAddMouse.containsMouse || slotAddMouse.activeFocus)
+                                        property bool liveKitReplaceTarget: liveKitSlotTarget && modelData.assigned
                                         Rectangle {
                                             id: slotAuditionBackdrop
                                             anchors.fill: parent
                                             radius: 3
                                             visible: modelData.auditioning
                                             color: "#1a1418"
+                                            border.color: window.accent
+                                        }
+                                        Rectangle {
+                                            id: liveKitSlotTargetBackdrop
+                                            objectName: "liveKitSlotTarget" + kitGroupIndex + "_" + index
+                                            anchors.fill: parent
+                                            radius: 3
+                                            visible: liveKitSlotTarget
+                                            color: "#211014"
                                             border.color: window.accent
                                         }
                                         MouseArea {
@@ -1476,22 +1490,25 @@ ApplicationWindow {
                                             Label { text: modelData.assignment; color: modelData.auditioning ? window.accent : (modelData.assigned ? window.textColor : window.muted); font.pixelSize: 11; elide: Text.ElideRight }
                                             Rectangle {
                                                 id: slotAdd
-                                                Layout.preferredWidth: 22
                                                 Layout.preferredHeight: 22
                                                 radius: 3
-                                                color: slotAddMouse.containsMouse ? "#24151a" : "transparent"
-                                                border.color: window.interaction.liveKitPendingAdd !== "" ? window.accent : "transparent"
+                                                Layout.preferredWidth: liveKitReplaceTarget ? 52 : 22
+                                                color: liveKitSlotTarget ? "#24151a" : "transparent"
+                                                border.color: liveKitSlotTarget ? window.accent : "transparent"
                                                 Label {
                                                     anchors.centerIn: parent
-                                                    text: "+"
-                                                    color: slotAddMouse.containsMouse || window.interaction.liveKitPendingAdd !== "" ? window.accent : window.muted
-                                                    font.pixelSize: 13
+                                                    objectName: "liveKitSlotActionLabel" + kitGroupIndex + "_" + index
+                                                    text: liveKitReplaceTarget ? "Replace" : "+"
+                                                    color: liveKitSlotTarget ? window.accent : (slotAddMouse.containsMouse ? window.textColor : window.muted)
+                                                    font.pixelSize: liveKitReplaceTarget ? 10 : 13
                                                 }
                                                 MouseArea {
                                                     id: slotAddMouse
+                                                    objectName: "liveKitSlotAction" + kitGroupIndex + "_" + index
                                                     anchors.fill: parent
                                                     hoverEnabled: true
-                                                    onClicked: window.interaction.addLiveKitSlot(kitGroupIndex, index)
+                                                    focus: true
+                                                    onClicked: { slotAddMouse.forceActiveFocus(); window.interaction.addLiveKitSlot(kitGroupIndex, index) }
                                                 }
                                             }
                                         }

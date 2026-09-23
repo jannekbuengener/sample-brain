@@ -99,6 +99,38 @@ def test_empty_slot_projects_an_honest_empty_state():
     assert all(not slot["assigned"] for slot in drums["slots"])
 
 
+def test_pending_add_derives_empty_and_assigned_target_intent_without_domain_state():
+    fixture, view_model, adapter, live_kit = _production_adapter()
+    assigned = fixture.browser_rows[0]
+    pending = fixture.browser_rows[1]
+
+    adapter.request_add_to_kit(0)
+    assert adapter.assign_live_kit_slot("Drums", "Main Drum") is True
+    adapter.request_add_to_kit(1)
+
+    slots = view_model.qml_context()["liveKitGroups"][1]["slots"]
+    assert adapter.pending_live_kit_add == pending.display_name
+    assert slots[0]["assigned"] is True
+    assert slots[1]["assigned"] is False
+    assert live_kit.state.assignment_for("Drums", "Main Drum") is assigned
+    assert live_kit.state.assignment_for("Drums", "Closed Hat") is None
+
+    # The target state belongs to the renderer and is derived only from the
+    # existing pending-add property plus the read-only slot projection.
+    assert "property bool liveKitSlotTarget:" in QML_SOURCE
+    assert "property bool liveKitReplaceTarget:" in QML_SOURCE
+    assert "visible: liveKitSlotTarget" in QML_SOURCE
+    assert 'text: liveKitReplaceTarget ? "Replace" : "+"' in QML_SOURCE
+
+
+def test_without_pending_add_qml_has_no_replacement_target_state():
+    _fixture, _view_model, adapter, _live_kit = _production_adapter()
+
+    assert adapter.pending_live_kit_add == ""
+    assert "window.interaction.liveKitPendingAdd !== \"\"" in QML_SOURCE
+    assert "liveKitSlotTarget ? window.accent : \"transparent\"" in QML_SOURCE
+
+
 def test_assigned_slot_projects_existing_assignment_data():
     fixture, view_model, adapter, live_kit = _production_adapter()
     row = fixture.browser_rows[0]
@@ -280,13 +312,11 @@ def test_qml_group_header_hit_area_is_structurally_valid():
     assert "LiveKitState" not in QML_SOURCE
 
 
-def test_qml_values_blood_red_only_for_active_group_and_pending_intent():
+def test_qml_values_blood_red_only_for_active_group_and_addressed_pending_intent():
     assert "border.color: modelData.active ? window.accent : window.border" in QML_SOURCE
-    assert (
-        "border.color: window.interaction.liveKitPendingAdd !== \"\" ? window.accent : \"transparent\""
-        in QML_SOURCE
-    )
-    assert 'text: "+"' in QML_SOURCE
+    assert "border.color: liveKitSlotTarget ? window.accent : \"transparent\"" in QML_SOURCE
+    assert "visible: liveKitSlotTarget" in QML_SOURCE
+    assert 'text: liveKitReplaceTarget ? "Replace" : "+"' in QML_SOURCE
 
 
 @pytest.mark.skipif(
