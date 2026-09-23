@@ -418,18 +418,19 @@ def test_qml_live_kit_slot_audition_focused_state_is_subtle():
 
 
 def test_qml_replacement_target_is_separate_from_slot_audition_state():
-    # Audition remains a projection of shared playback.  Replacement is only
-    # the pending-add intent for the single hovered/focused target.
+    # Audition remains a projection of shared playback.  Replacement/Add on the
+    # action affordance derives only from the pending-add property and the
+    # read-only slot projection; no second Live-Kit target state is retained.
     assert "slotAuditionBackdrop" in QML_SOURCE
-    assert "liveKitSlotTargetBackdrop" in QML_SOURCE
     assert "visible: modelData.auditioning" in QML_SOURCE
-    assert "visible: liveKitSlotTarget" in QML_SOURCE
-    assert "liveKitReplaceTarget" in QML_SOURCE
-    assert "id: slotAdd" in QML_SOURCE
-    assert "id: slotInputMouse" in QML_SOURCE
+    assert "property bool hasPendingAdd:" in QML_SOURCE
+    assert "property bool showReplaceAffordance:" in QML_SOURCE
+    assert "id: slotAuditionMouse" in QML_SOURCE
+    assert "id: slotAction" in QML_SOURCE
+    assert "id: slotActionMouse" in QML_SOURCE
     assert "anchors.fill: parent" in QML_SOURCE
     assert "z: 1" in QML_SOURCE
-    assert 'enabled: window.interaction.liveKitPendingAdd !== "" || modelData.assigned' in QML_SOURCE
+    assert "enabled: modelData.assigned" in QML_SOURCE
     assert "window.interaction.addLiveKitSlot(kitGroupIndex, index)" in QML_SOURCE
     assert "window.interaction.auditionLiveKitSlot(kitGroupIndex, index)" in QML_SOURCE
 

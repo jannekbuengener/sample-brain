@@ -1448,11 +1448,14 @@ ApplicationWindow {
                                         objectName: "liveKitSlot" + kitGroupIndex + "_" + index
                                         Layout.fillWidth: true
                                         Layout.preferredHeight: 26
-                                        // This is renderer-only intent, derived from the authoritative
-                                        // pending Add property and the current read-only slot projection.
-                                        // It deliberately does not retain a second Live-Kit target state.
-                                        property bool liveKitSlotTarget: window.interaction.liveKitPendingAdd !== "" && slotInputMouse.containsMouse
-                                        property bool liveKitReplaceTarget: liveKitSlotTarget && modelData.assigned
+                                        // Renderer-only intent: derived from the authoritative
+                                        // pending-Add property plus the read-only slot projection.
+                                        // Keeps no second Live-Kit target state.
+                                        property bool hasPendingAdd: window.interaction.liveKitPendingAdd !== ""
+                                        property bool isAssigned: modelData.assigned
+                                        property bool isEmpty: !modelData.assigned
+                                        property bool showReplaceAffordance: modelData.assigned && !hasPendingAdd
+                                        property bool showAddAffordance: !modelData.assigned || hasPendingAdd
                                         Rectangle {
                                             id: slotAuditionBackdrop
                                             anchors.fill: parent
@@ -1461,55 +1464,48 @@ ApplicationWindow {
                                             color: "#1a1418"
                                             border.color: window.accent
                                         }
-                                        Rectangle {
-                                            id: liveKitSlotTargetBackdrop
-                                            objectName: "liveKitSlotTarget" + kitGroupIndex + "_" + index
+                                        MouseArea {
+                                            id: slotAuditionMouse
+                                            objectName: "slotAuditionMouse"
                                             anchors.fill: parent
-                                            radius: 3
-                                            visible: liveKitSlotTarget
-                                            color: "#211014"
-                                            border.color: window.accent
+                                            hoverEnabled: true
+                                            enabled: modelData.assigned
+                                            onClicked: window.interaction.auditionLiveKitSlot(kitGroupIndex, index)
                                         }
                                         RowLayout { anchors.fill: parent; spacing: 6
                                             Item { Layout.preferredWidth: 14; Layout.preferredHeight: 26
                                                 Label {
                                                     anchors.centerIn: parent
                                                     text: modelData.assigned ? "▶" : ""
-                                                    color: slotInputMouse.containsMouse && window.interaction.liveKitPendingAdd === "" ? window.accent : (modelData.auditioning ? window.accent : window.muted)
+                                                    color: slotAuditionMouse.containsMouse && window.interaction.liveKitPendingAdd === "" ? window.accent : (modelData.auditioning ? window.accent : window.muted)
                                                     font.pixelSize: 10
                                                 }
                                             }
                                             Label { text: modelData.name; color: window.muted; font.pixelSize: 11; Layout.fillWidth: true; elide: Text.ElideRight }
                                             Label { text: modelData.assignment; color: modelData.auditioning ? window.accent : (modelData.assigned ? window.textColor : window.muted); font.pixelSize: 11; elide: Text.ElideRight }
                                             Rectangle {
-                                                id: slotAdd
+                                                id: slotAction
                                                 Layout.preferredHeight: 22
                                                 radius: 3
-                                                Layout.preferredWidth: liveKitReplaceTarget ? 52 : 22
-                                                color: liveKitSlotTarget ? "#24151a" : "transparent"
-                                                border.color: liveKitSlotTarget ? window.accent : "transparent"
+                                                Layout.preferredWidth: showReplaceAffordance ? 52 : 22
+                                                color: hasPendingAdd ? "#24151a" : (showReplaceAffordance ? "#24151a" : "transparent")
+                                                border.color: hasPendingAdd ? window.accent : (showReplaceAffordance ? window.accent : "transparent")
                                                 Label {
                                                     anchors.centerIn: parent
-                                                    objectName: "liveKitSlotActionLabel" + kitGroupIndex + "_" + index
-                                                    text: liveKitReplaceTarget ? "Replace" : "+"
-                                                    color: liveKitSlotTarget ? window.accent : (slotInputMouse.containsMouse ? window.textColor : window.muted)
-                                                    font.pixelSize: liveKitReplaceTarget ? 10 : 13
+                                                    objectName: "slotActionLabel" + kitGroupIndex + "_" + index
+                                                    text: hasPendingAdd ? "+" : (showReplaceAffordance ? "↻" : "+")
+                                                    color: hasPendingAdd ? window.accent : (slotActionMouse.containsMouse ? window.textColor : window.muted)
+                                                    font.pixelSize: showReplaceAffordance ? 14 : 13
                                                 }
                                             }
                                         }
                                         MouseArea {
-                                            id: slotInputMouse
-                                            objectName: "liveKitSlotAction" + kitGroupIndex + "_" + index
-                                            anchors.fill: parent
+                                            id: slotActionMouse
+                                            objectName: "slotActionMouse" + kitGroupIndex + "_" + index
+                                            anchors.fill: slotAction
                                             hoverEnabled: true
                                             z: 1
-                                            enabled: window.interaction.liveKitPendingAdd !== "" || modelData.assigned
-                                            onClicked: {
-                                                if (window.interaction.liveKitPendingAdd !== "")
-                                                    window.interaction.addLiveKitSlot(kitGroupIndex, index)
-                                                else if (modelData.assigned)
-                                                    window.interaction.auditionLiveKitSlot(kitGroupIndex, index)
-                                            }
+                                            onClicked: window.interaction.addLiveKitSlot(kitGroupIndex, index)
                                         }
                                     }
                                 }
