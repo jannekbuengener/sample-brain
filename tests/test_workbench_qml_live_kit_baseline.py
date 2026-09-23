@@ -264,6 +264,19 @@ def test_qml_exposes_pending_and_slot_action_wiring():
     assert "modelData.assigned" in QML_SOURCE
 
 
+def test_qml_group_header_hit_area_is_structurally_valid():
+    wrapper = (
+        "Item { Layout.fillWidth: true; Layout.preferredHeight: 44; "
+        "Layout.leftMargin: 12; Layout.rightMargin: 10"
+    )
+    assert wrapper in QML_SOURCE
+    assert QML_SOURCE.count(wrapper) == 1
+    assert "RowLayout { anchors.fill: parent; spacing: 6" in QML_SOURCE
+    assert 'objectName: "liveKitGroupHeader" + index' in QML_SOURCE
+    assert "anchors.fill: parent\n                                    onClicked: window.interaction.toggleLiveKitGroup(kitGroupIndex)" in QML_SOURCE
+    assert "LiveKitState" not in QML_SOURCE
+
+
 def test_qml_values_blood_red_only_for_active_group_and_pending_intent():
     assert "border.color: modelData.active ? window.accent : window.border" in QML_SOURCE
     assert (
@@ -278,7 +291,9 @@ def test_qml_values_blood_red_only_for_active_group_and_pending_intent():
     reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
 )
 def test_qml_live_kit_runtime_roundtrip_pending_assign_and_group_toggle():
+    from PySide6.QtCore import Qt
     from PySide6.QtQuick import QQuickItem
+    from PySide6.QtTest import QTest
 
     from src.workbench_qml_spike import _qml_engine, _settle_qml_frame
 
@@ -335,13 +350,49 @@ def test_qml_live_kit_runtime_roundtrip_pending_assign_and_group_toggle():
         assert banner.property("visible") is False
         assert live_kit.state.assignment_for("Drums", "Closed Hat") is None
 
-        bridge.toggleLiveKitGroup(1)
-        app.processEvents()
+        def group_header(index: int) -> QQuickItem:
+            target = f"liveKitGroupHeader{index}"
+            to_visit = [pane]
+            while to_visit:
+                current = to_visit.pop()
+                if current.objectName() == target:
+                    return current
+                to_visit.extend(current.childItems())
+            raise AssertionError(f"kein Live Kit Gruppen-Header {target} gefunden")
+
+        def click_group_header(index: int) -> None:
+            header = group_header(index)
+            QTest.mouseClick(
+                window,
+                Qt.LeftButton,
+                Qt.NoModifier,
+                header.mapToScene(header.boundingRect().center()).toPoint(),
+            )
+            app.processEvents()
+
+        def canonical_start() -> None:
+            for index, want_active in (
+                (0, False),
+                (1, True),
+                (2, False),
+                (3, False),
+            ):
+                if live_kit.groups[index].active is not want_active:
+                    bridge.toggleLiveKitGroup(index)
+                    app.processEvents()
+
+        canonical_start()
+        assert live_kit.groups[1].active is True
+        click_group_header(1)
         assert live_kit.groups[1].active is False
         collapsed = window.property("screenData").property("liveKitGroups")
         assert collapsed[1]["active"] is False
         assert live_kit.state.assignment_for("Drums", "Main Drum") is fixture.browser_rows[4]
         assert view_model.live_kit_groups is live_kit.groups
+
+        click_group_header(1)
+        assert live_kit.groups[1].active is True
+        assert live_kit.state.assignment_for("Drums", "Main Drum") is fixture.browser_rows[4]
     finally:
         window.close()
         app.processEvents()

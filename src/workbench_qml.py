@@ -1294,11 +1294,15 @@ ApplicationWindow {
                         color: modelData.active ? window.panelAlt : "transparent"
                         border.color: modelData.active ? window.accent : window.border
                         ColumnLayout { anchors.fill: parent; spacing: 0
-                            RowLayout { Layout.fillWidth: true; Layout.preferredHeight: 44; Layout.leftMargin: 12; Layout.rightMargin: 10
-                                Label { text: (index + 1) + "  "; color: modelData.active ? window.accent : window.muted; font.pixelSize: 13; font.bold: true }
-                                Label { text: modelData.name; color: window.textColor; font.pixelSize: 14; font.bold: modelData.active; elide: Text.ElideRight; Layout.fillWidth: true }
-                                Label { text: modelData.active ? "▾" : "▸"; color: modelData.active ? window.accent : window.muted; font.pixelSize: 12 }
+                            Item { Layout.fillWidth: true; Layout.preferredHeight: 44; Layout.leftMargin: 12; Layout.rightMargin: 10
+                                RowLayout { anchors.fill: parent; spacing: 6
+                                    Label { text: (index + 1) + "  "; color: modelData.active ? window.accent : window.muted; font.pixelSize: 13; font.bold: true }
+                                    Label { text: modelData.name; color: window.textColor; font.pixelSize: 14; font.bold: modelData.active; elide: Text.ElideRight; Layout.fillWidth: true }
+                                    Label { text: modelData.active ? "▾" : "▸"; color: modelData.active ? window.accent : window.muted; font.pixelSize: 12 }
+                                }
                                 MouseArea {
+                                    id: liveKitGroupHeader
+                                    objectName: "liveKitGroupHeader" + index
                                     anchors.fill: parent
                                     onClicked: window.interaction.toggleLiveKitGroup(kitGroupIndex)
                                 }
