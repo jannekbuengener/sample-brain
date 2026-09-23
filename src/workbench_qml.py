@@ -947,13 +947,6 @@ ApplicationWindow {
     property int browserAddColumnWidth: 96
     property int browserDelegateCreations: 0
 
-    Keys.onPressed: function(event) {
-        if (event.key === Qt.Key_Escape && window.interaction.previewActive) {
-            window.interaction.stopPreview()
-            event.accepted = true
-        }
-    }
-
     FolderDialog {
         id: addSourceDialog
         title: "Sample Source hinzufügen"
@@ -1001,6 +994,12 @@ ApplicationWindow {
     }
 
     RowLayout { anchors.fill: parent; spacing: 0
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Escape && window.interaction.previewActive) {
+                window.interaction.stopPreview()
+                event.accepted = true
+            }
+        }
         Rectangle { id: libraryPane; objectName: "libraryPane"; Layout.preferredWidth: 300; Layout.minimumWidth: 230; Layout.fillHeight: true; color: window.panel; border.color: window.border
             ColumnLayout { anchors.fill: parent; anchors.margins: 16
                 RowLayout { Layout.fillWidth: true

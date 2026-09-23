@@ -452,6 +452,7 @@ def test_qml_repeated_audition_cycles_do_not_accumulate_qml_objects():
 )
 def test_qml_window_level_escape_stops_live_kit_audition_from_any_focus():
     from PySide6.QtCore import Qt
+    from PySide6.QtQuick import QQuickItem
     from PySide6.QtTest import QTest
 
     previews = []
@@ -482,6 +483,13 @@ def test_qml_window_level_escape_stops_live_kit_audition_from_any_focus():
         app.processEvents()
         assert interaction.property("previewActive") is True
         assert len(previews) == 1
+
+        library_tree = window.findChild(QQuickItem, "libraryTree")
+        assert library_tree is not None
+        library_tree.forceActiveFocus()
+        app.processEvents()
+        assert window.property("activeFocusItem") is library_tree
+        assert window.property("activeFocusItem").property("objectName") != "browserList"
 
         QTest.keyClick(window, Qt.Key_Escape)
         app.processEvents()
