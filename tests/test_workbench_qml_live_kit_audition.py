@@ -259,6 +259,26 @@ def test_add_replace_collapse_regressions_stay_green_with_audition_present():
     assert adapter.auditioning_live_kit_slot == ("Drums", "Main Drum")
 
 
+def test_slot_replacement_clears_the_auditioning_projection():
+    fixture, view_model, adapter, live_kit = _production_adapter(
+        on_preview_requested=lambda _row: None,
+    )
+    first = _row("first.wav")
+    _assign(adapter, live_kit, "Melodic", "Pad", first)
+
+    assert adapter.audition_live_kit_slot("Melodic", "Pad") is True
+    assert adapter.auditioning_live_kit_slot == ("Melodic", "Pad")
+
+    replacement = view_model.browser_rows[0].source_row
+    assert replacement is not first
+    adapter.request_add_to_kit(0)
+    assert adapter.assign_live_kit_slot("Melodic", "Pad") is True
+
+    assert live_kit.state.assignment_for("Melodic", "Pad") is replacement
+    assert adapter.auditioning_live_kit_slot is None
+    assert view_model.auditioning_live_kit_slot is None
+
+
 def test_slot_audition_introduces_no_transport_or_second_clock():
     previews = []
     _fixture, _view_model, adapter, live_kit = _production_adapter(
@@ -297,6 +317,11 @@ def test_qml_live_kit_slot_audition_focused_state_is_subtle():
     assert "visible: modelData.auditioning" in QML_SOURCE
     assert "modelData.auditioning ? window.accent" in QML_SOURCE
     assert 'font.pixelSize: 10' in QML_SOURCE
+
+
+def test_window_level_escape_stops_preview_independent_of_focus():
+    assert "event.key === Qt.Key_Escape && window.interaction.previewActive" in QML_SOURCE
+    assert "window.interaction.stopPreview()" in QML_SOURCE
 
 
 @pytest.mark.skipif(
@@ -410,6 +435,58 @@ def test_qml_repeated_audition_cycles_do_not_accumulate_qml_objects():
 
         assert descendant_count() == before_objects
         assert delegate_creations() == before_delegates
+    finally:
+        window.close()
+        app.processEvents()
+        timer = getattr(engine, "_screen1_waveform_timer", None)
+        if timer is not None:
+            timer.stop()
+        loader = getattr(engine, "_screen1_waveform_loader", None)
+        if loader is not None:
+            loader.close()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 not installed (Qt runtime tests)",
+)
+def test_qml_window_level_escape_stops_live_kit_audition_from_any_focus():
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    previews = []
+    fixture = build_screen1_visual_fixture_v1()
+    view_model = build_qml_view_model_from_fixture(fixture, "screen1-default-3panel")
+    live_kit = LiveKitPresenter()
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        live_kit=live_kit,
+        on_preview_requested=previews.append,
+    )
+    _assign(adapter, live_kit, "Drums", "Main Drum", _row("esc.wav"))
+    view_model.live_kit_groups = live_kit.groups
+
+    app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+    window.show()
+    _settle_qml_frame(app)
+    try:
+        bridge = engine._screen1_interaction_bridge
+        interaction = window.property("interaction")
+        screen_data = window.property("screenData")
+
+        QTest.keyClick(window, Qt.Key_Escape)
+        app.processEvents()
+        assert interaction.property("previewActive") is False
+
+        bridge.auditionLiveKitSlot(1, 0)
+        app.processEvents()
+        assert interaction.property("previewActive") is True
+        assert len(previews) == 1
+
+        QTest.keyClick(window, Qt.Key_Escape)
+        app.processEvents()
+        assert interaction.property("previewActive") is False
+        assert screen_data.property("liveKitGroups")[1]["slots"][0]["auditioning"] is False
     finally:
         window.close()
         app.processEvents()

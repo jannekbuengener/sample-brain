@@ -699,6 +699,8 @@ class Screen1QmlInteractionAdapter:
             return False
         self._pending_live_kit_row = None
         self._sync_live_kit_projection()
+        if self._auditioning_live_kit_slot == (group, slot):
+            self._clear_live_kit_audition_projection()
         return True
 
     def cancel_live_kit_add(self) -> bool:
@@ -944,6 +946,13 @@ ApplicationWindow {
     property int browserLengthColumnWidth: 62
     property int browserAddColumnWidth: 96
     property int browserDelegateCreations: 0
+
+    Keys.onPressed: function(event) {
+        if (event.key === Qt.Key_Escape && window.interaction.previewActive) {
+            window.interaction.stopPreview()
+            event.accepted = true
+        }
+    }
 
     FolderDialog {
         id: addSourceDialog
