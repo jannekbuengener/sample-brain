@@ -8,6 +8,7 @@ probe orchestration deliberately live in :mod:`src.workbench_qml_spike`.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import inspect
 import math
 from pathlib import Path
 from typing import Callable
@@ -191,6 +192,7 @@ class Screen1QmlViewModel:
         library_tree: WorkbenchLibraryTreeState | None = None,
         browser_context: str = "No library selected",
         browser_error: str | None = None,
+        auditioning_live_kit_slot: tuple[str, str] | None = None,
     ) -> None:
         if state_id not in SCREEN1_QML_STATE_IDS:
             raise ValueError("Unbekannter Screen-1-QML-State.")
@@ -206,6 +208,7 @@ class Screen1QmlViewModel:
         self.library_tree = library_tree or WorkbenchLibraryTreeState()
         self.browser_context = browser_context
         self.browser_error = browser_error
+        self.auditioning_live_kit_slot = auditioning_live_kit_slot
         self.analysis_status = "idle"
         self.analysis_folder_id: int | None = None
         self.analysis_current = 0
@@ -357,6 +360,8 @@ class Screen1QmlViewModel:
                                 else "Empty · Slot wählen"
                             ),
                             "assigned": slot.assignment is not None,
+                            "auditioning": self.auditioning_live_kit_slot
+                            == (group.name, slot.name),
                         }
                         for slot in group.slots
                     ],
@@ -520,6 +525,25 @@ def _qml_screen_data_bridge(
     return QmlScreenDataBridge()
 
 
+def _callback_accepts_start_ms(callback: Callable[..., object] | None) -> bool:
+    """True when the preview seam callback declares a ``start_ms`` keyword.
+
+    The seam stays row-only for legacy callbacks; offset-negotiating callbacks
+    receive the explicit preview start intention forwarded by the adapter.
+    """
+    if callback is None:
+        return False
+    try:
+        parameters = inspect.signature(callback).parameters
+    except (TypeError, ValueError):
+        return False
+    return any(
+        parameter.name == "start_ms"
+        or parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+
+
 class Screen1QmlInteractionAdapter:
     """Route renderer intent to the established Screen-1 Python contracts.
 
@@ -543,11 +567,15 @@ class Screen1QmlInteractionAdapter:
         self.harmony_controller = harmony_controller
         self.harmonic_match_open = view_model.panel_count == 4
         self._on_preview_requested = on_preview_requested
+        self._preview_request_accepts_start_ms = _callback_accepts_start_ms(
+            on_preview_requested
+        )
         self._on_preview_stopped = on_preview_stopped
         self._on_add_to_kit_requested = on_add_to_kit_requested
         self._live_kit = live_kit
         self._pending_live_kit_row: WorkbenchRow | None = None
         self._preview_active = False
+        self._auditioning_live_kit_slot: tuple[str, str] | None = None
         self._harmonic_match_context_fingerprint: tuple[object, ...] | None = None
         self._harmonic_match_selected_index = 0
         self._harmonic_match_scroll_y = 0.0
@@ -562,9 +590,29 @@ class Screen1QmlInteractionAdapter:
         """Select exactly one authoritative row without starting a preview."""
         return self.view_model.select_browser_index(index)
 
+    def _dispatch_preview(
+        self, row: WorkbenchRow, *, start_ms: int | None = None
+    ) -> object:
+        """Emit a preview intent through the shared owner seam.
+
+        ``start_ms=None`` keeps the owned default (the Browser saved cue).
+        Explicit offsets (Live Kit ``start_ms=0``) are forwarded only to
+        callbacks that declare the keyword, so legacy row-only seams stay
+        unchanged.
+        """
+        if self._on_preview_requested is None:
+            return None
+        if self._preview_request_accepts_start_ms:
+            return self._on_preview_requested(row, start_ms=start_ms)
+        return self._on_preview_requested(row)
+
     @property
     def preview_active(self) -> bool:
         return self._preview_active
+
+    @property
+    def auditioning_live_kit_slot(self) -> tuple[str, str] | None:
+        return self._auditioning_live_kit_slot
 
     @property
     def selected_harmonic_match_index(self) -> int:
@@ -575,26 +623,78 @@ class Screen1QmlInteractionAdapter:
         return self._harmonic_match_scroll_y
 
     def preview_row(self, index: int) -> WorkbenchRow:
-        """Select a row and emit exactly one preview intent."""
+        """Select a row and emit exactly one preview intent.
+
+        A rejected dispatch stops any prior playback through the authoritative
+        stop seam (mirroring the Live Kit audition failure branch), so audio
+        can never stay orphaned while the UI claims idle.
+        """
         if index == self.selected_browser_index:
             row = self.view_model.browser_rows[index].source_row
         else:
             row = self.select_row(index)
-        result = None
-        if self._on_preview_requested is not None:
-            result = self._on_preview_requested(row)
-        self._preview_active = bool(
+        was_active = self._preview_active
+        result = self._dispatch_preview(row)
+        accepted = bool(
             result is None or getattr(result, "ok", result is not False)
         )
+        if not accepted and was_active:
+            self._stop_preview_authoritative()
+        self._preview_active = accepted
+        self._clear_live_kit_audition_projection()
         return row
 
     def stop_preview(self) -> bool:
         """Stop only an active preview and leave selection untouched."""
         if not self._preview_active:
             return False
+        self._stop_preview_authoritative()
+        self._clear_live_kit_audition_projection()
+        return True
+
+    def _stop_preview_authoritative(self) -> None:
+        """Stop playback through the existing authoritative stop seam."""
         self._preview_active = False
         if self._on_preview_stopped is not None:
             self._on_preview_stopped()
+
+    def _clear_live_kit_audition_projection(self) -> None:
+        if self._auditioning_live_kit_slot is not None:
+            self._auditioning_live_kit_slot = None
+            self.view_model.auditioning_live_kit_slot = None
+
+    def audition_live_kit_slot(self, group: str, slot: str) -> bool:
+        """Audition exactly the assigned slot row through the shared preview seam.
+
+        Mirrors the authoritative Tk contract: an empty or unknown slot fails
+        closed without dispatching anything, and a browser selection is never
+        read or changed.  The dispatch reuses :attr:`_on_preview_requested`
+        (the sole preview owner), so the Slot->A/B->Browser replacement
+        semantics of the shared owner apply unchanged.  Live Kit honours its
+        zero-offset contract (``start_ms=0``) instead of the Browser saved cue.
+        A failed audition stops any prior playback through the authoritative
+        stop seam and clears the audition projection, so playback can never be
+        orphaned while the UI claims it is idle.
+        """
+        if self._live_kit is None:
+            return False
+        try:
+            row = self._live_kit.state.assignment_for(group, slot)
+        except ValueError:
+            return False
+        if row is None:
+            return False
+        was_active = self._preview_active
+        result = self._dispatch_preview(row, start_ms=0)
+        accepted = bool(result is None or getattr(result, "ok", result is not False))
+        if not accepted:
+            if was_active:
+                self._stop_preview_authoritative()
+            self._clear_live_kit_audition_projection()
+            return False
+        self._preview_active = True
+        self._auditioning_live_kit_slot = (group, slot)
+        self.view_model.auditioning_live_kit_slot = self._auditioning_live_kit_slot
         return True
 
     def request_add_to_kit(self, index: int) -> WorkbenchRow:
@@ -655,6 +755,8 @@ class Screen1QmlInteractionAdapter:
             return False
         self._pending_live_kit_row = None
         self._sync_live_kit_projection()
+        if self._auditioning_live_kit_slot == (group, slot):
+            self._clear_live_kit_audition_projection()
         return True
 
     def cancel_live_kit_add(self) -> bool:
@@ -743,8 +845,15 @@ class Screen1QmlInteractionAdapter:
 
     def preview_harmonic_match(self, index: int) -> WorkbenchRow:
         row = self.select_harmonic_match(index)
-        result = self._on_preview_requested(row) if self._on_preview_requested else None
-        self._preview_active = bool(result is None or getattr(result, "ok", result is not False))
+        was_active = self._preview_active
+        result = self._dispatch_preview(row)
+        accepted = bool(
+            result is None or getattr(result, "ok", result is not False)
+        )
+        if not accepted and was_active:
+            self._stop_preview_authoritative()
+        self._preview_active = accepted
+        self._clear_live_kit_audition_projection()
         return row
 
     def navigate_harmonic_match(self, direction: str, *, match_has_focus: bool) -> WorkbenchRow | None:
@@ -947,6 +1056,12 @@ ApplicationWindow {
     }
 
     RowLayout { anchors.fill: parent; spacing: 0
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Escape && window.interaction.previewActive) {
+                window.interaction.stopPreview()
+                event.accepted = true
+            }
+        }
         Rectangle { id: libraryPane; objectName: "libraryPane"; Layout.preferredWidth: 300; Layout.minimumWidth: 230; Layout.fillHeight: true; color: window.panel; border.color: window.border
             ColumnLayout { anchors.fill: parent; anchors.margins: 16
                 RowLayout { Layout.fillWidth: true
@@ -1277,7 +1392,7 @@ ApplicationWindow {
                     color: "#211014"
                     border.color: window.accent
                     focus: visible
-                    Keys.onEscapePressed: window.interaction.cancelLiveKitAdd()
+                    Keys.onEscapePressed: window.interaction.escapeLiveKitContext()
                     Label {
                         anchors.fill: parent
                         anchors.leftMargin: 8
@@ -1313,27 +1428,55 @@ ApplicationWindow {
                             }
                             ColumnLayout { visible: modelData.active; Layout.fillWidth: true; Layout.leftMargin: 12; Layout.rightMargin: 10; Layout.topMargin: 2
                                 Repeater { model: modelData.active ? modelData.slots : []
-                                    delegate: RowLayout { Layout.fillWidth: true; Layout.preferredHeight: 26
-                                        Label { text: modelData.name; color: window.muted; font.pixelSize: 11; Layout.fillWidth: true; elide: Text.ElideRight }
-                                        Label { text: modelData.assignment; color: modelData.assigned ? window.textColor : window.muted; font.pixelSize: 11; elide: Text.ElideRight }
+                                    delegate: Item {
+                                        objectName: "liveKitSlot" + kitGroupIndex + "_" + index
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 26
                                         Rectangle {
-                                            id: slotAdd
-                                            Layout.preferredWidth: 22
-                                            Layout.preferredHeight: 22
+                                            id: slotAuditionBackdrop
+                                            anchors.fill: parent
                                             radius: 3
-                                            color: slotAddMouse.containsMouse ? "#24151a" : "transparent"
-                                            border.color: window.interaction.liveKitPendingAdd !== "" ? window.accent : "transparent"
-                                            Label {
-                                                anchors.centerIn: parent
-                                                text: "+"
-                                                color: slotAddMouse.containsMouse || window.interaction.liveKitPendingAdd !== "" ? window.accent : window.muted
-                                                font.pixelSize: 13
+                                            visible: modelData.auditioning
+                                            color: "#1a1418"
+                                            border.color: window.accent
+                                        }
+                                        MouseArea {
+                                            id: slotAuditionMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            enabled: modelData.assigned
+                                            onClicked: window.interaction.auditionLiveKitSlot(kitGroupIndex, index)
+                                        }
+                                        RowLayout { anchors.fill: parent; spacing: 6
+                                            Item { Layout.preferredWidth: 14; Layout.preferredHeight: 26
+                                                Label {
+                                                    anchors.centerIn: parent
+                                                    text: modelData.assigned ? "▶" : ""
+                                                    color: slotAuditionMouse.containsMouse ? window.accent : (modelData.auditioning ? window.accent : window.muted)
+                                                    font.pixelSize: 10
+                                                }
                                             }
-                                            MouseArea {
-                                                id: slotAddMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                onClicked: window.interaction.addLiveKitSlot(kitGroupIndex, index)
+                                            Label { text: modelData.name; color: window.muted; font.pixelSize: 11; Layout.fillWidth: true; elide: Text.ElideRight }
+                                            Label { text: modelData.assignment; color: modelData.auditioning ? window.accent : (modelData.assigned ? window.textColor : window.muted); font.pixelSize: 11; elide: Text.ElideRight }
+                                            Rectangle {
+                                                id: slotAdd
+                                                Layout.preferredWidth: 22
+                                                Layout.preferredHeight: 22
+                                                radius: 3
+                                                color: slotAddMouse.containsMouse ? "#24151a" : "transparent"
+                                                border.color: window.interaction.liveKitPendingAdd !== "" ? window.accent : "transparent"
+                                                Label {
+                                                    anchors.centerIn: parent
+                                                    text: "+"
+                                                    color: slotAddMouse.containsMouse || window.interaction.liveKitPendingAdd !== "" ? window.accent : window.muted
+                                                    font.pixelSize: 13
+                                                }
+                                                MouseArea {
+                                                    id: slotAddMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    onClicked: window.interaction.addLiveKitSlot(kitGroupIndex, index)
+                                                }
                                             }
                                         }
                                     }
@@ -1477,8 +1620,29 @@ def _qml_interaction_bridge(
             if adapter.assign_live_kit_slot(*target):
                 self._refresh()
 
+        @Slot(int, int)
+        def auditionLiveKitSlot(self, group_index: int, slot_index: int) -> None:
+            target = self._live_kit_slot_target(group_index, slot_index)
+            if target is None:
+                return
+            adapter.audition_live_kit_slot(*target)
+            self._refresh()
+
         @Slot()
         def cancelLiveKitAdd(self) -> None:
+            adapter.cancel_live_kit_add()
+            self._refresh()
+
+        @Slot()
+        def escapeLiveKitContext(self) -> None:
+            """Coherent single-Escape for the pending-add banner.
+
+            Playback must never keep running because the focused banner
+            consumed the event: this routes through the same authoritative
+            stop contract first, then applies the established pending-add
+            cancel.  Both operations are idempotent and safe when idle.
+            """
+            adapter.stop_preview()
             adapter.cancel_live_kit_add()
             self._refresh()
 
@@ -1644,11 +1808,14 @@ def _qml_engine(
             else workbench_library_db_path()
         )
 
-        def preview_row(row: WorkbenchRow) -> object:
-            return preview_player.play(
-                row.path,
-                start_ms=get_preview_start_ms(row.path, library_db_path=preview_db_path),
-            )
+        def preview_row(
+            row: WorkbenchRow, *, start_ms: int | None = None
+        ) -> object:
+            if start_ms is None:
+                start_ms = get_preview_start_ms(
+                    row.path, library_db_path=preview_db_path
+                )
+            return preview_player.play(row.path, start_ms=start_ms)
 
         live_kit = LiveKitPresenter()
         adapter = Screen1QmlInteractionAdapter(

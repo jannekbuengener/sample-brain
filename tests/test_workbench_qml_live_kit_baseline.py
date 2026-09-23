@@ -260,9 +260,10 @@ def test_qml_exposes_pending_and_slot_action_wiring():
     assert "liveKitPendingAdd" in QML_SOURCE
     assert "toggleLiveKitGroup(" in QML_SOURCE
     assert "addLiveKitSlot(" in QML_SOURCE
-    assert "cancelLiveKitAdd" in QML_SOURCE
+    assert "escapeLiveKitContext" in QML_SOURCE
     assert "window.interaction.liveKitPendingAdd !== \"\"" in QML_SOURCE
-    assert "Keys.onEscapePressed: window.interaction.cancelLiveKitAdd()" in QML_SOURCE
+    assert "Keys.onEscapePressed: window.interaction.escapeLiveKitContext()" in QML_SOURCE
+    assert "Keys.onEscapePressed: window.interaction.cancelLiveKitAdd()" not in QML_SOURCE
     assert "modelData.assigned" in QML_SOURCE
 
 
