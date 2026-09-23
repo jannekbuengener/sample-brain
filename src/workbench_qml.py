@@ -1448,6 +1448,11 @@ ApplicationWindow {
                                         objectName: "liveKitSlot" + kitGroupIndex + "_" + index
                                         Layout.fillWidth: true
                                         Layout.preferredHeight: 26
+                                        // This is renderer-only intent, derived from the authoritative
+                                        // pending Add property and the current read-only slot projection.
+                                        // It deliberately does not retain a second Live-Kit target state.
+                                        property bool liveKitSlotTarget: window.interaction.liveKitPendingAdd !== "" && slotInputMouse.containsMouse
+                                        property bool liveKitReplaceTarget: liveKitSlotTarget && modelData.assigned
                                         Rectangle {
                                             id: slotAuditionBackdrop
                                             anchors.fill: parent
@@ -1456,19 +1461,21 @@ ApplicationWindow {
                                             color: "#1a1418"
                                             border.color: window.accent
                                         }
-                                        MouseArea {
-                                            id: slotAuditionMouse
+                                        Rectangle {
+                                            id: liveKitSlotTargetBackdrop
+                                            objectName: "liveKitSlotTarget" + kitGroupIndex + "_" + index
                                             anchors.fill: parent
-                                            hoverEnabled: true
-                                            enabled: modelData.assigned
-                                            onClicked: window.interaction.auditionLiveKitSlot(kitGroupIndex, index)
+                                            radius: 3
+                                            visible: liveKitSlotTarget
+                                            color: "#211014"
+                                            border.color: window.accent
                                         }
                                         RowLayout { anchors.fill: parent; spacing: 6
                                             Item { Layout.preferredWidth: 14; Layout.preferredHeight: 26
                                                 Label {
                                                     anchors.centerIn: parent
                                                     text: modelData.assigned ? "▶" : ""
-                                                    color: slotAuditionMouse.containsMouse ? window.accent : (modelData.auditioning ? window.accent : window.muted)
+                                                    color: slotInputMouse.containsMouse && window.interaction.liveKitPendingAdd === "" ? window.accent : (modelData.auditioning ? window.accent : window.muted)
                                                     font.pixelSize: 10
                                                 }
                                             }
@@ -1476,23 +1483,32 @@ ApplicationWindow {
                                             Label { text: modelData.assignment; color: modelData.auditioning ? window.accent : (modelData.assigned ? window.textColor : window.muted); font.pixelSize: 11; elide: Text.ElideRight }
                                             Rectangle {
                                                 id: slotAdd
-                                                Layout.preferredWidth: 22
                                                 Layout.preferredHeight: 22
                                                 radius: 3
-                                                color: slotAddMouse.containsMouse ? "#24151a" : "transparent"
-                                                border.color: window.interaction.liveKitPendingAdd !== "" ? window.accent : "transparent"
+                                                Layout.preferredWidth: liveKitReplaceTarget ? 52 : 22
+                                                color: liveKitSlotTarget ? "#24151a" : "transparent"
+                                                border.color: liveKitSlotTarget ? window.accent : "transparent"
                                                 Label {
                                                     anchors.centerIn: parent
-                                                    text: "+"
-                                                    color: slotAddMouse.containsMouse || window.interaction.liveKitPendingAdd !== "" ? window.accent : window.muted
-                                                    font.pixelSize: 13
+                                                    objectName: "liveKitSlotActionLabel" + kitGroupIndex + "_" + index
+                                                    text: liveKitReplaceTarget ? "Replace" : "+"
+                                                    color: liveKitSlotTarget ? window.accent : (slotInputMouse.containsMouse ? window.textColor : window.muted)
+                                                    font.pixelSize: liveKitReplaceTarget ? 10 : 13
                                                 }
-                                                MouseArea {
-                                                    id: slotAddMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    onClicked: window.interaction.addLiveKitSlot(kitGroupIndex, index)
-                                                }
+                                            }
+                                        }
+                                        MouseArea {
+                                            id: slotInputMouse
+                                            objectName: "liveKitSlotAction" + kitGroupIndex + "_" + index
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            z: 1
+                                            enabled: window.interaction.liveKitPendingAdd !== "" || modelData.assigned
+                                            onClicked: {
+                                                if (window.interaction.liveKitPendingAdd !== "")
+                                                    window.interaction.addLiveKitSlot(kitGroupIndex, index)
+                                                else if (modelData.assigned)
+                                                    window.interaction.auditionLiveKitSlot(kitGroupIndex, index)
                                             }
                                         }
                                     }

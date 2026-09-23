@@ -417,6 +417,23 @@ def test_qml_live_kit_slot_audition_focused_state_is_subtle():
     assert 'font.pixelSize: 10' in QML_SOURCE
 
 
+def test_qml_replacement_target_is_separate_from_slot_audition_state():
+    # Audition remains a projection of shared playback.  Replacement is only
+    # the pending-add intent for the single hovered/focused target.
+    assert "slotAuditionBackdrop" in QML_SOURCE
+    assert "liveKitSlotTargetBackdrop" in QML_SOURCE
+    assert "visible: modelData.auditioning" in QML_SOURCE
+    assert "visible: liveKitSlotTarget" in QML_SOURCE
+    assert "liveKitReplaceTarget" in QML_SOURCE
+    assert "id: slotAdd" in QML_SOURCE
+    assert "id: slotInputMouse" in QML_SOURCE
+    assert "anchors.fill: parent" in QML_SOURCE
+    assert "z: 1" in QML_SOURCE
+    assert 'enabled: window.interaction.liveKitPendingAdd !== "" || modelData.assigned' in QML_SOURCE
+    assert "window.interaction.addLiveKitSlot(kitGroupIndex, index)" in QML_SOURCE
+    assert "window.interaction.auditionLiveKitSlot(kitGroupIndex, index)" in QML_SOURCE
+
+
 def test_window_level_escape_stops_preview_independent_of_focus():
     assert "event.key === Qt.Key_Escape && window.interaction.previewActive" in QML_SOURCE
     assert "window.interaction.stopPreview()" in QML_SOURCE
