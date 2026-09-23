@@ -830,12 +830,28 @@ class Screen1QmlInteractionAdapter:
             suggestion.row = row
         return True
 
+    @property
+    def effective_harmony_status(self) -> str:
+        """Return the display status derived from actual pane visibility and controller state."""
+        if not self.harmonic_match_open:
+            return "Harmonic Match ist ausgeschaltet."
+        if self.harmony_controller is None:
+            return "Harmonic Match ist offen."
+        if self.harmony_controller.status == "Harmonic Match ist ausgeschaltet.":
+            return "Harmonic Match ist offen."
+        return self.harmony_controller.status
+
     def _project_harmonic_match(self, anchor: WorkbenchRow) -> None:
         if self.harmony_controller is None:
+            self.view_model.harmony_status = (
+                "Harmonic Match ist offen."
+                if self.harmonic_match_open
+                else "Harmonic Match ist ausgeschaltet."
+            )
             return
         self.view_model.harmony_rows = tuple(_qml_harmony_row(item) for item in self.harmony_controller.results)
         self.view_model.harmony_anchor = f"Reference: {anchor.display_name} · {anchor.key or '—'}"
-        self.view_model.harmony_status = self.harmony_controller.status
+        self.view_model.harmony_status = self.effective_harmony_status
 
     def select_harmonic_match(self, index: int) -> WorkbenchRow:
         if not 0 <= index < len(self.view_model.harmony_rows):
@@ -959,8 +975,8 @@ class Screen1QmlInteractionAdapter:
             self._harmonic_match_selected_index = 0
             self._harmonic_match_scroll_y = 0.0
         self._harmonic_match_session_scope = self._harmonic_match_browser_scope
-        self._project_harmonic_match(anchor)
         self.harmonic_match_open = True
+        self._project_harmonic_match(anchor)
         self.view_model.state_id = "screen1-harmonic-4panel"
         return True
 
