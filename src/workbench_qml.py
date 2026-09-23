@@ -1474,7 +1474,7 @@ ApplicationWindow {
                                             id: slotAuditionMouse
                                             anchors.fill: parent
                                             hoverEnabled: true
-                                            enabled: modelData.assigned
+                                            enabled: modelData.assigned && window.interaction.liveKitPendingAdd === ""
                                             onClicked: window.interaction.auditionLiveKitSlot(kitGroupIndex, index)
                                         }
                                         RowLayout { anchors.fill: parent; spacing: 6
