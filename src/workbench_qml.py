@@ -1513,6 +1513,7 @@ ApplicationWindow {
                                             height: slotAdd.height
                                             hoverEnabled: true
                                             focus: true
+                                            z: 1
                                             onClicked: { slotAddMouse.forceActiveFocus(); window.interaction.addLiveKitSlot(kitGroupIndex, index) }
                                         }
                                     }
