@@ -426,7 +426,7 @@ def test_qml_replacement_target_is_separate_from_slot_audition_state():
     assert "visible: liveKitSlotTarget" in QML_SOURCE
     assert "liveKitReplaceTarget" in QML_SOURCE
     assert "id: slotAdd" in QML_SOURCE
-    assert "z: 1" in QML_SOURCE
+    assert "anchors.right: parent.right" in QML_SOURCE
 
 
 def test_window_level_escape_stops_preview_independent_of_focus():

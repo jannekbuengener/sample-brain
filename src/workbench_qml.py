@@ -1490,9 +1490,8 @@ ApplicationWindow {
                                             Label { text: modelData.assignment; color: modelData.auditioning ? window.accent : (modelData.assigned ? window.textColor : window.muted); font.pixelSize: 11; elide: Text.ElideRight }
                                             Rectangle {
                                                 id: slotAdd
-                                            Layout.preferredHeight: 22
-                                            radius: 3
-                                            z: 1
+                                                Layout.preferredHeight: 22
+                                                radius: 3
                                                 Layout.preferredWidth: liveKitReplaceTarget ? 52 : 22
                                                 color: liveKitSlotTarget ? "#24151a" : "transparent"
                                                 border.color: liveKitSlotTarget ? window.accent : "transparent"
@@ -1503,16 +1502,18 @@ ApplicationWindow {
                                                     color: liveKitSlotTarget ? window.accent : (slotAddMouse.containsMouse ? window.textColor : window.muted)
                                                     font.pixelSize: liveKitReplaceTarget ? 10 : 13
                                                 }
-                                                MouseArea {
-                                                    id: slotAddMouse
-                                                    objectName: "liveKitSlotAction" + kitGroupIndex + "_" + index
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    focus: true
-                                                    z: 1
-                                                    onClicked: { slotAddMouse.forceActiveFocus(); window.interaction.addLiveKitSlot(kitGroupIndex, index) }
-                                                }
                                             }
+                                        }
+                                        MouseArea {
+                                            id: slotAddMouse
+                                            objectName: "liveKitSlotAction" + kitGroupIndex + "_" + index
+                                            anchors.right: parent.right
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: slotAdd.width
+                                            height: slotAdd.height
+                                            hoverEnabled: true
+                                            focus: true
+                                            onClicked: { slotAddMouse.forceActiveFocus(); window.interaction.addLiveKitSlot(kitGroupIndex, index) }
                                         }
                                     }
                                 }
