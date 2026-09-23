@@ -241,6 +241,8 @@ def test_qml_renders_only_the_projection_without_domain_duplication():
         assert forbidden not in QML_SOURCE, forbidden
     assert "window.screenData.liveKitGroups" in QML_SOURCE
     assert "liveKitAssignedCount" in QML_SOURCE
+    assert "liveKitTotalSlotCount" in QML_SOURCE
+    assert '" / 11"' not in QML_SOURCE
     assert 'objectName: "liveKitPane"' in QML_SOURCE
 
 
@@ -321,6 +323,11 @@ def test_qml_live_kit_runtime_roundtrip_pending_assign_and_group_toggle():
 
         projected = window.property("screenData").property("liveKitGroups")
         assert tuple(group["name"] for group in projected) == CANONICAL_GROUPS
+        screen_data = window.property("screenData")
+        assert screen_data.property("liveKitTotalSlotCount") == sum(
+            len(_slots) for _group, _slots in LIVE_KIT_SLOT_MAPPING
+        )
+        assert screen_data.property("liveKitAssignedCount") == 0
 
         bridge.addToKit(4)
         app.processEvents()
@@ -402,3 +409,57 @@ def test_qml_live_kit_runtime_roundtrip_pending_assign_and_group_toggle():
         loader = getattr(engine, "_screen1_waveform_loader", None)
         if loader is not None:
             loader.close()
+
+
+def test_live_kit_denominator_derives_from_projected_groups():
+    live_kit = LiveKitPresenter()
+    projected_total = sum(len(group.slots) for group in live_kit.groups)
+    canonical_total = sum(len(slots) for _group, slots in LIVE_KIT_SLOT_MAPPING)
+
+    assert canonical_total == 11
+    assert projected_total == canonical_total
+    assert tuple(
+        (group.name, len(group.slots)) for group in live_kit.groups
+    ) == tuple((group, len(slots)) for group, slots in LIVE_KIT_SLOT_MAPPING)
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
+)
+def test_qml_live_kit_total_slot_count_follows_the_projected_slot_set():
+    from PySide6.QtGui import QGuiApplication
+
+    from src.workbench_qml import (
+        QmlLiveKitGroup,
+        QmlLiveKitSlot,
+        _qml_screen_data_bridge,
+    )
+
+    app = QGuiApplication.instance() or QGuiApplication([])
+    fixture = build_screen1_visual_fixture_v1()
+    view_model = build_qml_view_model_from_fixture(
+        fixture,
+        "screen1-default-3panel",
+    )
+    restricted = (
+        QmlLiveKitGroup(
+            "Kick + Bass",
+            (QmlLiveKitSlot("Kick", _row("kick_01.wav")),),
+            False,
+        ),
+        QmlLiveKitGroup(
+            "Drums",
+            (
+                QmlLiveKitSlot("Main Drum", None),
+                QmlLiveKitSlot("Closed Hat", _row("closed_hat_01.wav")),
+            ),
+            False,
+        ),
+    )
+    view_model.live_kit_groups = restricted
+    screen_data = _qml_screen_data_bridge(view_model)
+
+    assert screen_data.property("liveKitTotalSlotCount") == 3
+    assert screen_data.property("liveKitAssignedCount") == 2
+    assert screen_data.property("liveKitTotalSlotCount") != 11

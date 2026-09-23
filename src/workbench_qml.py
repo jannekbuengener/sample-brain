@@ -480,6 +480,10 @@ def _qml_screen_data_bridge(
                 if slot.assignment is not None
             )
 
+        @Property(int, notify=liveKitGroupsChanged)
+        def liveKitTotalSlotCount(self) -> int:
+            return sum(len(group.slots) for group in view_model.live_kit_groups)
+
         @Property(int, notify=panelCountChanged)
         def panelCount(self) -> int:
             return view_model.panel_count
@@ -1261,7 +1265,7 @@ ApplicationWindow {
             ColumnLayout { anchors.fill: parent; anchors.margins: 14; spacing: 8
                 RowLayout { Layout.fillWidth: true
                     Label { text: "LIVE KIT"; color: window.muted; font.pixelSize: 12; Layout.fillWidth: true }
-                    Label { text: window.screenData.liveKitAssignedCount + " / 11"; color: window.muted; font.pixelSize: 11 }
+                    Label { text: window.screenData.liveKitAssignedCount + " / " + window.screenData.liveKitTotalSlotCount; color: window.muted; font.pixelSize: 11 }
                 }
                 Rectangle {
                     id: liveKitPendingBanner
