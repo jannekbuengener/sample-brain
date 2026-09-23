@@ -301,6 +301,47 @@ def test_harmonic_reopen_same_fingerprint_reuses_results_selection_and_scroll():
     assert adapter.harmonic_match_scroll_y == 42
 
 
+def test_harmonic_open_without_controller_reports_open_status():
+    _fixture, view_model, adapter = _adapter()
+
+    assert adapter.harmonic_match_open is False
+    assert view_model.harmony_status == "Harmonic Match ist ausgeschaltet."
+    assert adapter.toggle_harmonic_match() is True
+    assert adapter.harmonic_match_open is True
+    assert view_model.state_id == "screen1-harmonic-4panel"
+    assert view_model.harmony_status == "Harmonic Match ist offen."
+
+
+def test_harmonic_reopen_with_stale_controller_off_status_keeps_open_label():
+    calls = []
+    controller = HarmonicMatchLibraryController(finder=_stub_harmony_finder)
+    original = controller.set_anchor
+
+    def record(anchor, candidates):
+        calls.append(anchor)
+        original(anchor, candidates)
+
+    controller.set_anchor = record
+    fixture, view_model, adapter = _adapter(harmony_controller=controller)
+    selected = fixture.selected_browser_index
+    view_model.browser_rows = _set_mode_keys(fixture, view_model, selected)
+
+    assert adapter.toggle_harmonic_match() is True
+    assert adapter.harmonic_match_open is True
+    assert view_model.harmony_rows
+    assert view_model.harmony_status == f"{len(view_model.harmony_rows)} sichere Harmonic Matches."
+    assert len(calls) == 1
+
+    controller.status = "Harmonic Match ist ausgeschaltet."
+    assert adapter.effective_harmony_status == "Harmonic Match ist offen."
+    assert adapter.toggle_harmonic_match() is False
+    assert adapter.toggle_harmonic_match() is True
+    assert len(calls) == 1
+    assert adapter.harmonic_match_open is True
+    assert controller.status == "Harmonic Match ist ausgeschaltet."
+    assert view_model.harmony_status == "Harmonic Match ist offen."
+
+
 def test_harmonic_no_browser_selection_stays_closed_without_finder_call():
     calls = []
     controller = HarmonicMatchLibraryController(finder=lambda *_args: calls.append(True))
