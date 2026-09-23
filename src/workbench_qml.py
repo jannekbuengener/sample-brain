@@ -1472,10 +1472,7 @@ ApplicationWindow {
                                         }
                                         MouseArea {
                                             id: slotAuditionMouse
-                                            anchors.left: parent.left
-                                            anchors.right: slotAdd.left
-                                            anchors.top: parent.top
-                                            anchors.bottom: parent.bottom
+                                            anchors.fill: parent
                                             hoverEnabled: true
                                             enabled: modelData.assigned
                                             onClicked: window.interaction.auditionLiveKitSlot(kitGroupIndex, index)
@@ -1493,8 +1490,9 @@ ApplicationWindow {
                                             Label { text: modelData.assignment; color: modelData.auditioning ? window.accent : (modelData.assigned ? window.textColor : window.muted); font.pixelSize: 11; elide: Text.ElideRight }
                                             Rectangle {
                                                 id: slotAdd
-                                                Layout.preferredHeight: 22
-                                                radius: 3
+                                            Layout.preferredHeight: 22
+                                            radius: 3
+                                            z: 1
                                                 Layout.preferredWidth: liveKitReplaceTarget ? 52 : 22
                                                 color: liveKitSlotTarget ? "#24151a" : "transparent"
                                                 border.color: liveKitSlotTarget ? window.accent : "transparent"
@@ -1511,6 +1509,7 @@ ApplicationWindow {
                                                     anchors.fill: parent
                                                     hoverEnabled: true
                                                     focus: true
+                                                    z: 1
                                                     onClicked: { slotAddMouse.forceActiveFocus(); window.interaction.addLiveKitSlot(kitGroupIndex, index) }
                                                 }
                                             }
