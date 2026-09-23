@@ -191,6 +191,7 @@ class Screen1QmlViewModel:
         library_tree: WorkbenchLibraryTreeState | None = None,
         browser_context: str = "No library selected",
         browser_error: str | None = None,
+        auditioning_live_kit_slot: tuple[str, str] | None = None,
     ) -> None:
         if state_id not in SCREEN1_QML_STATE_IDS:
             raise ValueError("Unbekannter Screen-1-QML-State.")
@@ -206,6 +207,7 @@ class Screen1QmlViewModel:
         self.library_tree = library_tree or WorkbenchLibraryTreeState()
         self.browser_context = browser_context
         self.browser_error = browser_error
+        self.auditioning_live_kit_slot = auditioning_live_kit_slot
         self.analysis_status = "idle"
         self.analysis_folder_id: int | None = None
         self.analysis_current = 0
@@ -357,6 +359,8 @@ class Screen1QmlViewModel:
                                 else "Empty · Slot wählen"
                             ),
                             "assigned": slot.assignment is not None,
+                            "auditioning": self.auditioning_live_kit_slot
+                            == (group.name, slot.name),
                         }
                         for slot in group.slots
                     ],
@@ -548,6 +552,7 @@ class Screen1QmlInteractionAdapter:
         self._live_kit = live_kit
         self._pending_live_kit_row: WorkbenchRow | None = None
         self._preview_active = False
+        self._auditioning_live_kit_slot: tuple[str, str] | None = None
         self._harmonic_match_context_fingerprint: tuple[object, ...] | None = None
         self._harmonic_match_selected_index = 0
         self._harmonic_match_scroll_y = 0.0
@@ -565,6 +570,10 @@ class Screen1QmlInteractionAdapter:
     @property
     def preview_active(self) -> bool:
         return self._preview_active
+
+    @property
+    def auditioning_live_kit_slot(self) -> tuple[str, str] | None:
+        return self._auditioning_live_kit_slot
 
     @property
     def selected_harmonic_match_index(self) -> int:
@@ -586,6 +595,7 @@ class Screen1QmlInteractionAdapter:
         self._preview_active = bool(
             result is None or getattr(result, "ok", result is not False)
         )
+        self._clear_live_kit_audition_projection()
         return row
 
     def stop_preview(self) -> bool:
@@ -595,7 +605,41 @@ class Screen1QmlInteractionAdapter:
         self._preview_active = False
         if self._on_preview_stopped is not None:
             self._on_preview_stopped()
+        self._clear_live_kit_audition_projection()
         return True
+
+    def _clear_live_kit_audition_projection(self) -> None:
+        if self._auditioning_live_kit_slot is not None:
+            self._auditioning_live_kit_slot = None
+            self.view_model.auditioning_live_kit_slot = None
+
+    def audition_live_kit_slot(self, group: str, slot: str) -> bool:
+        """Audition exactly the assigned slot row through the shared preview seam.
+
+        Mirrors the authoritative Tk contract: an empty or unknown slot fails
+        closed without dispatching anything, and a browser selection is never
+        read or changed.  The dispatch reuses :attr:`_on_preview_requested`
+        (the sole preview owner), so the Slot->A/B->Browser replacement
+        semantics of the shared owner apply unchanged.
+        """
+        if self._live_kit is None:
+            return False
+        try:
+            row = self._live_kit.state.assignment_for(group, slot)
+        except ValueError:
+            return False
+        if row is None:
+            return False
+        result = None
+        if self._on_preview_requested is not None:
+            result = self._on_preview_requested(row)
+        self._preview_active = bool(
+            result is None or getattr(result, "ok", result is not False)
+        )
+        if self._preview_active:
+            self._auditioning_live_kit_slot = (group, slot)
+            self.view_model.auditioning_live_kit_slot = self._auditioning_live_kit_slot
+        return self._preview_active
 
     def request_add_to_kit(self, index: int) -> WorkbenchRow:
         """Emit an Add-to-Kit intent without assigning the row.
@@ -745,6 +789,7 @@ class Screen1QmlInteractionAdapter:
         row = self.select_harmonic_match(index)
         result = self._on_preview_requested(row) if self._on_preview_requested else None
         self._preview_active = bool(result is None or getattr(result, "ok", result is not False))
+        self._clear_live_kit_audition_projection()
         return row
 
     def navigate_harmonic_match(self, direction: str, *, match_has_focus: bool) -> WorkbenchRow | None:
@@ -1313,27 +1358,55 @@ ApplicationWindow {
                             }
                             ColumnLayout { visible: modelData.active; Layout.fillWidth: true; Layout.leftMargin: 12; Layout.rightMargin: 10; Layout.topMargin: 2
                                 Repeater { model: modelData.active ? modelData.slots : []
-                                    delegate: RowLayout { Layout.fillWidth: true; Layout.preferredHeight: 26
-                                        Label { text: modelData.name; color: window.muted; font.pixelSize: 11; Layout.fillWidth: true; elide: Text.ElideRight }
-                                        Label { text: modelData.assignment; color: modelData.assigned ? window.textColor : window.muted; font.pixelSize: 11; elide: Text.ElideRight }
+                                    delegate: Item {
+                                        objectName: "liveKitSlot" + kitGroupIndex + "_" + index
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 26
                                         Rectangle {
-                                            id: slotAdd
-                                            Layout.preferredWidth: 22
-                                            Layout.preferredHeight: 22
+                                            id: slotAuditionBackdrop
+                                            anchors.fill: parent
                                             radius: 3
-                                            color: slotAddMouse.containsMouse ? "#24151a" : "transparent"
-                                            border.color: window.interaction.liveKitPendingAdd !== "" ? window.accent : "transparent"
-                                            Label {
-                                                anchors.centerIn: parent
-                                                text: "+"
-                                                color: slotAddMouse.containsMouse || window.interaction.liveKitPendingAdd !== "" ? window.accent : window.muted
-                                                font.pixelSize: 13
+                                            visible: modelData.auditioning
+                                            color: "#1a1418"
+                                            border.color: window.accent
+                                        }
+                                        MouseArea {
+                                            id: slotAuditionMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            enabled: modelData.assigned
+                                            onClicked: window.interaction.auditionLiveKitSlot(kitGroupIndex, index)
+                                        }
+                                        RowLayout { anchors.fill: parent; spacing: 6
+                                            Item { Layout.preferredWidth: 14; Layout.preferredHeight: 26
+                                                Label {
+                                                    anchors.centerIn: parent
+                                                    text: modelData.assigned ? "▶" : ""
+                                                    color: slotAuditionMouse.containsMouse ? window.accent : (modelData.auditioning ? window.accent : window.muted)
+                                                    font.pixelSize: 10
+                                                }
                                             }
-                                            MouseArea {
-                                                id: slotAddMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                onClicked: window.interaction.addLiveKitSlot(kitGroupIndex, index)
+                                            Label { text: modelData.name; color: window.muted; font.pixelSize: 11; Layout.fillWidth: true; elide: Text.ElideRight }
+                                            Label { text: modelData.assignment; color: modelData.auditioning ? window.accent : (modelData.assigned ? window.textColor : window.muted); font.pixelSize: 11; elide: Text.ElideRight }
+                                            Rectangle {
+                                                id: slotAdd
+                                                Layout.preferredWidth: 22
+                                                Layout.preferredHeight: 22
+                                                radius: 3
+                                                color: slotAddMouse.containsMouse ? "#24151a" : "transparent"
+                                                border.color: window.interaction.liveKitPendingAdd !== "" ? window.accent : "transparent"
+                                                Label {
+                                                    anchors.centerIn: parent
+                                                    text: "+"
+                                                    color: slotAddMouse.containsMouse || window.interaction.liveKitPendingAdd !== "" ? window.accent : window.muted
+                                                    font.pixelSize: 13
+                                                }
+                                                MouseArea {
+                                                    id: slotAddMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    onClicked: window.interaction.addLiveKitSlot(kitGroupIndex, index)
+                                                }
                                             }
                                         }
                                     }
@@ -1475,6 +1548,14 @@ def _qml_interaction_bridge(
             if target is None:
                 return
             if adapter.assign_live_kit_slot(*target):
+                self._refresh()
+
+        @Slot(int, int)
+        def auditionLiveKitSlot(self, group_index: int, slot_index: int) -> None:
+            target = self._live_kit_slot_target(group_index, slot_index)
+            if target is None:
+                return
+            if adapter.audition_live_kit_slot(*target):
                 self._refresh()
 
         @Slot()
