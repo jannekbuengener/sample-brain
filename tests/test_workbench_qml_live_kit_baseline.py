@@ -442,6 +442,141 @@ def test_qml_live_kit_runtime_roundtrip_pending_assign_and_group_toggle():
             loader.close()
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
+)
+def test_qml_pending_add_pointer_targets_full_slot_surface_and_resets_after_leave():
+    """Drive the real QML pointer path for assigned replacement and empty add."""
+    from PySide6.QtCore import QPoint, QPointF, QRectF, Qt
+    from PySide6.QtQuick import QQuickItem
+    from PySide6.QtTest import QTest
+
+    from src.workbench_qml_spike import _qml_engine, _settle_qml_frame
+
+    fixture = build_screen1_visual_fixture_v1()
+    view_model = build_qml_view_model_from_fixture(
+        fixture,
+        "screen1-default-3panel",
+    )
+    previews = []
+    live_kit = LiveKitPresenter()
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        live_kit=live_kit,
+        on_preview_requested=previews.append,
+    )
+    live_kit.assign("Drums", "Main Drum", fixture.browser_rows[0])
+    adapter._sync_live_kit_projection()
+    view_model.live_kit_groups = live_kit.groups
+
+    app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+    window.show()
+    _settle_qml_frame(app)
+    try:
+        bridge = engine._screen1_interaction_bridge
+        interaction = window.property("interaction")
+        pane = window.findChild(QQuickItem, "liveKitPane")
+        assert pane is not None
+
+        def item(name: str) -> QQuickItem:
+            to_visit = [pane]
+            while to_visit:
+                current = to_visit.pop()
+                if current.objectName() == name:
+                    return current
+                to_visit.extend(current.childItems())
+            raise AssertionError(f"QML item {name!r} fehlt im Live-Kit-Visualbaum")
+
+        def slot_pointer_point(slot: QQuickItem, handler: QQuickItem) -> QPoint:
+            slot_bounds = slot.boundingRect()
+            local_point = QPointF(
+                slot_bounds.left() + slot_bounds.width() * 0.25,
+                slot_bounds.center().y(),
+            )
+            handler_origin = handler.mapToItem(slot, QPointF(0, 0))
+            handler_bounds = QRectF(handler_origin, handler.size())
+            assert slot_bounds.contains(local_point)
+            # The selected point must be owned by the one slot interaction
+            # surface, not only by the old right-hand action glyph.
+            assert handler_bounds.contains(local_point)
+            return slot.mapToScene(local_point).toPoint()
+
+        assigned_slot = item("liveKitSlot1_0")
+        assigned_handler = item("liveKitSlotAction1_0")
+        assigned_target = item("liveKitSlotTarget1_0")
+        assigned_label = item("liveKitSlotActionLabel1_0")
+        other_slot = item("liveKitSlot1_1")
+        other_target = item("liveKitSlotTarget1_1")
+        assert assigned_slot.property("visible") is True
+        assert assigned_slot.property("enabled") is True
+        assert assigned_handler.property("visible") is True
+        assert assigned_handler.property("enabled") is True
+
+        bridge.addToKit(1)
+        _settle_qml_frame(app)
+        assert interaction.property("liveKitPendingAdd") == fixture.browser_rows[1].display_name
+
+        assigned_point = slot_pointer_point(assigned_slot, assigned_handler)
+        QTest.mouseMove(window, assigned_point)
+        _settle_qml_frame(app)
+        assert assigned_slot.property("liveKitSlotTarget") is True
+        assert assigned_slot.property("liveKitReplaceTarget") is True
+        assert assigned_target.property("visible") is True
+        assert assigned_label.property("text") == "Replace"
+        assert other_slot.property("liveKitSlotTarget") is False
+        assert other_target.property("visible") is False
+        assert previews == []
+        assert interaction.property("previewActive") is False
+
+        outside = QPoint(4, 4)
+        assert not assigned_slot.boundingRect().contains(
+            assigned_slot.mapFromScene(QPointF(outside))
+        )
+        QTest.mouseMove(window, outside)
+        _settle_qml_frame(app)
+        assert assigned_slot.property("liveKitSlotTarget") is False
+        assert assigned_target.property("visible") is False
+
+        QTest.mouseMove(window, assigned_point)
+        _settle_qml_frame(app)
+        QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, assigned_point)
+        _settle_qml_frame(app)
+        assert live_kit.state.assignment_for("Drums", "Main Drum") is fixture.browser_rows[1]
+        assert interaction.property("liveKitPendingAdd") == ""
+        # Assignment refreshes the QML projection, so observe the replacement
+        # delegate instance rather than retaining a deleted Qt wrapper.
+        assigned_slot = item("liveKitSlot1_0")
+        assigned_target = item("liveKitSlotTarget1_0")
+        assert assigned_slot.property("liveKitSlotTarget") is False
+        assert assigned_target.property("visible") is False
+        assert previews == []
+
+        bridge.addToKit(2)
+        _settle_qml_frame(app)
+        empty_slot = item("liveKitSlot1_1")
+        empty_handler = item("liveKitSlotAction1_1")
+        empty_target = item("liveKitSlotTarget1_1")
+        empty_label = item("liveKitSlotActionLabel1_1")
+        empty_point = slot_pointer_point(empty_slot, empty_handler)
+        QTest.mouseMove(window, empty_point)
+        _settle_qml_frame(app)
+        assert empty_slot.property("liveKitSlotTarget") is True
+        assert empty_slot.property("liveKitReplaceTarget") is False
+        assert empty_target.property("visible") is True
+        assert empty_label.property("text") == "+"
+        assert previews == []
+    finally:
+        window.close()
+        app.processEvents()
+        timer = getattr(engine, "_screen1_waveform_timer", None)
+        if timer is not None:
+            timer.stop()
+        loader = getattr(engine, "_screen1_waveform_loader", None)
+        if loader is not None:
+            loader.close()
+
+
 def test_live_kit_denominator_derives_from_projected_groups():
     live_kit = LiveKitPresenter()
     projected_total = sum(len(group.slots) for group in live_kit.groups)
