@@ -845,8 +845,14 @@ class Screen1QmlInteractionAdapter:
 
     def preview_harmonic_match(self, index: int) -> WorkbenchRow:
         row = self.select_harmonic_match(index)
+        was_active = self._preview_active
         result = self._dispatch_preview(row)
-        self._preview_active = bool(result is None or getattr(result, "ok", result is not False))
+        accepted = bool(
+            result is None or getattr(result, "ok", result is not False)
+        )
+        if not accepted and was_active:
+            self._stop_preview_authoritative()
+        self._preview_active = accepted
         self._clear_live_kit_audition_projection()
         return row
 

@@ -342,6 +342,27 @@ def test_browser_preview_failure_stops_prior_playback_and_clears_projection():
     assert adapter.stop_preview() is False
 
 
+def test_harmonic_preview_failure_stops_prior_playback_and_clears_projection():
+    stops = []
+    _fixture, _view_model, adapter, live_kit = _production_adapter(
+        on_preview_requested=_rejecting_probe(rejected_name="TECH_PAD_01.wav"),
+        on_preview_stopped=lambda: stops.append("stop"),
+    )
+    _assign(adapter, live_kit, "Drums", "Main Drum", _row("main.wav"))
+
+    assert adapter.audition_live_kit_slot("Drums", "Main Drum") is True
+    assert adapter.preview_active is True
+    assert stops == []
+
+    failing_index = 2
+    assert adapter.select_harmonic_match(failing_index) is not None
+    assert adapter.preview_harmonic_match(failing_index) is not None
+    assert stops == ["stop"]
+    assert adapter.preview_active is False
+    assert adapter.auditioning_live_kit_slot is None
+    assert adapter.stop_preview() is False
+
+
 def _rejecting_probe(*, rejected_name: str):
     def probe(row, *, start_ms=None) -> object:
         if row.relative_path.endswith(rejected_name):
