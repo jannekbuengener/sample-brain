@@ -620,3 +620,55 @@ def test_qml_window_level_escape_stops_live_kit_audition_from_any_focus():
         loader = getattr(engine, "_screen1_waveform_loader", None)
         if loader is not None:
             loader.close()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 not installed (Qt runtime tests)",
+)
+def test_qml_rejected_audition_refreshes_cleared_projection():
+    fixture = build_screen1_visual_fixture_v1()
+    view_model = build_qml_view_model_from_fixture(fixture, "screen1-default-3panel")
+    live_kit = LiveKitPresenter()
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        live_kit=live_kit,
+        on_preview_requested=_rejecting_probe(rejected_name="b.wav"),
+    )
+    _assign(adapter, live_kit, "Drums", "Main Drum", _row("a.wav"))
+    _assign(adapter, live_kit, "Drums", "Closed Hat", _row("b.wav"))
+    view_model.live_kit_groups = live_kit.groups
+
+    app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+    window.show()
+    _settle_qml_frame(app)
+    try:
+        bridge = engine._screen1_interaction_bridge
+        screen_model = engine._screen1_screen_model
+        screen_data = window.property("screenData")
+        live_kit_refreshes = []
+
+        screen_model.liveKitGroupsChanged.connect(
+            lambda: live_kit_refreshes.append("refresh")
+        )
+
+        bridge.auditionLiveKitSlot(1, 0)
+        app.processEvents()
+        assert screen_data.property("liveKitGroups")[1]["slots"][0]["auditioning"] is True
+
+        bridge.auditionLiveKitSlot(1, 1)
+        app.processEvents()
+        assert live_kit_refreshes, (
+            "rejected audition must emit liveKitGroupsChanged so the QML "
+            "Repeater re-evaluates the cleared audition projection"
+        )
+        assert screen_data.property("liveKitGroups")[1]["slots"][0]["auditioning"] is False
+    finally:
+        window.close()
+        app.processEvents()
+        timer = getattr(engine, "_screen1_waveform_timer", None)
+        if timer is not None:
+            timer.stop()
+        loader = getattr(engine, "_screen1_waveform_loader", None)
+        if loader is not None:
+            loader.close()

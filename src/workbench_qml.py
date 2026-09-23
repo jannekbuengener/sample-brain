@@ -1610,8 +1610,8 @@ def _qml_interaction_bridge(
             target = self._live_kit_slot_target(group_index, slot_index)
             if target is None:
                 return
-            if adapter.audition_live_kit_slot(*target):
-                self._refresh()
+            adapter.audition_live_kit_slot(*target)
+            self._refresh()
 
         @Slot()
         def cancelLiveKitAdd(self) -> None:
