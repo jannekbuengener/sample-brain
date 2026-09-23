@@ -1472,7 +1472,10 @@ ApplicationWindow {
                                         }
                                         MouseArea {
                                             id: slotAuditionMouse
-                                            anchors.fill: parent
+                                            anchors.left: parent.left
+                                            anchors.right: slotAdd.left
+                                            anchors.top: parent.top
+                                            anchors.bottom: parent.bottom
                                             hoverEnabled: true
                                             enabled: modelData.assigned
                                             onClicked: window.interaction.auditionLiveKitSlot(kitGroupIndex, index)
