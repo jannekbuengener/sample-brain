@@ -8,6 +8,7 @@ probe orchestration deliberately live in :mod:`src.workbench_qml_spike`.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import inspect
 import math
 from pathlib import Path
 from typing import Callable
@@ -524,6 +525,25 @@ def _qml_screen_data_bridge(
     return QmlScreenDataBridge()
 
 
+def _callback_accepts_start_ms(callback: Callable[..., object] | None) -> bool:
+    """True when the preview seam callback declares a ``start_ms`` keyword.
+
+    The seam stays row-only for legacy callbacks; offset-negotiating callbacks
+    receive the explicit preview start intention forwarded by the adapter.
+    """
+    if callback is None:
+        return False
+    try:
+        parameters = inspect.signature(callback).parameters
+    except (TypeError, ValueError):
+        return False
+    return any(
+        parameter.name == "start_ms"
+        or parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+
+
 class Screen1QmlInteractionAdapter:
     """Route renderer intent to the established Screen-1 Python contracts.
 
@@ -547,6 +567,9 @@ class Screen1QmlInteractionAdapter:
         self.harmony_controller = harmony_controller
         self.harmonic_match_open = view_model.panel_count == 4
         self._on_preview_requested = on_preview_requested
+        self._preview_request_accepts_start_ms = _callback_accepts_start_ms(
+            on_preview_requested
+        )
         self._on_preview_stopped = on_preview_stopped
         self._on_add_to_kit_requested = on_add_to_kit_requested
         self._live_kit = live_kit
@@ -566,6 +589,22 @@ class Screen1QmlInteractionAdapter:
     def select_row(self, index: int) -> WorkbenchRow:
         """Select exactly one authoritative row without starting a preview."""
         return self.view_model.select_browser_index(index)
+
+    def _dispatch_preview(
+        self, row: WorkbenchRow, *, start_ms: int | None = None
+    ) -> object:
+        """Emit a preview intent through the shared owner seam.
+
+        ``start_ms=None`` keeps the owned default (the Browser saved cue).
+        Explicit offsets (Live Kit ``start_ms=0``) are forwarded only to
+        callbacks that declare the keyword, so legacy row-only seams stay
+        unchanged.
+        """
+        if self._on_preview_requested is None:
+            return None
+        if self._preview_request_accepts_start_ms:
+            return self._on_preview_requested(row, start_ms=start_ms)
+        return self._on_preview_requested(row)
 
     @property
     def preview_active(self) -> bool:
@@ -589,9 +628,7 @@ class Screen1QmlInteractionAdapter:
             row = self.view_model.browser_rows[index].source_row
         else:
             row = self.select_row(index)
-        result = None
-        if self._on_preview_requested is not None:
-            result = self._on_preview_requested(row)
+        result = self._dispatch_preview(row)
         self._preview_active = bool(
             result is None or getattr(result, "ok", result is not False)
         )
@@ -602,11 +639,15 @@ class Screen1QmlInteractionAdapter:
         """Stop only an active preview and leave selection untouched."""
         if not self._preview_active:
             return False
+        self._stop_preview_authoritative()
+        self._clear_live_kit_audition_projection()
+        return True
+
+    def _stop_preview_authoritative(self) -> None:
+        """Stop playback through the existing authoritative stop seam."""
         self._preview_active = False
         if self._on_preview_stopped is not None:
             self._on_preview_stopped()
-        self._clear_live_kit_audition_projection()
-        return True
 
     def _clear_live_kit_audition_projection(self) -> None:
         if self._auditioning_live_kit_slot is not None:
@@ -620,7 +661,11 @@ class Screen1QmlInteractionAdapter:
         closed without dispatching anything, and a browser selection is never
         read or changed.  The dispatch reuses :attr:`_on_preview_requested`
         (the sole preview owner), so the Slot->A/B->Browser replacement
-        semantics of the shared owner apply unchanged.
+        semantics of the shared owner apply unchanged.  Live Kit honours its
+        zero-offset contract (``start_ms=0``) instead of the Browser saved cue.
+        A failed audition stops any prior playback through the authoritative
+        stop seam and clears the audition projection, so playback can never be
+        orphaned while the UI claims it is idle.
         """
         if self._live_kit is None:
             return False
@@ -630,16 +675,18 @@ class Screen1QmlInteractionAdapter:
             return False
         if row is None:
             return False
-        result = None
-        if self._on_preview_requested is not None:
-            result = self._on_preview_requested(row)
-        self._preview_active = bool(
-            result is None or getattr(result, "ok", result is not False)
-        )
-        if self._preview_active:
-            self._auditioning_live_kit_slot = (group, slot)
-            self.view_model.auditioning_live_kit_slot = self._auditioning_live_kit_slot
-        return self._preview_active
+        was_active = self._preview_active
+        result = self._dispatch_preview(row, start_ms=0)
+        accepted = bool(result is None or getattr(result, "ok", result is not False))
+        if not accepted:
+            if was_active:
+                self._stop_preview_authoritative()
+            self._clear_live_kit_audition_projection()
+            return False
+        self._preview_active = True
+        self._auditioning_live_kit_slot = (group, slot)
+        self.view_model.auditioning_live_kit_slot = self._auditioning_live_kit_slot
+        return True
 
     def request_add_to_kit(self, index: int) -> WorkbenchRow:
         """Emit an Add-to-Kit intent without assigning the row.
@@ -789,7 +836,7 @@ class Screen1QmlInteractionAdapter:
 
     def preview_harmonic_match(self, index: int) -> WorkbenchRow:
         row = self.select_harmonic_match(index)
-        result = self._on_preview_requested(row) if self._on_preview_requested else None
+        result = self._dispatch_preview(row)
         self._preview_active = bool(result is None or getattr(result, "ok", result is not False))
         self._clear_live_kit_audition_projection()
         return row
@@ -1330,7 +1377,7 @@ ApplicationWindow {
                     color: "#211014"
                     border.color: window.accent
                     focus: visible
-                    Keys.onEscapePressed: window.interaction.cancelLiveKitAdd()
+                    Keys.onEscapePressed: window.interaction.escapeLiveKitContext()
                     Label {
                         anchors.fill: parent
                         anchors.leftMargin: 8
@@ -1571,6 +1618,19 @@ def _qml_interaction_bridge(
             adapter.cancel_live_kit_add()
             self._refresh()
 
+        @Slot()
+        def escapeLiveKitContext(self) -> None:
+            """Coherent single-Escape for the pending-add banner.
+
+            Playback must never keep running because the focused banner
+            consumed the event: this routes through the same authoritative
+            stop contract first, then applies the established pending-add
+            cancel.  Both operations are idempotent and safe when idle.
+            """
+            adapter.stop_preview()
+            adapter.cancel_live_kit_add()
+            self._refresh()
+
         @Slot(int)
         def navigateHarmony(self, step: int) -> None:
             adapter.navigate_harmonic_match("next" if step > 0 else "previous", match_has_focus=True)
@@ -1733,11 +1793,14 @@ def _qml_engine(
             else workbench_library_db_path()
         )
 
-        def preview_row(row: WorkbenchRow) -> object:
-            return preview_player.play(
-                row.path,
-                start_ms=get_preview_start_ms(row.path, library_db_path=preview_db_path),
-            )
+        def preview_row(
+            row: WorkbenchRow, *, start_ms: int | None = None
+        ) -> object:
+            if start_ms is None:
+                start_ms = get_preview_start_ms(
+                    row.path, library_db_path=preview_db_path
+                )
+            return preview_player.play(row.path, start_ms=start_ms)
 
         live_kit = LiveKitPresenter()
         adapter = Screen1QmlInteractionAdapter(

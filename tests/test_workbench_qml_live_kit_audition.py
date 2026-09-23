@@ -279,6 +279,62 @@ def test_slot_replacement_clears_the_auditioning_projection():
     assert view_model.auditioning_live_kit_slot is None
 
 
+def test_failed_replacement_audition_stops_prior_playback_and_clears_projection():
+    stops = []
+    fixture, view_model, adapter, live_kit = _production_adapter(
+        on_preview_requested=_rejecting_probe(rejected_name="b.wav"),
+        on_preview_stopped=lambda: stops.append("stop"),
+    )
+    selected_before = adapter.selected_browser_index
+    drum_a = _row("a.wav")
+    reject_b = _row("b.wav")
+    _assign(adapter, live_kit, "Drums", "Main Drum", drum_a)
+    _assign(adapter, live_kit, "Drums", "Closed Hat", reject_b)
+
+    assert adapter.audition_live_kit_slot("Drums", "Main Drum") is True
+    assert adapter.preview_active is True
+
+    assert adapter.audition_live_kit_slot("Drums", "Closed Hat") is False
+    assert stops == ["stop"]
+    assert adapter.preview_active is False
+    assert adapter.auditioning_live_kit_slot is None
+    assert view_model.auditioning_live_kit_slot is None
+    assert live_kit.state.assignment_for("Drums", "Main Drum") is drum_a
+    assert live_kit.state.assignment_for("Drums", "Closed Hat") is reject_b
+    assert adapter.selected_browser_index == selected_before
+
+
+def test_live_kit_audition_requests_zero_offset_while_browser_keeps_cue():
+    calls = []
+    fixture, _view_model, adapter, live_kit = _production_adapter(
+        on_preview_requested=lambda row, *, start_ms=None: calls.append((row, start_ms)),
+    )
+    slot_row = _row("cue.wav")
+    _assign(adapter, live_kit, "Drums", "Main Drum", slot_row)
+    browser_row = fixture.browser_rows[0]
+
+    assert adapter.preview_row(0) is browser_row
+    assert adapter.audition_live_kit_slot("Drums", "Main Drum") is True
+
+    assert calls[0] == (browser_row, None)
+    assert calls[1] == (slot_row, 0)
+    assert adapter.auditioning_live_kit_slot == ("Drums", "Main Drum")
+
+
+def _rejecting_probe(*, rejected_name: str):
+    def probe(row, *, start_ms=None) -> object:
+        if row.relative_path.endswith(rejected_name):
+            return False
+        return True
+
+    return probe
+
+
+def test_qml_pending_banner_escape_routes_through_bridge_contract():
+    assert "Keys.onEscapePressed: window.interaction.escapeLiveKitContext()" in QML_SOURCE
+    assert "Keys.onEscapePressed: window.interaction.cancelLiveKitAdd()" not in QML_SOURCE
+
+
 def test_slot_audition_introduces_no_transport_or_second_clock():
     previews = []
     _fixture, _view_model, adapter, live_kit = _production_adapter(
@@ -435,6 +491,66 @@ def test_qml_repeated_audition_cycles_do_not_accumulate_qml_objects():
 
         assert descendant_count() == before_objects
         assert delegate_creations() == before_delegates
+    finally:
+        window.close()
+        app.processEvents()
+        timer = getattr(engine, "_screen1_waveform_timer", None)
+        if timer is not None:
+            timer.stop()
+        loader = getattr(engine, "_screen1_waveform_loader", None)
+        if loader is not None:
+            loader.close()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 not installed (Qt runtime tests)",
+)
+def test_qml_pending_banner_escape_stops_audition_and_cancels_add():
+    from PySide6.QtCore import Qt
+    from PySide6.QtQuick import QQuickItem
+    from PySide6.QtTest import QTest
+
+    previews = []
+    fixture = build_screen1_visual_fixture_v1()
+    view_model = build_qml_view_model_from_fixture(fixture, "screen1-default-3panel")
+    live_kit = LiveKitPresenter()
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        live_kit=live_kit,
+        on_preview_requested=previews.append,
+    )
+    _assign(adapter, live_kit, "Drums", "Main Drum", _row("banner.wav"))
+    view_model.live_kit_groups = live_kit.groups
+
+    app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+    window.show()
+    _settle_qml_frame(app)
+    try:
+        bridge = engine._screen1_interaction_bridge
+        interaction = window.property("interaction")
+        screen_data = window.property("screenData")
+        banner = window.findChild(QQuickItem, "liveKitPendingBanner")
+        assert banner is not None
+
+        bridge.auditionLiveKitSlot(1, 0)
+        app.processEvents()
+        assert interaction.property("previewActive") is True
+        assert screen_data.property("liveKitGroups")[1]["slots"][0]["auditioning"] is True
+
+        bridge.addToKit(4)
+        app.processEvents()
+        assert interaction.property("liveKitPendingAdd") == fixture.browser_rows[4].display_name
+        assert banner.property("visible") is True
+        assert banner.property("activeFocus") is True
+
+        QTest.keyClick(window, Qt.Key_Escape)
+        app.processEvents()
+
+        assert interaction.property("previewActive") is False
+        assert screen_data.property("liveKitGroups")[1]["slots"][0]["auditioning"] is False
+        assert interaction.property("liveKitPendingAdd") == ""
+        assert banner.property("visible") is False
     finally:
         window.close()
         app.processEvents()
