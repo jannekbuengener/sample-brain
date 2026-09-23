@@ -1502,7 +1502,10 @@ ApplicationWindow {
                                         MouseArea {
                                             id: slotActionMouse
                                             objectName: "slotActionMouse" + kitGroupIndex + "_" + index
-                                            anchors.fill: slotAction
+                                            x: slotAction.x
+                                            y: slotAction.y
+                                            width: slotAction.width
+                                            height: slotAction.height
                                             hoverEnabled: true
                                             z: 1
                                             onClicked: window.interaction.addLiveKitSlot(kitGroupIndex, index)

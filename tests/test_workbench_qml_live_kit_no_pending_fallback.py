@@ -343,6 +343,17 @@ def _click_item(app, window, item):
     app.processEvents()
 
 
+def _find_visual_item(root, object_name: str):
+    """Find Repeater delegates through the Qt Quick visual-child tree."""
+    to_visit = [root]
+    while to_visit:
+        current = to_visit.pop()
+        if current.objectName() == object_name:
+            return current
+        to_visit.extend(current.childItems())
+    return None
+
+
 class TestQmlNoPendingEmptySlotAdd:
     """QML runtime tests for empty slot add without pending."""
 
@@ -376,7 +387,7 @@ class TestQmlNoPendingEmptySlotAdd:
             assert pane is not None
 
             # Find the slot add button for Drums/Main Drum (group 1, slot 0)
-            slot_add = window.findChild(__import__("PySide6.QtQuick").QtQuick.QQuickItem, "liveKitSlot1_0")
+            slot_add = _find_visual_item(pane, "liveKitSlot1_0")
             assert slot_add is not None
 
             # The add button should be visible/interactive even without pending
@@ -546,15 +557,15 @@ class TestQmlPointerOwnership:
             assert pane is not None
 
             # Find the slot delegate
-            slot_item = window.findChild(QQuickItem, "liveKitSlot1_0")
+            slot_item = _find_visual_item(pane, "liveKitSlot1_0")
             assert slot_item is not None
 
             # Find the audition mouse area (full slot)
-            audition_mouse = slot_item.findChild(QQuickItem, "slotAuditionMouse")
+            audition_mouse = _find_visual_item(slot_item, "slotAuditionMouse")
             assert audition_mouse is not None
 
             # Find the action button mouse area (small affordance) - new ID
-            action_mouse = slot_item.findChild(QQuickItem, "slotActionMouse1_0")
+            action_mouse = _find_visual_item(slot_item, "slotActionMouse1_0")
             assert action_mouse is not None
 
             # They should be separate QQuickItems with separate pointer ownership
