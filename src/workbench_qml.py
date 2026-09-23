@@ -1474,6 +1474,7 @@ ApplicationWindow {
                                             id: slotAuditionMouse
                                             anchors.fill: parent
                                             hoverEnabled: true
+                                            visible: window.interaction.liveKitPendingAdd === ""
                                             enabled: modelData.assigned && window.interaction.liveKitPendingAdd === ""
                                             onClicked: window.interaction.auditionLiveKitSlot(kitGroupIndex, index)
                                         }
