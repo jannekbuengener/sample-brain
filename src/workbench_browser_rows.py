@@ -193,27 +193,10 @@ class BoundedBackgroundWaveformLoader:
             pass
 
     def _run(self) -> None:
-        # Initialize COM for this thread on Windows (required for soundfile/libsndfile)
-        # Try STA first (Qt uses STA), fall back to MTA if needed
-        _com_initialized = False
-        _com_module = None
-        try:
-            import ctypes
-            ole32 = ctypes.windll.ole32
-            # Try STA (Qt uses STA) - soundfile/libsndfile may need STA on Windows
-            hr = ole32.CoInitializeEx(0, 2)  # COINIT_APARTMENTTHREADED
-            if hr < 0:
-                # Fall back to MTA
-                hr = ole32.CoInitializeEx(0, 0)  # COINIT_MULTITHREADED
-            _com_initialized = hr >= 0
-            _com_module = ole32
-        except Exception:
-            pass
-
         while not self._closed.is_set():
             path = self._tasks.get()
             if path is None or self._closed.is_set():
-                break
+                return
             try:
                 result = WaveformCacheResult("ready", tuple(self._loader(path)))
             except Exception:
@@ -221,12 +204,6 @@ class BoundedBackgroundWaveformLoader:
             with self._results_lock:
                 self._results.put((path, result))
                 self._result_ready.set()
-
-        if _com_initialized and _com_module is not None:
-            try:
-                _com_module.CoUninitialize()
-            except Exception:
-                pass
 
 
 @dataclass(frozen=True)
