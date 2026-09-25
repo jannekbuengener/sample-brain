@@ -1644,7 +1644,10 @@ def _classify_catalog_import_item(
             display_name=row.display_name,
             action="import",
         )
-    if _analysis_fields_equal(row, cached):
+    if (
+        _analysis_fields_equal(row, cached)
+        and cached.analyzer_version == _catalog_import_analyzer_version(row)
+    ):
         return CatalogImportPreviewItem(
             path=row.path,
             display_name=row.display_name,

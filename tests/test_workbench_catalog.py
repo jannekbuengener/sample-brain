@@ -236,7 +236,12 @@ class TestCatalogCacheImport:
             load_catalog_rows,
             workbench_scope_requires_refresh,
         )
-        from src.workbench_library import load_sample_by_path
+        from src.workbench_library import (
+            WORKBENCH_ANALYZER_VERSION,
+            load_sample_by_path,
+            upsert_folder,
+            upsert_sample,
+        )
 
         state_dir = tmp_path / "state"
         state_dir.mkdir()
@@ -252,6 +257,14 @@ class TestCatalogCacheImport:
             path=str(sample),
             relative_path=sample.name,
             key=key,
+        )
+        stat = sample.stat()
+        upsert_sample(
+            upsert_folder(target),
+            row,
+            size_bytes=stat.st_size,
+            mtime_ns=stat.st_mtime_ns,
+            analyzer_version=WORKBENCH_ANALYZER_VERSION,
         )
 
         result = import_catalog_rows_to_cache([row], target)
