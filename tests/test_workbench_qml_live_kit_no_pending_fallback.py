@@ -328,7 +328,7 @@ class TestOnlyExplicitTargetSlotChanged:
 # QML-Level Tests (require PySide6)
 # ============================================================
 
-pytestmark = pytest.mark.skipif(
+requires_pyside6 = pytest.mark.skipif(
     __import__("importlib.util").util.find_spec("PySide6") is None,
     reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
 )
@@ -354,6 +354,7 @@ def _find_visual_item(root, object_name: str):
     return None
 
 
+@requires_pyside6
 class TestQmlNoPendingEmptySlotAdd:
     """QML runtime tests for empty slot add without pending."""
 
@@ -415,6 +416,7 @@ class TestQmlNoPendingEmptySlotAdd:
                 loader.close()
 
 
+@requires_pyside6
 class TestQmlAssignedSlotAuditionPrimary:
     """QML runtime tests for assigned slot primary audition."""
 
@@ -470,6 +472,7 @@ class TestQmlAssignedSlotAuditionPrimary:
                 loader.close()
 
 
+@requires_pyside6
 class TestQmlAssignedSlotReplace:
     """QML runtime tests for assigned slot replace affordance."""
 
@@ -526,6 +529,7 @@ class TestQmlAssignedSlotReplace:
                 loader.close()
 
 
+@requires_pyside6
 class TestQmlPointerOwnership:
     """QML pointer ownership tests - verify action target and audition surface are separate."""
 
@@ -586,6 +590,7 @@ class TestQmlPointerOwnership:
                 loader.close()
 
 
+@requires_pyside6
 class TestQmlPendingAddRegression:
     """QML runtime tests to verify pending add flows from #611 still work."""
 
