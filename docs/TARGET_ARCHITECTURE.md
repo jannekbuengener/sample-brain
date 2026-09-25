@@ -38,7 +38,7 @@ All four steps are implemented and stable.
 | Embedding DB | `src/db.py` | Stable | `embedding_models` and `sample_embeddings` tables + helpers including `iter_pending_samples()`. |
 | Index | `src/index.py`, `src/vec_index.py`, `src/search_backend.py` | Stable | NumPy cosine index + optional sqlite-vec vec0 cache; `NumpySearchBackend` / `SqliteVecSearchBackend`; default `numpy` |
 | Search | `src/search.py` | Stable | `run_search()` → embedding backend → search backend adapter → ranked hits. NumPy + sqlite-vec paths. |
-| Screen-1 QML renderer | `src/workbench_qml.py` | Optional production baseline | PySide6/Qt Quick renderer with a thin ViewModel/command adapter over the Python-authoritative Workbench core. Starts only through `workbench --qml-screen1`; Tk remains the default and fallback. |
+| Screen-1 QML renderer | `src/workbench_qml.py` | Canonical renderer direction | PySide6/Qt Quick renderer with a thin ViewModel/command adapter over the Python-authoritative Workbench core. New Screen-1 visual/product work belongs here; Tkinter remains a legacy/fallback path and behavior reference. |
 
 ### 2.3 EPIC 2 capabilities on `main`
 
@@ -64,9 +64,10 @@ contracts instead of reimplementing them. The retained `workbench_qml_spike`
 module is only a compatibility, fixture, virtualization, and visual-acceptance
 harness over that same shell.
 
-Tkinter remains the functional default and legacy/fallback path while Screen 1
-migrates slice by slice. This does not decide packaging, distribution, or a
-complete Screen-1 migration.
+Tkinter remains a legacy/fallback path and source of existing behavior contracts.
+New Screen-1 visual/product implementation belongs in the QML renderer. This
+does not decide packaging, distribution, or the timing of any remaining runtime
+migration.
 
 ### 2.5 Known Technical Debt
 
@@ -88,13 +89,15 @@ Scan  →  Analyze  →  Autotype  →  Export
 
 All four steps are implemented and stable on `main`.
 
-### 3.2 Target Pipeline (EPIC 2 — Semantic Search Foundation)
+### 3.2 Extended Pipeline (EPIC 2 — Semantic Search Foundation)
 
 ```
 Scan  →  Analyze  →  Embed  →  Index  →  Search  →  Export
 ```
 
-Embed, Index, and Search are planned. Export will be extended with result metadata.
+Embed, Index, and Search are implemented on `main` behind their documented optional
+backends and runtime requirements. NumPy remains the default search backend;
+sqlite-vec is opt-in.
 
 ### 3.3 Long-term Pipeline (EPIC 3-6)
 
@@ -215,7 +218,7 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 | Component | EPIC | Purpose |
 |-----------|------|---------|
 | FastAPI Service | EPIC 4 | Local HTTP API around pipeline operations |
-| Desktop UI | EPIC 4 | React/Tauri concept superseded; standalone app follows the VST3-first target (see §10.3) |
+| Desktop UI | EPIC 4 | React/Tauri concept superseded; current Screen-1 product rendering follows the PySide6 / Qt Quick / QML direction in §2.4 and §10.2 |
 | Recommendation Engine | EPIC 3 | Hybrid ranking combining vector similarity + structured metadata |
 | DAW Workflow | EPIC 5 | Integration paths for Ableton, Reaper beyond FL Studio |
 | Re-imagine Engine | EPIC 6 | DSP-based variant generation (pitch, time, stretch, reverse, slice) |
@@ -480,29 +483,36 @@ A local HTTP API that wraps pipeline operations and search:
 
 **Status:** Not implemented. Not planned before EPIC 2 completion.
 
-### 10.2 VST-first Producing Workspace (Product Target, Issues #90–#95)
+### 10.2 Screen-1 Desktop Renderer Direction
 
-The first product incarnation is a **VST3 browser/assistant plugin**. A standalone producing application follows later from the same core. Both share the same processing backend (Library Intelligence, Matching, Context, Transform).
+The active Screen-1 product-rendering direction is **PySide6 / Qt Quick / QML**
+(`LOCK_PYSIDE6_QML`). The Python Core/Controller/Audio/Catalog contracts remain
+authoritative and are reused by the renderer rather than duplicated in QML.
 
-**VST3 Plugin (first):**
-- VST3 is the primary plugin standard; CLAP support is optional later
-- Browser UI with sample grid/list, audio preview with waveform
-- Filter/search/similar samples across the catalog
-- Drag & drop into DAW
-- Collections, favorites, project basket
-- Variant browser (BPM-locked, key-shifted previews)
-- FL Studio is the first target host but not a hard product dependency — all VST3-capable DAWs are potential hosts
+Tkinter is retained only as a legacy/fallback path and as a source of existing
+behavior/integration contracts. The earlier React/Tauri desktop concept is
+superseded.
 
-**Standalone App (later):**
-- Same core as the plugin
-- Standalone producing workspace without DAW dependency
-- Additional functionality: playback, arrangement, session management
+This direction does not decide packaging or distribution.
 
-**Status:** Target defined in Issues #90–#95. Architecture and implementation are follow-up scope.
+### 10.3 Parked VST3 Product Path (Historical Issues #90–#95)
 
-### 10.3 Desktop UI (EPIC 4 — superseded by VST-first target)
+The earlier VST-first product target from Issues #90–#95 is **historical and parked**.
+It is not the active product sequence and must not drive current Screen-1 architecture
+or implementation work.
 
-The previously planned React/Tauri desktop UI is **superseded** by the VST3-first and standalone product target. Standalone app replaces the separate desktop UI concept.
+Issue #469 is the canonical reactivation gate for any future VST3 product work.
+Until that gate is consciously reopened against the then-current product and
+repository state:
+
+- no VST3 shell or plugin-specific UI is an active target;
+- no plugin framework or host dependency is selected;
+- no current QML/Desktop work should be interpreted as preparation for VST3;
+- Library, Matching, Context, Audio, and Transform capabilities remain reusable core
+  concerns rather than plugin-owned implementations.
+
+A future VST3 path may reuse the same core if reactivated, but no ordering between
+desktop and plugin product forms is currently asserted.
 
 ### 10.4 Recommendation Engine (EPIC 3)
 
