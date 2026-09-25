@@ -430,6 +430,45 @@ class TestCatalogCacheImport:
         ) is False
         assert catalog_db.stat().st_mtime_ns == catalog_mtime_before
 
+    def test_preview_treats_path_resolution_loop_as_invalid(
+        self,
+        catalog_db: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from src.workbench_controller import (
+            add_workbench_library_folder,
+            load_catalog_rows,
+            preview_catalog_import,
+        )
+
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+        target = tmp_path / "library"
+        target.mkdir()
+        add_workbench_library_folder(target)
+        loop_path = tmp_path / "loop.wav"
+        row = replace(
+            load_catalog_rows(catalog_path=catalog_db)[0],
+            path=str(loop_path),
+            relative_path=loop_path.name,
+        )
+        original_resolve = Path.resolve
+
+        def _resolve(candidate: Path, strict: bool = False):
+            if candidate == loop_path:
+                raise RuntimeError("Symlink loop")
+            return original_resolve(candidate, strict=strict)
+
+        monkeypatch.setattr(Path, "resolve", _resolve)
+
+        preview = preview_catalog_import([row], target)
+
+        assert preview.import_count == 0
+        assert preview.error_count == 1
+        assert preview.items[0].action == "error"
+
     def test_import_writes_cache_without_touching_catalog(
         self,
         catalog_db: Path,
