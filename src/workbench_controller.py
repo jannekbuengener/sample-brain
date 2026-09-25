@@ -1578,6 +1578,16 @@ def _analysis_fields_equal(
     return True
 
 
+def _catalog_path_is_within_target(path: str, *, target_folder: Path) -> bool:
+    """Return whether *path* resolves inside the selected registered folder."""
+    try:
+        sample_path = Path(path).expanduser().resolve()
+        target = target_folder.expanduser().resolve()
+    except OSError:
+        return False
+    return sample_path.is_relative_to(target)
+
+
 def _catalog_row_for_cache_import(
     row: WorkbenchRow,
     *,
@@ -1628,6 +1638,7 @@ def _catalog_import_analyzer_version(row: WorkbenchRow) -> str | None:
 def _classify_catalog_import_item(
     row: WorkbenchRow,
     *,
+    target_folder: Path,
     library_db_path: Path,
 ) -> CatalogImportPreviewItem:
     if not is_catalog_readonly_row(row):
@@ -1636,6 +1647,13 @@ def _classify_catalog_import_item(
             display_name=row.display_name,
             action="error",
             message="Keine Catalog-Zeile",
+        )
+    if not _catalog_path_is_within_target(row.path, target_folder=target_folder):
+        return CatalogImportPreviewItem(
+            path=row.path,
+            display_name=row.display_name,
+            action="error",
+            message="Sample liegt außerhalb des ausgewählten Zielordners.",
         )
     cached = load_sample_by_path(row.path, db_path=library_db_path)
     if cached is None:
@@ -1688,7 +1706,14 @@ def preview_catalog_import(
             folder_registered=True,
             error_message="Keine Catalog-Zeilen zum Importieren.",
         )
-    items = [_classify_catalog_import_item(row, library_db_path=db) for row in rows]
+    items = [
+        _classify_catalog_import_item(
+            row,
+            target_folder=folder,
+            library_db_path=db,
+        )
+        for row in rows
+    ]
     return CatalogImportPreview(
         items=items,
         target_folder=str(folder),
