@@ -430,8 +430,10 @@ class TestCatalogCacheImport:
         ) is False
         assert catalog_db.stat().st_mtime_ns == catalog_mtime_before
 
-    def test_preview_treats_path_resolution_loop_as_invalid(
+    @pytest.mark.parametrize("resolve_error", [RuntimeError, ValueError])
+    def test_preview_treats_path_resolution_errors_as_invalid(
         self,
+        resolve_error: type[Exception],
         catalog_db: Path,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -458,7 +460,7 @@ class TestCatalogCacheImport:
 
         def _resolve(candidate: Path, strict: bool = False):
             if candidate == loop_path:
-                raise RuntimeError("Symlink loop")
+                raise resolve_error("invalid path")
             return original_resolve(candidate, strict=strict)
 
         monkeypatch.setattr(Path, "resolve", _resolve)
