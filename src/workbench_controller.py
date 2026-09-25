@@ -23,6 +23,7 @@ from .analyze import (
 )
 from .bpm_display import format_bpm_display, round_bpm_display
 from .export_fl import MAX_TAGS, write_fl_tags_from_sample_rows
+from .key_signature import parse_key_signature
 from .classify import rule_type
 from .scan import iter_audio_files_stream, safe_audio_info
 from .workbench_catalog import (
@@ -1610,6 +1611,20 @@ def _catalog_row_for_cache_import(
     )
 
 
+def _catalog_import_analyzer_version(row: WorkbenchRow) -> str | None:
+    """Return current provenance only for catalog keys with an explicit mode.
+
+    Catalog rows do not carry Workbench-analyzer provenance.  A root-only key
+    is legacy-compatible input but cannot satisfy the mode-aware v2 contract,
+    so retaining unknown provenance makes the existing refresh path reanalyze
+    it instead of presenting it as a fresh Harmonic Match anchor.
+    """
+    parsed = parse_key_signature(row.key)
+    if parsed is None or parsed.mode is None:
+        return None
+    return WORKBENCH_ANALYZER_VERSION
+
+
 def _classify_catalog_import_item(
     row: WorkbenchRow,
     *,
@@ -1629,7 +1644,10 @@ def _classify_catalog_import_item(
             display_name=row.display_name,
             action="import",
         )
-    if _analysis_fields_equal(row, cached):
+    if (
+        _analysis_fields_equal(row, cached)
+        and cached.analyzer_version == _catalog_import_analyzer_version(row)
+    ):
         return CatalogImportPreviewItem(
             path=row.path,
             display_name=row.display_name,
@@ -1791,7 +1809,7 @@ def import_catalog_rows_to_cache(
                 size_bytes=size_bytes,
                 mtime_ns=mtime_ns,
                 db_path=db,
-                analyzer_version=WORKBENCH_ANALYZER_VERSION,
+                analyzer_version=_catalog_import_analyzer_version(source_row),
             )
         except (TypeError, sqlite3.Error, OSError):
             errors += 1
