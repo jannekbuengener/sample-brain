@@ -54,6 +54,17 @@ def catalog_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return db_path
 
 
+def _catalog_rows_for_target(rows, target: Path):
+    return [
+        replace(
+            row,
+            path=str((target / Path(row.path).name).resolve()),
+            relative_path=Path(row.path).name,
+        )
+        for row in rows
+    ]
+
+
 class TestCatalogDbPath:
     def test_defaults_to_config_db_path(self, catalog_db: Path):
         assert catalog_db_path() == catalog_db
@@ -362,13 +373,103 @@ class TestCatalogCacheImport:
         target = tmp_path / "library"
         target.mkdir()
         add_workbench_library_folder(target)
-        rows = load_catalog_rows(catalog_path=catalog_db)
+        rows = _catalog_rows_for_target(load_catalog_rows(catalog_path=catalog_db), target)
 
         preview = preview_catalog_import(rows, target)
 
         assert preview.folder_registered is True
         assert preview.import_count == 3
         assert preview.skip_count == 0
+
+    def test_external_catalog_path_is_rejected_without_refresh_loop(
+        self,
+        catalog_db: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from src.workbench_controller import (
+            add_workbench_library_folder,
+            import_catalog_rows_to_cache,
+            load_catalog_rows,
+            preview_catalog_import,
+            workbench_scope_requires_refresh,
+        )
+        from src.workbench_library import load_sample_by_path
+
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+        target = tmp_path / "library"
+        target.mkdir()
+        add_workbench_library_folder(target)
+        outside_dir = tmp_path / "library-other"
+        outside_dir.mkdir()
+        outside = outside_dir / "kick.wav"
+        outside.write_bytes(b"RIFF")
+        row = replace(
+            load_catalog_rows(catalog_path=catalog_db)[0],
+            path=str(outside.resolve()),
+            relative_path=outside.name,
+        )
+        catalog_mtime_before = catalog_db.stat().st_mtime_ns
+
+        preview = preview_catalog_import([row], target)
+        result = import_catalog_rows_to_cache([row], target)
+
+        assert preview.folder_registered is True
+        assert preview.import_count == 0
+        assert preview.error_count == 1
+        assert preview.items[0].action == "error"
+        assert "außerhalb" in (preview.items[0].message or "")
+        assert result.imported == 0
+        assert result.errors == 1
+        assert load_sample_by_path(str(outside.resolve())) is None
+        assert workbench_scope_requires_refresh(
+            folder_id=None,
+            folder_path=target,
+        ) is False
+        assert catalog_db.stat().st_mtime_ns == catalog_mtime_before
+
+    @pytest.mark.parametrize("resolve_error", [RuntimeError, ValueError])
+    def test_preview_treats_path_resolution_errors_as_invalid(
+        self,
+        resolve_error: type[Exception],
+        catalog_db: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from src.workbench_controller import (
+            add_workbench_library_folder,
+            load_catalog_rows,
+            preview_catalog_import,
+        )
+
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+        target = tmp_path / "library"
+        target.mkdir()
+        add_workbench_library_folder(target)
+        loop_path = tmp_path / "loop.wav"
+        row = replace(
+            load_catalog_rows(catalog_path=catalog_db)[0],
+            path=str(loop_path),
+            relative_path=loop_path.name,
+        )
+        original_resolve = Path.resolve
+
+        def _resolve(candidate: Path, strict: bool = False):
+            if candidate == loop_path:
+                raise resolve_error("invalid path")
+            return original_resolve(candidate, strict=strict)
+
+        monkeypatch.setattr(Path, "resolve", _resolve)
+
+        preview = preview_catalog_import([row], target)
+
+        assert preview.import_count == 0
+        assert preview.error_count == 1
+        assert preview.items[0].action == "error"
 
     def test_import_writes_cache_without_touching_catalog(
         self,
@@ -390,7 +491,7 @@ class TestCatalogCacheImport:
         target = tmp_path / "library"
         target.mkdir()
         add_workbench_library_folder(target)
-        rows = load_catalog_rows(catalog_path=catalog_db)
+        rows = _catalog_rows_for_target(load_catalog_rows(catalog_path=catalog_db), target)
         catalog_mtime_before = catalog_db.stat().st_mtime_ns
 
         result = import_catalog_rows_to_cache(rows, target)
@@ -434,8 +535,12 @@ class TestCatalogCacheImport:
         target = tmp_path / "library"
         target.mkdir()
         folder_id = upsert_folder(target, db_path=db_path)
-        kick_path = "/samples/kick.wav"
-        row = load_catalog_rows(catalog_path=catalog_db)[0]
+        kick_path = str((target / "kick.wav").resolve())
+        row = replace(
+            load_catalog_rows(catalog_path=catalog_db)[0],
+            path=kick_path,
+            relative_path="kick.wav",
+        )
         row = type(row)(
             **{
                 **row.__dict__,
@@ -451,7 +556,9 @@ class TestCatalogCacheImport:
             duration_ms=2000,
         )
         add_workbench_library_folder(target)
-        catalog_rows = load_catalog_rows(catalog_path=catalog_db)
+        catalog_rows = _catalog_rows_for_target(
+            load_catalog_rows(catalog_path=catalog_db), target
+        )
 
         result = import_catalog_rows_to_cache(catalog_rows, target)
 
@@ -504,7 +611,9 @@ class TestCatalogCacheImport:
         target = tmp_path / "library"
         target.mkdir()
         folder_id = upsert_folder(target, db_path=db_path)
-        catalog_rows = load_catalog_rows(catalog_path=catalog_db)
+        catalog_rows = _catalog_rows_for_target(
+            load_catalog_rows(catalog_path=catalog_db), target
+        )
         stale = catalog_rows[0]
         stale = type(stale)(
             **{

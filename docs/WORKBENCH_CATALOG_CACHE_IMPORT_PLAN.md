@@ -77,7 +77,7 @@ Match rows primarily by **resolved absolute path** (`original_path` in cache == 
 
 | Situation | Detection | Planned UX |
 |---|---|---|
-| Path not in cache | No conflict | Insert new cache row under registered folder (or prompt to register folder) |
+| Path not in cache | No conflict | Insert only when the resolved sample path is inside the explicitly selected registered target folder; external paths are rejected in preview |
 | Path in cache, same analysis | `bpm`/`key`/`pred_type` equal within tolerance | Skip or “already up to date” |
 | Path in cache, different analysis | Field mismatch | Show **catalog vs cache** badge; user chooses: keep cache / overwrite from catalog / skip |
 | Path in cache, user cue edits | Cue columns non-default in cache | **Never silent overwrite** of cue fields on catalog import |
