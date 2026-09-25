@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -221,6 +222,95 @@ class TestCatalogReadonlyGuards:
 
 
 class TestCatalogCacheImport:
+    @pytest.mark.parametrize("key", ["C", "F#", "Bb"])
+    def test_import_keeps_root_only_keys_stale_for_refresh(
+        self,
+        key: str,
+        catalog_db: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from src.workbench_controller import (
+            add_workbench_library_folder,
+            import_catalog_rows_to_cache,
+            load_catalog_rows,
+            workbench_scope_requires_refresh,
+        )
+        from src.workbench_library import load_sample_by_path
+
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+        target = tmp_path / "library"
+        target.mkdir()
+        sample = target / f"legacy-{key.replace('#', 'sharp').replace('b', 'flat')}.wav"
+        sample.write_bytes(b"RIFF")
+        add_workbench_library_folder(target)
+        catalog_mtime_before = catalog_db.stat().st_mtime_ns
+        row = replace(
+            load_catalog_rows(catalog_path=catalog_db)[0],
+            path=str(sample),
+            relative_path=sample.name,
+            key=key,
+        )
+
+        result = import_catalog_rows_to_cache([row], target)
+
+        cached = load_sample_by_path(str(sample))
+        assert result.imported == 1
+        assert cached is not None
+        assert cached.analyzer_version is None
+        assert workbench_scope_requires_refresh(
+            folder_id=None,
+            folder_path=target,
+        ) is True
+        assert catalog_db.stat().st_mtime_ns == catalog_mtime_before
+
+    @pytest.mark.parametrize("key", ["Cmaj", "aMIN", "Bb major"])
+    def test_import_marks_modal_keys_current_without_refresh(
+        self,
+        key: str,
+        catalog_db: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from src.workbench_controller import (
+            add_workbench_library_folder,
+            import_catalog_rows_to_cache,
+            load_catalog_rows,
+            workbench_scope_requires_refresh,
+        )
+        from src.workbench_library import (
+            WORKBENCH_ANALYZER_VERSION,
+            load_sample_by_path,
+        )
+
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+        target = tmp_path / "library"
+        target.mkdir()
+        sample = target / "modal.wav"
+        sample.write_bytes(b"RIFF")
+        add_workbench_library_folder(target)
+        row = replace(
+            load_catalog_rows(catalog_path=catalog_db)[0],
+            path=str(sample),
+            relative_path=sample.name,
+            key=key,
+        )
+
+        result = import_catalog_rows_to_cache([row], target)
+
+        cached = load_sample_by_path(str(sample))
+        assert result.imported == 1
+        assert cached is not None
+        assert cached.analyzer_version == WORKBENCH_ANALYZER_VERSION
+        assert workbench_scope_requires_refresh(
+            folder_id=None,
+            folder_path=target,
+        ) is False
+
     def test_preview_requires_registered_folder(
         self,
         catalog_db: Path,
