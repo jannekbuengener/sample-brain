@@ -1583,7 +1583,7 @@ def _catalog_path_is_within_target(path: str, *, target_folder: Path) -> bool:
     try:
         sample_path = Path(path).expanduser().resolve()
         target = target_folder.expanduser().resolve()
-    except (OSError, RuntimeError):
+    except (OSError, RuntimeError, ValueError):
         return False
     return sample_path.is_relative_to(target)
 
