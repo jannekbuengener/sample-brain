@@ -23,7 +23,7 @@ Library / Screen 1
 | Screen | Intent | Status on `main` |
 |--------|--------|------------------|
 | Screen 1 | Library browse + Live Kit assignment | Live Kit + QML Screen-1 shell exist; Tk remains default/fallback |
-| Screen 2 | Channel Rack — program patterns/triggers over Live Kit channels | **HOLD** — ownership (step 2) done on `main`; still blocked behind pattern core + sequencer playback |
+| Screen 2 | Channel Rack — program patterns/triggers over Live Kit channels | **FOUNDATIONS GREEN / UI READY** — session ownership, Pattern Core, Sequencer Playback, and Channel Rack Python core are on `main`; QML UI is not built yet |
 | Screen 3 | Arrangement mode over patterns/channels | **Not built** — must not be designed in Screen-2 slices |
 
 ## 3. Channel Rack product rules (Screen 2 intent)
@@ -62,10 +62,10 @@ Do not conflate Track Map / `arrangement_*` analysis contracts with Screen-3 Arr
 Do **not** start Screen-2 UI before these foundations:
 
 1. **Product canon** (this document + PRD/architecture alignment)
-2. **Session ownership** — one Live Kit truth; QML commands → native transport/audio
-3. **Minimal Pattern Core** — Channel, Pattern, Trigger/Event, musical position, stable slot/channel IDs
-4. **Minimal Sequencer Playback** — pattern position → `TempoMap` → scheduled engine frame → cached PCM voice
-5. **Only then** Screen-2 Channel Rack UI
+2. **Session ownership** — one Live Kit truth; QML commands → native transport/audio — **DONE** (#647)
+3. **Minimal Pattern Core** — Channel, Pattern, Trigger/Event, musical position, stable slot/channel IDs — **DONE** (#656)
+4. **Minimal Sequencer Playback** — pattern position → `TempoMap` → scheduled engine frame → cached PCM voice — **DONE** (#663)
+5. **Screen-2 Channel Rack UI** — foundations are green; Channel Rack Python core is **DONE** (#667); QML UI is **READY** to start
 
 ## 6. Documents this canon overrides (on conflict)
 
@@ -83,11 +83,12 @@ Historical VST pillar specs (#90–#95) remain **archived design notes** for a p
 | Realtime Workbench boundary | `docs/REALTIME_WORKBENCH_SCOPE.md` |
 | Screen-1 renderer lock | `LOCK_PYSIDE6_QML` in `docs/TARGET_ARCHITECTURE.md` |
 | Session ownership (step 2 — done) | [`SESSION_OWNERSHIP_CONTRACT.md`](SESSION_OWNERSHIP_CONTRACT.md), `src/workbench_session.py` |
-| Pattern Core (step 3 — next) | [`PATTERN_CORE_CONTRACT.md`](PATTERN_CORE_CONTRACT.md) |
-| Sequencer Playback (step 4) | [`SEQUENCER_PLAYBACK_CONTRACT.md`](SEQUENCER_PLAYBACK_CONTRACT.md) |
+| Pattern Core (step 3 — done, #656) | [`PATTERN_CORE_CONTRACT.md`](PATTERN_CORE_CONTRACT.md), `src/pattern_core.py` |
+| Sequencer Playback (step 4 — done, #663) | [`SEQUENCER_PLAYBACK_CONTRACT.md`](SEQUENCER_PLAYBACK_CONTRACT.md), `src/sequencer_playback.py` |
+| Channel Rack Python core (pre-UI — done, #667) | `src/channel_rack.py` |
 | Live Kit state | `src/workbench_live_kit.py` |
 | Session time / TempoMap | `src/session_grid.py` |
 | Native voices | `src/native_audio.py` |
 | QML Screen-1 shell | `src/workbench_qml.py` |
 
-Screen-2 Channel Rack UI remains **HOLD** until steps 2→3→4 are green.
+Steps 2→3→4 are green on `main`; the Channel Rack Python core is also merged. Screen-2 Channel Rack QML is now **READY** to start and remains unimplemented until its first UI slice lands.

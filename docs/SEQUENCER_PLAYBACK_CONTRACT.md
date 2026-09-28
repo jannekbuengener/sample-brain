@@ -1,7 +1,7 @@
 # Sequencer Playback Contract (Minimal) — Sample Brain
 
-Status: **DOCS_GATE** definition only. **Not implemented.**  
-Blocked behind: [`SESSION_OWNERSHIP_CONTRACT.md`](SESSION_OWNERSHIP_CONTRACT.md) + [`PATTERN_CORE_CONTRACT.md`](PATTERN_CORE_CONTRACT.md).
+Status: **IMPLEMENTED on `main`** — `src/sequencer_playback.py` via PR #663.  
+Prerequisites [`SESSION_OWNERSHIP_CONTRACT.md`](SESSION_OWNERSHIP_CONTRACT.md) and [`PATTERN_CORE_CONTRACT.md`](PATTERN_CORE_CONTRACT.md) are also implemented.
 
 Parent: [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md) build-order step 4.
 
@@ -46,13 +46,13 @@ Pattern playhead / upcoming triggers
 - Piano-roll note lengths
 - Pitch / stretch
 
-## Acceptance (future product_code slice)
+## Implemented acceptance
 
-- [ ] Given a Pattern + TempoMap + cached paths, triggers schedule at expected engine frames in tests
-- [ ] Concurrent triggers on different channels do not go through `TransportAwarePreview`
-- [ ] Empty / missing sample_path does not crash the engine loop
-- [ ] No QML Channel Rack in the same slice unless explicitly scoped out
+- [x] Given a Pattern + TempoMap + cached paths, triggers schedule at expected engine frames in tests
+- [x] Concurrent triggers on different channels do not go through `TransportAwarePreview`
+- [x] Empty / missing `sample_path` fails soft without crashing the engine loop
+- [x] Sequencer playback remains separate from Screen-2 QML
 
 ## Next
 
-Only after this playback seam is green: Screen-2 Channel Rack UI (build-order step 5).
+This playback seam is green on `main` (#663). Channel Rack Python core is also merged (#667), so Screen-2 Channel Rack QML (build-order step 5) is now ready to start.
