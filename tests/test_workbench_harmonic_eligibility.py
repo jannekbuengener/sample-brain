@@ -172,11 +172,11 @@ class TestHarmonicMatchKeyForRow:
         assert row.key_analysis_claim.matching_eligible is False
 
 
-class TestEligibilityDoesNotActivateHarmony:
-    def test_rate_harmony_still_uncertain_for_v2_product_key_none(self):
+class TestEligibilityActivatesHarmony:
+    def test_rate_harmony_uses_eligible_v2_claim_when_product_key_none(self):
         claim = _claim(key="Cmaj", mode="maj")
         candidate = _row("v2-cand", key=None, key_conf=None, claim=claim)
         reference = _row("ref", key="Cmaj", key_conf=0.8, claim=None)
         assert harmonic_match_key_for_row(candidate) == "Cmaj"
         suggestion = rate_harmony(reference, candidate)
-        assert suggestion.relation is HarmonyRelation.UNCERTAIN
+        assert suggestion.relation is HarmonyRelation.DIRECT
