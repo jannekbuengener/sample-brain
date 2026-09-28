@@ -359,6 +359,16 @@ def test_sidecar_rejects_noncanonical_root_and_contradictory_mode_evidence(
             sample_id=1, source_identity=identity, result=invalid_pearson_score
         )
 
+    rounded_pearson_score = _result(root="C", mode=None)
+    rounded_pearson_score.root_evidence["raw_top_score"] = 1.0000000000000002
+    write_key_analysis_v2_shadow(
+        sample_id=1, source_identity=identity, result=rounded_pearson_score
+    )
+    assert (
+        read_key_analysis_v2_shadow(sample_id=1, source_identity=identity)
+        == rounded_pearson_score
+    )
+
     rounded_abstention = _result(root="C", mode=None)
     rounded_abstention.mode_evidence.update(
         {
@@ -435,6 +445,18 @@ def test_sidecar_rejects_noncanonical_root_and_contradictory_mode_evidence(
             text("UPDATE key_analysis_v2_shadow SET analyzed_at = 'not-a-date' WHERE sample_id = 1")
         )
     assert read_key_analysis_v2_shadow(sample_id=1, source_identity=identity) is None
+
+    rescanned_identity = hash_record("sha256", "b" * 64)
+    with db_module.get_engine().begin() as conn:
+        conn.execute(
+            text("UPDATE samples SET hash = :hash, hash_algorithm = :algorithm WHERE id = 1"),
+            {
+                "hash": rescanned_identity["value"],
+                "algorithm": rescanned_identity["algorithm"],
+            },
+        )
+    with pytest.raises(ValueError, match="source identity"):
+        write_key_analysis_v2_shadow(sample_id=1, source_identity=identity, result=_result())
 
 
 def test_sidecar_migrates_legacy_catalog_and_preserves_sha1_semantics(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

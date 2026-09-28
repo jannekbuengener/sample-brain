@@ -42,6 +42,7 @@ _KEY_ANALYSIS_V2_MODE_EVIDENCE_KEYS = frozenset(
     }
 )
 _KEY_ANALYSIS_V2_EVIDENCE_QUANTIZATION_HALF_STEP = 0.5e-6
+_KEY_ANALYSIS_V2_PEARSON_EPSILON = 1e-12
 
 
 @dataclass(frozen=True)
@@ -222,7 +223,11 @@ def _validated_root_evidence(value: object) -> dict[str, Any] | None:
     score = value.get("raw_top_score")
     if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score):
         return None
-    if not -1.0 <= float(score) <= 1.0:
+    if not (
+        -1.0 - _KEY_ANALYSIS_V2_PEARSON_EPSILON
+        <= float(score)
+        <= 1.0 + _KEY_ANALYSIS_V2_PEARSON_EPSILON
+    ):
         return None
     return dict(value)
 
@@ -359,11 +364,21 @@ def write_key_analysis_v2_shadow_row(
 
     engine = get_engine()
     with engine.begin() as conn:
-        exists = conn.execute(
-            text("SELECT 1 FROM samples WHERE id = :sample_id"), {"sample_id": sample_id}
+        sample = conn.execute(
+            text("SELECT hash, hash_algorithm FROM samples WHERE id = :sample_id"),
+            {"sample_id": sample_id},
         ).fetchone()
-        if exists is None:
+        if sample is None:
             raise ValueError("sample does not exist")
+        try:
+            catalog_identity = hash_record(
+                sample[1] or LEGACY_CONTENT_HASH_ALGORITHM,
+                sample[0],
+            )
+        except (TypeError, ValueError):
+            raise ValueError("sample has no valid content identity") from None
+        if catalog_identity != identity:
+            raise ValueError("source identity does not match sample")
         conn.execute(
             text("""
             INSERT INTO key_analysis_v2_shadow (
