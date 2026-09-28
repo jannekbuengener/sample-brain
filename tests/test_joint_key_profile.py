@@ -97,9 +97,27 @@ def test_repeat_identical_input_has_identical_complete_evidence():
     assert all(math.isfinite(entry.score) for entry in first.ranking)
 
 
-def test_core_has_no_essentia_or_probability_dependency():
+def test_core_imports_and_scores_when_essentia_is_unavailable(monkeypatch):
+    import builtins
+    import importlib.util
+    import sys
+
     import src.joint_key_profile as prototype
 
-    source = prototype.__file__
-    assert source is not None
-    assert "essentia" not in open(source, encoding="utf-8").read().casefold()
+    original_import = builtins.__import__
+
+    def reject_essentia(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "essentia" or name.startswith("essentia."):
+            raise ModuleNotFoundError("No module named 'essentia'")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", reject_essentia)
+    spec = importlib.util.spec_from_file_location("joint_key_profile_without_essentia", prototype.__file__)
+    assert spec is not None and spec.loader is not None
+    isolated = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, isolated)
+    spec.loader.exec_module(isolated)
+
+    result = isolated.rank_joint_key_profiles(isolated.rotate_profile(isolated.MAJOR_PROFILE, 0))
+
+    assert (result.root, result.mode) == ("C", "maj")

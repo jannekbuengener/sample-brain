@@ -1,17 +1,42 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from src.fsld_human_manifest import DOCUMENT_TYPE as FSLD_MANIFEST_DOCUMENT_TYPE
+from src.fsld_human_manifest import canonical_manifest_bytes
 from src.joint_key_profile import JointKeyProfileError, MAJOR_PROFILE, SEMITONES, rotate_profile
 from src.joint_key_profile_benchmark import (
+    JointKeyProfileBenchmarkError,
     evaluate_joint_key_profiles,
     mean_cqt_chroma,
     score_audio,
 )
 from tests.audio_fixtures import write_major_chord_wav
+
+
+def _write_manifest(tmp_path: Path, records: list[object]) -> tuple[Path, Path]:
+    manifest = {"document_type": FSLD_MANIFEST_DOCUMENT_TYPE, "records": records}
+    raw = canonical_manifest_bytes(manifest)
+    manifest_path = tmp_path / "manifest.json"
+    sha256_path = tmp_path / "manifest.sha256"
+    manifest_path.write_bytes(raw)
+    sha256_path.write_text(
+        f"{hashlib.sha256(raw).hexdigest()}  {manifest_path.name}\n", encoding="utf-8"
+    )
+    return manifest_path, sha256_path
+
+
+def _valid_manifest_record() -> dict[str, object]:
+    return {
+        "public_sample_id": "123",
+        "split": "TEST",
+        "annotation_tier": "ma",
+        "ground_truth": {},
+    }
 
 
 def test_adapter_uses_cqt_mean_and_returns_joint_raw_evidence(tmp_path: Path):
@@ -44,3 +69,29 @@ def test_invalid_chroma_from_adapter_is_fail_closed(monkeypatch, tmp_path: Path)
 def test_profile_fixture_input_is_accepted_by_core_contract():
     result = rotate_profile(MAJOR_PROFILE, SEMITONES.index("C"))
     assert result.shape == (12,)
+
+
+@pytest.mark.parametrize(
+    "record, message",
+    [
+        (["not", "an", "object"], "record 0 must be an object"),
+        ({"split": "TEST", "annotation_tier": "ma", "ground_truth": {}}, "public_sample_id"),
+        ({**_valid_manifest_record(), "public_sample_id": 123}, "public_sample_id"),
+        ({**_valid_manifest_record(), "split": "UNSUPPORTED"}, "split"),
+        ({**_valid_manifest_record(), "annotation_tier": "unknown"}, "annotation_tier"),
+        ({key: value for key, value in _valid_manifest_record().items() if key != "ground_truth"}, "ground_truth"),
+        ({**_valid_manifest_record(), "ground_truth": []}, "ground_truth"),
+    ],
+)
+def test_external_manifest_rejects_malformed_records_with_controlled_error(
+    tmp_path: Path, record: object, message: str
+):
+    manifest_path, sha256_path = _write_manifest(tmp_path, [record])
+
+    with pytest.raises(JointKeyProfileBenchmarkError, match=message):
+        evaluate_joint_key_profiles(
+            audio_root=tmp_path / "audio",
+            split="TEST",
+            manifest_path=manifest_path,
+            sha256_path=sha256_path,
+        )

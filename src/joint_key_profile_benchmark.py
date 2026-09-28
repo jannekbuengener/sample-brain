@@ -94,7 +94,27 @@ def _load_verified_manifest(manifest_path: Path, sha256_path: Path) -> dict[str,
     records = manifest.get("records")
     if not isinstance(records, list):
         raise JointKeyProfileBenchmarkError("manifest records must be a list")
+    for index, record in enumerate(records):
+        _validate_manifest_record(record, index=index)
     return manifest
+
+
+def _validate_manifest_record(record: object, *, index: int) -> None:
+    if not isinstance(record, dict):
+        raise JointKeyProfileBenchmarkError(f"manifest record {index} must be an object")
+    sample_id = record.get("public_sample_id")
+    if not isinstance(sample_id, str) or not sample_id.isdecimal():
+        raise JointKeyProfileBenchmarkError(f"manifest record {index} public_sample_id must be decimal")
+    if record.get("split") not in {"CALIBRATION", "TEST"}:
+        raise JointKeyProfileBenchmarkError(
+            f"manifest record {index} split must be CALIBRATION or TEST"
+        )
+    if record.get("annotation_tier") not in {"ma", "sa"}:
+        raise JointKeyProfileBenchmarkError(f"manifest record {index} annotation_tier must be ma or sa")
+    if "ground_truth" not in record:
+        raise JointKeyProfileBenchmarkError(f"manifest record {index} must include ground_truth")
+    if not isinstance(record["ground_truth"], dict):
+        raise JointKeyProfileBenchmarkError(f"manifest record {index} ground_truth must be an object")
 
 
 def _record_key(record: dict[str, Any]) -> int:
