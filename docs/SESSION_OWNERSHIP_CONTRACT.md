@@ -4,7 +4,7 @@ Status: **completed prerequisite** on `main` (PR [#647](https://github.com/janne
 Build-order step 2 is done. Does not authorize Screen-2 UI, Pattern Core, or Sequencer implementation by itself.
 
 Parent: [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md) build-order step 2.  
-Next: [`PATTERN_CORE_CONTRACT.md`](PATTERN_CORE_CONTRACT.md).
+Next: complete sequencer playback with the production PCM cache/decode provider; Screen-2 Channel Rack QML remains HOLD until then.
 
 ## Goal
 
@@ -32,7 +32,7 @@ WorkbenchSession (name TBD; Python-owned)
   ├── live_kit_presentation: LiveKitPresentationState
   ├── transport: WorkbenchTransportAdapter   # TempoMap + native engine
   ├── audition: TransportAwarePreview        # monophonic Screen-1 audition only
-  └── (later) pattern_engine / sequencer     # separate from audition
+  └── pattern / sequencer core              # implemented separately; still separate from audition
 
 QML Screen-1 / future Screen-2
   → InteractionAdapter / Presenter
@@ -76,4 +76,4 @@ QML Screen-1 / future Screen-2
 
 ## Next
 
-[`PATTERN_CORE_CONTRACT.md`](PATTERN_CORE_CONTRACT.md) → [`SEQUENCER_PLAYBACK_CONTRACT.md`](SEQUENCER_PLAYBACK_CONTRACT.md) → only then Screen-2 UI (**HOLD** until 2→3→4 are green).
+Pattern Core (#656), the sequencer scheduling seam (#663), and Channel Rack Python core (#667) are on `main`; the production PCM cache/decode provider is the remaining playback prerequisite before Screen-2 QML.

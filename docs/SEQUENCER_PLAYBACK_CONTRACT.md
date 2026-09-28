@@ -1,7 +1,7 @@
 # Sequencer Playback Contract (Minimal) — Sample Brain
 
-Status: **DOCS_GATE** definition only. **Not implemented.**  
-Blocked behind: [`SESSION_OWNERSHIP_CONTRACT.md`](SESSION_OWNERSHIP_CONTRACT.md) + [`PATTERN_CORE_CONTRACT.md`](PATTERN_CORE_CONTRACT.md).
+Status: **SCHEDULER SEAM IMPLEMENTED on `main`** — `src/sequencer_playback.py` via PR #663. **Production PCM cache/decode provider pending.**  
+Prerequisites [`SESSION_OWNERSHIP_CONTRACT.md`](SESSION_OWNERSHIP_CONTRACT.md) and [`PATTERN_CORE_CONTRACT.md`](PATTERN_CORE_CONTRACT.md) are implemented.
 
 Parent: [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md) build-order step 4.
 
@@ -46,13 +46,14 @@ Pattern playhead / upcoming triggers
 - Piano-roll note lengths
 - Pitch / stretch
 
-## Acceptance (future product_code slice)
+## Implemented acceptance
 
-- [ ] Given a Pattern + TempoMap + cached paths, triggers schedule at expected engine frames in tests
-- [ ] Concurrent triggers on different channels do not go through `TransportAwarePreview`
-- [ ] Empty / missing sample_path does not crash the engine loop
-- [ ] No QML Channel Rack in the same slice unless explicitly scoped out
+- [x] Given a Pattern + TempoMap + cached paths, triggers schedule at expected engine frames in tests
+- [x] Concurrent triggers on different channels do not go through `TransportAwarePreview`
+- [x] Empty / missing `sample_path` fails soft without crashing the engine loop
+- [x] Sequencer scheduling remains separate from Screen-2 QML
+- [ ] Production path provides a reusable `pcm_for_path` cache/decode provider outside the audio callback
 
 ## Next
 
-Only after this playback seam is green: Screen-2 Channel Rack UI (build-order step 5).
+The scheduling seam is green on `main` (#663), and Channel Rack Python core is merged (#667). The production PCM cache/decode provider is still required to complete build-order step 4; Screen-2 Channel Rack QML remains HOLD until it lands.

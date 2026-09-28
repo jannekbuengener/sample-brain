@@ -1,6 +1,6 @@
 # Pattern Core Contract (Minimal) — Sample Brain
 
-Status: **DOCS_GATE** definition only. **Not implemented.**  
+Status: **IMPLEMENTED on `main`** — `src/pattern_core.py` via PR #656.  
 Not a Channel Rack UI spec. Not a full DAW event model.
 
 Parent: [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md) build-order step 3.  
@@ -24,7 +24,7 @@ Define the smallest Python-owned musical model so a later sequencer can fire sam
 
 ### Channel ID
 
-- Format: opaque stable string, e.g. `ch_kick`, `ch_closed_hat` (exact scheme TBD at TEST_GATE).
+- Format: opaque stable string, e.g. `ch_kick`, `ch_closed_hat`; the v1 mapping is implemented and frozen in `src/pattern_core.py`.
 - Live Kit taxonomy labels (`"Kick"`, `"Closed Hat"`) remain **display / mapping** keys.
 - Mapping: each canonical Live Kit `(group, slot)` maps 1:1 to one `channel_id` for v1.
 - Renaming a display label must **not** change `channel_id`.
@@ -101,9 +101,9 @@ Product rule: taking a Live Kit into the Channel Rack means channels are created
 - Persistence / DB tables
 - BeatGrid as pattern authority (source analysis stays separate)
 
-## Sequencer handoff (step 4 — not this doc’s implementation)
+## Sequencer handoff (step 4 — implemented separately)
 
-Later minimal playback:
+The one-pass scheduling seam is implemented in `src/sequencer_playback.py` via PR #663. A production PCM cache/decode provider for its injected `pcm_for_path` dependency is still pending:
 
 ```text
 pattern playhead (musical)
@@ -114,14 +114,14 @@ pattern playhead (musical)
 
 Audition (`TransportAwarePreview`) remains separate and monophonic.
 
-## Acceptance for a future Pattern Core product_code slice
+## Implemented acceptance
 
-- [ ] Stable `channel_id` mapping from `LIVE_KIT_SLOT_MAPPING`
-- [ ] Pattern + Trigger types with musical positions via `TempoMap` units
-- [ ] Channels reference `sample_path` (or None); no audio file copies
-- [ ] Unit tests for mapping, trigger ordering, length bounds
-- [ ] No QML Screen-2, no sequencer scheduling yet (unless combined under explicit GO)
+- [x] Stable `channel_id` mapping from `LIVE_KIT_SLOT_MAPPING`
+- [x] Pattern + Trigger types with exact quarter-note `Fraction` positions compatible with `TempoMap`
+- [x] Channels reference `sample_path` (or None); no audio file copies
+- [x] Unit tests for mapping, trigger ordering, and length bounds
+- [x] Pattern Core remains Python-owned; Screen-2 QML was not added in the Pattern Core slice
 
 ## Next
 
-[`SESSION_OWNERSHIP_CONTRACT.md`](SESSION_OWNERSHIP_CONTRACT.md) → this core → sequencer playback contract/slice → Screen-2 UI last.
+Session ownership (#647), Pattern Core (#656), the sequencer scheduling seam (#663), and Channel Rack Python core (#667) are on `main`. The production PCM cache/decode provider must complete sequencer playback before Screen-2 QML starts.
