@@ -271,11 +271,13 @@ def _validated_mode_evidence(value: object, *, root: str, mode: str | None) -> d
         or contrast < 0.0
     ):
         return None
-    if not _third_contrast_matches_quantized_evidence(major_energy, minor_energy, contrast):
+    raw_lower, raw_upper = _third_contrast_raw_bounds(major_energy, minor_energy)
+    if not _third_contrast_matches_quantized_evidence(
+        major_energy, minor_energy, contrast, raw_lower=raw_lower, raw_upper=raw_upper
+    ):
         return None
     if threshold != KEY_ANALYSIS_V2_SHADOW_MODE_CONTRAST_MIN:
         return None
-    half_step = _KEY_ANALYSIS_V2_EVIDENCE_QUANTIZATION_HALF_STEP
     directional_modes = (
         {"maj", "min"}
         if major_energy == minor_energy
@@ -283,15 +285,16 @@ def _validated_mode_evidence(value: object, *, root: str, mode: str | None) -> d
         if major_energy > minor_energy
         else {"min"}
     )
-    # ``estimate_key_mode`` decides from unrounded energies but persists its
-    # contrast rounded to six decimals.  An abstention whose raw contrast is
-    # just below 0.30 can therefore carry 0.300000 evidence; retain that
-    # explicit abstention without inventing a new decision threshold.
+    # ``estimate_key_mode`` decides from unrounded energies but persists
+    # six-decimal evidence.  Derive feasible abstention/commit outcomes from
+    # the raw-contrast interval implied by those energy buckets, not from the
+    # stored rounded contrast alone (which can equal 0.300000 while every
+    # feasible raw value stays strictly below the threshold).
     expected_modes = (
         {None}
-        if contrast < threshold
+        if raw_upper < threshold
         else directional_modes
-        if contrast > threshold
+        if raw_lower >= threshold
         else {None, *directional_modes}
     )
     if mode not in expected_modes:
@@ -299,10 +302,10 @@ def _validated_mode_evidence(value: object, *, root: str, mode: str | None) -> d
     return dict(value)
 
 
-def _third_contrast_matches_quantized_evidence(
-    major_energy: float, minor_energy: float, contrast: float
-) -> bool:
-    """Check whether six-decimal evidence can originate from one raw contrast."""
+def _third_contrast_raw_bounds(
+    major_energy: float, minor_energy: float
+) -> tuple[float, float]:
+    """Return the feasible raw-contrast interval for six-decimal energy buckets."""
 
     half_step = _KEY_ANALYSIS_V2_EVIDENCE_QUANTIZATION_HALF_STEP
     major_bounds = (max(0.0, major_energy - half_step), major_energy + half_step)
@@ -314,7 +317,22 @@ def _third_contrast_matches_quantized_evidence(
     ]
     if major_bounds[0] <= minor_bounds[1] and minor_bounds[0] <= major_bounds[1]:
         candidates.append(0.0)
-    raw_lower, raw_upper = min(candidates), max(candidates)
+    return min(candidates), max(candidates)
+
+
+def _third_contrast_matches_quantized_evidence(
+    major_energy: float,
+    minor_energy: float,
+    contrast: float,
+    *,
+    raw_lower: float | None = None,
+    raw_upper: float | None = None,
+) -> bool:
+    """Check whether six-decimal evidence can originate from one raw contrast."""
+
+    if raw_lower is None or raw_upper is None:
+        raw_lower, raw_upper = _third_contrast_raw_bounds(major_energy, minor_energy)
+    half_step = _KEY_ANALYSIS_V2_EVIDENCE_QUANTIZATION_HALF_STEP
     stored_lower = max(0.0, contrast - half_step)
     stored_upper = contrast + half_step
     return raw_lower <= stored_upper and stored_lower <= raw_upper

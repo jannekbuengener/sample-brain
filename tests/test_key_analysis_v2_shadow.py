@@ -392,6 +392,81 @@ def test_sidecar_rejects_noncanonical_root_and_contradictory_mode_evidence(
         == rounded_abstention
     )
 
+    # Quantized energy buckets that genuinely straddle MODE_CONTRAST_MIN may
+    # retain either producer decision (abstention above, or directional commit).
+    threshold_overlap_commit = _result(root="C", mode="maj")
+    threshold_overlap_commit.mode_evidence.update(
+        {
+            "major_third_energy": 0.65,
+            "minor_third_energy": 0.35,
+            "contrast": 0.3,
+            "mode": "maj",
+        }
+    )
+    write_key_analysis_v2_shadow(
+        sample_id=1, source_identity=identity, result=threshold_overlap_commit
+    )
+    assert (
+        read_key_analysis_v2_shadow(sample_id=1, source_identity=identity)
+        == threshold_overlap_commit
+    )
+
+    # Stored contrast 0.300000 with buckets whose raw upper bound stays
+    # strictly below 0.30 cannot commit a directional mode.
+    impossible_threshold_commit = _result(root="C", mode="maj")
+    impossible_threshold_commit.mode_evidence.update(
+        {
+            "major_third_energy": 0.000396,
+            "minor_third_energy": 0.000214,
+            "contrast": 0.3,
+            "mode": "maj",
+        }
+    )
+    with pytest.raises(ValueError, match="mode evidence"):
+        write_key_analysis_v2_shadow(
+            sample_id=1, source_identity=identity, result=impossible_threshold_commit
+        )
+
+    write_key_analysis_v2_shadow(
+        sample_id=1, source_identity=identity, result=threshold_overlap_commit
+    )
+    with db_module.get_engine().begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE key_analysis_v2_shadow "
+                "SET key_mode_evidence = :evidence, key = :key, key_mode = :mode "
+                "WHERE sample_id = 1"
+            ),
+            {
+                "evidence": json.dumps(
+                    impossible_threshold_commit.mode_evidence,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ),
+                "key": "Cmaj",
+                "mode": "maj",
+            },
+        )
+    assert read_key_analysis_v2_shadow(sample_id=1, source_identity=identity) is None
+
+    # Same energy buckets remain valid when the producer abstains.
+    impossible_threshold_abstention = _result(root="C", mode=None)
+    impossible_threshold_abstention.mode_evidence.update(
+        {
+            "major_third_energy": 0.000396,
+            "minor_third_energy": 0.000214,
+            "contrast": 0.3,
+        }
+    )
+    write_key_analysis_v2_shadow(
+        sample_id=1, source_identity=identity, result=impossible_threshold_abstention
+    )
+    assert (
+        read_key_analysis_v2_shadow(sample_id=1, source_identity=identity)
+        == impossible_threshold_abstention
+    )
+
     above_normalized_energy = _result(root="C", mode=None)
     above_normalized_energy.mode_evidence.update(
         {
