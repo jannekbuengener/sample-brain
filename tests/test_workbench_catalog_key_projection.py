@@ -282,7 +282,7 @@ def test_pure_decoder_matches_single_and_batch_reader(
     assert decoded == single == batch
 
 
-def test_v2_catalog_claim_does_not_activate_harmonic_match(
+def test_v2_catalog_modeful_claim_activates_harmonic_match(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     db_path = _seed_current_catalog(tmp_path, monkeypatch)
@@ -304,7 +304,7 @@ def test_v2_catalog_claim_does_not_activate_harmonic_match(
 
     suggestion = rate_harmony(reference, candidate)
 
-    assert suggestion.relation is HarmonyRelation.UNCERTAIN
+    assert suggestion.relation is HarmonyRelation.DIRECT
 
 
 def test_v2_catalog_import_remains_stale_for_refresh(
