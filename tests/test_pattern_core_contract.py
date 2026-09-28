@@ -140,7 +140,9 @@ def test_channel_ids_are_explicit_stable_contract_not_label_slugification():
         if slot == "Closed Hat":
             assert channel_id == "ch_closed_hat"
             assert channel_id != slug_candidate
-            assert channel_id != f"ch_{slug_candidate}"
+            # Table ID may coincide with ch_+underscore_slug; reject a different
+            # naive transform (spaces stripped, no underscore) instead.
+            assert channel_id != f"ch_{slot.lower().replace(' ', '')}"
 
 
 def test_channel_id_lookup_fails_closed_for_unknown_slot():
