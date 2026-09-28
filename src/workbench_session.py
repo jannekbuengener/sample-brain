@@ -1,0 +1,118 @@
+"""Session ownership seam for Screen-1 Live Kit + shared audition.
+
+One composed session owns exactly one :class:`LiveKitState` and exactly one
+:class:`TransportAwarePreview` audition owner. Screen-2 / Pattern / Sequencer
+types are intentionally absent from this module.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+import tkinter as tk
+
+from .workbench import WorkbenchApp
+from .workbench_controller import WorkbenchRow
+from .workbench_harmony import HarmonicMatchLibraryController
+from .workbench_live_kit import LiveKitState
+from .workbench_preview import WorkbenchPreviewPlayer
+from .workbench_qml import (
+    LiveKitPresenter,
+    Screen1QmlInteractionAdapter,
+    Screen1QmlViewModel,
+)
+from .workbench_transport_adapter import WorkbenchTransportAdapter
+from .workbench_transport_ui import TransportAwarePreview
+
+
+@dataclass
+class WorkbenchSession:
+    """Owned Screen-1 session surfaces composed by :func:`compose_workbench_session`."""
+
+    live_kit: LiveKitState
+    live_kit_presenter: LiveKitPresenter
+    transport: WorkbenchTransportAdapter
+    audition: TransportAwarePreview
+    qml_interaction_adapter: Screen1QmlInteractionAdapter
+    tk_workbench: WorkbenchApp | None = None
+
+
+class _SessionAuditionPlayRow:
+    """Resolve ``audition.play_row`` at call time while advertising TAP ownership.
+
+    Frozen ownership tests may replace ``audition.play_row`` on the session
+    owner. A captured bound method would miss that patch; this delegate keeps
+    ``__self__`` / ``__func__`` aligned with :meth:`TransportAwarePreview.play_row`.
+    """
+
+    __slots__ = ("_audition",)
+
+    def __init__(self, audition: TransportAwarePreview) -> None:
+        self._audition = audition
+
+    @property
+    def __self__(self) -> TransportAwarePreview:
+        return self._audition
+
+    @property
+    def __func__(self) -> Any:
+        return type(self._audition).play_row
+
+    def __call__(self, row: WorkbenchRow, *, start_ms: int = 0) -> object:
+        return self._audition.play_row(row, start_ms=start_ms)
+
+
+def compose_workbench_session(
+    *, include_tk_workbench: bool = False
+) -> WorkbenchSession:
+    """Compose one shared Live Kit + one TransportAwarePreview audition owner."""
+
+    live_kit = LiveKitState()
+    presenter = LiveKitPresenter(state=live_kit)
+    tk_workbench: WorkbenchApp | None = None
+
+    if include_tk_workbench:
+        root = tk.Tk()
+        root.withdraw()
+        tk_workbench = WorkbenchApp(root, live_kit_state=live_kit)
+        transport = tk_workbench._transport_adapter
+        audition = tk_workbench._preview
+        if not isinstance(audition, TransportAwarePreview):
+            raise RuntimeError(
+                "Tk WorkbenchApp must expose TransportAwarePreview as session audition."
+            )
+    else:
+        transport = WorkbenchTransportAdapter()
+        audition = TransportAwarePreview(WorkbenchPreviewPlayer(), transport)
+
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=presenter.groups,
+    )
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        harmony_controller=HarmonicMatchLibraryController(),
+        on_preview_requested=_SessionAuditionPlayRow(audition),
+        on_preview_stopped=audition.stop,
+        live_kit=presenter,
+    )
+
+    return WorkbenchSession(
+        live_kit=live_kit,
+        live_kit_presenter=presenter,
+        transport=transport,
+        audition=audition,
+        qml_interaction_adapter=adapter,
+        tk_workbench=tk_workbench,
+    )
+
+
+__all__ = [
+    "WorkbenchSession",
+    "compose_workbench_session",
+]

@@ -1829,34 +1829,17 @@ def _qml_engine(
     engine = QQmlApplicationEngine()
     preview_player = None
     if interaction_adapter is None:
-        from .workbench_controller import get_preview_start_ms
-        from .workbench_preview import WorkbenchPreviewPlayer
+        from .workbench_session import compose_workbench_session
 
-        preview_player = WorkbenchPreviewPlayer()
-        preview_db_path = (
-            runtime_composition.library_db_path
-            if runtime_composition is not None
-            else workbench_library_db_path()
-        )
-
-        def preview_row(
-            row: WorkbenchRow, *, start_ms: int | None = None
-        ) -> object:
-            if start_ms is None:
-                start_ms = get_preview_start_ms(
-                    row.path, library_db_path=preview_db_path
-                )
-            return preview_player.play(row.path, start_ms=start_ms)
-
-        live_kit = LiveKitPresenter()
-        adapter = Screen1QmlInteractionAdapter(
-            view_model=view_model,
-            harmony_controller=HarmonicMatchLibraryController(),
-            on_preview_requested=preview_row,
-            on_preview_stopped=preview_player.stop,
-            live_kit=live_kit,
-        )
+        session = compose_workbench_session()
+        preview_player = session.audition
+        live_kit = session.live_kit_presenter
+        adapter = session.qml_interaction_adapter
+        # Keep the caller-provided view_model as the renderer surface while
+        # reusing the session-owned kit + TransportAwarePreview audition.
+        adapter.view_model = view_model
         view_model.live_kit_groups = live_kit.groups
+        view_model.auditioning_live_kit_slot = adapter.auditioning_live_kit_slot
     else:
         adapter = interaction_adapter
         live_kit = getattr(interaction_adapter, "_live_kit", None)
@@ -2095,20 +2078,19 @@ def _settle_qml_frame(app: object) -> None:
 
 def run_qml_screen1(*, state_id: str = "screen1-default-3panel") -> int:
     """Open the optional production Screen-1 renderer without changing Tk defaults."""
+    from .workbench_session import compose_workbench_session
+
     composition = Screen1QmlRuntimeComposition(
         library_db_path=workbench_library_db_path(),
     )
-    view_model = Screen1QmlViewModel(
-        state_id=state_id,
-        library_labels=(),
-        browser_rows=(),
-        selected_browser_index=-1,
-        harmony_rows=(),
-        live_kit_groups=_empty_live_kit_groups(),
-        library_tree=composition.library_tree,
-    )
+    session = compose_workbench_session()
+    view_model = session.qml_interaction_adapter.view_model
+    view_model.state_id = state_id
+    view_model.library_tree = composition.library_tree
+    view_model.live_kit_groups = session.live_kit_presenter.groups
     app, _engine, _window = _qml_engine(
         view_model,
+        interaction_adapter=session.qml_interaction_adapter,
         runtime_composition=composition,
     )
     try:
