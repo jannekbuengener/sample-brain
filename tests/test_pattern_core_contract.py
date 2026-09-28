@@ -229,12 +229,21 @@ def test_trigger_rejects_negative_position():
         Trigger(channel_id="ch_kick", position=Fraction(-1, 4))
 
 
-def test_trigger_rejects_unknown_channel_id():
+def test_trigger_accepts_opaque_non_live_kit_channel_id():
+    """#681: Trigger identity is opaque; membership is rack-context validated."""
     module = _pattern_core_or_fail()
     Trigger = _require_symbol(module, "Trigger")
 
-    with pytest.raises((ValueError, TypeError, KeyError)):
-        Trigger(channel_id="ch_snare", position=Fraction(0, 1))
+    trigger = Trigger(channel_id="ch_user_1", position=Fraction(0, 1))
+    assert trigger.channel_id == "ch_user_1"
+
+
+def test_trigger_rejects_empty_channel_id():
+    module = _pattern_core_or_fail()
+    Trigger = _require_symbol(module, "Trigger")
+
+    with pytest.raises((ValueError, TypeError)):
+        Trigger(channel_id="", position=Fraction(0, 1))
 
 
 def test_pattern_requires_positive_length():
