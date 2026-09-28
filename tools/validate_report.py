@@ -14,15 +14,19 @@ import re
 import sqlite3
 import sys
 from collections import Counter
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from statistics import median
+from typing import Iterator
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src import config as config_module
 from src.bpm_display import format_bpm_display
+from src.db import init_db, read_key_analysis_feature_rows
 from src.key_signature import parse_key_signature
 
 BPM_HINT_RE = re.compile(r"(?<!\d)(\d{2,3})\s*[-_ ]?\s*bpm(?![A-Za-z0-9])", re.IGNORECASE)
@@ -166,6 +170,24 @@ def _key_match(predicted: str | None, hint: str | None) -> tuple[bool, bool]:
     return root_match, signature_match
 
 
+@contextmanager
+def _bound_catalog_db(db_path: Path) -> Iterator[Path]:
+    """Temporarily bind ``config.DB_PATH`` to *db_path* for the read foundation.
+
+    Restores the previous path even when the report path raises. Additive schema
+    migration runs via ``init_db()`` (nullable V2 columns; no version=1 backfill).
+    """
+
+    resolved = Path(db_path).expanduser().resolve()
+    previous = config_module.DB_PATH
+    config_module.DB_PATH = resolved
+    try:
+        init_db()
+        yield resolved
+    finally:
+        config_module.DB_PATH = previous
+
+
 def generate_report(db_path: Path, out_path: Path) -> dict[str, int | bool]:
     """Generate the Markdown report and return compact machine-readable metrics."""
 
@@ -189,19 +211,20 @@ def generate_report(db_path: Path, out_path: Path) -> dict[str, int | bool]:
             row["name"] for row in connection.execute("PRAGMA table_info(features)").fetchall()
         }
         pred_type_expr = "f.pred_type" if "pred_type" in feature_columns else "NULL"
+        loudness_expr = "f.loudness" if "loudness" in feature_columns else "NULL"
+        brightness_expr = "f.brightness" if "brightness" in feature_columns else "NULL"
+        class_expr = 'f."class"' if "class" in feature_columns else "NULL"
+        bpm_expr = "f.bpm" if "bpm" in feature_columns else "NULL"
         rows = connection.execute(
             f"""
             SELECT
                 s.id,
                 COALESCE(s.relpath, s.path) AS ref,
-                s.duration,
                 f.sample_id AS feature_sample_id,
-                f.bpm,
-                f.key,
-                f.key_conf,
-                f.loudness,
-                f.brightness,
-                f."class" AS class_name,
+                {bpm_expr} AS bpm,
+                {loudness_expr} AS loudness,
+                {brightness_expr} AS brightness,
+                {class_expr} AS class_name,
                 {pred_type_expr} AS pred_type
             FROM samples AS s
             LEFT JOIN features AS f ON f.sample_id = s.id
@@ -222,6 +245,12 @@ def generate_report(db_path: Path, out_path: Path) -> dict[str, int | bool]:
     finally:
         connection.close()
 
+    feature_sample_ids = [
+        int(row["id"]) for row in rows if row["feature_sample_id"] is not None
+    ]
+    with _bound_catalog_db(db_path):
+        key_records = read_key_analysis_feature_rows(sample_ids=feature_sample_ids)
+
     sample_count = len(rows)
     missing_features = sum(1 for row in rows if row["feature_sample_id"] is None)
     catalog_consistent = (
@@ -229,9 +258,37 @@ def generate_report(db_path: Path, out_path: Path) -> dict[str, int | bool]:
     )
 
     bpm_values = [float(row["bpm"]) for row in rows if row["bpm"] is not None]
-    key_conf_values = [
-        float(row["key_conf"]) for row in rows if row["key_conf"] is not None
-    ]
+
+    valid_key_claims = 0
+    v1_key_claims = 0
+    v2_key_claims = 0
+    v2_modeful = 0
+    v2_root_only = 0
+    v1_with_key_conf = 0
+    invalid_key_claims = 0
+    v1_key_conf_values: list[float] = []
+
+    for sample_id in feature_sample_ids:
+        record = key_records.get(sample_id)
+        if record is None:
+            invalid_key_claims += 1
+            continue
+        version = record.key_analysis_contract_version
+        if version is None:
+            if record.key is not None:
+                valid_key_claims += 1
+                v1_key_claims += 1
+            if record.key_conf is not None:
+                v1_with_key_conf += 1
+                v1_key_conf_values.append(float(record.key_conf))
+        elif version == 2:
+            if record.key is not None:
+                valid_key_claims += 1
+                v2_key_claims += 1
+                if record.key_mode is None:
+                    v2_root_only += 1
+                else:
+                    v2_modeful += 1
 
     bpm_results: Counter[str] = Counter()
     key_hint_count = 0
@@ -247,6 +304,9 @@ def generate_report(db_path: Path, out_path: Path) -> dict[str, int | bool]:
 
     for row in rows:
         ref = row["ref"] or ""
+        sample_id = int(row["id"])
+        key_record = key_records.get(sample_id)
+        predicted_key = key_record.key if key_record is not None else None
 
         bpm_hint = extract_bpm_hint(ref)
         bpm_result = classify_bpm_match(
@@ -259,7 +319,7 @@ def generate_report(db_path: Path, out_path: Path) -> dict[str, int | bool]:
         key_hint = extract_key_hint(ref)
         if key_hint is not None:
             key_hint_count += 1
-            root_match, signature_match = _key_match(row["key"], key_hint)
+            root_match, signature_match = _key_match(predicted_key, key_hint)
             key_root_matches += int(root_match)
             key_signature_matches += int(signature_match)
 
@@ -280,8 +340,6 @@ def generate_report(db_path: Path, out_path: Path) -> dict[str, int | bool]:
 
     bpm_hint_count = sum(bpm_results.values())
     with_bpm = len(bpm_values)
-    with_key = sum(1 for row in rows if row["key"] is not None)
-    with_key_conf = len(key_conf_values)
     with_class = sum(1 for row in rows if row["class_name"] is not None)
 
     lines: list[str] = [
@@ -296,8 +354,17 @@ def generate_report(db_path: Path, out_path: Path) -> dict[str, int | bool]:
         f"- Catalog consistent: **{'YES' if catalog_consistent else 'NO'}**\n\n",
         "## Feature coverage\n",
         f"- With BPM: **{with_bpm}** ({_pct(with_bpm, sample_count):.1f}%)\n",
-        f"- With Key: **{with_key}** ({_pct(with_key, sample_count):.1f}%)\n",
-        f"- With Key confidence: **{with_key_conf}** ({_pct(with_key_conf, sample_count):.1f}%)\n",
+        f"- Valid key claims: **{valid_key_claims}** "
+        f"({_pct(valid_key_claims, sample_count):.1f}%)\n",
+        f"- V1 key claims: **{v1_key_claims}** ({_pct(v1_key_claims, sample_count):.1f}%)\n",
+        f"- V2 key claims: **{v2_key_claims}** ({_pct(v2_key_claims, sample_count):.1f}%)\n",
+        f"- V2 modeful: **{v2_modeful}** ({_pct(v2_modeful, sample_count):.1f}%)\n",
+        f"- V2 root-only / mode unresolved: **{v2_root_only}** "
+        f"({_pct(v2_root_only, sample_count):.1f}%)\n",
+        f"- V1 with key_conf: **{v1_with_key_conf}** "
+        f"({_pct(v1_with_key_conf, sample_count):.1f}%)\n",
+        f"- Invalid/unreadable key claims: **{invalid_key_claims}** "
+        f"({_pct(invalid_key_claims, sample_count):.1f}%)\n",
         f"- With Loop/OneShot class: **{with_class}** ({_pct(with_class, sample_count):.1f}%)\n\n",
         "## BPM plausibility — filename weak labels\n",
         f"- Weak BPM labels: **{bpm_hint_count}**\n",
@@ -333,14 +400,16 @@ def generate_report(db_path: Path, out_path: Path) -> dict[str, int | bool]:
         ]
     )
 
-    if key_conf_values:
-        low_key_conf = sum(1 for value in key_conf_values if value < 0.55)
+    if v1_key_conf_values:
+        low_key_conf = sum(1 for value in v1_key_conf_values if value < 0.55)
         lines.extend(
             [
-                f"- key_conf min / median / max: **{min(key_conf_values):.3f} / "
-                f"{median(key_conf_values):.3f} / {max(key_conf_values):.3f}**\n",
-                f"- key_conf below FL export gate 0.55: **{low_key_conf}/{len(key_conf_values)}** "
-                f"({_pct(low_key_conf, len(key_conf_values)):.1f}%)\n",
+                "\n## V1 key_conf evidence\n",
+                f"- key_conf min / median / max: **{min(v1_key_conf_values):.3f} / "
+                f"{median(v1_key_conf_values):.3f} / {max(v1_key_conf_values):.3f}**\n",
+                f"- key_conf below FL export gate 0.55: "
+                f"**{low_key_conf}/{len(v1_key_conf_values)}** "
+                f"({_pct(low_key_conf, len(v1_key_conf_values)):.1f}%)\n",
             ]
         )
 
@@ -369,7 +438,9 @@ def generate_report(db_path: Path, out_path: Path) -> dict[str, int | bool]:
             "\n## Decision notes\n",
             "- Weak labels come only from explicit filename/folder tokens; missing hints are not treated as failures.\n",
             "- `half_time` / `double_time` are reported separately from true BPM mismatches.\n",
-            "- Key confidence uses the current 0–1 analyzer scale; the FL export gate is 0.55.\n",
+            "- V1 key_conf uses chroma_peak_prominence; FL export gate 0.55 applies only to V1.\n",
+            "- V2 key claims use contract_version=2 with key_conf=NULL; Pearson score is evidence, never confidence.\n",
+            "- Invalid/unreadable key claims are features rows the version-aware reader rejects; they are not counted as valid keys.\n",
             "- Private catalogs and generated reports remain local and are gitignored.\n",
         ]
     )
@@ -384,6 +455,12 @@ def generate_report(db_path: Path, out_path: Path) -> dict[str, int | bool]:
         "key_weak_labels": key_hint_count,
         "class_weak_labels": class_hint_count,
         "instrument_weak_labels": instrument_hint_count,
+        "valid_key_claims": valid_key_claims,
+        "v1_key_claims": v1_key_claims,
+        "v2_key_claims": v2_key_claims,
+        "v2_modeful": v2_modeful,
+        "v2_root_only": v2_root_only,
+        "invalid_key_claims": invalid_key_claims,
     }
 
 
