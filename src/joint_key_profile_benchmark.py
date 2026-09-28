@@ -89,6 +89,8 @@ def _load_verified_manifest(manifest_path: Path, sha256_path: Path) -> dict[str,
         raise JointKeyProfileBenchmarkError("manifest bytes are not canonical")
     try:
         canonical = canonical_manifest_bytes(manifest)
+    except UnicodeEncodeError as exc:
+        raise JointKeyProfileBenchmarkError("manifest contains invalid Unicode") from exc
     except ValueError as exc:
         raise JointKeyProfileBenchmarkError("manifest contains non-finite JSON values") from exc
     if raw != canonical:
@@ -260,7 +262,11 @@ def run_joint_key_profile_evaluation(
 
     output_path = Path(output_path)
     try:
-        output_path.resolve(strict=False).relative_to(REPOSITORY_ROOT)
+        resolved_output_path = output_path.resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise JointKeyProfileBenchmarkError("output path could not be resolved") from exc
+    try:
+        resolved_output_path.relative_to(REPOSITORY_ROOT)
     except ValueError:
         pass
     else:
