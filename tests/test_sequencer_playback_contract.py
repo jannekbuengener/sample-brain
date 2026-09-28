@@ -120,13 +120,15 @@ class FakeNativeEngine:
         self.schedule_errors: set[int] = set()
         self.stop_voice_calls: list[int] = []
         self.remove_voice_calls: list[int] = []
+        # Optional: map VoiceConfig.id → distinct native-returned voice id.
+        self.returned_voice_ids: dict[int, int] = {}
 
     def create_voice(self, config: VoiceConfig) -> int:
         self.create_calls.append(config)
         self.ops.append(("create_voice", config.id))
         if config.id in self.create_errors:
             raise RuntimeError(f"native create_voice failed for {config.id}")
-        return config.id
+        return self.returned_voice_ids.get(config.id, config.id)
 
     def schedule_voice_start(self, voice_id: int, engine_frame: int) -> None:
         self.schedule_calls.append((voice_id, engine_frame))
@@ -331,6 +333,50 @@ def test_schedule_creates_pcm_voice_then_schedules_exact_frame():
     assert engine.schedule_calls == [(41, 124_000)]
     assert engine.ops[0][0] == "create_voice"
     assert engine.ops[1][0] == "schedule_voice_start"
+
+
+def test_schedule_uses_voice_id_returned_by_native_create():
+    """Allocator id → VoiceConfig.id → create_voice → schedule returned native id.
+
+    Live NativeAudio returns ``voice_id.value`` from create_voice; that returned
+    id may differ from ``VoiceConfig.id``. Scheduling must use the returned id.
+    """
+    module = _sequencer_or_fail()
+    plan = _require_symbol(module, "plan_pattern_once")
+    schedule = _require_symbol(module, "schedule_pattern_once")
+
+    tempo_map = TempoMap(sample_rate=48_000, bpm=120)
+    pattern = Pattern(
+        pattern_id="pat_returned_id",
+        length_quarter_notes=Fraction(4, 1),
+        triggers=[Trigger(channel_id="ch_kick", position=Fraction(1, 1))],
+    )
+    channels = _channels(
+        _channel("ch_kick", "Kick + Bass", "Kick", "synthetic/kick.wav")
+    )
+    planned = plan(
+        pattern=pattern,
+        channels_by_id=channels,
+        tempo_map=tempo_map,
+        pattern_start_quarter=Fraction(0, 1),
+        pattern_start_engine_frame=100_000,
+    )
+
+    engine = FakeNativeEngine()
+    engine.returned_voice_ids[41] = 9041
+    result = schedule(
+        planned_triggers=planned,
+        engine=engine,
+        pcm_for_path=lambda _path: _pcm(),
+        allocate_voice_id=lambda: 41,
+    )
+
+    assert len(engine.create_calls) == 1
+    assert engine.create_calls[0].id == 41
+    assert engine.schedule_calls == [(9041, 124_000)]
+    assert 41 not in [voice_id for voice_id, _frame in engine.schedule_calls]
+    assert result.scheduled_voice_ids == (9041,)
+    assert result.scheduled_count == 1
 
 
 def test_voice_ids_come_from_injected_allocator():
