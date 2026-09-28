@@ -263,7 +263,13 @@ def _validated_mode_evidence(value: object, *, root: str, mode: str | None) -> d
     minor_energy = float(value["minor_third_energy"])
     contrast = float(value["contrast"])
     threshold = float(value["threshold"])
-    if major_energy < 0.0 or minor_energy < 0.0 or contrast < 0.0:
+    if (
+        major_energy < 0.0
+        or major_energy > 1.0
+        or minor_energy < 0.0
+        or minor_energy > 1.0
+        or contrast < 0.0
+    ):
         return None
     if not _third_contrast_matches_quantized_evidence(major_energy, minor_energy, contrast):
         return None
