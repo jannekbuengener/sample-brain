@@ -117,6 +117,7 @@ Nur Werte, die das Analyseergebnis fachlich bestimmen:
 | `canonical_channels` | `canon_audio.CANONICAL_CHANNELS` (1). |
 | `analyze_sr` | `config.ANALYZE_SR`. |
 | `analyze_hop_length` | `config.ANALYZE_HOP_LENGTH`. |
+| `key_analysis_contract_version` | Expliziter Context-/Track-Map-Parameter (`1` default, `2` explicit V2). Teil der Analyzer-Identität; ändert Fingerprint und Cache-Key. |
 
 **Nicht** pauschal gefingerprintet werden indirekte Dependencies wie `numpy` /
 `scipy`. Diese werden nur ergänzt, wenn nachweislich eine davon die

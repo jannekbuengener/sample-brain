@@ -10,7 +10,13 @@ from typing import Any, Optional
 
 import soundfile as sf
 
-from .analyze import KEY_ANALYSIS_CONTRACT_VERSION, Features, extract_features
+from .analyze import (
+    KEY_ANALYSIS_CONTRACT_VERSION,
+    SHORT_AUDIO_QUALITY_NOTE,
+    Features,
+    extract_features,
+    safe_load,
+)
 from .canon_audio import probe_audio, render_canonical_wav
 from .content_hash import (
     DEFAULT_CONTENT_HASH_ALGORITHM,
@@ -21,7 +27,6 @@ from .content_hash import (
 )
 from .key_signature import parse_key_signature
 from .track_analysis_cache import (
-    TRACK_ANALYSIS_CACHE_CONTRACT_VERSION,
     build_cache_entry,
     compute_analysis_fingerprint,
     compute_cache_key,
@@ -33,6 +38,9 @@ from .track_analysis_cache import (
 
 SUPPORTED_EXTENSIONS = frozenset({".wav", ".flac", ".aif", ".aiff"})
 REQUESTED_COMPONENTS = ("bpm", "key", "loudness", "brightness")
+TRACK_MAP_SCHEMA_VERSION = "1.2.0"
+_SUPPORTED_KEY_ANALYSIS_CONTRACT_VERSIONS = frozenset({1, 2})
+_KEY_ANALYSIS_CONTRACT_V2 = 2
 
 
 class ContextAnalyzeError(ValueError):
@@ -74,12 +82,48 @@ def _validate_path(path: Path) -> None:
         )
 
 
+def _validate_key_analysis_contract(version: int) -> int:
+    if not isinstance(version, int) or isinstance(version, bool):
+        raise ContextAnalyzeError(
+            "UNSUPPORTED_KEY_ANALYSIS_CONTRACT",
+            "Unsupported key analysis contract version.",
+        )
+    if version not in _SUPPORTED_KEY_ANALYSIS_CONTRACT_VERSIONS:
+        raise ContextAnalyzeError(
+            "UNSUPPORTED_KEY_ANALYSIS_CONTRACT",
+            "Unsupported key analysis contract version.",
+        )
+    return version
+
+
 def _no_result(reason_code: str) -> dict[str, object]:
     return {"status": "no_result", "reason_code": reason_code, "source_ref": "analyze"}
 
 
 def _not_requested(reason_code: str) -> dict[str, object]:
     return {"status": "not_run", "reason_code": reason_code}
+
+
+def _project_v2_key(result: Any) -> dict[str, object]:
+    """Project a V2 key analyzer result into Track Map key semantics.
+
+    Omits ``key_conf`` / ``key_conf_kind``. Does not invent mode.
+    """
+    if result is None:
+        return _no_result("KEY_UNDETECTABLE")
+    key: dict[str, object] = {
+        "status": "ok",
+        "root": result.root,
+        "source_ref": "analyze",
+        "root_evidence": dict(result.root_evidence),
+        "mode_evidence": dict(result.mode_evidence),
+    }
+    if result.mode is not None:
+        key["mode"] = result.mode
+    else:
+        key["status"] = "partial"
+        key["reason_code"] = "MODE_UNRESOLVED"
+    return key
 
 
 def _base_analysis(
@@ -175,9 +219,11 @@ def analyze_context_file(
     path: Path,
     *,
     bpm_normalization: str = "none",
+    key_analysis_contract_version: int = KEY_ANALYSIS_CONTRACT_VERSION,
     _source_hash: dict[str, str] | None = None,
 ) -> dict[str, object]:
     """Analyze one WAV/FLAC file without initializing or mutating the catalog DB."""
+    contract = _validate_key_analysis_contract(key_analysis_contract_version)
     source_path = Path(path)
     _validate_path(source_path)
     source_hash = (
@@ -195,6 +241,7 @@ def analyze_context_file(
             "AUDIO_LOAD_FAILED", "Audio file could not be read."
         ) from exc
 
+    v2_key: dict[str, object] | None = None
     try:
         with TemporaryDirectory(prefix="sample-brain-context-") as temp_dir:
             canonical_path = Path(temp_dir) / "canonical.wav"
@@ -204,6 +251,22 @@ def analyze_context_file(
                 timebase.duration_seconds,
                 bpm_normalization=bpm_normalization,
             )
+            if (
+                features is not None
+                and contract == _KEY_ANALYSIS_CONTRACT_V2
+                and features.quality_note != SHORT_AUDIO_QUALITY_NOTE
+            ):
+                # Option A: explicit V2 path only. Reuse the existing analyze
+                # loader; extra decode/CQT is accepted for the non-default path.
+                from . import key_analysis_v2 as key_analysis_v2_mod
+
+                y, sr = safe_load(canonical_path)
+                if y is None or sr is None:
+                    v2_key = _no_result("KEY_UNDETECTABLE")
+                else:
+                    v2_key = _project_v2_key(
+                        key_analysis_v2_mod.estimate_key_v2_shadow(y, sr)
+                    )
     except ContextAnalyzeError:
         raise
     except Exception as exc:
@@ -218,6 +281,8 @@ def analyze_context_file(
     base_analysis, quality_notes = _base_analysis(
         features, bpm_normalization=bpm_normalization
     )
+    if v2_key is not None:
+        base_analysis["musical"]["key"] = v2_key
     timeline = {
         "beats": _not_requested("BEATS_NOT_REQUESTED"),
         "downbeats": _not_requested("DOWNBEATS_NOT_REQUESTED"),
@@ -234,7 +299,7 @@ def analyze_context_file(
     package_version = _package_version()
     return {
         "document_type": "sample_brain.track_map",
-        "schema_version": "1.1.0",
+        "schema_version": TRACK_MAP_SCHEMA_VERSION,
         "source": {
             "original": {
                 "file_name": source_path.name,
@@ -273,13 +338,13 @@ def analyze_context_file(
                         "working_audio": "temporary_canonical_wav",
                         "canonical_sample_rate_hz": 44100,
                         "canonical_channels": 1,
-                        "key_analysis_contract_version": KEY_ANALYSIS_CONTRACT_VERSION,
+                        "key_analysis_contract_version": contract,
                         "parameter_fingerprint": compute_analysis_fingerprint(
                             bpm_normalization=bpm_normalization,
                             backend_name="librosa",
                             backend_version=_package_version_for("librosa"),
                             sample_brain_version=package_version,
-                            key_analysis_contract_version=KEY_ANALYSIS_CONTRACT_VERSION,
+                            key_analysis_contract_version=contract,
                         ),
                     },
                 },
@@ -354,12 +419,18 @@ def analyze_context_file_cached(
     bpm_normalization: str = "none",
     cache_dir: Optional[Path] = None,
     enabled: bool = True,
+    key_analysis_contract_version: int = KEY_ANALYSIS_CONTRACT_VERSION,
 ) -> TrackAnalysisCacheResult:
     """Analyze one WAV/FLAC file, reusing/migrating cached analysis when valid."""
+    contract = _validate_key_analysis_contract(key_analysis_contract_version)
     source_path = Path(path)
 
     if not enabled:
-        track_map = analyze_context_file(source_path, bpm_normalization=bpm_normalization)
+        track_map = analyze_context_file(
+            source_path,
+            bpm_normalization=bpm_normalization,
+            key_analysis_contract_version=contract,
+        )
         return TrackAnalysisCacheResult(
             track_map=track_map, cache_status="disabled", cache_key=None
         )
@@ -379,12 +450,14 @@ def analyze_context_file_cached(
         backend_name="librosa",
         backend_version=backend_version,
         sample_brain_version=package_version,
+        key_analysis_contract_version=contract,
     )
     cache_kwargs = {
         "bpm_normalization": bpm_normalization,
         "backend_name": "librosa",
         "backend_version": backend_version,
         "sample_brain_version": package_version,
+        "key_analysis_contract_version": contract,
     }
     current_key = compute_cache_key(
         source_content_hash=current_hash,
@@ -432,6 +505,7 @@ def analyze_context_file_cached(
     track_map = analyze_context_file(
         source_path,
         bpm_normalization=bpm_normalization,
+        key_analysis_contract_version=contract,
         _source_hash=current_hash,
     )
     entry = build_cache_entry(
@@ -450,6 +524,7 @@ def analyze_context_file_cached(
 
 __all__ = [
     "ContextAnalyzeError",
+    "TRACK_MAP_SCHEMA_VERSION",
     "content_hash",
     "analyze_context_file",
     "analyze_context_file_cached",

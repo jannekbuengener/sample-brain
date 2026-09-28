@@ -224,12 +224,12 @@ class TestContextAnalyzeMode:
         assert cfg["key_analysis_contract_version"] == KEY_ANALYSIS_CONTRACT_VERSION
         assert "parameter_fingerprint" in cfg
 
-    def test_schema_version_1_1_0(self, tmp_path: Path):
+    def test_schema_version_1_2_0(self, tmp_path: Path):
         from src.context_analyze import analyze_context_file
 
         p = write_sine_wav(tmp_path / "c.wav", duration_sec=2.0, frequency_hz=NOTE_HZ["C"])
         result = analyze_context_file(p)
-        assert result["schema_version"] == "1.1.0"
+        assert result["schema_version"] == "1.2.0"
 
     def test_no_result_preserved(self, tmp_path: Path):
         from src.context_analyze import analyze_context_file
