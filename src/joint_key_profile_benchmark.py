@@ -89,6 +89,8 @@ def _load_verified_manifest(manifest_path: Path, sha256_path: Path) -> dict[str,
         raise JointKeyProfileBenchmarkError("manifest bytes are not canonical")
     try:
         canonical = canonical_manifest_bytes(manifest)
+    except UnicodeEncodeError as exc:
+        raise JointKeyProfileBenchmarkError("manifest contains invalid Unicode") from exc
     except ValueError as exc:
         raise JointKeyProfileBenchmarkError("manifest contains non-finite JSON values") from exc
     if raw != canonical:

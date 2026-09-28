@@ -135,6 +135,28 @@ def test_external_manifest_rejects_nonfinite_json_with_controlled_error(tmp_path
         )
 
 
+def test_external_manifest_rejects_lone_surrogate_with_controlled_error(tmp_path: Path):
+    raw = (
+        b'{"document_type":"sample_brain.fsld_human_manifest","records":['
+        b'{"annotation_tier":"ma","ground_truth":{"label":"\\ud800"},'
+        b'"public_sample_id":"123","split":"TEST"}]}\n'
+    )
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_bytes(raw)
+
+    parsed = json.loads(raw)
+    assert parsed["records"][0]["ground_truth"]["label"] == "\ud800"
+    with pytest.raises(UnicodeEncodeError):
+        canonical_manifest_bytes(parsed)
+    with pytest.raises(JointKeyProfileBenchmarkError, match="invalid Unicode"):
+        evaluate_joint_key_profiles(
+            audio_root=tmp_path / "audio",
+            split="TEST",
+            manifest_path=manifest_path,
+            sha256_path=tmp_path / "manifest.sha256",
+        )
+
+
 def test_external_manifest_rejects_oversized_json_integer_with_controlled_error(tmp_path: Path):
     manifest_path, sha256_path, raw = _write_oversized_integer_manifest(tmp_path)
 
