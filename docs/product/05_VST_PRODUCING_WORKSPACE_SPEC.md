@@ -3,9 +3,16 @@
 **Issue:** [#93](https://github.com/jannekbuengener/sample-brain/issues/93)  
 **Parent:** [#90](https://github.com/jannekbuengener/sample-brain/issues/90)  
 **Depends on:** All prior pillar specs (#94–#92, #95)  
-**Status:** Spec (docs-only); no VST3 plugin on `main`
+**Status:** Spec (docs-only); no VST3 plugin on `main` — **PARKED / SUPERSEDED as primary path**
 
-This document defines the **first product body**: a VST3 browser/assistant plugin (standalone app later) that surfaces library intelligence, matching, context, and variants in the DAW workflow.
+> **Canon override:** Primary producing path is local Workbench  
+> (`Library → Live Kit → Channel Rack → Arrangement`) per  
+> [`docs/PRODUCT_WORKFLOW_CANON.md`](../PRODUCT_WORKFLOW_CANON.md).  
+> VST/host UI is parked under [#469](https://github.com/jannekbuengener/sample-brain/issues/469).  
+> Keep this document as historical design notes for an optional plugin surface;  
+> do not treat it as authorization for VST-first product delivery.
+
+This document originally defined a VST3 browser/assistant plugin (standalone app later) that surfaces library intelligence, matching, context, and variants in a DAW host. That framing is no longer the primary product body.
 
 ---
 

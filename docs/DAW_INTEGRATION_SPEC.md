@@ -2,9 +2,9 @@
 
 ## 1. Purpose
 
-This document defines the current and planned DAW integration strategy for Sample Brain. It covers the **VST3-first product path** (target), the **legacy FL Studio Browser tag export** (fallback), and research for additional DAW metadata paths.
+This document defines the current and planned **external DAW integration** strategy for Sample Brain: the **legacy FL Studio Browser tag export** (implemented fallback), research for additional DAW metadata paths, and a **parked** optional VST/host plugin path.
 
-**Key principle:** The primary product interface is a **VST3 browser/assistant plugin** (Issues [#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95)). The CLI `export_fl` path is a legacy/fallback metadata export for producers who run the pipeline outside the plugin. See `docs/PRODUCT_REQUIREMENTS.md` §5 for the shipped-vs-target scope split.
+**Key principle:** The **primary producing path** is the local Workbench (`Library → Live Kit → Channel Rack → Arrangement`) per [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md). External DAW hosting is **not** part of that core workflow. The CLI `export_fl` path is a legacy/fallback metadata export. A VST3 browser/assistant plugin remains **parked** ([#469](https://github.com/jannekbuengener/sample-brain/issues/469)); historical Issues [#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95) are archived capability notes, not authorization to treat VST as primary.
 
 ---
 
@@ -299,7 +299,7 @@ CLI (export_fl)  →  ExportDispatcher  →  FormatEncoder
 - **No automated DAW detection.** The user must specify the DAW type and export path manually or via config.
 - **No FL-native reverse engineering.** No FLP parsing/manipulation, no FL Studio internal API access.
 
-> **Note:** The old "no VST3/AU/AAX plugin" non-goal is **superseded** by the VST3-first product target (Issues [#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95)). The first product incarnation is a VST3 browser/assistant plugin; a standalone producing app follows later. See `docs/PRODUCT_REQUIREMENTS.md` §6 for the updated target.
+> **Note:** VST3/AU/AAX as a **primary** product path is **superseded**. Primary producing path is the local Workbench ([`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md)). An optional VST/host plugin remains **parked** (#469). See `docs/PRODUCT_REQUIREMENTS.md` §5–6.
 
 ---
 

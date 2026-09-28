@@ -38,7 +38,7 @@ All four steps are implemented and stable.
 | Embedding DB | `src/db.py` | Stable | `embedding_models` and `sample_embeddings` tables + helpers including `iter_pending_samples()`. |
 | Index | `src/index.py`, `src/vec_index.py`, `src/search_backend.py` | Stable | NumPy cosine index + optional sqlite-vec vec0 cache; `NumpySearchBackend` / `SqliteVecSearchBackend`; default `numpy` |
 | Search | `src/search.py` | Stable | `run_search()` → embedding backend → search backend adapter → ranked hits. NumPy + sqlite-vec paths. |
-| Screen-1 QML renderer | `src/workbench_qml.py` | Canonical renderer direction | PySide6/Qt Quick renderer with a thin ViewModel/command adapter over the Python-authoritative Workbench core. New Screen-1 visual/product work belongs here; Tkinter remains a legacy/fallback path and behavior reference. |
+| Screen-1 QML renderer | `src/workbench_qml.py` | Optional production baseline | PySide6/Qt Quick renderer with a thin ViewModel/command adapter over the Python-authoritative Workbench core. Starts only through `workbench --qml-screen1`; Tk remains the default and fallback. |
 
 ### 2.3 EPIC 2 capabilities on `main`
 
@@ -64,10 +64,9 @@ contracts instead of reimplementing them. The retained `workbench_qml_spike`
 module is only a compatibility, fixture, virtualization, and visual-acceptance
 harness over that same shell.
 
-Tkinter remains a legacy/fallback path and source of existing behavior contracts.
-New Screen-1 visual/product implementation belongs in the QML renderer. This
-does not decide packaging, distribution, or the timing of any remaining runtime
-migration.
+Tkinter remains the functional default and legacy/fallback path while Screen 1
+migrates slice by slice. This does not decide packaging, distribution, or a
+complete Screen-1 migration.
 
 ### 2.5 Known Technical Debt
 
@@ -89,15 +88,13 @@ Scan  →  Analyze  →  Autotype  →  Export
 
 All four steps are implemented and stable on `main`.
 
-### 3.2 Extended Pipeline (EPIC 2 — Semantic Search Foundation)
+### 3.2 Target Pipeline (EPIC 2 — Semantic Search Foundation)
 
 ```
 Scan  →  Analyze  →  Embed  →  Index  →  Search  →  Export
 ```
 
-Embed, Index, and Search are implemented on `main` behind their documented optional
-backends and runtime requirements. NumPy remains the default search backend;
-sqlite-vec is opt-in.
+Embed, Index, and Search are planned. Export will be extended with result metadata.
 
 ### 3.3 Long-term Pipeline (EPIC 3-6)
 
@@ -218,7 +215,7 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 | Component | EPIC | Purpose |
 |-----------|------|---------|
 | FastAPI Service | EPIC 4 | Local HTTP API around pipeline operations |
-| Desktop UI | EPIC 4 | React/Tauri concept superseded; current Screen-1 product rendering follows the PySide6 / Qt Quick / QML direction in §2.4 and §10.2 |
+| Desktop UI | EPIC 4 | React/Tauri superseded; local Workbench is primary UI (see §10.2–10.3) |
 | Recommendation Engine | EPIC 3 | Hybrid ranking combining vector similarity + structured metadata |
 | DAW Workflow | EPIC 5 | Integration paths for Ableton, Reaper beyond FL Studio |
 | Re-imagine Engine | EPIC 6 | DSP-based variant generation (pitch, time, stretch, reverse, slice) |
@@ -483,36 +480,26 @@ A local HTTP API that wraps pipeline operations and search:
 
 **Status:** Not implemented. Not planned before EPIC 2 completion.
 
-### 10.2 Screen-1 Desktop Renderer Direction
+### 10.2 Local Producing Workspace (Workbench-first; VST parked)
 
-The active Screen-1 product-rendering direction is **PySide6 / Qt Quick / QML**
-(`LOCK_PYSIDE6_QML`). The Python Core/Controller/Audio/Catalog contracts remain
-authoritative and are reused by the renderer rather than duplicated in QML.
+Canonical path: [`docs/PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md).
 
-Tkinter is retained only as a legacy/fallback path and as a source of existing
-behavior/integration contracts. The earlier React/Tauri desktop concept is
-superseded.
+**Primary — Local Workbench:**
+- Screen 1: Library + Live Kit (partially on `main`; `LOCK_PYSIDE6_QML` for new visuals)
+- Screen 2: Channel Rack (patterns/triggers) — **not built**; requires ownership + pattern core + sequencer playback first
+- Screen 3: Arrangement mode — later; not Screen-2 scope
+- Shared cores: Library Intelligence, Matching, Context, optional Transform
+- External DAW is **not** part of the core workflow
 
-This direction does not decide packaging or distribution.
+**Parked — VST3 / host plugin ([#469](https://github.com/jannekbuengener/sample-brain/issues/469)):**
+- Optional later DAW-inline surface over the same core
+- Historical specs under `docs/product/05_VST_PRODUCING_WORKSPACE_SPEC.md` are archived design notes, not the current primary path
 
-### 10.3 Parked VST3 Product Path (Historical Issues #90–#95)
+**Status:** Workbench Screen 1 / Live Kit advancing on `main`. Channel Rack and Arrangement are planned behind the build order in the workflow canon. VST remains parked.
 
-The earlier VST-first product target from Issues #90–#95 is **historical and parked**.
-It is not the active product sequence and must not drive current Screen-1 architecture
-or implementation work.
+### 10.3 Desktop UI (EPIC 4 — superseded)
 
-Issue #469 is the canonical reactivation gate for any future VST3 product work.
-Until that gate is consciously reopened against the then-current product and
-repository state:
-
-- no VST3 shell or plugin-specific UI is an active target;
-- no plugin framework or host dependency is selected;
-- no current QML/Desktop work should be interpreted as preparation for VST3;
-- Library, Matching, Context, Audio, and Transform capabilities remain reusable core
-  concerns rather than plugin-owned implementations.
-
-A future VST3 path may reuse the same core if reactivated, but no ordering between
-desktop and plugin product forms is currently asserted.
+The previously planned React/Tauri desktop UI is **superseded**. The local Workbench (Tk fallback + QML Screen-1 path) is the producing UI surface. A separate React/Tauri app is not the target.
 
 ### 10.4 Recommendation Engine (EPIC 3)
 
@@ -549,14 +536,14 @@ The following are explicitly **not part of the target architecture** at any plan
 
 - **No cloud-first or hybrid architecture** — the system is designed for local-only operation. Cloud features, if any, are optional opt-in extras.
 - **No sample marketplace** — no store, ratings, purchases, or community features.
-- **No generative song production** — the system analyses, retrieves, and organises. It does not create music.
+- **No generative songwriting** — the system analyses, retrieves, organises, and (when built) supports **user-authored** patterns / later Arrangement. It does not invent finished songs.
 - **No committed audio samples** — `.wav`, `.mp3`, `.flac`, `.aiff` and similar files are never committed to the repository.
 - **No committed DB/index/model/cache artifacts** — all generated state is untracked by design.
 - **No FAISS in current implementation** — NumPy `.npz` index is on `main`; FAISS is superseded by ADR-0004
 - **No API or UI before CLI pipeline is reliable** — the CLI pipeline must be stable and tested before any API or UI layer is built.
-- **No real-time audio analysis in the audio thread** — the pipeline is batch-oriented. Heavy scanning, DB access, indexing, and ML inference must not run in the audio thread. The plugin only plays back prepared audio and displays precomputed metadata.
+- **No real-time audio analysis in the audio thread** — the pipeline is batch-oriented. Heavy scanning, DB access, indexing, and ML inference must not run in the audio thread. Realtime playback uses prepared/cached audio and precomputed metadata only.
 - **No FL-native reverse engineering** — no FLP parsing/manipulation, no FL Studio internal API access. Integration uses documented public interfaces.
-- **No FL-Browser dependency as the main product path** — FL Studio Browser export is legacy/fallback.
+- **No FL-Browser or VST dependency as the main product path** — FL export is legacy/fallback; VST is parked (#469); Workbench is primary ([`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md)).
 
 ---
 

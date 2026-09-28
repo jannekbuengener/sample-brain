@@ -10,13 +10,14 @@ Minimal session startup sequence for agents working on `jannekbuengener/sample-b
 2. `.cursor/rules/sample-brain-project.mdc` — project guardrails
 3. `.cursor/rules/skill-routing.mdc` — task-to-skill mapping (Priority A)
 4. `docs/TARGET_ARCHITECTURE.md` — current and target architecture, including the locked Screen-1 renderer
-5. `docs/WORKBENCH_QML_PROOF_SPIKE.md` — Screen-1 QML shell and proof/evidence boundary
-6. `README.md` — product one-liner, quickstart
-7. `knowledge/CURRENT_STATUS.md` — current state, what works
-8. `knowledge/ACTIVE_ROADMAP.md` — completed work, next priorities
-9. `docs/PRODUCT_REQUIREMENTS.md` — product vision, MVP scope
-10. `docs/SYSTEM_REQUIREMENTS.md` — functional/non-functional requirements
-11. `docs/DATA_AND_ARTIFACT_POLICY.md` — committed vs untracked artifacts
+5. `docs/PRODUCT_WORKFLOW_CANON.md` — Workbench-first producing path (Screen 1 → Live Kit → Channel Rack → Arrangement); overrides stale VST-first wording elsewhere
+6. `docs/WORKBENCH_QML_PROOF_SPIKE.md` — Screen-1 QML shell and proof/evidence boundary
+7. `README.md` — product one-liner, quickstart
+8. `knowledge/CURRENT_STATUS.md` — current state, what works
+9. `knowledge/ACTIVE_ROADMAP.md` — completed work, next priorities
+10. `docs/PRODUCT_REQUIREMENTS.md` — product vision, MVP scope
+11. `docs/SYSTEM_REQUIREMENTS.md` — functional/non-functional requirements
+12. `docs/DATA_AND_ARTIFACT_POLICY.md` — committed vs untracked artifacts
 
 For any Screen-1/UI task, the renderer gate above is mandatory before planning or
 implementation: `SCREEN1_RENDERER = LOCK_PYSIDE6_QML`. New visual/product work
@@ -24,13 +25,18 @@ uses PySide6 / Qt Quick / QML; Tkinter remains legacy/fallback and behavioral
 reference only. Reuse the Python Core/Controller/Audio/Catalog contracts and do
 not reopen the renderer decision.
 
+For Channel Rack / Screen-2 work, follow the build order in
+`docs/PRODUCT_WORKFLOW_CANON.md` (ownership → pattern core → sequencer → UI).
+Do not start Screen-2 UI before those docs gates.
+
 ## Task-Specific Context
 
 | Domain | Documents |
 |--------|-----------|
-| Screen 1 / UI | `docs/TARGET_ARCHITECTURE.md`, `docs/WORKBENCH_QML_PROOF_SPIKE.md`, live #579 / #503 and the scoped child issue |
+| Screen 1 / UI | `docs/TARGET_ARCHITECTURE.md`, `docs/WORKBENCH_QML_PROOF_SPIKE.md`, `docs/PRODUCT_WORKFLOW_CANON.md`, live #579 / #503 and the scoped child issue |
+| Channel Rack / Screen 2 | `docs/PRODUCT_WORKFLOW_CANON.md`, `docs/SESSION_OWNERSHIP_CONTRACT.md`, `docs/PATTERN_CORE_CONTRACT.md`, `docs/SEQUENCER_PLAYBACK_CONTRACT.md` — UI only after those gates |
 | EPIC 2 (Semantic Search) | `docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md`, ADR-0001–0005 |
-| DAW / Export | `docs/DAW_INTEGRATION_SPEC.md`, `src/export_fl.py` |
+| DAW / Export | `docs/DAW_INTEGRATION_SPEC.md`, `src/export_fl.py` (legacy/fallback; VST parked #469) |
 | CI / Merge Governance | `docs/CI_DEGRADED_MODE.md`, `knowledge/governance/GOVERNANCE.md` |
 | Repository Hygiene | `docs/ISSUE_BACKLOG.md`, `docs/DATA_AND_ARTIFACT_POLICY.md` |
 | Agent / Role | `.cursor/agents/_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md` |
