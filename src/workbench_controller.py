@@ -200,6 +200,22 @@ def validate_workbench_folder(path_text: str) -> WorkbenchFolderValidation:
     )
 
 
+@dataclass(frozen=True)
+class WorkbenchKeyAnalysisClaim:
+    """Validated catalog key-analysis provenance for Workbench consumers.
+
+    Distinct from product ``WorkbenchRow.key`` and from matching eligibility.
+    """
+
+    key: str
+    mode: str | None
+    contract_version: int | None
+    valid: bool
+    matching_eligible: bool
+    root_evidence_kind: str | None
+    mode_evidence_kind: str | None
+
+
 @dataclass
 class WorkbenchRow:
     display_name: str
@@ -216,6 +232,7 @@ class WorkbenchRow:
     error: str | None = None
     error_code: str | None = None
     details: dict[str, Any] = field(default_factory=dict)
+    key_analysis_claim: WorkbenchKeyAnalysisClaim | None = None
 
     def playlist_fields(self) -> dict[str, Any]:
         return {
@@ -764,7 +781,14 @@ def analyze_folder_for_workbench(
 
 
 def row_as_dict(row: WorkbenchRow) -> dict[str, Any]:
-    return asdict(row)
+    """Serialize a row for playlist/CSV-style consumers.
+
+    Omits ``key_analysis_claim`` so internal provenance does not enter the
+    public dictionary schema used by CSV and similar allowlisted callers.
+    """
+    data = asdict(row)
+    data.pop("key_analysis_claim", None)
+    return data
 
 
 PLAYLIST_CSV_FIELDS: tuple[str, ...] = (
@@ -2246,6 +2270,7 @@ __all__ = [
     "ShouldCancel",
     "WorkbenchFolderValidation",
     "WorkbenchRow",
+    "WorkbenchKeyAnalysisClaim",
     "WorkbenchCueMetadata",
     "WorkbenchPlaylistAddOutcome",
     "WorkbenchPlaylistValidationError",

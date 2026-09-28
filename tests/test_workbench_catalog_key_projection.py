@@ -1,13 +1,15 @@
-"""Frozen #661 contract tests for the Workbench V2 catalog key boundary."""
+"""Frozen #661/#665 contract tests for Workbench catalog key claim transport."""
 
 from __future__ import annotations
 
+import csv
 import json
 import sqlite3
 from pathlib import Path
 
 import pytest
 
+import src.analyze as analyze_module
 import src.config as config_module
 import src.db as db_module
 from src.db import decode_key_analysis_feature_record
@@ -18,12 +20,19 @@ from src.key_analysis_v2 import (
 )
 from src.workbench_catalog import load_catalog_samples
 from src.workbench_controller import (
+    PLAYLIST_CSV_FIELDS,
+    WorkbenchKeyAnalysisClaim,
+    WorkbenchResult,
     add_workbench_library_folder,
+    export_workbench_rows_to_csv,
     import_catalog_rows_to_cache,
+    row_as_dict,
+    workbench_row_to_fl_sample_row,
     workbench_scope_requires_refresh,
 )
 from src.workbench_harmony import HarmonyRelation, rate_harmony
 from src.workbench_library import load_sample_by_path
+from src.workbench_qml import _qml_row
 
 
 def _result(*, root: str = "C", mode: str | None = "maj") -> KeyAnalysisV2Result:
@@ -122,12 +131,26 @@ def test_legacy_catalog_stays_readonly_and_v1_compatible(tmp_path: Path):
     assert db_path.stat().st_mtime_ns == mtime_before
     assert len(rows) == 1
     row = rows[0]
+    projected = row.to_workbench_row()
     assert row.key == "Amin"
     assert row.key_conf == pytest.approx(0.72)
     assert row.key_claim == "Amin"
     assert row.key_analysis_contract_version is None
     assert row.key_claim_valid is True
     assert row.key_matching_eligible is True
+    assert projected.key == "Amin"
+    assert projected.key_conf == pytest.approx(0.72)
+    assert projected.key_analysis_claim == WorkbenchKeyAnalysisClaim(
+        key="Amin",
+        mode=None,
+        contract_version=None,
+        valid=True,
+        matching_eligible=True,
+        root_evidence_kind=None,
+        mode_evidence_kind=None,
+    )
+    assert "key_claim" not in projected.details
+    assert "key_analysis_claim" not in projected.details
 
 
 @pytest.mark.parametrize("mode, expected_key", [("maj", "Cmaj"), (None, "C")])
@@ -152,6 +175,20 @@ def test_v2_claim_is_recognized_but_not_projected_downstream(
     assert row.key_conf is None
     assert projected.key is None
     assert projected.key_conf is None
+    assert projected.key_analysis_claim == WorkbenchKeyAnalysisClaim(
+        key=expected_key,
+        mode=mode,
+        contract_version=2,
+        valid=True,
+        matching_eligible=False,
+        root_evidence_kind=row.key_root_evidence_kind,
+        mode_evidence_kind=row.key_mode_evidence_kind,
+    )
+    assert projected.key_analysis_claim.root_evidence_kind == "joint_24_profile_pearson"
+    assert projected.key_analysis_claim.mode_evidence_kind == "third_contrast"
+    assert "key_claim" not in projected.details
+    assert "key_analysis_claim" not in projected.details
+    assert "key" not in projected.details
 
 
 @pytest.mark.parametrize("case", ["unknown", "malformed", "stale"])
@@ -199,18 +236,27 @@ def test_invalid_v2_key_claim_fails_closed_without_dropping_sample(
         )
 
     row = load_catalog_samples(db_path)[0]
+    projected = row.to_workbench_row()
 
     assert row.key is None
     assert row.key_conf is None
     assert row.key_claim is None
     assert row.key_claim_valid is False
     assert row.key_matching_eligible is False
+    assert projected.key is None
+    assert projected.key_conf is None
+    assert projected.key_analysis_claim is None
     assert row.bpm == pytest.approx(131.0)
     assert row.loudness == pytest.approx(-9.0)
     assert row.brightness == pytest.approx(0.8)
     assert row.sample_class == "loop"
     assert row.pred_type == "kick"
     assert row.status == "ok"
+    assert projected.bpm == pytest.approx(131.0)
+    assert projected.loudness == pytest.approx(-9.0)
+    assert projected.brightness == pytest.approx(0.8)
+    assert projected.sample_class == "loop"
+    assert projected.pred_type == "kick"
 
 
 def test_pure_decoder_matches_single_and_batch_reader(
@@ -280,8 +326,72 @@ def test_v2_catalog_import_remains_stale_for_refresh(
     result = import_catalog_rows_to_cache([catalog_row], target)
     cached = load_sample_by_path(str(sample))
 
+    assert catalog_row.key_analysis_claim is not None
+    assert catalog_row.key_analysis_claim.key == "Cmaj"
     assert result.imported == 1
     assert cached is not None
     assert cached.key is None
     assert cached.analyzer_version is None
     assert workbench_scope_requires_refresh(folder_id=None, folder_path=target) is True
+
+
+def test_v2_claim_transport_does_not_activate_public_consumers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    db_path = _seed_current_catalog(tmp_path, monkeypatch)
+    write_key_analysis_v2_features(sample_id=1, result=_result(root="C", mode="maj"))
+    projected = load_catalog_samples(db_path)[0].to_workbench_row()
+
+    assert projected.key_analysis_claim is not None
+    assert projected.key_analysis_claim.matching_eligible is False
+
+    playlist = projected.playlist_fields()
+    assert "key_analysis_claim" not in playlist
+    assert playlist["key"] is None
+    assert playlist["key_conf"] is None
+
+    as_dict = row_as_dict(projected)
+    assert "key_analysis_claim" not in as_dict
+    assert as_dict["key"] is None
+    assert as_dict["key_conf"] is None
+
+    payload = WorkbenchResult(summary={"ok": 1}, rows=[projected]).to_dict()
+    assert "key_analysis_claim" not in payload["rows"][0]
+    assert payload["rows"][0]["key"] is None
+    assert "key_analysis_claim" not in payload["rows"][0]["details"]
+    assert "key_claim" not in payload["rows"][0]["details"]
+
+    csv_path = tmp_path / "playlist.csv"
+    export_workbench_rows_to_csv([projected], csv_path)
+    with csv_path.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        assert tuple(reader.fieldnames or ()) == PLAYLIST_CSV_FIELDS
+        rows = list(reader)
+    assert len(rows) == 1
+    assert rows[0]["key"] == ""
+    assert rows[0]["key_conf"] == ""
+    assert "key_analysis_claim" not in rows[0]
+
+    fl_row = workbench_row_to_fl_sample_row(projected)
+    assert fl_row is not None
+    assert fl_row[6] is None  # key
+    assert fl_row[7] is None  # key_conf
+
+    qml = _qml_row(projected)
+    assert qml.key == "—"
+
+    assert analyze_module.KEY_ANALYSIS_CONTRACT_VERSION == 1
+
+
+def test_workbench_key_analysis_claim_is_frozen():
+    claim = WorkbenchKeyAnalysisClaim(
+        key="Cmaj",
+        mode="maj",
+        contract_version=2,
+        valid=True,
+        matching_eligible=False,
+        root_evidence_kind="joint_24_profile_pearson",
+        mode_evidence_kind="third_contrast",
+    )
+    with pytest.raises(Exception):
+        claim.key = "Gmaj"  # type: ignore[misc]
