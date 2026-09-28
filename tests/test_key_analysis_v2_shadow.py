@@ -339,6 +339,42 @@ def test_sidecar_rejects_noncanonical_root_and_contradictory_mode_evidence(
             sample_id=1, source_identity=identity, result=contradictory_mode
         )
 
+    negative_energy = _result(root="C", mode=None)
+    negative_energy.mode_evidence.update(
+        {
+            "major_third_energy": -2.0,
+            "minor_third_energy": -1.0,
+            "contrast": -1.0 / 3.0,
+        }
+    )
+    with pytest.raises(ValueError, match="mode evidence"):
+        write_key_analysis_v2_shadow(
+            sample_id=1, source_identity=identity, result=negative_energy
+        )
+
+    invalid_pearson_score = _result(root="C", mode=None)
+    invalid_pearson_score.root_evidence["raw_top_score"] = 1.01
+    with pytest.raises(ValueError, match="root evidence"):
+        write_key_analysis_v2_shadow(
+            sample_id=1, source_identity=identity, result=invalid_pearson_score
+        )
+
+    rounded_abstention = _result(root="C", mode=None)
+    rounded_abstention.mode_evidence.update(
+        {
+            "major_third_energy": 1.3,
+            "minor_third_energy": 0.7,
+            "contrast": 0.3,
+        }
+    )
+    write_key_analysis_v2_shadow(
+        sample_id=1, source_identity=identity, result=rounded_abstention
+    )
+    assert (
+        read_key_analysis_v2_shadow(sample_id=1, source_identity=identity)
+        == rounded_abstention
+    )
+
 
 def test_sidecar_migrates_legacy_catalog_and_preserves_sha1_semantics(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db_path = _use_temp_db(tmp_path, monkeypatch)

@@ -209,6 +209,8 @@ def _validated_root_evidence(value: object) -> dict[str, Any] | None:
     score = value.get("raw_top_score")
     if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score):
         return None
+    if not -1.0 <= float(score) <= 1.0:
+        return None
     return dict(value)
 
 
@@ -232,19 +234,26 @@ def _validated_mode_evidence(value: object, *, root: str, mode: str | None) -> d
     minor_energy = float(value["minor_third_energy"])
     contrast = float(value["contrast"])
     threshold = float(value["threshold"])
+    if major_energy < 0.0 or minor_energy < 0.0:
+        return None
     expected_contrast = abs(major_energy - minor_energy) / (major_energy + minor_energy + 1e-9)
     if not math.isclose(contrast, expected_contrast, abs_tol=1.5e-6):
         return None
     if threshold != KEY_ANALYSIS_V2_SHADOW_MODE_CONTRAST_MIN:
         return None
-    expected_mode = (
-        None
+    selected_mode = "maj" if major_energy >= minor_energy else "min"
+    # ``estimate_key_mode`` decides from unrounded energies but persists its
+    # contrast rounded to six decimals.  An abstention whose raw contrast is
+    # just below 0.30 can therefore carry 0.300000 evidence; retain that
+    # explicit abstention without inventing a new decision threshold.
+    expected_modes = (
+        {None}
         if contrast < threshold
-        else "maj"
-        if major_energy >= minor_energy
-        else "min"
+        else {selected_mode}
+        if contrast > threshold
+        else {None, selected_mode}
     )
-    if mode != expected_mode:
+    if mode not in expected_modes:
         return None
     return dict(value)
 
