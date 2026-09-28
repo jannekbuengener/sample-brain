@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
+import sys
 
 import numpy as np
 import pytest
@@ -52,6 +54,17 @@ def _write_nonfinite_manifest(tmp_path: Path) -> tuple[Path, Path]:
         f"{hashlib.sha256(raw).hexdigest()}  {manifest_path.name}\n", encoding="utf-8"
     )
     return manifest_path, sha256_path
+
+
+def _write_oversized_integer_manifest(tmp_path: Path) -> tuple[Path, Path, bytes]:
+    raw = b'{"oversized_integer":' + b"1" * (sys.get_int_max_str_digits() + 1) + b"}\n"
+    manifest_path = tmp_path / "manifest.json"
+    sha256_path = tmp_path / "manifest.sha256"
+    manifest_path.write_bytes(raw)
+    sha256_path.write_text(
+        f"{hashlib.sha256(raw).hexdigest()}  {manifest_path.name}\n", encoding="utf-8"
+    )
+    return manifest_path, sha256_path, raw
 
 
 def test_adapter_uses_cqt_mean_and_returns_joint_raw_evidence(tmp_path: Path):
@@ -116,6 +129,20 @@ def test_external_manifest_rejects_nonfinite_json_with_controlled_error(tmp_path
     manifest_path, sha256_path = _write_nonfinite_manifest(tmp_path)
 
     with pytest.raises(JointKeyProfileBenchmarkError, match="non-finite JSON"):
+        evaluate_joint_key_profiles(
+            audio_root=tmp_path / "audio",
+            split="TEST",
+            manifest_path=manifest_path,
+            sha256_path=sha256_path,
+        )
+
+
+def test_external_manifest_rejects_oversized_json_integer_with_controlled_error(tmp_path: Path):
+    manifest_path, sha256_path, raw = _write_oversized_integer_manifest(tmp_path)
+
+    with pytest.raises(ValueError, match="Exceeds the limit"):
+        json.loads(raw)
+    with pytest.raises(JointKeyProfileBenchmarkError, match="UTF-8 JSON"):
         evaluate_joint_key_profiles(
             audio_root=tmp_path / "audio",
             split="TEST",

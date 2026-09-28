@@ -79,8 +79,11 @@ def score_audio(audio_path: Path) -> JointKeyProfileResult:
 def _load_verified_manifest(manifest_path: Path, sha256_path: Path) -> dict[str, Any]:
     try:
         raw = Path(manifest_path).read_bytes()
+    except OSError as exc:
+        raise JointKeyProfileBenchmarkError("manifest could not be read as UTF-8 JSON") from exc
+    try:
         manifest = json.loads(raw.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (UnicodeDecodeError, ValueError) as exc:
         raise JointKeyProfileBenchmarkError("manifest could not be read as UTF-8 JSON") from exc
     if not isinstance(manifest, dict):
         raise JointKeyProfileBenchmarkError("manifest bytes are not canonical")
