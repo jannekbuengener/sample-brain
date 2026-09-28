@@ -1,39 +1,42 @@
 # Product Pillar Specs — Sample Brain
 
-Canonical pillar contracts for the VST-first product target ([Issue #90](https://github.com/jannekbuengener/sample-brain/issues/90)). Parent vision and MVP scope live in [`docs/PRODUCT_REQUIREMENTS.md`](../PRODUCT_REQUIREMENTS.md) §5–6; these specs add implementable contracts per pillar.
+Capability specs for library, matching, context, and transform cores that feed the **local Workbench**. Primary producing path: [`docs/PRODUCT_WORKFLOW_CANON.md`](../PRODUCT_WORKFLOW_CANON.md). Parent vision: [`docs/PRODUCT_REQUIREMENTS.md`](../PRODUCT_REQUIREMENTS.md) §5–6.
+
+**Supersession:** The historical “VST-first producing workspace” framing (#90 / #93) is **parked** ([#469](https://github.com/jannekbuengener/sample-brain/issues/469)). Pillar specs remain useful for **core capability contracts**; they do **not** authorize VST as the main product interface.
 
 ## Pillar index
 
 | Pillar | Issue | Spec | Status |
 |--------|-------|------|--------|
-| Parent — VST-first producing intelligence | [#90](https://github.com/jannekbuengener/sample-brain/issues/90) | PRD §5–6, [`DAW_INTEGRATION_SPEC.md`](../DAW_INTEGRATION_SPEC.md) | **Parent spec complete** — PR #102 consolidated; all child specs done; parent closes via reconcile PR |
+| Parent — producing intelligence cores | [#90](https://github.com/jannekbuengener/sample-brain/issues/90) | PRD §5–6, workflow canon, [`DAW_INTEGRATION_SPEC.md`](../DAW_INTEGRATION_SPEC.md) | Spec set complete; VST-first parent framing superseded |
 | **[LIBRARY]** Library Intelligence & Metadata/Naming | [#94](https://github.com/jannekbuengener/sample-brain/issues/94) | [`01_LIBRARY_INTELLIGENCE_SPEC.md`](01_LIBRARY_INTELLIGENCE_SPEC.md) | **Done** (PR #105) |
 | **[MATCHING]** Harmonic & Rhythmic Matching | [#91](https://github.com/jannekbuengener/sample-brain/issues/91) | [`02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md`](02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md) | **Done** (PR #105) |
 | **[CONTEXT]** Track Context Analysis | [#95](https://github.com/jannekbuengener/sample-brain/issues/95) | [`03_TRACK_CONTEXT_ANALYSIS_SPEC.md`](03_TRACK_CONTEXT_ANALYSIS_SPEC.md) | **Done** (PR #106) |
 | **[TRANSFORM]** Realtime Fit & Transform Engine | [#92](https://github.com/jannekbuengener/sample-brain/issues/92) | [`04_REALTIME_FIT_TRANSFORM_SPEC.md`](04_REALTIME_FIT_TRANSFORM_SPEC.md) | **Done** (PR #106) |
-| **[WORKSPACE]** VST-first Producing Workspace | [#93](https://github.com/jannekbuengener/sample-brain/issues/93) | [`05_VST_PRODUCING_WORKSPACE_SPEC.md`](05_VST_PRODUCING_WORKSPACE_SPEC.md) | **Done** (PR #106) |
+| **[WORKSPACE]** Producing Workspace | [#93](https://github.com/jannekbuengener/sample-brain/issues/93) | [`05_VST_PRODUCING_WORKSPACE_SPEC.md`](05_VST_PRODUCING_WORKSPACE_SPEC.md) | Spec exists; **VST UI parked** — Workbench Screens 1–3 are the active workspace path |
 
 ## Dependency order
-
-Recommended build and documentation order:
 
 ```text
 1. Library (#94)     →  catalog + features
 2. Matching (#91)    →  fit scoring
 3. Context (#95)     →  track profile
-4. Transform (#92)   →  playable variants
-5. Workspace (#93)   →  VST3 UI + host integration
+4. Transform (#92)   →  playable variants (optional for Channel Rack v1)
+5. Workbench UI      →  Screen 1 → Live Kit → Channel Rack → Arrangement
+   (VST shell #93 UI remains parked under #469)
 ```
 
-Context and Transform can be developed in parallel after Library + Matching; Workspace integrates all pillars.
-
-Runtime on `main` today: CLI scan → analyze → autotype → export_fl (legacy FL); optional embed/index/search; matching via `sample-brain match`; track context analysis via `sample-brain context analyze` (Track Map v1 + Track Analysis Cache); track deconstruction via `sample-brain deconstruct` (Track Map, Arrangement, Loop/Section Assets, Performance Pack layout); pack import via `sample-brain pack-import`. VST3 plugin and transform engine are not implemented.
+Runtime on `main` today: CLI scan → analyze → autotype → export_fl (legacy FL); optional embed/index/search; matching / context / deconstruct / pack-import as documented; Workbench Screen 1 + Live Kit (Tk + QML path). Channel Rack, Arrangement mode, and VST3 plugin are **not** implemented.
 
 ## Related documents
 
 | Document | Role |
 |----------|------|
+| [`docs/PRODUCT_WORKFLOW_CANON.md`](../PRODUCT_WORKFLOW_CANON.md) | Primary producing workflow + build order |
 | [`docs/PRODUCT_REQUIREMENTS.md`](../PRODUCT_REQUIREMENTS.md) | Vision, audience, MVP scope |
-| [`docs/TARGET_ARCHITECTURE.md`](../TARGET_ARCHITECTURE.md) | Module boundaries, §10.2 VST workspace target |
+| [`docs/TARGET_ARCHITECTURE.md`](../TARGET_ARCHITECTURE.md) | Module boundaries, Workbench-first §10.2 |
 | [`docs/DATA_AND_ARTIFACT_POLICY.md`](../DATA_AND_ARTIFACT_POLICY.md) | Committed vs runtime artifacts |
-| [`docs/DAW_INTEGRATION_SPEC.md`](../DAW_INTEGRATION_SPEC.md) | FL export fallback + VST3 product tiers |
+| [`docs/DAW_INTEGRATION_SPEC.md`](../DAW_INTEGRATION_SPEC.md) | FL export fallback + parked VST notes |
+| [`docs/PATTERN_CORE_CONTRACT.md`](../PATTERN_CORE_CONTRACT.md) | Minimal Channel / Pattern / Trigger contract (docs gate; next after ownership) |
+| [`docs/SEQUENCER_PLAYBACK_CONTRACT.md`](../SEQUENCER_PLAYBACK_CONTRACT.md) | Pattern → TempoMap → native schedule (docs gate; after Pattern Core) |
+| [`docs/SESSION_OWNERSHIP_CONTRACT.md`](../SESSION_OWNERSHIP_CONTRACT.md) | Single Live Kit + QML→native audio ownership (completed on `main`) |

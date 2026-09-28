@@ -40,7 +40,7 @@
 
 ### 1.4 Export — FL Studio Browser Tags (Legacy/Fallback)
 
-> **Note:** FL Studio Browser export is the current stable integration point but is classified as **legacy/fallback** per the VST3-first product target (Issues [#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95)). The main product path is the VST3 browser/assistant plugin; FL Studio Browser tags remain available for producers who use the CLI pipeline directly.
+> **Note:** FL Studio Browser export is the current stable **external** integration point and remains **legacy/fallback**. The **main product path** is the local Workbench ([`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md)). A VST3 plugin path is parked (#469), not primary.
 
 | ID | Requirement | Priority |
 |---|---|---|
@@ -150,7 +150,7 @@
 
 | ID | Constraint | Value |
 |---|---|---|
-| CST-OS-01 | Primary target OS | Windows 10/11 (FL Studio is first target host, not a hard product dependency — all VST3-capable DAWs are potential hosts) |
+| CST-OS-01 | Primary target OS | Windows 10/11 (local Workbench primary; external DAW optional/parked) |
 | CST-OS-02 | Secondary target OS | macOS (>= 12) and Linux (Ubuntu 22.04+) |
 | CST-PYTHON-01 | Python version | 3.12.10, pinned by `.python-version` |
 | CST-PYTHON-02 | Package manager | pip with `requirements.txt` and optional extras |
@@ -165,9 +165,9 @@
 | CST-STOR-01 | Model cache | Hugging Face cache (`~/.cache/huggingface/`) — system-global, untracked |
 | CST-STOR-02 | Index storage | `data/indexes/` — untracked local artifact |
 | CST-STOR-03 | Report storage | `reports/` — untracked local artifact |
-| CST-PLUGIN-01 | Plugin format target | VST3 is the first plugin format; CLAP optional later (Issues #90–#95) |
-| CST-PLUGIN-02 | Product incarnation | VST3 browser/assistant plugin first; standalone producing app later from the same core |
-| CST-PLUGIN-03 | Host scope | FL Studio is first target host but not a hard dependency — all VST3-capable DAWs are supported |
+| CST-PLUGIN-01 | Optional plugin format (parked) | VST3 candidate if unparked later; CLAP optional; **not** primary product path (#469) |
+| CST-PLUGIN-02 | Primary product incarnation | Local Workbench: Screen 1 → Live Kit → Channel Rack → Arrangement ([`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md)) |
+| CST-PLUGIN-03 | Host scope | External DAW hosting is optional/parked; not required for core workflow |
 
 ---
 
