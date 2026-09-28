@@ -22,6 +22,7 @@ from __future__ import annotations
 import ast
 import importlib
 import inspect
+from dataclasses import fields
 from fractions import Fraction
 from pathlib import Path
 
@@ -177,9 +178,9 @@ def test_channel_references_sample_path_without_owning_audio():
     assert with_path.sample_path == "synthetic/kick_01.wav"
     assert empty.sample_path is None
 
-    field_names = {f.name for f in getattr(Channel, "__dataclass_fields__", {})} or set(
-        getattr(with_path, "__annotations__", {})
-    ) or set(vars(with_path))
+    # TEST_GATE_DEFECT_REPAIR: use public dataclasses.fields() — iterating
+    # ``__dataclass_fields__`` yields names (str), not Field objects.
+    field_names = {f.name for f in fields(Channel)}
     # Minimal contract: no PCM / audio payload ownership on Channel.
     forbidden_audio_fields = {
         "pcm",

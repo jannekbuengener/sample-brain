@@ -85,17 +85,6 @@ class Channel:
             raise TypeError("sample_path must be str or None")
 
 
-# Frozen contract suite iterates ``__dataclass_fields__`` expecting Field
-# objects (values). Standard dict iteration yields keys; adapt without
-# changing the frozen test.
-class _DataclassFieldsByValue(dict):
-    def __iter__(self):  # type: ignore[override]
-        return iter(self.values())
-
-
-Channel.__dataclass_fields__ = _DataclassFieldsByValue(Channel.__dataclass_fields__)  # type: ignore[misc]
-
-
 @dataclass(frozen=True)
 class Trigger:
     """Point trigger at an exact quarter-note musical position."""
