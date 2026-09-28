@@ -26,9 +26,7 @@ def _write_manifest(tmp_path: Path, records: list[object]) -> tuple[Path, Path]:
     manifest_path = tmp_path / "manifest.json"
     sha256_path = tmp_path / "manifest.sha256"
     manifest_path.write_bytes(raw)
-    sha256_path.write_text(
-        f"{hashlib.sha256(raw).hexdigest()}  {manifest_path.name}\n", encoding="utf-8"
-    )
+    sha256_path.write_bytes(f"{hashlib.sha256(raw).hexdigest()}  {manifest_path.name}\n".encode("utf-8"))
     return manifest_path, sha256_path
 
 
@@ -64,6 +62,16 @@ def _write_oversized_integer_manifest(tmp_path: Path) -> tuple[Path, Path, bytes
     sha256_path.write_text(
         f"{hashlib.sha256(raw).hexdigest()}  {manifest_path.name}\n", encoding="utf-8"
     )
+    return manifest_path, sha256_path, raw
+
+
+def _write_deeply_nested_manifest(tmp_path: Path) -> tuple[Path, Path, bytes]:
+    depth = sys.getrecursionlimit() * 4
+    raw = b"[" * depth + b"0" + b"]" * depth
+    manifest_path = tmp_path / "manifest.json"
+    sha256_path = tmp_path / "manifest.sha256"
+    manifest_path.write_bytes(raw)
+    sha256_path.write_bytes(f"{hashlib.sha256(raw).hexdigest()}  {manifest_path.name}\n".encode("utf-8"))
     return manifest_path, sha256_path, raw
 
 
@@ -141,6 +149,20 @@ def test_external_manifest_rejects_oversized_json_integer_with_controlled_error(
     manifest_path, sha256_path, raw = _write_oversized_integer_manifest(tmp_path)
 
     with pytest.raises(ValueError, match="Exceeds the limit"):
+        json.loads(raw)
+    with pytest.raises(JointKeyProfileBenchmarkError, match="UTF-8 JSON"):
+        evaluate_joint_key_profiles(
+            audio_root=tmp_path / "audio",
+            split="TEST",
+            manifest_path=manifest_path,
+            sha256_path=sha256_path,
+        )
+
+
+def test_external_manifest_rejects_deeply_nested_json_with_controlled_error(tmp_path: Path):
+    manifest_path, sha256_path, raw = _write_deeply_nested_manifest(tmp_path)
+
+    with pytest.raises(RecursionError):
         json.loads(raw)
     with pytest.raises(JointKeyProfileBenchmarkError, match="UTF-8 JSON"):
         evaluate_joint_key_profiles(
