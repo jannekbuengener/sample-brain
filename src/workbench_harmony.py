@@ -15,7 +15,11 @@ from .key_signature import (
     key_distance_semitones,
     format_key_signature as fmt_key,
 )
-from .workbench_controller import WorkbenchRow, validate_workbench_matching_reference
+from .workbench_controller import (
+    WorkbenchKeyAnalysisClaim,
+    WorkbenchRow,
+    validate_workbench_matching_reference,
+)
 
 
 class HarmonyRelation(Enum):
@@ -38,6 +42,44 @@ class HarmonySuggestion:
     total_score: float  # 0.0 to 1.0
     pitch_shift_semitones: Optional[int] = None
     explanation: str = ""
+
+
+# ── V2 Harmonic Match eligibility (pure; unwired from rate_harmony) ───
+
+
+def is_harmonic_match_claim_eligible(
+    claim: WorkbenchKeyAnalysisClaim | None,
+) -> bool:
+    """True when a validated modeful V2 claim may be used as a Harmonic Match key.
+
+    Fail closed. Does not consult ``matching_eligible``, ``key_conf``, or
+    evidence blobs. Does not mutate ``claim``.
+    """
+    if claim is None:
+        return False
+    if not claim.valid:
+        return False
+    if claim.contract_version != 2:
+        return False
+    if claim.mode not in {"maj", "min"}:
+        return False
+    parsed = parse_key_signature(claim.key)
+    if parsed is None or parsed.mode is None:
+        return False
+    return claim.mode == parsed.mode
+
+
+def harmonic_match_key_for_row(row: WorkbenchRow) -> str | None:
+    """Resolve a Harmonic Match key string from a Workbench row.
+
+    Prefer an eligible V2 claim key. Otherwise fall back to the existing
+    product ``row.key`` (V1/legacy). Pure: no DB, no mutation, no wiring into
+    ``rate_harmony`` / controller in this slice.
+    """
+    claim = row.key_analysis_claim
+    if claim is not None and is_harmonic_match_claim_eligible(claim):
+        return claim.key
+    return row.key
 
 
 # ── Key Relation Logic ────────────────────────────────────────────────
