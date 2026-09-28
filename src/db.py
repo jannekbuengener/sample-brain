@@ -224,7 +224,7 @@ def _validated_root_evidence(value: object) -> dict[str, Any] | None:
     if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score):
         return None
     if not (
-        -1.0 - _KEY_ANALYSIS_V2_PEARSON_EPSILON
+        -_KEY_ANALYSIS_V2_PEARSON_EPSILON
         <= float(score)
         <= 1.0 + _KEY_ANALYSIS_V2_PEARSON_EPSILON
     ):
@@ -261,7 +261,7 @@ def _validated_mode_evidence(value: object, *, root: str, mode: str | None) -> d
     half_step = _KEY_ANALYSIS_V2_EVIDENCE_QUANTIZATION_HALF_STEP
     directional_modes = (
         {"maj", "min"}
-        if abs(major_energy - minor_energy) <= 2.0 * half_step
+        if major_energy == minor_energy
         else {"maj"}
         if major_energy > minor_energy
         else {"min"}

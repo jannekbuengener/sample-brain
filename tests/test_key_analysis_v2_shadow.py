@@ -359,6 +359,13 @@ def test_sidecar_rejects_noncanonical_root_and_contradictory_mode_evidence(
             sample_id=1, source_identity=identity, result=invalid_pearson_score
         )
 
+    invalid_negative_top_score = _result(root="C", mode=None)
+    invalid_negative_top_score.root_evidence["raw_top_score"] = -0.5
+    with pytest.raises(ValueError, match="root evidence"):
+        write_key_analysis_v2_shadow(
+            sample_id=1, source_identity=identity, result=invalid_negative_top_score
+        )
+
     rounded_pearson_score = _result(root="C", mode=None)
     rounded_pearson_score.root_evidence["raw_top_score"] = 1.0000000000000002
     write_key_analysis_v2_shadow(
@@ -417,6 +424,20 @@ def test_sidecar_rejects_noncanonical_root_and_contradictory_mode_evidence(
         read_key_analysis_v2_shadow(sample_id=1, source_identity=identity)
         == tied_rounded_energies
     )
+
+    adjacent_bins_reversed = _result(root="C", mode="min")
+    adjacent_bins_reversed.mode_evidence.update(
+        {
+            "major_third_energy": 0.000001,
+            "minor_third_energy": 0.0,
+            "contrast": 0.5,
+            "mode": "min",
+        }
+    )
+    with pytest.raises(ValueError, match="mode evidence"):
+        write_key_analysis_v2_shadow(
+            sample_id=1, source_identity=identity, result=adjacent_bins_reversed
+        )
 
     extra_mode_field = _result(root="C", mode=None)
     extra_mode_field.mode_evidence["confidence"] = 1.0
