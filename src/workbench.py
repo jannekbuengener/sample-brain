@@ -265,7 +265,9 @@ def _fmt(value: float | None, *, digits: int = 2) -> str:
 
 
 class WorkbenchApp:
-    def __init__(self, root: tk.Tk) -> None:
+    def __init__(
+        self, root: tk.Tk, *, live_kit_state: LiveKitState | None = None
+    ) -> None:
         self.root = root
         self.root.title("Sample Brain — Local Workbench")
         self.root.configure(bg=BG_DARK)
@@ -299,7 +301,9 @@ class WorkbenchApp:
         )
         self._harmonic_match_selected_index = 0
         self._harmonic_match_context_fingerprint: tuple[object, ...] | None = None
-        self._live_kit_state = LiveKitState()
+        self._live_kit_state = (
+            live_kit_state if live_kit_state is not None else LiveKitState()
+        )
         self._live_kit_presentation = LiveKitPresentationState(self._live_kit_state)
 
         self._build_styles()
