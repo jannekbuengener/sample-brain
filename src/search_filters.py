@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .db import get_engine, text
+from .db import get_engine, read_key_analysis_feature_rows, text
 from .key_signature import parse_key_signature
 
 
@@ -61,6 +61,14 @@ def key_matches_scale(key: str | None, scale: str | None) -> bool:
     return normalized_scale in f"{parsed.root}{parsed.mode}"
 
 
+def _key_matches_exact(record_key: str | None, filter_key: str) -> bool:
+    """Case-insensitive exact comparison matching prior LOWER(f.key) semantics."""
+
+    if record_key is None:
+        return False
+    return record_key.strip().casefold() == filter_key.strip().casefold()
+
+
 def resolve_filtered_sample_ids(filters: SearchFilters | None) -> set[int] | None:
     if filters is None or not filters.active():
         return None
@@ -74,9 +82,8 @@ def resolve_filtered_sample_ids(filters: SearchFilters | None) -> set[int] | Non
     if filters.max_bpm is not None:
         clauses.append("f.bpm <= :max_bpm")
         params["max_bpm"] = filters.max_bpm
-    if filters.key is not None:
-        clauses.append("LOWER(f.key) = :key")
-        params["key"] = filters.key.strip().casefold()
+    # Key/scale are intentionally omitted from SQL: raw features.key is not
+    # version-aware. Validated key claims are applied in Phase 2 below.
     if filters.pred_type is not None:
         clauses.append("LOWER(f.pred_type) = :pred_type")
         params["pred_type"] = filters.pred_type.strip().casefold()
@@ -104,7 +111,7 @@ def resolve_filtered_sample_ids(filters: SearchFilters | None) -> set[int] | Non
         where_sql = "WHERE " + " AND ".join(clauses)
 
     query = f"""
-        SELECT DISTINCT s.id, f.key
+        SELECT DISTINCT s.id
         FROM samples s
         LEFT JOIN features f ON f.sample_id = s.id
         {tag_join}
@@ -114,12 +121,26 @@ def resolve_filtered_sample_ids(filters: SearchFilters | None) -> set[int] | Non
     with engine.begin() as conn:
         rows = conn.execute(text(query), params).fetchall()
 
-    if filters.scale is not None:
-        rows = [
-            row for row in rows if key_matches_scale(row[1], filters.scale)
-        ]
+    candidate_ids = {int(row[0]) for row in rows}
 
-    return {int(row[0]) for row in rows}
+    key_or_scale_active = filters.key is not None or filters.scale is not None
+    if not key_or_scale_active:
+        return candidate_ids
+
+    # Phase 2: version-aware key/scale filter owns only the key dimension.
+    # Reader misses (unknown/malformed/stale) fail closed — no raw-key fallback.
+    key_records = read_key_analysis_feature_rows(sample_ids=candidate_ids)
+    matched: set[int] = set()
+    for sample_id in candidate_ids:
+        record = key_records.get(sample_id)
+        if record is None:
+            continue
+        if filters.key is not None and not _key_matches_exact(record.key, filters.key):
+            continue
+        if filters.scale is not None and not key_matches_scale(record.key, filters.scale):
+            continue
+        matched.add(sample_id)
+    return matched
 
 
 def sync_pred_type_tags() -> int:
