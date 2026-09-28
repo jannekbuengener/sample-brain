@@ -39,6 +39,9 @@ All four steps are implemented and stable.
 | Index | `src/index.py`, `src/vec_index.py`, `src/search_backend.py` | Stable | NumPy cosine index + optional sqlite-vec vec0 cache; `NumpySearchBackend` / `SqliteVecSearchBackend`; default `numpy` |
 | Search | `src/search.py` | Stable | `run_search()` → embedding backend → search backend adapter → ranked hits. NumPy + sqlite-vec paths. |
 | Screen-1 QML renderer | `src/workbench_qml.py` | Optional production baseline | PySide6/Qt Quick renderer with a thin ViewModel/command adapter over the Python-authoritative Workbench core. Starts only through `workbench --qml-screen1`; Tk remains the default and fallback. |
+| Pattern Core | `src/pattern_core.py` | Current | Python-owned `Channel`, `Trigger`, and `Pattern` model with stable Live Kit channel IDs and exact quarter-note `Fraction` positions (#656). |
+| Sequencer Playback | `src/sequencer_playback.py` | Current | One-pass Pattern → `TempoMap` → absolute native engine-frame planning and fail-soft PCM voice scheduling (#663). |
+| Channel Rack Python core | `src/channel_rack.py` | Current | Projects the 11 canonical Live Kit slots into `screen2-main`, owns immutable 16-step toggles, and reuses the sequencer playback seam; QML UI is not yet implemented (#667). |
 
 ### 2.3 EPIC 2 capabilities on `main`
 
@@ -486,7 +489,7 @@ Canonical path: [`docs/PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md).
 
 **Primary — Local Workbench:**
 - Screen 1: Library + Live Kit (partially on `main`; `LOCK_PYSIDE6_QML` for new visuals)
-- Screen 2: Channel Rack (patterns/triggers) — **not built**; requires ownership + pattern core + sequencer playback first
+- Screen 2: Channel Rack (patterns/triggers) — Python core is **implemented** (#667); ownership (#647), Pattern Core (#656), and Sequencer Playback (#663) are green; QML UI is the next layer and is not built yet
 - Screen 3: Arrangement mode — later; not Screen-2 scope
 - Shared cores: Library Intelligence, Matching, Context, optional Transform
 - External DAW is **not** part of the core workflow

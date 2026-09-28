@@ -26,7 +26,7 @@ Capability specs for library, matching, context, and transform cores that feed t
    (VST shell #93 UI remains parked under #469)
 ```
 
-Runtime on `main` today: CLI scan → analyze → autotype → export_fl (legacy FL); optional embed/index/search; matching / context / deconstruct / pack-import as documented; Workbench Screen 1 + Live Kit (Tk + QML path). Channel Rack, Arrangement mode, and VST3 plugin are **not** implemented.
+Runtime on `main` today: CLI scan → analyze → autotype → export_fl (legacy FL); optional embed/index/search; matching / context / deconstruct / pack-import as documented; Workbench Screen 1 + Live Kit (Tk + QML path); Pattern Core, Sequencer Playback, and the Channel Rack Python core. Screen-2 QML UI, Arrangement mode, and VST3 plugin are **not** implemented.
 
 ## Related documents
 
@@ -37,6 +37,6 @@ Runtime on `main` today: CLI scan → analyze → autotype → export_fl (legacy
 | [`docs/TARGET_ARCHITECTURE.md`](../TARGET_ARCHITECTURE.md) | Module boundaries, Workbench-first §10.2 |
 | [`docs/DATA_AND_ARTIFACT_POLICY.md`](../DATA_AND_ARTIFACT_POLICY.md) | Committed vs runtime artifacts |
 | [`docs/DAW_INTEGRATION_SPEC.md`](../DAW_INTEGRATION_SPEC.md) | FL export fallback + parked VST notes |
-| [`docs/PATTERN_CORE_CONTRACT.md`](../PATTERN_CORE_CONTRACT.md) | Minimal Channel / Pattern / Trigger contract (docs gate; next after ownership) |
-| [`docs/SEQUENCER_PLAYBACK_CONTRACT.md`](../SEQUENCER_PLAYBACK_CONTRACT.md) | Pattern → TempoMap → native schedule (docs gate; after Pattern Core) |
+| [`docs/PATTERN_CORE_CONTRACT.md`](../PATTERN_CORE_CONTRACT.md) | Minimal Channel / Pattern / Trigger contract — implemented in `src/pattern_core.py` (#656) |
+| [`docs/SEQUENCER_PLAYBACK_CONTRACT.md`](../SEQUENCER_PLAYBACK_CONTRACT.md) | Pattern → TempoMap → native schedule — implemented in `src/sequencer_playback.py` (#663) |
 | [`docs/SESSION_OWNERSHIP_CONTRACT.md`](../SESSION_OWNERSHIP_CONTRACT.md) | Single Live Kit + QML→native audio ownership (completed on `main`) |
