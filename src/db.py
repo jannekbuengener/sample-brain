@@ -14,10 +14,12 @@ from .content_hash import (
     hash_record,
     normalize_hash_record,
 )
+from .joint_key_profile import SEMITONES as JOINT_KEY_ROOTS
 from .key_signature import format_key_signature
 
 
 KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION = 2
+KEY_ANALYSIS_V2_SHADOW_MODE_CONTRAST_MIN = 0.30
 _KEY_ANALYSIS_V2_ROOT_EVIDENCE_KEYS = frozenset(
     {
         "kind",
@@ -198,7 +200,7 @@ def _validated_root_evidence(value: object) -> dict[str, Any] | None:
         return None
     if value.get("kind") != "joint_24_profile_pearson":
         return None
-    if not isinstance(value.get("selected_root"), str) or not value["selected_root"]:
+    if value.get("selected_root") not in JOINT_KEY_ROOTS:
         return None
     if value.get("raw_top_mode") not in {"maj", "min"}:
         return None
@@ -226,6 +228,24 @@ def _validated_mode_evidence(value: object, *, root: str, mode: str | None) -> d
         number = value[field]
         if isinstance(number, bool) or not isinstance(number, (int, float)) or not math.isfinite(number):
             return None
+    major_energy = float(value["major_third_energy"])
+    minor_energy = float(value["minor_third_energy"])
+    contrast = float(value["contrast"])
+    threshold = float(value["threshold"])
+    expected_contrast = abs(major_energy - minor_energy) / (major_energy + minor_energy + 1e-9)
+    if not math.isclose(contrast, expected_contrast, abs_tol=1.5e-6):
+        return None
+    if threshold != KEY_ANALYSIS_V2_SHADOW_MODE_CONTRAST_MIN:
+        return None
+    expected_mode = (
+        None
+        if contrast < threshold
+        else "maj"
+        if major_energy >= minor_energy
+        else "min"
+    )
+    if mode != expected_mode:
+        return None
     return dict(value)
 
 

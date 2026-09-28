@@ -303,6 +303,43 @@ def test_sidecar_rejects_missing_sample_wrong_contract_and_invalid_hash(tmp_path
     assert read_key_analysis_v2_shadow(sample_id=1, source_identity=identity) is None
 
 
+def test_sidecar_rejects_noncanonical_root_and_contradictory_mode_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _use_temp_db(tmp_path, monkeypatch)
+    db_module.init_db()
+    identity = hash_record("sha256", "a" * 64)
+    _insert_sample(1, identity)
+
+    noncanonical_root = _result(root="H", mode="maj")
+    noncanonical_root.mode_evidence.update(
+        {
+            "major_third_energy": 0.8,
+            "minor_third_energy": 0.2,
+            "contrast": 0.6,
+            "mode": "maj",
+        }
+    )
+    with pytest.raises(ValueError, match="root evidence"):
+        write_key_analysis_v2_shadow(
+            sample_id=1, source_identity=identity, result=noncanonical_root
+        )
+
+    contradictory_mode = _result(root="C", mode="min")
+    contradictory_mode.mode_evidence.update(
+        {
+            "major_third_energy": 1.0,
+            "minor_third_energy": 0.0,
+            "contrast": 1.0,
+            "mode": "min",
+        }
+    )
+    with pytest.raises(ValueError, match="mode evidence"):
+        write_key_analysis_v2_shadow(
+            sample_id=1, source_identity=identity, result=contradictory_mode
+        )
+
+
 def test_sidecar_migrates_legacy_catalog_and_preserves_sha1_semantics(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db_path = _use_temp_db(tmp_path, monkeypatch)
     legacy_identity = hash_record("sha1", "b" * 40)

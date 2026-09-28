@@ -93,6 +93,8 @@ def write_key_analysis_v2_shadow(
 
     if result.contract_version != KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION:
         raise ValueError("unsupported V2 shadow contract version")
+    if result.root_evidence.get("selected_root") != result.root:
+        raise ValueError("V2 shadow root does not match root evidence")
     write_key_analysis_v2_shadow_row(
         sample_id=sample_id,
         source_identity=source_identity,
