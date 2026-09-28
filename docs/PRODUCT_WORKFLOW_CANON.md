@@ -30,7 +30,8 @@ Library / Screen 1
 
 These are product constraints for later implementation. They are **not** a claim that Screen 2 exists.
 
-- Live Kit assignments can be taken into the Channel Rack (kit → channels).
+- Live Kit assignments can be taken into the Channel Rack (kit → channels) as the **initial seed**.
+- The Channel Rack is **not** limited to the fixed Live Kit slot universe; user-added channels with opaque IDs (no fake Live Kit slot) are in scope for the Python core (#681).
 - A sample remains the unchanged library asset; channels **reference** samples and do not duplicate audio files.
 - Channel Rack is **pattern/trigger first** (grid programming).
 - A later piano / event editor may share the same pattern substrate; it is **not** required for Screen-2 v1.

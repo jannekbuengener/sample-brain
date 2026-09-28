@@ -1,8 +1,9 @@
 """Minimal Channel Rack core — Live Kit channels, step grid, one pattern pass.
 
 Projects canonical Live Kit slots into Pattern Core channels, toggles 16th-note
-steps immutably, and schedules one pattern pass through sequencer_playback.
-Musical truth stays Python-owned; this module adds no visual surfaces.
+steps immutably, appends user-added channels without Live Kit provenance, and
+schedules one pattern pass through sequencer_playback. Musical truth stays
+Python-owned; this module adds no visual surfaces.
 """
 
 from __future__ import annotations
@@ -12,7 +13,14 @@ from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any
 
-from .pattern_core import CHANNEL_ID_BY_LIVE_KIT_SLOT, Channel, Pattern, Trigger
+from .pattern_core import (
+    CHANNEL_ID_BY_LIVE_KIT_SLOT,
+    Channel,
+    Pattern,
+    Trigger,
+    allocate_user_channel_id,
+    require_triggers_reference_known_channels,
+)
 from .sequencer_playback import (
     PlaybackScheduleResult,
     plan_pattern_once,
@@ -33,6 +41,15 @@ class ChannelRackState:
     channels: tuple[Channel, ...]
     pattern: Pattern
     step_count: int
+
+    def __post_init__(self) -> None:
+        channel_ids = [channel.channel_id for channel in self.channels]
+        if len(channel_ids) != len(set(channel_ids)):
+            raise ValueError("channels must have unique channel_id values")
+        require_triggers_reference_known_channels(
+            self.pattern.triggers,
+            known_channel_ids=channel_ids,
+        )
 
 
 def build_channel_rack_state(live_kit: LiveKitState) -> ChannelRackState:
@@ -60,6 +77,36 @@ def build_channel_rack_state(live_kit: LiveKitState) -> ChannelRackState:
             triggers=(),
         ),
         step_count=DEFAULT_STEP_COUNT,
+    )
+
+
+def add_user_channel(
+    state: ChannelRackState,
+    *,
+    sample_path: str | None = None,
+    channel_id: str | None = None,
+) -> ChannelRackState:
+    """Append a user-added rack channel without Live Kit provenance."""
+
+    existing_ids = [channel.channel_id for channel in state.channels]
+    new_id = (
+        channel_id
+        if channel_id is not None
+        else allocate_user_channel_id(existing_ids)
+    )
+    if new_id in existing_ids:
+        raise ValueError(f"Duplicate channel_id: {new_id!r}")
+
+    new_channel = Channel(
+        channel_id=new_id,
+        live_kit_group=None,
+        live_kit_slot=None,
+        sample_path=sample_path,
+    )
+    return ChannelRackState(
+        channels=state.channels + (new_channel,),
+        pattern=state.pattern,
+        step_count=state.step_count,
     )
 
 
@@ -135,6 +182,7 @@ def play_channel_rack_once(
 
 __all__ = [
     "ChannelRackState",
+    "add_user_channel",
     "build_channel_rack_state",
     "play_channel_rack_once",
     "toggle_step",
