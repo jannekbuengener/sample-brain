@@ -26,6 +26,7 @@ from src.workbench_controller import (
     add_workbench_library_folder,
     export_workbench_rows_to_csv,
     import_catalog_rows_to_cache,
+    row_as_dict,
     workbench_row_to_fl_sample_row,
     workbench_scope_requires_refresh,
 )
@@ -348,6 +349,11 @@ def test_v2_claim_transport_does_not_activate_public_consumers(
     assert "key_analysis_claim" not in playlist
     assert playlist["key"] is None
     assert playlist["key_conf"] is None
+
+    as_dict = row_as_dict(projected)
+    assert "key_analysis_claim" not in as_dict
+    assert as_dict["key"] is None
+    assert as_dict["key_conf"] is None
 
     payload = WorkbenchResult(summary={"ok": 1}, rows=[projected]).to_dict()
     assert "key_analysis_claim" not in payload["rows"][0]

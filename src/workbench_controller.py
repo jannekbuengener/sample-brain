@@ -781,7 +781,14 @@ def analyze_folder_for_workbench(
 
 
 def row_as_dict(row: WorkbenchRow) -> dict[str, Any]:
-    return asdict(row)
+    """Serialize a row for playlist/CSV-style consumers.
+
+    Omits ``key_analysis_claim`` so internal provenance does not enter the
+    public dictionary schema used by CSV and similar allowlisted callers.
+    """
+    data = asdict(row)
+    data.pop("key_analysis_claim", None)
+    return data
 
 
 PLAYLIST_CSV_FIELDS: tuple[str, ...] = (
