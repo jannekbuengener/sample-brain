@@ -694,6 +694,19 @@ def _key_analysis_feature_record_from_row(row: Mapping[str, Any]) -> KeyAnalysis
     )
 
 
+def decode_key_analysis_feature_record(
+    row: Mapping[str, Any],
+) -> KeyAnalysisFeatureRecord | None:
+    """Pure version-aware decoder for one ``features`` mapping.
+
+    This is the canonical DB-independent boundary for read-only consumers.
+    It performs no I/O or schema mutation and intentionally shares the exact
+    validation semantics used by the single/batch catalog readers.
+    """
+
+    return _key_analysis_feature_record_from_row(row)
+
+
 _KEY_ANALYSIS_FEATURE_SELECT = """
 SELECT sample_id, key, key_conf, key_mode, key_mode_evidence,
        key_analysis_contract_version, key_root_evidence
@@ -712,7 +725,7 @@ def read_key_analysis_feature_row(*, sample_id: int) -> KeyAnalysisFeatureRecord
         ).mappings().fetchone()
     if row is None:
         return None
-    return _key_analysis_feature_record_from_row(dict(row))
+    return decode_key_analysis_feature_record(dict(row))
 
 
 def read_key_analysis_feature_rows(
@@ -735,7 +748,7 @@ def read_key_analysis_feature_rows(
 
     result: dict[int, KeyAnalysisFeatureRecord] = {}
     for row in rows:
-        record = _key_analysis_feature_record_from_row(dict(row))
+        record = decode_key_analysis_feature_record(dict(row))
         if record is not None:
             result[record.sample_id] = record
     return result

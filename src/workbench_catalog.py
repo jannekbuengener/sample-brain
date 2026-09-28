@@ -7,21 +7,44 @@ from pathlib import Path, PurePath
 from typing import Any
 
 from . import config
+from .db import KeyAnalysisFeatureRecord, decode_key_analysis_feature_record
 from .workbench_library import normalize_display_name
 
 CATALOG_SOURCE = "catalog"
 CATALOG_LIBRARY_FOLDER_LABEL = "catalog.db (read-only)"
 DEFAULT_CATALOG_LOAD_LIMIT = 5000
 
-_CATALOG_SELECT_SQL = """
+_OPTIONAL_KEY_COLUMNS = (
+    "key_mode",
+    "key_mode_evidence",
+    "key_analysis_contract_version",
+    "key_root_evidence",
+)
+
+
+def _optional_feature_expr(feature_columns: set[str], column: str) -> str:
+    if column in feature_columns:
+        return f"f.{column}"
+    return f"NULL AS {column}"
+
+
+def _catalog_select_sql(feature_columns: set[str]) -> str:
+    optional_key_fields = ",\n    ".join(
+        _optional_feature_expr(feature_columns, column)
+        for column in _OPTIONAL_KEY_COLUMNS
+    )
+    return f"""
 SELECT
+    s.id AS sample_id,
     s.path,
     s.relpath,
     s.size_bytes,
     s.duration,
+    f.sample_id AS feature_sample_id,
     f.bpm,
     f.key,
     f.key_conf,
+    {optional_key_fields},
     f.loudness,
     f.brightness,
     f.class,
@@ -83,6 +106,13 @@ class CatalogSampleRow:
     pred_type: str | None
     status: str
     source: str = CATALOG_SOURCE
+    key_claim: str | None = None
+    key_mode: str | None = None
+    key_analysis_contract_version: int | None = None
+    key_claim_valid: bool = False
+    key_matching_eligible: bool = False
+    key_root_evidence_kind: str | None = None
+    key_mode_evidence_kind: str | None = None
 
     def to_workbench_row(self) -> Any:
         from .workbench_controller import WorkbenchRow
@@ -119,8 +149,37 @@ class CatalogSampleRow:
         )
 
 
+def _decode_catalog_key_claim(row: sqlite3.Row) -> KeyAnalysisFeatureRecord | None:
+    if row["feature_sample_id"] is None:
+        return None
+    return decode_key_analysis_feature_record(
+        {
+            "sample_id": row["sample_id"],
+            "key": row["key"],
+            "key_conf": row["key_conf"],
+            "key_mode": row["key_mode"],
+            "key_mode_evidence": row["key_mode_evidence"],
+            "key_analysis_contract_version": row["key_analysis_contract_version"],
+            "key_root_evidence": row["key_root_evidence"],
+        }
+    )
+
+
 def _catalog_row_from_sqlite(row: sqlite3.Row) -> CatalogSampleRow:
     path = row["path"]
+    record = _decode_catalog_key_claim(row)
+    valid_claim = record is not None and record.key is not None
+    legacy_v1 = valid_claim and record.key_analysis_contract_version is None
+    root_kind = (
+        record.key_root_evidence.get("kind")
+        if record is not None and record.key_root_evidence is not None
+        else None
+    )
+    mode_kind = (
+        record.key_mode_evidence.get("kind")
+        if record is not None and record.key_mode_evidence is not None
+        else None
+    )
     return CatalogSampleRow(
         path=path,
         relative_path=row["relpath"] or "",
@@ -128,13 +187,26 @@ def _catalog_row_from_sqlite(row: sqlite3.Row) -> CatalogSampleRow:
         size_bytes=row["size_bytes"],
         duration=row["duration"],
         bpm=row["bpm"],
-        key=row["key"],
-        key_conf=row["key_conf"],
+        # Boundary: only legacy V1 remains downstream-eligible in #661.
+        # Valid V2 is retained as a catalog claim below but is not projected
+        # into WorkbenchRow.key/key_conf, so Harmony/cache behavior cannot
+        # activate implicitly.
+        key=record.key if legacy_v1 else None,
+        key_conf=record.key_conf if legacy_v1 else None,
         loudness=row["loudness"],
         brightness=row["brightness"],
         sample_class=row["class"],
         pred_type=row["pred_type"],
         status=row["analysis_status"],
+        key_claim=record.key if valid_claim else None,
+        key_mode=record.key_mode if valid_claim else None,
+        key_analysis_contract_version=(
+            record.key_analysis_contract_version if valid_claim else None
+        ),
+        key_claim_valid=valid_claim,
+        key_matching_eligible=legacy_v1,
+        key_root_evidence_kind=root_kind if valid_claim else None,
+        key_mode_evidence_kind=mode_kind if valid_claim else None,
     )
 
 
@@ -148,18 +220,21 @@ def load_catalog_samples(
     if not catalog_available(db_path):
         return []
 
-    sql = _CATALOG_SELECT_SQL
     params: tuple[Any, ...] = ()
-    if limit is not None:
-        if limit < 0:
-            raise ValueError("limit must be non-negative")
-        sql = sql.rstrip() + "\nLIMIT ?"
-        params = (limit,)
-
     try:
         conn = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
         try:
+            feature_columns = {
+                str(column[1])
+                for column in conn.execute("PRAGMA table_info(features)").fetchall()
+            }
+            sql = _catalog_select_sql(feature_columns)
+            if limit is not None:
+                if limit < 0:
+                    raise ValueError("limit must be non-negative")
+                sql = sql.rstrip() + "\nLIMIT ?"
+                params = (limit,)
             rows = conn.execute(sql, params).fetchall()
         finally:
             conn.close()
