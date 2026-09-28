@@ -114,6 +114,12 @@ def _validate_manifest_record(record: object, *, index: int) -> None:
     sample_id = record.get("public_sample_id")
     if not isinstance(sample_id, str) or not sample_id.isdecimal():
         raise JointKeyProfileBenchmarkError(f"manifest record {index} public_sample_id must be decimal")
+    try:
+        int(sample_id)
+    except ValueError as exc:
+        raise JointKeyProfileBenchmarkError(
+            f"manifest record {index} public_sample_id must be convertible to integer"
+        ) from exc
     if record.get("split") not in {"CALIBRATION", "TEST"}:
         raise JointKeyProfileBenchmarkError(
             f"manifest record {index} split must be CALIBRATION or TEST"

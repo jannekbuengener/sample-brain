@@ -149,3 +149,25 @@ def test_external_manifest_rejects_oversized_json_integer_with_controlled_error(
             manifest_path=manifest_path,
             sha256_path=sha256_path,
         )
+
+
+def test_external_manifest_rejects_oversized_decimal_sample_id_with_controlled_error(
+    tmp_path: Path,
+):
+    sample_id = "1" * (sys.get_int_max_str_digits() + 1)
+    manifest_path, sha256_path = _write_manifest(
+        tmp_path, [{**_valid_manifest_record(), "public_sample_id": sample_id}]
+    )
+
+    parsed = json.loads(manifest_path.read_bytes())
+    assert parsed["records"][0]["public_sample_id"] == sample_id
+    assert sample_id.isdecimal()
+    with pytest.raises(ValueError, match="Exceeds the limit"):
+        int(sample_id)
+    with pytest.raises(JointKeyProfileBenchmarkError, match="convertible to integer"):
+        evaluate_joint_key_profiles(
+            audio_root=tmp_path / "audio",
+            split="TEST",
+            manifest_path=manifest_path,
+            sha256_path=sha256_path,
+        )
