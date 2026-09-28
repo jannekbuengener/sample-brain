@@ -612,8 +612,16 @@ def test_sidecar_migrates_legacy_catalog_and_preserves_sha1_semantics(tmp_path: 
     }
     with engine.begin() as conn:
         feature_columns = {row[1] for row in conn.execute(text("PRAGMA table_info(features)"))}
-    assert "key_analysis_contract_version" not in feature_columns
-    assert "key_root_evidence" not in feature_columns
+    assert "key_analysis_contract_version" in feature_columns
+    assert "key_root_evidence" in feature_columns
+    with engine.begin() as conn:
+        additive = conn.execute(
+            text(
+                "SELECT key_analysis_contract_version, key_root_evidence "
+                "FROM features WHERE sample_id = 1"
+            )
+        ).one()
+    assert additive == (None, None)
     assert legacy == ("C", 0.5)
     assert db_module.find_sample_identity_by_path("legacy.wav") == (1, legacy_identity)
 

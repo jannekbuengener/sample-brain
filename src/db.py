@@ -117,6 +117,9 @@ def init_db():
         """))
 
         # features (mit pred_type!)
+        # V2 key-analysis target columns are additive and nullable. Existing V1
+        # rows intentionally keep NULL contract/root-evidence until an explicit
+        # V2 upsert writes them; there is no backfill.
         conn.execute(text("""
         CREATE TABLE IF NOT EXISTS features (
             sample_id INTEGER PRIMARY KEY,
@@ -134,14 +137,18 @@ def init_db():
             quality_note TEXT,
             key_mode TEXT,
             key_mode_evidence TEXT,
+            key_analysis_contract_version INTEGER,
+            key_root_evidence TEXT,
             FOREIGN KEY(sample_id) REFERENCES samples(id)
         );
         """))
         feature_cols = conn.execute(text("PRAGMA table_info(features)")).fetchall()
         feature_col_names = {column[1] for column in feature_cols}
-        for column_name in ("quality_note", "key_mode", "key_mode_evidence"):
+        for column_name in ("quality_note", "key_mode", "key_mode_evidence", "key_root_evidence"):
             if column_name not in feature_col_names:
                 conn.execute(text(f"ALTER TABLE features ADD COLUMN {column_name} TEXT"))
+        if "key_analysis_contract_version" not in feature_col_names:
+            conn.execute(text("ALTER TABLE features ADD COLUMN key_analysis_contract_version INTEGER"))
 
         # embedding models registry
         conn.execute(text("""
@@ -358,6 +365,78 @@ def _read_json_object(value: object) -> dict[str, Any] | None:
     except (TypeError, ValueError, json.JSONDecodeError):
         return None
     return decoded if isinstance(decoded, dict) else None
+
+
+def write_key_analysis_v2_features_row(
+    *,
+    sample_id: int,
+    key: str,
+    key_mode: str | None,
+    key_root_evidence: Mapping[str, Any],
+    key_mode_evidence: Mapping[str, Any] | None,
+    contract_version: int = KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION,
+) -> None:
+    """Atomically upsert only the V2 key contract into ``features``.
+
+    Unrelated feature columns are preserved on conflict. ``key_conf`` is always
+    written as NULL; callers cannot supply an alternate V2 confidence value.
+    """
+
+    if contract_version != KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION:
+        raise ValueError("unsupported V2 key analysis contract version")
+    if key_mode not in {"maj", "min", None}:
+        raise ValueError("invalid V2 key mode")
+    if not isinstance(key, str) or not key:
+        raise ValueError("V2 features key must be a non-empty canonical string")
+    root_evidence = _validated_root_evidence(dict(key_root_evidence))
+    if root_evidence is None:
+        raise ValueError("invalid V2 key root evidence")
+    mode_evidence = _validated_mode_evidence(
+        dict(key_mode_evidence) if key_mode_evidence is not None else None,
+        root=root_evidence["selected_root"],
+        mode=key_mode,
+    )
+    if mode_evidence is None:
+        raise ValueError("invalid V2 key mode evidence")
+    if key != format_key_signature(root_evidence["selected_root"], key_mode):
+        raise ValueError("V2 features key does not match root and mode evidence")
+
+    engine = get_engine()
+    with engine.begin() as conn:
+        sample = conn.execute(
+            text("SELECT id FROM samples WHERE id = :sample_id"),
+            {"sample_id": sample_id},
+        ).fetchone()
+        if sample is None:
+            raise ValueError("sample does not exist")
+        conn.execute(
+            text(
+                """
+                INSERT INTO features (
+                    sample_id, key, key_conf, key_mode, key_mode_evidence,
+                    key_analysis_contract_version, key_root_evidence
+                ) VALUES (
+                    :sample_id, :key, NULL, :key_mode, :key_mode_evidence,
+                    :contract_version, :key_root_evidence
+                )
+                ON CONFLICT(sample_id) DO UPDATE SET
+                    key=excluded.key,
+                    key_conf=NULL,
+                    key_mode=excluded.key_mode,
+                    key_mode_evidence=excluded.key_mode_evidence,
+                    key_analysis_contract_version=excluded.key_analysis_contract_version,
+                    key_root_evidence=excluded.key_root_evidence
+                """
+            ),
+            {
+                "sample_id": sample_id,
+                "key": key,
+                "key_mode": key_mode,
+                "key_mode_evidence": _serialize_key_analysis_v2_evidence(mode_evidence),
+                "contract_version": contract_version,
+                "key_root_evidence": _serialize_key_analysis_v2_evidence(root_evidence),
+            },
+        )
 
 
 def write_key_analysis_v2_shadow_row(

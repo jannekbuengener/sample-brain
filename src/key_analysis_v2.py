@@ -16,6 +16,7 @@ from .analyze import _chroma_mean, estimate_key_mode
 from .db import (
     KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION,
     read_key_analysis_v2_shadow_row,
+    write_key_analysis_v2_features_row,
     write_key_analysis_v2_shadow_row,
 )
 from .joint_key_profile import JointKeyProfileError, rank_joint_key_profiles
@@ -86,6 +87,31 @@ def estimate_key_v2_shadow(y: np.ndarray, sr: int) -> KeyAnalysisV2Result | None
     )
 
 
+def write_key_analysis_v2_features(*, sample_id: int, result: KeyAnalysisV2Result) -> None:
+    """Persist an explicitly requested V2 key contract into ``features``.
+
+    This is not the analyzer default. ``key_conf`` is always NULL; unrelated
+    non-key feature columns are preserved when a row already exists.
+    """
+
+    if result.contract_version != KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION:
+        raise ValueError("unsupported V2 key analysis contract version")
+    if result.root_evidence.get("selected_root") != result.root:
+        raise ValueError("V2 features root does not match root evidence")
+    if result.mode_evidence.get("mode") != result.mode:
+        raise ValueError("V2 features mode does not match mode evidence")
+    if result.key != format_key_signature(result.root, result.mode):
+        raise ValueError("V2 features key does not match root and mode")
+    write_key_analysis_v2_features_row(
+        sample_id=sample_id,
+        key=result.key,
+        key_mode=result.mode,
+        key_root_evidence=result.root_evidence,
+        key_mode_evidence=result.mode_evidence,
+        contract_version=result.contract_version,
+    )
+
+
 def write_key_analysis_v2_shadow(
     *,
     sample_id: int,
@@ -137,5 +163,6 @@ __all__ = [
     "estimate_key_v2_shadow",
     "read_key_analysis_v2_shadow",
     "serialize_key_analysis_v2_evidence",
+    "write_key_analysis_v2_features",
     "write_key_analysis_v2_shadow",
 ]
