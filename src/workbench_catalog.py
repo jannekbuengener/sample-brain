@@ -115,7 +115,7 @@ class CatalogSampleRow:
     key_mode_evidence_kind: str | None = None
 
     def to_workbench_row(self) -> Any:
-        from .workbench_controller import WorkbenchRow
+        from .workbench_controller import WorkbenchKeyAnalysisClaim, WorkbenchRow
 
         details: dict[str, Any] = {
             "path": self.path,
@@ -130,6 +130,18 @@ class CatalogSampleRow:
             details["duration"] = self.duration
 
         relative_path = self.relative_path or PurePath(self.path).name
+
+        key_analysis_claim = None
+        if self.key_claim_valid and self.key_claim is not None:
+            key_analysis_claim = WorkbenchKeyAnalysisClaim(
+                key=self.key_claim,
+                mode=self.key_mode,
+                contract_version=self.key_analysis_contract_version,
+                valid=True,
+                matching_eligible=self.key_matching_eligible,
+                root_evidence_kind=self.key_root_evidence_kind,
+                mode_evidence_kind=self.key_mode_evidence_kind,
+            )
 
         return WorkbenchRow(
             display_name=self.display_name,
@@ -146,6 +158,7 @@ class CatalogSampleRow:
             error=None,
             error_code=None,
             details=details,
+            key_analysis_claim=key_analysis_claim,
         )
 
 
