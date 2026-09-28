@@ -1,7 +1,7 @@
 import json
 import math
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
 from sqlalchemy import create_engine, event, text
@@ -29,6 +29,19 @@ _KEY_ANALYSIS_V2_ROOT_EVIDENCE_KEYS = frozenset(
         "raw_top_mode_authoritative",
     }
 )
+_KEY_ANALYSIS_V2_MODE_EVIDENCE_KEYS = frozenset(
+    {
+        "kind",
+        "major_third_energy",
+        "minor_third_energy",
+        "contrast",
+        "threshold",
+        "mode",
+        "root",
+        "root_source",
+    }
+)
+_KEY_ANALYSIS_V2_EVIDENCE_QUANTIZATION_HALF_STEP = 0.5e-6
 
 
 @dataclass(frozen=True)
@@ -215,7 +228,7 @@ def _validated_root_evidence(value: object) -> dict[str, Any] | None:
 
 
 def _validated_mode_evidence(value: object, *, root: str, mode: str | None) -> dict[str, Any] | None:
-    if not isinstance(value, dict):
+    if not isinstance(value, dict) or set(value) != _KEY_ANALYSIS_V2_MODE_EVIDENCE_KEYS:
         return None
     if value.get("kind") != "third_contrast":
         return None
@@ -234,10 +247,9 @@ def _validated_mode_evidence(value: object, *, root: str, mode: str | None) -> d
     minor_energy = float(value["minor_third_energy"])
     contrast = float(value["contrast"])
     threshold = float(value["threshold"])
-    if major_energy < 0.0 or minor_energy < 0.0:
+    if major_energy < 0.0 or minor_energy < 0.0 or contrast < 0.0:
         return None
-    expected_contrast = abs(major_energy - minor_energy) / (major_energy + minor_energy + 1e-9)
-    if not math.isclose(contrast, expected_contrast, abs_tol=1.5e-6):
+    if not _third_contrast_matches_quantized_evidence(major_energy, minor_energy, contrast):
         return None
     if threshold != KEY_ANALYSIS_V2_SHADOW_MODE_CONTRAST_MIN:
         return None
@@ -256,6 +268,39 @@ def _validated_mode_evidence(value: object, *, root: str, mode: str | None) -> d
     if mode not in expected_modes:
         return None
     return dict(value)
+
+
+def _third_contrast_matches_quantized_evidence(
+    major_energy: float, minor_energy: float, contrast: float
+) -> bool:
+    """Check whether six-decimal evidence can originate from one raw contrast."""
+
+    half_step = _KEY_ANALYSIS_V2_EVIDENCE_QUANTIZATION_HALF_STEP
+    major_bounds = (max(0.0, major_energy - half_step), major_energy + half_step)
+    minor_bounds = (max(0.0, minor_energy - half_step), minor_energy + half_step)
+    candidates = [
+        abs(major - minor) / (major + minor + 1e-9)
+        for major in major_bounds
+        for minor in minor_bounds
+    ]
+    if major_bounds[0] <= minor_bounds[1] and minor_bounds[0] <= major_bounds[1]:
+        candidates.append(0.0)
+    raw_lower, raw_upper = min(candidates), max(candidates)
+    stored_lower = max(0.0, contrast - half_step)
+    stored_upper = contrast + half_step
+    return raw_lower <= stored_upper and stored_lower <= raw_upper
+
+
+def _validated_utc_timestamp(value: object) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
+        return None
+    return value
 
 
 def _read_json_object(value: object) -> dict[str, Any] | None:
@@ -300,9 +345,9 @@ def write_key_analysis_v2_shadow_row(
         raise ValueError("invalid V2 key mode evidence")
     if key != format_key_signature(root_evidence["selected_root"], key_mode):
         raise ValueError("V2 shadow key does not match root and mode evidence")
-    timestamp = analyzed_at or datetime.now(timezone.utc).isoformat()
-    if not isinstance(timestamp, str) or not timestamp:
-        raise ValueError("analyzed_at must be a non-empty UTC timestamp string")
+    timestamp = _validated_utc_timestamp(analyzed_at or datetime.now(timezone.utc).isoformat())
+    if timestamp is None:
+        raise ValueError("analyzed_at must be an explicit UTC timestamp string")
 
     engine = get_engine()
     with engine.begin() as conn:
@@ -387,7 +432,8 @@ def read_key_analysis_v2_shadow_row(
         return None
     if row[4] != format_key_signature(root_evidence["selected_root"], key_mode):
         return None
-    if not isinstance(row[8], str) or not row[8]:
+    timestamp = _validated_utc_timestamp(row[8])
+    if timestamp is None:
         return None
     return KeyAnalysisV2ShadowRow(
         sample_id=int(row[0]),
@@ -397,7 +443,7 @@ def read_key_analysis_v2_shadow_row(
         key_mode=key_mode,
         key_root_evidence=root_evidence,
         key_mode_evidence=mode_evidence,
-        analyzed_at=row[8],
+        analyzed_at=timestamp,
     )
 
 

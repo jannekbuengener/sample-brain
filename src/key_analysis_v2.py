@@ -87,7 +87,11 @@ def estimate_key_v2_shadow(y: np.ndarray, sr: int) -> KeyAnalysisV2Result | None
 
 
 def write_key_analysis_v2_shadow(
-    *, sample_id: int, source_identity: object, result: KeyAnalysisV2Result
+    *,
+    sample_id: int,
+    source_identity: object,
+    result: KeyAnalysisV2Result,
+    analyzed_at: str | None = None,
 ) -> None:
     """Persist a caller-requested V2 shadow result; never writes ``features``."""
 
@@ -103,6 +107,7 @@ def write_key_analysis_v2_shadow(
         key_root_evidence=result.root_evidence,
         key_mode_evidence=result.mode_evidence,
         contract_version=result.contract_version,
+        analyzed_at=analyzed_at,
     )
 
 

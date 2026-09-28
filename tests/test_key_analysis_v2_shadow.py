@@ -375,6 +375,43 @@ def test_sidecar_rejects_noncanonical_root_and_contradictory_mode_evidence(
         == rounded_abstention
     )
 
+    independently_rounded_evidence = _result(root="C", mode=None)
+    independently_rounded_evidence.mode_evidence.update(
+        {
+            "major_third_energy": 0.023106,
+            "minor_third_energy": 0.026421,
+            "contrast": 0.066928,
+        }
+    )
+    write_key_analysis_v2_shadow(
+        sample_id=1, source_identity=identity, result=independently_rounded_evidence
+    )
+    assert (
+        read_key_analysis_v2_shadow(sample_id=1, source_identity=identity)
+        == independently_rounded_evidence
+    )
+
+    extra_mode_field = _result(root="C", mode=None)
+    extra_mode_field.mode_evidence["confidence"] = 1.0
+    with pytest.raises(ValueError, match="mode evidence"):
+        write_key_analysis_v2_shadow(
+            sample_id=1, source_identity=identity, result=extra_mode_field
+        )
+
+    with pytest.raises(ValueError, match="analyzed_at"):
+        write_key_analysis_v2_shadow(
+            sample_id=1,
+            source_identity=identity,
+            result=_result(),
+            analyzed_at="not-a-date",
+        )
+
+    with db_module.get_engine().begin() as conn:
+        conn.execute(
+            text("UPDATE key_analysis_v2_shadow SET analyzed_at = 'not-a-date' WHERE sample_id = 1")
+        )
+    assert read_key_analysis_v2_shadow(sample_id=1, source_identity=identity) is None
+
 
 def test_sidecar_migrates_legacy_catalog_and_preserves_sha1_semantics(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db_path = _use_temp_db(tmp_path, monkeypatch)
