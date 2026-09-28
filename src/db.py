@@ -2,7 +2,7 @@ import json
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from sqlalchemy import create_engine, event, text
 from pathlib import Path
@@ -57,6 +57,23 @@ class KeyAnalysisV2ShadowRow:
     key_root_evidence: dict[str, Any]
     key_mode_evidence: dict[str, Any] | None
     analyzed_at: str
+
+
+@dataclass(frozen=True)
+class KeyAnalysisFeatureRecord:
+    """Version-aware catalog key claim from ``features`` (#650).
+
+    ``key_analysis_contract_version is None`` means legacy V1 (no backfill to 1).
+    V2 claims require ``version==2``, ``key_conf is None``, and validated evidence.
+    """
+
+    sample_id: int
+    key: str | None
+    key_conf: float | None
+    key_mode: str | None
+    key_mode_evidence: dict[str, Any] | None
+    key_analysis_contract_version: int | None
+    key_root_evidence: dict[str, Any] | None
 
 
 def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
@@ -582,6 +599,146 @@ def read_key_analysis_v2_shadow_row(
         key_mode_evidence=mode_evidence,
         analyzed_at=timestamp,
     )
+
+
+def _normalize_v1_key_mode(value: object) -> str | None:
+    if value is None:
+        return None
+    if value in {"maj", "min"}:
+        return str(value)
+    return None
+
+
+def _decode_v1_key_mode_evidence(value: object) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    return _read_json_object(value)
+
+
+def _coerce_optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
+    if not math.isfinite(number):
+        return None
+    return number
+
+
+def _key_analysis_feature_record_from_row(row: Mapping[str, Any]) -> KeyAnalysisFeatureRecord | None:
+    """Decode one ``features`` row into a version-aware key claim, or miss."""
+
+    sample_id = row.get("sample_id")
+    if not isinstance(sample_id, int):
+        try:
+            sample_id = int(sample_id)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+
+    version = row.get("key_analysis_contract_version")
+    if version is None:
+        key = row.get("key")
+        if key is not None and not isinstance(key, str):
+            return None
+        return KeyAnalysisFeatureRecord(
+            sample_id=sample_id,
+            key=key,
+            key_conf=_coerce_optional_float(row.get("key_conf")),
+            key_mode=_normalize_v1_key_mode(row.get("key_mode")),
+            key_mode_evidence=_decode_v1_key_mode_evidence(row.get("key_mode_evidence")),
+            key_analysis_contract_version=None,
+            key_root_evidence=None,
+        )
+
+    try:
+        version_int = int(version)
+    except (TypeError, ValueError):
+        return None
+    if version_int != KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION:
+        return None
+    if row.get("key_conf") is not None:
+        return None
+
+    key = row.get("key")
+    if not isinstance(key, str) or not key:
+        return None
+    key_mode = row.get("key_mode")
+    if key_mode not in {"maj", "min", None}:
+        return None
+
+    root_evidence = _validated_root_evidence(_read_json_object(row.get("key_root_evidence")))
+    if root_evidence is None:
+        return None
+    mode_evidence = _validated_mode_evidence(
+        _read_json_object(row.get("key_mode_evidence")),
+        root=root_evidence["selected_root"],
+        mode=key_mode,
+    )
+    if mode_evidence is None:
+        return None
+    if key != format_key_signature(root_evidence["selected_root"], key_mode):
+        return None
+
+    return KeyAnalysisFeatureRecord(
+        sample_id=sample_id,
+        key=key,
+        key_conf=None,
+        key_mode=key_mode,
+        key_mode_evidence=mode_evidence,
+        key_analysis_contract_version=KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION,
+        key_root_evidence=root_evidence,
+    )
+
+
+_KEY_ANALYSIS_FEATURE_SELECT = """
+SELECT sample_id, key, key_conf, key_mode, key_mode_evidence,
+       key_analysis_contract_version, key_root_evidence
+FROM features
+"""
+
+
+def read_key_analysis_feature_row(*, sample_id: int) -> KeyAnalysisFeatureRecord | None:
+    """Return a version-aware key claim for one sample, or ``None`` on miss."""
+
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(_KEY_ANALYSIS_FEATURE_SELECT + " WHERE sample_id = :sample_id"),
+            {"sample_id": sample_id},
+        ).mappings().fetchone()
+    if row is None:
+        return None
+    return _key_analysis_feature_record_from_row(dict(row))
+
+
+def read_key_analysis_feature_rows(
+    *, sample_ids: Iterable[int]
+) -> dict[int, KeyAnalysisFeatureRecord]:
+    """Return validated key claims keyed by ``sample_id``; misses are omitted."""
+
+    ids = sorted({int(sample_id) for sample_id in sample_ids})
+    if not ids:
+        return {}
+
+    placeholders = ", ".join(f":id{index}" for index in range(len(ids)))
+    params = {f"id{index}": sample_id for index, sample_id in enumerate(ids)}
+    engine = get_engine()
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(_KEY_ANALYSIS_FEATURE_SELECT + f" WHERE sample_id IN ({placeholders})"),
+            params,
+        ).mappings().fetchall()
+
+    result: dict[int, KeyAnalysisFeatureRecord] = {}
+    for row in rows:
+        record = _key_analysis_feature_record_from_row(dict(row))
+        if record is not None:
+            result[record.sample_id] = record
+    return result
 
 
 def upsert_embedding_model(

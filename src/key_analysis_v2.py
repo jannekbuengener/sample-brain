@@ -15,6 +15,9 @@ import numpy as np
 from .analyze import _chroma_mean, estimate_key_mode
 from .db import (
     KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION,
+    KeyAnalysisFeatureRecord,
+    read_key_analysis_feature_row,
+    read_key_analysis_feature_rows,
     read_key_analysis_v2_shadow_row,
     write_key_analysis_v2_features_row,
     write_key_analysis_v2_shadow_row,
@@ -159,8 +162,11 @@ def read_key_analysis_v2_shadow(
 
 __all__ = [
     "KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION",
+    "KeyAnalysisFeatureRecord",
     "KeyAnalysisV2Result",
     "estimate_key_v2_shadow",
+    "read_key_analysis_feature_row",
+    "read_key_analysis_feature_rows",
     "read_key_analysis_v2_shadow",
     "serialize_key_analysis_v2_evidence",
     "write_key_analysis_v2_features",
