@@ -1,3 +1,9 @@
+import json
+import math
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Any, Mapping
+
 from sqlalchemy import create_engine, event, text
 from pathlib import Path
 
@@ -6,7 +12,51 @@ from .content_hash import (
     DEFAULT_CONTENT_HASH_ALGORITHM,
     LEGACY_CONTENT_HASH_ALGORITHM,
     hash_record,
+    normalize_hash_record,
 )
+from .joint_key_profile import SEMITONES as JOINT_KEY_ROOTS
+from .key_signature import format_key_signature
+
+
+KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION = 2
+KEY_ANALYSIS_V2_SHADOW_MODE_CONTRAST_MIN = 0.30
+_KEY_ANALYSIS_V2_ROOT_EVIDENCE_KEYS = frozenset(
+    {
+        "kind",
+        "selected_root",
+        "raw_top_score",
+        "raw_top_mode",
+        "raw_top_mode_authoritative",
+    }
+)
+_KEY_ANALYSIS_V2_MODE_EVIDENCE_KEYS = frozenset(
+    {
+        "kind",
+        "major_third_energy",
+        "minor_third_energy",
+        "contrast",
+        "threshold",
+        "mode",
+        "root",
+        "root_source",
+    }
+)
+_KEY_ANALYSIS_V2_EVIDENCE_QUANTIZATION_HALF_STEP = 0.5e-6
+_KEY_ANALYSIS_V2_PEARSON_EPSILON = 1e-12
+
+
+@dataclass(frozen=True)
+class KeyAnalysisV2ShadowRow:
+    """Validated, explicitly requested V2-shadow data for one catalog sample."""
+
+    sample_id: int
+    source_identity: dict[str, str]
+    contract_version: int
+    key: str
+    key_mode: str | None
+    key_root_evidence: dict[str, Any]
+    key_mode_evidence: dict[str, Any] | None
+    analyzed_at: str
 
 
 def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
@@ -47,6 +97,24 @@ def init_db():
         sample_col_names = {column[1] for column in sample_cols}
         if "hash_algorithm" not in sample_col_names:
             conn.execute(text("ALTER TABLE samples ADD COLUMN hash_algorithm TEXT"))
+
+        # The V2 key-analysis shadow is deliberately separate from ``features``.
+        # V1 remains the normal analyzer and consumer contract until a later,
+        # explicitly scoped migration switches readers and writers.
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS key_analysis_v2_shadow (
+            sample_id INTEGER PRIMARY KEY,
+            source_hash TEXT NOT NULL,
+            source_hash_algorithm TEXT NOT NULL,
+            contract_version INTEGER NOT NULL,
+            key TEXT,
+            key_mode TEXT,
+            key_root_evidence TEXT NOT NULL,
+            key_mode_evidence TEXT,
+            analyzed_at TEXT NOT NULL,
+            FOREIGN KEY(sample_id) REFERENCES samples(id)
+        );
+        """))
 
         # features (mit pred_type!)
         conn.execute(text("""
@@ -133,6 +201,308 @@ def init_db():
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_sample_tags_sample_id ON sample_tags(sample_id);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_sample_tags_tag ON sample_tags(tag);"))
     return engine
+
+
+def _serialize_key_analysis_v2_evidence(evidence: Mapping[str, Any]) -> str:
+    return json.dumps(
+        dict(evidence), sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+    )
+
+
+def _validated_root_evidence(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or set(value) != _KEY_ANALYSIS_V2_ROOT_EVIDENCE_KEYS:
+        return None
+    if value.get("kind") != "joint_24_profile_pearson":
+        return None
+    if value.get("selected_root") not in JOINT_KEY_ROOTS:
+        return None
+    if value.get("raw_top_mode") not in {"maj", "min"}:
+        return None
+    if value.get("raw_top_mode_authoritative") is not False:
+        return None
+    score = value.get("raw_top_score")
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        return None
+    try:
+        score = float(score)
+    except OverflowError:
+        return None
+    if not math.isfinite(score):
+        return None
+    if not (
+        -_KEY_ANALYSIS_V2_PEARSON_EPSILON
+        <= float(score)
+        <= 1.0 + _KEY_ANALYSIS_V2_PEARSON_EPSILON
+    ):
+        return None
+    return dict(value)
+
+
+def _validated_mode_evidence(value: object, *, root: str, mode: str | None) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or set(value) != _KEY_ANALYSIS_V2_MODE_EVIDENCE_KEYS:
+        return None
+    if value.get("kind") != "third_contrast":
+        return None
+    if value.get("root") != root or value.get("root_source") != "joint_24_profile_pearson":
+        return None
+    if value.get("mode") != mode or mode not in {"maj", "min", None}:
+        return None
+    required_numeric = ("major_third_energy", "minor_third_energy", "contrast", "threshold")
+    if any(field not in value for field in required_numeric):
+        return None
+    for field in required_numeric:
+        number = value[field]
+        if isinstance(number, bool) or not isinstance(number, (int, float)):
+            return None
+        try:
+            if not math.isfinite(float(number)):
+                return None
+        except OverflowError:
+            return None
+    major_energy = float(value["major_third_energy"])
+    minor_energy = float(value["minor_third_energy"])
+    contrast = float(value["contrast"])
+    threshold = float(value["threshold"])
+    if (
+        major_energy < 0.0
+        or major_energy > 1.0
+        or minor_energy < 0.0
+        or minor_energy > 1.0
+        or contrast < 0.0
+    ):
+        return None
+    raw_lower, raw_upper = _third_contrast_raw_bounds(major_energy, minor_energy)
+    if not _third_contrast_matches_quantized_evidence(
+        major_energy, minor_energy, contrast, raw_lower=raw_lower, raw_upper=raw_upper
+    ):
+        return None
+    if threshold != KEY_ANALYSIS_V2_SHADOW_MODE_CONTRAST_MIN:
+        return None
+    directional_modes = (
+        {"maj", "min"}
+        if major_energy == minor_energy
+        else {"maj"}
+        if major_energy > minor_energy
+        else {"min"}
+    )
+    # ``estimate_key_mode`` decides from unrounded energies but persists
+    # six-decimal evidence.  Derive feasible abstention/commit outcomes from
+    # the raw-contrast interval implied by those energy buckets, not from the
+    # stored rounded contrast alone (which can equal 0.300000 while every
+    # feasible raw value stays strictly below the threshold).
+    expected_modes = (
+        {None}
+        if raw_upper < threshold
+        else directional_modes
+        if raw_lower >= threshold
+        else {None, *directional_modes}
+    )
+    if mode not in expected_modes:
+        return None
+    return dict(value)
+
+
+def _third_contrast_raw_bounds(
+    major_energy: float, minor_energy: float
+) -> tuple[float, float]:
+    """Return the feasible raw-contrast interval for six-decimal energy buckets."""
+
+    half_step = _KEY_ANALYSIS_V2_EVIDENCE_QUANTIZATION_HALF_STEP
+    major_bounds = (max(0.0, major_energy - half_step), major_energy + half_step)
+    minor_bounds = (max(0.0, minor_energy - half_step), minor_energy + half_step)
+    candidates = [
+        abs(major - minor) / (major + minor + 1e-9)
+        for major in major_bounds
+        for minor in minor_bounds
+    ]
+    if major_bounds[0] <= minor_bounds[1] and minor_bounds[0] <= major_bounds[1]:
+        candidates.append(0.0)
+    return min(candidates), max(candidates)
+
+
+def _third_contrast_matches_quantized_evidence(
+    major_energy: float,
+    minor_energy: float,
+    contrast: float,
+    *,
+    raw_lower: float | None = None,
+    raw_upper: float | None = None,
+) -> bool:
+    """Check whether six-decimal evidence can originate from one raw contrast."""
+
+    if raw_lower is None or raw_upper is None:
+        raw_lower, raw_upper = _third_contrast_raw_bounds(major_energy, minor_energy)
+    half_step = _KEY_ANALYSIS_V2_EVIDENCE_QUANTIZATION_HALF_STEP
+    stored_lower = max(0.0, contrast - half_step)
+    stored_upper = contrast + half_step
+    return raw_lower <= stored_upper and stored_lower <= raw_upper
+
+
+def _validated_utc_timestamp(value: object) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
+        return None
+    return value
+
+
+def _read_json_object(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        decoded = json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return decoded if isinstance(decoded, dict) else None
+
+
+def write_key_analysis_v2_shadow_row(
+    *,
+    sample_id: int,
+    source_identity: object,
+    key: str,
+    key_mode: str | None,
+    key_root_evidence: Mapping[str, Any],
+    key_mode_evidence: Mapping[str, Any] | None,
+    contract_version: int = KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION,
+    analyzed_at: str | None = None,
+) -> None:
+    """Atomically upsert one explicit V2-shadow row without touching ``features``."""
+
+    identity = normalize_hash_record(source_identity)
+    root_evidence = _validated_root_evidence(dict(key_root_evidence))
+    if root_evidence is None:
+        raise ValueError("invalid V2 key root evidence")
+    if contract_version != KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION:
+        raise ValueError("unsupported V2 shadow contract version")
+    if key_mode not in {"maj", "min", None}:
+        raise ValueError("invalid V2 key mode")
+    if not isinstance(key, str) or not key:
+        raise ValueError("V2 shadow key must be a non-empty canonical string")
+    mode_evidence = _validated_mode_evidence(
+        dict(key_mode_evidence) if key_mode_evidence is not None else None,
+        root=root_evidence["selected_root"],
+        mode=key_mode,
+    )
+    if mode_evidence is None:
+        raise ValueError("invalid V2 key mode evidence")
+    if key != format_key_signature(root_evidence["selected_root"], key_mode):
+        raise ValueError("V2 shadow key does not match root and mode evidence")
+    timestamp_value = datetime.now(timezone.utc).isoformat() if analyzed_at is None else analyzed_at
+    timestamp = _validated_utc_timestamp(timestamp_value)
+    if timestamp is None:
+        raise ValueError("analyzed_at must be an explicit UTC timestamp string")
+
+    engine = get_engine()
+    with engine.begin() as conn:
+        sample = conn.execute(
+            text("SELECT hash, hash_algorithm FROM samples WHERE id = :sample_id"),
+            {"sample_id": sample_id},
+        ).fetchone()
+        if sample is None:
+            raise ValueError("sample does not exist")
+        try:
+            catalog_identity = hash_record(
+                sample[1] or LEGACY_CONTENT_HASH_ALGORITHM,
+                sample[0],
+            )
+        except (TypeError, ValueError):
+            raise ValueError("sample has no valid content identity") from None
+        if catalog_identity != identity:
+            raise ValueError("source identity does not match sample")
+        conn.execute(
+            text("""
+            INSERT INTO key_analysis_v2_shadow (
+                sample_id, source_hash, source_hash_algorithm, contract_version,
+                key, key_mode, key_root_evidence, key_mode_evidence, analyzed_at
+            ) VALUES (
+                :sample_id, :source_hash, :source_hash_algorithm, :contract_version,
+                :key, :key_mode, :key_root_evidence, :key_mode_evidence, :analyzed_at
+            )
+            ON CONFLICT(sample_id) DO UPDATE SET
+                source_hash=excluded.source_hash,
+                source_hash_algorithm=excluded.source_hash_algorithm,
+                contract_version=excluded.contract_version,
+                key=excluded.key,
+                key_mode=excluded.key_mode,
+                key_root_evidence=excluded.key_root_evidence,
+                key_mode_evidence=excluded.key_mode_evidence,
+                analyzed_at=excluded.analyzed_at
+            """),
+            {
+                "sample_id": sample_id,
+                "source_hash": identity["value"],
+                "source_hash_algorithm": identity["algorithm"],
+                "contract_version": contract_version,
+                "key": key,
+                "key_mode": key_mode,
+                "key_root_evidence": _serialize_key_analysis_v2_evidence(root_evidence),
+                "key_mode_evidence": _serialize_key_analysis_v2_evidence(mode_evidence),
+                "analyzed_at": timestamp,
+            },
+        )
+
+
+def read_key_analysis_v2_shadow_row(
+    *, sample_id: int, source_identity: object
+) -> KeyAnalysisV2ShadowRow | None:
+    """Return a validated V2-shadow hit only for the exact source identity."""
+
+    identity = normalize_hash_record(source_identity)
+    engine = get_engine()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+            SELECT sample_id, source_hash, source_hash_algorithm, contract_version,
+                   key, key_mode, key_root_evidence, key_mode_evidence, analyzed_at
+            FROM key_analysis_v2_shadow
+            WHERE sample_id = :sample_id
+              AND source_hash = :source_hash
+              AND source_hash_algorithm = :source_hash_algorithm
+              AND contract_version = :contract_version
+            """),
+            {
+                "sample_id": sample_id,
+                "source_hash": identity["value"],
+                "source_hash_algorithm": identity["algorithm"],
+                "contract_version": KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION,
+            },
+        ).fetchone()
+    if row is None:
+        return None
+
+    try:
+        stored_identity = hash_record(row[2], row[1])
+    except (TypeError, ValueError):
+        return None
+    root_evidence = _validated_root_evidence(_read_json_object(row[6]))
+    key_mode = row[5]
+    if key_mode not in {"maj", "min", None} or root_evidence is None:
+        return None
+    mode_evidence = _validated_mode_evidence(
+        _read_json_object(row[7]), root=root_evidence["selected_root"], mode=key_mode
+    )
+    if mode_evidence is None or not isinstance(row[4], str) or not row[4]:
+        return None
+    if row[4] != format_key_signature(root_evidence["selected_root"], key_mode):
+        return None
+    timestamp = _validated_utc_timestamp(row[8])
+    if timestamp is None:
+        return None
+    return KeyAnalysisV2ShadowRow(
+        sample_id=int(row[0]),
+        source_identity=stored_identity,
+        contract_version=int(row[3]),
+        key=row[4],
+        key_mode=key_mode,
+        key_root_evidence=root_evidence,
+        key_mode_evidence=mode_evidence,
+        analyzed_at=timestamp,
+    )
 
 
 def upsert_embedding_model(
