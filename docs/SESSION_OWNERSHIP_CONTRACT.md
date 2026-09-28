@@ -4,7 +4,7 @@ Status: **completed prerequisite** on `main` (PR [#647](https://github.com/janne
 Build-order step 2 is done. Does not authorize Screen-2 UI, Pattern Core, or Sequencer implementation by itself.
 
 Parent: [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md) build-order step 2.  
-Next: Screen-2 Channel Rack QML; Pattern Core (#656), Sequencer Playback (#663), and Channel Rack Python core (#667) are complete.
+Next: complete sequencer playback with the production PCM cache/decode provider; Screen-2 Channel Rack QML remains HOLD until then.
 
 ## Goal
 
@@ -76,4 +76,4 @@ QML Screen-1 / future Screen-2
 
 ## Next
 
-Pattern Core (#656) → Sequencer Playback (#663) → Channel Rack Python core (#667) are complete on `main`; Screen-2 QML is now the next product layer.
+Pattern Core (#656), the sequencer scheduling seam (#663), and Channel Rack Python core (#667) are on `main`; the production PCM cache/decode provider is the remaining playback prerequisite before Screen-2 QML.

@@ -103,7 +103,7 @@ Product rule: taking a Live Kit into the Channel Rack means channels are created
 
 ## Sequencer handoff (step 4 — implemented separately)
 
-The minimal playback seam is implemented in `src/sequencer_playback.py` via PR #663:
+The one-pass scheduling seam is implemented in `src/sequencer_playback.py` via PR #663. A production PCM cache/decode provider for its injected `pcm_for_path` dependency is still pending:
 
 ```text
 pattern playhead (musical)
@@ -124,4 +124,4 @@ Audition (`TransportAwarePreview`) remains separate and monophonic.
 
 ## Next
 
-Session ownership (#647) → Pattern Core (#656) → Sequencer Playback (#663) → Channel Rack Python core (#667) are complete on `main`. Screen-2 QML is the next product layer.
+Session ownership (#647), Pattern Core (#656), the sequencer scheduling seam (#663), and Channel Rack Python core (#667) are on `main`. The production PCM cache/decode provider must complete sequencer playback before Screen-2 QML starts.
