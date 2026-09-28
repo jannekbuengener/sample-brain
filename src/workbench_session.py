@@ -8,12 +8,13 @@ types are intentionally absent from this module.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import tkinter as tk
 
 from .workbench import WorkbenchApp
-from .workbench_controller import WorkbenchRow
+from .workbench_controller import WorkbenchRow, get_preview_start_ms
 from .workbench_harmony import HarmonicMatchLibraryController
 from .workbench_live_kit import LiveKitState
 from .workbench_preview import WorkbenchPreviewPlayer
@@ -44,12 +45,22 @@ class _SessionAuditionPlayRow:
     Frozen ownership tests may replace ``audition.play_row`` on the session
     owner. A captured bound method would miss that patch; this delegate keeps
     ``__self__`` / ``__func__`` aligned with :meth:`TransportAwarePreview.play_row`.
+
+    ``start_ms=None`` (Browser) resolves the saved cue via
+    :func:`get_preview_start_ms`. Explicit offsets (Live Kit ``0``) are
+    forwarded unchanged — never coerced ``None -> 0``.
     """
 
-    __slots__ = ("_audition",)
+    __slots__ = ("_audition", "_library_db_path")
 
-    def __init__(self, audition: TransportAwarePreview) -> None:
+    def __init__(
+        self,
+        audition: TransportAwarePreview,
+        *,
+        library_db_path: Path | None = None,
+    ) -> None:
         self._audition = audition
+        self._library_db_path = library_db_path
 
     @property
     def __self__(self) -> TransportAwarePreview:
@@ -59,12 +70,21 @@ class _SessionAuditionPlayRow:
     def __func__(self) -> Any:
         return type(self._audition).play_row
 
-    def __call__(self, row: WorkbenchRow, *, start_ms: int = 0) -> object:
-        return self._audition.play_row(row, start_ms=start_ms)
+    def __call__(self, row: WorkbenchRow, *, start_ms: int | None = None) -> object:
+        if start_ms is None:
+            resolved = get_preview_start_ms(
+                row.path,
+                library_db_path=self._library_db_path,
+            )
+        else:
+            resolved = start_ms
+        return self._audition.play_row(row, start_ms=resolved)
 
 
 def compose_workbench_session(
-    *, include_tk_workbench: bool = False
+    *,
+    include_tk_workbench: bool = False,
+    library_db_path: Path | None = None,
 ) -> WorkbenchSession:
     """Compose one shared Live Kit + one TransportAwarePreview audition owner."""
 
@@ -97,7 +117,10 @@ def compose_workbench_session(
     adapter = Screen1QmlInteractionAdapter(
         view_model=view_model,
         harmony_controller=HarmonicMatchLibraryController(),
-        on_preview_requested=_SessionAuditionPlayRow(audition),
+        on_preview_requested=_SessionAuditionPlayRow(
+            audition,
+            library_db_path=library_db_path,
+        ),
         on_preview_stopped=audition.stop,
         live_kit=presenter,
     )

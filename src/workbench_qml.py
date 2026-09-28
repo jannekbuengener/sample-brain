@@ -1831,7 +1831,10 @@ def _qml_engine(
     if interaction_adapter is None:
         from .workbench_session import compose_workbench_session
 
-        session = compose_workbench_session()
+        library_db_path = None
+        if runtime_composition is not None:
+            library_db_path = getattr(runtime_composition, "library_db_path", None)
+        session = compose_workbench_session(library_db_path=library_db_path)
         preview_player = session.audition
         live_kit = session.live_kit_presenter
         adapter = session.qml_interaction_adapter
@@ -2078,19 +2081,23 @@ def _settle_qml_frame(app: object) -> None:
 
 def run_qml_screen1(*, state_id: str = "screen1-default-3panel") -> int:
     """Open the optional production Screen-1 renderer without changing Tk defaults."""
-    from .workbench_session import compose_workbench_session
-
     composition = Screen1QmlRuntimeComposition(
         library_db_path=workbench_library_db_path(),
     )
-    session = compose_workbench_session()
-    view_model = session.qml_interaction_adapter.view_model
-    view_model.state_id = state_id
+    # Compose exactly one WorkbenchSession inside ``_qml_engine`` (default
+    # branch) so the established ``view_model`` + ``runtime_composition`` call
+    # shape stays intact for test seams and production alike.
+    view_model = Screen1QmlViewModel(
+        state_id=state_id,
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
     view_model.library_tree = composition.library_tree
-    view_model.live_kit_groups = session.live_kit_presenter.groups
     app, _engine, _window = _qml_engine(
         view_model,
-        interaction_adapter=session.qml_interaction_adapter,
         runtime_composition=composition,
     )
     try:
