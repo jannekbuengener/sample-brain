@@ -39,6 +39,21 @@ def _valid_manifest_record() -> dict[str, object]:
     }
 
 
+def _write_nonfinite_manifest(tmp_path: Path) -> tuple[Path, Path]:
+    raw = (
+        b'{"document_type":"sample_brain.fsld_human_manifest","records":['
+        b'{"annotation_tier":"ma","ground_truth":{"bpm":NaN},'
+        b'"public_sample_id":"123","split":"TEST"}]}\n'
+    )
+    manifest_path = tmp_path / "manifest.json"
+    sha256_path = tmp_path / "manifest.sha256"
+    manifest_path.write_bytes(raw)
+    sha256_path.write_text(
+        f"{hashlib.sha256(raw).hexdigest()}  {manifest_path.name}\n", encoding="utf-8"
+    )
+    return manifest_path, sha256_path
+
+
 def test_adapter_uses_cqt_mean_and_returns_joint_raw_evidence(tmp_path: Path):
     audio = write_major_chord_wav(tmp_path / "c_major.wav")
 
@@ -89,6 +104,18 @@ def test_external_manifest_rejects_malformed_records_with_controlled_error(
     manifest_path, sha256_path = _write_manifest(tmp_path, [record])
 
     with pytest.raises(JointKeyProfileBenchmarkError, match=message):
+        evaluate_joint_key_profiles(
+            audio_root=tmp_path / "audio",
+            split="TEST",
+            manifest_path=manifest_path,
+            sha256_path=sha256_path,
+        )
+
+
+def test_external_manifest_rejects_nonfinite_json_with_controlled_error(tmp_path: Path):
+    manifest_path, sha256_path = _write_nonfinite_manifest(tmp_path)
+
+    with pytest.raises(JointKeyProfileBenchmarkError, match="non-finite JSON"):
         evaluate_joint_key_profiles(
             audio_root=tmp_path / "audio",
             split="TEST",

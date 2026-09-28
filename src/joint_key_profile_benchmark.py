@@ -82,7 +82,13 @@ def _load_verified_manifest(manifest_path: Path, sha256_path: Path) -> dict[str,
         manifest = json.loads(raw.decode("utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise JointKeyProfileBenchmarkError("manifest could not be read as UTF-8 JSON") from exc
-    if not isinstance(manifest, dict) or raw != canonical_manifest_bytes(manifest):
+    if not isinstance(manifest, dict):
+        raise JointKeyProfileBenchmarkError("manifest bytes are not canonical")
+    try:
+        canonical = canonical_manifest_bytes(manifest)
+    except ValueError as exc:
+        raise JointKeyProfileBenchmarkError("manifest contains non-finite JSON values") from exc
+    if raw != canonical:
         raise JointKeyProfileBenchmarkError("manifest bytes are not canonical")
     expected = f"{hashlib.sha256(raw).hexdigest()}  {Path(manifest_path).name}\n".encode("utf-8")
     try:
