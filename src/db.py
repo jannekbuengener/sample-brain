@@ -221,7 +221,13 @@ def _validated_root_evidence(value: object) -> dict[str, Any] | None:
     if value.get("raw_top_mode_authoritative") is not False:
         return None
     score = value.get("raw_top_score")
-    if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score):
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        return None
+    try:
+        score = float(score)
+    except OverflowError:
+        return None
+    if not math.isfinite(score):
         return None
     if not (
         -_KEY_ANALYSIS_V2_PEARSON_EPSILON
@@ -246,7 +252,12 @@ def _validated_mode_evidence(value: object, *, root: str, mode: str | None) -> d
         return None
     for field in required_numeric:
         number = value[field]
-        if isinstance(number, bool) or not isinstance(number, (int, float)) or not math.isfinite(number):
+        if isinstance(number, bool) or not isinstance(number, (int, float)):
+            return None
+        try:
+            if not math.isfinite(float(number)):
+                return None
+        except OverflowError:
             return None
     major_energy = float(value["major_third_energy"])
     minor_energy = float(value["minor_third_energy"])
