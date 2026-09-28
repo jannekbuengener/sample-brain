@@ -18,7 +18,11 @@ from .workbench_browser_rows import (
     BoundedBackgroundWaveformLoader,
     BoundedLazyWaveformCache,
 )
-from .workbench_harmony import HarmonicMatchLibraryController, HarmonySuggestion
+from .workbench_harmony import (
+    HarmonicMatchLibraryController,
+    HarmonySuggestion,
+    harmonic_match_key_for_row,
+)
 from .workbench_live_kit import LiveKitPresentationState, LiveKitState
 from .workbench_library import workbench_library_db_path
 from .workbench_library_navigation import LibraryNodeKind
@@ -799,7 +803,12 @@ class Screen1QmlInteractionAdapter:
 
     @classmethod
     def _harmonic_match_row_fingerprint(cls, row: WorkbenchRow) -> tuple[object, ...]:
-        return (row.path, row.key, cls._harmonic_match_bpm_fingerprint(row.bpm), row.display_name)
+        return (
+            row.path,
+            harmonic_match_key_for_row(row),
+            cls._harmonic_match_bpm_fingerprint(row.bpm),
+            row.display_name,
+        )
 
     def _current_harmonic_match_fingerprint(self, anchor: WorkbenchRow) -> tuple[object, ...]:
         candidates = tuple(sorted(
@@ -850,7 +859,8 @@ class Screen1QmlInteractionAdapter:
             )
             return
         self.view_model.harmony_rows = tuple(_qml_harmony_row(item) for item in self.harmony_controller.results)
-        self.view_model.harmony_anchor = f"Reference: {anchor.display_name} · {anchor.key or '—'}"
+        anchor_key = harmonic_match_key_for_row(anchor) or "—"
+        self.view_model.harmony_anchor = f"Reference: {anchor.display_name} · {anchor_key}"
         self.view_model.harmony_status = self.effective_harmony_status
 
     def select_harmonic_match(self, index: int) -> WorkbenchRow:

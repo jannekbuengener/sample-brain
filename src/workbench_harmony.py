@@ -86,10 +86,11 @@ def harmonic_match_key_for_row(row: WorkbenchRow) -> str | None:
 
 
 def _parse_key_from_row(row: WorkbenchRow) -> Optional[ParsedKey]:
-    """Parse a WorkbenchRow's key using the canonical parser."""
-    if row.key is None:
+    """Parse the row's effective Harmonic Match key with the canonical parser."""
+    key = harmonic_match_key_for_row(row)
+    if key is None:
         return None
-    return parse_key_signature(row.key)
+    return parse_key_signature(key)
 
 
 def _check_direct(ref_key: ParsedKey, cand_key: ParsedKey) -> bool:
@@ -356,7 +357,7 @@ def find_harmony_matches(
             display_match = (
                 needle in cand.display_name.casefold()
                 or needle in str(cand.relative_path).casefold()
-                or needle in (cand.key or "").casefold()
+                or needle in (harmonic_match_key_for_row(cand) or "").casefold()
                 or needle in (cand.pred_type or "").casefold()
             )
             if display_match:
@@ -423,7 +424,8 @@ class HarmonicMatchLibraryController:
         if matching_error is not None:
             self.status = matching_error
             return
-        parsed_key = parse_key_signature(anchor.key) if anchor.key else None
+        anchor_key = harmonic_match_key_for_row(anchor)
+        parsed_key = parse_key_signature(anchor_key) if anchor_key else None
         if parsed_key is None or parsed_key.mode is None:
             self.status = "Harmonic Match benötigt einen auswertbaren Referenz-Key."
             return
