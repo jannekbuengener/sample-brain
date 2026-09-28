@@ -94,6 +94,7 @@ from .workbench_harmony import (
     HarmonyRelation,
     HarmonySuggestion as HarmonyFinderSuggestion,
     find_harmony_matches,
+    harmonic_match_key_for_row,
 )
 from .bpm_display import format_bpm_display
 from .workbench_attack_suggest import AttackSuggestion, suggest_attack_ms
@@ -1219,7 +1220,7 @@ class WorkbenchApp:
     ) -> tuple[str, str | None, tuple[str, object], str]:
         return (
             row.path,
-            row.key,
+            harmonic_match_key_for_row(row),
             cls._harmonic_match_bpm_fingerprint(row.bpm),
             row.display_name,
         )
@@ -1315,7 +1316,7 @@ class WorkbenchApp:
         self._body.columnconfigure(3, weight=0, minsize=0)
 
     def _show_harmonic_match_library(self, anchor: WorkbenchRow) -> None:
-        anchor_key = anchor.key or "—"
+        anchor_key = harmonic_match_key_for_row(anchor) or "—"
         self._harmonic_match_anchor_var.set(
             f"Reference: {catalog_row_display_name(anchor)} · {anchor_key}"
         )
