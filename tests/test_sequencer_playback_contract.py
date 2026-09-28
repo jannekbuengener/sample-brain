@@ -788,3 +788,83 @@ def test_sequencer_contract_does_not_add_beatgrid_or_wall_clock_timing_authority
     assert type(planned[0].position) is Fraction
     assert not hasattr(planned[0], "start_ms")
     assert not hasattr(planned[0], "beat_grid")
+
+
+# --- #681 membership gate at plan_pattern_once boundary ----------------------
+
+
+def test_plan_pattern_once_rejects_phantom_channel_id_fail_closed():
+    """UNKNOWN CHANNEL != MISSING SAMPLE: phantom IDs must not soft-skip."""
+    module = _sequencer_or_fail()
+    plan = _require_symbol(module, "plan_pattern_once")
+
+    tempo_map = TempoMap(sample_rate=48_000, bpm=120)
+    pattern = Pattern(
+        pattern_id="pat_phantom",
+        length_quarter_notes=Fraction(4, 1),
+        triggers=[Trigger(channel_id="ch_phantom", position=Fraction(0, 1))],
+    )
+    channels = _channels(
+        _channel("ch_kick", "Kick + Bass", "Kick", "synthetic/kick.wav")
+    )
+
+    with pytest.raises(ValueError, match="Unknown channel_id"):
+        plan(
+            pattern=pattern,
+            channels_by_id=channels,
+            tempo_map=tempo_map,
+            pattern_start_quarter=Fraction(0, 1),
+            pattern_start_engine_frame=0,
+        )
+
+
+def test_plan_pattern_once_accepts_user_added_opaque_channel():
+    module = _sequencer_or_fail()
+    plan = _require_symbol(module, "plan_pattern_once")
+
+    tempo_map = TempoMap(sample_rate=48_000, bpm=120)
+    user = Channel(
+        channel_id="ch_user_1",
+        live_kit_group=None,
+        live_kit_slot=None,
+        sample_path="synthetic/user_01.wav",
+    )
+    pattern = Pattern(
+        pattern_id="pat_user",
+        length_quarter_notes=Fraction(4, 1),
+        triggers=[Trigger(channel_id="ch_user_1", position=Fraction(1, 4))],
+    )
+    planned = plan(
+        pattern=pattern,
+        channels_by_id=_channels(user),
+        tempo_map=tempo_map,
+        pattern_start_quarter=Fraction(0, 1),
+        pattern_start_engine_frame=0,
+    )
+    assert len(planned) == 1
+    assert planned[0].channel_id == "ch_user_1"
+    assert planned[0].sample_path == "synthetic/user_01.wav"
+
+
+def test_plan_pattern_once_keeps_empty_sample_path_fail_soft_for_known_channel():
+    """Existing channel with sample_path=None remains planable (missing source)."""
+    module = _sequencer_or_fail()
+    plan = _require_symbol(module, "plan_pattern_once")
+
+    tempo_map = TempoMap(sample_rate=48_000, bpm=120)
+    pattern = Pattern(
+        pattern_id="pat_empty_known",
+        length_quarter_notes=Fraction(4, 1),
+        triggers=[Trigger(channel_id="ch_kick", position=Fraction(0, 1))],
+    )
+    planned = plan(
+        pattern=pattern,
+        channels_by_id=_channels(
+            _channel("ch_kick", "Kick + Bass", "Kick", None)
+        ),
+        tempo_map=tempo_map,
+        pattern_start_quarter=Fraction(0, 1),
+        pattern_start_engine_frame=0,
+    )
+    assert planned[0].channel_id == "ch_kick"
+    assert planned[0].sample_path is None

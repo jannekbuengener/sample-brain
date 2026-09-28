@@ -18,7 +18,7 @@ from .native_audio import (
     PcmBufferConfig,
     VoiceConfig,
 )
-from .pattern_core import Channel, Pattern
+from .pattern_core import Channel, Pattern, require_triggers_reference_known_channels
 from .session_grid import TempoMap
 
 
@@ -65,6 +65,13 @@ def plan_pattern_once(
     ):
         raise TypeError("pattern_start_engine_frame must be an int")
 
+    # Membership fail-closed at this public seam (#681): unknown channel_id is
+    # invalid context, not a missing sample. Empty sample_path stays fail-soft.
+    require_triggers_reference_known_channels(
+        pattern.triggers,
+        known_channel_ids=channels_by_id.keys(),
+    )
+
     start_session_frame = tempo_map.quarter_note_to_frame(pattern_start_quarter)
     planned: list[ScheduledTrigger] = []
     for trigger in pattern.triggers:
@@ -75,12 +82,11 @@ def plan_pattern_once(
         )
         if engine_frame < 0:
             raise ValueError(f"engine_frame must be non-negative, got {engine_frame}")
-        channel = channels_by_id.get(trigger.channel_id)
-        sample_path = channel.sample_path if channel is not None else None
+        channel = channels_by_id[trigger.channel_id]
         planned.append(
             ScheduledTrigger(
                 channel_id=trigger.channel_id,
-                sample_path=sample_path,
+                sample_path=channel.sample_path,
                 position=trigger.position,
                 engine_frame=engine_frame,
             )

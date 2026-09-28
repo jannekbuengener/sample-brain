@@ -77,8 +77,8 @@ Pattern {
 ### Trigger validation
 
 - `Trigger` itself accepts any non-empty opaque `channel_id` plus a valid `Fraction` position.
-- Membership ("does this trigger refer to a channel that exists in this rack/pattern context?") is validated at the **rack / session boundary** (e.g. `ChannelRackState`, `toggle_step`, `require_triggers_reference_known_channels`), not against a global hardcoded Live Kit ID universe.
-- Phantom channel IDs must fail closed at that boundary.
+- Membership ("does this trigger refer to a channel that exists in this rack/pattern context?") is validated at the **rack / session / planner boundary** (e.g. `ChannelRackState`, `toggle_step`, `require_triggers_reference_known_channels`, and the public `plan_pattern_once` seam), not against a global hardcoded Live Kit ID universe.
+- Phantom channel IDs must fail closed at that boundary. Unknown channel ≠ missing `sample_path` (empty path on a known channel remains fail-soft).
 
 Reuse existing types where possible:
 
