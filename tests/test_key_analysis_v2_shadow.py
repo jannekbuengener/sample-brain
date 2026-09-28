@@ -379,8 +379,8 @@ def test_sidecar_rejects_noncanonical_root_and_contradictory_mode_evidence(
     rounded_abstention = _result(root="C", mode=None)
     rounded_abstention.mode_evidence.update(
         {
-            "major_third_energy": 1.3,
-            "minor_third_energy": 0.7,
+            "major_third_energy": 0.65,
+            "minor_third_energy": 0.35,
             "contrast": 0.3,
         }
     )
@@ -391,6 +391,36 @@ def test_sidecar_rejects_noncanonical_root_and_contradictory_mode_evidence(
         read_key_analysis_v2_shadow(sample_id=1, source_identity=identity)
         == rounded_abstention
     )
+
+    above_normalized_energy = _result(root="C", mode=None)
+    above_normalized_energy.mode_evidence.update(
+        {
+            "major_third_energy": 1.1,
+            "minor_third_energy": 1.0,
+            "contrast": 0.047619,
+        }
+    )
+    with pytest.raises(ValueError, match="mode evidence"):
+        write_key_analysis_v2_shadow(
+            sample_id=1, source_identity=identity, result=above_normalized_energy
+        )
+
+    with db_module.get_engine().begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE key_analysis_v2_shadow "
+                "SET key_mode_evidence = :evidence WHERE sample_id = 1"
+            ),
+            {
+                "evidence": json.dumps(
+                    above_normalized_energy.mode_evidence,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                )
+            },
+        )
+    assert read_key_analysis_v2_shadow(sample_id=1, source_identity=identity) is None
 
     independently_rounded_evidence = _result(root="C", mode=None)
     independently_rounded_evidence.mode_evidence.update(
