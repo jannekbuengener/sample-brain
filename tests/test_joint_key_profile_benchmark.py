@@ -15,6 +15,7 @@ from src.joint_key_profile_benchmark import (
     JointKeyProfileBenchmarkError,
     evaluate_joint_key_profiles,
     mean_cqt_chroma,
+    run_joint_key_profile_evaluation,
     score_audio,
 )
 from tests.audio_fixtures import write_major_chord_wav
@@ -135,6 +136,28 @@ def test_external_manifest_rejects_nonfinite_json_with_controlled_error(tmp_path
         )
 
 
+def test_external_manifest_rejects_lone_surrogate_with_controlled_error(tmp_path: Path):
+    raw = (
+        b'{"document_type":"sample_brain.fsld_human_manifest","records":['
+        b'{"annotation_tier":"ma","ground_truth":{"label":"\\ud800"},'
+        b'"public_sample_id":"123","split":"TEST"}]}\n'
+    )
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_bytes(raw)
+
+    parsed = json.loads(raw)
+    assert parsed["records"][0]["ground_truth"]["label"] == "\ud800"
+    with pytest.raises(UnicodeEncodeError):
+        canonical_manifest_bytes(parsed)
+    with pytest.raises(JointKeyProfileBenchmarkError, match="invalid Unicode"):
+        evaluate_joint_key_profiles(
+            audio_root=tmp_path / "audio",
+            split="TEST",
+            manifest_path=manifest_path,
+            sha256_path=tmp_path / "manifest.sha256",
+        )
+
+
 def test_external_manifest_rejects_oversized_json_integer_with_controlled_error(tmp_path: Path):
     manifest_path, sha256_path, raw = _write_oversized_integer_manifest(tmp_path)
 
@@ -146,6 +169,47 @@ def test_external_manifest_rejects_oversized_json_integer_with_controlled_error(
             split="TEST",
             manifest_path=manifest_path,
             sha256_path=sha256_path,
+        )
+
+
+def test_output_resolution_failure_is_translated_to_a_controlled_error(monkeypatch, tmp_path: Path):
+    def raise_resolution_failure(_path: Path, *, strict: bool) -> Path:
+        raise RuntimeError("symlink loop")
+
+    monkeypatch.setattr(Path, "resolve", raise_resolution_failure)
+
+    with pytest.raises(JointKeyProfileBenchmarkError, match="output path could not be resolved"):
+        run_joint_key_profile_evaluation(
+            audio_root=tmp_path / "audio",
+            split="TEST",
+            output_path=tmp_path / "external-report.json",
+        )
+
+
+def test_benchmark_writes_to_an_external_output_path(tmp_path: Path):
+    manifest_path, sha256_path = _write_manifest(tmp_path, [_valid_manifest_record()])
+    output_path = tmp_path / "joint-key-report.json"
+
+    result = run_joint_key_profile_evaluation(
+        audio_root=tmp_path / "audio",
+        split="TEST",
+        output_path=output_path,
+        manifest_path=manifest_path,
+        sha256_path=sha256_path,
+    )
+
+    assert result["run_status"] == "PUBLIC_AUDIO_NOT_AVAILABLE_LOCALLY"
+    assert output_path.is_file()
+
+
+def test_benchmark_rejects_repository_internal_output_path(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr("src.joint_key_profile_benchmark.REPOSITORY_ROOT", tmp_path)
+
+    with pytest.raises(JointKeyProfileBenchmarkError, match="outside the repository"):
+        run_joint_key_profile_evaluation(
+            audio_root=tmp_path / "audio",
+            split="TEST",
+            output_path=tmp_path / "internal-report.json",
         )
 
 
