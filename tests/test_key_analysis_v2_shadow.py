@@ -391,6 +391,23 @@ def test_sidecar_rejects_noncanonical_root_and_contradictory_mode_evidence(
         == independently_rounded_evidence
     )
 
+    tied_rounded_energies = _result(root="C", mode="min")
+    tied_rounded_energies.mode_evidence.update(
+        {
+            "major_third_energy": 0.0,
+            "minor_third_energy": 0.0,
+            "contrast": 0.659898,
+            "mode": "min",
+        }
+    )
+    write_key_analysis_v2_shadow(
+        sample_id=1, source_identity=identity, result=tied_rounded_energies
+    )
+    assert (
+        read_key_analysis_v2_shadow(sample_id=1, source_identity=identity)
+        == tied_rounded_energies
+    )
+
     extra_mode_field = _result(root="C", mode=None)
     extra_mode_field.mode_evidence["confidence"] = 1.0
     with pytest.raises(ValueError, match="mode evidence"):
@@ -404,6 +421,13 @@ def test_sidecar_rejects_noncanonical_root_and_contradictory_mode_evidence(
             source_identity=identity,
             result=_result(),
             analyzed_at="not-a-date",
+        )
+    with pytest.raises(ValueError, match="analyzed_at"):
+        write_key_analysis_v2_shadow(
+            sample_id=1,
+            source_identity=identity,
+            result=_result(),
+            analyzed_at="",
         )
 
     with db_module.get_engine().begin() as conn:

@@ -253,7 +253,14 @@ def _validated_mode_evidence(value: object, *, root: str, mode: str | None) -> d
         return None
     if threshold != KEY_ANALYSIS_V2_SHADOW_MODE_CONTRAST_MIN:
         return None
-    selected_mode = "maj" if major_energy >= minor_energy else "min"
+    half_step = _KEY_ANALYSIS_V2_EVIDENCE_QUANTIZATION_HALF_STEP
+    directional_modes = (
+        {"maj", "min"}
+        if abs(major_energy - minor_energy) <= 2.0 * half_step
+        else {"maj"}
+        if major_energy > minor_energy
+        else {"min"}
+    )
     # ``estimate_key_mode`` decides from unrounded energies but persists its
     # contrast rounded to six decimals.  An abstention whose raw contrast is
     # just below 0.30 can therefore carry 0.300000 evidence; retain that
@@ -261,9 +268,9 @@ def _validated_mode_evidence(value: object, *, root: str, mode: str | None) -> d
     expected_modes = (
         {None}
         if contrast < threshold
-        else {selected_mode}
+        else directional_modes
         if contrast > threshold
-        else {None, selected_mode}
+        else {None, *directional_modes}
     )
     if mode not in expected_modes:
         return None
@@ -345,7 +352,8 @@ def write_key_analysis_v2_shadow_row(
         raise ValueError("invalid V2 key mode evidence")
     if key != format_key_signature(root_evidence["selected_root"], key_mode):
         raise ValueError("V2 shadow key does not match root and mode evidence")
-    timestamp = _validated_utc_timestamp(analyzed_at or datetime.now(timezone.utc).isoformat())
+    timestamp_value = datetime.now(timezone.utc).isoformat() if analyzed_at is None else analyzed_at
+    timestamp = _validated_utc_timestamp(timestamp_value)
     if timestamp is None:
         raise ValueError("analyzed_at must be an explicit UTC timestamp string")
 
