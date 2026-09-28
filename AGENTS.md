@@ -73,27 +73,40 @@ Benchmark harness (local only, work-dir outside repo): `python -m src.cli benchm
 - The Workbench may use a narrow native audio core for hard real-time playback/recording while Python remains UI/analysis/control; see `docs/REALTIME_WORKBENCH_SCOPE.md`.
 - Entry point: `python -m src.cli` (or `.venv/bin/python -m src.cli` on Linux).
 
-### One-time VM prerequisites (not in update script)
-- Ubuntu/Debian: `python3.12-venv` must be installed (`sudo apt-get install -y python3.12-venv`) before the first venv creation.
-- Audio I/O: `libsndfile1` is required for real `analyze` runs (usually preinstalled on Ubuntu).
+### System packages
+- Ubuntu/Debian needs `python3.12-venv` and `python3-tk` before venv creation and Workbench tests (`sudo apt-get install -y python3.12-venv python3-tk`). Tk is required because Workbench modules and tests import `tkinter`.
+- `libsndfile1` is required for real `analyze` runs. `xvfb` is required to run the Tk tests headlessly. Both are present on the default Cloud Agent image.
 
-### Dependency refresh (automatic on startup)
-- See the VM update script: creates/refreshes `.venv`, installs `requirements.txt` + `pytest`.
-- `pytest` is **not** listed in `requirements.txt`; install it alongside requirements for local/Cloud verification.
+### Dependency refresh (`install`)
+The Cloud Agent install command is idempotent and creates `.venv` in the repo:
+
+```bash
+export DEBIAN_FRONTEND=noninteractive
+sudo apt-get update
+sudo apt-get install -y python3.12-venv python3-tk
+python3.12 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements.txt "pytest>=8,<10" "ruff==0.16.0"
+.venv/bin/python -m pip install -e .
+```
+
+- `pytest` and `ruff` are **not** listed in `requirements.txt`. CI pins `pytest>=8,<10` and `ruff==0.16.0`.
 
 ### Verify (Linux paths)
 ```bash
-source .venv/bin/activate   # optional
-pip install -r requirements.txt pytest
-pip install -e .
+source .venv/bin/activate
 python -m src.cli --help
 sample-brain --help
-python -m pytest -q
+xvfb-run -a python -m pytest -q
+python -m ruff check .
 python -m py_compile src/analyze.py src/cli.py
 ```
 
+Activate the venv before pytest. A few tests spawn bare `python`. `.venv/bin` must be on `PATH`, and `/usr/bin/python3` does not have the project dependencies.
+
 ### Bootstrap validation notes
-- Fresh isolated venv bootstrap validation passed `pytest -q` (138 tests) without a repo-local `init`.
+- Full `xvfb-run -a python -m pytest -q` on this image: 2318 passed, 72 skipped, and 2 failed. The two failures are `tests/test_workbench_desktop_shortcut.py` runtime-installer rollback tests. They create a temp directory in the repository parent. Cloud Agent checkout is `/workspace`, so that parent is `/` and `tempfile` raises `PermissionError`. That is a checkout-layout limit, not a missing dependency.
+- Nested tests call bare `python`. Run pytest from an activated venv so that command is `.venv/bin/python`. Do not symlink or overwrite `/usr/bin/python3.12`.
 - Prefer `SAMPLE_BRAIN_DB_PATH` pointing outside the repo for agent smoke tests so `git status` stays clean.
 - If `python -m venv` fails on Ubuntu/Debian, use `virtualenv` as fallback (see README bootstrap section).
 - Do not run CLAP model download during bootstrap validation.
