@@ -93,12 +93,12 @@ def test_v2_fixture_clean_start_semantics():
     assert state.auto_audition is False
     assert state.density_mode == DENSITY_MODE_V2_COMPACT_TARGET
     assert state.motion_mode == MOTION_MODE_FULL
-    assert state.layout.source_nav_visible is True
+    assert state.layout.source_nav_visible is False
     assert state.layout.calm_canvas_visible is True
     assert state.layout.browser_materialized is False
     assert state.layout.harmonic_visible is False
     assert state.layout.live_kit_materialized is False
-    assert state.layout.panel_ratios == {"source_nav": 1.0}
+    assert state.layout.panel_ratios == {}
     assert state.browser_fixture_row_count == 0
     assert state.harmony_fixture_row_count == 0
 

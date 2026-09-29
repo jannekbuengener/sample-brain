@@ -31,6 +31,7 @@ from .workbench_visual_acceptance import (
     validate_capture_sanity,
     validate_runtime_for_visual_acceptance,
     write_visual_evidence_manifest,
+    _write_png,
 )
 
 QML_SOURCE = production.QML_SOURCE
@@ -174,6 +175,10 @@ def build_qml_view_model_from_fixture_v2(
         browser_materialized=bool(state.layout.browser_materialized),
         live_kit_materialized=bool(state.layout.live_kit_materialized),
     )
+    if state.source_selected:
+        view_model.set_library_revealed(False)
+    else:
+        view_model.set_library_revealed(bool(state.layout.source_nav_visible))
     return view_model
 
 
@@ -271,10 +276,144 @@ def _module_file(module_name: str) -> Path:
 
 
 def _grab_qml_window_png(window: object, target: Path, *, engine: object | None = None) -> None:
-    """Capture Screen-1 evidence with the shared PNG writer (sanity-compatible)."""
+    """Capture Screen-1 evidence from the Qt Quick framebuffer.
+
+    Prefer ``grabWindow()`` over GDI BitBlt: the software scene graph can report
+    Image.painted size before the HWND client area has composed the texture,
+    which produced pure-black Clean Start evidence under BitBlt. Pixels are
+    written with the shared PNG writer so ``validate_capture_sanity`` stays
+    compatible.
+    """
     del engine  # reserved for future root re-resolution
-    # Requires QT_QUICK_BACKEND=software so GDI sees Qt Quick updates.
-    capture_windows_client_window(int(window.winId()), target)
+    from PySide6.QtGui import QImage
+
+    image = window.grabWindow()
+    if image is None or image.isNull():
+        capture_windows_client_window(int(window.winId()), target)
+        return
+    converted = image.convertToFormat(QImage.Format.Format_RGBA8888)
+    width = int(converted.width())
+    height = int(converted.height())
+    if width <= 0 or height <= 0:
+        raise EvidenceError("QML framebuffer grab returned empty dimensions.")
+    bytes_per_line = int(converted.bytesPerLine())
+    raw = bytes(converted.constBits())
+    expected = width * 4
+    if bytes_per_line == expected:
+        rgba = raw[: height * expected]
+    else:
+        rgba = b"".join(
+            raw[row * bytes_per_line : row * bytes_per_line + expected]
+            for row in range(height)
+        )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _write_png(target, width, height, rgba)
+
+def _wait_for_screen1_background_ready(window: object, app: object, *, timeout_ms: int = 3000) -> None:
+    """Block until the canonical Screen-1 background Image has painted.
+
+    Visual-acceptance captures must not race the async Image load; otherwise the
+    first Clean Start frame can be pure black while later frames show the
+    reference texture (#731 / #725 evidence).
+    """
+    from PySide6.QtCore import QElapsedTimer
+    from PySide6.QtQuick import QQuickItem
+
+    background = window.findChild(QQuickItem, "screen1Background")
+    if background is None:
+        raise RuntimeError("screen1Background fehlt vor Visual-Acceptance-Capture.")
+
+    timer = QElapsedTimer()
+    timer.start()
+    while timer.elapsed() < int(timeout_ms):
+        # Image.status is not reliably convertible via QObject.property(); painted
+        # size is the capture-relevant readiness signal (same as background tests).
+        painted_w = float(background.property("paintedWidth") or 0)
+        painted_h = float(background.property("paintedHeight") or 0)
+        if painted_w > 0 and painted_h > 0:
+            # Two composed frames: painted size can lead HWND/GDI composition.
+            _settle_qml_frame(app)
+            _settle_qml_frame(app)
+            return
+        _settle_qml_frame(app)
+    raise RuntimeError(
+        "screen1Background wurde vor Capture nicht rechtzeitig gemalt "
+        f"(timeout_ms={timeout_ms})."
+    )
+
+
+def _png_center_patch_has_texture(path: Path, *, x0: int = 300, y0: int = 300, size: int = 200) -> bool:
+    """Return True when a center patch is not a single flat color (background present)."""
+    import struct
+    import zlib
+
+    data = path.read_bytes()
+    if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n":
+        return False
+    pos = 8
+    width = height = 0
+    color_type = 2
+    idat = b""
+    while pos + 8 <= len(data):
+        length = struct.unpack(">I", data[pos : pos + 4])[0]
+        ctype = data[pos + 4 : pos + 8]
+        chunk = data[pos + 8 : pos + 8 + length]
+        pos += 12 + length
+        if ctype == b"IHDR":
+            width, height = struct.unpack(">II", chunk[:8])
+            color_type = chunk[9]
+        elif ctype == b"IDAT":
+            idat += chunk
+        elif ctype == b"IEND":
+            break
+    if width <= 0 or height <= 0 or not idat:
+        return False
+    bpp = {2: 3, 6: 4}.get(int(color_type))
+    if bpp is None:
+        return False
+    raw = zlib.decompress(idat)
+    rows: list[bytes] = []
+    stride = width * bpp
+    index = 0
+    prev = bytearray(stride)
+    for _ in range(height):
+        filt = raw[index]
+        index += 1
+        row = bytearray(raw[index : index + stride])
+        index += stride
+        if filt == 1:
+            for x in range(stride):
+                left = row[x - bpp] if x >= bpp else 0
+                row[x] = (row[x] + left) & 255
+        elif filt == 2:
+            for x in range(stride):
+                row[x] = (row[x] + prev[x]) & 255
+        elif filt == 3:
+            for x in range(stride):
+                left = row[x - bpp] if x >= bpp else 0
+                row[x] = (row[x] + ((left + prev[x]) // 2)) & 255
+        elif filt == 4:
+            for x in range(stride):
+                a = row[x - bpp] if x >= bpp else 0
+                b = prev[x]
+                c = prev[x - bpp] if x >= bpp else 0
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pr = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
+                row[x] = (row[x] + pr) & 255
+        elif filt != 0:
+            return False
+        rows.append(bytes(row))
+        prev = row
+    colors: set[bytes] = set()
+    for y in range(y0, min(height, y0 + size)):
+        row = rows[y]
+        for x in range(x0, min(width, x0 + size)):
+            off = x * bpp
+            colors.add(row[off : off + 3])
+            if len(colors) > 1:
+                return True
+    return False
 
 
 def _is_within(path: Path, root: Path) -> bool:
@@ -506,6 +645,11 @@ def apply_screen1_visual_state_v2(
         browser_materialized=bool(state.layout.browser_materialized),
         live_kit_materialized=bool(state.layout.live_kit_materialized),
     )
+    # #725: library_revealed is No-Source presentation only.
+    if state.source_selected:
+        view_model.set_library_revealed(False)
+    else:
+        view_model.set_library_revealed(bool(state.layout.source_nav_visible))
     adapter.harmonic_match_open = bool(state.layout.harmonic_visible)
     if not state.preview_active and adapter.preview_active:
         adapter.stop_preview()
@@ -669,6 +813,7 @@ def run_qml_visual_acceptance_v2(
             window.setHeight(CLIENT_HEIGHT)
             window.show()
             _settle_qml_frame(app)
+            _wait_for_screen1_background_ready(window, app)
             dpi_scale = current_windows_dpi_scale(int(window.winId()))
             if evidence_kind == _V2_EVIDENCE_BASELINE:
                 _require_v2_capture_dpi_100(int(window.winId()))
@@ -782,6 +927,155 @@ def run_qml_visual_acceptance_v2(
         engines.clear()
 
 
+_V725_CAPTURE_LABELS = (
+    "clean-start-collapsed",
+    "clean-start-reveal-hover",
+    "opened-no-source",
+    "active-source",
+)
+
+
+def run_qml_visual_acceptance_725(
+    *,
+    runtime_root: Path,
+    evidence_dir: Path,
+) -> dict[str, object]:
+    """#725 Runtime-/Interaction-Captures. Does not invent a parallel fixture family."""
+    import platform
+
+    from PySide6.QtQuick import QQuickItem
+
+    _require_fresh_qml_capture_process()
+    report = validate_qml_renderer_provenance(runtime_root)
+    fixture = build_screen1_visual_fixture_v2()
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    captures: dict[str, Path] = {}
+    sanity: dict[str, dict[str, bool | list[object]]] = {}
+    engines: list[object] = []
+    dpi_scale = 100
+
+    def _capture(label: str, window: object, engine: object, *, v2_state: str) -> None:
+        nonlocal dpi_scale
+        target = evidence_dir / f"{label}.png"
+        _grab_qml_window_png(window, target, engine=engine)
+        check = validate_capture_sanity(
+            target, expected_width=CLIENT_WIDTH, expected_height=CLIENT_HEIGHT
+        )
+        check["v2_state_id"] = v2_state
+        check["capture_label"] = label
+        check["pass"] = bool(check["pass"])
+        if label in {"clean-start-collapsed", "clean-start-reveal-hover", "opened-no-source"}:
+            # Calm Canvas states must show the canonical background texture, not a
+            # pure-black race against async Image composition.
+            if not _png_center_patch_has_texture(target):
+                raise EvidenceError(
+                    f"{label}: Screen-1 background texture missing in capture "
+                    "(async Image race / compositor miss)."
+                )
+        sanity[label] = check
+        captures[label] = target
+
+    try:
+        # 1) Collapsed clean start (= screen1-clean-start product projection)
+        clean = resolve_screen1_visual_state_v2(fixture, "screen1-clean-start")
+        view_model = Screen1QmlViewModel(
+            state_id="screen1-default-3panel",
+            library_labels=(),
+            browser_rows=(),
+            selected_browser_index=-1,
+            harmony_rows=(),
+            live_kit_groups=(),
+        )
+        adapter = Screen1QmlInteractionAdapter(view_model=view_model)
+        apply_screen1_visual_state_v2(view_model, adapter, fixture, clean)
+        app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+        engines.append(engine)
+        window.setWidth(CLIENT_WIDTH)
+        window.setHeight(CLIENT_HEIGHT)
+        window.show()
+        _settle_qml_frame(app)
+        _wait_for_screen1_background_ready(window, app)
+        dpi_scale = _require_v2_capture_dpi_100(int(window.winId()))
+        _capture("clean-start-collapsed", window, engine, v2_state="screen1-clean-start")
+
+        # 2) Hover on edge affordance (interaction capture only)
+        affordance = window.findChild(QQuickItem, "libraryRevealAffordance")
+        if affordance is None:
+            raise RuntimeError("libraryRevealAffordance fehlt für #725 Hover-Capture.")
+        affordance.setProperty("hovered", True)
+        _settle_qml_frame(app)
+        _capture(
+            "clean-start-reveal-hover", window, engine, v2_state="screen1-clean-start"
+        )
+
+        # 3) Opened-no-source via real reveal intent
+        bridge = engine._screen1_interaction_bridge
+        bridge.revealLibrary()
+        _settle_qml_frame(app)
+        if not view_model.library_revealed or view_model.has_active_source:
+            raise RuntimeError("Reveal muss Opened-no-source ohne Source Selection setzen.")
+        _capture("opened-no-source", window, engine, v2_state="screen1-clean-start")
+        window.close()
+        app.processEvents()
+
+        # 4) Active source (= screen1-active-source)
+        active = resolve_screen1_visual_state_v2(fixture, "screen1-active-source")
+        view_model = build_qml_view_model_from_fixture_v2(fixture, "screen1-active-source")
+        adapter = Screen1QmlInteractionAdapter(
+            view_model=view_model,
+            harmony_controller=production.HarmonicMatchLibraryController(),
+        )
+        apply_screen1_visual_state_v2(view_model, adapter, fixture, active)
+        app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+        engines.append(engine)
+        window.setWidth(CLIENT_WIDTH)
+        window.setHeight(CLIENT_HEIGHT)
+        window.show()
+        _settle_qml_frame(app)
+        _wait_for_screen1_background_ready(window, app)
+        dpi_scale = _require_v2_capture_dpi_100(int(window.winId()))
+        _capture("active-source", window, engine, v2_state="screen1-active-source")
+        window.close()
+        app.processEvents()
+
+        if tuple(captures) != _V725_CAPTURE_LABELS:
+            raise EvidenceError(
+                f"#725 captures must be {_V725_CAPTURE_LABELS}; got {tuple(captures)}"
+            )
+        manifest = {
+            "schema": "sample_brain_screen1_725_clean_start_evidence",
+            "issue": 725,
+            "commit": report.manifest.commit,
+            "channel": report.manifest.channel,
+            "runtime_status": "valid",
+            "python": f"{platform.python_implementation()} {platform.python_version()}",
+            "os": "Windows " + platform.release(),
+            "dpi": dpi_scale,
+            "fixture": fixture.version,
+            "fixture_states_referenced": [
+                "screen1-clean-start",
+                "screen1-active-source",
+            ],
+            "capture_labels": list(_V725_CAPTURE_LABELS),
+            "screenshot_hashes": {
+                key: __import__("hashlib").sha256(path.read_bytes()).hexdigest()
+                for key, path in captures.items()
+            },
+            "sanity_results": {
+                key: {
+                    "pass": bool(value.get("pass")),
+                    "v2_state_id": value.get("v2_state_id"),
+                    "capture_label": value.get("capture_label"),
+                }
+                for key, value in sanity.items()
+            },
+        }
+        write_visual_evidence_manifest(evidence_dir / "manifest-725.json", manifest)
+        return manifest
+    finally:
+        engines.clear()
+
+
 __all__ = [
     "QML_SOURCE",
     "QmlBrowserRow",
@@ -798,6 +1092,8 @@ __all__ = [
     "run_qml_virtualization_probe",
     "run_qml_visual_acceptance",
     "run_qml_visual_acceptance_v2",
+    "run_qml_visual_acceptance_725",
     "validate_qml_renderer_provenance",
     "virtual_row_window",
+    "_wait_for_screen1_background_ready",
 ]
