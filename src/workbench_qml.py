@@ -1364,9 +1364,17 @@ ApplicationWindow {
             color: "transparent"
             ColumnLayout {
                 anchors.centerIn: parent
-                spacing: 14
-                // #725 Owner Visual: primary First View CTA — large + with "Add Source"
-                // headline. Branding stays in the header only (not Calm Canvas).
+                spacing: 10
+                // #725 Owner Visual: primary First View CTA — "Add Source" above large +.
+                // Branding stays in the header only (not Calm Canvas).
+                Label {
+                    objectName: "calmCanvasAddSourceLabel"
+                    text: "Add Source"
+                    color: theme.textSecondary
+                    font.pixelSize: 15
+                    horizontalAlignment: Text.AlignHCenter
+                    Layout.alignment: Qt.AlignHCenter
+                }
                 Button {
                     id: calmCanvasAddSource
                     objectName: "calmCanvasAddSource"
@@ -1395,15 +1403,6 @@ ApplicationWindow {
                         border.width: 1
                     }
                     onClicked: addSourceDialog.open()
-                }
-                Label {
-                    objectName: "calmCanvasAddSourceLabel"
-                    text: "Add Source"
-                    color: theme.textPrimary
-                    font.pixelSize: 24
-                    font.bold: true
-                    horizontalAlignment: Text.AlignHCenter
-                    Layout.alignment: Qt.AlignHCenter
                 }
             }
         }

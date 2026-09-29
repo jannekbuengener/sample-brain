@@ -524,6 +524,10 @@ def test_qml_source_declares_calm_canvas_and_progressive_disclosure():
     assert 'text: "Add Source"' in calm_block
     assert "implicitWidth: 96" in calm_block
     assert "font.pixelSize: 64" in calm_block
+    label_idx = calm_block.index('objectName: "calmCanvasAddSourceLabel"')
+    plus_idx = calm_block.index('objectName: "calmCanvasAddSource"')
+    assert label_idx < plus_idx
+    assert "font.pixelSize: 15" in calm_block[label_idx:plus_idx]
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
@@ -570,6 +574,8 @@ def test_qml_clean_start_add_source_cta_is_primary_focus(tmp_path: Path):
         assert add_source.height() >= 88
         assert affordance is not None and affordance.isVisible()
         assert add_source.width() > affordance.width() * 2
+        # Label sits above the plus.
+        assert label.y() + label.height() <= add_source.y()
         accessible = add_source.property("Accessible.name")
         if accessible is None:
             from src.workbench_qml import QML_SOURCE
