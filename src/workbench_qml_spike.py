@@ -254,13 +254,29 @@ def _module_file(module_name: str) -> Path:
     return Path(location).resolve()
 
 
-def _grab_qml_window_png(window: object, target: Path) -> None:
+def _grab_qml_window_png(window: object, target: Path, *, engine: object | None = None) -> None:
     """Capture a Qt Quick window via grabWindow (not GDI BitBlt)."""
     from PySide6.QtQuick import QQuickWindow
 
-    quick = window if isinstance(window, QQuickWindow) else None
+    candidates: list[object] = [window]
+    if engine is not None:
+        try:
+            candidates.extend(list(engine.rootObjects()))
+        except Exception:
+            pass
+    quick = next((obj for obj in candidates if isinstance(obj, QQuickWindow)), None)
     if quick is None:
-        raise RuntimeError("QML capture requires a QQuickWindow root object.")
+        # Some PySide builds expose ApplicationWindow only as QWindow; still try.
+        grab = getattr(window, "grabWindow", None)
+        if callable(grab):
+            image = grab()
+            if image is not None and not image.isNull() and image.save(str(target)):
+                return
+        raise RuntimeError(
+            "QML capture requires a QQuickWindow root object; "
+            f"got {type(window)!r} className="
+            f"{getattr(getattr(window, 'metaObject', lambda: None)(), 'className', lambda: '?')()}"
+        )
     image = quick.grabWindow()
     if image.isNull() or not image.save(str(target)):
         raise RuntimeError(f"QML grabWindow capture failed for {target.name}")
@@ -531,7 +547,7 @@ def run_qml_visual_acceptance_v2(
             target = evidence_dir / f"{state_id}.png"
             # GDI BitBlt can miss Qt Quick scene-graph updates; grab the QML
             # window framebuffer so harmonic-open evidence is distinct.
-            _grab_qml_window_png(window, target)
+            _grab_qml_window_png(window, target, engine=engine)
             check = validate_capture_sanity(
                 target, expected_width=CLIENT_WIDTH, expected_height=CLIENT_HEIGHT
             )
@@ -561,7 +577,7 @@ def run_qml_visual_acceptance_v2(
             _settle_qml_frame(app)
             stress_id = f"compact-stress-{stress_w}x{stress_h}"
             target = evidence_dir / f"{stress_id}.png"
-            _grab_qml_window_png(window, target)
+            _grab_qml_window_png(window, target, engine=engine)
             check = validate_capture_sanity(
                 target, expected_width=stress_w, expected_height=stress_h
             )
