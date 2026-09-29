@@ -208,7 +208,7 @@ class PatternPassPlayer:
     """
 
     _pending: deque[ScheduledTrigger] = field(init=False, repr=False)
-    _owned_live: dict[int, int] = field(init=False, repr=False)
+    _owned_live: dict[int, dict[str, Any]] = field(init=False, repr=False)
     _lookahead_frames: int = field(init=False, repr=False)
     _max_voices: int = field(init=False, repr=False)
     _scheduled_voice_ids: list[int] = field(init=False, repr=False)
@@ -229,13 +229,19 @@ class PatternPassPlayer:
             lookahead_frames, name="lookahead_frames"
         )
         self._max_voices = _validate_non_negative_int(max_voices, name="max_voices")
+        if self._max_voices > SB_MAX_VOICES:
+            raise ValueError(
+                f"max_voices must be <= SB_MAX_VOICES ({SB_MAX_VOICES}), "
+                f"got {self._max_voices}"
+            )
         ordered = sorted(
             list(planned_triggers),
             key=lambda trigger: (trigger.engine_frame, trigger.channel_id),
         )
         self._pending = deque(ordered)
         self.planned_count = len(ordered)
-        self._owned_live = {}
+        # voice_id → {start_frame, seen_active}
+        self._owned_live: dict[int, dict[str, Any]] = {}
         self._scheduled_voice_ids = []
         self._skipped_missing_source_count = 0
         self._skipped_voice_limit_count = 0
@@ -296,21 +302,33 @@ class PatternPassPlayer:
             states[voice_id] = int(voice_states[index])
         return total, states
 
-    def _reclaim_owned_idle(self, engine: _LifecycleEngine) -> None:
+    def _reclaim_owned_idle(
+        self, engine: _LifecycleEngine, *, engine_frame: int
+    ) -> None:
         _total, states = self._snapshot_total_and_states(engine)
         for voice_id in list(self._owned_live):
+            meta = self._owned_live[voice_id]
             state = states.get(voice_id)
             if state is None:
                 # Voice disappeared from snapshot (foreign remove) — drop tracking.
                 self._owned_live.pop(voice_id, None)
                 continue
-            if state == SB_VOICE_IDLE:
-                try:
-                    engine.remove_voice(voice_id)
-                except Exception:
-                    self._skipped_engine_error_count += 1
-                    continue
-                self._owned_live.pop(voice_id, None)
+            if state != SB_VOICE_IDLE:
+                # SCHEDULED / PLAYING / STOPPING: schedule command was observed.
+                meta["seen_active"] = True
+                continue
+            # IDLE may mean "created, schedule not yet applied" OR "EOF finished".
+            # Only reclaim after we have seen a non-IDLE state, or after the
+            # audio clock has advanced strictly past the requested start frame
+            # (same-buffer start+EOF can skip intermediate states in snapshots).
+            if not meta["seen_active"] and engine_frame <= int(meta["start_frame"]):
+                continue
+            try:
+                engine.remove_voice(voice_id)
+            except Exception:
+                self._skipped_engine_error_count += 1
+                continue
+            self._owned_live.pop(voice_id, None)
 
     def tick(
         self,
@@ -347,7 +365,7 @@ class PatternPassPlayer:
         )
         horizon = engine_frame + window
 
-        self._reclaim_owned_idle(engine)
+        self._reclaim_owned_idle(engine, engine_frame=engine_frame)
 
         tick_scheduled: list[int] = []
         while self._pending:
@@ -402,7 +420,10 @@ class PatternPassPlayer:
                 continue
 
             self._pending.popleft()
-            self._owned_live[created_id] = trigger.engine_frame
+            self._owned_live[created_id] = {
+                "start_frame": trigger.engine_frame,
+                "seen_active": False,
+            }
             self._scheduled_voice_ids.append(created_id)
             tick_scheduled.append(created_id)
 

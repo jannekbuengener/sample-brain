@@ -137,6 +137,9 @@ class FakeNativeEngine:
         self.returned_voice_ids: dict[int, int] = {}
         self.engine_frame: int = 0
         self._voices: dict[int, dict[str, Any]] = {}
+        # When True, schedule_voice_start only records the start frame; state
+        # stays IDLE until advance_to (models native command-queue latency).
+        self.defer_schedule_apply: bool = False
 
     def seed_foreign_voice(self, voice_id: int, *, pcm_frames: int = 8) -> None:
         """Register a non-player voice that still consumes global capacity."""
@@ -159,6 +162,8 @@ class FakeNativeEngine:
             elif engine_frame >= start:
                 meta["state"] = SB_VOICE_PLAYING
             else:
+                # Future start: once the audio clock exists, a queued schedule
+                # is visible as SCHEDULED (command applied in a prior callback).
                 meta["state"] = SB_VOICE_SCHEDULED
 
     def get_snapshot(self) -> Any:
@@ -215,6 +220,10 @@ class FakeNativeEngine:
             raise RuntimeError(f"native schedule_voice_start failed for {voice_id}")
         meta = self._voices[voice_id]
         meta["start_frame"] = engine_frame
+        if self.defer_schedule_apply:
+            # Native path: command queued, voice remains IDLE until callback.
+            meta["state"] = SB_VOICE_IDLE
+            return
         if self.engine_frame >= engine_frame + int(meta["pcm_frames"]):
             meta["state"] = SB_VOICE_IDLE
         elif self.engine_frame >= engine_frame:
@@ -1331,3 +1340,47 @@ def test_pattern_pass_player_missing_sample_fail_soft():
     )
     assert result.skipped_missing_source_count == 1
     assert result.scheduled_count == 1
+
+def test_pattern_pass_player_does_not_reclaim_unacked_initial_idle():
+    """P1: IDLE before schedule-ack must not be treated as EOF reclaimable."""
+    module = _sequencer_or_fail()
+    Player = _require_symbol(module, "PatternPassPlayer")
+    ScheduledTrigger = _require_symbol(module, "ScheduledTrigger")
+
+    planned = (
+        ScheduledTrigger(
+            channel_id="ch_kick",
+            sample_path="synthetic/kick.wav",
+            position=Fraction(0, 1),
+            engine_frame=4800,
+        ),
+    )
+    engine = FakeNativeEngine()
+    engine.defer_schedule_apply = True
+    ids = iter(range(1, 10))
+    player = Player(planned, lookahead_frames=4800)
+    player.tick(
+        engine_frame=0,
+        engine=engine,
+        pcm_for_path=lambda _path: _short_pcm(),
+        allocate_voice_id=lambda: next(ids),
+    )
+    assert engine.get_snapshot().total_voice_count == 1
+    assert engine.get_snapshot().voice_states[0] == SB_VOICE_IDLE
+    # Second tick at same clock before audio callback — must keep the voice.
+    player.tick(
+        engine_frame=0,
+        engine=engine,
+        pcm_for_path=lambda _path: _short_pcm(),
+        allocate_voice_id=lambda: next(ids),
+    )
+    assert engine.remove_voice_calls == []
+    assert engine.get_snapshot().total_voice_count == 1
+    assert player.live_voice_count == 1
+
+
+def test_pattern_pass_player_rejects_max_voices_above_sb_max():
+    module = _sequencer_or_fail()
+    Player = _require_symbol(module, "PatternPassPlayer")
+    with pytest.raises(ValueError, match="SB_MAX_VOICES"):
+        Player((), lookahead_frames=0, max_voices=SB_MAX_VOICES + 1)
