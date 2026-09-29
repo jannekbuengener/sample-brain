@@ -18,12 +18,12 @@ This roadmap intentionally groups durable work rather than mirroring every open 
 
 Current sequence is owned by #691 and its scoped children: shared visual acceptance, compact Browser/Harmonic density, elastic coupled panels, Clean Start/progressive disclosure, waveform rendering research, then display/startup preferences. Panel reordering remains parked until the layout foundation is accepted.
 
-### Active — Screen 2 Channel Rack
+### Foundations ready / UI HOLD — Screen 2 Channel Rack
 
 **[#675 — Live Kit → Channel Rack](https://github.com/jannekbuengener/sample-brain/issues/675)**  
 **[#678 — Screen-2 QML Channel Rack](https://github.com/jannekbuengener/sample-brain/issues/678)**
 
-The Python/session/sequencer foundations are already present. Keep Screen 2 distinct from the parked Screen-3 arrangement timeline (#679).
+The Python/session/sequencer foundations are already present. **Screen-2 QML #678 remains HOLD** under `docs/PRODUCT_WORKFLOW_CANON.md` until that gate is explicitly lifted. Keep Screen 2 distinct from the parked Screen-3 arrangement timeline (#679).
 
 ### Active — repository governance and reconciliation
 
@@ -80,7 +80,7 @@ The following are no longer roadmap work and should not be represented as open e
 ### Screen-2 foundation
 
 - Session ownership, Pattern Core, sequencer scheduling/PCM and Channel Rack Python core are established.
-- Product/UI delivery is tracked under #675/#678.
+- Product/UI delivery is tracked under #675/#678; the QML UI remains **HOLD** until the canonical gate is explicitly lifted.
 - Screen 3 arrangement remains separately parked under #679; do not pull arrangement/timeline scope into Screen 2.
 
 ### Track deconstruction / performance packs
