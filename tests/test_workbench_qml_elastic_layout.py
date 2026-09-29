@@ -53,17 +53,47 @@ def test_qml_keeps_browser_search_and_escape_handlers():
 def test_elastic_bridge_inactive_on_clean_start(tmp_path: Path):
     active = {"value": False}
     harmony = {"value": False}
+    revealed = {"value": False}
     bridge = create_elastic_layout_bridge(
         state_dir=tmp_path,
         harmony_open=lambda: harmony["value"],
         has_active_source=lambda: active["value"],
+        library_revealed=lambda: revealed["value"],
     )
     bridge.setContentWidth(1600.0)
-    assert bridge.libraryWidth == 300.0
+    assert bridge.libraryWidth == 0.0
     assert bridge.browserWidth == 0.0
     assert bridge.harmonyWidth == 0.0
     assert bridge.liveKitWidth == 0.0
+    before = dict(bridge.current_ratios())
     bridge.applyDrag("library", 40.0)
+    assert bridge.libraryWidth == 0.0
+    assert dict(bridge.current_ratios()) == before
+
+    revealed["value"] = True
+    bridge.syncFromInteraction()
+    assert bridge.libraryWidth == 300.0
+    assert bridge.browserWidth == 0.0
+    assert dict(bridge.current_ratios()) == before
+
+
+def test_elastic_bridge_reveal_does_not_persist_ratios(tmp_path: Path):
+    from src.workbench_layout_solver import load_layout_preferences
+
+    active = {"value": False}
+    revealed = {"value": False}
+    bridge = create_elastic_layout_bridge(
+        state_dir=tmp_path,
+        harmony_open=lambda: False,
+        has_active_source=lambda: active["value"],
+        library_revealed=lambda: revealed["value"],
+    )
+    before = dict(bridge.current_ratios())
+    revealed["value"] = True
+    bridge.syncFromInteraction()
+    bridge.endDrag()
+    loaded = load_layout_preferences(state_dir=tmp_path)
+    assert dict(loaded.ratios) == before
     assert bridge.libraryWidth == 300.0
 
 

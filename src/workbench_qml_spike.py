@@ -174,6 +174,10 @@ def build_qml_view_model_from_fixture_v2(
         browser_materialized=bool(state.layout.browser_materialized),
         live_kit_materialized=bool(state.layout.live_kit_materialized),
     )
+    if state.source_selected:
+        view_model.set_library_revealed(False)
+    else:
+        view_model.set_library_revealed(bool(state.layout.source_nav_visible))
     return view_model
 
 
@@ -506,6 +510,11 @@ def apply_screen1_visual_state_v2(
         browser_materialized=bool(state.layout.browser_materialized),
         live_kit_materialized=bool(state.layout.live_kit_materialized),
     )
+    # #725: library_revealed is No-Source presentation only.
+    if state.source_selected:
+        view_model.set_library_revealed(False)
+    else:
+        view_model.set_library_revealed(bool(state.layout.source_nav_visible))
     adapter.harmonic_match_open = bool(state.layout.harmonic_visible)
     if not state.preview_active and adapter.preview_active:
         adapter.stop_preview()
@@ -782,6 +791,145 @@ def run_qml_visual_acceptance_v2(
         engines.clear()
 
 
+_V725_CAPTURE_LABELS = (
+    "clean-start-collapsed",
+    "clean-start-reveal-hover",
+    "opened-no-source",
+    "active-source",
+)
+
+
+def run_qml_visual_acceptance_725(
+    *,
+    runtime_root: Path,
+    evidence_dir: Path,
+) -> dict[str, object]:
+    """#725 Runtime-/Interaction-Captures. Does not invent a parallel fixture family."""
+    import platform
+
+    from PySide6.QtQuick import QQuickItem
+
+    _require_fresh_qml_capture_process()
+    report = validate_qml_renderer_provenance(runtime_root)
+    fixture = build_screen1_visual_fixture_v2()
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    captures: dict[str, Path] = {}
+    sanity: dict[str, dict[str, bool | list[object]]] = {}
+    engines: list[object] = []
+    dpi_scale = 100
+
+    def _capture(label: str, window: object, engine: object, *, v2_state: str) -> None:
+        nonlocal dpi_scale
+        target = evidence_dir / f"{label}.png"
+        _grab_qml_window_png(window, target, engine=engine)
+        check = validate_capture_sanity(
+            target, expected_width=CLIENT_WIDTH, expected_height=CLIENT_HEIGHT
+        )
+        check["v2_state_id"] = v2_state
+        check["capture_label"] = label
+        check["pass"] = bool(check["pass"])
+        sanity[label] = check
+        captures[label] = target
+
+    try:
+        # 1) Collapsed clean start (= screen1-clean-start product projection)
+        clean = resolve_screen1_visual_state_v2(fixture, "screen1-clean-start")
+        view_model = Screen1QmlViewModel(
+            state_id="screen1-default-3panel",
+            library_labels=(),
+            browser_rows=(),
+            selected_browser_index=-1,
+            harmony_rows=(),
+            live_kit_groups=(),
+        )
+        adapter = Screen1QmlInteractionAdapter(view_model=view_model)
+        apply_screen1_visual_state_v2(view_model, adapter, fixture, clean)
+        app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+        engines.append(engine)
+        window.setWidth(CLIENT_WIDTH)
+        window.setHeight(CLIENT_HEIGHT)
+        window.show()
+        _settle_qml_frame(app)
+        dpi_scale = _require_v2_capture_dpi_100(int(window.winId()))
+        _capture("clean-start-collapsed", window, engine, v2_state="screen1-clean-start")
+
+        # 2) Hover on edge affordance (interaction capture only)
+        affordance = window.findChild(QQuickItem, "libraryRevealAffordance")
+        if affordance is None:
+            raise RuntimeError("libraryRevealAffordance fehlt für #725 Hover-Capture.")
+        affordance.setProperty("hovered", True)
+        _settle_qml_frame(app)
+        _capture(
+            "clean-start-reveal-hover", window, engine, v2_state="screen1-clean-start"
+        )
+
+        # 3) Opened-no-source via real reveal intent
+        bridge = engine._screen1_interaction_bridge
+        bridge.revealLibrary()
+        _settle_qml_frame(app)
+        if not view_model.library_revealed or view_model.has_active_source:
+            raise RuntimeError("Reveal muss Opened-no-source ohne Source Selection setzen.")
+        _capture("opened-no-source", window, engine, v2_state="screen1-clean-start")
+        window.close()
+        app.processEvents()
+
+        # 4) Active source (= screen1-active-source)
+        active = resolve_screen1_visual_state_v2(fixture, "screen1-active-source")
+        view_model = build_qml_view_model_from_fixture_v2(fixture, "screen1-active-source")
+        adapter = Screen1QmlInteractionAdapter(
+            view_model=view_model,
+            harmony_controller=production.HarmonicMatchLibraryController(),
+        )
+        apply_screen1_visual_state_v2(view_model, adapter, fixture, active)
+        app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+        engines.append(engine)
+        window.setWidth(CLIENT_WIDTH)
+        window.setHeight(CLIENT_HEIGHT)
+        window.show()
+        _settle_qml_frame(app)
+        dpi_scale = _require_v2_capture_dpi_100(int(window.winId()))
+        _capture("active-source", window, engine, v2_state="screen1-active-source")
+        window.close()
+        app.processEvents()
+
+        if tuple(captures) != _V725_CAPTURE_LABELS:
+            raise EvidenceError(
+                f"#725 captures must be {_V725_CAPTURE_LABELS}; got {tuple(captures)}"
+            )
+        manifest = {
+            "schema": "sample_brain_screen1_725_clean_start_evidence",
+            "issue": 725,
+            "commit": report.manifest.commit,
+            "channel": report.manifest.channel,
+            "runtime_status": "valid",
+            "python": f"{platform.python_implementation()} {platform.python_version()}",
+            "os": "Windows " + platform.release(),
+            "dpi": dpi_scale,
+            "fixture": fixture.version,
+            "fixture_states_referenced": [
+                "screen1-clean-start",
+                "screen1-active-source",
+            ],
+            "capture_labels": list(_V725_CAPTURE_LABELS),
+            "screenshot_hashes": {
+                key: __import__("hashlib").sha256(path.read_bytes()).hexdigest()
+                for key, path in captures.items()
+            },
+            "sanity_results": {
+                key: {
+                    "pass": bool(value.get("pass")),
+                    "v2_state_id": value.get("v2_state_id"),
+                    "capture_label": value.get("capture_label"),
+                }
+                for key, value in sanity.items()
+            },
+        }
+        write_visual_evidence_manifest(evidence_dir / "manifest-725.json", manifest)
+        return manifest
+    finally:
+        engines.clear()
+
+
 __all__ = [
     "QML_SOURCE",
     "QmlBrowserRow",
@@ -798,6 +946,7 @@ __all__ = [
     "run_qml_virtualization_probe",
     "run_qml_visual_acceptance",
     "run_qml_visual_acceptance_v2",
+    "run_qml_visual_acceptance_725",
     "validate_qml_renderer_provenance",
     "virtual_row_window",
 ]

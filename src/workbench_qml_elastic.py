@@ -15,12 +15,17 @@ from .workbench_layout_solver import (
     solve_widths,
 )
 
+# Fixed No-Source Library width when revealed (#725 Opened-no-source).
+# Not a ratio authority — elastic solve applies only with has_active_source.
+OPENED_NO_SOURCE_LIBRARY_WIDTH_PX = 300.0
+
 
 def create_elastic_layout_bridge(
     *,
     state_dir: Path | None = None,
     harmony_open: Callable[[], bool],
     has_active_source: Callable[[], bool],
+    library_revealed: Callable[[], bool] | None = None,
     on_changed: Callable[[], None] | None = None,
 ):
     """Thin QObject projection; solver remains the layout authority."""
@@ -37,6 +42,7 @@ def create_elastic_layout_bridge(
     }
     persistable = bool(loaded.persistable)
     layout_revision = 0
+    revealed = library_revealed or (lambda: False)
 
     class ElasticLayoutBridge(QObject):
         changed = Signal()
@@ -55,8 +61,12 @@ def create_elastic_layout_bridge(
         def _recompute(self) -> None:
             nonlocal widths
             if not bool(has_active_source()):
+                # #725 No-Source presentation only — never touches stored ratios.
+                library_w = (
+                    OPENED_NO_SOURCE_LIBRARY_WIDTH_PX if bool(revealed()) else 0.0
+                )
                 widths = {
-                    "library": 300.0,
+                    "library": library_w,
                     "browser": 0.0,
                     "harmony": 0.0,
                     "livekit": 0.0,
@@ -149,4 +159,8 @@ def create_elastic_layout_bridge(
     return ElasticLayoutBridge()
 
 
-__all__ = ["CANONICAL_DEFAULT_RATIOS", "create_elastic_layout_bridge"]
+__all__ = [
+    "CANONICAL_DEFAULT_RATIOS",
+    "OPENED_NO_SOURCE_LIBRARY_WIDTH_PX",
+    "create_elastic_layout_bridge",
+]

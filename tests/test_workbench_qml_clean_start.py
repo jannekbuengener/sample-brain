@@ -501,9 +501,225 @@ def test_qml_source_declares_calm_canvas_and_progressive_disclosure():
     from src.workbench_qml import QML_SOURCE
 
     assert 'objectName: "calmCanvas"' in QML_SOURCE
+    assert 'objectName: "libraryRevealAffordance"' in QML_SOURCE
+    assert "revealLibrary()" in QML_SOURCE
+    assert "libraryRevealed" in QML_SOURCE
     assert "hasActiveSource" in QML_SOURCE
     assert "browserPane" in QML_SOURCE
     assert "liveKitPane" in QML_SOURCE
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_qml_clean_start_library_collapsed_with_reveal_affordance(tmp_path: Path):
+    from PySide6.QtQuick import QQuickItem
+
+    from src.workbench_library_navigation import WorkbenchLibraryNavigation
+    from src.workbench_qml import (
+        Screen1QmlRuntimeComposition,
+        Screen1QmlViewModel,
+        _qml_engine,
+        apply_clean_start_launch,
+    )
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+
+    _root, db = _register_analyzed_root(tmp_path)
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+        library_tree=composition.library_tree,
+    )
+    apply_clean_start_launch(view_model, composition)
+    assert view_model.library_revealed is False
+    app, engine, window = _qml_engine(view_model, runtime_composition=composition)
+    window.show()
+    try:
+        app.processEvents()
+        layout = engine._screen1_layout_model
+        calm = window.findChild(QQuickItem, "calmCanvas")
+        library = window.findChild(QQuickItem, "libraryPane")
+        affordance = window.findChild(QQuickItem, "libraryRevealAffordance")
+        add_source = window.findChild(QQuickItem, "calmCanvasAddSource")
+        browser = window.findChild(QQuickItem, "browserPane")
+        live_kit = window.findChild(QQuickItem, "liveKitPane")
+        assert calm is not None and calm.isVisible()
+        assert add_source is not None and add_source.isVisible()
+        assert affordance is not None and affordance.isVisible()
+        assert browser is not None and not browser.isVisible()
+        assert live_kit is not None and not live_kit.isVisible()
+        assert layout.libraryWidth == 0.0
+        if library is not None:
+            assert not library.isVisible() or library.width() == 0
+        assert composition.has_active_source is False
+        assert view_model.library_revealed is False
+    finally:
+        _shutdown_engine(app, engine, window)
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_qml_reveal_opens_library_without_source_audition_or_harmony(tmp_path: Path):
+    from PySide6.QtQuick import QQuickItem
+
+    from src.workbench_library_navigation import WorkbenchLibraryNavigation
+    from src.workbench_layout_solver import CANONICAL_DEFAULT_RATIOS
+    from src.workbench_qml import (
+        Screen1QmlRuntimeComposition,
+        Screen1QmlViewModel,
+        _qml_engine,
+        apply_clean_start_launch,
+    )
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+
+    _root, db = _register_analyzed_root(tmp_path)
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+        library_tree=composition.library_tree,
+    )
+    apply_clean_start_launch(view_model, composition)
+    app, engine, window = _qml_engine(view_model, runtime_composition=composition)
+    window.show()
+    try:
+        app.processEvents()
+        bridge = engine._screen1_interaction_bridge
+        adapter = engine._screen1_interaction_adapter
+        layout = engine._screen1_layout_model
+        ratios_before = dict(layout.current_ratios())
+        assert ratios_before == dict(CANONICAL_DEFAULT_RATIOS)
+        bridge.revealLibrary()
+        app.processEvents()
+        assert view_model.library_revealed is True
+        assert composition.has_active_source is False
+        assert view_model.selected_browser_index == -1
+        assert view_model.browser_rows == ()
+        assert adapter.preview_active is False
+        assert adapter.harmonic_match_open is False
+        assert composition.audition_dispatches == []
+        assert view_model.harmony_rows == ()
+        assert dict(layout.current_ratios()) == ratios_before
+        assert layout.libraryWidth == 300.0
+        calm = window.findChild(QQuickItem, "calmCanvas")
+        library = window.findChild(QQuickItem, "libraryPane")
+        affordance = window.findChild(QQuickItem, "libraryRevealAffordance")
+        browser = window.findChild(QQuickItem, "browserPane")
+        assert calm is not None and calm.isVisible()
+        assert library is not None and library.isVisible()
+        assert affordance is not None and not affordance.isVisible()
+        assert browser is not None and not browser.isVisible()
+    finally:
+        _shutdown_engine(app, engine, window)
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_qml_restart_resets_reveal_to_collapsed(tmp_path: Path):
+    from src.workbench_library_navigation import WorkbenchLibraryNavigation
+    from src.workbench_qml import (
+        Screen1QmlRuntimeComposition,
+        Screen1QmlViewModel,
+        apply_clean_start_launch,
+    )
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+
+    _root, db = _register_analyzed_root(tmp_path)
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+        library_tree=composition.library_tree,
+    )
+    apply_clean_start_launch(view_model, composition)
+    view_model.reveal_library()
+    assert view_model.library_revealed is True
+    apply_clean_start_launch(view_model, composition)
+    assert view_model.library_revealed is False
+    assert composition.has_active_source is False
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_qml_source_select_after_reveal_uses_elastic_not_reveal_flag(tmp_path: Path):
+    from PySide6.QtQuick import QQuickItem
+
+    from src.workbench_library_navigation import (
+        LibraryNodeKind,
+        WorkbenchLibraryNavigation,
+    )
+    from src.workbench_qml import (
+        Screen1QmlRuntimeComposition,
+        Screen1QmlViewModel,
+        _qml_engine,
+        apply_clean_start_launch,
+    )
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+
+    _root, db = _register_analyzed_root(tmp_path)
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+        library_tree=composition.library_tree,
+    )
+    apply_clean_start_launch(view_model, composition)
+    app, engine, window = _qml_engine(view_model, runtime_composition=composition)
+    window.show()
+    try:
+        library_model = engine._screen1_library_model
+        library_bridge = engine._screen1_library_bridge
+        bridge = engine._screen1_interaction_bridge
+        layout = engine._screen1_layout_model
+        bridge.revealLibrary()
+        app.processEvents()
+        library_model.state.fetch_children(SAMPLE_SOURCES)
+        root_node = next(
+            node
+            for node in navigation.children(SAMPLE_SOURCES)
+            if node.kind is LibraryNodeKind.REGISTERED_ROOT
+        )
+        library_bridge.selectLibraryNode(root_node.node_id)
+        app.processEvents()
+        assert composition.has_active_source is True
+        assert layout.libraryWidth > 0
+        assert layout.browserWidth > 0
+        assert layout.liveKitWidth > 0
+        # Reveal flag is not a second Active-Source authority.
+        calm = window.findChild(QQuickItem, "calmCanvas")
+        browser = window.findChild(QQuickItem, "browserPane")
+        assert calm is not None and not calm.isVisible()
+        assert browser is not None and browser.isVisible()
+    finally:
+        _shutdown_engine(app, engine, window)
 
 
 # --- Visual acceptance product apply ----------------------------------------
@@ -526,6 +742,7 @@ def test_apply_v2_clean_start_and_active_source_projection():
     adapter = Screen1QmlInteractionAdapter(view_model=view_model)
     apply_screen1_visual_state_v2(view_model, adapter, fixture, clean)
     assert view_model.has_active_source is False
+    assert view_model.library_revealed is False
     assert view_model.calm_canvas_visible is True
     assert view_model.browser_materialized is False
     assert view_model.live_kit_materialized is False
@@ -536,6 +753,7 @@ def test_apply_v2_clean_start_and_active_source_projection():
     active = resolve_screen1_visual_state_v2(fixture, "screen1-active-source")
     apply_screen1_visual_state_v2(view_model, adapter, fixture, active)
     assert view_model.has_active_source is True
+    assert view_model.library_revealed is False
     assert view_model.calm_canvas_visible is False
     assert view_model.browser_materialized is True
     assert view_model.live_kit_materialized is True

@@ -222,6 +222,26 @@ def _ratios_sum_ok(ratios: Mapping[str, float]) -> bool:
     return abs(sum(values) - 1.0) <= 1e-9
 
 
+def _panel_ratios_contract_ok(
+    *,
+    source_nav_visible: bool,
+    browser_materialized: bool,
+    harmonic_visible: bool,
+    live_kit_materialized: bool,
+    panel_ratios: Mapping[str, float],
+) -> bool:
+    """Empty ratios are valid only when no weighted working panes are declared."""
+    any_weighted = (
+        source_nav_visible
+        or browser_materialized
+        or harmonic_visible
+        or live_kit_materialized
+    )
+    if not any_weighted:
+        return len(panel_ratios) == 0
+    return _ratios_sum_ok(panel_ratios)
+
+
 def _layout(
     *,
     source_nav_visible: bool,
@@ -232,7 +252,13 @@ def _layout(
     panel_ratios: Mapping[str, float],
 ) -> Screen1PanelLayoutV2:
     frozen = {str(k): float(v) for k, v in panel_ratios.items()}
-    if not _ratios_sum_ok(frozen):
+    if not _panel_ratios_contract_ok(
+        source_nav_visible=source_nav_visible,
+        browser_materialized=browser_materialized,
+        harmonic_visible=harmonic_visible,
+        live_kit_materialized=live_kit_materialized,
+        panel_ratios=frozen,
+    ):
         raise EvidenceError("panel_ratios must sum to 1.0 for positive entries")
     return Screen1PanelLayoutV2(
         source_nav_visible=source_nav_visible,
@@ -272,12 +298,12 @@ def build_screen1_visual_fixture_v2() -> Screen1VisualFixtureV2:
         density_mode=DENSITY_MODE_V2_COMPACT_TARGET,
         motion_mode=MOTION_MODE_FULL,
         layout=_layout(
-            source_nav_visible=True,
+            source_nav_visible=False,
             calm_canvas_visible=True,
             browser_materialized=False,
             harmonic_visible=False,
             live_kit_materialized=False,
-            panel_ratios={"source_nav": 1.0},
+            panel_ratios={},
         ),
         browser_fixture_row_count=0,
         harmony_fixture_row_count=0,
@@ -381,7 +407,13 @@ def validate_screen1_visual_fixture_v2(fixture: Screen1VisualFixtureV2) -> None:
         state = resolve_screen1_visual_state_v2(fixture, state_id)
         if state.state_id != state_id:
             raise EvidenceError("state_id mismatch inside Screen-1 v2 fixture")
-        if not _ratios_sum_ok(state.layout.panel_ratios):
+        if not _panel_ratios_contract_ok(
+            source_nav_visible=state.layout.source_nav_visible,
+            browser_materialized=state.layout.browser_materialized,
+            harmonic_visible=state.layout.harmonic_visible,
+            live_kit_materialized=state.layout.live_kit_materialized,
+            panel_ratios=state.layout.panel_ratios,
+        ):
             raise EvidenceError(f"Invalid panel_ratios for {state_id}")
         if state.auto_audition:
             raise EvidenceError("v2 acceptance states must not enable auto_audition")

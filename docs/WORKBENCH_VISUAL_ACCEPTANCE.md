@@ -47,8 +47,9 @@ Authority on conflicts for Startup / Density / Panel geometry / Persistence:
 
 `scoped #691 child > #691 > #700 contract docs > historical #503 visual acceptance`
 
-For normal launch visibility / restore specifically: `#693` supersedes historical
-`#503/#518` restore behaviour (see Clean Start doc).
+For normal launch visibility / restore specifically:
+`#725` (collapsed First View) supersedes `#693` Source-Navigation-visible launch,
+which supersedes historical `#503/#518` restore behaviour (see Clean Start doc).
 
 Module: `src/workbench_visual_acceptance.py`
 
@@ -63,7 +64,7 @@ Module: `src/workbench_visual_acceptance.py`
 
 | State ID | Intent |
 |----------|--------|
-| `screen1-clean-start` | Source Navigation + Calm Canvas; no source selected; browser / harmonic / Live Kit **not** materialised as active working panes; no preview / no sample selection |
+| `screen1-clean-start` | Collapsed Source Navigation (#725); Calm Canvas + primary Add Source + edge affordance; no source selected; browser / harmonic / Live Kit **not** materialised; no preview / no sample selection |
 | `screen1-active-source` | Explicit synthetic source selected; browser materialised; harmonic closed; Live Kit may be materialised; no auto-audition |
 | `screen1-harmonic-open` | Like active-source + Harmonic Match visible via existing toggle/anchor contract |
 | `screen1-elastic-resized` | Like active-source with **deterministic non-default** panel ratios (acceptance representation only; no solver) |
@@ -96,8 +97,21 @@ Same capture baseline as v1 when screenshots are produced later:
 - synthetic fixture paths only
 - Owner Visual Acceptance remains separate from agent self-attestation
 
-Follow-up UI slices (#692–#696) must reference these v2 state IDs instead of
+Follow-up UI slices (#692–#696, #725) must reference these v2 state IDs instead of
 inventing parallel fixture semantics.
+
+### #725 Runtime-/Interaction-Captures
+
+Do **not** add competing REQUIRED_STATE_IDS_V2 entries. Additional evidence
+filenames for Owner Visual Acceptance may include:
+
+- `clean-start-collapsed` — product projection of `screen1-clean-start`
+- `clean-start-reveal-hover` — same collapsed layout with edge-affordance hover
+- `opened-no-source` — Library revealed, no Source selected (interaction capture)
+- `active-source` — product projection of `screen1-active-source`
+
+These are capture labels only. Historical v1 evidence under
+`docs/assets/portfolio/runtime/` remains untouched.
 
 ## Screen-1 canonical background reference
 

@@ -230,6 +230,8 @@ class Screen1QmlViewModel:
         self.calm_canvas_visible = True
         self.browser_materialized = False
         self.live_kit_materialized = False
+        # #725 No-Source presentation only (collapsed by default).
+        self.library_revealed = False
 
     @property
     def panel_count(self) -> int:
@@ -305,6 +307,19 @@ class Screen1QmlViewModel:
         self.calm_canvas_visible = bool(calm_canvas_visible)
         self.browser_materialized = bool(browser_materialized)
         self.live_kit_materialized = bool(live_kit_materialized)
+
+    def set_library_revealed(self, revealed: bool) -> None:
+        """Set No-Source Library presentation (#725). Ignored by #694 when active."""
+        self.library_revealed = bool(revealed)
+
+    def reveal_library(self) -> bool:
+        """Reveal Library without Source selection / audition / harmony side effects."""
+        if self.has_active_source:
+            return False
+        if self.library_revealed:
+            return False
+        self.library_revealed = True
+        return True
 
     def set_browser_waveform(self, path: str, envelope: tuple[float, ...]) -> bool:
         """Apply one cached waveform without changing browser selection."""
@@ -1169,7 +1184,7 @@ ApplicationWindow {
         onWidthChanged: layoutModel.setContentWidth(width)
         Component.onCompleted: layoutModel.setContentWidth(width)
 
-        Rectangle { id: libraryPane; objectName: "libraryPane"; width: layoutModel.libraryWidth; height: parent.height; color: window.panel; border.color: window.border
+        Rectangle { id: libraryPane; objectName: "libraryPane"; width: layoutModel.libraryWidth; height: parent.height; visible: width > 0; color: window.panel; border.color: window.border
             ColumnLayout { anchors.fill: parent; anchors.margins: 16
                 RowLayout { Layout.fillWidth: true
                     Label { text: "LIBRARY"; color: window.muted; font.pixelSize: 12; Layout.fillWidth: true }
@@ -1241,6 +1256,36 @@ ApplicationWindow {
             }
         }
         Item {
+            id: libraryRevealAffordance
+            objectName: "libraryRevealAffordance"
+            // #725 subtle edge reveal — secondary to Add Source; not a red CTA.
+            z: 20
+            visible: !window.interaction.hasActiveSource && !window.interaction.libraryRevealed
+            width: 18
+            height: parent.height
+            anchors.left: parent.left
+            property bool hovered: false
+            Rectangle {
+                anchors.fill: parent
+                color: libraryRevealAffordance.hovered ? "#141618" : "transparent"
+                opacity: libraryRevealAffordance.hovered ? 0.92 : 0.55
+            }
+            Text {
+                anchors.centerIn: parent
+                text: "›"
+                color: libraryRevealAffordance.hovered ? "#9aa0a6" : "#5c6168"
+                font.pixelSize: 16
+            }
+            MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onEntered: libraryRevealAffordance.hovered = true
+                onExited: libraryRevealAffordance.hovered = false
+                onClicked: window.interaction.revealLibrary()
+            }
+        }
+        Item {
             id: handleAfterLibrary
             objectName: "elasticHandleAfterLibrary"
             visible: window.interaction.hasActiveSource
@@ -1291,13 +1336,16 @@ ApplicationWindow {
                     Layout.alignment: Qt.AlignHCenter
                 }
                 Label {
-                    text: "Select a Source, or Add Source to begin."
+                    text: window.interaction.libraryRevealed
+                          ? "Select a Source, or Add Source to begin."
+                          : "Add Source to begin."
                     color: window.muted
                     font.pixelSize: 14
                     horizontalAlignment: Text.AlignHCenter
                     Layout.alignment: Qt.AlignHCenter
                 }
                 Button {
+                    objectName: "calmCanvasAddSource"
                     text: "Add Source"
                     Layout.alignment: Qt.AlignHCenter
                     onClicked: addSourceDialog.open()
@@ -1861,6 +1909,15 @@ def _qml_interaction_bridge(
             return adapter.view_model.has_active_source
 
         @Property(bool, notify=state_changed)
+        def libraryRevealed(self) -> bool:
+            return bool(adapter.view_model.library_revealed)
+
+        @Slot()
+        def revealLibrary(self) -> None:
+            if adapter.view_model.reveal_library():
+                self._refresh()
+
+        @Property(bool, notify=state_changed)
         def previewActive(self) -> bool:
             return adapter.preview_active
 
@@ -2347,6 +2404,7 @@ def _qml_engine(
     layout_model = create_elastic_layout_bridge(
         harmony_open=lambda: bool(adapter.harmonic_match_open),
         has_active_source=lambda: bool(adapter.view_model.has_active_source),
+        library_revealed=lambda: bool(adapter.view_model.library_revealed),
     )
 
     def on_interaction_state_changed() -> None:
@@ -2467,6 +2525,7 @@ def apply_clean_start_launch(
         browser_materialized=False,
         live_kit_materialized=False,
     )
+    view_model.set_library_revealed(False)
     view_model.harmony_rows = ()
     view_model.harmony_anchor = ""
     view_model.harmony_status = "Harmonic Match ist ausgeschaltet."

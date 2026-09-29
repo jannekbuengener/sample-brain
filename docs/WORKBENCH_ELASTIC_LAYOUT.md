@@ -38,8 +38,16 @@ Elastic coupled drag applies when the **active workspace** is materialised
 - 3-panel: `library | browser | livekit`
 - 4-panel: `library | browser | harmony | livekit`
 
-Clean Start (`library | calm canvas`) does **not** run coupled elastic drag.
-Calm Canvas is not a weighted panel in the solver. #693 owns launch visibility.
+Clean Start / No-Source presentation does **not** run coupled elastic drag.
+Calm Canvas is not a weighted panel in the solver.
+
+No-Source presentation (#693 / #725):
+
+- Collapsed Clean Start: Library width `0` (not materialised); Calm Canvas fills.
+- Opened-no-source (`library_revealed=True`): fixed Library preferred width
+  (presentation only); still **no** elastic drag and **no** ratio writes.
+- `#725` `library_revealed` is No-Source presentation only. When
+  `has_active_source=True`, this solver alone owns geometry.
 
 ## Canonical state
 
@@ -144,7 +152,8 @@ Those remain #693 / later #696 Startup Preset territory.
 - Live Kit visual redesign
 - Screen 2
 - Audio / matching / catalog domain changes
-- #693 Clean Start behaviour changes
+- #725 collapsed First View / reveal affordance (No-Source presentation only;
+  does not invent a second ratio model)
 
 ## Validation contracts (minimum)
 
