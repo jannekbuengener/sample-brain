@@ -66,8 +66,8 @@ def test_browser_search_field_is_visually_integrated():
     assert QML_SOURCE.count(SEARCH_MARKER) == 1
     assert 'placeholderText: "Search samples"' in search
     assert "background: Rectangle" in search
-    assert "placeholderTextColor: window.muted" in search
-    assert "activeFocus ? window.accent" in search
+    assert "placeholderTextColor: theme.textSecondary" in search
+    assert "activeFocus ? theme.actionActive" in search
 
 
 def test_browser_header_composes_context_title_scope_count_and_error():
@@ -128,7 +128,7 @@ def test_browser_density_waveform_and_divider_invariants():
     assert "property int rowHeight: window.densityRowHeight" in QML_SOURCE
     assert "Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth" in delegate
     assert "height: window.densityDividerHeight" in delegate
-    assert "color: window.divider" in delegate
+    assert "color: theme.dividerDefault" in delegate
 
 
 def test_browser_shared_column_spec_uses_single_definition_each():

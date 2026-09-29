@@ -413,7 +413,7 @@ def test_qml_slot_audition_wiring_has_no_audio_or_domain_implementation():
 def test_qml_live_kit_slot_audition_focused_state_is_subtle():
     assert "slotAuditionBackdrop" in QML_SOURCE
     assert "visible: modelData.auditioning" in QML_SOURCE
-    assert "modelData.auditioning ? window.accent" in QML_SOURCE
+    assert "modelData.auditioning ? theme.actionActive" in QML_SOURCE
     assert 'font.pixelSize: 10' in QML_SOURCE
 
 
