@@ -141,8 +141,9 @@ Tkinter -> funktionierender Legacy-/Fallback-Pfad und Verhaltensreferenz
 Python Core/Controller/Audio/Catalog -> autoritativ und wiederzuverwenden
 ```
 
-`src/workbench_qml.py` ist die kanonische QML-Shell. Die ursprüngliche
-Migration unter #503 ist abgeschlossen; aktuelle Screen-1-Weiterentwicklung
+`src/workbench_qml.py` ist die kanonische QML-Shell. Das ursprüngliche
+Screen-1-Epic #503 ist geschlossen; das ist **kein** Claim, dass jede
+technische Migration abgeschlossen ist. Aktuelle Screen-1-Weiterentwicklung
 läuft unter #691. Neue Slices prüfen vor der Planung den Renderer-Canon,
 #691, das scoped Child-Issue und den GitHub-Live-State. Diese
 Festlegung entfernt Tkinter nicht und dupliziert keine bestehende Python- oder
