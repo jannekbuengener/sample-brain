@@ -1022,12 +1022,20 @@ ApplicationWindow {
     property color accent: "#b1122b"
     property color divider: "#26292e"
     property int textTitle: 18
-    property int textBody: 14
-    property int textMeta: 13
-    property int textCaption: 11
-    property int browserRowHeight: 66
-    property int browserRowInset: 12
-    property int browserRowSpacing: 12
+    property int textBody: 12
+    property int textMeta: 11
+    property int textCaption: 10
+    // #692 shared compact density (logical px / DIP) — Browser + Harmonic Match.
+    // densityRowHeight=30 is the first implementation baseline, not a forever-lock:
+    // Owner Visual Acceptance may later retarget (e.g. 28/32) via explicit product
+    // adjustment of this token together with the frozen #692 assertion.
+    property int densityRowHeight: 30
+    property int densityVerticalInset: 4
+    property int densityHorizontalInset: 8
+    property int densityWaveformHeight: 22
+    property int densityRowSpacing: 8
+    property int densityDividerHeight: 1
+    property int densityActionHitTarget: 24
     property int browserWaveformWidth: 180
     property int browserWaveformMin: 150
     property int browserMetaColumnWidth: 48
@@ -1229,7 +1237,7 @@ ApplicationWindow {
                         onClicked: window.screenData.cancelAnalysis()
                     }
                 }
-                RowLayout { Layout.fillWidth: true; anchors.leftMargin: window.browserRowInset; anchors.rightMargin: window.browserRowInset; spacing: window.browserRowSpacing
+                RowLayout { Layout.fillWidth: true; anchors.leftMargin: window.densityHorizontalInset; anchors.rightMargin: window.densityHorizontalInset; spacing: window.densityRowSpacing
                     Item { Layout.preferredWidth: window.browserWaveformWidth; Layout.minimumWidth: window.browserWaveformMin }
                     Label { text: "SAMPLE NAME"; color: window.muted; Layout.fillWidth: true; font.pixelSize: window.textCaption; font.bold: true }
                     Label { text: "BPM"; color: window.muted; Layout.preferredWidth: window.browserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
@@ -1237,7 +1245,7 @@ ApplicationWindow {
                     Label { text: "LENGTH"; color: window.muted; Layout.preferredWidth: window.browserLengthColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
                     Item { Layout.preferredWidth: window.browserAddColumnWidth }
                 }
-                ListView { id: browser; objectName: "browserList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: window.browserRowHeight; implicitHeight: window.browserRowHeight * 2
+                ListView { id: browser; objectName: "browserList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: window.densityRowHeight; implicitHeight: window.densityRowHeight * 2
                     Keys.onPressed: function(event) {
                         if (event.key === Qt.Key_Down) { window.interaction.navigateBrowser(1); event.accepted = true }
                         else if (event.key === Qt.Key_Up) { window.interaction.navigateBrowser(-1); event.accepted = true }
@@ -1246,15 +1254,15 @@ ApplicationWindow {
                     delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.screenData.selectedBrowserIndex ? "#211014" : (rowSelection.containsMouse ? "#15181c" : "transparent"); border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0; border.color: window.accent
                         Component.onCompleted: window.browserDelegateCreations += 1
                         MouseArea { id: rowSelection; anchors.fill: parent; z: 0; hoverEnabled: true; onClicked: { browser.forceActiveFocus(); window.interaction.selectRow(index) } }
-                        RowLayout { anchors.fill: parent; anchors.leftMargin: window.browserRowInset; anchors.rightMargin: window.browserRowInset; spacing: window.browserRowSpacing; z: 1
-                            Item { id: waveformSurface; Layout.preferredWidth: window.browserWaveformWidth; Layout.minimumWidth: window.browserWaveformMin; Layout.fillHeight: true
+                        RowLayout { anchors.fill: parent; anchors.leftMargin: window.densityHorizontalInset; anchors.rightMargin: window.densityHorizontalInset; anchors.topMargin: window.densityVerticalInset; anchors.bottomMargin: window.densityVerticalInset; spacing: window.densityRowSpacing; z: 1
+                            Item { id: waveformSurface; Layout.preferredWidth: window.browserWaveformWidth; Layout.minimumWidth: window.browserWaveformMin; Layout.preferredHeight: window.densityWaveformHeight; Layout.maximumHeight: window.densityWaveformHeight
                                 Canvas { id: waveformCanvas; anchors.fill: parent; property var envelope: modelData.waveform
                                     onEnvelopeChanged: requestPaint()
                                     onPaint: {
                                         var context = getContext("2d")
                                         context.clearRect(0, 0, width, height)
                                         context.strokeStyle = index === window.screenData.selectedBrowserIndex ? window.accent : "#6d737c"
-                                        context.lineWidth = 1.4
+                                        context.lineWidth = 1.2
                                         context.beginPath()
                                         var points = envelope || []
                                         var center = height / 2
@@ -1266,7 +1274,7 @@ ApplicationWindow {
                                             for (var point = 0; point < points.length; point++) {
                                                 var value = Math.max(0, Math.min(1, Number(points[point]) || 0))
                                                 var x = Math.min(width, point * step + step / 2)
-                                                var amplitude = Math.max(2, height * 0.42 * value)
+                                                var amplitude = Math.max(1, height * 0.42 * value)
                                                 context.moveTo(x, center - amplitude)
                                                 context.lineTo(x, center + amplitude)
                                             }
@@ -1276,18 +1284,16 @@ ApplicationWindow {
                                 }
                                 MouseArea { anchors.fill: parent; z: 2; onClicked: { browser.forceActiveFocus(); window.interaction.previewRow(index) } }
                             }
-                            ColumnLayout { Layout.fillWidth: true
-                                spacing: 3
-                                Label { text: modelData.name; color: window.textColor; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
-                                Label { text: modelData.type; color: window.muted; font.pixelSize: window.textCaption; elide: Text.ElideRight; Layout.fillWidth: true }
-                            }
-                            Label { text: modelData.bpm; color: window.textColor; Layout.preferredWidth: window.browserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textMeta }
-                            Label { text: modelData.key; color: window.textColor; Layout.preferredWidth: window.browserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textMeta }
-                            Label { text: modelData.duration; color: window.textColor; Layout.preferredWidth: window.browserLengthColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textMeta }
+                            Label { text: modelData.name; color: window.textColor; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; verticalAlignment: Text.AlignVCenter }
+                            Label { text: modelData.type; color: window.muted; font.pixelSize: window.textCaption; elide: Text.ElideRight; Layout.preferredWidth: 72; Layout.maximumWidth: 88; verticalAlignment: Text.AlignVCenter }
+                            Label { text: modelData.bpm; color: window.textColor; Layout.preferredWidth: window.browserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
+                            Label { text: modelData.key; color: window.textColor; Layout.preferredWidth: window.browserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
+                            Label { text: modelData.duration; color: window.textColor; Layout.preferredWidth: window.browserLengthColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
                             Rectangle {
                                 id: addButton
                                 Layout.preferredWidth: window.browserAddColumnWidth
-                                Layout.preferredHeight: 28
+                                Layout.preferredHeight: Math.min(window.densityActionHitTarget, window.densityRowHeight - 2 * window.densityVerticalInset)
+                                Layout.maximumHeight: window.densityRowHeight - 2 * window.densityVerticalInset
                                 radius: 3
                                 property bool hovered: addButtonMouse.containsMouse
                                 color: addButtonMouse.pressed ? "#3a1720" : (addButtonMouse.containsMouse ? "#24151a" : "transparent")
@@ -1298,7 +1304,7 @@ ApplicationWindow {
                                     color: addButtonMouse.pressed || addButtonMouse.containsMouse || index === window.screenData.selectedBrowserIndex ? window.accent : window.muted
                                     horizontalAlignment: Text.AlignRight
                                     verticalAlignment: Text.AlignVCenter
-                                    font.pixelSize: 11
+                                    font.pixelSize: window.textCaption
                                 }
                                 MouseArea {
                                     id: addButtonMouse
@@ -1311,7 +1317,7 @@ ApplicationWindow {
                                 }
                             }
                         }
-                        Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: window.divider; opacity: index === window.screenData.selectedBrowserIndex ? 0.35 : 0.8 }
+                        Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: window.densityDividerHeight; color: window.divider; opacity: index === window.screenData.selectedBrowserIndex ? 0.35 : 0.8 }
                     }
                 }
             }
@@ -1325,8 +1331,8 @@ ApplicationWindow {
                             harmonicMatchList.contentY = window.interaction.harmonyScrollY
                         }
                         window.interaction.requestHarmonyWaveforms(
-                            Math.max(0, Math.floor(harmonicMatchList.contentY / 72)),
-                            Math.ceil(harmonicMatchList.height / 72) + 2
+                            Math.max(0, Math.floor(harmonicMatchList.contentY / window.densityRowHeight)),
+                            Math.ceil(harmonicMatchList.height / window.densityRowHeight) + 2
                         )
                     })
                 } else {
@@ -1352,52 +1358,87 @@ ApplicationWindow {
                     onContentYChanged: {
                         window.interaction.setHarmonyScrollY(contentY)
                         window.interaction.requestHarmonyWaveforms(
-                            Math.max(0, Math.floor(contentY / 72)),
-                            Math.ceil(height / 72) + 2
+                            Math.max(0, Math.floor(contentY / window.densityRowHeight)),
+                            Math.ceil(height / window.densityRowHeight) + 2
                         )
                     }
                     onHeightChanged: {
                         if (visible) {
                             window.interaction.requestHarmonyWaveforms(
-                                Math.max(0, Math.floor(contentY / 72)),
-                                Math.ceil(height / 72) + 2
+                                Math.max(0, Math.floor(contentY / window.densityRowHeight)),
+                                Math.ceil(height / window.densityRowHeight) + 2
                             )
                         }
                     }
-                    delegate: Rectangle { width: parent.width; height: 72; color: index === window.interaction.selectedHarmonyIndex ? window.panelAlt : "transparent"; border.color: window.border
-                        MouseArea { anchors.fill: parent; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.selectHarmonyRow(index) } }
-                        RowLayout { anchors.fill: parent; anchors.margins: 9
-                            Canvas { Layout.preferredWidth: 100; Layout.fillHeight: true; property var envelope: modelData.waveform
-                                onPaint: {
-                                    var context = getContext("2d")
-                                    context.clearRect(0, 0, width, height)
-                                    context.strokeStyle = "#6d737c"
-                                    context.lineWidth = 1.2
-                                    context.beginPath()
-                                    var points = envelope || []
-                                    var center = height / 2
-                                    var step = points.length > 0 ? width / points.length : width
-                                    if (points.length === 0) { context.moveTo(0, center); context.lineTo(width, center) }
-                                    for (var point = 0; point < points.length; point++) {
-                                        var value = Math.max(0, Math.min(1, Number(points[point]) || 0))
-                                        var x = Math.min(width, point * step + step / 2)
-                                        var amplitude = Math.max(2, height * 0.38 * value)
-                                        context.moveTo(x, center - amplitude)
-                                        context.lineTo(x, center + amplitude)
+                    delegate: Rectangle { width: parent.width; height: window.densityRowHeight; color: index === window.interaction.selectedHarmonyIndex ? window.panelAlt : "transparent"; border.color: window.border
+                        MouseArea { anchors.fill: parent; z: 0; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.selectHarmonyRow(index) } }
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: window.densityHorizontalInset
+                            anchors.rightMargin: window.densityHorizontalInset
+                            anchors.topMargin: window.densityVerticalInset
+                            anchors.bottomMargin: window.densityVerticalInset
+                            spacing: window.densityRowSpacing
+                            z: 1
+                            Item {
+                                Layout.preferredWidth: 100
+                                Layout.preferredHeight: window.densityWaveformHeight
+                                Layout.maximumHeight: window.densityWaveformHeight
+                                Canvas {
+                                    id: harmonyWaveformCanvas
+                                    anchors.fill: parent
+                                    property var envelope: modelData.waveform
+                                    onEnvelopeChanged: requestPaint()
+                                    onPaint: {
+                                        var context = getContext("2d")
+                                        context.clearRect(0, 0, width, height)
+                                        context.strokeStyle = "#6d737c"
+                                        context.lineWidth = 1.2
+                                        context.beginPath()
+                                        var points = envelope || []
+                                        var center = height / 2
+                                        var step = points.length > 0 ? width / points.length : width
+                                        if (points.length === 0) { context.moveTo(0, center); context.lineTo(width, center) }
+                                        for (var point = 0; point < points.length; point++) {
+                                            var value = Math.max(0, Math.min(1, Number(points[point]) || 0))
+                                            var x = Math.min(width, point * step + step / 2)
+                                            var amplitude = Math.max(1, height * 0.38 * value)
+                                            context.moveTo(x, center - amplitude)
+                                            context.lineTo(x, center + amplitude)
+                                        }
+                                        context.stroke()
                                     }
-                                    context.stroke()
                                 }
-                                MouseArea { anchors.fill: parent; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.previewHarmonyRow(index) } }
+                                MouseArea { anchors.fill: parent; z: 2; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.previewHarmonyRow(index) } }
                             }
-                            ColumnLayout { Layout.fillWidth: true
-                                Label { text: modelData.name; color: window.textColor }
-                                Label { text: modelData.type + " · " + modelData.relation + " · " + modelData.fit; color: window.muted; font.pixelSize: 11 }
+                            Label { text: modelData.name; color: window.textColor; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; verticalAlignment: Text.AlignVCenter }
+                            Label { text: modelData.key; color: window.accent; font.pixelSize: window.textMeta; verticalAlignment: Text.AlignVCenter }
+                            Label {
+                                text: modelData.relation + " · " + modelData.fit
+                                color: window.muted
+                                font.pixelSize: window.textCaption
+                                elide: Text.ElideRight
+                                Layout.preferredWidth: 88
+                                Layout.maximumWidth: 110
+                                verticalAlignment: Text.AlignVCenter
                             }
-                            Label { text: modelData.key; color: window.accent }
-                            Text { text: "+ Add"; color: window.muted; font.pixelSize: 11
+                            Rectangle {
+                                Layout.preferredWidth: 44
+                                Layout.preferredHeight: Math.min(window.densityActionHitTarget, window.densityRowHeight - 2 * window.densityVerticalInset)
+                                Layout.maximumHeight: window.densityRowHeight - 2 * window.densityVerticalInset
+                                color: "transparent"
+                                Label {
+                                    anchors.fill: parent
+                                    text: "+ Add"
+                                    color: window.muted
+                                    font.pixelSize: window.textCaption
+                                    horizontalAlignment: Text.AlignRight
+                                    verticalAlignment: Text.AlignVCenter
+                                }
                                 MouseArea { anchors.fill: parent; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.addHarmonyToKit(index) } }
                             }
                         }
+                        Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: window.densityDividerHeight; color: window.divider; opacity: 0.8 }
                     }
                 }
             }

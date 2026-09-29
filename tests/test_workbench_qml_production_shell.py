@@ -76,8 +76,10 @@ def test_spike_harness_owns_fixture_and_acceptance_operations():
     for harness_name in (
         "run_qml_proof_spike",
         "run_qml_visual_acceptance",
+        "run_qml_visual_acceptance_v2",
         "run_qml_virtualization_probe",
         "validate_qml_renderer_provenance",
+        "build_qml_view_model_from_fixture_v2",
     ):
         assert hasattr(workbench_qml_spike, harness_name)
     assert workbench_qml_spike.QML_SOURCE is workbench_qml.QML_SOURCE

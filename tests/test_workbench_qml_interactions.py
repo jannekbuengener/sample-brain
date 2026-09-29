@@ -747,14 +747,16 @@ def test_qml_real_interaction_smoke_click_arrows_focus_and_harmonic_toggle():
         toggle = window.findChild(QQuickItem, "harmonicMatchButton")
         assert browser is not None and search is not None and toggle is not None
 
-        row_four = browser.mapToScene(QPointF(300, 4 * 66 + 33)).toPoint()
+        row_height = int(window.property("densityRowHeight"))
+        assert row_height == 30
+        row_four = browser.mapToScene(QPointF(300, 4 * row_height + row_height / 2)).toPoint()
         QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, row_four)
         app.processEvents()
         assert view_model.selected_browser_index == 4
         assert dispatched == [fixture.browser_rows[4]]
         assert previews == []
 
-        waveform_four = browser.mapToScene(QPointF(40, 4 * 66 + 33)).toPoint()
+        waveform_four = browser.mapToScene(QPointF(40, 4 * row_height + row_height / 2)).toPoint()
         QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, waveform_four)
         app.processEvents()
         assert view_model.selected_browser_index == 4
@@ -779,7 +781,7 @@ def test_qml_real_interaction_smoke_click_arrows_focus_and_harmonic_toggle():
         add_intents = []
         engine._screen1_interaction_bridge.addToKitIntent.connect(add_intents.append)
         add_point = browser.mapToScene(
-            QPointF(float(browser.property("width")) - 48, 4 * 66 + 33)
+            QPointF(float(browser.property("width")) - 48, 4 * row_height + row_height / 2)
         ).toPoint()
         QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, add_point)
         app.processEvents()
