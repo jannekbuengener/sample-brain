@@ -200,7 +200,15 @@ def apply_divider_drag(
     widths = _apply_side_delta(widths, right, right_weights, -absorbed, mins)
     widths = _enforce_minima(widths, mins, content)
 
-    return _ratios_from_visible_widths(stored, widths, visible)
+    return _ratios_for_target_widths(
+        stored,
+        widths,
+        visible,
+        available_width=available_width,
+        harmony_open=harmony_open,
+        has_active_source=has_active_source,
+        handle_width=handle_width,
+    )
 
 
 def layout_preferences_path(
@@ -419,25 +427,71 @@ def _enforce_minima(
     return result
 
 
-def _ratios_from_visible_widths(
+def _ratios_for_target_widths(
     stored: Mapping[str, float],
-    widths: Mapping[str, float],
+    target_widths: Mapping[str, float],
     visible: list[str],
+    *,
+    available_width: float,
+    harmony_open: bool,
+    has_active_source: bool,
+    handle_width: float,
 ) -> dict[str, float]:
-    content = sum(widths[panel_id] for panel_id in visible)
+    """Invert constrained widths back into preferences without persisting clamps."""
+    candidate = normalize_ratios(stored)
+    content = sum(float(target_widths[panel_id]) for panel_id in visible)
     if content <= 0:
-        return normalize_ratios(stored)
-    visible_set = set(visible)
-    hidden = [panel_id for panel_id in PANEL_IDS if panel_id not in visible_set]
-    hidden_mass = sum(float(stored[panel_id]) for panel_id in hidden)
-    visible_mass = 1.0 - hidden_mass
-    merged: dict[str, float] = {}
-    for panel_id in visible:
-        merged[panel_id] = (widths[panel_id] / content) * visible_mass
-    for panel_id in hidden:
-        merged[panel_id] = float(stored[panel_id])
-    # Re-normalize to absorb float noise while keeping relative hidden mass.
-    return normalize_ratios(merged)
+        return candidate
+
+    visible_mass = sum(candidate[panel_id] for panel_id in visible)
+    if visible_mass <= 0:
+        return candidate
+
+    hidden = [panel_id for panel_id in PANEL_IDS if panel_id not in set(visible)]
+    tolerance = 1e-6
+
+    for _ in range(64):
+        current = solve_widths(
+            candidate,
+            available_width=available_width,
+            harmony_open=harmony_open,
+            has_active_source=has_active_source,
+            handle_width=handle_width,
+        )
+        errors = {
+            panel_id: float(target_widths[panel_id]) - float(current.widths[panel_id])
+            for panel_id in visible
+        }
+        if max(abs(value) for value in errors.values()) <= tolerance:
+            return normalize_ratios(candidate)
+
+        corrections = {
+            panel_id: (errors[panel_id] / content) * visible_mass
+            for panel_id in visible
+        }
+        step = 1.0
+        while step > 1e-9 and any(
+            candidate[panel_id] + step * corrections[panel_id] <= 0
+            for panel_id in visible
+        ):
+            step *= 0.5
+        if step <= 1e-9:
+            return normalize_ratios(stored)
+
+        for panel_id in visible:
+            candidate[panel_id] += step * corrections[panel_id]
+
+        visible_total = sum(candidate[panel_id] for panel_id in visible)
+        if visible_total <= 0 or not math.isfinite(visible_total):
+            return normalize_ratios(stored)
+        scale = visible_mass / visible_total
+        for panel_id in visible:
+            candidate[panel_id] *= scale
+        for panel_id in hidden:
+            candidate[panel_id] = float(stored[panel_id])
+
+    # Fail closed rather than persisting a constrained state we could not invert.
+    return normalize_ratios(stored)
 
 
 __all__ = [
