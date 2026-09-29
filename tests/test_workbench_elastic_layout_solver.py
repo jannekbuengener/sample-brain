@@ -278,3 +278,19 @@ def test_inf_ratio_in_on_disk_blob_fail_closed(tmp_path: Path):
     loaded = load_layout_preferences(state_dir=tmp_path)
     assert loaded.persistable is False
     assert loaded.ratios == dict(CANONICAL_DEFAULT_RATIOS)
+
+
+def test_closed_harmony_drag_preserves_hidden_ratio_above_95_percent():
+    ratios = normalize_ratios(
+        {"library": 0.001, "browser": 0.001, "harmony": 0.997, "livekit": 0.001}
+    )
+    after = apply_divider_drag(
+        ratios,
+        divider_after="browser",
+        delta_px=12.0,
+        available_width=1600.0,
+        harmony_open=False,
+        has_active_source=True,
+    )
+    assert after["harmony"] == pytest.approx(ratios["harmony"], abs=1e-12)
+    assert abs(sum(after.values()) - 1.0) < 1e-12
