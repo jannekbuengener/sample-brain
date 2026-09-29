@@ -265,6 +265,8 @@ def _grab_qml_window_png(window: object, target: Path) -> None:
     if image.isNull() or not image.save(str(target)):
         raise RuntimeError(f"QML grabWindow capture failed for {target.name}")
 
+
+def _is_within(path: Path, root: Path) -> bool:
     try:
         path.resolve().relative_to(root.resolve())
     except ValueError:
