@@ -38,6 +38,11 @@ Pattern playhead / upcoming triggers
 - Different sample rates use distinct provider instances / keys (no false hits)
 - Failed / empty / non-finite loads are **not** cached
 - Bounded LRU eviction (`max_entries`, default 64)
+- Keep `SequencerPcmProvider` at rack/session lifetime and pass it as
+  `pcm_provider=` (or `pcm_for_path=`) across pattern passes; the ephemeral
+  default inside `play_channel_rack_once` is one-shot only
+- Prefer `warm_channel_rack_pcm(state, provider)` before anchoring playback so
+  decode completes before engine-frame scheduling
 
 ## Constraints from live code
 

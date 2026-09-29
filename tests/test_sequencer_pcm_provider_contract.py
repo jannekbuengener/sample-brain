@@ -535,6 +535,46 @@ def test_play_channel_rack_once_can_omit_pcm_for_path_using_tempo_map_rate(
     assert result.scheduled_count == 1
 
 
+def test_channel_rack_reuses_long_lived_pcm_provider_across_passes(tmp_path: Path):
+    """Production callers must keep SequencerPcmProvider at session/rack lifetime."""
+    provider_cls = _require_symbol(_provider_module_or_fail(), "SequencerPcmProvider")
+    rack = importlib.import_module("src.channel_rack")
+    play = rack.play_channel_rack_once
+    warm = getattr(rack, "warm_channel_rack_pcm", None)
+    assert callable(warm), "MISSING_PRODUCTION_SURFACE: warm_channel_rack_pcm"
+
+    wav = _write_mono_wav(tmp_path / "kick_01.wav", sr=ENGINE_SR)
+    live_kit = LiveKitState()
+    live_kit.assign("Kick + Bass", "Kick", _synthetic_row(wav))
+    state = rack.toggle_step(rack.build_channel_rack_state(live_kit), "ch_kick", 0)
+    tempo_map = TempoMap(sample_rate=ENGINE_SR, bpm=120)
+    decode_calls: list[str] = []
+
+    def counting_decode(path, *, sample_rate: int, start_ms: int = 0):
+        decode_calls.append(str(path))
+        decode = _require_symbol(_decode_or_fail(), "decode_native_pcm")
+        return decode(path, sample_rate=sample_rate, start_ms=start_ms)
+
+    provider = provider_cls(sample_rate=ENGINE_SR, decode_fn=counting_decode)
+    warm(state, provider)
+    assert len(decode_calls) == 1
+
+    engine = MagicMock(name="native_engine")
+    engine.create_voice.side_effect = lambda cfg: cfg.id
+    for _ in range(2):
+        result = play(
+            state,
+            tempo_map=tempo_map,
+            pattern_start_quarter=Fraction(0, 1),
+            pattern_start_engine_frame=0,
+            engine=engine,
+            pcm_provider=provider,
+            allocate_voice_id=_voice_id_allocator(1),
+        )
+        assert result.scheduled_count == 1
+    assert len(decode_calls) == 1, "long-lived pcm_provider must cache across passes"
+
+
 def test_provider_has_no_qml_or_preview_dependency():
     module = _provider_module_or_fail()
     source_path = Path(inspect.getsourcefile(module) or "")

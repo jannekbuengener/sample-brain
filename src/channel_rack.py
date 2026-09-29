@@ -159,17 +159,27 @@ def play_channel_rack_once(
     pattern_start_engine_frame: int,
     engine: Any,
     pcm_for_path: Callable[[str], Any] | None = None,
+    pcm_provider: SequencerPcmProvider | None = None,
     allocate_voice_id: Callable[[], int],
 ) -> PlaybackScheduleResult:
     """Plan and schedule one pattern pass via the sequencer public seam.
 
-    When ``pcm_for_path`` is omitted, a production ``SequencerPcmProvider`` is
-    created for ``tempo_map.sample_rate`` so callers need not invent decode logic.
-    Pass an explicit provider (or other callable) to reuse a long-lived cache.
+    Resolution for PCM:
+
+    1. Explicit ``pcm_for_path`` callable (tests / custom injectors).
+    2. Else long-lived ``pcm_provider`` (preferred production path — cache reused
+       across pattern passes).
+    3. Else an ephemeral ``SequencerPcmProvider(tempo_map.sample_rate)`` for a
+       single call. Callers that replay patterns must pass ``pcm_provider`` (or
+       an equivalent callable) so decode is not repeated and stays off the
+       realtime path relative to engine-frame anchoring.
     """
 
-    resolver = pcm_for_path
-    if resolver is None:
+    if pcm_for_path is not None:
+        resolver: Callable[[str], Any] = pcm_for_path
+    elif pcm_provider is not None:
+        resolver = pcm_provider
+    else:
         resolver = SequencerPcmProvider(sample_rate=tempo_map.sample_rate)
 
     channels_by_id: Mapping[str, Channel] = {
@@ -190,10 +200,26 @@ def play_channel_rack_once(
     )
 
 
+def warm_channel_rack_pcm(
+    state: ChannelRackState,
+    provider: SequencerPcmProvider,
+) -> None:
+    """Decode/cache every assigned sample path before scheduling voices."""
+
+    seen: set[str] = set()
+    for channel in state.channels:
+        path = channel.sample_path
+        if path is None or path == "" or path in seen:
+            continue
+        seen.add(path)
+        provider.pcm_for_path(path)
+
+
 __all__ = [
     "ChannelRackState",
     "add_user_channel",
     "build_channel_rack_state",
     "play_channel_rack_once",
     "toggle_step",
+    "warm_channel_rack_pcm",
 ]
