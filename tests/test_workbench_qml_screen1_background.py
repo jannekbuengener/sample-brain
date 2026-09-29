@@ -62,15 +62,17 @@ def test_qml_source_uses_stretch_background_image_without_crop_or_gradients():
 
 def test_qml_palette_tokens_are_near_black_with_functional_accent_only():
     source = workbench_qml.QML_SOURCE
-    assert 'color: "#000000"' in source
-    assert 'property color panel: "#0c0d0e"' in source
-    assert 'property color panelAlt: "#141516"' in source
-    assert 'property color accent: "#b1122b"' in source
-    assert 'property color selectedRow: "#1a1012"' in source
-    assert 'property color border: "#222426"' in source
+    assert 'readonly property color neutral000: "#000000"' in source
+    assert 'readonly property color neutral100: "#0c0d0e"' in source
+    assert 'readonly property color neutral150: "#141516"' in source
+    assert 'readonly property color accentPrimary: "#b1122b"' in source
+    assert 'readonly property color accentSurface: "#1a1012"' in source
+    assert 'readonly property color neutral250: "#222426"' in source
+    assert "readonly property color surfacePanel: neutral100" in source
+    assert "readonly property color actionActive: accentPrimary" in source
     # Accent stays blood-red functional; no orange / blue brand accents.
     assert "#ff4500" not in source.casefold()
-    assert re.search(r'property color accent:\s*"#b1122b"', source)
+    assert re.search(r'readonly property color accentPrimary:\s*"#b1122b"', source)
 
 
 @pytest.mark.skipif(
