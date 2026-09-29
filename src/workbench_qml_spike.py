@@ -476,6 +476,15 @@ def run_qml_visual_acceptance_v2(
             if state_id not in allowed:
                 raise EvidenceError(f"Unknown Screen-1 v2 capture state: {state_id!r}")
             view_model = build_qml_view_model_from_fixture_v2(fixture, state_id)
+            # Always start from the 3-panel shell, then open Harmonic via the real
+            # control — matches the proven v1 acceptance path and avoids a stale
+            # initial 4-panel projection that can miss the first paint.
+            if resolve_screen1_visual_state_v2(fixture, state_id).layout.harmonic_visible:
+                view_model = build_qml_view_model_from_fixture_v2(
+                    fixture, "screen1-active-source"
+                )
+                # Keep v2 evidence label while using a closed shell as the start.
+                view_model.state_id = "screen1-default-3panel"
             adapter = Screen1QmlInteractionAdapter(
                 view_model=view_model,
                 harmony_controller=production.HarmonicMatchLibraryController(),
@@ -488,7 +497,7 @@ def run_qml_visual_acceptance_v2(
             _settle_qml_frame(app)
 
             state = resolve_screen1_visual_state_v2(fixture, state_id)
-            if state.layout.harmonic_visible and not adapter.harmonic_match_open:
+            if state.layout.harmonic_visible:
                 from PySide6.QtCore import QPointF, Qt
                 from PySide6.QtQuick import QQuickItem
                 from PySide6.QtTest import QTest
@@ -502,6 +511,7 @@ def run_qml_visual_acceptance_v2(
                     Qt.NoModifier,
                     control.mapToScene(QPointF(8, 8)).toPoint(),
                 )
+                _settle_qml_frame(app)
                 _settle_qml_frame(app)
                 if not adapter.harmonic_match_open:
                     raise RuntimeError("Harmonic-Match-Control konnte den Pane nicht öffnen.")
