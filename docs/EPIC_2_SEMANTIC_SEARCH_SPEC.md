@@ -163,7 +163,7 @@ A component or pipeline step is considered production-ready when:
 | 12 | Audio-to-audio search | Embed audio file → search NumPy index → enrich → ranked results | Steps 9, 8 | ✅ Done | `--query-audio`; same contract as text (#29) |
 | 13 | CLI `index_build` | Registered subcommand calls `build_numpy_index()` | Step 9 | ✅ NumPy skeleton + persistence | Index built on demand, status reported. Persisted via `--save` / `--index-path`. No FAISS. |
 | 14 | CLI `search` | Registered subcommand calls `run_search()` with query, top-k, backend, index-path | Steps 11, 12 | ✅ Backend contract + flags wired | CLI accepts `--backend {noop,clap}`, `--index-path`, `--model-id`, `--topk`. Wired via profile config. Controlled error handling for unavailable backends. |
-| 15 | Documentation and validation | Documented contracts, acceptance tests, CI smoke checks | Steps 1-14 | ✅ Docs + 138 tests | Index/search contracts documented. M1–M4 runtime proof complete. sqlite-vec Phases 1–7 merged (#47–#50); Phase 8 docs in closeout PR. |
+| 15 | Documentation and validation | Documented contracts, acceptance tests, CI smoke checks | Steps 1-14 | ✅ Docs + regression coverage | Index/search contracts documented. M1–M4 runtime proof complete. sqlite-vec Phases 1–7 merged (#47–#50); Phase 8 docs in closeout PR. |
 | 16 | sqlite-vec vec0 rebuild | `rebuild_vec0_cache()` from `sample_embeddings`; state in `vector_index_state` | Steps 4, 9 | ✅ Done | `index_build --search-backend sqlite-vec`; staleness via `source_hash` fingerprint |
 | 17 | Search backend selection | `get_search_backend("numpy" \| "sqlite-vec")`; config/CLI/env gate | Step 16 | ✅ Done | Default `numpy`; opt-in `sqlite-vec`. Gate evidence: [SQLITE_VEC_GATE_EVIDENCE.md](benchmarks/SQLITE_VEC_GATE_EVIDENCE.md) |
 
