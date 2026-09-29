@@ -377,16 +377,20 @@ def extract_features(
     )
 
 
+# V1 upsert owns key-analysis provenance (#688): always clear leftover V2
+# markers. NULL contract/root-evidence means legacy/V1 (no backfill to 1).
 _FEATURE_UPSERT = text(
     """
     INSERT INTO features (
         sample_id, bpm, key, key_conf, loudness, brightness,
         mfcc_mean, mfcc_std, chroma_mean, chroma_std, "class",
-        quality_note, key_mode, key_mode_evidence
+        quality_note, key_mode, key_mode_evidence,
+        key_analysis_contract_version, key_root_evidence
     ) VALUES (
         :sample_id, :bpm, :key, :key_conf, :loudness, :brightness,
         :mfcc_mean, :mfcc_std, :chroma_mean, :chroma_std, :clazz,
-        :quality_note, :key_mode, :key_mode_evidence
+        :quality_note, :key_mode, :key_mode_evidence,
+        NULL, NULL
     )
     ON CONFLICT(sample_id) DO UPDATE SET
         bpm=excluded.bpm,
@@ -401,7 +405,9 @@ _FEATURE_UPSERT = text(
         "class"=excluded."class",
         quality_note=excluded.quality_note,
         key_mode=excluded.key_mode,
-        key_mode_evidence=excluded.key_mode_evidence
+        key_mode_evidence=excluded.key_mode_evidence,
+        key_analysis_contract_version=NULL,
+        key_root_evidence=NULL
     """
 )
 
