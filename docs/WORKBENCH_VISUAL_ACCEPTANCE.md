@@ -98,3 +98,22 @@ Same capture baseline as v1 when screenshots are produced later:
 
 Follow-up UI slices (#692–#696) must reference these v2 state IDs instead of
 inventing parallel fixture semantics.
+
+## Screen-1 canonical background reference
+
+Kanonische visuelle Referenz (Reference = Runtime-Asset, eine Datei):
+
+`docs/assets/portfolio/references/screen1_background_reference.png`
+
+- Byte-identische Owner-Freigabe; Datei darf nicht neu gerendert, skaliert,
+  komprimiert, recolored oder sonst verändert werden.
+- Erwartete SHA-256:
+  `2c799440a7b2c9d6e20e8163378ddcbecd29478d76ad8d7ee74835d3b60a47ae`
+- QML bindet dasselbe Asset als Root-Background über `screen1BackgroundUrl`
+  mit `Image.Stretch` (vollständiges Bild über die verfügbare Screen-1-Fläche;
+  **kein** Crop, kein Tint/Colorize/Blur, keine Ambient-Gradient-/Glow-Layer).
+- UI-Palette bleibt near-black / neutral und leitet Surfaces aus der
+  Bildhierarchie ab; Accent `#b1122b` nur funktional (Selection / Active /
+  Toggle). Kein dekoratives Rot oder Blau.
+- Frozen v1 Portfolio-Screenshots unter `docs/assets/portfolio/runtime/`
+  bleiben unverändert.

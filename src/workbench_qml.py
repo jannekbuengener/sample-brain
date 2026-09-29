@@ -1028,6 +1028,24 @@ def qml_runtime_available() -> bool:
     return True
 
 
+SCREEN1_BACKGROUND_REFERENCE_RELATIVE = Path(
+    "docs/assets/portfolio/references/screen1_background_reference.png"
+)
+SCREEN1_BACKGROUND_REFERENCE_SHA256 = (
+    "2c799440a7b2c9d6e20e8163378ddcbecd29478d76ad8d7ee74835d3b60a47ae"
+)
+
+
+def screen1_background_reference_path() -> Path:
+    """Return the repo-relative canonical Screen-1 background reference path."""
+    return Path(__file__).resolve().parents[1] / SCREEN1_BACKGROUND_REFERENCE_RELATIVE
+
+
+def screen1_background_url() -> str:
+    """Return a file URL for the canonical Screen-1 background reference."""
+    return screen1_background_reference_path().resolve().as_uri()
+
+
 QML_SOURCE = r'''
 import QtQuick
 import QtQuick.Controls
@@ -1039,17 +1057,21 @@ ApplicationWindow {
     visible: true
     width: 1600; height: 900
     minimumWidth: 1120; minimumHeight: 640
-    color: "#08090a"
+    color: "#000000"
     title: "Sample Brain"
     property var screenData: screenModel
     property var interaction: interactionModel
-    property color panel: "#0e1012"
-    property color panelAlt: "#15181c"
+    property color panel: "#0c0d0e"
+    property color panelAlt: "#141516"
     property color textColor: "#eceef1"
     property color muted: "#8b9098"
-    property color border: "#26292e"
+    property color border: "#222426"
     property color accent: "#b1122b"
-    property color divider: "#26292e"
+    property color divider: "#222426"
+    property color selectedRow: "#1a1012"
+    property color headerBg: "#050506"
+    property color browserPaneBg: "#0a0b0c"
+    property color waveformMuted: "#6d737c"
     property int textTitle: 18
     property int textBody: 12
     property int textMeta: 11
@@ -1102,8 +1124,20 @@ ApplicationWindow {
         function onRemovalRequested() { removeSourceDialog.open() }
     }
 
+    // Canonical Screen-1 background: full original asset stretched to the
+    // available content area. No crop, tint, blur, glow, or ambient overlays.
+    Image {
+        id: screen1Background
+        objectName: "screen1Background"
+        anchors.fill: parent
+        z: -1
+        source: screen1BackgroundUrl
+        fillMode: Image.Stretch
+        asynchronous: true
+    }
+
     header: Rectangle {
-        height: 68; color: "#090a0b"; border.color: window.border
+        height: 68; color: window.headerBg; border.color: window.border
         RowLayout { anchors.fill: parent; anchors.leftMargin: 22; anchors.rightMargin: 22
             Label { text: "◉  Sample Brain"; color: window.textColor; font.pixelSize: 21; font.bold: true }
             Item { Layout.fillWidth: true }
@@ -1157,7 +1191,7 @@ ApplicationWindow {
                         implicitHeight: 34
                         indentation: 16
                         background: Rectangle {
-                            color: libraryInteraction.selectedLibraryNodeId === model.nodeId ? "#211014" : "transparent"
+                            color: libraryInteraction.selectedLibraryNodeId === model.nodeId ? window.selectedRow : "transparent"
                             border.color: libraryInteraction.selectedLibraryNodeId === model.nodeId ? window.accent : "transparent"
                         }
                         contentItem: Item {
@@ -1244,13 +1278,13 @@ ApplicationWindow {
             visible: !window.interaction.hasActiveSource
             width: visible ? Math.max(0, parent.width - libraryPane.width) : 0
             height: parent.height
-            color: "#08090a"
+            color: "transparent"
             ColumnLayout {
                 anchors.centerIn: parent
                 spacing: 14
                 Label {
                     text: "Sample Brain"
-                    color: "#c4c8ce"
+                    color: window.textColor
                     font.pixelSize: 28
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
@@ -1270,7 +1304,7 @@ ApplicationWindow {
                 }
             }
         }
-        Rectangle { id: browserPane; objectName: "browserPane"; visible: window.interaction.hasActiveSource; width: visible ? layoutModel.browserWidth : 0; height: parent.height; color: "#0a0b0c"; border.color: window.border
+        Rectangle { id: browserPane; objectName: "browserPane"; visible: window.interaction.hasActiveSource; width: visible ? layoutModel.browserWidth : 0; height: parent.height; color: window.browserPaneBg; border.color: window.border
             // #692 owner-visual repair: preserve required scan columns when the
             // workspace is narrow. Type is optional; sample identity is not.
             property bool browserNarrowColumns: width < 700
@@ -1373,7 +1407,7 @@ ApplicationWindow {
                         else if (event.key === Qt.Key_Up) { window.interaction.navigateBrowser(-1); event.accepted = true }
                         else if (event.key === Qt.Key_Escape) { window.interaction.stopPreview(); event.accepted = true }
                     }
-                    delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.screenData.selectedBrowserIndex ? "#211014" : (rowSelection.containsMouse ? "#15181c" : "transparent"); border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0; border.color: window.accent
+                    delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.screenData.selectedBrowserIndex ? window.selectedRow : (rowSelection.containsMouse ? window.panelAlt : "transparent"); border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0; border.color: window.accent
                         Component.onCompleted: window.browserDelegateCreations += 1
                         MouseArea { id: rowSelection; anchors.fill: parent; z: 0; hoverEnabled: true; onClicked: { browser.forceActiveFocus(); window.interaction.selectRow(index) } }
                         RowLayout { anchors.fill: parent; anchors.leftMargin: window.densityHorizontalInset; anchors.rightMargin: window.densityHorizontalInset; anchors.topMargin: window.densityVerticalInset; anchors.bottomMargin: window.densityVerticalInset; spacing: window.densityRowSpacing; z: 1
@@ -1383,7 +1417,7 @@ ApplicationWindow {
                                     onPaint: {
                                         var context = getContext("2d")
                                         context.clearRect(0, 0, width, height)
-                                        context.strokeStyle = index === window.screenData.selectedBrowserIndex ? window.accent : "#6d737c"
+                                        context.strokeStyle = index === window.screenData.selectedBrowserIndex ? window.accent : window.waveformMuted
                                         context.lineWidth = 1.2
                                         context.beginPath()
                                         var points = envelope || []
@@ -1418,8 +1452,8 @@ ApplicationWindow {
                                 Layout.maximumHeight: window.densityRowHeight - 2 * window.densityVerticalInset
                                 radius: 3
                                 property bool hovered: addButtonMouse.containsMouse
-                                color: addButtonMouse.pressed ? "#3a1720" : (addButtonMouse.containsMouse ? "#24151a" : "transparent")
-                                border.color: addButtonMouse.containsMouse || index === window.screenData.selectedBrowserIndex ? "#5b1d2a" : "transparent"
+                                color: addButtonMouse.pressed ? window.selectedRow : (addButtonMouse.containsMouse ? window.selectedRow : "transparent")
+                                border.color: addButtonMouse.containsMouse || index === window.screenData.selectedBrowserIndex ? window.accent : "transparent"
                                 Label {
                                     anchors.fill: parent
                                     text: browserPane.browserNarrowColumns ? "+ Add" : "+ Add to Kit"
@@ -1559,7 +1593,7 @@ ApplicationWindow {
                                     onPaint: {
                                         var context = getContext("2d")
                                         context.clearRect(0, 0, width, height)
-                                        context.strokeStyle = "#6d737c"
+                                        context.strokeStyle = window.waveformMuted
                                         context.lineWidth = 1.2
                                         context.beginPath()
                                         var points = envelope || []
@@ -1655,7 +1689,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 30
                     radius: 4
-                    color: "#211014"
+                    color: window.selectedRow
                     border.color: window.accent
                     focus: visible
                     Keys.onEscapePressed: window.interaction.escapeLiveKitContext()
@@ -1664,7 +1698,7 @@ ApplicationWindow {
                         anchors.leftMargin: 8
                         anchors.rightMargin: 8
                         text: "Add " + window.interaction.liveKitPendingAdd + " · Slot + · Esc"
-                        color: "#f2a0ab"
+                        color: window.textColor
                         font.pixelSize: 11
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
@@ -1715,7 +1749,7 @@ ApplicationWindow {
                                             anchors.fill: parent
                                             radius: 3
                                             visible: modelData.auditioning
-                                            color: "#1a1418"
+                                            color: window.selectedRow
                                             border.color: window.accent
                                         }
                                         MouseArea {
@@ -1742,7 +1776,7 @@ ApplicationWindow {
                                                 Layout.preferredHeight: 22
                                                 radius: 3
                                                 Layout.preferredWidth: showReplaceAffordance ? 52 : 22
-                                                color: hasPendingAdd ? "#24151a" : (showReplaceAffordance ? "#24151a" : "transparent")
+                                                color: hasPendingAdd ? window.selectedRow : (showReplaceAffordance ? window.selectedRow : "transparent")
                                                 border.color: hasPendingAdd ? window.accent : (showReplaceAffordance ? window.accent : "transparent")
                                                 Label {
                                                     anchors.centerIn: parent
@@ -2341,6 +2375,10 @@ def _qml_engine(
     engine.rootContext().setContextProperty("layoutModel", layout_model)
     engine.rootContext().setContextProperty("libraryTreeModel", library_model)
     engine.rootContext().setContextProperty("libraryInteraction", library_bridge)
+    engine.rootContext().setContextProperty(
+        "screen1BackgroundUrl",
+        screen1_background_url(),
+    )
     if analysis_coordinator is not None:
         engine.rootContext().setContextProperty(
             "_screen1AnalysisCoordinator",
@@ -2497,10 +2535,14 @@ __all__ = [
     "QmlBrowserRow",
     "QmlLiveKitGroup",
     "QmlLiveKitSlot",
+    "SCREEN1_BACKGROUND_REFERENCE_RELATIVE",
+    "SCREEN1_BACKGROUND_REFERENCE_SHA256",
     "SCREEN1_QML_STATE_IDS",
     "Screen1QmlInteractionAdapter",
     "Screen1QmlViewModel",
     "apply_clean_start_launch",
     "qml_runtime_available",
     "run_qml_screen1",
+    "screen1_background_reference_path",
+    "screen1_background_url",
 ]
