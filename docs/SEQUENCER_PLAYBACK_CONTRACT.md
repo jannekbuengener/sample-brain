@@ -1,6 +1,6 @@
 # Sequencer Playback Contract (Minimal) — Sample Brain
 
-Status: **SCHEDULER SEAM IMPLEMENTED on `main`** — `src/sequencer_playback.py` via PR #663. **Production PCM cache/decode provider pending.**  
+Status: **SCHEDULER + PCM PROVIDER on `main` path** — `src/sequencer_playback.py` (#663) and production cache/decode provider `src/sequencer_pcm.py` + shared `src/native_pcm_decode.py` (#676).
 Prerequisites [`SESSION_OWNERSHIP_CONTRACT.md`](SESSION_OWNERSHIP_CONTRACT.md) and [`PATTERN_CORE_CONTRACT.md`](PATTERN_CORE_CONTRACT.md) are implemented.
 
 Parent: [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md) build-order step 4.
@@ -15,7 +15,7 @@ Schedule Pattern triggers onto the native engine without Screen-2 UI and without
 Pattern playhead / upcoming triggers
   → musical position (quarter / MusicalPosition)
   → TempoMap → session/engine frame
-  → ensure PCM cache entry for channel.sample_path
+  → SequencerPcmProvider (path → cached PcmBufferConfig)
   → NativeAudioEngine.create_voice (or reuse pooled voice)
   → schedule_voice_start(voice_id, engine_frame)
 ```
@@ -28,7 +28,24 @@ Pattern playhead / upcoming triggers
 | Musical → frame map | `TempoMap` / `SessionTransport` (`src/session_grid.py`) | Use wall-clock or preview `start_ms` as authority |
 | Voice schedule | `NativeAudioEngine` (`src/native_audio.py`) | Route through `WorkbenchPreviewPlayer` |
 | Screen-1 audition | `TransportAwarePreview` | Own polyphonic pattern voices |
-| PCM cache | New small Python cache (path → float32 buffer) | Decode inside audio callback; commit audio |
+| Offline decode | `native_pcm_decode.decode_native_pcm` | Run inside the audio callback |
+| PCM cache | `SequencerPcmProvider` / `PathPcmCache` (`src/sequencer_pcm.py`) | Decode inside audio callback; commit audio |
+
+## Cache policy (v1)
+
+- Key: `(canonicalize_pcm_path(path), provider sample_rate)` — absolute /
+  collapsed / symlink-resolved when possible
+- Identical path aliases + sample_rate → cache hit (no re-decode)
+- Different sample rates use distinct provider instances / keys (no false hits)
+- Failed / empty / non-finite loads are **not** cached
+- Bounded LRU eviction (`max_entries`, default 64)
+- Meaningful trailing whitespace in paths is preserved (only all-whitespace
+  rejected)
+- `play_channel_rack_once` requires `pcm_provider` or `pcm_for_path` — never
+  creates an ephemeral provider per call
+- `pcm_provider.sample_rate` must match `tempo_map.sample_rate`
+- Prefer `warm_channel_rack_pcm(state, provider)` before anchoring playback so
+  decode completes before engine-frame scheduling
 
 ## Constraints from live code
 
@@ -52,8 +69,8 @@ Pattern playhead / upcoming triggers
 - [x] Concurrent triggers on different channels do not go through `TransportAwarePreview`
 - [x] Empty / missing `sample_path` fails soft without crashing the engine loop
 - [x] Sequencer scheduling remains separate from Screen-2 QML
-- [ ] Production path provides a reusable `pcm_for_path` cache/decode provider outside the audio callback
+- [x] Production path provides a reusable `pcm_for_path` cache/decode provider outside the audio callback
 
 ## Next
 
-The scheduling seam is green on `main` (#663), and Channel Rack Python core is merged (#667). The production PCM cache/decode provider is still required to complete build-order step 4; Screen-2 Channel Rack QML remains HOLD until it lands.
+Build-order step 4 (minimal sequencer playback including production PCM cache/decode) is complete on the #676 path. Screen-2 Channel Rack QML remains HOLD until explicitly scoped.

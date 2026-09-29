@@ -23,7 +23,7 @@ Library / Screen 1
 | Screen | Intent | Status on `main` |
 |--------|--------|------------------|
 | Screen 1 | Library browse + Live Kit assignment | Live Kit + QML Screen-1 shell exist; Tk remains default/fallback |
-| Screen 2 | Channel Rack — program patterns/triggers over Live Kit channels | **FOUNDATIONS PARTIAL / UI HOLD** — session ownership, Pattern Core, the sequencer scheduling seam, and Channel Rack Python core are on `main`; the production PCM cache/decode provider required by sequencer playback is still missing |
+| Screen 2 | Channel Rack — program patterns/triggers over Live Kit channels | **FOUNDATIONS READY / UI HOLD** — session ownership, Pattern Core, sequencer scheduling, Channel Rack Python core, and the production PCM cache/decode provider (#676) are in place; Screen-2 QML remains HOLD |
 | Screen 3 | Arrangement mode over patterns/channels | **Not built** — must not be designed in Screen-2 slices |
 
 ## 3. Channel Rack product rules (Screen 2 intent)
@@ -65,8 +65,8 @@ Do **not** start Screen-2 UI before these foundations:
 1. **Product canon** (this document + PRD/architecture alignment)
 2. **Session ownership** — one Live Kit truth; QML commands → native transport/audio — **DONE** (#647)
 3. **Minimal Pattern Core** — Channel, Pattern, Trigger/Event, musical position, stable slot/channel IDs — **DONE** (#656)
-4. **Minimal Sequencer Playback** — pattern position → `TempoMap` → scheduled engine frame → cached PCM voice — **PARTIAL**: scheduling seam **DONE** (#663); production PCM cache/decode provider still pending
-5. **Screen-2 Channel Rack UI** — Channel Rack Python core is **DONE** (#667); QML UI remains **HOLD** until step 4 has a production `pcm_for_path` provider
+4. **Minimal Sequencer Playback** — pattern position → `TempoMap` → scheduled engine frame → cached PCM voice — **DONE** (#663 scheduler + #676 PCM cache/decode provider)
+5. **Screen-2 Channel Rack UI** — Channel Rack Python core is **DONE** (#667); QML UI remains **HOLD** until explicitly scoped
 
 ## 6. Documents this canon overrides (on conflict)
 
@@ -85,11 +85,11 @@ Historical VST pillar specs (#90–#95) remain **archived design notes** for a p
 | Screen-1 renderer lock | `LOCK_PYSIDE6_QML` in `docs/TARGET_ARCHITECTURE.md` |
 | Session ownership (step 2 — done) | [`SESSION_OWNERSHIP_CONTRACT.md`](SESSION_OWNERSHIP_CONTRACT.md), `src/workbench_session.py` |
 | Pattern Core (step 3 — done, #656) | [`PATTERN_CORE_CONTRACT.md`](PATTERN_CORE_CONTRACT.md), `src/pattern_core.py` |
-| Sequencer Playback (step 4 — scheduler seam done, #663; PCM provider pending) | [`SEQUENCER_PLAYBACK_CONTRACT.md`](SEQUENCER_PLAYBACK_CONTRACT.md), `src/sequencer_playback.py` |
+| Sequencer Playback (step 4 — done, #663 + #676) | [`SEQUENCER_PLAYBACK_CONTRACT.md`](SEQUENCER_PLAYBACK_CONTRACT.md), `src/sequencer_playback.py`, `src/sequencer_pcm.py`, `src/native_pcm_decode.py` |
 | Channel Rack Python core (pre-UI — done, #667) | `src/channel_rack.py` |
 | Live Kit state | `src/workbench_live_kit.py` |
 | Session time / TempoMap | `src/session_grid.py` |
 | Native voices | `src/native_audio.py` |
 | QML Screen-1 shell | `src/workbench_qml.py` |
 
-Steps 2→3 are green on `main`; the step-4 scheduling seam is green, but its production PCM cache/decode provider is still missing. The Channel Rack Python core is merged, while Screen-2 Channel Rack QML remains **HOLD** until that playback dependency is complete.
+Steps 2→3→4 are green on the #676 path (scheduling + production PCM provider). The Channel Rack Python core is merged; Screen-2 Channel Rack QML remains **HOLD**.

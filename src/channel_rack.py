@@ -21,6 +21,7 @@ from .pattern_core import (
     allocate_user_channel_id,
     require_triggers_reference_known_channels,
 )
+from .sequencer_pcm import SequencerPcmProvider, canonicalize_pcm_path
 from .sequencer_playback import (
     PlaybackScheduleResult,
     plan_pattern_once,
@@ -157,10 +158,27 @@ def play_channel_rack_once(
     pattern_start_quarter: Fraction,
     pattern_start_engine_frame: int,
     engine: Any,
-    pcm_for_path: Callable[[str], Any],
+    pcm_for_path: Callable[[str], Any] | None = None,
+    pcm_provider: SequencerPcmProvider | None = None,
     allocate_voice_id: Callable[[], int],
 ) -> PlaybackScheduleResult:
-    """Plan and schedule one pattern pass via the sequencer public seam."""
+    """Plan and schedule one pattern pass via the sequencer public seam.
+
+    Resolution for PCM:
+
+    1. Explicit ``pcm_for_path`` callable (tests / custom injectors).
+    2. Else long-lived ``pcm_provider`` (preferred production path).
+
+    At least one of ``pcm_for_path`` / ``pcm_provider`` is required. The provider
+    is never created ephemerally here — keep it at rack/session lifetime and
+    prefer ``warm_channel_rack_pcm`` before anchoring playback.
+    """
+
+    resolver = _resolve_pcm_injector(
+        pcm_for_path=pcm_for_path,
+        pcm_provider=pcm_provider,
+        tempo_map=tempo_map,
+    )
 
     channels_by_id: Mapping[str, Channel] = {
         channel.channel_id: channel for channel in state.channels
@@ -175,9 +193,96 @@ def play_channel_rack_once(
     return schedule_pattern_once(
         planned_triggers=planned,
         engine=engine,
-        pcm_for_path=pcm_for_path,
+        pcm_for_path=resolver,
         allocate_voice_id=allocate_voice_id,
     )
+
+
+def _resolve_pcm_injector(
+    *,
+    pcm_for_path: Callable[[str], Any] | None,
+    pcm_provider: SequencerPcmProvider | None,
+    tempo_map: TempoMap,
+) -> Callable[[str], Any]:
+    if pcm_for_path is not None:
+        bound_provider = _sequencer_provider_from_callable(pcm_for_path)
+        if bound_provider is not None:
+            _require_matching_sample_rate(bound_provider, tempo_map)
+        return pcm_for_path
+    if pcm_provider is not None:
+        _require_matching_sample_rate(pcm_provider, tempo_map)
+        return pcm_provider
+    raise ValueError(
+        "play_channel_rack_once requires pcm_provider or pcm_for_path; "
+        "pass a long-lived SequencerPcmProvider so PCM cache survives pattern passes"
+    )
+
+
+def _sequencer_provider_from_callable(
+    pcm_for_path: Callable[[str], Any],
+) -> SequencerPcmProvider | None:
+    if isinstance(pcm_for_path, SequencerPcmProvider):
+        return pcm_for_path
+    owner = getattr(pcm_for_path, "__self__", None)
+    if isinstance(owner, SequencerPcmProvider):
+        return owner
+    return None
+
+
+def _require_matching_sample_rate(
+    provider: SequencerPcmProvider,
+    tempo_map: TempoMap,
+) -> None:
+    if int(provider.sample_rate) != int(tempo_map.sample_rate):
+        raise ValueError(
+            "pcm_provider.sample_rate must match tempo_map.sample_rate "
+            f"(got provider={provider.sample_rate}, tempo_map={tempo_map.sample_rate})"
+        )
+
+
+def warm_channel_rack_pcm(
+    state: ChannelRackState,
+    provider: SequencerPcmProvider,
+) -> tuple[str, ...]:
+    """Decode/cache every assigned sample path before scheduling voices.
+
+    Capacity is measured by provider cache identity (canonical key), not raw
+    path spellings, so aliases of one file count once.
+
+    Returns every raw alias that failed to load (fail-soft), including all
+    spellings that share a failed identity. Raises ``ValueError`` when unique
+    identities exceed ``provider.max_entries``.
+    """
+
+    aliases_by_identity: dict[str, list[str]] = {}
+    order: list[str] = []
+    for channel in state.channels:
+        path = channel.sample_path
+        if path is None or path == "" or path.isspace():
+            continue
+        try:
+            identity = canonicalize_pcm_path(path)
+        except (OSError, RuntimeError, ValueError):
+            identity = path
+        if identity not in aliases_by_identity:
+            aliases_by_identity[identity] = []
+            order.append(identity)
+        aliases_by_identity[identity].append(path)
+
+    if len(order) > provider.max_entries:
+        raise ValueError(
+            "warm_channel_rack_pcm requires provider.max_entries >= number of "
+            "unique sample identities "
+            f"(need {len(order)}, max_entries={provider.max_entries})"
+        )
+
+    failed: list[str] = []
+    for identity in order:
+        aliases = aliases_by_identity[identity]
+        representative = aliases[0]
+        if provider.pcm_for_path(representative) is None:
+            failed.extend(aliases)
+    return tuple(failed)
 
 
 __all__ = [
@@ -186,4 +291,5 @@ __all__ = [
     "build_channel_rack_state",
     "play_channel_rack_once",
     "toggle_step",
+    "warm_channel_rack_pcm",
 ]
