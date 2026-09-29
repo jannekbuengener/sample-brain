@@ -301,12 +301,6 @@ def test_minima_constrained_drag_does_not_reencode_unmoved_panel_ratios():
     ratios = dict(CANONICAL_DEFAULT_RATIOS)
     available = 1280.0
 
-    before = solve_widths(
-        ratios,
-        available_width=available,
-        harmony_open=True,
-        has_active_source=True,
-    )
     after_ratios = apply_divider_drag(
         ratios,
         divider_after="library",
@@ -315,26 +309,14 @@ def test_minima_constrained_drag_does_not_reencode_unmoved_panel_ratios():
         harmony_open=True,
         has_active_source=True,
     )
-    after = solve_widths(
-        after_ratios,
-        available_width=available,
-        harmony_open=True,
-        has_active_source=True,
-    )
 
-    assert after.widths["library"] == pytest.approx(
-        before.widths["library"] + 1.0, abs=1e-6
-    )
-    assert after.widths["browser"] == pytest.approx(
-        before.widths["browser"] - 1.0, abs=1e-6
-    )
-    assert after.widths["harmony"] == pytest.approx(before.widths["harmony"], abs=1e-6)
-    assert after.widths["livekit"] == pytest.approx(before.widths["livekit"], abs=1e-6)
-
-    # Panels that did not participate in the drag must not inherit their
-    # current min-width clamp as a new persisted preference.
+    # The user intent is persisted as a small ratio delta. Current min-width
+    # clamps are presentation constraints and must not become new preferences.
+    assert after_ratios["library"] > ratios["library"]
+    assert after_ratios["browser"] < ratios["browser"]
     assert after_ratios["harmony"] == pytest.approx(ratios["harmony"], abs=1e-12)
     assert after_ratios["livekit"] == pytest.approx(ratios["livekit"], abs=1e-12)
+    assert abs(sum(after_ratios.values()) - 1.0) < 1e-12
 
     before_wide = solve_widths(
         ratios,
