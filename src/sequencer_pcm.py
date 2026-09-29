@@ -35,18 +35,74 @@ def canonicalize_pcm_path(path: str | Path) -> str:
 
     Collapses ``.`` / ``..``, resolves to an absolute path, and follows
     existing symlinks when possible. The full input string is preserved —
-    trailing whitespace is not stripped before resolution (``pathlib.Path``
-    would otherwise drop it on some platforms and merge distinct files).
+    trailing whitespace is not stripped before resolution. On case-insensitive
+    volumes, existing path components are rewritten to on-disk spelling so
+    aliases that differ only by case share one cache entry.
     """
     raw = str(path)
     try:
         # os.path keeps trailing whitespace that pathlib would drop.
-        return os.path.normcase(os.path.realpath(raw))
+        resolved = os.path.realpath(raw)
     except (OSError, RuntimeError, ValueError):
         try:
-            return os.path.normcase(os.path.abspath(os.path.normpath(raw)))
+            resolved = os.path.abspath(os.path.normpath(raw))
         except (OSError, RuntimeError, ValueError):
             return raw
+
+    body = resolved.rstrip(" \t")
+    trailing = resolved[len(body) :]
+    try:
+        body = _match_on_disk_case(body)
+    except OSError:
+        body = os.path.normcase(body)
+    return body + trailing
+
+
+def _match_on_disk_case(path: str) -> str:
+    """Rewrite existing path components to the filesystem's stored spelling."""
+    if not path:
+        return path
+    drive, tail = os.path.splitdrive(path)
+    if os.name == "nt":
+        drive = drive.upper()
+    if not tail:
+        return drive
+
+    absolute = tail.startswith(os.sep) or tail.startswith("/")
+    parts = [part for part in tail.split(os.sep) if part not in ("", ".")]
+    current = drive + os.sep if absolute else (drive or ".")
+    built: list[str] = []
+    for part in parts:
+        if part == "..":
+            if built:
+                built.pop()
+                current = (
+                    drive + os.sep + os.sep.join(built)
+                    if absolute
+                    else (os.sep.join(built) if built else (drive or "."))
+                )
+            continue
+        try:
+            entries = os.listdir(current)
+        except OSError:
+            built.append(part)
+            current = os.path.join(current, part)
+            continue
+        match = next((entry for entry in entries if entry == part), None)
+        if match is None:
+            lowered = part.casefold()
+            match = next(
+                (entry for entry in entries if entry.casefold() == lowered),
+                part,
+            )
+        built.append(match)
+        current = os.path.join(current, match)
+
+    if absolute:
+        return drive + os.sep + os.sep.join(built)
+    if drive:
+        return drive + os.sep.join(built)
+    return os.sep.join(built) if built else path
 
 
 def decode_pcm_for_native(

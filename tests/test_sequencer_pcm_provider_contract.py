@@ -478,10 +478,22 @@ def test_canonicalize_pcm_path_does_not_strip_before_resolve(monkeypatch):
         return str(path)
 
     monkeypatch.setattr(module.os.path, "realpath", fake_realpath)
-    monkeypatch.setattr(module.os.path, "normcase", lambda p: p)
+    monkeypatch.setattr(module, "_match_on_disk_case", lambda p: p)
     result = canonicalize("/samples/kick.wav ")
     assert result.endswith(" ")
     assert seen == ["/samples/kick.wav "]
+
+
+def test_canonicalize_pcm_path_folds_case_via_on_disk_spelling(
+    monkeypatch, tmp_path: Path
+):
+    module = _provider_module_or_fail()
+    canonicalize = _require_symbol(module, "canonicalize_pcm_path")
+    wav = _write_mono_wav(tmp_path / "Kick.wav", sr=ENGINE_SR)
+    monkeypatch.setattr(module.os.path, "realpath", lambda p: str(wav))
+    # Simulate case-insensitive lookup of the same file under different spelling.
+    alias = str(tmp_path / "kick.wav")
+    assert canonicalize(alias) == canonicalize(str(wav))
 
 
 def test_provider_symlink_loop_canonicalization_fails_soft(monkeypatch, tmp_path: Path):
@@ -516,6 +528,14 @@ def test_provider_cache_key_canonicalizes_path_aliases(tmp_path: Path):
     second = provider.pcm_for_path(via_dot)
     assert first is not None and second is not None
     assert len(decode_calls) == 1
+
+    # Existing-file identity uses inode, so casing aliases share one entry when
+    # the filesystem treats them as the same path (Windows / CI-friendly spelling).
+    decode_calls.clear()
+    mixed = absolute.swapcase() if absolute != absolute.swapcase() else absolute
+    third = provider.pcm_for_path(mixed)
+    assert third is not None
+    assert len(decode_calls) == 0
 
 
 def test_canonicalize_symlink_loop_stays_fail_soft(monkeypatch, tmp_path: Path):
