@@ -126,3 +126,49 @@ def test_qml_runtime_exposes_background_image_with_stretch_fill():
         loader = getattr(engine, "_screen1_waveform_loader", None)
         if loader is not None:
             loader.close()
+
+
+@pytest.mark.skipif(
+    not workbench_qml.qml_runtime_available(),
+    reason="PySide6 unavailable",
+)
+def test_wait_for_screen1_background_ready_before_capture():
+    """#725/#731: first Clean Start capture must not race the async Image load."""
+    from PySide6.QtQuick import QQuickItem
+
+    from src.workbench_qml import Screen1QmlInteractionAdapter, Screen1QmlViewModel
+    from src.workbench_qml_spike import (
+        _qml_engine,
+        _settle_qml_frame,
+        _wait_for_screen1_background_ready,
+        apply_screen1_visual_state_v2,
+    )
+    from src.workbench_visual_acceptance import (
+        build_screen1_visual_fixture_v2,
+        resolve_screen1_visual_state_v2,
+    )
+
+    fixture = build_screen1_visual_fixture_v2()
+    clean = resolve_screen1_visual_state_v2(fixture, "screen1-clean-start")
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    adapter = Screen1QmlInteractionAdapter(view_model=view_model)
+    apply_screen1_visual_state_v2(view_model, adapter, fixture, clean)
+    app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+    window.show()
+    try:
+        _settle_qml_frame(app)
+        _wait_for_screen1_background_ready(window, app)
+        background = window.findChild(QQuickItem, "screen1Background")
+        assert background is not None
+        assert float(background.property("paintedWidth") or 0) > 0
+        assert float(background.property("paintedHeight") or 0) > 0
+    finally:
+        window.close()
+        app.processEvents()

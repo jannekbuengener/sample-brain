@@ -281,6 +281,37 @@ def _grab_qml_window_png(window: object, target: Path, *, engine: object | None 
     capture_windows_client_window(int(window.winId()), target)
 
 
+def _wait_for_screen1_background_ready(window: object, app: object, *, timeout_ms: int = 3000) -> None:
+    """Block until the canonical Screen-1 background Image has painted.
+
+    Visual-acceptance captures must not race the async Image load; otherwise the
+    first Clean Start frame can be pure black while later frames show the
+    reference texture (#731 / #725 evidence).
+    """
+    from PySide6.QtCore import QElapsedTimer
+    from PySide6.QtQuick import QQuickItem
+
+    background = window.findChild(QQuickItem, "screen1Background")
+    if background is None:
+        raise RuntimeError("screen1Background fehlt vor Visual-Acceptance-Capture.")
+
+    timer = QElapsedTimer()
+    timer.start()
+    while timer.elapsed() < int(timeout_ms):
+        # Image.status is not reliably convertible via QObject.property(); painted
+        # size is the capture-relevant readiness signal (same as background tests).
+        painted_w = float(background.property("paintedWidth") or 0)
+        painted_h = float(background.property("paintedHeight") or 0)
+        if painted_w > 0 and painted_h > 0:
+            _settle_qml_frame(app)
+            return
+        _settle_qml_frame(app)
+    raise RuntimeError(
+        "screen1Background wurde vor Capture nicht rechtzeitig gemalt "
+        f"(timeout_ms={timeout_ms})."
+    )
+
+
 def _is_within(path: Path, root: Path) -> bool:
     try:
         path.resolve().relative_to(root.resolve())
@@ -678,6 +709,7 @@ def run_qml_visual_acceptance_v2(
             window.setHeight(CLIENT_HEIGHT)
             window.show()
             _settle_qml_frame(app)
+            _wait_for_screen1_background_ready(window, app)
             dpi_scale = current_windows_dpi_scale(int(window.winId()))
             if evidence_kind == _V2_EVIDENCE_BASELINE:
                 _require_v2_capture_dpi_100(int(window.winId()))
@@ -850,6 +882,7 @@ def run_qml_visual_acceptance_725(
         window.setHeight(CLIENT_HEIGHT)
         window.show()
         _settle_qml_frame(app)
+        _wait_for_screen1_background_ready(window, app)
         dpi_scale = _require_v2_capture_dpi_100(int(window.winId()))
         _capture("clean-start-collapsed", window, engine, v2_state="screen1-clean-start")
 
@@ -887,6 +920,7 @@ def run_qml_visual_acceptance_725(
         window.setHeight(CLIENT_HEIGHT)
         window.show()
         _settle_qml_frame(app)
+        _wait_for_screen1_background_ready(window, app)
         dpi_scale = _require_v2_capture_dpi_100(int(window.winId()))
         _capture("active-source", window, engine, v2_state="screen1-active-source")
         window.close()
@@ -949,4 +983,5 @@ __all__ = [
     "run_qml_visual_acceptance_725",
     "validate_qml_renderer_provenance",
     "virtual_row_window",
+    "_wait_for_screen1_background_ready",
 ]
