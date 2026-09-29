@@ -23,9 +23,6 @@ At the 2026-09-29 reconciliation, GitHub live shows the following durable work c
 
 - [#691](https://github.com/jannekbuengener/sample-brain/issues/691) — **Screen 1 Calm Adaptive Workspace**. Follow-up product/UI work after the closed #503 migration baseline. Children cover compact density, clean start, elastic panel layout, waveform research, preferences and parked reordering.
 - [#675](https://github.com/jannekbuengener/sample-brain/issues/675) / [#678](https://github.com/jannekbuengener/sample-brain/issues/678) — **Screen 2 Channel Rack** product track. Foundations are present; the QML UI remains **HOLD** under `PRODUCT_WORKFLOW_CANON.md` until its documented gate is explicitly lifted.
-- [#679](https://github.com/jannekbuengener/sample-brain/issues/679) — **Screen 3 Arrangement** is parked/future product scope.
-- [#680](https://github.com/jannekbuengener/sample-brain/issues/680) — vocal/beatbox → sample-pattern R&D is parked/future.
-
 ### Governance / audit / validation
 
 - [#494](https://github.com/jannekbuengener/sample-brain/issues/494) — migrate the temporary active `main` ruleset to the stable canon-aligned strict ruleset. The older #405 branch-protection gap is closed and must not be treated as the current governance state.
@@ -37,6 +34,8 @@ At the 2026-09-29 reconciliation, GitHub live shows the following durable work c
 - [#469](https://github.com/jannekbuengener/sample-brain/issues/469) — VST3 integration is explicitly **parked / not active**.
 - [#74](https://github.com/jannekbuengener/sample-brain/issues/74) — upstream sqlite-vec ANN readiness tracker; no private ANN replacement.
 - [#615](https://github.com/jannekbuengener/sample-brain/issues/615) and scoped children — Bitwig is an **R&D playground only**, not a Sample-Brain product integration decision.
+- [#679](https://github.com/jannekbuengener/sample-brain/issues/679) — Screen 3 Arrangement is **parked / future product scope**.
+- [#680](https://github.com/jannekbuengener/sample-brain/issues/680) — vocal/beatbox → sample-pattern is **parked / future R&D**.
 
 Closed historical work such as #392, #405, #503, #579, #196, #198 and #73 remains useful evidence but is not active roadmap work.
 
