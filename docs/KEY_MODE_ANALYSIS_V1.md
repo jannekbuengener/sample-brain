@@ -58,6 +58,23 @@ historical evidence is invented.
 `features.key` remains the canonical root/mode string (`<ROOT>maj` /
 `<ROOT>min` / `<ROOT>`).
 
+### V1 write ownership / V2 provenance reset (#688)
+
+A successful V1 `_FEATURE_UPSERT` (via `run_analyze` / `_flush_feature_batch`)
+atomically owns the key-analysis provenance for that row:
+
+- writes V1 `key`, `key_conf`, `key_mode`, and `key_mode_evidence`
+- sets `key_analysis_contract_version = NULL` (legacy/V1; no backfill to integer `1`)
+- sets `key_root_evidence = NULL`
+
+This clears leftover explicit V2 target-write markers so a later V1 reanalysis
+cannot leave a stale hybrid row (`version=2` with V1 key/confidence data).
+The version-aware catalog reader already fail-closes such hybrids; this write
+contract makes rollback/reanalysis persistence consistent.
+
+Explicit V2 key writes remain on `write_key_analysis_v2_features` /
+`write_key_analysis_v2_features_row` and are unchanged by the V1 upsert path.
+
 ## 4. Third-contrast detector
 
 `estimate_key_mode(y, sr, *, root, chroma_mean)` uses the already-selected root as
