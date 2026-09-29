@@ -1256,6 +1256,18 @@ ApplicationWindow {
                     Item { Layout.preferredWidth: browserPane.effectiveBrowserAddColumnWidth }
                 }
                 ListView { id: browser; objectName: "browserList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: window.densityRowHeight; implicitHeight: window.densityRowHeight * 2
+                    function requestVisibleWaveforms() {
+                        if (rowHeight <= 0 || height <= 0)
+                            return
+                        window.interaction.requestWaveforms(
+                            Math.max(0, Math.floor(contentY / rowHeight)),
+                            Math.ceil(height / rowHeight) + 2
+                        )
+                    }
+                    Component.onCompleted: Qt.callLater(requestVisibleWaveforms)
+                    onContentYChanged: requestVisibleWaveforms()
+                    onHeightChanged: requestVisibleWaveforms()
+                    onModelChanged: Qt.callLater(requestVisibleWaveforms)
                     Keys.onPressed: function(event) {
                         if (event.key === Qt.Key_Down) { window.interaction.navigateBrowser(1); event.accepted = true }
                         else if (event.key === Qt.Key_Up) { window.interaction.navigateBrowser(-1); event.accepted = true }
@@ -1927,12 +1939,18 @@ def _qml_engine(
         loader=lambda path: compute_waveform_envelope(path, max_points=96),
         max_pending=14,
     )
+    # Last viewport ranges — drain re-requests so max_pending saturation
+    # still fills the full compact visible window without raising the bound.
+    browser_waveform_viewport = [0, 0]
+    harmony_waveform_viewport = [0, 0]
 
     def request_waveforms(start: int, count: int) -> None:
         if count <= 0:
             return
         first = max(0, start)
         last = min(len(view_model.browser_rows), first + count)
+        browser_waveform_viewport[0] = first
+        browser_waveform_viewport[1] = max(0, last - first)
         for row in view_model.browser_rows[first:last]:
             if row.waveform_envelope:
                 continue
@@ -1943,10 +1961,34 @@ def _qml_engine(
             return
         first = max(0, start)
         last = min(len(view_model.harmony_rows), first + count)
+        harmony_waveform_viewport[0] = first
+        harmony_waveform_viewport[1] = max(0, last - first)
         for row in view_model.harmony_rows[first:last]:
             if row.waveform_envelope:
                 continue
             waveform_loader.schedule(str(row.source_row.path))
+
+    def request_visible_browser_waveforms_from_window() -> None:
+        """Python-side viewport seed after model refresh; QML owns scroll/resize."""
+        try:
+            from PySide6.QtQuick import QQuickItem
+        except Exception:
+            return
+        roots = engine.rootObjects()
+        if not roots:
+            return
+        root = roots[0]
+        browser = root.findChild(QQuickItem, "browserList")
+        if browser is None:
+            return
+        row_height = int(root.property("densityRowHeight") or 0)
+        height = float(browser.property("height") or 0.0)
+        content_y = float(browser.property("contentY") or 0.0)
+        if row_height <= 0 or height <= 0:
+            return
+        start = max(0, int(content_y // row_height))
+        count = int(math.ceil(height / row_height)) + 2
+        request_waveforms(start, count)
 
     def drain_waveforms() -> None:
         if waveform_loader.drain_results() == 0:
@@ -1960,6 +2002,13 @@ def _qml_engine(
                 ) or changed
         if changed:
             refresh_browser_rows()
+        # Freeing pending slots must continue filling the current viewport.
+        if browser_waveform_viewport[1] > 0:
+            request_waveforms(browser_waveform_viewport[0], browser_waveform_viewport[1])
+        if harmony_waveform_viewport[1] > 0:
+            request_harmony_waveforms(
+                harmony_waveform_viewport[0], harmony_waveform_viewport[1]
+            )
 
     analysis_coordinator = None
 
@@ -1988,7 +2037,7 @@ def _qml_engine(
                         str(refresh_target.normalized_path),
                     )
         _sync_runtime_browser_state(view_model, adapter, runtime_composition)
-        request_waveforms(0, 20)
+        request_visible_browser_waveforms_from_window()
         refresh_browser_scope()
         bridge.refreshState()
 
@@ -2123,7 +2172,7 @@ def _qml_engine(
     waveform_timer.timeout.connect(drain_waveforms)
     waveform_timer.start()
     engine._screen1_waveform_timer = waveform_timer
-    request_waveforms(0, 20)
+    request_visible_browser_waveforms_from_window()
     app.aboutToQuit.connect(waveform_loader.close)
     if analysis_coordinator is not None:
         app.aboutToQuit.connect(analysis_coordinator.shutdown)

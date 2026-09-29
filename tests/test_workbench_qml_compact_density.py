@@ -123,7 +123,8 @@ def test_interaction_contracts_preserved_under_compact_density():
     assert 'text: "▶"' not in QML_SOURCE
     assert 'objectName: "browserSearch"' in QML_SOURCE
     # Keyboard nav is owned by the browser ListView, not the search field.
-    browser_keys = _snippet(QML_SOURCE, 'objectName: "browserList"', 900)
+    # Span covers viewport waveform hooks + Keys handlers.
+    browser_keys = _snippet(QML_SOURCE, 'objectName: "browserList"', 1800)
     assert "Keys.onPressed" in browser_keys
     assert "navigateBrowser" in browser_keys
 
