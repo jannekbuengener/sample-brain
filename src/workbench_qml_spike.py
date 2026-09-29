@@ -255,22 +255,9 @@ def _module_file(module_name: str) -> Path:
 
 
 def _grab_qml_window_png(window: object, target: Path, *, engine: object | None = None) -> None:
-    """Capture a Qt Quick window; prefer grabWindow, fall back to GDI client capture."""
-    candidates: list[object] = [window]
-    if engine is not None:
-        try:
-            candidates.extend(list(engine.rootObjects()))
-        except Exception:
-            pass
-
-    for obj in candidates:
-        grab = getattr(obj, "grabWindow", None)
-        if callable(grab):
-            image = grab()
-            if image is not None and not image.isNull() and image.save(str(target)):
-                return
-
-    # Software Qt Quick backend makes GDI client captures trustworthy.
+    """Capture Screen-1 evidence with the shared PNG writer (sanity-compatible)."""
+    del engine  # reserved for future root re-resolution
+    # Requires QT_QUICK_BACKEND=software so GDI sees Qt Quick updates.
     capture_windows_client_window(int(window.winId()), target)
 
 
