@@ -25,5 +25,5 @@ def test_artifact_policy_names_all_supported_sample_audio_extensions() -> None:
         encoding="utf-8"
     ).lower()
 
-    missing = sorted(ext for ext in AUDIO_EXTS if `\`${ext.lower()}\`` not in policy)
+    missing = sorted(ext for ext in AUDIO_EXTS if f"`{ext.lower()}`" not in policy)
     assert not missing, f"supported sample extensions missing from artifact policy: {missing}"
