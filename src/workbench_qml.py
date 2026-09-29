@@ -1387,6 +1387,20 @@ ApplicationWindow {
                     ToolTip.visible: hovered
                     ToolTip.delay: 350
                     ToolTip.text: "Add Source"
+                    contentItem: Text {
+                        text: calmCanvasAddSource.text
+                        color: calmCanvasAddSource.hovered ? theme.textPrimary : theme.textSecondary
+                        font.pixelSize: calmCanvasAddSource.font.pixelSize
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        radius: 6
+                        color: calmCanvasAddSource.hovered ? theme.surfaceElevated : "transparent"
+                        border.color: calmCanvasAddSource.hovered ? theme.borderSubtle : "transparent"
+                        border.width: 1
+                    }
                     onClicked: addSourceDialog.open()
                 }
             }
