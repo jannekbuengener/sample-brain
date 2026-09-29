@@ -1364,7 +1364,7 @@ ApplicationWindow {
             color: "transparent"
             ColumnLayout {
                 anchors.centerIn: parent
-                spacing: 14
+                spacing: 18
                 Label {
                     text: "Sample Brain"
                     color: theme.textPrimary
@@ -1373,19 +1373,20 @@ ApplicationWindow {
                     horizontalAlignment: Text.AlignHCenter
                     Layout.alignment: Qt.AlignHCenter
                 }
-                Label {
-                    text: window.interaction.libraryRevealed
-                          ? "Select a Source, or Add Source to begin."
-                          : "Add Source to begin."
-                    color: theme.textSecondary
-                    font.pixelSize: 14
-                    horizontalAlignment: Text.AlignHCenter
-                    Layout.alignment: Qt.AlignHCenter
-                }
+                // #725 Owner Visual: compact Add Source (+) — tooltip/accessible name keep semantics.
                 Button {
+                    id: calmCanvasAddSource
                     objectName: "calmCanvasAddSource"
-                    text: "Add Source"
+                    text: "+"
+                    flat: true
+                    implicitWidth: 40
+                    implicitHeight: 40
+                    font.pixelSize: 22
                     Layout.alignment: Qt.AlignHCenter
+                    Accessible.name: "Add Source"
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 350
+                    ToolTip.text: "Add Source"
                     onClicked: addSourceDialog.open()
                 }
             }

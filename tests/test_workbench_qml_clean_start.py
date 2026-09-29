@@ -507,6 +507,66 @@ def test_qml_source_declares_calm_canvas_and_progressive_disclosure():
     assert "hasActiveSource" in QML_SOURCE
     assert "browserPane" in QML_SOURCE
     assert "liveKitPane" in QML_SOURCE
+    assert 'objectName: "calmCanvasAddSource"' in QML_SOURCE
+    assert 'text: "+"' in QML_SOURCE
+    assert 'Accessible.name: "Add Source"' in QML_SOURCE
+    assert 'ToolTip.text: "Add Source"' in QML_SOURCE
+    assert "Add Source to begin." not in QML_SOURCE
+    assert "Select a Source, or Add Source to begin." not in QML_SOURCE
+    assert "onClicked: addSourceDialog.open()" in QML_SOURCE
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_qml_clean_start_add_source_is_compact_plus_with_accessible_name(
+    tmp_path: Path,
+):
+    from PySide6.QtQuick import QQuickItem
+
+    from src.workbench_library_navigation import WorkbenchLibraryNavigation
+    from src.workbench_qml import (
+        Screen1QmlRuntimeComposition,
+        Screen1QmlViewModel,
+        _qml_engine,
+        apply_clean_start_launch,
+    )
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+
+    _root, db = _register_analyzed_root(tmp_path)
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+        library_tree=composition.library_tree,
+    )
+    apply_clean_start_launch(view_model, composition)
+    app, engine, window = _qml_engine(view_model, runtime_composition=composition)
+    window.show()
+    try:
+        app.processEvents()
+        add_source = window.findChild(QQuickItem, "calmCanvasAddSource")
+        assert add_source is not None and add_source.isVisible()
+        assert str(add_source.property("text")) == "+"
+        # Accessible name stays "Add Source" for the compact + control.
+        accessible = add_source.property("Accessible.name")
+        if accessible is None:
+            # Qt may expose as attached property via QObject meta; fall back to QML contract.
+            from src.workbench_qml import QML_SOURCE
+
+            assert 'Accessible.name: "Add Source"' in QML_SOURCE
+        else:
+            assert str(accessible) == "Add Source"
+        assert add_source.width() <= 48
+        assert add_source.height() <= 48
+    finally:
+        _shutdown_engine(app, engine, window)
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
