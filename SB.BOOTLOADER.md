@@ -60,16 +60,18 @@ Never read these automatically: `knowledge/SHARED.WORKING.MEMORY.md`, `knowledge
 
 | Priority | Category |
 |----------|----------|
-| 1 (highest) | Product Requirements |
-| 2 | System Requirements |
-| 3 | Target Architecture |
-| 4 | Data and Artifact Policy |
-| 5 | EPIC-specific specs |
-| 6 | ADRs |
-| 7 | Roadmap / Current Status |
-| 8 | README |
-| 9 | Agents docs |
-| 10 | Issue Backlog |
+| 0 (live truth) | GitHub / Repo live execution evidence |
+| 1 | Explicit current canon / supersession map (`docs/CANON_INDEX.md`, `docs/PRODUCT_WORKFLOW_CANON.md`) |
+| 2 | Product Requirements |
+| 3 | System Requirements |
+| 4 | Target Architecture |
+| 5 | Data and Artifact Policy |
+| 6 | EPIC-specific specs |
+| 7 | ADRs |
+| 8 | Roadmap / Current Status |
+| 9 | README |
+| 10 | Agents docs |
+| 11 | Issue Backlog |
 
 See `docs/BOOTLOADER_AND_CONTEXT_STRATEGY.md` for full detail.
 
