@@ -29,7 +29,7 @@ This document defines what data and artifacts may be committed to version contro
 | `data/last_paths.json` | ❌ No | ✅ Always | ✅ Yes |
 | `.venv/`, `venv/`, `env/` | ❌ No | ✅ Always | ✅ Yes (`pip install -r requirements.txt`) |
 | `__pycache__/`, `*.pyc` | ❌ No | ✅ Always | ✅ Yes (runtime artifact) |
-| Sample audio files (`.wav`, `.aiff`, `.flac`, `.mp3`) | ❌ No | ✅ Always | ❌ Source data |
+| Sample audio files (`.wav`, `.aif`, `.aiff`, `.flac`, `.mp3`, `.ogg`) | ❌ No | ✅ Always | ❌ Source data |
 
 ---
 
@@ -183,7 +183,7 @@ The following patterns are covered by `.gitignore` (see the file itself for the 
 | `data/models/` | Downloaded model weights |
 | `*.pt`, `*.pth`, `*.safetensors` | PyTorch / ML model weights |
 | `reports/` | Generated reports |
-| `data/**/*.wav`, `data/**/*.aiff`, etc. | Audio sample files |
+| `data/**/*.wav`, `data/**/*.aif`, `data/**/*.aiff`, `data/**/*.flac`, `data/**/*.mp3`, `data/**/*.ogg` | Supported private sample audio files |
 | `knowledge/SHARED.WORKING.MEMORY.md` | Private working memory |
 | `knowledge/logs/` | Agent session logs |
 

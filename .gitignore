@@ -216,9 +216,11 @@ config/profiles.local.yaml
 
 # --- SampleBrain hygiene ---
 data/**/*.wav
+data/**/*.aif
 data/**/*.aiff
 data/**/*.flac
 data/**/*.mp3
+data/**/*.ogg
 data/catalog.db
 data/**/catalog.db
 data/last_paths.json
