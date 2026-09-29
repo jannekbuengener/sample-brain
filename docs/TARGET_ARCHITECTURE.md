@@ -386,7 +386,7 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 
 ### 7.4 Search — Query and Retrieval
 
-**Status on `main`:** NumPy text search E2E smoke proven (M4). Audio-to-audio search not implemented.
+**Status on `main`:** Text and audio query modes are implemented through the current search contract; quality/readiness claims remain bounded by the repository's controlled evaluation evidence.
 
 **Current flow:**
 ```
