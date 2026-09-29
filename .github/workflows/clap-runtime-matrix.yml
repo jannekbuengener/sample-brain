@@ -6,6 +6,7 @@ on:
     paths:
       - "requirements-clap.txt"
       - "pyproject.toml"
+      - ".python-version"
       - "src/embed.py"
       - "src/model_readiness.py"
       - "tests/test_model_readiness.py"
@@ -17,6 +18,7 @@ on:
     paths:
       - "requirements-clap.txt"
       - "pyproject.toml"
+      - ".python-version"
       - "src/embed.py"
       - "src/model_readiness.py"
       - "tests/test_model_readiness.py"
