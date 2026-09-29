@@ -201,7 +201,38 @@ def apply_divider_drag(
     widths = _apply_side_delta(widths, right, right_weights, -absorbed, mins)
     widths = _enforce_minima(widths, mins, content)
 
-    return _ratios_from_visible_delta(stored, before_widths, widths, visible)
+    if all(
+        abs(float(widths[panel_id]) - float(before_widths[panel_id])) < 1e-6
+        for panel_id in visible
+    ):
+        return stored
+
+    candidate = _ratios_from_visible_delta(stored, before_widths, widths, visible)
+    if _ratios_realize_widths(
+        candidate,
+        widths,
+        available_width=available_width,
+        harmony_open=harmony_open,
+        has_active_source=has_active_source,
+        handle_width=handle_width,
+    ):
+        return candidate
+
+    # Delta encoding can sit below hard minima and snap back on re-solve.
+    # Invert the post-drag geometry into ratios so the current window renders
+    # the drag; decline only when even that cannot realize the widths.
+    inverted = _ratios_from_target_widths(stored, widths, visible)
+    if _ratios_realize_widths(
+        inverted,
+        widths,
+        available_width=available_width,
+        harmony_open=harmony_open,
+        has_active_source=has_active_source,
+        handle_width=handle_width,
+    ):
+        return inverted
+
+    return stored
 
 
 def layout_preferences_path(
@@ -448,6 +479,57 @@ def _ratios_from_visible_delta(
     # The width delta sums to zero, so hidden ratios and visible mass stay stable;
     # normalize once to absorb floating-point noise only.
     return normalize_ratios(merged)
+
+
+def _ratios_from_target_widths(
+    stored: Mapping[str, float],
+    target_widths: Mapping[str, float],
+    visible: list[str],
+) -> dict[str, float]:
+    """Invert visible target widths into ratios; keep hidden panel ratios."""
+    normalized = normalize_ratios(stored)
+    content = sum(float(target_widths[panel_id]) for panel_id in visible)
+    if content <= 0:
+        return normalized
+
+    visible_mass = sum(normalized[panel_id] for panel_id in visible)
+    if visible_mass <= 0:
+        return normalized
+
+    merged = dict(normalized)
+    for panel_id in visible:
+        share = float(target_widths[panel_id]) / content
+        if not math.isfinite(share) or share <= 0:
+            return normalized
+        merged[panel_id] = share * visible_mass
+
+    return normalize_ratios(merged)
+
+
+def _ratios_realize_widths(
+    ratios: Mapping[str, float],
+    target_widths: Mapping[str, float],
+    *,
+    available_width: float,
+    harmony_open: bool,
+    has_active_source: bool,
+    handle_width: float,
+    tolerance_px: float = 0.51,
+) -> bool:
+    solution = solve_widths(
+        ratios,
+        available_width=available_width,
+        harmony_open=harmony_open,
+        has_active_source=has_active_source,
+        handle_width=handle_width,
+    )
+    if solution.fallback is not None:
+        return False
+    return all(
+        abs(float(solution.widths[panel_id]) - float(target_widths[panel_id]))
+        <= tolerance_px
+        for panel_id in target_widths
+    )
 
 
 __all__ = [

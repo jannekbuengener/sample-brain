@@ -16,6 +16,7 @@ from src.workbench_layout_solver import (
     HANDLE_WIDTH_PX,
     LAYOUT_PREFERENCES_SCHEMA_VERSION,
     PANEL_IDS,
+    PANEL_MIN_WIDTH,
     apply_divider_drag,
     layout_preferences_path,
     load_layout_preferences,
@@ -298,36 +299,88 @@ def test_closed_harmony_drag_preserves_hidden_ratio_above_95_percent():
 
 
 def test_minima_constrained_drag_does_not_reencode_unmoved_panel_ratios():
+    """When delta encoding already realizes the drag, keep unmoved prefs."""
     ratios = dict(CANONICAL_DEFAULT_RATIOS)
-    available = 1280.0
+    available = 1500.0
 
+    before = solve_widths(
+        ratios,
+        available_width=available,
+        harmony_open=True,
+        has_active_source=True,
+    )
     after_ratios = apply_divider_drag(
         ratios,
         divider_after="library",
-        delta_px=1.0,
+        delta_px=10.0,
+        available_width=available,
+        harmony_open=True,
+        has_active_source=True,
+    )
+    after = solve_widths(
+        after_ratios,
         available_width=available,
         harmony_open=True,
         has_active_source=True,
     )
 
-    # The user intent is persisted as a small ratio delta. Current min-width
-    # clamps are presentation constraints and must not become new preferences.
+    assert after.widths["library"] == pytest.approx(before.widths["library"] + 10.0, abs=0.51)
+    assert after.widths["browser"] == pytest.approx(before.widths["browser"] - 10.0, abs=0.51)
     assert after_ratios["library"] > ratios["library"]
     assert after_ratios["browser"] < ratios["browser"]
     assert after_ratios["harmony"] == pytest.approx(ratios["harmony"], abs=1e-12)
     assert after_ratios["livekit"] == pytest.approx(ratios["livekit"], abs=1e-12)
     assert abs(sum(after_ratios.values()) - 1.0) < 1e-12
 
-    before_wide = solve_widths(
+
+def test_constrained_drag_inverts_when_delta_encode_cannot_render():
+    """At 1280 four-panel mins, tiny library drags must invert — not snap back."""
+    ratios = dict(CANONICAL_DEFAULT_RATIOS)
+    available = 1280.0
+
+    before = solve_widths(
         ratios,
-        available_width=1600.0,
+        available_width=available,
         harmony_open=True,
         has_active_source=True,
     )
-    after_wide = solve_widths(
+    assert before.widths["library"] == pytest.approx(PANEL_MIN_WIDTH["library"])
+
+    after_ratios = apply_divider_drag(
+        ratios,
+        divider_after="library",
+        delta_px=2.0,
+        available_width=available,
+        harmony_open=True,
+        has_active_source=True,
+    )
+    after = solve_widths(
         after_ratios,
-        available_width=1600.0,
+        available_width=available,
         harmony_open=True,
         has_active_source=True,
     )
-    assert abs(after_wide.widths["browser"] - before_wide.widths["browser"]) < 10.0
+
+    assert after.widths["library"] == pytest.approx(before.widths["library"] + 2.0, abs=0.51)
+    assert after.widths["browser"] == pytest.approx(before.widths["browser"] - 2.0, abs=0.51)
+    assert after_ratios != ratios
+    assert abs(sum(after_ratios.values()) - 1.0) < 1e-12
+
+    # Dragging back must be possible from the inverted prefs (no stuck min).
+    restored = apply_divider_drag(
+        after_ratios,
+        divider_after="library",
+        delta_px=-2.0,
+        available_width=available,
+        harmony_open=True,
+        has_active_source=True,
+    )
+    restored_widths = solve_widths(
+        restored,
+        available_width=available,
+        harmony_open=True,
+        has_active_source=True,
+    )
+    assert restored_widths.widths["library"] == pytest.approx(
+        before.widths["library"], abs=0.51
+    )
