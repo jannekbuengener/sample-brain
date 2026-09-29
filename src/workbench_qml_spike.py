@@ -31,6 +31,7 @@ from .workbench_visual_acceptance import (
     validate_capture_sanity,
     validate_runtime_for_visual_acceptance,
     write_visual_evidence_manifest,
+    _write_png,
 )
 
 QML_SOURCE = production.QML_SOURCE
@@ -279,18 +280,34 @@ def _grab_qml_window_png(window: object, target: Path, *, engine: object | None 
 
     Prefer ``grabWindow()`` over GDI BitBlt: the software scene graph can report
     Image.painted size before the HWND client area has composed the texture,
-    which produced pure-black Clean Start evidence under BitBlt.
+    which produced pure-black Clean Start evidence under BitBlt. Pixels are
+    written with the shared PNG writer so ``validate_capture_sanity`` stays
+    compatible.
     """
     del engine  # reserved for future root re-resolution
+    from PySide6.QtGui import QImage
+
     image = window.grabWindow()
     if image is None or image.isNull():
-        # Fail soft to the historical Windows client capture path.
         capture_windows_client_window(int(window.winId()), target)
         return
+    converted = image.convertToFormat(QImage.Format.Format_RGBA8888)
+    width = int(converted.width())
+    height = int(converted.height())
+    if width <= 0 or height <= 0:
+        raise EvidenceError("QML framebuffer grab returned empty dimensions.")
+    bytes_per_line = int(converted.bytesPerLine())
+    raw = bytes(converted.constBits())
+    expected = width * 4
+    if bytes_per_line == expected:
+        rgba = raw[: height * expected]
+    else:
+        rgba = b"".join(
+            raw[row * bytes_per_line : row * bytes_per_line + expected]
+            for row in range(height)
+        )
     target.parent.mkdir(parents=True, exist_ok=True)
-    if not image.save(str(target), "PNG"):
-        raise EvidenceError(f"QML framebuffer konnte nicht nach {target} geschrieben werden.")
-
+    _write_png(target, width, height, rgba)
 
 def _wait_for_screen1_background_ready(window: object, app: object, *, timeout_ms: int = 3000) -> None:
     """Block until the canonical Screen-1 background Image has painted.
