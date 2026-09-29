@@ -351,6 +351,157 @@ def run_qml_visual_acceptance(*, runtime_root: Path, evidence_dir: Path) -> dict
     finally:
         engines.clear()
 
+
+def apply_screen1_visual_state_v2(
+    view_model: Screen1QmlViewModel,
+    adapter: Screen1QmlInteractionAdapter,
+    fixture,
+    state,
+) -> None:
+    """Project a #700 v2 acceptance state onto the production Screen-1 shell."""
+    live_state = LiveKitState()
+    if state.layout.live_kit_materialized:
+        for group, slots in fixture.assignments.items():
+            for slot, row in slots.items():
+                live_state.assign(group, slot, row)
+    presentation = LiveKitPresentationState(live_state)
+    groups = tuple(
+        QmlLiveKitGroup(
+            name=group.name,
+            slots=tuple(
+                QmlLiveKitSlot(slot.name, slot.assignment) for slot in group.slots
+            ),
+            active=not presentation.is_collapsed(group.name),
+        )
+        for group in presentation.visible_structure()
+    )
+    rows = fixture.browser_rows if state.layout.browser_materialized else ()
+    selected = (
+        -1
+        if state.selected_browser_index is None
+        else int(state.selected_browser_index)
+    )
+    if selected >= len(rows):
+        selected = -1
+    view_model.state_id = (
+        "screen1-harmonic-4panel"
+        if state.layout.harmonic_visible
+        else "screen1-default-3panel"
+    )
+    view_model.library_labels = fixture.library_labels
+    view_model.browser_rows = tuple(production._qml_row(row) for row in rows)
+    view_model.selected_browser_index = selected
+    view_model.harmony_rows = (
+        tuple(production._qml_harmony_row(match) for match in fixture.harmony_results)
+        if state.layout.harmonic_visible
+        else ()
+    )
+    view_model.live_kit_groups = groups
+    view_model.browser_context = (
+        (state.selected_source_label or "No library selected")
+        if state.source_selected
+        else "No library selected"
+    )
+    view_model.browser_error = None
+    view_model.set_workspace_materialization(
+        has_active_source=bool(state.source_selected),
+        calm_canvas_visible=bool(state.layout.calm_canvas_visible),
+        browser_materialized=bool(state.layout.browser_materialized),
+        live_kit_materialized=bool(state.layout.live_kit_materialized),
+    )
+    adapter.harmonic_match_open = bool(state.layout.harmonic_visible)
+    if not state.preview_active and adapter.preview_active:
+        adapter.stop_preview()
+    if state.layout.harmonic_visible:
+        view_model.harmony_status = "Harmonic Match"
+    else:
+        view_model.harmony_anchor = ""
+        view_model.harmony_status = "Harmonic Match ist ausgeschaltet."
+
+
+def run_qml_visual_acceptance_v2(
+    *,
+    runtime_root: Path,
+    evidence_dir: Path,
+    state_ids: tuple[str, ...] = ("screen1-clean-start", "screen1-active-source"),
+) -> dict[str, object]:
+    """Capture #700/#693 calm-workspace states through the production QML shell."""
+    import platform
+
+    from .workbench_visual_acceptance import (
+        REQUIRED_STATE_IDS_V2,
+        build_screen1_visual_fixture_v2,
+        build_visual_evidence_manifest_v2,
+        resolve_screen1_visual_state_v2,
+    )
+
+    report = validate_qml_renderer_provenance(runtime_root)
+    fixture = build_screen1_visual_fixture_v2()
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    captures: dict[str, Path] = {}
+    sanity: dict[str, dict[str, bool | list[object]]] = {}
+    app = None
+    engines: list[object] = []
+    try:
+        for state_id in state_ids:
+            if state_id not in REQUIRED_STATE_IDS_V2:
+                raise ValueError(f"Unbekannter v2 Visual-State: {state_id}")
+            state = resolve_screen1_visual_state_v2(fixture, state_id)
+            view_model = Screen1QmlViewModel(
+                state_id="screen1-default-3panel",
+                library_labels=(),
+                browser_rows=(),
+                selected_browser_index=-1,
+                harmony_rows=(),
+                live_kit_groups=(),
+            )
+            adapter = Screen1QmlInteractionAdapter(
+                view_model=view_model,
+                harmony_controller=production.HarmonicMatchLibraryController(),
+            )
+            apply_screen1_visual_state_v2(
+                view_model, adapter, fixture, state
+            )
+            app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+            engines.append(engine)
+            window.show()
+            _settle_qml_frame(app)
+            target = evidence_dir / f"{state_id}.png"
+            capture_windows_client_window(int(window.winId()), target)
+            check = validate_capture_sanity(
+                target, expected_width=CLIENT_WIDTH, expected_height=CLIENT_HEIGHT
+            )
+            check["source_selected"] = bool(state.source_selected)
+            check["browser_materialized"] = bool(state.layout.browser_materialized)
+            check["calm_canvas_visible"] = bool(state.layout.calm_canvas_visible)
+            check["pass"] = bool(
+                check["pass"]
+                and view_model.has_active_source == state.source_selected
+                and view_model.browser_materialized == state.layout.browser_materialized
+                and view_model.calm_canvas_visible == state.layout.calm_canvas_visible
+            )
+            sanity[state_id] = check
+            captures[state_id] = target
+            window.close()
+            app.processEvents()
+        if app is None:
+            raise RuntimeError("Qt Quick Screen-1 Renderer konnte keine Capture-Instanz starten.")
+        manifest = build_visual_evidence_manifest_v2(
+            runtime_report=report,
+            fixture=fixture,
+            captures=captures,
+            os_name="Windows " + platform.release(),
+            dpi_scale=current_windows_dpi_scale(int(window.winId())),
+            client_width=CLIENT_WIDTH,
+            client_height=CLIENT_HEIGHT,
+            sanity_results=sanity,
+        )
+        write_visual_evidence_manifest(evidence_dir / "manifest_v2.json", manifest)
+        return manifest
+    finally:
+        engines.clear()
+
+
 __all__ = [
     "QML_SOURCE",
     "QmlBrowserRow",
@@ -360,10 +511,12 @@ __all__ = [
     "Screen1QmlViewModel",
     "VirtualRowWindow",
     "build_qml_view_model_from_fixture",
+    "apply_screen1_visual_state_v2",
     "qml_runtime_available",
     "run_qml_proof_spike",
     "run_qml_virtualization_probe",
     "run_qml_visual_acceptance",
+    "run_qml_visual_acceptance_v2",
     "validate_qml_renderer_provenance",
     "virtual_row_window",
 ]

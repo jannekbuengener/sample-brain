@@ -37,13 +37,18 @@ evidence only.
 
 ## v2 — Calm Adaptive Workspace acceptance (#700 / #691)
 
-Additive contract. **No product behaviour change.** Density (#692), Clean Start
-product code (#693), Elastic Solver (#694), Waveform motion (#695), and Live Kit
-redesign are out of scope for this fixture layer.
+Additive **fixture** contract for calm-workspace state IDs. Product Clean Start
+behaviour is owned by [#693](https://github.com/jannekbuengener/sample-brain/issues/693)
+/ [`WORKBENCH_CLEAN_START.md`](WORKBENCH_CLEAN_START.md). Density (#692), Elastic
+Solver (#694), Waveform motion (#695), and Live Kit redesign remain separate
+slices.
 
 Authority on conflicts for Startup / Density / Panel geometry / Persistence:
 
 `scoped #691 child > #691 > #700 contract docs > historical #503 visual acceptance`
+
+For normal launch visibility / restore specifically: `#693` supersedes historical
+`#503/#518` restore behaviour (see Clean Start doc).
 
 Module: `src/workbench_visual_acceptance.py`
 

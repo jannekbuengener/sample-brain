@@ -86,6 +86,23 @@ class Screen1QmlRuntimeComposition:
         """Node id of the last successfully dispatched selection."""
         return self._selected_node_id
 
+    @property
+    def has_active_source(self) -> bool:
+        """True when an explicit navigation scope is active without error."""
+        return (
+            self._selected_node_id is not None
+            and self.browser_state.scope is not None
+            and self.browser_state.error is None
+        )
+
+    @property
+    def browser_materialized(self) -> bool:
+        return self.has_active_source
+
+    @property
+    def live_kit_materialized(self) -> bool:
+        return self.has_active_source
+
     def dispatch_selection(self, intent: LibrarySelectionIntent) -> Screen1BrowserState:
         """Load exactly once for a valid intent, or fail closed."""
         scope = getattr(intent, "scope", None)
@@ -98,10 +115,10 @@ class Screen1QmlRuntimeComposition:
         except Exception:
             return self._set_no_scope("Library-Scope konnte nicht geladen werden.")
 
-        selected_index = 0 if rows else -1
+        # #693: Source selection must not synthesise a Sample-row selection.
         self.browser_state = Screen1BrowserState(
             rows=rows,
-            selected_index=selected_index,
+            selected_index=-1,
             browser_context=self._browser_context(intent),
             scope=scope,
             error=None,
@@ -358,6 +375,7 @@ class Screen1QmlRuntimeComposition:
         return intent.node.label
 
     def _set_no_scope(self, error: str | None = None) -> Screen1BrowserState:
+        self._selected_node_id = None
         self.browser_state = Screen1BrowserState(error=error)
         return self.browser_state
 

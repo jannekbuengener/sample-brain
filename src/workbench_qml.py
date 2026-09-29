@@ -32,6 +32,11 @@ from .workbench_qml_library import (
     create_qt_library_tree_model,
 )
 from .workbench_qml_runtime import Screen1QmlRuntimeComposition
+from .workbench_qml_startup import (
+    WorkspaceMode,
+    load_startup_preset,
+    resolve_launch_workspace,
+)
 from .workbench_waveform import compute_waveform_envelope
 
 SCREEN1_QML_STATE_IDS = ("screen1-default-3panel", "screen1-harmonic-4panel")
@@ -219,6 +224,11 @@ class Screen1QmlViewModel:
         self.analysis_total = 0
         self.analysis_source = ""
         self.analysis_error: str | None = None
+        # #693 Clean Start materialization (progressive disclosure)
+        self.has_active_source = False
+        self.calm_canvas_visible = True
+        self.browser_materialized = False
+        self.live_kit_materialized = False
 
     @property
     def panel_count(self) -> int:
@@ -282,6 +292,18 @@ class Screen1QmlViewModel:
         self.browser_context = browser_context
         self.browser_error = error
 
+    def set_workspace_materialization(
+        self,
+        *,
+        has_active_source: bool,
+        calm_canvas_visible: bool,
+        browser_materialized: bool,
+        live_kit_materialized: bool,
+    ) -> None:
+        self.has_active_source = bool(has_active_source)
+        self.calm_canvas_visible = bool(calm_canvas_visible)
+        self.browser_materialized = bool(browser_materialized)
+        self.live_kit_materialized = bool(live_kit_materialized)
 
     def set_browser_waveform(self, path: str, envelope: tuple[float, ...]) -> bool:
         """Apply one cached waveform without changing browser selection."""
@@ -387,6 +409,12 @@ def _sync_runtime_browser_state(
         selected_index=state.selected_index,
         browser_context=state.browser_context,
         error=state.error,
+    )
+    view_model.set_workspace_materialization(
+        has_active_source=runtime_composition.has_active_source,
+        calm_canvas_visible=not runtime_composition.has_active_source,
+        browser_materialized=runtime_composition.browser_materialized,
+        live_kit_materialized=runtime_composition.live_kit_materialized,
     )
     adapter.replace_browser_scope(state.scope)
 
@@ -1159,7 +1187,39 @@ ApplicationWindow {
                 }
             }
         }
-        Rectangle { id: browserPane; objectName: "browserPane"; Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.fillHeight: true; color: "#0a0b0c"; border.color: window.border
+        Rectangle {
+            id: calmCanvas
+            objectName: "calmCanvas"
+            visible: !window.interaction.hasActiveSource
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            color: "#08090a"
+            ColumnLayout {
+                anchors.centerIn: parent
+                spacing: 14
+                Label {
+                    text: "Sample Brain"
+                    color: "#c4c8ce"
+                    font.pixelSize: 28
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                    Layout.alignment: Qt.AlignHCenter
+                }
+                Label {
+                    text: "Select a Source, or Add Source to begin."
+                    color: window.muted
+                    font.pixelSize: 14
+                    horizontalAlignment: Text.AlignHCenter
+                    Layout.alignment: Qt.AlignHCenter
+                }
+                Button {
+                    text: "Add Source"
+                    Layout.alignment: Qt.AlignHCenter
+                    onClicked: addSourceDialog.open()
+                }
+            }
+        }
+        Rectangle { id: browserPane; objectName: "browserPane"; visible: window.interaction.hasActiveSource; Layout.fillWidth: visible; Layout.minimumWidth: 0; Layout.preferredWidth: visible ? 1 : 0; Layout.fillHeight: true; color: "#0a0b0c"; border.color: window.border
             ColumnLayout { anchors.fill: parent; anchors.margins: 18; spacing: 10
                 RowLayout { Layout.fillWidth: true
                     ColumnLayout { Layout.fillWidth: true; spacing: 2
@@ -1402,7 +1462,7 @@ ApplicationWindow {
                 }
             }
         }
-        Rectangle { id: liveKitPane; objectName: "liveKitPane"; Layout.preferredWidth: 300; Layout.fillHeight: true; color: window.panel; border.color: window.border
+        Rectangle { id: liveKitPane; objectName: "liveKitPane"; visible: window.interaction.hasActiveSource; Layout.preferredWidth: visible ? 300 : 0; Layout.minimumWidth: visible ? 220 : 0; Layout.fillHeight: true; color: window.panel; border.color: window.border
             ColumnLayout { anchors.fill: parent; anchors.margins: 14; spacing: 8
                 RowLayout { Layout.fillWidth: true
                     Label { text: "LIVE KIT"; color: window.muted; font.pixelSize: 12; Layout.fillWidth: true }
@@ -1576,6 +1636,10 @@ def _qml_interaction_bridge(
         @Property(bool, notify=state_changed)
         def harmonicMatchOpen(self) -> bool:
             return adapter.harmonic_match_open
+
+        @Property(bool, notify=state_changed)
+        def hasActiveSource(self) -> bool:
+            return adapter.view_model.has_active_source
 
         @Property(bool, notify=state_changed)
         def previewActive(self) -> bool:
@@ -2089,6 +2153,73 @@ def _settle_qml_frame(app: object) -> None:
     app.processEvents()
 
 
+def apply_clean_start_launch(
+    view_model: Screen1QmlViewModel,
+    runtime_composition: Screen1QmlRuntimeComposition,
+    *,
+    state_dir: Path | None = None,
+    env=None,
+    source_available: Callable[[str], bool] | None = None,
+) -> WorkspaceMode:
+    """Apply Clean Start (or optional Startup Preset override) for normal launch.
+
+    Never restores sample selection, preview, harmony, or scroll. Corrupt / missing
+    preset Sources fail closed to Clean Start. Does not delete registered Sources.
+    """
+    loaded = load_startup_preset(state_dir=state_dir, env=env)
+
+    def _default_available(node_id: str) -> bool:
+        tree = runtime_composition.library_tree
+        node = tree.node(node_id)
+        if node is None and node_id.startswith("root:"):
+            tree.fetch_children("container:sample-sources")
+            node = tree.node(node_id)
+        return bool(node is not None and node.selectable)
+
+    launch = resolve_launch_workspace(
+        preset=loaded.preset,
+        source_available=source_available or _default_available,
+    )
+    view_model.state_id = "screen1-default-3panel"
+    runtime_composition.clear_no_scope()
+    view_model.set_browser_state(
+        rows=(),
+        selected_index=-1,
+        browser_context="No library selected",
+        error=None,
+    )
+    view_model.set_workspace_materialization(
+        has_active_source=False,
+        calm_canvas_visible=True,
+        browser_materialized=False,
+        live_kit_materialized=False,
+    )
+    view_model.harmony_rows = ()
+    view_model.harmony_anchor = ""
+    view_model.harmony_status = "Harmonic Match ist ausgeschaltet."
+
+    if launch.mode is WorkspaceMode.ACTIVE_SOURCE and launch.source_node_id:
+        intent = runtime_composition.library_tree.select(launch.source_node_id)
+        if intent is not None:
+            runtime_composition.dispatch_selection(intent)
+            state = runtime_composition.browser_state
+            view_model.set_browser_state(
+                rows=state.rows,
+                selected_index=-1,
+                browser_context=state.browser_context,
+                error=state.error,
+            )
+            view_model.set_workspace_materialization(
+                has_active_source=runtime_composition.has_active_source,
+                calm_canvas_visible=not runtime_composition.has_active_source,
+                browser_materialized=runtime_composition.browser_materialized,
+                live_kit_materialized=runtime_composition.live_kit_materialized,
+            )
+            return WorkspaceMode.ACTIVE_SOURCE
+        # Missing/unselectable Source: remain Clean Start (fail closed).
+    return WorkspaceMode.CLEAN_START
+
+
 def run_qml_screen1(*, state_id: str = "screen1-default-3panel") -> int:
     """Open the optional production Screen-1 renderer without changing Tk defaults."""
     composition = Screen1QmlRuntimeComposition(
@@ -2106,6 +2237,7 @@ def run_qml_screen1(*, state_id: str = "screen1-default-3panel") -> int:
         live_kit_groups=(),
     )
     view_model.library_tree = composition.library_tree
+    apply_clean_start_launch(view_model, composition)
     app, _engine, _window = _qml_engine(
         view_model,
         runtime_composition=composition,
@@ -2133,6 +2265,7 @@ __all__ = [
     "SCREEN1_QML_STATE_IDS",
     "Screen1QmlInteractionAdapter",
     "Screen1QmlViewModel",
+    "apply_clean_start_launch",
     "qml_runtime_available",
     "run_qml_screen1",
 ]
