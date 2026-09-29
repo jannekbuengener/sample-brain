@@ -2,6 +2,8 @@
 
 Evidence for [Issue #72](https://github.com/jannekbuengener/sample-brain/issues/72): `key_conf` value distribution on synthetic fixtures and validation of the FL export threshold (`CONF_KEY_MIN = 0.55`).
 
+> **Historical evidence snapshot:** Version numbers, measured values and commands in this document describe the 2026-07-07 evidence capture at commit `6f77176`. They are retained for reproducibility and are **not** current bootstrap/dependency instructions. For the current runtime, use the live `.python-version`, `requirements.txt` and current `main` contracts.
+
 Related spec: [`docs/product/01_LIBRARY_INTELLIGENCE_SPEC.md`](../product/01_LIBRARY_INTELLIGENCE_SPEC.md) §6.1.
 
 ## Run metadata
@@ -150,7 +152,9 @@ The threshold separates these groups cleanly on the fixture set (no samples in t
 | P2 | Update `tools/validate_report.py` / `title_pipeline.py` thresholds | Open |
 | P2 | Re-analyze legacy catalogs or document migration note | Open |
 
-## Commands
+## Historical reproduction commands
+
+The following commands reproduce the captured 2026-07-07 environment; do not use the NumPy pin as a current project setup instruction.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install "numpy==2.4.6"
