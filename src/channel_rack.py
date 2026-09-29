@@ -249,13 +249,13 @@ def warm_channel_rack_pcm(
     Capacity is measured by provider cache identity (canonical key), not raw
     path spellings, so aliases of one file count once.
 
-    Returns the tuple of raw paths that failed to load (fail-soft). Callers can
-    skip those sources without re-decoding after the engine-frame anchor.
-    Raises ``ValueError`` when unique identities exceed ``provider.max_entries``.
+    Returns every raw alias that failed to load (fail-soft), including all
+    spellings that share a failed identity. Raises ``ValueError`` when unique
+    identities exceed ``provider.max_entries``.
     """
 
-    paths_by_identity: list[str] = []
-    seen_identities: set[str] = set()
+    aliases_by_identity: dict[str, list[str]] = {}
+    order: list[str] = []
     for channel in state.channels:
         path = channel.sample_path
         if path is None or path == "" or path.isspace():
@@ -264,22 +264,24 @@ def warm_channel_rack_pcm(
             identity = canonicalize_pcm_path(path)
         except (OSError, RuntimeError, ValueError):
             identity = path
-        if identity in seen_identities:
-            continue
-        seen_identities.add(identity)
-        paths_by_identity.append(path)
+        if identity not in aliases_by_identity:
+            aliases_by_identity[identity] = []
+            order.append(identity)
+        aliases_by_identity[identity].append(path)
 
-    if len(paths_by_identity) > provider.max_entries:
+    if len(order) > provider.max_entries:
         raise ValueError(
             "warm_channel_rack_pcm requires provider.max_entries >= number of "
             "unique sample identities "
-            f"(need {len(paths_by_identity)}, max_entries={provider.max_entries})"
+            f"(need {len(order)}, max_entries={provider.max_entries})"
         )
 
     failed: list[str] = []
-    for path in paths_by_identity:
-        if provider.pcm_for_path(path) is None:
-            failed.append(path)
+    for identity in order:
+        aliases = aliases_by_identity[identity]
+        representative = aliases[0]
+        if provider.pcm_for_path(representative) is None:
+            failed.extend(aliases)
     return tuple(failed)
 
 
