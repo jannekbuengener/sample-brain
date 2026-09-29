@@ -21,6 +21,7 @@ from .pattern_core import (
     allocate_user_channel_id,
     require_triggers_reference_known_channels,
 )
+from .sequencer_pcm import SequencerPcmProvider
 from .sequencer_playback import (
     PlaybackScheduleResult,
     plan_pattern_once,
@@ -157,10 +158,19 @@ def play_channel_rack_once(
     pattern_start_quarter: Fraction,
     pattern_start_engine_frame: int,
     engine: Any,
-    pcm_for_path: Callable[[str], Any],
+    pcm_for_path: Callable[[str], Any] | None = None,
     allocate_voice_id: Callable[[], int],
 ) -> PlaybackScheduleResult:
-    """Plan and schedule one pattern pass via the sequencer public seam."""
+    """Plan and schedule one pattern pass via the sequencer public seam.
+
+    When ``pcm_for_path`` is omitted, a production ``SequencerPcmProvider`` is
+    created for ``tempo_map.sample_rate`` so callers need not invent decode logic.
+    Pass an explicit provider (or other callable) to reuse a long-lived cache.
+    """
+
+    resolver = pcm_for_path
+    if resolver is None:
+        resolver = SequencerPcmProvider(sample_rate=tempo_map.sample_rate)
 
     channels_by_id: Mapping[str, Channel] = {
         channel.channel_id: channel for channel in state.channels
@@ -175,7 +185,7 @@ def play_channel_rack_once(
     return schedule_pattern_once(
         planned_triggers=planned,
         engine=engine,
-        pcm_for_path=pcm_for_path,
+        pcm_for_path=resolver,
         allocate_voice_id=allocate_voice_id,
     )
 

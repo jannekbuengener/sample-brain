@@ -36,7 +36,7 @@ import importlib
 import inspect
 from fractions import Fraction
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -44,7 +44,6 @@ import pytest
 import soundfile as sf
 
 from src.native_audio import PcmBufferConfig
-from src.pattern_core import Channel, Pattern, Trigger
 from src.session_grid import TempoMap
 from src.workbench_controller import WorkbenchRow
 from src.workbench_live_kit import LiveKitState

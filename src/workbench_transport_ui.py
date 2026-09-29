@@ -14,9 +14,9 @@ from tkinter import ttk
 from typing import Any, Callable
 
 import numpy as np
-import soundfile as sf
 
 from . import native_audio
+from .native_pcm_decode import decode_native_pcm
 from .session_grid import TimeSignature, compute_sync_playback_rate
 from .workbench_controller import WorkbenchRow
 from .workbench_preview import PreviewResult
@@ -47,29 +47,7 @@ def _load_native_pcm(
     start_ms: int,
 ) -> tuple[np.ndarray, int]:
     """Decode immutable source audio to finite PCM at the engine sample rate."""
-    data, source_rate = sf.read(
-        str(path),
-        dtype="float32",
-        always_2d=True,
-    )
-    if data.size == 0:
-        raise ValueError("Audio enthält keine Samples.")
-    if data.shape[1] > 2:
-        data = np.mean(data, axis=1, keepdims=True, dtype=np.float32)
-    if int(source_rate) != int(sample_rate):
-        import librosa
-
-        data = librosa.resample(
-            data.T,
-            orig_sr=int(source_rate),
-            target_sr=int(sample_rate),
-            axis=-1,
-        ).T
-    start_frame = int(max(0, int(start_ms)) * int(sample_rate) / 1_000)
-    if start_frame >= data.shape[0]:
-        raise ValueError("Startposition liegt außerhalb der Audiodatei.")
-    pcm = np.ascontiguousarray(data[start_frame:], dtype=np.float32)
-    return pcm, int(pcm.shape[1])
+    return decode_native_pcm(path, sample_rate=sample_rate, start_ms=start_ms)
 
 
 def _row_is_one_shot(row: WorkbenchRow) -> bool:

@@ -126,16 +126,16 @@ Product rule: Live Kit is the **initial seed** for the Channel Rack, not a fixed
 
 ## Sequencer handoff (step 4 — implemented separately)
 
-The one-pass scheduling seam is implemented in `src/sequencer_playback.py` via PR #663. A production PCM cache/decode provider for its injected `pcm_for_path` dependency is still pending:
+The one-pass scheduling seam is implemented in `src/sequencer_playback.py` via PR #663. The production PCM cache/decode provider is `src/sequencer_pcm.py` + shared `src/native_pcm_decode.py` (#676):
 
 ```text
 pattern playhead (musical)
   → TempoMap.quarter_note_to_frame / bar_beat_to_frame
+  → SequencerPcmProvider (path → cached PcmBufferConfig; decode offline)
   → NativeAudioEngine.schedule_voice_start(voice_id, engine_frame)
-  → PCM from cache keyed by sample_path (decode outside audio callback)
 ```
 
-Audition (`TransportAwarePreview`) remains separate and monophonic.
+Audition (`TransportAwarePreview`) remains separate and monophonic; it may reuse shared decode but does not own the sequencer cache.
 
 ## Implemented acceptance
 
@@ -149,4 +149,4 @@ Audition (`TransportAwarePreview`) remains separate and monophonic.
 
 ## Next
 
-Session ownership (#647), Pattern Core (#656), the sequencer scheduling seam (#663), Channel Rack Python core (#667), and extensible channel identity (#681) are on `main` (or in flight). The production PCM cache/decode provider (#676) and initial step semantics (#677) must complete before Screen-2 QML (#678) starts.
+Session ownership (#647), Pattern Core (#656), the sequencer scheduling seam (#663), Channel Rack Python core (#667), extensible channel identity (#681), and the production PCM cache/decode provider (#676) complete the playback foundations. Initial step semantics (#677) remain before Screen-2 QML (#678); Screen-2 QML stays HOLD until explicitly scoped.
