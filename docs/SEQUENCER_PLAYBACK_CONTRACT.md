@@ -49,7 +49,8 @@ Pattern playhead / upcoming triggers
 
 ## Constraints from live code
 
-- `SB_MAX_VOICES = 32` — pattern polyphony must fail soft or voice-steal under explicit policy (product decision at TEST_GATE).
+- `SB_MAX_VOICES = 32` — `schedule_pattern_once` fail-softs with `skipped_voice_limit_count` when a single pass would create more voices; it does not remove or reuse voices within that pass (no voice stealing in v1).
+- Channel Rack DEFAULT_ON (#677) seeds 16 triggers per sample-bearing channel, so ≥3 filled channels yield ≥48 events and currently skip past the 32 create budget. Pattern semantics remain valid; retrigger / voice lifecycle is a separate follow-up under #675 — not redesigned here.
 - Voice create copies PCM into the engine — cache lifetime and re-trigger policy need tests.
 - `schedule_events_in_buffer` is a buffer-window helper only; the sequencer still decides which absolute frames to arm ahead of time.
 - Source `BeatGrid` stays analysis/edit time; pattern scheduling uses session `TempoMap` unless a later product decision adds BeatGrid sync.
@@ -73,4 +74,4 @@ Pattern playhead / upcoming triggers
 
 ## Next
 
-Build-order step 4 (minimal sequencer playback including production PCM cache/decode) is complete on the #676 path. Screen-2 Channel Rack QML remains HOLD until explicitly scoped.
+Build-order step 4 (minimal sequencer playback including production PCM cache/decode) is complete on the #676 path. DEFAULT_ON step semantics (#677) are owned by the Channel Rack core. Screen-2 Channel Rack QML remains HOLD until explicitly scoped; resolve or waive the >32-event voice-lifecycle follow-up before relying on full DEFAULT_ON kits in Screen-2 playback.

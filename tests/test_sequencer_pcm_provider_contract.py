@@ -149,6 +149,15 @@ def _synthetic_row(path: Path) -> WorkbenchRow:
     )
 
 
+def _rack_state_with_single_kick_step(rack, live_kit: LiveKitState, *, step: int = 0):
+    """DEFAULT_ON (#677) seeds 16 steps; keep only one active for PCM seam fixtures."""
+    state = rack.build_channel_rack_state(live_kit)
+    for index in range(state.step_count):
+        if index != step:
+            state = rack.toggle_step(state, "ch_kick", index)
+    return state
+
+
 def _voice_id_allocator(start: int = 1) -> Callable[[], int]:
     state = {"v": int(start)}
 
@@ -616,13 +625,11 @@ def test_channel_rack_playback_reaches_production_provider(tmp_path: Path):
     provider_cls = _require_symbol(_provider_module_or_fail(), "SequencerPcmProvider")
     rack = importlib.import_module("src.channel_rack")
     play = rack.play_channel_rack_once
-    toggle = rack.toggle_step
-    build = rack.build_channel_rack_state
 
     wav = _write_mono_wav(tmp_path / "kick_01.wav", sr=ENGINE_SR)
     live_kit = LiveKitState()
     live_kit.assign("Kick + Bass", "Kick", _synthetic_row(wav))
-    state = toggle(build(live_kit), "ch_kick", 0)
+    state = _rack_state_with_single_kick_step(rack, live_kit, step=0)
     provider = provider_cls(sample_rate=ENGINE_SR)
     tempo_map = TempoMap(sample_rate=ENGINE_SR, bpm=120)
     engine = MagicMock(name="native_engine")
@@ -654,7 +661,7 @@ def test_play_channel_rack_once_requires_long_lived_pcm_injector(tmp_path: Path)
     wav = _write_mono_wav(tmp_path / "kick_01.wav", sr=ENGINE_SR)
     live_kit = LiveKitState()
     live_kit.assign("Kick + Bass", "Kick", _synthetic_row(wav))
-    state = rack.toggle_step(rack.build_channel_rack_state(live_kit), "ch_kick", 0)
+    state = _rack_state_with_single_kick_step(rack, live_kit, step=0)
     tempo_map = TempoMap(sample_rate=ENGINE_SR, bpm=120)
     engine = MagicMock(name="native_engine")
     engine.create_voice.side_effect = lambda cfg: cfg.id
@@ -692,7 +699,7 @@ def test_play_channel_rack_once_rejects_mismatched_provider_sample_rate(
     wav = _write_mono_wav(tmp_path / "kick_01.wav", sr=ENGINE_SR)
     live_kit = LiveKitState()
     live_kit.assign("Kick + Bass", "Kick", _synthetic_row(wav))
-    state = rack.toggle_step(rack.build_channel_rack_state(live_kit), "ch_kick", 0)
+    state = _rack_state_with_single_kick_step(rack, live_kit, step=0)
     tempo_map = TempoMap(sample_rate=48_000, bpm=120)
     provider = provider_cls(sample_rate=44_100)
     engine = MagicMock(name="native_engine")
@@ -731,7 +738,7 @@ def test_channel_rack_reuses_long_lived_pcm_provider_across_passes(tmp_path: Pat
     wav = _write_mono_wav(tmp_path / "kick_01.wav", sr=ENGINE_SR)
     live_kit = LiveKitState()
     live_kit.assign("Kick + Bass", "Kick", _synthetic_row(wav))
-    state = rack.toggle_step(rack.build_channel_rack_state(live_kit), "ch_kick", 0)
+    state = _rack_state_with_single_kick_step(rack, live_kit, step=0)
     tempo_map = TempoMap(sample_rate=ENGINE_SR, bpm=120)
     decode_calls: list[str] = []
 

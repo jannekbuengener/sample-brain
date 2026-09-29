@@ -255,9 +255,14 @@ def test_add_user_channel_appends_opaque_channel_without_live_kit_slot():
     # Seed channels unchanged.
     assert extended.channels[:11] == seed.channels
 
+    # #677 DEFAULT_ON: sample-bearing user channel seeds all 16 steps.
+    assert len(extended.pattern.triggers) == 16
+    assert all(t.channel_id == user.channel_id for t in extended.pattern.triggers)
+
     toggled = toggle(extended, user.channel_id, 2)
-    assert toggled.pattern.triggers == (
-        Trigger(channel_id=user.channel_id, position=Fraction(2, 4)),
+    assert len(toggled.pattern.triggers) == 15
+    assert Trigger(channel_id=user.channel_id, position=Fraction(2, 4)) not in (
+        toggled.pattern.triggers
     )
 
 

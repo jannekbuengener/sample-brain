@@ -1,9 +1,10 @@
 """Minimal Channel Rack core — Live Kit channels, step grid, one pattern pass.
 
-Projects canonical Live Kit slots into Pattern Core channels, toggles 16th-note
-steps immutably, appends user-added channels without Live Kit provenance, and
-schedules one pattern pass through sequencer_playback. Musical truth stays
-Python-owned; this module adds no visual surfaces.
+Projects canonical Live Kit slots into Pattern Core channels, seeds DEFAULT_ON
+triggers for sample-bearing channels, toggles 16th-note steps immutably,
+appends user-added channels without Live Kit provenance, and schedules one
+pattern pass through sequencer_playback. Musical truth stays Python-owned;
+this module adds no visual surfaces.
 """
 
 from __future__ import annotations
@@ -35,6 +36,19 @@ DEFAULT_STEP_COUNT = 16
 DEFAULT_PATTERN_LENGTH = Fraction(4, 1)
 
 
+def _sample_bearing(sample_path: str | None) -> bool:
+    """True when the channel has a non-empty sample path (playable source)."""
+    return sample_path is not None and sample_path != ""
+
+
+def _full_step_triggers(channel_id: str, step_count: int) -> tuple[Trigger, ...]:
+    """DEFAULT_ON seed: every v1 step active at Fraction(step_index, 4)."""
+    return tuple(
+        Trigger(channel_id=channel_id, position=Fraction(i, 4))
+        for i in range(step_count)
+    )
+
+
 @dataclass(frozen=True)
 class ChannelRackState:
     """Immutable rack snapshot: channels, active pattern, and step grid size."""
@@ -54,7 +68,11 @@ class ChannelRackState:
 
 
 def build_channel_rack_state(live_kit: LiveKitState) -> ChannelRackState:
-    """Project current Live Kit assignments into an empty 16-step rack state."""
+    """Project Live Kit assignments into a 16-step rack with DEFAULT_ON seeds.
+
+    Sample-bearing channels start with every step active. Empty channels
+    remain triggerless (no phantom events for vacant Live Kit slots).
+    """
 
     channels: list[Channel] = []
     for group, slots in LIVE_KIT_SLOT_MAPPING:
@@ -70,12 +88,19 @@ def build_channel_rack_state(live_kit: LiveKitState) -> ChannelRackState:
                 )
             )
 
+    triggers: list[Trigger] = []
+    for channel in channels:
+        if _sample_bearing(channel.sample_path):
+            triggers.extend(
+                _full_step_triggers(channel.channel_id, DEFAULT_STEP_COUNT)
+            )
+
     return ChannelRackState(
         channels=tuple(channels),
         pattern=Pattern(
             pattern_id=DEFAULT_PATTERN_ID,
             length_quarter_notes=DEFAULT_PATTERN_LENGTH,
-            triggers=(),
+            triggers=tuple(triggers),
         ),
         step_count=DEFAULT_STEP_COUNT,
     )
@@ -87,7 +112,11 @@ def add_user_channel(
     sample_path: str | None = None,
     channel_id: str | None = None,
 ) -> ChannelRackState:
-    """Append a user-added rack channel without Live Kit provenance."""
+    """Append a user-added rack channel without Live Kit provenance.
+
+    Sample-bearing user channels seed DEFAULT_ON (all steps active). Empty
+    user channels append without adding triggers.
+    """
 
     existing_ids = [channel.channel_id for channel in state.channels]
     new_id = (
@@ -104,9 +133,18 @@ def add_user_channel(
         live_kit_slot=None,
         sample_path=sample_path,
     )
+    new_triggers = state.pattern.triggers
+    if _sample_bearing(sample_path):
+        new_triggers = state.pattern.triggers + _full_step_triggers(
+            new_id, state.step_count
+        )
     return ChannelRackState(
         channels=state.channels + (new_channel,),
-        pattern=state.pattern,
+        pattern=Pattern(
+            pattern_id=state.pattern.pattern_id,
+            length_quarter_notes=state.pattern.length_quarter_notes,
+            triggers=new_triggers,
+        ),
         step_count=state.step_count,
     )
 
