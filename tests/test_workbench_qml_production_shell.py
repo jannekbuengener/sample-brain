@@ -83,3 +83,29 @@ def test_spike_harness_owns_fixture_and_acceptance_operations():
     ):
         assert hasattr(workbench_qml_spike, harness_name)
     assert workbench_qml_spike.QML_SOURCE is workbench_qml.QML_SOURCE
+
+
+def _install_fake_qgui(monkeypatch, *, instance):
+    qtgui = types.ModuleType("PySide6.QtGui")
+    qtgui.QGuiApplication = types.SimpleNamespace(instance=lambda: instance)
+    pyside6 = types.ModuleType("PySide6")
+    pyside6.__path__ = []
+    pyside6.QtGui = qtgui
+    monkeypatch.setitem(sys.modules, "PySide6", pyside6)
+    monkeypatch.setitem(sys.modules, "PySide6.QtGui", qtgui)
+
+
+def test_v2_capture_fails_closed_when_qguiapplication_already_exists(monkeypatch):
+    from src import workbench_qml_spike
+    from src.workbench_visual_acceptance import EvidenceError
+
+    _install_fake_qgui(monkeypatch, instance=object())
+    with pytest.raises(EvidenceError, match="frischen Prozess"):
+        workbench_qml_spike._require_fresh_qml_capture_process()
+
+
+def test_v2_capture_allows_fresh_process_before_qt_runtime(monkeypatch):
+    from src import workbench_qml_spike
+
+    _install_fake_qgui(monkeypatch, instance=None)
+    workbench_qml_spike._require_fresh_qml_capture_process()
