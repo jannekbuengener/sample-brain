@@ -214,7 +214,7 @@ An issue is done when:
 | Entity | Table | Purpose | Planned |
 |--------|-------|---------|---------|
 | **Embedding Job** | `embedding_jobs` | Track batch embedding progress, resume on failure | EPIC 2, P2 |
-| **Vector Index** | `vector_indexes` | Track FAISS index builds (checksum, count, timestamp) | EPIC 2, P2 |
+| **Vector Index State** | `vector_index_state` | Track rebuildable sqlite-vec cache state/fingerprint; NumPy `.npz` metadata lives in the index artifact | Implemented / ADR-0004 |
 | **Search Log** | `search_log` | Local search interaction logging for ranking improvement | EPIC 3, P3 |
 
 ### 5.3 Data Flow
