@@ -24,9 +24,8 @@ from .pattern_core import (
 )
 from .sequencer_pcm import SequencerPcmProvider, canonicalize_pcm_path
 from .sequencer_playback import (
-    PlaybackScheduleResult,
+    PatternPassPlayer,
     plan_pattern_once,
-    schedule_pattern_once,
 )
 from .session_grid import TempoMap
 from .workbench_live_kit import LIVE_KIT_SLOT_MAPPING, LiveKitState
@@ -34,6 +33,19 @@ from .workbench_live_kit import LIVE_KIT_SLOT_MAPPING, LiveKitState
 DEFAULT_PATTERN_ID = "screen2-main"
 DEFAULT_STEP_COUNT = 16
 DEFAULT_PATTERN_LENGTH = Fraction(4, 1)
+
+
+@dataclass(frozen=True)
+class ChannelRackPlayHandle:
+    """Result of starting one rack pattern pass via ``PatternPassPlayer``."""
+
+    player: PatternPassPlayer
+    planned_count: int
+    scheduled_voice_ids: tuple[int, ...]
+    scheduled_count: int
+    skipped_missing_source_count: int
+    skipped_voice_limit_count: int
+    skipped_engine_error_count: int
 
 
 def _sample_bearing(sample_path: str | None) -> bool:
@@ -196,11 +208,18 @@ def play_channel_rack_once(
     pattern_start_quarter: Fraction,
     pattern_start_engine_frame: int,
     engine: Any,
+    lookahead_frames: int,
     pcm_for_path: Callable[[str], Any] | None = None,
     pcm_provider: SequencerPcmProvider | None = None,
     allocate_voice_id: Callable[[], int],
-) -> PlaybackScheduleResult:
-    """Plan and schedule one pattern pass via the sequencer public seam.
+) -> ChannelRackPlayHandle:
+    """Plan and start one pattern pass via ``PatternPassPlayer``.
+
+    Builds a stateful player for the full planned event list, runs an initial
+    ``tick`` at ``pattern_start_engine_frame`` with the injected
+    ``lookahead_frames``, and returns a handle so callers can continue ticking
+    as the engine clock advances. The eager ``schedule_pattern_once`` helper is
+    intentionally not used here.
 
     Resolution for PCM:
 
@@ -228,11 +247,24 @@ def play_channel_rack_once(
         pattern_start_quarter=pattern_start_quarter,
         pattern_start_engine_frame=pattern_start_engine_frame,
     )
-    return schedule_pattern_once(
+    player = PatternPassPlayer(
         planned_triggers=planned,
+        lookahead_frames=lookahead_frames,
+    )
+    tick = player.tick(
+        engine_frame=pattern_start_engine_frame,
         engine=engine,
         pcm_for_path=resolver,
         allocate_voice_id=allocate_voice_id,
+    )
+    return ChannelRackPlayHandle(
+        player=player,
+        planned_count=player.planned_count,
+        scheduled_voice_ids=tick.scheduled_voice_ids,
+        scheduled_count=tick.scheduled_count,
+        skipped_missing_source_count=tick.skipped_missing_source_count,
+        skipped_voice_limit_count=tick.skipped_voice_limit_count,
+        skipped_engine_error_count=tick.skipped_engine_error_count,
     )
 
 
@@ -324,6 +356,7 @@ def warm_channel_rack_pcm(
 
 
 __all__ = [
+    "ChannelRackPlayHandle",
     "ChannelRackState",
     "add_user_channel",
     "build_channel_rack_state",

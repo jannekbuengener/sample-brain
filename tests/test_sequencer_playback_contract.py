@@ -14,7 +14,11 @@ separate IMPLEMENTATION_GATE lands the module.
 
 v1 scope frozen here:
 - ONE_PATTERN_PASS (no looping)
-- FAIL_SOFT_NO_VOICE_STEALING (max 32 pattern voices per schedule call)
+- FAIL_SOFT_NO_VOICE_STEALING
+- ``schedule_pattern_once`` remains the eager create-budget helper
+- ``PatternPassPlayer`` owns bounded materialization + IDLE reclaim
+- ``SB_MAX_VOICES`` is engine-global registered capacity (``total_voice_count``)
+- injectable ``lookahead_frames`` (no hardcoded sample_rate product law)
 - injected voice-id allocator
 - injected PCM provider (no decode in audio callback)
 - TempoMap + engine-frame anchor formula
@@ -26,7 +30,7 @@ from __future__ import annotations
 import ast
 import importlib
 import inspect
-from dataclasses import fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from fractions import Fraction
 from pathlib import Path
 from typing import Any, Callable
@@ -37,6 +41,9 @@ import pytest
 from src.native_audio import (
     SB_MAX_VOICES,
     SB_SOURCE_PCM_BUFFER,
+    SB_VOICE_IDLE,
+    SB_VOICE_PLAYING,
+    SB_VOICE_SCHEDULED,
     PcmBufferConfig,
     VoiceConfig,
 )
@@ -47,6 +54,8 @@ from src.session_grid import TempoMap
 REQUIRED_PUBLIC_SYMBOLS = (
     "ScheduledTrigger",
     "PlaybackScheduleResult",
+    "PatternPassPlayer",
+    "PatternPassTickResult",
     "plan_pattern_once",
     "schedule_pattern_once",
 )
@@ -110,7 +119,11 @@ def _channels(*items: Channel) -> dict[str, Channel]:
 
 
 class FakeNativeEngine:
-    """In-memory native engine double — no hardware / no ctypes."""
+    """In-memory native engine double — no hardware / no ctypes.
+
+    Tracks registered voices with PCM lengths so tests can advance
+    ``engine_frame`` and observe IDLE reclaim / global ``total_voice_count``.
+    """
 
     def __init__(self) -> None:
         self.create_calls: list[VoiceConfig] = []
@@ -122,27 +135,103 @@ class FakeNativeEngine:
         self.remove_voice_calls: list[int] = []
         # Optional: map VoiceConfig.id → distinct native-returned voice id.
         self.returned_voice_ids: dict[int, int] = {}
+        self.engine_frame: int = 0
+        self._voices: dict[int, dict[str, Any]] = {}
+
+    def seed_foreign_voice(self, voice_id: int, *, pcm_frames: int = 8) -> None:
+        """Register a non-player voice that still consumes global capacity."""
+        self._voices[voice_id] = {
+            "state": SB_VOICE_IDLE,
+            "start_frame": None,
+            "pcm_frames": pcm_frames,
+            "foreign": True,
+        }
+
+    def advance_to(self, engine_frame: int) -> None:
+        self.engine_frame = engine_frame
+        for meta in self._voices.values():
+            start = meta["start_frame"]
+            if start is None:
+                continue
+            pcm_frames = int(meta["pcm_frames"])
+            if engine_frame >= start + pcm_frames:
+                meta["state"] = SB_VOICE_IDLE
+            elif engine_frame >= start:
+                meta["state"] = SB_VOICE_PLAYING
+            else:
+                meta["state"] = SB_VOICE_SCHEDULED
+
+    def get_snapshot(self) -> Any:
+        ids = list(self._voices.keys())
+        states = [int(self._voices[vid]["state"]) for vid in ids]
+        pad = SB_MAX_VOICES - len(ids)
+        if pad > 0:
+            ids = ids + [0] * pad
+            states = states + [SB_VOICE_IDLE] * pad
+        else:
+            ids = ids[:SB_MAX_VOICES]
+            states = states[:SB_MAX_VOICES]
+
+        @dataclass
+        class _Snap:
+            total_voice_count: int
+            active_voice_count: int
+            voice_ids: list[int]
+            voice_states: list[int]
+            engine_frame: int
+
+        active = sum(1 for state in states if state == SB_VOICE_PLAYING)
+        return _Snap(
+            total_voice_count=len(self._voices),
+            active_voice_count=active,
+            voice_ids=ids,
+            voice_states=states,
+            engine_frame=self.engine_frame,
+        )
 
     def create_voice(self, config: VoiceConfig) -> int:
         self.create_calls.append(config)
         self.ops.append(("create_voice", config.id))
         if config.id in self.create_errors:
             raise RuntimeError(f"native create_voice failed for {config.id}")
-        return self.returned_voice_ids.get(config.id, config.id)
+        voice_id = self.returned_voice_ids.get(config.id, config.id)
+        pcm_frames = 8
+        if config.pcm_buffer is not None:
+            samples = config.pcm_buffer.samples
+            channels = int(config.pcm_buffer.channels)
+            pcm_frames = int(samples.size // max(channels, 1))
+        self._voices[voice_id] = {
+            "state": SB_VOICE_IDLE,
+            "start_frame": None,
+            "pcm_frames": pcm_frames,
+            "foreign": False,
+        }
+        return voice_id
 
     def schedule_voice_start(self, voice_id: int, engine_frame: int) -> None:
         self.schedule_calls.append((voice_id, engine_frame))
         self.ops.append(("schedule_voice_start", (voice_id, engine_frame)))
         if voice_id in self.schedule_errors:
             raise RuntimeError(f"native schedule_voice_start failed for {voice_id}")
+        meta = self._voices[voice_id]
+        meta["start_frame"] = engine_frame
+        if self.engine_frame >= engine_frame + int(meta["pcm_frames"]):
+            meta["state"] = SB_VOICE_IDLE
+        elif self.engine_frame >= engine_frame:
+            meta["state"] = SB_VOICE_PLAYING
+        else:
+            meta["state"] = SB_VOICE_SCHEDULED
 
     def stop_voice(self, voice_id: int) -> None:
         self.stop_voice_calls.append(voice_id)
         self.ops.append(("stop_voice", voice_id))
+        if voice_id in self._voices:
+            self._voices[voice_id]["state"] = SB_VOICE_IDLE
 
     def remove_voice(self, voice_id: int) -> None:
         self.remove_voice_calls.append(voice_id)
         self.ops.append(("remove_voice", voice_id))
+        self._voices.pop(voice_id, None)
 
 
 # --- Public API --------------------------------------------------------------
@@ -652,7 +741,8 @@ def test_native_schedule_error_fails_soft_and_later_trigger_continues():
     assert engine.schedule_calls == [(1, 0), (2, 24_000)]
 
 
-def test_voice_limit_is_fail_soft_without_voice_stealing():
+def test_eager_schedule_pattern_once_create_budget_is_fail_soft_without_voice_stealing():
+    """Eager helper contract: one call creates at most max_voices (no reclaim)."""
     module = _sequencer_or_fail()
     plan = _require_symbol(module, "plan_pattern_once")
     schedule = _require_symbol(module, "schedule_pattern_once")
@@ -698,6 +788,12 @@ def test_voice_limit_is_fail_soft_without_voice_stealing():
     assert engine.remove_voice_calls == []
     assert "stop_voice" not in {op for op, _ in engine.ops}
     assert "remove_voice" not in {op for op, _ in engine.ops}
+
+
+# Keep legacy name as an alias so older checklists still resolve.
+test_voice_limit_is_fail_soft_without_voice_stealing = (
+    test_eager_schedule_pattern_once_create_budget_is_fail_soft_without_voice_stealing
+)
 
 
 def test_planning_is_pure_and_does_not_decode_or_touch_native_engine():
@@ -868,3 +964,370 @@ def test_plan_pattern_once_keeps_empty_sample_path_fail_soft_for_known_channel()
     )
     assert planned[0].channel_id == "ch_kick"
     assert planned[0].sample_path is None
+
+
+# --- #698 PatternPassPlayer voice lifecycle ---------------------------------
+
+
+def _short_pcm() -> PcmBufferConfig:
+    """Very short one-shot so temporal passes stay under concurrent capacity."""
+    return _pcm(frames=2, channels=1)
+
+
+def _drive_pattern_pass(
+    player,
+    *,
+    engine: FakeNativeEngine,
+    pcm_for_path,
+    allocate_voice_id,
+    end_frame: int,
+    step: int = 1,
+):
+    max_total = 0
+    frame = 0
+    while frame <= end_frame:
+        engine.advance_to(frame)
+        result = player.tick(
+            engine_frame=frame,
+            engine=engine,
+            pcm_for_path=pcm_for_path,
+            allocate_voice_id=allocate_voice_id,
+        )
+        max_total = max(max_total, result.total_voice_count)
+        if player.pending_count == 0 and player.live_voice_count == 0:
+            break
+        frame += step
+    else:
+        # Final reclaim sweep after last event durations.
+        engine.advance_to(end_frame + 64)
+        player.tick(
+            engine_frame=end_frame + 64,
+            engine=engine,
+            pcm_for_path=pcm_for_path,
+            allocate_voice_id=allocate_voice_id,
+        )
+        max_total = max(max_total, engine.get_snapshot().total_voice_count)
+    return max_total
+
+
+def test_pattern_pass_player_lookahead_frames_must_be_non_negative_int():
+    module = _sequencer_or_fail()
+    Player = _require_symbol(module, "PatternPassPlayer")
+    with pytest.raises(ValueError, match="lookahead_frames"):
+        Player((), lookahead_frames=-1)
+    with pytest.raises(ValueError, match="lookahead_frames"):
+        Player((), lookahead_frames=True)  # type: ignore[arg-type]
+
+
+def test_pattern_pass_player_48_default_on_events_all_materialise_under_concurrent_32():
+    """TOTAL EVENTS != CONCURRENCY: 3x16=48 with short PCM, peak registered <=32."""
+    module = _sequencer_or_fail()
+    plan = _require_symbol(module, "plan_pattern_once")
+    Player = _require_symbol(module, "PatternPassPlayer")
+
+    tempo_map = TempoMap(sample_rate=48_000, bpm=120)
+    channel_specs = (
+        ("ch_kick", "Kick + Bass", "Kick", "synthetic/kick.wav"),
+        ("ch_main_drum", "Drums", "Main Drum", "synthetic/snare.wav"),
+        ("ch_closed_hat", "Drums", "Closed Hat", "synthetic/hat.wav"),
+    )
+    channels = _channels(
+        *[_channel(cid, group, slot, path) for cid, group, slot, path in channel_specs]
+    )
+    triggers = [
+        Trigger(channel_id=cid, position=Fraction(step, 4))
+        for cid, _g, _s, _p in channel_specs
+        for step in range(16)
+    ]
+    pattern = Pattern(
+        pattern_id="pat_48",
+        length_quarter_notes=Fraction(4, 1),
+        triggers=triggers,
+    )
+    planned = plan(
+        pattern=pattern,
+        channels_by_id=channels,
+        tempo_map=tempo_map,
+        pattern_start_quarter=Fraction(0, 1),
+        pattern_start_engine_frame=0,
+    )
+    assert len(planned) == 48
+    planned_frames = {t.engine_frame for t in planned}
+
+    ids = iter(range(1, 10_000))
+    engine = FakeNativeEngine()
+    # Lookahead covers one 16th (6000 frames @ 120BPM/48k); injectable, not magic.
+    player = Player(planned, lookahead_frames=6000)
+    max_total = _drive_pattern_pass(
+        player,
+        engine=engine,
+        pcm_for_path=lambda _path: _short_pcm(),
+        allocate_voice_id=lambda: next(ids),
+        end_frame=max(t.engine_frame for t in planned) + 16,
+        step=100,
+    )
+
+    assert player.scheduled_count == 48
+    assert player.skipped_voice_limit_count == 0
+    assert player.pending_count == 0
+    assert max_total <= SB_MAX_VOICES
+    scheduled_frames = {frame for _vid, frame in engine.schedule_calls}
+    assert scheduled_frames == planned_frames
+    assert engine.get_snapshot().total_voice_count <= SB_MAX_VOICES
+
+
+def test_pattern_pass_player_64_default_on_events_all_materialise_under_concurrent_32():
+    module = _sequencer_or_fail()
+    plan = _require_symbol(module, "plan_pattern_once")
+    Player = _require_symbol(module, "PatternPassPlayer")
+
+    tempo_map = TempoMap(sample_rate=48_000, bpm=120)
+    channel_specs = (
+        ("ch_kick", "Kick + Bass", "Kick", "synthetic/kick.wav"),
+        ("ch_main_drum", "Drums", "Main Drum", "synthetic/snare.wav"),
+        ("ch_closed_hat", "Drums", "Closed Hat", "synthetic/hat.wav"),
+        ("ch_percussion", "Drums", "Percussion", "synthetic/perc.wav"),
+    )
+    channels = _channels(
+        *[_channel(cid, group, slot, path) for cid, group, slot, path in channel_specs]
+    )
+    triggers = [
+        Trigger(channel_id=cid, position=Fraction(step, 4))
+        for cid, _g, _s, _p in channel_specs
+        for step in range(16)
+    ]
+    pattern = Pattern(
+        pattern_id="pat_64",
+        length_quarter_notes=Fraction(4, 1),
+        triggers=triggers,
+    )
+    planned = plan(
+        pattern=pattern,
+        channels_by_id=channels,
+        tempo_map=tempo_map,
+        pattern_start_quarter=Fraction(0, 1),
+        pattern_start_engine_frame=0,
+    )
+    assert len(planned) == 64
+
+    ids = iter(range(1, 10_000))
+    engine = FakeNativeEngine()
+    player = Player(planned, lookahead_frames=6000)
+    max_total = _drive_pattern_pass(
+        player,
+        engine=engine,
+        pcm_for_path=lambda _path: _short_pcm(),
+        allocate_voice_id=lambda: next(ids),
+        end_frame=max(t.engine_frame for t in planned) + 16,
+        step=100,
+    )
+
+    assert player.scheduled_count == 64
+    assert player.skipped_voice_limit_count == 0
+    assert player.pending_count == 0
+    assert max_total <= SB_MAX_VOICES
+    assert len(engine.schedule_calls) == 64
+
+
+def test_pattern_pass_player_more_than_32_same_frame_fail_soft_without_stealing():
+    module = _sequencer_or_fail()
+    plan = _require_symbol(module, "plan_pattern_once")
+    Player = _require_symbol(module, "PatternPassPlayer")
+
+    tempo_map = TempoMap(sample_rate=48_000, bpm=120)
+    # 33 channels, one trigger each at the same musical position → same engine frame.
+    channels_list = [
+        Channel(
+            channel_id=f"ch_user_{i}",
+            live_kit_group=None,
+            live_kit_slot=None,
+            sample_path=f"synthetic/s{i}.wav",
+        )
+        for i in range(33)
+    ]
+    channels = _channels(*channels_list)
+    triggers = [
+        Trigger(channel_id=f"ch_user_{i}", position=Fraction(0, 1)) for i in range(33)
+    ]
+    pattern = Pattern(
+        pattern_id="pat_simultaneous",
+        length_quarter_notes=Fraction(4, 1),
+        triggers=triggers,
+    )
+    planned = plan(
+        pattern=pattern,
+        channels_by_id=channels,
+        tempo_map=tempo_map,
+        pattern_start_quarter=Fraction(0, 1),
+        pattern_start_engine_frame=0,
+    )
+    assert len({t.engine_frame for t in planned}) == 1
+
+    ids = iter(range(1, 10_000))
+    engine = FakeNativeEngine()
+    player = Player(planned, lookahead_frames=0)
+    engine.advance_to(0)
+    result = player.tick(
+        engine_frame=0,
+        engine=engine,
+        pcm_for_path=lambda _path: _short_pcm(),
+        allocate_voice_id=lambda: next(ids),
+    )
+    assert result.scheduled_count == 32
+    assert result.skipped_voice_limit_count == 1
+    assert result.total_voice_count == 32
+    assert engine.get_snapshot().total_voice_count == 32
+    # No stealing: never stop/remove PLAYING voices to free capacity mid-tick.
+    assert engine.stop_voice_calls == []
+
+
+def test_pattern_pass_player_respects_foreign_voices_for_global_capacity():
+    module = _sequencer_or_fail()
+    Player = _require_symbol(module, "PatternPassPlayer")
+    ScheduledTrigger = _require_symbol(module, "ScheduledTrigger")
+
+    foreign = 10
+    engine = FakeNativeEngine()
+    for voice_id in range(1, foreign + 1):
+        engine.seed_foreign_voice(voice_id)
+
+    planned = tuple(
+        ScheduledTrigger(
+            channel_id="ch_kick",
+            sample_path="synthetic/kick.wav",
+            position=Fraction(0, 1),
+            engine_frame=0,
+        )
+        for _ in range(30)
+    )
+    # 10 foreign + 30 attempted => only 22 can register (32-10).
+    ids = iter(range(100, 10_000))
+    player = Player(planned, lookahead_frames=0)
+    engine.advance_to(0)
+    result = player.tick(
+        engine_frame=0,
+        engine=engine,
+        pcm_for_path=lambda _path: _short_pcm(),
+        allocate_voice_id=lambda: next(ids),
+    )
+    assert result.scheduled_count == SB_MAX_VOICES - foreign
+    assert result.skipped_voice_limit_count == 30 - (SB_MAX_VOICES - foreign)
+    assert engine.get_snapshot().total_voice_count == SB_MAX_VOICES
+    assert engine.get_snapshot().total_voice_count <= SB_MAX_VOICES
+
+
+def test_pattern_pass_player_late_event_keeps_exact_engine_frame():
+    module = _sequencer_or_fail()
+    plan = _require_symbol(module, "plan_pattern_once")
+    Player = _require_symbol(module, "PatternPassPlayer")
+
+    tempo_map = TempoMap(sample_rate=48_000, bpm=120)
+    triggers = [
+        Trigger(channel_id="ch_kick", position=Fraction(i, 16)) for i in range(40)
+    ]
+    pattern = Pattern(
+        pattern_id="pat_late",
+        length_quarter_notes=Fraction(8, 1),
+        triggers=triggers,
+    )
+    channels = _channels(
+        _channel("ch_kick", "Kick + Bass", "Kick", "synthetic/kick.wav")
+    )
+    planned = plan(
+        pattern=pattern,
+        channels_by_id=channels,
+        tempo_map=tempo_map,
+        pattern_start_quarter=Fraction(0, 1),
+        pattern_start_engine_frame=0,
+    )
+    target = planned[35]
+    ids = iter(range(1, 10_000))
+    engine = FakeNativeEngine()
+    player = Player(planned, lookahead_frames=3000)
+    _drive_pattern_pass(
+        player,
+        engine=engine,
+        pcm_for_path=lambda _path: _short_pcm(),
+        allocate_voice_id=lambda: next(ids),
+        end_frame=max(t.engine_frame for t in planned) + 16,
+        step=50,
+    )
+    assert (any(vid for vid, frame in engine.schedule_calls if frame == target.engine_frame))
+    assert player.scheduled_count == 40
+    assert player.skipped_voice_limit_count == 0
+    matching = [frame for _vid, frame in engine.schedule_calls]
+    assert matching.count(target.engine_frame) >= 1
+    # Frame-exact: every planned frame appears unchanged in schedule requests.
+    assert {frame for _vid, frame in engine.schedule_calls} == {
+        t.engine_frame for t in planned
+    }
+
+
+def test_pattern_pass_player_stop_removes_owned_voices_without_leaks():
+    module = _sequencer_or_fail()
+    Player = _require_symbol(module, "PatternPassPlayer")
+    ScheduledTrigger = _require_symbol(module, "ScheduledTrigger")
+
+    planned = tuple(
+        ScheduledTrigger(
+            channel_id="ch_kick",
+            sample_path="synthetic/kick.wav",
+            position=Fraction(i, 4),
+            engine_frame=i * 6000,
+        )
+        for i in range(4)
+    )
+    engine = FakeNativeEngine()
+    engine.seed_foreign_voice(999)
+    ids = iter(range(1, 100))
+    player = Player(planned, lookahead_frames=20_000)
+    engine.advance_to(0)
+    player.tick(
+        engine_frame=0,
+        engine=engine,
+        pcm_for_path=lambda _path: _short_pcm(),
+        allocate_voice_id=lambda: next(ids),
+    )
+    assert player.live_voice_count > 0
+    owned_before = set(player._owned_live)
+    player.stop(engine)
+    assert player.live_voice_count == 0
+    assert player.pending_count == 0
+    for voice_id in owned_before:
+        assert voice_id in engine.remove_voice_calls
+        assert voice_id not in engine._voices
+    # Foreign voice remains.
+    assert 999 in engine._voices
+    assert engine.get_snapshot().total_voice_count == 1
+
+
+def test_pattern_pass_player_missing_sample_fail_soft():
+    module = _sequencer_or_fail()
+    Player = _require_symbol(module, "PatternPassPlayer")
+    ScheduledTrigger = _require_symbol(module, "ScheduledTrigger")
+
+    planned = (
+        ScheduledTrigger(
+            channel_id="ch_kick",
+            sample_path=None,
+            position=Fraction(0, 1),
+            engine_frame=0,
+        ),
+        ScheduledTrigger(
+            channel_id="ch_snare",
+            sample_path="synthetic/snare.wav",
+            position=Fraction(0, 1),
+            engine_frame=0,
+        ),
+    )
+    engine = FakeNativeEngine()
+    ids = iter(range(1, 10))
+    player = Player(planned, lookahead_frames=0)
+    result = player.tick(
+        engine_frame=0,
+        engine=engine,
+        pcm_for_path=lambda path: _short_pcm() if path.endswith("snare.wav") else None,
+        allocate_voice_id=lambda: next(ids),
+    )
+    assert result.skipped_missing_source_count == 1
+    assert result.scheduled_count == 1

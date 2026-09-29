@@ -53,6 +53,7 @@ REQUIRED_PUBLIC_SYMBOLS = (
     "build_channel_rack_state",
     "toggle_step",
     "play_channel_rack_once",
+    "ChannelRackPlayHandle",
 )
 
 DEFAULT_PATTERN_ID = "screen2-main"
@@ -377,7 +378,8 @@ def test_play_channel_rack_once_reuses_sequencer_public_seam(monkeypatch):
     import src.sequencer_playback as sequencer
 
     plan_calls: list[dict[str, Any]] = []
-    schedule_calls: list[dict[str, Any]] = []
+    player_inits: list[dict[str, Any]] = []
+    tick_calls: list[dict[str, Any]] = []
     sentinel_planned = (
         sequencer.ScheduledTrigger(
             channel_id="ch_kick",
@@ -386,29 +388,42 @@ def test_play_channel_rack_once_reuses_sequencer_public_seam(monkeypatch):
             engine_frame=1000,
         ),
     )
-    sentinel_result = sequencer.PlaybackScheduleResult(
-        scheduled_voice_ids=(7,),
-        scheduled_count=1,
-        skipped_missing_source_count=0,
-        skipped_voice_limit_count=0,
-        skipped_engine_error_count=0,
-    )
 
     def fake_plan(**kwargs):
         plan_calls.append(kwargs)
         return sentinel_planned
 
-    def fake_schedule(**kwargs):
-        schedule_calls.append(kwargs)
-        return sentinel_result
+    class FakePlayer:
+        def __init__(self, planned_triggers, *, lookahead_frames, max_voices=32):
+            player_inits.append(
+                {
+                    "planned_triggers": planned_triggers,
+                    "lookahead_frames": lookahead_frames,
+                    "max_voices": max_voices,
+                }
+            )
+            self.planned_count = len(tuple(planned_triggers))
+            self._tick = sequencer.PatternPassTickResult(
+                scheduled_voice_ids=(7,),
+                scheduled_count=1,
+                skipped_missing_source_count=0,
+                skipped_voice_limit_count=0,
+                skipped_engine_error_count=0,
+                pending_count=0,
+                live_voice_count=1,
+                total_voice_count=1,
+            )
+
+        def tick(self, **kwargs):
+            tick_calls.append(kwargs)
+            return self._tick
 
     monkeypatch.setattr(sequencer, "plan_pattern_once", fake_plan)
-    monkeypatch.setattr(sequencer, "schedule_pattern_once", fake_schedule)
-    # Also patch names bound into channel_rack if imported via ``from … import``.
+    monkeypatch.setattr(sequencer, "PatternPassPlayer", FakePlayer)
     if hasattr(module, "plan_pattern_once"):
         monkeypatch.setattr(module, "plan_pattern_once", fake_plan)
-    if hasattr(module, "schedule_pattern_once"):
-        monkeypatch.setattr(module, "schedule_pattern_once", fake_schedule)
+    if hasattr(module, "PatternPassPlayer"):
+        monkeypatch.setattr(module, "PatternPassPlayer", FakePlayer)
 
     live_kit = _live_kit_with_kick()
     state = toggle(_build_state(module, live_kit), "ch_kick", 0)
@@ -421,18 +436,26 @@ def test_play_channel_rack_once_reuses_sequencer_public_seam(monkeypatch):
         pattern_start_quarter=Fraction(0, 1),
         pattern_start_engine_frame=1000,
         engine=engine,
+        lookahead_frames=4800,
         pcm_for_path=lambda _path: None,
         allocate_voice_id=lambda: 1,
     )
 
     assert plan_calls, "play_channel_rack_once must call plan_pattern_once"
-    assert schedule_calls, "play_channel_rack_once must call schedule_pattern_once"
-    assert schedule_calls[0].get("planned_triggers") is sentinel_planned
-    assert result is sentinel_result
+    assert player_inits, "play_channel_rack_once must construct PatternPassPlayer"
+    assert player_inits[0]["planned_triggers"] is sentinel_planned
+    assert player_inits[0]["lookahead_frames"] == 4800
+    assert tick_calls, "play_channel_rack_once must tick the player once"
+    assert tick_calls[0]["engine_frame"] == 1000
+    assert result.scheduled_count == 1
+    assert result.scheduled_voice_ids == (7,)
+    assert result.player is not None
 
     source = Path(inspect.getsourcefile(module) or "").read_text(encoding="utf-8")
     assert "plan_pattern_once" in source
-    assert "schedule_pattern_once" in source
+    assert "PatternPassPlayer" in source
+    # Eager helper must not be the rack playback path after #698.
+    assert "schedule_pattern_once(" not in source
     # Must not re-implement frame conversion locally.
     assert "quarter_note_to_frame" not in source
 

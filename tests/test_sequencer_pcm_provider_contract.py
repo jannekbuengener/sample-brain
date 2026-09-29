@@ -36,6 +36,7 @@ import importlib
 import inspect
 from fractions import Fraction
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Callable
 from unittest.mock import MagicMock
 
@@ -43,10 +44,41 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from src.native_audio import PcmBufferConfig
+from src.native_audio import SB_MAX_VOICES, SB_VOICE_IDLE, PcmBufferConfig
 from src.session_grid import TempoMap
 from src.workbench_controller import WorkbenchRow
 from src.workbench_live_kit import LiveKitState
+
+
+def _lifecycle_mock_engine() -> MagicMock:
+    """MagicMock engine that exposes snapshot/remove for PatternPassPlayer."""
+    engine = MagicMock(name="native_engine")
+    voices: dict[int, int] = {}
+
+    def create_voice(cfg):
+        voices[cfg.id] = SB_VOICE_IDLE
+        return cfg.id
+
+    def remove_voice(voice_id: int) -> None:
+        voices.pop(int(voice_id), None)
+
+    def get_snapshot():
+        ids = list(voices.keys())
+        states = [voices[vid] for vid in ids]
+        pad = max(0, SB_MAX_VOICES - len(ids))
+        return SimpleNamespace(
+            total_voice_count=len(voices),
+            voice_ids=ids + [0] * pad,
+            voice_states=states + [SB_VOICE_IDLE] * pad,
+            engine_frame=0,
+        )
+
+    engine.create_voice.side_effect = create_voice
+    engine.remove_voice.side_effect = remove_voice
+    engine.stop_voice.side_effect = lambda _vid: None
+    engine.schedule_voice_start.side_effect = lambda _vid, _frame: None
+    engine.get_snapshot.side_effect = get_snapshot
+    return engine
 
 
 REQUIRED_DECODE_SYMBOLS = ("decode_native_pcm",)
@@ -632,8 +664,7 @@ def test_channel_rack_playback_reaches_production_provider(tmp_path: Path):
     state = _rack_state_with_single_kick_step(rack, live_kit, step=0)
     provider = provider_cls(sample_rate=ENGINE_SR)
     tempo_map = TempoMap(sample_rate=ENGINE_SR, bpm=120)
-    engine = MagicMock(name="native_engine")
-    engine.create_voice.side_effect = lambda cfg: cfg.id
+    engine = _lifecycle_mock_engine()
 
     result = play(
         state,
@@ -641,6 +672,7 @@ def test_channel_rack_playback_reaches_production_provider(tmp_path: Path):
         pattern_start_quarter=Fraction(0, 1),
         pattern_start_engine_frame=0,
         engine=engine,
+        lookahead_frames=4800,
         pcm_for_path=provider,
         allocate_voice_id=_voice_id_allocator(10),
     )
@@ -657,14 +689,14 @@ def test_play_channel_rack_once_requires_long_lived_pcm_injector(tmp_path: Path)
     assert sig.parameters["pcm_for_path"].default is None
     assert "pcm_provider" in sig.parameters
     assert sig.parameters["pcm_provider"].default is None
+    assert "lookahead_frames" in sig.parameters
 
     wav = _write_mono_wav(tmp_path / "kick_01.wav", sr=ENGINE_SR)
     live_kit = LiveKitState()
     live_kit.assign("Kick + Bass", "Kick", _synthetic_row(wav))
     state = _rack_state_with_single_kick_step(rack, live_kit, step=0)
     tempo_map = TempoMap(sample_rate=ENGINE_SR, bpm=120)
-    engine = MagicMock(name="native_engine")
-    engine.create_voice.side_effect = lambda cfg: cfg.id
+    engine = _lifecycle_mock_engine()
 
     with pytest.raises(ValueError, match="pcm_provider or pcm_for_path"):
         play(
@@ -673,6 +705,7 @@ def test_play_channel_rack_once_requires_long_lived_pcm_injector(tmp_path: Path)
             pattern_start_quarter=Fraction(0, 1),
             pattern_start_engine_frame=0,
             engine=engine,
+            lookahead_frames=4800,
             allocate_voice_id=_voice_id_allocator(1),
         )
 
@@ -683,6 +716,7 @@ def test_play_channel_rack_once_requires_long_lived_pcm_injector(tmp_path: Path)
         pattern_start_quarter=Fraction(0, 1),
         pattern_start_engine_frame=0,
         engine=engine,
+        lookahead_frames=4800,
         pcm_provider=provider,
         allocate_voice_id=_voice_id_allocator(1),
     )
@@ -711,6 +745,7 @@ def test_play_channel_rack_once_rejects_mismatched_provider_sample_rate(
             pattern_start_quarter=Fraction(0, 1),
             pattern_start_engine_frame=0,
             engine=engine,
+            lookahead_frames=4800,
             pcm_provider=provider,
             allocate_voice_id=_voice_id_allocator(1),
         )
@@ -722,6 +757,7 @@ def test_play_channel_rack_once_rejects_mismatched_provider_sample_rate(
             pattern_start_quarter=Fraction(0, 1),
             pattern_start_engine_frame=0,
             engine=engine,
+            lookahead_frames=4800,
             pcm_for_path=provider.pcm_for_path,
             allocate_voice_id=_voice_id_allocator(1),
         )
@@ -752,8 +788,7 @@ def test_channel_rack_reuses_long_lived_pcm_provider_across_passes(tmp_path: Pat
     assert failed == ()
     assert len(decode_calls) == 1
 
-    engine = MagicMock(name="native_engine")
-    engine.create_voice.side_effect = lambda cfg: cfg.id
+    engine = _lifecycle_mock_engine()
     for _ in range(2):
         result = play(
             state,
@@ -761,6 +796,7 @@ def test_channel_rack_reuses_long_lived_pcm_provider_across_passes(tmp_path: Pat
             pattern_start_quarter=Fraction(0, 1),
             pattern_start_engine_frame=0,
             engine=engine,
+            lookahead_frames=4800,
             pcm_provider=provider,
             allocate_voice_id=_voice_id_allocator(1),
         )
