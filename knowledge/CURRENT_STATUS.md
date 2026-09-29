@@ -22,7 +22,7 @@ At the 2026-09-29 reconciliation, GitHub live shows the following durable work c
 ### Active product/UI delivery
 
 - [#691](https://github.com/jannekbuengener/sample-brain/issues/691) — **Screen 1 Calm Adaptive Workspace**. Follow-up product/UI work after the closed #503 migration baseline. Children cover compact density, clean start, elastic panel layout, waveform research, preferences and parked reordering.
-- [#675](https://github.com/jannekbuengener/sample-brain/issues/675) / [#678](https://github.com/jannekbuengener/sample-brain/issues/678) — **Screen 2 Channel Rack** product track and QML UI.
+- [#675](https://github.com/jannekbuengener/sample-brain/issues/675) / [#678](https://github.com/jannekbuengener/sample-brain/issues/678) — **Screen 2 Channel Rack** product track. Foundations are present; the QML UI remains **HOLD** under `PRODUCT_WORKFLOW_CANON.md` until its documented gate is explicitly lifted.
 - [#679](https://github.com/jannekbuengener/sample-brain/issues/679) — **Screen 3 Arrangement** is parked/future product scope.
 - [#680](https://github.com/jannekbuengener/sample-brain/issues/680) — vocal/beatbox → sample-pattern R&D is parked/future.
 
@@ -65,7 +65,7 @@ Transient PRs and exact `main` SHA are intentionally not frozen here. Query GitH
 - The local Workbench and native-audio contracts are established.
 - `LOCK_PYSIDE6_QML` remains the renderer canon for new Screen-1 visual/product work; `src/workbench_qml.py` is the canonical QML Screen-1 shell and Tkinter is legacy/fallback plus behavioral reference.
 - The original Screen-1 migration epic #503 is closed. Current Screen-1 refinement continues under #691; agents must not route new work through #503 as though it were still active.
-- Screen-2 foundations now include session ownership, Pattern Core, sequencer scheduling/PCM and Channel Rack Python core; UI delivery is tracked under #675/#678.
+- Screen-2 foundations now include session ownership, Pattern Core, sequencer scheduling/PCM and Channel Rack Python core; #675/#678 track the product/UI path, with QML UI still **HOLD** under the current product workflow canon.
 - native audio core and deterministic transport/key-lock test surface remain part of the shipped foundation.
 - Quick Capture voice-to-issue flow uses local recording + local whisper.cpp + GitHub CLI. Private/local path and obvious secret redaction applies before public issue creation; see [`docs/QUICK_CAPTURE.md`](../docs/QUICK_CAPTURE.md).
 
