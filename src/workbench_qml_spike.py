@@ -255,8 +255,10 @@ def _module_file(module_name: str) -> Path:
 
 
 def _grab_qml_window_png(window: object, target: Path, *, engine: object | None = None) -> None:
-    """Capture a Qt Quick window via grabWindow (not GDI BitBlt)."""
+    """Capture a Qt Quick window via grabWindow / QScreen.grabWindow."""
+    from PySide6.QtGui import QGuiApplication
     from PySide6.QtQuick import QQuickWindow
+    import shiboken6
 
     candidates: list[object] = [window]
     if engine is not None:
@@ -264,22 +266,38 @@ def _grab_qml_window_png(window: object, target: Path, *, engine: object | None 
             candidates.extend(list(engine.rootObjects()))
         except Exception:
             pass
+
     quick = next((obj for obj in candidates if isinstance(obj, QQuickWindow)), None)
     if quick is None:
-        # Some PySide builds expose ApplicationWindow only as QWindow; still try.
-        grab = getattr(window, "grabWindow", None)
-        if callable(grab):
-            image = grab()
-            if image is not None and not image.isNull() and image.save(str(target)):
-                return
-        raise RuntimeError(
-            "QML capture requires a QQuickWindow root object; "
-            f"got {type(window)!r} className="
-            f"{getattr(getattr(window, 'metaObject', lambda: None)(), 'className', lambda: '?')()}"
-        )
-    image = quick.grabWindow()
+        # After some import/engine paths Shiboken wraps ApplicationWindow as QWindow.
+        for obj in candidates:
+            try:
+                ptr = shiboken6.getCppPointer(obj)[0]
+                quick = shiboken6.wrapInstance(int(ptr), QQuickWindow)
+                break
+            except Exception:
+                continue
+
+    if quick is not None:
+        image = quick.grabWindow()
+        if not image.isNull() and image.save(str(target)):
+            return
+
+    grab = getattr(window, "grabWindow", None)
+    if callable(grab):
+        image = grab()
+        if image is not None and not image.isNull() and image.save(str(target)):
+            return
+
+    win_id = int(window.winId())
+    screen = window.screen() if hasattr(window, "screen") else None
+    if screen is None:
+        screen = QGuiApplication.primaryScreen()
+    if screen is None:
+        raise RuntimeError("QML capture: no QScreen available for grabWindow.")
+    image = screen.grabWindow(win_id)
     if image.isNull() or not image.save(str(target)):
-        raise RuntimeError(f"QML grabWindow capture failed for {target.name}")
+        raise RuntimeError(f"QML screen.grabWindow capture failed for {target.name}")
 
 
 def _is_within(path: Path, root: Path) -> bool:
