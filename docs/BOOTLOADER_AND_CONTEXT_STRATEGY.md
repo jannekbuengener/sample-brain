@@ -18,7 +18,7 @@ The following documents must be read at the start of every new session before an
 
 | Document | When to read | Purpose |
 |----------|-------------|---------|
-| `README.md` | Every session | Product one-liner, MVP features, quickstart, doc index |
+| `README.md` | Every session | Product one-liner, MVP features, quickstart, doc index |\n| `docs/CANON_INDEX.md` | Every session | Authority map for active canon vs supporting/snapshot/historical sources |
 | `docs/PRODUCT_REQUIREMENTS.md` | Every session | Product vision, target audience, MVP scope, non-goals, product principles |
 | `docs/SYSTEM_REQUIREMENTS.md` | Every session | Functional and non-functional requirements, system constraints, data model, testing strategy |
 | `docs/TARGET_ARCHITECTURE.md` | Every session | Current and target architecture, component boundaries, dependency direction, local-first rules |
@@ -209,3 +209,8 @@ Skill candidates to evaluate later (not analyzed here):
 - `docs/MCP_SETUP.md`
 - `knowledge/ACTIVE_ROADMAP.md`
 - `knowledge/CURRENT_STATUS.md`
+
+
+### Deterministic drift closeout
+
+For documentation/canon/governance/status/routing/audit changes, run `python tools/check_canon_drift.py` before packaging. The checker covers only audit-proven deterministic invariants and never substitutes for live GitHub/repo truth.
