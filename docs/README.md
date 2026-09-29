@@ -17,9 +17,9 @@ internal agent- and process docs are clearly separated.
 |---|---|
 | [Product Requirements](PRODUCT_REQUIREMENTS.md) | Vision, audience, MVP scope |
 | [System Requirements](SYSTEM_REQUIREMENTS.md) | Functional / non-functional requirements |
-| [Product Pillar Specs](product/README.md) | Index of the five VST-first pillar specs |
+| [Product Pillar Specs](product/README.md) | Historical capability pillar specs; VST-first framing is parked/superseded as primary path |
 | [Realtime Workbench Scope](REALTIME_WORKBENCH_SCOPE.md) | Boundary of the local real-time workbench |
-| [Issue Backlog](ISSUE_BACKLOG.md) | Planned work |
+| [Issue Backlog](ISSUE_BACKLOG.md) | Historical backlog/PR ledger; use GitHub live + CURRENT_STATUS/ACTIVE_ROADMAP for current work |
 
 ## Architecture & Decisions
 

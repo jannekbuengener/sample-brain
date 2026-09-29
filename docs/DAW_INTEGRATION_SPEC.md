@@ -126,58 +126,64 @@ Kick,Snare,HiHat-Closed,Pad,Loop,Dark,Bright,Punchy,Atmospheric
 
 ## 4. Integration Strategy
 
-### 4.0 Product integration tiers
+The **local Workbench is the primary producing path** and is defined in [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md). This document only classifies optional/external DAW integration paths.
+
+### 4.0 External integration tiers
 
 | Tier | Path | Role | Status |
 |------|------|------|--------|
-| **Tier 1 (target)** | VST3 Plugin ← shared core ← SQLite catalog | Primary product interface: browse, preview, match, transform, drag & drop into any VST3-capable host | Target — Issues [#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95) |
-| **Tier 2 (fallback)** | CLI `export_fl` → FL Browser tags ← SQLite catalog | Legacy metadata export for FL Studio Browser without the plugin | ✅ Shipped — stable |
-| **Tier 3 (research)** | Ableton / Reaper metadata paths ← SQLite catalog | Alternative DAW metadata injection without a plugin SDK | ❌ Not implemented |
+| **Tier 1 (shipped fallback)** | CLI `export_fl` → FL Browser tags ← SQLite catalog | Local metadata export for FL Studio Browser | ✅ Shipped — legacy/fallback |
+| **Tier 2 (research)** | Ableton / Reaper metadata paths ← SQLite catalog | Optional DAW metadata integration without making a host part of the product core | ❌ Not implemented |
+| **Tier 3 (parked)** | Optional VST/host plugin ← shared core ← SQLite catalog | Possible future browser/assistant surface that reuses existing core contracts | ⏸ Parked — [#469](https://github.com/jannekbuengener/sample-brain/issues/469) |
 
 ```
-Tier 1 (target):     Host DAW  ←──  VST3 Plugin  ←──  Shared core  ←──  SQLite catalog
-Tier 2 (fallback):   FL Studio  ←──  CLI export_fl  ←──  SQLite catalog
-Tier 3 (research):   Ableton/Reaper  ←──  metadata export research  ←──  SQLite catalog
+Primary product:          Local Workbench  ←── shared core ←── SQLite catalog
+Tier 1 (fallback):        FL Studio        ←── CLI export_fl
+Tier 2 (research):        Ableton/Reaper   ←── metadata export research
+Tier 3 (parked optional): Host DAW         ←── VST/host plugin ←── shared core
 ```
 
-FL Studio is the **first target host** for Tier 1 but **not a hard product dependency**. All VST3-capable DAWs are potential hosts.
+No external DAW is required for the core producer workflow. FL Studio remains a useful validation/export target, not a hard product dependency.
 
-### 4.1 Legacy fallback path (Tier 2 — shipped)
+### 4.1 Legacy fallback path (Tier 1 — shipped)
 
 ```
 FL Studio  ←──  CLI export_fl  ←──  SQLite catalog
 ```
 
-- FL Studio Browser Tags are the only **implemented** CLI export format
-- Classified as **legacy/fallback** — not the main product path (see Tier 1)
-- Focus on stability, configurable limits, and edge-case handling
-- Documentation of tag format and export workflow
+- FL Studio Browser Tags are the only **implemented** CLI export format.
+- This path is legacy/fallback, not the main product interface.
+- Focus remains on stability, configurable limits, edge-case handling and truthful documentation.
 
-### 4.2 Research path (Tier 3 — planned)
+### 4.2 Research path (Tier 2 — planned)
 
 ```
 Ableton  ←──  research/adapt  ←──  SQLite catalog
 Reaper   ←──  BWF chunks      ←──  SQLite catalog
 ```
 
-- Research Ableton and Reaper integration paths (Sections 3.2–3.3)
-- Implement metadata embedding (BWF chunks) as a candidate cross-DAW metadata strategy, subject to DAW-specific validation
-- Support project-context search fields (BPM, key, target type) as search filters
-- Does not replace Tier 1 — plugin remains the primary integration
+- Research Ableton and Reaper integration paths (Sections 3.2–3.3).
+- Candidate metadata strategies must be validated per DAW before implementation.
+- Research results do not activate a new primary product path.
 
-### 4.3 Long-term extensions (future)
+### 4.3 Parked host-plugin path (Tier 3)
 
-```
-VST3 Plugin  ←──  shared core  ←──  SQLite catalog
-Standalone App  ←──  same core  ←──  SQLite catalog
-Local API  ←──  FastAPI layer  ←──  SQLite catalog
-Tier 3 encoders  ←──  ExportDispatcher  ←──  SQLite catalog
-```
+The historical VST-first plan is retained only as design history and capability reference.
 
-- Standalone producing app from the same core as the VST3 plugin
-- Local API so DAW scripts can query the catalog without CLI overhead
-- DAW-agnostic metadata export layer via encoder dispatch (Section 6.2)
-- Previously planned React/Tauri desktop UI is superseded by VST-first + standalone target
+- VST/host integration is parked under [#469](https://github.com/jannekbuengener/sample-brain/issues/469).
+- No VST-specific implementation issue should be inferred from this document while #469 remains parked.
+- If reactivated later, the plugin must reuse Library/Search/Matching/Context/Transform core contracts rather than duplicate them.
+- Host/framework/packaging decisions must be re-evaluated against then-current repo state.
+
+### 4.4 Long-term external extensions
+
+Possible future integrations remain optional:
+
+- Local API for DAW scripts or automation.
+- Additional metadata encoders.
+- A reactivated host plugin after an explicit product decision.
+
+None of these supersede the local Workbench producing path.
 
 ---
 

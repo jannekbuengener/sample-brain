@@ -67,10 +67,10 @@
 
 | ID | Requirement | Priority |
 |---|---|---|
-| FR-IDX-01 | The system shall build a local FAISS vector index from stored embeddings on demand | P1 |
-| FR-IDX-02 | The system shall support index rebuild from the SQLite catalog (source of truth) | P1 |
-| FR-IDX-03 | The system shall store index files outside version control in a designated local directory | P1 |
-| FR-IDX-04 | The system shall support at least IndexFlatIP (exact) and IndexIVFFlat (approximate) index types | P2 |
+| FR-IDX-01 | The system shall build a local vector-search representation from stored embeddings on demand; NumPy is the default backend and sqlite-vec is opt-in per ADR-0004 | P1 |
+| FR-IDX-02 | The system shall support index/cache rebuild from the SQLite catalog (source of truth) | P1 |
+| FR-IDX-03 | The system shall keep rebuildable external index artifacts outside version control | P1 |
+| FR-IDX-04 | Approximate nearest-neighbour search is optional and may only replace the default when the current ADR-0004 readiness/benchmark gates are satisfied | P2 |
 
 ### 1.7 Search — Semantic Search (EPIC 2)
 
@@ -116,7 +116,7 @@
 | NFR-PRF-01 | Scan throughput shall be limited by filesystem I/O, not by application logic | P1 |
 | NFR-PRF-02 | Analyze throughput on consumer hardware (CPU-only) shall process at least 1 sample per second for typical audio lengths (3-30 seconds) | P1 |
 | NFR-PRF-03 | The SQLite catalog shall support up to 100,000 samples without degradation of basic queries | P1 |
-| NFR-PRF-04 | FAISS approximate search (EPIC 2) shall return results in under one second for up to 100k samples | P2 |
+| NFR-PRF-04 | Any future ANN backend must satisfy the current ADR-0004 benchmark/readiness gates before becoming a default path; NumPy remains the stable default until then | P2 |
 | NFR-PRF-05 | CLI startup time to `--help` shall be under one second regardless of optional dependencies | P0 |
 
 ### 2.5 Reproducibility
@@ -181,7 +181,7 @@
 | **EPIC 1 — Config & Setup** | Library roots and model paths are configurable via profiles. Fresh clone setup is verified end-to-end. |
 | **EPIC 2 — Semantic Search** | Embedding pipeline (embed → index → search) works locally with CLAP. Dependencies are optional. Artifacts are rebuildable and untracked. |
 | **EPIC 3 — Ranking** | Hybrid search (vector + structured metadata) is implemented and testable. |
-| **EPIC 4 — API & UI** | FastAPI service boots locally and exposes pipeline operations. Desktop UI is prototyped. |
+| **EPIC 4 — API & UI (historical taxonomy)** | FastAPI remains an optional/future service path; the old separate desktop-UI target is superseded by the local Workbench workflow governed by `PRODUCT_WORKFLOW_CANON.md`. |
 | **EPIC 5 — DAW Workflow** | FL Studio export is stable and tested. Integration research for other DAWs is documented. |
 | **EPIC 6 — Re-imagine** | DSP variant generation is prototyped with bounded scope. Generated audio is cacheable and exportable. |
 
@@ -214,7 +214,7 @@ An issue is done when:
 | Entity | Table | Purpose | Planned |
 |--------|-------|---------|---------|
 | **Embedding Job** | `embedding_jobs` | Track batch embedding progress, resume on failure | EPIC 2, P2 |
-| **Vector Index** | `vector_indexes` | Track FAISS index builds (checksum, count, timestamp) | EPIC 2, P2 |
+| **Vector Index State** | `vector_index_state` | Track rebuildable sqlite-vec cache state/fingerprint; NumPy `.npz` metadata lives in the index artifact | Implemented / ADR-0004 |
 | **Search Log** | `search_log` | Local search interaction logging for ranking improvement | EPIC 3, P3 |
 
 ### 5.3 Data Flow
