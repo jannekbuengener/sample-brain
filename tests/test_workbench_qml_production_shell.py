@@ -109,3 +109,36 @@ def test_v2_capture_allows_fresh_process_before_qt_runtime(monkeypatch):
 
     _install_fake_qgui(monkeypatch, instance=None)
     workbench_qml_spike._require_fresh_qml_capture_process()
+
+
+
+def test_v2_capture_rejects_unimplemented_fixture_states():
+    from src import workbench_qml_spike
+    from src.workbench_visual_acceptance import EvidenceError
+
+    workbench_qml_spike._validate_v2_capture_states(
+        ("screen1-active-source", "screen1-harmonic-open")
+    )
+    for unsupported in ("screen1-clean-start", "screen1-elastic-resized"):
+        with pytest.raises(EvidenceError, match="nicht unterstützt"):
+            workbench_qml_spike._validate_v2_capture_states((unsupported,))
+
+
+def test_v2_capture_requires_100_percent_windows_dpi(monkeypatch):
+    from src import workbench_qml_spike
+    from src.workbench_visual_acceptance import EvidenceError
+
+    monkeypatch.setattr(
+        workbench_qml_spike,
+        "current_windows_dpi_scale",
+        lambda _hwnd: 125,
+    )
+    with pytest.raises(EvidenceError, match="100%-Windows-DPI-Baseline"):
+        workbench_qml_spike._require_v2_capture_dpi_100(123)
+
+    monkeypatch.setattr(
+        workbench_qml_spike,
+        "current_windows_dpi_scale",
+        lambda _hwnd: 100,
+    )
+    assert workbench_qml_spike._require_v2_capture_dpi_100(123) == 100
