@@ -67,10 +67,10 @@
 
 | ID | Requirement | Priority |
 |---|---|---|
-| FR-IDX-01 | The system shall build a local FAISS vector index from stored embeddings on demand | P1 |
-| FR-IDX-02 | The system shall support index rebuild from the SQLite catalog (source of truth) | P1 |
-| FR-IDX-03 | The system shall store index files outside version control in a designated local directory | P1 |
-| FR-IDX-04 | The system shall support at least IndexFlatIP (exact) and IndexIVFFlat (approximate) index types | P2 |
+| FR-IDX-01 | The system shall build a local vector-search representation from stored embeddings on demand; NumPy is the default backend and sqlite-vec is opt-in per ADR-0004 | P1 |
+| FR-IDX-02 | The system shall support index/cache rebuild from the SQLite catalog (source of truth) | P1 |
+| FR-IDX-03 | The system shall keep rebuildable external index artifacts outside version control | P1 |
+| FR-IDX-04 | Approximate nearest-neighbour search is optional and may only replace the default when the current ADR-0004 readiness/benchmark gates are satisfied | P2 |
 
 ### 1.7 Search — Semantic Search (EPIC 2)
 
@@ -116,7 +116,7 @@
 | NFR-PRF-01 | Scan throughput shall be limited by filesystem I/O, not by application logic | P1 |
 | NFR-PRF-02 | Analyze throughput on consumer hardware (CPU-only) shall process at least 1 sample per second for typical audio lengths (3-30 seconds) | P1 |
 | NFR-PRF-03 | The SQLite catalog shall support up to 100,000 samples without degradation of basic queries | P1 |
-| NFR-PRF-04 | FAISS approximate search (EPIC 2) shall return results in under one second for up to 100k samples | P2 |
+| NFR-PRF-04 | Any future ANN backend must satisfy the current ADR-0004 benchmark/readiness gates before becoming a default path; NumPy remains the stable default until then | P2 |
 | NFR-PRF-05 | CLI startup time to `--help` shall be under one second regardless of optional dependencies | P0 |
 
 ### 2.5 Reproducibility
