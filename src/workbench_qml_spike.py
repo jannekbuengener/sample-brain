@@ -517,7 +517,11 @@ def run_qml_visual_acceptance_v2(
                     raise RuntimeError("Harmonic-Match-Control konnte den Pane nicht öffnen.")
 
             target = evidence_dir / f"{state_id}.png"
-            capture_windows_client_window(int(window.winId()), target)
+            # GDI BitBlt can miss Qt Quick scene-graph updates; grab the QML
+            # window framebuffer so harmonic-open evidence is distinct.
+            image = window.grabWindow()
+            if image.isNull() or not image.save(str(target)):
+                raise RuntimeError(f"QML grabWindow capture failed for {state_id}")
             check = validate_capture_sanity(
                 target, expected_width=CLIENT_WIDTH, expected_height=CLIENT_HEIGHT
             )
@@ -547,7 +551,9 @@ def run_qml_visual_acceptance_v2(
             _settle_qml_frame(app)
             stress_id = f"compact-stress-{stress_w}x{stress_h}"
             target = evidence_dir / f"{stress_id}.png"
-            capture_windows_client_window(int(window.winId()), target)
+            image = window.grabWindow()
+            if image.isNull() or not image.save(str(target)):
+                raise RuntimeError(f"QML grabWindow capture failed for {stress_id}")
             check = validate_capture_sanity(
                 target, expected_width=stress_w, expected_height=stress_h
             )
