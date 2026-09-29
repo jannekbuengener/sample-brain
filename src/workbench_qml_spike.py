@@ -457,6 +457,18 @@ def _modal_harmony_acceptance_fixture_v2(
     )
 
 
+
+def _require_fresh_qml_capture_process() -> None:
+    """Reject v2 evidence when a Qt GUI runtime already exists in-process."""
+    from PySide6.QtGui import QGuiApplication
+
+    if QGuiApplication.instance() is not None:
+        raise EvidenceError(
+            "QML-v2-Capture braucht einen frischen Prozess ohne bestehende "
+            "QGuiApplication; QT_QUICK_BACKEND muss vor der ersten Qt-Quick-"
+            "Runtime festgelegt werden."
+        )
+
 def run_qml_visual_acceptance_v2(
     *,
     runtime_root: Path,
@@ -473,8 +485,10 @@ def run_qml_visual_acceptance_v2(
 
     # Software scene graph keeps client captures / grabWindow coherent on Windows.
     # Force (do not setdefault): a pre-set hardware backend would make GDI BitBlt
-    # miss Qt Quick updates and produce stale identical frames.
+    # miss Qt Quick updates and produce stale identical frames. Environment alone
+    # is insufficient once Qt already owns a GUI application, so fail closed there.
     os.environ["QT_QUICK_BACKEND"] = "software"
+    _require_fresh_qml_capture_process()
 
     report = validate_qml_renderer_provenance(runtime_root)
     fixture = _modal_harmony_acceptance_fixture_v2(build_screen1_visual_fixture_v2())
