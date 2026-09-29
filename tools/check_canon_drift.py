@@ -62,9 +62,15 @@ def collect_canon_drift() -> list[str]:
         problems.append("SB.BOOTLOADER does not route Screen-1 work through live #691")
     if "#503/#579 are historical" not in bootloader:
         problems.append("SB.BOOTLOADER does not classify #503/#579 as historical")
+    if "Explicit current canon / supersession map" not in bootloader:
+        problems.append("SB.BOOTLOADER lacks explicit canon/supersession precedence")
     if "docs/CANON_INDEX.md" not in strategy:
         problems.append(
             "BOOTLOADER_AND_CONTEXT_STRATEGY does not route through docs/CANON_INDEX.md"
+        )
+    if "Explicit current canon / supersession map" not in strategy:
+        problems.append(
+            "BOOTLOADER_AND_CONTEXT_STRATEGY lacks explicit canon/supersession precedence"
         )
     if "\\n| `docs/CANON_INDEX.md`" in strategy:
         problems.append("BOOTLOADER_AND_CONTEXT_STRATEGY contains an escaped table newline")
