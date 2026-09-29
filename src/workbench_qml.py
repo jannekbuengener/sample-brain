@@ -32,6 +32,7 @@ from .workbench_qml_library import (
     create_qt_library_tree_model,
 )
 from .workbench_qml_runtime import Screen1QmlRuntimeComposition
+from .workbench_qml_elastic import create_elastic_layout_bridge
 from .workbench_qml_startup import (
     WorkspaceMode,
     load_startup_preset,
@@ -1120,14 +1121,21 @@ ApplicationWindow {
         }
     }
 
-    RowLayout { anchors.fill: parent; spacing: 0
+    Row {
+        id: workspaceRow
+        objectName: "workspaceRow"
+        anchors.fill: parent
+        spacing: 0
         Keys.onPressed: function(event) {
             if (event.key === Qt.Key_Escape && window.interaction.previewActive) {
                 window.interaction.stopPreview()
                 event.accepted = true
             }
         }
-        Rectangle { id: libraryPane; objectName: "libraryPane"; Layout.preferredWidth: 300; Layout.minimumWidth: 230; Layout.fillHeight: true; color: window.panel; border.color: window.border
+        onWidthChanged: layoutModel.setContentWidth(width)
+        Component.onCompleted: layoutModel.setContentWidth(width)
+
+        Rectangle { id: libraryPane; objectName: "libraryPane"; width: layoutModel.libraryWidth; height: parent.height; color: window.panel; border.color: window.border
             ColumnLayout { anchors.fill: parent; anchors.margins: 16
                 RowLayout { Layout.fillWidth: true
                     Label { text: "LIBRARY"; color: window.muted; font.pixelSize: 12; Layout.fillWidth: true }
@@ -1198,12 +1206,41 @@ ApplicationWindow {
                 }
             }
         }
+        Item {
+            id: handleAfterLibrary
+            objectName: "elasticHandleAfterLibrary"
+            visible: window.interaction.hasActiveSource
+            width: visible ? layoutModel.handleWidth : 0
+            height: parent.height
+            Rectangle {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: 1
+                height: parent.height
+                color: window.divider
+            }
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.SizeHorCursor
+                property real lastGlobalX: 0
+                onPressed: function(mouse) {
+                    lastGlobalX = mapToItem(null, mouse.x, 0).x
+                }
+                onPositionChanged: function(mouse) {
+                    if (!pressed)
+                        return
+                    var globalX = mapToItem(null, mouse.x, 0).x
+                    layoutModel.applyDrag("library", globalX - lastGlobalX)
+                    lastGlobalX = globalX
+                }
+                onReleased: layoutModel.endDrag()
+            }
+        }
         Rectangle {
             id: calmCanvas
             objectName: "calmCanvas"
             visible: !window.interaction.hasActiveSource
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+            width: visible ? Math.max(0, parent.width - libraryPane.width) : 0
+            height: parent.height
             color: "#08090a"
             ColumnLayout {
                 anchors.centerIn: parent
@@ -1230,7 +1267,7 @@ ApplicationWindow {
                 }
             }
         }
-        Rectangle { id: browserPane; objectName: "browserPane"; visible: window.interaction.hasActiveSource; Layout.fillWidth: visible; Layout.minimumWidth: 0; Layout.preferredWidth: visible ? 1 : 0; Layout.fillHeight: true; color: "#0a0b0c"; border.color: window.border
+        Rectangle { id: browserPane; objectName: "browserPane"; visible: window.interaction.hasActiveSource; width: visible ? layoutModel.browserWidth : 0; height: parent.height; color: "#0a0b0c"; border.color: window.border
             // #692 owner-visual repair: preserve required scan columns when the
             // workspace is narrow. Type is optional; sample identity is not.
             property bool browserNarrowColumns: width < 700
@@ -1404,9 +1441,49 @@ ApplicationWindow {
                 }
             }
         }
-        Rectangle { visible: window.interaction.harmonicMatchOpen; Layout.preferredWidth: visible ? 360 : 0; Layout.minimumWidth: visible ? 360 : 0; Layout.fillHeight: true; color: window.panel; border.color: window.border
-            onVisibleChanged: {
-                if (visible) {
+        Item {
+            id: handleAfterBrowser
+            objectName: "elasticHandleAfterBrowser"
+            visible: window.interaction.hasActiveSource
+            width: visible ? layoutModel.handleWidth : 0
+            height: parent.height
+            Rectangle {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: 1
+                height: parent.height
+                color: window.divider
+            }
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.SizeHorCursor
+                property real lastGlobalX: 0
+                onPressed: function(mouse) {
+                    lastGlobalX = mapToItem(null, mouse.x, 0).x
+                }
+                onPositionChanged: function(mouse) {
+                    if (!pressed)
+                        return
+                    var globalX = mapToItem(null, mouse.x, 0).x
+                    layoutModel.applyDrag("browser", globalX - lastGlobalX)
+                    lastGlobalX = globalX
+                }
+                onReleased: layoutModel.endDrag()
+            }
+        }
+        Rectangle {
+            id: harmonyPane
+            objectName: "harmonyPane"
+            // Stay layout-participating; width 0 when closed (model-driven).
+            opacity: window.interaction.harmonicMatchOpen ? 1 : 0
+            enabled: window.interaction.harmonicMatchOpen
+            width: layoutModel.harmonyWidth
+            height: parent.height
+            color: window.panel
+            border.color: window.border
+            property bool harmonyOpen: window.interaction.harmonicMatchOpen
+            onHarmonyOpenChanged: {
+                layoutModel.syncFromInteraction()
+                if (harmonyOpen) {
                     harmonicMatchList.forceActiveFocus()
                     Qt.callLater(function() {
                         if (window.interaction.harmonyScrollY > 0) {
@@ -1525,7 +1602,36 @@ ApplicationWindow {
                 }
             }
         }
-        Rectangle { id: liveKitPane; objectName: "liveKitPane"; visible: window.interaction.hasActiveSource; Layout.preferredWidth: visible ? 300 : 0; Layout.minimumWidth: visible ? 220 : 0; Layout.fillHeight: true; color: window.panel; border.color: window.border
+        Item {
+            id: handleAfterHarmony
+            objectName: "elasticHandleAfterHarmony"
+            visible: window.interaction.hasActiveSource && window.interaction.harmonicMatchOpen
+            width: visible ? layoutModel.handleWidth : 0
+            height: parent.height
+            Rectangle {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: 1
+                height: parent.height
+                color: window.divider
+            }
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.SizeHorCursor
+                property real lastGlobalX: 0
+                onPressed: function(mouse) {
+                    lastGlobalX = mapToItem(null, mouse.x, 0).x
+                }
+                onPositionChanged: function(mouse) {
+                    if (!pressed)
+                        return
+                    var globalX = mapToItem(null, mouse.x, 0).x
+                    layoutModel.applyDrag("harmony", globalX - lastGlobalX)
+                    lastGlobalX = globalX
+                }
+                onReleased: layoutModel.endDrag()
+            }
+        }
+        Rectangle { id: liveKitPane; objectName: "liveKitPane"; visible: window.interaction.hasActiveSource; width: visible ? layoutModel.liveKitWidth : 0; height: parent.height; color: window.panel; border.color: window.border
             ColumnLayout { anchors.fill: parent; anchors.margins: 14; spacing: 8
                 RowLayout { Layout.fillWidth: true
                     Label { text: "LIVE KIT"; color: window.muted; font.pixelSize: 12; Layout.fillWidth: true }
@@ -1553,28 +1659,32 @@ ApplicationWindow {
                         elide: Text.ElideRight
                     }
                 }
-                Repeater { model: window.screenData.liveKitGroups
-                    delegate: Rectangle {
-                        property int kitGroupIndex: index
-                        Layout.fillWidth: true
-                        implicitHeight: 44 + (modelData.active ? modelData.slots.length * 26 + 14 : 0)
-                        radius: 6
-                        color: modelData.active ? window.panelAlt : "transparent"
-                        border.color: modelData.active ? window.accent : window.border
-                        ColumnLayout { anchors.fill: parent; spacing: 0
-                            Item { Layout.fillWidth: true; Layout.preferredHeight: 44; Layout.leftMargin: 12; Layout.rightMargin: 10
-                                RowLayout { anchors.fill: parent; spacing: 6
-                                    Label { text: (index + 1) + "  "; color: modelData.active ? window.accent : window.muted; font.pixelSize: 13; font.bold: true }
-                                    Label { text: modelData.name; color: window.textColor; font.pixelSize: 14; font.bold: modelData.active; elide: Text.ElideRight; Layout.fillWidth: true }
-                                    Label { text: modelData.active ? "▾" : "▸"; color: modelData.active ? window.accent : window.muted; font.pixelSize: 12 }
+                Column {
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignTop
+                    spacing: 0
+                    Repeater { model: window.screenData.liveKitGroups
+                        delegate: Rectangle {
+                            property int kitGroupIndex: index
+                            width: liveKitPane.width - 28
+                            height: 44 + (modelData.active ? modelData.slots.length * 26 + 14 : 0)
+                            radius: 6
+                            color: modelData.active ? window.panelAlt : "transparent"
+                            border.color: modelData.active ? window.accent : window.border
+                            ColumnLayout { anchors.fill: parent; spacing: 0
+                                Item { Layout.fillWidth: true; Layout.preferredHeight: 44; Layout.leftMargin: 12; Layout.rightMargin: 10
+                                    RowLayout { anchors.fill: parent; spacing: 6
+                                        Label { text: (index + 1) + "  "; color: modelData.active ? window.accent : window.muted; font.pixelSize: 13; font.bold: true }
+                                        Label { text: modelData.name; color: window.textColor; font.pixelSize: 14; font.bold: modelData.active; elide: Text.ElideRight; Layout.fillWidth: true }
+                                        Label { text: modelData.active ? "▾" : "▸"; color: modelData.active ? window.accent : window.muted; font.pixelSize: 12 }
+                                    }
+                                    MouseArea {
+                                        id: liveKitGroupHeader
+                                        objectName: "liveKitGroupHeader" + index
+                                        anchors.fill: parent
+                                        onClicked: window.interaction.toggleLiveKitGroup(kitGroupIndex)
+                                    }
                                 }
-                                MouseArea {
-                                    id: liveKitGroupHeader
-                                    objectName: "liveKitGroupHeader" + index
-                                    anchors.fill: parent
-                                    onClicked: window.interaction.toggleLiveKitGroup(kitGroupIndex)
-                                }
-                            }
                             ColumnLayout { visible: modelData.active; Layout.fillWidth: true; Layout.leftMargin: 12; Layout.rightMargin: 10; Layout.topMargin: 2
                                 Repeater { model: modelData.active ? modelData.slots : []
                                     delegate: Item {
@@ -1648,6 +1758,7 @@ ApplicationWindow {
                             }
                         }
                     }
+                }
                 }
                 Item { Layout.fillHeight: true }
             }
@@ -2188,9 +2299,20 @@ def _qml_engine(
         view_model,
         on_cancel_analysis=cancel_analysis,
     )
+    layout_model = create_elastic_layout_bridge(
+        harmony_open=lambda: bool(adapter.harmonic_match_open),
+        has_active_source=lambda: bool(adapter.view_model.has_active_source),
+    )
+
+    def on_interaction_state_changed() -> None:
+        refresh_screen_model()
+        # Recompute widths before QML reacts to state_changed so RowLayout
+        # never sees a 3-panel width set with a third handle visible.
+        layout_model.syncFromInteraction()
+
     bridge = _qml_interaction_bridge(
         adapter,
-        on_state_changed=refresh_screen_model,
+        on_state_changed=on_interaction_state_changed,
         on_waveform_request=request_waveforms,
         on_harmony_waveform_request=request_harmony_waveforms,
     )
@@ -2205,6 +2327,7 @@ def _qml_engine(
         library_model.selection_invalidated.connect(dispatch_library_selection)
     engine.rootContext().setContextProperty("screenModel", screen_model)
     engine.rootContext().setContextProperty("interactionModel", bridge)
+    engine.rootContext().setContextProperty("layoutModel", layout_model)
     engine.rootContext().setContextProperty("libraryTreeModel", library_model)
     engine.rootContext().setContextProperty("libraryInteraction", library_bridge)
     if analysis_coordinator is not None:
@@ -2218,6 +2341,7 @@ def _qml_engine(
     # Keep both Python objects alive for the complete Qt engine lifetime.
     engine._screen1_interaction_adapter = adapter
     engine._screen1_interaction_bridge = bridge
+    engine._screen1_layout_model = layout_model
     engine._screen1_library_model = library_model
     engine._screen1_library_bridge = library_bridge
     engine._screen1_screen_model = screen_model

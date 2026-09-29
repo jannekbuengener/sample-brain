@@ -283,8 +283,9 @@ def test_qml_header_and_panels_remain_structurally_stable():
     assert 'text: "MASTER"' in QML_SOURCE
     assert 'text: "GRID"' in QML_SOURCE
     assert 'text: "SYNC"' in QML_SOURCE
-    assert QML_SOURCE.count("visible: window.interaction.harmonicMatchOpen") == 1
-    assert "Layout.preferredWidth: visible ? 360 : 0" in QML_SOURCE
+    assert "property bool harmonyOpen: window.interaction.harmonicMatchOpen" in QML_SOURCE
+    assert "layoutModel.harmonyWidth" in QML_SOURCE
+    assert "Layout.preferredWidth: visible ? 360 : 0" not in QML_SOURCE
     assert 'objectName: "harmonicMatchButton"' in QML_SOURCE
 
 
@@ -308,7 +309,9 @@ def test_qml_group_header_hit_area_is_structurally_valid():
     assert QML_SOURCE.count(wrapper) == 1
     assert "RowLayout { anchors.fill: parent; spacing: 6" in QML_SOURCE
     assert 'objectName: "liveKitGroupHeader" + index' in QML_SOURCE
-    assert "anchors.fill: parent\n                                    onClicked: window.interaction.toggleLiveKitGroup(kitGroupIndex)" in QML_SOURCE
+    assert "anchors.fill: parent\n                                        onClicked: window.interaction.toggleLiveKitGroup(kitGroupIndex)" in QML_SOURCE or \
+        "anchors.fill: parent\n                                    onClicked: window.interaction.toggleLiveKitGroup(kitGroupIndex)" in QML_SOURCE
+    assert "width: parent.width" in QML_SOURCE
     assert "LiveKitState" not in QML_SOURCE
 
 

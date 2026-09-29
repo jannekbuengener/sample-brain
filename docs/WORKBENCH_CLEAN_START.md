@@ -78,6 +78,11 @@ When no Source is active, the centre surface is a Calm Canvas:
 |------|----------|---------------|
 | Persistent library data | registered Sources, cache rows | kept |
 | UI preferences (later #696) | panel ratios, density, motion, optional startup Source | may apply only via explicit Startup Preset |
+| Layout ratios (#694) | relative panel weights only | may restore on launch; never restores Source/selection/harmony/preview |
+
+Panel **geometry** after Active Source is owned by
+[`WORKBENCH_ELASTIC_LAYOUT.md`](WORKBENCH_ELASTIC_LAYOUT.md) (#694). Elastic
+persistence restores ratios only and must not reopen session context.
 | Transient session | active Source, browser selection, preview, harmony open/results, scroll | **never** restored on normal launch |
 
 Stale or corrupt preference / preset persistence fails closed to Clean Start.

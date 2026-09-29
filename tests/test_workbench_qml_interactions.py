@@ -590,7 +590,7 @@ def test_harmonic_single_control_button_without_secondary_close_and_on_off_contr
 
     assert QML_SOURCE.count('objectName: "harmonicMatchButton"') == 1
     assert QML_SOURCE.count("toggleHarmonicMatch()") == 1
-    assert "onVisibleChanged" in QML_SOURCE
+    assert "onHarmonyOpenChanged" in QML_SOURCE
     assert "Qt.callLater" in QML_SOURCE
     assert "harmonyScrollY" in QML_SOURCE
     for forbidden in ('text: "✕"', 'text: "X"', 'text: "OFF"'):
@@ -600,8 +600,9 @@ def test_harmonic_single_control_button_without_secondary_close_and_on_off_contr
 def test_harmonic_panel_layout_is_derived_from_a_single_visible_state():
     from src.workbench_qml import QML_SOURCE
 
-    assert QML_SOURCE.count("visible: window.interaction.harmonicMatchOpen") == 1
-    assert "Layout.preferredWidth: visible ? 360 : 0" in QML_SOURCE
+    assert "property bool harmonyOpen: window.interaction.harmonicMatchOpen" in QML_SOURCE
+    assert "layoutModel.harmonyWidth" in QML_SOURCE
+    assert "Layout.preferredWidth: visible ? 360 : 0" not in QML_SOURCE
     assert "screen1-default-3panel" not in QML_SOURCE
     assert "screen1-harmonic-4panel" not in QML_SOURCE
 
@@ -1212,6 +1213,7 @@ def test_qml_scope_switch_closes_harmonic_panel_and_reopens_with_new_scope(tmp_p
         assert coordinator._core.current_token(folder_id_a) is None
         a_paths = {str(row.source_row.path) for row in view_model.browser_rows}
 
+        adapter.select_row(0)
         assert adapter.toggle_harmonic_match() is True
         assert adapter.harmonic_match_open is True
         assert view_model.state_id == "screen1-harmonic-4panel"
@@ -1228,6 +1230,7 @@ def test_qml_scope_switch_closes_harmonic_panel_and_reopens_with_new_scope(tmp_p
         b_paths = {str(row.source_row.path) for row in view_model.browser_rows}
         assert b_paths and a_paths != b_paths
 
+        adapter.select_row(0)
         assert adapter.toggle_harmonic_match() is True
         assert view_model.state_id == "screen1-harmonic-4panel"
         assert adapter.harmony_controller.anchor is not None
