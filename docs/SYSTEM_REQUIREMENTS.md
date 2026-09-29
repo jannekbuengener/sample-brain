@@ -181,7 +181,7 @@
 | **EPIC 1 — Config & Setup** | Library roots and model paths are configurable via profiles. Fresh clone setup is verified end-to-end. |
 | **EPIC 2 — Semantic Search** | Embedding pipeline (embed → index → search) works locally with CLAP. Dependencies are optional. Artifacts are rebuildable and untracked. |
 | **EPIC 3 — Ranking** | Hybrid search (vector + structured metadata) is implemented and testable. |
-| **EPIC 4 — API & UI** | FastAPI service boots locally and exposes pipeline operations. Desktop UI is prototyped. |
+| **EPIC 4 — API & UI (historical taxonomy)** | FastAPI remains an optional/future service path; the old separate desktop-UI target is superseded by the local Workbench workflow governed by `PRODUCT_WORKFLOW_CANON.md`. |
 | **EPIC 5 — DAW Workflow** | FL Studio export is stable and tested. Integration research for other DAWs is documented. |
 | **EPIC 6 — Re-imagine** | DSP variant generation is prototyped with bounded scope. Generated audio is cacheable and exportable. |
 
