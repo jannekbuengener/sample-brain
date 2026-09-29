@@ -1364,56 +1364,46 @@ ApplicationWindow {
             color: "transparent"
             ColumnLayout {
                 anchors.centerIn: parent
-                spacing: 18
+                spacing: 14
+                // #725 Owner Visual: primary First View CTA — large + with "Add Source"
+                // headline. Branding stays in the header only (not Calm Canvas).
+                Button {
+                    id: calmCanvasAddSource
+                    objectName: "calmCanvasAddSource"
+                    text: "+"
+                    flat: true
+                    implicitWidth: 96
+                    implicitHeight: 96
+                    font.pixelSize: 64
+                    Layout.alignment: Qt.AlignHCenter
+                    Accessible.name: "Add Source"
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 350
+                    ToolTip.text: "Add Source"
+                    contentItem: Text {
+                        text: calmCanvasAddSource.text
+                        color: calmCanvasAddSource.hovered ? theme.textPrimary : theme.textSecondary
+                        font.pixelSize: calmCanvasAddSource.font.pixelSize
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        radius: 10
+                        color: calmCanvasAddSource.hovered ? theme.surfaceElevated : "transparent"
+                        border.color: calmCanvasAddSource.hovered ? theme.borderSubtle : "transparent"
+                        border.width: 1
+                    }
+                    onClicked: addSourceDialog.open()
+                }
                 Label {
-                    text: "Sample Brain"
+                    objectName: "calmCanvasAddSourceLabel"
+                    text: "Add Source"
                     color: theme.textPrimary
-                    font.pixelSize: 28
+                    font.pixelSize: 24
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
                     Layout.alignment: Qt.AlignHCenter
-                }
-                // #725 Owner Visual: calm "Add Source" text directly above compact +.
-                ColumnLayout {
-                    spacing: 6
-                    Layout.alignment: Qt.AlignHCenter
-                    Label {
-                        objectName: "calmCanvasAddSourceLabel"
-                        text: "Add Source"
-                        color: theme.textSecondary
-                        font.pixelSize: 14
-                        horizontalAlignment: Text.AlignHCenter
-                        Layout.alignment: Qt.AlignHCenter
-                    }
-                    Button {
-                        id: calmCanvasAddSource
-                        objectName: "calmCanvasAddSource"
-                        text: "+"
-                        flat: true
-                        implicitWidth: 40
-                        implicitHeight: 40
-                        font.pixelSize: 22
-                        Layout.alignment: Qt.AlignHCenter
-                        Accessible.name: "Add Source"
-                        ToolTip.visible: hovered
-                        ToolTip.delay: 350
-                        ToolTip.text: "Add Source"
-                        contentItem: Text {
-                            text: calmCanvasAddSource.text
-                            color: calmCanvasAddSource.hovered ? theme.textPrimary : theme.textSecondary
-                            font.pixelSize: calmCanvasAddSource.font.pixelSize
-                            font.bold: true
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                        background: Rectangle {
-                            radius: 6
-                            color: calmCanvasAddSource.hovered ? theme.surfaceElevated : "transparent"
-                            border.color: calmCanvasAddSource.hovered ? theme.borderSubtle : "transparent"
-                            border.width: 1
-                        }
-                        onClicked: addSourceDialog.open()
-                    }
                 }
             }
         }
