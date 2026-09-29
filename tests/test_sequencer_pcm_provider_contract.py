@@ -457,6 +457,38 @@ def test_provider_preserves_trailing_whitespace_in_sample_paths(tmp_path: Path):
     assert seen == [spaced]
 
 
+def test_canonicalize_pcm_path_does_not_strip_before_resolve(monkeypatch):
+    """Whitespace-bearing paths must not resolve via a stripped neighbor."""
+    module = _provider_module_or_fail()
+    canonicalize = _require_symbol(module, "canonicalize_pcm_path")
+    seen: list[str] = []
+
+    def fake_realpath(path):
+        seen.append(str(path))
+        return str(path)
+
+    monkeypatch.setattr(module.os.path, "realpath", fake_realpath)
+    monkeypatch.setattr(module.os.path, "normcase", lambda p: p)
+    result = canonicalize("/samples/kick.wav ")
+    assert result.endswith(" ")
+    assert seen == ["/samples/kick.wav "]
+
+
+def test_provider_symlink_loop_canonicalization_fails_soft(monkeypatch, tmp_path: Path):
+    provider_cls = _require_symbol(_provider_module_or_fail(), "SequencerPcmProvider")
+    module = _provider_module_or_fail()
+
+    def boom(_path):
+        raise RuntimeError("Symlink loop from resolve")
+
+    monkeypatch.setattr(module, "canonicalize_pcm_path", boom)
+    provider = provider_cls(
+        sample_rate=ENGINE_SR,
+        decode_fn=lambda *a, **k: (_ for _ in ()).throw(AssertionError("decode")),
+    )
+    assert provider.pcm_for_path(str(tmp_path / "loop.wav")) is None
+
+
 def test_provider_cache_key_canonicalizes_path_aliases(tmp_path: Path):
     provider_cls = _require_symbol(_provider_module_or_fail(), "SequencerPcmProvider")
     wav = _write_mono_wav(tmp_path / "tone.wav", sr=ENGINE_SR)
@@ -474,6 +506,33 @@ def test_provider_cache_key_canonicalizes_path_aliases(tmp_path: Path):
     second = provider.pcm_for_path(via_dot)
     assert first is not None and second is not None
     assert len(decode_calls) == 1
+
+
+def test_canonicalize_symlink_loop_stays_fail_soft(monkeypatch, tmp_path: Path):
+    """realpath/abspath RuntimeError (symlink loop) must stay fail-soft."""
+    module = _provider_module_or_fail()
+    canonicalize = _require_symbol(module, "canonicalize_pcm_path")
+    provider_cls = _require_symbol(module, "SequencerPcmProvider")
+
+    def boom_realpath(_path):
+        raise RuntimeError("Symlink loop from realpath")
+
+    def boom_abspath(_path):
+        raise RuntimeError("Symlink loop from abspath")
+
+    monkeypatch.setattr(module.os.path, "realpath", boom_realpath)
+    monkeypatch.setattr(module.os.path, "abspath", boom_abspath)
+    monkeypatch.setattr(module.os.path, "normpath", lambda p: p)
+    monkeypatch.setattr(module.os.path, "normcase", lambda p: p)
+
+    raw = str(tmp_path / "loop.wav")
+    assert canonicalize(raw) == raw
+
+    def ok_decode(path, *, sample_rate: int, start_ms: int = 0):
+        return np.zeros((8, 1), dtype=np.float32), 1
+
+    provider = provider_cls(sample_rate=ENGINE_SR, decode_fn=ok_decode)
+    assert provider.pcm_for_path(raw) is not None
 
 
 # --- Sequencer + Channel Rack integration -----------------------------------

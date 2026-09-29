@@ -8,6 +8,7 @@ Does not schedule voices and does not own Screen-1 audition playback.
 
 from __future__ import annotations
 
+import os
 from collections import OrderedDict
 from collections.abc import Callable
 from pathlib import Path
@@ -33,21 +34,19 @@ def canonicalize_pcm_path(path: str | Path) -> str:
     """Return a stable cache key for a filesystem path.
 
     Collapses ``.`` / ``..``, resolves to an absolute path, and follows
-    existing symlinks when possible. Trailing whitespace from the original
-    string is preserved (``Path`` would otherwise drop it on some platforms).
+    existing symlinks when possible. The full input string is preserved —
+    trailing whitespace is not stripped before resolution (``pathlib.Path``
+    would otherwise drop it on some platforms and merge distinct files).
     """
     raw = str(path)
-    body = raw.rstrip(" \t")
-    trailing = raw[len(body) :]
-    candidate = Path(body) if body else Path(".")
     try:
-        resolved = str(candidate.resolve(strict=False))
-    except OSError:
+        # os.path keeps trailing whitespace that pathlib would drop.
+        return os.path.normcase(os.path.realpath(raw))
+    except (OSError, RuntimeError, ValueError):
         try:
-            resolved = str(candidate.absolute())
-        except OSError:
-            resolved = str(candidate)
-    return resolved + trailing
+            return os.path.normcase(os.path.abspath(os.path.normpath(raw)))
+        except (OSError, RuntimeError, ValueError):
+            return raw
 
 
 def decode_pcm_for_native(
@@ -114,7 +113,11 @@ class SequencerPcmProvider:
         if text == "" or text.isspace():
             return None
 
-        key = (canonicalize_pcm_path(text), self._sample_rate)
+        try:
+            key = (canonicalize_pcm_path(text), self._sample_rate)
+        except (OSError, RuntimeError, ValueError):
+            return None
+
         cached = self._cache.get(key)
         if cached is not None:
             self._cache.move_to_end(key)
