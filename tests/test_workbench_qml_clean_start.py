@@ -508,12 +508,23 @@ def test_qml_source_declares_calm_canvas_and_progressive_disclosure():
     assert "browserPane" in QML_SOURCE
     assert "liveKitPane" in QML_SOURCE
     assert 'objectName: "calmCanvasAddSource"' in QML_SOURCE
+    assert 'objectName: "calmCanvasAddSourceLabel"' in QML_SOURCE
     assert 'text: "+"' in QML_SOURCE
     assert 'Accessible.name: "Add Source"' in QML_SOURCE
     assert 'ToolTip.text: "Add Source"' in QML_SOURCE
     assert "Add Source to begin." not in QML_SOURCE
     assert "Select a Source, or Add Source to begin." not in QML_SOURCE
     assert "onClicked: addSourceDialog.open()" in QML_SOURCE
+    # Calm label is plain text above +, not a second button.
+    calm_block = QML_SOURCE.split('objectName: "calmCanvas"', 1)[1].split(
+        'objectName: "browserPane"', 1
+    )[0]
+    assert 'text: "Sample Brain"' in calm_block
+    label_idx = calm_block.index('objectName: "calmCanvasAddSourceLabel"')
+    plus_idx = calm_block.index('objectName: "calmCanvasAddSource"')
+    assert label_idx < plus_idx
+    assert 'text: "Add Source"' in calm_block[label_idx:plus_idx]
+    assert "implicitWidth: 40" in calm_block
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
@@ -551,7 +562,10 @@ def test_qml_clean_start_add_source_is_compact_plus_with_accessible_name(
     window.show()
     try:
         app.processEvents()
+        label = window.findChild(QQuickItem, "calmCanvasAddSourceLabel")
         add_source = window.findChild(QQuickItem, "calmCanvasAddSource")
+        assert label is not None and label.isVisible()
+        assert str(label.property("text")) == "Add Source"
         assert add_source is not None and add_source.isVisible()
         assert str(add_source.property("text")) == "+"
         # Accessible name stays "Add Source" for the compact + control.
@@ -565,6 +579,8 @@ def test_qml_clean_start_add_source_is_compact_plus_with_accessible_name(
             assert str(accessible) == "Add Source"
         assert add_source.width() <= 48
         assert add_source.height() <= 48
+        # Label sits directly above the plus (same parent column).
+        assert label.y() + label.height() <= add_source.y()
     finally:
         _shutdown_engine(app, engine, window)
 

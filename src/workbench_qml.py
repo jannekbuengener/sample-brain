@@ -1364,24 +1364,17 @@ ApplicationWindow {
             color: "transparent"
             ColumnLayout {
                 anchors.centerIn: parent
-                spacing: 18
-                Label {
-                    text: "Sample Brain"
-                    color: theme.textPrimary
-                    font.pixelSize: 28
-                    font.bold: true
-                    horizontalAlignment: Text.AlignHCenter
-                    Layout.alignment: Qt.AlignHCenter
-                }
-                // #725 Owner Visual: compact Add Source (+) — tooltip/accessible name keep semantics.
+                spacing: 14
+                // #725 Owner Visual: primary First View CTA — large + with "Add Source"
+                // headline. Branding stays in the header only (not Calm Canvas).
                 Button {
                     id: calmCanvasAddSource
                     objectName: "calmCanvasAddSource"
                     text: "+"
                     flat: true
-                    implicitWidth: 40
-                    implicitHeight: 40
-                    font.pixelSize: 22
+                    implicitWidth: 96
+                    implicitHeight: 96
+                    font.pixelSize: 64
                     Layout.alignment: Qt.AlignHCenter
                     Accessible.name: "Add Source"
                     ToolTip.visible: hovered
@@ -1396,12 +1389,21 @@ ApplicationWindow {
                         verticalAlignment: Text.AlignVCenter
                     }
                     background: Rectangle {
-                        radius: 6
+                        radius: 10
                         color: calmCanvasAddSource.hovered ? theme.surfaceElevated : "transparent"
                         border.color: calmCanvasAddSource.hovered ? theme.borderSubtle : "transparent"
                         border.width: 1
                     }
                     onClicked: addSourceDialog.open()
+                }
+                Label {
+                    objectName: "calmCanvasAddSourceLabel"
+                    text: "Add Source"
+                    color: theme.textPrimary
+                    font.pixelSize: 24
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                    Layout.alignment: Qt.AlignHCenter
                 }
             }
         }
