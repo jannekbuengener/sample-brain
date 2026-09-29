@@ -126,3 +126,30 @@ def test_interaction_contracts_preserved_under_compact_density():
     browser_keys = _snippet(QML_SOURCE, 'objectName: "browserList"', 900)
     assert "Keys.onPressed" in browser_keys
     assert "navigateBrowser" in browser_keys
+
+
+def test_owner_visual_repair_preserves_required_browser_columns_at_narrow_width():
+    assert "property bool browserNarrowColumns: width < 700" in QML_SOURCE
+    assert "property int effectiveBrowserWaveformWidth: browserNarrowColumns ? window.browserWaveformMin : window.browserWaveformWidth" in QML_SOURCE
+    assert "property int effectiveBrowserMetaColumnWidth: browserNarrowColumns ? 40 : window.browserMetaColumnWidth" in QML_SOURCE
+    assert "property int effectiveBrowserLengthColumnWidth: browserNarrowColumns ? 52 : window.browserLengthColumnWidth" in QML_SOURCE
+    assert "property int effectiveBrowserAddColumnWidth: browserNarrowColumns ? 56 : window.browserAddColumnWidth" in QML_SOURCE
+
+    delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
+    assert "visible: !browserPane.browserNarrowColumns" in delegate
+    assert "Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120" in delegate
+    assert 'text: browserPane.browserNarrowColumns ? "+ Add" : "+ Add to Kit"' in delegate
+    assert "browserPane.effectiveBrowserMetaColumnWidth" in delegate
+    assert "browserPane.effectiveBrowserLengthColumnWidth" in delegate
+    assert "browserPane.effectiveBrowserAddColumnWidth" in delegate
+
+
+def test_harmonic_compact_columns_preserve_sample_identity():
+    assert _int_property(QML_SOURCE, "harmonicWaveformWidth") == 72
+    assert _int_property(QML_SOURCE, "harmonicRelationColumnWidth") == 72
+    assert _int_property(QML_SOURCE, "harmonicAddColumnWidth") == 44
+    harmonic = _harmonic_list_block(QML_SOURCE)
+    assert "Layout.minimumWidth: 64" in harmonic
+    assert "window.harmonicWaveformWidth" in harmonic
+    assert "window.harmonicRelationColumnWidth" in harmonic
+    assert "window.harmonicAddColumnWidth" in harmonic
