@@ -430,7 +430,6 @@ def _ratios_from_visible_widths(
     visible_set = set(visible)
     hidden = [panel_id for panel_id in PANEL_IDS if panel_id not in visible_set]
     hidden_mass = sum(float(stored[panel_id]) for panel_id in hidden)
-    hidden_mass = min(max(hidden_mass, 0.0), 0.95)
     visible_mass = 1.0 - hidden_mass
     merged: dict[str, float] = {}
     for panel_id in visible:
