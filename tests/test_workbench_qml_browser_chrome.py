@@ -1,14 +1,11 @@
-"""RED contracts for #603 — QML Browser chrome + density convergence.
+"""Browser chrome contracts — #603 behavior + #692 compact density.
 
-Freezes the next #543 browser slice on top of the #591 row baseline:
-
-- integrated search chrome (no default-widget look, focus accent, themed box);
-- honest sample count derived from ``browserRows.length`` runtime data;
-- shared column spec used identically by the column header and the row delegate
-  (exact alignment, no duplicated magic margins);
-- bounded typography roles with stable hierarchy (title/body/meta/caption);
-- row density / waveform / divider invariants;
-- preserved intent + keyboard + virtualization contracts from #591/#583/#564.
+#603 still owns search chrome, column alignment, typography hierarchy,
+intent/keyboard/virtualization behavior. The historical density gate
+``58 <= browserRowHeight <= 72`` is superseded by #692: shared
+``densityRowHeight == 30`` DIP is the first compact baseline (not an immutable
+forever-lock — Owner Visual Acceptance may later retarget e.g. 28/32 DIP via
+explicit product adjustment of token + frozen assertion together).
 
 These are reproducible QML layout invariants over ``QML_SOURCE``, not
 pixel tests. They run without PySide6.
@@ -21,15 +18,23 @@ import re
 from src.workbench_qml import QML_SOURCE
 
 BROWSER_ROW_DELEGATE_MARKER = "delegate: Rectangle { id: browserRow"
-BROWSER_ROW_DELEGATE_SPAN = 6200  # bis inkl. Row-Trennlinie (Bottom-Divider), endet vor dem Harmonic-Panel
+BROWSER_ROW_DELEGATE_SPAN = 9000  # through compact row + bottom divider; stops before Live Kit
 SEARCH_MARKER = 'objectName: "browserSearch"'
 COLUMN_HEADER_MARKER = 'text: "SAMPLE NAME"'
 
-# Shared column spec introduced by this slice. Used by header AND delegate.
-_SHARED_COLUMN_ROLES = (
-    "browserRowHeight",
-    "browserRowInset",
-    "browserRowSpacing",
+# Shared density + browser column spec. Used by header AND / OR both list delegates.
+_SHARED_DENSITY_ROLES = (
+    "densityRowHeight",
+    "densityVerticalInset",
+    "densityHorizontalInset",
+    "densityWaveformHeight",
+    "densityRowSpacing",
+    "densityDividerHeight",
+    "densityActionHitTarget",
+)
+
+# Browser-specific column widths stay browser-local but shared between header + row.
+_SHARED_BROWSER_COLUMN_ROLES = (
     "browserWaveformWidth",
     "browserWaveformMin",
     "browserMetaColumnWidth",
@@ -74,16 +79,25 @@ def test_browser_header_composes_context_title_scope_count_and_error():
 
 
 def test_browser_column_spec_is_shared_between_header_and_rows():
-    for role in _SHARED_COLUMN_ROLES:
-        assert QML_SOURCE.count(f"window.{role}") >= 2, (
-            f"Column-Spec {role} wird nicht von Header UND Delegate geteilt"
+    for role in _SHARED_BROWSER_COLUMN_ROLES:
+        assert QML_SOURCE.count(f"property int {role}:") == 1
+
+    for role in (
+        "effectiveBrowserWaveformWidth",
+        "effectiveBrowserMetaColumnWidth",
+        "effectiveBrowserLengthColumnWidth",
+        "effectiveBrowserAddColumnWidth",
+    ):
+        assert QML_SOURCE.count(f"browserPane.{role}") >= 2, (
+            f"Responsive Column-Spec {role} wird nicht von Header UND Delegate geteilt"
         )
-    assert QML_SOURCE.count("anchors.leftMargin: window.browserRowInset") == 2
-    assert QML_SOURCE.count("anchors.rightMargin: window.browserRowInset") == 2
+    assert QML_SOURCE.count("anchors.leftMargin: window.densityHorizontalInset") >= 2
+    assert QML_SOURCE.count("anchors.rightMargin: window.densityHorizontalInset") >= 2
 
     header = _column_header_layout(QML_SOURCE)
-    assert "anchors.leftMargin: window.browserRowInset" in header
-    assert "anchors.rightMargin: window.browserRowInset" in header
+    assert "anchors.leftMargin: window.densityHorizontalInset" in header
+    assert "anchors.rightMargin: window.densityHorizontalInset" in header
+    assert "spacing: window.densityRowSpacing" in header
 
     delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
     for magic in ("anchors.leftMargin: 12", "anchors.rightMargin: 12", "Layout.preferredWidth: 180"):
@@ -91,31 +105,34 @@ def test_browser_column_spec_is_shared_between_header_and_rows():
 
 
 def test_browser_typography_roles_are_bounded_and_assigned():
+    """Compact #692 typography — fit a single 30-DIP horizontal scan line."""
     assert 16 <= _int_property(QML_SOURCE, "textTitle") <= 20
-    assert 13 <= _int_property(QML_SOURCE, "textBody") <= 16
-    assert 12 <= _int_property(QML_SOURCE, "textMeta") <= 14
-    assert 10 <= _int_property(QML_SOURCE, "textCaption") <= 12
+    assert 11 <= _int_property(QML_SOURCE, "textBody") <= 13
+    assert 10 <= _int_property(QML_SOURCE, "textMeta") <= 12
+    assert 9 <= _int_property(QML_SOURCE, "textCaption") <= 11
 
     delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
     assert "font.pixelSize: window.textBody" in delegate  # Sample-Name
-    assert "font.pixelSize: window.textCaption" in delegate  # Sample-Typ
+    assert "font.pixelSize: window.textCaption" in delegate  # Sample-Typ (inline)
     assert QML_SOURCE.count("font.pixelSize: window.textMeta") >= 3  # BPM/Key/Length
 
 
 def test_browser_density_waveform_and_divider_invariants():
-    row_height = _int_property(QML_SOURCE, "browserRowHeight")
-    assert 58 <= row_height <= 72
+    """#692 supersedes historical 58..72 browserRowHeight density."""
+    assert _int_property(QML_SOURCE, "densityRowHeight") == 30
     assert _int_property(QML_SOURCE, "browserWaveformMin") >= 140
+    assert "property int browserRowHeight:" not in QML_SOURCE
 
     delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
     assert "height: browser.rowHeight" in delegate
-    assert "Layout.preferredWidth: window.browserWaveformWidth" in delegate
-    assert delegate.count("anchors.bottom: parent.bottom; height: 1") == 1
+    assert "property int rowHeight: window.densityRowHeight" in QML_SOURCE
+    assert "Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth" in delegate
+    assert "height: window.densityDividerHeight" in delegate
     assert "color: window.divider" in delegate
 
 
 def test_browser_shared_column_spec_uses_single_definition_each():
-    for role in _SHARED_COLUMN_ROLES:
+    for role in _SHARED_DENSITY_ROLES + _SHARED_BROWSER_COLUMN_ROLES:
         assert QML_SOURCE.count(f"property int {role}:") == 1
     assert QML_SOURCE.count("property color divider:") == 1
 
@@ -130,7 +147,7 @@ def test_browser_intent_keyboard_and_virtualization_contracts_preserved():
     assert QML_SOURCE.count("toggleHarmonicMatch()") == 1
     assert 'text: "Play"' not in QML_SOURCE
     assert 'text: "▶"' not in QML_SOURCE
-    assert "reuseItems: true" in QML_SOURCE
+    assert QML_SOURCE.count("reuseItems: true") == 2
     assert "Component.onCompleted: window.browserDelegateCreations += 1" in QML_SOURCE
     assert "navigateBrowser(1)" in QML_SOURCE
     assert "navigateBrowser(-1)" in QML_SOURCE

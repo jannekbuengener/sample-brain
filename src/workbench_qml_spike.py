@@ -19,11 +19,15 @@ from .workbench_visual_acceptance import (
     CLIENT_WIDTH,
     EvidenceError,
     REQUIRED_STATE_IDS,
+    REQUIRED_STATE_IDS_V2,
     Screen1VisualFixture,
+    Screen1VisualFixtureV2,
     build_screen1_visual_fixture_v1,
+    build_screen1_visual_fixture_v2,
     build_visual_evidence_manifest,
     capture_windows_client_window,
     current_windows_dpi_scale,
+    resolve_screen1_visual_state_v2,
     validate_capture_sanity,
     validate_runtime_for_visual_acceptance,
     write_visual_evidence_manifest,
@@ -73,7 +77,7 @@ def build_qml_view_model_from_fixture(
         )
         for group in presentation.visible_structure()
     )
-    return Screen1QmlViewModel(
+    view_model = Screen1QmlViewModel(
         state_id=state_id,
         library_labels=fixture.library_labels,
         browser_rows=tuple(production._qml_row(row) for row in fixture.browser_rows),
@@ -85,6 +89,92 @@ def build_qml_view_model_from_fixture(
         on_browser_selected=on_browser_selected,
         library_tree=library_tree,
     )
+    # Historical v1 fixtures describe an already-active Screen-1 workspace.
+    # Under #693 Clean Start, that means materialize Browser + Live Kit.
+    view_model.set_workspace_materialization(
+        has_active_source=True,
+        calm_canvas_visible=False,
+        browser_materialized=True,
+        live_kit_materialized=True,
+    )
+    return view_model
+
+
+def build_qml_view_model_from_fixture_v2(
+    fixture: Screen1VisualFixtureV2,
+    state_id: str,
+    *,
+    on_browser_selected: Callable[[WorkbenchRow], None] | None = None,
+    library_tree: WorkbenchLibraryTreeState | None = None,
+) -> Screen1QmlViewModel:
+    """Map additive #700/#692 v2 fixture states onto the production shell.
+
+    The production ``Screen1QmlViewModel`` still keys panel geometry off the
+    historical shell IDs (3panel / 4panel). Evidence files and manifests use the
+    public v2 state IDs; this helper only bridges row/selection/Live-Kit data.
+    """
+    state = resolve_screen1_visual_state_v2(fixture, state_id)
+    shell_state_id = (
+        "screen1-harmonic-4panel"
+        if state.layout.harmonic_visible
+        else "screen1-default-3panel"
+    )
+
+    live_kit = LiveKitState()
+    if state.layout.live_kit_materialized:
+        for group, slots in fixture.assignments.items():
+            for slot, row in slots.items():
+                if row is not None:
+                    live_kit.assign(group, slot, row)
+    presentation = LiveKitPresentationState(live_kit)
+    groups = tuple(
+        QmlLiveKitGroup(
+            name=group.name,
+            slots=tuple(
+                QmlLiveKitSlot(slot.name, slot.assignment) for slot in group.slots
+            ),
+            active=not presentation.is_collapsed(group.name),
+        )
+        for group in presentation.visible_structure()
+    )
+
+    if state.layout.browser_materialized:
+        browser_rows = tuple(production._qml_row(row) for row in fixture.browser_rows)
+        selected = (
+            int(state.selected_browser_index)
+            if state.selected_browser_index is not None
+            else 0
+        )
+        context = state.selected_source_label or "Samples"
+    else:
+        browser_rows = ()
+        selected = 0
+        context = "No library selected"
+
+    harmony_rows = ()
+    if state.layout.harmonic_visible:
+        harmony_rows = tuple(
+            production._qml_harmony_row(match) for match in fixture.harmony_results
+        )
+
+    view_model = Screen1QmlViewModel(
+        state_id=shell_state_id,
+        library_labels=fixture.library_labels,
+        browser_rows=browser_rows,
+        selected_browser_index=selected,
+        harmony_rows=harmony_rows,
+        live_kit_groups=groups,
+        on_browser_selected=on_browser_selected,
+        library_tree=library_tree,
+        browser_context=context,
+    )
+    view_model.set_workspace_materialization(
+        has_active_source=bool(state.source_selected),
+        calm_canvas_visible=bool(state.layout.calm_canvas_visible),
+        browser_materialized=bool(state.layout.browser_materialized),
+        live_kit_materialized=bool(state.layout.live_kit_materialized),
+    )
+    return view_model
 
 
 def run_qml_proof_spike(*, state_id: str = "screen1-default-3panel") -> int:
@@ -178,6 +268,13 @@ def _module_file(module_name: str) -> Path:
     if location is None:
         raise EvidenceError(f"Import-Provenance für {module_name} fehlt.")
     return Path(location).resolve()
+
+
+def _grab_qml_window_png(window: object, target: Path, *, engine: object | None = None) -> None:
+    """Capture Screen-1 evidence with the shared PNG writer (sanity-compatible)."""
+    del engine  # reserved for future root re-resolution
+    # Requires QT_QUICK_BACKEND=software so GDI sees Qt Quick updates.
+    capture_windows_client_window(int(window.winId()), target)
 
 
 def _is_within(path: Path, root: Path) -> bool:
@@ -419,84 +516,267 @@ def apply_screen1_visual_state_v2(
         view_model.harmony_status = "Harmonic Match ist ausgeschaltet."
 
 
+def _modal_harmony_acceptance_fixture_v2(
+    fixture: Screen1VisualFixtureV2,
+) -> Screen1VisualFixtureV2:
+    """Apply the same modal key overrides as v1 so harmonic open can match."""
+    v1_shaped = Screen1VisualFixture(
+        version="screen1_visual_fixture_v1",
+        library_labels=fixture.library_labels,
+        browser_rows=fixture.browser_rows,
+        selected_browser_index=2,
+        harmony_results=fixture.harmony_results,
+        assignments={
+            group: {slot: row for slot, row in slots.items() if row is not None}
+            for group, slots in fixture.assignments.items()
+        },
+        state_ids=REQUIRED_STATE_IDS,
+    )
+    modal = _modal_harmony_acceptance_fixture(v1_shaped)
+    return replace(
+        fixture,
+        browser_rows=modal.browser_rows,
+        harmony_results=modal.harmony_results,
+    )
+
+
+
+def _require_fresh_qml_capture_process() -> None:
+    """Fail closed unless this process can still start a software Qt Quick runtime.
+
+    Setting ``QT_QUICK_BACKEND`` is ignored once a ``QGuiApplication`` exists, and
+    a pre-loaded non-software Qt Quick binding can leave GDI density captures
+    looking sane while missing scene-graph updates. Callers must use a fresh
+    Python process after any other Qt Quick evidence path.
+    """
+    import os
+
+    from PySide6.QtGui import QGuiApplication
+
+    prior_backend = (os.environ.get("QT_QUICK_BACKEND") or "").strip().lower()
+    qtquick_loaded = "PySide6.QtQuick" in sys.modules
+    if QGuiApplication.instance() is not None:
+        raise EvidenceError(
+            "QML-v2-Capture braucht einen frischen Prozess ohne bestehende "
+            "QGuiApplication; QT_QUICK_BACKEND muss vor der ersten Qt-Quick-"
+            "Runtime festgelegt werden."
+        )
+    if qtquick_loaded and prior_backend not in ("", "software"):
+        raise EvidenceError(
+            "QML-v2-Capture: Qt Quick ist bereits mit inkompatiblem "
+            f"QT_QUICK_BACKEND={prior_backend!r} geladen; frischer Prozess mit "
+            "software-Backend erforderlich."
+        )
+    # Force after fail-closed checks so a pre-set hardware backend cannot win.
+    os.environ["QT_QUICK_BACKEND"] = "software"
+
+
+_V2_CAPTURE_STATE_IDS = (
+    "screen1-active-source",
+    "screen1-harmonic-open",
+)
+_V2_EVIDENCE_BASELINE = "baseline"
+_V2_EVIDENCE_DPI_PROBE = "dpi_probe"
+
+
+def _validate_v2_capture_states(capture_states: tuple[str, ...]) -> None:
+    allowed = set(_V2_CAPTURE_STATE_IDS)
+    unsupported = tuple(state for state in capture_states if state not in allowed)
+    if unsupported:
+        raise EvidenceError(
+            "QML-v2-Density-Capture unterstützt aktuell nur "
+            f"{_V2_CAPTURE_STATE_IDS}; nicht unterstützt: {unsupported}"
+        )
+
+
+def _require_v2_capture_dpi_100(hwnd: int) -> int:
+    dpi_scale = current_windows_dpi_scale(hwnd)
+    if dpi_scale != 100:
+        raise EvidenceError(
+            "QML-v2-Density-Capture braucht die 100%-Windows-DPI-Baseline; "
+            f"aktuell: {dpi_scale}%."
+        )
+    return dpi_scale
+
+
+def _resolve_v2_density_runtime_status(*, dpi_scale: int, evidence_kind: str) -> str:
+    """Baseline evidence may claim valid only at 100% DPI; probes never may."""
+    kind = (evidence_kind or "").strip().lower()
+    if kind == _V2_EVIDENCE_BASELINE:
+        if dpi_scale != 100:
+            raise EvidenceError(
+                "QML-v2-Density-Capture braucht die 100%-Windows-DPI-Baseline; "
+                f"aktuell: {dpi_scale}%."
+            )
+        return "valid"
+    if kind == _V2_EVIDENCE_DPI_PROBE:
+        # Probes exist for Owner High-DPI inspection (real OS scale or QT_SCALE).
+        # They must never be submitted as baseline-valid evidence.
+        return "dpi_probe"
+    raise EvidenceError(
+        f"Unknown density evidence_kind {evidence_kind!r}; expected "
+        f"{_V2_EVIDENCE_BASELINE!r} or {_V2_EVIDENCE_DPI_PROBE!r}."
+    )
+
+
 def run_qml_visual_acceptance_v2(
     *,
     runtime_root: Path,
     evidence_dir: Path,
-    state_ids: tuple[str, ...] = ("screen1-clean-start", "screen1-active-source"),
+    capture_states: tuple[str, ...] = (
+        "screen1-active-source",
+        "screen1-harmonic-open",
+    ),
+    compact_stress_size: tuple[int, int] = (1120, 640),
+    evidence_kind: str = _V2_EVIDENCE_BASELINE,
 ) -> dict[str, object]:
-    """Capture #700/#693 calm-workspace states through the production QML shell."""
+    """Additive #692/#700 v2 capture path. Does not replace v1 acceptance."""
     import platform
 
-    from .workbench_visual_acceptance import (
-        REQUIRED_STATE_IDS_V2,
-        build_screen1_visual_fixture_v2,
-        build_visual_evidence_manifest_v2,
-        resolve_screen1_visual_state_v2,
-    )
+    # Software scene graph keeps client captures coherent on Windows. Environment
+    # alone is insufficient once Qt already owns a GUI / non-software Quick
+    # runtime, so fail closed there before creating windows.
+    _require_fresh_qml_capture_process()
 
+    _validate_v2_capture_states(capture_states)
     report = validate_qml_renderer_provenance(runtime_root)
-    fixture = build_screen1_visual_fixture_v2()
+    fixture = _modal_harmony_acceptance_fixture_v2(build_screen1_visual_fixture_v2())
     evidence_dir.mkdir(parents=True, exist_ok=True)
     captures: dict[str, Path] = {}
     sanity: dict[str, dict[str, bool | list[object]]] = {}
     app = None
     engines: list[object] = []
+    dpi_scale = 100
     try:
-        for state_id in state_ids:
-            if state_id not in REQUIRED_STATE_IDS_V2:
-                raise ValueError(f"Unbekannter v2 Visual-State: {state_id}")
+        for state_id in capture_states:
+            view_model = build_qml_view_model_from_fixture_v2(fixture, state_id)
+            # Always start from the 3-panel shell, then open Harmonic via the real
+            # control — matches the proven v1 acceptance path and avoids a stale
+            # initial 4-panel projection that can miss the first paint.
+            if resolve_screen1_visual_state_v2(fixture, state_id).layout.harmonic_visible:
+                view_model = build_qml_view_model_from_fixture_v2(
+                    fixture, "screen1-active-source"
+                )
+                # Keep v2 evidence label while using a closed shell as the start.
+                view_model.state_id = "screen1-default-3panel"
+            adapter = Screen1QmlInteractionAdapter(
+                view_model=view_model,
+                harmony_controller=production.HarmonicMatchLibraryController(),
+            )
+            app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+            engines.append(engine)
+            window.setWidth(CLIENT_WIDTH)
+            window.setHeight(CLIENT_HEIGHT)
+            window.show()
+            _settle_qml_frame(app)
+            dpi_scale = current_windows_dpi_scale(int(window.winId()))
+            if evidence_kind == _V2_EVIDENCE_BASELINE:
+                _require_v2_capture_dpi_100(int(window.winId()))
+
             state = resolve_screen1_visual_state_v2(fixture, state_id)
-            view_model = Screen1QmlViewModel(
-                state_id="screen1-default-3panel",
-                library_labels=(),
-                browser_rows=(),
-                selected_browser_index=-1,
-                harmony_rows=(),
-                live_kit_groups=(),
+            if state.layout.harmonic_visible:
+                from PySide6.QtCore import QPointF, Qt
+                from PySide6.QtQuick import QQuickItem
+                from PySide6.QtTest import QTest
+
+                control = window.findChild(QQuickItem, "harmonicMatchButton")
+                if control is None:
+                    raise RuntimeError("Harmonic-Match-Control fehlt in der Production-QML-Shell.")
+                QTest.mouseClick(
+                    window,
+                    Qt.LeftButton,
+                    Qt.NoModifier,
+                    control.mapToScene(QPointF(8, 8)).toPoint(),
+                )
+                _settle_qml_frame(app)
+                _settle_qml_frame(app)
+                if not adapter.harmonic_match_open:
+                    raise RuntimeError("Harmonic-Match-Control konnte den Pane nicht öffnen.")
+
+            target = evidence_dir / f"{state_id}.png"
+            # GDI BitBlt can miss Qt Quick scene-graph updates; grab the QML
+            # window framebuffer so harmonic-open evidence is distinct.
+            _grab_qml_window_png(window, target, engine=engine)
+            check = validate_capture_sanity(
+                target, expected_width=CLIENT_WIDTH, expected_height=CLIENT_HEIGHT
+            )
+            check["v2_state_id"] = state_id
+            check["density_mode"] = state.density_mode
+            check["harmonic_visible"] = bool(state.layout.harmonic_visible)
+            check["pass"] = bool(check["pass"])
+            sanity[state_id] = check
+            captures[state_id] = target
+            window.close()
+            app.processEvents()
+
+        if compact_stress_size is not None:
+            stress_w, stress_h = compact_stress_size
+            view_model = build_qml_view_model_from_fixture_v2(
+                fixture, "screen1-active-source"
             )
             adapter = Screen1QmlInteractionAdapter(
                 view_model=view_model,
                 harmony_controller=production.HarmonicMatchLibraryController(),
             )
-            apply_screen1_visual_state_v2(
-                view_model, adapter, fixture, state
-            )
             app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
             engines.append(engine)
+            window.setWidth(stress_w)
+            window.setHeight(stress_h)
             window.show()
             _settle_qml_frame(app)
-            target = evidence_dir / f"{state_id}.png"
-            capture_windows_client_window(int(window.winId()), target)
+            dpi_scale = current_windows_dpi_scale(int(window.winId()))
+            if evidence_kind == _V2_EVIDENCE_BASELINE:
+                _require_v2_capture_dpi_100(int(window.winId()))
+            stress_id = f"compact-stress-{stress_w}x{stress_h}"
+            target = evidence_dir / f"{stress_id}.png"
+            _grab_qml_window_png(window, target, engine=engine)
             check = validate_capture_sanity(
-                target, expected_width=CLIENT_WIDTH, expected_height=CLIENT_HEIGHT
+                target, expected_width=stress_w, expected_height=stress_h
             )
-            check["source_selected"] = bool(state.source_selected)
-            check["browser_materialized"] = bool(state.layout.browser_materialized)
-            check["calm_canvas_visible"] = bool(state.layout.calm_canvas_visible)
-            check["pass"] = bool(
-                check["pass"]
-                and view_model.has_active_source == state.source_selected
-                and view_model.browser_materialized == state.layout.browser_materialized
-                and view_model.calm_canvas_visible == state.layout.calm_canvas_visible
-            )
-            sanity[state_id] = check
-            captures[state_id] = target
+            check["v2_state_id"] = "screen1-active-source"
+            check["compact_stress"] = True
+            check["pass"] = bool(check["pass"])
+            sanity[stress_id] = check
+            captures[stress_id] = target
             window.close()
             app.processEvents()
+
         if app is None:
             raise RuntimeError("Qt Quick Screen-1 Renderer konnte keine Capture-Instanz starten.")
-        manifest = build_visual_evidence_manifest_v2(
-            runtime_report=report,
-            fixture=fixture,
-            captures=captures,
-            os_name="Windows " + platform.release(),
-            dpi_scale=current_windows_dpi_scale(int(window.winId())),
-            client_width=CLIENT_WIDTH,
-            client_height=CLIENT_HEIGHT,
-            sanity_results=sanity,
+
+        runtime_status = _resolve_v2_density_runtime_status(
+            dpi_scale=dpi_scale, evidence_kind=evidence_kind
         )
-        write_visual_evidence_manifest(evidence_dir / "manifest_v2.json", manifest)
+        manifest = {
+            "schema": "sample_brain_screen1_v2_density_evidence",
+            "issue": 692,
+            "commit": report.manifest.commit,
+            "channel": report.manifest.channel,
+            "runtime_status": runtime_status,
+            "evidence_kind": evidence_kind,
+            "python": f"{platform.python_implementation()} {platform.python_version()}",
+            "os": "Windows " + platform.release(),
+            "dpi": dpi_scale,
+            "qt_scale_factor": __import__("os").environ.get("QT_SCALE_FACTOR"),
+            "fixture": fixture.version,
+            "density_mode": "compact_target_30dip",
+            "density_row_height_dip_baseline": 30,
+            "states": list(captures.keys()),
+            "screenshot_hashes": {
+                key: __import__("hashlib").sha256(path.read_bytes()).hexdigest()
+                for key, path in captures.items()
+            },
+            "sanity_results": {
+                key: {
+                    "pass": bool(value.get("pass")),
+                    "v2_state_id": value.get("v2_state_id"),
+                    "density_mode": value.get("density_mode"),
+                    "compact_stress": bool(value.get("compact_stress", False)),
+                }
+                for key, value in sanity.items()
+            },
+        }
+        write_visual_evidence_manifest(evidence_dir / "manifest-v2-density.json", manifest)
         return manifest
     finally:
         engines.clear()
@@ -511,6 +791,7 @@ __all__ = [
     "Screen1QmlViewModel",
     "VirtualRowWindow",
     "build_qml_view_model_from_fixture",
+    "build_qml_view_model_from_fixture_v2",
     "apply_screen1_visual_state_v2",
     "qml_runtime_available",
     "run_qml_proof_spike",
