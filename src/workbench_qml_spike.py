@@ -527,11 +527,8 @@ def _resolve_v2_density_runtime_status(*, dpi_scale: int, evidence_kind: str) ->
             )
         return "valid"
     if kind == _V2_EVIDENCE_DPI_PROBE:
-        if dpi_scale == 100:
-            raise EvidenceError(
-                "dpi_probe evidence requires non-100% DPI; use evidence_kind="
-                f"{_V2_EVIDENCE_BASELINE!r} for the baseline."
-            )
+        # Probes exist for Owner High-DPI inspection (real OS scale or QT_SCALE).
+        # They must never be submitted as baseline-valid evidence.
         return "dpi_probe"
     raise EvidenceError(
         f"Unknown density evidence_kind {evidence_kind!r}; expected "
@@ -677,6 +674,7 @@ def run_qml_visual_acceptance_v2(
             "python": f"{platform.python_implementation()} {platform.python_version()}",
             "os": "Windows " + platform.release(),
             "dpi": dpi_scale,
+            "qt_scale_factor": __import__("os").environ.get("QT_SCALE_FACTOR"),
             "fixture": fixture.version,
             "density_mode": "compact_target_30dip",
             "density_row_height_dip_baseline": 30,

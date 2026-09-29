@@ -176,14 +176,10 @@ def test_v2_density_baseline_runtime_status_never_valid_off_100():
 
 def test_v2_density_dpi_probe_runtime_status_is_not_valid():
     from src import workbench_qml_spike
-    from src.workbench_visual_acceptance import EvidenceError
 
-    status = workbench_qml_spike._resolve_v2_density_runtime_status(
-        dpi_scale=150, evidence_kind="dpi_probe"
-    )
-    assert status == "dpi_probe"
-    assert status != "valid"
-    with pytest.raises(EvidenceError, match="non-100%"):
-        workbench_qml_spike._resolve_v2_density_runtime_status(
-            dpi_scale=100, evidence_kind="dpi_probe"
+    for dpi in (100, 125, 150):
+        status = workbench_qml_spike._resolve_v2_density_runtime_status(
+            dpi_scale=dpi, evidence_kind="dpi_probe"
         )
+        assert status == "dpi_probe"
+        assert status != "valid"
