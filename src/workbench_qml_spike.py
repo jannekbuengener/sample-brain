@@ -459,21 +459,41 @@ def _modal_harmony_acceptance_fixture_v2(
 
 
 def _require_fresh_qml_capture_process() -> None:
-    """Reject v2 evidence when a Qt GUI runtime already exists in-process."""
+    """Fail closed unless this process can still start a software Qt Quick runtime.
+
+    Setting ``QT_QUICK_BACKEND`` is ignored once a ``QGuiApplication`` exists, and
+    a pre-loaded non-software Qt Quick binding can leave GDI density captures
+    looking sane while missing scene-graph updates. Callers must use a fresh
+    Python process after any other Qt Quick evidence path.
+    """
+    import os
+
     from PySide6.QtGui import QGuiApplication
 
+    prior_backend = (os.environ.get("QT_QUICK_BACKEND") or "").strip().lower()
+    qtquick_loaded = "PySide6.QtQuick" in sys.modules
     if QGuiApplication.instance() is not None:
         raise EvidenceError(
             "QML-v2-Capture braucht einen frischen Prozess ohne bestehende "
             "QGuiApplication; QT_QUICK_BACKEND muss vor der ersten Qt-Quick-"
             "Runtime festgelegt werden."
         )
+    if qtquick_loaded and prior_backend not in ("", "software"):
+        raise EvidenceError(
+            "QML-v2-Capture: Qt Quick ist bereits mit inkompatiblem "
+            f"QT_QUICK_BACKEND={prior_backend!r} geladen; frischer Prozess mit "
+            "software-Backend erforderlich."
+        )
+    # Force after fail-closed checks so a pre-set hardware backend cannot win.
+    os.environ["QT_QUICK_BACKEND"] = "software"
 
 
 _V2_CAPTURE_STATE_IDS = (
     "screen1-active-source",
     "screen1-harmonic-open",
 )
+_V2_EVIDENCE_BASELINE = "baseline"
+_V2_EVIDENCE_DPI_PROBE = "dpi_probe"
 
 
 def _validate_v2_capture_states(capture_states: tuple[str, ...]) -> None:
@@ -495,6 +515,30 @@ def _require_v2_capture_dpi_100(hwnd: int) -> int:
         )
     return dpi_scale
 
+
+def _resolve_v2_density_runtime_status(*, dpi_scale: int, evidence_kind: str) -> str:
+    """Baseline evidence may claim valid only at 100% DPI; probes never may."""
+    kind = (evidence_kind or "").strip().lower()
+    if kind == _V2_EVIDENCE_BASELINE:
+        if dpi_scale != 100:
+            raise EvidenceError(
+                "QML-v2-Density-Capture braucht die 100%-Windows-DPI-Baseline; "
+                f"aktuell: {dpi_scale}%."
+            )
+        return "valid"
+    if kind == _V2_EVIDENCE_DPI_PROBE:
+        if dpi_scale == 100:
+            raise EvidenceError(
+                "dpi_probe evidence requires non-100% DPI; use evidence_kind="
+                f"{_V2_EVIDENCE_BASELINE!r} for the baseline."
+            )
+        return "dpi_probe"
+    raise EvidenceError(
+        f"Unknown density evidence_kind {evidence_kind!r}; expected "
+        f"{_V2_EVIDENCE_BASELINE!r} or {_V2_EVIDENCE_DPI_PROBE!r}."
+    )
+
+
 def run_qml_visual_acceptance_v2(
     *,
     runtime_root: Path,
@@ -504,16 +548,14 @@ def run_qml_visual_acceptance_v2(
         "screen1-harmonic-open",
     ),
     compact_stress_size: tuple[int, int] = (1120, 640),
+    evidence_kind: str = _V2_EVIDENCE_BASELINE,
 ) -> dict[str, object]:
     """Additive #692/#700 v2 capture path. Does not replace v1 acceptance."""
-    import os
     import platform
 
-    # Software scene graph keeps client captures / grabWindow coherent on Windows.
-    # Force (do not setdefault): a pre-set hardware backend would make GDI BitBlt
-    # miss Qt Quick updates and produce stale identical frames. Environment alone
-    # is insufficient once Qt already owns a GUI application, so fail closed there.
-    os.environ["QT_QUICK_BACKEND"] = "software"
+    # Software scene graph keeps client captures coherent on Windows. Environment
+    # alone is insufficient once Qt already owns a GUI / non-software Quick
+    # runtime, so fail closed there before creating windows.
     _require_fresh_qml_capture_process()
 
     _validate_v2_capture_states(capture_states)
@@ -524,6 +566,7 @@ def run_qml_visual_acceptance_v2(
     sanity: dict[str, dict[str, bool | list[object]]] = {}
     app = None
     engines: list[object] = []
+    dpi_scale = 100
     try:
         for state_id in capture_states:
             view_model = build_qml_view_model_from_fixture_v2(fixture, state_id)
@@ -546,7 +589,9 @@ def run_qml_visual_acceptance_v2(
             window.setHeight(CLIENT_HEIGHT)
             window.show()
             _settle_qml_frame(app)
-            _require_v2_capture_dpi_100(int(window.winId()))
+            dpi_scale = current_windows_dpi_scale(int(window.winId()))
+            if evidence_kind == _V2_EVIDENCE_BASELINE:
+                _require_v2_capture_dpi_100(int(window.winId()))
 
             state = resolve_screen1_visual_state_v2(fixture, state_id)
             if state.layout.harmonic_visible:
@@ -599,7 +644,9 @@ def run_qml_visual_acceptance_v2(
             window.setHeight(stress_h)
             window.show()
             _settle_qml_frame(app)
-            _require_v2_capture_dpi_100(int(window.winId()))
+            dpi_scale = current_windows_dpi_scale(int(window.winId()))
+            if evidence_kind == _V2_EVIDENCE_BASELINE:
+                _require_v2_capture_dpi_100(int(window.winId()))
             stress_id = f"compact-stress-{stress_w}x{stress_h}"
             target = evidence_dir / f"{stress_id}.png"
             _grab_qml_window_png(window, target, engine=engine)
@@ -617,15 +664,19 @@ def run_qml_visual_acceptance_v2(
         if app is None:
             raise RuntimeError("Qt Quick Screen-1 Renderer konnte keine Capture-Instanz starten.")
 
+        runtime_status = _resolve_v2_density_runtime_status(
+            dpi_scale=dpi_scale, evidence_kind=evidence_kind
+        )
         manifest = {
             "schema": "sample_brain_screen1_v2_density_evidence",
             "issue": 692,
             "commit": report.manifest.commit,
             "channel": report.manifest.channel,
-            "runtime_status": "valid",
+            "runtime_status": runtime_status,
+            "evidence_kind": evidence_kind,
             "python": f"{platform.python_implementation()} {platform.python_version()}",
             "os": "Windows " + platform.release(),
-            "dpi": 100,
+            "dpi": dpi_scale,
             "fixture": fixture.version,
             "density_mode": "compact_target_30dip",
             "density_row_height_dip_baseline": 30,

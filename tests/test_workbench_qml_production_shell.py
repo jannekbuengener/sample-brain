@@ -106,10 +106,24 @@ def test_v2_capture_fails_closed_when_qguiapplication_already_exists(monkeypatch
 
 def test_v2_capture_allows_fresh_process_before_qt_runtime(monkeypatch):
     from src import workbench_qml_spike
+    import os
 
     _install_fake_qgui(monkeypatch, instance=None)
+    monkeypatch.delenv("QT_QUICK_BACKEND", raising=False)
+    sys.modules.pop("PySide6.QtQuick", None)
     workbench_qml_spike._require_fresh_qml_capture_process()
+    assert os.environ.get("QT_QUICK_BACKEND") == "software"
 
+
+def test_v2_capture_rejects_preloaded_nonssoftware_qtquick(monkeypatch):
+    from src import workbench_qml_spike
+    from src.workbench_visual_acceptance import EvidenceError
+
+    _install_fake_qgui(monkeypatch, instance=None)
+    monkeypatch.setenv("QT_QUICK_BACKEND", "rhi")
+    monkeypatch.setitem(sys.modules, "PySide6.QtQuick", types.ModuleType("PySide6.QtQuick"))
+    with pytest.raises(EvidenceError, match="inkompatiblem"):
+        workbench_qml_spike._require_fresh_qml_capture_process()
 
 
 def test_v2_capture_rejects_unimplemented_fixture_states():
@@ -142,3 +156,34 @@ def test_v2_capture_requires_100_percent_windows_dpi(monkeypatch):
         lambda _hwnd: 100,
     )
     assert workbench_qml_spike._require_v2_capture_dpi_100(123) == 100
+
+
+def test_v2_density_baseline_runtime_status_never_valid_off_100():
+    from src import workbench_qml_spike
+    from src.workbench_visual_acceptance import EvidenceError
+
+    assert (
+        workbench_qml_spike._resolve_v2_density_runtime_status(
+            dpi_scale=100, evidence_kind="baseline"
+        )
+        == "valid"
+    )
+    with pytest.raises(EvidenceError, match="100%-Windows-DPI-Baseline"):
+        workbench_qml_spike._resolve_v2_density_runtime_status(
+            dpi_scale=125, evidence_kind="baseline"
+        )
+
+
+def test_v2_density_dpi_probe_runtime_status_is_not_valid():
+    from src import workbench_qml_spike
+    from src.workbench_visual_acceptance import EvidenceError
+
+    status = workbench_qml_spike._resolve_v2_density_runtime_status(
+        dpi_scale=150, evidence_kind="dpi_probe"
+    )
+    assert status == "dpi_probe"
+    assert status != "valid"
+    with pytest.raises(EvidenceError, match="non-100%"):
+        workbench_qml_spike._resolve_v2_density_runtime_status(
+            dpi_scale=100, evidence_kind="dpi_probe"
+        )
