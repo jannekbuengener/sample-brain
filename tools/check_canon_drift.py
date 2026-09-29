@@ -6,7 +6,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 CANON_PATHS = (
+    "AGENTS.md",
+    "SB.BOOTLOADER.md",
     "docs/CANON_INDEX.md",
+    "docs/BOOTLOADER_AND_CONTEXT_STRATEGY.md",
+    "docs/benchmarks/KEY_CONF_EVIDENCE.md",
     "docs/PRODUCT_WORKFLOW_CANON.md",
     "docs/PRODUCT_REQUIREMENTS.md",
     "docs/SYSTEM_REQUIREMENTS.md",
@@ -51,12 +55,19 @@ def collect_canon_drift() -> list[str]:
             problems.append(f"CANON_INDEX missing classification: {classification}")
 
     bootloader = _read("SB.BOOTLOADER.md")
+    strategy = _read("docs/BOOTLOADER_AND_CONTEXT_STRATEGY.md")
     if "docs/CANON_INDEX.md" not in bootloader:
         problems.append("SB.BOOTLOADER does not route through docs/CANON_INDEX.md")
     if "live #691" not in bootloader:
         problems.append("SB.BOOTLOADER does not route Screen-1 work through live #691")
     if "#503/#579 are historical" not in bootloader:
         problems.append("SB.BOOTLOADER does not classify #503/#579 as historical")
+    if "docs/CANON_INDEX.md" not in strategy:
+        problems.append(
+            "BOOTLOADER_AND_CONTEXT_STRATEGY does not route through docs/CANON_INDEX.md"
+        )
+    if "\\n| `docs/CANON_INDEX.md`" in strategy:
+        problems.append("BOOTLOADER_AND_CONTEXT_STRATEGY contains an escaped table newline")
 
     backlog = _read("docs/ISSUE_BACKLOG.md")
     if "HISTORICAL LEDGER, NOT LIVE TRACKER" not in backlog:
