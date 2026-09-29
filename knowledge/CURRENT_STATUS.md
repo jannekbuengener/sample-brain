@@ -1,6 +1,6 @@
 # CURRENT_STATUS
 
-**Last reconciled:** 2026-08-18
+**Last reconciled:** 2026-09-29
 
 ## Truth Rule
 
@@ -17,14 +17,30 @@ Do **not** infer current issue counts, PR counts, or the current `main` SHA from
 
 ## Current Operational Picture
 
-At the 2026-08-18 reconciliation, the durable open work was:
+At the 2026-09-29 reconciliation, GitHub live shows the following durable work classes. This is orientation, not a frozen issue count; query GitHub before execution.
 
-- [#405](https://github.com/jannekbuengener/sample-brain/issues/405) — **P0 repository safety:** enforce technical protection for `main`. The desired rules are decided; the current bounded operator cannot mutate repository protection settings.
-- [#392](https://github.com/jannekbuengener/sample-brain/issues/392) — **repository hygiene:** remove validated historical branches/worktrees and restore a clean canonical `main` checkout without discarding unique local work.
-- [#74](https://github.com/jannekbuengener/sample-brain/issues/74) — **upstream tracker:** wait for a stable, documented sqlite-vec ANN release. Do not build a private ANN replacement merely to close this tracker.
-- [#375](https://github.com/jannekbuengener/sample-brain/issues/375) — **future product work:** optional hidden hierarchical element detail below simple performance groups. It is intentionally not a current blocker.
+### Active product/UI delivery
 
-Transient PRs are intentionally not frozen into this document. Query GitHub live.
+- [#691](https://github.com/jannekbuengener/sample-brain/issues/691) — **Screen 1 Calm Adaptive Workspace**. Follow-up product/UI work after the closed #503 migration baseline. Children cover compact density, clean start, elastic panel layout, waveform research, preferences and parked reordering.
+- [#675](https://github.com/jannekbuengener/sample-brain/issues/675) / [#678](https://github.com/jannekbuengener/sample-brain/issues/678) — **Screen 2 Channel Rack** product track and QML UI.
+- [#679](https://github.com/jannekbuengener/sample-brain/issues/679) — **Screen 3 Arrangement** is parked/future product scope.
+- [#680](https://github.com/jannekbuengener/sample-brain/issues/680) — vocal/beatbox → sample-pattern R&D is parked/future.
+
+### Governance / audit / validation
+
+- [#494](https://github.com/jannekbuengener/sample-brain/issues/494) — migrate the temporary active `main` ruleset to the stable canon-aligned strict ruleset. The older #405 branch-protection gap is closed and must not be treated as the current governance state.
+- [#703](https://github.com/jannekbuengener/sample-brain/issues/703) — repository truth/drift/hygiene reconciliation campaign.
+- [#468](https://github.com/jannekbuengener/sample-brain/issues/468) — remaining subjective listening validation for Techno performance assets.
+
+### Parked / external-dependency / R&D tracks
+
+- [#469](https://github.com/jannekbuengener/sample-brain/issues/469) — VST3 integration is explicitly **parked / not active**.
+- [#74](https://github.com/jannekbuengener/sample-brain/issues/74) — upstream sqlite-vec ANN readiness tracker; no private ANN replacement.
+- [#615](https://github.com/jannekbuengener/sample-brain/issues/615) and scoped children — Bitwig is an **R&D playground only**, not a Sample-Brain product integration decision.
+
+Closed historical work such as #392, #405, #503, #579, #196, #198 and #73 remains useful evidence but is not active roadmap work.
+
+Transient PRs and exact `main` SHA are intentionally not frozen here. Query GitHub live.
 
 ## Shipped System on `main`
 
@@ -46,11 +62,12 @@ Transient PRs are intentionally not frozen into this document. Query GitHub live
 
 ### Workbench and native audio
 
-- local Tkinter Workbench with library browsing, analysis, preview, waveform, cue/loop/attack editing, playlists, matching helpers, recording, and native transport integration. It remains the shipped functional default and legacy/fallback path during Screen-1 migration.
-- The optional `src/workbench_qml.py` production shell is the canonical Screen-1 renderer surface. `LOCK_PYSIDE6_QML` is locked for new Screen-1 visual/product work; the shell reuses the Python-authoritative Core/Controller/Audio/Catalog contracts through thin adapters.
-- Screen-1 migration is active slice by slice under #503. Existing Tkinter UI remains useful as behavior/integration reference, but is not the target for new Screen-1 product visuals.
-- native audio core and deterministic transport/key-lock test surface.
-- Quick Capture voice-to-issue flow using local recording + local whisper.cpp + GitHub CLI. Private/local path and obvious secret redaction is applied before public issue creation; see [`docs/QUICK_CAPTURE.md`](../docs/QUICK_CAPTURE.md).
+- The local Workbench and native-audio contracts are established.
+- `LOCK_PYSIDE6_QML` remains the renderer canon for new Screen-1 visual/product work; `src/workbench_qml.py` is the canonical QML Screen-1 shell and Tkinter is legacy/fallback plus behavioral reference.
+- The original Screen-1 migration epic #503 is closed. Current Screen-1 refinement continues under #691; agents must not route new work through #503 as though it were still active.
+- Screen-2 foundations now include session ownership, Pattern Core, sequencer scheduling/PCM and Channel Rack Python core; UI delivery is tracked under #675/#678.
+- native audio core and deterministic transport/key-lock test surface remain part of the shipped foundation.
+- Quick Capture voice-to-issue flow uses local recording + local whisper.cpp + GitHub CLI. Private/local path and obvious secret redaction applies before public issue creation; see [`docs/QUICK_CAPTURE.md`](../docs/QUICK_CAPTURE.md).
 
 ### Track deconstruction and performance packs
 
@@ -94,7 +111,7 @@ Pull requests now have a repository-wide `Full core pytest` job in addition to f
 
 CodeQL, Gitleaks, Dependency Review, Python smoke, and focused Core pytest jobs remain part of the normal GitHub evidence surface.
 
-**Important:** CI existence is not the same as branch protection. Until #405 is completed, the repository still lacks the intended technical enforcement preventing a direct bypass of PR/check gates.
+**Important:** The original unprotected-`main` gap tracked by #405 is historical/closed. Current repository-governance migration is tracked by #494; always read the live Ruleset state before making a merge-policy claim.
 
 ## Known Product / Operational Constraints
 
@@ -102,7 +119,7 @@ CodeQL, Gitleaks, Dependency Review, Python smoke, and focused Core pytest jobs 
 - sqlite-vec remains opt-in; NumPy remains the default search path until stable ANN and measured gates justify a change.
 - optional CLAP/stem dependencies must fail closed and must not make the core CLI/import path require heavy ML packages.
 - current Demucs-family weight usage remains a separate licensing/commercialization concern; do not treat technical availability as commercial permission.
-- repository/worktree cleanup remains open under #392; do not use old local branches as current truth.
+- #392 repository/worktree cleanup is closed; historical local branches/worktrees are still never a substitute for live `main` evidence.
 
 ## Key Canonical References
 
