@@ -1388,13 +1388,24 @@ ApplicationWindow {
                     ToolTip.visible: hovered
                     ToolTip.delay: 350
                     ToolTip.text: "Add Source"
-                    contentItem: Text {
-                        text: calmCanvasAddSource.text
-                        color: calmCanvasAddSource.hovered ? theme.textPrimary : theme.textSecondary
-                        font.pixelSize: calmCanvasAddSource.font.pixelSize
-                        font.weight: Font.Light
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
+                    contentItem: Item {
+                        // Thin geometric plus — text "+" glyphs stay too heavy at this size.
+                        readonly property int stroke: 3
+                        readonly property int arm: Math.round(Math.min(width, height) * 0.42)
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: parent.arm
+                            height: parent.stroke
+                            radius: 1
+                            color: calmCanvasAddSource.hovered ? theme.textPrimary : theme.textSecondary
+                        }
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: parent.stroke
+                            height: parent.arm
+                            radius: 1
+                            color: calmCanvasAddSource.hovered ? theme.textPrimary : theme.textSecondary
+                        }
                     }
                     background: Rectangle {
                         radius: 10
