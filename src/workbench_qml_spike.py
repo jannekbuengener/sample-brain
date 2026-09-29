@@ -469,6 +469,32 @@ def _require_fresh_qml_capture_process() -> None:
             "Runtime festgelegt werden."
         )
 
+
+_V2_CAPTURE_STATE_IDS = (
+    "screen1-active-source",
+    "screen1-harmonic-open",
+)
+
+
+def _validate_v2_capture_states(capture_states: tuple[str, ...]) -> None:
+    allowed = set(_V2_CAPTURE_STATE_IDS)
+    unsupported = tuple(state for state in capture_states if state not in allowed)
+    if unsupported:
+        raise EvidenceError(
+            "QML-v2-Density-Capture unterstützt aktuell nur "
+            f"{_V2_CAPTURE_STATE_IDS}; nicht unterstützt: {unsupported}"
+        )
+
+
+def _require_v2_capture_dpi_100(hwnd: int) -> int:
+    dpi_scale = current_windows_dpi_scale(hwnd)
+    if dpi_scale != 100:
+        raise EvidenceError(
+            "QML-v2-Density-Capture braucht die 100%-Windows-DPI-Baseline; "
+            f"aktuell: {dpi_scale}%."
+        )
+    return dpi_scale
+
 def run_qml_visual_acceptance_v2(
     *,
     runtime_root: Path,
@@ -490,6 +516,7 @@ def run_qml_visual_acceptance_v2(
     os.environ["QT_QUICK_BACKEND"] = "software"
     _require_fresh_qml_capture_process()
 
+    _validate_v2_capture_states(capture_states)
     report = validate_qml_renderer_provenance(runtime_root)
     fixture = _modal_harmony_acceptance_fixture_v2(build_screen1_visual_fixture_v2())
     evidence_dir.mkdir(parents=True, exist_ok=True)
@@ -497,11 +524,8 @@ def run_qml_visual_acceptance_v2(
     sanity: dict[str, dict[str, bool | list[object]]] = {}
     app = None
     engines: list[object] = []
-    allowed = set(REQUIRED_STATE_IDS_V2)
     try:
         for state_id in capture_states:
-            if state_id not in allowed:
-                raise EvidenceError(f"Unknown Screen-1 v2 capture state: {state_id!r}")
             view_model = build_qml_view_model_from_fixture_v2(fixture, state_id)
             # Always start from the 3-panel shell, then open Harmonic via the real
             # control — matches the proven v1 acceptance path and avoids a stale
@@ -522,6 +546,7 @@ def run_qml_visual_acceptance_v2(
             window.setHeight(CLIENT_HEIGHT)
             window.show()
             _settle_qml_frame(app)
+            _require_v2_capture_dpi_100(int(window.winId()))
 
             state = resolve_screen1_visual_state_v2(fixture, state_id)
             if state.layout.harmonic_visible:
@@ -574,6 +599,7 @@ def run_qml_visual_acceptance_v2(
             window.setHeight(stress_h)
             window.show()
             _settle_qml_frame(app)
+            _require_v2_capture_dpi_100(int(window.winId()))
             stress_id = f"compact-stress-{stress_w}x{stress_h}"
             target = evidence_dir / f"{stress_id}.png"
             _grab_qml_window_png(window, target, engine=engine)
@@ -599,7 +625,7 @@ def run_qml_visual_acceptance_v2(
             "runtime_status": "valid",
             "python": f"{platform.python_implementation()} {platform.python_version()}",
             "os": "Windows " + platform.release(),
-            "dpi": current_windows_dpi_scale(int(window.winId())),
+            "dpi": 100,
             "fixture": fixture.version,
             "density_mode": "compact_target_30dip",
             "density_row_height_dip_baseline": 30,
