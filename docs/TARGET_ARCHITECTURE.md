@@ -203,7 +203,7 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 - **Must not do:** Train indexes, generate embeddings for storage
 - **Inputs:** Text query string + top-k + optional index path
 - **Outputs:** Ranked list of `(sample_id, score)` hits
-- **Status:** NumPy E2E smoke proven (M4). Audio-to-audio search not yet implemented.
+- **Status:** NumPy E2E smoke is proven; text and audio query modes are implemented. Production-quality relevance claims remain bounded by the current evaluation evidence.
 
 ### 4.11 Export Layer (`src/export_fl.py`)
 
