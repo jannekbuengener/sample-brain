@@ -478,22 +478,29 @@ def test_canonicalize_pcm_path_does_not_strip_before_resolve(monkeypatch):
         return str(path)
 
     monkeypatch.setattr(module.os.path, "realpath", fake_realpath)
-    monkeypatch.setattr(module, "_match_on_disk_case", lambda p: p)
+
+    def fake_stat(_path):
+        raise FileNotFoundError("missing")
+
+    monkeypatch.setattr(module.os, "stat", fake_stat)
     result = canonicalize("/samples/kick.wav ")
     assert result.endswith(" ")
     assert seen == ["/samples/kick.wav "]
 
 
-def test_canonicalize_pcm_path_folds_case_via_on_disk_spelling(
-    monkeypatch, tmp_path: Path
-):
+def test_canonicalize_pcm_path_uses_inode_for_existing_files(tmp_path: Path):
     module = _provider_module_or_fail()
     canonicalize = _require_symbol(module, "canonicalize_pcm_path")
     wav = _write_mono_wav(tmp_path / "Kick.wav", sr=ENGINE_SR)
-    monkeypatch.setattr(module.os.path, "realpath", lambda p: str(wav))
-    # Simulate case-insensitive lookup of the same file under different spelling.
-    alias = str(tmp_path / "kick.wav")
-    assert canonicalize(alias) == canonicalize(str(wav))
+    key_a = canonicalize(str(wav))
+    key_b = canonicalize(str(tmp_path / "." / "Kick.wav"))
+    assert key_a == key_b
+    assert ":" in key_a  # dev:inode
+
+    # Missing differently-cased neighbor stays a distinct string key (Linux-safe).
+    missing = str(tmp_path / "does-not-exist-Kick.wav")
+    missing_key = canonicalize(missing)
+    assert ":" not in missing_key or missing_key == missing
 
 
 def test_provider_symlink_loop_canonicalization_fails_soft(monkeypatch, tmp_path: Path):

@@ -244,14 +244,28 @@ def warm_channel_rack_pcm(
     state: ChannelRackState,
     provider: SequencerPcmProvider,
 ) -> None:
-    """Decode/cache every assigned sample path before scheduling voices."""
+    """Decode/cache every assigned sample path before scheduling voices.
 
+    Raises ``ValueError`` when unique assigned paths exceed ``provider.max_entries``
+    so prewarming cannot silently evict samples still required for the pass.
+    """
+
+    paths: list[str] = []
     seen: set[str] = set()
     for channel in state.channels:
         path = channel.sample_path
         if path is None or path == "" or path.isspace() or path in seen:
             continue
         seen.add(path)
+        paths.append(path)
+
+    if len(paths) > provider.max_entries:
+        raise ValueError(
+            "warm_channel_rack_pcm requires provider.max_entries >= number of "
+            f"unique sample paths (need {len(paths)}, max_entries={provider.max_entries})"
+        )
+
+    for path in paths:
         provider.pcm_for_path(path)
 
 

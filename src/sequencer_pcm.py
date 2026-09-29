@@ -34,10 +34,12 @@ def canonicalize_pcm_path(path: str | Path) -> str:
     """Return a stable cache key for a filesystem path.
 
     Collapses ``.`` / ``..``, resolves to an absolute path, and follows
-    existing symlinks when possible. The full input string is preserved —
-    trailing whitespace is not stripped before resolution. On case-insensitive
-    volumes, existing path components are rewritten to on-disk spelling so
-    aliases that differ only by case share one cache entry.
+    existing symlinks when possible. Trailing whitespace is not stripped
+    before resolution.
+
+    Existing files key by ``dev:inode`` so case aliases on case-insensitive
+    volumes share one entry without collapsing distinct names on case-sensitive
+    Linux filesystems. Missing paths keep their resolved spelling.
     """
     raw = str(path)
     try:
@@ -49,60 +51,11 @@ def canonicalize_pcm_path(path: str | Path) -> str:
         except (OSError, RuntimeError, ValueError):
             return raw
 
-    body = resolved.rstrip(" \t")
-    trailing = resolved[len(body) :]
     try:
-        body = _match_on_disk_case(body)
-    except OSError:
-        body = os.path.normcase(body)
-    return body + trailing
-
-
-def _match_on_disk_case(path: str) -> str:
-    """Rewrite existing path components to the filesystem's stored spelling."""
-    if not path:
-        return path
-    drive, tail = os.path.splitdrive(path)
-    if os.name == "nt":
-        drive = drive.upper()
-    if not tail:
-        return drive
-
-    absolute = tail.startswith(os.sep) or tail.startswith("/")
-    parts = [part for part in tail.split(os.sep) if part not in ("", ".")]
-    current = drive + os.sep if absolute else (drive or ".")
-    built: list[str] = []
-    for part in parts:
-        if part == "..":
-            if built:
-                built.pop()
-                current = (
-                    drive + os.sep + os.sep.join(built)
-                    if absolute
-                    else (os.sep.join(built) if built else (drive or "."))
-                )
-            continue
-        try:
-            entries = os.listdir(current)
-        except OSError:
-            built.append(part)
-            current = os.path.join(current, part)
-            continue
-        match = next((entry for entry in entries if entry == part), None)
-        if match is None:
-            lowered = part.casefold()
-            match = next(
-                (entry for entry in entries if entry.casefold() == lowered),
-                part,
-            )
-        built.append(match)
-        current = os.path.join(current, match)
-
-    if absolute:
-        return drive + os.sep + os.sep.join(built)
-    if drive:
-        return drive + os.sep.join(built)
-    return os.sep.join(built) if built else path
+        st = os.stat(resolved)
+    except (OSError, RuntimeError, ValueError):
+        return resolved
+    return f"{st.st_dev}:{st.st_ino}"
 
 
 def decode_pcm_for_native(
@@ -146,6 +99,7 @@ class SequencerPcmProvider:
         self._max_entries = entries
         self._decode_fn: DecodeFn = decode_fn or decode_native_pcm
         self._cache: OrderedDict[tuple[str, int], PcmBufferConfig] = OrderedDict()
+        self._key_by_raw: dict[str, str] = {}
 
     @property
     def sample_rate(self) -> int:
@@ -160,6 +114,7 @@ class SequencerPcmProvider:
 
     def clear(self) -> None:
         self._cache.clear()
+        self._key_by_raw.clear()
 
     def pcm_for_path(self, path: str) -> PcmBufferConfig | None:
         if path is None:
@@ -169,11 +124,15 @@ class SequencerPcmProvider:
         if text == "" or text.isspace():
             return None
 
-        try:
-            key = (canonicalize_pcm_path(text), self._sample_rate)
-        except (OSError, RuntimeError, ValueError):
-            return None
+        key_path = self._key_by_raw.get(text)
+        if key_path is None:
+            try:
+                key_path = canonicalize_pcm_path(text)
+            except (OSError, RuntimeError, ValueError):
+                return None
+            self._key_by_raw[text] = key_path
 
+        key = (key_path, self._sample_rate)
         cached = self._cache.get(key)
         if cached is not None:
             self._cache.move_to_end(key)
