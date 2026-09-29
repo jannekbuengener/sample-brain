@@ -80,8 +80,16 @@ def test_browser_header_composes_context_title_scope_count_and_error():
 
 def test_browser_column_spec_is_shared_between_header_and_rows():
     for role in _SHARED_BROWSER_COLUMN_ROLES:
-        assert QML_SOURCE.count(f"window.{role}") >= 2, (
-            f"Column-Spec {role} wird nicht von Header UND Delegate geteilt"
+        assert QML_SOURCE.count(f"property int {role}:") == 1
+
+    for role in (
+        "effectiveBrowserWaveformWidth",
+        "effectiveBrowserMetaColumnWidth",
+        "effectiveBrowserLengthColumnWidth",
+        "effectiveBrowserAddColumnWidth",
+    ):
+        assert QML_SOURCE.count(f"browserPane.{role}") >= 2, (
+            f"Responsive Column-Spec {role} wird nicht von Header UND Delegate geteilt"
         )
     assert QML_SOURCE.count("anchors.leftMargin: window.densityHorizontalInset") >= 2
     assert QML_SOURCE.count("anchors.rightMargin: window.densityHorizontalInset") >= 2
@@ -118,7 +126,7 @@ def test_browser_density_waveform_and_divider_invariants():
     delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
     assert "height: browser.rowHeight" in delegate
     assert "property int rowHeight: window.densityRowHeight" in QML_SOURCE
-    assert "Layout.preferredWidth: window.browserWaveformWidth" in delegate
+    assert "Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth" in delegate
     assert "height: window.densityDividerHeight" in delegate
     assert "color: window.divider" in delegate
 
