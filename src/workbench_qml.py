@@ -1392,7 +1392,7 @@ ApplicationWindow {
                         text: calmCanvasAddSource.text
                         color: calmCanvasAddSource.hovered ? theme.textPrimary : theme.textSecondary
                         font.pixelSize: calmCanvasAddSource.font.pixelSize
-                        font.bold: true
+                        font.weight: Font.Light
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
