@@ -7,17 +7,18 @@ Minimal session startup sequence for agents working on `jannekbuengener/sample-b
 ## Mandatory Read Order (every session)
 
 1. `AGENTS.md` — root scope, global rules, quality gates
-2. `.cursor/rules/sample-brain-project.mdc` — project guardrails
-3. `.cursor/rules/skill-routing.mdc` — task-to-skill mapping (Priority A)
-4. `docs/TARGET_ARCHITECTURE.md` — current and target architecture, including the locked Screen-1 renderer
-5. `docs/PRODUCT_WORKFLOW_CANON.md` — Workbench-first producing path (Screen 1 → Live Kit → Channel Rack → Arrangement); overrides stale VST-first wording elsewhere
-6. `docs/WORKBENCH_QML_PROOF_SPIKE.md` — Screen-1 QML shell and proof/evidence boundary
-7. `README.md` — product one-liner, quickstart
-8. `knowledge/CURRENT_STATUS.md` — current state, what works
-9. `knowledge/ACTIVE_ROADMAP.md` — completed work, next priorities
-10. `docs/PRODUCT_REQUIREMENTS.md` — product vision, MVP scope
-11. `docs/SYSTEM_REQUIREMENTS.md` — functional/non-functional requirements
-12. `docs/DATA_AND_ARTIFACT_POLICY.md` — committed vs untracked artifacts
+2. `docs/CANON_INDEX.md` — authority/front-door map; classifies active canon, supporting contracts, durable snapshots and historical records
+3. `.cursor/rules/sample-brain-project.mdc` — project guardrails
+4. `.cursor/rules/skill-routing.mdc` — task-to-skill mapping (Priority A)
+5. `docs/TARGET_ARCHITECTURE.md` — current and target architecture, including the locked Screen-1 renderer
+6. `docs/PRODUCT_WORKFLOW_CANON.md` — Workbench-first producing path (Screen 1 → Live Kit → Channel Rack → Arrangement); overrides stale VST-first wording elsewhere
+7. `docs/WORKBENCH_QML_PROOF_SPIKE.md` — Screen-1 QML shell and proof/evidence boundary
+8. `README.md` — product one-liner, quickstart
+9. `knowledge/CURRENT_STATUS.md` — current state, what works
+10. `knowledge/ACTIVE_ROADMAP.md` — completed work, next priorities
+11. `docs/PRODUCT_REQUIREMENTS.md` — product vision, MVP scope
+12. `docs/SYSTEM_REQUIREMENTS.md` — functional/non-functional requirements
+13. `docs/DATA_AND_ARTIFACT_POLICY.md` — committed vs untracked artifacts
 
 For any Screen-1/UI task, the renderer gate above is mandatory before planning or
 implementation: `SCREEN1_RENDERER = LOCK_PYSIDE6_QML`. New visual/product work
@@ -59,15 +60,30 @@ Never read these automatically: `knowledge/SHARED.WORKING.MEMORY.md`, `knowledge
 
 | Priority | Category |
 |----------|----------|
-| 1 (highest) | Product Requirements |
-| 2 | System Requirements |
-| 3 | Target Architecture |
-| 4 | Data and Artifact Policy |
-| 5 | EPIC-specific specs |
-| 6 | ADRs |
-| 7 | Roadmap / Current Status |
-| 8 | README |
-| 9 | Agents docs |
-| 10 | Issue Backlog |
+| 0 (live truth) | GitHub / Repo live execution evidence |
+| 1 | Explicit current canon / supersession map (`docs/CANON_INDEX.md`, `docs/PRODUCT_WORKFLOW_CANON.md`) |
+| 2 | Product Requirements |
+| 3 | System Requirements |
+| 4 | Target Architecture |
+| 5 | Data and Artifact Policy |
+| 6 | EPIC-specific specs |
+| 7 | ADRs |
+| 8 | Roadmap / Current Status |
+| 9 | README |
+| 10 | Agents docs |
+| 11 | Issue Backlog |
 
 See `docs/BOOTLOADER_AND_CONTEXT_STRATEGY.md` for full detail.
+
+
+## Drift-Prevention Closeout
+
+For documentation, canon, governance, status, routing or audit work, run before final packaging:
+
+```bash
+python tools/check_canon_drift.py
+```
+
+This check is deliberately narrow and deterministic. It verifies front-door paths, authority markers and a small set of audit-proven contradictions. It does not replace GitHub-live checks, task-specific tests or review.
+
+If it finds an independent issue outside the current scope, record a scoped follow-up rather than silently broadening the change. Before declaring DONE, re-read live PR/check/issue state.
