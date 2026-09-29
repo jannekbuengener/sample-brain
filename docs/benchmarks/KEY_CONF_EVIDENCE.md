@@ -152,9 +152,9 @@ The threshold separates these groups cleanly on the fixture set (no samples in t
 | P2 | Update `tools/validate_report.py` / `title_pipeline.py` thresholds | Open |
 | P2 | Re-analyze legacy catalogs or document migration note | Open |
 
-## Historical reproduction commands
+## Commands recorded during the historical capture
 
-The following commands reproduce the captured 2026-07-07 environment; do not use the NumPy pin as a current project setup instruction.
+These commands are retained as **capture provenance**. They do **not** reconstruct the complete 2026-07-07 environment from a fresh current checkout because the document does not provide a full historical environment lock/setup procedure. Do not use the NumPy pin as a current project setup instruction.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install "numpy==2.4.6"
