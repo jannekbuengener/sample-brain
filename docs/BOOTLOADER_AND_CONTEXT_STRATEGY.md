@@ -124,18 +124,20 @@ If documents contradict each other, the following priority applies:
 
 | Priority | Document category | Example |
 |----------|------------------|---------|
-| 1 (highest) | Product Requirements | `docs/PRODUCT_REQUIREMENTS.md` |
-| 2 | System Requirements | `docs/SYSTEM_REQUIREMENTS.md` |
-| 3 | Target Architecture | `docs/TARGET_ARCHITECTURE.md` |
-| 4 | Data and Artifact Policy | `docs/DATA_AND_ARTIFACT_POLICY.md` |
-| 5 | EPIC-specific specs | `docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md` |
-| 6 | ADRs | `knowledge/roadmap/adr/ADR-*.md` |
-| 7 | Roadmap / Current Status | `knowledge/ACTIVE_ROADMAP.md`, `knowledge/CURRENT_STATUS.md` |
-| 8 | README | `README.md` |
-| 9 | Agents docs | `agents/AGENTS.md`, `agents/CLAUDE.md`, `agents/CODEX.md`, `agents/GEMINI.md` |
-| 10 | Issue Backlog | `docs/ISSUE_BACKLOG.md` |
+| 0 (live truth) | GitHub / Repo live execution evidence | current code, branch/PR/issue/check state |
+| 1 | Explicit current canon / supersession map | `docs/CANON_INDEX.md`, `docs/PRODUCT_WORKFLOW_CANON.md` |
+| 2 | Product Requirements | `docs/PRODUCT_REQUIREMENTS.md` |
+| 3 | System Requirements | `docs/SYSTEM_REQUIREMENTS.md` |
+| 4 | Target Architecture | `docs/TARGET_ARCHITECTURE.md` |
+| 5 | Data and Artifact Policy | `docs/DATA_AND_ARTIFACT_POLICY.md` |
+| 6 | EPIC-specific specs | `docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md` |
+| 7 | ADRs | `knowledge/roadmap/adr/ADR-*.md` |
+| 8 | Roadmap / Current Status | `knowledge/ACTIVE_ROADMAP.md`, `knowledge/CURRENT_STATUS.md` |
+| 9 | README | `README.md` |
+| 10 | Agents docs | `agents/AGENTS.md`, `agents/CLAUDE.md`, `agents/CODEX.md`, `agents/GEMINI.md` |
+| 11 | Issue Backlog | `docs/ISSUE_BACKLOG.md` |
 
-**Rule:** Requirements, architecture, and policy always take precedence over roadmap, backlog, and agent role descriptions.
+**Rule:** Live execution facts win for current state. For product/document conflicts, an explicit current supersession decision in the Canon Index / Product Workflow Canon wins over the superseded wording it names; otherwise requirements, architecture, and policy take precedence over roadmap, backlog, and agent role descriptions.
 
 ## 8. Role of AGENTS.md
 
