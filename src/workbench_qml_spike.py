@@ -255,11 +255,7 @@ def _module_file(module_name: str) -> Path:
 
 
 def _grab_qml_window_png(window: object, target: Path, *, engine: object | None = None) -> None:
-    """Capture a Qt Quick window via grabWindow / QScreen.grabWindow."""
-    from PySide6.QtGui import QGuiApplication
-    from PySide6.QtQuick import QQuickWindow
-    import shiboken6
-
+    """Capture a Qt Quick window; prefer grabWindow, fall back to GDI client capture."""
     candidates: list[object] = [window]
     if engine is not None:
         try:
@@ -267,37 +263,15 @@ def _grab_qml_window_png(window: object, target: Path, *, engine: object | None 
         except Exception:
             pass
 
-    quick = next((obj for obj in candidates if isinstance(obj, QQuickWindow)), None)
-    if quick is None:
-        # After some import/engine paths Shiboken wraps ApplicationWindow as QWindow.
-        for obj in candidates:
-            try:
-                ptr = shiboken6.getCppPointer(obj)[0]
-                quick = shiboken6.wrapInstance(int(ptr), QQuickWindow)
-                break
-            except Exception:
-                continue
+    for obj in candidates:
+        grab = getattr(obj, "grabWindow", None)
+        if callable(grab):
+            image = grab()
+            if image is not None and not image.isNull() and image.save(str(target)):
+                return
 
-    if quick is not None:
-        image = quick.grabWindow()
-        if not image.isNull() and image.save(str(target)):
-            return
-
-    grab = getattr(window, "grabWindow", None)
-    if callable(grab):
-        image = grab()
-        if image is not None and not image.isNull() and image.save(str(target)):
-            return
-
-    win_id = int(window.winId())
-    screen = window.screen() if hasattr(window, "screen") else None
-    if screen is None:
-        screen = QGuiApplication.primaryScreen()
-    if screen is None:
-        raise RuntimeError("QML capture: no QScreen available for grabWindow.")
-    image = screen.grabWindow(win_id)
-    if image.isNull() or not image.save(str(target)):
-        raise RuntimeError(f"QML screen.grabWindow capture failed for {target.name}")
+    # Software Qt Quick backend makes GDI client captures trustworthy.
+    capture_windows_client_window(int(window.winId()), target)
 
 
 def _is_within(path: Path, root: Path) -> bool:
@@ -507,7 +481,11 @@ def run_qml_visual_acceptance_v2(
     compact_stress_size: tuple[int, int] = (1120, 640),
 ) -> dict[str, object]:
     """Additive #692/#700 v2 capture path. Does not replace v1 acceptance."""
+    import os
     import platform
+
+    # Software scene graph keeps client captures / grabWindow coherent on Windows.
+    os.environ.setdefault("QT_QUICK_BACKEND", "software")
 
     report = validate_qml_renderer_provenance(runtime_root)
     fixture = _modal_harmony_acceptance_fixture_v2(build_screen1_visual_fixture_v2())
