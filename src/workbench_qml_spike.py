@@ -254,7 +254,17 @@ def _module_file(module_name: str) -> Path:
     return Path(location).resolve()
 
 
-def _is_within(path: Path, root: Path) -> bool:
+def _grab_qml_window_png(window: object, target: Path) -> None:
+    """Capture a Qt Quick window via grabWindow (not GDI BitBlt)."""
+    from PySide6.QtQuick import QQuickWindow
+
+    quick = window if isinstance(window, QQuickWindow) else None
+    if quick is None:
+        raise RuntimeError("QML capture requires a QQuickWindow root object.")
+    image = quick.grabWindow()
+    if image.isNull() or not image.save(str(target)):
+        raise RuntimeError(f"QML grabWindow capture failed for {target.name}")
+
     try:
         path.resolve().relative_to(root.resolve())
     except ValueError:
@@ -519,9 +529,7 @@ def run_qml_visual_acceptance_v2(
             target = evidence_dir / f"{state_id}.png"
             # GDI BitBlt can miss Qt Quick scene-graph updates; grab the QML
             # window framebuffer so harmonic-open evidence is distinct.
-            image = window.grabWindow()
-            if image.isNull() or not image.save(str(target)):
-                raise RuntimeError(f"QML grabWindow capture failed for {state_id}")
+            _grab_qml_window_png(window, target)
             check = validate_capture_sanity(
                 target, expected_width=CLIENT_WIDTH, expected_height=CLIENT_HEIGHT
             )
@@ -551,9 +559,7 @@ def run_qml_visual_acceptance_v2(
             _settle_qml_frame(app)
             stress_id = f"compact-stress-{stress_w}x{stress_h}"
             target = evidence_dir / f"{stress_id}.png"
-            image = window.grabWindow()
-            if image.isNull() or not image.save(str(target)):
-                raise RuntimeError(f"QML grabWindow capture failed for {stress_id}")
+            _grab_qml_window_png(window, target)
             check = validate_capture_sanity(
                 target, expected_width=stress_w, expected_height=stress_h
             )
