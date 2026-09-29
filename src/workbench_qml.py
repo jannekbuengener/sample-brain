@@ -1037,10 +1037,13 @@ ApplicationWindow {
     property int densityDividerHeight: 1
     property int densityActionHitTarget: 24
     property int browserWaveformWidth: 180
-    property int browserWaveformMin: 150
+    property int browserWaveformMin: 140
     property int browserMetaColumnWidth: 48
     property int browserLengthColumnWidth: 62
     property int browserAddColumnWidth: 96
+    property int harmonicWaveformWidth: 72
+    property int harmonicRelationColumnWidth: 72
+    property int harmonicAddColumnWidth: 44
     property int browserDelegateCreations: 0
 
     FolderDialog {
@@ -1168,6 +1171,13 @@ ApplicationWindow {
             }
         }
         Rectangle { id: browserPane; objectName: "browserPane"; Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.fillHeight: true; color: "#0a0b0c"; border.color: window.border
+            // #692 owner-visual repair: preserve required scan columns when the
+            // workspace is narrow. Type is optional; sample identity is not.
+            property bool browserNarrowColumns: width < 700
+            property int effectiveBrowserWaveformWidth: browserNarrowColumns ? window.browserWaveformMin : window.browserWaveformWidth
+            property int effectiveBrowserMetaColumnWidth: browserNarrowColumns ? 40 : window.browserMetaColumnWidth
+            property int effectiveBrowserLengthColumnWidth: browserNarrowColumns ? 52 : window.browserLengthColumnWidth
+            property int effectiveBrowserAddColumnWidth: browserNarrowColumns ? 56 : window.browserAddColumnWidth
             ColumnLayout { anchors.fill: parent; anchors.margins: 18; spacing: 10
                 RowLayout { Layout.fillWidth: true
                     ColumnLayout { Layout.fillWidth: true; spacing: 2
@@ -1238,12 +1248,12 @@ ApplicationWindow {
                     }
                 }
                 RowLayout { Layout.fillWidth: true; anchors.leftMargin: window.densityHorizontalInset; anchors.rightMargin: window.densityHorizontalInset; spacing: window.densityRowSpacing
-                    Item { Layout.preferredWidth: window.browserWaveformWidth; Layout.minimumWidth: window.browserWaveformMin }
-                    Label { text: "SAMPLE NAME"; color: window.muted; Layout.fillWidth: true; font.pixelSize: window.textCaption; font.bold: true }
-                    Label { text: "BPM"; color: window.muted; Layout.preferredWidth: window.browserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
-                    Label { text: "KEY"; color: window.muted; Layout.preferredWidth: window.browserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
-                    Label { text: "LENGTH"; color: window.muted; Layout.preferredWidth: window.browserLengthColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
-                    Item { Layout.preferredWidth: window.browserAddColumnWidth }
+                    Item { Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth; Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth }
+                    Label { text: "SAMPLE NAME"; color: window.muted; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; font.pixelSize: window.textCaption; font.bold: true }
+                    Label { text: "BPM"; color: window.muted; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
+                    Label { text: "KEY"; color: window.muted; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
+                    Label { text: "LENGTH"; color: window.muted; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
+                    Item { Layout.preferredWidth: browserPane.effectiveBrowserAddColumnWidth }
                 }
                 ListView { id: browser; objectName: "browserList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: window.densityRowHeight; implicitHeight: window.densityRowHeight * 2
                     Keys.onPressed: function(event) {
@@ -1255,7 +1265,7 @@ ApplicationWindow {
                         Component.onCompleted: window.browserDelegateCreations += 1
                         MouseArea { id: rowSelection; anchors.fill: parent; z: 0; hoverEnabled: true; onClicked: { browser.forceActiveFocus(); window.interaction.selectRow(index) } }
                         RowLayout { anchors.fill: parent; anchors.leftMargin: window.densityHorizontalInset; anchors.rightMargin: window.densityHorizontalInset; anchors.topMargin: window.densityVerticalInset; anchors.bottomMargin: window.densityVerticalInset; spacing: window.densityRowSpacing; z: 1
-                            Item { id: waveformSurface; Layout.preferredWidth: window.browserWaveformWidth; Layout.minimumWidth: window.browserWaveformMin; Layout.preferredHeight: window.densityWaveformHeight; Layout.maximumHeight: window.densityWaveformHeight
+                            Item { id: waveformSurface; Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth; Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth; Layout.preferredHeight: window.densityWaveformHeight; Layout.maximumHeight: window.densityWaveformHeight
                                 Canvas { id: waveformCanvas; anchors.fill: parent; property var envelope: modelData.waveform
                                     onEnvelopeChanged: requestPaint()
                                     onPaint: {
@@ -1284,14 +1294,14 @@ ApplicationWindow {
                                 }
                                 MouseArea { anchors.fill: parent; z: 2; onClicked: { browser.forceActiveFocus(); window.interaction.previewRow(index) } }
                             }
-                            Label { text: modelData.name; color: window.textColor; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; verticalAlignment: Text.AlignVCenter }
-                            Label { text: modelData.type; color: window.muted; font.pixelSize: window.textCaption; elide: Text.ElideRight; Layout.preferredWidth: 72; Layout.maximumWidth: 88; verticalAlignment: Text.AlignVCenter }
-                            Label { text: modelData.bpm; color: window.textColor; Layout.preferredWidth: window.browserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
-                            Label { text: modelData.key; color: window.textColor; Layout.preferredWidth: window.browserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
-                            Label { text: modelData.duration; color: window.textColor; Layout.preferredWidth: window.browserLengthColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
+                            Label { text: modelData.name; color: window.textColor; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; verticalAlignment: Text.AlignVCenter }
+                            Label { visible: !browserPane.browserNarrowColumns; text: modelData.type; color: window.muted; font.pixelSize: window.textCaption; elide: Text.ElideRight; Layout.preferredWidth: 72; Layout.maximumWidth: 88; verticalAlignment: Text.AlignVCenter }
+                            Label { text: modelData.bpm; color: window.textColor; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
+                            Label { text: modelData.key; color: window.textColor; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
+                            Label { text: modelData.duration; color: window.textColor; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
                             Rectangle {
                                 id: addButton
-                                Layout.preferredWidth: window.browserAddColumnWidth
+                                Layout.preferredWidth: browserPane.effectiveBrowserAddColumnWidth
                                 Layout.preferredHeight: Math.min(window.densityActionHitTarget, window.densityRowHeight - 2 * window.densityVerticalInset)
                                 Layout.maximumHeight: window.densityRowHeight - 2 * window.densityVerticalInset
                                 radius: 3
@@ -1300,9 +1310,9 @@ ApplicationWindow {
                                 border.color: addButtonMouse.containsMouse || index === window.screenData.selectedBrowserIndex ? "#5b1d2a" : "transparent"
                                 Label {
                                     anchors.fill: parent
-                                    text: "+ Add to Kit"
+                                    text: browserPane.browserNarrowColumns ? "+ Add" : "+ Add to Kit"
                                     color: addButtonMouse.pressed || addButtonMouse.containsMouse || index === window.screenData.selectedBrowserIndex ? window.accent : window.muted
-                                    horizontalAlignment: Text.AlignRight
+                                    horizontalAlignment: browserPane.browserNarrowColumns ? Text.AlignHCenter : Text.AlignRight
                                     verticalAlignment: Text.AlignVCenter
                                     font.pixelSize: window.textCaption
                                 }
@@ -1381,7 +1391,7 @@ ApplicationWindow {
                             spacing: window.densityRowSpacing
                             z: 1
                             Item {
-                                Layout.preferredWidth: 100
+                                Layout.preferredWidth: window.harmonicWaveformWidth
                                 Layout.preferredHeight: window.densityWaveformHeight
                                 Layout.maximumHeight: window.densityWaveformHeight
                                 Canvas {
@@ -1411,19 +1421,19 @@ ApplicationWindow {
                                 }
                                 MouseArea { anchors.fill: parent; z: 2; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.previewHarmonyRow(index) } }
                             }
-                            Label { text: modelData.name; color: window.textColor; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; verticalAlignment: Text.AlignVCenter }
+                            Label { text: modelData.name; color: window.textColor; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 64; verticalAlignment: Text.AlignVCenter }
                             Label { text: modelData.key; color: window.accent; font.pixelSize: window.textMeta; verticalAlignment: Text.AlignVCenter }
                             Label {
                                 text: modelData.relation + " · " + modelData.fit
                                 color: window.muted
                                 font.pixelSize: window.textCaption
                                 elide: Text.ElideRight
-                                Layout.preferredWidth: 88
-                                Layout.maximumWidth: 110
+                                Layout.preferredWidth: window.harmonicRelationColumnWidth
+                                Layout.maximumWidth: window.harmonicRelationColumnWidth
                                 verticalAlignment: Text.AlignVCenter
                             }
                             Rectangle {
-                                Layout.preferredWidth: 44
+                                Layout.preferredWidth: window.harmonicAddColumnWidth
                                 Layout.preferredHeight: Math.min(window.densityActionHitTarget, window.densityRowHeight - 2 * window.densityVerticalInset)
                                 Layout.maximumHeight: window.densityRowHeight - 2 * window.densityVerticalInset
                                 color: "transparent"
