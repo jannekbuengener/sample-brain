@@ -214,7 +214,7 @@ def test_scope_dispatch_uses_each_existing_loader_once_and_sets_visual_selection
     for node, scope, expected_kind in cases:
         result = composition.dispatch_selection(_intent(node, scope))
         assert result.error is None
-        assert result.selected_index == 0
+        assert result.selected_index == -1
         assert calls[-1][0] == expected_kind
 
     assert calls == [
@@ -286,7 +286,7 @@ def test_empty_scope_load_is_no_scope_and_non_empty_load_does_not_audition(
         _intent(nav.top[1], nav.resolve_scope("scope:all-library"))
     )
     assert [row.display_name for row in loaded.rows] == ["first"]
-    assert loaded.selected_index == 0
+    assert loaded.selected_index == -1
     assert composition.audition_dispatches == []
 
 
@@ -720,7 +720,7 @@ def test_real_library_root_scope_loads_exact_root_rows_and_candidate_pool(
     state = composition.dispatch_selection(intent)
 
     assert state.error is None
-    assert state.selected_index == 0
+    assert state.selected_index == -1
     rels = sorted(
         row.details["relative_path"].replace("\\", "/") for row in state.rows
     )
@@ -791,7 +791,7 @@ def test_real_library_subfolder_scope_loads_exact_subtree_rows_and_candidate_poo
     state = composition.dispatch_selection(_intent(subfolder_node, scope))
 
     assert state.error is None
-    assert state.selected_index == 0
+    assert state.selected_index == -1
     rels = sorted(
         row.details["relative_path"].replace("\\", "/") for row in state.rows
     )

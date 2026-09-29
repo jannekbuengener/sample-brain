@@ -77,7 +77,7 @@ def build_qml_view_model_from_fixture(
         )
         for group in presentation.visible_structure()
     )
-    return Screen1QmlViewModel(
+    view_model = Screen1QmlViewModel(
         state_id=state_id,
         library_labels=fixture.library_labels,
         browser_rows=tuple(production._qml_row(row) for row in fixture.browser_rows),
@@ -89,6 +89,15 @@ def build_qml_view_model_from_fixture(
         on_browser_selected=on_browser_selected,
         library_tree=library_tree,
     )
+    # Historical v1 fixtures describe an already-active Screen-1 workspace.
+    # Under #693 Clean Start, that means materialize Browser + Live Kit.
+    view_model.set_workspace_materialization(
+        has_active_source=True,
+        calm_canvas_visible=False,
+        browser_materialized=True,
+        live_kit_materialized=True,
+    )
+    return view_model
 
 
 def build_qml_view_model_from_fixture_v2(
@@ -148,7 +157,7 @@ def build_qml_view_model_from_fixture_v2(
             production._qml_harmony_row(match) for match in fixture.harmony_results
         )
 
-    return Screen1QmlViewModel(
+    view_model = Screen1QmlViewModel(
         state_id=shell_state_id,
         library_labels=fixture.library_labels,
         browser_rows=browser_rows,
@@ -159,6 +168,13 @@ def build_qml_view_model_from_fixture_v2(
         library_tree=library_tree,
         browser_context=context,
     )
+    view_model.set_workspace_materialization(
+        has_active_source=bool(state.source_selected),
+        calm_canvas_visible=bool(state.layout.calm_canvas_visible),
+        browser_materialized=bool(state.layout.browser_materialized),
+        live_kit_materialized=bool(state.layout.live_kit_materialized),
+    )
+    return view_model
 
 
 def run_qml_proof_spike(*, state_id: str = "screen1-default-3panel") -> int:
@@ -431,6 +447,73 @@ def run_qml_visual_acceptance(*, runtime_root: Path, evidence_dir: Path) -> dict
         return manifest
     finally:
         engines.clear()
+
+
+def apply_screen1_visual_state_v2(
+    view_model: Screen1QmlViewModel,
+    adapter: Screen1QmlInteractionAdapter,
+    fixture,
+    state,
+) -> None:
+    """Project a #700 v2 acceptance state onto the production Screen-1 shell."""
+    live_state = LiveKitState()
+    if state.layout.live_kit_materialized:
+        for group, slots in fixture.assignments.items():
+            for slot, row in slots.items():
+                live_state.assign(group, slot, row)
+    presentation = LiveKitPresentationState(live_state)
+    groups = tuple(
+        QmlLiveKitGroup(
+            name=group.name,
+            slots=tuple(
+                QmlLiveKitSlot(slot.name, slot.assignment) for slot in group.slots
+            ),
+            active=not presentation.is_collapsed(group.name),
+        )
+        for group in presentation.visible_structure()
+    )
+    rows = fixture.browser_rows if state.layout.browser_materialized else ()
+    selected = (
+        -1
+        if state.selected_browser_index is None
+        else int(state.selected_browser_index)
+    )
+    if selected >= len(rows):
+        selected = -1
+    view_model.state_id = (
+        "screen1-harmonic-4panel"
+        if state.layout.harmonic_visible
+        else "screen1-default-3panel"
+    )
+    view_model.library_labels = fixture.library_labels
+    view_model.browser_rows = tuple(production._qml_row(row) for row in rows)
+    view_model.selected_browser_index = selected
+    view_model.harmony_rows = (
+        tuple(production._qml_harmony_row(match) for match in fixture.harmony_results)
+        if state.layout.harmonic_visible
+        else ()
+    )
+    view_model.live_kit_groups = groups
+    view_model.browser_context = (
+        (state.selected_source_label or "No library selected")
+        if state.source_selected
+        else "No library selected"
+    )
+    view_model.browser_error = None
+    view_model.set_workspace_materialization(
+        has_active_source=bool(state.source_selected),
+        calm_canvas_visible=bool(state.layout.calm_canvas_visible),
+        browser_materialized=bool(state.layout.browser_materialized),
+        live_kit_materialized=bool(state.layout.live_kit_materialized),
+    )
+    adapter.harmonic_match_open = bool(state.layout.harmonic_visible)
+    if not state.preview_active and adapter.preview_active:
+        adapter.stop_preview()
+    if state.layout.harmonic_visible:
+        view_model.harmony_status = "Harmonic Match"
+    else:
+        view_model.harmony_anchor = ""
+        view_model.harmony_status = "Harmonic Match ist ausgeschaltet."
 
 
 def _modal_harmony_acceptance_fixture_v2(
@@ -709,6 +792,7 @@ __all__ = [
     "VirtualRowWindow",
     "build_qml_view_model_from_fixture",
     "build_qml_view_model_from_fixture_v2",
+    "apply_screen1_visual_state_v2",
     "qml_runtime_available",
     "run_qml_proof_spike",
     "run_qml_virtualization_probe",

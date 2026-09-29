@@ -91,13 +91,13 @@ Scan  →  Analyze  →  Autotype  →  Export
 
 All four steps are implemented and stable on `main`.
 
-### 3.2 Target Pipeline (EPIC 2 — Semantic Search Foundation)
+### 3.2 Semantic Search Pipeline (EPIC 2 — implemented foundation)
 
 ```
 Scan  →  Analyze  →  Embed  →  Index  →  Search  →  Export
 ```
 
-Embed, Index, and Search are planned. Export will be extended with result metadata.
+Embed, Index, and Search are implemented on `main` behind their guarded/optional backend contracts. NumPy remains the default search backend; sqlite-vec is opt-in. The diagram is the current semantic-search architecture flow, not a future implementation claim.
 
 ### 3.3 Long-term Pipeline (EPIC 3-6)
 
@@ -116,7 +116,7 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 | **Autotype** | Classify by instrument type using rules + optional kNN | `features` table | `features.pred_type` updated | SQLite (`features.pred_type`) | None | kNN degrades gracefully if embeddings / seeds unavailable | **Current** |
 | **Embed** | Generate per-sample embedding vectors via selected backend | `samples` table (audio file path) | Rows in `sample_embeddings` table | SQLite (`sample_embeddings`) + model registry | HF cache (`~/.cache/huggingface/`); optional external DB via `SAMPLE_BRAIN_DB_PATH` | Backend unavailable → clear error; per-file failure skip + report | **Current** — M3 smoke proven |
 | **Index** | Build local NumPy vector index from stored embeddings | `sample_embeddings` table | NumPy `.npz` index file | SQLite is source of truth; index is rebuildable cache | `data/indexes/*.npz` (or external path via `--index-path`) | Not enough embeddings → clear message | **Current** — NumPy default; sqlite-vec opt-in |
-| **Search** | Resolve text queries against the vector index | Text query + index | Ranked sample IDs + scores | SQLite (metadata enrichment) | None (index read-only) | No index → clear error; backend unavailable → clear error | **Current** — M4 NumPy E2E smoke proven |
+| **Search** | Resolve text or local-audio queries against the selected search backend | Text query or `--query-audio` + model/backend selection | Ranked sample IDs + scores | SQLite (metadata enrichment); selected search backend is rebuildable/query-only state | NumPy `.npz` only when the NumPy backend uses a persisted index; sqlite-vec uses the rebuildable DB cache | Missing query/model/index/cache → clear error; unavailable embedding/search backend → clear error | **Current** — text + audio query modes; NumPy default, sqlite-vec opt-in |
 | **Export** | Write DAW-compatible metadata tags | `features` table + `samples` table | FL Studio Browser tag file | SQLite (data source) | FL Studio tag file at user-specified location | Missing features → skip sample; continue with remaining | **Current** |
 | **Recommend** | Suggest compatible samples based on context (future) | Sample/project context + features + embeddings | Ranked recommendation list | SQLite (source data) | None | N/A — future | **Future** |
 
@@ -146,7 +146,7 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 - **Must not do:** Import ML backends, contain pipeline orchestration logic
 - **Inputs:** SQL queries via SQLAlchemy
 - **Outputs:** Database file at `data/catalog.db` (untracked)
-- **Tables:** `samples`, `features`, `embedding_models`, `sample_embeddings` (future: `embedding_jobs`, `vector_indexes`, `search_log`)
+- **Tables:** core metadata includes `samples`, `features`, `embedding_models`, `sample_embeddings`; rebuildable sqlite-vec cache state uses the implemented `vector_index_state` contract. Possible future operational tables such as `embedding_jobs` / `search_log` are not current schema claims.
 
 ### 4.4 Scanner (`src/scan.py`)
 
@@ -199,11 +199,11 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 
 ### 4.10 Search Layer (`src/search.py`, EPIC 2)
 
-- **Responsibility:** Accept text query, embed via selected backend, retrieve from NumPy index, return ranked hits
-- **Must not do:** Train indexes, generate embeddings for storage
-- **Inputs:** Text query string + top-k + optional index path
-- **Outputs:** Ranked list of `(sample_id, score)` hits
-- **Status:** NumPy E2E smoke proven (M4). Audio-to-audio search not yet implemented.
+- **Responsibility:** Accept exactly one query mode (text or local audio), embed via the selected embedding backend, dispatch retrieval through the selected search-backend adapter (`numpy` default or opt-in `sqlite-vec`), enrich metadata, and return ranked hits
+- **Must not do:** Train indexes, generate embeddings for storage, or treat a rebuildable search cache as source of truth
+- **Inputs:** Text query string **or** `--query-audio` path + `model_id` + top-k + embedding backend + search backend; optional NumPy `index_path`; optional filters/rerank metadata
+- **Outputs:** Ranked list of `(sample_id, score)` hits enriched from SQLite
+- **Status:** Text and audio query modes are implemented. NumPy is the default search backend; sqlite-vec is opt-in. Production-quality relevance claims remain bounded by the current evaluation evidence.
 
 ### 4.11 Export Layer (`src/export_fl.py`)
 
@@ -268,8 +268,10 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
                             │
                             ▼
  ┌──────────────────────────────────────────────────────┐
- │  6. Search: embed query via CLAP, retrieve from      │
- │     NumPy index, return ranked results                │
+ │  6. Search: embed text OR local-audio query via the  │
+ │     selected embedding backend; dispatch retrieval    │
+ │     to NumPy (default) or sqlite-vec (opt-in);        │
+ │     return ranked, SQLite-enriched results            │
  └──────────────────────────┬───────────────────────────┘
                             │
                             ▼
@@ -386,22 +388,27 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 
 ### 7.4 Search — Query and Retrieval
 
-**Status on `main`:** NumPy text search E2E smoke proven (M4). Audio-to-audio search not implemented.
+**Status on `main`:** Text and audio query modes are implemented through the current search contract; quality/readiness claims remain bounded by the repository's controlled evaluation evidence.
 
 **Current flow:**
 ```
-Text query  ──►  Embed via CLAP  ──►  NumPy index search  ──►  Ranked results
+Text query ─┐
+            ├─► selected embedding backend ─► normalized query vector ─► selected search backend ─► ranked + SQLite-enriched results
+Audio file ─┘                                                    ├─ NumPy (default; in-memory or optional `.npz`)
+                                                                 └─ sqlite-vec (opt-in rebuildable cache)
 ```
 
-**Hybrid search (EPIC 3, future):** Vector similarity combined with BPM, key, type, and duration filters.
+The public search contract accepts exactly one of text or `--query-audio`. `--index-path` belongs only to the NumPy search-backend path; sqlite-vec uses its rebuildable SQLite cache.
+
+**Hybrid reranking / filters:** Structured BPM/key/type/filter signals are already available on the current search path where explicitly requested; they do not change SQLite's source-of-truth role.
 
 ### 7.5 CLI Subcommands for EPIC 2
 
 | Subcommand | Status on `main` | Behaviour |
 |---|---|---|
 | `embed` | ✅ Functional | `--backend {noop,clap}`, batch worker with DB persistence. Use `SAMPLE_BRAIN_DB_PATH` for external DB during validation. |
-| `index_build` | ✅ Functional | Builds NumPy index from SQLite embeddings; `--save` / `--index-path` for `.npz` persistence. |
-| `search` | ✅ Functional | Text query → CLAP embed → NumPy search. M4 E2E smoke proven. |
+| `index_build` | ✅ Functional | Builds the default NumPy representation from SQLite embeddings and can persist `.npz` via `--save` / `--index-path`; `--search-backend sqlite-vec` rebuilds the opt-in sqlite-vec cache. |
+| `search` | ✅ Functional | Accepts a text query **or** `--query-audio`, embeds through the selected embedding backend, and retrieves through `--search-backend {numpy,sqlite-vec}`. NumPy remains default; sqlite-vec is opt-in. |
 
 ---
 
