@@ -125,16 +125,24 @@ class SequencerPcmProvider:
             return None
 
         key_path = self._key_by_raw.get(text)
-        if key_path is None:
-            try:
-                key_path = canonicalize_pcm_path(text)
-            except (OSError, RuntimeError, ValueError):
-                return None
-            self._key_by_raw[text] = key_path
+        if key_path is not None:
+            key = (key_path, self._sample_rate)
+            cached = self._cache.get(key)
+            if cached is not None:
+                self._cache.move_to_end(key)
+                return cached
+            # Memo may be stale after eviction or file replacement — refresh.
+            self._key_by_raw.pop(text, None)
+
+        try:
+            key_path = canonicalize_pcm_path(text)
+        except (OSError, RuntimeError, ValueError):
+            return None
 
         key = (key_path, self._sample_rate)
         cached = self._cache.get(key)
         if cached is not None:
+            self._key_by_raw[text] = key_path
             self._cache.move_to_end(key)
             return cached
 
@@ -152,6 +160,7 @@ class SequencerPcmProvider:
         if config is None:
             return None
 
+        self._key_by_raw[text] = key_path
         self._cache[key] = config
         self._cache.move_to_end(key)
         while len(self._cache) > self._max_entries:
