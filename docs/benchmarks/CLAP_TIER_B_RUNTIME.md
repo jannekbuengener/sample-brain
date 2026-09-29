@@ -2,13 +2,15 @@
 
 Optional CLAP search-quality evaluation remains local/opt-in. #423 makes the Python runtime and model snapshot reproducible without turning model download into a Core or CI requirement.
 
+**Runtime contract note:** The package matrix below is the current supported install identity. Historical benchmark result documents keep the package versions recorded at their own capture time; changing this runtime matrix does not rewrite old measured evidence.
+
 ## Pinned runtime identity
 
 | Field | Value |
 |---|---|
 | Python | `3.12` |
-| PyTorch | `2.13.0` |
-| Transformers | `5.16.1` |
+| PyTorch | `2.14.0` |
+| Transformers | `5.17.0` |
 | Model | `laion/clap-htsat-unfused` |
 | Model revision | `79b58ed25fc00386262a2bea4b19fd21dc4310a0` |
 | Serialization | `safetensors` required (`use_safetensors=True`) |
