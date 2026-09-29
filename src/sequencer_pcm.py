@@ -130,10 +130,10 @@ class SequencerPcmProvider:
                 sample_rate=self._sample_rate,
                 start_ms=0,
             )
+            config = self._validated_buffer(pcm_array, channels)
         except Exception:
             return None
 
-        config = self._validated_buffer(pcm_array, channels)
         if config is None:
             return None
 
@@ -158,7 +158,10 @@ class SequencerPcmProvider:
         if channel_count not in (1, 2):
             return None
 
-        samples = np.asarray(pcm_array, dtype=np.float32)
+        try:
+            samples = np.asarray(pcm_array, dtype=np.float32)
+        except (TypeError, ValueError):
+            return None
         if samples.size == 0:
             return None
         if not np.isfinite(samples).all():

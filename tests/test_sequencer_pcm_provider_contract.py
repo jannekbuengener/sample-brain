@@ -402,6 +402,16 @@ def test_provider_unexpected_channel_count_fails_soft(tmp_path: Path):
     assert provider.pcm_for_path(str(tmp_path / "wide.wav")) is None
 
 
+def test_provider_malformed_decoder_buffer_fails_soft(tmp_path: Path):
+    provider_cls = _require_symbol(_provider_module_or_fail(), "SequencerPcmProvider")
+
+    def ragged_decode(path, *, sample_rate: int, start_ms: int = 0):
+        return [object(), object()], 1
+
+    provider = provider_cls(sample_rate=ENGINE_SR, decode_fn=ragged_decode)
+    assert provider.pcm_for_path(str(tmp_path / "ragged.wav")) is None
+
+
 def test_provider_failed_load_does_not_poison_later_success(tmp_path: Path):
     provider_cls = _require_symbol(_provider_module_or_fail(), "SequencerPcmProvider")
     target = tmp_path / "late.wav"
