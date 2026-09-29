@@ -3,7 +3,7 @@
 **Issue:** [#232](https://github.com/jannekbuengener/sample-brain/issues/232)
 **Parent:** [#227](https://github.com/jannekbuengener/sample-brain/issues/227)
 **Status on issue tracker:** `CLOSED` / documented on `main`
-**Schema version:** `1.0.0`
+**Schema version:** `1.2.0`
 **Document type:** `sample_brain.track_map`
 
 This document is the canonical, machine-readable Track Map v1 contract for sample-brain. The Track Map is the portable, neutral technical description of a single complete track. It is the shared input for later contracts:
@@ -52,7 +52,7 @@ A Track Map is **track-level only**: one audio file → one Track Map. It is not
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `document_type` | string | yes | Must be `"sample_brain.track_map"`. Identifies the document kind. |
-| `schema_version` | string | yes | SemVer string matching MAJOR.MINOR.PATCH. This canonical contract revision is `"1.0.0"`; compatible v1 documents may use `1.x.x`. |
+| `schema_version` | string | yes | SemVer string matching MAJOR.MINOR.PATCH. This canonical contract revision is `"1.2.0"`; compatible v1 documents may use `1.x.x`. |
 | `source` | object | yes | Source identity (Section 4). |
 | `timebase` | object | yes | Timebase reference (Section 5). |
 | `analysis` | object | yes | Analysis status + musical/audio/timeline blocks (Section 6). |
@@ -64,7 +64,10 @@ A Track Map is **track-level only**: one audio file → one Track Map. It is not
 - **MAJOR** increments when a previously required field is removed or renamed in a breaking way.
 - **MINOR** increments when new optional fields or additive optional structures are introduced, provided existing v1 fields and enums retain their meaning.
 - **PATCH** increments for non-breaking documentation or example corrections.
-- The current, frozen contract revision documented here is `1.0.0`; this document does not raise that version.
+- The current canonical contract revision documented here is `1.2.0` (compatible `1.x`).
+- Revision history inside the `1.x` line:
+  - `1.1.0` (#212): optional Dur/Moll `key.mode`, `key.mode_evidence`, and root-only `partial` + `MODE_UNRESOLVED`; analyze provenance may carry `key_analysis_contract_version`.
+  - `1.2.0` (#683): optional `key.root_evidence`; document `schema_version` describes the available structure for both key-analysis contracts `1` and `2` (the selected analyzer is recorded in provenance, not by inventing a separate Track Map major version).
 - Readers must reject any Track Map whose `schema_version` major number is unsupported. v1 consumers accept compatible `1.x.x` documents unless another explicitly defined incompatibility applies.
 - The status enum values (`ok`, `partial`, `not_run`, `failed`, `no_result`) are fixed for v1. New status values require a `MAJOR` increment.
 - `analysis.status` accepts only `ok`, `partial`, `failed` in v1.
@@ -155,20 +158,28 @@ The `analysis` block holds the overall status plus musical, audio-summary, and t
 |-------|------|----------|-------------|
 | `key.status` | string | yes | Individual status (Section 10). |
 | `key.root` | string | conditional | Required when status is `ok` or `partial`. Must be one of `C`, `C#`, `D`, `D#`, `E`, `F`, `F#`, `G`, `G#`, `A`, `A#`, `B`. |
-| `key.key_conf` | number | conditional | Confidence as `chroma_peak_prominence` — the normalized chroma peak prominence (ratio, ~0-1). Not a calibrated probability. |
-| `key.key_conf_kind` | string | conditional | Must be `"chroma_peak_prominence"` when `key_conf` is present. Documents the meaning of `key_conf`. |
+| `key.mode` | string | conditional | Optional since `1.1.0`. When present must be `"maj"` or `"min"`. Absent when mode is unresolved while a root is still usable. |
+| `key.mode_evidence` | object | conditional | Optional since `1.1.0`. Deterministic third-contrast evidence explaining a committed or abstained mode. Not a calibrated probability. |
+| `key.root_evidence` | object | conditional | Optional since `1.2.0`. Provenance-bearing root evidence (e.g. V2 `joint_24_profile_pearson`). Absent on typical V1 key-contract runs. |
+| `key.key_conf` | number | conditional | V1 key-contract confidence as `chroma_peak_prominence` — the normalized chroma peak prominence (ratio, ~0-1). Not a calibrated probability. Must be omitted for key-analysis contract `2`. |
+| `key.key_conf_kind` | string | conditional | Must be `"chroma_peak_prominence"` when `key_conf` is present. Must be omitted when `key_conf` is absent (including all contract-`2` runs). |
+| `key.reason_code` | string | conditional | Required when status is `partial` or `no_result` for a key limitation. Root-only mode abstention uses `MODE_UNRESOLVED`. Undetectable key uses `KEY_UNDETECTABLE`. |
 | `key.source_ref` | string | conditional | Key into `provenance.components`. Required when a key value is present. |
 
 **Rules:**
 
-- When `key.status` is `ok` or `partial`, `key.root` must be present. `partial` means a usable root exists while another part of the key result is limited.
-- When no meaningful root can be determined, `key.status` must be `no_result` with `reason_code` and `source_ref`; `ok` or `partial` without `key.root` is invalid.
+- When `key.status` is `ok` or `partial`, `key.root` must be present. `partial` means a usable root exists while another part of the key result is limited (for example unresolved mode).
+- When mode is unresolved but a root is usable, `key.status` must be `partial` with `reason_code = MODE_UNRESOLVED`. Do not invent major/minor.
+- When no meaningful root can be determined, `key.status` must be `no_result` with `reason_code` (typically `KEY_UNDETECTABLE`) and `source_ref`; `ok` or `partial` without `key.root` is invalid.
 - The canonical v1 root vocabulary is `C`, `C#`, `D`, `D#`, `E`, `F`, `F#`, `G`, `G#`, `A`, `A#`, `B`, matching `src/analyze.py::SEMITONES`.
 - Enharmonic inputs such as `Db`, `Eb`, `Gb`, `Ab`, or `Bb` must be normalized to the corresponding canonical sharp spelling before serialization.
-- `key.root` alone is valid — the public v1 contract contains only Root, `key_conf`, and `key_conf_kind`.
-- `key.mode` is not part of v1. A later mode would be an additive future contract decision.
-- `key_conf` is expressed as `chroma_peak_prominence` and explicitly **not** as a generic probability. See [`docs/benchmarks/KEY_CONF_EVIDENCE.md`](benchmarks/KEY_CONF_EVIDENCE.md) and issue [#72](https://github.com/jannekbuengener/sample-brain/issues/72).
-- The `features.key` and `features.key_conf` columns in the Library catalog map to `key.root` and `key.key_conf` respectively.
+- `key.root` alone remains valid (root-only / mode abstention).
+- `key.mode` and `key.mode_evidence` are part of the compatible `1.x` contract since `1.1.0` (see [`docs/KEY_MODE_ANALYSIS_V1.md`](KEY_MODE_ANALYSIS_V1.md)).
+- `key.root_evidence` is an additive optional `1.2.0` field. Pearson / joint raw scores inside evidence are **not** confidence and must never be published as `key_conf`.
+- For key-analysis contract `1`, `key_conf` is expressed as `chroma_peak_prominence` and explicitly **not** as a generic probability. See [`docs/benchmarks/KEY_CONF_EVIDENCE.md`](benchmarks/KEY_CONF_EVIDENCE.md) and issue [#72](https://github.com/jannekbuengener/sample-brain/issues/72).
+- For key-analysis contract `2`, omit `key_conf` and `key_conf_kind` entirely.
+- The selected key analyzer is recorded in `provenance.components.analyze.configuration.key_analysis_contract_version` (`1` or `2`). Document `schema_version` stays on the Track Map structure line (`1.2.0`) for both.
+- The `features.key` and `features.key_conf` columns in the Library catalog map to `key.root` and `key.key_conf` respectively for catalog rows; Track Map context analysis does not write the catalog.
 
 ### 6.4 Loudness
 
@@ -303,7 +314,7 @@ The Track Map uses a **centralized** `provenance.components` registry. Each anal
 | `model.name` | string | conditional | Model identifier, if a model was used. Absent for algorithmic components. |
 | `model.version` | string | conditional | Model version, if a model was used. Either `model.version` or `model.revision` may be present. |
 | `model.revision` | string | conditional | Model revision / hash, if a model was used. Either `model.version` or `model.revision` may be present. |
-| `configuration` | object | yes | Relevant configuration values that affected the result. Must not contain secrets. If no special parameters are needed, use `{}`. The `analyze` component additionally includes `parameter_fingerprint` (SHA-256 of the effective analyzer parameters and analysis identity) for cache reproducibility and auditability — see `docs/TRACK_ANALYSIS_CACHE_V1.md`. |
+| `configuration` | object | yes | Relevant configuration values that affected the result. Must not contain secrets. If no special parameters are needed, use `{}`. The `analyze` component additionally includes: `bpm_normalization`, `working_audio`, `canonical_sample_rate_hz`, `canonical_channels`, **`key_analysis_contract_version`** (`1` or `2`, selecting the key analyzer), and `parameter_fingerprint` (SHA-256 of the effective analyzer parameters and analysis identity, including that key contract) for cache reproducibility and auditability — see `docs/TRACK_ANALYSIS_CACHE_V1.md`. |
 
 ### Rules
 
@@ -349,7 +360,7 @@ Each analysis sub-component and each timeline block carries one of:
 
 ### Status field details
 
-- `reason_code` (string): A stable machine-readable code explaining why the component was `not_run` or produced `no_result` (e.g. `BEAT_GRID_NOT_REQUESTED`, `BACKEND_UNAVAILABLE`, `MODEL_UNAVAILABLE`, `COMPONENT_UNAVAILABLE`, `BPM_UNDETECTABLE`).
+- `reason_code` (string): A stable machine-readable code explaining why the component was `not_run`, `no_result`, or (for key) `partial` mode abstention (e.g. `BEAT_GRID_NOT_REQUESTED`, `BACKEND_UNAVAILABLE`, `MODEL_UNAVAILABLE`, `COMPONENT_UNAVAILABLE`, `BPM_UNDETECTABLE`, `KEY_UNDETECTABLE`, `MODE_UNRESOLVED`).
 - An unrequested optional component uses `not_run` with a `*_NOT_REQUESTED` reason and does not degrade `analysis.status`.
 - A requested component that is unavailable or cannot start also uses `not_run`, with an unavailable reason code. It contributes `partial` when the analysis purpose remains usable and `failed` when the purpose cannot be meaningfully fulfilled.
 - `error` (object): Present when `status` is `failed`.
@@ -391,7 +402,7 @@ For `ok` or `partial`, the component's result-specific required fields are defin
 | Field (dotted path) | Required | Type | Notes |
 |---|---|---|---|
 | `document_type` | yes | string | `"sample_brain.track_map"` |
-| `schema_version` | yes | string | Compatible v1 SemVer (`1.x.x`); current contract revision is `"1.0.0"`. The embedded `analyze` component result block uses its own `schema_version` `"1.1.0"` (issue #212: adds optional Dur/Moll `key` mode fields). |
+| `schema_version` | yes | string | Compatible v1 SemVer (`1.x.x`); current contract revision is `"1.2.0"`. |
 | `source.original.file_name` | yes | string | Base name |
 | `source.original.relative_uri` | no | string | Relative to Track Map file |
 | `source.original.size_bytes` | no | integer | File size |
@@ -414,9 +425,15 @@ For `ok` or `partial`, the component's result-specific required fields are defin
 | `analysis.musical.bpm.source_ref` | conditional | string | Key into `provenance.components` |
 | `analysis.musical.key.status` | yes | string | Individual status |
 | `analysis.musical.key.root` | conditional | string | Required for key status `ok`/`partial`; canonical sharp-based v1 vocabulary only |
-| `analysis.musical.key.key_conf_kind` | conditional | string | Must be `chroma_peak_prominence` |
-| `analysis.musical.key.key_conf` | conditional | number | Normalized prominence (0-1) |
+| `analysis.musical.key.mode` | conditional | string | Optional since `1.1.0`; `"maj"` or `"min"` when committed |
+| `analysis.musical.key.mode_evidence` | conditional | object | Optional since `1.1.0`; third-contrast evidence |
+| `analysis.musical.key.root_evidence` | conditional | object | Optional since `1.2.0`; root provenance (e.g. V2 joint evidence) |
+| `analysis.musical.key.reason_code` | conditional | string | e.g. `MODE_UNRESOLVED`, `KEY_UNDETECTABLE` |
+| `analysis.musical.key.key_conf_kind` | conditional | string | Must be `chroma_peak_prominence` when `key_conf` present; omit for contract `2` |
+| `analysis.musical.key.key_conf` | conditional | number | Normalized prominence (0-1); omit for contract `2` |
 | `analysis.musical.key.source_ref` | conditional | string | Key into `provenance.components` |
+| `provenance.components.analyze.configuration.key_analysis_contract_version` | yes | integer | `1` (default V1 key analyzer) or `2` (explicit V2); unknown values fail closed before analysis |
+| `provenance.components.analyze.configuration.parameter_fingerprint` | yes | string | SHA-256 analysis identity including the selected key contract |
 | `analysis.audio_summary.loudness.status` | yes | string | Individual status |
 | `analysis.audio_summary.loudness.value` | conditional | number | dBFS |
 | `analysis.audio_summary.loudness.unit` | conditional | string | `"dBFS"` |
@@ -472,12 +489,12 @@ For `ok` or `partial`, the component's result-specific required fields are defin
 
 ## 12. Complete JSON Example
 
-This is a valid Track Map v1 example. The #233 one-shot runtime emits the base-analysis subset for a local WAV/FLAC file without catalog access; unrequested timeline blocks are `not_run` with `*_NOT_REQUESTED` reasons. Key has no mode and BPM has no confidence. The overall `analysis.status` is `ok` when every requested base component succeeds.
+This is a valid Track Map v1 example. The #233 one-shot runtime emits the base-analysis subset for a local WAV/FLAC file without catalog access; unrequested timeline blocks are `not_run` with `*_NOT_REQUESTED` reasons. The overall `analysis.status` is `ok` when every requested base component succeeds. Document `schema_version` is `1.2.0`; the example shows a default key-analysis contract `1` run.
 
 ```json
 {
   "document_type": "sample_brain.track_map",
-  "schema_version": "1.0.0",
+  "schema_version": "1.2.0",
   "source": {
     "original": {
       "file_name": "my_track.wav",
@@ -492,7 +509,7 @@ This is a valid Track Map v1 example. The #233 one-shot runtime emits the base-a
         "sample_rate_hz": 44100,
         "channels": 2
       },
-      "source_ref": "scan"
+      "source_ref": "context_source"
     }
   },
   "timebase": {
@@ -519,8 +536,13 @@ This is a valid Track Map v1 example. The #233 one-shot runtime emits the base-a
       "key": {
         "status": "ok",
         "root": "C",
+        "mode": "maj",
         "key_conf": 0.82,
         "key_conf_kind": "chroma_peak_prominence",
+        "mode_evidence": {
+          "kind": "third_contrast",
+          "mode": "maj"
+        },
         "source_ref": "analyze"
       }
     },
@@ -543,11 +565,11 @@ This is a valid Track Map v1 example. The #233 one-shot runtime emits the base-a
     "timeline": {
       "beats": {
         "status": "not_run",
-        "reason_code": "BEAT_GRID_NOT_REQUESTED"
+        "reason_code": "BEATS_NOT_REQUESTED"
       },
       "downbeats": {
         "status": "not_run",
-        "reason_code": "BEAT_GRID_NOT_REQUESTED"
+        "reason_code": "DOWNBEATS_NOT_REQUESTED"
       },
       "energy": {
         "status": "not_run",
@@ -555,14 +577,14 @@ This is a valid Track Map v1 example. The #233 one-shot runtime emits the base-a
       },
       "sections": {
         "status": "not_run",
-        "reason_code": "STRUCTURE_NOT_REQUESTED"
+        "reason_code": "SECTIONS_NOT_REQUESTED"
       }
     }
   },
   "provenance": {
     "components": {
-      "scan": {
-        "component": "scan",
+      "context_source": {
+        "component": "context_source",
         "sample_brain_version": "0.9.0",
         "configuration": {
           "hash_algorithm": "sha256"
@@ -576,7 +598,12 @@ This is a valid Track Map v1 example. The #233 one-shot runtime emits the base-a
           "version": "0.11.0"
         },
         "configuration": {
-          "chroma_algorithm": "cqt"
+          "bpm_normalization": "none",
+          "working_audio": "temporary_canonical_wav",
+          "canonical_sample_rate_hz": 44100,
+          "canonical_channels": 1,
+          "key_analysis_contract_version": 1,
+          "parameter_fingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         }
       }
     }
@@ -593,7 +620,7 @@ This is a valid Track Map v1 example. The #233 one-shot runtime emits the base-a
 
 | #232 Acceptance criterion | This document |
 |---------------------------|---------------|
-| Canonical repo documentation names `schema_version: 1.0.0` and `document_type` | Section 3 |
+| Canonical repo documentation names `schema_version` and `document_type` | Section 3 (`1.2.0` current; compatible `1.x`) |
 | Portable JSON example and field description are present | Sections 4–12, 13 |
 | Required, optional, and status-based fields are clearly explained | Sections 4–12, 11 |
 | No private absolute paths are part of the contract | Sections 2, 4, 8 |
@@ -659,9 +686,10 @@ The Track Map deliberately excludes the following. They have or will have their 
 | Asset generation (#250-#256) | Not implemented | Asset Manifest (separate) |
 | Performance Pack (#257-#264) | Not implemented | Pack manifest (separate) |
 
-Current `main` ships the one-shot Track Map v1 runtime (#233, `src/context_analyze.py`),
-which emits a base Track Map `1.0.0` (BPM, key, loudness, brightness) without catalog
-access, plus the BeatGrid (#236) and StructureV1 (#265) backends as separate
-status-based components on the shared #234 timebase. A single orchestrator that merges
-all timeline components into one Track Map document is a documented future enhancement
-and is outside the v1 acceptance scope of #227.
+Current `main` ships the one-shot Track Map runtime (#233 / #683, `src/context_analyze.py`),
+which emits a base Track Map `1.2.0` (BPM, key with optional mode / mode_evidence / root_evidence,
+loudness, brightness) without catalog access. Default key analysis remains contract `1`; contract `2`
+is an explicit Python API opt-in that threads the same version into provenance and the Track Analysis
+Cache identity. BeatGrid (#236) and StructureV1 (#265) remain separate status-based components on the
+shared #234 timebase. A single orchestrator that merges all timeline components into one Track Map
+document is a documented future enhancement and is outside the v1 acceptance scope of #227.
