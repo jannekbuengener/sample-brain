@@ -77,6 +77,7 @@ def test_elastic_bridge_inactive_on_clean_start(tmp_path: Path):
     assert dict(bridge.current_ratios()) == before
 
 
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 def test_elastic_bridge_reveal_does_not_persist_ratios(tmp_path: Path):
     from src.workbench_layout_solver import load_layout_preferences
 
