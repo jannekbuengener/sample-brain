@@ -98,3 +98,12 @@ python -m pytest -q            # Core tests
 5. Nächster sicherer Schritt (next safe step)
 6. Evidence: commands/files/PRs/checks reviewed
 7. Finalstatus: PASS / HOLD / BLOCKED_MISSING_GO / READY_FOR_IMPLEMENTATION / READY_FOR_PR / READY_FOR_MERGE / DONE_MERGED_SYNCED / CI_GREEN / DEGRADED_CI_ACTIVE / BILLING_LOCK_DOCS_ONLY_WAIVER / LOCAL_VALIDATION_REQUIRED / RUNNER_FALLBACK_REQUIRED / HOLD_BRANCH_PROTECTION / HOLD_SECURITY_CHECK_UNAVAILABLE / HOLD_WORKFLOW_SCOPE / HOLD_ARTIFACT_OR_SECRET_RISK
+
+## Private MCP / connector boundary
+
+Private ChatGPT/operator MCP is not a worker requirement and must not be propagated into worker prompts.
+
+- no worker prompt may require `mcp_preflight`, a private MCP endpoint/token, or connector credentials;
+- no private connector payload/data is forwarded to workers;
+- workers receive only sanitized facts/evidence needed for the scoped task;
+- missing private MCP access is never a worker blocker.
