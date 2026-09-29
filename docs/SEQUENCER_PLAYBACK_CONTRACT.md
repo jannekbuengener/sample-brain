@@ -29,7 +29,7 @@ Pattern playhead / upcoming triggers
 | Voice schedule | `NativeAudioEngine` (`src/native_audio.py`) | Route through `WorkbenchPreviewPlayer` |
 | Screen-1 audition | `TransportAwarePreview` | Own polyphonic pattern voices |
 | Offline decode | `native_pcm_decode.decode_native_pcm` | Run inside the audio callback |
-| PCM cache | `SequencerPcmProvider` (`src/sequencer_pcm.py`) | Decode inside audio callback; commit audio |
+| PCM cache | `SequencerPcmProvider` / `PathPcmCache` (`src/sequencer_pcm.py`) | Decode inside audio callback; commit audio |
 
 ## Cache policy (v1)
 

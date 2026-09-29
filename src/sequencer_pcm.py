@@ -1,7 +1,9 @@
 """Production PCM cache/decode provider for sequencer ``pcm_for_path``.
 
-Owns offline decode + bounded LRU cache keyed by ``(path, sample_rate)``.
+Owns offline decode + bounded LRU cache keyed by ``(canonical path, sample_rate)``.
 Does not schedule voices and does not own Screen-1 audition playback.
+
+``PathPcmCache`` is the plan-facing alias for ``SequencerPcmProvider``.
 """
 
 from __future__ import annotations
@@ -15,7 +17,12 @@ import numpy as np
 from .native_audio import PcmBufferConfig
 from .native_pcm_decode import decode_native_pcm
 
-__all__ = ["SequencerPcmProvider", "canonicalize_pcm_path"]
+__all__ = [
+    "PathPcmCache",
+    "SequencerPcmProvider",
+    "canonicalize_pcm_path",
+    "decode_pcm_for_native",
+]
 
 DecodeFn = Callable[..., tuple[np.ndarray, int]]
 
@@ -43,8 +50,29 @@ def canonicalize_pcm_path(path: str | Path) -> str:
     return resolved + trailing
 
 
+def decode_pcm_for_native(
+    path: str | Path,
+    *,
+    sample_rate: int,
+) -> PcmBufferConfig:
+    """Full-file decode to a native-compatible ``PcmBufferConfig`` (raises on failure)."""
+    pcm_array, channels = decode_native_pcm(
+        path,
+        sample_rate=int(sample_rate),
+        start_ms=0,
+    )
+    config = SequencerPcmProvider._validated_buffer(pcm_array, channels)
+    if config is None:
+        raise ValueError("Decoded PCM is empty, non-finite, or has unsupported channels")
+    return config
+
+
 class SequencerPcmProvider:
-    """Callable path → ``PcmBufferConfig | None`` with fail-soft LRU cache."""
+    """Callable path → ``PcmBufferConfig | None`` with fail-soft LRU cache.
+
+    Only successful decodes are cached (no durable negative cache). Call ``clear()``
+    to drop entries. Decode runs outside the realtime audio callback.
+    """
 
     def __init__(
         self,
@@ -142,3 +170,7 @@ class SequencerPcmProvider:
                 return None
         samples = np.ascontiguousarray(samples, dtype=np.float32)
         return PcmBufferConfig(samples=samples, channels=channel_count)
+
+
+# Plan-facing name from the #676 session plan.
+PathPcmCache = SequencerPcmProvider
