@@ -205,8 +205,9 @@ def _resolve_pcm_injector(
     tempo_map: TempoMap,
 ) -> Callable[[str], Any]:
     if pcm_for_path is not None:
-        if isinstance(pcm_for_path, SequencerPcmProvider):
-            _require_matching_sample_rate(pcm_for_path, tempo_map)
+        bound_provider = _sequencer_provider_from_callable(pcm_for_path)
+        if bound_provider is not None:
+            _require_matching_sample_rate(bound_provider, tempo_map)
         return pcm_for_path
     if pcm_provider is not None:
         _require_matching_sample_rate(pcm_provider, tempo_map)
@@ -215,6 +216,17 @@ def _resolve_pcm_injector(
         "play_channel_rack_once requires pcm_provider or pcm_for_path; "
         "pass a long-lived SequencerPcmProvider so PCM cache survives pattern passes"
     )
+
+
+def _sequencer_provider_from_callable(
+    pcm_for_path: Callable[[str], Any],
+) -> SequencerPcmProvider | None:
+    if isinstance(pcm_for_path, SequencerPcmProvider):
+        return pcm_for_path
+    owner = getattr(pcm_for_path, "__self__", None)
+    if isinstance(owner, SequencerPcmProvider):
+        return owner
+    return None
 
 
 def _require_matching_sample_rate(

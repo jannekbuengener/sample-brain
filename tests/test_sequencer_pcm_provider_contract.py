@@ -666,6 +666,17 @@ def test_play_channel_rack_once_rejects_mismatched_provider_sample_rate(
             allocate_voice_id=_voice_id_allocator(1),
         )
 
+    with pytest.raises(ValueError, match="sample_rate must match"):
+        play(
+            state,
+            tempo_map=tempo_map,
+            pattern_start_quarter=Fraction(0, 1),
+            pattern_start_engine_frame=0,
+            engine=engine,
+            pcm_for_path=provider.pcm_for_path,
+            allocate_voice_id=_voice_id_allocator(1),
+        )
+
 
 def test_channel_rack_reuses_long_lived_pcm_provider_across_passes(tmp_path: Path):
     """Production callers must keep SequencerPcmProvider at session/rack lifetime."""
