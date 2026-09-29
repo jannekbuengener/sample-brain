@@ -11,7 +11,7 @@ EPIC 2 delivers three new capabilities:
 - **Index** — build a local vector index for fast similarity search
 - **Search** — resolve natural language or audio queries against the catalog
 
-Semantic search is a core capability that feeds into the VST3-first product target (Issues [#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95)): search results power variant-based recommendations in the **Realtime Fit & Transform Engine** and in-catalog discovery in the **VST-first Producing Workspace**.
+Semantic search is a reusable core capability for the **local Workbench producing path** defined in [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md). Historical Issues [#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95) remain capability references for retrieval, matching, context and transforms; their VST-first workspace framing is parked under [#469](https://github.com/jannekbuengener/sample-brain/issues/469).
 
 ---
 
@@ -44,7 +44,7 @@ Semantic search is a core capability that feeds into the VST3-first product targ
 - Sample generation or transformation (EPIC 6)
 - Committing DB, index, model, or cache artifacts to version control
 - Real-time audio analysis
-- DAW plugin SDK (previously out of scope; now superseded by the VST3-first product target — see Issues [#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95). DAW integration via VST3 plugin is now the primary product path.)
+- DAW/plugin product integration. EPIC 2 exposes reusable search capability only; the optional VST/host path is parked under [#469](https://github.com/jannekbuengener/sample-brain/issues/469) and is not the primary producing path.
 
 ---
 
@@ -569,9 +569,9 @@ EPIC 3 (Hybrid Ranking & Recommendation) builds on this foundation:
 | Results | Ranked by semantic + optional metadata blend | Ranked by hybrid relevance + usage patterns |
 | Recommendation | Not in scope | "Samples like this" based on combined signals |
 
-Semantic search results from EPIC 2 are consumed by the VST-first product target pillars:
+Semantic search results from EPIC 2 are reusable by the current local Workbench and by any later explicitly reactivated integration surface. Historical #90–#95 pillar specs remain capability references, not current product-path authority:
 - **Realtime Fit & Transform Engine** — variant-based recommendations (-12/+12 semitones, pitch/sync modes) use search as the retrieval backbone to find source samples and their variants
-- **VST-first Producing Workspace** — in-plugin sample discovery, similarity search, and collection management build on EPIC 2's NumPy/sqlite-vec search backend
+- **Local Workbench discovery surfaces** — sample discovery, similarity search, and collection workflows can build on EPIC 2's NumPy/sqlite-vec search backend; a future plugin may reuse the same core only after #469 is explicitly reactivated
 
 **EPIC 3 does not begin until EPIC 2 search is stable on `main`**, meaning:
 - M4 NumPy E2E smoke is proven; M5 production hardening (Tier A) completed; M6 (FAISS) superseded by ADR-0004
