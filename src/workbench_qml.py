@@ -1219,7 +1219,10 @@ ApplicationWindow {
                 color: window.divider
             }
             MouseArea {
+                // Wider hit target than the 6-DIP layout charge (contract).
                 anchors.fill: parent
+                anchors.leftMargin: -5
+                anchors.rightMargin: -5
                 cursorShape: Qt.SizeHorCursor
                 property real lastGlobalX: 0
                 onPressed: function(mouse) {
@@ -1454,7 +1457,12 @@ ApplicationWindow {
                 color: window.divider
             }
             MouseArea {
+                // Wider hit target than the 6-DIP layout charge. Expand into the
+                // Browser always; expand right only when Harmony occupies space
+                // so Live Kit clicks are not stolen in 3-panel mode.
                 anchors.fill: parent
+                anchors.leftMargin: -5
+                anchors.rightMargin: window.interaction.harmonicMatchOpen ? -5 : 0
                 cursorShape: Qt.SizeHorCursor
                 property real lastGlobalX: 0
                 onPressed: function(mouse) {
@@ -1615,7 +1623,10 @@ ApplicationWindow {
                 color: window.divider
             }
             MouseArea {
+                // Wider hit target than the 6-DIP layout charge (contract).
                 anchors.fill: parent
+                anchors.leftMargin: -5
+                anchors.rightMargin: -5
                 cursorShape: Qt.SizeHorCursor
                 property real lastGlobalX: 0
                 onPressed: function(mouse) {

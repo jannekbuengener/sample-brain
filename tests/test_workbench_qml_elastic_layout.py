@@ -37,6 +37,9 @@ def test_qml_projects_layout_model_widths_and_handles():
     assert 'layoutModel.applyDrag("harmony"' in QML_SOURCE
     assert "layoutModel.endDrag()" in QML_SOURCE
     assert "layoutModel.syncFromInteraction()" in QML_SOURCE
+    # Hit target wider than the 6-DIP layout charge (visual strip stays thin).
+    assert "anchors.leftMargin: -5" in QML_SOURCE
+    assert "anchors.rightMargin: window.interaction.harmonicMatchOpen ? -5 : 0" in QML_SOURCE
 
 
 def test_qml_keeps_browser_search_and_escape_handlers():
