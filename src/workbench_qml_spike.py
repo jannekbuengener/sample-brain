@@ -472,7 +472,9 @@ def run_qml_visual_acceptance_v2(
     import platform
 
     # Software scene graph keeps client captures / grabWindow coherent on Windows.
-    os.environ.setdefault("QT_QUICK_BACKEND", "software")
+    # Force (do not setdefault): a pre-set hardware backend would make GDI BitBlt
+    # miss Qt Quick updates and produce stale identical frames.
+    os.environ["QT_QUICK_BACKEND"] = "software"
 
     report = validate_qml_renderer_provenance(runtime_root)
     fixture = _modal_harmony_acceptance_fixture_v2(build_screen1_visual_fixture_v2())
