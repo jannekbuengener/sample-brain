@@ -38,7 +38,7 @@ Semantic search is a reusable core capability for the **local Workbench producin
 - Recommendation engine (EPIC 3)
 - Hybrid ranking weight tuning beyond baseline measurement (EPIC 3+; CLI rerank exists on `main`)
 - Local HTTP API / FastAPI service (EPIC 4)
-- Desktop UI (EPIC 4)
+- UI/product-surface work (outside EPIC 2; current local Workbench is governed by the product workflow canon)
 - Cloud sync or multi-user features
 - Model training or fine-tuning
 - Sample generation or transformation (EPIC 6)
@@ -55,7 +55,7 @@ The following EPIC 2 infrastructure already exists on `main`:
 | Component | Status on `main` | Detail |
 |-----------|-----------------|--------|
 | **SQLite catalog** | ✅ Stable | `samples`, `features` tables with CRUD helpers |
-| **Embedding schema** | ✅ Stable | `embedding_models` and `sample_embeddings` tables created by `init_db()` (empty, no data flowing) |
+| **Embedding schema** | ✅ Stable | `embedding_models` and `sample_embeddings` tables created by `init_db()`; embedding persistence is exercised by the guarded worker/runtime paths |
 | **Model registry** | ✅ Stable | `upsert_embedding_model()`, `get_embedding_model()` implement INSERT OR IGNORE and query |
 | **Embedding persistence** | ✅ Stable | `insert_sample_embedding()`, `sample_embedding_exists()` implement BLOB storage and staleness check via `source_hash` |
 | **Backend interface** | ✅ Stable | `EmbeddingBackend` ABC with `embed_audio()`, `embed_text()`, `model_info()` |
@@ -595,4 +595,4 @@ EPIC 3 specifics are TODO — this document does not define them. At transition 
 | `knowledge/roadmap/adr/ADR-0002-local-vector-index-strategy.md` | FAISS selection rationale, index lifecycle, artifact hygiene |
 | `knowledge/roadmap/adr/ADR-0003-embedding-db-schema-design.md` | SQLite schema design for embeddings, BLOB rationale, staleness detection |
 | `docs/ISSUE_BACKLOG.md` | EPIC 2 task breakdown (#10-#15) |
-| `knowledge/ACTIVE_ROADMAP.md` | Current implementation status — P1 done, P2 planned |
+| `knowledge/ACTIVE_ROADMAP.md` | Current durable priorities; GitHub live remains execution truth |
