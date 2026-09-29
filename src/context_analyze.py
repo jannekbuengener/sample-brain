@@ -399,6 +399,7 @@ def _rebuild_track_map_with_current_source(
         "source_ref": "context_source",
     }
     new_map = dict(cached_map)
+    new_map["schema_version"] = TRACK_MAP_SCHEMA_VERSION
     new_map["source"] = {"original": new_source}
 
     provenance = dict(new_map.get("provenance") or {})
