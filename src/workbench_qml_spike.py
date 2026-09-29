@@ -275,10 +275,21 @@ def _module_file(module_name: str) -> Path:
 
 
 def _grab_qml_window_png(window: object, target: Path, *, engine: object | None = None) -> None:
-    """Capture Screen-1 evidence with the shared PNG writer (sanity-compatible)."""
+    """Capture Screen-1 evidence from the Qt Quick framebuffer.
+
+    Prefer ``grabWindow()`` over GDI BitBlt: the software scene graph can report
+    Image.painted size before the HWND client area has composed the texture,
+    which produced pure-black Clean Start evidence under BitBlt.
+    """
     del engine  # reserved for future root re-resolution
-    # Requires QT_QUICK_BACKEND=software so GDI sees Qt Quick updates.
-    capture_windows_client_window(int(window.winId()), target)
+    image = window.grabWindow()
+    if image is None or image.isNull():
+        # Fail soft to the historical Windows client capture path.
+        capture_windows_client_window(int(window.winId()), target)
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not image.save(str(target), "PNG"):
+        raise EvidenceError(f"QML framebuffer konnte nicht nach {target} geschrieben werden.")
 
 
 def _wait_for_screen1_background_ready(window: object, app: object, *, timeout_ms: int = 3000) -> None:
@@ -303,6 +314,8 @@ def _wait_for_screen1_background_ready(window: object, app: object, *, timeout_m
         painted_w = float(background.property("paintedWidth") or 0)
         painted_h = float(background.property("paintedHeight") or 0)
         if painted_w > 0 and painted_h > 0:
+            # Two composed frames: painted size can lead HWND/GDI composition.
+            _settle_qml_frame(app)
             _settle_qml_frame(app)
             return
         _settle_qml_frame(app)
@@ -310,6 +323,80 @@ def _wait_for_screen1_background_ready(window: object, app: object, *, timeout_m
         "screen1Background wurde vor Capture nicht rechtzeitig gemalt "
         f"(timeout_ms={timeout_ms})."
     )
+
+
+def _png_center_patch_has_texture(path: Path, *, x0: int = 300, y0: int = 300, size: int = 200) -> bool:
+    """Return True when a center patch is not a single flat color (background present)."""
+    import struct
+    import zlib
+
+    data = path.read_bytes()
+    if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n":
+        return False
+    pos = 8
+    width = height = 0
+    color_type = 2
+    idat = b""
+    while pos + 8 <= len(data):
+        length = struct.unpack(">I", data[pos : pos + 4])[0]
+        ctype = data[pos + 4 : pos + 8]
+        chunk = data[pos + 8 : pos + 8 + length]
+        pos += 12 + length
+        if ctype == b"IHDR":
+            width, height = struct.unpack(">II", chunk[:8])
+            color_type = chunk[9]
+        elif ctype == b"IDAT":
+            idat += chunk
+        elif ctype == b"IEND":
+            break
+    if width <= 0 or height <= 0 or not idat:
+        return False
+    bpp = {2: 3, 6: 4}.get(int(color_type))
+    if bpp is None:
+        return False
+    raw = zlib.decompress(idat)
+    rows: list[bytes] = []
+    stride = width * bpp
+    index = 0
+    prev = bytearray(stride)
+    for _ in range(height):
+        filt = raw[index]
+        index += 1
+        row = bytearray(raw[index : index + stride])
+        index += stride
+        if filt == 1:
+            for x in range(stride):
+                left = row[x - bpp] if x >= bpp else 0
+                row[x] = (row[x] + left) & 255
+        elif filt == 2:
+            for x in range(stride):
+                row[x] = (row[x] + prev[x]) & 255
+        elif filt == 3:
+            for x in range(stride):
+                left = row[x - bpp] if x >= bpp else 0
+                row[x] = (row[x] + ((left + prev[x]) // 2)) & 255
+        elif filt == 4:
+            for x in range(stride):
+                a = row[x - bpp] if x >= bpp else 0
+                b = prev[x]
+                c = prev[x - bpp] if x >= bpp else 0
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pr = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
+                row[x] = (row[x] + pr) & 255
+        elif filt != 0:
+            return False
+        rows.append(bytes(row))
+        prev = row
+    colors: set[bytes] = set()
+    for y in range(y0, min(height, y0 + size)):
+        row = rows[y]
+        for x in range(x0, min(width, x0 + size)):
+            off = x * bpp
+            colors.add(row[off : off + 3])
+            if len(colors) > 1:
+                return True
+    return False
 
 
 def _is_within(path: Path, root: Path) -> bool:
@@ -860,6 +947,14 @@ def run_qml_visual_acceptance_725(
         check["v2_state_id"] = v2_state
         check["capture_label"] = label
         check["pass"] = bool(check["pass"])
+        if label in {"clean-start-collapsed", "clean-start-reveal-hover", "opened-no-source"}:
+            # Calm Canvas states must show the canonical background texture, not a
+            # pure-black race against async Image composition.
+            if not _png_center_patch_has_texture(target):
+                raise EvidenceError(
+                    f"{label}: Screen-1 background texture missing in capture "
+                    "(async Image race / compositor miss)."
+                )
         sanity[label] = check
         captures[label] = target
 
