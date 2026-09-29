@@ -64,7 +64,7 @@ canon before planning or implementation and fetch GitHub live state first:
 
 1. `docs/TARGET_ARCHITECTURE.md`
 2. `docs/WORKBENCH_QML_PROOF_SPIKE.md`
-3. live `main`, Issue #579, Parent #503, and the relevant scoped child issue
+3. live `main`, Parent #691, and the relevant scoped child issue; read closed #503/#579 only when the current child cites their historical contracts
 
 The decision is already closed: `SCREEN1_RENDERER = LOCK_PYSIDE6_QML`.
 New Screen-1 visual/product work belongs in PySide6 / Qt Quick / QML. Tkinter
@@ -75,7 +75,7 @@ not duplicate domain logic or reopen the technology choice.
 
 ### Repository Hygiene
 
-- `docs/ISSUE_BACKLOG.md` — planned work across all epics, status of open items
+- `docs/ISSUE_BACKLOG.md` — historical backlog/PR ledger; use GitHub live for current open/closed state and current work
 - `docs/DATA_AND_ARTIFACT_POLICY.md` — enforcement checklist before any commit
 
 ## 5. Forbidden Context Sources
@@ -101,7 +101,7 @@ The following sources must never be read automatically during session startup. T
 1. `git status --short --branch` — verify branch and working tree state
 2. Check current branch — confirm it matches the intended work target
 3. Read mandatory context documents (Section 3)
-4. If the task is Screen-1/UI work, fetch live `main`, #579, #503, and the relevant child issue before planning or implementation
+4. If the task is Screen-1/UI work, fetch live `main`, #691, and the relevant child issue before planning or implementation; closed #503/#579 are historical evidence, not the active work queue
 5. Classify the task:
    - Documentation
    - Architecture / Design

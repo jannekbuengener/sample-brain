@@ -33,8 +33,8 @@ Do not start Screen-2 UI before those docs gates.
 
 | Domain | Documents |
 |--------|-----------|
-| Screen 1 / UI | `docs/TARGET_ARCHITECTURE.md`, `docs/WORKBENCH_QML_PROOF_SPIKE.md`, `docs/PRODUCT_WORKFLOW_CANON.md`, live #579 / #503 and the scoped child issue |
-| Channel Rack / Screen 2 | `docs/PRODUCT_WORKFLOW_CANON.md`, `docs/SESSION_OWNERSHIP_CONTRACT.md`, `docs/PATTERN_CORE_CONTRACT.md`, `docs/SEQUENCER_PLAYBACK_CONTRACT.md` — UI only after those gates |
+| Screen 1 / UI | `docs/TARGET_ARCHITECTURE.md`, `docs/WORKBENCH_QML_PROOF_SPIKE.md`, `docs/PRODUCT_WORKFLOW_CANON.md`, live #691 and the scoped child issue; #503/#579 are historical migration/governance evidence only |
+| Channel Rack / Screen 2 | `docs/PRODUCT_WORKFLOW_CANON.md`, live #675/#678, `docs/SESSION_OWNERSHIP_CONTRACT.md`, `docs/PATTERN_CORE_CONTRACT.md`, `docs/SEQUENCER_PLAYBACK_CONTRACT.md` |
 | EPIC 2 (Semantic Search) | `docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md`, ADR-0001–0005 |
 | DAW / Export | `docs/DAW_INTEGRATION_SPEC.md`, `src/export_fl.py` (legacy/fallback; VST parked #469) |
 | CI / Merge Governance | `docs/CI_DEGRADED_MODE.md`, `knowledge/governance/GOVERNANCE.md` |
@@ -50,7 +50,7 @@ Never read these automatically: `knowledge/SHARED.WORKING.MEMORY.md`, `knowledge
 1. `git fetch origin --prune && git status -sb`
 2. Confirm branch matches intended work target
 3. Read mandatory documents (above)
-4. For Screen-1/UI work, fetch live `main`, #579, #503, and the relevant scoped child issue before planning or implementation
+4. For Screen-1/UI work, fetch live `main`, #691, and the relevant scoped child issue before planning or implementation; use closed #503/#579 only as historical evidence when the child explicitly references them
 5. Classify task → load task-specific documents
 6. Confirm no forbidden sources touched
 7. Begin work

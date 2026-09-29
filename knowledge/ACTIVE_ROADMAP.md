@@ -1,6 +1,6 @@
 # ACTIVE_ROADMAP
 
-**Last reconciled:** 2026-08-18
+**Last reconciled:** 2026-09-29
 
 ## How to Use This Roadmap
 
@@ -10,50 +10,38 @@ For execution state, fetch GitHub and repo live first. If this roadmap conflicts
 
 ## Current Priority Order
 
-### P0 — Repository safety
+This roadmap intentionally groups durable work rather than mirroring every open issue.
 
-**[#405 — Enforce branch protection on `main`](https://github.com/jannekbuengener/sample-brain/issues/405)**
+### Active — Screen 1 product refinement
 
-Desired protection is already defined:
+**[#691 — Calm Adaptive Workspace](https://github.com/jannekbuengener/sample-brain/issues/691)**
 
-- PR required before merge.
-- required checks enforced and branch kept up to date.
-- admin/owner bypass prevented.
-- force push and branch deletion blocked.
-- conversation resolution / normal review hygiene enforced.
+Current sequence is owned by #691 and its scoped children: shared visual acceptance, compact Browser/Harmonic density, elastic coupled panels, Clean Start/progressive disclosure, waveform rendering research, then display/startup preferences. Panel reordering remains parked until the layout foundation is accepted.
 
-The current bounded operator cannot mutate repository protection settings. Do not redesign this issue; execute it when an appropriate repository-admin mutation surface is available.
+### Foundations ready / UI HOLD — Screen 2 Channel Rack
 
-### P1 — Repository hygiene
+**[#675 — Live Kit → Channel Rack](https://github.com/jannekbuengener/sample-brain/issues/675)**  
+**[#678 — Screen-2 QML Channel Rack](https://github.com/jannekbuengener/sample-brain/issues/678)**
 
-**[#392 — Branch/worktree cleanup](https://github.com/jannekbuengener/sample-brain/issues/392)**
+The Python/session/sequencer foundations are already present. **Screen-2 QML #678 remains HOLD** under `docs/PRODUCT_WORKFLOW_CANON.md` until that gate is explicitly lifted. Keep Screen 2 distinct from the parked Screen-3 arrangement timeline (#679).
 
-Decisions are already locked. The remaining work is execution against validated local worktrees/branches without discarding unique dirty state.
+### Active — repository governance and reconciliation
 
-Target state:
+- [#494](https://github.com/jannekbuengener/sample-brain/issues/494) — move from the temporary active main ruleset to the stable canon-aligned strict model without a protection gap.
+- [#703](https://github.com/jannekbuengener/sample-brain/issues/703) — reconcile repository truth, docs, status, agents, CI, validation evidence and artifact hygiene.
 
-- canonical checkout on current `main`.
-- only intentionally active worktrees/branches remain.
-- historical remote branches removed after verification.
-- stale/prunable worktree registrations cleaned normally, not forcibly.
-- automatic post-merge branch cleanup enabled when repository settings can be changed safely.
+### Active validation
 
-### P1 — Upstream ANN watch only
+- [#468](https://github.com/jannekbuengener/sample-brain/issues/468) — subjective listening validation for the existing Techno pilot assets.
 
-**[#74 — sqlite-vec ANN readiness](https://github.com/jannekbuengener/sample-brain/issues/74)**
+### Watch / parked — do not promote implicitly
 
-Current decision remains:
+- [#74](https://github.com/jannekbuengener/sample-brain/issues/74) — wait for a stable documented sqlite-vec ANN release; NumPy remains the default search backend.
+- [#469](https://github.com/jannekbuengener/sample-brain/issues/469) — VST3 product integration is parked.
+- [#615](https://github.com/jannekbuengener/sample-brain/issues/615) — Bitwig work is R&D/playground only.
+- [#679](https://github.com/jannekbuengener/sample-brain/issues/679) / [#680](https://github.com/jannekbuengener/sample-brain/issues/680) — future arrangement and input-mode ideas, not current delivery blockers.
 
-- stable NumPy search is the default.
-- sqlite-vec remains optional.
-- do not build a private ANN substitute merely to close this tracker.
-- reopen implementation work only after upstream ships a stable, documented, benchmarkable ANN path for target platforms.
-
-### Future — optional deeper performance detail
-
-**[#375 — Hidden hierarchical element layer](https://github.com/jannekbuengener/sample-brain/issues/375)**
-
-This is future product scope, not a current reliability blocker. The simple top-level producer view remains the default; deeper element separation must be evidence-based and truthful when eventually implemented.
+Closed #392/#405/#503/#579/#196/#198/#73 are historical evidence, not current roadmap items.
 
 ## Shipped Foundations
 
@@ -83,11 +71,17 @@ The following are no longer roadmap work and should not be represented as open e
 - native audio transport and recording path.
 - Quick Capture local voice-to-GitHub-issue flow.
 
-### Screen-1 renderer migration (active)
+### Screen-1 QML foundation and current refinement
 
-- `LOCK_PYSIDE6_QML` is the decided renderer contract for new Screen-1 visual/product work.
-- `src/workbench_qml.py` is the optional production QML shell; it remains a thin renderer/intent layer over the Python-authoritative Core/Controller/Audio/Catalog contracts.
-- Migration proceeds slice by slice under #503 and its scoped child issues. Tkinter remains available as legacy/fallback and behavioral reference, not as the target for new Screen-1 visuals.
+- `LOCK_PYSIDE6_QML` remains the decided renderer contract for new Screen-1 visual/product work.
+- `src/workbench_qml.py` is the production QML shell and remains a thin renderer/intent layer over Python-authoritative Core/Controller/Audio/Catalog contracts.
+- The original migration epic #503 is closed. Current refinement is tracked under #691; Tkinter remains legacy/fallback and behavioral reference, not the target for new Screen-1 visuals.
+
+### Screen-2 foundation
+
+- Session ownership, Pattern Core, sequencer scheduling/PCM and Channel Rack Python core are established.
+- Product/UI delivery is tracked under #675/#678; the QML UI remains **HOLD** until the canonical gate is explicitly lifted.
+- Screen 3 arrangement remains separately parked under #679; do not pull arrangement/timeline scope into Screen 2.
 
 ### Track deconstruction / performance packs
 

@@ -50,7 +50,7 @@ Only when working on sqlite-vec gates or backend behavior:
 ```bash
 pip install -e ".[vec]"
 python -m src.cli vec status
-python -m pytest -q   # 138 tests; vec-specific tests skip without [vec]
+python -m pytest -q   # full suite; optional/backend-specific tests may skip when extras are unavailable
 ```
 
 Benchmark harness (local only, work-dir outside repo): `python -m src.cli benchmark vec --samples 1000 10000 100000 --work-dir /tmp/sample-brain-bench`. Gate evidence: [`docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md`](docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md). Default search backend remains **`numpy`** until all gates PASS.

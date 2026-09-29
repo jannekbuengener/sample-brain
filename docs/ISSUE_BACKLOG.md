@@ -1,8 +1,12 @@
 # Issue Backlog
 
-Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board reality** below for live state.
+Prepared backlog with historical GitHub issue/PR cross-reference.
 
-## GitHub Board Reality (2026-07-10)
+> **STATUS — HISTORICAL LEDGER, NOT LIVE TRACKER (reconciled 2026-09-29):**  
+> This file preserves older backlog/PR cross-reference evidence and is **not** authoritative for current open/closed state, current PR count, `main` SHA, or current product priority. Use GitHub live first, then `knowledge/CURRENT_STATUS.md` and `knowledge/ACTIVE_ROADMAP.md`.  
+> Current durable tracks at reconciliation include #691 (Screen 1), #675/#678 (Screen 2), #494 (governance), #703 (repo audit), #468 (listening validation), #74 (upstream ANN watch), #469 (parked VST3), and #615 (Bitwig R&D).
+
+## Historical GitHub Board Snapshot (2026-07-10 — non-current)
 
 | Item | Status | Notes |
 |------|--------|-------|
@@ -69,7 +73,7 @@ Prepared backlog with GitHub issue/PR cross-reference. See **GitHub board realit
 | M4 NumPy search E2E | ✅ Done | Documented in `CURRENT_STATUS.md`; no retro issue |
 | FAISS adapter | ❌ Deferred | M6 — not started; requires explicit scoped approval |
 
-## Post-cleanup board state
+## Historical post-cleanup board state
 
 As of `main` at `9968c6d`:
 
