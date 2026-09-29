@@ -24,6 +24,7 @@ from .workbench_harmony import (
     harmonic_match_key_for_row,
 )
 from .workbench_live_kit import LiveKitPresentationState, LiveKitState
+from .workbench_live_kit_export import LiveKitExportResult, export_live_kit
 from .workbench_library import workbench_library_db_path
 from .workbench_library_navigation import LibraryNodeKind
 from .workbench_qml_analysis import AnalysisUiState, create_qt_analysis_coordinator
@@ -624,6 +625,8 @@ class Screen1QmlInteractionAdapter:
         self._pending_live_kit_row: WorkbenchRow | None = None
         self._preview_active = False
         self._auditioning_live_kit_slot: tuple[str, str] | None = None
+        self._live_kit_export_status = ""
+        self._live_kit_export_ok: bool | None = None
         self._harmonic_match_context_fingerprint: tuple[object, ...] | None = None
         self._harmonic_match_selected_index = 0
         self._harmonic_match_scroll_y = 0.0
@@ -812,6 +815,37 @@ class Screen1QmlInteractionAdapter:
             return False
         self._pending_live_kit_row = None
         return True
+
+    @property
+    def live_kit_export_status(self) -> str:
+        return self._live_kit_export_status
+
+    @property
+    def live_kit_export_ok(self) -> bool | None:
+        return self._live_kit_export_ok
+
+    def export_live_kit(self, destination_parent: Path | str) -> LiveKitExportResult:
+        """Export the current Live Kit through the pure Python export service.
+
+        Reads kit state only. Does not mutate assignments, presentation,
+        browser selection, preview/audition, harmony, or transport.
+        """
+        if self._live_kit is None:
+            result = LiveKitExportResult(
+                ok=False,
+                error_code="NO_LIVE_KIT",
+                error_message="Live Kit ist nicht verfügbar. Export abgebrochen.",
+            )
+            self._live_kit_export_ok = False
+            self._live_kit_export_status = result.error_message or ""
+            return result
+        result = export_live_kit(self._live_kit.state, destination_parent)
+        self._live_kit_export_ok = result.ok
+        if result.ok and result.export_path is not None:
+            self._live_kit_export_status = f"Exportiert nach: {result.export_path}"
+        else:
+            self._live_kit_export_status = result.error_message or "Export fehlgeschlagen."
+        return result
 
     def navigate_browser(
         self, direction: str, *, browser_has_focus: bool
@@ -1153,6 +1187,12 @@ ApplicationWindow {
         id: addSourceDialog
         title: "Sample Source hinzufügen"
         onAccepted: libraryInteraction.registerSourceUrl(selectedFolder.toString())
+    }
+
+    FolderDialog {
+        id: exportKitDialog
+        title: "Live Kit exportieren"
+        onAccepted: window.interaction.exportLiveKitUrl(selectedFolder.toString())
     }
 
     Dialog {
@@ -1794,6 +1834,23 @@ ApplicationWindow {
                 RowLayout { Layout.fillWidth: true
                     Label { text: "LIVE KIT"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
                     Label { text: window.screenData.liveKitAssignedCount + " / " + window.screenData.liveKitTotalSlotCount; color: theme.textSecondary; font.pixelSize: 11 }
+                    Button {
+                        id: liveKitExportButton
+                        objectName: "liveKitExportButton"
+                        text: "Export Kit"
+                        flat: true
+                        onClicked: exportKitDialog.open()
+                    }
+                }
+                Label {
+                    id: liveKitExportStatus
+                    objectName: "liveKitExportStatus"
+                    visible: window.interaction.liveKitExportStatus.length > 0
+                    Layout.fillWidth: true
+                    text: window.interaction.liveKitExportStatus
+                    color: window.interaction.liveKitExportOk ? theme.textSecondary : theme.actionActive
+                    font.pixelSize: 11
+                    wrapMode: Text.Wrap
                 }
                 Rectangle {
                     id: liveKitPendingBanner
@@ -1946,7 +2003,7 @@ def _qml_interaction_bridge(
     on_harmony_waveform_request: Callable[[int, int], None] | None = None,
 ):
     """Expose the pure interaction adapter to QML only when Qt is installed."""
-    from PySide6.QtCore import QObject, Property, Signal, Slot
+    from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
 
     class QmlInteractionBridge(QObject):
         state_changed = Signal()
@@ -1985,6 +2042,21 @@ def _qml_interaction_bridge(
         @Property(bool, notify=state_changed)
         def previewActive(self) -> bool:
             return adapter.preview_active
+
+        @Property(str, notify=state_changed)
+        def liveKitExportStatus(self) -> str:
+            return adapter.live_kit_export_status
+
+        @Property(bool, notify=state_changed)
+        def liveKitExportOk(self) -> bool:
+            return bool(adapter.live_kit_export_ok)
+
+        @Slot(str)
+        def exportLiveKitUrl(self, url: str) -> None:
+            candidate = QUrl(url)
+            path = candidate.toLocalFile() if candidate.isLocalFile() else url
+            adapter.export_live_kit(path)
+            self._refresh()
 
         @Property(int, notify=state_changed)
         def selectedHarmonyIndex(self) -> int:
