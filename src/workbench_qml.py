@@ -1390,8 +1390,8 @@ ApplicationWindow {
                     ToolTip.text: "Add Source"
                     contentItem: Item {
                         // Thin geometric plus — text "+" glyphs stay too heavy at this size.
-                        readonly property int stroke: 3
-                        readonly property int arm: Math.round(Math.min(width, height) * 0.42)
+                        readonly property int stroke: 2
+                        readonly property int arm: Math.round(Math.min(width, height) * 0.38)
                         Rectangle {
                             anchors.centerIn: parent
                             width: parent.arm

@@ -528,7 +528,7 @@ def test_qml_source_declares_calm_canvas_and_progressive_disclosure():
     plus_idx = calm_block.index('objectName: "calmCanvasAddSource"')
     assert label_idx < plus_idx
     assert "font.pixelSize: 15" in calm_block[label_idx:plus_idx]
-    assert "readonly property int stroke: 3" in calm_block
+    assert "readonly property int stroke: 2" in calm_block
     assert 'text: "+"' in calm_block  # Accessible/button identity stays "+"
     assert "font.bold: true" not in calm_block.split(
         'objectName: "calmCanvasAddSource"', 1
