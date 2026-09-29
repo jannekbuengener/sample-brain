@@ -15,15 +15,32 @@ import numpy as np
 from .native_audio import PcmBufferConfig
 from .native_pcm_decode import decode_native_pcm
 
-__all__ = ["SequencerPcmProvider"]
+__all__ = ["SequencerPcmProvider", "canonicalize_pcm_path"]
 
 DecodeFn = Callable[..., tuple[np.ndarray, int]]
 
 DEFAULT_MAX_ENTRIES = 64
 
 
-def _normalize_cache_path(path: str) -> str:
-    return str(Path(path))
+def canonicalize_pcm_path(path: str | Path) -> str:
+    """Return a stable cache key for a filesystem path.
+
+    Collapses ``.`` / ``..``, resolves to an absolute path, and follows
+    existing symlinks when possible. Trailing whitespace from the original
+    string is preserved (``Path`` would otherwise drop it on some platforms).
+    """
+    raw = str(path)
+    body = raw.rstrip(" \t")
+    trailing = raw[len(body) :]
+    candidate = Path(body) if body else Path(".")
+    try:
+        resolved = str(candidate.resolve(strict=False))
+    except OSError:
+        try:
+            resolved = str(candidate.absolute())
+        except OSError:
+            resolved = str(candidate)
+    return resolved + trailing
 
 
 class SequencerPcmProvider:
@@ -64,19 +81,21 @@ class SequencerPcmProvider:
     def pcm_for_path(self, path: str) -> PcmBufferConfig | None:
         if path is None:
             return None
-        text = str(path).strip()
-        if not text:
+        text = str(path)
+        # Reject empty / all-whitespace only — do not strip meaningful trailing spaces.
+        if text == "" or text.isspace():
             return None
 
-        key = (_normalize_cache_path(text), self._sample_rate)
+        key = (canonicalize_pcm_path(text), self._sample_rate)
         cached = self._cache.get(key)
         if cached is not None:
             self._cache.move_to_end(key)
             return cached
 
         try:
+            # Pass the original string so trailing whitespace is not lost via Path().
             pcm_array, channels = self._decode_fn(
-                Path(text),
+                text,
                 sample_rate=self._sample_rate,
                 start_ms=0,
             )

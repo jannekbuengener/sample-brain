@@ -167,20 +167,18 @@ def play_channel_rack_once(
     Resolution for PCM:
 
     1. Explicit ``pcm_for_path`` callable (tests / custom injectors).
-    2. Else long-lived ``pcm_provider`` (preferred production path — cache reused
-       across pattern passes).
-    3. Else an ephemeral ``SequencerPcmProvider(tempo_map.sample_rate)`` for a
-       single call. Callers that replay patterns must pass ``pcm_provider`` (or
-       an equivalent callable) so decode is not repeated and stays off the
-       realtime path relative to engine-frame anchoring.
+    2. Else long-lived ``pcm_provider`` (preferred production path).
+
+    At least one of ``pcm_for_path`` / ``pcm_provider`` is required. The provider
+    is never created ephemerally here — keep it at rack/session lifetime and
+    prefer ``warm_channel_rack_pcm`` before anchoring playback.
     """
 
-    if pcm_for_path is not None:
-        resolver: Callable[[str], Any] = pcm_for_path
-    elif pcm_provider is not None:
-        resolver = pcm_provider
-    else:
-        resolver = SequencerPcmProvider(sample_rate=tempo_map.sample_rate)
+    resolver = _resolve_pcm_injector(
+        pcm_for_path=pcm_for_path,
+        pcm_provider=pcm_provider,
+        tempo_map=tempo_map,
+    )
 
     channels_by_id: Mapping[str, Channel] = {
         channel.channel_id: channel for channel in state.channels
@@ -200,6 +198,36 @@ def play_channel_rack_once(
     )
 
 
+def _resolve_pcm_injector(
+    *,
+    pcm_for_path: Callable[[str], Any] | None,
+    pcm_provider: SequencerPcmProvider | None,
+    tempo_map: TempoMap,
+) -> Callable[[str], Any]:
+    if pcm_for_path is not None:
+        if isinstance(pcm_for_path, SequencerPcmProvider):
+            _require_matching_sample_rate(pcm_for_path, tempo_map)
+        return pcm_for_path
+    if pcm_provider is not None:
+        _require_matching_sample_rate(pcm_provider, tempo_map)
+        return pcm_provider
+    raise ValueError(
+        "play_channel_rack_once requires pcm_provider or pcm_for_path; "
+        "pass a long-lived SequencerPcmProvider so PCM cache survives pattern passes"
+    )
+
+
+def _require_matching_sample_rate(
+    provider: SequencerPcmProvider,
+    tempo_map: TempoMap,
+) -> None:
+    if int(provider.sample_rate) != int(tempo_map.sample_rate):
+        raise ValueError(
+            "pcm_provider.sample_rate must match tempo_map.sample_rate "
+            f"(got provider={provider.sample_rate}, tempo_map={tempo_map.sample_rate})"
+        )
+
+
 def warm_channel_rack_pcm(
     state: ChannelRackState,
     provider: SequencerPcmProvider,
@@ -209,7 +237,7 @@ def warm_channel_rack_pcm(
     seen: set[str] = set()
     for channel in state.channels:
         path = channel.sample_path
-        if path is None or path == "" or path in seen:
+        if path is None or path == "" or path.isspace() or path in seen:
             continue
         seen.add(path)
         provider.pcm_for_path(path)

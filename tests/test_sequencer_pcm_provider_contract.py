@@ -437,6 +437,45 @@ def test_provider_lru_eviction_is_bounded(tmp_path: Path):
     assert "a.wav" in decode_calls
 
 
+def test_provider_preserves_trailing_whitespace_in_sample_paths(tmp_path: Path):
+    """Do not strip meaningful trailing spaces before decode / cache keying."""
+    provider_cls = _require_symbol(_provider_module_or_fail(), "SequencerPcmProvider")
+    seen: list[str] = []
+
+    def capturing_decode(path, *, sample_rate: int, start_ms: int = 0):
+        seen.append(str(path))
+        return np.zeros((8, 1), dtype=np.float32), 1
+
+    provider = provider_cls(sample_rate=ENGINE_SR, decode_fn=capturing_decode)
+    spaced = str(tmp_path / "kick.wav") + " "
+    pcm = provider.pcm_for_path(spaced)
+    assert pcm is not None
+    _assert_valid_pcm(pcm)
+    assert seen == [spaced]
+    # All-whitespace remains fail-soft and never reaches decode.
+    assert provider.pcm_for_path("   ") is None
+    assert seen == [spaced]
+
+
+def test_provider_cache_key_canonicalizes_path_aliases(tmp_path: Path):
+    provider_cls = _require_symbol(_provider_module_or_fail(), "SequencerPcmProvider")
+    wav = _write_mono_wav(tmp_path / "tone.wav", sr=ENGINE_SR)
+    decode_calls: list[str] = []
+
+    def counting_decode(path, *, sample_rate: int, start_ms: int = 0):
+        decode_calls.append(str(path))
+        decode = _require_symbol(_decode_or_fail(), "decode_native_pcm")
+        return decode(path, sample_rate=sample_rate, start_ms=start_ms)
+
+    provider = provider_cls(sample_rate=ENGINE_SR, decode_fn=counting_decode)
+    absolute = str(wav.resolve())
+    via_dot = str(tmp_path / "." / "tone.wav")
+    first = provider.pcm_for_path(absolute)
+    second = provider.pcm_for_path(via_dot)
+    assert first is not None and second is not None
+    assert len(decode_calls) == 1
+
+
 # --- Sequencer + Channel Rack integration -----------------------------------
 
 
@@ -501,20 +540,15 @@ def test_channel_rack_playback_reaches_production_provider(tmp_path: Path):
     assert engine.create_voice.call_count == 1
 
 
-def test_play_channel_rack_once_can_omit_pcm_for_path_using_tempo_map_rate(
-    tmp_path: Path,
-):
-    """Productive wiring: callers need not invent a decode strategy."""
-    _provider_module_or_fail()
+def test_play_channel_rack_once_requires_long_lived_pcm_injector(tmp_path: Path):
+    """P1: no ephemeral provider — callers must pass pcm_provider or pcm_for_path."""
+    provider_cls = _require_symbol(_provider_module_or_fail(), "SequencerPcmProvider")
     rack = importlib.import_module("src.channel_rack")
     play = rack.play_channel_rack_once
     sig = inspect.signature(play)
-    assert "pcm_for_path" in sig.parameters
-    param = sig.parameters["pcm_for_path"]
-    assert param.default is None, (
-        "pcm_for_path must default to None so production uses "
-        "SequencerPcmProvider(tempo_map.sample_rate)"
-    )
+    assert sig.parameters["pcm_for_path"].default is None
+    assert "pcm_provider" in sig.parameters
+    assert sig.parameters["pcm_provider"].default is None
 
     wav = _write_mono_wav(tmp_path / "kick_01.wav", sr=ENGINE_SR)
     live_kit = LiveKitState()
@@ -524,15 +558,54 @@ def test_play_channel_rack_once_can_omit_pcm_for_path_using_tempo_map_rate(
     engine = MagicMock(name="native_engine")
     engine.create_voice.side_effect = lambda cfg: cfg.id
 
+    with pytest.raises(ValueError, match="pcm_provider or pcm_for_path"):
+        play(
+            state,
+            tempo_map=tempo_map,
+            pattern_start_quarter=Fraction(0, 1),
+            pattern_start_engine_frame=0,
+            engine=engine,
+            allocate_voice_id=_voice_id_allocator(1),
+        )
+
+    provider = provider_cls(sample_rate=ENGINE_SR)
     result = play(
         state,
         tempo_map=tempo_map,
         pattern_start_quarter=Fraction(0, 1),
         pattern_start_engine_frame=0,
         engine=engine,
+        pcm_provider=provider,
         allocate_voice_id=_voice_id_allocator(1),
     )
     assert result.scheduled_count == 1
+
+
+def test_play_channel_rack_once_rejects_mismatched_provider_sample_rate(
+    tmp_path: Path,
+):
+    provider_cls = _require_symbol(_provider_module_or_fail(), "SequencerPcmProvider")
+    rack = importlib.import_module("src.channel_rack")
+    play = rack.play_channel_rack_once
+
+    wav = _write_mono_wav(tmp_path / "kick_01.wav", sr=ENGINE_SR)
+    live_kit = LiveKitState()
+    live_kit.assign("Kick + Bass", "Kick", _synthetic_row(wav))
+    state = rack.toggle_step(rack.build_channel_rack_state(live_kit), "ch_kick", 0)
+    tempo_map = TempoMap(sample_rate=48_000, bpm=120)
+    provider = provider_cls(sample_rate=44_100)
+    engine = MagicMock(name="native_engine")
+
+    with pytest.raises(ValueError, match="sample_rate must match"):
+        play(
+            state,
+            tempo_map=tempo_map,
+            pattern_start_quarter=Fraction(0, 1),
+            pattern_start_engine_frame=0,
+            engine=engine,
+            pcm_provider=provider,
+            allocate_voice_id=_voice_id_allocator(1),
+        )
 
 
 def test_channel_rack_reuses_long_lived_pcm_provider_across_passes(tmp_path: Path):
