@@ -119,7 +119,7 @@ def test_pending_add_derives_empty_and_assigned_target_intent_without_domain_sta
     # existing pending-add property plus the read-only slot projection.
     assert "property bool hasPendingAdd:" in QML_SOURCE
     assert "property bool showReplaceAffordance:" in QML_SOURCE
-    assert "hasPendingAdd ? window.accent : (showReplaceAffordance ? window.accent : \"transparent\")" in QML_SOURCE
+    assert "hasPendingAdd ? theme.actionActive : (showReplaceAffordance ? theme.actionActive : \"transparent\")" in QML_SOURCE
     assert 'hasPendingAdd ? "+" : (showReplaceAffordance ? "↻" : "+")' in QML_SOURCE
 
 
@@ -128,7 +128,7 @@ def test_without_pending_add_qml_has_no_replacement_target_state():
 
     assert adapter.pending_live_kit_add == ""
     assert "window.interaction.liveKitPendingAdd !== \"\"" in QML_SOURCE
-    assert "hasPendingAdd ? window.accent : (showReplaceAffordance ? window.accent : \"transparent\")" in QML_SOURCE
+    assert "hasPendingAdd ? theme.actionActive : (showReplaceAffordance ? theme.actionActive : \"transparent\")" in QML_SOURCE
 
 
 def test_assigned_slot_projects_existing_assignment_data():

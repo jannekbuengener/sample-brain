@@ -1072,21 +1072,58 @@ ApplicationWindow {
     visible: true
     width: 1600; height: 900
     minimumWidth: 1120; minimumHeight: 640
-    color: "#000000"
+    color: theme.surfaceRoot
     title: "Sample Brain"
     property var screenData: screenModel
     property var interaction: interactionModel
-    property color panel: "#0c0d0e"
-    property color panelAlt: "#141516"
-    property color textColor: "#eceef1"
-    property color muted: "#8b9098"
-    property color border: "#222426"
-    property color accent: "#b1122b"
-    property color divider: "#222426"
-    property color selectedRow: "#1a1012"
-    property color headerBg: "#050506"
-    property color browserPaneBg: "#0a0b0c"
-    property color waveformMuted: "#6d737c"
+    // Screen-1 color contract: primitives -> semantic tokens -> components.
+    // HEX literals live only on primitives. See docs/WORKBENCH_VISUAL_ACCEPTANCE.md.
+    QtObject {
+        id: theme
+        // --- primitives ---
+        readonly property color neutral000: "#000000"
+        readonly property color neutral050: "#050506"
+        readonly property color neutral075: "#0a0b0c"
+        readonly property color neutral100: "#0c0d0e"
+        readonly property color neutral150: "#141516"
+        readonly property color neutral250: "#222426"
+        readonly property color contentPrimary: "#eceef1"
+        readonly property color contentSecondary: "#8b9098"
+        readonly property color contentDisabled: "#8b9098"
+        readonly property color contentOnAction: "#ffffff"
+        readonly property color waveformNeutral: "#6d737c"
+        readonly property color accentPrimary: "#b1122b"
+        readonly property color accentSurface: "#1a1012"
+        // --- semantic tokens ---
+        readonly property color surfaceRoot: neutral000
+        readonly property color surfaceHeader: neutral050
+        readonly property color surfaceBrowser: neutral075
+        readonly property color surfacePanel: neutral100
+        readonly property color surfaceElevated: neutral150
+        readonly property color borderSubtle: neutral250
+        readonly property color dividerDefault: neutral250
+        readonly property color textPrimary: contentPrimary
+        readonly property color textSecondary: contentSecondary
+        readonly property color textDisabled: contentDisabled
+        readonly property color textOnAction: contentOnAction
+        readonly property color waveformDefault: waveformNeutral
+        readonly property color waveformActive: accentPrimary
+        readonly property color selectionSurface: accentSurface
+        readonly property color selectionBorder: accentPrimary
+        readonly property color actionActive: accentPrimary
+    }
+    // Thin aliases for runtime property reads / legacy window.* bindings.
+    readonly property color panel: theme.surfacePanel
+    readonly property color panelAlt: theme.surfaceElevated
+    readonly property color textColor: theme.textPrimary
+    readonly property color muted: theme.textSecondary
+    readonly property color border: theme.borderSubtle
+    readonly property color accent: theme.actionActive
+    readonly property color divider: theme.dividerDefault
+    readonly property color selectedRow: theme.selectionSurface
+    readonly property color headerBg: theme.surfaceHeader
+    readonly property color browserPaneBg: theme.surfaceBrowser
+    readonly property color waveformMuted: theme.waveformDefault
     property int textTitle: 18
     property int textBody: 12
     property int textMeta: 11
@@ -1152,20 +1189,20 @@ ApplicationWindow {
     }
 
     header: Rectangle {
-        height: 68; color: window.headerBg; border.color: window.border
+        height: 68; color: theme.surfaceHeader; border.color: theme.borderSubtle
         RowLayout { anchors.fill: parent; anchors.leftMargin: 22; anchors.rightMargin: 22
-            Label { text: "◉  Sample Brain"; color: window.textColor; font.pixelSize: 21; font.bold: true }
+            Label { text: "◉  Sample Brain"; color: theme.textPrimary; font.pixelSize: 21; font.bold: true }
             Item { Layout.fillWidth: true }
-            Label { text: "MASTER"; color: window.muted; font.pixelSize: 12 }
-            Label { text: "132"; color: window.textColor; font.pixelSize: 24; font.bold: true }
-            Label { text: "BPM"; color: window.muted; font.pixelSize: 12 }
+            Label { text: "MASTER"; color: theme.textSecondary; font.pixelSize: 12 }
+            Label { text: "132"; color: theme.textPrimary; font.pixelSize: 24; font.bold: true }
+            Label { text: "BPM"; color: theme.textSecondary; font.pixelSize: 12 }
             Item { width: 24 }
-            Label { text: "GRID"; color: window.muted; font.pixelSize: 12 }
-            Label { text: "4/4"; color: window.textColor; font.pixelSize: 24; font.bold: true }
+            Label { text: "GRID"; color: theme.textSecondary; font.pixelSize: 12 }
+            Label { text: "4/4"; color: theme.textPrimary; font.pixelSize: 24; font.bold: true }
             Item { width: 24 }
-            Label { text: "SYNC"; color: window.muted; font.pixelSize: 12 }
-            Rectangle { width: 48; height: 25; radius: 4; color: window.accent
-                Label { anchors.centerIn: parent; text: "ON"; color: "white"; font.bold: true }
+            Label { text: "SYNC"; color: theme.textSecondary; font.pixelSize: 12 }
+            Rectangle { width: 48; height: 25; radius: 4; color: theme.actionActive
+                Label { anchors.centerIn: parent; text: "ON"; color: theme.textOnAction; font.bold: true }
             }
         }
     }
@@ -1184,10 +1221,10 @@ ApplicationWindow {
         onWidthChanged: layoutModel.setContentWidth(width)
         Component.onCompleted: layoutModel.setContentWidth(width)
 
-        Rectangle { id: libraryPane; objectName: "libraryPane"; width: layoutModel.libraryWidth; height: parent.height; visible: width > 0; color: window.panel; border.color: window.border
+        Rectangle { id: libraryPane; objectName: "libraryPane"; width: layoutModel.libraryWidth; height: parent.height; visible: width > 0; color: theme.surfacePanel; border.color: theme.borderSubtle
             ColumnLayout { anchors.fill: parent; anchors.margins: 16
                 RowLayout { Layout.fillWidth: true
-                    Label { text: "LIBRARY"; color: window.muted; font.pixelSize: 12; Layout.fillWidth: true }
+                    Label { text: "LIBRARY"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
                     Button { text: "Add Source"; onClicked: addSourceDialog.open() }
                     Button { visible: libraryInteraction.canRemoveSelectedSource; text: "Remove"; onClicked: libraryInteraction.prepareRemoveSource() }
                 }
@@ -1206,8 +1243,8 @@ ApplicationWindow {
                         implicitHeight: 34
                         indentation: 16
                         background: Rectangle {
-                            color: libraryInteraction.selectedLibraryNodeId === model.nodeId ? window.selectedRow : "transparent"
-                            border.color: libraryInteraction.selectedLibraryNodeId === model.nodeId ? window.accent : "transparent"
+                            color: libraryInteraction.selectedLibraryNodeId === model.nodeId ? theme.selectionSurface : "transparent"
+                            border.color: libraryInteraction.selectedLibraryNodeId === model.nodeId ? theme.actionActive : "transparent"
                         }
                         contentItem: Item {
                             implicitHeight: 34
@@ -1231,7 +1268,7 @@ ApplicationWindow {
                                 Label {
                                     Layout.fillWidth: true
                                     text: model.loading ? "Loading…" : model.display
-                                    color: model.availability === "offline" ? window.muted : window.textColor
+                                    color: model.availability === "offline" ? theme.textDisabled : theme.textPrimary
                                     opacity: model.error ? 0.72 : 1.0
                                     elide: Text.ElideRight
                                     font.pixelSize: 14
@@ -1239,7 +1276,7 @@ ApplicationWindow {
                                 Label {
                                     visible: model.error
                                     text: "Retry"
-                                    color: window.muted
+                                    color: theme.textSecondary
                                     font.pixelSize: 11
                                 }
                             }
@@ -1267,13 +1304,14 @@ ApplicationWindow {
             property bool hovered: false
             Rectangle {
                 anchors.fill: parent
-                color: libraryRevealAffordance.hovered ? "#141618" : "transparent"
+                color: libraryRevealAffordance.hovered ? theme.surfaceElevated : "transparent"
                 opacity: libraryRevealAffordance.hovered ? 0.92 : 0.55
             }
             Text {
                 anchors.centerIn: parent
                 text: "›"
-                color: libraryRevealAffordance.hovered ? "#9aa0a6" : "#5c6168"
+                color: theme.textSecondary
+                opacity: libraryRevealAffordance.hovered ? 1.0 : 0.55
                 font.pixelSize: 16
             }
             MouseArea {
@@ -1295,7 +1333,7 @@ ApplicationWindow {
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: 1
                 height: parent.height
-                color: window.divider
+                color: theme.dividerDefault
             }
             MouseArea {
                 // Wider hit target than the 6-DIP layout charge (contract).
@@ -1329,7 +1367,7 @@ ApplicationWindow {
                 spacing: 14
                 Label {
                     text: "Sample Brain"
-                    color: window.textColor
+                    color: theme.textPrimary
                     font.pixelSize: 28
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
@@ -1339,7 +1377,7 @@ ApplicationWindow {
                     text: window.interaction.libraryRevealed
                           ? "Select a Source, or Add Source to begin."
                           : "Add Source to begin."
-                    color: window.muted
+                    color: theme.textSecondary
                     font.pixelSize: 14
                     horizontalAlignment: Text.AlignHCenter
                     Layout.alignment: Qt.AlignHCenter
@@ -1352,7 +1390,7 @@ ApplicationWindow {
                 }
             }
         }
-        Rectangle { id: browserPane; objectName: "browserPane"; visible: window.interaction.hasActiveSource; width: visible ? layoutModel.browserWidth : 0; height: parent.height; color: window.browserPaneBg; border.color: window.border
+        Rectangle { id: browserPane; objectName: "browserPane"; visible: window.interaction.hasActiveSource; width: visible ? layoutModel.browserWidth : 0; height: parent.height; color: theme.surfaceBrowser; border.color: theme.borderSubtle
             // #692 owner-visual repair: preserve required scan columns when the
             // workspace is narrow. Type is optional; sample identity is not.
             property bool browserNarrowColumns: width < 700
@@ -1363,23 +1401,23 @@ ApplicationWindow {
             ColumnLayout { anchors.fill: parent; anchors.margins: 18; spacing: 10
                 RowLayout { Layout.fillWidth: true
                     ColumnLayout { Layout.fillWidth: true; spacing: 2
-                        Label { text: window.screenData.browserContext; color: window.textColor; font.pixelSize: window.textTitle; font.bold: true }
-                        Label { text: window.screenData.browserRows.length + " samples"; color: window.muted; font.pixelSize: window.textCaption }
-                        Label { visible: window.screenData.errorMessage.length > 0; text: window.screenData.errorMessage; color: window.accent; font.pixelSize: 11 }
+                        Label { text: window.screenData.browserContext; color: theme.textPrimary; font.pixelSize: window.textTitle; font.bold: true }
+                        Label { text: window.screenData.browserRows.length + " samples"; color: theme.textSecondary; font.pixelSize: window.textCaption }
+                        Label { visible: window.screenData.errorMessage.length > 0; text: window.screenData.errorMessage; color: theme.actionActive; font.pixelSize: 11 }
                     }
                     Item { Layout.fillWidth: true }
                     Button {
                         objectName: "harmonicMatchButton"
                         text: "Harmonic Match"
                         background: Rectangle {
-                            color: window.interaction.harmonicMatchOpen ? window.accent : window.panelAlt
+                            color: window.interaction.harmonicMatchOpen ? theme.actionActive : theme.surfaceElevated
                             border.width: window.interaction.harmonicMatchOpen ? 1 : 0
-                            border.color: window.accent
+                            border.color: theme.selectionBorder
                             radius: 4
                         }
                         contentItem: Text {
                             text: "Harmonic Match"
-                            color: window.textColor
+                            color: theme.textPrimary
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                             rightPadding: 16
@@ -1387,11 +1425,11 @@ ApplicationWindow {
                         }
                         onClicked: window.interaction.toggleHarmonicMatch()
                     }
-                    TextField { objectName: "browserSearch"; placeholderText: "Search samples"; placeholderTextColor: window.muted; Layout.preferredWidth: 230; Layout.minimumWidth: 120
+                    TextField { objectName: "browserSearch"; placeholderText: "Search samples"; placeholderTextColor: theme.textSecondary; Layout.preferredWidth: 230; Layout.minimumWidth: 120
                         background: Rectangle {
                             radius: 6
                             border.width: 1
-                            border.color: parent.activeFocus ? window.accent : window.border
+                            border.color: parent.activeFocus ? theme.actionActive : theme.borderSubtle
                             color: "transparent"
                         }
                     }
@@ -1406,13 +1444,13 @@ ApplicationWindow {
                               window.screenData.analysisStatus === "done" ? "Analyse abgeschlossen" :
                               window.screenData.analysisStatus === "cancelled" ? "Analyse abgebrochen" :
                               window.screenData.analysisStatus === "error" ? window.screenData.analysisError : ""
-                        color: window.screenData.analysisStatus === "error" ? window.accent : window.muted
+                        color: window.screenData.analysisStatus === "error" ? theme.actionActive : theme.textSecondary
                         font.pixelSize: 11
                     }
                     Label {
                         visible: window.screenData.analysisTotal > 0
                         text: window.screenData.analysisCurrent + " / " + window.screenData.analysisTotal
-                        color: window.textColor
+                        color: theme.textPrimary
                         font.pixelSize: 11
                     }
                     ProgressBar {
@@ -1431,10 +1469,10 @@ ApplicationWindow {
                 }
                 RowLayout { Layout.fillWidth: true; anchors.leftMargin: window.densityHorizontalInset; anchors.rightMargin: window.densityHorizontalInset; spacing: window.densityRowSpacing
                     Item { Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth; Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth }
-                    Label { text: "SAMPLE NAME"; color: window.muted; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; font.pixelSize: window.textCaption; font.bold: true }
-                    Label { text: "BPM"; color: window.muted; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
-                    Label { text: "KEY"; color: window.muted; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
-                    Label { text: "LENGTH"; color: window.muted; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
+                    Label { text: "SAMPLE NAME"; color: theme.textSecondary; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; font.pixelSize: window.textCaption; font.bold: true }
+                    Label { text: "BPM"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
+                    Label { text: "KEY"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
+                    Label { text: "LENGTH"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
                     Item { Layout.preferredWidth: browserPane.effectiveBrowserAddColumnWidth }
                 }
                 ListView { id: browser; objectName: "browserList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: window.densityRowHeight; implicitHeight: window.densityRowHeight * 2
@@ -1455,7 +1493,7 @@ ApplicationWindow {
                         else if (event.key === Qt.Key_Up) { window.interaction.navigateBrowser(-1); event.accepted = true }
                         else if (event.key === Qt.Key_Escape) { window.interaction.stopPreview(); event.accepted = true }
                     }
-                    delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.screenData.selectedBrowserIndex ? window.selectedRow : (rowSelection.containsMouse ? window.panelAlt : "transparent"); border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0; border.color: window.accent
+                    delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface : (rowSelection.containsMouse ? theme.surfaceElevated : "transparent"); border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0; border.color: theme.selectionBorder
                         Component.onCompleted: window.browserDelegateCreations += 1
                         MouseArea { id: rowSelection; anchors.fill: parent; z: 0; hoverEnabled: true; onClicked: { browser.forceActiveFocus(); window.interaction.selectRow(index) } }
                         RowLayout { anchors.fill: parent; anchors.leftMargin: window.densityHorizontalInset; anchors.rightMargin: window.densityHorizontalInset; anchors.topMargin: window.densityVerticalInset; anchors.bottomMargin: window.densityVerticalInset; spacing: window.densityRowSpacing; z: 1
@@ -1465,7 +1503,7 @@ ApplicationWindow {
                                     onPaint: {
                                         var context = getContext("2d")
                                         context.clearRect(0, 0, width, height)
-                                        context.strokeStyle = index === window.screenData.selectedBrowserIndex ? window.accent : window.waveformMuted
+                                        context.strokeStyle = index === window.screenData.selectedBrowserIndex ? theme.waveformActive : theme.waveformDefault
                                         context.lineWidth = 1.2
                                         context.beginPath()
                                         var points = envelope || []
@@ -1488,11 +1526,11 @@ ApplicationWindow {
                                 }
                                 MouseArea { anchors.fill: parent; z: 2; onClicked: { browser.forceActiveFocus(); window.interaction.previewRow(index) } }
                             }
-                            Label { text: modelData.name; color: window.textColor; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; verticalAlignment: Text.AlignVCenter }
-                            Label { visible: !browserPane.browserNarrowColumns; text: modelData.type; color: window.muted; font.pixelSize: window.textCaption; elide: Text.ElideRight; Layout.preferredWidth: 72; Layout.maximumWidth: 88; verticalAlignment: Text.AlignVCenter }
-                            Label { text: modelData.bpm; color: window.textColor; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
-                            Label { text: modelData.key; color: window.textColor; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
-                            Label { text: modelData.duration; color: window.textColor; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
+                            Label { text: modelData.name; color: theme.textPrimary; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; verticalAlignment: Text.AlignVCenter }
+                            Label { visible: !browserPane.browserNarrowColumns; text: modelData.type; color: theme.textSecondary; font.pixelSize: window.textCaption; elide: Text.ElideRight; Layout.preferredWidth: 72; Layout.maximumWidth: 88; verticalAlignment: Text.AlignVCenter }
+                            Label { text: modelData.bpm; color: theme.textPrimary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
+                            Label { text: modelData.key; color: theme.textPrimary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
+                            Label { text: modelData.duration; color: theme.textPrimary; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
                             Rectangle {
                                 id: addButton
                                 Layout.preferredWidth: browserPane.effectiveBrowserAddColumnWidth
@@ -1500,12 +1538,12 @@ ApplicationWindow {
                                 Layout.maximumHeight: window.densityRowHeight - 2 * window.densityVerticalInset
                                 radius: 3
                                 property bool hovered: addButtonMouse.containsMouse
-                                color: addButtonMouse.pressed ? window.selectedRow : (addButtonMouse.containsMouse ? window.selectedRow : "transparent")
-                                border.color: addButtonMouse.containsMouse || index === window.screenData.selectedBrowserIndex ? window.accent : "transparent"
+                                color: addButtonMouse.pressed ? theme.selectionSurface : (addButtonMouse.containsMouse ? theme.selectionSurface : "transparent")
+                                border.color: addButtonMouse.containsMouse || index === window.screenData.selectedBrowserIndex ? theme.actionActive : "transparent"
                                 Label {
                                     anchors.fill: parent
                                     text: browserPane.browserNarrowColumns ? "+ Add" : "+ Add to Kit"
-                                    color: addButtonMouse.pressed || addButtonMouse.containsMouse || index === window.screenData.selectedBrowserIndex ? window.accent : window.muted
+                                    color: addButtonMouse.pressed || addButtonMouse.containsMouse || index === window.screenData.selectedBrowserIndex ? theme.actionActive : theme.textSecondary
                                     horizontalAlignment: browserPane.browserNarrowColumns ? Text.AlignHCenter : Text.AlignRight
                                     verticalAlignment: Text.AlignVCenter
                                     font.pixelSize: window.textCaption
@@ -1521,7 +1559,7 @@ ApplicationWindow {
                                 }
                             }
                         }
-                        Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: window.densityDividerHeight; color: window.divider; opacity: index === window.screenData.selectedBrowserIndex ? 0.35 : 0.8 }
+                        Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: window.densityDividerHeight; color: theme.dividerDefault; opacity: index === window.screenData.selectedBrowserIndex ? 0.35 : 0.8 }
                     }
                 }
             }
@@ -1536,7 +1574,7 @@ ApplicationWindow {
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: 1
                 height: parent.height
-                color: window.divider
+                color: theme.dividerDefault
             }
             MouseArea {
                 // Wider hit target than the 6-DIP layout charge. Expand into the
@@ -1568,8 +1606,8 @@ ApplicationWindow {
             enabled: window.interaction.harmonicMatchOpen
             width: layoutModel.harmonyWidth
             height: parent.height
-            color: window.panel
-            border.color: window.border
+            color: theme.surfacePanel
+            border.color: theme.borderSubtle
             property bool harmonyOpen: window.interaction.harmonicMatchOpen
             onHarmonyOpenChanged: {
                 layoutModel.syncFromInteraction()
@@ -1589,9 +1627,9 @@ ApplicationWindow {
                 }
             }
             ColumnLayout { anchors.fill: parent; anchors.margins: 14
-                Label { text: "Harmonic Matches"; color: window.textColor; font.pixelSize: 18; font.bold: true }
-                Label { text: window.screenData.harmonyAnchor; color: window.muted; font.pixelSize: 12 }
-                Label { text: window.screenData.harmonyStatus; color: window.muted; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                Label { text: "Harmonic Matches"; color: theme.textPrimary; font.pixelSize: 18; font.bold: true }
+                Label { text: window.screenData.harmonyAnchor; color: theme.textSecondary; font.pixelSize: 12 }
+                Label { text: window.screenData.harmonyStatus; color: theme.textSecondary; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true }
                 ListView { id: harmonicMatchList; objectName: "harmonicMatchList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.harmonyRows; clip: true; reuseItems: true; focus: window.interaction.harmonicMatchOpen
                     Keys.onUpPressed: {
                         window.interaction.navigateHarmony(-1)
@@ -1619,7 +1657,7 @@ ApplicationWindow {
                             )
                         }
                     }
-                    delegate: Rectangle { width: parent.width; height: window.densityRowHeight; color: index === window.interaction.selectedHarmonyIndex ? window.panelAlt : "transparent"; border.color: window.border
+                    delegate: Rectangle { width: parent.width; height: window.densityRowHeight; color: index === window.interaction.selectedHarmonyIndex ? theme.surfaceElevated : "transparent"; border.color: theme.borderSubtle
                         MouseArea { anchors.fill: parent; z: 0; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.selectHarmonyRow(index) } }
                         RowLayout {
                             anchors.fill: parent
@@ -1641,7 +1679,7 @@ ApplicationWindow {
                                     onPaint: {
                                         var context = getContext("2d")
                                         context.clearRect(0, 0, width, height)
-                                        context.strokeStyle = window.waveformMuted
+                                        context.strokeStyle = theme.waveformDefault
                                         context.lineWidth = 1.2
                                         context.beginPath()
                                         var points = envelope || []
@@ -1660,11 +1698,11 @@ ApplicationWindow {
                                 }
                                 MouseArea { anchors.fill: parent; z: 2; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.previewHarmonyRow(index) } }
                             }
-                            Label { text: modelData.name; color: window.textColor; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 64; verticalAlignment: Text.AlignVCenter }
-                            Label { text: modelData.key; color: window.accent; font.pixelSize: window.textMeta; verticalAlignment: Text.AlignVCenter }
+                            Label { text: modelData.name; color: theme.textPrimary; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 64; verticalAlignment: Text.AlignVCenter }
+                            Label { text: modelData.key; color: theme.actionActive; font.pixelSize: window.textMeta; verticalAlignment: Text.AlignVCenter }
                             Label {
                                 text: modelData.relation + " · " + modelData.fit
-                                color: window.muted
+                                color: theme.textSecondary
                                 font.pixelSize: window.textCaption
                                 elide: Text.ElideRight
                                 Layout.preferredWidth: window.harmonicRelationColumnWidth
@@ -1679,7 +1717,7 @@ ApplicationWindow {
                                 Label {
                                     anchors.fill: parent
                                     text: "+ Add"
-                                    color: window.muted
+                                    color: theme.textSecondary
                                     font.pixelSize: window.textCaption
                                     horizontalAlignment: Text.AlignRight
                                     verticalAlignment: Text.AlignVCenter
@@ -1687,7 +1725,7 @@ ApplicationWindow {
                                 MouseArea { anchors.fill: parent; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.addHarmonyToKit(index) } }
                             }
                         }
-                        Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: window.densityDividerHeight; color: window.divider; opacity: 0.8 }
+                        Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: window.densityDividerHeight; color: theme.dividerDefault; opacity: 0.8 }
                     }
                 }
             }
@@ -1702,7 +1740,7 @@ ApplicationWindow {
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: 1
                 height: parent.height
-                color: window.divider
+                color: theme.dividerDefault
             }
             MouseArea {
                 // Wider hit target than the 6-DIP layout charge (contract).
@@ -1724,11 +1762,11 @@ ApplicationWindow {
                 onReleased: layoutModel.endDrag()
             }
         }
-        Rectangle { id: liveKitPane; objectName: "liveKitPane"; visible: window.interaction.hasActiveSource; width: visible ? layoutModel.liveKitWidth : 0; height: parent.height; color: window.panel; border.color: window.border
+        Rectangle { id: liveKitPane; objectName: "liveKitPane"; visible: window.interaction.hasActiveSource; width: visible ? layoutModel.liveKitWidth : 0; height: parent.height; color: theme.surfacePanel; border.color: theme.borderSubtle
             ColumnLayout { anchors.fill: parent; anchors.margins: 14; spacing: 8
                 RowLayout { Layout.fillWidth: true
-                    Label { text: "LIVE KIT"; color: window.muted; font.pixelSize: 12; Layout.fillWidth: true }
-                    Label { text: window.screenData.liveKitAssignedCount + " / " + window.screenData.liveKitTotalSlotCount; color: window.muted; font.pixelSize: 11 }
+                    Label { text: "LIVE KIT"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
+                    Label { text: window.screenData.liveKitAssignedCount + " / " + window.screenData.liveKitTotalSlotCount; color: theme.textSecondary; font.pixelSize: 11 }
                 }
                 Rectangle {
                     id: liveKitPendingBanner
@@ -1737,8 +1775,8 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 30
                     radius: 4
-                    color: window.selectedRow
-                    border.color: window.accent
+                    color: theme.selectionSurface
+                    border.color: theme.selectionBorder
                     focus: visible
                     Keys.onEscapePressed: window.interaction.escapeLiveKitContext()
                     Label {
@@ -1746,7 +1784,7 @@ ApplicationWindow {
                         anchors.leftMargin: 8
                         anchors.rightMargin: 8
                         text: "Add " + window.interaction.liveKitPendingAdd + " · Slot + · Esc"
-                        color: window.textColor
+                        color: theme.textPrimary
                         font.pixelSize: 11
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
@@ -1762,14 +1800,14 @@ ApplicationWindow {
                             width: liveKitPane.width - 28
                             height: 44 + (modelData.active ? modelData.slots.length * 26 + 14 : 0)
                             radius: 6
-                            color: modelData.active ? window.panelAlt : "transparent"
-                            border.color: modelData.active ? window.accent : window.border
+                            color: modelData.active ? theme.surfaceElevated : "transparent"
+                            border.color: modelData.active ? theme.actionActive : theme.borderSubtle
                             ColumnLayout { anchors.fill: parent; spacing: 0
                                 Item { Layout.fillWidth: true; Layout.preferredHeight: 44; Layout.leftMargin: 12; Layout.rightMargin: 10
                                     RowLayout { anchors.fill: parent; spacing: 6
-                                        Label { text: (index + 1) + "  "; color: modelData.active ? window.accent : window.muted; font.pixelSize: 13; font.bold: true }
-                                        Label { text: modelData.name; color: window.textColor; font.pixelSize: 14; font.bold: modelData.active; elide: Text.ElideRight; Layout.fillWidth: true }
-                                        Label { text: modelData.active ? "▾" : "▸"; color: modelData.active ? window.accent : window.muted; font.pixelSize: 12 }
+                                        Label { text: (index + 1) + "  "; color: modelData.active ? theme.actionActive : theme.textSecondary; font.pixelSize: 13; font.bold: true }
+                                        Label { text: modelData.name; color: theme.textPrimary; font.pixelSize: 14; font.bold: modelData.active; elide: Text.ElideRight; Layout.fillWidth: true }
+                                        Label { text: modelData.active ? "▾" : "▸"; color: modelData.active ? theme.actionActive : theme.textSecondary; font.pixelSize: 12 }
                                     }
                                     MouseArea {
                                         id: liveKitGroupHeader
@@ -1797,8 +1835,8 @@ ApplicationWindow {
                                             anchors.fill: parent
                                             radius: 3
                                             visible: modelData.auditioning
-                                            color: window.selectedRow
-                                            border.color: window.accent
+                                            color: theme.selectionSurface
+                                            border.color: theme.selectionBorder
                                         }
                                         MouseArea {
                                             id: slotAuditionMouse
@@ -1813,24 +1851,24 @@ ApplicationWindow {
                                                 Label {
                                                     anchors.centerIn: parent
                                                     text: modelData.assigned ? "▶" : ""
-                                                    color: slotAuditionMouse.containsMouse && window.interaction.liveKitPendingAdd === "" ? window.accent : (modelData.auditioning ? window.accent : window.muted)
+                                                    color: slotAuditionMouse.containsMouse && window.interaction.liveKitPendingAdd === "" ? theme.actionActive : (modelData.auditioning ? theme.actionActive : theme.textSecondary)
                                                     font.pixelSize: 10
                                                 }
                                             }
-                                            Label { text: modelData.name; color: window.muted; font.pixelSize: 11; Layout.fillWidth: true; elide: Text.ElideRight }
-                                            Label { text: modelData.assignment; color: modelData.auditioning ? window.accent : (modelData.assigned ? window.textColor : window.muted); font.pixelSize: 11; elide: Text.ElideRight }
+                                            Label { text: modelData.name; color: theme.textSecondary; font.pixelSize: 11; Layout.fillWidth: true; elide: Text.ElideRight }
+                                            Label { text: modelData.assignment; color: modelData.auditioning ? theme.actionActive : (modelData.assigned ? theme.textPrimary : theme.textSecondary); font.pixelSize: 11; elide: Text.ElideRight }
                                             Rectangle {
                                                 id: slotAction
                                                 Layout.preferredHeight: 22
                                                 radius: 3
                                                 Layout.preferredWidth: showReplaceAffordance ? 52 : 22
-                                                color: hasPendingAdd ? window.selectedRow : (showReplaceAffordance ? window.selectedRow : "transparent")
-                                                border.color: hasPendingAdd ? window.accent : (showReplaceAffordance ? window.accent : "transparent")
+                                                color: hasPendingAdd ? theme.selectionSurface : (showReplaceAffordance ? theme.selectionSurface : "transparent")
+                                                border.color: hasPendingAdd ? theme.actionActive : (showReplaceAffordance ? theme.actionActive : "transparent")
                                                 Label {
                                                     anchors.centerIn: parent
                                                     objectName: "slotActionLabel" + kitGroupIndex + "_" + index
                                                     text: hasPendingAdd ? "+" : (showReplaceAffordance ? "↻" : "+")
-                                                    color: hasPendingAdd ? window.accent : (slotActionMouse.containsMouse ? window.textColor : window.muted)
+                                                    color: hasPendingAdd ? theme.actionActive : (slotActionMouse.containsMouse ? theme.textPrimary : theme.textSecondary)
                                                     font.pixelSize: showReplaceAffordance ? 14 : 13
                                                 }
                                             }
