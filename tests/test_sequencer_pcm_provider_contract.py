@@ -536,13 +536,18 @@ def test_provider_cache_key_canonicalizes_path_aliases(tmp_path: Path):
     assert first is not None and second is not None
     assert len(decode_calls) == 1
 
-    # Existing-file identity uses inode, so casing aliases share one entry when
-    # the filesystem treats them as the same path (Windows / CI-friendly spelling).
+    # Existing-file identity uses inode; casing aliases share one entry only when
+    # the filesystem treats both spellings as the same existing file.
     decode_calls.clear()
     mixed = absolute.swapcase() if absolute != absolute.swapcase() else absolute
-    third = provider.pcm_for_path(mixed)
-    assert third is not None
-    assert len(decode_calls) == 0
+    if Path(mixed).exists():
+        third = provider.pcm_for_path(mixed)
+        assert third is not None
+        assert len(decode_calls) == 0
+    else:
+        third = provider.pcm_for_path(mixed)
+        assert third is None
+        assert len(decode_calls) == 1
 
 
 def test_canonicalize_symlink_loop_stays_fail_soft(monkeypatch, tmp_path: Path):
@@ -736,7 +741,8 @@ def test_channel_rack_reuses_long_lived_pcm_provider_across_passes(tmp_path: Pat
         return decode(path, sample_rate=sample_rate, start_ms=start_ms)
 
     provider = provider_cls(sample_rate=ENGINE_SR, decode_fn=counting_decode)
-    warm(state, provider)
+    failed = warm(state, provider)
+    assert failed == ()
     assert len(decode_calls) == 1
 
     engine = MagicMock(name="native_engine")
@@ -753,6 +759,33 @@ def test_channel_rack_reuses_long_lived_pcm_provider_across_passes(tmp_path: Pat
         )
         assert result.scheduled_count == 1
     assert len(decode_calls) == 1, "long-lived pcm_provider must cache across passes"
+
+
+def test_warm_channel_rack_pcm_reports_failed_paths_and_counts_identities(
+    tmp_path: Path,
+):
+    provider_cls = _require_symbol(_provider_module_or_fail(), "SequencerPcmProvider")
+    rack = importlib.import_module("src.channel_rack")
+    warm = rack.warm_channel_rack_pcm
+    build = rack.build_channel_rack_state
+
+    wav = _write_mono_wav(tmp_path / "kick_01.wav", sr=ENGINE_SR)
+    live_kit = LiveKitState()
+    live_kit.assign("Kick + Bass", "Kick", _synthetic_row(wav))
+    state = build(live_kit)
+    # Alias via "." should not double-count capacity.
+    alias = str(tmp_path / "." / "kick_01.wav")
+    state = rack.add_user_channel(state, sample_path=alias)
+    provider = provider_cls(sample_rate=ENGINE_SR, max_entries=1)
+    assert warm(state, provider) == ()
+
+    missing_state = rack.add_user_channel(
+        build(LiveKitState()),
+        sample_path=str(tmp_path / "missing.wav"),
+    )
+    provider2 = provider_cls(sample_rate=ENGINE_SR, max_entries=2)
+    failed = warm(missing_state, provider2)
+    assert failed == (str(tmp_path / "missing.wav"),)
 
 
 def test_provider_has_no_qml_or_preview_dependency():

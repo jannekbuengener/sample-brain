@@ -21,7 +21,7 @@ from .pattern_core import (
     allocate_user_channel_id,
     require_triggers_reference_known_channels,
 )
-from .sequencer_pcm import SequencerPcmProvider
+from .sequencer_pcm import SequencerPcmProvider, canonicalize_pcm_path
 from .sequencer_playback import (
     PlaybackScheduleResult,
     plan_pattern_once,
@@ -243,30 +243,44 @@ def _require_matching_sample_rate(
 def warm_channel_rack_pcm(
     state: ChannelRackState,
     provider: SequencerPcmProvider,
-) -> None:
+) -> tuple[str, ...]:
     """Decode/cache every assigned sample path before scheduling voices.
 
-    Raises ``ValueError`` when unique assigned paths exceed ``provider.max_entries``
-    so prewarming cannot silently evict samples still required for the pass.
+    Capacity is measured by provider cache identity (canonical key), not raw
+    path spellings, so aliases of one file count once.
+
+    Returns the tuple of raw paths that failed to load (fail-soft). Callers can
+    skip those sources without re-decoding after the engine-frame anchor.
+    Raises ``ValueError`` when unique identities exceed ``provider.max_entries``.
     """
 
-    paths: list[str] = []
-    seen: set[str] = set()
+    paths_by_identity: list[str] = []
+    seen_identities: set[str] = set()
     for channel in state.channels:
         path = channel.sample_path
-        if path is None or path == "" or path.isspace() or path in seen:
+        if path is None or path == "" or path.isspace():
             continue
-        seen.add(path)
-        paths.append(path)
+        try:
+            identity = canonicalize_pcm_path(path)
+        except (OSError, RuntimeError, ValueError):
+            identity = path
+        if identity in seen_identities:
+            continue
+        seen_identities.add(identity)
+        paths_by_identity.append(path)
 
-    if len(paths) > provider.max_entries:
+    if len(paths_by_identity) > provider.max_entries:
         raise ValueError(
             "warm_channel_rack_pcm requires provider.max_entries >= number of "
-            f"unique sample paths (need {len(paths)}, max_entries={provider.max_entries})"
+            "unique sample identities "
+            f"(need {len(paths_by_identity)}, max_entries={provider.max_entries})"
         )
 
-    for path in paths:
-        provider.pcm_for_path(path)
+    failed: list[str] = []
+    for path in paths_by_identity:
+        if provider.pcm_for_path(path) is None:
+            failed.append(path)
+    return tuple(failed)
 
 
 __all__ = [
