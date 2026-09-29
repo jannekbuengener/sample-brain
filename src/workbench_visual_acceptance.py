@@ -206,9 +206,19 @@ class Screen1VisualFixtureV2:
 
 
 def _ratios_sum_ok(ratios: Mapping[str, float]) -> bool:
-    values = [float(v) for v in ratios.values() if float(v) > 0.0]
+    if not ratios:
+        return False
+    values: list[float] = []
+    for raw in ratios.values():
+        value = float(raw)
+        if value != value or value == float("inf") or value == float("-inf"):
+            return False
+        if value < 0.0:
+            return False
+        if value > 0.0:
+            values.append(value)
     if not values:
-        return True
+        return False
     return abs(sum(values) - 1.0) <= 1e-9
 
 
@@ -375,6 +385,8 @@ def validate_screen1_visual_fixture_v2(fixture: Screen1VisualFixtureV2) -> None:
             raise EvidenceError(f"Invalid panel_ratios for {state_id}")
         if state.auto_audition:
             raise EvidenceError("v2 acceptance states must not enable auto_audition")
+        if state.preview_active:
+            raise EvidenceError("v2 acceptance states must not enable preview_active")
         if "\\" in json.dumps(state.layout.panel_ratios) or _private(
             {
                 "label": state.selected_source_label,

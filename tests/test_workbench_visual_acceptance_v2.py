@@ -192,3 +192,43 @@ def test_v1_manifest_path_still_requires_only_v1_states(tmp_path: Path):
     )
     assert result["fixture"] == FIXTURE_VERSION
     assert result["states"] == list(REQUIRED_STATE_IDS)
+
+
+def test_v2_rejects_negative_or_nan_panel_ratios():
+    fixture = build_screen1_visual_fixture_v2()
+    bad = resolve_screen1_visual_state_v2(fixture, "screen1-active-source")
+    from dataclasses import replace
+
+    from src.workbench_visual_acceptance import Screen1PanelLayoutV2
+
+    tainted = replace(
+        bad,
+        layout=Screen1PanelLayoutV2(
+            source_nav_visible=True,
+            calm_canvas_visible=False,
+            browser_materialized=True,
+            harmonic_visible=False,
+            live_kit_materialized=True,
+            panel_ratios={"source_nav": 1.0, "browser": -0.2},
+        ),
+    )
+    broken = replace(
+        fixture,
+        states={**fixture.states, "screen1-active-source": tainted},
+    )
+    with pytest.raises(EvidenceError, match="panel_ratios"):
+        validate_screen1_visual_fixture_v2(broken)
+
+
+def test_v2_rejects_preview_active_states():
+    fixture = build_screen1_visual_fixture_v2()
+    from dataclasses import replace
+
+    active = resolve_screen1_visual_state_v2(fixture, "screen1-active-source")
+    tainted = replace(active, preview_active=True)
+    broken = replace(
+        fixture,
+        states={**fixture.states, "screen1-active-source": tainted},
+    )
+    with pytest.raises(EvidenceError, match="preview_active"):
+        validate_screen1_visual_fixture_v2(broken)
