@@ -112,31 +112,47 @@ Values shown as `motion=off / motion=on` where both were measured.
 Visual evidence (local, outside repo):
 `%TEMP%/sample-brain-695-evidence/visuals/<renderer>/{normal,hovered,selected,active-preview}.png`
 
-## Exit classification (exactly one)
+## EXIT CLASSIFICATION
 
-Chosen by `classify_from_results` from evidence, not preference.
+**`KEEP_CANVAS_PLUS_ACTIVE_OVERLAY`**
 
-**Suite EXIT: `KEEP_CANVAS_PLUS_ACTIVE_OVERLAY`**
+Chosen by `classify_from_results` from measured evidence (not preference).
+Post-sync onto current `main` does not reopen this classification unless new
+live measurements refute it — they do not.
 
-Rationale from evidence:
+Rationale:
 
 - Shape: higher scroll/initial cost and ~16× worse active-motion frame cost vs Canvas → rejected.
 - Cached static: virtualizes cleanly and motion overlay is cheap, but did **not** beat Canvas scroll on the measured matrix / 50k probe → not selected as full-body replacement.
 - QSG geometry: no ≥25% scroll win vs Canvas+Cached; higher maintainability/production risk → rejected for production now.
-- Canvas remains the least-risk body renderer; active-row motion belongs in a thin overlay (playhead / reduced intensity) with `on|reduced|off` modes later.
+- Canvas remains the least-risk body renderer; active-row motion belongs in a thin overlay.
 
-## Recommended follow-up (smallest production slice)
+### Production recommendation (binding for follow-up)
 
-After Owner review of this research PR:
+- Existing Canvas waveform **body** stays for normal / selected / pooled rows.
+- Separate **active preview overlay** layer for the playing row only.
+- **Playhead** is the first production step (no intensity/glow in that first slice).
+- Optional subtle intensity may come later on the same overlay mechanism.
+- Motion only on the Playing row; offscreen/pooled → no timers, no continuous repaints.
+- Modes `on` / `reduced` / `off` remain architecturally possible.
+- No Settings UI in the follow-up slice; Motion Off must be able to disable the overlay.
 
-1. Keep production Canvas waveform body for inactive/pooled rows.
-2. Add a thin **active overlay** (playhead + optional reduced intensity) driven
-   by existing preview state — no per-row timers for pooled delegates.
-3. Wire future motion preference modes (`on` / `reduced` / `off`) behind the
-   existing session/preview contracts — Settings UI remains out of scope.
+## Recommended follow-up (smallest production slice — NOT in this PR)
 
-## Non-scope (explicit)
+**Screen-1 active waveform overlay — playhead on playing row**
+
+Scope:
+
+1. Production Canvas body unchanged.
+2. Existing preview/audition state is the sole playback truth (no new audio clock, no new analysis).
+3. Thin playhead overlay only on the active preview row.
+4. Pooled/offscreen fail-closed (no animation / no timers).
+5. Motion Off disables the overlay; Reduced can later reuse the same mechanism.
+6. No intensity/glow scope in this first production slice unless technically required for the playhead itself.
+7. No Settings UI.
+
+## Non-scope (explicit for #695 research)
 
 Final production renderer, spectrogram/FFT features, Live Kit redesign,
 Screen 2, Settings/Motion Preference UI, panel reordering, audio engine
-rewrite, heavy new dependencies.
+rewrite, heavy new dependencies, and the playhead overlay production slice above.
