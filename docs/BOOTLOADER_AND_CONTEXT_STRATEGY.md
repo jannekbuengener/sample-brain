@@ -75,7 +75,7 @@ not duplicate domain logic or reopen the technology choice.
 
 ### Repository Hygiene
 
-- `docs/ISSUE_BACKLOG.md` — planned work across all epics, status of open items
+- `docs/ISSUE_BACKLOG.md` — historical backlog/PR ledger; use GitHub live for current open/closed state and current work
 - `docs/DATA_AND_ARTIFACT_POLICY.md` — enforcement checklist before any commit
 
 ## 5. Forbidden Context Sources
