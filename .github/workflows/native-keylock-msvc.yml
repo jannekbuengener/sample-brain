@@ -7,6 +7,7 @@ on:
       - "native/audio/**"
       - "src/native_audio.py"
       - "tests/test_keylock_sync.py"
+      - ".python-version"
       - ".github/workflows/native-keylock-msvc.yml"
   workflow_dispatch:
 
