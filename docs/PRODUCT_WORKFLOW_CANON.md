@@ -23,7 +23,7 @@ Library / Screen 1
 | Screen | Intent | Status on `main` |
 |--------|--------|------------------|
 | Screen 1 | Library browse + Live Kit assignment | Live Kit + QML Screen-1 shell exist; Tk remains default/fallback |
-| Screen 2 | Channel Rack — program patterns/triggers over Live Kit channels | **FOUNDATIONS READY / UI HOLD** — session ownership, Pattern Core, sequencer scheduling, Channel Rack Python core, and the production PCM cache/decode provider (#676) are in place; Screen-2 QML remains HOLD |
+| Screen 2 | Channel Rack — program patterns/triggers over Live Kit channels | **FOUNDATIONS READY / UI HOLD** — session ownership, Pattern Core, sequencer scheduling, Channel Rack Python core, production PCM provider (#676), and DEFAULT_ON initial step semantics (#677) are in place; Screen-2 QML (#678) remains HOLD |
 | Screen 3 | Arrangement mode over patterns/channels | **Not built** — must not be designed in Screen-2 slices |
 
 ## 3. Channel Rack product rules (Screen 2 intent)
@@ -34,6 +34,7 @@ These are product constraints for later implementation. They are **not** a claim
 - The Channel Rack is **not** limited to the fixed Live Kit slot universe; user-added channels with opaque IDs (no fake Live Kit slot) are in scope for the Python core (#681).
 - A sample remains the unchanged library asset; channels **reference** samples and do not duplicate audio files.
 - Channel Rack is **pattern/trigger first** (grid programming).
+- **Initial step semantics (v1, #677):** New sample-bearing Channel Rack channels initialize with every v1 step active. Empty channels initialize without triggers. Screen 2 uses DEFAULT_ON / subtractive programming: click removes an active step trigger; click again restores it. Pattern storage remains an explicit trigger list (no inverted / off-mask). There is no additive/subtractive mode selector or preference in v1.
 - A later piano / event editor may share the same pattern substrate; it is **not** required for Screen-2 v1.
 - Arrangement, mixer, sends, inserts, buses, and complex routing are **out of Screen-2 scope**.
 - Architecture must not unnecessarily block those later extensions.
@@ -66,7 +67,7 @@ Do **not** start Screen-2 UI before these foundations:
 2. **Session ownership** — one Live Kit truth; QML commands → native transport/audio — **DONE** (#647)
 3. **Minimal Pattern Core** — Channel, Pattern, Trigger/Event, musical position, stable slot/channel IDs — **DONE** (#656)
 4. **Minimal Sequencer Playback** — pattern position → `TempoMap` → scheduled engine frame → cached PCM voice — **DONE** (#663 scheduler + #676 PCM cache/decode provider)
-5. **Screen-2 Channel Rack UI** — Channel Rack Python core is **DONE** (#667); QML UI remains **HOLD** until explicitly scoped
+5. **Screen-2 Channel Rack UI** — Channel Rack Python core is **DONE** (#667); initial DEFAULT_ON step semantics are **DONE** (#677); QML UI (#678) remains **HOLD** until explicitly scoped (and any documented playback-capacity blockers are resolved or waived)
 
 ## 6. Documents this canon overrides (on conflict)
 
@@ -92,4 +93,4 @@ Historical VST pillar specs (#90–#95) remain **archived design notes** for a p
 | Native voices | `src/native_audio.py` |
 | QML Screen-1 shell | `src/workbench_qml.py` |
 
-Steps 2→3→4 are green on the #676 path (scheduling + production PCM provider). The Channel Rack Python core is merged; Screen-2 Channel Rack QML remains **HOLD**.
+Steps 2→3→4 are green on the #676 path (scheduling + production PCM provider). The Channel Rack Python core and DEFAULT_ON initial step semantics (#677) are merged; Screen-2 Channel Rack QML remains **HOLD**.

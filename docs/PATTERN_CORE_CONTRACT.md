@@ -110,6 +110,15 @@ same Trigger / Pattern substrate
 
 Product rule: Live Kit is the **initial seed** for the Channel Rack, not a fixed channel universe. Samples stay library assets.
 
+### Channel Rack initial step semantics (#677)
+
+Owned by `src/channel_rack.py` (not by Pattern Core types themselves):
+
+- New **sample-bearing** channels (non-empty `sample_path`) initialize with every v1 step active — 16 triggers at `Fraction(0, 4)` … `Fraction(15, 4)`.
+- **Empty** channels (`sample_path` is `None` or empty) initialize **without** triggers (no phantom events).
+- The same rule applies to Live Kit seed channels and user-added channels (`add_user_channel`).
+- `toggle_step` stays a symmetric presence toggle; storage remains an explicit trigger list.
+
 ## Explicit non-goals (this contract)
 
 - Screen-2 / Channel Rack widgets / `+` button UI
@@ -149,4 +158,4 @@ Audition (`TransportAwarePreview`) remains separate and monophonic; it may reuse
 
 ## Next
 
-Session ownership (#647), Pattern Core (#656), the sequencer scheduling seam (#663), Channel Rack Python core (#667), extensible channel identity (#681), and the production PCM cache/decode provider (#676) complete the playback foundations. Initial step semantics (#677) remain before Screen-2 QML (#678); Screen-2 QML stays HOLD until explicitly scoped.
+Session ownership (#647), Pattern Core (#656), the sequencer scheduling seam (#663), Channel Rack Python core (#667), extensible channel identity (#681), the production PCM cache/decode provider (#676), and DEFAULT_ON initial step semantics (#677) complete the Screen-2 Python foundations. Screen-2 QML (#678) stays HOLD until explicitly scoped; DEFAULT_ON kits with ≥3 sample-bearing channels can exceed the current one-pass `SB_MAX_VOICES=32` create budget (see sequencer playback contract / voice-lifecycle follow-up).
