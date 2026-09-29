@@ -654,7 +654,7 @@ def test_production_qml_contract_has_observable_screen_state_and_action_path():
     assert "window.screenData.selectedBrowserIndex" in source
     assert 'objectName: "browserPane"' in source
     assert 'objectName: "workspaceRow"' in source
-    assert "width: layoutModel.browserWidth" in source
+    assert "width: visible ? layoutModel.browserWidth : 0" in source
     assert "onWidthChanged: layoutModel.setContentWidth(width)" in source
 
 
