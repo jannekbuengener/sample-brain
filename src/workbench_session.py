@@ -9,11 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import tkinter as tk
-
-from .workbench import WorkbenchApp
 from .workbench_channel_rack import ChannelRackController
 from .workbench_controller import WorkbenchRow, get_preview_start_ms
 from .workbench_harmony import HarmonicMatchLibraryController
@@ -25,7 +22,10 @@ from .workbench_qml import (
     Screen1QmlViewModel,
 )
 from .workbench_transport_adapter import WorkbenchTransportAdapter
-from .workbench_transport_ui import TransportAwarePreview
+from .workbench_transport_preview import TransportAwarePreview
+
+if TYPE_CHECKING:
+    from .workbench import WorkbenchApp
 
 
 @dataclass
@@ -95,6 +95,10 @@ def compose_workbench_session(
     tk_workbench: WorkbenchApp | None = None
 
     if include_tk_workbench:
+        import tkinter as tk
+
+        from .workbench import WorkbenchApp
+
         root = tk.Tk()
         root.withdraw()
         tk_workbench = WorkbenchApp(root, live_kit_state=live_kit)

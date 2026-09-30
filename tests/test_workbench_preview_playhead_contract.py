@@ -101,7 +101,7 @@ def _native_preview(monkeypatch: pytest.MonkeyPatch) -> tuple[TransportAwarePrev
 
     preview._pcm_load_fn = _pcm_load  # noqa: SLF001
     monkeypatch.setattr(
-        "src.workbench_transport_ui.read_audio_duration_ms",
+        "src.workbench_transport_preview.read_audio_duration_ms",
         lambda _path: 1000,
     )
     return preview, engine

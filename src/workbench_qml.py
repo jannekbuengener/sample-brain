@@ -797,7 +797,7 @@ class Screen1QmlInteractionAdapter:
 
     def preview_playback_snapshot(self):
         """Return authoritative preview telemetry for playhead presentation."""
-        from .workbench_transport_ui import PreviewPlaybackSnapshot
+        from .workbench_transport_preview import PreviewPlaybackSnapshot
 
         if self._waveform_motion_mode == "off" or not self._preview_active:
             self._preview_playback_cache = PreviewPlaybackSnapshot.idle()
