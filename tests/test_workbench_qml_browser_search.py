@@ -8,19 +8,53 @@ from pathlib import Path
 
 import pytest
 
-from src.workbench_qml import QML_SOURCE
+from src.workbench_controller import WorkbenchRow
+from src.workbench_qml import QML_SOURCE, Screen1QmlViewModel
 
 PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 
-pytestmark = pytest.mark.skipif(
-    not PY_SIDE6_AVAILABLE,
-    reason="PySide6 ist nicht installiert",
-)
+
+def _row(name: str, *, key: str) -> WorkbenchRow:
+    return WorkbenchRow(
+        display_name=name,
+        relative_path=name,
+        path=f"/tmp/{name}.wav",
+        bpm=120.0,
+        key=key,
+        key_conf=0.9,
+        loudness=None,
+        brightness=None,
+        sample_class="one_shot",
+        pred_type="Kick",
+        status="ok",
+        details={},
+    )
 
 
 def test_qml_source_wires_browser_search_to_interaction() -> None:
     assert 'objectName: "browserSearch"' in QML_SOURCE
     assert "onTextChanged: window.interaction.setBrowserSearch(text)" in QML_SOURCE
+
+
+def test_view_model_browser_search_filters_without_qt() -> None:
+    vm = Screen1QmlViewModel.baseline("screen1-default-3panel")
+    vm.set_browser_state(
+        rows=(
+            _row("alpha kick", key="Cmaj"),
+            _row("beta snare", key="Amin"),
+            _row("gamma pulse", key="Fmaj"),
+        ),
+        selected_index=0,
+        browser_context="All Samples",
+        error=None,
+    )
+    assert len(vm.browser_rows) == 3
+    vm.set_browser_search_query("alpha")
+    assert len(vm.browser_rows) == 1
+    assert vm.browser_rows[0].source_row.display_name == "alpha kick"
+    assert vm.selected_browser_index == 0
+    vm.set_browser_search_query("")
+    assert len(vm.browser_rows) == 3
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
@@ -73,7 +107,6 @@ def test_browser_search_filters_and_clears_live(tmp_path: Path) -> None:
         assert len(view_model.browser_rows) == 1
         assert "cmaj" in view_model.browser_rows[0].source_row.display_name.casefold()
 
-        # Direct Slot path (same as QML onTextChanged) must clear back to full scope.
         bridge.setBrowserSearch("")
         app.processEvents()
         assert len(view_model.browser_rows) == before
