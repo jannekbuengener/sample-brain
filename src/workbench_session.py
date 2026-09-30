@@ -115,6 +115,8 @@ def compose_workbench_session(
     # #region agent log
     try:
         import json
+        import sys
+        import tempfile
         import time
         from pathlib import Path as _Path
 
@@ -130,9 +132,21 @@ def compose_workbench_session(
             },
             "timestamp": int(time.time() * 1000),
         }
-        _log = _Path(__file__).resolve().parents[1] / "debug-676a9f.log"
-        with _log.open("a", encoding="utf-8") as _handle:
-            _handle.write(json.dumps(_payload, ensure_ascii=True) + "\n")
+        _line = json.dumps(_payload, ensure_ascii=True) + "\n"
+        _candidates = [
+            _Path(__file__).resolve().parents[1] / "debug-676a9f.log",
+            _Path(tempfile.gettempdir()) / "debug-676a9f.log",
+        ]
+        if getattr(sys, "frozen", False):
+            _candidates.append(
+                _Path(sys.executable).resolve().parent / "debug-676a9f.log"
+            )
+        for _log in _candidates:
+            try:
+                with _log.open("a", encoding="utf-8") as _handle:
+                    _handle.write(_line)
+            except Exception:
+                pass
     except Exception:
         pass
     # #endregion
