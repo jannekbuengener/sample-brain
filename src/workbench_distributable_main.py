@@ -48,7 +48,44 @@ def main() -> int:
     # samplebrain_audio.dll from the executable directory (trusted packaging path).
     os.environ.setdefault("SAMPLE_BRAIN_DISTRIBUTABLE", "1")
     apply_windows_distributable_defaults()
-    from .workbench_qml import run_qml_screen1
+    # #region agent log
+    def _dbg760(message: str, data: dict, hypothesis_id: str) -> None:
+        import json
+        import time
+        from pathlib import Path
+
+        payload = {
+            "sessionId": "676a9f",
+            "runId": "post-fix",
+            "hypothesisId": hypothesis_id,
+            "location": "workbench_distributable_main.py:main",
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+        }
+        try:
+            log_path = Path(__file__).resolve().parents[1] / "debug-676a9f.log"
+            with log_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
+        except Exception:
+            pass
+
+    _dbg760("distributable_main_before_qml_import", {"platform": sys.platform}, "D")
+    # #endregion
+    try:
+        from .workbench_qml import run_qml_screen1
+    except Exception as exc:
+        # #region agent log
+        _dbg760(
+            "distributable_main_qml_import_failed",
+            {"type": type(exc).__name__, "msg": str(exc)[:300]},
+            "D",
+        )
+        # #endregion
+        raise
+    # #region agent log
+    _dbg760("distributable_main_qml_imported", {}, "D")
+    # #endregion
 
     result = run_qml_screen1()
     return int(result or 0)

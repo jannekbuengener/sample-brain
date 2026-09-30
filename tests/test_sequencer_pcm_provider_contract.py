@@ -281,14 +281,18 @@ def test_decode_native_pcm_gt2_channels_collapses_safely(tmp_path: Path):
 
 def test_audition_load_native_pcm_delegates_to_shared_decode():
     """Reuse without coupling: audition calls shared decode; does not own cache."""
-    transport_ui = importlib.import_module("src.workbench_transport_ui")
-    source = Path(inspect.getsourcefile(transport_ui) or "").read_text(encoding="utf-8")
+    # #760: TAP/_load_native_pcm live in workbench_transport_preview (Tk-free).
+    preview = importlib.import_module("src.workbench_transport_preview")
+    source = Path(inspect.getsourcefile(preview) or "").read_text(encoding="utf-8")
     assert "decode_native_pcm" in source
     assert "native_pcm_decode" in source
-    load_fn = getattr(transport_ui, "_load_native_pcm", None)
+    load_fn = getattr(preview, "_load_native_pcm", None)
     assert callable(load_fn)
     load_src = inspect.getsource(load_fn)
     assert "decode_native_pcm" in load_src
+    # Legacy import surface still re-exports the helper.
+    transport_ui = importlib.import_module("src.workbench_transport_ui")
+    assert getattr(transport_ui, "_load_native_pcm", None) is load_fn
 
 
 def test_shared_decode_module_has_no_audition_or_qml_coupling():

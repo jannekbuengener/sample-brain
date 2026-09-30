@@ -797,7 +797,7 @@ class Screen1QmlInteractionAdapter:
 
     def preview_playback_snapshot(self):
         """Return authoritative preview telemetry for playhead presentation."""
-        from .workbench_transport_ui import PreviewPlaybackSnapshot
+        from .workbench_transport_preview import PreviewPlaybackSnapshot
 
         if self._waveform_motion_mode == "off" or not self._preview_active:
             self._preview_playback_cache = PreviewPlaybackSnapshot.idle()
@@ -3225,7 +3225,44 @@ def _qml_engine(
     preview_player = None
     channel_rack_controller = None
     if interaction_adapter is None:
-        from .workbench_session import compose_workbench_session
+        # #region agent log
+        def _dbg760(message: str, data: dict, hypothesis_id: str) -> None:
+            import json
+            import time
+            from pathlib import Path
+
+            payload = {
+                "sessionId": "676a9f",
+            "runId": "post-fix",
+            "hypothesisId": "A",
+            "location": "workbench_qml.py:_qml_engine",
+            "message": message,
+                "data": data,
+                "timestamp": int(time.time() * 1000),
+            }
+            try:
+                log_path = Path(__file__).resolve().parents[1] / "debug-676a9f.log"
+                with log_path.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
+            except Exception:
+                pass
+
+        _dbg760("before_workbench_session_import", {}, "A")
+        # #endregion
+        try:
+            from .workbench_session import compose_workbench_session
+        except Exception as exc:
+            # #region agent log
+            _dbg760(
+                "workbench_session_import_failed",
+                {"type": type(exc).__name__, "msg": str(exc)[:400]},
+                "A",
+            )
+            # #endregion
+            raise
+        # #region agent log
+        _dbg760("workbench_session_imported", {}, "A")
+        # #endregion
 
         library_db_path = None
         if runtime_composition is not None:
