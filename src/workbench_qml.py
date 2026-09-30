@@ -2437,14 +2437,14 @@ ApplicationWindow {
                 Button {
                     id: channelRackPlayButton
                     objectName: "channelRackPlayButton"
-                    text: "Play"
+                    text: "Play Pattern"
                     enabled: !window.channelRack.playing
                     onClicked: window.channelRack.play()
                 }
                 Button {
                     id: channelRackStopButton
                     objectName: "channelRackStopButton"
-                    text: "Stop"
+                    text: "Stop Pattern"
                     enabled: window.channelRack.playing
                     onClicked: window.channelRack.stop()
                 }
