@@ -13,7 +13,11 @@ from typing import Any, Literal, Mapping
 # v2: mode-aware key analysis (KEY_ANALYSIS_CONTRACT_VERSION) is part of the
 # persisted analysis contract. Cache rows written before this bump (root-only
 # keys without mode) must be re-analyzed, not served as fresh cache hits.
-WORKBENCH_ANALYZER_VERSION = "workbench_v2"
+# Cache generation for workbench library analysis rows.
+# Bumped in #763 so historically hollow ok-rows (loudness/class present but
+# BPM/Key/brightness absent under workbench_v2) miss the sticky cache and are
+# re-analyzed by the existing refresh contract. Not a new analyzer algorithm.
+WORKBENCH_ANALYZER_VERSION = "workbench_v3"
 WORKBENCH_LIBRARY_SCHEMA_VERSION = 4
 _LIBRARY_DB_NAME = "workbench_library.db"
 
