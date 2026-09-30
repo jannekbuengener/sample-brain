@@ -1688,11 +1688,8 @@ ApplicationWindow {
             width: visible ? Math.max(0, parent.width - libraryPane.width) : 0
             height: parent.height
             // Deep Sample-Brain working surface (no bright dialog chrome).
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: theme.surfaceRoot }
-                GradientStop { position: 0.55; color: theme.surfaceBrowser }
-                GradientStop { position: 1.0; color: theme.selectionSurface }
-            }
+            // Solid theme fill only — Screen-1 background contract forbids Gradient.
+            color: theme.surfaceRoot
 
             // Input ownership: blocker under status/progress/cancel (z below card).
             MouseArea {
