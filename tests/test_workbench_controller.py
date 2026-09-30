@@ -763,10 +763,109 @@ def test_progress_callback_reports_current_and_total(sample_folder: Path):
 
     assert result.summary["files_found"] == 2
     analyzing = [e for e in events if e[3] == "analyzing"]
+    # current = completed count before the named sample finishes.
     assert len(analyzing) == 2
-    assert analyzing[0][0] == 1 and analyzing[0][1] == 2
-    assert analyzing[1][0] == 2 and analyzing[1][1] == 2
+    assert analyzing[0][0] == 0 and analyzing[0][1] == 2
+    assert analyzing[1][0] == 1 and analyzing[1][1] == 2
     assert events[0][3] == "scanning"
+    done = [e for e in events if e[3] == "done"]
+    assert done[-1][0] == 2 and done[-1][1] == 2
+
+
+def test_folder_progress_is_completed_count_not_sample_ordinal(tmp_path: Path):
+    """#744: bar = processed/total; display_name = sample currently in flight."""
+    root = tmp_path / "five"
+    root.mkdir()
+    names = [f"s{i}.wav" for i in range(1, 6)]
+    for name in names:
+        write_kick_transient_wav(root / name, bpm=120.0, duration_sec=0.4)
+
+    events: list[tuple[int, int, str, str]] = []
+
+    def progress(current: int, total: int, name: str, phase: str) -> None:
+        events.append((current, total, name, phase))
+
+    result = analyze_folder_for_workbench(root, progress_callback=progress, use_cache=True)
+    assert result.summary["files_found"] == 5
+    assert result.summary["analyzed_count"] + result.summary["error_count"] == 5
+
+    # After scan, total is known at 0 completed.
+    post_scan = next(e for e in events if e[1] == 5 and e[0] == 0 and e[3] == "scanning")
+    assert post_scan is not None
+
+    analyzing = [e for e in events if e[3] == "analyzing"]
+    assert len(analyzing) == 5
+    assert analyzing[0] == (0, 5, analyzing[0][2], "analyzing")
+    assert analyzing[1][0] == 1 and analyzing[1][1] == 5
+    # Start of sample 2 keeps completed count; only the name changes.
+    assert analyzing[1][2] != analyzing[0][2]
+
+    # Monotonic completed count across the whole job.
+    completed_values = [e[0] for e in events if e[1] == 5]
+    assert completed_values == sorted(completed_values)
+    assert completed_values[-1] == 5
+
+    # Cache-hit second pass still counts processed files.
+    events.clear()
+    second = analyze_folder_for_workbench(root, progress_callback=progress, use_cache=True)
+    assert second.summary["cache_hits"] == 5
+    analyzing2 = [e for e in events if e[3] == "analyzing"]
+    assert analyzing2[0][0] == 0
+    assert analyzing2[1][0] == 1
+    finals = [e for e in events if e[3] in {"done", "error"}]
+    assert finals[-1][0] == 5 and finals[-1][1] == 5
+
+
+def test_folder_progress_counts_controlled_sample_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    root = tmp_path / "mixed"
+    root.mkdir()
+    write_kick_transient_wav(root / "ok.wav", bpm=120.0, duration_sec=0.4)
+    bad = root / "bad.wav"
+    bad.write_bytes(b"not-a-wav")
+
+    events: list[tuple[int, int, str, str]] = []
+    analyze_folder_for_workbench(
+        root,
+        progress_callback=lambda c, t, n, p: events.append((c, t, n, p)),
+        use_cache=False,
+    )
+    analyzing = [e for e in events if e[3] == "analyzing"]
+    assert analyzing[0][0] == 0
+    # After first file completes (ok or error), next start keeps completed count.
+    if len(analyzing) >= 2:
+        assert analyzing[1][0] == 1
+    terminal = [e for e in events if e[3] in {"done", "error"} and e[1] == 2]
+    assert terminal
+    assert terminal[-1][0] == 2
+
+
+def test_cancel_keeps_last_completed_count(tmp_path: Path):
+    root = tmp_path / "cancel-five"
+    root.mkdir()
+    for i in range(1, 6):
+        write_kick_transient_wav(root / f"s{i}.wav", bpm=120.0, duration_sec=0.3)
+
+    events: list[tuple[int, int, str, str]] = []
+    seen_done = {"n": 0}
+
+    def progress(current: int, total: int, name: str, phase: str) -> None:
+        events.append((current, total, name, phase))
+        if phase == "done":
+            seen_done["n"] += 1
+
+    def cancel_after_one_done() -> bool:
+        return seen_done["n"] >= 1
+
+    analyze_folder_for_workbench(
+        root,
+        progress_callback=progress,
+        should_cancel=cancel_after_one_done,
+        use_cache=False,
+    )
+    cancelled = [e for e in events if e[3] == "cancelled"]
+    assert cancelled
+    assert cancelled[-1][0] == 1
+    assert cancelled[-1][1] == 5
 
 
 def test_empty_folder_progress_and_summary(tmp_path: Path):

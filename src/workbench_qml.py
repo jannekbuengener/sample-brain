@@ -1743,7 +1743,8 @@ ApplicationWindow {
                         visible: window.screenData.analysisTotal > 0
                                  && (window.screenData.analysisStatus === "scanning"
                                      || window.screenData.analysisStatus === "analyzing")
-                        text: window.screenData.analysisCurrent + " / " + window.screenData.analysisTotal
+                        // Folder-level completed/total — not the in-flight sample ordinal.
+                        text: window.screenData.analysisCurrent + " / " + window.screenData.analysisTotal + " Samples"
                         color: theme.textPrimary
                         font.pixelSize: 13
                     }
@@ -1870,7 +1871,7 @@ ApplicationWindow {
                     }
                     Label {
                         visible: window.screenData.analysisTotal > 0
-                        text: window.screenData.analysisCurrent + " / " + window.screenData.analysisTotal
+                        text: window.screenData.analysisCurrent + " / " + window.screenData.analysisTotal + " Samples"
                         color: theme.textPrimary
                         font.pixelSize: 11
                     }

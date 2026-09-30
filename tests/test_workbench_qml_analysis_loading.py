@@ -93,6 +93,7 @@ def test_qml_declares_744_loading_surface_structure():
     assert "analysisCancelButton" in QML_SOURCE
     assert "analysisProgressTrack" in QML_SOURCE
     assert "analysisProgressFill" in QML_SOURCE
+    assert '" Samples"' in QML_SOURCE or "+ \" Samples\"" in QML_SOURCE
     # Blocker must be declared before status card so Cancel stays clickable.
     blocker_idx = QML_SOURCE.index("objectName: \"analysisWorkspaceBlocker\"")
     card_idx = QML_SOURCE.index("objectName: \"analysisStatusCard\"")

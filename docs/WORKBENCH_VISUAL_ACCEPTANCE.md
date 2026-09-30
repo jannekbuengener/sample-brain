@@ -133,6 +133,19 @@ labels only (real `AnalysisUiState` phases; no fake progress clock):
 | `08-125pct` | Same at 125% scale |
 | `09-150pct` | Same at 150% scale |
 
+#### #744 loading progress contract
+
+- Progress bar = **folder-level** `processed / total` (`analysisCurrent` /
+  `analysisTotal`). `current` means completed files in this folder (success,
+  cache hit, or controlled per-sample error), not the ordinal of the sample
+  currently in flight.
+- Display name = **currently processed sample** (`analysisSource`); independent
+  of the completed count.
+- No per-sample progress bar and no second bar. No fake progress / timer.
+
+Example mid-folder: label `Analysiere hit.wav`, count `2 / 5 Samples`, bar ~40%
+means two files finished and `hit.wav` is the third file currently analyzing.
+
 Evidence stays **outside** the repository. Synthetic fixture paths only. Owner
 Visual Acceptance remains separate from agent self-attestation. Capture helper:
 `run_qml_visual_acceptance_744` in `src/workbench_qml_spike.py`.

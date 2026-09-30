@@ -636,6 +636,8 @@ def analyze_folder_for_workbench(
 
     audio_paths = _collect_audio_paths(root, limit)
     total = len(audio_paths)
+    # Folder total known; current stays completed-count (0 before first sample).
+    _emit_progress(progress_callback, 0, total, "", "scanning")
 
     rows: list[WorkbenchRow] = []
     analyzed_count = 0
@@ -649,7 +651,8 @@ def analyze_folder_for_workbench(
             break
         rel = str(audio_path.relative_to(root))
         display_name = normalize_display_name(audio_path.name)
-        _emit_progress(progress_callback, index, total, display_name, "analyzing")
+        # current = completed files so far; display_name = sample now in flight.
+        _emit_progress(progress_callback, index - 1, total, display_name, "analyzing")
 
         stat = _file_stat(audio_path)
         if use_cache and folder_id is not None and stat is not None:
