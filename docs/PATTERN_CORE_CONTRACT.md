@@ -158,4 +158,4 @@ Audition (`TransportAwarePreview`) remains separate and monophonic; it may reuse
 
 ## Next
 
-Session ownership (#647), Pattern Core (#656), the sequencer scheduling seam (#663), Channel Rack Python core (#667), extensible channel identity (#681), the production PCM cache/decode provider (#676), DEFAULT_ON initial step semantics (#677), and voice lifecycle (#698) complete the Screen-2 Python foundations. Screen-2 QML (#678) is technically unblocked; product execution remains PARKED / sequenced after Screen-1 pilot gate #727 (explicit Owner-GO required).
+Session ownership (#647), Pattern Core (#656), the sequencer scheduling seam (#663), Channel Rack Python core (#667), extensible channel identity (#681), the production PCM cache/decode provider (#676), DEFAULT_ON initial step semantics (#677), and voice lifecycle (#698) complete the Screen-2 Python foundations. Screen-2 QML (#678) is **ACTIVE** under explicit Owner-GO (not gated by #727).

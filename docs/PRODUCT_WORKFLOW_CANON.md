@@ -23,7 +23,7 @@ Library / Screen 1
 | Screen | Intent | Status on `main` |
 |--------|--------|------------------|
 | Screen 1 | Library browse + Live Kit assignment | Live Kit + QML Screen-1 shell exist; Tk remains default/fallback |
-| Screen 2 | Channel Rack — program patterns/triggers over Live Kit channels | **FOUNDATIONS READY / TECHNICALLY UNBLOCKED; PRODUCT PROGRAM PARKED** — session ownership, Pattern Core, sequencer scheduling, Channel Rack Python core, production PCM provider (#676), DEFAULT_ON initial step semantics (#677), extensible channels (#681), and voice lifecycle (#698) are DONE on `main`; Screen-2 QML (#678) is technically unblocked. Product execution remains **PARKED / NOT ACTIVE** and sequenced after the Screen-1 pilot gate (#727); no Screen-2 UI without explicit Owner-GO |
+| Screen 2 | Channel Rack — program patterns/triggers over Live Kit channels | **ACTIVE (#678)** — session ownership, Pattern Core, sequencer scheduling, Channel Rack Python core, production PCM provider (#676), DEFAULT_ON initial step semantics (#677), extensible channels (#681), and voice lifecycle (#698) are DONE on `main`; Screen-2 QML Channel Rack (#678) is in active implementation under explicit Owner-GO (not gated by #727) |
 | Screen 3 | Arrangement mode over patterns/channels | **Not built** — must not be designed in Screen-2 slices |
 
 ## 3. Channel Rack product rules (Screen 2 intent)
@@ -67,7 +67,7 @@ Foundation gates before Screen-2 UI (technical readiness):
 2. **Session ownership** — one Live Kit truth; QML commands → native transport/audio — **DONE** (#647)
 3. **Minimal Pattern Core** — Channel, Pattern, Trigger/Event, musical position, stable slot/channel IDs — **DONE** (#656)
 4. **Minimal Sequencer Playback** — pattern position → `TempoMap` → scheduled engine frame → cached PCM voice — **DONE** (#663 scheduler + #676 PCM cache/decode provider + #698 voice lifecycle)
-5. **Screen-2 Channel Rack UI** — Channel Rack Python core is **DONE** (#667); initial DEFAULT_ON step semantics are **DONE** (#677); extensible channels are **DONE** (#681); QML implementation (#678) is **technically unblocked**. Product execution remains **PARKED / NOT ACTIVE** and sequenced after Screen-1 pilot gate [#727](https://github.com/jannekbuengener/sample-brain/issues/727); do **not** start Screen-2 UI without explicit Owner-GO
+5. **Screen-2 Channel Rack UI** — Channel Rack Python core is **DONE** (#667); initial DEFAULT_ON step semantics are **DONE** (#677); extensible channels are **DONE** (#681); QML implementation (#678) is **ACTIVE** under explicit Owner-GO (not gated by Screen-1 pilot #727)
 
 `TECHNICALLY_UNBLOCKED` is not `CURRENT_PRODUCT_PRIORITY`.
 
@@ -95,4 +95,4 @@ Historical VST pillar specs (#90–#95) remain **archived design notes** for a p
 | Native voices | `src/native_audio.py` |
 | QML Screen-1 shell | `src/workbench_qml.py` |
 
-Steps 2→3→4 are green (scheduling + production PCM provider + #698 voice lifecycle). The Channel Rack Python core, DEFAULT_ON initial step semantics (#677), and extensible channels (#681) are merged; Screen-2 Channel Rack QML (#678) is **technically unblocked** but **product-parked** until after #727 and an explicit Owner-GO.
+Steps 2→3→4 are green (scheduling + production PCM provider + #698 voice lifecycle). The Channel Rack Python core, DEFAULT_ON initial step semantics (#677), and extensible channels (#681) are merged; Screen-2 Channel Rack QML (#678) is **ACTIVE** under explicit Owner-GO (not gated by #727).

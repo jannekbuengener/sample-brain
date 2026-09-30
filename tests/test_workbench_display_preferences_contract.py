@@ -158,7 +158,7 @@ def _write_corrupt_display_prefs(api: SimpleNamespace, state_dir: Path, payload:
 
 
 def test_layout_preferences_alone_do_not_auto_resume_source(tmp_path: Path) -> None:
-    """Persisted ratios without Startup designation → Clean Start."""
+    """Persisted ratios alone do not invent a Source (library authority required)."""
     save_layout_preferences(
         {
             "library": 0.12,
@@ -177,7 +177,9 @@ def test_layout_preferences_alone_do_not_auto_resume_source(tmp_path: Path) -> N
     assert launch.harmonic_visible is False
 
 
-def test_missing_startup_designation_is_clean_start(tmp_path: Path) -> None:
+def test_missing_startup_designation_without_persisted_sources_is_clean_start(
+    tmp_path: Path,
+) -> None:
     result = load_startup_preset(state_dir=tmp_path)
     assert result.preset is None
     launch = resolve_launch_workspace(preset=result.preset)
@@ -458,7 +460,9 @@ def test_set_as_startup_is_explicit_and_opens_source_without_transient_restore(
     assert FORBIDDEN_PRESET_KEYS.isdisjoint(raw)
 
 
-def test_clear_or_absent_startup_designation_returns_clean_start(tmp_path: Path) -> None:
+def test_clear_or_absent_startup_designation_without_persisted_list_is_clean_start(
+    tmp_path: Path,
+) -> None:
     api = _api()
     api.save_workspace_preset(
         {
@@ -480,6 +484,16 @@ def test_clear_or_absent_startup_designation_returns_clean_start(tmp_path: Path)
     )
     assert launch.mode is WorkspaceMode.CLEAN_START
     assert launch.source_node_id is None
+
+
+def test_clear_startup_with_persisted_sources_still_returns_workspace() -> None:
+    launch = resolve_launch_workspace(
+        preset=None,
+        source_available=lambda node_id: node_id == "root:42",
+        persisted_source_node_ids=("root:42",),
+    )
+    assert launch.mode is WorkspaceMode.ACTIVE_SOURCE
+    assert launch.source_node_id == "root:42"
 
 
 @pytest.mark.parametrize(

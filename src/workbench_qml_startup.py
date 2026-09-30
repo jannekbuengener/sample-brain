@@ -1,4 +1,4 @@
-"""Screen-1 startup preset resolve seam for Clean Start (#693) and #696 hook."""
+"""Screen-1 startup resolve seam for Clean Start / Returning Workspace (#693/#762)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 import json
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from .workbench_controller import workbench_state_dir
 
@@ -85,28 +85,43 @@ def resolve_launch_workspace(
     *,
     preset: Screen1StartupPreset | None,
     source_available: Callable[[str], bool] | None = None,
+    persisted_source_node_ids: Sequence[str] | None = None,
 ) -> LaunchWorkspace:
-    """Resolve normal launch. Default Clean Start; valid preset Source may override."""
-    if preset is None or not preset.startup_source_node_id:
-        return _clean_start()
-    node_id = str(preset.startup_source_node_id).strip()
-    if not node_id:
-        return _clean_start()
+    """Resolve normal launch for Screen 1 (#693/#762).
+
+    Empty library → Clean Start. Available persisted Sources → Returning
+    Workspace. Optional ``startup_source_node_id`` is a preference override,
+    not a required gate. Transient session state is never implied here.
+    """
     checker = source_available or (lambda _node_id: False)
-    try:
-        available = bool(checker(node_id))
-    except Exception:
-        return _clean_start()
-    if not available:
-        return _clean_start()
-    return LaunchWorkspace(
-        mode=WorkspaceMode.ACTIVE_SOURCE,
-        source_node_id=node_id,
-        browser_materialized=True,
-        live_kit_materialized=True,
-        calm_canvas_visible=False,
-        harmonic_visible=False,
-    )
+    candidates: list[str] = []
+    if preset is not None and preset.startup_source_node_id:
+        preferred = str(preset.startup_source_node_id).strip() or None
+        if preferred:
+            candidates.append(preferred)
+    for node_id in persisted_source_node_ids or ():
+        text = str(node_id).strip()
+        if not text or text in candidates:
+            continue
+        candidates.append(text)
+
+    for node_id in candidates:
+        try:
+            available = bool(checker(node_id))
+        except Exception:
+            available = False
+        if not available:
+            continue
+        return LaunchWorkspace(
+            mode=WorkspaceMode.ACTIVE_SOURCE,
+            source_node_id=node_id,
+            browser_materialized=True,
+            # #742: Live Kit stays undisclosed until Add-to-Kit intent.
+            live_kit_materialized=False,
+            calm_canvas_visible=False,
+            harmonic_visible=False,
+        )
+    return _clean_start()
 
 
 def save_startup_preset_for_tests(

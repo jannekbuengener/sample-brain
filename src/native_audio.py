@@ -53,14 +53,30 @@ def _get_platform_lib_filename() -> str:
         return "libsamplebrain_audio.so"
 
 
+def _distributable_exe_dir() -> Path | None:
+    """Return the executable directory for Windows distributable launches only."""
+    if os.environ.get("SAMPLE_BRAIN_DISTRIBUTABLE", "").strip() not in {"1", "true", "TRUE", "yes", "YES"}:
+        return None
+    if not getattr(sys, "argv", None):
+        return None
+    try:
+        return Path(sys.executable).resolve().parent
+    except OSError:
+        return None
+
+
 def _get_trusted_roots() -> List[Path]:
     """Return explicit trusted root directories for native audio library resolution."""
     module_dir = Path(__file__).resolve().parent
     repo_root = module_dir.parent
-    return [
+    roots = [
         module_dir.resolve(),
         (repo_root / "native" / "audio" / "build").resolve(),
     ]
+    exe_dir = _distributable_exe_dir()
+    if exe_dir is not None:
+        roots.append(exe_dir)
+    return roots
 
 
 def _get_trusted_candidates() -> List[Path]:
@@ -76,6 +92,14 @@ def _get_trusted_candidates() -> List[Path]:
         repo_root / "native" / "audio" / "build" / "lib" / filename,
         repo_root / "native" / "audio" / "build" / "bin" / filename,
     ]
+    exe_dir = _distributable_exe_dir()
+    if exe_dir is not None:
+        raw_candidates.extend(
+            [
+                exe_dir / filename,
+                exe_dir / "src" / filename,
+            ]
+        )
 
     # Deduplicate while preserving order without resolving symlinks early
     seen = set()

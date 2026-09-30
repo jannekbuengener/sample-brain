@@ -1,8 +1,9 @@
-"""Optional production Screen-1 Qt Quick shell.
+"""Optional production Qt Quick Workbench shell (Screen 1 + Screen 2).
 
 This module owns only renderer-facing state, interaction routing, and Qt engine
-startup. It can be imported without PySide6; fixture, evidence, and synthetic
-probe orchestration deliberately live in :mod:`src.workbench_qml_spike`.
+startup. Musical truth for Screen 2 stays in ``ChannelRackController`` /
+``channel_rack``. Fixture, evidence, and synthetic probe orchestration
+deliberately live in :mod:`src.workbench_qml_spike`.
 """
 
 from __future__ import annotations
@@ -10,10 +11,12 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import inspect
 import math
+import os
+import sys
 from pathlib import Path
 from typing import Callable
 
-from .workbench_controller import WorkbenchRow
+from .workbench_controller import WorkbenchRow, filter_workbench_rows
 from .workbench_browser_rows import (
     BoundedBackgroundWaveformLoader,
     BoundedLazyWaveformCache,
@@ -209,6 +212,8 @@ class Screen1QmlViewModel:
             raise ValueError("Unbekannter Screen-1-QML-State.")
         self.state_id = state_id
         self.library_labels = library_labels
+        self._browser_rows_all = browser_rows
+        self._browser_search_query = ""
         self.browser_rows = browser_rows
         self.selected_browser_index = selected_browser_index
         self.harmony_rows = harmony_rows
@@ -291,10 +296,41 @@ class Screen1QmlViewModel:
         browser_context: str,
         error: str | None,
     ) -> None:
-        self.browser_rows = tuple(_qml_row(row) for row in rows)
-        self.selected_browser_index = selected_index
+        self._browser_rows_all = tuple(_qml_row(row) for row in rows)
+        preferred_path: str | None = None
+        if 0 <= selected_index < len(self._browser_rows_all):
+            preferred_path = str(self._browser_rows_all[selected_index].source_row.path)
         self.browser_context = browser_context
         self.browser_error = error
+        self._republish_browser_rows(preferred_path=preferred_path)
+
+    def set_browser_search_query(self, query: str) -> None:
+        """Project text search into the visible Sample Browser (#758).
+
+        Uses the existing ``filter_workbench_rows`` contract. Empty query restores
+        the full current-scope list. Does not invent structured or semantic search.
+        """
+        self._browser_search_query = str(query or "")
+        preferred_path: str | None = None
+        if 0 <= self.selected_browser_index < len(self.browser_rows):
+            preferred_path = str(self.browser_rows[self.selected_browser_index].source_row.path)
+        self._republish_browser_rows(preferred_path=preferred_path)
+
+    def _republish_browser_rows(self, *, preferred_path: str | None) -> None:
+        source_rows = tuple(row.source_row for row in self._browser_rows_all)
+        filtered = filter_workbench_rows(list(source_rows), self._browser_search_query)
+        by_path = {str(row.source_row.path): row for row in self._browser_rows_all}
+        self.browser_rows = tuple(
+            by_path[str(row.path)] for row in filtered if str(row.path) in by_path
+        )
+        if preferred_path is None:
+            self.selected_browser_index = -1
+            return
+        for index, row in enumerate(self.browser_rows):
+            if str(row.source_row.path) == preferred_path:
+                self.selected_browser_index = index
+                return
+        self.selected_browser_index = -1
 
     def set_workspace_materialization(
         self,
@@ -323,14 +359,20 @@ class Screen1QmlViewModel:
     def set_browser_waveform(self, path: str, envelope: tuple[float, ...]) -> bool:
         """Apply one cached waveform without changing browser selection."""
         changed = False
-        updated: list[QmlBrowserRow] = []
-        for row in self.browser_rows:
+        updated_all: list[QmlBrowserRow] = []
+        for row in self._browser_rows_all:
             if str(row.source_row.path) == path and row.waveform_envelope != envelope:
                 row = replace(row, waveform_envelope=envelope)
                 changed = True
-            updated.append(row)
+            updated_all.append(row)
         if changed:
-            self.browser_rows = tuple(updated)
+            preferred_path: str | None = None
+            if 0 <= self.selected_browser_index < len(self.browser_rows):
+                preferred_path = str(
+                    self.browser_rows[self.selected_browser_index].source_row.path
+                )
+            self._browser_rows_all = tuple(updated_all)
+            self._republish_browser_rows(preferred_path=preferred_path)
         harmony_updated: list[QmlHarmonyRow] = []
         for row in self.harmony_rows:
             if str(row.source_row.path) == path and row.waveform_envelope != envelope:
@@ -431,6 +473,9 @@ def _sync_runtime_browser_state(
         browser_materialized=runtime_composition.browser_materialized,
         live_kit_materialized=runtime_composition.live_kit_materialized,
     )
+    # #762: Active Source materialises Library with Browser (no Browser-only half).
+    if runtime_composition.has_active_source:
+        view_model.set_library_revealed(True)
     adapter.replace_browser_scope(state.scope)
 
 
@@ -755,7 +800,7 @@ class Screen1QmlInteractionAdapter:
 
     def preview_playback_snapshot(self):
         """Return authoritative preview telemetry for playhead presentation."""
-        from .workbench_transport_ui import PreviewPlaybackSnapshot
+        from .workbench_transport_preview import PreviewPlaybackSnapshot
 
         if self._waveform_motion_mode == "off" or not self._preview_active:
             self._preview_playback_cache = PreviewPlaybackSnapshot.idle()
@@ -1232,8 +1277,37 @@ SCREEN1_BACKGROUND_REFERENCE_SHA256 = (
 
 
 def screen1_background_reference_path() -> Path:
-    """Return the repo-relative canonical Screen-1 background reference path."""
-    return Path(__file__).resolve().parents[1] / SCREEN1_BACKGROUND_REFERENCE_RELATIVE
+    """Return the canonical Screen-1 background reference path.
+
+    Resolution order:
+    1. PyInstaller extract root (`sys._MEIPASS`) when the PNG was packed as data
+    2. Directory next to a frozen / distributable executable
+    3. Repository root next to ``src/`` (editable / source runs)
+    """
+    relative = SCREEN1_BACKGROUND_REFERENCE_RELATIVE
+    candidates: list[Path] = []
+
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / relative)
+
+    frozen = bool(getattr(sys, "frozen", False))
+    distributable = os.environ.get("SAMPLE_BRAIN_DISTRIBUTABLE", "").strip() in {
+        "1",
+        "true",
+        "TRUE",
+        "yes",
+        "YES",
+    }
+    if frozen or distributable:
+        candidates.append(Path(sys.executable).resolve().parent / relative)
+
+    candidates.append(Path(__file__).resolve().parents[1] / relative)
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[-1]
 
 
 def screen1_background_url() -> str:
@@ -1256,6 +1330,8 @@ ApplicationWindow {
     title: "Sample Brain"
     property var screenData: screenModel
     property var interaction: interactionModel
+    property var channelRack: channelRackModel
+    readonly property string activeScreen: channelRack.activeScreen
     // Screen-1 color contract: primitives -> semantic tokens -> components.
     // HEX literals live only on primitives. See docs/WORKBENCH_VISUAL_ACCEPTANCE.md.
     QtObject {
@@ -1402,10 +1478,26 @@ ApplicationWindow {
                 Label { anchors.centerIn: parent; text: "ON"; color: theme.textOnAction; font.bold: true }
             }
             Item { width: 16 }
+            Button {
+                id: openChannelRackButton
+                objectName: "openChannelRackButton"
+                text: window.activeScreen === "screen2" ? "Screen 1" : "Channel Rack"
+                visible: window.activeScreen === "screen1"
+                onClicked: window.interaction.openChannelRack()
+            }
+            Button {
+                id: returnToScreen1Button
+                objectName: "returnToScreen1Button"
+                text: "← Screen 1"
+                visible: window.activeScreen === "screen2"
+                onClicked: window.interaction.returnToScreen1()
+            }
+            Item { width: 12 }
             // #696 secondary display preferences — header overflow only (no permanent settings bar).
             ToolButton {
                 id: displayPreferencesOverflow
                 objectName: "displayPreferencesOverflow"
+                visible: window.activeScreen === "screen1"
                 text: "⋯"
                 flat: true
                 implicitWidth: 36
@@ -1497,6 +1589,7 @@ ApplicationWindow {
         objectName: "workspaceRow"
         anchors.fill: parent
         spacing: 0
+        visible: window.activeScreen === "screen1"
         Keys.onPressed: function(event) {
             if (event.key === Qt.Key_Escape && window.interaction.previewActive) {
                 window.interaction.stopPreview()
@@ -1854,6 +1947,7 @@ ApplicationWindow {
                             border.color: parent.activeFocus ? theme.actionActive : theme.borderSubtle
                             color: "transparent"
                         }
+                        onTextChanged: window.interaction.setBrowserSearch(text)
                     }
                 }
                 RowLayout {
@@ -2376,13 +2470,181 @@ ApplicationWindow {
     }
 
     Item {
+        id: channelRackScreen
+        objectName: "channelRackScreen"
+        anchors.fill: parent
+        visible: window.activeScreen === "screen2"
+        focus: visible
+        activeFocusOnTab: true
+        Keys.onPressed: function(event) {
+            if (!visible) return
+            if (event.key === Qt.Key_Escape) {
+                window.interaction.returnToScreen1()
+                event.accepted = true
+            } else if (event.key === Qt.Key_Space) {
+                if (window.channelRack.playing) window.channelRack.stop()
+                else window.channelRack.play()
+                event.accepted = true
+            }
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 18
+            spacing: 12
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+                Label {
+                    text: "Channel Rack"
+                    color: theme.textPrimary
+                    font.pixelSize: 20
+                    font.bold: true
+                }
+                Label {
+                    text: "Pattern " + window.channelRack.patternId
+                    color: theme.textSecondary
+                    font.pixelSize: 12
+                }
+                Item { Layout.fillWidth: true }
+                Button {
+                    id: channelRackPlayButton
+                    objectName: "channelRackPlayButton"
+                    text: "Play Pattern"
+                    enabled: !window.channelRack.playing
+                    onClicked: window.channelRack.play()
+                }
+                Button {
+                    id: channelRackStopButton
+                    objectName: "channelRackStopButton"
+                    text: "Stop Pattern"
+                    enabled: window.channelRack.playing
+                    onClicked: window.channelRack.stop()
+                }
+                Button {
+                    id: addUserChannelButton
+                    objectName: "addUserChannelButton"
+                    text: "+ Channel"
+                    onClicked: window.channelRack.addUserChannel()
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 0
+                Item { Layout.preferredWidth: 220 }
+                Repeater {
+                    model: window.channelRack.stepMarkers
+                    delegate: Item {
+                        Layout.preferredWidth: 28
+                        Layout.preferredHeight: 18
+                        Rectangle {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: 2
+                            height: parent.height
+                            color: modelData.bar_boundary ? theme.actionActive : (modelData.beat_boundary ? theme.borderSubtle : "transparent")
+                        }
+                        Label {
+                            anchors.centerIn: parent
+                            text: modelData.beat_boundary ? (index + 1) : ""
+                            color: theme.textSecondary
+                            font.pixelSize: 9
+                        }
+                    }
+                }
+            }
+
+            ListView {
+                id: channelRackStepGrid
+                objectName: "channelRackStepGrid"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                spacing: 10
+                model: window.channelRack.groups
+                boundsBehavior: Flickable.StopAtBounds
+                delegate: ColumnLayout {
+                    width: channelRackStepGrid.width
+                    spacing: 4
+                    Label {
+                        text: modelData.name
+                        color: theme.textSecondary
+                        font.pixelSize: 11
+                        font.bold: true
+                    }
+                    Repeater {
+                        model: modelData.rows
+                        delegate: RowLayout {
+                            id: channelRow
+                            Layout.fillWidth: true
+                            spacing: 8
+                            property string channelId: modelData.channel_id
+                            property var stepStates: modelData.steps
+                            property string displayName: modelData.display_name
+                            property string sampleLabel: modelData.sample_label
+                            ColumnLayout {
+                                Layout.preferredWidth: 212
+                                spacing: 2
+                                Label {
+                                    text: channelRow.displayName
+                                    color: theme.textPrimary
+                                    font.pixelSize: 12
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    text: channelRow.sampleLabel !== "" ? channelRow.sampleLabel : "empty"
+                                    color: theme.textSecondary
+                                    font.pixelSize: 10
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    text: channelRow.channelId
+                                    color: theme.textDisabled
+                                    font.pixelSize: 9
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                            }
+                            Repeater {
+                                model: channelRow.stepStates
+                                delegate: Rectangle {
+                                    width: 26
+                                    height: 26
+                                    radius: 3
+                                    property bool stepOn: modelData
+                                    color: stepOn ? theme.actionActive : theme.surfaceElevated
+                                    border.color: {
+                                        var marker = window.channelRack.stepMarkers[index]
+                                        if (marker && marker.bar_boundary) return theme.actionActive
+                                        if (marker && marker.beat_boundary) return theme.borderSubtle
+                                        return theme.dividerDefault
+                                    }
+                                    border.width: 1
+                                    opacity: stepOn ? 1.0 : 0.72
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        onClicked: window.channelRack.toggleStep(channelRow.channelId, index)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Item {
         id: libraryRevealAffordance
         objectName: "libraryRevealAffordance"
         // #725/#742 subtle edge reveal — overlay, not a workspaceRow child.
         // Row must own horizontal pane geometry; this Item anchors to the
         // ApplicationWindow content item instead.
         z: 20
-        visible: !window.interaction.libraryRevealed
+        visible: window.activeScreen === "screen1" && !window.interaction.libraryRevealed
         width: 18
         height: parent.height
         anchors.left: parent.left
@@ -2428,8 +2690,11 @@ def _qml_interaction_bridge(
     adapter: Screen1QmlInteractionAdapter,
     *,
     on_state_changed: Callable[[], None] | None = None,
+    on_browser_rows_changed: Callable[[], None] | None = None,
     on_waveform_request: Callable[[int, int], None] | None = None,
     on_harmony_waveform_request: Callable[[int, int], None] | None = None,
+    on_open_channel_rack: Callable[[], None] | None = None,
+    on_return_to_screen1: Callable[[], None] | None = None,
 ):
     """Expose the pure interaction adapter to QML only when Qt is installed."""
     from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
@@ -2575,6 +2840,13 @@ def _qml_interaction_bridge(
             adapter.preview_row(index)
             self._refresh()
 
+        @Slot(str)
+        def setBrowserSearch(self, query: str) -> None:
+            adapter.view_model.set_browser_search_query(query)
+            if on_browser_rows_changed is not None:
+                on_browser_rows_changed()
+            self._refresh()
+
         @Slot()
         def stopPreview(self) -> None:
             adapter.stop_preview()
@@ -2693,7 +2965,147 @@ def _qml_interaction_bridge(
             adapter.toggle_harmonic_match()
             self._refresh()
 
+        @Slot()
+        def openChannelRack(self) -> None:
+            if on_open_channel_rack is not None:
+                on_open_channel_rack()
+
+        @Slot()
+        def returnToScreen1(self) -> None:
+            if on_return_to_screen1 is not None:
+                on_return_to_screen1()
+
     return QmlInteractionBridge()
+
+
+def _qml_channel_rack_bridge(controller):
+    """Expose Channel Rack projection + commands; Python remains musical SoT.
+
+    ``controller`` may be ``None`` when ``_qml_engine`` is driven with an
+    injected ``interaction_adapter`` (Screen-1 harnesses). Screen-2 commands
+    then fail closed — Channel Rack must use compose-owned session transport
+    (#678), never a second invented owner.
+    """
+    from PySide6.QtCore import QObject, Property, Signal, Slot
+
+    class QmlChannelRackBridge(QObject):
+        state_changed = Signal()
+
+        def __init__(self) -> None:
+            super().__init__()
+            self._groups: list[dict] = []
+            self._step_markers: list[dict] = []
+            self._step_count = 16
+            self._pattern_id = ""
+            self._active_screen = "screen1"
+            self._playing = False
+            self._sync_from_controller()
+
+        def _sync_from_controller(self) -> None:
+            if controller is None:
+                self._groups = []
+                self._step_markers = []
+                self._step_count = 16
+                self._pattern_id = ""
+                self._active_screen = "screen1"
+                self._playing = False
+                return
+            projection = controller.projection()
+            self._groups = list(projection.get("groups") or [])
+            self._step_markers = list(projection.get("step_markers") or [])
+            self._step_count = int(projection.get("step_count") or 16)
+            self._pattern_id = str(projection.get("pattern_id") or "")
+            self._active_screen = controller.active_screen
+            self._playing = bool(controller.is_playing)
+
+        def refresh(self) -> None:
+            self._sync_from_controller()
+            self.state_changed.emit()
+
+        @Property(str, notify=state_changed)
+        def activeScreen(self) -> str:
+            return self._active_screen
+
+        @Property(bool, notify=state_changed)
+        def playing(self) -> bool:
+            return self._playing
+
+        @Property(int, notify=state_changed)
+        def stepCount(self) -> int:
+            return self._step_count
+
+        @Property(str, notify=state_changed)
+        def patternId(self) -> str:
+            return self._pattern_id
+
+        @Property("QVariantList", notify=state_changed)
+        def groups(self) -> list:
+            return self._groups
+
+        @Property("QVariantList", notify=state_changed)
+        def stepMarkers(self) -> list:
+            return self._step_markers
+
+        @Slot()
+        def openChannelRack(self) -> None:
+            if controller is None:
+                return
+            controller.enter_screen2()
+            self.refresh()
+
+        @Slot()
+        def returnToScreen1(self) -> None:
+            if controller is None:
+                return
+            controller.leave_screen2()
+            self.refresh()
+
+        @Slot(str, int)
+        def toggleStep(self, channel_id: str, step_index: int) -> None:
+            if controller is None:
+                return
+            controller.toggle_step(channel_id, int(step_index))
+            self.refresh()
+
+        @Slot()
+        def addUserChannel(self) -> None:
+            if controller is None:
+                return
+            controller.add_user_channel()
+            self.refresh()
+
+        @Slot()
+        def play(self) -> None:
+            if controller is None:
+                return
+            try:
+                controller.play()
+            except RuntimeError:
+                # Fail soft in the Qt slot: keep UI not-playing when native
+                # engine/transport is unavailable.
+                self._playing = False
+                self._active_screen = controller.active_screen
+                self.state_changed.emit()
+                return
+            self.refresh()
+
+        @Slot()
+        def stop(self) -> None:
+            if controller is None:
+                return
+            controller.stop()
+            self.refresh()
+
+        @Slot()
+        def tickPlayback(self) -> None:
+            if controller is None:
+                return
+            controller.tick_playback()
+            self._playing = bool(controller.is_playing)
+            self._active_screen = controller.active_screen
+            self.state_changed.emit()
+
+    return QmlChannelRackBridge()
 
 
 def _qml_library_interaction_bridge(
@@ -2814,6 +3226,7 @@ def _qml_engine(
     app = QGuiApplication.instance() or QGuiApplication([])
     engine = QQmlApplicationEngine()
     preview_player = None
+    channel_rack_controller = None
     if interaction_adapter is None:
         from .workbench_session import compose_workbench_session
 
@@ -2824,14 +3237,19 @@ def _qml_engine(
         preview_player = session.audition
         live_kit = session.live_kit_presenter
         adapter = session.qml_interaction_adapter
+        channel_rack_controller = session.channel_rack
         # Keep the caller-provided view_model as the renderer surface while
         # reusing the session-owned kit + TransportAwarePreview audition.
         adapter.view_model = view_model
         view_model.live_kit_groups = live_kit.groups
         view_model.auditioning_live_kit_slot = adapter.auditioning_live_kit_slot
     else:
+        # Injected-adapter harnesses keep Screen-1 surfaces only. Screen-2
+        # Channel Rack must reuse compose-owned session transport (#678) —
+        # do not invent a second WorkbenchTransportAdapter here.
         adapter = interaction_adapter
         live_kit = getattr(interaction_adapter, "_live_kit", None)
+        channel_rack_controller = None
     try:
         from .workbench_display_preferences import load_display_preferences
 
@@ -3158,11 +3576,22 @@ def _qml_engine(
         # never sees a 3-panel width set with a third handle visible.
         layout_model.syncFromInteraction()
 
+    channel_rack_bridge = _qml_channel_rack_bridge(channel_rack_controller)
+
+    def open_channel_rack() -> None:
+        channel_rack_bridge.openChannelRack()
+
+    def return_to_screen1() -> None:
+        channel_rack_bridge.returnToScreen1()
+
     bridge = _qml_interaction_bridge(
         adapter,
         on_state_changed=on_interaction_state_changed,
+        on_browser_rows_changed=refresh_browser_rows,
         on_waveform_request=request_waveforms,
         on_harmony_waveform_request=request_harmony_waveforms,
+        on_open_channel_rack=open_channel_rack,
+        on_return_to_screen1=return_to_screen1,
     )
     adapter._runtime_composition = runtime_composition
     engine._screen1_analysis_fail_closed = lambda: _analysis_fail_closed(
@@ -3182,6 +3611,7 @@ def _qml_engine(
     engine.rootContext().setContextProperty("layoutModel", layout_model)
     engine.rootContext().setContextProperty("libraryTreeModel", library_model)
     engine.rootContext().setContextProperty("libraryInteraction", library_bridge)
+    engine.rootContext().setContextProperty("channelRackModel", channel_rack_bridge)
     engine.rootContext().setContextProperty(
         "screen1BackgroundUrl",
         screen1_background_url(),
@@ -3202,6 +3632,8 @@ def _qml_engine(
     engine._screen1_library_bridge = library_bridge
     engine._screen1_screen_model = screen_model
     engine._screen1_live_kit = live_kit
+    engine._screen1_channel_rack = channel_rack_controller
+    engine._screen1_channel_rack_bridge = channel_rack_bridge
     engine._screen1_runtime_composition = runtime_composition
     engine._screen1_analysis_coordinator = analysis_coordinator
     engine._screen1_waveform_cache = waveform_cache
@@ -3216,6 +3648,23 @@ def _qml_engine(
     waveform_timer.timeout.connect(drain_waveforms)
     waveform_timer.start()
     engine._screen1_waveform_timer = waveform_timer
+
+    channel_rack_timer = QTimer()
+    channel_rack_timer.setInterval(20)
+
+    def _tick_channel_rack() -> None:
+        if channel_rack_bridge.playing:
+            channel_rack_bridge.tickPlayback()
+        else:
+            channel_rack_timer.stop()
+
+    channel_rack_timer.timeout.connect(_tick_channel_rack)
+    channel_rack_bridge.state_changed.connect(
+        lambda: channel_rack_timer.start()
+        if channel_rack_bridge.playing
+        else channel_rack_timer.stop()
+    )
+    engine._screen1_channel_rack_timer = channel_rack_timer
     request_visible_browser_waveforms_from_window()
     app.aboutToQuit.connect(waveform_loader.close)
     if analysis_coordinator is not None:
@@ -3241,27 +3690,55 @@ def apply_clean_start_launch(
     env=None,
     source_available: Callable[[str], bool] | None = None,
 ) -> WorkspaceMode:
-    """Apply Clean Start (or optional Startup Preset override) for normal launch.
+    """Apply First-use Clean Start or Returning Workspace for normal launch.
 
-    Never restores sample selection, preview, harmony, or scroll. Corrupt / missing
-    preset Sources fail closed to Clean Start. Does not delete registered Sources.
+    Reuses persisted library Sources (#762). Never restores sample selection,
+    preview, harmony, Live Kit disclosure, or scroll. Missing/offline preferred
+    Sources fall through to the next available persisted Source without deleting
+    registration.
     """
+    from .workbench_controller import get_workbench_library_folders
+    from .workbench_library_navigation import LibraryAvailability
+
     loaded = load_startup_preset(state_dir=state_dir, env=env)
 
+    def _ensure_source_children() -> None:
+        tree = runtime_composition.library_tree
+        tree.fetch_children("container:sample-sources")
+
     def _default_available(node_id: str) -> bool:
+        _ensure_source_children()
         tree = runtime_composition.library_tree
         node = tree.node(node_id)
-        if node is None and node_id.startswith("root:"):
-            tree.fetch_children("container:sample-sources")
-            node = tree.node(node_id)
-        return bool(node is not None and node.selectable)
+        if node is None:
+            return False
+        if not node.selectable:
+            return False
+        availability = getattr(node, "availability", None)
+        if availability is LibraryAvailability.OFFLINE:
+            return False
+        if availability is LibraryAvailability.ERROR:
+            return False
+        return True
+
+    _ensure_source_children()
+    persisted_ids: list[str] = []
+    for folder in get_workbench_library_folders(
+        library_db_path=runtime_composition.library_db_path
+    ):
+        node_id = f"root:{folder.id}"
+        persisted_ids.append(node_id)
+    # Keep library order (last_opened_at) as the deterministic fallback authority.
+    # Tree display order may sort by label; returning policy must not.
 
     launch = resolve_launch_workspace(
         preset=loaded.preset,
         source_available=source_available or _default_available,
+        persisted_source_node_ids=persisted_ids,
     )
     view_model.state_id = "screen1-default-3panel"
     runtime_composition.clear_no_scope()
+    runtime_composition.clear_live_kit_disclosure()
     view_model.set_browser_state(
         rows=(),
         selected_index=-1,
@@ -3283,21 +3760,26 @@ def apply_clean_start_launch(
         intent = runtime_composition.library_tree.select(launch.source_node_id)
         if intent is not None:
             runtime_composition.dispatch_selection(intent)
-            state = runtime_composition.browser_state
-            view_model.set_browser_state(
-                rows=state.rows,
-                selected_index=-1,
-                browser_context=state.browser_context,
-                error=state.error,
-            )
-            view_model.set_workspace_materialization(
-                has_active_source=runtime_composition.has_active_source,
-                calm_canvas_visible=not runtime_composition.has_active_source,
-                browser_materialized=runtime_composition.browser_materialized,
-                live_kit_materialized=runtime_composition.live_kit_materialized,
-            )
-            return WorkspaceMode.ACTIVE_SOURCE
-        # Missing/unselectable Source: remain Clean Start (fail closed).
+            if runtime_composition.has_active_source:
+                state = runtime_composition.browser_state
+                view_model.set_browser_state(
+                    rows=state.rows,
+                    selected_index=-1,
+                    browser_context=state.browser_context,
+                    error=state.error,
+                )
+                view_model.set_workspace_materialization(
+                    has_active_source=True,
+                    calm_canvas_visible=False,
+                    browser_materialized=True,
+                    live_kit_materialized=False,
+                )
+                # #762: Active Source materialises Library + Browser together.
+                view_model.set_library_revealed(True)
+                return WorkspaceMode.ACTIVE_SOURCE
+            # Offline/unloadable scope: keep registration, stay Clean Start.
+            runtime_composition.clear_no_scope()
+        # Missing/unselectable Source: remain Clean Start (fail soft).
     return WorkspaceMode.CLEAN_START
 
 

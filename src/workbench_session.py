@@ -1,19 +1,17 @@
-"""Session ownership seam for Screen-1 Live Kit + shared audition.
+"""Session ownership seam for Live Kit + shared audition + Screen-2 rack.
 
-One composed session owns exactly one :class:`LiveKitState` and exactly one
-:class:`TransportAwarePreview` audition owner. Screen-2 / Pattern / Sequencer
-types are intentionally absent from this module.
+One composed session owns exactly one :class:`LiveKitState`, exactly one
+:class:`TransportAwarePreview` audition owner, and one Screen-2
+:class:`ChannelRackController` that reuses the same kit + transport.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import tkinter as tk
-
-from .workbench import WorkbenchApp
+from .workbench_channel_rack import ChannelRackController
 from .workbench_controller import WorkbenchRow, get_preview_start_ms
 from .workbench_harmony import HarmonicMatchLibraryController
 from .workbench_live_kit import LiveKitState
@@ -24,18 +22,22 @@ from .workbench_qml import (
     Screen1QmlViewModel,
 )
 from .workbench_transport_adapter import WorkbenchTransportAdapter
-from .workbench_transport_ui import TransportAwarePreview
+from .workbench_transport_preview import TransportAwarePreview
+
+if TYPE_CHECKING:
+    from .workbench import WorkbenchApp
 
 
 @dataclass
 class WorkbenchSession:
-    """Owned Screen-1 session surfaces composed by :func:`compose_workbench_session`."""
+    """Owned Workbench surfaces composed by :func:`compose_workbench_session`."""
 
     live_kit: LiveKitState
     live_kit_presenter: LiveKitPresenter
     transport: WorkbenchTransportAdapter
     audition: TransportAwarePreview
     qml_interaction_adapter: Screen1QmlInteractionAdapter
+    channel_rack: ChannelRackController
     tk_workbench: WorkbenchApp | None = None
 
 
@@ -93,6 +95,10 @@ def compose_workbench_session(
     tk_workbench: WorkbenchApp | None = None
 
     if include_tk_workbench:
+        import tkinter as tk
+
+        from .workbench import WorkbenchApp
+
         root = tk.Tk()
         root.withdraw()
         tk_workbench = WorkbenchApp(root, live_kit_state=live_kit)
@@ -126,12 +132,15 @@ def compose_workbench_session(
         live_kit=presenter,
     )
 
+    channel_rack = ChannelRackController(live_kit=live_kit, transport=transport)
+
     return WorkbenchSession(
         live_kit=live_kit,
         live_kit_presenter=presenter,
         transport=transport,
         audition=audition,
         qml_interaction_adapter=adapter,
+        channel_rack=channel_rack,
         tk_workbench=tk_workbench,
     )
 

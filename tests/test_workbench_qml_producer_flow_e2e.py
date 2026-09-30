@@ -429,15 +429,17 @@ def test_screen1_producer_flow_e2e_pass(tmp_path: Path):
     )
     adapter2 = engine2._screen1_interaction_adapter
     live_kit2 = engine2._screen1_live_kit
-    library_bridge2 = engine2._screen1_library_bridge
     library_model2 = engine2._screen1_library_model
     try:
-        assert mode2 is WorkspaceMode.CLEAN_START
-        assert composition2.has_active_source is False
+        assert mode2 is WorkspaceMode.ACTIVE_SOURCE
+        assert composition2.has_active_source is True
+        assert composition2.browser_materialized is True
+        assert view_model2.library_revealed is True
         assert view_model2.selected_browser_index == -1
         assert adapter2.harmonic_match_open is False
         assert adapter2.preview_active is False
         assert adapter2.pending_live_kit_add == ""
+        assert composition2.live_kit_materialized is False
         assert all(
             live_kit2.state.assignment_for(group, slot) is None
             for group, slot in _slot_targets()
@@ -452,9 +454,7 @@ def test_screen1_producer_flow_e2e_pass(tmp_path: Path):
             if node.kind is LibraryNodeKind.REGISTERED_ROOT
         ]
         assert len(roots) == 1
-        library_bridge2.selectLibraryNode(roots[0].node_id)
-        app2.processEvents()
-        assert composition2.has_active_source is True
+        assert composition2.selected_node_id == roots[0].node_id
         assert len(view_model2.browser_rows) == analyzed_row_count
         # Fresh/cached load: no analysis job required for unchanged source.
         coordinator2 = engine2._screen1_analysis_coordinator
@@ -463,7 +463,7 @@ def test_screen1_producer_flow_e2e_pass(tmp_path: Path):
         assert adapter2.harmonic_match_open is False
         assert adapter2.preview_active is False
         evidence["restart"] = {
-            "clean_start": "PASS",
+            "returning_workspace": "PASS",
             "source_persistence": "PASS",
             "transient_not_restored": True,
             "cached_rows": len(view_model2.browser_rows),

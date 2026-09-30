@@ -914,7 +914,6 @@
       "parked_tracks": {
         "summary": "These tracks are parked/HOLD. Do not auto-route or reactivate them.",
         "tracks": [
-          "Screen 2 #675/#678",
           "Screen 3 #679",
           "#680",
           "VST3 #469",

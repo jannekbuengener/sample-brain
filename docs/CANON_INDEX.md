@@ -51,7 +51,7 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 ## Task routing
 
 - **Screen 1:** live #691 + scoped child, then Screen-1 authorities above.
-- **Screen 2:** live #675/#678 + `PRODUCT_WORKFLOW_CANON.md` and Screen-2 supporting contracts. Foundations are technically unblocked (#676/#677/#681/#698 DONE); product/UI execution remains PARKED and sequenced after Screen-1 pilot gate #727 (explicit Owner-GO required).
+- **Screen 2:** live #675/#678 + `PRODUCT_WORKFLOW_CANON.md` and Screen-2 supporting contracts. Foundations are DONE (#676/#677/#681/#698); Screen-2 QML (#678) is **ACTIVE** under explicit Owner-GO (not gated by #727).
 - **Search:** EPIC-2 spec + active ADRs + current code/tests.
 - **CI/governance:** GitHub live rules/checks first; docs describe policy, not current API state.
 - **Repository hygiene:** `DATA_AND_ARTIFACT_POLICY.md` + live working-tree/worktree state.
