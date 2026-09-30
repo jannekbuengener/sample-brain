@@ -2897,7 +2897,13 @@ def _qml_interaction_bridge(
 
 
 def _qml_channel_rack_bridge(controller):
-    """Expose Channel Rack projection + commands; Python remains musical SoT."""
+    """Expose Channel Rack projection + commands; Python remains musical SoT.
+
+    ``controller`` may be ``None`` when ``_qml_engine`` is driven with an
+    injected ``interaction_adapter`` (Screen-1 harnesses). Screen-2 commands
+    then fail closed — Channel Rack must use compose-owned session transport
+    (#678), never a second invented owner.
+    """
     from PySide6.QtCore import QObject, Property, Signal, Slot
 
     class QmlChannelRackBridge(QObject):
@@ -2914,6 +2920,14 @@ def _qml_channel_rack_bridge(controller):
             self._sync_from_controller()
 
         def _sync_from_controller(self) -> None:
+            if controller is None:
+                self._groups = []
+                self._step_markers = []
+                self._step_count = 16
+                self._pattern_id = ""
+                self._active_screen = "screen1"
+                self._playing = False
+                return
             projection = controller.projection()
             self._groups = list(projection.get("groups") or [])
             self._step_markers = list(projection.get("step_markers") or [])
@@ -2952,36 +2966,50 @@ def _qml_channel_rack_bridge(controller):
 
         @Slot()
         def openChannelRack(self) -> None:
+            if controller is None:
+                return
             controller.enter_screen2()
             self.refresh()
 
         @Slot()
         def returnToScreen1(self) -> None:
+            if controller is None:
+                return
             controller.leave_screen2()
             self.refresh()
 
         @Slot(str, int)
         def toggleStep(self, channel_id: str, step_index: int) -> None:
+            if controller is None:
+                return
             controller.toggle_step(channel_id, int(step_index))
             self.refresh()
 
         @Slot()
         def addUserChannel(self) -> None:
+            if controller is None:
+                return
             controller.add_user_channel()
             self.refresh()
 
         @Slot()
         def play(self) -> None:
+            if controller is None:
+                return
             controller.play()
             self.refresh()
 
         @Slot()
         def stop(self) -> None:
+            if controller is None:
+                return
             controller.stop()
             self.refresh()
 
         @Slot()
         def tickPlayback(self) -> None:
+            if controller is None:
+                return
             controller.tick_playback()
             self._playing = bool(controller.is_playing)
             self._active_screen = controller.active_screen
@@ -3126,17 +3154,12 @@ def _qml_engine(
         view_model.live_kit_groups = live_kit.groups
         view_model.auditioning_live_kit_slot = adapter.auditioning_live_kit_slot
     else:
+        # Injected-adapter harnesses keep Screen-1 surfaces only. Screen-2
+        # Channel Rack must reuse compose-owned session transport (#678) —
+        # do not invent a second WorkbenchTransportAdapter here.
         adapter = interaction_adapter
         live_kit = getattr(interaction_adapter, "_live_kit", None)
-        from .workbench_channel_rack import ChannelRackController
-        from .workbench_live_kit import LiveKitState
-        from .workbench_transport_adapter import WorkbenchTransportAdapter
-
-        kit_state = getattr(live_kit, "state", None) if live_kit is not None else None
-        channel_rack_controller = ChannelRackController(
-            live_kit=kit_state if kit_state is not None else LiveKitState(),
-            transport=WorkbenchTransportAdapter(),
-        )
+        channel_rack_controller = None
     try:
         from .workbench_display_preferences import load_display_preferences
 

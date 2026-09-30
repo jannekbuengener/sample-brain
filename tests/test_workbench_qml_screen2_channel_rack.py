@@ -371,6 +371,14 @@ def test_session_wires_channel_rack_controller_without_forbidden_exports():
         assert not hasattr(importlib.import_module("src.workbench_qml"), forbidden)
 
 
+def test_qml_engine_injection_path_does_not_invent_transport():
+    """Injected-adapter harnesses must fail closed for Screen-2 (#678)."""
+    qml_mod = importlib.import_module("src.workbench_qml")
+    engine_src = inspect.getsource(qml_mod._qml_engine)
+    assert "WorkbenchTransportAdapter()" not in engine_src
+    assert "channel_rack_controller = None" in engine_src
+
+
 def test_beat_bar_grouping_markers_are_projected():
     module = _controller_module_or_fail()
     project = _require(module, "project_channel_rack_for_qml")
@@ -390,23 +398,35 @@ def test_beat_bar_grouping_markers_are_projected():
     reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
 )
 def test_qml_runtime_screen2_navigation_projection_and_step_toggle():
-    """Real QML runtime acceptance for Screen-2 Channel Rack (#678)."""
+    """Real QML runtime acceptance for Screen-2 Channel Rack (#678).
+
+    Uses the compose-owned ``_qml_engine`` path so Channel Rack shares the
+    session transport (no second ``WorkbenchTransportAdapter``).
+    """
     from PySide6.QtQuick import QQuickItem
 
     from src.workbench_qml import (
-        LiveKitPresenter,
-        Screen1QmlInteractionAdapter,
         Screen1QmlViewModel,
         _qml_engine,
         _settle_qml_frame,
     )
 
-    kit = _kit_with_samples()
-    presenter = LiveKitPresenter(state=kit)
     view_model = Screen1QmlViewModel.baseline("screen1-default-3panel")
-    view_model.live_kit_groups = presenter.groups
-    adapter = Screen1QmlInteractionAdapter(view_model=view_model, live_kit=presenter)
-    app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+    app, engine, window = _qml_engine(view_model)
+    adapter = engine._screen1_interaction_adapter
+    controller = engine._screen1_channel_rack
+    assert controller is not None
+    audition = getattr(engine, "_screen1_preview_player", None)
+    assert audition is not None
+    assert controller.transport is audition.transport
+    assert controller.live_kit is adapter._live_kit.state
+
+    kit = controller.live_kit
+    kit.assign("Kick + Bass", "Kick", _row("kick.wav"))
+    kit.assign("Drums", "Closed Hat", _row("ch.wav"))
+    kit.assign("Drums", "Open Hat", _row("oh.wav"))
+    view_model.live_kit_groups = adapter._live_kit.groups
+
     window.show()
     _settle_qml_frame(app)
     try:
@@ -434,7 +454,6 @@ def test_qml_runtime_screen2_navigation_projection_and_step_toggle():
         assert channel_rack.stepCount == 16
         assert len(channel_rack.groups) >= 4
 
-        controller = engine._screen1_channel_rack
         before = controller.state
         assert before is not None
         channel_rack.toggleStep("ch_kick", 0)
