@@ -13,6 +13,7 @@ from . import workbench_qml as production
 from .workbench_controller import WorkbenchRow
 from .workbench_harmony import HarmonyRelation
 from .workbench_live_kit import LiveKitPresentationState, LiveKitState
+from .workbench_qml_analysis import AnalysisUiState
 from .workbench_qml_library import WorkbenchLibraryTreeState
 from .workbench_visual_acceptance import (
     CLIENT_HEIGHT,
@@ -1090,13 +1091,315 @@ def run_qml_visual_acceptance_725(
         engines.clear()
 
 
+_V744_CAPTURE_LABELS = (
+    "01-scanning-early",
+    "02-analyzing-mid",
+    "03-analyzing-near-complete",
+    "04-cancelled",
+    "05-error",
+    "06-success-transition-browser",
+    "07-100pct",
+    "08-125pct",
+    "09-150pct",
+)
+
+
+def _project_analysis_loading_state(
+    view_model: Screen1QmlViewModel,
+    engine: object,
+    app: object,
+    state: AnalysisUiState,
+    *,
+    has_active_source: bool = False,
+) -> None:
+    """Project a real AnalysisUiState onto Screen-1 (no fake progress clock)."""
+    view_model.set_analysis_state(state)
+    view_model.set_workspace_materialization(
+        has_active_source=has_active_source,
+        calm_canvas_visible=state.phase not in {"scanning", "analyzing", "error"},
+        browser_materialized=has_active_source,
+        live_kit_materialized=False,
+    )
+    engine._screen1_screen_model.refresh()
+    engine._screen1_interaction_bridge.refreshState()
+    layout = getattr(engine, "_screen1_layout_model", None)
+    if layout is not None:
+        layout.syncFromInteraction()
+    app.processEvents()
+
+
+def run_qml_visual_acceptance_744(
+    *,
+    runtime_root: Path,
+    evidence_dir: Path,
+    scale_factor: float = 1.0,
+    capture_labels: tuple[str, ...] | None = None,
+    manifest_path: Path | None = None,
+    git_run=None,
+) -> dict[str, object]:
+    """#744 analysis-loading Runtime-Evidence. Additive labels; not V2 required IDs.
+
+    ``scale_factor`` selects which scale-specific labels (07–09) are captured in
+    this process. Callers should use a fresh Python process per scale factor.
+    """
+    import platform
+    import struct
+
+    _require_fresh_qml_capture_process()
+    report = validate_qml_renderer_provenance(
+        runtime_root,
+        manifest_path=manifest_path,
+        git_run=git_run,
+    )
+    fixture = build_screen1_visual_fixture_v2()
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    captures: dict[str, Path] = {}
+    sanity: dict[str, dict[str, object]] = {}
+    engines: list[object] = []
+    labels = capture_labels
+    if labels is None:
+        if abs(scale_factor - 1.0) < 1e-6:
+            labels = (
+                "01-scanning-early",
+                "02-analyzing-mid",
+                "03-analyzing-near-complete",
+                "04-cancelled",
+                "05-error",
+                "06-success-transition-browser",
+                "07-100pct",
+            )
+        elif abs(scale_factor - 1.25) < 1e-6:
+            labels = ("08-125pct",)
+        elif abs(scale_factor - 1.5) < 1e-6:
+            labels = ("09-150pct",)
+        else:
+            raise EvidenceError(f"unsupported #744 scale_factor={scale_factor}")
+
+    def _capture(label: str, window: object, engine: object, *, note: str) -> None:
+        target = evidence_dir / f"{label}.png"
+        _grab_qml_window_png(window, target, engine=engine)
+        if abs(scale_factor - 1.0) < 1e-6:
+            check = validate_capture_sanity(
+                target, expected_width=CLIENT_WIDTH, expected_height=CLIENT_HEIGHT
+            )
+        else:
+            data = target.read_bytes()
+            width, height = struct.unpack(">II", data[16:24])
+            check = validate_capture_sanity(
+                target, expected_width=width, expected_height=height
+            )
+        check["capture_label"] = label
+        check["note"] = note
+        check["scale_factor"] = scale_factor
+        check["pass"] = bool(check["pass"])
+        sanity[label] = check
+        captures[label] = target
+
+    try:
+        view_model = Screen1QmlViewModel(
+            state_id="screen1-default-3panel",
+            library_labels=(),
+            browser_rows=(),
+            selected_browser_index=-1,
+            harmony_rows=(),
+            live_kit_groups=(),
+        )
+        adapter = Screen1QmlInteractionAdapter(view_model=view_model)
+        app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+        engines.append(engine)
+        window.setWidth(CLIENT_WIDTH)
+        window.setHeight(CLIENT_HEIGHT)
+        window.show()
+        _settle_qml_frame(app)
+        _wait_for_screen1_background_ready(window, app)
+
+        phase_specs = {
+            "01-scanning-early": (
+                AnalysisUiState(folder_id=1, phase="scanning", current=0, total=0),
+                "real scanning phase",
+            ),
+            "02-analyzing-mid": (
+                AnalysisUiState(
+                    folder_id=1,
+                    phase="analyzing",
+                    current=2,
+                    total=5,
+                    display_name="hit.wav",
+                ),
+                "real analyzing mid progress",
+            ),
+            "03-analyzing-near-complete": (
+                AnalysisUiState(
+                    folder_id=1,
+                    phase="analyzing",
+                    current=4,
+                    total=5,
+                    display_name="hit.wav",
+                ),
+                "real analyzing near-complete progress",
+            ),
+            "05-error": (
+                AnalysisUiState(
+                    folder_id=1,
+                    phase="error",
+                    error="Analyse fehlgeschlagen.",
+                ),
+                "real error phase fail-closed presentation",
+            ),
+            "07-100pct": (
+                AnalysisUiState(
+                    folder_id=1,
+                    phase="analyzing",
+                    current=3,
+                    total=5,
+                    display_name="hit.wav",
+                ),
+                "loading surface at 100% scale",
+            ),
+            "08-125pct": (
+                AnalysisUiState(
+                    folder_id=1,
+                    phase="analyzing",
+                    current=3,
+                    total=5,
+                    display_name="hit.wav",
+                ),
+                "loading surface at 125% scale",
+            ),
+            "09-150pct": (
+                AnalysisUiState(
+                    folder_id=1,
+                    phase="analyzing",
+                    current=3,
+                    total=5,
+                    display_name="hit.wav",
+                ),
+                "loading surface at 150% scale",
+            ),
+        }
+
+        for label in labels:
+            if label in phase_specs:
+                state, note = phase_specs[label]
+                _project_analysis_loading_state(view_model, engine, app, state)
+                _settle_qml_frame(app)
+                _capture(label, window, engine, note=note)
+            elif label == "04-cancelled":
+                _project_analysis_loading_state(
+                    view_model,
+                    engine,
+                    app,
+                    AnalysisUiState(
+                        folder_id=1,
+                        phase="analyzing",
+                        current=1,
+                        total=4,
+                        display_name="hit.wav",
+                    ),
+                )
+                view_model.set_analysis_state(AnalysisUiState(folder_id=1, phase="idle"))
+                view_model.set_workspace_materialization(
+                    has_active_source=False,
+                    calm_canvas_visible=True,
+                    browser_materialized=False,
+                    live_kit_materialized=False,
+                )
+                adapter.harmonic_match_open = False
+                adapter.stop_preview()
+                engine._screen1_screen_model.refresh()
+                engine._screen1_interaction_bridge.refreshState()
+                _settle_qml_frame(app)
+                _capture(label, window, engine, note="cancelled fail-closed idle")
+            elif label == "06-success-transition-browser":
+                active = resolve_screen1_visual_state_v2(fixture, "screen1-active-source")
+                active_vm = build_qml_view_model_from_fixture_v2(
+                    fixture, "screen1-active-source"
+                )
+                active_adapter = Screen1QmlInteractionAdapter(
+                    view_model=active_vm,
+                    harmony_controller=production.HarmonicMatchLibraryController(),
+                )
+                apply_screen1_visual_state_v2(
+                    active_vm, active_adapter, fixture, active
+                )
+                active_vm.set_workspace_materialization(
+                    has_active_source=True,
+                    calm_canvas_visible=False,
+                    browser_materialized=True,
+                    live_kit_materialized=False,
+                )
+                active_vm.set_analysis_state(AnalysisUiState(phase="idle"))
+                active_vm.selected_browser_index = -1
+                window.close()
+                app.processEvents()
+                app, engine, window = _qml_engine(
+                    active_vm, interaction_adapter=active_adapter
+                )
+                engines.append(engine)
+                window.setWidth(CLIENT_WIDTH)
+                window.setHeight(CLIENT_HEIGHT)
+                window.show()
+                _settle_qml_frame(app)
+                _wait_for_screen1_background_ready(window, app)
+                _capture(
+                    label,
+                    window,
+                    engine,
+                    note="success → Browser-first; Harmony closed; Live Kit hidden",
+                )
+                view_model = active_vm
+                adapter = active_adapter
+            else:
+                raise EvidenceError(f"unknown #744 evidence label: {label}")
+
+        missing = [label for label in labels if label not in captures]
+        if missing:
+            raise EvidenceError(f"#744 captures missing: {missing}")
+        manifest = {
+            "schema": "sample_brain_screen1_744_analysis_loading_evidence",
+            "issue": 744,
+            "commit": report.manifest.commit,
+            "channel": report.manifest.channel,
+            "runtime_status": "valid",
+            "python": f"{platform.python_implementation()} {platform.python_version()}",
+            "os": "Windows " + platform.release(),
+            "scale_factor": scale_factor,
+            "qt_scale_factor": __import__("os").environ.get("QT_SCALE_FACTOR"),
+            "fixture": fixture.version,
+            "capture_labels": list(labels),
+            "all_evidence_ids": list(_V744_CAPTURE_LABELS),
+            "screenshot_hashes": {
+                key: __import__("hashlib").sha256(path.read_bytes()).hexdigest()
+                for key, path in captures.items()
+            },
+            "sanity_results": {
+                key: {
+                    "pass": bool(value.get("pass")),
+                    "capture_label": value.get("capture_label"),
+                    "note": value.get("note"),
+                    "scale_factor": value.get("scale_factor"),
+                }
+                for key, value in sanity.items()
+            },
+        }
+        suffix = "100" if abs(scale_factor - 1.0) < 1e-6 else (
+            "125" if abs(scale_factor - 1.25) < 1e-6 else "150"
+        )
+        write_visual_evidence_manifest(
+            evidence_dir / f"manifest-744-{suffix}.json", manifest
+        )
+        return manifest
+    finally:
+        engines.clear()
+
+
 __all__ = [
     "QML_SOURCE",
     "QmlBrowserRow",
     "QmlLiveKitGroup",
     "QmlLiveKitSlot",
-    "Screen1QmlInteractionAdapter",
     "Screen1QmlViewModel",
+    "Screen1QmlInteractionAdapter",
     "VirtualRowWindow",
     "build_qml_view_model_from_fixture",
     "build_qml_view_model_from_fixture_v2",
@@ -1107,7 +1410,9 @@ __all__ = [
     "run_qml_visual_acceptance",
     "run_qml_visual_acceptance_v2",
     "run_qml_visual_acceptance_725",
+    "run_qml_visual_acceptance_744",
     "validate_qml_renderer_provenance",
     "virtual_row_window",
     "_wait_for_screen1_background_ready",
+    "_V744_CAPTURE_LABELS",
 ]

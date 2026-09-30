@@ -78,6 +78,7 @@ def test_spike_harness_owns_fixture_and_acceptance_operations():
         "run_qml_visual_acceptance",
         "run_qml_visual_acceptance_v2",
         "run_qml_visual_acceptance_725",
+        "run_qml_visual_acceptance_744",
         "run_qml_virtualization_probe",
         "validate_qml_renderer_provenance",
         "build_qml_view_model_from_fixture_v2",

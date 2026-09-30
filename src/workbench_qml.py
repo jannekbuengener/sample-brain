@@ -1678,7 +1678,7 @@ ApplicationWindow {
             }
         }
         Rectangle {
-            // #742 minimal analysis surface — functional only; #744 owns final loading visuals.
+            // #744 analysis loading experience — deep blocking surface; real AnalysisUiState only.
             id: analysisWorkingSurface
             objectName: "analysisWorkingSurface"
             visible: !window.interaction.hasActiveSource
@@ -1687,45 +1687,129 @@ ApplicationWindow {
                          || window.screenData.analysisStatus === "error")
             width: visible ? Math.max(0, parent.width - libraryPane.width) : 0
             height: parent.height
-            color: theme.surfaceBrowser
-            border.color: theme.borderSubtle
-            ColumnLayout {
+            // Deep Sample-Brain working surface (no bright dialog chrome).
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: theme.surfaceRoot }
+                GradientStop { position: 0.55; color: theme.surfaceBrowser }
+                GradientStop { position: 1.0; color: theme.selectionSurface }
+            }
+
+            // Input ownership: blocker under status/progress/cancel (z below card).
+            MouseArea {
+                id: analysisWorkspaceBlocker
+                objectName: "analysisWorkspaceBlocker"
+                anchors.fill: parent
+                z: 0
+                acceptedButtons: Qt.AllButtons
+                hoverEnabled: true
+                onPressed: function(mouse) { mouse.accepted = true }
+                onClicked: function(mouse) { mouse.accepted = true }
+                onWheel: function(wheel) { wheel.accepted = true }
+            }
+
+            Rectangle {
+                id: analysisStatusCard
+                objectName: "analysisStatusCard"
+                z: 1
                 anchors.centerIn: parent
-                spacing: 12
-                width: Math.min(420, parent.width - 48)
-                Label {
-                    Layout.fillWidth: true
-                    horizontalAlignment: Text.AlignHCenter
-                    text: window.screenData.analysisStatus === "scanning" ? "Analysiere Quelle …" :
-                          window.screenData.analysisStatus === "analyzing" ? "Analysiere " + window.screenData.analysisSource :
-                          window.screenData.analysisStatus === "error" ? window.screenData.analysisError : ""
-                    color: window.screenData.analysisStatus === "error" ? theme.actionActive : theme.textSecondary
-                    font.pixelSize: 14
-                    wrapMode: Text.Wrap
-                }
-                Label {
-                    Layout.alignment: Qt.AlignHCenter
-                    visible: window.screenData.analysisTotal > 0
-                    text: window.screenData.analysisCurrent + " / " + window.screenData.analysisTotal
-                    color: theme.textPrimary
-                    font.pixelSize: 12
-                }
-                ProgressBar {
-                    Layout.alignment: Qt.AlignHCenter
-                    Layout.preferredWidth: 220
-                    visible: window.screenData.analysisStatus === "scanning" || window.screenData.analysisStatus === "analyzing"
-                    indeterminate: window.screenData.analysisTotal === 0
-                    from: 0
-                    to: Math.max(window.screenData.analysisTotal, 1)
-                    value: window.screenData.analysisCurrent
-                }
-                Button {
-                    id: analysisCancelButton
-                    objectName: "analysisCancelButton"
-                    Layout.alignment: Qt.AlignHCenter
-                    visible: window.screenData.analysisStatus === "scanning" || window.screenData.analysisStatus === "analyzing"
-                    text: "Cancel"
-                    onClicked: window.screenData.cancelAnalysis()
+                width: Math.min(440, parent.width - 64)
+                height: analysisStatusColumn.implicitHeight + 48
+                radius: 10
+                color: theme.surfacePanel
+                border.color: theme.borderSubtle
+                border.width: 1
+
+                ColumnLayout {
+                    id: analysisStatusColumn
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.margins: 24
+                    spacing: 14
+
+                    Label {
+                        objectName: "analysisStatusLabel"
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
+                        text: window.screenData.analysisStatus === "scanning" ? "Analysiere Quelle …" :
+                              window.screenData.analysisStatus === "analyzing" ? "Analysiere " + window.screenData.analysisSource :
+                              window.screenData.analysisStatus === "error" ? window.screenData.analysisError : ""
+                        color: window.screenData.analysisStatus === "error" ? theme.actionActive : theme.textSecondary
+                        font.pixelSize: 15
+                        wrapMode: Text.Wrap
+                    }
+
+                    Label {
+                        objectName: "analysisProgressCount"
+                        Layout.alignment: Qt.AlignHCenter
+                        visible: window.screenData.analysisTotal > 0
+                                 && (window.screenData.analysisStatus === "scanning"
+                                     || window.screenData.analysisStatus === "analyzing")
+                        text: window.screenData.analysisCurrent + " / " + window.screenData.analysisTotal
+                        color: theme.textPrimary
+                        font.pixelSize: 13
+                    }
+
+                    // Real progress only — bound to analysisCurrent/analysisTotal (no Timer).
+                    Item {
+                        objectName: "analysisProgressTrack"
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.preferredWidth: Math.min(280, parent.width)
+                        Layout.preferredHeight: 6
+                        visible: window.screenData.analysisStatus === "scanning"
+                                 || window.screenData.analysisStatus === "analyzing"
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 3
+                            color: theme.surfaceElevated
+                            border.color: theme.borderSubtle
+                            border.width: 1
+                        }
+                        Rectangle {
+                            id: analysisProgressFill
+                            objectName: "analysisProgressFill"
+                            anchors.left: parent.left
+                            anchors.top: parent.top
+                            anchors.bottom: parent.bottom
+                            width: {
+                                if (window.screenData.analysisTotal <= 0)
+                                    return parent.width * 0.28
+                                return parent.width * Math.min(
+                                    1.0,
+                                    Math.max(0.0, window.screenData.analysisCurrent / window.screenData.analysisTotal)
+                                )
+                            }
+                            radius: 3
+                            color: theme.actionActive
+                            opacity: window.screenData.analysisTotal <= 0 ? 0.45 : 0.85
+                        }
+                    }
+
+                    Button {
+                        id: analysisCancelButton
+                        objectName: "analysisCancelButton"
+                        Layout.alignment: Qt.AlignHCenter
+                        visible: window.screenData.analysisStatus === "scanning"
+                                 || window.screenData.analysisStatus === "analyzing"
+                        text: "Cancel"
+                        flat: true
+                        contentItem: Text {
+                            text: analysisCancelButton.text
+                            color: theme.textSecondary
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            font.pixelSize: 12
+                        }
+                        background: Rectangle {
+                            implicitWidth: 88
+                            implicitHeight: 28
+                            radius: 6
+                            color: analysisCancelButton.hovered ? theme.surfaceElevated : "transparent"
+                            border.color: analysisCancelButton.hovered ? theme.borderSubtle : "transparent"
+                            border.width: 1
+                        }
+                        onClicked: window.screenData.cancelAnalysis()
+                    }
                 }
             }
         }
