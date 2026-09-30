@@ -28,9 +28,12 @@ At the 2026-09-30 reconciliation, GitHub live shows the following durable work c
 - [#494](https://github.com/jannekbuengener/sample-brain/issues/494) — migrate the temporary active `main` ruleset to the stable canon-aligned strict ruleset. The older #405 branch-protection gap is closed and must not be treated as the current governance state.
 - [#703](https://github.com/jannekbuengener/sample-brain/issues/703) — repository truth/drift/hygiene reconciliation campaign.
 
+### Active — Screen 2 Channel Rack
+
+- [#675](https://github.com/jannekbuengener/sample-brain/issues/675) / [#678](https://github.com/jannekbuengener/sample-brain/issues/678) — Screen 2 Channel Rack. Foundations remain shipped; Screen-2 QML (#678) is **ACTIVE** under explicit Owner-GO (not gated by #727).
+
 ### Parked / external-dependency / R&D tracks
 
-- [#675](https://github.com/jannekbuengener/sample-brain/issues/675) / [#678](https://github.com/jannekbuengener/sample-brain/issues/678) — Screen 2 Channel Rack. Foundations remain shipped; both tracks are **PARKED / NOT ACTIVE** under the current Owner decision. No Screen-2 UI implementation or new Screen-2 slices without an explicit new Owner-GO.
 - [#468](https://github.com/jannekbuengener/sample-brain/issues/468) — Techno listening/stem pilot. Existing canary/listening evidence remains historically valid; the track is **PARKED / NOT ACTIVE**. No further Listening-/Stem-/Demucs-canaries, Track-02–05 runs, or scorecard campaign without explicit Owner reactivation.
 - [#469](https://github.com/jannekbuengener/sample-brain/issues/469) — VST3 integration is explicitly **parked / not active**.
 - [#74](https://github.com/jannekbuengener/sample-brain/issues/74) — upstream sqlite-vec ANN readiness tracker; no private ANN replacement.
@@ -65,7 +68,7 @@ Transient PRs and exact `main` SHA are intentionally not frozen here. Query GitH
 - The local Workbench and native-audio contracts are established.
 - `LOCK_PYSIDE6_QML` remains the renderer canon for new Screen-1 visual/product work; `src/workbench_qml.py` is the canonical QML Screen-1 shell and Tkinter is legacy/fallback plus behavioral reference.
 - The original Screen-1 migration epic #503 is closed. Current Screen-1 refinement continues under #691; agents must not route new work through #503 as though it were still active.
-- Screen-2 foundations now include session ownership, Pattern Core, sequencer scheduling/PCM and Channel Rack Python core; product/UI tracks #675/#678 remain open but are currently **PARKED / NOT ACTIVE** pending an explicit Owner-GO.
+- Screen-2 foundations now include session ownership, Pattern Core, sequencer scheduling/PCM and Channel Rack Python core; Screen-2 QML (#678) is **ACTIVE** under explicit Owner-GO.
 - native audio core and deterministic transport/key-lock test surface remain part of the shipped foundation.
 - Quick Capture voice-to-issue flow uses local recording + local whisper.cpp + GitHub CLI. Private/local path and obvious secret redaction applies before public issue creation; see [`docs/QUICK_CAPTURE.md`](../docs/QUICK_CAPTURE.md).
 

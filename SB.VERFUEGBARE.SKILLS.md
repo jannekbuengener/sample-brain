@@ -106,7 +106,6 @@ Not an active hygiene authority: `docs/ISSUE_BACKLOG.md` (HISTORICAL_LEDGER only
 
 These tracks are parked/HOLD. Do not auto-route or reactivate them.
 
-- Screen 2 #675/#678
 - Screen 3 #679
 - #680
 - VST3 #469
