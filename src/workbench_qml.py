@@ -1688,7 +1688,8 @@ ApplicationWindow {
             width: visible ? Math.max(0, parent.width - libraryPane.width) : 0
             height: parent.height
             // Deep Sample-Brain working surface (no bright dialog chrome).
-            // Solid theme fill only — Screen-1 background contract forbids Gradient.
+            // Solid theme fill only — Screen-1 background contract forbids
+            // ambient fill transitions in QML_SOURCE.
             color: theme.surfaceRoot
 
             // Input ownership: blocker under status/progress/cancel (z below card).
