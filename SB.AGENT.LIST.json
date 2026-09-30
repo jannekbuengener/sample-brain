@@ -1,7 +1,7 @@
 {
-  "_comment": "Sample Brain — verfügbare Cursor Sub-Agents. Routing via SKILL_INTEGRATION_PLAN.md und skill-routing.mdc.",
   "version": 1,
-  "updated": "2026-09-18",
+  "updated": "2026-09-30",
+  "_comment": "Sample Brain — inventory view of Cursor Sub-Agents. Agent contract authority is .cursor/agents/*.md. Routing authority is docs/operations/CAPABILITY_REGISTRY.json.",
   "agents": [
     {
       "id": "sample-brain-control-orchestrator",
@@ -55,7 +55,7 @@
     {
       "id": "sample-brain-issue-backlog-maintainer",
       "name": "Issue Backlog Maintainer",
-      "description": "Pflegt ISSUE_BACKLOG.md, synchronisiert Issue-Status mit Board-Reality",
+      "description": "Maintains docs/ISSUE_BACKLOG.md as HISTORICAL_LEDGER only; live GitHub state wins; never routes work from the ledger",
       "readonly": false
     },
     {
@@ -79,7 +79,7 @@
     {
       "id": "sample-brain-skill-routing-auditor",
       "name": "Skill Routing Auditor",
-      "description": "Read-only auditor for SampleBrain SkillForge routing docs, Cursor rules, Priority A/B/C usage, and agent-task mapping quality.",
+      "description": "Read-only auditor for capability registry, generated routing views, skill mirrors, capability types, parked routes, and visual-accept path",
       "readonly": true
     },
     {
