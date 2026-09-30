@@ -219,24 +219,28 @@ def test_screen1_producer_flow_e2e_pass(tmp_path: Path):
         # --- 3/4/5 Add Source + Analysis ---------------------------------
         library_bridge.registerSourceUrl(str(source))
         app.processEvents()
-        assert composition.has_active_source is True
-        selected_id = library_bridge.selectedLibraryNodeId
-        assert selected_id.startswith("root:")
-        folder_id = int(selected_id.split(":", 1)[1])
+        # #742: analysis runs before Source/Browser materialization.
+        assert composition.has_active_source is False
+        folder_id = view_model.analysis_folder_id
+        assert folder_id is not None
         assert coordinator is not None
         assert _wait_for_analysis(app, coordinator, folder_id, view_model), (
             f"analysis did not complete (status={view_model.analysis_status!r}, "
             f"rows={len(view_model.browser_rows)})"
         )
         app.processEvents()
+        assert composition.has_active_source is True
+        selected_id = library_bridge.selectedLibraryNodeId
+        assert selected_id == f"root:{folder_id}"
         assert view_model.analysis_status in {"done", "idle"}
         row_count = len(view_model.browser_rows)
         assert row_count >= 11
         assert view_model.selected_browser_index == -1
         assert adapter.preview_active is False
         assert adapter.harmonic_match_open is False
+        assert composition.live_kit_revealed is False
         assert browser.isVisible()
-        assert live_kit_pane.isVisible()
+        assert not live_kit_pane.isVisible()
         assert not calm.isVisible()
 
         # --- 6/7 Browser browse + metadata (sanitized) --------------------
@@ -311,8 +315,13 @@ def test_screen1_producer_flow_e2e_pass(tmp_path: Path):
         # --- 12 Harmonic Add-to-Kit ---------------------------------------
         slots = _slot_targets()
         assert len(slots) == 11
+        assert not live_kit_pane.isVisible()
         harmony_row = adapter.request_add_harmonic_match_to_kit(0)
         assert harmony_row is not None
+        engine._screen1_interaction_bridge.refreshState()
+        app.processEvents()
+        assert composition.live_kit_revealed is True
+        assert live_kit_pane.isVisible()
         group0, slot0 = slots[0]
         assert adapter.assign_live_kit_slot(group0, slot0) is True
         assert live_kit.state.assignment_for(group0, slot0) is not None

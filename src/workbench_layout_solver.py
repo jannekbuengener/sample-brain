@@ -75,13 +75,21 @@ def normalize_ratios(ratios: Mapping[str, float]) -> dict[str, float]:
     return {panel_id: values[panel_id] / total for panel_id in PANEL_IDS}
 
 
-def visible_panel_ids(*, harmony_open: bool, has_active_source: bool) -> tuple[str, ...]:
+def visible_panel_ids(
+    *,
+    harmony_open: bool,
+    has_active_source: bool,
+    live_kit_visible: bool = True,
+) -> tuple[str, ...]:
     # Clean Start: calm canvas is not a weighted panel; elastic is inactive.
     if not has_active_source:
         return ()
+    panels: list[str] = ["library", "browser"]
     if harmony_open:
-        return ("library", "browser", "harmony", "livekit")
-    return ("library", "browser", "livekit")
+        panels.append("harmony")
+    if live_kit_visible:
+        panels.append("livekit")
+    return tuple(panels)
 
 
 def set_harmony_open(ratios: Mapping[str, float], _open: bool) -> dict[str, float]:
@@ -95,11 +103,14 @@ def solve_widths(
     available_width: float,
     harmony_open: bool,
     has_active_source: bool,
+    live_kit_visible: bool = True,
     handle_width: float = HANDLE_WIDTH_PX,
 ) -> LayoutSolution:
     stored = normalize_ratios(ratios)
     visible = visible_panel_ids(
-        harmony_open=harmony_open, has_active_source=has_active_source
+        harmony_open=harmony_open,
+        has_active_source=has_active_source,
+        live_kit_visible=live_kit_visible,
     )
     if available_width <= 0 or not math.isfinite(available_width):
         raise ValueError("available_width must be finite and > 0")
@@ -145,6 +156,7 @@ def apply_divider_drag(
     available_width: float,
     harmony_open: bool,
     has_active_source: bool,
+    live_kit_visible: bool = True,
     decay: float = DEFAULT_DECAY,
     handle_width: float = HANDLE_WIDTH_PX,
 ) -> dict[str, float]:
@@ -155,7 +167,11 @@ def apply_divider_drag(
         return stored
 
     visible = list(
-        visible_panel_ids(harmony_open=harmony_open, has_active_source=has_active_source)
+        visible_panel_ids(
+            harmony_open=harmony_open,
+            has_active_source=has_active_source,
+            live_kit_visible=live_kit_visible,
+        )
     )
     if divider_after not in visible:
         raise ValueError(f"divider_after {divider_after!r} is not visible")
@@ -170,6 +186,7 @@ def apply_divider_drag(
         available_width=available_width,
         harmony_open=harmony_open,
         has_active_source=has_active_source,
+        live_kit_visible=live_kit_visible,
         handle_width=handle_width,
     )
     if solution.fallback is not None:
@@ -214,6 +231,7 @@ def apply_divider_drag(
         available_width=available_width,
         harmony_open=harmony_open,
         has_active_source=has_active_source,
+        live_kit_visible=live_kit_visible,
         handle_width=handle_width,
     ):
         return candidate
@@ -228,6 +246,7 @@ def apply_divider_drag(
         available_width=available_width,
         harmony_open=harmony_open,
         has_active_source=has_active_source,
+        live_kit_visible=live_kit_visible,
         handle_width=handle_width,
     ):
         return inverted
@@ -514,6 +533,7 @@ def _ratios_realize_widths(
     harmony_open: bool,
     has_active_source: bool,
     handle_width: float,
+    live_kit_visible: bool = True,
     tolerance_px: float = 0.51,
 ) -> bool:
     solution = solve_widths(
@@ -521,6 +541,7 @@ def _ratios_realize_widths(
         available_width=available_width,
         harmony_open=harmony_open,
         has_active_source=has_active_source,
+        live_kit_visible=live_kit_visible,
         handle_width=handle_width,
     )
     if solution.fallback is not None:

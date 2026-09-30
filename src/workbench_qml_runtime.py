@@ -80,6 +80,8 @@ class Screen1QmlRuntimeComposition:
         self.browser_state = Screen1BrowserState()
         self.audition_dispatches: list[WorkbenchRow] = []
         self._selected_node_id: str | None = None
+        # #742 transient Live Kit disclosure — not persisted, not kit domain.
+        self._live_kit_revealed = False
 
     @property
     def selected_node_id(self) -> str | None:
@@ -100,8 +102,25 @@ class Screen1QmlRuntimeComposition:
         return self.has_active_source
 
     @property
+    def live_kit_revealed(self) -> bool:
+        """True after the first explicit Add-to-Kit intent in this session."""
+        return self._live_kit_revealed
+
+    @property
     def live_kit_materialized(self) -> bool:
-        return self.has_active_source
+        # #742: active Source alone must not reveal Live Kit.
+        return self.has_active_source and self._live_kit_revealed
+
+    def reveal_live_kit(self) -> bool:
+        """Reveal Live Kit pane (UI disclosure only; kit domain unchanged)."""
+        if self._live_kit_revealed:
+            return False
+        self._live_kit_revealed = True
+        return True
+
+    def clear_live_kit_disclosure(self) -> None:
+        """Reset transient Live Kit pane disclosure without touching kit state."""
+        self._live_kit_revealed = False
 
     def dispatch_selection(self, intent: LibrarySelectionIntent) -> Screen1BrowserState:
         """Load exactly once for a valid intent, or fail closed."""
@@ -227,6 +246,7 @@ class Screen1QmlRuntimeComposition:
             return None
 
     def clear_no_scope(self, error: str | None = None) -> Screen1BrowserState:
+        self.clear_live_kit_disclosure()
         return self._set_no_scope(error)
 
     @staticmethod

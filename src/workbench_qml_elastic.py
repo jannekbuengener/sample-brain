@@ -26,6 +26,7 @@ def create_elastic_layout_bridge(
     harmony_open: Callable[[], bool],
     has_active_source: Callable[[], bool],
     library_revealed: Callable[[], bool] | None = None,
+    live_kit_visible: Callable[[], bool] | None = None,
     on_changed: Callable[[], None] | None = None,
 ):
     """Thin QObject projection; solver remains the layout authority."""
@@ -43,6 +44,8 @@ def create_elastic_layout_bridge(
     persistable = bool(loaded.persistable)
     layout_revision = 0
     revealed = library_revealed or (lambda: False)
+    # Default True preserves pre-#742 bridge callers; production passes disclosure.
+    kit_visible = live_kit_visible if live_kit_visible is not None else (lambda: True)
 
     class ElasticLayoutBridge(QObject):
         changed = Signal()
@@ -77,6 +80,7 @@ def create_elastic_layout_bridge(
                 available_width=max(content_width, 1.0),
                 harmony_open=bool(harmony_open()),
                 has_active_source=True,
+                live_kit_visible=bool(kit_visible()),
             )
             widths = {
                 "library": float(solution.widths.get("library", 0.0)),
@@ -136,6 +140,7 @@ def create_elastic_layout_bridge(
                 available_width=max(content_width, 1.0),
                 harmony_open=bool(harmony_open()),
                 has_active_source=True,
+                live_kit_visible=bool(kit_visible()),
             )
             self._recompute()
             self._emit()
