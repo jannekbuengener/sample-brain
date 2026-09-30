@@ -1552,37 +1552,9 @@ ApplicationWindow {
                 }
             }
         }
-        Item {
-            id: libraryRevealAffordance
-            objectName: "libraryRevealAffordance"
-            // #725/#742 subtle edge reveal — works in Clean Start and Active Source.
-            z: 20
-            visible: !window.interaction.libraryRevealed
-            width: 18
-            height: parent.height
-            anchors.left: parent.left
-            property bool hovered: false
-            Rectangle {
-                anchors.fill: parent
-                color: libraryRevealAffordance.hovered ? theme.surfaceElevated : "transparent"
-                opacity: libraryRevealAffordance.hovered ? 0.92 : 0.55
-            }
-            Text {
-                anchors.centerIn: parent
-                text: "›"
-                color: theme.textSecondary
-                opacity: libraryRevealAffordance.hovered ? 1.0 : 0.55
-                font.pixelSize: 16
-            }
-            MouseArea {
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onEntered: libraryRevealAffordance.hovered = true
-                onExited: libraryRevealAffordance.hovered = false
-                onClicked: window.interaction.revealLibrary()
-            }
-        }
+        // #742 geometry: libraryRevealAffordance is an overlay sibling of workspaceRow
+        // (not a Row child). Horizontal anchors on Row-managed children disable the
+        // Row positioner and collapse all pane x origins to 0.
         Item {
             id: handleAfterLibrary
             objectName: "elasticHandleAfterLibrary"
@@ -2288,6 +2260,40 @@ ApplicationWindow {
                 }
                 Item { Layout.fillHeight: true }
             }
+        }
+    }
+
+    Item {
+        id: libraryRevealAffordance
+        objectName: "libraryRevealAffordance"
+        // #725/#742 subtle edge reveal — overlay, not a workspaceRow child.
+        // Row must own horizontal pane geometry; this Item anchors to the
+        // ApplicationWindow content item instead.
+        z: 20
+        visible: !window.interaction.libraryRevealed
+        width: 18
+        height: parent.height
+        anchors.left: parent.left
+        property bool hovered: false
+        Rectangle {
+            anchors.fill: parent
+            color: libraryRevealAffordance.hovered ? theme.surfaceElevated : "transparent"
+            opacity: libraryRevealAffordance.hovered ? 0.92 : 0.55
+        }
+        Text {
+            anchors.centerIn: parent
+            text: "›"
+            color: theme.textSecondary
+            opacity: libraryRevealAffordance.hovered ? 1.0 : 0.55
+            font.pixelSize: 16
+        }
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onEntered: libraryRevealAffordance.hovered = true
+            onExited: libraryRevealAffordance.hovered = false
+            onClicked: window.interaction.revealLibrary()
         }
     }
 }
