@@ -14,6 +14,14 @@ Screen-1 QML (dev):
 python -m src.cli workbench --qml-screen1
 ```
 
+Screen-1 UI acceptance (local Windows desktop smoke; evidence outside repo):
+
+```powershell
+python tools/screen1_ui_acceptance.py
+```
+
+See `docs/SCREEN1_UI_ACCEPTANCE.md`.
+
 ## Producer runtime and desktop shortcut
 
 Install the dedicated, provenance-checked runtime from a current `main` ref:
