@@ -174,6 +174,14 @@ $QWindows = Get-ChildItem -LiteralPath $FinalApp -Recurse -Filter "qwindows.dll"
     Select-Object -First 1
 if (-not $QWindows) { throw "qwindows.dll missing from standalone artifact - Qt platforms plugin FAIL." }
 
+# Screen-1 canonical background presence gate (frozen QML must not depend on repo checkout)
+$BgName = "screen1_background_reference.png"
+$Background = Get-ChildItem -LiteralPath $FinalApp -Recurse -Filter $BgName -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+if (-not $Background) {
+    throw "$BgName missing from standalone artifact - Screen-1 background FAIL."
+}
+
 # Tester note + BUILDINFO (relative evidence IDs only; no machine-local absolute paths)
 Copy-Item -LiteralPath (Join-Path $RepoRoot "tools\windows\TESTER_NOTE.md") `
     -Destination (Join-Path $FinalApp "TESTER_NOTE.txt") -Force
