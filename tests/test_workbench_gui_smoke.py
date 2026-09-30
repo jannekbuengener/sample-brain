@@ -469,6 +469,9 @@ def test_live_kit_slot_exposes_compact_audition_affordance(tmp_path, monkeypatch
     try:
         app = WorkbenchApp(root)
         app._live_kit_state.assign("Drums", "Main Drum", assigned)
+        # #743: groups start collapsed; expand Drums so the slot row is visible.
+        if app._live_kit_presentation.is_collapsed("Drums"):
+            app._toggle_live_kit_group("Drums")
         dispatched = []
         monkeypatch.setattr(
             app._preview,
