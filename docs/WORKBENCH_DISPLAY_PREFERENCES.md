@@ -134,7 +134,7 @@ exportable absolute private paths.
 |--------|--------|
 | Save Workspace Preset | Persist current stable UI preference snapshot (no transient session). |
 | Set Preset as Startup | Explicitly designate the saved Startup Preset file used at next launch. |
-| Clear Startup (if exposed) | Remove designation → next launch Clean Start. |
+| Clear Startup (if exposed) | Remove designation only. Next launch still uses Returning Workspace when persisted Sources remain (#762); empty library → Clean Start. |
 
 Module seams (extend, do not fork):
 
@@ -147,8 +147,8 @@ Module seams (extend, do not fork):
 
 | Condition | Behavior |
 |-----------|----------|
-| Unknown schema version | Controlled fail-closed (Clean Start for startup resolve; defaults for prefs). |
-| Malformed JSON | Clean Start / defaults; no crash. |
+| Unknown schema version | Ignore bad Startup Source; Returning Workspace still considers persisted library Sources (#762); defaults for prefs. |
+| Malformed JSON | Ignore bad Startup Source / defaults; no crash. Returning Workspace still considers persisted library Sources when available. |
 | Missing/offline startup Source | Skip that designation; fall to next available persisted library Source (#762); if none → Clean Start. Do not delete registration. |
 | Invalid ratios | Canonical default ratios. |
 | Unknown panel IDs | Ignore / fail-closed per elastic contract. |
