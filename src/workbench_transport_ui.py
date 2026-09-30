@@ -21,11 +21,39 @@ from .session_grid import TimeSignature, compute_sync_playback_rate
 from .workbench_controller import WorkbenchRow
 from .workbench_preview import PreviewResult
 from .workbench_transport_adapter import WorkbenchTransportAdapter
+from .workbench_waveform import read_audio_duration_ms
 
 TRANSPORT_POLL_MS = 50
 DEFAULT_TEMPO_BPM = 132.0
 
 PcmLoadFn = Callable[..., tuple[np.ndarray, int]]
+
+
+@dataclass(frozen=True)
+class PreviewPlaybackSnapshot:
+    """Read-only preview telemetry for Screen-1 playhead presentation (#738).
+
+    Position is engine/transport-backed. Legacy OS playback cannot invent
+    progress and must return :meth:`idle`.
+    """
+
+    playing: bool
+    sample_path: str
+    position_ms: int
+    duration_ms: int
+    progress: float
+    playback_instance_id: int
+
+    @classmethod
+    def idle(cls) -> "PreviewPlaybackSnapshot":
+        return cls(
+            playing=False,
+            sample_path="",
+            position_ms=0,
+            duration_ms=0,
+            progress=0.0,
+            playback_instance_id=0,
+        )
 
 
 def format_transport_tempo_label(bpm: float) -> str:
@@ -82,6 +110,8 @@ class TransportAwarePreview:
         self._pcm_load_fn = pcm_load_fn or _load_native_pcm
         self._active_voice_id: int | None = None
         self._native_current_path: Path | None = None
+        self._native_identity_path: str = ""
+        self._native_duration_ms: int = 0
         self._next_voice_id = 1
 
     @property
@@ -100,9 +130,16 @@ class TransportAwarePreview:
     def grid_time_signature(self) -> TimeSignature:
         return self._transport.tempo_map.time_signature
 
+    def _clear_native_audition_state(self) -> None:
+        self._active_voice_id = None
+        self._native_current_path = None
+        self._native_identity_path = ""
+        self._native_duration_ms = 0
+
     def _stop_native_voice(self) -> bool:
         voice_id = self._active_voice_id
         if voice_id is None:
+            self._clear_native_audition_state()
             return True
         engine = self._transport.get_native_engine()
         if engine is not None:
@@ -112,9 +149,63 @@ class TransportAwarePreview:
             except Exception:
                 return False
         self._transport.unregister_voice(voice_id)
-        self._active_voice_id = None
-        self._native_current_path = None
+        self._clear_native_audition_state()
         return True
+
+    def _voice_state(self, voice_id: int) -> int | None:
+        engine = self._transport.get_native_engine()
+        if engine is None or not hasattr(engine, "snapshot"):
+            return None
+        try:
+            snapshot = engine.snapshot()
+        except Exception:
+            return None
+        ids = list(getattr(snapshot, "voice_ids", []) or [])
+        states = list(getattr(snapshot, "voice_states", []) or [])
+        for index, candidate in enumerate(ids):
+            if int(candidate) != int(voice_id):
+                continue
+            if index >= len(states):
+                return None
+            return int(states[index])
+        return None
+
+    def playback_snapshot(self) -> PreviewPlaybackSnapshot:
+        """Return engine-backed preview progress, or idle when unavailable."""
+        voice_id = self._active_voice_id
+        path = self._native_current_path
+        identity = self._native_identity_path or (str(path) if path is not None else "")
+        duration_ms = int(self._native_duration_ms)
+        if voice_id is None or path is None or duration_ms <= 0:
+            return PreviewPlaybackSnapshot.idle()
+        if not self._transport.is_native_available():
+            return PreviewPlaybackSnapshot.idle()
+
+        # Refresh transport from the native engine clock before reading position.
+        self._transport.get_session_frame()
+        state = self._voice_state(voice_id)
+        if state not in (
+            native_audio.SB_VOICE_SCHEDULED,
+            native_audio.SB_VOICE_PLAYING,
+        ):
+            return PreviewPlaybackSnapshot.idle()
+
+        source_frame = self._transport.get_source_frame()
+        if source_frame is None:
+            return PreviewPlaybackSnapshot.idle()
+        sample_rate = int(self._transport.tempo_map.sample_rate)
+        if sample_rate <= 0:
+            return PreviewPlaybackSnapshot.idle()
+        position_ms = max(0, int(round(source_frame * 1000.0 / sample_rate)))
+        progress = min(1.0, max(0.0, position_ms / float(duration_ms)))
+        return PreviewPlaybackSnapshot(
+            playing=True,
+            sample_path=identity,
+            position_ms=position_ms,
+            duration_ms=duration_ms,
+            progress=float(progress),
+            playback_instance_id=int(voice_id),
+        )
 
     def _play_legacy(self, method_name: str, *args: Any, **kwargs: Any):
         if not self._stop_native_voice():
@@ -145,6 +236,7 @@ class TransportAwarePreview:
     def play_row(self, row: WorkbenchRow, *, start_ms: int = 0) -> PreviewResult:
         """Audition exactly one row through the shared native/fallback owner."""
         path = Path(row.path).resolve()
+        identity_path = str(row.path)
         one_shot = _row_is_one_shot(row)
         source_bpm = None if one_shot else row.bpm
         sync_enabled = self._transport.is_sync_enabled()
@@ -221,6 +313,9 @@ class TransportAwarePreview:
             engine.schedule_voice_start(created_id, start_frame)
             self._active_voice_id = created_id
             self._native_current_path = path
+            self._native_identity_path = identity_path
+            duration = read_audio_duration_ms(path)
+            self._native_duration_ms = int(duration) if duration is not None else 0
             self._transport.play()
         except Exception as exc:
             if self._active_voice_id == created_id:

@@ -137,9 +137,11 @@ Rationale:
 - Modes `on` / `reduced` / `off` remain architecturally possible.
 - No Settings UI in the follow-up slice; Motion Off must be able to disable the overlay.
 
-## Recommended follow-up (smallest production slice — NOT in this PR)
+## Recommended follow-up (smallest production slice)
 
-**Screen-1 active waveform overlay — playhead on playing row**
+**[#738](https://github.com/jannekbuengener/sample-brain/issues/738) — Screen-1 active waveform overlay — preview playhead**
+
+Production contract: [`docs/WORKBENCH_PREVIEW_PLAYHEAD_CONTRACT.md`](WORKBENCH_PREVIEW_PLAYHEAD_CONTRACT.md).
 
 Scope:
 
