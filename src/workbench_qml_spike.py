@@ -78,6 +78,13 @@ def build_qml_view_model_from_fixture(
         )
         for group in presentation.visible_structure()
     )
+    # Historical v1 fixtures describe an already-active Screen-1 workspace.
+    # Browser context must not stay on the Clean-Start default while rows exist.
+    context = (
+        fixture.library_labels[0]
+        if fixture.library_labels
+        else "Samples"
+    )
     view_model = Screen1QmlViewModel(
         state_id=state_id,
         library_labels=fixture.library_labels,
@@ -89,8 +96,8 @@ def build_qml_view_model_from_fixture(
         live_kit_groups=groups,
         on_browser_selected=on_browser_selected,
         library_tree=library_tree,
+        browser_context=context,
     )
-    # Historical v1 fixtures describe an already-active Screen-1 workspace.
     # Under #693 Clean Start, that means materialize Browser + Live Kit.
     # Source Navigation was visible in those fixtures (#725 library disclosure).
     view_model.set_workspace_materialization(
@@ -100,6 +107,11 @@ def build_qml_view_model_from_fixture(
         live_kit_materialized=True,
     )
     view_model.set_library_revealed(True)
+    # 4-panel fixture states project an open Harmonic Match surface.
+    if state_id.endswith("4panel") and view_model.harmony_rows:
+        view_model.harmony_status = "Harmonic Match ist offen."
+    else:
+        view_model.harmony_status = "Harmonic Match ist ausgeschaltet."
     return view_model
 
 
@@ -148,6 +160,7 @@ def build_qml_view_model_from_fixture_v2(
             if state.selected_browser_index is not None
             else 0
         )
+        # Active Source must never project the Clean-Start "No library selected" copy.
         context = state.selected_source_label or "Samples"
     else:
         browser_rows = ()
@@ -179,6 +192,10 @@ def build_qml_view_model_from_fixture_v2(
     )
     # #725/#742: library_revealed gates Library elastic participation in all modes.
     view_model.set_library_revealed(bool(state.layout.source_nav_visible))
+    if state.layout.harmonic_visible and harmony_rows:
+        view_model.harmony_status = "Harmonic Match ist offen."
+    else:
+        view_model.harmony_status = "Harmonic Match ist ausgeschaltet."
     return view_model
 
 
@@ -634,7 +651,7 @@ def apply_screen1_visual_state_v2(
     )
     view_model.live_kit_groups = groups
     view_model.browser_context = (
-        (state.selected_source_label or "No library selected")
+        (state.selected_source_label or "Samples")
         if state.source_selected
         else "No library selected"
     )
