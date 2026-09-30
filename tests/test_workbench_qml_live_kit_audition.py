@@ -585,6 +585,8 @@ def test_qml_pending_banner_escape_stops_audition_and_cancels_add():
         on_preview_requested=previews.append,
     )
     _assign(adapter, live_kit, "Drums", "Main Drum", _row("banner.wav"))
+    # #743: expand Drums before banner/audition focus path (slots remain projected).
+    assert adapter.toggle_live_kit_group("Drums") is False
     view_model.live_kit_groups = live_kit.groups
 
     app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)

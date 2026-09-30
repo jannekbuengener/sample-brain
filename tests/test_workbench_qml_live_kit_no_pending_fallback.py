@@ -387,6 +387,12 @@ class TestQmlNoPendingEmptySlotAdd:
             pane = window.findChild(__import__("PySide6.QtQuick").QtQuick.QQuickItem, "liveKitPane")
             assert pane is not None
 
+            # #743: expand Drums via the interaction bridge so slot rows materialise.
+            bridge.toggleLiveKitGroup(1)
+            app.processEvents()
+            _settle_qml_frame(app)
+            assert live_kit.groups[1].active is True
+
             # Find the slot add button for Drums/Main Drum (group 1, slot 0)
             slot_add = _find_visual_item(pane, "liveKitSlot1_0")
             assert slot_add is not None
@@ -550,6 +556,8 @@ class TestQmlPointerOwnership:
         )
         assigned_row = _row("pointer_test.wav")
         _assign(adapter, live_kit, "Drums", "Main Drum", assigned_row)
+        # #743: expand Drums so slot rows exist for pointer-ownership checks.
+        assert adapter.toggle_live_kit_group("Drums") is False
         view_model.live_kit_groups = live_kit.groups
 
         app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
