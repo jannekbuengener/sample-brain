@@ -1606,9 +1606,88 @@ ApplicationWindow {
                     Button { text: "Add Source"; onClicked: addSourceDialog.open() }
                     Button { visible: libraryInteraction.canRemoveSelectedSource; text: "Remove"; onClicked: libraryInteraction.prepareRemoveSource() }
                 }
+                RowLayout {
+                    id: libraryScopeBar
+                    objectName: "libraryScopeBar"
+                    Layout.fillWidth: true
+                    spacing: 6
+                    property string mode: "sources"
+                    ToolButton {
+                        objectName: "librarySourcesScopeButton"
+                        text: "⌁"
+                        flat: true
+                        checkable: true
+                        checked: libraryScopeBar.mode === "sources"
+                        onClicked: libraryScopeBar.mode = "sources"
+                        Accessible.name: "Sample Sources"
+                    }
+                    ToolButton {
+                        objectName: "libraryAllSamplesScopeButton"
+                        text: "≡"
+                        flat: true
+                        checkable: true
+                        checked: libraryInteraction.selectedLibraryNodeId === "scope:all-library"
+                        onClicked: {
+                            libraryScopeBar.mode = "sources"
+                            libraryInteraction.selectLibraryNode("scope:all-library")
+                        }
+                        Accessible.name: "All Samples"
+                    }
+                    ToolButton {
+                        objectName: "libraryCatalogScopeButton"
+                        text: "◉"
+                        flat: true
+                        checkable: true
+                        checked: libraryInteraction.selectedLibraryNodeId === "scope:catalog-readonly"
+                        onClicked: {
+                            libraryScopeBar.mode = "sources"
+                            libraryInteraction.selectLibraryNode("scope:catalog-readonly")
+                        }
+                        Accessible.name: "Catalog"
+                    }
+                    ToolButton {
+                        objectName: "libraryCollectionsScopeButton"
+                        text: "▣"
+                        flat: true
+                        checkable: true
+                        checked: libraryScopeBar.mode === "collections"
+                        onClicked: libraryScopeBar.mode = "collections"
+                        Accessible.name: "Collections"
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+                ListView {
+                    id: collectionList
+                    objectName: "libraryCollectionList"
+                    visible: libraryScopeBar.mode === "collections"
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    focus: visible
+                    activeFocusOnTab: visible
+                    model: libraryInteraction.collectionEntries
+                    delegate: ItemDelegate {
+                        width: collectionList.width
+                        text: modelData.label
+                        highlighted: modelData.selected
+                        Accessible.name: modelData.label
+                        onClicked: {
+                            collectionList.forceActiveFocus()
+                            libraryInteraction.selectLibraryNode(modelData.nodeId)
+                        }
+                    }
+                    Label {
+                        anchors.centerIn: parent
+                        visible: collectionList.count === 0
+                        text: "No collections"
+                        color: theme.textSecondary
+                        font.pixelSize: 11
+                    }
+                }
                 TreeView {
                     id: libraryTree
                     objectName: "libraryTree"
+                    visible: libraryScopeBar.mode === "sources"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     model: libraryTreeModel
@@ -1631,8 +1710,6 @@ ApplicationWindow {
                                 onTapped: {
                                     if (model.error) {
                                         libraryInteraction.retryLibraryNode(model.parentNodeId)
-                                    } else if (model.kind === "add_source" && model.nodeId === "action:add-source") {
-                                        addSourceDialog.open()
                                     } else if (model.selectable) {
                                         libraryTree.forceActiveFocus()
                                         libraryInteraction.selectLibraryNode(model.nodeId)
@@ -3154,6 +3231,20 @@ def _qml_library_interaction_bridge(
         @Property(int, notify=state_changed)
         def removalCachedSampleCount(self) -> int:
             return self._removal_cached_sample_count
+
+        @Property("QVariantList", notify=state_changed)
+        def collectionEntries(self) -> list[dict[str, object]]:
+            state = library_model.state
+            state.fetch_children("container:collections")
+            return [
+                {
+                    "nodeId": node.node_id,
+                    "label": node.label,
+                    "selected": state.selected_node_id == node.node_id,
+                }
+                for node in state.visible_children("container:collections")
+                if node.kind is LibraryNodeKind.COLLECTION
+            ]
 
         @Slot(str)
         def selectLibraryNode(self, node_id: str) -> None:

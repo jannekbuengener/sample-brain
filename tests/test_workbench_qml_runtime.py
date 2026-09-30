@@ -118,17 +118,7 @@ class FakeNavigation:
 
     def children(self, node_id: str):
         if node_id == SAMPLE_SOURCES:
-            return tuple(self.sample_roots) + (
-                LibraryNode(
-                    "action:add-source",
-                    LibraryNodeKind.ADD_SOURCE,
-                    "Add Source…",
-                    SAMPLE_SOURCES,
-                    False,
-                    False,
-                    LibraryAvailability.AVAILABLE,
-                ),
-            )
+            return tuple(self.sample_roots)
         if node_id == ROOT_ID:
             return (self.subfolder,) if self.root_children_enabled else ()
         if node_id == "container:collections":
@@ -402,7 +392,7 @@ def test_add_source_uses_existing_validation_and_registration_seams(
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
-def test_add_source_node_is_an_action_and_replace_refresh_has_no_stale_children():
+def test_source_tree_has_no_add_source_action_and_replace_refresh_has_no_stale_children():
     from PySide6.QtCore import QCoreApplication
 
     from src.workbench_qml_library import create_qt_library_tree_model
@@ -418,10 +408,10 @@ def test_add_source_node_is_an_action_and_replace_refresh_has_no_stale_children(
     model.fetchMore(initial_root_index)
     assert model.rowCount(initial_root_index) == 1
 
-    assert model.data(model.index(0, 0, sample_index), model.SelectableRole) is True
-    action_index = model.index(model.rowCount(sample_index) - 1, 0, sample_index)
-    assert model.data(action_index, model.KindRole) == LibraryNodeKind.ADD_SOURCE.value
-    assert model.data(action_index, model.SelectableRole) is False
+    assert model.rowCount(sample_index) == 1
+    assert model.data(model.index(0, 0, sample_index), model.KindRole) == (
+        LibraryNodeKind.REGISTERED_ROOT.value
+    )
     assert model.selectNode("action:add-source") is False
 
     assert model.selectNode(ROOT_ID) is True
@@ -434,19 +424,15 @@ def test_add_source_node_is_an_action_and_replace_refresh_has_no_stale_children(
     assert model.replaceBranch(SAMPLE_SOURCES) is True
     assert state.selected_node_id is None
     assert state.selection_intent is None
-    assert model.rowCount(sample_index) == 1
-    assert model.data(model.index(0, 0, sample_index), model.KindRole) == LibraryNodeKind.ADD_SOURCE.value
+    assert model.rowCount(sample_index) == 0
 
     navigation.sample_roots.append(navigation.root)
     assert model.replaceBranch(SAMPLE_SOURCES) is True
     root_index = model.index(0, 0, sample_index)
     model.fetchMore(root_index)
     assert model.rowCount(root_index) == 0
-    assert model.rowCount(sample_index) == 2
-    assert [
-        model.data(model.index(index, 0, sample_index), model.NodeIdRole)
-        for index in range(model.rowCount(sample_index))
-    ] == [ROOT_ID, "action:add-source"]
+    assert model.rowCount(sample_index) == 1
+    assert model.data(model.index(0, 0, sample_index), model.NodeIdRole) == ROOT_ID
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
@@ -471,6 +457,31 @@ def test_library_bridge_dispatches_selection_callback_once_without_signal_wiring
 
     assert dispatches == [ROOT_ID]
     assert state.selection_intent is not None
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_library_bridge_projects_collections_without_a_second_navigation_backend():
+    from PySide6.QtCore import QCoreApplication
+
+    from src.workbench_qml import _qml_library_interaction_bridge
+    from src.workbench_qml_library import create_qt_library_tree_model
+
+    app = QCoreApplication.instance() or QCoreApplication([])
+    del app
+    state = WorkbenchLibraryTreeState(FakeNavigation())
+    model = create_qt_library_tree_model(state)
+    bridge = _qml_library_interaction_bridge(model)
+
+    assert bridge.collectionEntries == [
+        {"nodeId": COLLECTION_ID, "label": "Set A", "selected": False}
+    ]
+
+    bridge.selectLibraryNode(COLLECTION_ID)
+    assert bridge.collectionEntries == [
+        {"nodeId": COLLECTION_ID, "label": "Set A", "selected": True}
+    ]
+    assert state.selection_intent is not None
+    assert state.selection_intent.scope.kind is LibraryScopeKind.COLLECTION
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")

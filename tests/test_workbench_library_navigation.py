@@ -71,6 +71,9 @@ def test_navigation_emits_stable_taxonomy_ids_and_typed_scopes(
     top_level = navigation.top_level_nodes()
     assert [(node.node_id, node.kind) for node in top_level] == [
         ("container:sample-sources", LibraryNodeKind.SAMPLE_SOURCES),
+    ]
+    secondary = navigation.secondary_nodes()
+    assert [(node.node_id, node.kind) for node in secondary] == [
         ("scope:all-library", LibraryNodeKind.ALL_SAMPLES),
         ("scope:catalog-readonly", LibraryNodeKind.CATALOG),
         ("container:collections", LibraryNodeKind.COLLECTIONS),
@@ -82,8 +85,8 @@ def test_navigation_emits_stable_taxonomy_ids_and_typed_scopes(
     assert root_node.label == "sample-root"
     assert root_node.selectable and root_node.expandable
     assert root_node.availability is LibraryAvailability.AVAILABLE
-    assert source_children[-1].node_id == "action:add-source"
-    assert not source_children[-1].selectable
+    assert [node.node_id for node in source_children] == [f"root:{folder_id}"]
+    assert not any(node.node_id == "action:add-source" for node in source_children)
 
     # TEST_CONTRACT_FIX: the frozen literal encoded ``Drums`` instead of the
     # canonical ``normcase(relative_path)`` value. Product behavior is unchanged.
@@ -170,6 +173,7 @@ def test_favorites_are_not_emitted_without_a_persistent_contract(
 ) -> None:
     navigation = WorkbenchLibraryNavigation(library_db_path=library_db)
     node_ids = [node.node_id for node in navigation.top_level_nodes()]
+    node_ids.extend(node.node_id for node in navigation.secondary_nodes())
     node_ids.extend(node.node_id for node in navigation.children("container:sample-sources"))
     node_ids.extend(node.node_id for node in navigation.children("container:collections"))
 

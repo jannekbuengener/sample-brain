@@ -44,14 +44,29 @@ def _error_node(parent_id: str) -> LibraryNode:
 class WorkbenchLibraryTreeState:
     """Qt-free lazy state over ``WorkbenchLibraryNavigation``.
 
-    Only ``top_level_nodes`` runs during construction.  Direct children are
-    fetched once per branch, retained by stable node ID, and reset only by an
-    explicit retry.
+    The visible tree is sourced from ``top_level_nodes``; secondary icon-bar
+    nodes are remembered separately so they reuse the same typed selection path
+    without appearing as fake Source folders. Direct children are fetched once
+    per branch, retained by stable node ID, and reset only by explicit retry.
     """
 
     def __init__(self, navigation: Any | None = None) -> None:
         self.navigation = navigation or WorkbenchLibraryNavigation()
         top_level = tuple(self.navigation.top_level_nodes())
+        secondary_loader = getattr(self.navigation, "secondary_nodes", None)
+        if callable(secondary_loader):
+            secondary = tuple(secondary_loader())
+            tree_top_level = top_level
+        else:
+            secondary_kinds = {
+                LibraryNodeKind.ALL_SAMPLES,
+                LibraryNodeKind.CATALOG,
+                LibraryNodeKind.COLLECTIONS,
+            }
+            secondary = tuple(node for node in top_level if node.kind in secondary_kinds)
+            tree_top_level = tuple(
+                node for node in top_level if node.kind not in secondary_kinds
+            )
         self._nodes: dict[str, LibraryNode] = {}
         self._children: dict[str | None, tuple[str, ...]] = {None: ()}
         self._loaded: set[str] = set()
@@ -59,8 +74,10 @@ class WorkbenchLibraryTreeState:
         self._expanded: set[str] = set()
         self.selected_node_id: str | None = None
         self.selection_intent: LibrarySelectionIntent | None = None
-        self._remember_nodes(top_level)
-        self._children[None] = tuple(node.node_id for node in top_level)
+        self._remember_nodes(tree_top_level)
+        self._remember_nodes(secondary)
+        self._secondary_node_ids = tuple(node.node_id for node in secondary)
+        self._children[None] = tuple(node.node_id for node in tree_top_level)
 
     @property
     def library_db_path(self) -> Path | None:
@@ -78,6 +95,14 @@ class WorkbenchLibraryTreeState:
         return tuple(
             self._nodes[node_id]
             for node_id in self._children.get(parent_id, ())
+            if node_id in self._nodes
+        )
+
+    def secondary_nodes(self) -> tuple[LibraryNode, ...]:
+        """Return remembered icon-bar nodes without placing them in the tree."""
+        return tuple(
+            self._nodes[node_id]
+            for node_id in self._secondary_node_ids
             if node_id in self._nodes
         )
 
