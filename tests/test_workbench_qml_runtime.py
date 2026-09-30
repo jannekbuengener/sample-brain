@@ -661,7 +661,10 @@ def test_production_qml_contract_has_observable_screen_state_and_action_path():
     assert "browserRowsChanged" in source or "screenModel" in source
     assert "addSource" in source
     assert "removeSource" in source
-    assert "action:add-source" in source
+    # TEST_CONTRACT_FIX #765: Add Source is the single header action now; the
+    # historical tree action is intentionally superseded.
+    assert 'Button { text: "Add Source"; onClicked: addSourceDialog.open() }' in source
+    assert "action:add-source" not in source
     assert "window.screenData.selectedBrowserIndex" in source
     assert 'objectName: "browserPane"' in source
     assert 'objectName: "workspaceRow"' in source
