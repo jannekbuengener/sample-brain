@@ -51,9 +51,15 @@ Rules:
 - One global presentation refresh driver may re-read the snapshot; it never invents position.
 - Browser and Harmonic Match share the same snapshot properties.
 - ListView `reuseItems` fail-closed: no per-row timers; identity/progress come only from authoritative snapshot.
-- Motion On / Reduced / Off seam without Settings UI (#696). Motion Off disables playhead and the presentation driver for this feature.
+- Motion On / Reduced / Off consumed from #696 display preferences
+  ([`WORKBENCH_DISPLAY_PREFERENCES.md`](WORKBENCH_DISPLAY_PREFERENCES.md);
+  canonical `on` \| `reduced` \| `off`). Motion Off disables playhead and the
+  presentation driver for this feature.
 - Selection color updates must `requestPaint()` on selection change independently of playback.
 
 ## Non-scope
 
-Renderer migration, intensity/glow/energy, spectrogram/FFT, Settings/#696, Screen 2, audio-engine rewrite, exposing native `pcm_position` (optional later improvement; not required for this slice while transport source-frame is engine-backed).
+Renderer migration, intensity/glow/energy, spectrogram/FFT, Preferences UI
+(owned by #696), Screen 2, audio-engine rewrite, exposing native `pcm_position`
+(optional later improvement; not required for this slice while transport
+source-frame is engine-backed).

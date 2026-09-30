@@ -111,7 +111,7 @@ When no Source is active, the centre surface is a Calm Canvas:
 | Kind | Examples | Normal launch |
 |------|----------|---------------|
 | Persistent library data | registered Sources, cache rows | kept |
-| UI preferences (later #696) | panel visibility / layout ratios, density, motion, optional startup Source | may apply only via explicit Startup Preset |
+| UI preferences (#696) | panel visibility / layout ratios, density, motion, optional startup Source | see [`WORKBENCH_DISPLAY_PREFERENCES.md`](WORKBENCH_DISPLAY_PREFERENCES.md); Startup Source only via explicit designation |
 | Layout ratios (#694) | relative panel weights only | may restore on launch; never restores Source/selection/harmony/preview |
 | Transient No-Source reveal (`library_revealed`) | Library edge reveal | **never** restored; always collapsed |
 | Transient session | active Source, browser selection, preview, harmony open/results, scroll | **never** restored on normal launch |
@@ -123,17 +123,22 @@ persistence restores ratios only and must not reopen session context.
 Stale or corrupt preference / preset persistence fails closed to Clean Start.
 It must not crash and must not silently fall back to another Source.
 
-## Startup Preset contract (hook for #696)
+## Startup Preset contract
 
-Clean Start remains the default. A later explicit Startup Preset may override
-it. This slice prepares the **read/resolve contract only** — no Preferences UI.
+Clean Start remains the default. An explicit Startup Preset may override it.
+
+Product Preferences UI, writers, Reset Layout, and Set-as-Startup ownership:
+[`WORKBENCH_DISPLAY_PREFERENCES.md`](WORKBENCH_DISPLAY_PREFERENCES.md) (#696).
+
+#693 keeps the **read/resolve** seam in `src/workbench_qml_startup.py`. #696
+extends that seam with product write/UI without changing Clean Start defaults.
 
 Preset may store:
 
 - schema `version`;
 - panel visibility / layout ratios;
-- density mode;
-- motion mode;
+- density mode (first #696 slice: Compact only);
+- motion mode (`on` \| `reduced` \| `off`; legacy `full` normalizes to `on`);
 - optional `startup_source_node_id`.
 
 Preset must **not** store:
@@ -176,13 +181,15 @@ from agent self-attestation. Historical v1 evidence stays frozen.
 
 ## Non-goals
 
-- Full display Preferences / Startup Preset UI (#696)
 - Live Kit content redesign
 - Panel reordering
-- Session snapshot system
+- Session snapshot system / last-session auto-resume
 - Tk `WorkbenchApp._restore_last_folder` (legacy path)
 - Changing #576 scope loaders (only auto-selection of row 0 is superseded)
 - Parallel Visual-Acceptance state family / new REQUIRED_STATE_IDS_V2
+
+Display Preferences UI, writers, and Startup designation product actions are
+owned by #696 / [`WORKBENCH_DISPLAY_PREFERENCES.md`](WORKBENCH_DISPLAY_PREFERENCES.md).
 
 ## Authority
 

@@ -670,12 +670,72 @@ class Screen1QmlInteractionAdapter:
         return self._waveform_motion_mode
 
     def set_waveform_motion_mode(self, mode: str) -> str:
-        """Presentation-only motion mode seam (On/Reduced/Off). No Settings UI."""
-        normalized = str(mode or "").strip().lower()
-        if normalized not in {"on", "reduced", "off"}:
-            raise ValueError(f"Unsupported waveform motion mode: {mode}")
+        """Presentation-only motion mode seam (On/Reduced/Off)."""
+        from .workbench_display_preferences import normalize_motion_mode
+
+        normalized = normalize_motion_mode(mode)
         self._waveform_motion_mode = normalized
         return self._waveform_motion_mode
+
+    def reset_layout_preferences(self) -> None:
+        from .workbench_display_preferences import reset_layout
+
+        reset_layout()
+
+    def save_workspace_preset_action(self) -> None:
+        from .workbench_display_preferences import save_workspace_preset
+        from .workbench_layout_solver import CANONICAL_DEFAULT_RATIOS, load_layout_preferences
+
+        loaded = load_layout_preferences()
+        ratios = dict(loaded.ratios) if loaded.ratios else dict(CANONICAL_DEFAULT_RATIOS)
+        save_workspace_preset(
+            {
+                "version": 1,
+                "panel_ratios": ratios,
+                "panel_visibility": {
+                    "library": True,
+                    "browser": True,
+                    "harmony": bool(self.harmonic_match_open),
+                    "livekit": True,
+                },
+                "density_mode": "compact",
+                "motion_mode": self._waveform_motion_mode,
+                "startup_source_node_id": None,
+            }
+        )
+
+    def set_workspace_preset_as_startup(self) -> None:
+        from .workbench_display_preferences import set_as_startup
+
+        set_as_startup()
+
+    def return_to_clean_start_action(self) -> None:
+        """Clear transient workspace context; keep Sources/presets/display prefs."""
+        from .workbench_display_preferences import return_to_clean_start
+
+        self.stop_preview()
+        if self.harmonic_match_open:
+            self.harmonic_match_open = False
+        self.view_model.set_browser_state(
+            rows=(),
+            selected_index=-1,
+            browser_context="No library selected",
+            error=None,
+        )
+        self.view_model.set_workspace_materialization(
+            has_active_source=False,
+            calm_canvas_visible=True,
+            browser_materialized=False,
+            live_kit_materialized=False,
+        )
+        self.view_model.set_library_revealed(False)
+        self.view_model.harmony_rows = ()
+        self.view_model.harmony_anchor = ""
+        self.view_model.harmony_status = "Harmonic Match ist ausgeschaltet."
+        self._harmonic_match_selected_index = 0
+        self._harmonic_match_scroll_y = 0.0
+        self._auditioning_live_kit_slot = None
+        return_to_clean_start()
 
     def preview_playback_snapshot(self):
         """Return authoritative preview telemetry for playhead presentation."""
@@ -1296,6 +1356,94 @@ ApplicationWindow {
             Label { text: "SYNC"; color: theme.textSecondary; font.pixelSize: 12 }
             Rectangle { width: 48; height: 25; radius: 4; color: theme.actionActive
                 Label { anchors.centerIn: parent; text: "ON"; color: theme.textOnAction; font.bold: true }
+            }
+            Item { width: 16 }
+            // #696 secondary display preferences — header overflow only (no permanent settings bar).
+            ToolButton {
+                id: displayPreferencesOverflow
+                objectName: "displayPreferencesOverflow"
+                text: "⋯"
+                flat: true
+                implicitWidth: 36
+                implicitHeight: 32
+                onClicked: displayPreferencesPopover.open()
+                Accessible.name: "Display preferences"
+            }
+            Popup {
+                id: displayPreferencesPopover
+                objectName: "displayPreferencesPopover"
+                x: displayPreferencesOverflow.x + displayPreferencesOverflow.width - width
+                y: displayPreferencesOverflow.height + 6
+                width: 260
+                padding: 12
+                modal: false
+                focus: true
+                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                background: Rectangle {
+                    color: theme.surfaceElevated
+                    border.color: theme.borderSubtle
+                    radius: 6
+                }
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 8
+                    Label { text: "Density"; color: theme.textSecondary; font.pixelSize: 11 }
+                    Label { text: "Compact"; color: theme.textPrimary; font.pixelSize: 13 }
+                    Label { text: "Motion"; color: theme.textSecondary; font.pixelSize: 11 }
+                    RowLayout {
+                        spacing: 6
+                        Button {
+                            text: "On"
+                            checkable: true
+                            checked: window.interaction.waveformMotionMode === "on"
+                            onClicked: window.interaction.setWaveformMotionMode("on")
+                        }
+                        Button {
+                            text: "Reduced"
+                            checkable: true
+                            checked: window.interaction.waveformMotionMode === "reduced"
+                            onClicked: window.interaction.setWaveformMotionMode("reduced")
+                        }
+                        Button {
+                            text: "Off"
+                            checkable: true
+                            checked: window.interaction.waveformMotionMode === "off"
+                            onClicked: window.interaction.setWaveformMotionMode("off")
+                        }
+                    }
+                    Button {
+                        Layout.fillWidth: true
+                        text: "Reset Layout"
+                        onClicked: {
+                            window.interaction.resetLayoutPreferences()
+                            displayPreferencesPopover.close()
+                        }
+                    }
+                    Button {
+                        Layout.fillWidth: true
+                        text: "Save Workspace Preset"
+                        onClicked: {
+                            window.interaction.saveWorkspacePreset()
+                            displayPreferencesPopover.close()
+                        }
+                    }
+                    Button {
+                        Layout.fillWidth: true
+                        text: "Set Preset as Startup"
+                        onClicked: {
+                            window.interaction.setWorkspacePresetAsStartup()
+                            displayPreferencesPopover.close()
+                        }
+                    }
+                    Button {
+                        Layout.fillWidth: true
+                        text: "Return to Clean Start"
+                        onClicked: {
+                            window.interaction.returnToCleanStart()
+                            displayPreferencesPopover.close()
+                        }
+                    }
+                }
             }
         }
     }
@@ -2153,6 +2301,42 @@ def _qml_interaction_bridge(
         def waveformMotionMode(self) -> str:
             return adapter.waveform_motion_mode
 
+        @Slot(str)
+        def setWaveformMotionMode(self, mode: str) -> None:
+            from .workbench_display_preferences import save_display_preferences
+
+            adapter.set_waveform_motion_mode(mode)
+            try:
+                save_display_preferences(
+                    {
+                        "density_mode": "compact",
+                        "motion_mode": adapter.waveform_motion_mode,
+                    }
+                )
+            except OSError:
+                pass
+            self._refresh()
+
+        @Slot()
+        def resetLayoutPreferences(self) -> None:
+            adapter.reset_layout_preferences()
+            self._refresh()
+
+        @Slot()
+        def saveWorkspacePreset(self) -> None:
+            adapter.save_workspace_preset_action()
+            self._refresh()
+
+        @Slot()
+        def setWorkspacePresetAsStartup(self) -> None:
+            adapter.set_workspace_preset_as_startup()
+            self._refresh()
+
+        @Slot()
+        def returnToCleanStart(self) -> None:
+            adapter.return_to_clean_start_action()
+            self._refresh()
+
         @Slot()
         def refreshPreviewPlayback(self) -> None:
             adapter.refresh_preview_playback()
@@ -2448,6 +2632,12 @@ def _qml_engine(
     else:
         adapter = interaction_adapter
         live_kit = getattr(interaction_adapter, "_live_kit", None)
+    try:
+        from .workbench_display_preferences import load_display_preferences
+
+        adapter.set_waveform_motion_mode(load_display_preferences().motion_mode)
+    except Exception:
+        pass
     library_model = create_qt_library_tree_model(view_model.library_tree)
 
     def refresh_screen_model() -> None:

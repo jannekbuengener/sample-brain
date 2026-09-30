@@ -77,7 +77,9 @@ Each state declares:
 - panel ratios (positive entries sum to `1.0`)
 - browser / harmony fixture row counts
 - `density_mode` (declared; default acceptance target `compact_target_30dip`)
-- `motion_mode` (`full` / `reduced` / `off`)
+- `motion_mode` (canonical `on` / `reduced` / `off`; historical fixture token
+  `full` means `on` and must not be written by new code — see
+  [`WORKBENCH_DISPLAY_PREFERENCES.md`](WORKBENCH_DISPLAY_PREFERENCES.md) #696)
 - `preview_active` / `auto_audition` (both false in these baseline states)
 
 Canonical ratio constants (for later #694 comparison):
