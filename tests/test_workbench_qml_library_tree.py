@@ -218,9 +218,11 @@ def test_qml_library_model_uses_exact_canonical_taxonomy_without_fake_surface() 
     assert "TreeView" in source
     assert "libraryTreeModel" in source
     assert 'objectName: "libraryScopeBar"' in source
+    assert 'objectName: "librarySourcesScopeButton"' in source
     assert 'objectName: "libraryAllSamplesScopeButton"' in source
     assert 'objectName: "libraryCatalogScopeButton"' in source
     assert 'objectName: "libraryCollectionsScopeButton"' in source
+    assert 'Accessible.name: "Sample Sources"' in source
     assert 'Accessible.name: "All Samples"' in source
     assert 'Accessible.name: "Catalog"' in source
     assert 'Accessible.name: "Collections"' in source
@@ -228,6 +230,52 @@ def test_qml_library_model_uses_exact_canonical_taxonomy_without_fake_surface() 
     assert "libraryLabels" not in source
     for forbidden in ("Favorites", "My Kits", "Recently Added", "Splice", "User Library"):
         assert forbidden not in source
+
+
+def test_library_scope_bar_visual_polish_contract() -> None:
+    """#771 Owner Visual repair: geometric icons, theme active state, tree retreat."""
+    from src import workbench_qml
+
+    source = workbench_qml.QML_SOURCE
+    scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
+        'objectName: "libraryCollectionList"', 1
+    )[0]
+    tree_block = source.split('objectName: "libraryTree"', 1)[1].split(
+        "delegate: TreeViewDelegate", 1
+    )[0]
+    collection_block = source.split('objectName: "libraryCollectionList"', 1)[1].split(
+        'objectName: "libraryTree"', 1
+    )[0]
+
+    for glyph in ("⌁", "≡", "◉", "▣"):
+        assert f'text: "{glyph}"' not in source
+
+    assert "theme.selectionSurface" in scope_block
+    assert "theme.selectionBorder" in scope_block or "theme.actionActive" in scope_block
+    assert "theme.surfaceElevated" in scope_block
+
+    assert 'visible: libraryScopeBar.mode === "sources"' in tree_block
+    assert 'enabled: libraryScopeBar.mode === "sources"' in tree_block
+    assert 'activeFocusOnTab: libraryScopeBar.mode === "sources"' in tree_block
+    assert 'visible: libraryScopeBar.mode !== "collections"' not in tree_block
+
+    assert "libraryInteraction.collectionEntries" in collection_block
+    assert "theme.selectionSurface" in collection_block
+    assert "theme.textPrimary" in collection_block
+    assert "ItemDelegate" not in collection_block
+
+
+def test_browser_767_column_and_favorite_wiring_preserved() -> None:
+    from src import workbench_qml
+
+    source = workbench_qml.QML_SOURCE
+    assert "toggleFavorite" in source
+    assert 'text: "BPM"' in source
+    assert 'text: "KEY"' in source
+    assert 'text: "LENGTH"' in source
+    assert "waveformCanvas" in source
+    assert "modelData.favorite" in source
+    assert 'objectName: "browserFavoriteButton"' in source
 
 
 def test_tree_state_initializes_only_top_level_and_fetches_direct_children_once() -> None:

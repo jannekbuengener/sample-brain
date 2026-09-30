@@ -88,11 +88,27 @@ contract remains authoritative.
 Collections entries are keyboard-focusable when the Collections surface is
 visible. All icon controls retain accessible names.
 
+## Source Tree visibility by scope mode
+
+Presentation rule for the Library pane (no opacity-only hide with active input):
+
+| Mode | Source Tree | Secondary surface |
+|------|-------------|-------------------|
+| Sources | visible + focusable/interactive | — |
+| All Samples | not visible; not focusable; no input | — |
+| Catalog | not visible; not focusable; no input | — |
+| Collections | not visible; not focusable; no input | Collection list visible |
+
+Returning to Sources keeps the existing Tree expand/selection state; do not
+reload navigation solely because of a scope-bar mode switch.
+
 ## Visual and responsive contract
 
 The Library pane keeps the existing near-black surfaces, thin dividers, compact
-density, and sparse blood-red intent. The top icon row is compact and the Source
-tree remains the primary vertical content.
+density, and sparse blood-red intent. Scope controls are icon-only geometric
+marks (no emoji/Unicode glyph icons, no brain artwork). Active scope uses
+`selectionSurface` + `selectionBorder`/`actionActive`; idle uses panel-dark
+surfaces — never light-gray native chrome.
 
 Labels are clipped/elided rather than exposing raw producer paths. The pane must
 remain usable at the existing Screen-1 acceptance sizes and Windows scale
