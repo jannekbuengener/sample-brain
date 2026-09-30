@@ -16,14 +16,15 @@ class PrivacyClass(str, Enum):
 
 DOCUMENT_TYPE = "sample_brain.measurement_event"
 SCHEMA_VERSION = "1.0.0"
-SUPPORTED_EVENT_NAMES = frozenset({"pipeline.stage_finished"})
-SUPPORTED_DOMAINS = frozenset({"pipeline"})
+SUPPORTED_EVENT_NAMES = frozenset({"pipeline.stage_finished", "match.query_finished"})
+SUPPORTED_DOMAINS = frozenset({"pipeline", "match"})
 SUPPORTED_STATUSES = frozenset({"ok", "error", "cancelled", "skipped"})
 
 STAGE_FINISHED_ALLOWED_PROPS = frozenset(
     {"stage", "wall_ms", "items_ok", "items_skip", "items_fail"}
 )
 STAGE_FINISHED_ALLOWED_STAGES = frozenset({"analyze"})
+MATCH_QUERY_FINISHED_ALLOWED_PROPS = frozenset({"wall_ms", "result_count"})
 
 FORBIDDEN_PROP_KEYS = frozenset(
     {
@@ -165,12 +166,27 @@ def validate_event(event: MeasurementEvent) -> Optional[MeasurementEvent]:
         if prop_keys & FORBIDDEN_PROP_KEYS:
             return None
         if event.event_name == "pipeline.stage_finished":
+            if event.domain != "pipeline":
+                return None
             if prop_keys - STAGE_FINISHED_ALLOWED_PROPS:
                 return None
             stage = event.props.get("stage")
             if stage not in STAGE_FINISHED_ALLOWED_STAGES:
                 return None
             for key in ("wall_ms", "items_ok", "items_skip", "items_fail"):
+                if key not in event.props:
+                    return None
+                value = event.props[key]
+                if not isinstance(value, int) or isinstance(value, bool):
+                    return None
+                if value < 0:
+                    return None
+        elif event.event_name == "match.query_finished":
+            if event.domain != "match":
+                return None
+            if prop_keys - MATCH_QUERY_FINISHED_ALLOWED_PROPS:
+                return None
+            for key in ("wall_ms", "result_count"):
                 if key not in event.props:
                     return None
                 value = event.props[key]
