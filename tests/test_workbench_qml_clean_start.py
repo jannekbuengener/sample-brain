@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -191,7 +192,7 @@ def test_dispatch_selection_does_not_synthesise_sample_selection(
     assert state.selected_index == -1
     assert composition.has_active_source is True
     assert composition.browser_materialized is True
-    assert composition.live_kit_materialized is True
+    assert composition.live_kit_materialized is False
     assert composition.audition_dispatches == []
 
 
@@ -385,18 +386,25 @@ def test_qml_source_select_materialises_browser_without_selection_or_audition(
         app.processEvents()
         assert composition.has_active_source is True
         assert composition.browser_materialized is True
-        assert composition.live_kit_materialized is True
+        assert composition.live_kit_materialized is False
         assert view_model.browser_rows
         assert view_model.selected_browser_index == -1
         assert adapter.harmonic_match_open is False
         assert adapter.preview_active is False
         assert composition.audition_dispatches == []
+        assert view_model.library_revealed is False
+        layout = engine._screen1_layout_model
+        assert layout.libraryWidth == 0
+        assert layout.liveKitWidth == 0
+        assert layout.browserWidth > 0
         calm = window.findChild(QQuickItem, "calmCanvas")
         browser = window.findChild(QQuickItem, "browserPane")
         live_kit = window.findChild(QQuickItem, "liveKitPane")
+        library = window.findChild(QQuickItem, "libraryPane")
         assert calm is not None and not calm.isVisible()
         assert browser is not None and browser.isVisible()
-        assert live_kit is not None and live_kit.isVisible()
+        assert live_kit is not None and not live_kit.isVisible()
+        assert library is not None and (not library.isVisible() or library.width() == 0)
     finally:
         _shutdown_engine(app, engine, window)
 
@@ -434,13 +442,26 @@ def test_qml_add_source_may_activate_new_source(tmp_path: Path):
     window.show()
     try:
         library_bridge = engine._screen1_library_bridge
+        coordinator = engine._screen1_analysis_coordinator
         assert composition.has_active_source is False
         library_bridge.registerSourceUrl(str(source))
         app.processEvents()
+        # #742: registration starts analysis; Source activates only after success.
+        assert composition.has_active_source is False
+        folder_id = view_model.analysis_folder_id
+        assert folder_id is not None
+        deadline = time.monotonic() + 90.0
+        while time.monotonic() < deadline:
+            app.processEvents()
+            if composition.has_active_source and len(view_model.browser_rows) > 0:
+                break
+            time.sleep(0.05)
         assert composition.has_active_source is True
         assert composition.browser_materialized is True
+        assert composition.live_kit_materialized is False
         assert library_bridge.selectedLibraryNodeId.startswith("root:")
         assert view_model.selected_browser_index == -1
+        assert coordinator is not None
     finally:
         _shutdown_engine(app, engine, window)
 
@@ -795,7 +816,7 @@ def test_qml_source_select_after_reveal_uses_elastic_not_reveal_flag(tmp_path: P
         assert composition.has_active_source is True
         assert layout.libraryWidth > 0
         assert layout.browserWidth > 0
-        assert layout.liveKitWidth > 0
+        assert layout.liveKitWidth == 0
         # Reveal flag is not a second Active-Source authority.
         calm = window.findChild(QQuickItem, "calmCanvas")
         browser = window.findChild(QQuickItem, "browserPane")
@@ -836,7 +857,8 @@ def test_apply_v2_clean_start_and_active_source_projection():
     active = resolve_screen1_visual_state_v2(fixture, "screen1-active-source")
     apply_screen1_visual_state_v2(view_model, adapter, fixture, active)
     assert view_model.has_active_source is True
-    assert view_model.library_revealed is False
+    # Active-source fixture includes Source Navigation (#725/#742 disclosure gate).
+    assert view_model.library_revealed is True
     assert view_model.calm_canvas_visible is False
     assert view_model.browser_materialized is True
     assert view_model.live_kit_materialized is True

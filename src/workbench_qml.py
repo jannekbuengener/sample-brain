@@ -310,13 +310,11 @@ class Screen1QmlViewModel:
         self.live_kit_materialized = bool(live_kit_materialized)
 
     def set_library_revealed(self, revealed: bool) -> None:
-        """Set No-Source Library presentation (#725). Ignored by #694 when active."""
+        """Set Library panel disclosure (#725). Transient; not ratio authority."""
         self.library_revealed = bool(revealed)
 
     def reveal_library(self) -> bool:
         """Reveal Library without Source selection / audition / harmony side effects."""
-        if self.has_active_source:
-            return False
         if self.library_revealed:
             return False
         self.library_revealed = True
@@ -636,6 +634,21 @@ class Screen1QmlInteractionAdapter:
         self._harmonic_match_session_scope: object | None = None
         self._waveform_motion_mode = "on"
         self._preview_playback_cache: object | None = None
+        # Optional #742 disclosure owner (set by production engine wiring).
+        self._runtime_composition: Screen1QmlRuntimeComposition | None = None
+
+    def _reveal_live_kit_pane(self) -> None:
+        """UI disclosure only — does not mutate Live-Kit domain assignments."""
+        composition = self._runtime_composition
+        if composition is None:
+            return
+        composition.reveal_live_kit()
+        self.view_model.set_workspace_materialization(
+            has_active_source=self.view_model.has_active_source,
+            calm_canvas_visible=self.view_model.calm_canvas_visible,
+            browser_materialized=self.view_model.browser_materialized,
+            live_kit_materialized=composition.live_kit_materialized,
+        )
 
     @property
     def selected_browser_index(self) -> int:
@@ -716,6 +729,8 @@ class Screen1QmlInteractionAdapter:
         self.stop_preview()
         if self.harmonic_match_open:
             self.harmonic_match_open = False
+        if self._runtime_composition is not None:
+            self._runtime_composition.clear_no_scope()
         self.view_model.set_browser_state(
             rows=(),
             selected_index=-1,
@@ -735,6 +750,7 @@ class Screen1QmlInteractionAdapter:
         self._harmonic_match_selected_index = 0
         self._harmonic_match_scroll_y = 0.0
         self._auditioning_live_kit_slot = None
+        self._pending_live_kit_row = None
         return_to_clean_start()
 
     def preview_playback_snapshot(self):
@@ -854,9 +870,11 @@ class Screen1QmlInteractionAdapter:
 
         The row is remembered as the pending Live Kit target; the actual slot
         assignment happens only through :meth:`assign_live_kit_slot`.
+        First Add-to-Kit also reveals the Live Kit pane (#742 disclosure).
         """
         row = self.view_model.browser_rows[index].source_row
         self._pending_live_kit_row = row
+        self._reveal_live_kit_pane()
         if self._on_add_to_kit_requested is not None:
             self._on_add_to_kit_requested(row)
         return row
@@ -1078,6 +1096,7 @@ class Screen1QmlInteractionAdapter:
     def request_add_harmonic_match_to_kit(self, index: int) -> WorkbenchRow:
         row = self.select_harmonic_match(index)
         self._pending_live_kit_row = row
+        self._reveal_live_kit_pane()
         if self._on_add_to_kit_requested is not None:
             self._on_add_to_kit_requested(row)
         return row
@@ -1536,9 +1555,9 @@ ApplicationWindow {
         Item {
             id: libraryRevealAffordance
             objectName: "libraryRevealAffordance"
-            // #725 subtle edge reveal — secondary to Add Source; not a red CTA.
+            // #725/#742 subtle edge reveal — works in Clean Start and Active Source.
             z: 20
-            visible: !window.interaction.hasActiveSource && !window.interaction.libraryRevealed
+            visible: !window.interaction.libraryRevealed
             width: 18
             height: parent.height
             anchors.left: parent.left
@@ -1567,7 +1586,7 @@ ApplicationWindow {
         Item {
             id: handleAfterLibrary
             objectName: "elasticHandleAfterLibrary"
-            visible: window.interaction.hasActiveSource
+            visible: window.interaction.hasActiveSource && window.interaction.libraryRevealed
             width: visible ? layoutModel.handleWidth : 0
             height: parent.height
             Rectangle {
@@ -1600,6 +1619,9 @@ ApplicationWindow {
             id: calmCanvas
             objectName: "calmCanvas"
             visible: !window.interaction.hasActiveSource
+                     && window.screenData.analysisStatus !== "scanning"
+                     && window.screenData.analysisStatus !== "analyzing"
+                     && window.screenData.analysisStatus !== "error"
             width: visible ? Math.max(0, parent.width - libraryPane.width) : 0
             height: parent.height
             color: "transparent"
@@ -1655,6 +1677,58 @@ ApplicationWindow {
                         border.width: 1
                     }
                     onClicked: addSourceDialog.open()
+                }
+            }
+        }
+        Rectangle {
+            // #742 minimal analysis surface — functional only; #744 owns final loading visuals.
+            id: analysisWorkingSurface
+            objectName: "analysisWorkingSurface"
+            visible: !window.interaction.hasActiveSource
+                     && (window.screenData.analysisStatus === "scanning"
+                         || window.screenData.analysisStatus === "analyzing"
+                         || window.screenData.analysisStatus === "error")
+            width: visible ? Math.max(0, parent.width - libraryPane.width) : 0
+            height: parent.height
+            color: theme.surfaceBrowser
+            border.color: theme.borderSubtle
+            ColumnLayout {
+                anchors.centerIn: parent
+                spacing: 12
+                width: Math.min(420, parent.width - 48)
+                Label {
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    text: window.screenData.analysisStatus === "scanning" ? "Analysiere Quelle …" :
+                          window.screenData.analysisStatus === "analyzing" ? "Analysiere " + window.screenData.analysisSource :
+                          window.screenData.analysisStatus === "error" ? window.screenData.analysisError : ""
+                    color: window.screenData.analysisStatus === "error" ? theme.actionActive : theme.textSecondary
+                    font.pixelSize: 14
+                    wrapMode: Text.Wrap
+                }
+                Label {
+                    Layout.alignment: Qt.AlignHCenter
+                    visible: window.screenData.analysisTotal > 0
+                    text: window.screenData.analysisCurrent + " / " + window.screenData.analysisTotal
+                    color: theme.textPrimary
+                    font.pixelSize: 12
+                }
+                ProgressBar {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.preferredWidth: 220
+                    visible: window.screenData.analysisStatus === "scanning" || window.screenData.analysisStatus === "analyzing"
+                    indeterminate: window.screenData.analysisTotal === 0
+                    from: 0
+                    to: Math.max(window.screenData.analysisTotal, 1)
+                    value: window.screenData.analysisCurrent
+                }
+                Button {
+                    id: analysisCancelButton
+                    objectName: "analysisCancelButton"
+                    Layout.alignment: Qt.AlignHCenter
+                    visible: window.screenData.analysisStatus === "scanning" || window.screenData.analysisStatus === "analyzing"
+                    text: "Cancel"
+                    onClicked: window.screenData.cancelAnalysis()
                 }
             }
         }
@@ -1854,6 +1928,7 @@ ApplicationWindow {
             id: handleAfterBrowser
             objectName: "elasticHandleAfterBrowser"
             visible: window.interaction.hasActiveSource
+                     && (window.interaction.harmonicMatchOpen || window.interaction.liveKitRevealed)
             width: visible ? layoutModel.handleWidth : 0
             height: parent.height
             Rectangle {
@@ -2034,7 +2109,9 @@ ApplicationWindow {
         Item {
             id: handleAfterHarmony
             objectName: "elasticHandleAfterHarmony"
-            visible: window.interaction.hasActiveSource && window.interaction.harmonicMatchOpen
+            visible: window.interaction.hasActiveSource
+                     && window.interaction.harmonicMatchOpen
+                     && window.interaction.liveKitRevealed
             width: visible ? layoutModel.handleWidth : 0
             height: parent.height
             Rectangle {
@@ -2063,7 +2140,7 @@ ApplicationWindow {
                 onReleased: layoutModel.endDrag()
             }
         }
-        Rectangle { id: liveKitPane; objectName: "liveKitPane"; visible: window.interaction.hasActiveSource; width: visible ? layoutModel.liveKitWidth : 0; height: parent.height; color: theme.surfacePanel; border.color: theme.borderSubtle
+        Rectangle { id: liveKitPane; objectName: "liveKitPane"; visible: window.interaction.hasActiveSource && window.interaction.liveKitRevealed; width: visible ? layoutModel.liveKitWidth : 0; height: parent.height; color: theme.surfacePanel; border.color: theme.borderSubtle
             ColumnLayout { anchors.fill: parent; anchors.margins: 14; spacing: 8
                 RowLayout { Layout.fillWidth: true
                     Label { text: "LIVE KIT"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
@@ -2263,6 +2340,10 @@ def _qml_interaction_bridge(
         @Property(bool, notify=state_changed)
         def hasActiveSource(self) -> bool:
             return adapter.view_model.has_active_source
+
+        @Property(bool, notify=state_changed)
+        def liveKitRevealed(self) -> bool:
+            return bool(adapter.view_model.live_kit_materialized)
 
         @Property(bool, notify=state_changed)
         def libraryRevealed(self) -> bool:
@@ -2730,10 +2811,57 @@ def _qml_engine(
             )
 
     analysis_coordinator = None
+    layout_model = None
+    bridge = None  # assigned below; closures resolve at call time
 
     def apply_analysis_state(state: AnalysisUiState) -> None:
         view_model.set_analysis_state(state)
+        if state.phase in {"scanning", "analyzing"}:
+            # #742: hide working panes while analysis runs; keep technical identity.
+            view_model.set_workspace_materialization(
+                has_active_source=False,
+                calm_canvas_visible=False,
+                browser_materialized=False,
+                live_kit_materialized=False,
+            )
+            if runtime_composition is not None:
+                runtime_composition.clear_live_kit_disclosure()
+        elif state.phase in {"cancelled", "error"}:
+            _analysis_fail_closed(state)
         refresh_screen_model()
+        if layout_model is not None:
+            layout_model.syncFromInteraction()
+        if bridge is not None:
+            bridge.refreshState()
+
+    def _analysis_fail_closed(state: AnalysisUiState) -> None:
+        """Cancel/failure must not leave half-materialized working panes."""
+        if runtime_composition is not None:
+            runtime_composition.clear_no_scope()
+        view_model.set_browser_state(
+            rows=(),
+            selected_index=-1,
+            browser_context="No library selected",
+            error=None,
+        )
+        view_model.set_workspace_materialization(
+            has_active_source=False,
+            calm_canvas_visible=True,
+            browser_materialized=False,
+            live_kit_materialized=False,
+        )
+        if state.phase == "cancelled":
+            # Analysis UI ends after cancel (#742).
+            view_model.set_analysis_state(
+                AnalysisUiState(
+                    folder_id=state.folder_id,
+                    folder_path=state.folder_path,
+                    token=state.token,
+                    phase="idle",
+                )
+            )
+        adapter.harmonic_match_open = False
+        adapter.stop_preview()
 
     def dispatch_library_selection() -> None:
         if runtime_composition is None:
@@ -2743,22 +2871,50 @@ def _qml_engine(
             runtime_composition.clear_no_scope(
                 "Library-Auswahl konnte nicht aufgelöst werden."
             )
-        else:
-            state = runtime_composition.dispatch_selection(intent)
-            if analysis_coordinator is not None and state.error is None:
-                try:
-                    refresh_target = runtime_composition.refresh_target(intent.scope)
-                except Exception:
-                    refresh_target = None
-                if refresh_target is not None:
-                    analysis_coordinator.start(
-                        refresh_target.folder_id,
-                        str(refresh_target.normalized_path),
-                    )
+            _sync_runtime_browser_state(view_model, adapter, runtime_composition)
+            request_visible_browser_waveforms_from_window()
+            refresh_browser_scope()
+            bridge.refreshState()
+            return
+
+        refresh_target = None
+        if analysis_coordinator is not None:
+            try:
+                refresh_target = runtime_composition.refresh_target(intent.scope)
+            except Exception:
+                refresh_target = None
+        if refresh_target is not None and analysis_coordinator is not None:
+            # #742 Option B: keep technical Source identity, defer visible panes.
+            runtime_composition.dispatch_selection(intent)
+            runtime_composition.clear_live_kit_disclosure()
+            view_model.set_browser_state(
+                rows=(),
+                selected_index=-1,
+                browser_context="Analysiere Quelle …",
+                error=None,
+            )
+            view_model.set_workspace_materialization(
+                has_active_source=False,
+                calm_canvas_visible=False,
+                browser_materialized=False,
+                live_kit_materialized=False,
+            )
+            adapter.replace_browser_scope(intent.scope)
+            analysis_coordinator.start(
+                refresh_target.folder_id,
+                str(refresh_target.normalized_path),
+            )
+            refresh_browser_scope()
+            bridge.refreshState()
+            layout_model.syncFromInteraction()
+            return
+
+        runtime_composition.dispatch_selection(intent)
         _sync_runtime_browser_state(view_model, adapter, runtime_composition)
         request_visible_browser_waveforms_from_window()
         refresh_browser_scope()
         bridge.refreshState()
+        layout_model.syncFromInteraction()
 
     def finish_analysis(folder_id: int, _result: object) -> None:
         previous_selected = (
@@ -2780,8 +2936,21 @@ def _qml_engine(
             and library_model.state.node(f"root:{folder_id}") is not None
         ):
             library_model.state.fetch_children(f"root:{folder_id}")
+        # #742: Live Kit stays hidden after success; Browser materializes via sync.
+        if runtime_composition is not None:
+            runtime_composition.clear_live_kit_disclosure()
         if library_model.selectNode(target_node_id):
-            dispatch_library_selection()
+            # Force immediate materialization of analyzed source (no refresh loop).
+            intent = library_model.state.selection_intent
+            if intent is not None and runtime_composition is not None:
+                runtime_composition.dispatch_selection(intent)
+                _sync_runtime_browser_state(view_model, adapter, runtime_composition)
+                request_visible_browser_waveforms_from_window()
+                refresh_browser_scope()
+                bridge.refreshState()
+                layout_model.syncFromInteraction()
+            else:
+                dispatch_library_selection()
         else:
             refresh_screen_model()
 
@@ -2799,14 +2968,28 @@ def _qml_engine(
         registration = runtime_composition.register_source_for_analysis(Path(path))
         if registration is not None:
             library_model.replaceBranch("container:sample-sources")
-            if library_model.state.selected_node_id is None:
-                library_model.selectNode(f"root:{registration.folder_id}")
-            dispatch_library_selection()
+            # #742: technical registration + analysis first; activate after success.
+            runtime_composition.clear_no_scope()
+            view_model.set_browser_state(
+                rows=(),
+                selected_index=-1,
+                browser_context="No library selected",
+                error=None,
+            )
+            view_model.set_workspace_materialization(
+                has_active_source=False,
+                calm_canvas_visible=False,
+                browser_materialized=False,
+                live_kit_materialized=False,
+            )
             if analysis_coordinator is not None:
                 analysis_coordinator.start(
                     registration.folder_id,
                     str(registration.normalized_path),
                 )
+            refresh_browser_scope()
+            bridge.refreshState()
+            layout_model.syncFromInteraction()
         else:
             _sync_runtime_browser_state(view_model, adapter, runtime_composition)
             refresh_browser_scope()
@@ -2847,6 +3030,7 @@ def _qml_engine(
         harmony_open=lambda: bool(adapter.harmonic_match_open),
         has_active_source=lambda: bool(adapter.view_model.has_active_source),
         library_revealed=lambda: bool(adapter.view_model.library_revealed),
+        live_kit_visible=lambda: bool(adapter.view_model.live_kit_materialized),
     )
 
     def on_interaction_state_changed() -> None:
@@ -2860,6 +3044,10 @@ def _qml_engine(
         on_state_changed=on_interaction_state_changed,
         on_waveform_request=request_waveforms,
         on_harmony_waveform_request=request_harmony_waveforms,
+    )
+    adapter._runtime_composition = runtime_composition
+    engine._screen1_analysis_fail_closed = lambda: _analysis_fail_closed(
+        AnalysisUiState(phase="error", error=view_model.analysis_error)
     )
     library_bridge = _qml_library_interaction_bridge(
         library_model,
