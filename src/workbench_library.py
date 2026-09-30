@@ -18,7 +18,7 @@ from typing import Any, Literal, Mapping
 # BPM/Key/brightness absent under workbench_v2) miss the sticky cache and are
 # re-analyzed by the existing refresh contract. Not a new analyzer algorithm.
 WORKBENCH_ANALYZER_VERSION = "workbench_v3"
-WORKBENCH_LIBRARY_SCHEMA_VERSION = 4
+WORKBENCH_LIBRARY_SCHEMA_VERSION = 5
 _LIBRARY_DB_NAME = "workbench_library.db"
 
 _CUE_SAMPLE_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -141,11 +141,17 @@ def init_workbench_library(db_path: Path | None = None) -> None:
                 ON playlist_samples(playlist_id);
             CREATE INDEX IF NOT EXISTS idx_playlist_samples_path
                 ON playlist_samples(sample_path);
+
+            CREATE TABLE IF NOT EXISTS favorite_samples (
+                sample_path TEXT PRIMARY KEY NOT NULL,
+                added_at TEXT NOT NULL
+            );
             """
         )
         _migrate_library_schema_v2(conn)
         _migrate_library_schema_v3(conn)
         _migrate_library_schema_v4(conn)
+        _migrate_library_schema_v5(conn)
         conn.commit()
 
 
@@ -242,6 +248,97 @@ def _migrate_library_schema_v4(conn: sqlite3.Connection) -> None:
             ON playlist_samples(sample_path);
         """
     )
+
+
+def _migrate_library_schema_v5(conn: sqlite3.Connection) -> None:
+    """Add dedicated Favorites table (#766) — not a magic playlist."""
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='favorite_samples'"
+    ).fetchone()
+    if row is not None:
+        return
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS favorite_samples (
+            sample_path TEXT PRIMARY KEY NOT NULL,
+            added_at TEXT NOT NULL
+        )
+        """
+    )
+
+
+def _normalize_favorite_sample_path(sample_path: Path | str) -> str:
+    path = str(Path(sample_path).expanduser().resolve())
+    if not path:
+        raise ValueError("sample path must not be empty")
+    return path
+
+
+def is_sample_favorite(
+    sample_path: Path | str,
+    *,
+    db_path: Path | None = None,
+) -> bool:
+    """Return whether ``sample_path`` is currently favorited."""
+    path = _normalize_favorite_sample_path(sample_path)
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM favorite_samples WHERE sample_path = ?",
+            (path,),
+        ).fetchone()
+    return row is not None
+
+
+def set_sample_favorite(
+    sample_path: Path | str,
+    favorite: bool,
+    *,
+    db_path: Path | None = None,
+) -> bool:
+    """Persist favorite state. Returns the resulting favorite flag (idempotent)."""
+    path = _normalize_favorite_sample_path(sample_path)
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        if favorite:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO favorite_samples (sample_path, added_at)
+                VALUES (?, ?)
+                """,
+                (path, _utc_now_iso()),
+            )
+        else:
+            conn.execute(
+                "DELETE FROM favorite_samples WHERE sample_path = ?",
+                (path,),
+            )
+        conn.commit()
+    return bool(favorite)
+
+
+def toggle_sample_favorite(
+    sample_path: Path | str,
+    *,
+    db_path: Path | None = None,
+) -> bool:
+    """Flip favorite state and return the resulting flag."""
+    next_state = not is_sample_favorite(sample_path, db_path=db_path)
+    return set_sample_favorite(sample_path, next_state, db_path=db_path)
+
+
+def list_favorite_sample_paths(*, db_path: Path | None = None) -> list[str]:
+    """Return favorited sample paths, oldest assignment first."""
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT sample_path
+            FROM favorite_samples
+            ORDER BY added_at ASC, sample_path ASC
+            """
+        ).fetchall()
+    return [str(row["sample_path"]) for row in rows]
 
 
 def validate_workbench_cue_metadata(
@@ -1061,9 +1158,13 @@ __all__ = [
     "get_or_create_playlist",
     "get_playlist_by_name",
     "init_workbench_library",
+    "is_sample_favorite",
+    "list_favorite_sample_paths",
     "list_library_folders",
     "list_playlist_sample_paths",
     "list_playlists",
+    "set_sample_favorite",
+    "toggle_sample_favorite",
     "load_all_cached_samples",
     "load_folder_samples",
     "load_folder_subtree_samples",

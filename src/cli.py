@@ -2,6 +2,7 @@
 from __future__ import annotations
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 import time
@@ -83,6 +84,12 @@ _COMMAND_EXAMPLES: dict[tuple[str, ...], list[str]] = {
     ("vec", "smoke"): [
         "sample-brain vec smoke",
     ],
+    ("measurement", "report"): [
+        "sample-brain measurement report",
+        "sample-brain measurement report --json",
+        "sample-brain measurement report --event match.query_finished",
+        "sample-brain measurement report --event match.query_finished --json",
+    ],
     ("pack-import",): [
         "sample-brain pack-import ./performance-pack",
         "sample-brain pack-import ./performance-pack --dry-run",
@@ -107,6 +114,7 @@ def _infer_command_path(argv: list[str]) -> tuple[str, ...]:
         "db",
         "benchmark",
         "vec",
+        "measurement",
         "workbench",
         "pack-import",
     }
@@ -116,6 +124,7 @@ def _infer_command_path(argv: list[str]) -> tuple[str, ...]:
         "doctor",
         "status",
         "smoke",
+        "report",
         "bpm-evidence",
         "key-conf-evidence",
         "vec",
@@ -941,6 +950,37 @@ def main():
         **_agent_parser_kwargs("sample-brain vec smoke"),
     )
 
+    p_measurement = sub.add_parser(
+        "measurement",
+        help="Local Measurement Contract diagnostics (optional, offline)",
+    )
+    measurement_sub = p_measurement.add_subparsers(
+        dest="measurement_cmd",
+        required=True,
+        parser_class=AgentFriendlyArgumentParser,
+    )
+    p_measurement_report = measurement_sub.add_parser(
+        "report",
+        help="Aggregate local measurement events (pipeline.stage_finished by default)",
+        **_agent_parser_kwargs(
+            "sample-brain measurement report",
+            "sample-brain measurement report --json",
+            "sample-brain measurement report --event match.query_finished",
+            "sample-brain measurement report --event match.query_finished --json",
+        ),
+    )
+    p_measurement_report.add_argument(
+        "--event",
+        choices=("pipeline.stage_finished", "match.query_finished"),
+        default="pipeline.stage_finished",
+        help="Event name to aggregate (default: pipeline.stage_finished).",
+    )
+    p_measurement_report.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the report as JSON.",
+    )
+
     p_workbench = sub.add_parser(
         "workbench",
         help="Lokale Werkbank starten (Playlist-Ansicht, tkinter)",
@@ -1066,7 +1106,23 @@ def main():
         except Exception as e:
             print(f"[ERROR] Analyze-Modul fehlt/fehlerhaft: {e}", file=sys.stderr)
             sys.exit(1)
-        run_analyze(bpm_normalization=bpm_normalization, only_missing=not args.all)
+        started = time.perf_counter()
+        summary = run_analyze(
+            bpm_normalization=bpm_normalization, only_missing=not args.all
+        )
+        wall_ms = max(0, int((time.perf_counter() - started) * 1000))
+        try:
+            from .measurement.emit import record_analyze_stage_safe
+
+            record_analyze_stage_safe(
+                config=cfg,
+                env=os.environ,
+                summary=summary,
+                wall_ms=wall_ms,
+            )
+        except Exception:
+            # Hard fail-soft boundary: measurement must never affect analyze success.
+            pass
         print("Analyze completed.")
         return
 
@@ -1527,6 +1583,51 @@ def main():
         if args.vec_cmd == "smoke":
             print(format_availability_message(report))
             if not report.available:
+                sys.exit(1)
+            return
+
+    if args.cmd == "measurement":
+        if args.measurement_cmd == "report":
+            from .measurement.config import resolve_measurement_db_path
+            from .measurement.reader import ReadStatus
+            from .measurement.report import (
+                build_match_query_finished_report,
+                build_stage_finished_report,
+                format_match_report_text,
+                format_report_text,
+                match_report_to_dict,
+                report_to_dict,
+            )
+
+            db_path = resolve_measurement_db_path(env=dict(os.environ))
+            event_name = getattr(args, "event", "pipeline.stage_finished")
+            if event_name == "match.query_finished":
+                report = build_match_query_finished_report(db_path)
+                if args.json:
+                    print(
+                        json.dumps(
+                            match_report_to_dict(report),
+                            indent=2,
+                            sort_keys=True,
+                            allow_nan=False,
+                        )
+                    )
+                else:
+                    print(format_match_report_text(report), end="")
+            else:
+                report = build_stage_finished_report(db_path)
+                if args.json:
+                    print(
+                        json.dumps(
+                            report_to_dict(report),
+                            indent=2,
+                            sort_keys=True,
+                            allow_nan=False,
+                        )
+                    )
+                else:
+                    print(format_report_text(report), end="")
+            if report.status is ReadStatus.ERROR:
                 sys.exit(1)
             return
 
