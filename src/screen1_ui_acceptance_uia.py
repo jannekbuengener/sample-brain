@@ -48,31 +48,34 @@ _HELPER = Path(__file__).resolve().parents[1] / "tools" / "windows" / "screen1_u
 def _run_uia(action: str, hwnd: int, name: str = "") -> str:
     if not _HELPER.is_file():
         raise FocusGuardError(f"missing UIA helper: {_HELPER}")
-    completed = subprocess.run(
-        [
-            "powershell",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(_HELPER),
-            "-Action",
-            action,
-            "-Hwnd",
-            str(int(hwnd)),
-            "-Name",
-            name,
-        ],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
-    if completed.returncode != 0:
-        err = (completed.stderr or completed.stdout or "").strip()
-        raise FocusGuardError(f"UIA {action} failed: {err}")
-    return (completed.stdout or "").strip()
+    last_err = ""
+    for attempt in range(3):
+        completed = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(_HELPER),
+                "-Action",
+                action,
+                "-Hwnd",
+                str(int(hwnd)),
+                "-Name",
+                name,
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        if completed.returncode == 0:
+            return (completed.stdout or "").strip()
+        last_err = (completed.stderr or completed.stdout or "").strip()
+        time.sleep(0.35 * (attempt + 1))
+    raise FocusGuardError(f"UIA {action} failed: {last_err}")
 
 
 def element_exists(hwnd: int, name: str) -> bool:
@@ -108,7 +111,11 @@ def send_escape() -> None:
 
 
 def click_screen(x: int, y: int) -> None:
-    user32.SetCursorPos(int(x), int(y))
+    # Clamp to signed 32-bit for Win32 APIs (multi-monitor coords can be negative).
+    xi = max(-2147483648, min(2147483647, int(x)))
+    yi = max(-2147483648, min(2147483647, int(y)))
+    if not user32.SetCursorPos(xi, yi):
+        raise FocusGuardError(f"SetCursorPos failed x={xi} y={yi}")
     time.sleep(0.05)
     MOUSEEVENTF_LEFTDOWN = 0x0002
     MOUSEEVENTF_LEFTUP = 0x0004
@@ -126,63 +133,93 @@ def capture_window_bmp(hwnd: int, path: Path) -> None:
     height = int(rect.bottom - rect.top)
     if width <= 0 or height <= 0:
         raise FocusGuardError("invalid window size for capture")
+
     hdc_screen = user32.GetDC(0)
+    if not hdc_screen:
+        raise FocusGuardError("GetDC failed for capture")
     hdc_mem = gdi32.CreateCompatibleDC(hdc_screen)
+    if not hdc_mem:
+        user32.ReleaseDC(0, hdc_screen)
+        raise FocusGuardError("CreateCompatibleDC failed for capture")
     hbmp = gdi32.CreateCompatibleBitmap(hdc_screen, width, height)
-    gdi32.SelectObject(hdc_mem, hbmp)
-    PW_RENDERFULLCONTENT = 0x00000002
-    user32.PrintWindow(hwnd, hdc_mem, PW_RENDERFULLCONTENT)
+    if not hbmp:
+        gdi32.DeleteDC(hdc_mem)
+        user32.ReleaseDC(0, hdc_screen)
+        raise FocusGuardError("CreateCompatibleBitmap failed for capture")
 
-    class BITMAPINFOHEADER(ctypes.Structure):
-        _fields_ = [
-            ("biSize", wintypes.DWORD),
-            ("biWidth", wintypes.LONG),
-            ("biHeight", wintypes.LONG),
-            ("biPlanes", wintypes.WORD),
-            ("biBitCount", wintypes.WORD),
-            ("biCompression", wintypes.DWORD),
-            ("biSizeImage", wintypes.DWORD),
-            ("biXPelsPerMeter", wintypes.LONG),
-            ("biYPelsPerMeter", wintypes.LONG),
-            ("biClrUsed", wintypes.DWORD),
-            ("biClrImportant", wintypes.DWORD),
-        ]
+    try:
+        previous = gdi32.SelectObject(hdc_mem, hbmp)
+        if not previous:
+            raise FocusGuardError("SelectObject failed for capture")
+        PW_RENDERFULLCONTENT = 0x00000002
+        printed = bool(user32.PrintWindow(hwnd, hdc_mem, PW_RENDERFULLCONTENT))
+        if not printed:
+            raise FocusGuardError("PrintWindow failed for capture")
 
-    bi = BITMAPINFOHEADER()
-    bi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
-    bi.biWidth = width
-    bi.biHeight = -height
-    bi.biPlanes = 1
-    bi.biBitCount = 24
-    bi.biCompression = 0
-    row_stride = ((width * 3 + 3) // 4) * 4
-    image_size = row_stride * height
-    buf = (ctypes.c_ubyte * image_size)()
-    gdi32.GetDIBits(hdc_mem, hbmp, 0, height, ctypes.byref(buf), ctypes.byref(bi), 0)
-    off_bits = 14 + ctypes.sizeof(BITMAPINFOHEADER)
-    file_header = struct.pack("<2sIHHI", b"BM", off_bits + image_size, 0, 0, off_bits)
-    info_header = struct.pack(
-        "<IiiHHIIiiII",
-        ctypes.sizeof(BITMAPINFOHEADER),
-        width,
-        -height,
-        1,
-        24,
-        0,
-        image_size,
-        0,
-        0,
-        0,
-        0,
-    )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("wb") as handle:
-        handle.write(file_header)
-        handle.write(info_header)
-        handle.write(bytes(buf))
-    gdi32.DeleteObject(hbmp)
-    gdi32.DeleteDC(hdc_mem)
-    user32.ReleaseDC(0, hdc_screen)
+        class BITMAPINFOHEADER(ctypes.Structure):
+            _fields_ = [
+                ("biSize", wintypes.DWORD),
+                ("biWidth", wintypes.LONG),
+                ("biHeight", wintypes.LONG),
+                ("biPlanes", wintypes.WORD),
+                ("biBitCount", wintypes.WORD),
+                ("biCompression", wintypes.DWORD),
+                ("biSizeImage", wintypes.DWORD),
+                ("biXPelsPerMeter", wintypes.LONG),
+                ("biYPelsPerMeter", wintypes.LONG),
+                ("biClrUsed", wintypes.DWORD),
+                ("biClrImportant", wintypes.DWORD),
+            ]
+
+        bi = BITMAPINFOHEADER()
+        bi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+        bi.biWidth = width
+        bi.biHeight = -height
+        bi.biPlanes = 1
+        bi.biBitCount = 24
+        bi.biCompression = 0
+        row_stride = ((width * 3 + 3) // 4) * 4
+        image_size = row_stride * height
+        buf = (ctypes.c_ubyte * image_size)()
+        copied = int(
+            gdi32.GetDIBits(hdc_mem, hbmp, 0, height, ctypes.byref(buf), ctypes.byref(bi), 0)
+        )
+        if copied == 0:
+            raise FocusGuardError("GetDIBits failed for capture")
+        # Fail-closed: empty/black PrintWindow payloads are not evidence.
+        sample = 0
+        step = max(1, image_size // 2048)
+        for i in range(0, image_size, step):
+            sample |= int(buf[i])
+        if sample == 0:
+            raise FocusGuardError("capture bitmap has no pixel data")
+        off_bits = 14 + ctypes.sizeof(BITMAPINFOHEADER)
+        file_header = struct.pack("<2sIHHI", b"BM", off_bits + image_size, 0, 0, off_bits)
+        info_header = struct.pack(
+            "<IiiHHIIiiII",
+            ctypes.sizeof(BITMAPINFOHEADER),
+            width,
+            -height,
+            1,
+            24,
+            0,
+            image_size,
+            0,
+            0,
+            0,
+            0,
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("wb") as handle:
+            handle.write(file_header)
+            handle.write(info_header)
+            handle.write(bytes(buf))
+        if path.stat().st_size < off_bits + row_stride:
+            raise FocusGuardError("capture file too small to be a valid BMP")
+    finally:
+        gdi32.DeleteObject(hbmp)
+        gdi32.DeleteDC(hdc_mem)
+        user32.ReleaseDC(0, hdc_screen)
 
 
 def region_mean_luma(path: Path, *, x_ratio0: float, x_ratio1: float) -> float:

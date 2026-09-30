@@ -4,6 +4,7 @@
 Usage:
   python tools/screen1_ui_acceptance.py
   python tools/screen1_ui_acceptance.py --keep-app
+  python tools/screen1_ui_acceptance.py --allow-reuse   # debug only
 
 Evidence is written outside the repo under ~/.sample-brain/ui-acceptance/<run-id>/.
 Does not depend on windows-mcp as a Python package.
@@ -28,11 +29,19 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Do not terminate a Sample Brain process started by this runner",
     )
+    parser.add_argument(
+        "--allow-reuse",
+        action="store_true",
+        help="Debug opt-in: attach to an already-running Sample Brain window (never default)",
+    )
     args = parser.parse_args(argv)
 
     from src.screen1_ui_acceptance import run_acceptance
 
-    report, code = run_acceptance(keep_app=bool(args.keep_app))
+    report, code = run_acceptance(
+        keep_app=bool(args.keep_app),
+        allow_reuse=bool(args.allow_reuse),
+    )
     print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
     return code
 

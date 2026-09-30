@@ -18,6 +18,8 @@ local Windows host.
 ```powershell
 python tools/screen1_ui_acceptance.py
 python tools/screen1_ui_acceptance.py --keep-app
+# debug only — never default:
+python tools/screen1_ui_acceptance.py --allow-reuse
 ```
 
 Exit codes:
@@ -29,19 +31,23 @@ Exit codes:
 | 2 | PARTIAL |
 | 3 | BLOCKED |
 
+Default V1 starts a fresh `workbench --qml-screen1` from the repo interpreter and
+binds cases to that PID. An already-open Sample Brain window yields **BLOCKED**
+(no silent reuse). `--allow-reuse` is debug-only.
+
 ## Cases (V1)
 
-1. **app_start** — start `python -m src.cli workbench --qml-screen1`, detect window, capture UIA names + screenshot.
+1. **app_start** — start `python -m src.cli workbench --qml-screen1`, detect window owned by that PID, require `Display preferences` in UIA, capture screenshot.
 2. **display_preferences** — UIA-only open/verify/Esc(+outside-click)/restore for `Display preferences` and unique open markers (`Reset Layout`, `Save Workspace Preset`, `Density`, `Motion`, …).
-3. **harmonic_match** — UIA button invoke; sample-row selection may be `VISUAL_FALLBACK` while ListView rows lack UIA; open/restore verified via UIA title and/or visual panel delta.
+3. **harmonic_match** — UIA button invoke; sample-row selection may be `VISUAL_FALLBACK` while ListView rows lack UIA; **open/restore require a real visual panel delta** (sticky `Harmonic Matches` UIA title alone is never PASS).
 
 A click acknowledgement alone is never PASS.
 
 ## Focus guard
 
 Before each case the runner brings the `Sample Brain` window to the foreground
-and re-checks focus after waits. This reduces false results from IDE z-order
-steals.
+and requires `GetForegroundWindow() == hwnd`. Shown-but-not-foreground is
+**BLOCKED**, not PASS. This reduces false results from IDE z-order steals.
 
 ## Evidence
 

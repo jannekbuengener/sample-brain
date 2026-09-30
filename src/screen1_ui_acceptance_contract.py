@@ -168,3 +168,60 @@ ACCESSIBILITY_FOLLOWUPS_V1: tuple[str, ...] = (
     "Harmonic Match pane open-state / 'Harmonic Matches' title is not reliably exposed in UIA; prefer Accessible.name on the pane root.",
     "harmonicMatchButton currently relies on Button.text for UIA Name; add Accessible.name: \"Harmonic Match\" for stability.",
 )
+
+
+def evaluate_app_start_controls(interactive_names: list[str]) -> tuple[bool, str]:
+    """Display preferences is mandatory for app_start PASS."""
+    if DISPLAY_PREFERENCES_NAME not in interactive_names:
+        return False, "missing_display_preferences_control"
+    return True, "display_preferences_present"
+
+
+def evaluate_harmonic_open_visual(
+    *,
+    title_before: bool,
+    title_after: bool,
+    before_luma: float,
+    after_luma: float,
+    min_delta: float = 1.5,
+) -> tuple[bool, list[str], list[str]]:
+    """VISUAL_FALLBACK open proof: sticky UIA title alone never yields open_ok.
+
+    Returns (open_ok, verification, notes).
+    """
+    verification: list[str] = []
+    notes: list[str] = []
+    visual_delta = abs(float(after_luma) - float(before_luma))
+    visual_open = visual_delta >= float(min_delta)
+    if title_before:
+        notes.append("harmonic_matches_title_present_before_toggle")
+    if title_after:
+        notes.append("harmonic_matches_title_present_after_toggle")
+        verification.append("harmonic_panel_title_uia_evidence_only")
+    if not visual_open:
+        if title_before and title_after:
+            verification.append(
+                "harmonic_open_stale_uia_without_visual_delta "
+                f"before={before_luma:.2f} after={after_luma:.2f}"
+            )
+        else:
+            verification.append(
+                f"harmonic_open_not_verified visual_delta={visual_delta:.2f}"
+            )
+        return False, verification, notes
+    verification.append(
+        f"harmonic_panel_visual_delta luma_before={before_luma:.2f} luma_after={after_luma:.2f}"
+    )
+    return True, verification, notes
+
+
+def evaluate_harmonic_restore_visual(
+    *,
+    before_luma: float,
+    after_luma: float,
+    restore_luma: float,
+) -> bool:
+    """Restore is ok when restore luma is sufficiently close to the pre-open state."""
+    open_delta = abs(float(after_luma) - float(before_luma))
+    restore_delta = abs(float(restore_luma) - float(before_luma))
+    return restore_delta <= max(0.75, open_delta * 0.45)
