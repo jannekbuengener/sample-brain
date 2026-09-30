@@ -1,5 +1,20 @@
 # Skill Integration Plan – sample-brain
 
+## Role of this document
+
+**Human narrative / orientation only.**
+Machine routing authority is [`docs/operations/CAPABILITY_REGISTRY.json`](operations/CAPABILITY_REGISTRY.json).
+Operations front door: [`docs/operations/README.md`](operations/README.md).
+Generated views: [`.cursor/rules/skill-routing.mdc`](../.cursor/rules/skill-routing.mdc), [`SB.VERFUEGBARE.SKILLS.md`](../SB.VERFUEGBARE.SKILLS.md).
+`SB.VERFUEGBARE.SKILLS_LISTE_2026-08-09.md` is **historical/frozen**, not active routing authority.
+
+Do not treat this file as a second independent routing matrix. Prefer regenerating views from the registry:
+
+```bash
+python tools/generate_capability_views.py
+python tools/check_capability_drift.py
+```
+
 ## Kurzbeschreibung
 
 Skills geben Agenten in `sample-brain` wiederholbare Workflows statt Ad-hoc-Entscheidungen.
@@ -22,7 +37,7 @@ Skill-Quellen:
 - `jMerta` – täglicher Agenten-Workflow (Priorität A)
 - `Anthropic-Cybersecurity-Skills` – Security-Hardening (Priorität B)
 
-Routing-Details: [.cursor/rules/skill-routing.mdc](../.cursor/rules/skill-routing.mdc)
+Routing-Details (generated view): [.cursor/rules/skill-routing.mdc](../.cursor/rules/skill-routing.mdc)
 
 ---
 

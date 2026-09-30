@@ -57,6 +57,10 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 - **Repository hygiene:** `DATA_AND_ARTIFACT_POLICY.md` + live working-tree/worktree state.
 - **Historical research:** use historical records as evidence only; do not promote them over active canon.
 
+## Operations / capability (not product canon)
+
+Capability, routing and process-KPI truth lives under [`docs/operations/README.md`](operations/README.md) with machine authority in [`docs/operations/CAPABILITY_REGISTRY.json`](operations/CAPABILITY_REGISTRY.json). This index does not duplicate those facts.
+
 ## Drift-prevention closeout
 
 For documentation, canon, governance, status or audit changes:

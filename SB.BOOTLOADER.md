@@ -9,7 +9,8 @@ Minimal session startup sequence for agents working on `jannekbuengener/sample-b
 1. `AGENTS.md` — root scope, global rules, quality gates
 2. `docs/CANON_INDEX.md` — authority/front-door map; classifies active canon, supporting contracts, durable snapshots and historical records
 3. `.cursor/rules/sample-brain-project.mdc` — project guardrails
-4. `.cursor/rules/skill-routing.mdc` — task-to-skill mapping (Priority A)
+4. `.cursor/rules/skill-routing.mdc` — task-to-skill mapping (generated from `docs/operations/CAPABILITY_REGISTRY.json`)
+4b. `docs/operations/README.md` — operations/capability front door (not product canon)
 5. `docs/TARGET_ARCHITECTURE.md` — current and target architecture, including the locked Screen-1 renderer
 6. `docs/PRODUCT_WORKFLOW_CANON.md` — Workbench-first producing path (Screen 1 → Live Kit → Channel Rack → Arrangement); overrides stale VST-first wording elsewhere
 7. `docs/WORKBENCH_QML_PROOF_SPIKE.md` — Screen-1 QML shell and proof/evidence boundary
@@ -39,7 +40,8 @@ Do not start Screen-2 UI before those docs gates.
 | EPIC 2 (Semantic Search) | `docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md`, ADR-0001–0005 |
 | DAW / Export | `docs/DAW_INTEGRATION_SPEC.md`, `src/export_fl.py` (legacy/fallback; VST parked #469) |
 | CI / Merge Governance | `docs/CI_DEGRADED_MODE.md`, `knowledge/governance/GOVERNANCE.md` |
-| Repository Hygiene | `docs/ISSUE_BACKLOG.md`, `docs/DATA_AND_ARTIFACT_POLICY.md` |
+| Repository Hygiene | live worktree/branch state, `docs/DATA_AND_ARTIFACT_POLICY.md`, agent `sample-brain-repository-auditor`; ops front door `docs/operations/README.md` |
+| Operations / capabilities | `docs/operations/README.md`, `docs/operations/CAPABILITY_REGISTRY.json` |
 | Agent / Role | `.cursor/agents/_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md` |
 
 ## Forbidden Context

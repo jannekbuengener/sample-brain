@@ -29,7 +29,11 @@
 - Prefer updating tests together with behavior changes.
 
 ## Skill routing
-- Skill routing: For agent task-to-skill mapping, use `docs/SKILL_INTEGRATION_PLAN.md`, `.cursor/rules/skill-routing.mdc`, and `SB.VERFUEGBARE_SKILLS.md`. These files provide recommendation/routing guidance only; they do not authorize automatic tool, workflow, CI, or security changes.
+- Machine routing authority: `docs/operations/CAPABILITY_REGISTRY.json` (front door: `docs/operations/README.md`).
+- Generated views: `.cursor/rules/skill-routing.mdc`, `SB.VERFUEGBARE.SKILLS.md` (marked generated blocks only).
+- Human narrative: `docs/SKILL_INTEGRATION_PLAN.md` (not machine authority).
+- `SB.VERFUEGBARE.SKILLS_LISTE_2026-08-09.md` is historical/frozen, not active routing authority.
+- These provide recommendation/routing guidance only; they do not authorize automatic tool, workflow, CI, or security changes.
 
 ## Quality Gates
 
@@ -39,7 +43,13 @@ For docs/canon/governance/status/routing/audit changes, also run:
 python tools/check_canon_drift.py
 ```
 
-This is a narrow deterministic drift sweep; live GitHub/repo evidence still wins.
+For operations/capability/routing/skill-mirror changes, also run:
+
+```bash
+python tools/check_capability_drift.py
+```
+
+These are narrow deterministic drift sweeps; live GitHub/repo evidence still wins.
 
 - Setup:
 - `py -3.12 -m venv .venv`

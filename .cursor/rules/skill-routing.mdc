@@ -10,11 +10,23 @@ alwaysApply: true
 Docs/routing-only. Skills werden **empfohlen**, nicht automatisch ausgeführt.
 Keine CI-Workflow-Änderungen, keine neuen Tools, keine bulk Skill-Kopien ins Repo.
 
-Referenz: [docs/SKILL_INTEGRATION_PLAN.md](../../docs/SKILL_INTEGRATION_PLAN.md), [SB.VERFUEGBARE.SKILLS.md](../../SB.VERFUEGBARE.SKILLS.md) (identische Matrix)
+**Machine routing authority:** [`docs/operations/CAPABILITY_REGISTRY.json`](../../docs/operations/CAPABILITY_REGISTRY.json)
+**Operations front door:** [`docs/operations/README.md`](../../docs/operations/README.md)
+**Product canon (separate):** [`docs/CANON_INDEX.md`](../../docs/CANON_INDEX.md)
+
+Human narrative (not machine authority): [`docs/SKILL_INTEGRATION_PLAN.md`](../../docs/SKILL_INTEGRATION_PLAN.md)
+Generated companion view: [`SB.VERFUEGBARE.SKILLS.md`](../../SB.VERFUEGBARE.SKILLS.md)
+
+`SB.VERFUEGBARE.SKILLS_LISTE_2026-08-09.md` is **historical/frozen** and not active routing authority.
+
+The routing matrix below is generated. Do not hand-edit inside the markers; run:
+`python tools/generate_capability_views.py`
+
+<!-- BEGIN GENERATED CAPABILITY ROUTING -->
 
 ## Routing-Matrix
 
-| Situation | Skill(s) |
+| Situation | Capability |
 |-----------|------------|
 | Neues Feature oder Issue planen | `sample-brain-issue-to-session-plan` |
 | Unklare Fehlerursache | `sample-brain-root-cause` |
@@ -27,15 +39,15 @@ Referenz: [docs/SKILL_INTEGRATION_PLAN.md](../../docs/SKILL_INTEGRATION_PLAN.md)
 | Wesentliche Produktivcode-Implementierung (vor Code) | `sample-brain-test-first` |
 | Commit vorbereiten | `jMerta/commit-work` |
 | PR vorbereiten / öffnen | `jMerta/create-pr` |
-| Commit + PR zusammen | `jMerta/commit-work` + `jMerta/create-pr` |
+| Commit + PR zusammen | `jMerta/commit-work`, `jMerta/create-pr` |
 | Qualitätsprüfung vor Merge | `jMerta/coding-guidelines-verify` |
 | Klar abgegrenztes Issue explizit an Jules delegieren | `sample-brain-jules-dispatch` |
+| Screen-1 UI/QML Visual Acceptance nach automatisierten Tests | `workflow-screen1-visual-acceptance` |
+| Repository-/Worktree-Hygiene | `workflow-repository-hygiene`, `sample-brain-repository-auditor` |
 
 ## Security-Workflow-Audit (Priorität B, nur gezielt)
 
 Nur bei **explizitem** Security-/CI-Audit-Auftrag. Keine Auto-Änderung ohne separaten Auftrag.
-
-For generic CI/security workflow audits, start with `detecting-supply-chain-attacks-in-ci-cd` or the most specific matching Priority B skill. The result should be documented first; implementation requires a separate explicit task.
 
 Priority B skills come from the external Anthropic-Cybersecurity-Skills package (not copied into this repo).
 
@@ -46,8 +58,6 @@ Priority B skills come from the external Anthropic-Cybersecurity-Skills package 
 | SAST-Pipeline | `integrating-sast-into-github-actions-pipeline` |
 | Supply-Chain in CI/CD | `detecting-supply-chain-attacks-in-ci-cd` |
 | Custom Semgrep-Regeln | `implementing-semgrep-for-custom-sast-rules` |
-
-Bestehende Workflows nur **referenzieren** (`ci-smoke`, `codeql`, `dependency-review`, `gitleaks`) – nicht ohne Auftrag ändern.
 
 ## Default-Reihenfolge
 
@@ -60,18 +70,66 @@ Die lokale Reihenfolge ist verbindlich fuer Sample-Brain-spezifische Arbeit:
 ```text
 Issue mit signifikantem Produktcode-Slice -> sample-brain-issue-to-session-plan -> sample-brain-test-first
 Issue mit Docs-Slice -> sample-brain-issue-to-session-plan -> jMerta/docs-sync
-Issue mit CI-/Tooling-Slice -> sample-brain-issue-to-session-plan -> jMerta/ci-fix und optional sample-brain-ci-debugger
+Issue mit CI-/Tooling-Slice -> sample-brain-issue-to-session-plan -> jMerta/ci-fix und optional agent sample-brain-ci-debugger
 Issue mit Dependency-Slice -> sample-brain-issue-to-session-plan -> jMerta/dependency-upgrader
 Issue mit Workflow-Slice -> sample-brain-issue-to-session-plan -> bestehende workflow-spezifische Route
 Issue mit Governance-Slice -> sample-brain-issue-to-session-plan -> bestehender Governance-/Docs-Weg
 Issue mit unbekanntem Slice -> sample-brain-issue-to-session-plan -> planning_blocked
 Unklarer Bug mit Produkt-/Verhaltensursache -> sample-brain-root-cause -> sample-brain-regression-gap -> sample-brain-test-first
-Unklarer Bug mit CI-/Tooling-/Infrastruktur-Ursache -> sample-brain-root-cause -> jMerta/ci-fix und sample-brain-ci-debugger
+Unklarer Bug mit CI-/Tooling-/Infrastruktur-Ursache -> sample-brain-root-cause -> jMerta/ci-fix und agent sample-brain-ci-debugger
 Unklarer Bug mit Docs-/Contract-Ursache -> sample-brain-root-cause -> jMerta/docs-sync; sample-brain-test-first nur bei einer späteren genehmigten Produktcode-Aenderung
 Bekannter Defekt -> sample-brain-regression-gap -> sample-brain-test-first
 Issue geplant + expliziter Jules-Dispatch -> sample-brain-jules-dispatch -> unabhängige lokale Rückprüfung
+Screen-1 UI/QML visual change -> automated validation -> visual fixture/runtime evidence -> OWNER VISUAL ACCEPTANCE -> VISUAL_ACCEPT_PENDING|PASS|FAIL
 ```
 
-`sample-brain-test-first` fixiert DOCS -> TESTS -> TEST FREEZE ->
-IMPLEMENTATION -> CHECKS. Die lokalen Skills ergänzen externe Workflow-Skills
-und ersetzen sie nicht.
+## Screen-1 Visual Acceptance
+
+For Screen-1 UI/QML visual work, automated tests are necessary but not sufficient. Owner visual acceptance is required.
+
+Sequence:
+
+```text
+automated validation
+visual fixture/runtime evidence
+OWNER VISUAL ACCEPTANCE
+VISUAL_ACCEPT_PENDING | VISUAL_ACCEPT_PASS | VISUAL_ACCEPT_FAIL
+```
+
+Status values: `VISUAL_ACCEPT_PENDING`, `VISUAL_ACCEPT_PASS`, `VISUAL_ACCEPT_FAIL`
+
+No AI pixel judge. Owner visual judgment is not replaced by automated tests.
+
+## Repository Hygiene
+
+Repository hygiene uses live repo/worktree state plus artifact policy and the repository auditor.
+
+- live git worktree/branch state
+- docs/DATA_AND_ARTIFACT_POLICY.md
+- agent sample-brain-repository-auditor
+
+Not an active hygiene authority: `docs/ISSUE_BACKLOG.md` (HISTORICAL_LEDGER only).
+
+## Parked Tracks (do not auto-route)
+
+These tracks are parked/HOLD. Do not auto-route or reactivate them.
+
+- Screen 2 #675/#678
+- Screen 3 #679
+- #680
+- VST3 #469
+- Bitwig #620
+
+Reactivation: `explicit_owner_go` only.
+
+## Capability typing notes
+
+- sample-brain-ci-debugger is an AGENT, not a skill.
+- SB.VERFUEGBARE.SKILLS_LISTE_2026-08-09.md is historical/frozen and not active routing authority.
+- Machine routing authority is docs/operations/CAPABILITY_REGISTRY.json.
+- Agent contract authority is .cursor/agents/*.md; SB.AGENT.LIST.json is inventory/view only.
+- Private ChatGPT MCP is chatgpt-operator-only and never a worker requirement.
+
+Machine routing authority: `docs/operations/CAPABILITY_REGISTRY.json`. Do not hand-edit this generated block; regenerate via `python tools/generate_capability_views.py`.
+
+<!-- END GENERATED CAPABILITY ROUTING -->
