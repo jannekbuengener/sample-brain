@@ -1626,9 +1626,9 @@ ApplicationWindow {
                         text: "≡"
                         flat: true
                         checkable: true
-                        checked: libraryInteraction.selectedLibraryNodeId === "scope:all-library"
+                        checked: libraryScopeBar.mode === "all"
                         onClicked: {
-                            libraryScopeBar.mode = "sources"
+                            libraryScopeBar.mode = "all"
                             libraryInteraction.selectLibraryNode("scope:all-library")
                         }
                         Accessible.name: "All Samples"
@@ -1638,9 +1638,9 @@ ApplicationWindow {
                         text: "◉"
                         flat: true
                         checkable: true
-                        checked: libraryInteraction.selectedLibraryNodeId === "scope:catalog-readonly"
+                        checked: libraryScopeBar.mode === "catalog"
                         onClicked: {
-                            libraryScopeBar.mode = "sources"
+                            libraryScopeBar.mode = "catalog"
                             libraryInteraction.selectLibraryNode("scope:catalog-readonly")
                         }
                         Accessible.name: "Catalog"
@@ -1687,7 +1687,7 @@ ApplicationWindow {
                 TreeView {
                     id: libraryTree
                     objectName: "libraryTree"
-                    visible: libraryScopeBar.mode === "sources"
+                    visible: libraryScopeBar.mode !== "collections"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     model: libraryTreeModel
@@ -1711,6 +1711,7 @@ ApplicationWindow {
                                     if (model.error) {
                                         libraryInteraction.retryLibraryNode(model.parentNodeId)
                                     } else if (model.selectable) {
+                                        libraryScopeBar.mode = "sources"
                                         libraryTree.forceActiveFocus()
                                         libraryInteraction.selectLibraryNode(model.nodeId)
                                     }
