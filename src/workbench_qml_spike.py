@@ -1120,6 +1120,10 @@ def _project_analysis_loading_state(
         browser_materialized=has_active_source,
         live_kit_materialized=False,
     )
+    # Loading occupation must not inherit a prior Library reveal from earlier
+    # evidence labels in the same process (e.g. after success→Browser).
+    if state.phase in {"scanning", "analyzing", "error"}:
+        view_model.set_library_revealed(False)
     engine._screen1_screen_model.refresh()
     engine._screen1_interaction_bridge.refreshState()
     layout = getattr(engine, "_screen1_layout_model", None)
