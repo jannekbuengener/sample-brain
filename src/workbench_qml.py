@@ -1677,20 +1677,282 @@ ApplicationWindow {
 
         Rectangle { id: libraryPane; objectName: "libraryPane"; width: layoutModel.libraryWidth; height: parent.height; visible: width > 0; color: theme.surfacePanel; border.color: theme.borderSubtle
             ColumnLayout { anchors.fill: parent; anchors.margins: 16
-                RowLayout { Layout.fillWidth: true
+                RowLayout { id: libraryHeaderRow; Layout.fillWidth: true
                     Label { text: "LIBRARY"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
                     Button { text: "Add Source"; onClicked: addSourceDialog.open() }
                     Button { visible: libraryInteraction.canRemoveSelectedSource; text: "Remove"; onClicked: libraryInteraction.prepareRemoveSource() }
                 }
+                RowLayout {
+                    id: libraryScopeBar
+                    objectName: "libraryScopeBar"
+                    Layout.fillWidth: true
+                    spacing: 6
+                    property string mode: "sources"
+                    readonly property int controlSize: 28
+                    readonly property int iconPad: 6
+
+                    function scopeFill(active, hovered) {
+                        if (active)
+                            return theme.selectionSurface
+                        if (hovered)
+                            return theme.surfaceElevated
+                        return "transparent"
+                    }
+                    function scopeStroke(active) {
+                        return active ? theme.selectionBorder : "transparent"
+                    }
+                    function scopeInk(active) {
+                        return active ? theme.actionActive : theme.textSecondary
+                    }
+
+                    ToolButton {
+                        id: sourcesScopeButton
+                        objectName: "librarySourcesScopeButton"
+                        text: ""
+                        flat: true
+                        checkable: true
+                        checked: libraryScopeBar.mode === "sources"
+                        Layout.preferredWidth: libraryScopeBar.controlSize
+                        Layout.preferredHeight: libraryScopeBar.controlSize
+                        onClicked: libraryScopeBar.mode = "sources"
+                        Accessible.name: "Sample Sources"
+                        background: Rectangle {
+                            radius: 4
+                            color: libraryScopeBar.scopeFill(sourcesScopeButton.checked, sourcesScopeButton.hovered)
+                            border.width: sourcesScopeButton.checked ? 1 : 0
+                            border.color: libraryScopeBar.scopeStroke(sourcesScopeButton.checked)
+                        }
+                        contentItem: Item {
+                            anchors.fill: parent
+                            Canvas {
+                                anchors.fill: parent
+                                anchors.margins: libraryScopeBar.iconPad
+                                onPaint: {
+                                    var ctx = getContext("2d")
+                                    ctx.reset()
+                                    ctx.strokeStyle = libraryScopeBar.scopeInk(sourcesScopeButton.checked)
+                                    ctx.lineWidth = 1.5
+                                    ctx.strokeRect(1, 4, width - 2, height - 6)
+                                    ctx.beginPath()
+                                    ctx.moveTo(1, 8)
+                                    ctx.lineTo(width - 1, 8)
+                                    ctx.stroke()
+                                }
+                                Component.onCompleted: requestPaint()
+                                Connections {
+                                    target: sourcesScopeButton
+                                    function onCheckedChanged() { parent.requestPaint() }
+                                    function onHoveredChanged() { parent.requestPaint() }
+                                }
+                            }
+                        }
+                    }
+                    ToolButton {
+                        id: allSamplesScopeButton
+                        objectName: "libraryAllSamplesScopeButton"
+                        text: ""
+                        flat: true
+                        checkable: true
+                        checked: libraryScopeBar.mode === "all"
+                        Layout.preferredWidth: libraryScopeBar.controlSize
+                        Layout.preferredHeight: libraryScopeBar.controlSize
+                        onClicked: {
+                            libraryScopeBar.mode = "all"
+                            libraryInteraction.selectLibraryNode("scope:all-library")
+                        }
+                        Accessible.name: "All Samples"
+                        background: Rectangle {
+                            radius: 4
+                            color: libraryScopeBar.scopeFill(allSamplesScopeButton.checked, allSamplesScopeButton.hovered)
+                            border.width: allSamplesScopeButton.checked ? 1 : 0
+                            border.color: libraryScopeBar.scopeStroke(allSamplesScopeButton.checked)
+                        }
+                        contentItem: Item {
+                            anchors.fill: parent
+                            Canvas {
+                                anchors.fill: parent
+                                anchors.margins: libraryScopeBar.iconPad
+                                onPaint: {
+                                    var ctx = getContext("2d")
+                                    ctx.reset()
+                                    ctx.strokeStyle = libraryScopeBar.scopeInk(allSamplesScopeButton.checked)
+                                    ctx.lineWidth = 1.5
+                                    var y1 = height * 0.25
+                                    var y2 = height * 0.5
+                                    var y3 = height * 0.75
+                                    ctx.beginPath(); ctx.moveTo(0, y1); ctx.lineTo(width, y1); ctx.stroke()
+                                    ctx.beginPath(); ctx.moveTo(0, y2); ctx.lineTo(width, y2); ctx.stroke()
+                                    ctx.beginPath(); ctx.moveTo(0, y3); ctx.lineTo(width, y3); ctx.stroke()
+                                }
+                                Component.onCompleted: requestPaint()
+                                Connections {
+                                    target: allSamplesScopeButton
+                                    function onCheckedChanged() { parent.requestPaint() }
+                                    function onHoveredChanged() { parent.requestPaint() }
+                                }
+                            }
+                        }
+                    }
+                    ToolButton {
+                        id: catalogScopeButton
+                        objectName: "libraryCatalogScopeButton"
+                        text: ""
+                        flat: true
+                        checkable: true
+                        checked: libraryScopeBar.mode === "catalog"
+                        Layout.preferredWidth: libraryScopeBar.controlSize
+                        Layout.preferredHeight: libraryScopeBar.controlSize
+                        onClicked: {
+                            libraryScopeBar.mode = "catalog"
+                            libraryInteraction.selectLibraryNode("scope:catalog-readonly")
+                        }
+                        Accessible.name: "Catalog"
+                        background: Rectangle {
+                            radius: 4
+                            color: libraryScopeBar.scopeFill(catalogScopeButton.checked, catalogScopeButton.hovered)
+                            border.width: catalogScopeButton.checked ? 1 : 0
+                            border.color: libraryScopeBar.scopeStroke(catalogScopeButton.checked)
+                        }
+                        contentItem: Item {
+                            anchors.fill: parent
+                            Canvas {
+                                anchors.fill: parent
+                                anchors.margins: libraryScopeBar.iconPad
+                                onPaint: {
+                                    var ctx = getContext("2d")
+                                    ctx.reset()
+                                    ctx.strokeStyle = libraryScopeBar.scopeInk(catalogScopeButton.checked)
+                                    ctx.fillStyle = libraryScopeBar.scopeInk(catalogScopeButton.checked)
+                                    ctx.lineWidth = 1.5
+                                    var cx = width / 2
+                                    var cy = height / 2
+                                    var r = Math.min(width, height) / 2 - 0.5
+                                    ctx.beginPath()
+                                    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+                                    ctx.stroke()
+                                    ctx.beginPath()
+                                    ctx.arc(cx, cy, 1.5, 0, Math.PI * 2)
+                                    ctx.fill()
+                                }
+                                Component.onCompleted: requestPaint()
+                                Connections {
+                                    target: catalogScopeButton
+                                    function onCheckedChanged() { parent.requestPaint() }
+                                    function onHoveredChanged() { parent.requestPaint() }
+                                }
+                            }
+                        }
+                    }
+                    ToolButton {
+                        id: collectionsScopeButton
+                        objectName: "libraryCollectionsScopeButton"
+                        text: ""
+                        flat: true
+                        checkable: true
+                        checked: libraryScopeBar.mode === "collections"
+                        Layout.preferredWidth: libraryScopeBar.controlSize
+                        Layout.preferredHeight: libraryScopeBar.controlSize
+                        onClicked: libraryScopeBar.mode = "collections"
+                        Accessible.name: "Collections"
+                        background: Rectangle {
+                            radius: 4
+                            color: libraryScopeBar.scopeFill(collectionsScopeButton.checked, collectionsScopeButton.hovered)
+                            border.width: collectionsScopeButton.checked ? 1 : 0
+                            border.color: libraryScopeBar.scopeStroke(collectionsScopeButton.checked)
+                        }
+                        contentItem: Item {
+                            anchors.fill: parent
+                            Canvas {
+                                anchors.fill: parent
+                                anchors.margins: libraryScopeBar.iconPad
+                                onPaint: {
+                                    var ctx = getContext("2d")
+                                    ctx.reset()
+                                    ctx.strokeStyle = libraryScopeBar.scopeInk(collectionsScopeButton.checked)
+                                    ctx.lineWidth = 1.5
+                                    ctx.strokeRect(2, 1, width - 6, height - 6)
+                                    ctx.strokeRect(5, 4, width - 6, height - 6)
+                                }
+                                Component.onCompleted: requestPaint()
+                                Connections {
+                                    target: collectionsScopeButton
+                                    function onCheckedChanged() { parent.requestPaint() }
+                                    function onHoveredChanged() { parent.requestPaint() }
+                                }
+                            }
+                        }
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+                Item {
+                    id: libraryContentHost
+                    objectName: "libraryContentHost"
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                ListView {
+                    id: collectionList
+                    objectName: "libraryCollectionList"
+                    visible: libraryScopeBar.mode === "collections"
+                    anchors.fill: parent
+                    clip: true
+                    focus: visible
+                    activeFocusOnTab: visible
+                    spacing: 2
+                    model: libraryInteraction.collectionEntries
+                    delegate: Item {
+                        id: collectionRow
+                        width: collectionList.width
+                        height: 30
+                        property bool rowSelected: modelData.selected
+                        property bool rowHovered: collectionHover.hovered
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 4
+                            color: collectionRow.rowSelected
+                                   ? theme.selectionSurface
+                                   : (collectionRow.rowHovered ? theme.surfaceElevated : "transparent")
+                            border.width: collectionRow.rowSelected ? 1 : 0
+                            border.color: collectionRow.rowSelected ? theme.selectionBorder : "transparent"
+                        }
+                        Label {
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.left: parent.left
+                            anchors.leftMargin: 8
+                            anchors.right: parent.right
+                            anchors.rightMargin: 8
+                            text: modelData.label
+                            color: collectionRow.rowSelected ? theme.textPrimary : theme.textSecondary
+                            font.pixelSize: 12
+                            elide: Text.ElideRight
+                        }
+                        HoverHandler { id: collectionHover }
+                        TapHandler {
+                            onTapped: {
+                                collectionList.forceActiveFocus()
+                                libraryInteraction.selectLibraryNode(modelData.nodeId)
+                            }
+                        }
+                        Accessible.name: modelData.label
+                        Accessible.role: Accessible.ListItem
+                    }
+                    Label {
+                        anchors.centerIn: parent
+                        visible: collectionList.count === 0
+                        text: "No collections"
+                        color: theme.textSecondary
+                        font.pixelSize: 11
+                    }
+                }
                 TreeView {
                     id: libraryTree
                     objectName: "libraryTree"
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    visible: libraryScopeBar.mode === "sources"
+                    enabled: libraryScopeBar.mode === "sources"
+                    anchors.fill: parent
                     model: libraryTreeModel
                     clip: true
-                    focus: true
-                    activeFocusOnTab: true
+                    focus: libraryScopeBar.mode === "sources"
+                    activeFocusOnTab: libraryScopeBar.mode === "sources"
                     boundsBehavior: Flickable.StopAtBounds
                     delegate: TreeViewDelegate {
                         id: libraryDelegate
@@ -1707,9 +1969,8 @@ ApplicationWindow {
                                 onTapped: {
                                     if (model.error) {
                                         libraryInteraction.retryLibraryNode(model.parentNodeId)
-                                    } else if (model.kind === "add_source" && model.nodeId === "action:add-source") {
-                                        addSourceDialog.open()
                                     } else if (model.selectable) {
+                                        libraryScopeBar.mode = "sources"
                                         libraryTree.forceActiveFocus()
                                         libraryInteraction.selectLibraryNode(model.nodeId)
                                     }
@@ -1743,6 +2004,7 @@ ApplicationWindow {
                         }
                     }
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                }
                 }
             }
         }
@@ -3261,6 +3523,20 @@ def _qml_library_interaction_bridge(
         @Property(int, notify=state_changed)
         def removalCachedSampleCount(self) -> int:
             return self._removal_cached_sample_count
+
+        @Property("QVariantList", notify=state_changed)
+        def collectionEntries(self) -> list[dict[str, object]]:
+            state = library_model.state
+            state.fetch_children("container:collections")
+            return [
+                {
+                    "nodeId": node.node_id,
+                    "label": node.label,
+                    "selected": state.selected_node_id == node.node_id,
+                }
+                for node in state.visible_children("container:collections")
+                if node.kind is LibraryNodeKind.COLLECTION
+            ]
 
         @Slot(str)
         def selectLibraryNode(self, node_id: str) -> None:

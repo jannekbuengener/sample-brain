@@ -101,15 +101,6 @@ class FakeNavigation:
                 self.root,
                 self.offline_root,
                 self.empty_root,
-                LibraryNode(
-                    "action:add-source",
-                    LibraryNodeKind.ADD_SOURCE,
-                    "Add Source…",
-                    SAMPLE_SOURCES,
-                    False,
-                    False,
-                    LibraryAvailability.AVAILABLE,
-                ),
             ),
             ROOT_ID: (
                 LibraryNode(
@@ -169,6 +160,10 @@ class FakeNavigation:
             FOLDER_ID: LibraryScope(
                 LibraryScopeKind.SUBFOLDER, folder_id=1, relative_path="Drums"
             ),
+            "scope:all-library": LibraryScope(LibraryScopeKind.ALL_SAMPLES),
+            "scope:catalog-readonly": LibraryScope(
+                LibraryScopeKind.CATALOG, catalog_limit=17
+            ),
             "collection:7": LibraryScope(
                 LibraryScopeKind.COLLECTION, playlist_id=7, playlist_name="Set A"
             ),
@@ -222,9 +217,74 @@ def test_qml_library_model_uses_exact_canonical_taxonomy_without_fake_surface() 
     source = workbench_qml.QML_SOURCE
     assert "TreeView" in source
     assert "libraryTreeModel" in source
+    assert 'objectName: "libraryScopeBar"' in source
+    assert 'objectName: "librarySourcesScopeButton"' in source
+    assert 'objectName: "libraryAllSamplesScopeButton"' in source
+    assert 'objectName: "libraryCatalogScopeButton"' in source
+    assert 'objectName: "libraryCollectionsScopeButton"' in source
+    assert 'Accessible.name: "Sample Sources"' in source
+    assert 'Accessible.name: "All Samples"' in source
+    assert 'Accessible.name: "Catalog"' in source
+    assert 'Accessible.name: "Collections"' in source
+    assert 'model.kind === "add_source"' not in source
     assert "libraryLabels" not in source
     for forbidden in ("Favorites", "My Kits", "Recently Added", "Splice", "User Library"):
         assert forbidden not in source
+
+
+def test_library_scope_bar_visual_polish_contract() -> None:
+    """#771 Owner Visual repair: geometric icons, theme active state, tree retreat."""
+    from src import workbench_qml
+
+    source = workbench_qml.QML_SOURCE
+    scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
+        'objectName: "libraryCollectionList"', 1
+    )[0]
+    tree_block = source.split('objectName: "libraryTree"', 1)[1].split(
+        "delegate: TreeViewDelegate", 1
+    )[0]
+    collection_block = source.split('objectName: "libraryCollectionList"', 1)[1].split(
+        'objectName: "libraryTree"', 1
+    )[0]
+
+    for glyph in ("⌁", "≡", "◉", "▣"):
+        assert f'text: "{glyph}"' not in source
+
+    assert "theme.selectionSurface" in scope_block
+    assert "theme.selectionBorder" in scope_block or "theme.actionActive" in scope_block
+    assert "theme.surfaceElevated" in scope_block
+
+    assert 'visible: libraryScopeBar.mode === "sources"' in tree_block
+    assert 'enabled: libraryScopeBar.mode === "sources"' in tree_block
+    assert 'activeFocusOnTab: libraryScopeBar.mode === "sources"' in tree_block
+    assert 'visible: libraryScopeBar.mode !== "collections"' not in tree_block
+    assert 'objectName: "libraryContentHost"' in source
+    assert "Layout.fillHeight: true" in source.split(
+        'objectName: "libraryContentHost"', 1
+    )[1].split('objectName: "libraryCollectionList"', 1)[0]
+    # Tree/list fill the host via anchors; they must not be ColumnLayout fillHeight siblings of the scope bar.
+    assert "Layout.fillHeight: true" not in tree_block
+    assert "Layout.fillHeight: true" not in collection_block
+    assert "anchors.fill: parent" in tree_block
+    assert "anchors.fill: parent" in collection_block
+
+    assert "libraryInteraction.collectionEntries" in collection_block
+    assert "theme.selectionSurface" in collection_block
+    assert "theme.textPrimary" in collection_block
+    assert "ItemDelegate" not in collection_block
+
+
+def test_browser_767_column_and_favorite_wiring_preserved() -> None:
+    from src import workbench_qml
+
+    source = workbench_qml.QML_SOURCE
+    assert "toggleFavorite" in source
+    assert 'text: "BPM"' in source
+    assert 'text: "KEY"' in source
+    assert 'text: "LENGTH"' in source
+    assert "waveformCanvas" in source
+    assert "modelData.favorite" in source
+    assert 'objectName: "browserFavoriteButton"' in source
 
 
 def test_tree_state_initializes_only_top_level_and_fetches_direct_children_once() -> None:
@@ -234,7 +294,12 @@ def test_tree_state_initializes_only_top_level_and_fetches_direct_children_once(
     state = WorkbenchLibraryTreeState(navigation)
 
     assert [node.node_id for node in state.visible_children(None)] == [
-        node.node_id for node in navigation.top
+        SAMPLE_SOURCES
+    ]
+    assert [node.node_id for node in state.secondary_nodes()] == [
+        "scope:all-library",
+        "scope:catalog-readonly",
+        COLLECTIONS,
     ]
     assert navigation.calls == []
 
@@ -244,7 +309,6 @@ def test_tree_state_initializes_only_top_level_and_fetches_direct_children_once(
         ROOT_ID,
         OFFLINE_ROOT_ID,
         EMPTY_ROOT_ID,
-        "action:add-source",
     ]
     assert state.can_fetch_more(ROOT_ID)
     assert navigation.calls == [SAMPLE_SOURCES]
@@ -275,6 +339,29 @@ def test_expand_is_not_select_and_selection_resolves_exactly_one_scope() -> None
     assert intent.node.node_id == ROOT_ID
     assert intent.scope.kind is LibraryScopeKind.ROOT
     assert navigation.calls == [ROOT_ID, f"scope:{ROOT_ID}"]
+
+
+
+
+def test_secondary_icon_nodes_use_the_same_typed_selection_authority() -> None:
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+
+    navigation = FakeNavigation()
+    state = WorkbenchLibraryTreeState(navigation)
+
+    all_samples = state.select("scope:all-library")
+    assert all_samples is not None
+    assert all_samples.scope.kind is LibraryScopeKind.ALL_SAMPLES
+
+    catalog = state.select("scope:catalog-readonly")
+    assert catalog is not None
+    assert catalog.scope.kind is LibraryScopeKind.CATALOG
+
+    state.fetch_children(COLLECTIONS)
+    collection = state.select("collection:7")
+    assert collection is not None
+    assert collection.scope.kind is LibraryScopeKind.COLLECTION
+    assert collection.scope.playlist_name == "Set A"
 
 
 def test_offline_root_is_visible_selectable_and_not_expandable() -> None:
@@ -369,14 +456,14 @@ def test_qabstract_item_model_fetches_only_the_expanded_branch() -> None:
     state = WorkbenchLibraryTreeState(navigation)
     model = create_qt_library_tree_model(state)
     assert isinstance(model, QAbstractItemModel)
-    assert model.rowCount() == 4
+    assert model.rowCount() == 1
     assert navigation.calls == []
 
     sample_index = model.index(0, 0)
     assert model.canFetchMore(sample_index)
     model.fetchMore(sample_index)
     assert navigation.calls == [SAMPLE_SOURCES]
-    assert model.rowCount(sample_index) == 4
+    assert model.rowCount(sample_index) == 3
     assert model.canFetchMore(model.index(0, 0, sample_index))
     assert navigation.calls == [SAMPLE_SOURCES]
 
