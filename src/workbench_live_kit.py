@@ -78,8 +78,9 @@ class LiveKitPresentationState:
 
     def __init__(self, state: LiveKitState) -> None:
         self._state = state
-        self._active_group: str | None = "Drums"
-        self._collapsed_groups: set[str] = set(state.groups()) - {"Drums"}
+        # #743: first reveal shows only compact group headers; expand is explicit.
+        self._active_group: str | None = None
+        self._collapsed_groups: set[str] = set(state.groups())
 
     def toggle_group(self, group: str) -> bool:
         self._state.slots_for(group)

@@ -214,11 +214,13 @@ def test_collapse_expand_does_not_stop_or_mutate_playback():
     _assign(adapter, live_kit, "Drums", "Main Drum", _row("main.wav"))
 
     assert adapter.audition_live_kit_slot("Drums", "Main Drum") is True
-    assert adapter.toggle_live_kit_group("Drums") is True
-
+    # #743: Drums starts collapsed; expand then collapse without stopping playback.
+    assert adapter.toggle_live_kit_group("Drums") is False
     assert adapter.preview_active is True
     assert adapter.auditioning_live_kit_slot == ("Drums", "Main Drum")
     assert live_kit.state.assignment_for("Drums", "Main Drum") is not None
+    assert adapter.toggle_live_kit_group("Drums") is True
+    assert adapter.auditioning_live_kit_slot == ("Drums", "Main Drum")
     assert adapter.toggle_live_kit_group("Drums") is False
     assert adapter.auditioning_live_kit_slot == ("Drums", "Main Drum")
 
@@ -255,6 +257,8 @@ def test_add_replace_collapse_regressions_stay_green_with_audition_present():
     assert live_kit.state.assignment_for("Drums", "Closed Hat") is None
 
     assert adapter.audition_live_kit_slot("Drums", "Main Drum") is True
+    # #743: expand then collapse; audition projection must survive disclosure.
+    assert adapter.toggle_live_kit_group("Drums") is False
     assert adapter.toggle_live_kit_group("Drums") is True
     assert adapter.auditioning_live_kit_slot == ("Drums", "Main Drum")
 

@@ -58,6 +58,24 @@ Source Navigation | Browser
 Live Kit is not co-materialised with Browser. It reveals only on the first
 explicit Browser or Harmony Add-to-Kit intent (`live_kit_revealed`).
 
+### Live Kit group disclosure (#743)
+
+When the Live Kit pane first becomes visible, group disclosure defaults to
+**all four groups collapsed**:
+
+- Kick + Bass
+- Drums
+- Melodic
+- Atmos / FX
+
+`LiveKitPresentationState.active_group` starts as `None`. The first reveal
+shows only the four compact group headers; slot rows appear only after an
+explicit group expand. Zero expanded groups is valid. Accordion semantics
+after that remain unchanged (one active group; clicking the active group
+collapses it). Expand/collapse is presentation state only and must not
+mutate Live-Kit assignments, Sample/Source selection, Preview, musical
+session/preset state, or export/audition semantics.
+
 Geometry for the Active Source workspace is owned exclusively by #694
 (elastic ratios / persistence). `#725` owns only the No-Source presentation
 flag `library_revealed`:
