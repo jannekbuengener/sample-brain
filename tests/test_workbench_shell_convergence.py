@@ -305,16 +305,17 @@ def test_partial_view_settings_remain_non_persistable_during_session(
         root.destroy()
 
 
-def test_live_kit_default_uses_one_clear_active_group():
+def test_live_kit_default_starts_with_all_groups_collapsed():
+    # #743: first Live Kit disclosure shows four compact headers only.
     presentation = LiveKitPresentationState(LiveKitState())
 
-    assert presentation.active_group() == "Drums"
-    assert presentation.is_collapsed("Drums") is False
+    assert presentation.active_group() is None
+    assert all(presentation.is_collapsed(group) for group in EXPECTED_GROUPS)
     assert tuple(
         group
         for group in EXPECTED_GROUPS
         if not presentation.is_collapsed(group)
-    ) == ("Drums",)
+    ) == ()
 
 
 def test_live_kit_accordion_preserves_taxonomy_slots_and_assignment_state():

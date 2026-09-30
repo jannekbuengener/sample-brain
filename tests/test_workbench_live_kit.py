@@ -235,10 +235,12 @@ def test_disclosure_state_is_separate_from_musical_state():
     )
     presentation = presentation_type(state)
 
-    assert _require_method(presentation, "toggle_group", missing)("Drums") is True
+    # #743: groups start collapsed; expand/collapse must not touch musical state.
     assert _require_method(presentation, "is_collapsed", missing)("Drums") is True
     assert _require_method(presentation, "toggle_group", missing)("Drums") is False
+    assert _require_method(presentation, "is_collapsed", missing)("Drums") is False
     assert _require_method(presentation, "toggle_group", missing)("Drums") is True
+    assert _require_method(presentation, "toggle_group", missing)("Drums") is False
 
     assert (
         _groups(state, missing),

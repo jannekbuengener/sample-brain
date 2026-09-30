@@ -74,6 +74,9 @@ def test_collapse_expand_changes_only_presentation_state_not_assignments():
         for group in live_kit.groups
     )
 
+    # #743: all groups start collapsed; expand/collapse remains presentation-only.
+    assert live_kit.groups[1].active is False
+    assert adapter.toggle_live_kit_group("Drums") is False
     assert live_kit.groups[1].active is True
     assert adapter.toggle_live_kit_group("Drums") is True
     assert live_kit.groups[1].active is False
