@@ -137,7 +137,10 @@ Persistence **must not** restore by itself:
 - Live Kit visibility under Clean Start;
 - Preview / Transport / scroll.
 
-Those remain #693 / later #696 Startup Preset territory.
+Those remain #693 Clean Start / #696 Display Preferences Startup Preset
+territory ([`WORKBENCH_DISPLAY_PREFERENCES.md`](WORKBENCH_DISPLAY_PREFERENCES.md)).
+**Reset Layout** (restore canonical ratios without mutating library data) is a
+#696 product action that writes through this solver's preference path.
 
 ## Architecture
 
