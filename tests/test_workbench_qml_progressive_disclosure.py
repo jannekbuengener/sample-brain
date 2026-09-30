@@ -16,6 +16,7 @@ import pytest
 
 from src.workbench_layout_solver import (
     CANONICAL_DEFAULT_RATIOS,
+    HANDLE_WIDTH_PX,
     apply_divider_drag,
     load_layout_preferences,
     save_layout_preferences,
@@ -121,6 +122,43 @@ def test_visible_panels_browser_only_without_live_kit_reveal():
     ) == ("library", "browser", "livekit")
 
 
+def test_visible_panels_exclude_collapsed_library():
+    """#725+#742: collapsed Library must not reserve elastic width."""
+    assert visible_panel_ids(
+        harmony_open=False,
+        has_active_source=True,
+        library_visible=False,
+        live_kit_visible=False,
+    ) == ("browser",)
+    assert visible_panel_ids(
+        harmony_open=True,
+        has_active_source=True,
+        library_visible=False,
+        live_kit_visible=False,
+    ) == ("browser", "harmony")
+    assert visible_panel_ids(
+        harmony_open=False,
+        has_active_source=True,
+        library_visible=False,
+        live_kit_visible=True,
+    ) == ("browser", "livekit")
+
+
+def test_collapsed_library_gives_browser_full_content_width():
+    available = 1600.0
+    solution = solve_widths(
+        CANONICAL_DEFAULT_RATIOS,
+        available_width=available,
+        harmony_open=False,
+        has_active_source=True,
+        library_visible=False,
+        live_kit_visible=False,
+    )
+    assert set(solution.widths) == {"browser"}
+    assert abs(solution.widths["browser"] - available) < 1e-6
+    assert solution.ratios == CANONICAL_DEFAULT_RATIOS
+
+
 def test_pane_reveal_hide_does_not_drift_stored_ratios():
     ratios = dict(CANONICAL_DEFAULT_RATIOS)
     available = 1600.0
@@ -186,6 +224,34 @@ def test_disclosure_state_is_not_in_layout_preference_payload(tmp_path: Path):
     serialized = str(dict(loaded.ratios))
     assert "live_kit_revealed" not in serialized
     assert "liveKitRevealed" not in serialized
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_elastic_bridge_collapsed_library_browser_fills_width(tmp_path: Path):
+    from src.workbench_qml_elastic import create_elastic_layout_bridge
+
+    active = {"value": True}
+    revealed = {"value": False}
+    kit = {"value": False}
+    bridge = create_elastic_layout_bridge(
+        state_dir=tmp_path,
+        harmony_open=lambda: False,
+        has_active_source=lambda: active["value"],
+        library_revealed=lambda: revealed["value"],
+        live_kit_visible=lambda: kit["value"],
+    )
+    available = 1600.0
+    bridge.setContentWidth(available)
+    assert bridge.libraryWidth == 0.0
+    assert bridge.liveKitWidth == 0.0
+    assert bridge.harmonyWidth == 0.0
+    assert abs(bridge.browserWidth - available) < 1.0
+
+    revealed["value"] = True
+    bridge.syncFromInteraction()
+    assert bridge.libraryWidth > 0.0
+    assert bridge.browserWidth > 0.0
+    assert abs(bridge.libraryWidth + bridge.browserWidth + HANDLE_WIDTH_PX - available) < 1.0
 
 
 def test_ratio_solver_drag_stable_across_live_kit_reveal_toggle():

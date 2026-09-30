@@ -392,12 +392,19 @@ def test_qml_source_select_materialises_browser_without_selection_or_audition(
         assert adapter.harmonic_match_open is False
         assert adapter.preview_active is False
         assert composition.audition_dispatches == []
+        assert view_model.library_revealed is False
+        layout = engine._screen1_layout_model
+        assert layout.libraryWidth == 0
+        assert layout.liveKitWidth == 0
+        assert layout.browserWidth > 0
         calm = window.findChild(QQuickItem, "calmCanvas")
         browser = window.findChild(QQuickItem, "browserPane")
         live_kit = window.findChild(QQuickItem, "liveKitPane")
+        library = window.findChild(QQuickItem, "libraryPane")
         assert calm is not None and not calm.isVisible()
         assert browser is not None and browser.isVisible()
         assert live_kit is not None and not live_kit.isVisible()
+        assert library is not None and (not library.isVisible() or library.width() == 0)
     finally:
         _shutdown_engine(app, engine, window)
 
@@ -850,7 +857,8 @@ def test_apply_v2_clean_start_and_active_source_projection():
     active = resolve_screen1_visual_state_v2(fixture, "screen1-active-source")
     apply_screen1_visual_state_v2(view_model, adapter, fixture, active)
     assert view_model.has_active_source is True
-    assert view_model.library_revealed is False
+    # Active-source fixture includes Source Navigation (#725/#742 disclosure gate).
+    assert view_model.library_revealed is True
     assert view_model.calm_canvas_visible is False
     assert view_model.browser_materialized is True
     assert view_model.live_kit_materialized is True

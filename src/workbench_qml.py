@@ -310,13 +310,11 @@ class Screen1QmlViewModel:
         self.live_kit_materialized = bool(live_kit_materialized)
 
     def set_library_revealed(self, revealed: bool) -> None:
-        """Set No-Source Library presentation (#725). Ignored by #694 when active."""
+        """Set Library panel disclosure (#725). Transient; not ratio authority."""
         self.library_revealed = bool(revealed)
 
     def reveal_library(self) -> bool:
         """Reveal Library without Source selection / audition / harmony side effects."""
-        if self.has_active_source:
-            return False
         if self.library_revealed:
             return False
         self.library_revealed = True
@@ -1557,9 +1555,9 @@ ApplicationWindow {
         Item {
             id: libraryRevealAffordance
             objectName: "libraryRevealAffordance"
-            // #725 subtle edge reveal — secondary to Add Source; not a red CTA.
+            // #725/#742 subtle edge reveal — works in Clean Start and Active Source.
             z: 20
-            visible: !window.interaction.hasActiveSource && !window.interaction.libraryRevealed
+            visible: !window.interaction.libraryRevealed
             width: 18
             height: parent.height
             anchors.left: parent.left
@@ -1588,7 +1586,7 @@ ApplicationWindow {
         Item {
             id: handleAfterLibrary
             objectName: "elasticHandleAfterLibrary"
-            visible: window.interaction.hasActiveSource
+            visible: window.interaction.hasActiveSource && window.interaction.libraryRevealed
             width: visible ? layoutModel.handleWidth : 0
             height: parent.height
             Rectangle {

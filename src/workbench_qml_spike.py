@@ -92,12 +92,14 @@ def build_qml_view_model_from_fixture(
     )
     # Historical v1 fixtures describe an already-active Screen-1 workspace.
     # Under #693 Clean Start, that means materialize Browser + Live Kit.
+    # Source Navigation was visible in those fixtures (#725 library disclosure).
     view_model.set_workspace_materialization(
         has_active_source=True,
         calm_canvas_visible=False,
         browser_materialized=True,
         live_kit_materialized=True,
     )
+    view_model.set_library_revealed(True)
     return view_model
 
 
@@ -175,10 +177,8 @@ def build_qml_view_model_from_fixture_v2(
         browser_materialized=bool(state.layout.browser_materialized),
         live_kit_materialized=bool(state.layout.live_kit_materialized),
     )
-    if state.source_selected:
-        view_model.set_library_revealed(False)
-    else:
-        view_model.set_library_revealed(bool(state.layout.source_nav_visible))
+    # #725/#742: library_revealed gates Library elastic participation in all modes.
+    view_model.set_library_revealed(bool(state.layout.source_nav_visible))
     return view_model
 
 
@@ -645,11 +645,8 @@ def apply_screen1_visual_state_v2(
         browser_materialized=bool(state.layout.browser_materialized),
         live_kit_materialized=bool(state.layout.live_kit_materialized),
     )
-    # #725: library_revealed is No-Source presentation only.
-    if state.source_selected:
-        view_model.set_library_revealed(False)
-    else:
-        view_model.set_library_revealed(bool(state.layout.source_nav_visible))
+    # #725/#742: library_revealed gates Library elastic participation in all modes.
+    view_model.set_library_revealed(bool(state.layout.source_nav_visible))
     adapter.harmonic_match_open = bool(state.layout.harmonic_visible)
     if not state.preview_active and adapter.preview_active:
         adapter.stop_preview()
