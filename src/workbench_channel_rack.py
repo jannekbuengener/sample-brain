@@ -278,8 +278,13 @@ class ChannelRackController:
         if hasattr(self._transport, "start"):
             try:
                 self._transport.start()
-            except Exception:
-                pass
+            except Exception as exc:
+                # Fail closed: never advertise playing without a live transport clock.
+                self._playing = False
+                self._play_handle = None
+                raise RuntimeError(
+                    f"Channel Rack transport failed to start: {exc}"
+                ) from exc
 
         warm_channel_rack_pcm(self._state, self._pcm_provider)
         start_frame = int(getattr(self._transport, "engine_frame", 0) or 0)

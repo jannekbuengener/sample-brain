@@ -278,6 +278,38 @@ def test_play_stop_uses_pattern_pass_player_and_pcm_provider(monkeypatch):
     assert stop_calls[0]._engine is engine
 
 
+def test_play_without_native_engine_fails_closed():
+    module = _controller_module_or_fail()
+    Controller = _require(module, "ChannelRackController")
+    transport = _fake_transport(engine=None)
+    controller = Controller(live_kit=_kit_with_samples(), transport=transport)
+    controller.enter_screen2()
+    with pytest.raises(RuntimeError, match="Native audio engine"):
+        controller.play()
+    assert controller.is_playing is False
+    assert controller.state is not None
+
+
+def test_play_transport_start_failure_does_not_advertise_playing():
+    module = _controller_module_or_fail()
+    Controller = _require(module, "ChannelRackController")
+    engine = MagicMock()
+    transport = _fake_transport(engine=engine)
+    transport.start = MagicMock(side_effect=RuntimeError("device busy"))
+    controller = Controller(live_kit=_kit_with_samples(), transport=transport)
+    controller.enter_screen2()
+    with pytest.raises(RuntimeError, match="transport failed to start"):
+        controller.play()
+    assert controller.is_playing is False
+
+
+def test_qml_channel_rack_bridge_play_fails_soft_without_engine():
+    qml_mod = importlib.import_module("src.workbench_qml")
+    bridge_src = inspect.getsource(qml_mod._qml_channel_rack_bridge)
+    assert "except RuntimeError:" in bridge_src
+    assert "Fail soft in the Qt slot" in bridge_src
+
+
 def test_multi_channel_default_on_step_grid_projection():
     module = _controller_module_or_fail()
     project = _require(module, "project_channel_rack_for_qml")

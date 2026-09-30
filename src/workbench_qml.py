@@ -3027,7 +3027,15 @@ def _qml_channel_rack_bridge(controller):
         def play(self) -> None:
             if controller is None:
                 return
-            controller.play()
+            try:
+                controller.play()
+            except RuntimeError:
+                # Fail soft in the Qt slot: keep UI not-playing when native
+                # engine/transport is unavailable.
+                self._playing = False
+                self._active_screen = controller.active_screen
+                self.state_changed.emit()
+                return
             self.refresh()
 
         @Slot()
