@@ -142,6 +142,7 @@ def compose_workbench_session(
         on_preview_stopped=audition.stop,
         on_preview_snapshot=audition.playback_snapshot,
         live_kit=presenter,
+        library_db_path=library_db_path,
     )
 
     channel_rack = ChannelRackController(live_kit=live_kit, transport=transport)

@@ -28,7 +28,11 @@ from .workbench_harmony import (
 )
 from .workbench_live_kit import LiveKitPresentationState, LiveKitState
 from .workbench_live_kit_export import LiveKitExportResult, export_live_kit
-from .workbench_library import workbench_library_db_path
+from .workbench_library import (
+    list_favorite_sample_paths,
+    toggle_sample_favorite,
+    workbench_library_db_path,
+)
 from .workbench_library_navigation import LibraryNodeKind
 from .workbench_qml_analysis import AnalysisUiState, create_qt_analysis_coordinator
 from .workbench_qml_library import (
@@ -58,6 +62,7 @@ class QmlBrowserRow:
     key: str
     duration: str
     waveform_envelope: tuple[float, ...]
+    is_favorite: bool = False
 
 
 @dataclass(frozen=True)
@@ -154,6 +159,23 @@ def _duration(row: WorkbenchRow) -> str:
         return str(value)
 
 
+def _path_in_favorites(path: str, favorites: set[str] | frozenset[str]) -> bool:
+    if path in favorites:
+        return True
+    try:
+        resolved = str(Path(path).expanduser().resolve())
+    except OSError:
+        return False
+    return resolved in favorites
+
+
+def _favorite_path_set(*, db_path: Path | None) -> set[str]:
+    try:
+        return set(list_favorite_sample_paths(db_path=db_path))
+    except OSError:
+        return set()
+
+
 def _waveform_envelope(row: WorkbenchRow) -> tuple[float, ...]:
     raw = _row_details(row).get("waveform_envelope")
     if raw is None or isinstance(raw, (str, bytes)):
@@ -164,7 +186,7 @@ def _waveform_envelope(row: WorkbenchRow) -> tuple[float, ...]:
         return ()
 
 
-def _qml_row(row: WorkbenchRow) -> QmlBrowserRow:
+def _qml_row(row: WorkbenchRow, *, is_favorite: bool = False) -> QmlBrowserRow:
     return QmlBrowserRow(
         source_row=row,
         display_name=row.display_name,
@@ -173,6 +195,7 @@ def _qml_row(row: WorkbenchRow) -> QmlBrowserRow:
         key=row.key or "—",
         duration=_duration(row),
         waveform_envelope=_waveform_envelope(row),
+        is_favorite=bool(is_favorite),
     )
 
 
@@ -295,14 +318,42 @@ class Screen1QmlViewModel:
         selected_index: int,
         browser_context: str,
         error: str | None,
+        favorite_paths: set[str] | frozenset[str] | None = None,
     ) -> None:
-        self._browser_rows_all = tuple(_qml_row(row) for row in rows)
+        favorites = favorite_paths or set()
+        self._browser_rows_all = tuple(
+            _qml_row(
+                row,
+                is_favorite=_path_in_favorites(str(row.path), favorites),
+            )
+            for row in rows
+        )
         preferred_path: str | None = None
         if 0 <= selected_index < len(self._browser_rows_all):
             preferred_path = str(self._browser_rows_all[selected_index].source_row.path)
         self.browser_context = browser_context
         self.browser_error = error
         self._republish_browser_rows(preferred_path=preferred_path)
+
+    def set_browser_favorite(self, path: str, *, is_favorite: bool) -> bool:
+        """Project domain favorite state onto matching Browser rows."""
+        changed = False
+        updated_all: list[QmlBrowserRow] = []
+        for row in self._browser_rows_all:
+            if str(row.source_row.path) == path and row.is_favorite != is_favorite:
+                row = replace(row, is_favorite=bool(is_favorite))
+                changed = True
+            updated_all.append(row)
+        if not changed:
+            return False
+        preferred_path: str | None = None
+        if 0 <= self.selected_browser_index < len(self.browser_rows):
+            preferred_path = str(
+                self.browser_rows[self.selected_browser_index].source_row.path
+            )
+        self._browser_rows_all = tuple(updated_all)
+        self._republish_browser_rows(preferred_path=preferred_path)
+        return True
 
     def set_browser_search_query(self, query: str) -> None:
         """Project text search into the visible Sample Browser (#758).
@@ -414,6 +465,7 @@ class Screen1QmlViewModel:
                     "waveform": list(row.waveform_envelope),
                     "path": str(row.source_row.path),
                     "relativePath": row.source_row.relative_path,
+                    "favorite": bool(row.is_favorite),
                 }
                 for row in self.browser_rows
             ],
@@ -461,11 +513,13 @@ def _sync_runtime_browser_state(
 ) -> None:
     """Project the authoritative runtime browser state into the QML adapter."""
     state = runtime_composition.browser_state
+    favorites = _favorite_path_set(db_path=adapter.library_db_path)
     view_model.set_browser_state(
         rows=state.rows,
         selected_index=state.selected_index,
         browser_context=state.browser_context,
         error=state.error,
+        favorite_paths=favorites,
     )
     view_model.set_workspace_materialization(
         has_active_source=runtime_composition.has_active_source,
@@ -655,6 +709,7 @@ class Screen1QmlInteractionAdapter:
         on_preview_snapshot: Callable[[], object] | None = None,
         on_add_to_kit_requested: Callable[[WorkbenchRow], object] | None = None,
         live_kit: LiveKitPresenter | None = None,
+        library_db_path: Path | None = None,
     ) -> None:
         self.view_model = view_model
         self.harmony_controller = harmony_controller
@@ -667,6 +722,7 @@ class Screen1QmlInteractionAdapter:
         self._on_preview_snapshot = on_preview_snapshot
         self._on_add_to_kit_requested = on_add_to_kit_requested
         self._live_kit = live_kit
+        self._library_db_path = library_db_path
         self._pending_live_kit_row: WorkbenchRow | None = None
         self._preview_active = False
         self._auditioning_live_kit_slot: tuple[str, str] | None = None
@@ -909,6 +965,25 @@ class Screen1QmlInteractionAdapter:
         self.view_model.auditioning_live_kit_slot = self._auditioning_live_kit_slot
         self.preview_playback_snapshot()
         return True
+
+    @property
+    def library_db_path(self) -> Path | None:
+        return self._library_db_path
+
+    def toggle_favorite(self, index: int) -> bool:
+        """Toggle #766 Favorite persistence and project the resulting flag."""
+        row = self.view_model.browser_rows[index].source_row
+        path = str(row.path)
+        result = toggle_sample_favorite(path, db_path=self._library_db_path)
+        self.view_model.set_browser_favorite(path, is_favorite=result)
+        # Keep resolved-path projection coherent when row.path is unresolved.
+        try:
+            resolved = str(Path(path).expanduser().resolve())
+        except OSError:
+            resolved = path
+        if resolved != path:
+            self.view_model.set_browser_favorite(resolved, is_favorite=result)
+        return result
 
     def request_add_to_kit(self, index: int) -> WorkbenchRow:
         """Emit an Add-to-Kit intent without assigning the row.
@@ -1398,6 +1473,7 @@ ApplicationWindow {
     property int browserWaveformWidth: 180
     property int browserWaveformMin: 140
     property int browserMetaColumnWidth: 48
+    property int browserFavoriteColumnWidth: 28
     property int browserLengthColumnWidth: 62
     property int browserAddColumnWidth: 96
     property int harmonicWaveformWidth: 72
@@ -1911,6 +1987,7 @@ ApplicationWindow {
             property bool browserNarrowColumns: width < 700
             property int effectiveBrowserWaveformWidth: browserNarrowColumns ? window.browserWaveformMin : window.browserWaveformWidth
             property int effectiveBrowserMetaColumnWidth: browserNarrowColumns ? 40 : window.browserMetaColumnWidth
+            property int effectiveBrowserFavoriteColumnWidth: browserNarrowColumns ? 24 : window.browserFavoriteColumnWidth
             property int effectiveBrowserLengthColumnWidth: browserNarrowColumns ? 52 : window.browserLengthColumnWidth
             property int effectiveBrowserAddColumnWidth: browserNarrowColumns ? 56 : window.browserAddColumnWidth
             ColumnLayout { anchors.fill: parent; anchors.margins: 18; spacing: 10
@@ -1987,6 +2064,7 @@ ApplicationWindow {
                     Item { Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth; Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth }
                     Label { text: "SAMPLE NAME"; color: theme.textSecondary; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; font.pixelSize: window.textCaption; font.bold: true }
                     Label { text: "BPM"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
+                    Label { text: "FAV"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserFavoriteColumnWidth; horizontalAlignment: Text.AlignHCenter; font.pixelSize: window.textCaption; font.bold: true }
                     Label { text: "KEY"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
                     Label { text: "LENGTH"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
                     Item { Layout.preferredWidth: browserPane.effectiveBrowserAddColumnWidth }
@@ -2061,10 +2139,32 @@ ApplicationWindow {
                                 MouseArea { anchors.fill: parent; z: 2; onClicked: { browser.forceActiveFocus(); window.interaction.previewRow(index) } }
                             }
                             Label { text: modelData.name; color: theme.textPrimary; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; verticalAlignment: Text.AlignVCenter }
-                            Label { visible: !browserPane.browserNarrowColumns; text: modelData.type; color: theme.textSecondary; font.pixelSize: window.textCaption; elide: Text.ElideRight; Layout.preferredWidth: 72; Layout.maximumWidth: 88; verticalAlignment: Text.AlignVCenter }
                             Label { text: modelData.bpm; color: theme.textPrimary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
+                            Item {
+                                id: favoriteCell
+                                objectName: "browserFavoriteButton"
+                                Layout.preferredWidth: browserPane.effectiveBrowserFavoriteColumnWidth
+                                Layout.preferredHeight: Math.min(window.densityActionHitTarget, window.densityRowHeight - 2 * window.densityVerticalInset)
+                                Layout.maximumHeight: window.densityRowHeight - 2 * window.densityVerticalInset
+                                Label {
+                                    anchors.fill: parent
+                                    text: modelData.favorite ? "★" : "☆"
+                                    color: modelData.favorite ? theme.actionActive : theme.textSecondary
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    font.pixelSize: window.textMeta
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: {
+                                        browser.forceActiveFocus()
+                                        window.interaction.toggleFavorite(index)
+                                    }
+                                }
+                            }
                             Label { text: modelData.key; color: theme.textPrimary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
                             Label { text: modelData.duration; color: theme.textPrimary; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
+                            Label { visible: !browserPane.browserNarrowColumns; text: modelData.type; color: theme.textSecondary; font.pixelSize: window.textCaption; elide: Text.ElideRight; Layout.preferredWidth: 72; Layout.maximumWidth: 88; verticalAlignment: Text.AlignVCenter }
                             Rectangle {
                                 id: addButton
                                 Layout.preferredWidth: browserPane.effectiveBrowserAddColumnWidth
@@ -2856,6 +2956,13 @@ def _qml_interaction_bridge(
         def addToKit(self, index: int) -> None:
             row = adapter.request_add_to_kit(index)
             self.addToKitIntent.emit(row.relative_path or str(row.path))
+            self._refresh()
+
+        @Slot(int)
+        def toggleFavorite(self, index: int) -> None:
+            adapter.toggle_favorite(index)
+            if on_browser_rows_changed is not None:
+                on_browser_rows_changed()
             self._refresh()
 
         @Slot(int)
@@ -3767,6 +3874,9 @@ def apply_clean_start_launch(
                     selected_index=-1,
                     browser_context=state.browser_context,
                     error=state.error,
+                    favorite_paths=_favorite_path_set(
+                        db_path=getattr(runtime_composition, "library_db_path", None)
+                    ),
                 )
                 view_model.set_workspace_materialization(
                     has_active_source=True,
