@@ -8,6 +8,12 @@ python -m src.cli workbench
 
 This is intentionally a developer command: it runs the code in that checkout.
 
+Screen-1 QML (dev):
+
+```powershell
+python -m src.cli workbench --qml-screen1
+```
+
 ## Producer runtime and desktop shortcut
 
 Install the dedicated, provenance-checked runtime from a current `main` ref:
@@ -26,5 +32,22 @@ state, interpreter, and import root before starting the Workbench.
 - The legacy `create_workbench_desktop_shortcut.ps1` helper now only creates
   this verified shortcut when the default runtime already exists.
 
-No packaged EXE is provided. Runtime installation is local and preserves
-developer checkouts without `reset`, `clean`, or branch switching.
+This path still requires Git + Python. It is **not** the external tester
+distributable.
+
+## Tester distributable (#729)
+
+Portable Windows ZIP for external testers (no Python/Git/checkout):
+
+```powershell
+# From a packaging venv with Python 3.12.10 + pip install -e ".[qtquick]"
+# + tools/windows/requirements-packaging.txt
+powershell -ExecutionPolicy Bypass -File .\tools\windows\build_distributable.ps1 -BuildNative
+```
+
+Pipeline: preferred `pyside6-deploy` → Nuitka `standalone`. If Nuitka hits the documented
+librosa/lazy_loader blocker, the build script uses **PyInstaller onedir** fallback.
+Output: `SampleBrain-Screen1-Pilot-<build-id>-win64.zip` with `SampleBrain.exe` (QML Screen 1).
+See `TESTER_NOTE.md`.
+
+No OneFile / MSI / installer / auto-updater in this slice.

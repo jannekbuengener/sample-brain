@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import inspect
 import math
+import os
+import sys
 from pathlib import Path
 from typing import Callable
 
@@ -1233,8 +1235,37 @@ SCREEN1_BACKGROUND_REFERENCE_SHA256 = (
 
 
 def screen1_background_reference_path() -> Path:
-    """Return the repo-relative canonical Screen-1 background reference path."""
-    return Path(__file__).resolve().parents[1] / SCREEN1_BACKGROUND_REFERENCE_RELATIVE
+    """Return the canonical Screen-1 background reference path.
+
+    Resolution order:
+    1. PyInstaller extract root (`sys._MEIPASS`) when the PNG was packed as data
+    2. Directory next to a frozen / distributable executable
+    3. Repository root next to ``src/`` (editable / source runs)
+    """
+    relative = SCREEN1_BACKGROUND_REFERENCE_RELATIVE
+    candidates: list[Path] = []
+
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / relative)
+
+    frozen = bool(getattr(sys, "frozen", False))
+    distributable = os.environ.get("SAMPLE_BRAIN_DISTRIBUTABLE", "").strip() in {
+        "1",
+        "true",
+        "TRUE",
+        "yes",
+        "YES",
+    }
+    if frozen or distributable:
+        candidates.append(Path(sys.executable).resolve().parent / relative)
+
+    candidates.append(Path(__file__).resolve().parents[1] / relative)
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[-1]
 
 
 def screen1_background_url() -> str:
