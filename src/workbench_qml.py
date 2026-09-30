@@ -1047,6 +1047,30 @@ class Screen1QmlInteractionAdapter:
             return "Harmonic Match ist offen."
         return self.harmony_controller.status
 
+    def sync_visible_state_labels(self) -> bool:
+        """Keep Browser/Harmony labels coherent with materialised workspace state.
+
+        Prevents contradictory UI copy such as "No library selected" while the
+        Browser is materialised, or "Harmonic Match ist ausgeschaltet." while
+        the Harmony pane is open. Returns True when any label changed.
+        """
+        changed = False
+        vm = self.view_model
+        if vm.has_active_source and vm.browser_materialized:
+            if not str(vm.browser_context or "").strip() or vm.browser_context == (
+                "No library selected"
+            ):
+                if vm.library_labels:
+                    vm.browser_context = str(vm.library_labels[0])
+                else:
+                    vm.browser_context = "Samples"
+                changed = True
+        if self.harmonic_match_open:
+            if vm.harmony_status == "Harmonic Match ist ausgeschaltet.":
+                vm.harmony_status = self.effective_harmony_status
+                changed = True
+        return changed
+
     def _project_harmonic_match(self, anchor: WorkbenchRow) -> None:
         if self.harmony_controller is None:
             self.view_model.harmony_status = (
@@ -1164,6 +1188,7 @@ class Screen1QmlInteractionAdapter:
         if self.harmonic_match_open:
             self.harmonic_match_open = False
             self.view_model.state_id = "screen1-default-3panel"
+            self.view_model.harmony_status = "Harmonic Match ist ausgeschaltet."
             return False
         if not self.view_model.browser_rows:
             self.view_model.harmony_rows = ()
@@ -2327,6 +2352,7 @@ def _qml_interaction_bridge(
         addToKitIntent = Signal(str)
 
         def _refresh(self) -> None:
+            adapter.sync_visible_state_labels()
             if on_state_changed is not None:
                 on_state_changed()
             self.state_changed.emit()
