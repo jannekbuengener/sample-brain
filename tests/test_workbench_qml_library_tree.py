@@ -258,6 +258,15 @@ def test_library_scope_bar_visual_polish_contract() -> None:
     assert 'enabled: libraryScopeBar.mode === "sources"' in tree_block
     assert 'activeFocusOnTab: libraryScopeBar.mode === "sources"' in tree_block
     assert 'visible: libraryScopeBar.mode !== "collections"' not in tree_block
+    assert 'objectName: "libraryContentHost"' in source
+    assert "Layout.fillHeight: true" in source.split(
+        'objectName: "libraryContentHost"', 1
+    )[1].split('objectName: "libraryCollectionList"', 1)[0]
+    # Tree/list fill the host via anchors; they must not be ColumnLayout fillHeight siblings of the scope bar.
+    assert "Layout.fillHeight: true" not in tree_block
+    assert "Layout.fillHeight: true" not in collection_block
+    assert "anchors.fill: parent" in tree_block
+    assert "anchors.fill: parent" in collection_block
 
     assert "libraryInteraction.collectionEntries" in collection_block
     assert "theme.selectionSurface" in collection_block

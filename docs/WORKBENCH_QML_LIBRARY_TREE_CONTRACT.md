@@ -99,6 +99,11 @@ Presentation rule for the Library pane (no opacity-only hide with active input):
 | Catalog | not visible; not focusable; no input | — |
 | Collections | not visible; not focusable; no input | Collection list visible |
 
+`libraryScopeBar` is permanent Library chrome under the LIBRARY / Add Source
+header. Mode switches must not move it: tree/list visibility is hosted inside a
+single `libraryContentHost` (`Layout.fillHeight`) so hiding the tree cannot
+collapse or re-pack the scope bar to the pane bottom.
+
 Returning to Sources keeps the existing Tree expand/selection state; do not
 reload navigation solely because of a scope-bar mode switch.
 

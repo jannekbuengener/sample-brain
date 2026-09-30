@@ -1677,7 +1677,7 @@ ApplicationWindow {
 
         Rectangle { id: libraryPane; objectName: "libraryPane"; width: layoutModel.libraryWidth; height: parent.height; visible: width > 0; color: theme.surfacePanel; border.color: theme.borderSubtle
             ColumnLayout { anchors.fill: parent; anchors.margins: 16
-                RowLayout { Layout.fillWidth: true
+                RowLayout { id: libraryHeaderRow; Layout.fillWidth: true
                     Label { text: "LIBRARY"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
                     Button { text: "Add Source"; onClicked: addSourceDialog.open() }
                     Button { visible: libraryInteraction.canRemoveSelectedSource; text: "Remove"; onClicked: libraryInteraction.prepareRemoveSource() }
@@ -1884,12 +1884,16 @@ ApplicationWindow {
                     }
                     Item { Layout.fillWidth: true }
                 }
+                Item {
+                    id: libraryContentHost
+                    objectName: "libraryContentHost"
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
                 ListView {
                     id: collectionList
                     objectName: "libraryCollectionList"
                     visible: libraryScopeBar.mode === "collections"
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    anchors.fill: parent
                     clip: true
                     focus: visible
                     activeFocusOnTab: visible
@@ -1944,8 +1948,7 @@ ApplicationWindow {
                     objectName: "libraryTree"
                     visible: libraryScopeBar.mode === "sources"
                     enabled: libraryScopeBar.mode === "sources"
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    anchors.fill: parent
                     model: libraryTreeModel
                     clip: true
                     focus: libraryScopeBar.mode === "sources"
@@ -2001,6 +2004,7 @@ ApplicationWindow {
                         }
                     }
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                }
                 }
             }
         }
