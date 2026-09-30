@@ -1,14 +1,29 @@
-# Branch Protection (Empfehlung)
+# Branch Protection
 
-Minimum:
-- Require a pull request before merging
-- Require status checks to pass before merging
-  - CI
-  - CodeQL
-  - Dependency Review
-  - Gitleaks
-  - Trivy (falls Docker genutzt wird)
-- Require linear history (optional)
-- Dismiss stale approvals (optional)
+Live Phase-A protection for `refs/heads/main` (issue #494 migration):
 
-Ziel: Keine "gruenen Illusionen". Merge nur, wenn Checks gruen sind.
+- Active ruleset: `main-strict` (id `21112261`)
+- Inactive temporary ruleset: `main-operator-temporary` (id `21112273`)
+- PR-based delivery required
+- `required_approving_review_count = 1`
+- Stale reviews dismissed on push
+- Required review-thread resolution
+- Required linear history
+- Deletion and non-fast-forward protection
+- Bypass actors empty; no admin bypass
+- Repository merge methods: merge commits OFF, squash ON, rebase ON
+
+Required status checks (preserve names and integration identities):
+
+- `Ruff static gate` (GitHub Actions / `15368`)
+- `Full core pytest` (GitHub Actions / `15368`)
+- `Workbench transport tests` (GitHub Actions / `15368`)
+- `Arrangement CLAP tests` (GitHub Actions / `15368`)
+- `Search quality exit regression` (GitHub Actions / `15368`)
+- `Python smoke` (GitHub Actions / `15368`)
+- `CodeQL` (GitHub Advanced Security / `57789`)
+- `gitleaks` (GitHub Actions / `15368`)
+- `dependency-review` (GitHub Actions / `15368`)
+- `analyze (python)` (GitHub Actions / `15368`)
+
+`mcp-quality-gate` / exact-head remains advisory until Phase B (#388). Merge only when required checks are green and the repository merge predicate is satisfied.
