@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-from .workbench_controller import WorkbenchRow
+from .workbench_controller import WorkbenchRow, filter_workbench_rows
 from .workbench_browser_rows import (
     BoundedBackgroundWaveformLoader,
     BoundedLazyWaveformCache,
@@ -212,6 +212,8 @@ class Screen1QmlViewModel:
             raise ValueError("Unbekannter Screen-1-QML-State.")
         self.state_id = state_id
         self.library_labels = library_labels
+        self._browser_rows_all = browser_rows
+        self._browser_search_query = ""
         self.browser_rows = browser_rows
         self.selected_browser_index = selected_browser_index
         self.harmony_rows = harmony_rows
@@ -294,10 +296,41 @@ class Screen1QmlViewModel:
         browser_context: str,
         error: str | None,
     ) -> None:
-        self.browser_rows = tuple(_qml_row(row) for row in rows)
-        self.selected_browser_index = selected_index
+        self._browser_rows_all = tuple(_qml_row(row) for row in rows)
+        preferred_path: str | None = None
+        if 0 <= selected_index < len(self._browser_rows_all):
+            preferred_path = str(self._browser_rows_all[selected_index].source_row.path)
         self.browser_context = browser_context
         self.browser_error = error
+        self._republish_browser_rows(preferred_path=preferred_path)
+
+    def set_browser_search_query(self, query: str) -> None:
+        """Project text search into the visible Sample Browser (#758).
+
+        Uses the existing ``filter_workbench_rows`` contract. Empty query restores
+        the full current-scope list. Does not invent structured or semantic search.
+        """
+        self._browser_search_query = str(query or "")
+        preferred_path: str | None = None
+        if 0 <= self.selected_browser_index < len(self.browser_rows):
+            preferred_path = str(self.browser_rows[self.selected_browser_index].source_row.path)
+        self._republish_browser_rows(preferred_path=preferred_path)
+
+    def _republish_browser_rows(self, *, preferred_path: str | None) -> None:
+        source_rows = tuple(row.source_row for row in self._browser_rows_all)
+        filtered = filter_workbench_rows(list(source_rows), self._browser_search_query)
+        by_path = {str(row.source_row.path): row for row in self._browser_rows_all}
+        self.browser_rows = tuple(
+            by_path[str(row.path)] for row in filtered if str(row.path) in by_path
+        )
+        if preferred_path is None:
+            self.selected_browser_index = -1
+            return
+        for index, row in enumerate(self.browser_rows):
+            if str(row.source_row.path) == preferred_path:
+                self.selected_browser_index = index
+                return
+        self.selected_browser_index = -1
 
     def set_workspace_materialization(
         self,
@@ -326,14 +359,20 @@ class Screen1QmlViewModel:
     def set_browser_waveform(self, path: str, envelope: tuple[float, ...]) -> bool:
         """Apply one cached waveform without changing browser selection."""
         changed = False
-        updated: list[QmlBrowserRow] = []
-        for row in self.browser_rows:
+        updated_all: list[QmlBrowserRow] = []
+        for row in self._browser_rows_all:
             if str(row.source_row.path) == path and row.waveform_envelope != envelope:
                 row = replace(row, waveform_envelope=envelope)
                 changed = True
-            updated.append(row)
+            updated_all.append(row)
         if changed:
-            self.browser_rows = tuple(updated)
+            preferred_path: str | None = None
+            if 0 <= self.selected_browser_index < len(self.browser_rows):
+                preferred_path = str(
+                    self.browser_rows[self.selected_browser_index].source_row.path
+                )
+            self._browser_rows_all = tuple(updated_all)
+            self._republish_browser_rows(preferred_path=preferred_path)
         harmony_updated: list[QmlHarmonyRow] = []
         for row in self.harmony_rows:
             if str(row.source_row.path) == path and row.waveform_envelope != envelope:
@@ -1905,6 +1944,7 @@ ApplicationWindow {
                             border.color: parent.activeFocus ? theme.actionActive : theme.borderSubtle
                             color: "transparent"
                         }
+                        onTextChanged: window.interaction.setBrowserSearch(text)
                     }
                 }
                 RowLayout {
@@ -2647,6 +2687,7 @@ def _qml_interaction_bridge(
     adapter: Screen1QmlInteractionAdapter,
     *,
     on_state_changed: Callable[[], None] | None = None,
+    on_browser_rows_changed: Callable[[], None] | None = None,
     on_waveform_request: Callable[[int, int], None] | None = None,
     on_harmony_waveform_request: Callable[[int, int], None] | None = None,
     on_open_channel_rack: Callable[[], None] | None = None,
@@ -2794,6 +2835,13 @@ def _qml_interaction_bridge(
         @Slot(int)
         def previewRow(self, index: int) -> None:
             adapter.preview_row(index)
+            self._refresh()
+
+        @Slot(str)
+        def setBrowserSearch(self, query: str) -> None:
+            adapter.view_model.set_browser_search_query(query)
+            if on_browser_rows_changed is not None:
+                on_browser_rows_changed()
             self._refresh()
 
         @Slot()
@@ -3536,6 +3584,7 @@ def _qml_engine(
     bridge = _qml_interaction_bridge(
         adapter,
         on_state_changed=on_interaction_state_changed,
+        on_browser_rows_changed=refresh_browser_rows,
         on_waveform_request=request_waveforms,
         on_harmony_waveform_request=request_harmony_waveforms,
         on_open_channel_rack=open_channel_rack,
