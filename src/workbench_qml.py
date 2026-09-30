@@ -2253,6 +2253,7 @@ ApplicationWindow {
                     color: theme.selectionSurface
                     border.color: theme.selectionBorder
                     focus: visible
+                    onVisibleChanged: if (visible) forceActiveFocus()
                     Keys.onEscapePressed: window.interaction.escapeLiveKitContext()
                     Label {
                         anchors.fill: parent
@@ -2288,7 +2289,10 @@ ApplicationWindow {
                                         id: liveKitGroupHeader
                                         objectName: "liveKitGroupHeader" + index
                                         anchors.fill: parent
-                                        onClicked: window.interaction.toggleLiveKitGroup(kitGroupIndex)
+                                        // onPressed (not onClicked): toggle before release so a
+                                        // collapsing group cannot slide a neighbor under the
+                                        // pointer and accidental-expand it (#743 disclosure).
+                                        onPressed: window.interaction.toggleLiveKitGroup(kitGroupIndex)
                                     }
                                 }
                             ColumnLayout { visible: modelData.active; Layout.fillWidth: true; Layout.leftMargin: 12; Layout.rightMargin: 10; Layout.topMargin: 2

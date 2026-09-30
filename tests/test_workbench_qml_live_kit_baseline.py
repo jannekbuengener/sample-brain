@@ -74,6 +74,9 @@ def test_collapse_expand_changes_only_presentation_state_not_assignments():
         for group in live_kit.groups
     )
 
+    # #743: all groups start collapsed; expand/collapse remains presentation-only.
+    assert live_kit.groups[1].active is False
+    assert adapter.toggle_live_kit_group("Drums") is False
     assert live_kit.groups[1].active is True
     assert adapter.toggle_live_kit_group("Drums") is True
     assert live_kit.groups[1].active is False
@@ -309,8 +312,8 @@ def test_qml_group_header_hit_area_is_structurally_valid():
     assert QML_SOURCE.count(wrapper) == 1
     assert "RowLayout { anchors.fill: parent; spacing: 6" in QML_SOURCE
     assert 'objectName: "liveKitGroupHeader" + index' in QML_SOURCE
-    assert "anchors.fill: parent\n                                        onClicked: window.interaction.toggleLiveKitGroup(kitGroupIndex)" in QML_SOURCE or \
-        "anchors.fill: parent\n                                    onClicked: window.interaction.toggleLiveKitGroup(kitGroupIndex)" in QML_SOURCE
+    assert "onPressed: window.interaction.toggleLiveKitGroup(kitGroupIndex)" in QML_SOURCE
+    assert "onClicked: window.interaction.toggleLiveKitGroup(kitGroupIndex)" not in QML_SOURCE
     assert "width: parent.width" in QML_SOURCE
     assert "LiveKitState" not in QML_SOURCE
 
@@ -403,6 +406,7 @@ def test_qml_live_kit_runtime_roundtrip_pending_assign_and_group_toggle():
                 header.mapToScene(header.boundingRect().center()).toPoint(),
             )
             app.processEvents()
+            _settle_qml_frame(app)
 
         def canonical_start() -> None:
             for index, want_active in (
@@ -464,6 +468,8 @@ def test_qml_pending_add_pointer_targets_slot_action_pill_and_commits():
         on_preview_requested=previews.append,
     )
     live_kit.assign("Drums", "Main Drum", fixture.browser_rows[0])
+    # #743: slots render only when their group is expanded.
+    assert live_kit.toggle_group("Drums") is False
     adapter._sync_live_kit_projection()
     view_model.live_kit_groups = live_kit.groups
 
