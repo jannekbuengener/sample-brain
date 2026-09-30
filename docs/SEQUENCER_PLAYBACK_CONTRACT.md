@@ -140,4 +140,4 @@ with more events than concurrent capacity must be driven through
 ## Next
 
 Voice lifecycle (#698) is DONE_MERGED_CLOSED and unblocks full DEFAULT_ON kit playback for Screen-2.
-Screen-2 Channel Rack QML (#678) is technically unblocked; product execution remains PARKED / sequenced after Screen-1 pilot gate #727 (explicit Owner-GO required).
+Screen-2 Channel Rack QML (#678) is **ACTIVE** under explicit Owner-GO (not gated by #727).
