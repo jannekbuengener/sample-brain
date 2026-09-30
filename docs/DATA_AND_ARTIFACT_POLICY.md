@@ -22,6 +22,7 @@ This document defines what data and artifacts may be committed to version contro
 | Regex maps (`data/filename_tag_regex.json`) | ✅ Yes (explicitly tracked) | — | — |
 | `data/catalog.db` and any `*.db` / `*.sqlite` | ❌ No | ✅ Always | ✅ Yes (scan → analyze → autotype) |
 | `reports/` | ❌ No | ✅ Always | ✅ Yes |
+| Measurement sidecar DB (user-local) | ❌ No | ✅ Always (outside repo) | ✅ Optional delete/reset |
 | `data/indexes/`, `*.faiss`, `*.index` | ❌ No | ✅ Always | ✅ Yes (from `sample_embeddings`) |
 | `data/embeddings/`, `*.npy`, `*.npz` | ❌ No | ✅ Always | ✅ Yes |
 | `data/models/`, `*.pt`, `*.pth`, `*.safetensors` | ❌ No | ✅ Always | ❌ Downloaded (one-time) |
@@ -79,6 +80,7 @@ The following may exist on the local filesystem but must never appear in `git st
 | Python cache | `__pycache__/`, `*.pyc` | Bytecode cache | ✅ Yes — never committed |
 | FL Studio tags | User-specified path (e.g. `Documents/Image-Line/Settings/Browser/Tags`) | Exported browser tags | ✅ Yes — `sample-brain export_fl` |
 | Agent session state | `knowledge/SHARED.WORKING.MEMORY.md`, `knowledge/logs/` | Private working memory and logs | N/A — explicitly excluded |
+| Measurement sidecar | User-local path outside the repo (default under `%LOCALAPPDATA%/sample-brain/measurement/` or `$XDG_CACHE_HOME/sample-brain/measurement/`; override via `SAMPLE_BRAIN_MEASUREMENT_DB_PATH` / profile). **Never** `data/catalog.db` | Redacted Measurement Contract v1 events (ADR-0006); engineering/evaluation/product-evidence trends | ✅ Optional — delete sidecar to reset; not required for core rebuild |
 
 ### 4.1 Rules for local state
 
@@ -87,6 +89,7 @@ The following may exist on the local filesystem but must never appear in `git st
 - Raw validation output does not become curated evidence merely because it was written under the checkout; review it first and move/copy only the approved public record into `evidence/`.
 - If the SQLite database or an index file is accidentally staged, stop and unstage it before committing.
 - The Hugging Face cache is system-global. Never copy it into the repository.
+- The measurement sidecar is local runtime state only. Do not commit it. Do not promote raw measurement rows into `evidence/` without the curated-evidence privacy review. External measurement export (if ever enabled) is opt-in and must follow ADR-0006 privacy classes (`export_safe` / approved aggregates only).
 
 ---
 

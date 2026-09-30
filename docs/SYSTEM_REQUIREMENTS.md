@@ -99,7 +99,9 @@
 |---|---|---|
 | NFR-PRV-01 | Audio data shall never be transmitted to any external service by default | P0 |
 | NFR-PRV-02 | Analysis results and metadata shall be stored exclusively in a local SQLite database unless the user explicitly exports or shares them | P0 |
-| NFR-PRV-03 | No telemetry, analytics, or usage tracking shall be built into any core pipeline component | P1 |
+| NFR-PRV-03 | No **external** telemetry, analytics, usage tracking, crash-reporting phone-home, or analytics-provider SDK shall be built into any core pipeline component. Core must not require network access or a third-party analytics account to function | P1 |
+| NFR-PRV-04 | A provider-neutral **local Measurement Layer** (see ADR-0006) may record redacted engineering/evaluation/product-evidence events to a local sidecar store. Measurement must be fail-soft, must not write into `catalog.db`, must not include audio/paths/filenames/query text/library identity in exportable payloads, and must default to mode `off` until an explicit later default-change decision | P1 |
+| NFR-PRV-05 | Any **external export** of measurement events (including Mixpanel or other sinks) shall be exclusively explicit opt-in (`local+export`), implemented outside core pipeline modules, and must no-op when offline, disabled, or unauthenticated. Sample Brain shall remain fully functional with export unavailable | P1 |
 
 ### 2.3 Offline Capability
 
