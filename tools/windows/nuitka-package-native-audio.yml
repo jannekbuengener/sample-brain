@@ -1,0 +1,15 @@
+# Nuitka package configuration for sample-brain native audio (#729).
+# Ensures samplebrain_audio.dll is present next to the frozen src package roots
+# when included via --include-data-files by tools/windows/build_distributable.ps1.
+#
+# DLL itself is produced by native/audio Release/x64 build and is gitignored (*.dll).
+#
+# This file documents the packaging contract for reviewers and for the build script.
+package: src
+include-data-files:
+  - source: native/audio/build/bin/Release/samplebrain_audio.dll
+    dest: samplebrain_audio.dll
+required-for-packaging-acceptance: true
+notes:
+  - Audition is part of the Screen-1 pilot contract; missing DLL = #729 FAIL.
+  - No-audio-device hosts must degrade without crash (runtime soft-fail remains).
