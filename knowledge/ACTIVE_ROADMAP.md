@@ -1,12 +1,12 @@
 # ACTIVE_ROADMAP
 
-**Last reconciled:** 2026-09-29
+**Last reconciled:** 2026-09-30
 
 ## How to Use This Roadmap
 
 This file describes durable priorities and sequencing. It deliberately does not mirror every GitHub issue, PR, commit SHA, or historical child issue.
 
-For execution state, fetch GitHub and repo live first. If this roadmap conflicts with live evidence, live evidence wins.
+For execution state, fetch GitHub and repo live first. If this roadmap conflicts with live evidence, live evidence wins. Open issues are not automatically active work.
 
 ## Current Priority Order
 
@@ -16,26 +16,23 @@ This roadmap intentionally groups durable work rather than mirroring every open 
 
 **[#691 — Calm Adaptive Workspace](https://github.com/jannekbuengener/sample-brain/issues/691)**
 
-Current sequence is owned by #691 and its scoped children: shared visual acceptance, compact Browser/Harmonic density, elastic coupled panels, Clean Start/progressive disclosure, waveform rendering research, then display/startup preferences. Panel reordering remains parked until the layout foundation is accepted.
+Current sequence is owned by #691 and its scoped children: shared visual acceptance, compact Browser/Harmonic density, elastic coupled panels, Clean Start/progressive disclosure, waveform rendering research, then display/startup preferences. Panel reordering remains parked until the layout foundation is accepted. Current product/UI delivery stays Screen-1-scoped.
 
-### Foundations ready / UI HOLD — Screen 2 Channel Rack
+### Parked — Screen 2 Channel Rack
 
 **[#675 — Live Kit → Channel Rack](https://github.com/jannekbuengener/sample-brain/issues/675)**  
 **[#678 — Screen-2 QML Channel Rack](https://github.com/jannekbuengener/sample-brain/issues/678)**
 
-The Python/session/sequencer foundations are already present. **Screen-2 QML #678 remains HOLD** under `docs/PRODUCT_WORKFLOW_CANON.md` until that gate is explicitly lifted. Keep Screen 2 distinct from the parked Screen-3 arrangement timeline (#679).
+Python/session/sequencer foundations remain shipped foundation truth. Both #675 and #678 are **PARKED / NOT ACTIVE** under the current Owner decision: no Screen-2 UI implementation and no new Screen-2 slices without an explicit new Owner-GO. Keep Screen 2 distinct from the parked Screen-3 arrangement timeline (#679).
 
 ### Active — repository governance and reconciliation
 
 - [#494](https://github.com/jannekbuengener/sample-brain/issues/494) — move from the temporary active main ruleset to the stable canon-aligned strict model without a protection gap.
 - [#703](https://github.com/jannekbuengener/sample-brain/issues/703) — reconcile repository truth, docs, status, agents, CI, validation evidence and artifact hygiene.
 
-### Active validation
-
-- [#468](https://github.com/jannekbuengener/sample-brain/issues/468) — subjective listening validation for the existing Techno pilot assets.
-
 ### Watch / parked — do not promote implicitly
 
+- [#468](https://github.com/jannekbuengener/sample-brain/issues/468) — **PARKED / NOT ACTIVE**. Existing canary/listening evidence remains historically valid; do not run further Listening-/Stem-validation without explicit Owner reactivation.
 - [#74](https://github.com/jannekbuengener/sample-brain/issues/74) — wait for a stable documented sqlite-vec ANN release; NumPy remains the default search backend.
 - [#469](https://github.com/jannekbuengener/sample-brain/issues/469) — VST3 product integration is parked.
 - [#615](https://github.com/jannekbuengener/sample-brain/issues/615) — Bitwig work is R&D/playground only.
@@ -80,7 +77,7 @@ The following are no longer roadmap work and should not be represented as open e
 ### Screen-2 foundation
 
 - Session ownership, Pattern Core, sequencer scheduling/PCM and Channel Rack Python core are established.
-- Product/UI delivery is tracked under #675/#678; the QML UI remains **HOLD** until the canonical gate is explicitly lifted.
+- Product/UI tracks #675/#678 remain open but are currently **PARKED / NOT ACTIVE**; do not resume Screen-2 UI work without an explicit Owner-GO.
 - Screen 3 arrangement remains separately parked under #679; do not pull arrangement/timeline scope into Screen 2.
 
 ### Track deconstruction / performance packs
