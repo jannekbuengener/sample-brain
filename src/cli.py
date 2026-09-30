@@ -84,6 +84,10 @@ _COMMAND_EXAMPLES: dict[tuple[str, ...], list[str]] = {
     ("vec", "smoke"): [
         "sample-brain vec smoke",
     ],
+    ("measurement", "report"): [
+        "sample-brain measurement report",
+        "sample-brain measurement report --json",
+    ],
     ("pack-import",): [
         "sample-brain pack-import ./performance-pack",
         "sample-brain pack-import ./performance-pack --dry-run",
@@ -108,6 +112,7 @@ def _infer_command_path(argv: list[str]) -> tuple[str, ...]:
         "db",
         "benchmark",
         "vec",
+        "measurement",
         "workbench",
         "pack-import",
     }
@@ -117,6 +122,7 @@ def _infer_command_path(argv: list[str]) -> tuple[str, ...]:
         "doctor",
         "status",
         "smoke",
+        "report",
         "bpm-evidence",
         "key-conf-evidence",
         "vec",
@@ -942,6 +948,29 @@ def main():
         **_agent_parser_kwargs("sample-brain vec smoke"),
     )
 
+    p_measurement = sub.add_parser(
+        "measurement",
+        help="Local Measurement Contract diagnostics (optional, offline)",
+    )
+    measurement_sub = p_measurement.add_subparsers(
+        dest="measurement_cmd",
+        required=True,
+        parser_class=AgentFriendlyArgumentParser,
+    )
+    p_measurement_report = measurement_sub.add_parser(
+        "report",
+        help="Aggregate local pipeline.stage_finished measurement events",
+        **_agent_parser_kwargs(
+            "sample-brain measurement report",
+            "sample-brain measurement report --json",
+        ),
+    )
+    p_measurement_report.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the report as JSON.",
+    )
+
     p_workbench = sub.add_parser(
         "workbench",
         help="Lokale Werkbank starten (Playlist-Ansicht, tkinter)",
@@ -1544,6 +1573,33 @@ def main():
         if args.vec_cmd == "smoke":
             print(format_availability_message(report))
             if not report.available:
+                sys.exit(1)
+            return
+
+    if args.cmd == "measurement":
+        if args.measurement_cmd == "report":
+            from .measurement.config import resolve_measurement_db_path
+            from .measurement.reader import ReadStatus
+            from .measurement.report import (
+                build_stage_finished_report,
+                format_report_text,
+                report_to_dict,
+            )
+
+            db_path = resolve_measurement_db_path(env=dict(os.environ))
+            report = build_stage_finished_report(db_path)
+            if args.json:
+                print(
+                    json.dumps(
+                        report_to_dict(report),
+                        indent=2,
+                        sort_keys=True,
+                        allow_nan=False,
+                    )
+                )
+            else:
+                print(format_report_text(report), end="")
+            if report.status is ReadStatus.ERROR:
                 sys.exit(1)
             return
 
