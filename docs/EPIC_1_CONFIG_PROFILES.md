@@ -163,7 +163,7 @@ Rules inherited and extended:
 - **Local config is never committed** — `config/profiles.local.yaml` must be ignored by `.gitignore` before local profiles are introduced
 - **Profiles must not contain secrets** — passwords, tokens, and API keys have no place in profile files
 - **Sample roots are privacy-sensitive** — they reveal the user's directory structure and drive layout
-- **No telemetry** — config must not phone home, check for updates, or report usage
+- **No phone-home telemetry** — config must not phone home, check for updates, or report usage to external services by default. Optional local Measurement keys (`measurement.mode`, `measurement.db_path`) are allowed per ADR-0006; external export remains explicit opt-in and outside core
 - **No automatic upload** — config is local-only; there is no "sync to cloud" feature
 - **FL Studio path is privacy-sensitive** — it reveals the user's OS username and drive layout
 - **Model cache dir** — default to system cache outside the repo (`~/.cache/huggingface/`); user may override

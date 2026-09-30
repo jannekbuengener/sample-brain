@@ -469,7 +469,7 @@ The dependency graph is acyclic. No module imports a module that imports it back
 The following rules apply to all current and future components:
 
 1. **No cloud dependency for core pipeline.** All operations from scan through export must work without any network access.
-2. **No telemetry.** No analytics, usage tracking, or crash reporting built into any pipeline component.
+2. **No external telemetry in core.** No analytics-provider SDK, usage phone-home, or crash-reporting phone-home may be built into core pipeline components. A provider-neutral **local Measurement Layer** (ADR-0006) may optionally record redacted events to a user-local sidecar store; external export is explicit opt-in only and must live outside core. Default measurement mode is `off`.
 3. **No sample upload.** Audio data never leaves the local filesystem as part of any core operation.
 4. **Model downloads are explicit and optional.** ML model weights are downloaded on first use, not during installation. The user must explicitly opt in by installing optional dependencies and running the embedding pipeline.
 5. **All generated artifacts are untracked.** SQLite DB, vector indexes, reports, caches, and model weights are excluded from version control.
