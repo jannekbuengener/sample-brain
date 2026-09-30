@@ -1651,7 +1651,7 @@ ApplicationWindow {
                                     objectName: "previewPlayhead"
                                     width: 2
                                     height: parent ? parent.height : 0
-                                    color: "#eceef1"
+                                    color: theme.textPrimary
                                     z: 3
                                     visible: window.previewPlayheadArmed && parent
                                         && (("" + modelData.path) === ("" + window.interaction.previewPlayingPath))
@@ -1838,7 +1838,7 @@ ApplicationWindow {
                                     objectName: "previewPlayhead"
                                     width: 2
                                     height: parent ? parent.height : 0
-                                    color: "#eceef1"
+                                    color: theme.textPrimary
                                     z: 3
                                     visible: window.previewPlayheadArmed && parent
                                         && (("" + modelData.path) === ("" + window.interaction.previewPlayingPath))
