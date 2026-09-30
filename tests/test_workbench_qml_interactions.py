@@ -1131,6 +1131,7 @@ def test_qml_fresh_v2_root_selection_starts_no_analysis_job(tmp_path):
 def test_qml_scope_switch_closes_harmonic_panel_and_reopens_with_new_scope(tmp_path):
     from src.workbench_controller import WorkbenchRow
     from src.workbench_library import (
+        WORKBENCH_ANALYZER_VERSION,
         upsert_folder,
         upsert_sample,
         workbench_library_db_path,
@@ -1170,7 +1171,7 @@ def test_qml_scope_switch_closes_harmonic_panel_and_reopens_with_new_scope(tmp_p
                 size_bytes=st.st_size,
                 mtime_ns=st.st_mtime_ns,
                 db_path=db,
-                analyzer_version="workbench_v2",
+                analyzer_version=WORKBENCH_ANALYZER_VERSION,
             )
         return root, folder_id
 

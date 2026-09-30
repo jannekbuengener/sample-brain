@@ -557,6 +557,7 @@ def _make_error_row(
         "relative_path": rel,
         "error_code": error_code,
         "error_detail": error_detail,
+        "analyzer_version": WORKBENCH_ANALYZER_VERSION,
     }
     return WorkbenchRow(
         display_name=display_name,
@@ -717,6 +718,7 @@ def analyze_folder_for_workbench(
                 "class": feats.clazz,
                 "pred_type": pred_type,
                 "tags": tags,
+                "analyzer_version": WORKBENCH_ANALYZER_VERSION,
             }
             if feats.quality_note:
                 details["short_audio_warning"] = feats.quality_note
