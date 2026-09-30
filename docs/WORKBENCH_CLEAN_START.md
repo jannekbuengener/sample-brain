@@ -42,18 +42,21 @@ Not active at normal launch:
 COLLAPSED_CLEAN_START
   → optional edge reveal (no Source)
   → OPENED_NO_SOURCE  (Library + Calm Canvas)
-  → user selects a Source (or Add Source completes)
+  → user selects a Source (or Add Source analysis succeeds)
   → ACTIVE_SOURCE
-  → Browser materialises
-  → Live Kit may appear as an active working pane
+  → Browser materialises (Browser-first)
   → Harmonic Match stays closed until explicit toggle
+  → Live Kit stays hidden until first Browser/Harmony Add-to-Kit intent
 ```
 
-After explicit Source selection:
+After successful analysis / Source activation (#742/#747/#748):
 
 ```text
-Source Navigation | Browser | Live Kit
+Source Navigation | Browser
 ```
+
+Live Kit is not co-materialised with Browser. It reveals only on the first
+explicit Browser or Harmony Add-to-Kit intent (`live_kit_revealed`).
 
 Geometry for the Active Source workspace is owned exclusively by #694
 (elastic ratios / persistence). `#725` owns only the No-Source presentation
@@ -86,6 +89,7 @@ Rules for Source selection:
 - do **not** synthesise a Sample-row selection (`selected_index = -1`);
 - do **not** auto-audition / start Preview;
 - do **not** open Harmonic Match;
+- do **not** reveal Live Kit (Add-to-Kit intent only; #742);
 - do **not** restore prior session selection, harmony, preview, or scroll.
 
 ## Add Source (#589)
@@ -155,8 +159,8 @@ Resolve rules:
 2. Corrupt / invalid JSON / wrong version / incomplete fields → Clean Start
    (`persistable=False` semantics; no crash).
 3. Preset with `startup_source_node_id` that resolves to an available selectable
-   node → Active Source for that node (Browser + Live Kit; Harmony closed;
-   `selected_index = -1`).
+   node → Active Source for that node (Browser visible; Harmony closed; Live Kit
+   hidden until Add-to-Kit; `selected_index = -1`).
 4. Preset Source missing / offline / unresolvable → Clean Start (fail closed).
 
 Module seam: `src/workbench_qml_startup.py`.

@@ -2,7 +2,10 @@
 
 Browser materializes only after successful analysis / explicit analyzed Source
 selection. Harmonic Match stays opt-in. Live Kit reveals only on Add-to-Kit.
-Transient disclosure is never persisted. #743/#744 remain out of scope.
+Transient disclosure is never persisted.
+
+Analysis loading visuals / blocking overlay ownership: #744
+(`tests/test_workbench_qml_analysis_loading.py`).
 """
 
 from __future__ import annotations

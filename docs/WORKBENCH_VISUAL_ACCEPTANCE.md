@@ -115,6 +115,41 @@ filenames for Owner Visual Acceptance may include:
 These are capture labels only. Historical v1 evidence under
 `docs/assets/portfolio/runtime/` remains untouched.
 
+### #744 Analysis loading Runtime-Evidence
+
+Do **not** add competing `REQUIRED_STATE_IDS_V2` entries. Additive Owner Visual
+Acceptance captures for the Source analysis loading experience (#744) use these
+labels only (real `AnalysisUiState` phases; no fake progress clock):
+
+| Evidence ID | Intent |
+|-------------|--------|
+| `01-scanning-early` | Analysis surface visible; phase `scanning`; early / indeterminate or low progress |
+| `02-analyzing-mid` | Phase `analyzing`; mid `current/total` |
+| `03-analyzing-near-complete` | Phase `analyzing`; near-complete `current/total` |
+| `04-cancelled` | After cancel → fail-closed idle; loading surface gone; no optional pane leaks |
+| `05-error` | Real `error` phase presentation; Browser/Harmony/Live Kit unusable; Cancel not active |
+| `06-success-transition-browser` | Overlay gone; Browser-first; Harmony closed; Live Kit hidden; no auto-selection / auto-audition |
+| `07-100pct` | Same loading surface at 100% Windows / Qt scale |
+| `08-125pct` | Same at 125% scale |
+| `09-150pct` | Same at 150% scale |
+
+#### #744 loading progress contract
+
+- Progress bar = **folder-level** `processed / total` (`analysisCurrent` /
+  `analysisTotal`). `current` means completed files in this folder (success,
+  cache hit, or controlled per-sample error), not the ordinal of the sample
+  currently in flight.
+- Display name = **currently processed sample** (`analysisSource`); independent
+  of the completed count.
+- No per-sample progress bar and no second bar. No fake progress / timer.
+
+Example mid-folder: label `Analysiere hit.wav`, count `2 / 5 Samples`, bar ~40%
+means two files finished and `hit.wav` is the third file currently analyzing.
+
+Evidence stays **outside** the repository. Synthetic fixture paths only. Owner
+Visual Acceptance remains separate from agent self-attestation. Capture helper:
+`run_qml_visual_acceptance_744` in `src/workbench_qml_spike.py`.
+
 ## Screen-1 canonical background reference
 
 Kanonische visuelle Referenz (Reference = Runtime-Asset, eine Datei):
