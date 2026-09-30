@@ -25,7 +25,6 @@ class LibraryNodeKind(str, Enum):
     CATALOG = "catalog"
     COLLECTIONS = "collections"
     COLLECTION = "collection"
-    ADD_SOURCE = "add_source"
     STATUS = "status"
 
 
@@ -73,7 +72,6 @@ _SAMPLE_SOURCES_ID = "container:sample-sources"
 _ALL_SAMPLES_ID = "scope:all-library"
 _CATALOG_ID = "scope:catalog-readonly"
 _COLLECTIONS_ID = "container:collections"
-_ADD_SOURCE_ID = "action:add-source"
 
 
 def _canonical_relative_path(relative_path: str) -> str | None:
@@ -200,11 +198,7 @@ class WorkbenchLibraryNavigation:
         return self._library_db_path
 
     def top_level_nodes(self) -> tuple[LibraryNode, ...]:
-        catalog_state = (
-            LibraryAvailability.AVAILABLE
-            if catalog_available(self._catalog_path)
-            else LibraryAvailability.OFFLINE
-        )
+        """Return only the real Source-tree root rendered by the Library tree."""
         return (
             LibraryNode(
                 _SAMPLE_SOURCES_ID,
@@ -215,6 +209,16 @@ class WorkbenchLibraryNavigation:
                 True,
                 LibraryAvailability.AVAILABLE,
             ),
+        )
+
+    def secondary_nodes(self) -> tuple[LibraryNode, ...]:
+        """Return non-folder Library scopes rendered by the compact icon bar."""
+        catalog_state = (
+            LibraryAvailability.AVAILABLE
+            if catalog_available(self._catalog_path)
+            else LibraryAvailability.OFFLINE
+        )
+        return (
             LibraryNode(
                 _ALL_SAMPLES_ID,
                 LibraryNodeKind.ALL_SAMPLES,
@@ -334,17 +338,6 @@ class WorkbenchLibraryNavigation:
             for folder in folders
         ]
         roots.sort(key=lambda node: (os.path.normcase(node.label), node.node_id))
-        roots.append(
-            LibraryNode(
-                _ADD_SOURCE_ID,
-                LibraryNodeKind.ADD_SOURCE,
-                "Add Source…",
-                _SAMPLE_SOURCES_ID,
-                False,
-                False,
-                LibraryAvailability.AVAILABLE,
-            )
-        )
         return tuple(roots)
 
     def _collection_children(self) -> tuple[LibraryNode, ...]:

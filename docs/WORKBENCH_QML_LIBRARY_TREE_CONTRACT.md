@@ -2,103 +2,125 @@
 
 ## Purpose and boundary
 
-Issue #575 renders the existing `WorkbenchLibraryNavigation` contract as a
-lazy Qt Quick tree. The tree owns presentation and selection intent only. It
-does not add a Library backend, load Browser rows, start Preview/Audition,
-change Harmony or Live Kit state, scan, analyze, read audio, load Catalog
-rows, open a Folder dialog, or register/remove sources. Browser loader wiring
-and Owner visual acceptance remain #576.
+The Screen-1 Library keeps one renderer-neutral navigation authority while #765
+separates **Source folders** from **secondary Library scopes** in the QML
+presentation. QML remains a thin renderer/intent layer; Browser loading, cache
+state, playlists, Catalog, analysis, Preview, Harmony, and Live Kit remain owned
+by their existing Python contracts.
 
-## Tree taxonomy
+This contract supersedes the historical #575 presentation taxonomy that rendered
+`Sample Sources / All Samples / Catalog / Collections` as four equal tree roots
+and placed `Add Source…` inside `Sample Sources`.
 
-The exact top-level model is:
+## Source tree taxonomy
+
+The visible QML tree now has exactly one top-level container:
 
 ```text
 Sample Sources
-All Samples
-Catalog
-Collections
+  <registered source root>
+    <real direct subfolder>
+      ...
 ```
 
-`Sample Sources` contains the persisted registered roots, followed by the
-canonical `Add Source…` action. Each available root may expose lazy direct
-subfolders. `Collections` contains only persisted Workbench playlists. The
-existing `LibraryNode` IDs and `LibraryScope` resolution from
-`WorkbenchLibraryNavigation` remain authoritative; display labels are never
-identities.
+`Sample Sources` contains only persisted registered roots plus their real lazy
+subfolders and bounded status/error nodes. It does **not** contain `Add Source…`,
+All Samples, Catalog, Collections, Favorites, or synthetic convenience folders.
 
-The normal QML model must not emit or contain `Favorites`, `My Kits`,
-`Recently Added`, `Splice`, `User Library`, implicit Desktop, implicit
-Downloads, implicit drives, or fake counts.
+The single primary Add Source affordance is the existing button in the Library
+header. `action:add-source` is no longer emitted by the navigation model.
+
+## Compact secondary icon navigation
+
+A compact icon-only row above the Source tree exposes the existing secondary
+Library concepts:
+
+- **Sample Sources** — returns the pane to the real Source tree;
+- **All Samples** — selects `scope:all-library`;
+- **Catalog** — selects `scope:catalog-readonly`;
+- **Collections** — reveals the existing persisted Workbench playlists.
+
+Favorites is intentionally not implemented by #765; #766 owns that feature and
+will join the same icon row.
+
+The icon row is presentation only. Stable node IDs and `LibraryScope`
+resolution remain authoritative. All Samples, Catalog, and collection entries
+flow through the exact same typed selection intent used by Source rows.
+
+Every icon-only control exposes a stable object/semantic identity and accessible
+name. #770 owns the later shared context-hint display; #765 does not implement
+tooltips, docking, dragging, or snap behavior.
+
+## Collections
+
+`Collections` remains a container over existing persisted Workbench playlists.
+The renderer asks the same `WorkbenchLibraryNavigation.children(
+"container:collections")` authority for entries. Selecting a collection resolves
+the existing `LibraryScopeKind.COLLECTION` with the persisted playlist identity.
+
+No second playlist model or QML-owned collection truth is introduced.
 
 ## Lazy loading
 
-The Qt adapter has a Qt-free state layer and a thin optional
-`QAbstractItemModel` wrapper. Initial construction materializes only the four
-top-level nodes. A branch expansion or `fetchMore()` requests exactly
-`navigation.children(parent_id)` once for that direct branch, then inserts
-only those returned direct children with `beginInsertRows()` / `endInsertRows()`.
-It never recursively expands descendants or sibling branches and never calls
-scan, analyze, audio reads, Catalog loading, or a second Library backend.
+Source expansion requests exactly one direct branch from
+`navigation.children(parent_id)`. It never recursively expands descendants or
+siblings and never starts scan/analyze/audio/Catalog work.
 
-An empty branch is a successful loaded branch with zero children and cannot
-fetch repeatedly. An error branch exposes the renderer-neutral error status
-without an absolute producer path. Retry clears only that branch and requests
-its direct children again. Offline roots remain visible and selectable,
-retain their cached scope, and are not expandable.
+An empty branch is a successful loaded branch with zero children. Error branches
+remain path-free and retry only their direct branch. Offline registered roots
+stay visible/selectable with cached scope and are not expandable.
 
-Loading, error, and availability are explicit model roles. Synchronous
-`children()` calls may complete within one `fetchMore()` call; no worker or
-animation is required merely to manufacture asynchronous behavior.
+Collections use the same bounded lazy state internally, but their container is
+remembered as a secondary navigation node rather than rendered as a Source-tree
+root.
 
 ## Selection and focus
 
-Selecting a label of a selectable node resolves exactly one existing
-`LibraryScope` and emits one typed selection intent. It does not invoke a
-Browser loader, Preview/Audition callback, Harmony controller, or Live Kit
-mutation. `Add Source…` is an action node without a scope; #575 presents it
-only and does not implement its dialog or registration wiring.
+Selecting any actionable Source or secondary node resolves exactly one existing
+`LibraryScope` and emits one typed selection intent. No renderer-only loader or
+second selection authority is introduced.
 
-The chevron/indicator expands or collapses only and must not select a scope.
-While the tree owns focus, normal TreeView behavior handles Up/Down, Left and
-Right. Enter transfers focus to the existing `browserList` without
-auditioning. The tree has no Escape handler and does not consume Escape; the
-existing higher-level Preview/Esc contract remains authoritative.
+Tree chevrons expand/collapse only. Source-tree Up/Down and Left/Right behavior
+remains native TreeView behavior. Enter transfers focus to the Browser without
+auditioning. The tree does not consume Escape; the higher-level Preview/Escape
+contract remains authoritative.
+
+Collections entries are keyboard-focusable when the Collections surface is
+visible. All icon controls retain accessible names.
 
 ## Visual and responsive contract
 
-The left pane uses the existing near-black surface and thin dividers. Only a
-real selected Library intent uses the blood-red accent. Secondary and Offline
-states are muted; chevrons and hover do not become red selection substitutes.
-Labels are clipped/elided instead of exposing raw producer path walls. The
-tree is vertically scrollable and remains usable inside the left pane at
-`1600x900` and `1120x640`; the center Browser and right Live-Kit structure do
-not collapse into a new layout.
+The Library pane keeps the existing near-black surfaces, thin dividers, compact
+density, and sparse blood-red intent. The top icon row is compact and the Source
+tree remains the primary vertical content.
+
+Labels are clipped/elided rather than exposing raw producer paths. The pane must
+remain usable at the existing Screen-1 acceptance sizes and Windows scale
+factors. #765 does not introduce a general docking/layout system.
 
 ## Qt optionality
 
-Importing normal Sample-Brain core modules and
-`src.workbench_library_navigation` remains possible without PySide6. The Qt
-adapter imports PySide6 only when the optional QML renderer is started. No new
-mandatory dependency is introduced; PySide6 remains under the existing
-`qtquick` extra.
+Normal core imports remain possible without PySide6. The optional Qt model and
+QML renderer are still created only on the Qt Quick path; no new mandatory
+dependency is introduced.
 
-## Test freeze
+## Test / migration note
 
-The #575 RED contract is frozen before implementation. The controlled RED run
-completed with 9 failures and 1 conditional skip because the tree adapter and
-TreeView integration do not exist on the base commit. Its SHA-256 is:
+The old #575 RED/freeze record remains historical evidence for the original QML
+tree migration. #765 is an explicit Owner-authorized product supersession of only
+its presentation taxonomy and Add-Source tree action.
 
-```text
-tests/test_workbench_qml_library_tree.py: 7F6E15DC895DF035EF89C7893281603658EB8AB9D70F27A996BA6D34149FF959
-```
+Regression coverage now freezes:
 
-Any later oracle correction must be explicitly marked
-`TEST_CONTRACT_FIX`, preserve the canonical behavior, and be explained in the
-diff. The existing #574 freeze tests remain unchanged.
+- one visible Source-tree root;
+- no `action:add-source` child;
+- All Samples / Catalog / Collections remembered as secondary nodes;
+- secondary selections use the same typed intent/scope authority;
+- persisted collection entries remain loadable;
+- Source lazy loading, retry, offline, keyboard, and focus behavior remain intact.
 
 ## Dependency boundary
 
-This slice depends on delivered #574 and prepares the typed tree/selection
-intent consumed by #576. It does not claim production Library-to-Browser
-runtime composition or Owner visual acceptance of that path.
+#765 does not implement Favorites (#766), Browser column arrangement (#767),
+sample Drag & Drop (#768), the bottom-center context hint (#770), or the future
+modular snap/docking system. Packaging/installer work is also out of scope.
