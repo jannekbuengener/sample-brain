@@ -7,16 +7,8 @@ import time
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QObject
-from PySide6.QtQuick import QQuickItem
 
 from src.workbench_qml import QML_SOURCE
-from tests.test_workbench_qml_producer_flow_e2e import (
-    _boot_screen1,
-    _build_representative_synthetic_bank,
-    _shutdown_engine,
-    _wait_for_analysis,
-)
 
 PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 
@@ -31,7 +23,18 @@ def test_qml_source_wires_browser_search_to_interaction() -> None:
     assert "onTextChanged: window.interaction.setBrowserSearch(text)" in QML_SOURCE
 
 
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 def test_browser_search_filters_and_clears_live(tmp_path: Path) -> None:
+    from PySide6.QtCore import QObject
+    from PySide6.QtQuick import QQuickItem
+
+    from tests.test_workbench_qml_producer_flow_e2e import (
+        _boot_screen1,
+        _build_representative_synthetic_bank,
+        _shutdown_engine,
+        _wait_for_analysis,
+    )
+
     db = tmp_path / "library.db"
     state_dir = tmp_path / "state"
     state_dir.mkdir()
