@@ -112,45 +112,6 @@ def compose_workbench_session(
         transport = WorkbenchTransportAdapter()
         audition = TransportAwarePreview(WorkbenchPreviewPlayer(), transport)
 
-    # #region agent log
-    try:
-        import json
-        import sys
-        import tempfile
-        import time
-        from pathlib import Path as _Path
-
-        _payload = {
-            "sessionId": "676a9f",
-            "runId": "post-fix",
-            "hypothesisId": "A",
-            "location": "workbench_session.py:compose_workbench_session",
-            "message": "compose_ok_no_module_tk",
-            "data": {
-                "include_tk_workbench": bool(include_tk_workbench),
-                "audition_type": type(audition).__name__,
-            },
-            "timestamp": int(time.time() * 1000),
-        }
-        _line = json.dumps(_payload, ensure_ascii=True) + "\n"
-        _candidates = [
-            _Path(__file__).resolve().parents[1] / "debug-676a9f.log",
-            _Path(tempfile.gettempdir()) / "debug-676a9f.log",
-        ]
-        if getattr(sys, "frozen", False):
-            _candidates.append(
-                _Path(sys.executable).resolve().parent / "debug-676a9f.log"
-            )
-        for _log in _candidates:
-            try:
-                with _log.open("a", encoding="utf-8") as _handle:
-                    _handle.write(_line)
-            except Exception:
-                pass
-    except Exception:
-        pass
-    # #endregion
-
     view_model = Screen1QmlViewModel(
         state_id="screen1-default-3panel",
         library_labels=(),

@@ -3225,55 +3225,7 @@ def _qml_engine(
     preview_player = None
     channel_rack_controller = None
     if interaction_adapter is None:
-        # #region agent log
-        def _dbg760(message: str, data: dict, hypothesis_id: str) -> None:
-            import json
-            import sys
-            import tempfile
-            import time
-            from pathlib import Path
-
-            payload = {
-                "sessionId": "676a9f",
-                "runId": "post-fix",
-                "hypothesisId": "A",
-                "location": "workbench_qml.py:_qml_engine",
-                "message": message,
-                "data": data,
-                "timestamp": int(time.time() * 1000),
-            }
-            line = json.dumps(payload, ensure_ascii=True) + "\n"
-            candidates = [
-                Path(__file__).resolve().parents[1] / "debug-676a9f.log",
-                Path(tempfile.gettempdir()) / "debug-676a9f.log",
-            ]
-            if getattr(sys, "frozen", False):
-                candidates.append(
-                    Path(sys.executable).resolve().parent / "debug-676a9f.log"
-                )
-            for log_path in candidates:
-                try:
-                    with log_path.open("a", encoding="utf-8") as handle:
-                        handle.write(line)
-                except Exception:
-                    pass
-
-        _dbg760("before_workbench_session_import", {}, "A")
-        # #endregion
-        try:
-            from .workbench_session import compose_workbench_session
-        except Exception as exc:
-            # #region agent log
-            _dbg760(
-                "workbench_session_import_failed",
-                {"type": type(exc).__name__, "msg": str(exc)[:400]},
-                "A",
-            )
-            # #endregion
-            raise
-        # #region agent log
-        _dbg760("workbench_session_imported", {}, "A")
-        # #endregion
+        from .workbench_session import compose_workbench_session
 
         library_db_path = None
         if runtime_composition is not None:
