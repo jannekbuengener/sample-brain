@@ -113,14 +113,20 @@ exportable absolute private paths.
 
 ### Startup semantics
 
-- Without an explicit Startup designation → **always Clean Start**.
-- A Startup Preset is valid only after an explicit user action
-  (`Set Preset as Startup` / equivalent).
-- Absence, corruption, or deletion of that designation → Clean Start.
-- Layout preference persistence **without** Startup designation may retain
-  ratios / density / motion, but **must not** activate any Source or working
-  pane at launch.
-- Hard rule: do **not** recreate “last session restore” under the name Preset.
+- Without registered Sources → Clean Start (unchanged First-use path).
+- With ≥1 available persisted Source → Returning Workspace (#762) even without
+  an explicit Startup designation. `startup_source_node_id` is an optional
+  preference override, not a required gate for Source reactivation.
+- A Startup Preset Source is valid only after an explicit user action
+  (`Set Preset as Startup` / equivalent) when the user wants a specific Source
+  over the library default order.
+- Absence, corruption, or deletion of that designation does **not** force Clean
+  Start when persisted Sources remain available (#762).
+- Layout preference persistence may retain ratios / density / motion. Source
+  reactivation on launch is owned by the library Source authority + optional
+  Startup designation, not by a general session snapshot.
+- Hard rule: do **not** recreate full “last session restore” (selection /
+  preview / harmony / scroll) under the name Preset.
 
 ### Product actions
 
@@ -128,7 +134,7 @@ exportable absolute private paths.
 |--------|--------|
 | Save Workspace Preset | Persist current stable UI preference snapshot (no transient session). |
 | Set Preset as Startup | Explicitly designate the saved Startup Preset file used at next launch. |
-| Clear Startup (if exposed) | Remove designation → next launch Clean Start. |
+| Clear Startup (if exposed) | Remove designation only. Next launch still uses Returning Workspace when persisted Sources remain (#762); empty library → Clean Start. |
 
 Module seams (extend, do not fork):
 
@@ -141,21 +147,22 @@ Module seams (extend, do not fork):
 
 | Condition | Behavior |
 |-----------|----------|
-| Unknown schema version | Controlled fail-closed (Clean Start for startup resolve; defaults for prefs). |
-| Malformed JSON | Clean Start / defaults; no crash. |
-| Missing/offline startup Source | Visible Source-state / Clean Start; no silent substitute Source. |
+| Unknown schema version | Ignore bad Startup Source; Returning Workspace still considers persisted library Sources (#762); defaults for prefs. |
+| Malformed JSON | Ignore bad Startup Source / defaults; no crash. Returning Workspace still considers persisted library Sources when available. |
+| Missing/offline startup Source | Skip that designation; fall to next available persisted library Source (#762); if none → Clean Start. Do not delete registration. |
 | Invalid ratios | Canonical default ratios. |
 | Unknown panel IDs | Ignore / fail-closed per elastic contract. |
 | Legacy motion `full` | Normalize to `on` on read; never re-persist as `full`. |
 
 ## RED contracts (minimum)
 
-1. Clean Start remains default without Startup designation.
+1. Empty library → Clean Start; persisted available Sources → Returning
+   Workspace without requiring Startup designation (#762).
 2. Density round-trip (Compact).
 3. Motion round-trip (`on` / `reduced` / `off`); `full` loads as `on`.
 4. Ratio/visibility preset round-trip.
-5. Startup preset may open only the designated Source (no selection / no
-   preview / harmony closed).
+5. Explicit Startup designation, when available, prefers that Source (no
+   selection / no preview / harmony closed / Live Kit undisclosed).
 6. Reset Layout does not change library/sample data.
 7. Return to Clean Start does not delete presets/Sources.
 8. Corrupt state does not crash.
