@@ -445,12 +445,26 @@ def _flush_feature_batch(engine, rows: list[dict]) -> None:
         conn.execute(_FEATURE_UPSERT, rows)
 
 
+@dataclass(frozen=True)
+class AnalyzeRunSummary:
+    """Boundary counts for Measurement Contract v1 (ADR-0006).
+
+    ``items_skip`` is reserved for future observed skips. In this slice the
+    SQL ``only_missing`` filter excludes already-analyzed rows before the loop,
+    so skip counts are not observed here and remain ``0``.
+    """
+
+    items_ok: int
+    items_skip: int
+    items_fail: int
+
+
 def run_analyze(
     limit: int | None = None,
     only_missing: bool = True,
     bpm_normalization: str = "none",
     batch_size: int = 100,
-) -> None:
+) -> AnalyzeRunSummary:
     """Compute features for samples in bounded batches.
 
     Safe by default:
@@ -464,6 +478,7 @@ def run_analyze(
 
     engine = init_db()
     processed = 0
+    items_fail = 0
     last_id = 0
     done = False
 
@@ -489,6 +504,7 @@ def run_analyze(
                     bpm_normalization=bpm_normalization,
                 )
                 if feats is None:
+                    items_fail += 1
                     continue
 
                 writes.append(
@@ -516,6 +532,12 @@ def run_analyze(
 
             _flush_feature_batch(engine, writes)
 
+    return AnalyzeRunSummary(
+        items_ok=processed,
+        items_skip=0,
+        items_fail=items_fail,
+    )
+
 
 __all__ = [
     "SHORT_AUDIO_DURATION_SEC",
@@ -523,6 +545,7 @@ __all__ = [
     "SHORT_AUDIO_WARNING_CODE",
     "KEY_ANALYSIS_CONTRACT_VERSION",
     "MODE_CONTRAST_MIN",
+    "AnalyzeRunSummary",
     "run_analyze",
     "extract_features",
     "safe_load",

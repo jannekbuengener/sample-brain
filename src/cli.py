@@ -2,6 +2,7 @@
 from __future__ import annotations
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 import time
@@ -1066,7 +1067,23 @@ def main():
         except Exception as e:
             print(f"[ERROR] Analyze-Modul fehlt/fehlerhaft: {e}", file=sys.stderr)
             sys.exit(1)
-        run_analyze(bpm_normalization=bpm_normalization, only_missing=not args.all)
+        started = time.perf_counter()
+        summary = run_analyze(
+            bpm_normalization=bpm_normalization, only_missing=not args.all
+        )
+        wall_ms = max(0, int((time.perf_counter() - started) * 1000))
+        try:
+            from .measurement.emit import record_analyze_stage_safe
+
+            record_analyze_stage_safe(
+                config=cfg,
+                env=os.environ,
+                summary=summary,
+                wall_ms=wall_ms,
+            )
+        except Exception:
+            # Hard fail-soft boundary: measurement must never affect analyze success.
+            pass
         print("Analyze completed.")
         return
 
