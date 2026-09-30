@@ -11,6 +11,14 @@ from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs
 REPO = Path(SPECPATH).resolve().parents[1]
 ENTRY = REPO / "tools" / "windows" / "sample_brain_gui_entry.py"
 DLL = REPO / "native" / "audio" / "build" / "bin" / "Release" / "samplebrain_audio.dll"
+SCREEN1_BACKGROUND = (
+    REPO
+    / "docs"
+    / "assets"
+    / "portfolio"
+    / "references"
+    / "screen1_background_reference.png"
+)
 
 datas = []
 binaries = []
@@ -40,6 +48,16 @@ binaries += collect_dynamic_libs("soundfile")
 
 if DLL.is_file():
     binaries.append((str(DLL), "."))
+
+# Canonical Screen-1 background (required for frozen QML surface; not optional polish).
+if not SCREEN1_BACKGROUND.is_file():
+    raise SystemExit(f"REQUIRED Screen-1 background missing: {SCREEN1_BACKGROUND}")
+datas.append(
+    (
+        str(SCREEN1_BACKGROUND),
+        str(Path("docs") / "assets" / "portfolio" / "references"),
+    )
+)
 
 a = Analysis(
     [str(ENTRY)],

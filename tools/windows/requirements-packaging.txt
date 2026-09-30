@@ -7,9 +7,10 @@
 #   lazy_loader missing `_StubVisitor` (implicit-imports plugin).
 # Authorized fallback for this slice: PyInstaller onedir.
 #
-# Runtime stack (pilot):
+# Pilot release identity (fail-closed in build_distributable.ps1):
 #   Python 3.12.10
-#   PySide6 / Qt 6.11.2 (project optional extra [qtquick])
+#   PySide6 / Qt 6.11.2
+PySide6==6.11.2
 Nuitka==4.1.1
 ordered-set==4.1.0
 zstandard==0.25.0

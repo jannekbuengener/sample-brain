@@ -1,13 +1,17 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Build the #729 Windows Screen-1 portable tester ZIP (pyside6-deploy → Nuitka standalone).
+  Build the #729 Windows Screen-1 portable tester ZIP.
 
 .DESCRIPTION
+  Preferred: pyside6-deploy dry-run -> Nuitka standalone.
+  Documented Nuitka/librosa blocker -> PyInstaller onedir fallback.
+
   Hard requirements:
-  - Python 3.12.10 packaging venv with .[qtquick] + tools/windows/requirements-packaging.txt
-  - Release/x64 samplebrain_audio.dll already built (or -BuildNative)
-  - No OneFile / MSI / installer in this path
+  - Exact Python 3.12.10
+  - Exact PySide6 6.11.2 (pilot pin)
+  - Release/x64 samplebrain_audio.dll (or -BuildNative)
+  - No OneFile / MSI / installer
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\tools\windows\build_distributable.ps1 -BuildNative
@@ -34,7 +38,7 @@ function Get-PackagingPython {
 $Py = Get-PackagingPython -Preferred $Python
 $PyVer = & $Py -c "import sys; print('{0}.{1}.{2}'.format(*sys.version_info[:3]))"
 if ($PyVer -ne "3.12.10") {
-    Write-Warning "Expected Python 3.12.10 for pilot packaging; found $PyVer"
+    throw "Pilot packaging requires exact Python 3.12.10; found $PyVer."
 }
 
 $SourceSha = (& git -C $RepoRoot rev-parse HEAD).Trim()
@@ -43,13 +47,20 @@ $DistRoot = if ($OutRoot) { $OutRoot } else { Join-Path $RepoRoot "dist\packagin
 $StageDir = Join-Path $DistRoot "stage-$BuildId"
 $ArtifactName = "SampleBrain-Screen1-Pilot-$BuildId-win64.zip"
 $ArtifactPath = Join-Path $DistRoot $ArtifactName
+$DumpbinEvidenceName = "dumpbin-samplebrain_audio-$BuildId.txt"
+$BlockerEvidenceName = "nuitka-blocker-$BuildId.txt"
 
 New-Item -ItemType Directory -Force -Path $DistRoot | Out-Null
 if (Test-Path -LiteralPath $StageDir) { Remove-Item -LiteralPath $StageDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
 
-# Ensure packaging pins
+# Ensure packaging pins (includes PySide6==6.11.2 for the release path)
 & $Py -m pip install -r (Join-Path $RepoRoot "tools\windows\requirements-packaging.txt") | Out-Host
+
+$PySideVer = & $Py -c "import PySide6; print(PySide6.__version__)"
+if ($PySideVer -ne "6.11.2") {
+    throw "Pilot packaging requires exact PySide6 6.11.2; found $PySideVer."
+}
 
 if ($BuildNative) {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
@@ -71,24 +82,31 @@ ctest -C Release --output-on-failure
 
 $Dll = Join-Path $RepoRoot "native\audio\build\bin\Release\samplebrain_audio.dll"
 if (-not (Test-Path -LiteralPath $Dll)) {
-    throw "REQUIRED samplebrain_audio.dll missing at $Dll - packaging acceptance would FAIL."
+    throw "REQUIRED samplebrain_audio.dll missing (expected native/audio/build/bin/Release/). Packaging acceptance FAIL."
 }
 
-# dumpbin dependents (evidence)
+# dumpbin dependents (build-machine evidence outside the shipped ZIP)
 $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
 $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-$DumpbinLog = Join-Path $DistRoot "dumpbin-samplebrain_audio-$BuildId.txt"
+$DumpbinLog = Join-Path $DistRoot $DumpbinEvidenceName
 cmd /c "`"$vs\VC\Auxiliary\Build\vcvarsall.bat`" x64 >nul & dumpbin /DEPENDENTS `"$Dll`" > `"$DumpbinLog`""
 if ($LASTEXITCODE -ne 0) { throw "dumpbin /DEPENDENTS failed." }
 
-# Patch pysidedeploy.spec python_path for this venv
-$SpecPath = Join-Path $RepoRoot "tools\windows\pysidedeploy.spec"
-$SpecText = Get-Content -LiteralPath $SpecPath -Raw
+# Patch a staged copy of pysidedeploy.spec only (never mutate the tracked file).
+$TrackedSpec = Join-Path $RepoRoot "tools\windows\pysidedeploy.spec"
+$StagedSpec = Join-Path $StageDir "pysidedeploy.spec"
+Copy-Item -LiteralPath $TrackedSpec -Destination $StagedSpec -Force
+$SpecText = Get-Content -LiteralPath $StagedSpec -Raw
+$SpecText = [regex]::Replace($SpecText, "(?m)^project_dir\s*=\s*.*$", "project_dir = $RepoRoot")
 $SpecText = [regex]::Replace($SpecText, "(?m)^python_path\s*=\s*.*$", "python_path = $Py")
-if ($SpecText -notmatch "(?m)^packages\s*=") { $SpecText = $SpecText -replace "(?m)(^\[python\]\r?\n)", "`$1packages = Nuitka==4.1.1`r`n" } else { $SpecText = [regex]::Replace($SpecText, "(?m)^packages\s*=\s*.*$", "packages = Nuitka==4.1.1") }
+if ($SpecText -notmatch "(?m)^packages\s*=") {
+    $SpecText = $SpecText -replace "(?m)(^\[python\]\r?\n)", "`$1packages = Nuitka==4.1.1`r`n"
+} else {
+    $SpecText = [regex]::Replace($SpecText, "(?m)^packages\s*=\s*.*$", "packages = Nuitka==4.1.1")
+}
 $SpecText = [regex]::Replace($SpecText, "(?m)^exec_directory\s*=\s*.*$", "exec_directory = $StageDir")
 $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-[System.IO.File]::WriteAllText($SpecPath, $SpecText, $utf8NoBom)
+[System.IO.File]::WriteAllText($StagedSpec, $SpecText, $utf8NoBom)
 
 $Deploy = Join-Path (Split-Path $Py -Parent) "pyside6-deploy.exe"
 if (-not (Test-Path -LiteralPath $Deploy)) {
@@ -103,7 +121,7 @@ $DryLog = Join-Path $DistRoot "pyside6-deploy-dry-run-$BuildId.txt"
 Write-Host "=== pyside6-deploy --dry-run (Nuitka invocation evidence) ==="
 $prevEap = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-& $Deploy --config-file $SpecPath --mode standalone --force --name SampleBrain --dry-run $Entry 2>&1 |
+& $Deploy --config-file $StagedSpec --mode standalone --force --name SampleBrain --dry-run $Entry 2>&1 |
     Tee-Object -FilePath $DryLog
 $deployExit = $LASTEXITCODE
 $ErrorActionPreference = $prevEap
@@ -116,7 +134,7 @@ if ($DryRunOnly) {
 
 # Documented Nuitka blocker (librosa/lazy_loader _StubVisitor) across 2.7/2.8/4.1.1.
 # Authorized #729 fallback: PyInstaller onedir.
-$BlockerNote = Join-Path $DistRoot "nuitka-blocker-$BuildId.txt"
+$BlockerNote = Join-Path $DistRoot $BlockerEvidenceName
 @"
 NUITKA_BLOCKED=1
 reason=Nuitka implicit-imports FATAL on module librosa: lazy_loader has no attribute _StubVisitor
@@ -135,7 +153,7 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller onedir build failed." }
 
 $Standalone = Join-Path $PyInstallerOut "SampleBrain"
 if (-not (Test-Path -LiteralPath $Standalone)) {
-    throw "Standalone SampleBrain output not found under $PyInstallerOut"
+    throw "Standalone SampleBrain output not found under staged pyinstaller-out."
 }
 
 $FinalApp = Join-Path $StageDir "SampleBrain"
@@ -145,7 +163,7 @@ if ($Standalone -ne $FinalApp) {
 }
 
 $Exe = Join-Path $FinalApp "SampleBrain.exe"
-if (-not (Test-Path -LiteralPath $Exe)) { throw "SampleBrain.exe missing in $FinalApp" }
+if (-not (Test-Path -LiteralPath $Exe)) { throw "SampleBrain.exe missing in staged SampleBrain folder." }
 
 # Ensure native DLL next to exe (packaging REQUIRED)
 $DllDest = Join-Path $FinalApp "samplebrain_audio.dll"
@@ -156,40 +174,39 @@ $QWindows = Get-ChildItem -LiteralPath $FinalApp -Recurse -Filter "qwindows.dll"
     Select-Object -First 1
 if (-not $QWindows) { throw "qwindows.dll missing from standalone artifact - Qt platforms plugin FAIL." }
 
-# Tester note + BUILDINFO (hash recorded in sidecar after final zip)
+# Tester note + BUILDINFO (relative evidence IDs only; no machine-local absolute paths)
 Copy-Item -LiteralPath (Join-Path $RepoRoot "tools\windows\TESTER_NOTE.md") `
     -Destination (Join-Path $FinalApp "TESTER_NOTE.txt") -Force
 
-$PySideVer = & $Py -c "import PySide6; print(PySide6.__version__)"
 $QtVer = & $Py -c "from PySide6.QtCore import qVersion; print(qVersion())"
 $NuitkaVer = ((& $Py -m nuitka --version 2>&1) | Select-Object -First 1).ToString().Trim()
+$PyInstallerVer = & $Py -c "import PyInstaller; print(PyInstaller.__version__)"
 
 $BuildInfoPath = Join-Path $FinalApp "BUILDINFO.txt"
-$BuildInfo = @"
-product=SampleBrain Screen 1 Pilot
-delivery=PORTABLE_STANDALONE_ZIP
-build_id=$BuildId
-source_sha=$SourceSha
-python=$PyVer
-pyside6=$PySideVer
-qt=$QtVer
-nuitka=$NuitkaVer
-packager=pyside6-deploy dry-run -> Nuitka BLOCKED (librosa/lazy_loader) -> PyInstaller onedir fallback
-nuitka_blocker_log=$BlockerNote
-native_audio_dll=samplebrain_audio.dll
-native_audio_source=native/audio/build/bin/Release/samplebrain_audio.dll
-native_audio_dumpbin_log=$DumpbinLog
-signing=unsigned (pilot); SmartScreen may warn - More info / Run anyway
-artifact_zip=$ArtifactName
-"@
-Set-Content -LiteralPath $BuildInfoPath -Value $BuildInfo -Encoding UTF8
-
+& $Py (Join-Path $RepoRoot "tools\windows\write_buildinfo.py") `
+    --out $BuildInfoPath `
+    --build-id $BuildId `
+    --source-sha $SourceSha `
+    --python $PyVer `
+    --pyside6 $PySideVer `
+    --qt $QtVer `
+    --pyinstaller $PyInstallerVer `
+    --nuitka $NuitkaVer `
+    --artifact-zip $ArtifactName
+if ($LASTEXITCODE -ne 0) { throw "BUILDINFO render/hygiene check failed." }
 # Hygiene: refuse common leak patterns in tree names
 $Forbidden = @(".venv", ".git", "catalog.db", "__pycache__", "profiles.local.yaml")
 $Leaks = Get-ChildItem -LiteralPath $FinalApp -Recurse -Force |
     Where-Object { $Forbidden -contains $_.Name }
 if ($Leaks) {
-    throw ("Artifact hygiene FAIL: " + (($Leaks | ForEach-Object { $_.FullName }) -join "; "))
+    throw ("Artifact hygiene FAIL: forbidden names present in staged SampleBrain tree.")
+}
+
+# Hygiene: refuse absolute path leaks inside shipped text files
+foreach ($shipped in @("BUILDINFO.txt", "TESTER_NOTE.txt")) {
+    $shippedPath = Join-Path $FinalApp $shipped
+    & $Py -c "from pathlib import Path; from src.workbench_distributable_buildinfo import validate_buildinfo_hygiene; validate_buildinfo_hygiene(Path(r'$shippedPath').read_text(encoding='utf-8'))"
+    if ($LASTEXITCODE -ne 0) { throw "Artifact hygiene FAIL: absolute path leak in $shipped" }
 }
 
 if (Test-Path -LiteralPath $ArtifactPath) { Remove-Item -LiteralPath $ArtifactPath -Force }
