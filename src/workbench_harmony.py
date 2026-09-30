@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, List, Optional, Sequence, Tuple
@@ -408,8 +409,10 @@ class HarmonicMatchLibraryController:
         self,
         *,
         finder: Callable[..., Tuple[list[HarmonySuggestion], Optional[str]]] = find_harmony_matches,
+        on_query_finished: Callable[..., None] | None = None,
     ) -> None:
         self._finder = finder
+        self._on_query_finished = on_query_finished
         self.anchor: WorkbenchRow | None = None
         self.results: tuple[HarmonySuggestion, ...] = ()
         self.status = "Harmonic Match ist ausgeschaltet."
@@ -431,6 +434,7 @@ class HarmonicMatchLibraryController:
             return
 
         eligible = [row for row in candidates if row.path != anchor.path]
+        started = time.perf_counter()
         suggestions, finder_status = self._finder(anchor, eligible)
         visible = tuple(
             suggestion
@@ -445,11 +449,21 @@ class HarmonicMatchLibraryController:
                 )
             )
         )
+        wall_ms = max(0, int((time.perf_counter() - started) * 1000))
         self.results = visible
         if visible:
             self.status = f"{len(visible)} sichere Harmonic Matches."
         else:
             self.status = finder_status or "Keine sicheren Harmonic Matches gefunden."
+        if self._on_query_finished is not None:
+            try:
+                self._on_query_finished(
+                    wall_ms=wall_ms,
+                    result_count=len(visible),
+                    status="ok",
+                )
+            except Exception:
+                pass
 
     def observe_selection(self, _row: WorkbenchRow) -> None:
         """Ordinary selection intentionally leaves the explicit anchor untouched."""
