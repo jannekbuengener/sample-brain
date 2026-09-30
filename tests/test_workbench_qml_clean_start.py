@@ -39,6 +39,28 @@ PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 SAMPLE_SOURCES = "container:sample-sources"
 
 
+def _force_collapsed_clean_start(view_model, composition) -> None:
+    """Keep registered Sources, force No-Source First View (#725 affordance tests)."""
+    composition.clear_no_scope()
+    composition.clear_live_kit_disclosure()
+    view_model.set_browser_state(
+        rows=(),
+        selected_index=-1,
+        browser_context="No library selected",
+        error=None,
+    )
+    view_model.set_workspace_materialization(
+        has_active_source=False,
+        calm_canvas_visible=True,
+        browser_materialized=False,
+        live_kit_materialized=False,
+    )
+    view_model.set_library_revealed(False)
+    view_model.harmony_rows = ()
+    view_model.harmony_anchor = ""
+    view_model.harmony_status = "Harmonic Match ist ausgeschaltet."
+
+
 def _row(name: str) -> WorkbenchRow:
     return WorkbenchRow(
         display_name=name,
@@ -151,9 +173,70 @@ def test_startup_preset_with_available_source_overrides_clean_start(tmp_path: Pa
     assert launch.mode is WorkspaceMode.ACTIVE_SOURCE
     assert launch.source_node_id == "root:42"
     assert launch.browser_materialized is True
-    assert launch.live_kit_materialized is True
+    assert launch.live_kit_materialized is False
     assert launch.calm_canvas_visible is False
     assert launch.harmonic_visible is False
+
+
+def test_persisted_sources_resolve_to_returning_workspace_without_startup_preset():
+    launch = resolve_launch_workspace(
+        preset=None,
+        source_available=lambda node_id: node_id == "root:7",
+        persisted_source_node_ids=("root:7",),
+    )
+    assert launch.mode is WorkspaceMode.ACTIVE_SOURCE
+    assert launch.source_node_id == "root:7"
+    assert launch.browser_materialized is True
+    assert launch.live_kit_materialized is False
+    assert launch.calm_canvas_visible is False
+
+
+def test_returning_source_policy_prefers_startup_then_persisted_order():
+    launch = resolve_launch_workspace(
+        preset=None,
+        source_available=lambda node_id: node_id in {"root:1", "root:2", "root:3"},
+        persisted_source_node_ids=("root:2", "root:1", "root:3"),
+    )
+    assert launch.source_node_id == "root:2"
+
+    from src.workbench_qml_startup import Screen1StartupPreset
+
+    preferred = Screen1StartupPreset(
+        version=SCREEN1_STARTUP_PRESET_SCHEMA_VERSION,
+        startup_source_node_id="root:3",
+    )
+    launch2 = resolve_launch_workspace(
+        preset=preferred,
+        source_available=lambda node_id: node_id in {"root:1", "root:2", "root:3"},
+        persisted_source_node_ids=("root:2", "root:1", "root:3"),
+    )
+    assert launch2.source_node_id == "root:3"
+
+
+def test_offline_preferred_source_falls_to_next_available_persisted():
+    from src.workbench_qml_startup import Screen1StartupPreset
+
+    preferred = Screen1StartupPreset(
+        version=SCREEN1_STARTUP_PRESET_SCHEMA_VERSION,
+        startup_source_node_id="root:offline",
+    )
+    launch = resolve_launch_workspace(
+        preset=preferred,
+        source_available=lambda node_id: node_id == "root:ok",
+        persisted_source_node_ids=("root:offline", "root:ok"),
+    )
+    assert launch.mode is WorkspaceMode.ACTIVE_SOURCE
+    assert launch.source_node_id == "root:ok"
+
+
+def test_all_offline_persisted_sources_fail_soft_to_clean_start():
+    launch = resolve_launch_workspace(
+        preset=None,
+        source_available=lambda _node_id: False,
+        persisted_source_node_ids=("root:1", "root:2"),
+    )
+    assert launch.mode is WorkspaceMode.CLEAN_START
+    assert launch.source_node_id is None
 
 
 def test_last_folder_artifact_does_not_change_clean_start_resolve(tmp_path: Path):
@@ -278,7 +361,8 @@ class _FakeNav:
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
-def test_qml_launch_with_sources_stays_clean_start(tmp_path: Path):
+def test_qml_launch_with_persisted_source_returns_to_library_and_browser(tmp_path: Path):
+    """Case 2 — Returning with one persisted valid Source (#762)."""
     from PySide6.QtQuick import QQuickItem
 
     from src.workbench_library_navigation import (
@@ -289,10 +373,13 @@ def test_qml_launch_with_sources_stays_clean_start(tmp_path: Path):
         Screen1QmlRuntimeComposition,
         Screen1QmlViewModel,
         _qml_engine,
+        apply_clean_start_launch,
     )
     from src.workbench_qml_library import WorkbenchLibraryTreeState
 
     _root, db = _register_analyzed_root(tmp_path)
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
     navigation = WorkbenchLibraryNavigation(library_db_path=db)
     composition = Screen1QmlRuntimeComposition(
         library_db_path=db,
@@ -307,20 +394,22 @@ def test_qml_launch_with_sources_stays_clean_start(tmp_path: Path):
         live_kit_groups=(),
         library_tree=composition.library_tree,
     )
+    mode = apply_clean_start_launch(view_model, composition, state_dir=state_dir)
     app, engine, window = _qml_engine(view_model, runtime_composition=composition)
     window.show()
     try:
         app.processEvents()
-        library_model = engine._screen1_library_model
         adapter = engine._screen1_interaction_adapter
-        assert library_model.state.selected_node_id is None
-        assert composition.has_active_source is False
-        assert composition.browser_materialized is False
+        assert mode is WorkspaceMode.ACTIVE_SOURCE
+        assert composition.has_active_source is True
+        assert composition.browser_materialized is True
         assert composition.live_kit_materialized is False
-        assert view_model.browser_rows == ()
+        assert view_model.library_revealed is True
+        assert view_model.browser_rows
         assert view_model.selected_browser_index == -1
         assert adapter.harmonic_match_open is False
         assert adapter.preview_active is False
+        library_model = engine._screen1_library_model
         library_model.state.fetch_children(SAMPLE_SOURCES)
         roots = [
             node
@@ -328,14 +417,182 @@ def test_qml_launch_with_sources_stays_clean_start(tmp_path: Path):
             if node.kind is LibraryNodeKind.REGISTERED_ROOT
         ]
         assert roots
+        assert library_model.state.selected_node_id == roots[0].node_id
         calm = window.findChild(QQuickItem, "calmCanvas")
         browser = window.findChild(QQuickItem, "browserPane")
         live_kit = window.findChild(QQuickItem, "liveKitPane")
-        assert calm is not None and calm.isVisible()
-        assert browser is not None and not browser.isVisible()
+        library = window.findChild(QQuickItem, "libraryPane")
+        layout = engine._screen1_layout_model
+        assert calm is not None and not calm.isVisible()
+        assert browser is not None and browser.isVisible()
         assert live_kit is not None and not live_kit.isVisible()
+        assert library is not None and library.isVisible() and layout.libraryWidth > 0
+        assert layout.browserWidth > 0
     finally:
         _shutdown_engine(app, engine, window)
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_qml_empty_library_launch_stays_clean_start(tmp_path: Path):
+    """Case 1 — Empty first run (#762)."""
+    from PySide6.QtQuick import QQuickItem
+
+    from src.workbench_library_navigation import WorkbenchLibraryNavigation
+    from src.workbench_qml import (
+        Screen1QmlRuntimeComposition,
+        Screen1QmlViewModel,
+        _qml_engine,
+        apply_clean_start_launch,
+    )
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+
+    db = tmp_path / "empty-library.db"
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+        library_tree=composition.library_tree,
+    )
+    mode = apply_clean_start_launch(view_model, composition, state_dir=state_dir)
+    app, engine, window = _qml_engine(view_model, runtime_composition=composition)
+    window.show()
+    try:
+        app.processEvents()
+        assert mode is WorkspaceMode.CLEAN_START
+        assert composition.has_active_source is False
+        assert composition.browser_materialized is False
+        assert view_model.library_revealed is False
+        calm = window.findChild(QQuickItem, "calmCanvas")
+        browser = window.findChild(QQuickItem, "browserPane")
+        assert calm is not None and calm.isVisible()
+        assert browser is not None and not browser.isVisible()
+    finally:
+        _shutdown_engine(app, engine, window)
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_qml_multiple_persisted_sources_pick_last_opened_deterministically(
+    tmp_path: Path,
+):
+    """Case 4 — Multiple persisted Sources (#762)."""
+    from src.workbench_controller import (
+        analyze_folder_for_workbench,
+        get_workbench_library_folders,
+        load_cached_folder_rows,
+    )
+    from src.workbench_library_navigation import WorkbenchLibraryNavigation
+    from src.workbench_qml import (
+        Screen1QmlRuntimeComposition,
+        Screen1QmlViewModel,
+        apply_clean_start_launch,
+    )
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+    from tests.audio_fixtures import write_kick_transient_wav
+
+    db = tmp_path / "multi.db"
+    first = tmp_path / "alpha"
+    second = tmp_path / "beta"
+    first.mkdir()
+    second.mkdir()
+    write_kick_transient_wav(first / "a.wav", bpm=120.0, duration_sec=1.0)
+    write_kick_transient_wav(second / "b.wav", bpm=120.0, duration_sec=1.0)
+    analyze_folder_for_workbench(first, library_db_path=db)
+    analyze_folder_for_workbench(second, library_db_path=db)
+    # Touch second as most recently opened → returning policy must prefer it.
+    load_cached_folder_rows(second, library_db_path=db)
+    folders = get_workbench_library_folders(library_db_path=db)
+    assert [Path(folder.path).name for folder in folders] == ["beta", "alpha"]
+    expected = f"root:{folders[0].id}"
+
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+        library_tree=composition.library_tree,
+    )
+    mode = apply_clean_start_launch(view_model, composition, state_dir=tmp_path / "st")
+    assert mode is WorkspaceMode.ACTIVE_SOURCE
+    assert composition.selected_node_id == expected
+    assert composition.browser_materialized is True
+    assert view_model.library_revealed is True
+    assert view_model.selected_browser_index == -1
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_qml_offline_persisted_source_kept_and_falls_to_available(
+    tmp_path: Path,
+):
+    """Case 5 — Missing/offline persisted Source (#762)."""
+    from src.workbench_controller import (
+        analyze_folder_for_workbench,
+        get_workbench_library_folders,
+    )
+    from src.workbench_library import register_library_folder
+    from src.workbench_library_navigation import WorkbenchLibraryNavigation
+    from src.workbench_qml import (
+        Screen1QmlRuntimeComposition,
+        Screen1QmlViewModel,
+        apply_clean_start_launch,
+    )
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+    from tests.audio_fixtures import write_kick_transient_wav
+
+    db = tmp_path / "offline.db"
+    online = tmp_path / "online"
+    offline = tmp_path / "offline-src"
+    online.mkdir()
+    offline.mkdir()
+    write_kick_transient_wav(online / "a.wav", bpm=120.0, duration_sec=1.0)
+    analyze_folder_for_workbench(online, library_db_path=db)
+    offline_id = register_library_folder(offline, db_path=db)
+    # Make offline path disappear while keeping registration.
+    offline_path = offline.resolve()
+    offline.rmdir()
+    assert not offline_path.exists()
+
+    before = get_workbench_library_folders(library_db_path=db)
+    assert any(folder.id == offline_id for folder in before)
+
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+        library_tree=composition.library_tree,
+    )
+    mode = apply_clean_start_launch(view_model, composition, state_dir=tmp_path / "st")
+    after = get_workbench_library_folders(library_db_path=db)
+    assert any(folder.id == offline_id for folder in after)
+    assert mode is WorkspaceMode.ACTIVE_SOURCE
+    assert composition.selected_node_id != f"root:{offline_id}"
+    assert composition.has_active_source is True
+    assert composition.browser_materialized is True
+    assert view_model.selected_browser_index == -1
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
@@ -392,9 +649,9 @@ def test_qml_source_select_materialises_browser_without_selection_or_audition(
         assert adapter.harmonic_match_open is False
         assert adapter.preview_active is False
         assert composition.audition_dispatches == []
-        assert view_model.library_revealed is False
+        assert view_model.library_revealed is True
         layout = engine._screen1_layout_model
-        assert layout.libraryWidth == 0
+        assert layout.libraryWidth > 0
         assert layout.liveKitWidth == 0
         assert layout.browserWidth > 0
         calm = window.findChild(QQuickItem, "calmCanvas")
@@ -404,7 +661,7 @@ def test_qml_source_select_materialises_browser_without_selection_or_audition(
         assert calm is not None and not calm.isVisible()
         assert browser is not None and browser.isVisible()
         assert live_kit is not None and not live_kit.isVisible()
-        assert library is not None and (not library.isVisible() or library.width() == 0)
+        assert library is not None and library.isVisible()
     finally:
         _shutdown_engine(app, engine, window)
 
@@ -503,8 +760,12 @@ def test_qml_does_not_restore_prior_session_selection_harmony_or_preview(
     apply_clean_start_launch(
         view_model, composition, state_dir=isolated_workbench_state_dir
     )
+    # Corrupt preset must not block Returning Workspace (#762); transient state
+    # (selection / harmony / preview) still must not restore.
     assert view_model.selected_browser_index == -1
-    assert composition.has_active_source is False
+    assert composition.has_active_source is True
+    assert composition.browser_materialized is True
+    assert view_model.library_revealed is True
 
     app, engine, window = _qml_engine(view_model, runtime_composition=composition)
     window.show()
@@ -512,7 +773,7 @@ def test_qml_does_not_restore_prior_session_selection_harmony_or_preview(
         adapter = engine._screen1_interaction_adapter
         assert adapter.harmonic_match_open is False
         assert adapter.preview_active is False
-        assert view_model.browser_rows == ()
+        assert view_model.browser_rows
         assert view_model.selected_browser_index == -1
     finally:
         _shutdown_engine(app, engine, window)
@@ -569,7 +830,7 @@ def test_qml_clean_start_add_source_cta_is_primary_focus(tmp_path: Path):
     )
     from src.workbench_qml_library import WorkbenchLibraryTreeState
 
-    _root, db = _register_analyzed_root(tmp_path)
+    db = tmp_path / "empty-cta.db"
     navigation = WorkbenchLibraryNavigation(library_db_path=db)
     composition = Screen1QmlRuntimeComposition(
         library_db_path=db,
@@ -642,6 +903,7 @@ def test_qml_clean_start_library_collapsed_with_reveal_affordance(tmp_path: Path
         library_tree=composition.library_tree,
     )
     apply_clean_start_launch(view_model, composition)
+    _force_collapsed_clean_start(view_model, composition)
     assert view_model.library_revealed is False
     app, engine, window = _qml_engine(view_model, runtime_composition=composition)
     window.show()
@@ -698,6 +960,7 @@ def test_qml_reveal_opens_library_without_source_audition_or_harmony(tmp_path: P
         library_tree=composition.library_tree,
     )
     apply_clean_start_launch(view_model, composition)
+    _force_collapsed_clean_start(view_model, composition)
     app, engine, window = _qml_engine(view_model, runtime_composition=composition)
     window.show()
     try:
@@ -732,7 +995,10 @@ def test_qml_reveal_opens_library_without_source_audition_or_harmony(tmp_path: P
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
-def test_qml_restart_resets_reveal_to_collapsed(tmp_path: Path):
+def test_qml_restart_with_sources_returns_workspace_without_transient_reveal_session(
+    tmp_path: Path,
+):
+    """Case 6 — Returning restores Source scope, not transient No-Source reveal."""
     from src.workbench_library_navigation import WorkbenchLibraryNavigation
     from src.workbench_qml import (
         Screen1QmlRuntimeComposition,
@@ -742,6 +1008,49 @@ def test_qml_restart_resets_reveal_to_collapsed(tmp_path: Path):
     from src.workbench_qml_library import WorkbenchLibraryTreeState
 
     _root, db = _register_analyzed_root(tmp_path)
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+        library_tree=composition.library_tree,
+    )
+    mode1 = apply_clean_start_launch(view_model, composition)
+    assert mode1 is WorkspaceMode.ACTIVE_SOURCE
+    assert view_model.library_revealed is True
+    assert view_model.selected_browser_index == -1
+    # Simulate a No-Source reveal session flag, then relaunch.
+    _force_collapsed_clean_start(view_model, composition)
+    view_model.reveal_library()
+    assert view_model.library_revealed is True
+    assert composition.has_active_source is False
+    mode2 = apply_clean_start_launch(view_model, composition)
+    assert mode2 is WorkspaceMode.ACTIVE_SOURCE
+    assert composition.has_active_source is True
+    assert composition.browser_materialized is True
+    assert view_model.library_revealed is True
+    assert view_model.selected_browser_index == -1
+    assert composition.live_kit_materialized is False
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_qml_empty_restart_resets_reveal_to_collapsed(tmp_path: Path):
+    from src.workbench_library_navigation import WorkbenchLibraryNavigation
+    from src.workbench_qml import (
+        Screen1QmlRuntimeComposition,
+        Screen1QmlViewModel,
+        apply_clean_start_launch,
+    )
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+
+    db = tmp_path / "empty.db"
     navigation = WorkbenchLibraryNavigation(library_db_path=db)
     composition = Screen1QmlRuntimeComposition(
         library_db_path=db,
@@ -796,6 +1105,7 @@ def test_qml_source_select_after_reveal_uses_elastic_not_reveal_flag(tmp_path: P
         library_tree=composition.library_tree,
     )
     apply_clean_start_launch(view_model, composition)
+    _force_collapsed_clean_start(view_model, composition)
     app, engine, window = _qml_engine(view_model, runtime_composition=composition)
     window.show()
     try:

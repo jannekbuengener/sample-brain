@@ -473,6 +473,9 @@ def _sync_runtime_browser_state(
         browser_materialized=runtime_composition.browser_materialized,
         live_kit_materialized=runtime_composition.live_kit_materialized,
     )
+    # #762: Active Source materialises Library with Browser (no Browser-only half).
+    if runtime_composition.has_active_source:
+        view_model.set_library_revealed(True)
     adapter.replace_browser_scope(state.scope)
 
 
@@ -3687,27 +3690,55 @@ def apply_clean_start_launch(
     env=None,
     source_available: Callable[[str], bool] | None = None,
 ) -> WorkspaceMode:
-    """Apply Clean Start (or optional Startup Preset override) for normal launch.
+    """Apply First-use Clean Start or Returning Workspace for normal launch.
 
-    Never restores sample selection, preview, harmony, or scroll. Corrupt / missing
-    preset Sources fail closed to Clean Start. Does not delete registered Sources.
+    Reuses persisted library Sources (#762). Never restores sample selection,
+    preview, harmony, Live Kit disclosure, or scroll. Missing/offline preferred
+    Sources fall through to the next available persisted Source without deleting
+    registration.
     """
+    from .workbench_controller import get_workbench_library_folders
+    from .workbench_library_navigation import LibraryAvailability
+
     loaded = load_startup_preset(state_dir=state_dir, env=env)
 
+    def _ensure_source_children() -> None:
+        tree = runtime_composition.library_tree
+        tree.fetch_children("container:sample-sources")
+
     def _default_available(node_id: str) -> bool:
+        _ensure_source_children()
         tree = runtime_composition.library_tree
         node = tree.node(node_id)
-        if node is None and node_id.startswith("root:"):
-            tree.fetch_children("container:sample-sources")
-            node = tree.node(node_id)
-        return bool(node is not None and node.selectable)
+        if node is None:
+            return False
+        if not node.selectable:
+            return False
+        availability = getattr(node, "availability", None)
+        if availability is LibraryAvailability.OFFLINE:
+            return False
+        if availability is LibraryAvailability.ERROR:
+            return False
+        return True
+
+    _ensure_source_children()
+    persisted_ids: list[str] = []
+    for folder in get_workbench_library_folders(
+        library_db_path=runtime_composition.library_db_path
+    ):
+        node_id = f"root:{folder.id}"
+        persisted_ids.append(node_id)
+    # Keep library order (last_opened_at) as the deterministic fallback authority.
+    # Tree display order may sort by label; returning policy must not.
 
     launch = resolve_launch_workspace(
         preset=loaded.preset,
         source_available=source_available or _default_available,
+        persisted_source_node_ids=persisted_ids,
     )
     view_model.state_id = "screen1-default-3panel"
     runtime_composition.clear_no_scope()
+    runtime_composition.clear_live_kit_disclosure()
     view_model.set_browser_state(
         rows=(),
         selected_index=-1,
@@ -3729,21 +3760,26 @@ def apply_clean_start_launch(
         intent = runtime_composition.library_tree.select(launch.source_node_id)
         if intent is not None:
             runtime_composition.dispatch_selection(intent)
-            state = runtime_composition.browser_state
-            view_model.set_browser_state(
-                rows=state.rows,
-                selected_index=-1,
-                browser_context=state.browser_context,
-                error=state.error,
-            )
-            view_model.set_workspace_materialization(
-                has_active_source=runtime_composition.has_active_source,
-                calm_canvas_visible=not runtime_composition.has_active_source,
-                browser_materialized=runtime_composition.browser_materialized,
-                live_kit_materialized=runtime_composition.live_kit_materialized,
-            )
-            return WorkspaceMode.ACTIVE_SOURCE
-        # Missing/unselectable Source: remain Clean Start (fail closed).
+            if runtime_composition.has_active_source:
+                state = runtime_composition.browser_state
+                view_model.set_browser_state(
+                    rows=state.rows,
+                    selected_index=-1,
+                    browser_context=state.browser_context,
+                    error=state.error,
+                )
+                view_model.set_workspace_materialization(
+                    has_active_source=True,
+                    calm_canvas_visible=False,
+                    browser_materialized=True,
+                    live_kit_materialized=False,
+                )
+                # #762: Active Source materialises Library + Browser together.
+                view_model.set_library_revealed(True)
+                return WorkspaceMode.ACTIVE_SOURCE
+            # Offline/unloadable scope: keep registration, stay Clean Start.
+            runtime_composition.clear_no_scope()
+        # Missing/unselectable Source: remain Clean Start (fail soft).
     return WorkspaceMode.CLEAN_START
 
 
