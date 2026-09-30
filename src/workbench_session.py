@@ -122,6 +122,7 @@ def compose_workbench_session(
             library_db_path=library_db_path,
         ),
         on_preview_stopped=audition.stop,
+        on_preview_snapshot=audition.playback_snapshot,
         live_kit=presenter,
     )
 

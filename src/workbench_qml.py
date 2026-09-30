@@ -609,6 +609,7 @@ class Screen1QmlInteractionAdapter:
         harmony_controller: HarmonicMatchLibraryController | None = None,
         on_preview_requested: Callable[[WorkbenchRow], object] | None = None,
         on_preview_stopped: Callable[[], object] | None = None,
+        on_preview_snapshot: Callable[[], object] | None = None,
         on_add_to_kit_requested: Callable[[WorkbenchRow], object] | None = None,
         live_kit: LiveKitPresenter | None = None,
     ) -> None:
@@ -620,6 +621,7 @@ class Screen1QmlInteractionAdapter:
             on_preview_requested
         )
         self._on_preview_stopped = on_preview_stopped
+        self._on_preview_snapshot = on_preview_snapshot
         self._on_add_to_kit_requested = on_add_to_kit_requested
         self._live_kit = live_kit
         self._pending_live_kit_row: WorkbenchRow | None = None
@@ -632,6 +634,8 @@ class Screen1QmlInteractionAdapter:
         self._harmonic_match_scroll_y = 0.0
         self._harmonic_match_browser_scope: object | None = None
         self._harmonic_match_session_scope: object | None = None
+        self._waveform_motion_mode = "on"
+        self._preview_playback_cache: object | None = None
 
     @property
     def selected_browser_index(self) -> int:
@@ -660,6 +664,39 @@ class Screen1QmlInteractionAdapter:
     @property
     def preview_active(self) -> bool:
         return self._preview_active
+
+    @property
+    def waveform_motion_mode(self) -> str:
+        return self._waveform_motion_mode
+
+    def set_waveform_motion_mode(self, mode: str) -> str:
+        """Presentation-only motion mode seam (On/Reduced/Off). No Settings UI."""
+        normalized = str(mode or "").strip().lower()
+        if normalized not in {"on", "reduced", "off"}:
+            raise ValueError(f"Unsupported waveform motion mode: {mode}")
+        self._waveform_motion_mode = normalized
+        return self._waveform_motion_mode
+
+    def preview_playback_snapshot(self):
+        """Return authoritative preview telemetry for playhead presentation."""
+        from .workbench_transport_ui import PreviewPlaybackSnapshot
+
+        if self._waveform_motion_mode == "off" or not self._preview_active:
+            self._preview_playback_cache = PreviewPlaybackSnapshot.idle()
+            return self._preview_playback_cache
+        if self._on_preview_snapshot is None:
+            self._preview_playback_cache = PreviewPlaybackSnapshot.idle()
+            return self._preview_playback_cache
+        snap = self._on_preview_snapshot()
+        if snap is None:
+            self._preview_playback_cache = PreviewPlaybackSnapshot.idle()
+        else:
+            self._preview_playback_cache = snap
+        return self._preview_playback_cache
+
+    def refresh_preview_playback(self):
+        """Re-read authoritative preview telemetry (presentation driver only)."""
+        return self.preview_playback_snapshot()
 
     @property
     def auditioning_live_kit_slot(self) -> tuple[str, str] | None:
@@ -693,6 +730,7 @@ class Screen1QmlInteractionAdapter:
             self._stop_preview_authoritative()
         self._preview_active = accepted
         self._clear_live_kit_audition_projection()
+        self.preview_playback_snapshot()
         return row
 
     def stop_preview(self) -> bool:
@@ -701,6 +739,7 @@ class Screen1QmlInteractionAdapter:
             return False
         self._stop_preview_authoritative()
         self._clear_live_kit_audition_projection()
+        self.preview_playback_snapshot()
         return True
 
     def _stop_preview_authoritative(self) -> None:
@@ -742,10 +781,12 @@ class Screen1QmlInteractionAdapter:
             if was_active:
                 self._stop_preview_authoritative()
             self._clear_live_kit_audition_projection()
+            self.preview_playback_snapshot()
             return False
         self._preview_active = True
         self._auditioning_live_kit_slot = (group, slot)
         self.view_model.auditioning_live_kit_slot = self._auditioning_live_kit_slot
+        self.preview_playback_snapshot()
         return True
 
     def request_add_to_kit(self, index: int) -> WorkbenchRow:
@@ -958,6 +999,7 @@ class Screen1QmlInteractionAdapter:
             self._stop_preview_authoritative()
         self._preview_active = accepted
         self._clear_live_kit_audition_projection()
+        self.preview_playback_snapshot()
         return row
 
     def navigate_harmonic_match(self, direction: str, *, match_has_focus: bool) -> WorkbenchRow | None:
@@ -1182,6 +1224,17 @@ ApplicationWindow {
     property int harmonicRelationColumnWidth: 72
     property int harmonicAddColumnWidth: 44
     property int browserDelegateCreations: 0
+    // #738 playhead presentation seam (no Settings UI — #696 owns preferences).
+    readonly property string waveformMotionMode: window.interaction.waveformMotionMode
+    readonly property bool previewPlayheadArmed: window.interaction.previewPlaybackPlaying
+        && window.waveformMotionMode !== "off"
+        && window.interaction.previewPlayingPath !== ""
+
+    FrameAnimation {
+        id: previewPlaybackDriver
+        running: window.previewPlayheadArmed
+        onTriggered: window.interaction.refreshPreviewPlayback()
+    }
 
     FolderDialog {
         id: addSourceDialog
@@ -1564,13 +1617,15 @@ ApplicationWindow {
                         Component.onCompleted: window.browserDelegateCreations += 1
                         MouseArea { id: rowSelection; anchors.fill: parent; z: 0; hoverEnabled: true; onClicked: { browser.forceActiveFocus(); window.interaction.selectRow(index) } }
                         RowLayout { anchors.fill: parent; anchors.leftMargin: window.densityHorizontalInset; anchors.rightMargin: window.densityHorizontalInset; anchors.topMargin: window.densityVerticalInset; anchors.bottomMargin: window.densityVerticalInset; spacing: window.densityRowSpacing; z: 1
-                            Item { id: waveformSurface; Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth; Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth; Layout.preferredHeight: window.densityWaveformHeight; Layout.maximumHeight: window.densityWaveformHeight
+                            Item { id: waveformSurface; objectName: "browserWaveformSurface"; Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth; Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth; Layout.preferredHeight: window.densityWaveformHeight; Layout.maximumHeight: window.densityWaveformHeight
                                 Canvas { id: waveformCanvas; anchors.fill: parent; property var envelope: modelData.waveform
+                                    property bool waveformSelected: index === window.screenData.selectedBrowserIndex
                                     onEnvelopeChanged: requestPaint()
+                                    onWaveformSelectedChanged: requestPaint()
                                     onPaint: {
                                         var context = getContext("2d")
                                         context.clearRect(0, 0, width, height)
-                                        context.strokeStyle = index === window.screenData.selectedBrowserIndex ? theme.waveformActive : theme.waveformDefault
+                                        context.strokeStyle = waveformSelected ? theme.waveformActive : theme.waveformDefault
                                         context.lineWidth = 1.2
                                         context.beginPath()
                                         var points = envelope || []
@@ -1589,6 +1644,22 @@ ApplicationWindow {
                                             }
                                         }
                                         context.stroke()
+                                    }
+                                }
+                                Rectangle {
+                                    id: browserPreviewPlayhead
+                                    objectName: "previewPlayhead"
+                                    width: 2
+                                    height: parent ? parent.height : 0
+                                    color: "#eceef1"
+                                    z: 3
+                                    visible: window.previewPlayheadArmed && parent
+                                        && (("" + modelData.path) === ("" + window.interaction.previewPlayingPath))
+                                    x: {
+                                        if (!parent)
+                                            return 0
+                                        var span = Math.max(0, parent.width - width)
+                                        return Math.round(Math.max(0, Math.min(1, window.interaction.previewProgress)) * span)
                                     }
                                 }
                                 MouseArea { anchors.fill: parent; z: 2; onClicked: { browser.forceActiveFocus(); window.interaction.previewRow(index) } }
@@ -1761,6 +1832,21 @@ ApplicationWindow {
                                             context.lineTo(x, center + amplitude)
                                         }
                                         context.stroke()
+                                    }
+                                }
+                                Rectangle {
+                                    objectName: "previewPlayhead"
+                                    width: 2
+                                    height: parent ? parent.height : 0
+                                    color: "#eceef1"
+                                    z: 3
+                                    visible: window.previewPlayheadArmed && parent
+                                        && (("" + modelData.path) === ("" + window.interaction.previewPlayingPath))
+                                    x: {
+                                        if (!parent)
+                                            return 0
+                                        var span = Math.max(0, parent.width - width)
+                                        return Math.round(Math.max(0, Math.min(1, window.interaction.previewProgress)) * span)
                                     }
                                 }
                                 MouseArea { anchors.fill: parent; z: 2; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.previewHarmonyRow(index) } }
@@ -2042,6 +2128,35 @@ def _qml_interaction_bridge(
         @Property(bool, notify=state_changed)
         def previewActive(self) -> bool:
             return adapter.preview_active
+
+        @Property(str, notify=state_changed)
+        def previewPlayingPath(self) -> str:
+            snap = adapter.preview_playback_snapshot()
+            return str(getattr(snap, "sample_path", "") or "")
+
+        @Property(float, notify=state_changed)
+        def previewProgress(self) -> float:
+            snap = adapter.preview_playback_snapshot()
+            return float(getattr(snap, "progress", 0.0) or 0.0)
+
+        @Property(bool, notify=state_changed)
+        def previewPlaybackPlaying(self) -> bool:
+            snap = adapter.preview_playback_snapshot()
+            return bool(getattr(snap, "playing", False))
+
+        @Property(int, notify=state_changed)
+        def previewPlaybackId(self) -> int:
+            snap = adapter.preview_playback_snapshot()
+            return int(getattr(snap, "playback_instance_id", 0) or 0)
+
+        @Property(str, notify=state_changed)
+        def waveformMotionMode(self) -> str:
+            return adapter.waveform_motion_mode
+
+        @Slot()
+        def refreshPreviewPlayback(self) -> None:
+            adapter.refresh_preview_playback()
+            self.state_changed.emit()
 
         @Property(str, notify=state_changed)
         def liveKitExportStatus(self) -> str:
