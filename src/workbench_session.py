@@ -3,6 +3,10 @@
 One composed session owns exactly one :class:`LiveKitState`, exactly one
 :class:`TransportAwarePreview` audition owner, and one Screen-2
 :class:`ChannelRackController` that reuses the same kit + transport.
+
+Cross-screen audio focus (#807) is owned here: entering Screen 2 / claiming
+Channel Rack playback releases Screen-1 audition; returning to Screen 1 leaves
+a quiet surface and never auto-resumes the previous audition.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ from .workbench_transport_adapter import WorkbenchTransportAdapter
 from .workbench_transport_preview import TransportAwarePreview
 
 if TYPE_CHECKING:
+    from .channel_rack import ChannelRackState
     from .workbench import WorkbenchApp
 
 
@@ -40,6 +45,22 @@ class WorkbenchSession:
     channel_rack: ChannelRackController
     tk_workbench: WorkbenchApp | None = None
     measurement_session_id: str | None = None
+
+    def release_screen1_audition(self) -> None:
+        """Stop Screen-1 monophonic audition and clear adapter projection.
+
+        Idempotent. Never resumes a previous audition — callers must start a
+        new explicit preview/Live Kit audition intent.
+        """
+        self.qml_interaction_adapter.quiet_audition()
+
+    def enter_screen2(self) -> ChannelRackState:
+        """Claim Channel Rack focus: quiet Screen-1 audition, then enter Screen 2."""
+        return self.channel_rack.enter_screen2()
+
+    def return_to_screen1(self) -> None:
+        """Leave Screen 2 quietly: stop pattern, keep Screen-1 audition off."""
+        self.channel_rack.leave_screen2()
 
 
 class _SessionAuditionPlayRow:
@@ -147,7 +168,7 @@ def compose_workbench_session(
 
     channel_rack = ChannelRackController(live_kit=live_kit, transport=transport)
 
-    return WorkbenchSession(
+    session = WorkbenchSession(
         live_kit=live_kit,
         live_kit_presenter=presenter,
         transport=transport,
@@ -157,6 +178,13 @@ def compose_workbench_session(
         tk_workbench=tk_workbench,
         measurement_session_id=measurement_session_id,
     )
+    # Single ownership: Channel Rack enter/play/leave claim/release Screen-1
+    # audition through the session policy, including bridge-direct paths.
+    channel_rack.set_audio_focus_hooks(
+        on_claim_focus=session.release_screen1_audition,
+        on_release_to_screen1=session.release_screen1_audition,
+    )
+    return session
 
 
 __all__ = [
