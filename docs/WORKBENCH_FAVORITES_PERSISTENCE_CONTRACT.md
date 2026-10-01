@@ -72,5 +72,8 @@ Defines the local Favorites / starred-samples domain for Screen 1:
 
 - Collections redesign, tags, smart collections, cloud sync
 - Ratings
-- #768 Drag & Drop, #770 context hint, #780/#781/#782 chrome slices
+- #768 Drag & Drop, #780/#781/#782 chrome slices
 - Screen 2/3, packaging, audio-engine changes
+
+Context-hint discoverability for the Favorites icon is owned by #770
+(`docs/WORKBENCH_CONTEXT_HINT_CONTRACT.md`).

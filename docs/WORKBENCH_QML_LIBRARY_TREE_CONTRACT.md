@@ -52,8 +52,9 @@ collection entries flow through the exact same typed selection intent used by
 Source rows.
 
 Every icon-only control exposes a stable object/semantic identity and accessible
-name. #770 owns the later shared context-hint display; #765 does not implement
-tooltips, docking, dragging, or snap behavior.
+name. #770 owns the shared bottom-center context-hint display; the icon row
+reports hover/focus intents into that seam and does not rely on classic
+cursor-adjacent ToolTips for Library scope discoverability.
 
 ## Collections
 
@@ -149,6 +150,7 @@ Regression coverage now freezes:
 ## Dependency boundary
 
 #765 delivered the compact icon-bar presentation. #766 completes Favorites in
-that bar. This contract still excludes sample Drag & Drop (#768), the
-bottom-center context hint (#770), and the future modular snap/docking system.
-Packaging/installer work is also out of scope.
+that bar. #770 delivers the shared bottom-center context-hint seam for those
+icon-only controls. This contract still excludes sample Drag & Drop (#768)
+and the future modular snap/docking system. Packaging/installer work is also
+out of scope.
