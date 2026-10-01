@@ -98,8 +98,6 @@ def resolve_brand_slots(*, repo_root: Path | None = None) -> Mapping[str, BrandA
     return {
         "brain_symbol": brain,
         "splash_typography": splash,
-        # Alias: wordmark slot is the splash typography reference (no second file).
-        "wordmark": splash,
     }
 
 
@@ -204,7 +202,6 @@ def brand_runtime_payload(
     )
     slots = resolve_brand_slots(repo_root=repo_root)
     brain = slots["brain_symbol"]
-    wordmark = slots["wordmark"]
     ratio = (
         float(projection.progress_ratio)
         if projection.progress_ratio is not None
@@ -222,7 +219,6 @@ def brand_runtime_payload(
         "jobToken": projection.job_token if projection.job_token is not None else -1,
         "stale": projection.stale,
         "brainUrl": brain.path.as_uri(),
-        "wordmarkUrl": wordmark.path.as_uri(),
         "headerPermitsPermanentBranding": SCREEN1_HEADER_PERMITS_PERMANENT_BRANDING,
         "claim": BRAND_CLAIM,
     }

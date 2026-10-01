@@ -68,8 +68,7 @@ def test_brand_slots_resolve_only_owner_approved_portfolio_refs() -> None:
     assert slots["brain_symbol"].sha256 == PRIMARY_BRAIN_SHA256
     assert slots["splash_typography"].path.resolve() == SPLASH_TYPOGRAPHY.resolve()
     assert slots["splash_typography"].sha256 == SPLASH_TYPOGRAPHY_SHA256
-    # Wordmark is an alias of splash typography (no duplicate / redrawn asset).
-    assert slots["wordmark"] is slots["splash_typography"]
+    assert "wordmark" not in slots  # no unused alias; splash_typography is the slot
     for slot in slots.values():
         assert slot.path.is_file()
         assert _sha256(slot.path) == slot.sha256
@@ -408,7 +407,7 @@ def test_brand_runtime_payload_is_qml_safe_dict() -> None:
     assert payload["jobToken"] == 42
     assert payload["stale"] is False
     assert payload["brainUrl"] == slots["brain_symbol"].path.as_uri()
-    assert payload["wordmarkUrl"] == slots["wordmark"].path.as_uri()
+    assert "wordmarkUrl" not in payload  # no Screen-1 consumer; splash slot only
     assert payload["headerPermitsPermanentBranding"] is False
     assert payload["claim"] == BRAND_CLAIM
     assert payload["brainUrl"].startswith("file:")
