@@ -138,6 +138,30 @@ def test_browser_typography_roles_are_bounded_and_assigned():
     assert QML_SOURCE.count("font.pixelSize: window.textMeta") >= 3  # BPM/Key/Length
 
 
+def test_browser_meta_fields_use_secondary_text_weight():
+    """ROW_CHROME_TYPOGRAPHY_WEIGHT — BPM/Key/Length secondary to Sample Name.
+
+    Color weight only; density tokens and meta pixel sizes stay frozen.
+    Harmonic Match Key keeps intentional ``actionActive`` accent.
+    """
+    delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
+    assert 'text: modelData.name; color: theme.textPrimary' in delegate
+    assert 'text: modelData.bpm; color: theme.textSecondary' in delegate
+    assert 'text: modelData.key; color: theme.textSecondary' in delegate
+    assert 'text: modelData.duration; color: theme.textSecondary' in delegate
+    assert 'text: modelData.bpm; color: theme.textPrimary' not in delegate
+    assert 'text: modelData.key; color: theme.textPrimary' not in delegate
+    assert 'text: modelData.duration; color: theme.textPrimary' not in delegate
+
+    harmonic = _snippet(QML_SOURCE, 'objectName: "harmonicMatchList"', 9000)
+    assert 'text: modelData.key; color: theme.actionActive' in harmonic
+    assert 'text: modelData.key; color: theme.textSecondary' not in harmonic
+
+    assert _int_property(QML_SOURCE, "densityRowHeight") == 30
+    assert _int_property(QML_SOURCE, "textMeta") == 11
+    assert _int_property(QML_SOURCE, "textBody") == 12
+
+
 def test_browser_density_waveform_and_divider_invariants():
     """#692 supersedes historical 58..72 browserRowHeight density."""
     assert _int_property(QML_SOURCE, "densityRowHeight") == 30
