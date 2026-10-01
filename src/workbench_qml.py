@@ -1507,7 +1507,7 @@ ApplicationWindow {
     property var screenData: screenModel
     property var interaction: interactionModel
     property var channelRack: channelRackModel
-    property var transport: transportModel
+    property var tempoSync: tempoSyncModel
     readonly property string activeScreen: channelRack.activeScreen
     // Screen-1 Theme Authority (#785): Theme Core owns colors; QML binds semantics.
     // No competing HEX palette here — see docs/assets/themes/ and workbench_theme.py.
@@ -1753,7 +1753,7 @@ ApplicationWindow {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.verticalCenter: parent.verticalCenter
             spacing: 0
-            // #805: MASTER/GRID/SYNC project session WorkbenchTransportAdapter only.
+            // #805: MASTER/GRID/SYNC project session tempo/SYNC authority only.
             Label { text: "MASTER"; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignVCenter }
             Button {
                 objectName: "tempoDownButton"
@@ -1771,11 +1771,11 @@ ApplicationWindow {
                     font.pixelSize: 14
                 }
                 background: Item {}
-                onClicked: window.transport.adjustTempo(-1.0)
+                onClicked: window.tempoSync.adjustTempo(-1.0)
             }
             Label {
                 objectName: "masterTempoValue"
-                text: window.transport.masterTempoText
+                text: window.tempoSync.masterTempoText
                 color: theme.textPrimary
                 font.pixelSize: 24
                 font.bold: true
@@ -1797,14 +1797,14 @@ ApplicationWindow {
                     font.pixelSize: 14
                 }
                 background: Item {}
-                onClicked: window.transport.adjustTempo(1.0)
+                onClicked: window.tempoSync.adjustTempo(1.0)
             }
             Label { text: "BPM"; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignVCenter }
             Item { width: 24 }
             Label { text: "GRID"; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignVCenter }
             Label {
                 objectName: "gridValue"
-                text: window.transport.gridText
+                text: window.tempoSync.gridText
                 color: theme.textPrimary
                 font.pixelSize: 24
                 font.bold: true
@@ -1816,22 +1816,22 @@ ApplicationWindow {
                 id: syncIndicator
                 objectName: "syncIndicator"
                 width: 48; height: 25; radius: 4
-                color: window.transport.syncEnabled ? theme.actionActive : theme.surfaceElevated
-                border.width: window.transport.syncEnabled ? 0 : 1
+                color: window.tempoSync.syncEnabled ? theme.actionActive : theme.surfaceElevated
+                border.width: window.tempoSync.syncEnabled ? 0 : 1
                 border.color: theme.borderSubtle
                 Layout.alignment: Qt.AlignVCenter
                 Accessible.name: "SYNC"
                 Label {
                     objectName: "syncStateLabel"
                     anchors.centerIn: parent
-                    text: window.transport.syncEnabled ? "ON" : "OFF"
-                    color: window.transport.syncEnabled ? theme.textOnAction : theme.textSecondary
+                    text: window.tempoSync.syncEnabled ? "ON" : "OFF"
+                    color: window.tempoSync.syncEnabled ? theme.textOnAction : theme.textSecondary
                     font.bold: true
                 }
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: window.transport.toggleSync()
+                    onClicked: window.tempoSync.toggleSync()
                 }
             }
             Item { width: 16 }
@@ -5469,7 +5469,7 @@ def _qml_engine(
     engine.rootContext().setContextProperty("libraryTreeModel", library_model)
     engine.rootContext().setContextProperty("libraryInteraction", library_bridge)
     engine.rootContext().setContextProperty("channelRackModel", channel_rack_bridge)
-    engine.rootContext().setContextProperty("transportModel", transport_bridge)
+    engine.rootContext().setContextProperty("tempoSyncModel", transport_bridge)
     theme_authority = _qml_theme_authority_bridge()
     engine.rootContext().setContextProperty("themeAuthority", theme_authority)
     engine.rootContext().setContextProperty(

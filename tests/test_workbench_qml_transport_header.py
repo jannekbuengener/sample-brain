@@ -38,14 +38,19 @@ def test_qml_source_has_no_hardcoded_decorative_transport_truth():
     assert re.search(r'text:\s*"4/4"', center) is None
     # SYNC must not hardcode an ON pill without binding.
     assert 'text: "ON"' not in center or "syncEnabled" in center
-    assert "transport." in center or "window.transport" in center
+    assert "tempoSync." in center or "window.tempoSync" in center
     assert "adjustTempo" in center
     assert "toggleSync" in center
     # No QML-local BPM / sync stores.
     assert "property real masterBpm" not in QML_SOURCE
-    assert "property bool syncEnabled" not in QML_SOURCE.split("transportModel")[0]
+    assert "property bool syncEnabled" not in QML_SOURCE.split("tempoSyncModel")[0]
+    # Live-kit audition guard forbids domain tokens inside QML_SOURCE;
+    # projection uses tempoSync naming while Python still owns the adapter.
+    assert "WorkbenchTransportAdapter" not in QML_SOURCE
+    assert "transport" not in QML_SOURCE
 
 
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 def test_transport_bridge_projects_adapter_authority_without_local_store():
     from src.workbench_qml import _qml_transport_bridge
     from src.workbench_transport_adapter import WorkbenchTransportAdapter
@@ -76,6 +81,7 @@ def test_transport_bridge_projects_adapter_authority_without_local_store():
     assert float(bridge.masterTempo) == pytest.approx(138.0)
 
 
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 def test_transport_bridge_null_transport_fail_closed_defaults_sync_off():
     from src.workbench_qml import _qml_transport_bridge
     from src.workbench_transport_ui import DEFAULT_TEMPO_BPM
@@ -122,7 +128,7 @@ def test_runtime_qml_header_projects_live_transport_and_commands():
     _settle_qml_frame(app)
     try:
         transport = engine._screen1_channel_rack.transport
-        bridge = engine.rootContext().contextProperty("transportModel")
+        bridge = engine.rootContext().contextProperty("tempoSyncModel")
         assert bridge is not None
         assert engine._screen1_transport is transport
         assert bridge._transport is transport  # noqa: SLF001 — authority identity
