@@ -1809,7 +1809,7 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                     text: themeAuthority.editAccent
                                     color: theme.textPrimary
-                                    placeholderText: "#rrggbb"
+                                    placeholderText: "hex color"
                                 }
                                 Label { text: "Background"; color: theme.textSecondary; font.pixelSize: 11 }
                                 TextField {
@@ -1818,7 +1818,7 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                     text: themeAuthority.editBackground
                                     color: theme.textPrimary
-                                    placeholderText: "#rrggbb"
+                                    placeholderText: "hex color"
                                 }
                                 Label { text: "Foreground"; color: theme.textSecondary; font.pixelSize: 11 }
                                 TextField {
@@ -1827,7 +1827,7 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                     text: themeAuthority.editForeground
                                     color: theme.textPrimary
-                                    placeholderText: "#rrggbb"
+                                    placeholderText: "hex color"
                                 }
                                 Label { text: "Custom name"; color: theme.textSecondary; font.pixelSize: 11 }
                                 TextField {
@@ -2667,7 +2667,8 @@ ApplicationWindow {
                     Label {
                         objectName: "analysisProgressCount"
                         Layout.alignment: Qt.AlignHCenter
-                        visible: window.screenData.analysisTotal > 0
+                        visible: !brandRuntime.stale
+                                 && window.screenData.analysisTotal > 0
                                  && (window.screenData.analysisStatus === "scanning"
                                      || window.screenData.analysisStatus === "analyzing")
                         // Folder-level completed/total — not the in-flight sample ordinal.
@@ -4752,7 +4753,17 @@ def _qml_engine(
                 runtime_composition.clear_live_kit_disclosure()
         elif state.phase in {"cancelled", "error"}:
             _analysis_fail_closed(state)
-        refresh_brand_runtime(state=state)
+        expected_token = None
+        if (
+            analysis_coordinator is not None
+            and state.folder_id is not None
+            and hasattr(analysis_coordinator, "current_token")
+        ):
+            try:
+                expected_token = analysis_coordinator.current_token(state.folder_id)
+            except Exception:
+                expected_token = None
+        refresh_brand_runtime(state=state, expected_token=expected_token)
         refresh_screen_model()
         if layout_model is not None:
             layout_model.syncFromInteraction()
