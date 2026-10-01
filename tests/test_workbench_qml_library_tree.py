@@ -57,6 +57,15 @@ class FakeNavigation:
                 LibraryAvailability.AVAILABLE,
             ),
             LibraryNode(
+                "scope:favorites",
+                LibraryNodeKind.FAVORITES,
+                "Favorites",
+                None,
+                True,
+                False,
+                LibraryAvailability.AVAILABLE,
+            ),
+            LibraryNode(
                 COLLECTIONS,
                 LibraryNodeKind.COLLECTIONS,
                 "Collections",
@@ -164,6 +173,7 @@ class FakeNavigation:
             "scope:catalog-readonly": LibraryScope(
                 LibraryScopeKind.CATALOG, catalog_limit=17
             ),
+            "scope:favorites": LibraryScope(LibraryScopeKind.FAVORITES),
             "collection:7": LibraryScope(
                 LibraryScopeKind.COLLECTION, playlist_id=7, playlist_name="Set A"
             ),
@@ -225,11 +235,18 @@ def test_qml_library_model_uses_exact_canonical_taxonomy_without_fake_surface() 
     assert 'Accessible.name: "Sample Sources"' in source
     assert 'Accessible.name: "All Samples"' in source
     assert 'Accessible.name: "Catalog"' in source
+    assert 'Accessible.name: "Favorites"' in source
     assert 'Accessible.name: "Collections"' in source
     assert 'model.kind === "add_source"' not in source
     assert "libraryLabels" not in source
-    for forbidden in ("Favorites", "My Kits", "Recently Added", "Splice", "User Library"):
+    assert 'objectName: "libraryFavoritesScopeButton"' in source
+    for forbidden in ("My Kits", "Recently Added", "Splice", "User Library"):
         assert forbidden not in source
+    # Favorites belongs in the scope bar, never as a Source-tree synthetic folder label.
+    tree_block = source.split('objectName: "libraryTree"', 1)[1].split(
+        "delegate: TreeViewDelegate", 1
+    )[0]
+    assert "Favorites" not in tree_block
 
 
 def test_library_scope_bar_visual_polish_contract() -> None:
@@ -299,6 +316,7 @@ def test_tree_state_initializes_only_top_level_and_fetches_direct_children_once(
     assert [node.node_id for node in state.secondary_nodes()] == [
         "scope:all-library",
         "scope:catalog-readonly",
+        "scope:favorites",
         COLLECTIONS,
     ]
     assert navigation.calls == []

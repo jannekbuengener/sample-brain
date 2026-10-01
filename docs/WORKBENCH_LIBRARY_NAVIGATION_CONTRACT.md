@@ -18,17 +18,26 @@ backend and no renderer, dialog, audio, scan, or analysis behavior.
 
 ## Navigation model
 
-The root surface consists of Sample Sources, All Samples, Catalog, and
-Collections. Sample Sources contains registered roots and Add Source. Roots
-expand lazily to direct subfolders only. Collections contains existing
-playlists. Favorites, implicit filesystem locations, counts, and fake
-collections are absent.
+The renderer-neutral authority still owns Sample Sources, All Samples,
+Catalog, Collections, and (as of #766) Favorites.
+
+Presentation split (owned by the QML Library Tree contract / #765+#766):
+
+- **Source tree:** Sample Sources with registered roots and lazy subfolders.
+  Add Source lives in the Library header, not inside the tree.
+- **Compact secondary icon bar:** All Samples, Catalog, Favorites, Collections.
+
+Favorites is a dedicated user-organization scope
+(`scope:favorites` / `LibraryScopeKind.FAVORITES`). It is not a Source-tree
+folder, not an analysis category, and not a playlist/Collection alias.
+Implicit filesystem locations, counts, and fake collections remain absent.
 
 Stable IDs are `root:<folder_id>`,
 `folder:<folder_id>:<base64url(normcase-relative-path)>`,
-`collection:<playlist_id>`, and stable IDs for static nodes. Display labels
-are never identity. Root labels use the directory name, with the shortest
-unique parent suffix only for duplicate names.
+`collection:<playlist_id>`, `scope:favorites`, and stable IDs for other
+static secondary nodes. Display labels are never identity. Root labels use
+the directory name, with the shortest unique parent suffix only for duplicate
+names.
 
 ## I/O and availability
 
@@ -40,32 +49,37 @@ renderer-neutral; error details must not expose an absolute producer path.
 
 ## Scope resolution
 
-Selectable roots, subfolders, All Samples, Catalog, and Collections resolve
-to typed scopes. A subfolder scope selects cached descendants by `folder_id`
-and a relative-path prefix; it never triggers a filesystem scan. The query
-compares legacy Windows and POSIX separators only at read time, without
-migrating stored `relative_path` values. Prefix matching escapes SQL wildcard
-characters and preserves directory boundaries.
+Selectable roots, subfolders, All Samples, Catalog, Favorites, and Collections
+resolve to typed scopes. A subfolder scope selects cached descendants by
+`folder_id` and a relative-path prefix; it never triggers a filesystem scan.
+The query compares legacy Windows and POSIX separators only at read time,
+without migrating stored `relative_path` values. Prefix matching escapes SQL
+wildcard characters and preserves directory boundaries.
 
-Catalog scopes remain read-only and use the existing load limit. Collection
+Catalog scopes remain read-only and use the existing load limit. Favorites
+scopes project persisted `favorite_samples` paths through the existing Browser
+row contracts (`docs/WORKBENCH_FAVORITES_PERSISTENCE_CONTRACT.md`). Collection
 scopes retain the stable playlist ID. Add Source is an action, not a sample
 scope.
 
 ## Non-scope
 
-This slice contains no QML, Tk, QAbstractItemModel, runtime composition,
-browser-row redesign, folder dialog, removal wiring, Favorites persistence,
-schema migration, audio/preview behavior, Harmony, or Live Kit work.
+This navigation authority itself does not own QML presentation, folder dialog
+UX, Browser-row chrome, schema migration beyond the Favorites table owned by
+#766, audio/preview behavior, Harmony, or Live Kit work. Favorites
+persistence + Favorites scope loading are specified in
+`docs/WORKBENCH_FAVORITES_PERSISTENCE_CONTRACT.md`.
 
 ## Test freeze
 
-The contract tests were frozen before implementation.  During GREEN validation
-the navigation test oracle was corrected once: **TEST_CONTRACT_FIX: Frozen
-test contradicted canonical normcase contract; product behavior unchanged.**
-The previous literal encoded `Drums`; the canonical value is derived from
-`base64url(normcase(relative-path))` and is therefore platform-correct.
+The original #574 contract tests were frozen before implementation. During
+GREEN validation the navigation test oracle was corrected once:
+**TEST_CONTRACT_FIX: Frozen test contradicted canonical normcase contract;
+product behavior unchanged.** The previous literal encoded `Drums`; the
+canonical value is derived from `base64url(normcase(relative-path))` and is
+therefore platform-correct.
 
-The closed freeze hashes are:
+Historical closed freeze hashes (#574 era; not current #766 authority):
 
 - `tests/test_workbench_library_navigation.py`:
   `08FF5AE872C0E9563EC6F1BB5A8E2BECA39356F31921502C20E65E173107C51A`
@@ -73,3 +87,7 @@ The closed freeze hashes are:
   `C6EA5EF785E4D438121BAB2FAA233272B98A11BBA1086975892FB0F29F9C810A`
 - `tests/test_workbench_controller.py`:
   `01B20E31F6B61A377D2DF52622C1AA3ED84FA936BC2C10F1FC33ACC6D735488F`
+
+#766 extends secondary navigation with Favorites; live tests under
+`tests/test_workbench_favorites_766.py` and the updated navigation/tree
+suites are the current Favorites authority for that slice.

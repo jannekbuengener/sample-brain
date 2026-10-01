@@ -29,9 +29,9 @@ Favorite is the compact personal-marker column from #766:
 - no 1–5 rating domain
 - no renderer-local favorite state; persistence is Python/domain-owned
 
-This slice implements the **minimum** Favorite wiring required for the
-Browser column + persistence contract. Full Favorites navigation/scope in the
-compact top icon bar remains #766.
+This slice implements the Favorite column + persistence wiring. Full Favorites
+navigation/scope in the compact top icon bar is owned by #766
+(`LibraryScopeKind.FAVORITES` / `scope:favorites`).
 
 ## Column behavior
 
@@ -67,7 +67,8 @@ protection, virtualization, and Add-to-Kit remain intact.
 - density retarget, CLEAN_START, Elastic layout changes
 - waveform render/animation redesign
 - Live Kit / Screen 2 / state IDs / audio / catalog / search / harmony logic
-- Favorites navigation surface (#766 remainder)
+- Favorites navigation surface (delivered by #766; this contract does not
+  reimplement it)
 - Rekordbox clone, cue/deck/DJ controls, packaging
 
 ## Typography note versus #776
