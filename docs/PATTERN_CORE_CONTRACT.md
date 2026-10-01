@@ -146,6 +146,11 @@ pattern playhead (musical)
 
 Audition (`TransportAwarePreview`) remains separate and monophonic; it may reuse shared decode but does not own the sequencer cache.
 
+Screen-2 Channel Rack (#810) may repeat this one-pass seam across successive
+finite passes (controller-owned loop until Stop). That does not turn Pattern
+Core into Arrangement/Timeline truth — a Pattern remains a finite musical loop
+replayed by orchestration above `PatternPassPlayer`.
+
 ## Implemented acceptance
 
 - [x] Stable `channel_id` mapping from `LIVE_KIT_SLOT_MAPPING`

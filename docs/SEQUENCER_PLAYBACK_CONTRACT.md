@@ -117,14 +117,23 @@ with more events than concurrent capacity must be driven through
 ## Non-goals
 
 - Screen-2 UI / QML
-- Continuous pattern looping / full transport engine
+- Continuous looping **inside** `PatternPassPlayer` / a public
+  `loop_pattern_forever` sequencer API (the one-pass primitive stays finite)
+- Full transport engine / arrangement timeline / song mode
 - Voice stealing as default polyphony policy
 - Raising `SB_MAX_VOICES`
 - SYNC rate / key-lock as v1 requirement (may reuse later)
 - Mixer / per-voice live gain FFI
-- Arrangement timeline
 - Piano-roll note lengths
 - Pitch / stretch
+
+## Channel Rack multi-pass orchestration (#810)
+
+Screen-2 Channel Rack Play may loop by **controller-owned** succession of
+finite `play_channel_rack_once` / `PatternPassPlayer` passes. Musical pass
+starts advance by `pattern.length_quarter_notes` on the live `TempoMap`
+(quarter-note authority → engine-frame anchors). That is not Arrangement,
+Timeline, or Clip semantics — only repeated pattern passes until Stop.
 
 ## Implemented acceptance
 
