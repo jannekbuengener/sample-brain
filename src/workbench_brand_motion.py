@@ -24,6 +24,9 @@ BRAND_CLAIM = "Sample Brain — Frech aber im Flow."
 
 SCREEN1_HEADER_PERMITS_PERMANENT_BRANDING = False
 
+# Only these phases may drive brand motion / progress visualization.
+WORKING_PHASES = frozenset({"scanning", "analyzing"})
+
 _PRIMARY_BRAIN_RELATIVE = (
     "docs/assets/portfolio/references/brand/sample_brain_logo_primary.png"
 )
@@ -70,7 +73,13 @@ def _repo_root(explicit: Path | None = None) -> Path:
 
 
 def resolve_brand_slots(*, repo_root: Path | None = None) -> Mapping[str, BrandAssetSlot]:
-    """Resolve Owner-approved portfolio brand references only (no generated assets)."""
+    """Resolve Owner-approved portfolio brand references only (no generated assets).
+
+    Slot map:
+    - ``brain_symbol`` — primary brain key-symbol (analysis/loading/splash/external)
+    - ``splash_typography`` — wordmark / splash hero typography (splash/external only)
+    Lockup = compose ``brain_symbol`` + ``splash_typography``; no separate asset file.
+    """
     root = _repo_root(repo_root)
     brain = BrandAssetSlot(
         slot_id="brain_symbol",
@@ -89,6 +98,8 @@ def resolve_brand_slots(*, repo_root: Path | None = None) -> Mapping[str, BrandA
     return {
         "brain_symbol": brain,
         "splash_typography": splash,
+        # Alias: wordmark slot is the splash typography reference (no second file).
+        "wordmark": splash,
     }
 
 
@@ -110,11 +121,11 @@ def project_analysis_motion(
 
     Consumes only phase/current/total/display_name (plus token for stale checks).
     Does not invent percentages or own a second progress clock.
+    Motion is active only while phase is scanning/analyzing and mode is not off.
     """
     mode = normalize_motion_mode(motion_mode)
     reduced = mode == MOTION_REDUCED
-    static = mode == MOTION_OFF
-    active = mode in {MOTION_ON, MOTION_REDUCED}
+    working = state.phase in WORKING_PHASES
 
     stale = expected_token is not None and state.token != expected_token
     if stale:
@@ -131,6 +142,22 @@ def project_analysis_motion(
             stale=True,
         )
 
+    sample_name = str(state.display_name or "")
+
+    if not working:
+        return AnalysisMotionProjection(
+            phase=state.phase,
+            progress_kind="none",
+            progress_ratio=None,
+            sample_name=sample_name,
+            motion_mode=mode,
+            motion_active=False,
+            reduced_motion=reduced,
+            static_fallback=True,
+            job_token=state.token,
+            stale=False,
+        )
+
     total = int(state.total)
     current = int(state.current)
     if total <= 0:
@@ -140,7 +167,8 @@ def project_analysis_motion(
         progress_kind = "determinate"
         progress_ratio = _clamp01(float(current) / float(total))
 
-    sample_name = str(state.display_name or "")
+    static = mode == MOTION_OFF
+    active = mode in {MOTION_ON, MOTION_REDUCED}
 
     return AnalysisMotionProjection(
         phase=state.phase,
@@ -156,11 +184,57 @@ def project_analysis_motion(
     )
 
 
+def brand_runtime_payload(
+    state: AnalysisUiState,
+    motion_mode: Any,
+    *,
+    expected_token: int | None = None,
+    repo_root: Path | None = None,
+) -> dict[str, Any]:
+    """QML-facing presentation dict. Presentation only — no analysis authority.
+
+    Numeric sentinels (QML null-unfriendly):
+    - ``progressRatio`` = ``-1.0`` when indeterminate / none
+    - ``jobToken`` = ``-1`` when token is absent
+    """
+    projection = project_analysis_motion(
+        state,
+        motion_mode,
+        expected_token=expected_token,
+    )
+    slots = resolve_brand_slots(repo_root=repo_root)
+    brain = slots["brain_symbol"]
+    wordmark = slots["wordmark"]
+    ratio = (
+        float(projection.progress_ratio)
+        if projection.progress_ratio is not None
+        else -1.0
+    )
+    return {
+        "phase": projection.phase,
+        "progressKind": projection.progress_kind,
+        "progressRatio": ratio,
+        "sampleName": projection.sample_name,
+        "motionMode": projection.motion_mode,
+        "motionActive": projection.motion_active,
+        "reducedMotion": projection.reduced_motion,
+        "staticFallback": projection.static_fallback,
+        "jobToken": projection.job_token if projection.job_token is not None else -1,
+        "stale": projection.stale,
+        "brainUrl": brain.path.as_uri(),
+        "wordmarkUrl": wordmark.path.as_uri(),
+        "headerPermitsPermanentBranding": SCREEN1_HEADER_PERMITS_PERMANENT_BRANDING,
+        "claim": BRAND_CLAIM,
+    }
+
+
 __all__ = (
     "AnalysisMotionProjection",
     "BRAND_CLAIM",
     "BrandAssetSlot",
     "SCREEN1_HEADER_PERMITS_PERMANENT_BRANDING",
+    "WORKING_PHASES",
+    "brand_runtime_payload",
     "project_analysis_motion",
     "resolve_brand_slots",
 )

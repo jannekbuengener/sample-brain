@@ -68,6 +68,8 @@ def test_brand_slots_resolve_only_owner_approved_portfolio_refs() -> None:
     assert slots["brain_symbol"].sha256 == PRIMARY_BRAIN_SHA256
     assert slots["splash_typography"].path.resolve() == SPLASH_TYPOGRAPHY.resolve()
     assert slots["splash_typography"].sha256 == SPLASH_TYPOGRAPHY_SHA256
+    # Wordmark is an alias of splash typography (no duplicate / redrawn asset).
+    assert slots["wordmark"] is slots["splash_typography"]
     for slot in slots.values():
         assert slot.path.is_file()
         assert _sha256(slot.path) == slot.sha256
@@ -352,3 +354,106 @@ def test_brand_motion_module_forbids_theme_and_dsp_authority() -> None:
         assert token not in lowered
     assert "workbench_qml" not in imported
     assert "theme" not in imported
+
+
+def test_project_analysis_motion_idle_done_error_are_static() -> None:
+    from src.workbench_brand_motion import WORKING_PHASES, project_analysis_motion
+
+    assert WORKING_PHASES == frozenset({"scanning", "analyzing"})
+    for phase in ("idle", "done", "cancelled", "error"):
+        projection = project_analysis_motion(
+            AnalysisUiState(
+                phase=phase,
+                current=2,
+                total=4,
+                display_name="left_over.wav",
+                token=1,
+            ),
+            MOTION_ON,
+        )
+        assert projection.progress_kind == "none"
+        assert projection.progress_ratio is None
+        assert projection.motion_active is False
+        assert projection.static_fallback is True
+        assert projection.sample_name == "left_over.wav"
+
+
+def test_brand_runtime_payload_is_qml_safe_dict() -> None:
+    from src.workbench_brand_motion import (
+        BRAND_CLAIM,
+        brand_runtime_payload,
+        resolve_brand_slots,
+    )
+
+    slots = resolve_brand_slots(repo_root=REPO_ROOT)
+    payload = brand_runtime_payload(
+        AnalysisUiState(
+            phase="analyzing",
+            current=1,
+            total=4,
+            display_name="kick.wav",
+            token=42,
+        ),
+        MOTION_ON,
+        repo_root=REPO_ROOT,
+    )
+    assert payload["phase"] == "analyzing"
+    assert payload["progressKind"] == "determinate"
+    assert payload["progressRatio"] == pytest.approx(0.25)
+    assert payload["sampleName"] == "kick.wav"
+    assert payload["motionMode"] == MOTION_ON
+    assert payload["motionActive"] is True
+    assert payload["reducedMotion"] is False
+    assert payload["staticFallback"] is False
+    assert payload["jobToken"] == 42
+    assert payload["stale"] is False
+    assert payload["brainUrl"] == slots["brain_symbol"].path.as_uri()
+    assert payload["wordmarkUrl"] == slots["wordmark"].path.as_uri()
+    assert payload["headerPermitsPermanentBranding"] is False
+    assert payload["claim"] == BRAND_CLAIM
+    assert payload["brainUrl"].startswith("file:")
+    assert "sample_brain_logo_primary.png" in payload["brainUrl"]
+
+    indeterminate = brand_runtime_payload(
+        AnalysisUiState(phase="scanning", current=0, total=0, token=1),
+        MOTION_REDUCED,
+        repo_root=REPO_ROOT,
+    )
+    assert indeterminate["progressKind"] == "indeterminate"
+    assert indeterminate["progressRatio"] == -1.0
+    assert indeterminate["motionActive"] is True
+    assert indeterminate["reducedMotion"] is True
+
+    off = brand_runtime_payload(
+        AnalysisUiState(
+            phase="analyzing",
+            current=1,
+            total=2,
+            display_name="hat.wav",
+            token=None,
+        ),
+        MOTION_OFF,
+        repo_root=REPO_ROOT,
+    )
+    assert off["staticFallback"] is True
+    assert off["motionActive"] is False
+    assert off["jobToken"] == -1
+    assert off["sampleName"] == "hat.wav"
+
+    stale = brand_runtime_payload(
+        AnalysisUiState(
+            phase="analyzing",
+            current=3,
+            total=4,
+            display_name="stale.wav",
+            token=9,
+        ),
+        MOTION_ON,
+        expected_token=10,
+        repo_root=REPO_ROOT,
+    )
+    assert stale["stale"] is True
+    assert stale["sampleName"] == ""
+    assert stale["progressKind"] == "none"
+    assert stale["progressRatio"] == -1.0
+    assert stale["motionActive"] is False
