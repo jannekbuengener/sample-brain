@@ -1008,6 +1008,17 @@ class Screen1QmlInteractionAdapter:
         self.preview_playback_snapshot()
         return True
 
+    def quiet_audition(self) -> None:
+        """Authoritative Screen-1 quiet for cross-screen audio focus (#807).
+
+        Always stops the shared preview owner and clears Live Kit audition
+        projection, even when the adapter already believes preview is idle.
+        Does not resume later — callers must start a new explicit audition.
+        """
+        self._stop_preview_authoritative()
+        self._clear_live_kit_audition_projection()
+        self.preview_playback_snapshot()
+
     def _stop_preview_authoritative(self) -> None:
         """Stop playback through the existing authoritative stop seam."""
         self._preview_active = False
@@ -4183,11 +4194,15 @@ def _qml_interaction_bridge(
         def openChannelRack(self) -> None:
             if on_open_channel_rack is not None:
                 on_open_channel_rack()
+            # Refresh interaction/screen projection after audio-focus quiet (#807)
+            # so previewActive / Live Kit audition chrome cannot stay stale.
+            self._refresh()
 
         @Slot()
         def returnToScreen1(self) -> None:
             if on_return_to_screen1 is not None:
                 on_return_to_screen1()
+            self._refresh()
 
     return QmlInteractionBridge()
 
@@ -4892,6 +4907,7 @@ def _qml_engine(
     preview_player = None
     channel_rack_controller = None
     session_transport = None
+    session = None
     if interaction_adapter is None:
         from .workbench_session import compose_workbench_session
 
@@ -4917,6 +4933,7 @@ def _qml_engine(
         live_kit = getattr(interaction_adapter, "_live_kit", None)
         channel_rack_controller = None
         session_transport = None
+        session = None
     try:
         from .workbench_display_preferences import load_display_preferences
 
@@ -5434,9 +5451,19 @@ def _qml_engine(
     transport_bridge = _qml_transport_bridge(session_transport)
 
     def open_channel_rack() -> None:
+        # Prefer session orchestration so open always goes through the
+        # Cross-Screen Audio Focus Policy (#807); bridge refresh keeps QML in sync.
+        if session is not None:
+            session.enter_screen2()
+            channel_rack_bridge.refresh()
+            return
         channel_rack_bridge.openChannelRack()
 
     def return_to_screen1() -> None:
+        if session is not None:
+            session.return_to_screen1()
+            channel_rack_bridge.refresh()
+            return
         channel_rack_bridge.returnToScreen1()
 
     bridge = _qml_interaction_bridge(
@@ -5493,6 +5520,7 @@ def _qml_engine(
     engine._screen1_screen_model = screen_model
     engine._screen1_theme_authority = theme_authority
     engine._screen1_live_kit = live_kit
+    engine._screen1_session = session
     engine._screen1_channel_rack = channel_rack_controller
     engine._screen1_channel_rack_bridge = channel_rack_bridge
     engine._screen1_transport = session_transport

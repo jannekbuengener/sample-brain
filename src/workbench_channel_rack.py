@@ -161,6 +161,8 @@ class ChannelRackController:
         pcm_provider: SequencerPcmProvider | None = None,
         lookahead_frames: int = DEFAULT_LOOKAHEAD_FRAMES,
         allocate_voice_id: Callable[[], int] | None = None,
+        on_claim_audio_focus: Callable[[], None] | None = None,
+        on_release_to_screen1: Callable[[], None] | None = None,
     ) -> None:
         self._live_kit = live_kit
         self._transport = transport
@@ -175,6 +177,22 @@ class ChannelRackController:
         self._active_screen = SCREEN1
         self._play_handle: ChannelRackPlayHandle | None = None
         self._playing = False
+        self._on_claim_audio_focus = on_claim_audio_focus
+        self._on_release_to_screen1 = on_release_to_screen1
+
+    def set_audio_focus_hooks(
+        self,
+        *,
+        on_claim_focus: Callable[[], None] | None = None,
+        on_release_to_screen1: Callable[[], None] | None = None,
+    ) -> None:
+        """Bind session-owned cross-screen audio focus callbacks (#807)."""
+        self._on_claim_audio_focus = on_claim_focus
+        self._on_release_to_screen1 = on_release_to_screen1
+
+    def _claim_audio_focus(self) -> None:
+        if self._on_claim_audio_focus is not None:
+            self._on_claim_audio_focus()
 
     @property
     def live_kit(self) -> LiveKitState:
@@ -215,6 +233,7 @@ class ChannelRackController:
         return project_channel_rack_for_qml(self._state)
 
     def enter_screen2(self) -> ChannelRackState:
+        self._claim_audio_focus()
         if self._state is None:
             self._state = build_channel_rack_state(self._live_kit)
         else:
@@ -225,6 +244,8 @@ class ChannelRackController:
     def leave_screen2(self) -> None:
         self.stop()
         self._active_screen = SCREEN1
+        if self._on_release_to_screen1 is not None:
+            self._on_release_to_screen1()
 
     def toggle_step(self, channel_id: str, step_index: int) -> ChannelRackState:
         if self._state is None:
@@ -241,6 +262,7 @@ class ChannelRackController:
     def play(self) -> ChannelRackPlayHandle | None:
         if self._state is None:
             raise RuntimeError("Channel Rack is not active; call enter_screen2() first")
+        self._claim_audio_focus()
         self.stop()
 
         engine = None
@@ -275,6 +297,12 @@ class ChannelRackController:
             pcm_provider=self._pcm_provider,
             allocate_voice_id=self._allocate_voice_id,
         )
+        # Honesty: do not advertise playing when the first tick already finished
+        # with nothing scheduled (missing PCM / empty pass soft-skip).
+        if handle.player.done and int(handle.scheduled_count) == 0:
+            self._play_handle = None
+            self._playing = False
+            return handle
         self._play_handle = handle
         self._playing = True
         return handle

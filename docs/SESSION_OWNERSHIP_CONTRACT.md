@@ -49,6 +49,27 @@ QML Screen-1 / future Screen-2
 5. **No kit persistence** in this slice. State remains in-memory; durable refs are a later decision.
 6. **No Pattern / Channel Rack UI** in this slice.
 
+## Cross-screen audio focus (#807)
+
+Python owns one Cross-Screen Audio Focus Policy on `WorkbenchSession`. QML stays intent/presentation only — no second transport, no second preview state, no QML-owned stop policy.
+
+```text
+enter Screen 2 / before pattern play
+  → release Screen-1 audition (TransportAwarePreview + adapter projection)
+  → Channel Rack owns the active musical playback surface
+
+pattern Stop
+  → ends pattern pass only
+  → does NOT auto-restart Screen-1 preview
+
+return Screen 1
+  → stop Channel Rack pattern
+  → Screen 1 starts quiet
+  → previous audition is NOT resumed
+```
+
+Owner seam: `WorkbenchSession.release_screen1_audition` / `enter_screen2` / `return_to_screen1`, wired into `ChannelRackController` claim/release hooks so bridge and session paths share one authority.
+
 ## Likely paths (implementation later)
 
 - `src/workbench_live_kit.py` — keep contracts; possibly add session wiring helper only if needed
