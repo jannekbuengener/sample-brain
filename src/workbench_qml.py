@@ -250,11 +250,13 @@ class Screen1QmlViewModel:
         self.auditioning_live_kit_slot = auditioning_live_kit_slot
         self.analysis_status = "idle"
         self.analysis_folder_id: int | None = None
-        self.analysis_token: int | None = None
         self.analysis_current = 0
         self.analysis_total = 0
         self.analysis_source = ""
         self.analysis_error: str | None = None
+        self.analysis_token: int | None = None
+        self._brand_expected_token: int | None = None
+        self._brand_motion_mode = "on"
         # #693 Clean Start materialization (progressive disclosure)
         self.has_active_source = False
         self.calm_canvas_visible = True
@@ -438,13 +440,40 @@ class Screen1QmlViewModel:
     def set_analysis_state(self, state: AnalysisUiState) -> None:
         self.analysis_status = state.phase
         self.analysis_folder_id = state.folder_id
-        self.analysis_token = state.token
         self.analysis_current = state.current
         self.analysis_total = state.total
         self.analysis_source = state.display_name
         self.analysis_error = state.error
+        self.analysis_token = state.token
+        # Live published states define the expected job token for brand projection.
+        self._brand_expected_token = state.token
+
+    def set_brand_motion_mode(self, mode: str) -> str:
+        from .workbench_display_preferences import normalize_motion_mode
+
+        self._brand_motion_mode = normalize_motion_mode(mode)
+        return self._brand_motion_mode
+
+    def brand_runtime_context(self) -> dict[str, object]:
+        """Project analysis evidence into QML brand/motion presentation fields."""
+        from .workbench_brand_motion import brand_runtime_payload
+
+        return brand_runtime_payload(
+            AnalysisUiState(
+                folder_id=self.analysis_folder_id,
+                phase=self.analysis_status,  # type: ignore[arg-type]
+                current=self.analysis_current,
+                total=self.analysis_total,
+                display_name=self.analysis_source,
+                token=self.analysis_token,
+                error=self.analysis_error,
+            ),
+            self._brand_motion_mode,
+            expected_token=self._brand_expected_token,
+        )
 
     def qml_context(self) -> dict[str, object]:
+        brand = self.brand_runtime_context()
         return {
             "panelCount": self.panel_count,
             "selectedBrowserIndex": self.selected_browser_index,
@@ -455,6 +484,16 @@ class Screen1QmlViewModel:
             "analysisTotal": self.analysis_total,
             "analysisSource": self.analysis_source,
             "analysisError": self.analysis_error or "",
+            "brandBrainUrl": brand["brainUrl"],
+            "brandProgressKind": brand["progressKind"],
+            "brandProgressRatio": brand["progressRatio"],
+            "brandSampleName": brand["sampleName"],
+            "brandMotionMode": brand["motionMode"],
+            "brandMotionActive": brand["motionActive"],
+            "brandReducedMotion": brand["reducedMotion"],
+            "brandStaticFallback": brand["staticFallback"],
+            "brandStale": brand["stale"],
+            "brandPhase": brand["phase"],
             "harmonyAnchor": self.harmony_anchor,
             "harmonyStatus": self.harmony_status,
             "browserRows": [
@@ -566,6 +605,7 @@ def _qml_screen_data_bridge(
         analysisProgressChanged = Signal()
         analysisSourceChanged = Signal()
         analysisErrorChanged = Signal()
+        brandMotionChanged = Signal()
         harmonyRowsChanged = Signal()
         harmonyAnchorChanged = Signal()
         harmonyStatusChanged = Signal()
@@ -607,6 +647,49 @@ def _qml_screen_data_bridge(
         @Property(str, notify=analysisErrorChanged)
         def analysisError(self) -> str:
             return view_model.analysis_error or ""
+
+        def _brand(self) -> dict[str, object]:
+            return view_model.brand_runtime_context()
+
+        @Property(str, notify=brandMotionChanged)
+        def brandBrainUrl(self) -> str:
+            return str(self._brand()["brainUrl"])
+
+        @Property(str, notify=brandMotionChanged)
+        def brandProgressKind(self) -> str:
+            return str(self._brand()["progressKind"])
+
+        @Property(float, notify=brandMotionChanged)
+        def brandProgressRatio(self) -> float:
+            return float(self._brand()["progressRatio"])
+
+        @Property(str, notify=brandMotionChanged)
+        def brandSampleName(self) -> str:
+            return str(self._brand()["sampleName"])
+
+        @Property(str, notify=brandMotionChanged)
+        def brandMotionMode(self) -> str:
+            return str(self._brand()["motionMode"])
+
+        @Property(bool, notify=brandMotionChanged)
+        def brandMotionActive(self) -> bool:
+            return bool(self._brand()["motionActive"])
+
+        @Property(bool, notify=brandMotionChanged)
+        def brandReducedMotion(self) -> bool:
+            return bool(self._brand()["reducedMotion"])
+
+        @Property(bool, notify=brandMotionChanged)
+        def brandStaticFallback(self) -> bool:
+            return bool(self._brand()["staticFallback"])
+
+        @Property(bool, notify=brandMotionChanged)
+        def brandStale(self) -> bool:
+            return bool(self._brand()["stale"])
+
+        @Property(str, notify=brandMotionChanged)
+        def brandPhase(self) -> str:
+            return str(self._brand()["phase"])
 
         @Property(list, notify=harmonyRowsChanged)
         def harmonyRows(self) -> list[dict[str, object]]:
@@ -650,6 +733,7 @@ def _qml_screen_data_bridge(
             self.analysisProgressChanged.emit()
             self.analysisSourceChanged.emit()
             self.analysisErrorChanged.emit()
+            self.brandMotionChanged.emit()
             self.harmonyRowsChanged.emit()
             self.harmonyAnchorChanged.emit()
             self.harmonyStatusChanged.emit()
@@ -791,6 +875,9 @@ class Screen1QmlInteractionAdapter:
 
         normalized = normalize_motion_mode(mode)
         self._waveform_motion_mode = normalized
+        # Brand/analysis motion consumes the same display preference.
+        if hasattr(self.view_model, "set_brand_motion_mode"):
+            self.view_model.set_brand_motion_mode(normalized)
         return self._waveform_motion_mode
 
     def reset_layout_preferences(self) -> None:
@@ -1421,8 +1508,8 @@ ApplicationWindow {
     property var interaction: interactionModel
     property var channelRack: channelRackModel
     readonly property string activeScreen: channelRack.activeScreen
-    // Screen-1 color contract (#785): Theme Core via themeAuthority → semantic roles.
-    // No competing HEX palette in QML. See docs/WORKBENCH_VISUAL_ACCEPTANCE.md.
+    // Screen-1 Theme Authority (#785): Theme Core owns colors; QML binds semantics.
+    // No competing HEX palette here — see docs/assets/themes/ and workbench_theme.py.
     QtObject {
         id: theme
         readonly property color surfaceRoot: themeAuthority.surfaceRoot
@@ -1430,7 +1517,6 @@ ApplicationWindow {
         readonly property color surfaceBrowser: themeAuthority.surfaceBrowser
         readonly property color surfacePanel: themeAuthority.surfacePanel
         readonly property color surfaceElevated: themeAuthority.surfaceElevated
-        readonly property color hoverSurface: themeAuthority.hoverSurface
         readonly property color borderSubtle: themeAuthority.borderSubtle
         readonly property color dividerDefault: themeAuthority.dividerDefault
         readonly property color textPrimary: themeAuthority.textPrimary
@@ -1442,6 +1528,8 @@ ApplicationWindow {
         readonly property color selectionSurface: themeAuthority.selectionSurface
         readonly property color selectionBorder: themeAuthority.selectionBorder
         readonly property color actionActive: themeAuthority.actionActive
+        readonly property color focusRing: themeAuthority.focusRing
+        readonly property color hoverSurface: themeAuthority.hoverSurface
     }
     // #770 shared context-hint content seam (ephemeral UI state; placement is separate).
     QtObject {
@@ -1761,6 +1849,97 @@ ApplicationWindow {
                         ColumnLayout {
                             anchors.fill: parent
                             spacing: 8
+                            Label { text: "Appearance"; color: theme.textSecondary; font.pixelSize: 11 }
+                            ComboBox {
+                                id: themePresetSelector
+                                objectName: "themePresetSelector"
+                                Layout.fillWidth: true
+                                model: themeAuthority.availableThemeNames
+                                currentIndex: themeAuthority.selectedThemeIndex
+                                onActivated: function(index) {
+                                    themeAuthority.selectTheme(themeAuthority.availableThemeNames[index])
+                                }
+                            }
+                            Button {
+                                id: themeCustomizeButton
+                                objectName: "themeCustomizeButton"
+                                Layout.fillWidth: true
+                                text: themeAuthority.isCustom ? "Custom theme active" : "Customize from preset"
+                                enabled: !themeAuthority.isCustom
+                                onClicked: themeAuthority.customizeSelectedPreset()
+                            }
+                            Label {
+                                visible: themeAuthority.isCustom
+                                text: "Base: " + themeAuthority.basePresetName
+                                color: theme.textSecondary
+                                font.pixelSize: 11
+                            }
+                            GridLayout {
+                                visible: themeAuthority.isCustom
+                                columns: 2
+                                columnSpacing: 8
+                                rowSpacing: 6
+                                Layout.fillWidth: true
+                                Label { text: "Accent"; color: theme.textSecondary; font.pixelSize: 11 }
+                                TextField {
+                                    id: themeAccentField
+                                    objectName: "themeAccentField"
+                                    Layout.fillWidth: true
+                                    text: themeAuthority.baseAccent
+                                    onAccepted: themeAuthority.setBaseAccent(text)
+                                    onActiveFocusChanged: if (!activeFocus) themeAuthority.setBaseAccent(text)
+                                }
+                                Label { text: "Background"; color: theme.textSecondary; font.pixelSize: 11 }
+                                TextField {
+                                    id: themeBackgroundField
+                                    objectName: "themeBackgroundField"
+                                    Layout.fillWidth: true
+                                    text: themeAuthority.baseBackground
+                                    onAccepted: themeAuthority.setBaseBackground(text)
+                                    onActiveFocusChanged: if (!activeFocus) themeAuthority.setBaseBackground(text)
+                                }
+                                Label { text: "Foreground"; color: theme.textSecondary; font.pixelSize: 11 }
+                                TextField {
+                                    id: themeForegroundField
+                                    objectName: "themeForegroundField"
+                                    Layout.fillWidth: true
+                                    text: themeAuthority.baseForeground
+                                    onAccepted: themeAuthority.setBaseForeground(text)
+                                    onActiveFocusChanged: if (!activeFocus) themeAuthority.setBaseForeground(text)
+                                }
+                            }
+                            RowLayout {
+                                visible: themeAuthority.isCustom
+                                spacing: 6
+                                Layout.fillWidth: true
+                                Button {
+                                    objectName: "themeSaveCustomButton"
+                                    text: "Save"
+                                    onClicked: themeAuthority.saveCurrentCustom()
+                                }
+                                Button {
+                                    objectName: "themeResetCustomButton"
+                                    text: "Reset"
+                                    onClicked: themeAuthority.resetCurrentCustom()
+                                }
+                                Button {
+                                    objectName: "themeDeleteCustomButton"
+                                    text: "Delete"
+                                    onClicked: themeAuthority.deleteCurrentCustom()
+                                }
+                            }
+                            TextField {
+                                id: themeRenameField
+                                objectName: "themeRenameField"
+                                visible: themeAuthority.isCustom
+                                Layout.fillWidth: true
+                                placeholderText: "Rename custom…"
+                                placeholderTextColor: theme.textSecondary
+                                onAccepted: {
+                                    themeAuthority.renameCurrentCustom(text)
+                                    text = ""
+                                }
+                            }
                             Label { text: "Density"; color: theme.textSecondary; font.pixelSize: 11 }
                             Label { text: "Compact"; color: theme.textPrimary; font.pixelSize: 13 }
                             Label { text: "Motion"; color: theme.textSecondary; font.pixelSize: 11 }
@@ -1783,108 +1962,6 @@ ApplicationWindow {
                                     checkable: true
                                     checked: window.interaction.waveformMotionMode === "off"
                                     onClicked: window.interaction.setWaveformMotionMode("off")
-                                }
-                            }
-                            // #785 Appearance / Theme — hosted here; Theme Core owns persistence.
-                            Label { text: "Appearance"; color: theme.textSecondary; font.pixelSize: 11 }
-                            ComboBox {
-                                id: themePresetSelector
-                                objectName: "themePresetSelector"
-                                Layout.fillWidth: true
-                                model: themeAuthority.selectableThemeNames
-                                currentIndex: Math.max(0, model.indexOf(themeAuthority.selectedTheme))
-                                onActivated: function(index) {
-                                    themeAuthority.selectTheme(model[index])
-                                }
-                            }
-                            GridLayout {
-                                columns: 2
-                                columnSpacing: 8
-                                rowSpacing: 6
-                                Layout.fillWidth: true
-                                Label { text: "Accent"; color: theme.textSecondary; font.pixelSize: 11 }
-                                TextField {
-                                    id: themeAccentField
-                                    objectName: "themeAccentField"
-                                    Layout.fillWidth: true
-                                    text: themeAuthority.editAccent
-                                    color: theme.textPrimary
-                                    placeholderText: "hex color"
-                                }
-                                Label { text: "Background"; color: theme.textSecondary; font.pixelSize: 11 }
-                                TextField {
-                                    id: themeBackgroundField
-                                    objectName: "themeBackgroundField"
-                                    Layout.fillWidth: true
-                                    text: themeAuthority.editBackground
-                                    color: theme.textPrimary
-                                    placeholderText: "hex color"
-                                }
-                                Label { text: "Foreground"; color: theme.textSecondary; font.pixelSize: 11 }
-                                TextField {
-                                    id: themeForegroundField
-                                    objectName: "themeForegroundField"
-                                    Layout.fillWidth: true
-                                    text: themeAuthority.editForeground
-                                    color: theme.textPrimary
-                                    placeholderText: "hex color"
-                                }
-                                Label { text: "Custom name"; color: theme.textSecondary; font.pixelSize: 11 }
-                                TextField {
-                                    id: themeCustomNameField
-                                    objectName: "themeCustomNameField"
-                                    Layout.fillWidth: true
-                                    text: themeAuthority.isCustomSelected ? themeAuthority.selectedTheme : ""
-                                    color: theme.textPrimary
-                                    placeholderText: "My theme"
-                                }
-                            }
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 6
-                                Button {
-                                    id: themeSaveButton
-                                    objectName: "themeSaveButton"
-                                    Layout.fillWidth: true
-                                    text: "Save"
-                                    onClicked: {
-                                        var name = themeCustomNameField.text.trim()
-                                        if (name.length === 0)
-                                            return
-                                        if (themeAuthority.isCustomSelected && name === themeAuthority.selectedTheme) {
-                                            themeAuthority.saveCustomTheme(
-                                                name,
-                                                themeAuthority.basePreset,
-                                                themeAccentField.text,
-                                                themeBackgroundField.text,
-                                                themeForegroundField.text
-                                            )
-                                        } else {
-                                            themeAuthority.createCustomTheme(
-                                                name,
-                                                themeAuthority.basePreset,
-                                                themeAccentField.text,
-                                                themeBackgroundField.text,
-                                                themeForegroundField.text
-                                            )
-                                        }
-                                    }
-                                }
-                                Button {
-                                    id: themeDeleteButton
-                                    objectName: "themeDeleteButton"
-                                    Layout.fillWidth: true
-                                    text: "Delete"
-                                    enabled: themeAuthority.isCustomSelected
-                                    onClicked: themeAuthority.deleteCustomTheme(themeAuthority.selectedTheme)
-                                }
-                                Button {
-                                    id: themeResetButton
-                                    objectName: "themeResetButton"
-                                    Layout.fillWidth: true
-                                    text: "Reset"
-                                    enabled: themeAuthority.isCustomSelected
-                                    onClicked: themeAuthority.resetCustomTheme(themeAuthority.selectedTheme)
                                 }
                             }
                             Button {
@@ -1961,7 +2038,7 @@ ApplicationWindow {
                         if (active)
                             return theme.selectionSurface
                         if (hovered)
-                            return theme.hoverSurface
+                            return theme.surfaceElevated
                         return "transparent"
                     }
                     function scopeStroke(active) {
@@ -2540,7 +2617,6 @@ ApplicationWindow {
         }
         Rectangle {
             // #744 analysis loading experience — deep blocking surface; real AnalysisUiState only.
-            // #786 brand/motion presentation consumes brandRuntime (no second progress clock).
             id: analysisWorkingSurface
             objectName: "analysisWorkingSurface"
             visible: !window.interaction.hasActiveSource
@@ -2587,52 +2663,99 @@ ApplicationWindow {
                     anchors.margins: 24
                     spacing: 14
 
-                    // #786 brain symbol — analysis/loading only (never Screen-1 header).
+                    // #786 Brand motion layer — visualizes Python projection only.
                     Item {
                         id: brandMotionLayer
                         objectName: "brandMotionLayer"
                         Layout.alignment: Qt.AlignHCenter
-                        Layout.preferredWidth: 72
-                        Layout.preferredHeight: 72
-                        property real breathe: 0
-                        visible: window.screenData.analysisStatus === "scanning"
-                                 || window.screenData.analysisStatus === "analyzing"
-                                 || window.screenData.analysisStatus === "error"
-                        opacity: brandRuntime.staticFallback
-                                 ? 1.0
-                                 : (brandRuntime.reducedMotion ? (0.88 + 0.08 * breathe)
-                                                               : (0.82 + 0.18 * breathe))
-                        scale: brandRuntime.motionActive
-                               ? (brandRuntime.reducedMotion ? (1.0 + 0.015 * breathe)
-                                                             : (1.0 + 0.04 * breathe))
-                               : 1.0
+                        Layout.preferredWidth: 96
+                        Layout.preferredHeight: 96
+                        property bool reducedMotion: window.screenData.brandReducedMotion
+                        property bool staticFallback: window.screenData.brandStaticFallback
+                        property bool motionActive: window.screenData.brandMotionActive
+                        property string motionMode: window.screenData.brandMotionMode
+                        property bool analysisBusy: window.screenData.analysisStatus === "scanning"
+                                                    || window.screenData.analysisStatus === "analyzing"
+                        property bool allowOrganicMotion: motionActive && !staticFallback && !reducedMotion
+                                                          && analysisBusy && !window.screenData.brandStale
+                        property bool allowReducedMotion: motionActive && reducedMotion && !staticFallback
+                                                          && analysisBusy && !window.screenData.brandStale
 
                         Image {
                             id: analysisBrandBrain
                             objectName: "analysisBrandBrain"
                             anchors.centerIn: parent
-                            width: 64
-                            height: 64
-                            source: brandRuntime.brainUrl
+                            width: 88
+                            height: 88
+                            source: window.screenData.brandBrainUrl
                             fillMode: Image.PreserveAspectFit
-                            smooth: true
-                            asynchronous: true
+                            // Static fallback remains clearly visible.
+                            opacity: brandMotionLayer.staticFallback ? 1.0
+                                     : (brandMotionLayer.allowOrganicMotion ? brainBreathe.opacityValue : 0.92)
+                            scale: brandMotionLayer.allowOrganicMotion ? brainBreathe.scaleValue : 1.0
+                            Accessible.name: "Sample Brain analysis"
                         }
 
-                        // Organic breathe — gated by brandRuntime.motionActive; not a progress clock.
-                        SequentialAnimation on breathe {
-                            running: brandRuntime.motionActive
+                        // Distinct reduced path: progress-tinted glow ring, no loop.
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 94
+                            height: 94
+                            radius: 47
+                            visible: brandMotionLayer.allowReducedMotion
+                            color: "transparent"
+                            border.width: 2
+                            border.color: theme.actionActive
+                            opacity: window.screenData.brandProgressKind === "determinate"
+                                     ? (0.25 + 0.55 * Math.max(0.0, Math.min(1.0, window.screenData.brandProgressRatio)))
+                                     : 0.4
+                        }
+
+                        // Organic calm breathe — only while real analysis is busy + motion on.
+                        QtObject {
+                            id: brainBreathe
+                            property real opacityValue: 0.88
+                            property real scaleValue: 1.0
+                        }
+                        SequentialAnimation {
+                            id: brandOrganicBreathe
+                            running: brandMotionLayer.allowOrganicMotion
                             loops: Animation.Infinite
                             NumberAnimation {
-                                from: 0
-                                to: 1
-                                duration: brandRuntime.reducedMotion ? 3200 : 1800
+                                target: brainBreathe
+                                property: "opacityValue"
+                                from: 0.82
+                                to: 1.0
+                                duration: 1600
                                 easing.type: Easing.InOutSine
                             }
                             NumberAnimation {
-                                from: 1
-                                to: 0
-                                duration: brandRuntime.reducedMotion ? 3200 : 1800
+                                target: brainBreathe
+                                property: "opacityValue"
+                                from: 1.0
+                                to: 0.82
+                                duration: 1600
+                                easing.type: Easing.InOutSine
+                            }
+                        }
+                        SequentialAnimation {
+                            id: brandOrganicScale
+                            running: brandMotionLayer.allowOrganicMotion
+                            loops: Animation.Infinite
+                            NumberAnimation {
+                                target: brainBreathe
+                                property: "scaleValue"
+                                from: 0.98
+                                to: 1.02
+                                duration: 1800
+                                easing.type: Easing.InOutSine
+                            }
+                            NumberAnimation {
+                                target: brainBreathe
+                                property: "scaleValue"
+                                from: 1.02
+                                to: 0.98
+                                duration: 1800
                                 easing.type: Easing.InOutSine
                             }
                         }
@@ -2653,22 +2776,24 @@ ApplicationWindow {
                     Label {
                         id: analysisBrandSampleName
                         objectName: "analysisBrandSampleName"
+                        Layout.fillWidth: true
                         Layout.alignment: Qt.AlignHCenter
-                        visible: brandRuntime.sampleName.length > 0
-                                 && !brandRuntime.stale
+                        horizontalAlignment: Text.AlignHCenter
+                        visible: window.screenData.brandSampleName.length > 0
                                  && (window.screenData.analysisStatus === "scanning"
                                      || window.screenData.analysisStatus === "analyzing")
-                        text: brandRuntime.sampleName
+                                 && !window.screenData.brandStale
+                        text: window.screenData.brandSampleName
                         color: theme.textPrimary
                         font.pixelSize: 12
-                        opacity: 0.85
+                        elide: Text.ElideMiddle
+                        opacity: brandMotionLayer.allowOrganicMotion ? 0.85 : 1.0
                     }
 
                     Label {
                         objectName: "analysisProgressCount"
                         Layout.alignment: Qt.AlignHCenter
-                        visible: !brandRuntime.stale
-                                 && window.screenData.analysisTotal > 0
+                        visible: window.screenData.brandProgressKind === "determinate"
                                  && (window.screenData.analysisStatus === "scanning"
                                      || window.screenData.analysisStatus === "analyzing")
                         // Folder-level completed/total — not the in-flight sample ordinal.
@@ -2677,7 +2802,7 @@ ApplicationWindow {
                         font.pixelSize: 13
                     }
 
-                    // Real progress only — brandRuntime projects AnalysisUiState (no Timer).
+                    // Real progress only — bound to analysisCurrent/analysisTotal (no Timer).
                     Item {
                         objectName: "analysisProgressTrack"
                         Layout.alignment: Qt.AlignHCenter
@@ -2699,16 +2824,23 @@ ApplicationWindow {
                             anchors.top: parent.top
                             anchors.bottom: parent.bottom
                             width: {
-                                if (brandRuntime.progressKind === "determinate"
-                                        && brandRuntime.progressRatio >= 0.0)
-                                    return parent.width * Math.min(1.0, Math.max(0.0, brandRuntime.progressRatio))
-                                if (brandRuntime.progressKind === "indeterminate")
+                                if (window.screenData.brandProgressKind === "indeterminate"
+                                    || window.screenData.analysisTotal <= 0)
                                     return parent.width * 0.28
-                                return 0
+                                if (window.screenData.brandProgressKind === "none")
+                                    return 0
+                                var ratio = window.screenData.brandProgressRatio
+                                if (ratio < 0.0)
+                                    ratio = Math.min(
+                                        1.0,
+                                        Math.max(0.0, window.screenData.analysisCurrent / Math.max(1, window.screenData.analysisTotal))
+                                    )
+                                return parent.width * Math.min(1.0, Math.max(0.0, ratio))
                             }
                             radius: 3
                             color: theme.actionActive
-                            opacity: brandRuntime.progressKind === "indeterminate" ? 0.45 : 0.85
+                            opacity: window.screenData.brandProgressKind === "indeterminate"
+                                     || window.screenData.analysisTotal <= 0 ? 0.45 : 0.85
                         }
                     }
 
@@ -2731,7 +2863,7 @@ ApplicationWindow {
                             implicitWidth: 88
                             implicitHeight: 28
                             radius: 6
-                            color: analysisCancelButton.hovered ? theme.hoverSurface : "transparent"
+                            color: analysisCancelButton.hovered ? theme.surfaceElevated : "transparent"
                             border.color: analysisCancelButton.hovered ? theme.borderSubtle : "transparent"
                             border.width: 1
                         }
@@ -2793,7 +2925,7 @@ ApplicationWindow {
                         background: Rectangle {
                             radius: 6
                             border.width: 1
-                            border.color: parent.activeFocus ? theme.actionActive : theme.borderSubtle
+                            border.color: parent.activeFocus ? theme.focusRing : theme.borderSubtle
                             color: "transparent"
                         }
                         onTextChanged: window.interaction.setBrowserSearch(text)
@@ -4274,79 +4406,113 @@ def _qml_library_interaction_bridge(
     return QmlLibraryInteractionBridge()
 
 
-def _qml_theme_authority(*, state_dir: Path | None = None):
-    """Expose Theme Core semantics to QML (#785). Persistence stays in workbench_theme."""
-    from PySide6.QtCore import Property, QObject, Signal, Slot
+def _qml_theme_authority_bridge(
+    *,
+    state_dir: Path | None = None,
+    env: dict[str, str] | None = None,
+):
+    """Expose Theme Core (#785) as the sole Screen-1 color authority for QML."""
+    from PySide6.QtCore import QObject, Property, Signal, Slot
 
     from . import workbench_theme as theme_mod
 
-    class ThemeAuthority(QObject):
+    class QmlThemeAuthorityBridge(QObject):
         themeChanged = Signal()
 
         def __init__(self) -> None:
             super().__init__()
             self._state_dir = state_dir
-            self._selected = theme_mod.DEFAULT_PRESET_NAME
-            self._base_preset = theme_mod.DEFAULT_PRESET_NAME
-            self._edit_accent = ""
-            self._edit_background = ""
-            self._edit_foreground = ""
-            self._is_custom = False
-            self._semantics: dict[str, str] = {}
-            self._preset_names = list(theme_mod.list_presets())
-            self._custom_names: list[str] = []
-            self.reload()
+            self._env = env
+            self._tokens = theme_mod.resolve_theme(state_dir=state_dir, env=env)
+            self._semantics = theme_mod.theme_tokens_to_qml_semantics(self._tokens)
+            self._draft_accent = self._tokens.accent
+            self._draft_background = self._tokens.background
+            self._draft_foreground = self._tokens.foreground
+            self._draft_name = self._tokens.name
 
-        def reload(self) -> None:
-            tokens = theme_mod.resolve_theme(state_dir=self._state_dir)
-            self._semantics = theme_mod.theme_tokens_to_qml_semantics(tokens)
-            self._selected = str(tokens.name)
-            self._base_preset = str(tokens.base_preset)
-            self._edit_accent = str(tokens.accent)
-            self._edit_background = str(tokens.background)
-            self._edit_foreground = str(tokens.foreground)
-            self._custom_names = list(theme_mod.list_custom_themes(state_dir=self._state_dir))
-            self._is_custom = self._selected in self._custom_names
+        def _reload(self, tokens: theme_mod.ThemeTokens | None = None) -> None:
+            self._tokens = tokens or theme_mod.resolve_theme(
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            self._semantics = theme_mod.theme_tokens_to_qml_semantics(self._tokens)
+            self._draft_accent = self._tokens.accent
+            self._draft_background = self._tokens.background
+            self._draft_foreground = self._tokens.foreground
+            self._draft_name = self._tokens.name
+            self.themeChanged.emit()
+
+        def _preview_from_draft(self) -> None:
+            accent = theme_mod._normalize_hex(self._draft_accent)
+            background = theme_mod._normalize_hex(self._draft_background)
+            foreground = theme_mod._normalize_hex(self._draft_foreground)
+            if accent is None or background is None or foreground is None:
+                return
+            base = theme_mod.ThemeBase(
+                accent=accent,
+                background=background,
+                foreground=foreground,
+            )
+            preview = theme_mod._tokens_from_base(
+                base,
+                name=self._draft_name,
+                base_preset=self._tokens.base_preset,
+            )
+            self._semantics = theme_mod.theme_tokens_to_qml_semantics(preview)
             self.themeChanged.emit()
 
         def _color(self, key: str) -> str:
-            return str(self._semantics.get(key, "#000000"))
+            return str(self._semantics.get(key) or theme_mod.TEXT_ON_ACTION)
+
+        def _available_names(self) -> list[str]:
+            customs = theme_mod.list_custom_themes(
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            return list(theme_mod.list_presets()) + customs
 
         @Property(str, notify=themeChanged)
-        def selectedTheme(self) -> str:
-            return self._selected
+        def selectedThemeName(self) -> str:
+            return self._tokens.name
 
         @Property(str, notify=themeChanged)
-        def basePreset(self) -> str:
-            return self._base_preset
+        def basePresetName(self) -> str:
+            return self._tokens.base_preset
 
         @Property(bool, notify=themeChanged)
-        def isCustomSelected(self) -> bool:
-            return self._is_custom
+        def isCustom(self) -> bool:
+            return self._tokens.name not in theme_mod.PRESET_ORDER
 
-        @Property(str, notify=themeChanged)
-        def editAccent(self) -> str:
-            return self._edit_accent
+        @Property(list, notify=themeChanged)
+        def availableThemeNames(self) -> list[str]:
+            return self._available_names()
 
-        @Property(str, notify=themeChanged)
-        def editBackground(self) -> str:
-            return self._edit_background
-
-        @Property(str, notify=themeChanged)
-        def editForeground(self) -> str:
-            return self._edit_foreground
-
-        @Property("QStringList", notify=themeChanged)
-        def presetNames(self) -> list[str]:
-            return list(self._preset_names)
-
-        @Property("QStringList", notify=themeChanged)
+        @Property(list, notify=themeChanged)
         def customThemeNames(self) -> list[str]:
-            return list(self._custom_names)
+            return theme_mod.list_custom_themes(
+                state_dir=self._state_dir,
+                env=self._env,
+            )
 
-        @Property("QStringList", notify=themeChanged)
-        def selectableThemeNames(self) -> list[str]:
-            return list(self._preset_names) + list(self._custom_names)
+        @Property(int, notify=themeChanged)
+        def selectedThemeIndex(self) -> int:
+            names = self._available_names()
+            try:
+                return names.index(self._tokens.name)
+            except ValueError:
+                return 0
+
+        @Property(str, notify=themeChanged)
+        def baseAccent(self) -> str:
+            return self._draft_accent
+
+        @Property(str, notify=themeChanged)
+        def baseBackground(self) -> str:
+            return self._draft_background
+
+        @Property(str, notify=themeChanged)
+        def baseForeground(self) -> str:
+            return self._draft_foreground
 
         @Property(str, notify=themeChanged)
         def surfaceRoot(self) -> str:
@@ -4367,10 +4533,6 @@ def _qml_theme_authority(*, state_dir: Path | None = None):
         @Property(str, notify=themeChanged)
         def surfaceElevated(self) -> str:
             return self._color("surfaceElevated")
-
-        @Property(str, notify=themeChanged)
-        def hoverSurface(self) -> str:
-            return self._color("hoverSurface")
 
         @Property(str, notify=themeChanged)
         def borderSubtle(self) -> str:
@@ -4416,158 +4578,158 @@ def _qml_theme_authority(*, state_dir: Path | None = None):
         def actionActive(self) -> str:
             return self._color("actionActive")
 
+        @Property(str, notify=themeChanged)
+        def focusRing(self) -> str:
+            return self._color("focusRing")
+
+        @Property(str, notify=themeChanged)
+        def hoverSurface(self) -> str:
+            return self._color("hoverSurface")
+
         @Slot(str)
         def selectTheme(self, name: str) -> None:
-            theme_mod.select_theme(str(name), state_dir=self._state_dir)
-            self.reload()
+            tokens = theme_mod.select_theme(
+                str(name),
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            self._reload(tokens)
 
-        @Slot(str, str, str, str, str)
-        def createCustomTheme(
-            self,
-            name: str,
-            base_preset: str,
-            accent: str,
-            background: str,
-            foreground: str,
-        ) -> None:
+        @Slot()
+        def customizeSelectedPreset(self) -> None:
+            base_preset = (
+                self._tokens.name
+                if self._tokens.name in theme_mod.PRESET_ORDER
+                else self._tokens.base_preset
+            )
+            if base_preset not in theme_mod.PRESET_ORDER:
+                base_preset = theme_mod.DEFAULT_PRESET_NAME
+            existing = set(theme_mod.PRESET_ORDER) | set(
+                theme_mod.list_custom_themes(state_dir=self._state_dir, env=self._env)
+            )
+            name = f"{base_preset} Custom"
+            suffix = 2
+            while name in existing:
+                name = f"{base_preset} Custom {suffix}"
+                suffix += 1
+            theme_mod.create_custom_theme(
+                name=name,
+                base_preset=base_preset,
+                accent=self._draft_accent,
+                background=self._draft_background,
+                foreground=self._draft_foreground,
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            tokens = theme_mod.select_theme(
+                name,
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            self._reload(tokens)
+
+        @Slot(str, str)
+        def createCustomFromPreset(self, base_preset: str, name: str) -> None:
             theme_mod.create_custom_theme(
                 name=str(name),
                 base_preset=str(base_preset),
-                accent=str(accent),
-                background=str(background),
-                foreground=str(foreground),
                 state_dir=self._state_dir,
+                env=self._env,
             )
-            theme_mod.select_theme(str(name).strip(), state_dir=self._state_dir)
-            self.reload()
+            tokens = theme_mod.select_theme(
+                str(name),
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            self._reload(tokens)
 
-        @Slot(str, str, str, str, str)
-        def saveCustomTheme(
-            self,
-            name: str,
-            base_preset: str,
-            accent: str,
-            background: str,
-            foreground: str,
-        ) -> None:
+        @Slot(str)
+        def setBaseAccent(self, value: str) -> None:
+            normalized = theme_mod._normalize_hex(value)
+            if normalized is None:
+                return
+            self._draft_accent = normalized
+            self._preview_from_draft()
+
+        @Slot(str)
+        def setBaseBackground(self, value: str) -> None:
+            normalized = theme_mod._normalize_hex(value)
+            if normalized is None:
+                return
+            self._draft_background = normalized
+            self._preview_from_draft()
+
+        @Slot(str)
+        def setBaseForeground(self, value: str) -> None:
+            normalized = theme_mod._normalize_hex(value)
+            if normalized is None:
+                return
+            self._draft_foreground = normalized
+            self._preview_from_draft()
+
+        @Slot()
+        def saveCurrentCustom(self) -> None:
+            if self._tokens.name in theme_mod.PRESET_ORDER:
+                return
             theme_mod.save_custom_theme(
                 {
-                    "name": str(name).strip(),
-                    "base_preset": str(base_preset),
-                    "accent": str(accent),
-                    "background": str(background),
-                    "foreground": str(foreground),
+                    "name": self._tokens.name,
+                    "base_preset": self._tokens.base_preset,
+                    "accent": self._draft_accent,
+                    "background": self._draft_background,
+                    "foreground": self._draft_foreground,
                 },
                 state_dir=self._state_dir,
+                env=self._env,
             )
-            theme_mod.select_theme(str(name).strip(), state_dir=self._state_dir)
-            self.reload()
+            tokens = theme_mod.select_theme(
+                self._tokens.name,
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            self._reload(tokens)
 
         @Slot(str)
-        def deleteCustomTheme(self, name: str) -> None:
-            theme_mod.delete_custom_theme(str(name), state_dir=self._state_dir)
-            self.reload()
-
-        @Slot(str)
-        def resetCustomTheme(self, name: str) -> None:
-            theme_mod.reset_custom_theme(str(name), state_dir=self._state_dir)
-            theme_mod.select_theme(str(name), state_dir=self._state_dir)
-            self.reload()
-
-    return ThemeAuthority()
-
-
-def _qml_brand_runtime():
-    """Expose brand_runtime_payload to analysisWorkingSurface (#786)."""
-    from PySide6.QtCore import Property, QObject, Signal
-
-    from .workbench_brand_motion import brand_runtime_payload
-    from .workbench_qml_analysis import AnalysisUiState
-
-    class BrandRuntimeBridge(QObject):
-        brandChanged = Signal()
-
-        def __init__(self) -> None:
-            super().__init__()
-            self._payload = brand_runtime_payload(
-                AnalysisUiState(phase="idle"),
-                "on",
+        def renameCurrentCustom(self, new_name: str) -> None:
+            if self._tokens.name in theme_mod.PRESET_ORDER:
+                return
+            old = self._tokens.name
+            theme_mod.rename_custom_theme(
+                old,
+                str(new_name),
+                state_dir=self._state_dir,
+                env=self._env,
             )
-
-        def apply(
-            self,
-            state: AnalysisUiState,
-            motion_mode: str,
-            *,
-            expected_token: int | None = None,
-        ) -> None:
-            self._payload = brand_runtime_payload(
-                state,
-                motion_mode,
-                expected_token=expected_token,
+            tokens = theme_mod.resolve_theme(
+                str(new_name).strip(),
+                state_dir=self._state_dir,
+                env=self._env,
             )
-            self.brandChanged.emit()
+            self._reload(tokens)
 
-        def _get(self, key: str, default: object = "") -> object:
-            return self._payload.get(key, default)
+        @Slot()
+        def deleteCurrentCustom(self) -> None:
+            if self._tokens.name in theme_mod.PRESET_ORDER:
+                return
+            theme_mod.delete_custom_theme(
+                self._tokens.name,
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            self._reload()
 
-        @Property(str, notify=brandChanged)
-        def phase(self) -> str:
-            return str(self._get("phase", "idle"))
+        @Slot()
+        def resetCurrentCustom(self) -> None:
+            if self._tokens.name in theme_mod.PRESET_ORDER:
+                return
+            tokens = theme_mod.reset_custom_theme(
+                self._tokens.name,
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            self._reload(tokens)
 
-        @Property(str, notify=brandChanged)
-        def progressKind(self) -> str:
-            return str(self._get("progressKind", "none"))
-
-        @Property(float, notify=brandChanged)
-        def progressRatio(self) -> float:
-            return float(self._get("progressRatio", -1.0))
-
-        @Property(str, notify=brandChanged)
-        def sampleName(self) -> str:
-            return str(self._get("sampleName", ""))
-
-        @Property(str, notify=brandChanged)
-        def motionMode(self) -> str:
-            return str(self._get("motionMode", "on"))
-
-        @Property(bool, notify=brandChanged)
-        def motionActive(self) -> bool:
-            return bool(self._get("motionActive", False))
-
-        @Property(bool, notify=brandChanged)
-        def reducedMotion(self) -> bool:
-            return bool(self._get("reducedMotion", False))
-
-        @Property(bool, notify=brandChanged)
-        def staticFallback(self) -> bool:
-            return bool(self._get("staticFallback", True))
-
-        @Property(int, notify=brandChanged)
-        def jobToken(self) -> int:
-            return int(self._get("jobToken", -1))
-
-        @Property(bool, notify=brandChanged)
-        def stale(self) -> bool:
-            return bool(self._get("stale", False))
-
-        @Property(str, notify=brandChanged)
-        def brainUrl(self) -> str:
-            return str(self._get("brainUrl", ""))
-
-        @Property(str, notify=brandChanged)
-        def wordmarkUrl(self) -> str:
-            return str(self._get("wordmarkUrl", ""))
-
-        @Property(bool, notify=brandChanged)
-        def headerPermitsPermanentBranding(self) -> bool:
-            return bool(self._get("headerPermitsPermanentBranding", False))
-
-        @Property(str, notify=brandChanged)
-        def claim(self) -> str:
-            return str(self._get("claim", ""))
-
-    return BrandRuntimeBridge()
+    return QmlThemeAuthorityBridge()
 
 
 def _qml_engine(
@@ -4704,42 +4866,8 @@ def _qml_engine(
     analysis_coordinator = None
     layout_model = None
     bridge = None  # assigned below; closures resolve at call time
-    theme_authority = _qml_theme_authority()
-    brand_runtime = _qml_brand_runtime()
-    last_analysis_state = {"value": AnalysisUiState(phase="idle")}
-
-    def refresh_brand_runtime(
-        *,
-        expected_token: int | None = None,
-        state: AnalysisUiState | None = None,
-    ) -> None:
-        # Prefer explicit state; otherwise project from the live view-model
-        # (test harnesses often call set_analysis_state without apply_analysis_state).
-        projected = state
-        if projected is None:
-            projected = AnalysisUiState(
-                folder_id=view_model.analysis_folder_id,
-                phase=str(view_model.analysis_status or "idle"),
-                token=view_model.analysis_token,
-                current=int(view_model.analysis_current or 0),
-                total=int(view_model.analysis_total or 0),
-                display_name=str(view_model.analysis_source or ""),
-                error=view_model.analysis_error,
-            )
-        last_analysis_state["value"] = projected
-        motion = "on"
-        if bridge is not None:
-            motion = str(bridge.waveformMotionMode)
-        elif adapter is not None:
-            motion = str(adapter.waveform_motion_mode)
-        brand_runtime.apply(
-            projected,
-            motion,
-            expected_token=expected_token,
-        )
 
     def apply_analysis_state(state: AnalysisUiState) -> None:
-        last_analysis_state["value"] = state
         view_model.set_analysis_state(state)
         if state.phase in {"scanning", "analyzing"}:
             # #742: hide working panes while analysis runs; keep technical identity.
@@ -4753,17 +4881,6 @@ def _qml_engine(
                 runtime_composition.clear_live_kit_disclosure()
         elif state.phase in {"cancelled", "error"}:
             _analysis_fail_closed(state)
-        expected_token = None
-        if (
-            analysis_coordinator is not None
-            and state.folder_id is not None
-            and hasattr(analysis_coordinator, "current_token")
-        ):
-            try:
-                expected_token = analysis_coordinator.current_token(state.folder_id)
-            except Exception:
-                expected_token = None
-        refresh_brand_runtime(state=state, expected_token=expected_token)
         refresh_screen_model()
         if layout_model is not None:
             layout_model.syncFromInteraction()
@@ -5157,7 +5274,6 @@ def _qml_engine(
     )
 
     def on_interaction_state_changed() -> None:
-        refresh_brand_runtime()
         refresh_screen_model()
         # Recompute widths before QML reacts to state_changed so RowLayout
         # never sees a 3-panel width set with a third handle visible.
@@ -5201,8 +5317,8 @@ def _qml_engine(
     engine.rootContext().setContextProperty("libraryTreeModel", library_model)
     engine.rootContext().setContextProperty("libraryInteraction", library_bridge)
     engine.rootContext().setContextProperty("channelRackModel", channel_rack_bridge)
+    theme_authority = _qml_theme_authority_bridge()
     engine.rootContext().setContextProperty("themeAuthority", theme_authority)
-    engine.rootContext().setContextProperty("brandRuntime", brand_runtime)
     engine.rootContext().setContextProperty(
         "screen1BackgroundUrl",
         screen1_background_url(),
@@ -5222,6 +5338,7 @@ def _qml_engine(
     engine._screen1_library_model = library_model
     engine._screen1_library_bridge = library_bridge
     engine._screen1_screen_model = screen_model
+    engine._screen1_theme_authority = theme_authority
     engine._screen1_live_kit = live_kit
     engine._screen1_channel_rack = channel_rack_controller
     engine._screen1_channel_rack_bridge = channel_rack_bridge
@@ -5236,10 +5353,6 @@ def _qml_engine(
     engine._screen1_waveform_cache = waveform_cache
     engine._screen1_waveform_loader = waveform_loader
     engine._screen1_waveform_timer = None
-    engine._screen1_theme_authority = theme_authority
-    engine._screen1_brand_runtime = brand_runtime
-    engine._screen1_refresh_brand_runtime = refresh_brand_runtime
-    refresh_brand_runtime()
     if preview_player is not None:
         engine._screen1_preview_player = preview_player
     from PySide6.QtCore import QTimer

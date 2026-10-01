@@ -269,8 +269,7 @@ def test_library_scope_bar_visual_polish_contract() -> None:
 
     assert "theme.selectionSurface" in scope_block
     assert "theme.selectionBorder" in scope_block or "theme.actionActive" in scope_block
-    # #785 Theme Core: hover uses hoverSurface; surfaceElevated remains acceptable legacy.
-    assert "theme.hoverSurface" in scope_block or "theme.surfaceElevated" in scope_block
+    assert "theme.surfaceElevated" in scope_block
 
     assert 'visible: libraryScopeBar.mode === "sources"' in tree_block
     assert 'enabled: libraryScopeBar.mode === "sources"' in tree_block

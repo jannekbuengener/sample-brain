@@ -1,6 +1,4 @@
 # Screen-1 Display Preferences — Density, Motion, Layout Reset, Startup Presets (#696)
-# Appearance / Theme selection is hosted here as a secondary affordance (#785),
-# but theme persistence remains owned by Theme Core (`workbench_theme.py`).
 
 Appearance / Theme selection is hosted here as a secondary affordance (#785),
 but theme persistence remains owned by Theme Core (`workbench_theme.py`).

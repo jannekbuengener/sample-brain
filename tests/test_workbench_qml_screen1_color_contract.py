@@ -1,15 +1,16 @@
-"""Screen-1 color contract: Theme Core via themeAuthority → semantic tokens → components.
+"""Screen-1 canonical color contract: Theme Core → themeAuthority → semantic tokens.
 
-#785: QML must not invent a second HEX palette. Semantic roles bind from
-themeAuthority (mapped by workbench_theme.theme_tokens_to_qml_semantics).
+#785 migrates color truth from a hardcoded QML primitive palette to Theme Core
+(`src/workbench_theme.py`) exposed as `themeAuthority`. Components bind only
+`theme.<semantic>` (and optional thin window aliases).
 """
 
 from __future__ import annotations
 
 import re
 
+from src import workbench_theme as theme_core
 from src import workbench_qml
-from src import workbench_theme as theme
 
 NAMED_COLOR_EXCEPTIONS: frozenset[str] = frozenset({"transparent"})
 
@@ -30,7 +31,7 @@ REQUIRED_SEMANTIC_NAMES: tuple[str, ...] = (
     "selectionSurface",
     "selectionBorder",
     "actionActive",
-    "hoverSurface",
+    "focusRing",
 )
 
 _HEX_RE = re.compile(r'"(#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8}))"')
@@ -56,31 +57,41 @@ def _extract_theme_block(source: str) -> str:
     raise AssertionError("unclosed theme QtObject in QML_SOURCE")
 
 
-def test_theme_semantic_tokens_bind_theme_authority():
-    source = workbench_qml.QML_SOURCE
-    theme_block = _extract_theme_block(source)
-    assert "themeAuthority" in source
+def _hex_values(text: str) -> list[str]:
+    return [m.group(1).lower() for m in _HEX_RE.finditer(text)]
+
+
+def _normalize_hex(value: str) -> str:
+    raw = value.lower()
+    if len(raw) == 4:  # #rgb
+        return "#" + "".join(ch * 2 for ch in raw[1:])
+    if len(raw) == 9:  # #aarrggbb → compare rgb only
+        return "#" + raw[3:]
+    return raw
+
+
+def test_theme_facade_binds_required_semantics_to_theme_authority():
+    theme = _extract_theme_block(workbench_qml.QML_SOURCE)
     for name in REQUIRED_SEMANTIC_NAMES:
         assert re.search(
-            rf"readonly property color {name}:\s*themeAuthority\.{name}",
-            theme_block,
+            rf"readonly property color {name}:\s*themeAuthority\.",
+            theme,
         ), f"missing themeAuthority binding for {name}"
-        assert not re.search(
-            rf"readonly property color {name}:\s*\"#",
-            theme_block,
-        ), f"semantic token {name} must not hardcode HEX"
+    assert not _HEX_RE.search(theme), "theme facade must not hardcode HEX"
 
 
-def test_qml_source_has_no_hex_hardcodes():
+def test_qml_source_has_no_stray_hex_hardcodes():
     source = workbench_qml.QML_SOURCE
-    found = sorted({m.group(1).lower() for m in _HEX_RE.finditer(source)})
-    assert found == [], f"HEX hardcodes remain in QML_SOURCE: {found}"
+    theme = _extract_theme_block(source)
+    outside = source.replace(theme, "", 1)
+    stray = sorted({_normalize_hex(h) for h in _hex_values(outside)})
+    assert stray == [], f"HEX outside themeAuthority-backed facade: {stray}"
 
 
 def test_qml_components_prefer_semantic_theme_tokens():
     source = workbench_qml.QML_SOURCE
-    theme_block = _extract_theme_block(source)
-    outside = source.replace(theme_block, "", 1)
+    theme = _extract_theme_block(source)
+    outside = source.replace(theme, "", 1)
     for legacy in (
         'property color panel: "#',
         'property color accent: "#',
@@ -88,6 +99,7 @@ def test_qml_components_prefer_semantic_theme_tokens():
         'color: "#000000"',
         'color: "#0c0d0e"',
         'color: "#b1122b"',
+        'color: "#8f0e24"',
     ):
         assert legacy not in outside
 
@@ -106,33 +118,39 @@ def test_qml_components_prefer_semantic_theme_tokens():
         "theme.selectionBorder",
         "theme.waveformDefault",
         "theme.waveformActive",
-        "theme.hoverSurface",
+        "theme.focusRing",
     ):
         assert needle in outside, f"missing semantic usage: {needle}"
 
 
 def test_named_color_hardcodes_are_only_documented_exceptions():
     source = workbench_qml.QML_SOURCE
-    theme_block = _extract_theme_block(source)
-    outside = source.replace(theme_block, "", 1)
+    theme = _extract_theme_block(source)
+    outside = source.replace(theme, "", 1)
     found = {m.group(1).lower() for m in _NAMED_COLOR_RE.finditer(outside)}
     unexpected = sorted(found - NAMED_COLOR_EXCEPTIONS)
     assert unexpected == [], f"undocumented named color hardcodes: {unexpected}"
 
 
-def test_theme_core_mapping_covers_required_qml_semantics():
-    mapped = theme.theme_tokens_to_qml_semantics(theme.resolve_theme("Blood"))
-    for name in REQUIRED_SEMANTIC_NAMES:
-        assert name in mapped, f"Theme Core map missing {name}"
-        assert mapped[name].startswith("#")
-    assert mapped["textOnAction"].lower() == "#ffffff"
-
-
-def test_functional_accent_comes_from_theme_core_not_legacy_hardcode():
+def test_functional_accent_default_is_blood_a_from_theme_core():
+    blood = theme_core.resolve_theme("Blood")
+    mapped = theme_core.theme_tokens_to_qml_semantics(blood)
+    assert blood.accent.lower() == theme_core.BLOOD_A_ACCENT
+    assert mapped["actionActive"].lower() == theme_core.BLOOD_A_ACCENT
+    assert mapped["focusRing"].lower() == theme_core.BLOOD_A_ACCENT
+    assert mapped["selectionBorder"].lower() == theme_core.BLOOD_A_ACCENT
+    assert mapped["waveformActive"].lower() == theme_core.BLOOD_A_ACCENT
+    # Legacy brighter hardcoded accent must not remain QML truth.
+    assert '"#b1122b"' not in workbench_qml.QML_SOURCE
     source = workbench_qml.QML_SOURCE.casefold()
     for banned in ("#ff4500", "#00bfff", "#1e90ff", "#00ffff", "#ff00ff"):
         assert banned not in source
-    # Legacy fixed Blood HEX must not reappear as QML truth (#785 Theme Core).
-    assert '#b1122b' not in source
-    blood = theme.theme_tokens_to_qml_semantics(theme.resolve_theme("Blood"))
-    assert blood["actionActive"].lower() == theme.resolve_theme("Blood").accent.lower()
+
+
+def test_theme_authority_is_single_runtime_color_owner():
+    from pathlib import Path
+
+    assert "themeAuthority" in _extract_theme_block(workbench_qml.QML_SOURCE)
+    module = Path(workbench_qml.__file__).read_text(encoding="utf-8")
+    assert "_qml_theme_authority_bridge" in module
+    assert 'setContextProperty("themeAuthority"' in module

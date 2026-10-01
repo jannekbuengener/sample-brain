@@ -39,12 +39,12 @@ def test_qml_source_uses_stretch_background_image_without_crop_or_gradients():
     source = workbench_qml.QML_SOURCE
     assert "objectName: \"screen1Background\"" in source
     assert "source: screen1BackgroundUrl" in source
-    assert "fillMode: Image.Stretch" in source
-    assert "PreserveAspectCrop" not in source
     assert "Gradient" not in source
     assert "LinearGradient" not in source
     assert "RadialGradient" not in source
-    # No decorative ambient overlays / colorize on the background image.
+    # Background image must stretch full-bleed — crop/fit modes are forbidden
+    # on screen1Background only. Other Images (e.g. #786 brand brain) may use
+    # PreserveAspectFit inside their own slots.
     bg_block = re.search(
         r"Image\s*\{[^}]*objectName:\s*\"screen1Background\".*?\}",
         source,
@@ -52,8 +52,10 @@ def test_qml_source_uses_stretch_background_image_without_crop_or_gradients():
     )
     assert bg_block is not None
     block = bg_block.group(0)
-    assert "PreserveAspectFit" not in block
+    assert "fillMode: Image.Stretch" in block
     assert "PreserveAspectCrop" not in block
+    assert "PreserveAspectFit" not in block
+    # No decorative ambient overlays / colorize on the background image.
     assert "colorize" not in block.casefold()
     assert "opacity:" not in block.casefold() or "opacity: 1" in block
     assert "layer.enabled" not in block.casefold()
@@ -62,20 +64,21 @@ def test_qml_source_uses_stretch_background_image_without_crop_or_gradients():
 
 
 def test_qml_palette_tokens_are_near_black_with_functional_accent_only():
-    """#785: palette truth is Theme Core via themeAuthority (no QML HEX fork)."""
+    from src import workbench_theme as theme_core
+
     source = workbench_qml.QML_SOURCE
-    assert "themeAuthority" in source
+    # Theme Authority facade — no competing hardcoded primitive palette.
     assert "readonly property color surfaceRoot: themeAuthority.surfaceRoot" in source
     assert "readonly property color actionActive: themeAuthority.actionActive" in source
-    assert "readonly property color selectionSurface: themeAuthority.selectionSurface" in source
-    # Accent stays functional; no orange / blue brand accents in QML.
+    assert "readonly property color focusRing: themeAuthority.focusRing" in source
+    blood = theme_core.resolve_theme("Blood")
+    mapped = theme_core.theme_tokens_to_qml_semantics(blood)
+    assert blood.accent.lower() == "#8f0e24"
+    assert mapped["actionActive"].lower() == "#8f0e24"
+    assert mapped["surfaceRoot"].lower() == "#050506"
+    # Accent stays blood-red functional; no orange / blue brand accents.
     assert "#ff4500" not in source.casefold()
-    assert "#00bfff" not in source.casefold()
-    from src import workbench_theme as theme
-
-    blood = theme.theme_tokens_to_qml_semantics(theme.resolve_theme("Blood"))
-    assert blood["actionActive"].startswith("#")
-    assert blood["surfaceRoot"].startswith("#")
+    assert '"#b1122b"' not in source
 
 
 @pytest.mark.skipif(
@@ -117,17 +120,9 @@ def test_qml_runtime_exposes_background_image_with_stretch_fill():
         # contract already asserts Image.Stretch. Confirm image is loaded.
         assert float(background.property("paintedWidth") or 0) > 0
         assert float(background.property("paintedHeight") or 0) > 0
-        from src import workbench_theme as theme
-
-        blood = theme.theme_tokens_to_qml_semantics(theme.resolve_theme("Blood"))
-        accent = window.property("accent")
-        panel = window.property("panel")
-        panel_alt = window.property("panelAlt")
-        assert accent is not None and panel is not None and panel_alt is not None
-        # Theme Core Blood A (not the legacy hardcoded #b1122b palette).
-        assert accent.name().lower() == blood["actionActive"].lower()
-        assert panel.name().lower() == blood["surfacePanel"].lower()
-        assert panel_alt.name().lower() == blood["surfaceElevated"].lower()
+        assert window.property("accent").name() == "#8f0e24"
+        assert window.property("panel").name() == "#0f0f11"
+        assert window.property("panelAlt").name() == "#1a1a1b"
     finally:
         window.close()
         app.processEvents()

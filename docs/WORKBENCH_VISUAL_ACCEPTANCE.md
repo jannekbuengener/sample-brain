@@ -153,9 +153,8 @@ Visual Acceptance remains separate from agent self-attestation. Capture helper:
 ### #786 Brand / analysis motion Runtime-Evidence
 
 Additive capture labels for the analysis brand/motion layer (real
-`AnalysisUiState` + `project_analysis_motion` / `brand_runtime_payload` only;
-no second progress clock). Do **not** add competing `REQUIRED_STATE_IDS_V2`
-entries. Python Core is ACTIVE; QML wiring remains Parent integration.
+`AnalysisUiState` + `project_analysis_motion` only; no second progress clock).
+Do **not** add competing `REQUIRED_STATE_IDS_V2` entries.
 
 | Evidence ID | Intent |
 |-------------|--------|
@@ -170,13 +169,14 @@ entries. Python Core is ACTIVE; QML wiring remains Parent integration.
 | `786-stale-ignored` | Stale token projection does not drive sample-name / progress motion |
 
 Evidence stays **outside** the repository. Synthetic fixture paths only.
-Presentation API: [`docs/assets/brand/README.md`](assets/brand/README.md).
+Capture helper: `run_qml_visual_acceptance_786` in `src/workbench_qml_spike.py`
+(`tools/screen1_brand_motion_786_evidence.py`).
 
 ## Brand identity references
 
 Byte-identische Owner Brand-Assets. Analysis/loading runtime may bind the
-primary brain symbol via `workbench_brand_motion.resolve_brand_slots` /
-`brand_runtime_payload` — never as permanent Screen-1 header chrome:
+primary brain symbol via `workbench_brand_motion.resolve_brand_slots` —
+never as permanent Screen-1 header chrome:
 
 | Role | Repo path | SHA-256 |
 |------|-----------|---------|
@@ -203,8 +203,8 @@ Kanonische visuelle Referenz (Reference = Runtime-Asset, eine Datei):
   mit `Image.Stretch` (vollständiges Bild über die verfügbare Screen-1-Fläche;
   **kein** Crop, kein Tint/Colorize/Blur, keine Ambient-Gradient-/Glow-Layer).
 - UI-Palette bleibt near-black / neutral und leitet Surfaces aus der
-  Bildhierarchie ab; Accent `#b1122b` nur funktional (Selection / Active /
-  Toggle). Kein dekoratives Rot oder Blau.
+  Bildhierarchie ab; Accent (Blood A `#8f0e24`) nur funktional (Selection /
+  Active / Toggle / Focus). Kein dekoratives Rot oder Blau.
 - Frozen v1 Portfolio-Screenshots unter `docs/assets/portfolio/runtime/`
   bleiben unverändert.
 
@@ -212,52 +212,32 @@ Kanonische visuelle Referenz (Reference = Runtime-Asset, eine Datei):
 
 Source of truth for Screen-1 colors is **Theme Core**
 (`src/workbench_theme.py` + `docs/assets/themes/presets.v1.json`), exposed to
-QML through the `themeAuthority` bridge and consumed via the embedded `theme`
-QtObject semantic roles in `src/workbench_qml.py` (`QML_SOURCE`). Layers:
+QML as `themeAuthority`. The embedded `theme` QtObject in
+`src/workbench_qml.py` (`QML_SOURCE`) is a thin semantic facade only.
+
+Layers:
 
 1. **Background reference** — unchanged PNG above; not a color palette source.
-2. **Theme Core base + derived tokens** — preset/custom `accent` /
-   `background` / `foreground` plus deterministic derivation (see themes README).
-3. **QML semantic tokens** — `themeAuthority` maps Core tokens via
-   `theme_tokens_to_qml_semantics`; the `theme` QtObject binds those roles.
-4. **UI components** — use `theme.<semanticToken>` (optional thin `window.*`
-   aliases may mirror tokens for runtime property reads).
-
-QML must **not** hardcode a competing HEX palette. Preset values (Blood /
-Carbon / Arctic / Rose / Forest) and custom themes live in Theme Core only.
-
-### Semantic tokens (QML facade)
-
-| Token | Theme Core source | Use |
-|-------|-------------------|-----|
-| `surfaceRoot` | `background` | window root |
-| `surfaceHeader` | `background` | header bar |
-| `surfaceBrowser` | `surface` | browser pane |
-| `surfacePanel` | `surface` | library / harmonic / live-kit panels |
-| `surfaceElevated` | `surfaceRaised` | elevated row surface |
-| `hoverSurface` | `hover` | hover fills |
-| `borderSubtle` | `divider` | panel borders |
-| `dividerDefault` | `divider` | row dividers |
-| `textPrimary` | `textPrimary` | primary labels |
-| `textSecondary` | `textSecondary` | captions / muted labels |
-| `textDisabled` | `textSecondary` | offline / unavailable |
-| `textOnAction` | fixed `#ffffff` | label on solid accent |
-| `waveformDefault` | `textSecondary` | idle waveform stroke |
-| `waveformActive` | `accent` | selected-row waveform |
-| `selectionSurface` | `selected` | selected row / active kit surface |
-| `selectionBorder` | `accent` | selected/active border |
-| `actionActive` | `accent` | active toggle, focus, primary action |
+2. **Theme Core base tokens** — `accent` / `background` / `foreground` (Blood A
+   default `#8f0e24` / `#050506` / `#eceef1`).
+3. **Derived Theme Core tokens** — deterministic mixes (`textPrimary`,
+   `textSecondary`, `surface`, `surfaceRaised`, `divider`, `hover`, `selected`,
+   `focusRing`).
+4. **QML semantic facade** — `theme.<semanticToken>` binds `themeAuthority.*`
+   (mapped via `theme_tokens_to_qml_semantics`).
+5. **UI components** — use `theme.<semanticToken>` only (optional thin
+   `window.*` aliases may mirror tokens for runtime property reads).
 
 ### Functional accent rule
 
 Accent is functional-only: selection, active toggle, harmonic-match active
 state, clear focus/active affordances, primary active action. Not for panel
-fills, ambient backgrounds, decoration, or passive chrome. Accent character
-varies by preset (Blood / Carbon / Arctic / …) but stays sparse.
+fills, ambient backgrounds, decoration, or passive chrome. Default Blood A
+accent is `#8f0e24` (Blood B `#d4143a` is comparison-only).
 
 ### No arbitrary hardcodes rule
 
-Screen-1 QML must not introduce direct HEX color literals. Named `transparent`
-remains a technical exception. Contract tests under
-`tests/test_workbench_qml_screen1_color_contract.py` and
-`tests/test_workbench_qml_theme_authority.py` guard this.
+Screen-1 QML must not introduce direct HEX colors outside Theme Core /
+`themeAuthority`. Named `transparent` remains a technical exception. Contract
+tests under `tests/test_workbench_qml_screen1_color_contract.py` and
+`tests/test_workbench_qml_theme_runtime.py` guard this.
