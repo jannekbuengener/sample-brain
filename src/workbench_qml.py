@@ -254,6 +254,9 @@ class Screen1QmlViewModel:
         self.analysis_total = 0
         self.analysis_source = ""
         self.analysis_error: str | None = None
+        self.analysis_token: int | None = None
+        self._brand_expected_token: int | None = None
+        self._brand_motion_mode = "on"
         # #693 Clean Start materialization (progressive disclosure)
         self.has_active_source = False
         self.calm_canvas_visible = True
@@ -441,8 +444,36 @@ class Screen1QmlViewModel:
         self.analysis_total = state.total
         self.analysis_source = state.display_name
         self.analysis_error = state.error
+        self.analysis_token = state.token
+        # Live published states define the expected job token for brand projection.
+        self._brand_expected_token = state.token
+
+    def set_brand_motion_mode(self, mode: str) -> str:
+        from .workbench_display_preferences import normalize_motion_mode
+
+        self._brand_motion_mode = normalize_motion_mode(mode)
+        return self._brand_motion_mode
+
+    def brand_runtime_context(self) -> dict[str, object]:
+        """Project analysis evidence into QML brand/motion presentation fields."""
+        from .workbench_brand_motion import brand_runtime_payload
+
+        return brand_runtime_payload(
+            AnalysisUiState(
+                folder_id=self.analysis_folder_id,
+                phase=self.analysis_status,  # type: ignore[arg-type]
+                current=self.analysis_current,
+                total=self.analysis_total,
+                display_name=self.analysis_source,
+                token=self.analysis_token,
+                error=self.analysis_error,
+            ),
+            self._brand_motion_mode,
+            expected_token=self._brand_expected_token,
+        )
 
     def qml_context(self) -> dict[str, object]:
+        brand = self.brand_runtime_context()
         return {
             "panelCount": self.panel_count,
             "selectedBrowserIndex": self.selected_browser_index,
@@ -453,6 +484,16 @@ class Screen1QmlViewModel:
             "analysisTotal": self.analysis_total,
             "analysisSource": self.analysis_source,
             "analysisError": self.analysis_error or "",
+            "brandBrainUrl": brand["brainUrl"],
+            "brandProgressKind": brand["progressKind"],
+            "brandProgressRatio": brand["progressRatio"],
+            "brandSampleName": brand["sampleName"],
+            "brandMotionMode": brand["motionMode"],
+            "brandMotionActive": brand["motionActive"],
+            "brandReducedMotion": brand["reducedMotion"],
+            "brandStaticFallback": brand["staticFallback"],
+            "brandStale": brand["stale"],
+            "brandPhase": brand["phase"],
             "harmonyAnchor": self.harmony_anchor,
             "harmonyStatus": self.harmony_status,
             "browserRows": [
@@ -564,6 +605,7 @@ def _qml_screen_data_bridge(
         analysisProgressChanged = Signal()
         analysisSourceChanged = Signal()
         analysisErrorChanged = Signal()
+        brandMotionChanged = Signal()
         harmonyRowsChanged = Signal()
         harmonyAnchorChanged = Signal()
         harmonyStatusChanged = Signal()
@@ -605,6 +647,49 @@ def _qml_screen_data_bridge(
         @Property(str, notify=analysisErrorChanged)
         def analysisError(self) -> str:
             return view_model.analysis_error or ""
+
+        def _brand(self) -> dict[str, object]:
+            return view_model.brand_runtime_context()
+
+        @Property(str, notify=brandMotionChanged)
+        def brandBrainUrl(self) -> str:
+            return str(self._brand()["brainUrl"])
+
+        @Property(str, notify=brandMotionChanged)
+        def brandProgressKind(self) -> str:
+            return str(self._brand()["progressKind"])
+
+        @Property(float, notify=brandMotionChanged)
+        def brandProgressRatio(self) -> float:
+            return float(self._brand()["progressRatio"])
+
+        @Property(str, notify=brandMotionChanged)
+        def brandSampleName(self) -> str:
+            return str(self._brand()["sampleName"])
+
+        @Property(str, notify=brandMotionChanged)
+        def brandMotionMode(self) -> str:
+            return str(self._brand()["motionMode"])
+
+        @Property(bool, notify=brandMotionChanged)
+        def brandMotionActive(self) -> bool:
+            return bool(self._brand()["motionActive"])
+
+        @Property(bool, notify=brandMotionChanged)
+        def brandReducedMotion(self) -> bool:
+            return bool(self._brand()["reducedMotion"])
+
+        @Property(bool, notify=brandMotionChanged)
+        def brandStaticFallback(self) -> bool:
+            return bool(self._brand()["staticFallback"])
+
+        @Property(bool, notify=brandMotionChanged)
+        def brandStale(self) -> bool:
+            return bool(self._brand()["stale"])
+
+        @Property(str, notify=brandMotionChanged)
+        def brandPhase(self) -> str:
+            return str(self._brand()["phase"])
 
         @Property(list, notify=harmonyRowsChanged)
         def harmonyRows(self) -> list[dict[str, object]]:
@@ -648,6 +733,7 @@ def _qml_screen_data_bridge(
             self.analysisProgressChanged.emit()
             self.analysisSourceChanged.emit()
             self.analysisErrorChanged.emit()
+            self.brandMotionChanged.emit()
             self.harmonyRowsChanged.emit()
             self.harmonyAnchorChanged.emit()
             self.harmonyStatusChanged.emit()
@@ -789,6 +875,9 @@ class Screen1QmlInteractionAdapter:
 
         normalized = normalize_motion_mode(mode)
         self._waveform_motion_mode = normalized
+        # Brand/analysis motion consumes the same display preference.
+        if hasattr(self.view_model, "set_brand_motion_mode"):
+            self.view_model.set_brand_motion_mode(normalized)
         return self._waveform_motion_mode
 
     def reset_layout_preferences(self) -> None:
@@ -2496,6 +2585,104 @@ ApplicationWindow {
                     anchors.margins: 24
                     spacing: 14
 
+                    // #786 Brand motion layer — visualizes Python projection only.
+                    Item {
+                        id: brandMotionLayer
+                        objectName: "brandMotionLayer"
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.preferredWidth: 96
+                        Layout.preferredHeight: 96
+                        property bool reducedMotion: window.screenData.brandReducedMotion
+                        property bool staticFallback: window.screenData.brandStaticFallback
+                        property bool motionActive: window.screenData.brandMotionActive
+                        property string motionMode: window.screenData.brandMotionMode
+                        property bool analysisBusy: window.screenData.analysisStatus === "scanning"
+                                                    || window.screenData.analysisStatus === "analyzing"
+                        property bool allowOrganicMotion: motionActive && !staticFallback && !reducedMotion
+                                                          && analysisBusy && !window.screenData.brandStale
+                        property bool allowReducedMotion: motionActive && reducedMotion && !staticFallback
+                                                          && analysisBusy && !window.screenData.brandStale
+
+                        Image {
+                            id: analysisBrandBrain
+                            objectName: "analysisBrandBrain"
+                            anchors.centerIn: parent
+                            width: 88
+                            height: 88
+                            source: window.screenData.brandBrainUrl
+                            fillMode: Image.PreserveAspectFit
+                            // Static fallback remains clearly visible.
+                            opacity: brandMotionLayer.staticFallback ? 1.0
+                                     : (brandMotionLayer.allowOrganicMotion ? brainBreathe.opacityValue : 0.92)
+                            scale: brandMotionLayer.allowOrganicMotion ? brainBreathe.scaleValue : 1.0
+                            Accessible.name: "Sample Brain analysis"
+                        }
+
+                        // Distinct reduced path: progress-tinted glow ring, no loop.
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 94
+                            height: 94
+                            radius: 47
+                            visible: brandMotionLayer.allowReducedMotion
+                            color: "transparent"
+                            border.width: 2
+                            border.color: theme.actionActive
+                            opacity: window.screenData.brandProgressKind === "determinate"
+                                     ? (0.25 + 0.55 * Math.max(0.0, Math.min(1.0, window.screenData.brandProgressRatio)))
+                                     : 0.4
+                        }
+
+                        // Organic calm breathe — only while real analysis is busy + motion on.
+                        QtObject {
+                            id: brainBreathe
+                            property real opacityValue: 0.88
+                            property real scaleValue: 1.0
+                        }
+                        SequentialAnimation {
+                            id: brandOrganicBreathe
+                            running: brandMotionLayer.allowOrganicMotion
+                            loops: Animation.Infinite
+                            NumberAnimation {
+                                target: brainBreathe
+                                property: "opacityValue"
+                                from: 0.82
+                                to: 1.0
+                                duration: 1600
+                                easing.type: Easing.InOutSine
+                            }
+                            NumberAnimation {
+                                target: brainBreathe
+                                property: "opacityValue"
+                                from: 1.0
+                                to: 0.82
+                                duration: 1600
+                                easing.type: Easing.InOutSine
+                            }
+                        }
+                        SequentialAnimation {
+                            id: brandOrganicScale
+                            running: brandMotionLayer.allowOrganicMotion
+                            loops: Animation.Infinite
+                            NumberAnimation {
+                                target: brainBreathe
+                                property: "scaleValue"
+                                from: 0.98
+                                to: 1.02
+                                duration: 1800
+                                easing.type: Easing.InOutSine
+                            }
+                            NumberAnimation {
+                                target: brainBreathe
+                                property: "scaleValue"
+                                from: 1.02
+                                to: 0.98
+                                duration: 1800
+                                easing.type: Easing.InOutSine
+                            }
+                        }
+                    }
+
                     Label {
                         objectName: "analysisStatusLabel"
                         Layout.fillWidth: true
@@ -2509,9 +2696,26 @@ ApplicationWindow {
                     }
 
                     Label {
+                        id: analysisBrandSampleName
+                        objectName: "analysisBrandSampleName"
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignHCenter
+                        horizontalAlignment: Text.AlignHCenter
+                        visible: window.screenData.brandSampleName.length > 0
+                                 && (window.screenData.analysisStatus === "scanning"
+                                     || window.screenData.analysisStatus === "analyzing")
+                                 && !window.screenData.brandStale
+                        text: window.screenData.brandSampleName
+                        color: theme.textPrimary
+                        font.pixelSize: 12
+                        elide: Text.ElideMiddle
+                        opacity: brandMotionLayer.allowOrganicMotion ? 0.85 : 1.0
+                    }
+
+                    Label {
                         objectName: "analysisProgressCount"
                         Layout.alignment: Qt.AlignHCenter
-                        visible: window.screenData.analysisTotal > 0
+                        visible: window.screenData.brandProgressKind === "determinate"
                                  && (window.screenData.analysisStatus === "scanning"
                                      || window.screenData.analysisStatus === "analyzing")
                         // Folder-level completed/total — not the in-flight sample ordinal.
@@ -2542,16 +2746,23 @@ ApplicationWindow {
                             anchors.top: parent.top
                             anchors.bottom: parent.bottom
                             width: {
-                                if (window.screenData.analysisTotal <= 0)
+                                if (window.screenData.brandProgressKind === "indeterminate"
+                                    || window.screenData.analysisTotal <= 0)
                                     return parent.width * 0.28
-                                return parent.width * Math.min(
-                                    1.0,
-                                    Math.max(0.0, window.screenData.analysisCurrent / window.screenData.analysisTotal)
-                                )
+                                if (window.screenData.brandProgressKind === "none")
+                                    return 0
+                                var ratio = window.screenData.brandProgressRatio
+                                if (ratio < 0.0)
+                                    ratio = Math.min(
+                                        1.0,
+                                        Math.max(0.0, window.screenData.analysisCurrent / Math.max(1, window.screenData.analysisTotal))
+                                    )
+                                return parent.width * Math.min(1.0, Math.max(0.0, ratio))
                             }
                             radius: 3
                             color: theme.actionActive
-                            opacity: window.screenData.analysisTotal <= 0 ? 0.45 : 0.85
+                            opacity: window.screenData.brandProgressKind === "indeterminate"
+                                     || window.screenData.analysisTotal <= 0 ? 0.45 : 0.85
                         }
                     }
 

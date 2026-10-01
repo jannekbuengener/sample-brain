@@ -156,11 +156,49 @@ def project_analysis_motion(
     )
 
 
+def brand_runtime_payload(
+    state: AnalysisUiState,
+    motion_mode: Any,
+    *,
+    expected_token: int | None = None,
+    repo_root: Path | None = None,
+) -> dict[str, Any]:
+    """QML-facing projection dict. Presentation only — no analysis authority."""
+    projection = project_analysis_motion(
+        state,
+        motion_mode,
+        expected_token=expected_token,
+    )
+    slots = resolve_brand_slots(repo_root=repo_root)
+    brain = slots["brain_symbol"]
+    ratio = (
+        float(projection.progress_ratio)
+        if projection.progress_ratio is not None
+        else -1.0
+    )
+    return {
+        "phase": projection.phase,
+        "progressKind": projection.progress_kind,
+        "progressRatio": ratio,
+        "sampleName": projection.sample_name,
+        "motionMode": projection.motion_mode,
+        "motionActive": projection.motion_active,
+        "reducedMotion": projection.reduced_motion,
+        "staticFallback": projection.static_fallback,
+        "jobToken": projection.job_token if projection.job_token is not None else -1,
+        "stale": projection.stale,
+        "brainUrl": brain.path.as_uri(),
+        "headerPermitsPermanentBranding": SCREEN1_HEADER_PERMITS_PERMANENT_BRANDING,
+        "claim": BRAND_CLAIM,
+    }
+
+
 __all__ = (
     "AnalysisMotionProjection",
     "BRAND_CLAIM",
     "BrandAssetSlot",
     "SCREEN1_HEADER_PERMITS_PERMANENT_BRANDING",
+    "brand_runtime_payload",
     "project_analysis_motion",
     "resolve_brand_slots",
 )
