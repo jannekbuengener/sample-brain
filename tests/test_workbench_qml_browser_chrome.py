@@ -94,7 +94,8 @@ def test_browser_search_field_is_visually_integrated():
     assert 'placeholderText: "Search samples"' in search
     assert "background: Rectangle" in search
     assert "placeholderTextColor: theme.textSecondary" in search
-    assert "activeFocus ? theme.actionActive" in search
+    assert "activeFocus ? theme.focusRing" in search
+    assert "activeFocus ? theme.actionActive" not in search
 
 
 def test_browser_header_composes_context_title_scope_count_and_error():

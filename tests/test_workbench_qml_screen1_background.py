@@ -64,18 +64,21 @@ def test_qml_source_uses_stretch_background_image_without_crop_or_gradients():
 
 
 def test_qml_palette_tokens_are_near_black_with_functional_accent_only():
+    from src import workbench_theme as theme_core
+
     source = workbench_qml.QML_SOURCE
-    assert 'readonly property color neutral000: "#000000"' in source
-    assert 'readonly property color neutral100: "#0c0d0e"' in source
-    assert 'readonly property color neutral150: "#141516"' in source
-    assert 'readonly property color accentPrimary: "#b1122b"' in source
-    assert 'readonly property color accentSurface: "#1a1012"' in source
-    assert 'readonly property color neutral250: "#222426"' in source
-    assert "readonly property color surfacePanel: neutral100" in source
-    assert "readonly property color actionActive: accentPrimary" in source
+    # Theme Authority facade — no competing hardcoded primitive palette.
+    assert "readonly property color surfaceRoot: themeAuthority.surfaceRoot" in source
+    assert "readonly property color actionActive: themeAuthority.actionActive" in source
+    assert "readonly property color focusRing: themeAuthority.focusRing" in source
+    blood = theme_core.resolve_theme("Blood")
+    mapped = theme_core.theme_tokens_to_qml_semantics(blood)
+    assert blood.accent.lower() == "#8f0e24"
+    assert mapped["actionActive"].lower() == "#8f0e24"
+    assert mapped["surfaceRoot"].lower() == "#050506"
     # Accent stays blood-red functional; no orange / blue brand accents.
     assert "#ff4500" not in source.casefold()
-    assert re.search(r'readonly property color accentPrimary:\s*"#b1122b"', source)
+    assert '"#b1122b"' not in source
 
 
 @pytest.mark.skipif(
@@ -117,9 +120,9 @@ def test_qml_runtime_exposes_background_image_with_stretch_fill():
         # contract already asserts Image.Stretch. Confirm image is loaded.
         assert float(background.property("paintedWidth") or 0) > 0
         assert float(background.property("paintedHeight") or 0) > 0
-        assert window.property("accent").name() == "#b1122b"
-        assert window.property("panel").name() == "#0c0d0e"
-        assert window.property("panelAlt").name() == "#141516"
+        assert window.property("accent").name() == "#8f0e24"
+        assert window.property("panel").name() == "#0f0f11"
+        assert window.property("panelAlt").name() == "#1a1a1b"
     finally:
         window.close()
         app.processEvents()

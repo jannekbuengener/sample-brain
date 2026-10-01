@@ -1,4 +1,4 @@
-"""#785 Theme Core — FROZEN RED CONTRACT.
+"""#785 Theme Core — FROZEN CONTRACT.
 
 Status: TEST_FREEZE
 Canon: docs/assets/themes/presets.v1.json, docs/assets/themes/README.md
@@ -7,7 +7,7 @@ These tests freeze Theme Core behaviour. Implementation must satisfy them
 without softening assertions. Failures must come from missing product behaviour.
 
 Scope: Python Theme Core + local persistence in workbench_state_dir family.
-Out of scope: QML file edits (PR #792 / #780 may still be open).
+QML runtime wiring is covered by tests/test_workbench_qml_theme_runtime.py.
 """
 
 from __future__ import annotations

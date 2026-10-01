@@ -1,13 +1,13 @@
 {
   "schema": "sample_brain.theme_presets",
   "version": 1,
-  "status": "design_canon_only",
+  "status": "runtime_canon",
   "notes": [
     "Base tokens accent/background/foreground are the sole source of truth.",
     "Derived tokens are computed and must not be edited independently.",
     "Blood primary_candidate is stage A (#8f0e24). Blood B (#d4143a) remains a brighter-crimson comparison variant.",
-    "Not a QML runtime contract. Product implementation is out of scope for this slice.",
-    "Issues #785/#786 remain open."
+    "Loaded by src/workbench_theme.py; Screen-1 QML consumes via themeAuthority (#785).",
+    "Custom themes persist base tokens only; derived tokens are never a second persistence truth."
   ],
   "derivation": {
     "textPrimary": "foreground",

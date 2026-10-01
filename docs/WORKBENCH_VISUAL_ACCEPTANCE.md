@@ -203,72 +203,41 @@ Kanonische visuelle Referenz (Reference = Runtime-Asset, eine Datei):
   mit `Image.Stretch` (vollständiges Bild über die verfügbare Screen-1-Fläche;
   **kein** Crop, kein Tint/Colorize/Blur, keine Ambient-Gradient-/Glow-Layer).
 - UI-Palette bleibt near-black / neutral und leitet Surfaces aus der
-  Bildhierarchie ab; Accent `#b1122b` nur funktional (Selection / Active /
-  Toggle). Kein dekoratives Rot oder Blau.
+  Bildhierarchie ab; Accent (Blood A `#8f0e24`) nur funktional (Selection /
+  Active / Toggle / Focus). Kein dekoratives Rot oder Blau.
 - Frozen v1 Portfolio-Screenshots unter `docs/assets/portfolio/runtime/`
   bleiben unverändert.
 
 ## Screen-1 canonical color contract
 
-Source of truth for Screen-1 colors is the embedded `theme` QtObject in
-`src/workbench_qml.py` (`QML_SOURCE`). Layers:
+Source of truth for Screen-1 colors is **Theme Core**
+(`src/workbench_theme.py` + `docs/assets/themes/presets.v1.json`), exposed to
+QML as `themeAuthority`. The embedded `theme` QtObject in
+`src/workbench_qml.py` (`QML_SOURCE`) is a thin semantic facade only.
+
+Layers:
 
 1. **Background reference** — unchanged PNG above; not a color palette source.
-2. **Color primitives** — raw HEX values only (near-black / neutral / one accent).
-3. **Semantic tokens** — meaning for UI states; components bind to these, not HEX.
-4. **UI components** — use `theme.<semanticToken>` (optional thin `window.*`
-   aliases may mirror tokens for runtime property reads).
-
-### Primitive palette
-
-| Primitive | HEX | Notes |
-|-----------|-----|--------|
-| `neutral000` | `#000000` | root / deepest surface |
-| `neutral050` | `#050506` | header |
-| `neutral075` | `#0a0b0c` | browser pane |
-| `neutral100` | `#0c0d0e` | panel |
-| `neutral150` | `#141516` | elevated / hover surface |
-| `neutral250` | `#222426` | border / divider |
-| `contentPrimary` | `#eceef1` | primary text |
-| `contentSecondary` | `#8b9098` | muted / secondary text |
-| `contentDisabled` | `#8b9098` | disabled/offline text (same value as secondary; no invented gray) |
-| `contentOnAction` | `#ffffff` | text on solid accent control |
-| `waveformNeutral` | `#6d737c` | idle waveform |
-| `accentPrimary` | `#b1122b` | functional accent only |
-| `accentSurface` | `#1a1012` | selection / active surface |
-
-Do not add primitives without a real semantic consumer. Do not invent decorative
-blues, neons, glows, or extra reds.
-
-### Semantic tokens
-
-| Token | Primitive | Use |
-|-------|-----------|-----|
-| `surfaceRoot` | `neutral000` | window root |
-| `surfaceHeader` | `neutral050` | header bar |
-| `surfaceBrowser` | `neutral075` | browser pane |
-| `surfacePanel` | `neutral100` | library / harmonic / live-kit panels |
-| `surfaceElevated` | `neutral150` | hover / elevated row surface |
-| `borderSubtle` | `neutral250` | panel borders |
-| `dividerDefault` | `neutral250` | row dividers |
-| `textPrimary` | `contentPrimary` | primary labels |
-| `textSecondary` | `contentSecondary` | captions / muted labels |
-| `textDisabled` | `contentDisabled` | offline / unavailable |
-| `textOnAction` | `contentOnAction` | label on solid accent |
-| `waveformDefault` | `waveformNeutral` | idle waveform stroke |
-| `waveformActive` | `accentPrimary` | selected-row waveform |
-| `selectionSurface` | `accentSurface` | selected row / active kit surface |
-| `selectionBorder` | `accentPrimary` | selected/active border |
-| `actionActive` | `accentPrimary` | active toggle, focus, primary action, harmonic-match on |
+2. **Theme Core base tokens** — `accent` / `background` / `foreground` (Blood A
+   default `#8f0e24` / `#050506` / `#eceef1`).
+3. **Derived Theme Core tokens** — deterministic mixes (`textPrimary`,
+   `textSecondary`, `surface`, `surfaceRaised`, `divider`, `hover`, `selected`,
+   `focusRing`).
+4. **QML semantic facade** — `theme.<semanticToken>` binds `themeAuthority.*`
+   (mapped via `theme_tokens_to_qml_semantics`).
+5. **UI components** — use `theme.<semanticToken>` only (optional thin
+   `window.*` aliases may mirror tokens for runtime property reads).
 
 ### Functional accent rule
 
-Red (`accentPrimary`) is functional-only: selection, active toggle, harmonic-match
-active state, clear focus/active affordances, primary active action. Not for
-panel fills, ambient backgrounds, decoration, or passive chrome.
+Accent is functional-only: selection, active toggle, harmonic-match active
+state, clear focus/active affordances, primary active action. Not for panel
+fills, ambient backgrounds, decoration, or passive chrome. Default Blood A
+accent is `#8f0e24` (Blood B `#d4143a` is comparison-only).
 
 ### No arbitrary hardcodes rule
 
-Screen-1 QML must not introduce new direct HEX colors outside the `theme`
-primitive block. Named `transparent` remains a technical exception. Contract
-tests under `tests/test_workbench_qml_screen1_color_contract.py` guard this.
+Screen-1 QML must not introduce direct HEX colors outside Theme Core /
+`themeAuthority`. Named `transparent` remains a technical exception. Contract
+tests under `tests/test_workbench_qml_screen1_color_contract.py` and
+`tests/test_workbench_qml_theme_runtime.py` guard this.
