@@ -1419,41 +1419,28 @@ ApplicationWindow {
     property var interaction: interactionModel
     property var channelRack: channelRackModel
     readonly property string activeScreen: channelRack.activeScreen
-    // Screen-1 color contract: primitives -> semantic tokens -> components.
-    // HEX literals live only on primitives. See docs/WORKBENCH_VISUAL_ACCEPTANCE.md.
+    // Screen-1 Theme Authority (#785): Theme Core owns colors; QML binds semantics.
+    // No competing HEX palette here — see docs/assets/themes/ and workbench_theme.py.
     QtObject {
         id: theme
-        // --- primitives ---
-        readonly property color neutral000: "#000000"
-        readonly property color neutral050: "#050506"
-        readonly property color neutral075: "#0a0b0c"
-        readonly property color neutral100: "#0c0d0e"
-        readonly property color neutral150: "#141516"
-        readonly property color neutral250: "#222426"
-        readonly property color contentPrimary: "#eceef1"
-        readonly property color contentSecondary: "#8b9098"
-        readonly property color contentDisabled: "#8b9098"
-        readonly property color contentOnAction: "#ffffff"
-        readonly property color waveformNeutral: "#6d737c"
-        readonly property color accentPrimary: "#b1122b"
-        readonly property color accentSurface: "#1a1012"
-        // --- semantic tokens ---
-        readonly property color surfaceRoot: neutral000
-        readonly property color surfaceHeader: neutral050
-        readonly property color surfaceBrowser: neutral075
-        readonly property color surfacePanel: neutral100
-        readonly property color surfaceElevated: neutral150
-        readonly property color borderSubtle: neutral250
-        readonly property color dividerDefault: neutral250
-        readonly property color textPrimary: contentPrimary
-        readonly property color textSecondary: contentSecondary
-        readonly property color textDisabled: contentDisabled
-        readonly property color textOnAction: contentOnAction
-        readonly property color waveformDefault: waveformNeutral
-        readonly property color waveformActive: accentPrimary
-        readonly property color selectionSurface: accentSurface
-        readonly property color selectionBorder: accentPrimary
-        readonly property color actionActive: accentPrimary
+        readonly property color surfaceRoot: themeAuthority.surfaceRoot
+        readonly property color surfaceHeader: themeAuthority.surfaceHeader
+        readonly property color surfaceBrowser: themeAuthority.surfaceBrowser
+        readonly property color surfacePanel: themeAuthority.surfacePanel
+        readonly property color surfaceElevated: themeAuthority.surfaceElevated
+        readonly property color borderSubtle: themeAuthority.borderSubtle
+        readonly property color dividerDefault: themeAuthority.dividerDefault
+        readonly property color textPrimary: themeAuthority.textPrimary
+        readonly property color textSecondary: themeAuthority.textSecondary
+        readonly property color textDisabled: themeAuthority.textDisabled
+        readonly property color textOnAction: themeAuthority.textOnAction
+        readonly property color waveformDefault: themeAuthority.waveformDefault
+        readonly property color waveformActive: themeAuthority.waveformActive
+        readonly property color selectionSurface: themeAuthority.selectionSurface
+        readonly property color selectionBorder: themeAuthority.selectionBorder
+        readonly property color actionActive: themeAuthority.actionActive
+        readonly property color focusRing: themeAuthority.focusRing
+        readonly property color hoverSurface: themeAuthority.hoverSurface
     }
     // #770 shared context-hint content seam (ephemeral UI state; placement is separate).
     QtObject {
@@ -1760,7 +1747,7 @@ ApplicationWindow {
                         objectName: "displayPreferencesPopover"
                         x: displayPreferencesOverflow.width - width
                         y: displayPreferencesOverflow.height + 6
-                        width: 260
+                        width: 300
                         padding: 12
                         modal: false
                         focus: true
@@ -1773,6 +1760,94 @@ ApplicationWindow {
                         ColumnLayout {
                             anchors.fill: parent
                             spacing: 8
+                            Label { text: "Appearance"; color: theme.textSecondary; font.pixelSize: 11 }
+                            ComboBox {
+                                id: themePresetSelector
+                                objectName: "themePresetSelector"
+                                Layout.fillWidth: true
+                                model: themeAuthority.availableThemeNames
+                                currentIndex: themeAuthority.selectedThemeIndex
+                                onActivated: function(index) {
+                                    themeAuthority.selectTheme(themeAuthority.availableThemeNames[index])
+                                }
+                            }
+                            Button {
+                                id: themeCustomizeButton
+                                objectName: "themeCustomizeButton"
+                                Layout.fillWidth: true
+                                text: themeAuthority.isCustom ? "Editing custom" : "Customize from preset"
+                                enabled: !themeAuthority.isCustom
+                                onClicked: themeAuthority.customizeSelectedPreset()
+                            }
+                            Label {
+                                visible: themeAuthority.isCustom
+                                text: "Base: " + themeAuthority.basePresetName
+                                color: theme.textSecondary
+                                font.pixelSize: 11
+                            }
+                            GridLayout {
+                                visible: themeAuthority.isCustom
+                                columns: 2
+                                columnSpacing: 8
+                                rowSpacing: 6
+                                Layout.fillWidth: true
+                                Label { text: "Accent"; color: theme.textSecondary; font.pixelSize: 11 }
+                                TextField {
+                                    id: themeAccentField
+                                    objectName: "themeAccentField"
+                                    Layout.fillWidth: true
+                                    text: themeAuthority.baseAccent
+                                    onEditingFinished: themeAuthority.setBaseAccent(text)
+                                }
+                                Label { text: "Background"; color: theme.textSecondary; font.pixelSize: 11 }
+                                TextField {
+                                    id: themeBackgroundField
+                                    objectName: "themeBackgroundField"
+                                    Layout.fillWidth: true
+                                    text: themeAuthority.baseBackground
+                                    onEditingFinished: themeAuthority.setBaseBackground(text)
+                                }
+                                Label { text: "Foreground"; color: theme.textSecondary; font.pixelSize: 11 }
+                                TextField {
+                                    id: themeForegroundField
+                                    objectName: "themeForegroundField"
+                                    Layout.fillWidth: true
+                                    text: themeAuthority.baseForeground
+                                    onEditingFinished: themeAuthority.setBaseForeground(text)
+                                }
+                            }
+                            RowLayout {
+                                visible: themeAuthority.isCustom
+                                spacing: 6
+                                Layout.fillWidth: true
+                                Button {
+                                    objectName: "themeSaveCustomButton"
+                                    text: "Save"
+                                    onClicked: themeAuthority.saveCurrentCustom()
+                                }
+                                Button {
+                                    objectName: "themeResetCustomButton"
+                                    text: "Reset"
+                                    onClicked: themeAuthority.resetCurrentCustom()
+                                }
+                                Button {
+                                    objectName: "themeDeleteCustomButton"
+                                    text: "Delete"
+                                    onClicked: themeAuthority.deleteCurrentCustom()
+                                }
+                            }
+                            TextField {
+                                id: themeRenameField
+                                objectName: "themeRenameField"
+                                visible: themeAuthority.isCustom
+                                Layout.fillWidth: true
+                                placeholderText: "Rename custom…"
+                                placeholderTextColor: theme.textSecondary
+                                onAccepted: {
+                                    themeAuthority.renameCurrentCustom(text)
+                                    text = ""
+                                }
+                            }
                             Label { text: "Density"; color: theme.textSecondary; font.pixelSize: 11 }
                             Label { text: "Compact"; color: theme.textPrimary; font.pixelSize: 13 }
                             Label { text: "Motion"; color: theme.textSecondary; font.pixelSize: 11 }
@@ -2636,7 +2711,7 @@ ApplicationWindow {
                         background: Rectangle {
                             radius: 6
                             border.width: 1
-                            border.color: parent.activeFocus ? theme.actionActive : theme.borderSubtle
+                            border.color: parent.activeFocus ? theme.focusRing : theme.borderSubtle
                             color: "transparent"
                         }
                         onTextChanged: window.interaction.setBrowserSearch(text)
@@ -4116,6 +4191,333 @@ def _qml_library_interaction_bridge(
 
     return QmlLibraryInteractionBridge()
 
+
+def _qml_theme_authority_bridge(
+    *,
+    state_dir: Path | None = None,
+    env: dict[str, str] | None = None,
+):
+    """Expose Theme Core (#785) as the sole Screen-1 color authority for QML."""
+    from PySide6.QtCore import QObject, Property, Signal, Slot
+
+    from . import workbench_theme as theme_mod
+
+    class QmlThemeAuthorityBridge(QObject):
+        themeChanged = Signal()
+
+        def __init__(self) -> None:
+            super().__init__()
+            self._state_dir = state_dir
+            self._env = env
+            self._tokens = theme_mod.resolve_theme(state_dir=state_dir, env=env)
+            self._semantics = theme_mod.theme_tokens_to_qml_semantics(self._tokens)
+            self._draft_accent = self._tokens.accent
+            self._draft_background = self._tokens.background
+            self._draft_foreground = self._tokens.foreground
+            self._draft_name = self._tokens.name
+
+        def _reload(self, tokens: theme_mod.ThemeTokens | None = None) -> None:
+            self._tokens = tokens or theme_mod.resolve_theme(
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            self._semantics = theme_mod.theme_tokens_to_qml_semantics(self._tokens)
+            self._draft_accent = self._tokens.accent
+            self._draft_background = self._tokens.background
+            self._draft_foreground = self._tokens.foreground
+            self._draft_name = self._tokens.name
+            self.themeChanged.emit()
+
+        def _preview_from_draft(self) -> None:
+            accent = theme_mod._normalize_hex(self._draft_accent)
+            background = theme_mod._normalize_hex(self._draft_background)
+            foreground = theme_mod._normalize_hex(self._draft_foreground)
+            if accent is None or background is None or foreground is None:
+                return
+            base = theme_mod.ThemeBase(
+                accent=accent,
+                background=background,
+                foreground=foreground,
+            )
+            preview = theme_mod._tokens_from_base(
+                base,
+                name=self._draft_name,
+                base_preset=self._tokens.base_preset,
+            )
+            self._semantics = theme_mod.theme_tokens_to_qml_semantics(preview)
+            self.themeChanged.emit()
+
+        def _color(self, key: str) -> str:
+            return str(self._semantics.get(key) or theme_mod.TEXT_ON_ACTION)
+
+        def _available_names(self) -> list[str]:
+            customs = theme_mod.list_custom_themes(
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            return list(theme_mod.list_presets()) + customs
+
+        @Property(str, notify=themeChanged)
+        def selectedThemeName(self) -> str:
+            return self._tokens.name
+
+        @Property(str, notify=themeChanged)
+        def basePresetName(self) -> str:
+            return self._tokens.base_preset
+
+        @Property(bool, notify=themeChanged)
+        def isCustom(self) -> bool:
+            return self._tokens.name not in theme_mod.PRESET_ORDER
+
+        @Property(list, notify=themeChanged)
+        def availableThemeNames(self) -> list[str]:
+            return self._available_names()
+
+        @Property(list, notify=themeChanged)
+        def customThemeNames(self) -> list[str]:
+            return theme_mod.list_custom_themes(
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+
+        @Property(int, notify=themeChanged)
+        def selectedThemeIndex(self) -> int:
+            names = self._available_names()
+            try:
+                return names.index(self._tokens.name)
+            except ValueError:
+                return 0
+
+        @Property(str, notify=themeChanged)
+        def baseAccent(self) -> str:
+            return self._draft_accent
+
+        @Property(str, notify=themeChanged)
+        def baseBackground(self) -> str:
+            return self._draft_background
+
+        @Property(str, notify=themeChanged)
+        def baseForeground(self) -> str:
+            return self._draft_foreground
+
+        @Property(str, notify=themeChanged)
+        def surfaceRoot(self) -> str:
+            return self._color("surfaceRoot")
+
+        @Property(str, notify=themeChanged)
+        def surfaceHeader(self) -> str:
+            return self._color("surfaceHeader")
+
+        @Property(str, notify=themeChanged)
+        def surfaceBrowser(self) -> str:
+            return self._color("surfaceBrowser")
+
+        @Property(str, notify=themeChanged)
+        def surfacePanel(self) -> str:
+            return self._color("surfacePanel")
+
+        @Property(str, notify=themeChanged)
+        def surfaceElevated(self) -> str:
+            return self._color("surfaceElevated")
+
+        @Property(str, notify=themeChanged)
+        def borderSubtle(self) -> str:
+            return self._color("borderSubtle")
+
+        @Property(str, notify=themeChanged)
+        def dividerDefault(self) -> str:
+            return self._color("dividerDefault")
+
+        @Property(str, notify=themeChanged)
+        def textPrimary(self) -> str:
+            return self._color("textPrimary")
+
+        @Property(str, notify=themeChanged)
+        def textSecondary(self) -> str:
+            return self._color("textSecondary")
+
+        @Property(str, notify=themeChanged)
+        def textDisabled(self) -> str:
+            return self._color("textDisabled")
+
+        @Property(str, notify=themeChanged)
+        def textOnAction(self) -> str:
+            return self._color("textOnAction")
+
+        @Property(str, notify=themeChanged)
+        def waveformDefault(self) -> str:
+            return self._color("waveformDefault")
+
+        @Property(str, notify=themeChanged)
+        def waveformActive(self) -> str:
+            return self._color("waveformActive")
+
+        @Property(str, notify=themeChanged)
+        def selectionSurface(self) -> str:
+            return self._color("selectionSurface")
+
+        @Property(str, notify=themeChanged)
+        def selectionBorder(self) -> str:
+            return self._color("selectionBorder")
+
+        @Property(str, notify=themeChanged)
+        def actionActive(self) -> str:
+            return self._color("actionActive")
+
+        @Property(str, notify=themeChanged)
+        def focusRing(self) -> str:
+            return self._color("focusRing")
+
+        @Property(str, notify=themeChanged)
+        def hoverSurface(self) -> str:
+            return self._color("hoverSurface")
+
+        @Slot(str)
+        def selectTheme(self, name: str) -> None:
+            tokens = theme_mod.select_theme(
+                str(name),
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            self._reload(tokens)
+
+        @Slot()
+        def customizeSelectedPreset(self) -> None:
+            base_preset = (
+                self._tokens.name
+                if self._tokens.name in theme_mod.PRESET_ORDER
+                else self._tokens.base_preset
+            )
+            if base_preset not in theme_mod.PRESET_ORDER:
+                base_preset = theme_mod.DEFAULT_PRESET_NAME
+            existing = set(theme_mod.PRESET_ORDER) | set(
+                theme_mod.list_custom_themes(state_dir=self._state_dir, env=self._env)
+            )
+            name = f"{base_preset} Custom"
+            suffix = 2
+            while name in existing:
+                name = f"{base_preset} Custom {suffix}"
+                suffix += 1
+            theme_mod.create_custom_theme(
+                name=name,
+                base_preset=base_preset,
+                accent=self._draft_accent,
+                background=self._draft_background,
+                foreground=self._draft_foreground,
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            tokens = theme_mod.select_theme(
+                name,
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            self._reload(tokens)
+
+        @Slot(str, str)
+        def createCustomFromPreset(self, base_preset: str, name: str) -> None:
+            theme_mod.create_custom_theme(
+                name=str(name),
+                base_preset=str(base_preset),
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            tokens = theme_mod.select_theme(
+                str(name),
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            self._reload(tokens)
+
+        @Slot(str)
+        def setBaseAccent(self, value: str) -> None:
+            normalized = theme_mod._normalize_hex(value)
+            if normalized is None:
+                return
+            self._draft_accent = normalized
+            self._preview_from_draft()
+
+        @Slot(str)
+        def setBaseBackground(self, value: str) -> None:
+            normalized = theme_mod._normalize_hex(value)
+            if normalized is None:
+                return
+            self._draft_background = normalized
+            self._preview_from_draft()
+
+        @Slot(str)
+        def setBaseForeground(self, value: str) -> None:
+            normalized = theme_mod._normalize_hex(value)
+            if normalized is None:
+                return
+            self._draft_foreground = normalized
+            self._preview_from_draft()
+
+        @Slot()
+        def saveCurrentCustom(self) -> None:
+            if self._tokens.name in theme_mod.PRESET_ORDER:
+                return
+            theme_mod.save_custom_theme(
+                {
+                    "name": self._tokens.name,
+                    "base_preset": self._tokens.base_preset,
+                    "accent": self._draft_accent,
+                    "background": self._draft_background,
+                    "foreground": self._draft_foreground,
+                },
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            tokens = theme_mod.select_theme(
+                self._tokens.name,
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            self._reload(tokens)
+
+        @Slot(str)
+        def renameCurrentCustom(self, new_name: str) -> None:
+            if self._tokens.name in theme_mod.PRESET_ORDER:
+                return
+            old = self._tokens.name
+            theme_mod.rename_custom_theme(
+                old,
+                str(new_name),
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            tokens = theme_mod.resolve_theme(
+                str(new_name).strip(),
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            self._reload(tokens)
+
+        @Slot()
+        def deleteCurrentCustom(self) -> None:
+            if self._tokens.name in theme_mod.PRESET_ORDER:
+                return
+            theme_mod.delete_custom_theme(
+                self._tokens.name,
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            self._reload()
+
+        @Slot()
+        def resetCurrentCustom(self) -> None:
+            if self._tokens.name in theme_mod.PRESET_ORDER:
+                return
+            tokens = theme_mod.reset_custom_theme(
+                self._tokens.name,
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+            self._reload(tokens)
+
+    return QmlThemeAuthorityBridge()
+
+
 def _qml_engine(
     view_model: Screen1QmlViewModel,
     *,
@@ -4672,6 +5074,8 @@ def _qml_engine(
     engine.rootContext().setContextProperty("libraryTreeModel", library_model)
     engine.rootContext().setContextProperty("libraryInteraction", library_bridge)
     engine.rootContext().setContextProperty("channelRackModel", channel_rack_bridge)
+    theme_authority = _qml_theme_authority_bridge()
+    engine.rootContext().setContextProperty("themeAuthority", theme_authority)
     engine.rootContext().setContextProperty(
         "screen1BackgroundUrl",
         screen1_background_url(),
@@ -4691,6 +5095,7 @@ def _qml_engine(
     engine._screen1_library_model = library_model
     engine._screen1_library_bridge = library_bridge
     engine._screen1_screen_model = screen_model
+    engine._screen1_theme_authority = theme_authority
     engine._screen1_live_kit = live_kit
     engine._screen1_channel_rack = channel_rack_controller
     engine._screen1_channel_rack_bridge = channel_rack_bridge

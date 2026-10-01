@@ -1,8 +1,12 @@
 # Screen-1 Display Preferences — Density, Motion, Layout Reset, Startup Presets (#696)
 
+Appearance / Theme selection is hosted here as a secondary affordance (#785),
+but theme persistence remains owned by Theme Core (`workbench_theme.py`).
+
 **Status:** ACTIVE_SUPPORTING (product contract under #691)  
 **Parent:** [#691](https://github.com/jannekbuengener/sample-brain/issues/691)  
 **Issue:** [#696](https://github.com/jannekbuengener/sample-brain/issues/696)  
+**Theme runtime:** [#785](https://github.com/jannekbuengener/sample-brain/issues/785) / [`docs/assets/themes/README.md`](assets/themes/README.md)  
 **Shared visual states:** [#700](https://github.com/jannekbuengener/sample-brain/issues/700) / [`WORKBENCH_VISUAL_ACCEPTANCE.md`](WORKBENCH_VISUAL_ACCEPTANCE.md)  
 **Depends on:** [#692](https://github.com/jannekbuengener/sample-brain/issues/692) density, [#693](https://github.com/jannekbuengener/sample-brain/issues/693) Clean Start, [#694](https://github.com/jannekbuengener/sample-brain/issues/694) elastic layout, [#695](https://github.com/jannekbuengener/sample-brain/issues/695)/[#738](https://github.com/jannekbuengener/sample-brain/issues/738) motion/playhead seams
 
@@ -19,6 +23,11 @@ This issue owns the **product Preferences surface and persistence writers** for:
 - Save Workspace Preset;
 - Set Preset as Startup;
 - Return to Clean Start.
+
+Appearance / Theme preset selection and custom-theme editing are **hosted** in
+the same header overflow surface (#785), but Theme Core owns token derivation
+and `screen1_theme_preferences.json` persistence. Display Preferences must not
+duplicate theme storage.
 
 It does **not** recreate historical last-session restore under the name Preset.
 

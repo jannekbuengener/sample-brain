@@ -67,6 +67,7 @@ Transient PRs and exact `main` SHA are intentionally not frozen here. Query GitH
 
 - The local Workbench and native-audio contracts are established.
 - `LOCK_PYSIDE6_QML` remains the renderer canon for new Screen-1 visual/product work; `src/workbench_qml.py` is the canonical QML Screen-1 shell and Tkinter is legacy/fallback plus behavioral reference.
+- Screen-1 Theme Core + QML Theme Authority (#785) provides preset-based dark appearance (Blood A default) with local custom themes; Display Preferences hosts Appearance without a second theme store.
 - The original Screen-1 migration epic #503 is closed. Current Screen-1 refinement continues under #691; agents must not route new work through #503 as though it were still active.
 - Screen-2 delivery on `main` includes session ownership, Pattern Core, sequencer scheduling/PCM, Channel Rack Python core, and Screen-2 QML Channel Rack (#678 / PR #755); parent epic #675 is CLOSED.
 - native audio core and deterministic transport/key-lock test surface remain part of the shipped foundation.

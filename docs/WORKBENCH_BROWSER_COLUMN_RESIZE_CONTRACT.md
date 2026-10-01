@@ -113,8 +113,10 @@ is the intended seam. This slice does not implement it.
 - Column reordering, sorting/filter redesign, spreadsheet grid.
 - Header-cell drag handles or header/row column-structure realignment
   (pre-existing #767/#776 concern).
-- Panel docking/reordering (#697), DnD (#768), Theme (#785), Brand/Motion
-  (#786), Screen 2/3, packaging, general Settings redesign.
+- Panel docking/reordering (#697), DnD (#768), Brand/Motion (#786),
+  Screen 2/3, packaging, general Settings redesign. Theme (#785) owns
+  appearance tokens via Theme Core and must not redefine Browser column
+  geometry.
 - Width persistence (documented seam only).
 
 ## Validation
