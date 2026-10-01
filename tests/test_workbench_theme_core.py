@@ -47,15 +47,24 @@ PERSIST_ALLOWED_KEYS = frozenset(
 # Theme Core token → existing QML semantic names (mapping helper only).
 QML_SEMANTIC_EXPECTATIONS = {
     "surfaceRoot": "background",
-    "textPrimary": "textPrimary",
-    "textSecondary": "textSecondary",
-    "actionActive": "accent",
-    "selectionSurface": "selected",
-    "selectionBorder": "accent",
+    "surfaceHeader": "background",
+    "surfaceBrowser": "surface",
+    "surfacePanel": "surface",
     "surfaceElevated": "surfaceRaised",
     "borderSubtle": "divider",
     "dividerDefault": "divider",
+    "textPrimary": "textPrimary",
+    "textSecondary": "textSecondary",
+    "textDisabled": "textSecondary",
+    "actionActive": "accent",
+    "selectionSurface": "selected",
+    "selectionBorder": "accent",
+    "waveformActive": "accent",
+    "waveformDefault": "textSecondary",
+    "focusRing": "focusRing",
+    "hoverSurface": "hover",
 }
+TEXT_ON_ACTION = "#ffffff"
 
 
 def _canon_presets() -> dict[str, Any]:
@@ -319,7 +328,34 @@ def test_theme_tokens_map_to_existing_qml_semantic_names() -> None:
     for qml_name, source_key in QML_SEMANTIC_EXPECTATIONS.items():
         assert qml_name in mapped
         assert _normalize_hex(mapped[qml_name]) == tokens[source_key]
+    assert _normalize_hex(mapped["textOnAction"]) == TEXT_ON_ACTION
+    assert "textOnAction" not in tokens  # not a theme base/derived token
     # Mapping is pure: same input → same output; no side effects on presets.
     again = theme.theme_tokens_to_qml_semantics(tokens)
     assert again == mapped
     assert _token_map(theme.resolve_theme("Blood")) == tokens
+
+
+def test_qml_semantic_map_covers_screen1_facade_without_persisting_text_on_action(
+    tmp_path: Path,
+) -> None:
+    """Handoff gap: Parent QML facade needs hoverSurface + textOnAction from Core."""
+    mapped = theme.theme_tokens_to_qml_semantics(theme.resolve_theme("Arctic"))
+    assert "hoverSurface" in mapped
+    assert _normalize_hex(mapped["hoverSurface"]) == _token_map(theme.resolve_theme("Arctic"))[
+        "hover"
+    ]
+    assert _normalize_hex(mapped["textOnAction"]) == TEXT_ON_ACTION
+    assert getattr(theme, "TEXT_ON_ACTION", None) is not None
+    assert _normalize_hex(theme.TEXT_ON_ACTION) == TEXT_ON_ACTION
+
+    theme.create_custom_theme(
+        name="Arctic Desk",
+        base_preset="Arctic",
+        state_dir=tmp_path,
+    )
+    raw = json.loads(theme.theme_preferences_path(state_dir=tmp_path).read_text(encoding="utf-8"))
+    stored = raw["custom_themes"]["Arctic Desk"]
+    assert "textOnAction" not in stored
+    assert "hoverSurface" not in stored
+    assert "hover" not in stored

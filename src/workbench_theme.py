@@ -71,7 +71,11 @@ _QML_SEMANTIC_MAP = {
     "waveformActive": "accent",
     "waveformDefault": "textSecondary",
     "focusRing": "focusRing",
+    "hoverSurface": "hover",
 }
+
+# Fixed contrast for solid accent controls — not a persisted base token.
+TEXT_ON_ACTION = "#ffffff"
 
 
 @dataclass(frozen=True)
@@ -648,6 +652,7 @@ def theme_tokens_to_qml_semantics(tokens: Mapping[str, Any] | ThemeTokens) -> di
         if normalized is None:
             continue
         out[qml_name] = normalized
+    out.setdefault("textOnAction", TEXT_ON_ACTION)
     return out
 
 
@@ -656,6 +661,7 @@ __all__ = [
     "BLOOD_B_ACCENT",
     "DEFAULT_PRESET_NAME",
     "PRESET_ORDER",
+    "TEXT_ON_ACTION",
     "THEME_PREFERENCES_SCHEMA",
     "THEME_PREFERENCES_SCHEMA_VERSION",
     "ThemeBase",
