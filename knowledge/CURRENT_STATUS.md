@@ -28,9 +28,9 @@ At the 2026-09-30 reconciliation, GitHub live shows the following durable work c
 - [#494](https://github.com/jannekbuengener/sample-brain/issues/494) — migrate the temporary active `main` ruleset to the stable canon-aligned strict ruleset. The older #405 branch-protection gap is closed and must not be treated as the current governance state.
 - [#703](https://github.com/jannekbuengener/sample-brain/issues/703) — repository truth/drift/hygiene reconciliation campaign.
 
-### Active — Screen 2 Channel Rack
+### Shipped — Screen 2 Channel Rack
 
-- [#675](https://github.com/jannekbuengener/sample-brain/issues/675) / [#678](https://github.com/jannekbuengener/sample-brain/issues/678) — Screen 2 Channel Rack. Foundations remain shipped; Screen-2 QML (#678) is **ACTIVE** under explicit Owner-GO (not gated by #727).
+- [#675](https://github.com/jannekbuengener/sample-brain/issues/675) / [#678](https://github.com/jannekbuengener/sample-brain/issues/678) — Screen 2 Channel Rack. Foundations and Screen-2 QML (#678 / PR #755) are **DONE**; parent epic #675 is CLOSED. Do not reopen without explicit Owner-GO.
 
 ### Parked / external-dependency / R&D tracks
 
@@ -68,7 +68,7 @@ Transient PRs and exact `main` SHA are intentionally not frozen here. Query GitH
 - The local Workbench and native-audio contracts are established.
 - `LOCK_PYSIDE6_QML` remains the renderer canon for new Screen-1 visual/product work; `src/workbench_qml.py` is the canonical QML Screen-1 shell and Tkinter is legacy/fallback plus behavioral reference.
 - The original Screen-1 migration epic #503 is closed. Current Screen-1 refinement continues under #691; agents must not route new work through #503 as though it were still active.
-- Screen-2 foundations now include session ownership, Pattern Core, sequencer scheduling/PCM and Channel Rack Python core; Screen-2 QML (#678) is **ACTIVE** under explicit Owner-GO.
+- Screen-2 delivery on `main` includes session ownership, Pattern Core, sequencer scheduling/PCM, Channel Rack Python core, and Screen-2 QML Channel Rack (#678 / PR #755); parent epic #675 is CLOSED.
 - native audio core and deterministic transport/key-lock test surface remain part of the shipped foundation.
 - Quick Capture voice-to-issue flow uses local recording + local whisper.cpp + GitHub CLI. Private/local path and obvious secret redaction applies before public issue creation; see [`docs/QUICK_CAPTURE.md`](../docs/QUICK_CAPTURE.md).
 
