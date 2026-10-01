@@ -1775,7 +1775,7 @@ ApplicationWindow {
                                 id: themeCustomizeButton
                                 objectName: "themeCustomizeButton"
                                 Layout.fillWidth: true
-                                text: themeAuthority.isCustom ? "Editing custom" : "Customize from preset"
+                                text: themeAuthority.isCustom ? "Custom theme active" : "Customize from preset"
                                 enabled: !themeAuthority.isCustom
                                 onClicked: themeAuthority.customizeSelectedPreset()
                             }
@@ -1797,7 +1797,8 @@ ApplicationWindow {
                                     objectName: "themeAccentField"
                                     Layout.fillWidth: true
                                     text: themeAuthority.baseAccent
-                                    onEditingFinished: themeAuthority.setBaseAccent(text)
+                                    onAccepted: themeAuthority.setBaseAccent(text)
+                                    onActiveFocusChanged: if (!activeFocus) themeAuthority.setBaseAccent(text)
                                 }
                                 Label { text: "Background"; color: theme.textSecondary; font.pixelSize: 11 }
                                 TextField {
@@ -1805,7 +1806,8 @@ ApplicationWindow {
                                     objectName: "themeBackgroundField"
                                     Layout.fillWidth: true
                                     text: themeAuthority.baseBackground
-                                    onEditingFinished: themeAuthority.setBaseBackground(text)
+                                    onAccepted: themeAuthority.setBaseBackground(text)
+                                    onActiveFocusChanged: if (!activeFocus) themeAuthority.setBaseBackground(text)
                                 }
                                 Label { text: "Foreground"; color: theme.textSecondary; font.pixelSize: 11 }
                                 TextField {
@@ -1813,7 +1815,8 @@ ApplicationWindow {
                                     objectName: "themeForegroundField"
                                     Layout.fillWidth: true
                                     text: themeAuthority.baseForeground
-                                    onEditingFinished: themeAuthority.setBaseForeground(text)
+                                    onAccepted: themeAuthority.setBaseForeground(text)
+                                    onActiveFocusChanged: if (!activeFocus) themeAuthority.setBaseForeground(text)
                                 }
                             }
                             RowLayout {
