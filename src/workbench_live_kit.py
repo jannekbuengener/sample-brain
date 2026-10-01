@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .workbench_controller import WorkbenchRow
@@ -27,13 +28,29 @@ DRUM_SLOTS = _SLOTS_BY_GROUP["Drums"]
 
 
 class LiveKitState:
-    """In-memory musical assignments; deliberately independent of Tk and storage."""
+    """In-memory musical assignments; deliberately independent of Tk and storage.
 
-    def __init__(self) -> None:
+    Optional ``on_assignment_changed`` supports session-owned persistence (#809).
+    Wire the callback only after restore completes so assign-during-restore does
+    not autosave a half-built snapshot.
+    """
+
+    def __init__(
+        self,
+        *,
+        on_assignment_changed: Callable[[], None] | None = None,
+    ) -> None:
         self._assignments: dict[str, dict[str, WorkbenchRow | None]] = {
             group: {slot: None for slot in slots}
             for group, slots in LIVE_KIT_SLOT_MAPPING
         }
+        self._on_assignment_changed = on_assignment_changed
+
+    def set_on_assignment_changed(
+        self, callback: Callable[[], None] | None
+    ) -> None:
+        """Bind or clear the post-mutation observer (session persistence)."""
+        self._on_assignment_changed = callback
 
     def groups(self) -> tuple[str, ...]:
         return LIVE_KIT_GROUPS
@@ -49,6 +66,8 @@ class LiveKitState:
     def assign(self, group: str, slot: str, row: WorkbenchRow) -> None:
         self._validate_slot(group, slot)
         self._assignments[group][slot] = row
+        if self._on_assignment_changed is not None:
+            self._on_assignment_changed()
 
     @staticmethod
     def _validate_group(group: str) -> None:

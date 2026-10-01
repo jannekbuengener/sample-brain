@@ -7,10 +7,15 @@ One composed session owns exactly one :class:`LiveKitState`, exactly one
 Cross-screen audio focus (#807) is owned here: entering Screen 2 / claiming
 Channel Rack playback releases Screen-1 audition; returning to Screen 1 leaves
 a quiet surface and never auto-resumes the previous audition.
+
+Musical session persistence (#809): load/validate a local snapshot under the
+Workbench state dir before first projection, then wire autosave callbacks only
+after a successful all-or-nothing restore (or fresh empty session).
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -24,6 +29,13 @@ from .workbench_qml import (
     LiveKitPresenter,
     Screen1QmlInteractionAdapter,
     Screen1QmlViewModel,
+)
+from .workbench_session_store import (
+    apply_snapshot_to_live_kit,
+    channel_rack_state_from_snapshot,
+    load_workbench_session_snapshot,
+    save_workbench_session_snapshot,
+    snapshot_from_musical_state,
 )
 from .workbench_transport_adapter import WorkbenchTransportAdapter
 from .workbench_transport_preview import TransportAwarePreview
@@ -105,14 +117,43 @@ class _SessionAuditionPlayRow:
         return self._audition.play_row(row, start_ms=resolved)
 
 
+def _autosave_musical_session(
+    *,
+    live_kit: LiveKitState,
+    channel_rack: ChannelRackController,
+    state_dir: Path | None,
+    env: Mapping[str, str] | None,
+) -> None:
+    """Persist current musical state. IO failures must not corrupt memory."""
+    try:
+        snapshot = snapshot_from_musical_state(live_kit, channel_rack.state)
+        save_workbench_session_snapshot(snapshot, state_dir=state_dir, env=env)
+    except OSError:
+        # Last good on-disk snapshot remains; in-memory state stays authoritative.
+        return
+
+
 def compose_workbench_session(
     *,
     include_tk_workbench: bool = False,
     library_db_path: Path | None = None,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> WorkbenchSession:
-    """Compose one shared Live Kit + one TransportAwarePreview audition owner."""
+    """Compose one shared Live Kit + one TransportAwarePreview audition owner.
 
+    Restores a validated musical session snapshot from the Workbench state dir
+    before the first projection. Autosave callbacks are wired only after restore
+    (or fresh empty construction) completes.
+    """
+
+    snapshot = load_workbench_session_snapshot(state_dir=state_dir, env=env)
+
+    # Restore without autosave observers so assign/restore cannot rewrite disk.
     live_kit = LiveKitState()
+    if snapshot is not None:
+        apply_snapshot_to_live_kit(snapshot, live_kit)
+
     presenter = LiveKitPresenter(state=live_kit)
     tk_workbench: WorkbenchApp | None = None
 
@@ -167,6 +208,10 @@ def compose_workbench_session(
     )
 
     channel_rack = ChannelRackController(live_kit=live_kit, transport=transport)
+    if snapshot is not None:
+        rack_state = channel_rack_state_from_snapshot(snapshot)
+        if rack_state is not None:
+            channel_rack.restore_state(rack_state)
 
     session = WorkbenchSession(
         live_kit=live_kit,
@@ -184,6 +229,17 @@ def compose_workbench_session(
         on_claim_focus=session.release_screen1_audition,
         on_release_to_screen1=session.release_screen1_audition,
     )
+
+    def _on_musical_mutation() -> None:
+        _autosave_musical_session(
+            live_kit=live_kit,
+            channel_rack=channel_rack,
+            state_dir=state_dir,
+            env=env,
+        )
+
+    live_kit.set_on_assignment_changed(_on_musical_mutation)
+    channel_rack.set_on_musical_state_changed(_on_musical_mutation)
     return session
 
 

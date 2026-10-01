@@ -209,6 +209,7 @@ class ChannelRackController:
         allocate_voice_id: Callable[[], int] | None = None,
         on_claim_audio_focus: Callable[[], None] | None = None,
         on_release_to_screen1: Callable[[], None] | None = None,
+        on_musical_state_changed: Callable[[], None] | None = None,
     ) -> None:
         self._live_kit = live_kit
         self._transport = transport
@@ -229,6 +230,7 @@ class ChannelRackController:
         self._loop_anchor_engine_frame = 0
         self._on_claim_audio_focus = on_claim_audio_focus
         self._on_release_to_screen1 = on_release_to_screen1
+        self._on_musical_state_changed = on_musical_state_changed
 
     def set_audio_focus_hooks(
         self,
@@ -239,6 +241,16 @@ class ChannelRackController:
         """Bind session-owned cross-screen audio focus callbacks (#807)."""
         self._on_claim_audio_focus = on_claim_focus
         self._on_release_to_screen1 = on_release_to_screen1
+
+    def set_on_musical_state_changed(
+        self, callback: Callable[[], None] | None
+    ) -> None:
+        """Bind or clear post-mutation observer for session persistence (#809)."""
+        self._on_musical_state_changed = callback
+
+    def _notify_musical_state_changed(self) -> None:
+        if self._on_musical_state_changed is not None:
+            self._on_musical_state_changed()
 
     def _claim_audio_focus(self) -> None:
         if self._on_claim_audio_focus is not None:
@@ -282,12 +294,28 @@ class ChannelRackController:
             }
         return project_channel_rack_for_qml(self._state)
 
+    def restore_state(self, state: ChannelRackState) -> None:
+        """Adopt a validated musical snapshot before first Screen-2 enter (#809).
+
+        Clears playback/loop runtime. Does not claim audio focus. Does not
+        rebuild DEFAULT_ON. Does not fire musical-state autosave callbacks —
+        callers must wire observers only after restore completes.
+        """
+        self.stop()
+        self._state = state
+        self._clear_loop_session()
+        self._active_screen = SCREEN1
+
     def enter_screen2(self) -> ChannelRackState:
         self._claim_audio_focus()
         if self._state is None:
             self._state = build_channel_rack_state(self._live_kit)
+            self._notify_musical_state_changed()
         else:
+            previous = self._state
             self._state = _sync_live_kit_sample_paths(self._state, self._live_kit)
+            if self._state is not previous:
+                self._notify_musical_state_changed()
         self._active_screen = SCREEN2
         return self._state
 
@@ -301,12 +329,14 @@ class ChannelRackController:
         if self._state is None:
             raise RuntimeError("Channel Rack is not active; call enter_screen2() first")
         self._state = toggle_step(self._state, channel_id, step_index)
+        self._notify_musical_state_changed()
         return self._state
 
     def add_user_channel(self, sample_path: str | None = None) -> ChannelRackState:
         if self._state is None:
             raise RuntimeError("Channel Rack is not active; call enter_screen2() first")
         self._state = add_user_channel(self._state, sample_path=sample_path)
+        self._notify_musical_state_changed()
         return self._state
 
     def assign_user_channel_sample(
@@ -318,6 +348,7 @@ class ChannelRackController:
         self._state = assign_user_channel_sample(
             self._state, channel_id, sample_path
         )
+        self._notify_musical_state_changed()
         return self._state
 
     def _clear_loop_session(self) -> None:
