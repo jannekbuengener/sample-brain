@@ -2576,7 +2576,10 @@ ApplicationWindow {
             property int favoriteUserWidth: -1
             property int lengthUserWidth: -1
             function _clampColumn(value, lo, hi) { return Math.max(lo, Math.min(hi, Math.round(value))) }
-            function _resolveColumn(user, dflt, lo, hi) { return _clampColumn(user < 0 ? dflt : user, lo, hi) }
+            // Wide mode: user override wins when set (>= 0). Narrow mode (#692):
+            // always keep responsive defaults so a prior wide-mode drag cannot
+            // defeat the compact column budget when the pane shrinks below 700.
+            function _resolveColumn(user, dflt, lo, hi) { return _clampColumn((browserNarrowColumns || user < 0) ? dflt : user, lo, hi) }
             function resizeColumn(role, deltaPx) {
                 if (role === "waveform")
                     waveformUserWidth = _clampColumn(effectiveBrowserWaveformWidth + deltaPx, window.browserWaveformMin, browserWaveformMax)
@@ -2836,23 +2839,16 @@ ApplicationWindow {
                                 onReleased: function(mouse) { mouse.accepted = true }
                             }
                         }
+                        // Key divider is visual-only. BPM owns the single interactive
+                        // meta handle; dual meta writers would apply 2Δ to Name and
+                        // desync the Key handle from the shared meta width (#780 P1).
                         Rectangle {
                             objectName: "browserColumnDivider_key"; z: 6
                             width: window.densityDividerHeight
                             height: browserRow.height - window.densityDividerHeight
                             x: rowBody.x + keyCell.x + keyCell.width + (window.densityRowSpacing - window.densityDividerHeight) / 2
                             color: theme.dividerDefault
-                            opacity: columnResizeKey.containsMouse || columnResizeKey.pressed ? 0.95 : 0.5
-                            MouseArea {
-                                id: columnResizeKey; anchors.fill: parent
-                                anchors.leftMargin: -browserPane.browserColumnHandlePadding
-                                anchors.rightMargin: -browserPane.browserColumnHandlePadding
-                                hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor
-                                property real lastGlobalX: 0
-                                onPressed: function(mouse) { lastGlobalX = mapToItem(null, mouse.x, 0).x; mouse.accepted = true }
-                                onPositionChanged: function(mouse) { if (!pressed) return; var gx = mapToItem(null, mouse.x, 0).x; browserPane.resizeColumn("meta", gx - lastGlobalX); lastGlobalX = gx }
-                                onReleased: function(mouse) { mouse.accepted = true }
-                            }
+                            opacity: 0.5
                         }
                         Rectangle {
                             objectName: "browserColumnDivider_length"; z: 6

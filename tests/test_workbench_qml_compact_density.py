@@ -133,6 +133,9 @@ def test_owner_visual_repair_preserves_required_browser_columns_at_narrow_width(
     assert "property bool browserNarrowColumns: width < 700" in QML_SOURCE
     # #780: effectiveBrowser* now fold runtime resize overrides in via
     # _resolveColumn, but the narrow-width responsive defaults are preserved.
+    # Narrow mode must ignore *UserWidth overrides (wide-mode drag must not
+    # defeat #692 compact defaults when the pane shrinks below 700).
+    assert "(browserNarrowColumns || user < 0) ? dflt : user" in QML_SOURCE
     # (Narrow-mode minimums keep the historical #692 values, asserted below.)
     assert (
         "browserNarrowColumns ? window.browserWaveformMin : window.browserWaveformWidth"

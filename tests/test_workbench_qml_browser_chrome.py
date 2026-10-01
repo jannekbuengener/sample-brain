@@ -302,6 +302,7 @@ def test_browser_density_tokens_unchanged_by_767():
 # ---------------------------------------------------------------------------
 
 # Resizable columns each paint a right-edge divider inside the row delegate.
+# Key is visual-only (BPM owns the sole interactive meta handle).
 _COLUMN_DIVIDER_OBJECTNAMES = (
     'objectName: "browserColumnDivider_waveform"',
     'objectName: "browserColumnDivider_bpm"',
@@ -309,6 +310,8 @@ _COLUMN_DIVIDER_OBJECTNAMES = (
     'objectName: "browserColumnDivider_key"',
     'objectName: "browserColumnDivider_length"',
 )
+_INTERACTIVE_COLUMN_DIVIDER_COUNT = 4  # Key divider has no MouseArea
+_META_RESIZE_CALL = 'browserPane.resizeColumn("meta"'
 
 
 def _browser_delegate_full(source: str) -> str:
@@ -340,10 +343,13 @@ def test_browser_columns_have_subtle_resizable_dividers():
 def test_browser_column_resize_hit_target_is_wider_than_visible_line():
     """#780: invisible grab target is wider than the ~1 DIP visible line."""
     delegate = _browser_delegate_full(QML_SOURCE)
-    assert delegate.count("cursorShape: Qt.SizeHorCursor") >= len(
-        _COLUMN_DIVIDER_OBJECTNAMES
+    assert (
+        delegate.count("cursorShape: Qt.SizeHorCursor")
+        == _INTERACTIVE_COLUMN_DIVIDER_COUNT
     )
-    assert delegate.count("preventStealing: true") >= len(_COLUMN_DIVIDER_OBJECTNAMES)
+    assert (
+        delegate.count("preventStealing: true") == _INTERACTIVE_COLUMN_DIVIDER_COUNT
+    )
     assert "anchors.leftMargin: -browserPane.browserColumnHandlePadding" in delegate
     assert "anchors.rightMargin: -browserPane.browserColumnHandlePadding" in delegate
     # Centralized, deterministic padding (not an inline magic number).
@@ -363,14 +369,45 @@ def test_browser_column_width_state_has_exactly_one_owner():
     ):
         assert QML_SOURCE.count(f"property int {prop}:") == 1
     delegate = _browser_delegate_full(QML_SOURCE)
-    # Delegate handles only forward pointer intent to the single owner.
-    assert delegate.count("browserPane.resizeColumn(") >= len(
-        _COLUMN_DIVIDER_OBJECTNAMES
+    # Interactive handles only; Key is visual-only for the shared meta role.
+    assert (
+        delegate.count("browserPane.resizeColumn(") == _INTERACTIVE_COLUMN_DIVIDER_COUNT
     )
+    # Exactly one meta writer (BPM). Dual Key+BPM meta calls would apply 2Δ.
+    assert delegate.count(_META_RESIZE_CALL) == 1
+    bpm_div = delegate.index('objectName: "browserColumnDivider_bpm"')
+    key_div = delegate.index('objectName: "browserColumnDivider_key"')
+    length_div = delegate.index('objectName: "browserColumnDivider_length"')
+    meta_call = delegate.index(_META_RESIZE_CALL)
+    assert bpm_div < meta_call < key_div
+    assert "MouseArea" not in delegate[key_div:length_div]
     # No competing geometry truth is built inside the delegate.
     assert "property int effectiveBrowser" not in delegate
     # Browser-column resize stays independent of panel resize.
     assert "layoutModel.applyDrag" not in delegate
+
+
+def test_browser_column_resize_ignores_user_overrides_when_narrow():
+    """#780/#692: narrow mode keeps responsive defaults over runtime overrides."""
+    assert "function _resolveColumn(" in QML_SOURCE
+    # Narrow must short-circuit user overrides (browserNarrowColumns || user < 0).
+    assert (
+        "(browserNarrowColumns || user < 0) ? dflt : user" in QML_SOURCE
+        or "(browserNarrowColumns || user < 0)? dflt : user" in QML_SOURCE
+    )
+    # Narrow responsive defaults still feed _resolveColumn / effective* widths.
+    assert (
+        "browserNarrowColumns ? window.browserWaveformMin : window.browserWaveformWidth"
+        in QML_SOURCE
+    )
+    assert (
+        "browserNarrowColumns ? browserMetaColumnMin : window.browserMetaColumnWidth"
+        in QML_SOURCE
+    )
+    assert (
+        "browserNarrowColumns ? browserLengthColumnMin : window.browserLengthColumnWidth"
+        in QML_SOURCE
+    )
 
 
 def test_browser_column_resize_minimums_are_deterministic():
@@ -381,13 +418,17 @@ def test_browser_column_resize_minimums_are_deterministic():
     assert waveform_max > waveform_min
     meta_min = _int_property(QML_SOURCE, "browserMetaColumnMin")
     meta_max = _int_property(QML_SOURCE, "browserMetaColumnMax")
-    assert 36 <= meta_min <= meta_max
+    # Contract mins equal narrow-mode fallbacks (#692 / #780 table).
+    assert meta_min == 40
+    assert meta_max == 96
     fav_min = _int_property(QML_SOURCE, "browserFavoriteColumnMin")
     fav_max = _int_property(QML_SOURCE, "browserFavoriteColumnMax")
-    assert 20 <= fav_min <= fav_max
+    assert fav_min == 24
+    assert fav_max == 48
     length_min = _int_property(QML_SOURCE, "browserLengthColumnMin")
     length_max = _int_property(QML_SOURCE, "browserLengthColumnMax")
-    assert 48 <= length_min <= length_max
+    assert length_min == 52
+    assert length_max == 120
 
 
 def test_browser_column_resize_reuses_shared_header_row_geometry():

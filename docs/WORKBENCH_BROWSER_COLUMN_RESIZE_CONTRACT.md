@@ -59,15 +59,22 @@ and shows `Qt.SizeHorCursor`:
 | Divider (right edge of) | Resizes width role        | Effect |
 |-------------------------|---------------------------|--------|
 | Waveform                | `waveform`                | Name absorbs |
-| BPM                     | `meta` (BPM **and** Key)  | Name absorbs |
+| BPM                     | `meta` (BPM **and** Key)  | Name absorbs; **sole interactive meta handle** |
 | Favorite                | `favorite`                | Name absorbs |
-| Key                     | `meta` (BPM **and** Key)  | Name absorbs |
+| Key                     | *(visual-only)*           | No `MouseArea`; geometry follows BPM via shared `meta` |
 | Length                  | `length`                  | Name absorbs |
 
 BPM and Key share the existing `effectiveBrowserMetaColumnWidth` role (#767) and
-resize together, by design, to stay a matched meta pair. `type` and
-`Add-to-Kit` are not resizable. The elastic Name column (`Layout.fillWidth`)
-absorbs every change, so only adjacent geometry moves.
+stay a matched meta pair. **Only the BPM divider is interactive** for `meta`: a
+second Key handle calling `resizeColumn("meta", Δ)` would double-apply Δ onto
+Name and desync handle tracking. The Key divider remains a subtle visual
+separator only. `type` and `Add-to-Kit` are not resizable. The elastic Name
+column (`Layout.fillWidth`) absorbs every change, so only adjacent geometry
+moves.
+
+While `browserNarrowColumns` (`width < 700`), `_resolveColumn` **ignores**
+runtime `*UserWidth` overrides and keeps the #692 narrow responsive defaults.
+Overrides apply again when the pane returns to wide mode.
 
 ## Minimum / maximum widths (deterministic)
 
