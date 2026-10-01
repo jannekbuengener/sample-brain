@@ -5,6 +5,7 @@
   "notes": [
     "Base tokens accent/background/foreground are the sole source of truth.",
     "Derived tokens are computed and must not be edited independently.",
+    "Blood primary_candidate is stage A (#8f0e24). Blood B (#d4143a) remains a brighter-crimson comparison variant.",
     "Not a QML runtime contract. Product implementation is out of scope for this slice.",
     "Issues #785/#786 remain open."
   ],
@@ -22,7 +23,7 @@
     "Blood": {
       "role": "primary_candidate",
       "base": {
-        "accent": "#b1122b",
+        "accent": "#8f0e24",
         "background": "#050506",
         "foreground": "#eceef1"
       },
@@ -33,13 +34,13 @@
         "surfaceRaised": "#1a1a1b",
         "divider": "#2a2a2c",
         "hover": "#1e1f20",
-        "selected": "#2b080e",
-        "focusRing": "#b1122b"
+        "selected": "#23070d",
+        "focusRing": "#8f0e24"
       },
       "derived_from": "base_only",
       "blood_variants": {
         "A": {
-          "label": "deeper blood",
+          "label": "deeper blood · primary_candidate",
           "base": {
             "accent": "#8f0e24",
             "background": "#050506",
@@ -58,7 +59,7 @@
           "derived_from": "base_only"
         },
         "B": {
-          "label": "brighter crimson",
+          "label": "brighter crimson · comparison",
           "base": {
             "accent": "#d4143a",
             "background": "#050506",
@@ -82,17 +83,17 @@
       "role": "preset",
       "base": {
         "accent": "#a8b0b8",
-        "background": "#070809",
-        "foreground": "#e8eaed"
+        "background": "#050607",
+        "foreground": "#eaecf0"
       },
       "derived": {
-        "textPrimary": "#e8eaed",
-        "textSecondary": "#838486",
-        "surface": "#111213",
-        "surfaceRaised": "#1b1c1e",
-        "divider": "#2b2c2d",
-        "hover": "#202122",
-        "selected": "#2a2d30",
+        "textPrimary": "#eaecf0",
+        "textSecondary": "#838487",
+        "surface": "#0f1011",
+        "surfaceRaised": "#1a1b1c",
+        "divider": "#2a2b2c",
+        "hover": "#1e1f21",
+        "selected": "#292b2e",
         "focusRing": "#a8b0b8"
       },
       "derived_from": "base_only"
@@ -101,17 +102,17 @@
       "role": "preset",
       "base": {
         "accent": "#6f9fbf",
-        "background": "#06080b",
-        "foreground": "#eef2f6"
+        "background": "#050607",
+        "foreground": "#e8edf2"
       },
       "derived": {
-        "textPrimary": "#eef2f6",
-        "textSecondary": "#86898c",
-        "surface": "#101316",
-        "surfaceRaised": "#1b1d20",
-        "divider": "#2b2d31",
-        "hover": "#202225",
-        "selected": "#1d2933",
+        "textPrimary": "#e8edf2",
+        "textSecondary": "#828588",
+        "surface": "#0f1012",
+        "surfaceRaised": "#191b1c",
+        "divider": "#292b2d",
+        "hover": "#1e1f21",
+        "selected": "#1c282f",
         "focusRing": "#6f9fbf"
       },
       "derived_from": "base_only"
