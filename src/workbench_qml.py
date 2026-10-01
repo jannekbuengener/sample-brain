@@ -1455,6 +1455,66 @@ ApplicationWindow {
         readonly property color selectionBorder: accentPrimary
         readonly property color actionActive: accentPrimary
     }
+    // #770 shared context-hint content seam (ephemeral UI state; placement is separate).
+    QtObject {
+        id: contextHintState
+        objectName: "contextHintState"
+        readonly property var descriptors: ({
+            "library.scope.sources": { "label": "Sample Sources", "help": "analysierte Sample-Quellen" },
+            "library.scope.all_samples": { "label": "All Samples", "help": "alle Samples im Workspace" },
+            "library.scope.catalog": { "label": "Catalog", "help": "schreibgeschützter Sample-Katalog" },
+            "library.scope.favorites": { "label": "Favorites", "help": "markierte Samples" },
+            "library.scope.collections": { "label": "Collections", "help": "gespeicherte Sample-Sammlungen" },
+            "library.add_source": { "label": "Add Source", "help": "lokalen Sample-Ordner hinzufügen" }
+        })
+        property string hoveredId: ""
+        property string focusedId: ""
+        property string activeId: ""
+        property string activeLabel: ""
+        property string activeHelp: ""
+        readonly property string displayText: activeId.length === 0 ? "" : (activeLabel + " — " + activeHelp)
+
+        function resolveActiveId() {
+            if (hoveredId.length > 0)
+                return hoveredId
+            if (focusedId.length > 0)
+                return focusedId
+            return ""
+        }
+        function applyDescriptor(id) {
+            activeId = id
+            if (id.length === 0 || descriptors[id] === undefined) {
+                activeLabel = ""
+                activeHelp = ""
+                return
+            }
+            activeLabel = descriptors[id].label
+            activeHelp = descriptors[id].help
+        }
+        function reconcile() {
+            applyDescriptor(resolveActiveId())
+        }
+        function reportHover(id) {
+            hoveredId = id
+            reconcile()
+        }
+        function clearHover(id) {
+            if (hoveredId === id)
+                hoveredId = ""
+            reconcile()
+        }
+        function reportFocus(id) {
+            focusedId = id
+            reconcile()
+        }
+        function clearFocus(id) {
+            if (focusedId === id)
+                focusedId = ""
+            reconcile()
+        }
+        onHoveredIdChanged: reconcile()
+        onFocusedIdChanged: reconcile()
+    }
     // Thin aliases for runtime property reads / legacy window.* bindings.
     readonly property color panel: theme.surfacePanel
     readonly property color panelAlt: theme.surfaceElevated
@@ -1547,6 +1607,40 @@ ApplicationWindow {
         source: screen1BackgroundUrl
         fillMode: Image.Stretch
         asynchronous: true
+    }
+
+    // #770 V1 placement surface — bottom-center; content owned by contextHintState.
+    footer: Item {
+        id: contextHintPlacement
+        objectName: "contextHintPlacement"
+        visible: window.activeScreen === "screen1"
+        height: visible ? 22 : 0
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: 1
+            color: theme.dividerDefault
+            opacity: 0.45
+        }
+        Label {
+            id: contextHintDisplay
+            objectName: "contextHintDisplay"
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(implicitWidth, parent.width - 32)
+            text: contextHintState.displayText
+            color: theme.textSecondary
+            font.pixelSize: window.textCaption
+            opacity: text.length > 0 ? 1.0 : 0.0
+            elide: Text.ElideRight
+            horizontalAlignment: Text.AlignHCenter
+            focus: false
+            activeFocusOnTab: false
+            Accessible.ignored: true
+            // Hint is display-only; never enter the tab/focus chain.
+            Keys.forwardTo: []
+        }
     }
 
     header: Rectangle {
@@ -1728,6 +1822,18 @@ ApplicationWindow {
                         Layout.preferredHeight: libraryScopeBar.controlSize
                         onClicked: libraryScopeBar.mode = "sources"
                         Accessible.name: "Sample Sources"
+                        onHoveredChanged: {
+                            if (hovered)
+                                contextHintState.reportHover("library.scope.sources")
+                            else
+                                contextHintState.clearHover("library.scope.sources")
+                        }
+                        onActiveFocusChanged: {
+                            if (activeFocus)
+                                contextHintState.reportFocus("library.scope.sources")
+                            else
+                                contextHintState.clearFocus("library.scope.sources")
+                        }
                         background: Rectangle {
                             radius: 4
                             color: libraryScopeBar.scopeFill(sourcesScopeButton.checked, sourcesScopeButton.hovered)
@@ -1773,6 +1879,18 @@ ApplicationWindow {
                             libraryInteraction.selectLibraryNode("scope:all-library")
                         }
                         Accessible.name: "All Samples"
+                        onHoveredChanged: {
+                            if (hovered)
+                                contextHintState.reportHover("library.scope.all_samples")
+                            else
+                                contextHintState.clearHover("library.scope.all_samples")
+                        }
+                        onActiveFocusChanged: {
+                            if (activeFocus)
+                                contextHintState.reportFocus("library.scope.all_samples")
+                            else
+                                contextHintState.clearFocus("library.scope.all_samples")
+                        }
                         background: Rectangle {
                             radius: 4
                             color: libraryScopeBar.scopeFill(allSamplesScopeButton.checked, allSamplesScopeButton.hovered)
@@ -1819,6 +1937,18 @@ ApplicationWindow {
                             libraryInteraction.selectLibraryNode("scope:catalog-readonly")
                         }
                         Accessible.name: "Catalog"
+                        onHoveredChanged: {
+                            if (hovered)
+                                contextHintState.reportHover("library.scope.catalog")
+                            else
+                                contextHintState.clearHover("library.scope.catalog")
+                        }
+                        onActiveFocusChanged: {
+                            if (activeFocus)
+                                contextHintState.reportFocus("library.scope.catalog")
+                            else
+                                contextHintState.clearFocus("library.scope.catalog")
+                        }
                         background: Rectangle {
                             radius: 4
                             color: libraryScopeBar.scopeFill(catalogScopeButton.checked, catalogScopeButton.hovered)
@@ -1869,6 +1999,18 @@ ApplicationWindow {
                             libraryInteraction.selectLibraryNode("scope:favorites")
                         }
                         Accessible.name: "Favorites"
+                        onHoveredChanged: {
+                            if (hovered)
+                                contextHintState.reportHover("library.scope.favorites")
+                            else
+                                contextHintState.clearHover("library.scope.favorites")
+                        }
+                        onActiveFocusChanged: {
+                            if (activeFocus)
+                                contextHintState.reportFocus("library.scope.favorites")
+                            else
+                                contextHintState.clearFocus("library.scope.favorites")
+                        }
                         background: Rectangle {
                             radius: 4
                             color: libraryScopeBar.scopeFill(favoritesScopeButton.checked, favoritesScopeButton.hovered)
@@ -1929,6 +2071,18 @@ ApplicationWindow {
                         Layout.preferredHeight: libraryScopeBar.controlSize
                         onClicked: libraryScopeBar.mode = "collections"
                         Accessible.name: "Collections"
+                        onHoveredChanged: {
+                            if (hovered)
+                                contextHintState.reportHover("library.scope.collections")
+                            else
+                                contextHintState.clearHover("library.scope.collections")
+                        }
+                        onActiveFocusChanged: {
+                            if (activeFocus)
+                                contextHintState.reportFocus("library.scope.collections")
+                            else
+                                contextHintState.clearFocus("library.scope.collections")
+                        }
                         background: Rectangle {
                             radius: 4
                             color: libraryScopeBar.scopeFill(collectionsScopeButton.checked, collectionsScopeButton.hovered)
@@ -2154,6 +2308,18 @@ ApplicationWindow {
                     ToolTip.visible: hovered
                     ToolTip.delay: 350
                     ToolTip.text: "Add Source"
+                    onHoveredChanged: {
+                        if (hovered)
+                            contextHintState.reportHover("library.add_source")
+                        else
+                            contextHintState.clearHover("library.add_source")
+                    }
+                    onActiveFocusChanged: {
+                        if (activeFocus)
+                            contextHintState.reportFocus("library.add_source")
+                        else
+                            contextHintState.clearFocus("library.add_source")
+                    }
                     contentItem: Item {
                         // Thin geometric plus — text "+" glyphs stay too heavy at this size.
                         readonly property int stroke: 2
