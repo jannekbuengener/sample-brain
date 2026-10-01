@@ -45,9 +45,10 @@ historical v1 gate. That Owner operative gate is **superseded** by the operative
 acceptance rule above for new work.
 
 P0/P1 findings block closure. P2/P3 are recorded separately and do not trigger
-automatic repair. A Screen-1 UI issue closes only after structural tests,
-`VALID` runtime, both captures, automated sanity, Owner PASS, no P0/P1, and
-commit/PR-bound evidence.
+automatic repair. Under the historical v1 Owner gate, a Screen-1 UI issue closed
+only after structural tests, `VALID` runtime, both captures, automated sanity,
+Owner PASS, no P0/P1, and commit/PR-bound evidence. New work follows the
+operative agent-owned rule above.
 
 Committed portfolio captures under `docs/assets/portfolio/runtime/` remain v1
 evidence only.
@@ -123,7 +124,7 @@ inventing parallel fixture semantics.
 ### #725 Runtime-/Interaction-Captures
 
 Do **not** add competing REQUIRED_STATE_IDS_V2 entries. Additional evidence
-filenames for Owner Visual Acceptance may include:
+filenames for historical Owner Visual Acceptance evidence may include:
 
 - `clean-start-collapsed` — product projection of `screen1-clean-start`
 - `clean-start-reveal-hover` — same collapsed layout with edge-affordance hover
@@ -135,7 +136,7 @@ These are capture labels only. Historical v1 evidence under
 
 ### #744 Analysis loading Runtime-Evidence
 
-Do **not** add competing `REQUIRED_STATE_IDS_V2` entries. Additive Owner Visual
+Do **not** add competing `REQUIRED_STATE_IDS_V2` entries. Additive historical Owner Visual
 Acceptance captures for the Source analysis loading experience (#744) use these
 labels only (real `AnalysisUiState` phases; no fake progress clock):
 
@@ -164,9 +165,10 @@ labels only (real `AnalysisUiState` phases; no fake progress clock):
 Example mid-folder: label `Analysiere hit.wav`, count `2 / 5 Samples`, bar ~40%
 means two files finished and `hit.wav` is the third file currently analyzing.
 
-Evidence stays **outside** the repository. Synthetic fixture paths only. Owner
-Visual Acceptance remains separate from agent self-attestation. Capture helper:
-`run_qml_visual_acceptance_744` in `src/workbench_qml_spike.py`.
+Evidence stays **outside** the repository. Synthetic fixture paths only.
+Historical Owner Visual Acceptance for delivered #744 evidence remained separate
+from agent self-attestation; new work follows the operative agent-owned rule.
+Capture helper: `run_qml_visual_acceptance_744` in `src/workbench_qml_spike.py`.
 
 ### #786 Brand / analysis motion Runtime-Evidence
 
