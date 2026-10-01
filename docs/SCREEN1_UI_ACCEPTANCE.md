@@ -74,4 +74,7 @@ and UIA name dumps. Do not commit evidence.
 
 - Expose browser ListView rows to UIA.
 - Expose Harmonic Match pane open-state / title to UIA.
-- Add explicit `Accessible.name` on `harmonicMatchButton`.
+
+## Delivered accessibility seams
+
+- `harmonicMatchButton` exposes explicit `Accessible.name: "Harmonic Match"` (#782).
