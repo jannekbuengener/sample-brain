@@ -623,3 +623,205 @@ def test_toggle_step_core_still_symmetric_after_persistence_import() -> None:
     assert len(_triggers_for(state, "ch_kick")) == 16
     state2 = toggle_step(state, "ch_kick", 0)
     assert len(_triggers_for(state2, "ch_kick")) == 15
+
+
+# --- #817 late Live Kit assign → DEFAULT_ON across restart --------------------
+
+_DEFAULT_ON_POSITIONS = tuple(Fraction(i, 4) for i in range(16))
+
+
+def test_late_live_kit_assign_after_empty_rack_persists_default_on(
+    tmp_path: Path,
+) -> None:
+    """Case 1: empty rack birth → Screen1 late assign → restart → DEFAULT_ON."""
+    kick = str(tmp_path / "kick.wav")
+    Path(kick).write_bytes(b"RIFF")
+
+    a = compose_workbench_session(state_dir=tmp_path)
+    empty = a.enter_screen2()
+    assert a.channel_rack.state is not None
+    kick_ch = next(c for c in empty.channels if c.channel_id == "ch_kick")
+    assert kick_ch.sample_path is None
+    assert _triggers_for(empty, "ch_kick") == ()
+    a.return_to_screen1()
+
+    a.live_kit.assign("Kick + Bass", "Kick", _row("kick.wav", kick))
+
+    b = compose_workbench_session(state_dir=tmp_path)
+    assert b.live_kit.assignment_for("Kick + Bass", "Kick") is not None
+    assert b.live_kit.assignment_for("Kick + Bass", "Kick").path == kick
+    restored = b.enter_screen2()
+    kick_restored = next(c for c in restored.channels if c.channel_id == "ch_kick")
+    assert kick_restored.sample_path == kick
+    kick_triggers = _triggers_for(restored, "ch_kick")
+    assert len(kick_triggers) == 16
+    assert [t.position for t in kick_triggers] == list(_DEFAULT_ON_POSITIONS)
+
+
+def test_late_live_kit_assign_reconciles_in_memory_before_restart(
+    tmp_path: Path,
+) -> None:
+    """Case 2: late assign heals active rack immediately (no re-enter needed)."""
+    kick = str(tmp_path / "kick.wav")
+    Path(kick).write_bytes(b"RIFF")
+
+    session = compose_workbench_session(state_dir=tmp_path)
+    session.enter_screen2()
+    session.return_to_screen1()
+    session.live_kit.assign("Kick + Bass", "Kick", _row("kick.wav", kick))
+
+    state = session.channel_rack.state
+    assert state is not None
+    kick_ch = next(c for c in state.channels if c.channel_id == "ch_kick")
+    assert kick_ch.sample_path == kick
+    kick_triggers = _triggers_for(state, "ch_kick")
+    assert len(kick_triggers) == 16
+    assert [t.position for t in kick_triggers] == list(_DEFAULT_ON_POSITIONS)
+
+    # Disk already coherent (Case 9)
+    data = json.loads(_session_path(tmp_path).read_text(encoding="utf-8"))
+    disk_kick = next(c for c in data["channel_rack"]["channels"] if c["channel_id"] == "ch_kick")
+    assert disk_kick["sample_path"] == kick
+    disk_triggers = [
+        t for t in data["channel_rack"]["triggers"] if t["channel_id"] == "ch_kick"
+    ]
+    assert len(disk_triggers) == 16
+
+
+def test_replacement_preserves_custom_pattern_across_restart(tmp_path: Path) -> None:
+    """Case 3: assigned → replacement keeps exact custom triggers."""
+    kick_a = str(tmp_path / "kick_a.wav")
+    kick_b = str(tmp_path / "kick_b.wav")
+    Path(kick_a).write_bytes(b"RIFF")
+    Path(kick_b).write_bytes(b"RIFF")
+
+    a = compose_workbench_session(state_dir=tmp_path)
+    a.live_kit.assign("Kick + Bass", "Kick", _row("kick_a.wav", kick_a))
+    state = a.enter_screen2()
+    for step in (1, 3, 5, 7, 9, 11, 13, 15):
+        state = a.channel_rack.toggle_step("ch_kick", step)
+    expected = _triggers_for(state, "ch_kick")
+    assert len(expected) == 8
+    a.return_to_screen1()
+    a.live_kit.assign("Kick + Bass", "Kick", _row("kick_b.wav", kick_b))
+
+    b = compose_workbench_session(state_dir=tmp_path)
+    assert b.live_kit.assignment_for("Kick + Bass", "Kick").path == kick_b
+    restored = b.enter_screen2()
+    assert next(c for c in restored.channels if c.channel_id == "ch_kick").sample_path == kick_b
+    assert _triggers_for(restored, "ch_kick") == expected
+
+
+def test_manual_all_off_survives_replacement_across_restart(tmp_path: Path) -> None:
+    """Case 4: intentional all-off must never reseed DEFAULT_ON on replace."""
+    kick_a = str(tmp_path / "kick_a.wav")
+    kick_b = str(tmp_path / "kick_b.wav")
+    Path(kick_a).write_bytes(b"RIFF")
+    Path(kick_b).write_bytes(b"RIFF")
+
+    a = compose_workbench_session(state_dir=tmp_path)
+    a.live_kit.assign("Kick + Bass", "Kick", _row("kick_a.wav", kick_a))
+    a.enter_screen2()
+    for step in range(16):
+        a.channel_rack.toggle_step("ch_kick", step)
+    assert _triggers_for(a.channel_rack.state, "ch_kick") == ()
+    a.return_to_screen1()
+    a.live_kit.assign("Kick + Bass", "Kick", _row("kick_b.wav", kick_b))
+
+    b = compose_workbench_session(state_dir=tmp_path)
+    restored = b.enter_screen2()
+    assert next(c for c in restored.channels if c.channel_id == "ch_kick").sample_path == kick_b
+    assert _triggers_for(restored, "ch_kick") == ()
+
+
+def test_late_kick_assign_isolates_unrelated_and_user_channels(tmp_path: Path) -> None:
+    """Cases 5+6: late Kick assign must not mutate Hat/Pad/user triggers."""
+    kick = str(tmp_path / "kick.wav")
+    hat = str(tmp_path / "hat.wav")
+    user = str(tmp_path / "user.wav")
+    Path(kick).write_bytes(b"RIFF")
+    Path(hat).write_bytes(b"RIFF")
+    Path(user).write_bytes(b"RIFF")
+
+    a = compose_workbench_session(state_dir=tmp_path)
+    a.live_kit.assign("Drums", "Closed Hat", _row("hat.wav", hat))
+    a.enter_screen2()
+    # Custom hat pattern (keep even steps)
+    for step in (1, 3, 5, 7, 9, 11, 13, 15):
+        a.channel_rack.toggle_step("ch_closed_hat", step)
+    hat_expected = _triggers_for(a.channel_rack.state, "ch_closed_hat")
+    a.channel_rack.add_user_channel()
+    a.channel_rack.assign_user_channel_sample("ch_user_1", user)
+    for step in range(16):
+        if step not in (0, 8):
+            a.channel_rack.toggle_step("ch_user_1", step)
+    user_expected = _triggers_for(a.channel_rack.state, "ch_user_1")
+    a.return_to_screen1()
+
+    a.live_kit.assign("Kick + Bass", "Kick", _row("kick.wav", kick))
+
+    mem = a.channel_rack.state
+    assert mem is not None
+    assert len(_triggers_for(mem, "ch_kick")) == 16
+    assert _triggers_for(mem, "ch_closed_hat") == hat_expected
+    assert _triggers_for(mem, "ch_user_1") == user_expected
+    user_ch = next(c for c in mem.channels if c.channel_id == "ch_user_1")
+    assert user_ch.sample_path == user
+    assert user_ch.live_kit_group is None
+    assert user_ch.live_kit_slot is None
+
+    b = compose_workbench_session(state_dir=tmp_path)
+    restored = b.enter_screen2()
+    assert len(_triggers_for(restored, "ch_kick")) == 16
+    assert _triggers_for(restored, "ch_closed_hat") == hat_expected
+    assert _triggers_for(restored, "ch_user_1") == user_expected
+
+
+def test_single_live_kit_assign_autosaves_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Case 7: one Live Kit assign → one coherent autosave (no double write)."""
+    kick = str(tmp_path / "kick.wav")
+    Path(kick).write_bytes(b"RIFF")
+
+    save_calls: list[Any] = []
+    import src.workbench_session as session_mod
+
+    real_save = session_mod.save_workbench_session_snapshot
+
+    def _counting_save(snapshot, **kwargs):
+        save_calls.append(snapshot)
+        return real_save(snapshot, **kwargs)
+
+    monkeypatch.setattr(session_mod, "save_workbench_session_snapshot", _counting_save)
+
+    session = compose_workbench_session(state_dir=tmp_path)
+    session.enter_screen2()
+    session.return_to_screen1()
+    save_calls.clear()
+
+    session.live_kit.assign("Kick + Bass", "Kick", _row("kick.wav", kick))
+    assert len(save_calls) == 1
+    snap = save_calls[0]
+    assert snap.channel_rack is not None
+    kick_ch = next(c for c in snap.channel_rack.channels if c.channel_id == "ch_kick")
+    assert kick_ch.sample_path == kick
+    assert len(_triggers_for(snap.channel_rack, "ch_kick")) == 16
+
+
+def test_live_kit_assign_without_rack_keeps_channel_rack_null(tmp_path: Path) -> None:
+    """Case 8: never entered Screen2 → assign persists kit only; rack stays null."""
+    kick = str(tmp_path / "kick.wav")
+    Path(kick).write_bytes(b"RIFF")
+
+    a = compose_workbench_session(state_dir=tmp_path)
+    assert a.channel_rack.state is None
+    a.live_kit.assign("Kick + Bass", "Kick", _row("kick.wav", kick))
+    assert a.channel_rack.state is None
+
+    data = json.loads(_session_path(tmp_path).read_text(encoding="utf-8"))
+    assert data["channel_rack"] is None
+    assert data["live_kit"]["Kick + Bass"]["Kick"]["path"] == kick
+
+    b = compose_workbench_session(state_dir=tmp_path)
+    assert b.channel_rack.state is None
+    built = b.enter_screen2()
+    assert len(_triggers_for(built, "ch_kick")) == 16

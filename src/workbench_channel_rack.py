@@ -306,16 +306,32 @@ class ChannelRackController:
         self._clear_loop_session()
         self._active_screen = SCREEN1
 
+    def reconcile_live_kit_state(self, *, notify: bool = True) -> bool:
+        """Heal existing rack against current Live Kit without Screen-2 enter (#817).
+
+        No-op when no rack state exists (does not materialize a rack). Does not
+        claim audio focus or change playback/loop runtime. When ``notify`` is
+        False, adopts reconciled state without firing the musical-state observer
+        (session Live-Kit autosave owns a single coherent write).
+        """
+        if self._state is None:
+            return False
+        previous = self._state
+        reconciled = _sync_live_kit_sample_paths(self._state, self._live_kit)
+        if reconciled is previous:
+            return False
+        self._state = reconciled
+        if notify:
+            self._notify_musical_state_changed()
+        return True
+
     def enter_screen2(self) -> ChannelRackState:
         self._claim_audio_focus()
         if self._state is None:
             self._state = build_channel_rack_state(self._live_kit)
             self._notify_musical_state_changed()
         else:
-            previous = self._state
-            self._state = _sync_live_kit_sample_paths(self._state, self._live_kit)
-            if self._state is not previous:
-                self._notify_musical_state_changed()
+            self.reconcile_live_kit_state(notify=True)
         self._active_screen = SCREEN2
         return self._state
 

@@ -305,7 +305,13 @@ def snapshot_from_musical_state(
     live_kit: LiveKitState,
     channel_rack_state: ChannelRackState | None,
 ) -> WorkbenchSessionSnapshot:
-    """Build a snapshot; seed paths come from LiveKitState (kit authority)."""
+    """Build a snapshot; seed paths come from LiveKitState (kit authority).
+
+    Serializes only. Musical empty→assigned DEFAULT_ON heal belongs in
+    :meth:`ChannelRackController.reconcile_live_kit_state` before save (#817).
+    Seed ``sample_path`` is still aligned to Live Kit defensively; triggers are
+    never invented or repaired here.
+    """
     live_paths = _empty_live_kit_paths()
     for group, slots in LIVE_KIT_SLOT_MAPPING:
         for slot in slots:
