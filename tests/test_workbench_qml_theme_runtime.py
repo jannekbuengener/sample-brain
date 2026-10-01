@@ -116,6 +116,7 @@ def test_legacy_hardcoded_blood_b_accent_is_not_default_truth() -> None:
 
 
 def test_theme_authority_bridge_defaults_to_blood_a(tmp_path: Path) -> None:
+    pytest.importorskip("PySide6")
     from src.workbench_qml import _qml_theme_authority_bridge
 
     bridge = _qml_theme_authority_bridge(state_dir=tmp_path)
@@ -128,6 +129,7 @@ def test_theme_authority_bridge_defaults_to_blood_a(tmp_path: Path) -> None:
 
 
 def test_theme_authority_bridge_switches_presets_and_persists(tmp_path: Path) -> None:
+    pytest.importorskip("PySide6")
     from src.workbench_qml import _qml_theme_authority_bridge
 
     bridge = _qml_theme_authority_bridge(state_dir=tmp_path)
@@ -143,6 +145,7 @@ def test_theme_authority_bridge_switches_presets_and_persists(tmp_path: Path) ->
 
 
 def test_theme_authority_bridge_custom_lifecycle(tmp_path: Path) -> None:
+    pytest.importorskip("PySide6")
     from src.workbench_qml import _qml_theme_authority_bridge
 
     bridge = _qml_theme_authority_bridge(state_dir=tmp_path)
@@ -168,6 +171,7 @@ def test_theme_authority_bridge_custom_lifecycle(tmp_path: Path) -> None:
 
 
 def test_theme_authority_bridge_corrupt_prefs_fail_closed_to_blood_a(tmp_path: Path) -> None:
+    pytest.importorskip("PySide6")
     from src.workbench_qml import _qml_theme_authority_bridge
 
     path = theme.theme_preferences_path(state_dir=tmp_path)
