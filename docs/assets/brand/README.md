@@ -20,8 +20,11 @@ Status: **slot contract only** for #786.
 
 ## Rules
 
-- Do **not** commit fake or placeholder SVG/PNG logos without an Owner-approved asset.
-- No Owner-approved brain/wordmark asset is present in this repo yet.
-- Direction (when an approved asset arrives): clear brain · black/anthracite · red inner lines · organic · surreal · calm.
+- Do **not** commit fake or placeholder SVG/PNG logos.
+- Owner-approved reference assets already exist under `docs/assets/portfolio/references/brand/`; reuse those exact files instead of duplicating, recoloring, resizing, compressing, or re-exporting them.
+- Primary brain reference: `sample_brain_logo_primary.png` — SHA-256 `6e8ba304d216e8f1ba0e819603388dc37ff18491fe1a3e22b985513258882605`.
+- Splash / hero typography reference: `sample_brain_splash_typography.png` — SHA-256 `eb130874c65ce8c1e36500b56e3cb1328318d6ac439fd13305547949994a83f6`.
+- These files are reference assets, not authorization to add permanent branding to the Screen-1 header.
+- Direction: clear brain · black/anthracite · controlled red inner lines/glow · organic · surreal · calm.
 - Wordmark: uppercase, geometric, light gray/white; not required as red letters.
 - Claim: `Sample Brain — Frech aber im Flow.`
