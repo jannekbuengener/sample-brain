@@ -1507,6 +1507,7 @@ ApplicationWindow {
     property var screenData: screenModel
     property var interaction: interactionModel
     property var channelRack: channelRackModel
+    property var transport: transportModel
     readonly property string activeScreen: channelRack.activeScreen
     // Screen-1 Theme Authority (#785): Theme Core owns colors; QML binds semantics.
     // No competing HEX palette here — see docs/assets/themes/ and workbench_theme.py.
@@ -1752,18 +1753,86 @@ ApplicationWindow {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.verticalCenter: parent.verticalCenter
             spacing: 0
+            // #805: MASTER/GRID/SYNC project session WorkbenchTransportAdapter only.
             Label { text: "MASTER"; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignVCenter }
-            Label { text: "132"; color: theme.textPrimary; font.pixelSize: 24; font.bold: true; Layout.alignment: Qt.AlignVCenter }
+            Button {
+                objectName: "tempoDownButton"
+                text: "−"
+                Accessible.name: "Tempo down"
+                flat: true
+                implicitWidth: 22
+                implicitHeight: 24
+                Layout.alignment: Qt.AlignVCenter
+                contentItem: Text {
+                    text: "−"
+                    color: theme.textSecondary
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.pixelSize: 14
+                }
+                background: Item {}
+                onClicked: window.transport.adjustTempo(-1.0)
+            }
+            Label {
+                objectName: "masterTempoValue"
+                text: window.transport.masterTempoText
+                color: theme.textPrimary
+                font.pixelSize: 24
+                font.bold: true
+                Layout.alignment: Qt.AlignVCenter
+            }
+            Button {
+                objectName: "tempoUpButton"
+                text: "+"
+                Accessible.name: "Tempo up"
+                flat: true
+                implicitWidth: 22
+                implicitHeight: 24
+                Layout.alignment: Qt.AlignVCenter
+                contentItem: Text {
+                    text: "+"
+                    color: theme.textSecondary
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.pixelSize: 14
+                }
+                background: Item {}
+                onClicked: window.transport.adjustTempo(1.0)
+            }
             Label { text: "BPM"; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignVCenter }
             Item { width: 24 }
             Label { text: "GRID"; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignVCenter }
-            Label { text: "4/4"; color: theme.textPrimary; font.pixelSize: 24; font.bold: true; Layout.alignment: Qt.AlignVCenter }
+            Label {
+                objectName: "gridValue"
+                text: window.transport.gridText
+                color: theme.textPrimary
+                font.pixelSize: 24
+                font.bold: true
+                Layout.alignment: Qt.AlignVCenter
+            }
             Item { width: 24 }
             Label { text: "SYNC"; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignVCenter }
             Rectangle {
-                width: 48; height: 25; radius: 4; color: theme.actionActive
+                id: syncIndicator
+                objectName: "syncIndicator"
+                width: 48; height: 25; radius: 4
+                color: window.transport.syncEnabled ? theme.actionActive : theme.surfaceElevated
+                border.width: window.transport.syncEnabled ? 0 : 1
+                border.color: theme.borderSubtle
                 Layout.alignment: Qt.AlignVCenter
-                Label { anchors.centerIn: parent; text: "ON"; color: theme.textOnAction; font.bold: true }
+                Accessible.name: "SYNC"
+                Label {
+                    objectName: "syncStateLabel"
+                    anchors.centerIn: parent
+                    text: window.transport.syncEnabled ? "ON" : "OFF"
+                    color: window.transport.syncEnabled ? theme.textOnAction : theme.textSecondary
+                    font.bold: true
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: window.transport.toggleSync()
+                }
             }
             Item { width: 16 }
             Button {
@@ -4123,6 +4192,85 @@ def _qml_interaction_bridge(
     return QmlInteractionBridge()
 
 
+def _qml_transport_bridge(transport):
+    """Thin QML projection/commands for session MASTER/GRID/SYNC (#805).
+
+    ``WorkbenchTransportAdapter`` (or compose-owned session transport) remains
+    the sole tempo/SYNC authority. QML never stores a second BPM or SYNC flag.
+    When ``transport`` is ``None`` (injected Screen-1 harnesses), project
+    fail-closed defaults and no-op commands — do not invent an adapter.
+    """
+    from PySide6.QtCore import QObject, Property, Signal, Slot
+
+    from .workbench_transport_ui import DEFAULT_TEMPO_BPM
+
+    class QmlTransportBridge(QObject):
+        state_changed = Signal()
+
+        def __init__(self) -> None:
+            super().__init__()
+            self._transport = transport
+            self._master_tempo = float(DEFAULT_TEMPO_BPM)
+            self._master_tempo_text = f"{self._master_tempo:g}"
+            self._grid_text = "4/4"
+            self._sync_enabled = False
+            self._sync_from_transport()
+
+        def _sync_from_transport(self) -> None:
+            if self._transport is None:
+                self._master_tempo = float(DEFAULT_TEMPO_BPM)
+                self._master_tempo_text = f"{self._master_tempo:g}"
+                self._grid_text = "4/4"
+                self._sync_enabled = False
+                return
+            tempo = float(self._transport.get_current_tempo())
+            self._master_tempo = tempo
+            self._master_tempo_text = f"{tempo:g}"
+            signature = self._transport.tempo_map.time_signature
+            self._grid_text = f"{signature.numerator}/{signature.denominator}"
+            self._sync_enabled = bool(self._transport.is_sync_enabled())
+
+        @Slot()
+        def refresh(self) -> None:
+            self._sync_from_transport()
+            self.state_changed.emit()
+
+        @Property(float, notify=state_changed)
+        def masterTempo(self) -> float:
+            return self._master_tempo
+
+        @Property(str, notify=state_changed)
+        def masterTempoText(self) -> str:
+            return self._master_tempo_text
+
+        @Property(str, notify=state_changed)
+        def gridText(self) -> str:
+            return self._grid_text
+
+        @Property(bool, notify=state_changed)
+        def syncEnabled(self) -> bool:
+            return self._sync_enabled
+
+        @Slot(float)
+        def adjustTempo(self, delta_bpm: float) -> None:
+            if self._transport is None:
+                return
+            current = float(self._transport.get_current_tempo())
+            target = max(1.0, current + float(delta_bpm))
+            self._transport.set_tempo(target)
+            self.refresh()
+
+        @Slot(result=bool)
+        def toggleSync(self) -> bool:
+            if self._transport is None:
+                return False
+            enabled = bool(self._transport.toggle_sync())
+            self.refresh()
+            return enabled
+
+    return QmlTransportBridge()
+
+
 def _qml_channel_rack_bridge(controller):
     """Expose Channel Rack projection + commands; Python remains musical SoT.
 
@@ -4743,6 +4891,7 @@ def _qml_engine(
     engine = QQmlApplicationEngine()
     preview_player = None
     channel_rack_controller = None
+    session_transport = None
     if interaction_adapter is None:
         from .workbench_session import compose_workbench_session
 
@@ -4754,6 +4903,7 @@ def _qml_engine(
         live_kit = session.live_kit_presenter
         adapter = session.qml_interaction_adapter
         channel_rack_controller = session.channel_rack
+        session_transport = session.transport
         # Keep the caller-provided view_model as the renderer surface while
         # reusing the session-owned kit + TransportAwarePreview audition.
         adapter.view_model = view_model
@@ -4766,6 +4916,7 @@ def _qml_engine(
         adapter = interaction_adapter
         live_kit = getattr(interaction_adapter, "_live_kit", None)
         channel_rack_controller = None
+        session_transport = None
     try:
         from .workbench_display_preferences import load_display_preferences
 
@@ -5280,6 +5431,7 @@ def _qml_engine(
         layout_model.syncFromInteraction()
 
     channel_rack_bridge = _qml_channel_rack_bridge(channel_rack_controller)
+    transport_bridge = _qml_transport_bridge(session_transport)
 
     def open_channel_rack() -> None:
         channel_rack_bridge.openChannelRack()
@@ -5317,6 +5469,7 @@ def _qml_engine(
     engine.rootContext().setContextProperty("libraryTreeModel", library_model)
     engine.rootContext().setContextProperty("libraryInteraction", library_bridge)
     engine.rootContext().setContextProperty("channelRackModel", channel_rack_bridge)
+    engine.rootContext().setContextProperty("transportModel", transport_bridge)
     theme_authority = _qml_theme_authority_bridge()
     engine.rootContext().setContextProperty("themeAuthority", theme_authority)
     engine.rootContext().setContextProperty(
@@ -5342,6 +5495,8 @@ def _qml_engine(
     engine._screen1_live_kit = live_kit
     engine._screen1_channel_rack = channel_rack_controller
     engine._screen1_channel_rack_bridge = channel_rack_bridge
+    engine._screen1_transport = session_transport
+    engine._screen1_transport_bridge = transport_bridge
     engine._screen1_runtime_composition = runtime_composition
     engine._screen1_analysis_coordinator = analysis_coordinator
     engine._screen1_finish_inbound_import = finish_inbound_import
