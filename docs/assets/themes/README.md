@@ -22,6 +22,6 @@ See `presets.v1.json` for values and derivation formulas.
 
 ## Presets
 
-Blood (primary candidate, with A/B accent stages), Carbon, Arctic, Rose, Forest.
+Blood is the primary candidate. Owner-approved stage **A** (`accent #8f0e24`) is the current default Blood base. Stage **B** (`accent #d4143a`) remains a brighter-crimson comparison variant only.
 
-All presets keep the Sample Brain dark language; only base tokens vary.
+Carbon, Arctic, Rose, and Forest stay in the same dark Sample Brain family; only base tokens vary. Accent is a sparse signal (selection, focus, primary action, small status), not atmosphere.
