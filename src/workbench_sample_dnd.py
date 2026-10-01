@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 import shutil
+import threading
 from typing import Literal, Sequence
 from urllib.parse import unquote, urlparse
 
@@ -28,6 +29,33 @@ from .workbench_library_navigation import (
 
 
 InboundStatus = Literal["imported", "skipped_conflict", "failed", "rejected"]
+
+# Serialize inbound COPY jobs in-process so overlapping workers cannot race the
+# same destination basename before exclusive create settles the winner.
+_INBOUND_COPY_LOCK = threading.Lock()
+
+
+def _copy_file_exclusive(source: Path, destination: Path) -> None:
+    """COPY *source* to *destination* using exclusive create (no overwrite).
+
+    Raises ``FileExistsError`` when *destination* already exists (EEXIST).
+    Partial destinations created during a failed write are removed.
+    """
+    created = False
+    try:
+        with open(destination, "xb") as out_f, open(source, "rb") as in_f:
+            created = True
+            shutil.copyfileobj(in_f, out_f)
+        shutil.copystat(source, destination, follow_symlinks=True)
+    except FileExistsError:
+        raise
+    except Exception:
+        if created:
+            try:
+                destination.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
 
 
 @dataclass(frozen=True)
@@ -272,93 +300,109 @@ def copy_files_into_destination(
     skipped: list[InboundFileResult] = []
     failed: list[InboundFileResult] = []
 
-    for source in source_paths:
-        try:
-            resolved = Path(source).expanduser().resolve()
-        except OSError as exc:
-            failed.append(
-                InboundFileResult(
-                    source_path=Path(source),
-                    status="failed",
-                    error_code="unreadable_source",
-                    error_message=str(exc),
+    # Hold the lock across the full inbound batch so concurrent same-name imports
+    # cannot both pass a pre-check and race the exclusive create.
+    with _INBOUND_COPY_LOCK:
+        for source in source_paths:
+            try:
+                resolved = Path(source).expanduser().resolve()
+            except OSError as exc:
+                failed.append(
+                    InboundFileResult(
+                        source_path=Path(source),
+                        status="failed",
+                        error_code="unreadable_source",
+                        error_message=str(exc),
+                    )
                 )
-            )
-            continue
-        if not resolved.is_file():
-            failed.append(
-                InboundFileResult(
-                    source_path=resolved,
-                    status="failed",
-                    error_code="unreadable_source",
-                    error_message="Quelldatei fehlt oder ist kein File.",
+                continue
+            if not resolved.is_file():
+                failed.append(
+                    InboundFileResult(
+                        source_path=resolved,
+                        status="failed",
+                        error_code="unreadable_source",
+                        error_message="Quelldatei fehlt oder ist kein File.",
+                    )
                 )
-            )
-            continue
-        if not _is_supported_audio(resolved):
-            failed.append(
-                InboundFileResult(
-                    source_path=resolved,
-                    status="failed",
-                    error_code="unsupported_audio",
-                    error_message="Dateityp wird nicht unterstützt.",
+                continue
+            if not _is_supported_audio(resolved):
+                failed.append(
+                    InboundFileResult(
+                        source_path=resolved,
+                        status="failed",
+                        error_code="unsupported_audio",
+                        error_message="Dateityp wird nicht unterstützt.",
+                    )
                 )
-            )
-            continue
+                continue
 
-        dest = destination.destination_dir / resolved.name
-        try:
-            dest_resolved = dest.resolve()
-        except OSError as exc:
-            failed.append(
-                InboundFileResult(
-                    source_path=resolved,
-                    status="failed",
-                    error_code="destination_error",
-                    error_message=str(exc),
+            dest = destination.destination_dir / resolved.name
+            try:
+                dest_resolved = dest.resolve()
+            except OSError as exc:
+                failed.append(
+                    InboundFileResult(
+                        source_path=resolved,
+                        status="failed",
+                        error_code="destination_error",
+                        error_message=str(exc),
+                    )
                 )
-            )
-            continue
-        if not _destination_under_source(destination.source_root, dest_resolved.parent):
-            failed.append(
-                InboundFileResult(
-                    source_path=resolved,
-                    status="failed",
-                    error_code="path_escape",
-                    error_message="Zieldatei außerhalb der Source.",
+                continue
+            if not _destination_under_source(destination.source_root, dest_resolved.parent):
+                failed.append(
+                    InboundFileResult(
+                        source_path=resolved,
+                        status="failed",
+                        error_code="path_escape",
+                        error_message="Zieldatei außerhalb der Source.",
+                    )
                 )
-            )
-            continue
-        if dest_resolved.exists():
-            skipped.append(
+                continue
+            # Fast-path collision check; exclusive create below is the real guard
+            # against TOCTOU races between exists() and write.
+            if dest_resolved.exists():
+                skipped.append(
+                    InboundFileResult(
+                        source_path=resolved,
+                        status="skipped_conflict",
+                        destination_path=dest_resolved,
+                        error_code="collision",
+                        error_message="Datei existiert bereits; kein Überschreiben.",
+                    )
+                )
+                continue
+            try:
+                _copy_file_exclusive(resolved, dest_resolved)
+            except FileExistsError:
+                skipped.append(
+                    InboundFileResult(
+                        source_path=resolved,
+                        status="skipped_conflict",
+                        destination_path=dest_resolved,
+                        error_code="collision",
+                        error_message="Datei existiert bereits; kein Überschreiben.",
+                    )
+                )
+                continue
+            except OSError as exc:
+                failed.append(
+                    InboundFileResult(
+                        source_path=resolved,
+                        status="failed",
+                        error_code="copy_failed",
+                        error_message=str(exc),
+                    )
+                )
+                continue
+            imported.append(
                 InboundFileResult(
                     source_path=resolved,
-                    status="skipped_conflict",
+                    status="imported",
                     destination_path=dest_resolved,
-                    error_code="collision",
-                    error_message="Datei existiert bereits; kein Überschreiben.",
                 )
             )
-            continue
-        try:
-            shutil.copy2(resolved, dest_resolved)
-        except OSError as exc:
-            failed.append(
-                InboundFileResult(
-                    source_path=resolved,
-                    status="failed",
-                    error_code="copy_failed",
-                    error_message=str(exc),
-                )
-            )
-            continue
-        imported.append(
-            InboundFileResult(
-                source_path=resolved,
-                status="imported",
-                destination_path=dest_resolved,
-            )
-        )
 
     return InboundImportResult(
         imported=tuple(imported),

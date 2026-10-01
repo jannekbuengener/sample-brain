@@ -510,3 +510,102 @@ def test_outbound_missing_file_fail_soft(tmp_path: Path):
 
     missing = tmp_path / "missing.wav"
     assert outbound_local_file_url(missing) is None
+
+
+def test_collision_race_exclusive_create_preserves_existing(
+    tmp_path: Path,
+    library_db: Path,
+    registered_source: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """exists()→copy TOCTOU: exclusive create must still refuse overwrite."""
+    from src.workbench_sample_dnd import DropDestination, copy_files_into_destination
+
+    existing = write_sine_wav(
+        registered_source / "race.wav", duration_sec=0.3, frequency_hz=60.0
+    )
+    existing_digest = _file_digest(existing)
+    external = tmp_path / "external"
+    external.mkdir()
+    challenger = write_sine_wav(
+        external / "race.wav", duration_sec=0.1, frequency_hz=180.0
+    )
+    assert _file_digest(challenger) != existing_digest
+
+    dest_target = (registered_source / "race.wav").resolve()
+    real_exists = Path.exists
+
+    def exists_race_lie(self: Path) -> bool:
+        try:
+            if Path(self).resolve() == dest_target:
+                return False
+        except OSError:
+            pass
+        return real_exists(self)
+
+    monkeypatch.setattr(Path, "exists", exists_race_lie)
+
+    folder_id = _folder_id(registered_source, library_db)
+    destination = DropDestination(
+        folder_id=folder_id,
+        source_root=registered_source.resolve(),
+        destination_dir=registered_source.resolve(),
+        node_id=f"root:{folder_id}",
+    )
+    result = copy_files_into_destination([challenger], destination)
+
+    assert len(result.imported) == 0
+    assert len(result.skipped_conflict) == 1
+    assert result.skipped_conflict[0].error_code == "collision"
+    assert _file_digest(existing) == existing_digest
+    assert existing.read_bytes() != challenger.read_bytes()
+
+
+def test_concurrent_same_name_inbound_no_silent_overwrite(
+    tmp_path: Path, library_db: Path, registered_source: Path
+):
+    """Overlapping same-basename imports: one wins, one conflict, no dual write."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from src.workbench_sample_dnd import DropDestination, copy_files_into_destination
+
+    external = tmp_path / "external"
+    (external / "A").mkdir(parents=True)
+    (external / "B").mkdir(parents=True)
+    src_a = write_sine_wav(
+        external / "A" / "same.wav", duration_sec=0.2, frequency_hz=50.0
+    )
+    src_b = write_sine_wav(
+        external / "B" / "same.wav", duration_sec=0.2, frequency_hz=250.0
+    )
+    digests = {_file_digest(src_a), _file_digest(src_b)}
+    assert len(digests) == 2
+
+    folder_id = _folder_id(registered_source, library_db)
+    destination = DropDestination(
+        folder_id=folder_id,
+        source_root=registered_source.resolve(),
+        destination_dir=registered_source.resolve(),
+        node_id=f"root:{folder_id}",
+    )
+    barrier = threading.Barrier(2)
+
+    def run_one(source: Path):
+        barrier.wait(timeout=5)
+        return copy_files_into_destination([source], destination)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(run_one, src_a), pool.submit(run_one, src_b)]
+        outcomes = [future.result(timeout=30) for future in futures]
+
+    imported_count = sum(len(outcome.imported) for outcome in outcomes)
+    skipped_count = sum(len(outcome.skipped_conflict) for outcome in outcomes)
+    failed_count = sum(len(outcome.failed) for outcome in outcomes)
+
+    assert imported_count == 1
+    assert skipped_count == 1
+    assert failed_count == 0
+    dest = registered_source / "same.wav"
+    assert dest.is_file()
+    assert _file_digest(dest) in digests
