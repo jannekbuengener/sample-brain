@@ -41,7 +41,6 @@ def test_qml_source_uses_stretch_background_image_without_crop_or_gradients():
     assert "source: screen1BackgroundUrl" in source
     assert "fillMode: Image.Stretch" in source
     assert "PreserveAspectCrop" not in source
-    assert "PreserveAspectFit" not in source
     assert "Gradient" not in source
     assert "LinearGradient" not in source
     assert "RadialGradient" not in source
@@ -53,6 +52,8 @@ def test_qml_source_uses_stretch_background_image_without_crop_or_gradients():
     )
     assert bg_block is not None
     block = bg_block.group(0)
+    assert "PreserveAspectFit" not in block
+    assert "PreserveAspectCrop" not in block
     assert "colorize" not in block.casefold()
     assert "opacity:" not in block.casefold() or "opacity: 1" in block
     assert "layer.enabled" not in block.casefold()
@@ -61,18 +62,20 @@ def test_qml_source_uses_stretch_background_image_without_crop_or_gradients():
 
 
 def test_qml_palette_tokens_are_near_black_with_functional_accent_only():
+    """#785: palette truth is Theme Core via themeAuthority (no QML HEX fork)."""
     source = workbench_qml.QML_SOURCE
-    assert 'readonly property color neutral000: "#000000"' in source
-    assert 'readonly property color neutral100: "#0c0d0e"' in source
-    assert 'readonly property color neutral150: "#141516"' in source
-    assert 'readonly property color accentPrimary: "#b1122b"' in source
-    assert 'readonly property color accentSurface: "#1a1012"' in source
-    assert 'readonly property color neutral250: "#222426"' in source
-    assert "readonly property color surfacePanel: neutral100" in source
-    assert "readonly property color actionActive: accentPrimary" in source
-    # Accent stays blood-red functional; no orange / blue brand accents.
+    assert "themeAuthority" in source
+    assert "readonly property color surfaceRoot: themeAuthority.surfaceRoot" in source
+    assert "readonly property color actionActive: themeAuthority.actionActive" in source
+    assert "readonly property color selectionSurface: themeAuthority.selectionSurface" in source
+    # Accent stays functional; no orange / blue brand accents in QML.
     assert "#ff4500" not in source.casefold()
-    assert re.search(r'readonly property color accentPrimary:\s*"#b1122b"', source)
+    assert "#00bfff" not in source.casefold()
+    from src import workbench_theme as theme
+
+    blood = theme.theme_tokens_to_qml_semantics(theme.resolve_theme("Blood"))
+    assert blood["actionActive"].startswith("#")
+    assert blood["surfaceRoot"].startswith("#")
 
 
 @pytest.mark.skipif(
@@ -114,9 +117,17 @@ def test_qml_runtime_exposes_background_image_with_stretch_fill():
         # contract already asserts Image.Stretch. Confirm image is loaded.
         assert float(background.property("paintedWidth") or 0) > 0
         assert float(background.property("paintedHeight") or 0) > 0
-        assert window.property("accent").name() == "#b1122b"
-        assert window.property("panel").name() == "#0c0d0e"
-        assert window.property("panelAlt").name() == "#141516"
+        from src import workbench_theme as theme
+
+        blood = theme.theme_tokens_to_qml_semantics(theme.resolve_theme("Blood"))
+        accent = window.property("accent")
+        panel = window.property("panel")
+        panel_alt = window.property("panelAlt")
+        assert accent is not None and panel is not None and panel_alt is not None
+        # Theme Core Blood A (not the legacy hardcoded #b1122b palette).
+        assert accent.name().lower() == blood["actionActive"].lower()
+        assert panel.name().lower() == blood["surfacePanel"].lower()
+        assert panel_alt.name().lower() == blood["surfaceElevated"].lower()
     finally:
         window.close()
         app.processEvents()
