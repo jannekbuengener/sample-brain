@@ -16,6 +16,7 @@ from .channel_rack import (
     ChannelRackPlayHandle,
     ChannelRackState,
     add_user_channel,
+    assign_user_channel_sample,
     build_channel_rack_state,
     play_channel_rack_once,
     reconcile_live_kit_sample_assignments,
@@ -257,6 +258,17 @@ class ChannelRackController:
         if self._state is None:
             raise RuntimeError("Channel Rack is not active; call enter_screen2() first")
         self._state = add_user_channel(self._state, sample_path=sample_path)
+        return self._state
+
+    def assign_user_channel_sample(
+        self, channel_id: str, sample_path: str
+    ) -> ChannelRackState:
+        """Assign a sample path to an existing user channel (#808)."""
+        if self._state is None:
+            raise RuntimeError("Channel Rack is not active; call enter_screen2() first")
+        self._state = assign_user_channel_sample(
+            self._state, channel_id, sample_path
+        )
         return self._state
 
     def play(self) -> ChannelRackPlayHandle | None:

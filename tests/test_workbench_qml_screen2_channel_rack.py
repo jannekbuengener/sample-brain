@@ -624,3 +624,235 @@ def test_clear_assignment_strips_channel_triggers_fail_closed():
         sum(1 for t in controller.state.pattern.triggers if t.channel_id == "ch_closed_hat")
         == 16
     )
+
+
+# --- #808 assign selected sample to user channel -----------------------------
+
+
+def test_controller_assign_user_channel_sample_empty_to_assigned():
+    module = _controller_module_or_fail()
+    Controller = _require(module, "ChannelRackController")
+    project = _require(module, "project_channel_rack_for_qml")
+
+    controller = Controller(live_kit=LiveKitState(), transport=_fake_transport())
+    controller.enter_screen2()
+    controller.add_user_channel()
+    user = next(
+        ch for ch in controller.state.channels if ch.channel_id.startswith(USER_CHANNEL_ID_PREFIX)
+    )
+    assert user.sample_path is None
+
+    after = controller.assign_user_channel_sample(user.channel_id, "synthetic/assigned.wav")
+    assigned = next(ch for ch in after.channels if ch.channel_id == user.channel_id)
+    assert assigned.sample_path == "synthetic/assigned.wav"
+    assert assigned.live_kit_group is None
+    assert assigned.live_kit_slot is None
+    assert sum(1 for t in after.pattern.triggers if t.channel_id == user.channel_id) == 16
+
+    projection = project(after)
+    user_row = next(
+        row
+        for group in projection["groups"]
+        for row in group["rows"]
+        if row["channel_id"] == user.channel_id
+    )
+    assert user_row["sample_path"] == "synthetic/assigned.wav"
+    assert user_row["sample_label"] == "assigned.wav"
+    assert user_row["is_user_channel"] is True
+    assert user_row["steps"] == [True] * 16
+
+
+def test_controller_assign_rejects_live_kit_and_empty_path():
+    module = _controller_module_or_fail()
+    Controller = _require(module, "ChannelRackController")
+    controller = Controller(live_kit=LiveKitState(), transport=_fake_transport())
+    controller.enter_screen2()
+    with pytest.raises(ValueError, match="Live Kit"):
+        controller.assign_user_channel_sample("ch_kick", "synthetic/x.wav")
+    controller.add_user_channel()
+    user_id = next(
+        ch.channel_id
+        for ch in controller.state.channels
+        if ch.channel_id.startswith(USER_CHANNEL_ID_PREFIX)
+    )
+    with pytest.raises(ValueError, match="sample_path"):
+        controller.assign_user_channel_sample(user_id, "  ")
+
+
+def test_controller_add_assign_toggle_play_with_synthetic_wav(tmp_path):
+    """Runtime flow: add → assign → toggle → play tick reaches assigned channel (#808)."""
+    from tests.audio_fixtures import write_sine_wav
+
+    module = _controller_module_or_fail()
+    Controller = _require(module, "ChannelRackController")
+
+    wav = write_sine_wav(
+        tmp_path / "user_assign.wav",
+        duration_sec=0.05,
+        frequency_hz=440.0,
+        sr=48_000,
+    )
+    engine = MagicMock()
+    created: list[object] = []
+
+    def create_voice(cfg):
+        created.append(cfg)
+        return getattr(cfg, "id", len(created))
+
+    engine.create_voice.side_effect = create_voice
+    engine.schedule_voice_start = MagicMock()
+    engine.get_snapshot.return_value = SimpleNamespace(
+        total_voice_count=0,
+        voice_ids=(),
+        voice_states=(),
+    )
+    engine.stop_voice = MagicMock()
+    engine.remove_voice = MagicMock()
+
+    transport = _fake_transport(sample_rate=48_000, engine=engine)
+    controller = Controller(live_kit=LiveKitState(), transport=transport)
+    controller.enter_screen2()
+    controller.add_user_channel()
+    user_id = next(
+        ch.channel_id
+        for ch in controller.state.channels
+        if ch.channel_id.startswith(USER_CHANNEL_ID_PREFIX)
+    )
+    controller.assign_user_channel_sample(user_id, str(wav))
+    # Leave only step 0 on so the first tick schedules exactly one voice.
+    for step in range(1, 16):
+        controller.toggle_step(user_id, step)
+
+    handle = controller.play()
+    assert handle is not None
+    assert handle.scheduled_count >= 1
+    assert handle.skipped_missing_source_count == 0
+    assert created, "expected at least one voice for assigned user channel"
+
+
+def test_qml_source_exposes_assign_selected_affordance_for_user_rows():
+    qml = importlib.import_module("src.workbench_qml")
+    source = qml.QML_SOURCE
+    assert "assignSelectedSample" in source
+    assert "Assign selected" in source
+    assert "is_user_channel" in source
+
+
+def test_qml_channel_rack_bridge_assign_selected_uses_browser_selection():
+    qml_mod = importlib.import_module("src.workbench_qml")
+    module = _controller_module_or_fail()
+    Controller = _require(module, "ChannelRackController")
+
+    controller = Controller(live_kit=LiveKitState(), transport=_fake_transport())
+    controller.enter_screen2()
+    controller.add_user_channel()
+    user_id = next(
+        ch.channel_id
+        for ch in controller.state.channels
+        if ch.channel_id.startswith(USER_CHANNEL_ID_PREFIX)
+    )
+
+    selected = {"path": "synthetic/from_browser.wav"}
+
+    def resolve_selected() -> str | None:
+        return selected["path"]
+
+    bridge = qml_mod._qml_channel_rack_bridge(
+        controller,
+        resolve_selected_sample_path=resolve_selected,
+    )
+    assert bridge.hasSelectedSample is True
+    bridge.assignSelectedSample(user_id)
+    user = next(ch for ch in controller.state.channels if ch.channel_id == user_id)
+    assert user.sample_path == "synthetic/from_browser.wav"
+    assert sum(1 for t in controller.state.pattern.triggers if t.channel_id == user_id) == 16
+
+    # fail-soft: no selection → no mutation
+    before = controller.state
+    selected["path"] = None
+    bridge.refresh()
+    assert bridge.hasSelectedSample is False
+    bridge.assignSelectedSample(user_id)
+    assert controller.state is before
+    assert (
+        next(ch for ch in controller.state.channels if ch.channel_id == user_id).sample_path
+        == "synthetic/from_browser.wav"
+    )
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
+)
+def test_qml_runtime_add_assign_selected_toggle_play(tmp_path):
+    """Offscreen: browser select → Screen 2 → add → assign → toggle → play (#808)."""
+    from PySide6.QtQuick import QQuickItem
+
+    from tests.audio_fixtures import write_sine_wav
+    from src.workbench_qml import (
+        Screen1QmlViewModel,
+        _qml_engine,
+        _qml_row,
+        _settle_qml_frame,
+    )
+
+    wav = write_sine_wav(
+        tmp_path / "browser_pick.wav",
+        duration_sec=0.05,
+        frequency_hz=330.0,
+        sr=48_000,
+    )
+    view_model = Screen1QmlViewModel.baseline("screen1-default-3panel")
+    # Replace baseline rows with a real synthetic path for assignment.
+    pick_row = _qml_row(_row("browser_pick.wav", path=str(wav)))
+    view_model._browser_rows_all = (pick_row,)
+    view_model.browser_rows = view_model._browser_rows_all
+    view_model.selected_browser_index = 0
+
+    app, engine, window = _qml_engine(view_model)
+    controller = engine._screen1_channel_rack
+    assert controller is not None
+    channel_rack = engine.rootContext().contextProperty("channelRackModel")
+
+    window.show()
+    _settle_qml_frame(app)
+    try:
+        channel_rack.openChannelRack()
+        app.processEvents()
+        _settle_qml_frame(app)
+        assert window.property("activeScreen") == "screen2"
+
+        channel_rack.addUserChannel()
+        app.processEvents()
+        user = next(
+            ch
+            for ch in controller.state.channels
+            if ch.channel_id.startswith(USER_CHANNEL_ID_PREFIX)
+        )
+        assert user.sample_path in (None, "")
+
+        assert channel_rack.hasSelectedSample is True
+        channel_rack.assignSelectedSample(user.channel_id)
+        app.processEvents()
+        assigned = next(ch for ch in controller.state.channels if ch.channel_id == user.channel_id)
+        assert assigned.sample_path == str(wav)
+        assert sum(
+            1 for t in controller.state.pattern.triggers if t.channel_id == user.channel_id
+        ) == 16
+
+        channel_rack.toggleStep(user.channel_id, 0)
+        app.processEvents()
+        assert Trigger(channel_id=user.channel_id, position=Fraction(0, 4)) not in (
+            controller.state.pattern.triggers
+        )
+
+        # Play fails soft without native engine in this harness — still refreshable.
+        channel_rack.play()
+        app.processEvents()
+        assert controller.is_playing is False
+
+        rack_screen = window.findChild(QQuickItem, "channelRackScreen")
+        assert rack_screen is not None and rack_screen.property("visible") is True
+    finally:
+        engine.deleteLater()
+        app.processEvents()

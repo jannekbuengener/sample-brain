@@ -383,3 +383,42 @@ def test_reconcile_preserves_manual_all_off_on_sample_bearing_channel():
     kick = next(ch for ch in healed.channels if ch.channel_id == "ch_kick")
     assert kick.sample_path == "synthetic/kick_01.wav"
     assert _triggers_for_channel(healed.pattern.triggers, "ch_kick") == ()
+
+
+# --- #808 user-channel assign DEFAULT_ON parity with #806 --------------------
+
+
+def test_assign_user_empty_to_sample_seeds_default_on_like_806():
+    """User empty→assigned uses same DEFAULT_ON seed as Live Kit late assign (#808)."""
+    rack = _channel_rack()
+    build = _require(rack, "build_channel_rack_state")
+    add = _require(rack, "add_user_channel")
+    assign = _require(rack, "assign_user_channel_sample")
+
+    state = add(build(LiveKitState()), sample_path=None)
+    user_id = state.channels[-1].channel_id
+    assigned = assign(state, user_id, "synthetic/user_late.wav")
+    triggers = _triggers_for_channel(assigned.pattern.triggers, user_id)
+    assert len(triggers) == EXPECTED_STEP_COUNT
+    assert [t.position for t in triggers] == list(EXPECTED_STEP_POSITIONS)
+
+
+def test_assign_user_replacement_preserves_pattern_like_806():
+    """User assigned→replacement preserves exact toggles (#808 / #806 parity)."""
+    rack = _channel_rack()
+    build = _require(rack, "build_channel_rack_state")
+    add = _require(rack, "add_user_channel")
+    assign = _require(rack, "assign_user_channel_sample")
+    toggle = _require(rack, "toggle_step")
+
+    state = add(build(LiveKitState()), sample_path="synthetic/user_a.wav")
+    user_id = state.channels[-1].channel_id
+    for step in (1, 5, 9):
+        state = toggle(state, user_id, step)
+    expected = _triggers_for_channel(state.pattern.triggers, user_id)
+    assert len(expected) == EXPECTED_STEP_COUNT - 3
+
+    replaced = assign(state, user_id, "synthetic/user_b.wav")
+    assert _triggers_for_channel(replaced.pattern.triggers, user_id) == expected
+    user = next(ch for ch in replaced.channels if ch.channel_id == user_id)
+    assert user.sample_path == "synthetic/user_b.wav"

@@ -3815,6 +3815,32 @@ ApplicationWindow {
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true
                                 }
+                                Loader {
+                                    active: Boolean(modelData.is_user_channel)
+                                    sourceComponent: Component {
+                                        Button {
+                                            id: assignSelectedSampleButton
+                                            objectName: "assignSelectedSampleButton_" + modelData.channel_id
+                                            enabled: window.channelRack.hasSelectedSample
+                                            text: "Assign selected"
+                                            flat: true
+                                            padding: 0
+                                            topPadding: 0
+                                            bottomPadding: 0
+                                            leftPadding: 0
+                                            rightPadding: 0
+                                            font.pixelSize: 10
+                                            onClicked: window.channelRack.assignSelectedSample(channelRow.channelId)
+                                            contentItem: Label {
+                                                text: assignSelectedSampleButton.text
+                                                color: assignSelectedSampleButton.enabled ? theme.textSecondary : theme.textDisabled
+                                                font.pixelSize: 10
+                                                elide: Text.ElideRight
+                                            }
+                                            background: Item {}
+                                        }
+                                    }
+                                }
                             }
                             Repeater {
                                 model: channelRow.stepStates
@@ -4286,13 +4312,21 @@ def _qml_transport_bridge(transport):
     return QmlTransportBridge()
 
 
-def _qml_channel_rack_bridge(controller):
+def _qml_channel_rack_bridge(
+    controller,
+    *,
+    resolve_selected_sample_path=None,
+):
     """Expose Channel Rack projection + commands; Python remains musical SoT.
 
     ``controller`` may be ``None`` when ``_qml_engine`` is driven with an
     injected ``interaction_adapter`` (Screen-1 harnesses). Screen-2 commands
     then fail closed — Channel Rack must use compose-owned session transport
     (#678), never a second invented owner.
+
+    ``resolve_selected_sample_path`` optionally reads the existing Screen-1
+    browser selection (no second selection store). Missing/invalid selection
+    fail-softs without mutating rack state (#808).
     """
     from PySide6.QtCore import QObject, Property, Signal, Slot
 
@@ -4307,7 +4341,20 @@ def _qml_channel_rack_bridge(controller):
             self._pattern_id = ""
             self._active_screen = "screen1"
             self._playing = False
+            self._has_selected_sample = False
             self._sync_from_controller()
+
+        def _resolved_selected_path(self) -> str | None:
+            if resolve_selected_sample_path is None:
+                return None
+            try:
+                path = resolve_selected_sample_path()
+            except Exception:
+                return None
+            if path is None:
+                return None
+            text = str(path).strip()
+            return text or None
 
         def _sync_from_controller(self) -> None:
             if controller is None:
@@ -4317,6 +4364,7 @@ def _qml_channel_rack_bridge(controller):
                 self._pattern_id = ""
                 self._active_screen = "screen1"
                 self._playing = False
+                self._has_selected_sample = False
                 return
             projection = controller.projection()
             self._groups = list(projection.get("groups") or [])
@@ -4325,6 +4373,7 @@ def _qml_channel_rack_bridge(controller):
             self._pattern_id = str(projection.get("pattern_id") or "")
             self._active_screen = controller.active_screen
             self._playing = bool(controller.is_playing)
+            self._has_selected_sample = self._resolved_selected_path() is not None
 
         def refresh(self) -> None:
             self._sync_from_controller()
@@ -4337,6 +4386,10 @@ def _qml_channel_rack_bridge(controller):
         @Property(bool, notify=state_changed)
         def playing(self) -> bool:
             return self._playing
+
+        @Property(bool, notify=state_changed)
+        def hasSelectedSample(self) -> bool:
+            return self._has_selected_sample
 
         @Property(int, notify=state_changed)
         def stepCount(self) -> int:
@@ -4380,6 +4433,24 @@ def _qml_channel_rack_bridge(controller):
             if controller is None:
                 return
             controller.add_user_channel()
+            self.refresh()
+
+        @Slot(str)
+        def assignSelectedSample(self, channel_id: str) -> None:
+            """Assign current Screen-1 browser selection to a user channel (#808)."""
+            if controller is None:
+                return
+            path = self._resolved_selected_path()
+            if path is None:
+                # Fail-soft: no valid selection → no musical mutation.
+                self.refresh()
+                return
+            try:
+                controller.assign_user_channel_sample(str(channel_id), path)
+            except (RuntimeError, TypeError, ValueError):
+                # Fail-soft at the QML intent boundary; Python core stays authoritative.
+                self.refresh()
+                return
             self.refresh()
 
         @Slot()
@@ -5447,7 +5518,22 @@ def _qml_engine(
         # never sees a 3-panel width set with a third handle visible.
         layout_model.syncFromInteraction()
 
-    channel_rack_bridge = _qml_channel_rack_bridge(channel_rack_controller)
+    channel_rack_bridge = _qml_channel_rack_bridge(
+        channel_rack_controller,
+        resolve_selected_sample_path=lambda: (
+            str(
+                adapter.view_model.browser_rows[
+                    adapter.view_model.selected_browser_index
+                ].source_row.path
+            )
+            if (
+                0
+                <= int(adapter.view_model.selected_browser_index)
+                < len(adapter.view_model.browser_rows)
+            )
+            else None
+        ),
+    )
     transport_bridge = _qml_transport_bridge(session_transport)
 
     def open_channel_rack() -> None:

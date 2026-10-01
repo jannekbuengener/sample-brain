@@ -41,6 +41,7 @@ REQUIRED_PATTERN_CORE_SYMBOLS = (
 
 REQUIRED_CHANNEL_RACK_SYMBOLS = (
     "add_user_channel",
+    "assign_user_channel_sample",
 )
 
 
@@ -283,3 +284,145 @@ def test_extensible_slice_exports_required_helpers():
     rack = _channel_rack()
     for name in REQUIRED_CHANNEL_RACK_SYMBOLS:
         _require(rack, name)
+
+
+# --- #808 assign sample to existing user channel -----------------------------
+
+
+def _triggers_for(triggers, channel_id: str):
+    return tuple(t for t in triggers if t.channel_id == channel_id)
+
+
+def test_assign_empty_user_channel_sets_path_and_seeds_default_on():
+    """empty → assigned: path set, opaque ID stable, DEFAULT_ON (#808)."""
+    rack = _channel_rack()
+    build = _require(rack, "build_channel_rack_state")
+    add = _require(rack, "add_user_channel")
+    assign = _require(rack, "assign_user_channel_sample")
+
+    seed = build(LiveKitState())
+    empty = add(seed, sample_path=None)
+    user = empty.channels[-1]
+    assert user.sample_path is None
+    assert _triggers_for(empty.pattern.triggers, user.channel_id) == ()
+
+    assigned = assign(empty, user.channel_id, "synthetic/user_assign.wav")
+    after = next(ch for ch in assigned.channels if ch.channel_id == user.channel_id)
+    assert after.channel_id == user.channel_id
+    assert after.sample_path == "synthetic/user_assign.wav"
+    assert after.live_kit_group is None
+    assert after.live_kit_slot is None
+    triggers = _triggers_for(assigned.pattern.triggers, user.channel_id)
+    assert len(triggers) == 16
+    assert [t.position for t in triggers] == [Fraction(i, 4) for i in range(16)]
+
+
+def test_assign_replacement_preserves_exact_user_step_toggles():
+    """assigned → replacement keeps exact user toggles (#808)."""
+    rack = _channel_rack()
+    build = _require(rack, "build_channel_rack_state")
+    add = _require(rack, "add_user_channel")
+    assign = _require(rack, "assign_user_channel_sample")
+    toggle = _require(rack, "toggle_step")
+
+    state = add(build(LiveKitState()), sample_path="synthetic/user_a.wav")
+    user_id = state.channels[-1].channel_id
+    state = toggle(state, user_id, 0)
+    state = toggle(state, user_id, 4)
+    state = toggle(state, user_id, 8)
+    expected = _triggers_for(state.pattern.triggers, user_id)
+    assert len(expected) == 13
+
+    replaced = assign(state, user_id, "synthetic/user_b.wav")
+    user = next(ch for ch in replaced.channels if ch.channel_id == user_id)
+    assert user.sample_path == "synthetic/user_b.wav"
+    assert _triggers_for(replaced.pattern.triggers, user_id) == expected
+
+
+def test_assign_keeps_user_taxonomy_without_live_kit_provenance():
+    rack = _channel_rack()
+    build = _require(rack, "build_channel_rack_state")
+    add = _require(rack, "add_user_channel")
+    assign = _require(rack, "assign_user_channel_sample")
+
+    state = add(build(LiveKitState()), sample_path=None)
+    user_id = state.channels[-1].channel_id
+    assigned = assign(state, user_id, "synthetic/user_tax.wav")
+    user = next(ch for ch in assigned.channels if ch.channel_id == user_id)
+    assert user.live_kit_group is None
+    assert user.live_kit_slot is None
+    assert user.channel_id.startswith("ch_user_")
+    assert user.channel_id not in CHANNEL_ID_BY_LIVE_KIT_SLOT.values()
+
+
+def test_assign_isolates_other_channels():
+    rack = _channel_rack()
+    build = _require(rack, "build_channel_rack_state")
+    add = _require(rack, "add_user_channel")
+    assign = _require(rack, "assign_user_channel_sample")
+    toggle = _require(rack, "toggle_step")
+    from src.workbench_controller import WorkbenchRow
+
+    kit = LiveKitState()
+    kit.assign(
+        "Kick + Bass",
+        "Kick",
+        WorkbenchRow(
+            display_name="Kick",
+            relative_path="kick.wav",
+            path="synthetic/kick.wav",
+            bpm=120.0,
+            key="C",
+            key_conf=0.9,
+            loudness=-12.0,
+            brightness=2000.0,
+            sample_class="one_shot",
+            pred_type="Kick",
+            status="ok",
+            details={},
+        ),
+    )
+    state = build(kit)
+    state = toggle(state, "ch_kick", 0)
+    kick_before = _triggers_for(state.pattern.triggers, "ch_kick")
+    kick_channel_before = next(ch for ch in state.channels if ch.channel_id == "ch_kick")
+
+    state = add(state, sample_path=None)
+    user_id = state.channels[-1].channel_id
+    assigned = assign(state, user_id, "synthetic/user_iso.wav")
+
+    kick_after = next(ch for ch in assigned.channels if ch.channel_id == "ch_kick")
+    assert kick_after == kick_channel_before
+    assert _triggers_for(assigned.pattern.triggers, "ch_kick") == kick_before
+
+
+def test_assign_unknown_channel_id_raises():
+    rack = _channel_rack()
+    build = _require(rack, "build_channel_rack_state")
+    assign = _require(rack, "assign_user_channel_sample")
+    state = build(LiveKitState())
+    with pytest.raises(ValueError, match="Unknown channel_id"):
+        assign(state, "ch_phantom", "synthetic/x.wav")
+
+
+def test_assign_empty_or_whitespace_path_raises():
+    rack = _channel_rack()
+    build = _require(rack, "build_channel_rack_state")
+    add = _require(rack, "add_user_channel")
+    assign = _require(rack, "assign_user_channel_sample")
+    state = add(build(LiveKitState()), sample_path=None)
+    user_id = state.channels[-1].channel_id
+    for bad in ("", "   ", "\t"):
+        with pytest.raises(ValueError, match="sample_path"):
+            assign(state, user_id, bad)
+
+
+def test_assign_rejects_live_kit_channel_target():
+    rack = _channel_rack()
+    build = _require(rack, "build_channel_rack_state")
+    assign = _require(rack, "assign_user_channel_sample")
+    state = build(LiveKitState())
+    with pytest.raises(ValueError, match="Live Kit"):
+        assign(state, "ch_kick", "synthetic/should_not_apply.wav")
+    kick = next(ch for ch in state.channels if ch.channel_id == "ch_kick")
+    assert kick.sample_path is None
