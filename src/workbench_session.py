@@ -230,7 +230,7 @@ def compose_workbench_session(
         on_release_to_screen1=session.release_screen1_audition,
     )
 
-    def _on_musical_mutation() -> None:
+    def _on_channel_rack_mutation() -> None:
         _autosave_musical_session(
             live_kit=live_kit,
             channel_rack=channel_rack,
@@ -238,8 +238,19 @@ def compose_workbench_session(
             env=env,
         )
 
-    live_kit.set_on_assignment_changed(_on_musical_mutation)
-    channel_rack.set_on_musical_state_changed(_on_musical_mutation)
+    def _on_live_kit_mutation() -> None:
+        # #817: heal existing rack against Live Kit before one coherent autosave.
+        # notify=False avoids nested rack→autosave doubling the Live Kit write.
+        channel_rack.reconcile_live_kit_state(notify=False)
+        _autosave_musical_session(
+            live_kit=live_kit,
+            channel_rack=channel_rack,
+            state_dir=state_dir,
+            env=env,
+        )
+
+    live_kit.set_on_assignment_changed(_on_live_kit_mutation)
+    channel_rack.set_on_musical_state_changed(_on_channel_rack_mutation)
     return session
 
 
