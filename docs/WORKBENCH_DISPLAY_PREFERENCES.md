@@ -2,6 +2,9 @@
 # Appearance / Theme selection is hosted here as a secondary affordance (#785),
 # but theme persistence remains owned by Theme Core (`workbench_theme.py`).
 
+Appearance / Theme selection is hosted here as a secondary affordance (#785),
+but theme persistence remains owned by Theme Core (`workbench_theme.py`).
+
 **Status:** ACTIVE_SUPPORTING (product contract under #691)  
 **Parent:** [#691](https://github.com/jannekbuengener/sample-brain/issues/691)  
 **Issue:** [#696](https://github.com/jannekbuengener/sample-brain/issues/696)  

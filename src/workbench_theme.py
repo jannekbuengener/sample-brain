@@ -2,7 +2,8 @@
 
 Preset-based dark appearance tokens with local custom-theme persistence.
 Derived tokens are computed from base accent/background/foreground only.
-QML mapping is a pure helper — this module does not edit QML sources.
+QML consumes mapped semantic colors through the Theme Authority bridge in
+``workbench_qml`` — this module remains the sole derivation/persistence owner.
 """
 
 from __future__ import annotations

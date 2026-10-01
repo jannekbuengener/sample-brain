@@ -624,6 +624,7 @@ def test_header_overflow_preferences_affordance_contract() -> None:
     assert f'objectName: "{PREFERENCES_OVERFLOW_OBJECT_NAME}"' in source
     assert f'objectName: "{PREFERENCES_POPOVER_OBJECT_NAME}"' in source
     for token in (
+        "Appearance",
         "Reset Layout",
         "Save Workspace Preset",
         "Set Preset as Startup",
@@ -632,6 +633,8 @@ def test_header_overflow_preferences_affordance_contract() -> None:
         "Density",
     ):
         assert token in source
+    assert 'objectName: "themePresetSelector"' in source
+    assert 'objectName: "themeCustomizeButton"' in source
     assert 'objectName: "settingsBar"' not in source
     assert 'objectName: "toolsPanel"' not in source
 

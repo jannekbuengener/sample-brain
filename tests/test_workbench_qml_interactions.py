@@ -841,17 +841,17 @@ def test_qml_harmonic_button_background_uses_accent_when_open_and_panel_alt_when
         background = toggle.property("background")
         assert background is not None
         closed_color = background.property("color").name()
-        assert closed_color == "#141516"
+        assert closed_color == "#1a1a1b"
 
         _click_item(app, window, toggle)
         _settle_qml_frame(app)
         assert window.property("interaction").property("harmonicMatchOpen") is True
-        assert background.property("color").name() == "#b1122b"
+        assert background.property("color").name() == "#8f0e24"
 
         _click_item(app, window, toggle)
         _settle_qml_frame(app)
         assert window.property("interaction").property("harmonicMatchOpen") is False
-        assert background.property("color").name() == "#141516"
+        assert background.property("color").name() == "#1a1a1b"
     finally:
         window.close()
         app.processEvents()
