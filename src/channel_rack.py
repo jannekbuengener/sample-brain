@@ -267,6 +267,78 @@ def add_user_channel(
     )
 
 
+def assign_user_channel_sample(
+    state: ChannelRackState,
+    channel_id: str,
+    sample_path: str,
+) -> ChannelRackState:
+    """Assign a library sample path to an existing user-added channel (#808).
+
+    Policy mirrors #806 DEFAULT_ON principles for a single user channel:
+
+    - empty → newly assigned: set path and seed DEFAULT_ON for this channel only
+    - assigned → replacement: replace path; keep that channel's triggers exactly
+    - Live Kit seed channels: rejected (no taxonomy pollution)
+    - empty / whitespace path: rejected
+    - unknown ``channel_id``: rejected
+
+    User channels keep ``live_kit_group`` / ``live_kit_slot`` as ``None``. Does
+    not call :func:`reconcile_live_kit_sample_assignments`.
+    """
+
+    if sample_path is None or not str(sample_path).strip():
+        raise ValueError("sample_path must be a non-empty sample reference")
+    path = str(sample_path).strip()
+
+    known = {channel.channel_id: channel for channel in state.channels}
+    if channel_id not in known:
+        raise ValueError(f"Unknown channel_id: {channel_id!r}")
+
+    channel = known[channel_id]
+    if channel.live_kit_group is not None or channel.live_kit_slot is not None:
+        raise ValueError(
+            f"Cannot assign sample to Live Kit channel: {channel_id!r}"
+        )
+
+    old_bearing = _sample_bearing(channel.sample_path)
+    if channel.sample_path == path:
+        return state
+
+    updated_channels = tuple(
+        Channel(
+            channel_id=existing.channel_id,
+            live_kit_group=existing.live_kit_group,
+            live_kit_slot=existing.live_kit_slot,
+            sample_path=path if existing.channel_id == channel_id else existing.sample_path,
+        )
+        if existing.channel_id == channel_id
+        else existing
+        for existing in state.channels
+    )
+
+    if not old_bearing:
+        # empty → assigned: strip orphans for this id, then seed DEFAULT_ON
+        other = tuple(
+            trigger
+            for trigger in state.pattern.triggers
+            if trigger.channel_id != channel_id
+        )
+        new_triggers = other + _full_step_triggers(channel_id, state.step_count)
+    else:
+        # assigned → replacement: keep exact trigger pattern
+        new_triggers = state.pattern.triggers
+
+    return ChannelRackState(
+        channels=updated_channels,
+        pattern=Pattern(
+            pattern_id=state.pattern.pattern_id,
+            length_quarter_notes=state.pattern.length_quarter_notes,
+            triggers=new_triggers,
+        ),
+        step_count=state.step_count,
+    )
+
+
 def toggle_step(
     state: ChannelRackState,
     channel_id: str,
@@ -465,6 +537,7 @@ __all__ = [
     "ChannelRackPlayHandle",
     "ChannelRackState",
     "add_user_channel",
+    "assign_user_channel_sample",
     "build_channel_rack_state",
     "play_channel_rack_once",
     "reconcile_live_kit_sample_assignments",
