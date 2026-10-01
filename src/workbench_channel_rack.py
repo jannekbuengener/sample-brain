@@ -18,10 +18,11 @@ from .channel_rack import (
     add_user_channel,
     build_channel_rack_state,
     play_channel_rack_once,
+    reconcile_live_kit_sample_assignments,
     toggle_step,
     warm_channel_rack_pcm,
 )
-from .pattern_core import Channel, Trigger
+from .pattern_core import Trigger
 from .sequencer_pcm import SequencerPcmProvider
 from .workbench_live_kit import LIVE_KIT_SLOT_MAPPING, LiveKitState
 
@@ -139,38 +140,14 @@ def _sync_live_kit_sample_paths(
     state: ChannelRackState,
     live_kit: LiveKitState,
 ) -> ChannelRackState:
-    """Refresh Live Kit seed sample paths without resetting pattern triggers."""
+    """Refresh Live Kit seed paths and heal DEFAULT_ON for late assignments.
 
-    updated: list[Channel] = []
-    changed = False
-    for channel in state.channels:
-        if channel.live_kit_group is None or channel.live_kit_slot is None:
-            updated.append(channel)
-            continue
-        assignment = live_kit.assignment_for(
-            channel.live_kit_group,
-            channel.live_kit_slot,
-        )
-        new_path = str(assignment.path) if assignment is not None else None
-        if new_path != channel.sample_path:
-            changed = True
-            updated.append(
-                Channel(
-                    channel_id=channel.channel_id,
-                    live_kit_group=channel.live_kit_group,
-                    live_kit_slot=channel.live_kit_slot,
-                    sample_path=new_path,
-                )
-            )
-        else:
-            updated.append(channel)
-    if not changed:
-        return state
-    return ChannelRackState(
-        channels=tuple(updated),
-        pattern=state.pattern,
-        step_count=state.step_count,
-    )
+    Delegates to :func:`reconcile_live_kit_sample_assignments` so empty→assigned
+    seeds DEFAULT_ON, replacements preserve user triggers, and clears strip
+    orphan/trigger state fail-closed (#806).
+    """
+
+    return reconcile_live_kit_sample_assignments(state, live_kit)
 
 
 class ChannelRackController:
