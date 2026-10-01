@@ -1,8 +1,12 @@
 # Brand asset slots
 
-Status: **ACTIVE** Screen-1 analysis/loading brand + motion runtime for #786
-(Python Core `#795` + QML visualization). Theme color authority remains #785 /
-`workbench_theme` — this layer does not invent a second palette.
+Status: **DONE_MERGED_CLOSED** for #786 (PR #799 / `93d868fe`, verified on
+post-Theme Authority `main` including #785 / `9a6929fa`).
+Screen-1 analysis/loading brand + motion runtime is on `main`
+(Python Core `#795` + QML visualization). Color tokens come only from
+`themeAuthority` / semantic `theme.*` (#785) — this layer does not invent a
+second palette. Implementer Visual Acceptance: `VISUAL_ACCEPT_PASS` (no
+pending Owner VA for this close).
 
 ## Superdesign project (canonical)
 
