@@ -472,7 +472,7 @@ def test_new_library_db_has_cue_columns(library_db: Path):
     assert "cue_updated_at" in columns
     assert "loop_source" in columns
     assert "attack_source" in columns
-    assert WORKBENCH_LIBRARY_SCHEMA_VERSION == 4
+    assert WORKBENCH_LIBRARY_SCHEMA_VERSION == 5
 
 
 def test_legacy_library_db_is_migrated_to_add_cue_columns(tmp_path: Path):

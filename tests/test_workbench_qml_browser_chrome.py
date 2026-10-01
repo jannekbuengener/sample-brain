@@ -18,7 +18,7 @@ import re
 from src.workbench_qml import QML_SOURCE
 
 BROWSER_ROW_DELEGATE_MARKER = "delegate: Rectangle { id: browserRow"
-BROWSER_ROW_DELEGATE_SPAN = 9000  # through compact row + bottom divider; stops before Live Kit
+BROWSER_ROW_DELEGATE_SPAN = 14000  # through compact row + Favorite + Add + bottom divider; stops before Live Kit
 SEARCH_MARKER = 'objectName: "browserSearch"'
 COLUMN_HEADER_MARKER = 'text: "SAMPLE NAME"'
 
@@ -38,8 +38,19 @@ _SHARED_BROWSER_COLUMN_ROLES = (
     "browserWaveformWidth",
     "browserWaveformMin",
     "browserMetaColumnWidth",
+    "browserFavoriteColumnWidth",
     "browserLengthColumnWidth",
     "browserAddColumnWidth",
+)
+
+# #767 default Browser scan order markers for row delegate.
+_BROWSER_ROW_ORDER_MARKERS = (
+    'objectName: "browserWaveformSurface"',
+    "text: modelData.name",
+    "text: modelData.bpm",
+    'objectName: "browserFavoriteButton"',
+    "text: modelData.key",
+    "text: modelData.duration",
 )
 
 
@@ -59,6 +70,15 @@ def _column_header_layout(source: str) -> str:
     start = source.rfind("RowLayout { Layout.fillWidth: true", 0, marker)
     assert start != -1, "Spalten-Header-RowLayout fehlt"
     return source[start:marker]
+
+
+def _full_browser_column_header(source: str) -> str:
+    """Header RowLayout through the trailing Add-column spacer (before ListView)."""
+    marker = source.index(COLUMN_HEADER_MARKER)
+    start = source.rfind("RowLayout { Layout.fillWidth: true", 0, marker)
+    assert start != -1, "Spalten-Header-RowLayout fehlt"
+    end = source.index("ListView { id: browser", marker)
+    return source[start:end]
 
 
 def test_browser_search_field_is_visually_integrated():
@@ -85,6 +105,7 @@ def test_browser_column_spec_is_shared_between_header_and_rows():
     for role in (
         "effectiveBrowserWaveformWidth",
         "effectiveBrowserMetaColumnWidth",
+        "effectiveBrowserFavoriteColumnWidth",
         "effectiveBrowserLengthColumnWidth",
         "effectiveBrowserAddColumnWidth",
     ):
@@ -164,6 +185,7 @@ def test_browser_shared_column_spec_uses_single_definition_each():
 def test_browser_intent_keyboard_and_virtualization_contracts_preserved():
     assert QML_SOURCE.count("previewRow(index)") == 1
     assert QML_SOURCE.count("addToKit(index)") == 1
+    assert QML_SOURCE.count("toggleFavorite(index)") == 1
     # stopPreview() gehört zwei Flächen: Browser-Escape UND Harmonic-Panel (vorbestehend).
     assert 'else if (event.key === Qt.Key_Escape) { window.interaction.stopPreview(); event.accepted = true }' in QML_SOURCE
     assert "Keys.onEscapePressed: window.interaction.stopPreview()" in QML_SOURCE
@@ -176,3 +198,81 @@ def test_browser_intent_keyboard_and_virtualization_contracts_preserved():
     assert "navigateBrowser(1)" in QML_SOURCE
     assert "navigateBrowser(-1)" in QML_SOURCE
     assert QML_SOURCE.count('objectName: "browserList"') == 1
+
+
+def _ordered_marker_positions(source: str, markers: tuple[str, ...]) -> list[int]:
+    positions: list[int] = []
+    cursor = 0
+    for marker in markers:
+        index = source.index(marker, cursor)
+        positions.append(index)
+        cursor = index + len(marker)
+    return positions
+
+
+def test_browser_default_column_order_matches_767_contract():
+    """Waveform → Sample Name → BPM → Favorite → Key → Length."""
+    header = _full_browser_column_header(QML_SOURCE)
+    # Header uses width placeholders then labels; verify label order + waveform slot first.
+    assert header.index("effectiveBrowserWaveformWidth") < header.index('text: "SAMPLE NAME"')
+    assert header.index('text: "SAMPLE NAME"') < header.index('text: "BPM"')
+    assert header.index('text: "BPM"') < header.index('text: "FAV"')
+    assert header.index('text: "FAV"') < header.index('text: "KEY"')
+    assert header.index('text: "KEY"') < header.index('text: "LENGTH"')
+
+    delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
+    positions = _ordered_marker_positions(delegate, _BROWSER_ROW_ORDER_MARKERS)
+    assert positions == sorted(positions)
+
+
+def test_browser_favorite_column_is_present_and_not_a_rating():
+    delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
+    assert 'objectName: "browserFavoriteButton"' in delegate
+    assert "modelData.favorite" in delegate
+    assert "toggleFavorite(index)" in delegate
+    # No 1–5 rating chrome.
+    assert "rating" not in delegate.lower()
+    assert "★★★★★" not in QML_SOURCE
+    assert _int_property(QML_SOURCE, "browserFavoriteColumnWidth") <= 32
+    assert _int_property(QML_SOURCE, "browserFavoriteColumnWidth") >= 20
+
+
+def test_browser_sample_name_is_flexible_and_meta_columns_align():
+    header = _full_browser_column_header(QML_SOURCE)
+    delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
+    assert 'text: "SAMPLE NAME"; color: theme.textSecondary; Layout.fillWidth: true' in header
+    assert "text: modelData.name; color: theme.textPrimary" in delegate
+    assert "Layout.fillWidth: true" in delegate
+    for role in (
+        "effectiveBrowserMetaColumnWidth",
+        "effectiveBrowserFavoriteColumnWidth",
+        "effectiveBrowserLengthColumnWidth",
+    ):
+        assert f"Layout.preferredWidth: browserPane.{role}" in header
+        assert f"Layout.preferredWidth: browserPane.{role}" in delegate
+
+
+def test_browser_sample_type_does_not_displace_default_column_order():
+    delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
+    type_pos = delegate.index("text: modelData.type")
+    # Type may remain secondary after Length, never between Name and Length primary order.
+    assert type_pos > delegate.index("text: modelData.duration")
+    assert type_pos > delegate.index('objectName: "browserFavoriteButton"')
+
+
+def test_browser_add_to_kit_remains_available_without_owning_scan_path():
+    delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
+    add_pos = delegate.index("window.interaction.addToKit(index)")
+    assert add_pos > delegate.index("text: modelData.duration")
+    assert '"+ Add to Kit"' in delegate
+    assert "effectiveBrowserAddColumnWidth" in delegate
+
+
+def test_browser_density_tokens_unchanged_by_767():
+    assert _int_property(QML_SOURCE, "densityRowHeight") == 30
+    assert _int_property(QML_SOURCE, "densityVerticalInset") == 4
+    assert _int_property(QML_SOURCE, "densityHorizontalInset") == 8
+    assert _int_property(QML_SOURCE, "densityWaveformHeight") == 22
+    assert _int_property(QML_SOURCE, "densityRowSpacing") == 8
+    assert _int_property(QML_SOURCE, "densityDividerHeight") == 1
+    assert _int_property(QML_SOURCE, "densityActionHitTarget") == 24

@@ -39,6 +39,7 @@ class WorkbenchSession:
     qml_interaction_adapter: Screen1QmlInteractionAdapter
     channel_rack: ChannelRackController
     tk_workbench: WorkbenchApp | None = None
+    measurement_session_id: str | None = None
 
 
 class _SessionAuditionPlayRow:
@@ -120,9 +121,20 @@ def compose_workbench_session(
         harmony_rows=(),
         live_kit_groups=presenter.groups,
     )
+    match_observer = None
+    measurement_session_id: str | None = None
+    try:
+        from .measurement.emit import make_match_query_finished_observer
+
+        match_observer, measurement_session_id = make_match_query_finished_observer()
+    except Exception:
+        match_observer = None
+        measurement_session_id = None
     adapter = Screen1QmlInteractionAdapter(
         view_model=view_model,
-        harmony_controller=HarmonicMatchLibraryController(),
+        harmony_controller=HarmonicMatchLibraryController(
+            on_query_finished=match_observer,
+        ),
         on_preview_requested=_SessionAuditionPlayRow(
             audition,
             library_db_path=library_db_path,
@@ -130,6 +142,7 @@ def compose_workbench_session(
         on_preview_stopped=audition.stop,
         on_preview_snapshot=audition.playback_snapshot,
         live_kit=presenter,
+        library_db_path=library_db_path,
     )
 
     channel_rack = ChannelRackController(live_kit=live_kit, transport=transport)
@@ -142,6 +155,7 @@ def compose_workbench_session(
         qml_interaction_adapter=adapter,
         channel_rack=channel_rack,
         tk_workbench=tk_workbench,
+        measurement_session_id=measurement_session_id,
     )
 
 

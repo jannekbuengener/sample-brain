@@ -28,7 +28,11 @@ from .workbench_harmony import (
 )
 from .workbench_live_kit import LiveKitPresentationState, LiveKitState
 from .workbench_live_kit_export import LiveKitExportResult, export_live_kit
-from .workbench_library import workbench_library_db_path
+from .workbench_library import (
+    list_favorite_sample_paths,
+    toggle_sample_favorite,
+    workbench_library_db_path,
+)
 from .workbench_library_navigation import LibraryNodeKind
 from .workbench_qml_analysis import AnalysisUiState, create_qt_analysis_coordinator
 from .workbench_qml_library import (
@@ -58,6 +62,7 @@ class QmlBrowserRow:
     key: str
     duration: str
     waveform_envelope: tuple[float, ...]
+    is_favorite: bool = False
 
 
 @dataclass(frozen=True)
@@ -154,6 +159,23 @@ def _duration(row: WorkbenchRow) -> str:
         return str(value)
 
 
+def _path_in_favorites(path: str, favorites: set[str] | frozenset[str]) -> bool:
+    if path in favorites:
+        return True
+    try:
+        resolved = str(Path(path).expanduser().resolve())
+    except OSError:
+        return False
+    return resolved in favorites
+
+
+def _favorite_path_set(*, db_path: Path | None) -> set[str]:
+    try:
+        return set(list_favorite_sample_paths(db_path=db_path))
+    except OSError:
+        return set()
+
+
 def _waveform_envelope(row: WorkbenchRow) -> tuple[float, ...]:
     raw = _row_details(row).get("waveform_envelope")
     if raw is None or isinstance(raw, (str, bytes)):
@@ -164,7 +186,7 @@ def _waveform_envelope(row: WorkbenchRow) -> tuple[float, ...]:
         return ()
 
 
-def _qml_row(row: WorkbenchRow) -> QmlBrowserRow:
+def _qml_row(row: WorkbenchRow, *, is_favorite: bool = False) -> QmlBrowserRow:
     return QmlBrowserRow(
         source_row=row,
         display_name=row.display_name,
@@ -173,6 +195,7 @@ def _qml_row(row: WorkbenchRow) -> QmlBrowserRow:
         key=row.key or "—",
         duration=_duration(row),
         waveform_envelope=_waveform_envelope(row),
+        is_favorite=bool(is_favorite),
     )
 
 
@@ -295,14 +318,42 @@ class Screen1QmlViewModel:
         selected_index: int,
         browser_context: str,
         error: str | None,
+        favorite_paths: set[str] | frozenset[str] | None = None,
     ) -> None:
-        self._browser_rows_all = tuple(_qml_row(row) for row in rows)
+        favorites = favorite_paths or set()
+        self._browser_rows_all = tuple(
+            _qml_row(
+                row,
+                is_favorite=_path_in_favorites(str(row.path), favorites),
+            )
+            for row in rows
+        )
         preferred_path: str | None = None
         if 0 <= selected_index < len(self._browser_rows_all):
             preferred_path = str(self._browser_rows_all[selected_index].source_row.path)
         self.browser_context = browser_context
         self.browser_error = error
         self._republish_browser_rows(preferred_path=preferred_path)
+
+    def set_browser_favorite(self, path: str, *, is_favorite: bool) -> bool:
+        """Project domain favorite state onto matching Browser rows."""
+        changed = False
+        updated_all: list[QmlBrowserRow] = []
+        for row in self._browser_rows_all:
+            if str(row.source_row.path) == path and row.is_favorite != is_favorite:
+                row = replace(row, is_favorite=bool(is_favorite))
+                changed = True
+            updated_all.append(row)
+        if not changed:
+            return False
+        preferred_path: str | None = None
+        if 0 <= self.selected_browser_index < len(self.browser_rows):
+            preferred_path = str(
+                self.browser_rows[self.selected_browser_index].source_row.path
+            )
+        self._browser_rows_all = tuple(updated_all)
+        self._republish_browser_rows(preferred_path=preferred_path)
+        return True
 
     def set_browser_search_query(self, query: str) -> None:
         """Project text search into the visible Sample Browser (#758).
@@ -414,6 +465,7 @@ class Screen1QmlViewModel:
                     "waveform": list(row.waveform_envelope),
                     "path": str(row.source_row.path),
                     "relativePath": row.source_row.relative_path,
+                    "favorite": bool(row.is_favorite),
                 }
                 for row in self.browser_rows
             ],
@@ -461,11 +513,13 @@ def _sync_runtime_browser_state(
 ) -> None:
     """Project the authoritative runtime browser state into the QML adapter."""
     state = runtime_composition.browser_state
+    favorites = _favorite_path_set(db_path=adapter.library_db_path)
     view_model.set_browser_state(
         rows=state.rows,
         selected_index=state.selected_index,
         browser_context=state.browser_context,
         error=state.error,
+        favorite_paths=favorites,
     )
     view_model.set_workspace_materialization(
         has_active_source=runtime_composition.has_active_source,
@@ -655,6 +709,7 @@ class Screen1QmlInteractionAdapter:
         on_preview_snapshot: Callable[[], object] | None = None,
         on_add_to_kit_requested: Callable[[WorkbenchRow], object] | None = None,
         live_kit: LiveKitPresenter | None = None,
+        library_db_path: Path | None = None,
     ) -> None:
         self.view_model = view_model
         self.harmony_controller = harmony_controller
@@ -667,6 +722,7 @@ class Screen1QmlInteractionAdapter:
         self._on_preview_snapshot = on_preview_snapshot
         self._on_add_to_kit_requested = on_add_to_kit_requested
         self._live_kit = live_kit
+        self._library_db_path = library_db_path
         self._pending_live_kit_row: WorkbenchRow | None = None
         self._preview_active = False
         self._auditioning_live_kit_slot: tuple[str, str] | None = None
@@ -909,6 +965,25 @@ class Screen1QmlInteractionAdapter:
         self.view_model.auditioning_live_kit_slot = self._auditioning_live_kit_slot
         self.preview_playback_snapshot()
         return True
+
+    @property
+    def library_db_path(self) -> Path | None:
+        return self._library_db_path
+
+    def toggle_favorite(self, index: int) -> bool:
+        """Toggle #766 Favorite persistence and project the resulting flag."""
+        row = self.view_model.browser_rows[index].source_row
+        path = str(row.path)
+        result = toggle_sample_favorite(path, db_path=self._library_db_path)
+        self.view_model.set_browser_favorite(path, is_favorite=result)
+        # Keep resolved-path projection coherent when row.path is unresolved.
+        try:
+            resolved = str(Path(path).expanduser().resolve())
+        except OSError:
+            resolved = path
+        if resolved != path:
+            self.view_model.set_browser_favorite(resolved, is_favorite=result)
+        return result
 
     def request_add_to_kit(self, index: int) -> WorkbenchRow:
         """Emit an Add-to-Kit intent without assigning the row.
@@ -1398,6 +1473,7 @@ ApplicationWindow {
     property int browserWaveformWidth: 180
     property int browserWaveformMin: 140
     property int browserMetaColumnWidth: 48
+    property int browserFavoriteColumnWidth: 28
     property int browserLengthColumnWidth: 62
     property int browserAddColumnWidth: 96
     property int harmonicWaveformWidth: 72
@@ -1601,20 +1677,282 @@ ApplicationWindow {
 
         Rectangle { id: libraryPane; objectName: "libraryPane"; width: layoutModel.libraryWidth; height: parent.height; visible: width > 0; color: theme.surfacePanel; border.color: theme.borderSubtle
             ColumnLayout { anchors.fill: parent; anchors.margins: 16
-                RowLayout { Layout.fillWidth: true
+                RowLayout { id: libraryHeaderRow; Layout.fillWidth: true
                     Label { text: "LIBRARY"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
                     Button { text: "Add Source"; onClicked: addSourceDialog.open() }
                     Button { visible: libraryInteraction.canRemoveSelectedSource; text: "Remove"; onClicked: libraryInteraction.prepareRemoveSource() }
                 }
+                RowLayout {
+                    id: libraryScopeBar
+                    objectName: "libraryScopeBar"
+                    Layout.fillWidth: true
+                    spacing: 6
+                    property string mode: "sources"
+                    readonly property int controlSize: 28
+                    readonly property int iconPad: 6
+
+                    function scopeFill(active, hovered) {
+                        if (active)
+                            return theme.selectionSurface
+                        if (hovered)
+                            return theme.surfaceElevated
+                        return "transparent"
+                    }
+                    function scopeStroke(active) {
+                        return active ? theme.selectionBorder : "transparent"
+                    }
+                    function scopeInk(active) {
+                        return active ? theme.actionActive : theme.textSecondary
+                    }
+
+                    ToolButton {
+                        id: sourcesScopeButton
+                        objectName: "librarySourcesScopeButton"
+                        text: ""
+                        flat: true
+                        checkable: true
+                        checked: libraryScopeBar.mode === "sources"
+                        Layout.preferredWidth: libraryScopeBar.controlSize
+                        Layout.preferredHeight: libraryScopeBar.controlSize
+                        onClicked: libraryScopeBar.mode = "sources"
+                        Accessible.name: "Sample Sources"
+                        background: Rectangle {
+                            radius: 4
+                            color: libraryScopeBar.scopeFill(sourcesScopeButton.checked, sourcesScopeButton.hovered)
+                            border.width: sourcesScopeButton.checked ? 1 : 0
+                            border.color: libraryScopeBar.scopeStroke(sourcesScopeButton.checked)
+                        }
+                        contentItem: Item {
+                            anchors.fill: parent
+                            Canvas {
+                                anchors.fill: parent
+                                anchors.margins: libraryScopeBar.iconPad
+                                onPaint: {
+                                    var ctx = getContext("2d")
+                                    ctx.reset()
+                                    ctx.strokeStyle = libraryScopeBar.scopeInk(sourcesScopeButton.checked)
+                                    ctx.lineWidth = 1.5
+                                    ctx.strokeRect(1, 4, width - 2, height - 6)
+                                    ctx.beginPath()
+                                    ctx.moveTo(1, 8)
+                                    ctx.lineTo(width - 1, 8)
+                                    ctx.stroke()
+                                }
+                                Component.onCompleted: requestPaint()
+                                Connections {
+                                    target: sourcesScopeButton
+                                    function onCheckedChanged() { parent.requestPaint() }
+                                    function onHoveredChanged() { parent.requestPaint() }
+                                }
+                            }
+                        }
+                    }
+                    ToolButton {
+                        id: allSamplesScopeButton
+                        objectName: "libraryAllSamplesScopeButton"
+                        text: ""
+                        flat: true
+                        checkable: true
+                        checked: libraryScopeBar.mode === "all"
+                        Layout.preferredWidth: libraryScopeBar.controlSize
+                        Layout.preferredHeight: libraryScopeBar.controlSize
+                        onClicked: {
+                            libraryScopeBar.mode = "all"
+                            libraryInteraction.selectLibraryNode("scope:all-library")
+                        }
+                        Accessible.name: "All Samples"
+                        background: Rectangle {
+                            radius: 4
+                            color: libraryScopeBar.scopeFill(allSamplesScopeButton.checked, allSamplesScopeButton.hovered)
+                            border.width: allSamplesScopeButton.checked ? 1 : 0
+                            border.color: libraryScopeBar.scopeStroke(allSamplesScopeButton.checked)
+                        }
+                        contentItem: Item {
+                            anchors.fill: parent
+                            Canvas {
+                                anchors.fill: parent
+                                anchors.margins: libraryScopeBar.iconPad
+                                onPaint: {
+                                    var ctx = getContext("2d")
+                                    ctx.reset()
+                                    ctx.strokeStyle = libraryScopeBar.scopeInk(allSamplesScopeButton.checked)
+                                    ctx.lineWidth = 1.5
+                                    var y1 = height * 0.25
+                                    var y2 = height * 0.5
+                                    var y3 = height * 0.75
+                                    ctx.beginPath(); ctx.moveTo(0, y1); ctx.lineTo(width, y1); ctx.stroke()
+                                    ctx.beginPath(); ctx.moveTo(0, y2); ctx.lineTo(width, y2); ctx.stroke()
+                                    ctx.beginPath(); ctx.moveTo(0, y3); ctx.lineTo(width, y3); ctx.stroke()
+                                }
+                                Component.onCompleted: requestPaint()
+                                Connections {
+                                    target: allSamplesScopeButton
+                                    function onCheckedChanged() { parent.requestPaint() }
+                                    function onHoveredChanged() { parent.requestPaint() }
+                                }
+                            }
+                        }
+                    }
+                    ToolButton {
+                        id: catalogScopeButton
+                        objectName: "libraryCatalogScopeButton"
+                        text: ""
+                        flat: true
+                        checkable: true
+                        checked: libraryScopeBar.mode === "catalog"
+                        Layout.preferredWidth: libraryScopeBar.controlSize
+                        Layout.preferredHeight: libraryScopeBar.controlSize
+                        onClicked: {
+                            libraryScopeBar.mode = "catalog"
+                            libraryInteraction.selectLibraryNode("scope:catalog-readonly")
+                        }
+                        Accessible.name: "Catalog"
+                        background: Rectangle {
+                            radius: 4
+                            color: libraryScopeBar.scopeFill(catalogScopeButton.checked, catalogScopeButton.hovered)
+                            border.width: catalogScopeButton.checked ? 1 : 0
+                            border.color: libraryScopeBar.scopeStroke(catalogScopeButton.checked)
+                        }
+                        contentItem: Item {
+                            anchors.fill: parent
+                            Canvas {
+                                anchors.fill: parent
+                                anchors.margins: libraryScopeBar.iconPad
+                                onPaint: {
+                                    var ctx = getContext("2d")
+                                    ctx.reset()
+                                    ctx.strokeStyle = libraryScopeBar.scopeInk(catalogScopeButton.checked)
+                                    ctx.fillStyle = libraryScopeBar.scopeInk(catalogScopeButton.checked)
+                                    ctx.lineWidth = 1.5
+                                    var cx = width / 2
+                                    var cy = height / 2
+                                    var r = Math.min(width, height) / 2 - 0.5
+                                    ctx.beginPath()
+                                    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+                                    ctx.stroke()
+                                    ctx.beginPath()
+                                    ctx.arc(cx, cy, 1.5, 0, Math.PI * 2)
+                                    ctx.fill()
+                                }
+                                Component.onCompleted: requestPaint()
+                                Connections {
+                                    target: catalogScopeButton
+                                    function onCheckedChanged() { parent.requestPaint() }
+                                    function onHoveredChanged() { parent.requestPaint() }
+                                }
+                            }
+                        }
+                    }
+                    ToolButton {
+                        id: collectionsScopeButton
+                        objectName: "libraryCollectionsScopeButton"
+                        text: ""
+                        flat: true
+                        checkable: true
+                        checked: libraryScopeBar.mode === "collections"
+                        Layout.preferredWidth: libraryScopeBar.controlSize
+                        Layout.preferredHeight: libraryScopeBar.controlSize
+                        onClicked: libraryScopeBar.mode = "collections"
+                        Accessible.name: "Collections"
+                        background: Rectangle {
+                            radius: 4
+                            color: libraryScopeBar.scopeFill(collectionsScopeButton.checked, collectionsScopeButton.hovered)
+                            border.width: collectionsScopeButton.checked ? 1 : 0
+                            border.color: libraryScopeBar.scopeStroke(collectionsScopeButton.checked)
+                        }
+                        contentItem: Item {
+                            anchors.fill: parent
+                            Canvas {
+                                anchors.fill: parent
+                                anchors.margins: libraryScopeBar.iconPad
+                                onPaint: {
+                                    var ctx = getContext("2d")
+                                    ctx.reset()
+                                    ctx.strokeStyle = libraryScopeBar.scopeInk(collectionsScopeButton.checked)
+                                    ctx.lineWidth = 1.5
+                                    ctx.strokeRect(2, 1, width - 6, height - 6)
+                                    ctx.strokeRect(5, 4, width - 6, height - 6)
+                                }
+                                Component.onCompleted: requestPaint()
+                                Connections {
+                                    target: collectionsScopeButton
+                                    function onCheckedChanged() { parent.requestPaint() }
+                                    function onHoveredChanged() { parent.requestPaint() }
+                                }
+                            }
+                        }
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+                Item {
+                    id: libraryContentHost
+                    objectName: "libraryContentHost"
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                ListView {
+                    id: collectionList
+                    objectName: "libraryCollectionList"
+                    visible: libraryScopeBar.mode === "collections"
+                    anchors.fill: parent
+                    clip: true
+                    focus: visible
+                    activeFocusOnTab: visible
+                    spacing: 2
+                    model: libraryInteraction.collectionEntries
+                    delegate: Item {
+                        id: collectionRow
+                        width: collectionList.width
+                        height: 30
+                        property bool rowSelected: modelData.selected
+                        property bool rowHovered: collectionHover.hovered
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 4
+                            color: collectionRow.rowSelected
+                                   ? theme.selectionSurface
+                                   : (collectionRow.rowHovered ? theme.surfaceElevated : "transparent")
+                            border.width: collectionRow.rowSelected ? 1 : 0
+                            border.color: collectionRow.rowSelected ? theme.selectionBorder : "transparent"
+                        }
+                        Label {
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.left: parent.left
+                            anchors.leftMargin: 8
+                            anchors.right: parent.right
+                            anchors.rightMargin: 8
+                            text: modelData.label
+                            color: collectionRow.rowSelected ? theme.textPrimary : theme.textSecondary
+                            font.pixelSize: 12
+                            elide: Text.ElideRight
+                        }
+                        HoverHandler { id: collectionHover }
+                        TapHandler {
+                            onTapped: {
+                                collectionList.forceActiveFocus()
+                                libraryInteraction.selectLibraryNode(modelData.nodeId)
+                            }
+                        }
+                        Accessible.name: modelData.label
+                        Accessible.role: Accessible.ListItem
+                    }
+                    Label {
+                        anchors.centerIn: parent
+                        visible: collectionList.count === 0
+                        text: "No collections"
+                        color: theme.textSecondary
+                        font.pixelSize: 11
+                    }
+                }
                 TreeView {
                     id: libraryTree
                     objectName: "libraryTree"
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    visible: libraryScopeBar.mode === "sources"
+                    enabled: libraryScopeBar.mode === "sources"
+                    anchors.fill: parent
                     model: libraryTreeModel
                     clip: true
-                    focus: true
-                    activeFocusOnTab: true
+                    focus: libraryScopeBar.mode === "sources"
+                    activeFocusOnTab: libraryScopeBar.mode === "sources"
                     boundsBehavior: Flickable.StopAtBounds
                     delegate: TreeViewDelegate {
                         id: libraryDelegate
@@ -1631,9 +1969,8 @@ ApplicationWindow {
                                 onTapped: {
                                     if (model.error) {
                                         libraryInteraction.retryLibraryNode(model.parentNodeId)
-                                    } else if (model.kind === "add_source" && model.nodeId === "action:add-source") {
-                                        addSourceDialog.open()
                                     } else if (model.selectable) {
+                                        libraryScopeBar.mode = "sources"
                                         libraryTree.forceActiveFocus()
                                         libraryInteraction.selectLibraryNode(model.nodeId)
                                     }
@@ -1667,6 +2004,7 @@ ApplicationWindow {
                         }
                     }
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                }
                 }
             }
         }
@@ -1911,6 +2249,7 @@ ApplicationWindow {
             property bool browserNarrowColumns: width < 700
             property int effectiveBrowserWaveformWidth: browserNarrowColumns ? window.browserWaveformMin : window.browserWaveformWidth
             property int effectiveBrowserMetaColumnWidth: browserNarrowColumns ? 40 : window.browserMetaColumnWidth
+            property int effectiveBrowserFavoriteColumnWidth: browserNarrowColumns ? 24 : window.browserFavoriteColumnWidth
             property int effectiveBrowserLengthColumnWidth: browserNarrowColumns ? 52 : window.browserLengthColumnWidth
             property int effectiveBrowserAddColumnWidth: browserNarrowColumns ? 56 : window.browserAddColumnWidth
             ColumnLayout { anchors.fill: parent; anchors.margins: 18; spacing: 10
@@ -1987,6 +2326,7 @@ ApplicationWindow {
                     Item { Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth; Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth }
                     Label { text: "SAMPLE NAME"; color: theme.textSecondary; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; font.pixelSize: window.textCaption; font.bold: true }
                     Label { text: "BPM"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
+                    Label { text: "FAV"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserFavoriteColumnWidth; horizontalAlignment: Text.AlignHCenter; font.pixelSize: window.textCaption; font.bold: true }
                     Label { text: "KEY"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
                     Label { text: "LENGTH"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
                     Item { Layout.preferredWidth: browserPane.effectiveBrowserAddColumnWidth }
@@ -2061,10 +2401,32 @@ ApplicationWindow {
                                 MouseArea { anchors.fill: parent; z: 2; onClicked: { browser.forceActiveFocus(); window.interaction.previewRow(index) } }
                             }
                             Label { text: modelData.name; color: theme.textPrimary; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; verticalAlignment: Text.AlignVCenter }
-                            Label { visible: !browserPane.browserNarrowColumns; text: modelData.type; color: theme.textSecondary; font.pixelSize: window.textCaption; elide: Text.ElideRight; Layout.preferredWidth: 72; Layout.maximumWidth: 88; verticalAlignment: Text.AlignVCenter }
                             Label { text: modelData.bpm; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
+                            Item {
+                                id: favoriteCell
+                                objectName: "browserFavoriteButton"
+                                Layout.preferredWidth: browserPane.effectiveBrowserFavoriteColumnWidth
+                                Layout.preferredHeight: Math.min(window.densityActionHitTarget, window.densityRowHeight - 2 * window.densityVerticalInset)
+                                Layout.maximumHeight: window.densityRowHeight - 2 * window.densityVerticalInset
+                                Label {
+                                    anchors.fill: parent
+                                    text: modelData.favorite ? "★" : "☆"
+                                    color: modelData.favorite ? theme.actionActive : theme.textSecondary
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    font.pixelSize: window.textMeta
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: {
+                                        browser.forceActiveFocus()
+                                        window.interaction.toggleFavorite(index)
+                                    }
+                                }
+                            }
                             Label { text: modelData.key; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
                             Label { text: modelData.duration; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
+                            Label { visible: !browserPane.browserNarrowColumns; text: modelData.type; color: theme.textSecondary; font.pixelSize: window.textCaption; elide: Text.ElideRight; Layout.preferredWidth: 72; Layout.maximumWidth: 88; verticalAlignment: Text.AlignVCenter }
                             Rectangle {
                                 id: addButton
                                 Layout.preferredWidth: browserPane.effectiveBrowserAddColumnWidth
@@ -2859,6 +3221,13 @@ def _qml_interaction_bridge(
             self._refresh()
 
         @Slot(int)
+        def toggleFavorite(self, index: int) -> None:
+            adapter.toggle_favorite(index)
+            if on_browser_rows_changed is not None:
+                on_browser_rows_changed()
+            self._refresh()
+
+        @Slot(int)
         def selectHarmonyRow(self, index: int) -> None:
             adapter.select_harmonic_match(index)
             self._refresh()
@@ -3154,6 +3523,20 @@ def _qml_library_interaction_bridge(
         @Property(int, notify=state_changed)
         def removalCachedSampleCount(self) -> int:
             return self._removal_cached_sample_count
+
+        @Property("QVariantList", notify=state_changed)
+        def collectionEntries(self) -> list[dict[str, object]]:
+            state = library_model.state
+            state.fetch_children("container:collections")
+            return [
+                {
+                    "nodeId": node.node_id,
+                    "label": node.label,
+                    "selected": state.selected_node_id == node.node_id,
+                }
+                for node in state.visible_children("container:collections")
+                if node.kind is LibraryNodeKind.COLLECTION
+            ]
 
         @Slot(str)
         def selectLibraryNode(self, node_id: str) -> None:
@@ -3767,6 +4150,9 @@ def apply_clean_start_launch(
                     selected_index=-1,
                     browser_context=state.browser_context,
                     error=state.error,
+                    favorite_paths=_favorite_path_set(
+                        db_path=getattr(runtime_composition, "library_db_path", None)
+                    ),
                 )
                 view_model.set_workspace_materialization(
                     has_active_source=True,

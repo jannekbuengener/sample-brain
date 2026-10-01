@@ -150,6 +150,22 @@ Evidence stays **outside** the repository. Synthetic fixture paths only. Owner
 Visual Acceptance remains separate from agent self-attestation. Capture helper:
 `run_qml_visual_acceptance_744` in `src/workbench_qml_spike.py`.
 
+## Brand identity references
+
+Byte-identische Owner Brand-Assets (Reference only in this slice — no header,
+scope-icon, splash-runtime, or packaging wiring):
+
+| Role | Repo path | SHA-256 |
+|------|-----------|---------|
+| Primary (reduced brain signet) | `docs/assets/portfolio/references/brand/sample_brain_logo_primary.png` | `6e8ba304d216e8f1ba0e819603388dc37ff18491fe1a3e22b985513258882605` |
+| Splash / Hero typography | `docs/assets/portfolio/references/brand/sample_brain_splash_typography.png` | `eb130874c65ce8c1e36500b56e3cb1328318d6ac439fd13305547949994a83f6` |
+
+- Primary: matte black organic form with controlled functional red glow.
+- Splash: expressive hero/loading reference; embedded SAMPLE typography is part
+  of the illustration (motion of that type is a later slice).
+- Brand Brain is not a Library scope icon. Do not recolor, resize, compress, or
+  re-export these files when updating the reference tree.
+
 ## Screen-1 canonical background reference
 
 Kanonische visuelle Referenz (Reference = Runtime-Asset, eine Datei):

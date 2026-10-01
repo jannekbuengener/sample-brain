@@ -87,6 +87,8 @@ _COMMAND_EXAMPLES: dict[tuple[str, ...], list[str]] = {
     ("measurement", "report"): [
         "sample-brain measurement report",
         "sample-brain measurement report --json",
+        "sample-brain measurement report --event match.query_finished",
+        "sample-brain measurement report --event match.query_finished --json",
     ],
     ("pack-import",): [
         "sample-brain pack-import ./performance-pack",
@@ -959,11 +961,19 @@ def main():
     )
     p_measurement_report = measurement_sub.add_parser(
         "report",
-        help="Aggregate local pipeline.stage_finished measurement events",
+        help="Aggregate local measurement events (pipeline.stage_finished by default)",
         **_agent_parser_kwargs(
             "sample-brain measurement report",
             "sample-brain measurement report --json",
+            "sample-brain measurement report --event match.query_finished",
+            "sample-brain measurement report --event match.query_finished --json",
         ),
+    )
+    p_measurement_report.add_argument(
+        "--event",
+        choices=("pipeline.stage_finished", "match.query_finished"),
+        default="pipeline.stage_finished",
+        help="Event name to aggregate (default: pipeline.stage_finished).",
     )
     p_measurement_report.add_argument(
         "--json",
@@ -1581,24 +1591,42 @@ def main():
             from .measurement.config import resolve_measurement_db_path
             from .measurement.reader import ReadStatus
             from .measurement.report import (
+                build_match_query_finished_report,
                 build_stage_finished_report,
+                format_match_report_text,
                 format_report_text,
+                match_report_to_dict,
                 report_to_dict,
             )
 
             db_path = resolve_measurement_db_path(env=dict(os.environ))
-            report = build_stage_finished_report(db_path)
-            if args.json:
-                print(
-                    json.dumps(
-                        report_to_dict(report),
-                        indent=2,
-                        sort_keys=True,
-                        allow_nan=False,
+            event_name = getattr(args, "event", "pipeline.stage_finished")
+            if event_name == "match.query_finished":
+                report = build_match_query_finished_report(db_path)
+                if args.json:
+                    print(
+                        json.dumps(
+                            match_report_to_dict(report),
+                            indent=2,
+                            sort_keys=True,
+                            allow_nan=False,
+                        )
                     )
-                )
+                else:
+                    print(format_match_report_text(report), end="")
             else:
-                print(format_report_text(report), end="")
+                report = build_stage_finished_report(db_path)
+                if args.json:
+                    print(
+                        json.dumps(
+                            report_to_dict(report),
+                            indent=2,
+                            sort_keys=True,
+                            allow_nan=False,
+                        )
+                    )
+                else:
+                    print(format_report_text(report), end="")
             if report.status is ReadStatus.ERROR:
                 sys.exit(1)
             return

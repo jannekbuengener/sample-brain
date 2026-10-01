@@ -9,6 +9,7 @@ internal agent- and process docs are clearly separated.
 |---|---|
 | [Portfolio Case Study](CASE_STUDY.md) | Full product story: problem, role, decisions, evidence |
 | [Screen-1 Visual Acceptance](WORKBENCH_VISUAL_ACCEPTANCE.md) | How runtime UI evidence is captured from a verified build |
+| [Screen-1 UI Acceptance](SCREEN1_UI_ACCEPTANCE.md) | Local Windows desktop smoke/acceptance workflow for Screen 1 |
 | [Screen-1 Clean Start](WORKBENCH_CLEAN_START.md) | Neutral launch, source-driven disclosure, startup preset hook |
 | [Screen-1 Elastic Layout](WORKBENCH_ELASTIC_LAYOUT.md) | Coupled weighted panel ratios, solver + QML projection (#694) |
 | [README](../README.md) | Landing page, feature status matrix, quickstart |

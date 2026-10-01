@@ -21,6 +21,7 @@ class ReadStatus(str, Enum):
 
 
 TARGET_EVENT_NAME = "pipeline.stage_finished"
+MATCH_QUERY_FINISHED_EVENT_NAME = "match.query_finished"
 
 
 @dataclass(frozen=True)
@@ -69,7 +70,9 @@ class MeasurementReader:
         uri = f"file:{quote(str(self.db_path.resolve()).replace(chr(92), '/'))}?mode=ro"
         return sqlite3.connect(uri, uri=True)
 
-    def iter_stage_finished(self) -> tuple[list[MeasurementEvent], ReadCounters, ReadStatus]:
+    def iter_events(
+        self, event_name: str
+    ) -> tuple[list[MeasurementEvent], ReadCounters, ReadStatus]:
         if not self.db_path.is_file():
             return [], ReadCounters(), ReadStatus.MISSING_DB
         try:
@@ -94,9 +97,9 @@ class MeasurementReader:
         rows_seen = 0
         invalid = 0
         skipped_unknown = 0
-        for event_name, payload_json in rows:
+        for row_event_name, payload_json in rows:
             rows_seen += 1
-            if event_name != TARGET_EVENT_NAME:
+            if row_event_name != event_name:
                 skipped_unknown += 1
                 continue
             try:
@@ -122,3 +125,11 @@ class MeasurementReader:
         if not events:
             return [], counters, ReadStatus.NO_DATA
         return events, counters, ReadStatus.OK
+
+    def iter_stage_finished(self) -> tuple[list[MeasurementEvent], ReadCounters, ReadStatus]:
+        return self.iter_events(TARGET_EVENT_NAME)
+
+    def iter_match_query_finished(
+        self,
+    ) -> tuple[list[MeasurementEvent], ReadCounters, ReadStatus]:
+        return self.iter_events(MATCH_QUERY_FINISHED_EVENT_NAME)
