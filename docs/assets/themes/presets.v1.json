@@ -1,0 +1,158 @@
+{
+  "schema": "sample_brain.theme_presets",
+  "version": 1,
+  "status": "design_canon_only",
+  "notes": [
+    "Base tokens accent/background/foreground are the sole source of truth.",
+    "Derived tokens are computed and must not be edited independently.",
+    "Not a QML runtime contract. Product implementation is out of scope for this slice.",
+    "Issues #785/#786 remain open."
+  ],
+  "derivation": {
+    "textPrimary": "foreground",
+    "textSecondary": "mix(foreground, background, 0.45)",
+    "surface": "mix(background, foreground, 0.045)",
+    "surfaceRaised": "mix(background, foreground, 0.09)",
+    "divider": "mix(background, foreground, 0.16)",
+    "hover": "mix(background, foreground, 0.11)",
+    "selected": "mix(background, accent, 0.22)",
+    "focusRing": "accent"
+  },
+  "presets": {
+    "Blood": {
+      "role": "primary_candidate",
+      "base": {
+        "accent": "#b1122b",
+        "background": "#050506",
+        "foreground": "#eceef1"
+      },
+      "derived": {
+        "textPrimary": "#eceef1",
+        "textSecondary": "#848587",
+        "surface": "#0f0f11",
+        "surfaceRaised": "#1a1a1b",
+        "divider": "#2a2a2c",
+        "hover": "#1e1f20",
+        "selected": "#2b080e",
+        "focusRing": "#b1122b"
+      },
+      "derived_from": "base_only",
+      "blood_variants": {
+        "A": {
+          "label": "deeper blood",
+          "base": {
+            "accent": "#8f0e24",
+            "background": "#050506",
+            "foreground": "#eceef1"
+          },
+          "derived": {
+            "textPrimary": "#eceef1",
+            "textSecondary": "#848587",
+            "surface": "#0f0f11",
+            "surfaceRaised": "#1a1a1b",
+            "divider": "#2a2a2c",
+            "hover": "#1e1f20",
+            "selected": "#23070d",
+            "focusRing": "#8f0e24"
+          },
+          "derived_from": "base_only"
+        },
+        "B": {
+          "label": "brighter crimson",
+          "base": {
+            "accent": "#d4143a",
+            "background": "#050506",
+            "foreground": "#eceef1"
+          },
+          "derived": {
+            "textPrimary": "#eceef1",
+            "textSecondary": "#848587",
+            "surface": "#0f0f11",
+            "surfaceRaised": "#1a1a1b",
+            "divider": "#2a2a2c",
+            "hover": "#1e1f20",
+            "selected": "#330811",
+            "focusRing": "#d4143a"
+          },
+          "derived_from": "base_only"
+        }
+      }
+    },
+    "Carbon": {
+      "role": "preset",
+      "base": {
+        "accent": "#a8b0b8",
+        "background": "#070809",
+        "foreground": "#e8eaed"
+      },
+      "derived": {
+        "textPrimary": "#e8eaed",
+        "textSecondary": "#838486",
+        "surface": "#111213",
+        "surfaceRaised": "#1b1c1e",
+        "divider": "#2b2c2d",
+        "hover": "#202122",
+        "selected": "#2a2d30",
+        "focusRing": "#a8b0b8"
+      },
+      "derived_from": "base_only"
+    },
+    "Arctic": {
+      "role": "preset",
+      "base": {
+        "accent": "#6f9fbf",
+        "background": "#06080b",
+        "foreground": "#eef2f6"
+      },
+      "derived": {
+        "textPrimary": "#eef2f6",
+        "textSecondary": "#86898c",
+        "surface": "#101316",
+        "surfaceRaised": "#1b1d20",
+        "divider": "#2b2d31",
+        "hover": "#202225",
+        "selected": "#1d2933",
+        "focusRing": "#6f9fbf"
+      },
+      "derived_from": "base_only"
+    },
+    "Rose": {
+      "role": "secondary_preset",
+      "base": {
+        "accent": "#c45a7a",
+        "background": "#080608",
+        "foreground": "#eee8ec"
+      },
+      "derived": {
+        "textPrimary": "#eee8ec",
+        "textSecondary": "#868285",
+        "surface": "#121012",
+        "surfaceRaised": "#1d1a1d",
+        "divider": "#2d2a2c",
+        "hover": "#211f21",
+        "selected": "#311821",
+        "focusRing": "#c45a7a"
+      },
+      "derived_from": "base_only"
+    },
+    "Forest": {
+      "role": "secondary_preset",
+      "base": {
+        "accent": "#4f8f6a",
+        "background": "#060807",
+        "foreground": "#e8eee9"
+      },
+      "derived": {
+        "textPrimary": "#e8eee9",
+        "textSecondary": "#828683",
+        "surface": "#101211",
+        "surfaceRaised": "#1a1d1b",
+        "divider": "#2a2d2b",
+        "hover": "#1f2120",
+        "selected": "#16261d",
+        "focusRing": "#4f8f6a"
+      },
+      "derived_from": "base_only"
+    }
+  }
+}
