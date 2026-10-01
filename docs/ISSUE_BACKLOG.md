@@ -4,7 +4,7 @@ Prepared backlog with historical GitHub issue/PR cross-reference.
 
 > **STATUS — HISTORICAL LEDGER, NOT LIVE TRACKER (reconciled 2026-10-01):**
 > This file preserves older backlog/PR cross-reference evidence and is **not** authoritative for current open/closed state, current PR count, `main` SHA, or current product priority. Use GitHub live first, then `knowledge/CURRENT_STATUS.md` and `knowledge/ACTIVE_ROADMAP.md`.
-> Current durable orientation at reconciliation: no authorized product implementation slice; closed #691/#494/#703 are historical/delivered; parked/watch include #697 (research), #468, #74 (upstream ANN), #469 (VST3), #615/#620 (Bitwig R&D), #679/#680 (future). Screen-2 epic #675/#678 is CLOSED/DONE (PR #755).
+> Current durable orientation at reconciliation: no authorized product implementation slice; closed #691/#494/#703/#468 are historical/delivered (do not reactivate #468 listening); parked/watch include #697 (research), #74 (upstream ANN), #469 (VST3), #615/#620 (Bitwig R&D), #679/#680 (future). Screen-2 epic #675/#678 is CLOSED/DONE (PR #755).
 
 ## Historical GitHub Board Snapshot (2026-07-10 — non-current)
 

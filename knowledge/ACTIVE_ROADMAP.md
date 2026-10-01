@@ -38,13 +38,13 @@ Python/session/sequencer foundations and Screen-2 QML Channel Rack are **DONE** 
 ### Watch / parked — do not promote implicitly
 
 - [#697](https://github.com/jannekbuengener/sample-brain/issues/697) — **PARKED / RESEARCH ONLY**. Panel reordering research; no implementation without explicit reactivation. Do not treat open research as an Active product track.
-- [#468](https://github.com/jannekbuengener/sample-brain/issues/468) — **PARKED / NOT ACTIVE**. Existing canary/listening evidence remains historically valid; do not run further Listening-/Stem-validation without explicit Owner reactivation.
+- Closed [#468](https://github.com/jannekbuengener/sample-brain/issues/468) — **CLOSED / not_planned** (historical). Existing canary/listening evidence remains historically valid; do not reactivate Listening-/Stem-validation without explicit Owner GO.
 - [#74](https://github.com/jannekbuengener/sample-brain/issues/74) — external upstream sqlite-vec ANN tracker only; NumPy remains the default search backend; no private ANN substitute.
 - [#469](https://github.com/jannekbuengener/sample-brain/issues/469) — VST3 product integration is parked.
 - [#615](https://github.com/jannekbuengener/sample-brain/issues/615) / [#620](https://github.com/jannekbuengener/sample-brain/issues/620) — Bitwig work is R&D/playground only; no product integration.
 - [#679](https://github.com/jannekbuengener/sample-brain/issues/679) / [#680](https://github.com/jannekbuengener/sample-brain/issues/680) — future arrangement and input-mode ideas, not current delivery blockers.
 
-Closed #392/#405/#503/#579/#196/#198/#73/#494/#703 are historical evidence, not current roadmap items.
+Closed #392/#405/#503/#579/#196/#198/#73/#494/#703/#468 are historical evidence, not current roadmap items.
 
 ## Shipped Foundations
 

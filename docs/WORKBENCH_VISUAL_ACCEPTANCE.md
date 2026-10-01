@@ -37,10 +37,12 @@ Automated checks cover provenance, both required states, dimensions, PNG
 presence, non-black pixels, panel position, hashes, and public manifest data.
 They do not assess visual product quality.
 
-The Owner must mark `PASS` or `FAIL` against `docs/assets/portfolio/mockups/ui_mockup.png` and
+The Owner historically marked `PASS` or `FAIL` against `docs/assets/portfolio/mockups/ui_mockup.png` and
 `docs/assets/portfolio/mockups/ui_mockup_matching.png` for hierarchy, spacing/density, typography, controls,
 color/intent, discoverability, clipping/overflow, populated/empty states, and
-overall producer-tool quality. Agent attestation is not an Owner PASS.
+overall producer-tool quality. Agent attestation was not an Owner PASS under that
+historical v1 gate. That Owner operative gate is **superseded** by the operative
+acceptance rule above for new work.
 
 P0/P1 findings block closure. P2/P3 are recorded separately and do not trigger
 automatic repair. A Screen-1 UI issue closes only after structural tests,
@@ -112,7 +114,8 @@ Same capture baseline as v1 when screenshots are produced later:
 - 1600×900 / 100% DPI primary reference
 - screenshots/manifests **outside** the repository
 - synthetic fixture paths only
-- Owner Visual Acceptance remains separate from agent self-attestation
+- Historical Owner Visual Acceptance remained separate from agent self-attestation
+  for delivered #691-era slices; new work follows the operative agent-owned rule above.
 
 Follow-up UI slices (#692–#696, #725) must reference these v2 state IDs instead of
 inventing parallel fixture semantics.

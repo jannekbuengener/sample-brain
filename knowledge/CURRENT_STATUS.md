@@ -36,7 +36,7 @@ Screen-1 on `main` includes Calm/Clean Start, compact Browser, elastic layout, D
 ### Parked / external-dependency / R&D tracks
 
 - [#697](https://github.com/jannekbuengener/sample-brain/issues/697) — Panel reordering. **PARKED / RESEARCH ONLY**; explicit reactivation required. Do not implement opportunistically.
-- [#468](https://github.com/jannekbuengener/sample-brain/issues/468) — Techno listening/stem pilot. Existing canary/listening evidence remains historically valid; the track is **PARKED / NOT ACTIVE**. No further Listening-/Stem-/Demucs-canaries, Track-02–05 runs, or scorecard campaign without explicit Owner reactivation.
+- Closed [#468](https://github.com/jannekbuengener/sample-brain/issues/468) — Techno listening/stem pilot. **CLOSED / not_planned** (historical). Existing canary/listening evidence remains historically valid; **do not reactivate** Listening-/Stem-/Demucs-canaries, Track-02–05 runs, or scorecard campaign without explicit Owner reactivation.
 - [#469](https://github.com/jannekbuengener/sample-brain/issues/469) — VST3 integration is explicitly **parked / not active**.
 - [#74](https://github.com/jannekbuengener/sample-brain/issues/74) — upstream sqlite-vec ANN readiness tracker only; no private ANN replacement.
 - [#615](https://github.com/jannekbuengener/sample-brain/issues/615) / [#620](https://github.com/jannekbuengener/sample-brain/issues/620) — Bitwig is an **R&D playground only**, not a Sample-Brain product integration decision.
