@@ -515,3 +515,112 @@ def test_qml_runtime_screen2_navigation_projection_and_step_toggle():
     finally:
         engine.deleteLater()
         app.processEvents()
+
+# --- #806 Live Kit late-assignment via ChannelRackController -----------------
+
+
+def _kick_trigger_count(state) -> int:
+    return sum(1 for t in state.pattern.triggers if t.channel_id == "ch_kick")
+
+
+def test_late_live_kit_assign_after_empty_screen2_seeds_default_on():
+    """empty kit → Screen 2 → assign → re-enter → path + DEFAULT_ON (#806)."""
+    module = _controller_module_or_fail()
+    Controller = _require(module, "ChannelRackController")
+
+    kit = LiveKitState()
+    controller = Controller(live_kit=kit, transport=_fake_transport())
+    controller.enter_screen2()
+    assert next(ch for ch in controller.state.channels if ch.channel_id == "ch_kick").sample_path is None
+    assert _kick_trigger_count(controller.state) == 0
+
+    controller.leave_screen2()
+    kit.assign("Kick + Bass", "Kick", _row("kick.wav", path="synthetic/kick_late.wav"))
+    controller.enter_screen2()
+
+    kick = next(ch for ch in controller.state.channels if ch.channel_id == "ch_kick")
+    assert kick.sample_path == "synthetic/kick_late.wav"
+    assert _kick_trigger_count(controller.state) == 16
+    assert all(
+        Trigger(channel_id="ch_kick", position=Fraction(i, 4)) in controller.state.pattern.triggers
+        for i in range(16)
+    )
+
+
+def test_late_assign_does_not_reset_other_programmed_channels():
+    """Isolation: only the newly filled channel is healed (#806)."""
+    module = _controller_module_or_fail()
+    Controller = _require(module, "ChannelRackController")
+
+    kit = LiveKitState()
+    kit.assign("Drums", "Closed Hat", _row("ch.wav", path="synthetic/ch.wav"))
+    controller = Controller(live_kit=kit, transport=_fake_transport())
+    controller.enter_screen2()
+    controller.toggle_step("ch_closed_hat", 0)
+    controller.toggle_step("ch_closed_hat", 1)
+    hat_before = tuple(
+        t for t in controller.state.pattern.triggers if t.channel_id == "ch_closed_hat"
+    )
+    assert len(hat_before) == 14
+
+    controller.leave_screen2()
+    kit.assign("Kick + Bass", "Kick", _row("kick.wav", path="synthetic/kick.wav"))
+    controller.enter_screen2()
+
+    assert _kick_trigger_count(controller.state) == 16
+    hat_after = tuple(
+        t for t in controller.state.pattern.triggers if t.channel_id == "ch_closed_hat"
+    )
+    assert hat_after == hat_before
+
+
+def test_sample_replacement_preserves_exact_user_step_pattern():
+    """Replace sample on programmed channel → user steps preserved exactly (#806)."""
+    module = _controller_module_or_fail()
+    Controller = _require(module, "ChannelRackController")
+
+    kit = LiveKitState()
+    kit.assign("Kick + Bass", "Kick", _row("kick_a.wav", path="synthetic/kick_a.wav"))
+    controller = Controller(live_kit=kit, transport=_fake_transport())
+    controller.enter_screen2()
+    for step in (0, 4, 8, 12):
+        controller.toggle_step("ch_kick", step)
+    expected = tuple(
+        t for t in controller.state.pattern.triggers if t.channel_id == "ch_kick"
+    )
+    assert len(expected) == 12
+
+    controller.leave_screen2()
+    kit.assign("Kick + Bass", "Kick", _row("kick_b.wav", path="synthetic/kick_b.wav"))
+    controller.enter_screen2()
+
+    kick = next(ch for ch in controller.state.channels if ch.channel_id == "ch_kick")
+    assert kick.sample_path == "synthetic/kick_b.wav"
+    assert (
+        tuple(t for t in controller.state.pattern.triggers if t.channel_id == "ch_kick")
+        == expected
+    )
+
+
+def test_clear_assignment_strips_channel_triggers_fail_closed():
+    """Clear Live Kit slot → sample_path None and triggers removed (#806)."""
+    module = _controller_module_or_fail()
+    Controller = _require(module, "ChannelRackController")
+
+    kit = _kit_with_samples()
+    controller = Controller(live_kit=kit, transport=_fake_transport())
+    controller.enter_screen2()
+    assert _kick_trigger_count(controller.state) == 16
+
+    controller.leave_screen2()
+    kit._assignments["Kick + Bass"]["Kick"] = None
+    controller.enter_screen2()
+
+    kick = next(ch for ch in controller.state.channels if ch.channel_id == "ch_kick")
+    assert kick.sample_path is None
+    assert _kick_trigger_count(controller.state) == 0
+    # Sibling channels remain programmed.
+    assert (
+        sum(1 for t in controller.state.pattern.triggers if t.channel_id == "ch_closed_hat")
+        == 16
+    )

@@ -118,6 +118,112 @@ def build_channel_rack_state(live_kit: LiveKitState) -> ChannelRackState:
     )
 
 
+def reconcile_live_kit_sample_assignments(
+    state: ChannelRackState,
+    live_kit: LiveKitState,
+) -> ChannelRackState:
+    """Sync Live Kit seed paths and heal DEFAULT_ON without global pattern reset.
+
+    Per Live Kit seed channel (#806):
+
+    - empty → newly assigned: seed canonical DEFAULT_ON for that channel only
+    - assigned → replaced (still sample-bearing): preserve existing triggers
+    - assigned → cleared / empty: strip that channel's triggers (fail-closed)
+    - sample-bearing with a manually edited pattern (including all-off): keep it
+    - orphan triggers on an empty seed channel: strip them
+    - user-added channels: untouched
+
+    Does not rebuild the full rack; only paths and per-channel trigger sets change.
+    """
+
+    updated_channels: list[Channel] = []
+    # Per seed channel_id: "seed" | "strip" | "keep"
+    seed_heal: dict[str, str] = {}
+    path_changed = False
+
+    for channel in state.channels:
+        if channel.live_kit_group is None or channel.live_kit_slot is None:
+            updated_channels.append(channel)
+            continue
+
+        assignment = live_kit.assignment_for(
+            channel.live_kit_group,
+            channel.live_kit_slot,
+        )
+        new_path = str(assignment.path) if assignment is not None else None
+        old_bearing = _sample_bearing(channel.sample_path)
+        new_bearing = _sample_bearing(new_path)
+
+        if new_path != channel.sample_path:
+            path_changed = True
+            updated_channels.append(
+                Channel(
+                    channel_id=channel.channel_id,
+                    live_kit_group=channel.live_kit_group,
+                    live_kit_slot=channel.live_kit_slot,
+                    sample_path=new_path,
+                )
+            )
+        else:
+            updated_channels.append(channel)
+
+        if not new_bearing:
+            seed_heal[channel.channel_id] = "strip"
+        elif not old_bearing:
+            seed_heal[channel.channel_id] = "seed"
+        else:
+            seed_heal[channel.channel_id] = "keep"
+
+    strip_or_seed_ids = {
+        channel_id
+        for channel_id, action in seed_heal.items()
+        if action in {"strip", "seed"}
+    }
+
+    if not path_changed:
+        needs_trigger_work = False
+        for channel_id, action in seed_heal.items():
+            if action == "keep":
+                continue
+            channel_triggers = [
+                t for t in state.pattern.triggers if t.channel_id == channel_id
+            ]
+            if action == "strip" and channel_triggers:
+                needs_trigger_work = True
+                break
+            if action == "seed":
+                needs_trigger_work = True
+                break
+        if not needs_trigger_work:
+            return state
+
+    new_triggers: list[Trigger] = [
+        trigger
+        for trigger in state.pattern.triggers
+        if trigger.channel_id not in strip_or_seed_ids
+    ]
+    for channel_id, action in seed_heal.items():
+        if action == "seed":
+            new_triggers.extend(_full_step_triggers(channel_id, state.step_count))
+
+    new_pattern = Pattern(
+        pattern_id=state.pattern.pattern_id,
+        length_quarter_notes=state.pattern.length_quarter_notes,
+        triggers=tuple(new_triggers),
+    )
+    if (
+        tuple(updated_channels) == state.channels
+        and new_pattern.triggers == state.pattern.triggers
+    ):
+        return state
+
+    return ChannelRackState(
+        channels=tuple(updated_channels),
+        pattern=new_pattern,
+        step_count=state.step_count,
+    )
+
+
 def add_user_channel(
     state: ChannelRackState,
     *,
@@ -361,6 +467,7 @@ __all__ = [
     "add_user_channel",
     "build_channel_rack_state",
     "play_channel_rack_once",
+    "reconcile_live_kit_sample_assignments",
     "toggle_step",
     "warm_channel_rack_pcm",
 ]

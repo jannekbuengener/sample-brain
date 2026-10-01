@@ -264,3 +264,122 @@ def test_phantom_channel_id_remains_fail_closed_on_toggle():
 
     with pytest.raises(ValueError, match="Unknown channel_id"):
         toggle(state, "ch_phantom", 0)
+
+# --- #806 Live Kit late-assignment reconcile ---------------------------------
+
+def test_reconcile_empty_to_assigned_seeds_default_on():
+    """empty → newly assigned seed channel gets canonical DEFAULT_ON (#806)."""
+    rack = _channel_rack()
+    build = _require(rack, "build_channel_rack_state")
+    reconcile = _require(rack, "reconcile_live_kit_sample_assignments")
+
+    kit = LiveKitState()
+    state = build(kit)
+    assert _triggers_for_channel(state.pattern.triggers, "ch_kick") == ()
+
+    kit.assign("Kick + Bass", "Kick", _synthetic_row("Kick", "synthetic/kick_late.wav"))
+    healed = reconcile(state, kit)
+
+    kick = next(ch for ch in healed.channels if ch.channel_id == "ch_kick")
+    kick_triggers = _triggers_for_channel(healed.pattern.triggers, "ch_kick")
+    assert kick.sample_path == "synthetic/kick_late.wav"
+    assert len(kick_triggers) == EXPECTED_STEP_COUNT
+    assert [t.position for t in kick_triggers] == list(EXPECTED_STEP_POSITIONS)
+
+
+def test_reconcile_sample_replacement_preserves_user_step_pattern():
+    """assigned → replaced keeps exact user toggles (#806)."""
+    rack = _channel_rack()
+    build = _require(rack, "build_channel_rack_state")
+    toggle = _require(rack, "toggle_step")
+    reconcile = _require(rack, "reconcile_live_kit_sample_assignments")
+
+    kit = _live_kit_with_assignments(
+        ("Kick + Bass", "Kick", "synthetic/kick_a.wav"),
+        ("Drums", "Closed Hat", "synthetic/ch_a.wav"),
+    )
+    state = build(kit)
+    state = toggle(state, "ch_kick", 0)
+    state = toggle(state, "ch_kick", 4)
+    state = toggle(state, "ch_kick", 8)
+    expected_kick = _triggers_for_channel(state.pattern.triggers, "ch_kick")
+    expected_hat = _triggers_for_channel(state.pattern.triggers, "ch_closed_hat")
+    assert len(expected_kick) == EXPECTED_STEP_COUNT - 3
+
+    kit.assign("Kick + Bass", "Kick", _synthetic_row("Kick", "synthetic/kick_b.wav"))
+    healed = reconcile(state, kit)
+
+    kick = next(ch for ch in healed.channels if ch.channel_id == "ch_kick")
+    assert kick.sample_path == "synthetic/kick_b.wav"
+    assert _triggers_for_channel(healed.pattern.triggers, "ch_kick") == expected_kick
+    assert _triggers_for_channel(healed.pattern.triggers, "ch_closed_hat") == expected_hat
+
+
+def test_reconcile_clear_strips_triggers_fail_closed():
+    """assigned → cleared strips that channel's triggers (#806)."""
+    rack = _channel_rack()
+    build = _require(rack, "build_channel_rack_state")
+    reconcile = _require(rack, "reconcile_live_kit_sample_assignments")
+
+    kit = _live_kit_with_assignments(
+        ("Kick + Bass", "Kick", "synthetic/kick_01.wav"),
+        ("Drums", "Closed Hat", "synthetic/ch_01.wav"),
+    )
+    state = build(kit)
+    assert len(_triggers_for_channel(state.pattern.triggers, "ch_kick")) == EXPECTED_STEP_COUNT
+
+    # Public Live Kit API is assign-only; clear is an internal assignment wipe.
+    kit._assignments["Kick + Bass"]["Kick"] = None
+    healed = reconcile(state, kit)
+
+    kick = next(ch for ch in healed.channels if ch.channel_id == "ch_kick")
+    assert kick.sample_path is None
+    assert _triggers_for_channel(healed.pattern.triggers, "ch_kick") == ()
+    assert (
+        len(_triggers_for_channel(healed.pattern.triggers, "ch_closed_hat"))
+        == EXPECTED_STEP_COUNT
+    )
+
+
+def test_reconcile_orphan_triggers_on_empty_channel_are_stripped():
+    """path None + leftover triggers → fail-closed strip (#806 unusual/orphan)."""
+    rack = _channel_rack()
+    build = _require(rack, "build_channel_rack_state")
+    reconcile = _require(rack, "reconcile_live_kit_sample_assignments")
+    from src.pattern_core import Pattern
+
+    kit = LiveKitState()
+    state = build(kit)
+    orphan = Trigger(channel_id="ch_kick", position=Fraction(0, 4))
+    polluted = type(state)(
+        channels=state.channels,
+        pattern=Pattern(
+            pattern_id=state.pattern.pattern_id,
+            length_quarter_notes=state.pattern.length_quarter_notes,
+            triggers=(orphan,),
+        ),
+        step_count=state.step_count,
+    )
+    healed = reconcile(polluted, kit)
+    assert _triggers_for_channel(healed.pattern.triggers, "ch_kick") == ()
+
+
+def test_reconcile_preserves_manual_all_off_on_sample_bearing_channel():
+    """User cleared every step on an assigned channel; re-reconcile must not reseed."""
+    rack = _channel_rack()
+    build = _require(rack, "build_channel_rack_state")
+    toggle = _require(rack, "toggle_step")
+    reconcile = _require(rack, "reconcile_live_kit_sample_assignments")
+
+    kit = _live_kit_with_assignments(
+        ("Kick + Bass", "Kick", "synthetic/kick_01.wav"),
+    )
+    state = build(kit)
+    for step in range(EXPECTED_STEP_COUNT):
+        state = toggle(state, "ch_kick", step)
+    assert _triggers_for_channel(state.pattern.triggers, "ch_kick") == ()
+
+    healed = reconcile(state, kit)
+    kick = next(ch for ch in healed.channels if ch.channel_id == "ch_kick")
+    assert kick.sample_path == "synthetic/kick_01.wav"
+    assert _triggers_for_channel(healed.pattern.triggers, "ch_kick") == ()
