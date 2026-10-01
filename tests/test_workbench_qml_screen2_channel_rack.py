@@ -738,6 +738,10 @@ def test_qml_source_exposes_assign_selected_affordance_for_user_rows():
     assert "is_user_channel" in source
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
+)
 def test_qml_channel_rack_bridge_assign_selected_uses_browser_selection():
     qml_mod = importlib.import_module("src.workbench_qml")
     module = _controller_module_or_fail()
