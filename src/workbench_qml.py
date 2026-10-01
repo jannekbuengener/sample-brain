@@ -1643,122 +1643,192 @@ ApplicationWindow {
         }
     }
 
+    // #782 top command hierarchy: LEFT identity / CENTER producer / RIGHT secondary.
+    // CENTER uses geometric horizontalCenter of the header, not a fill-spacer remainder.
     header: Rectangle {
-        height: 68; color: theme.surfaceHeader; border.color: theme.borderSubtle
-        RowLayout { anchors.fill: parent; anchors.leftMargin: 22; anchors.rightMargin: 22
-            Label { text: "◉  Sample Brain"; color: theme.textPrimary; font.pixelSize: 21; font.bold: true }
-            Item { Layout.fillWidth: true }
-            Label { text: "MASTER"; color: theme.textSecondary; font.pixelSize: 12 }
-            Label { text: "132"; color: theme.textPrimary; font.pixelSize: 24; font.bold: true }
-            Label { text: "BPM"; color: theme.textSecondary; font.pixelSize: 12 }
+        id: screen1Header
+        objectName: "screen1Header"
+        height: 68
+        color: theme.surfaceHeader
+        border.color: theme.borderSubtle
+
+        Item {
+            id: headerLeftZone
+            objectName: "headerLeftZone"
+            anchors.left: parent.left
+            anchors.leftMargin: 22
+            anchors.verticalCenter: parent.verticalCenter
+            height: parent.height
+            width: productIdentity.implicitWidth
+            Label {
+                id: productIdentity
+                anchors.verticalCenter: parent.verticalCenter
+                text: "◉  Sample Brain"
+                color: theme.textPrimary
+                font.pixelSize: 21
+                font.bold: true
+            }
+        }
+
+        RowLayout {
+            id: producerCommandZone
+            objectName: "producerCommandZone"
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 0
+            Label { text: "MASTER"; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignVCenter }
+            Label { text: "132"; color: theme.textPrimary; font.pixelSize: 24; font.bold: true; Layout.alignment: Qt.AlignVCenter }
+            Label { text: "BPM"; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignVCenter }
             Item { width: 24 }
-            Label { text: "GRID"; color: theme.textSecondary; font.pixelSize: 12 }
-            Label { text: "4/4"; color: theme.textPrimary; font.pixelSize: 24; font.bold: true }
+            Label { text: "GRID"; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignVCenter }
+            Label { text: "4/4"; color: theme.textPrimary; font.pixelSize: 24; font.bold: true; Layout.alignment: Qt.AlignVCenter }
             Item { width: 24 }
-            Label { text: "SYNC"; color: theme.textSecondary; font.pixelSize: 12 }
-            Rectangle { width: 48; height: 25; radius: 4; color: theme.actionActive
+            Label { text: "SYNC"; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignVCenter }
+            Rectangle {
+                width: 48; height: 25; radius: 4; color: theme.actionActive
+                Layout.alignment: Qt.AlignVCenter
                 Label { anchors.centerIn: parent; text: "ON"; color: theme.textOnAction; font.bold: true }
             }
             Item { width: 16 }
             Button {
-                id: openChannelRackButton
-                objectName: "openChannelRackButton"
-                text: window.activeScreen === "screen2" ? "Screen 1" : "Channel Rack"
-                visible: window.activeScreen === "screen1"
-                onClicked: window.interaction.openChannelRack()
-            }
-            Button {
-                id: returnToScreen1Button
-                objectName: "returnToScreen1Button"
-                text: "← Screen 1"
-                visible: window.activeScreen === "screen2"
-                onClicked: window.interaction.returnToScreen1()
-            }
-            Item { width: 12 }
-            // #696 secondary display preferences — header overflow only (no permanent settings bar).
-            ToolButton {
-                id: displayPreferencesOverflow
-                objectName: "displayPreferencesOverflow"
-                visible: window.activeScreen === "screen1"
-                text: "⋯"
-                flat: true
-                implicitWidth: 36
-                implicitHeight: 32
-                onClicked: displayPreferencesPopover.open()
-                Accessible.name: "Display preferences"
-            }
-            Popup {
-                id: displayPreferencesPopover
-                objectName: "displayPreferencesPopover"
-                x: displayPreferencesOverflow.x + displayPreferencesOverflow.width - width
-                y: displayPreferencesOverflow.height + 6
-                width: 260
-                padding: 12
-                modal: false
-                focus: true
-                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                objectName: "harmonicMatchButton"
+                text: "Harmonic Match"
+                Accessible.name: "Harmonic Match"
+                Layout.alignment: Qt.AlignVCenter
                 background: Rectangle {
-                    color: theme.surfaceElevated
-                    border.color: theme.borderSubtle
-                    radius: 6
+                    color: window.interaction.harmonicMatchOpen ? theme.actionActive : theme.surfaceElevated
+                    border.width: window.interaction.harmonicMatchOpen ? 1 : 0
+                    border.color: theme.selectionBorder
+                    radius: 4
                 }
-                ColumnLayout {
-                    anchors.fill: parent
-                    spacing: 8
-                    Label { text: "Density"; color: theme.textSecondary; font.pixelSize: 11 }
-                    Label { text: "Compact"; color: theme.textPrimary; font.pixelSize: 13 }
-                    Label { text: "Motion"; color: theme.textSecondary; font.pixelSize: 11 }
-                    RowLayout {
-                        spacing: 6
-                        Button {
-                            text: "On"
-                            checkable: true
-                            checked: window.interaction.waveformMotionMode === "on"
-                            onClicked: window.interaction.setWaveformMotionMode("on")
-                        }
-                        Button {
-                            text: "Reduced"
-                            checkable: true
-                            checked: window.interaction.waveformMotionMode === "reduced"
-                            onClicked: window.interaction.setWaveformMotionMode("reduced")
-                        }
-                        Button {
-                            text: "Off"
-                            checkable: true
-                            checked: window.interaction.waveformMotionMode === "off"
-                            onClicked: window.interaction.setWaveformMotionMode("off")
-                        }
+                contentItem: Text {
+                    text: "Harmonic Match"
+                    color: theme.textPrimary
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    rightPadding: 16
+                    leftPadding: 16
+                }
+                onClicked: window.interaction.toggleHarmonicMatch()
+            }
+        }
+
+        Item {
+            id: headerRightZone
+            objectName: "headerRightZone"
+            anchors.right: parent.right
+            anchors.rightMargin: 22
+            anchors.verticalCenter: parent.verticalCenter
+            height: parent.height
+            width: rightHeaderControls.implicitWidth
+            RowLayout {
+                id: rightHeaderControls
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 12
+                Button {
+                    id: openChannelRackButton
+                    objectName: "openChannelRackButton"
+                    text: window.activeScreen === "screen2" ? "Screen 1" : "Channel Rack"
+                    visible: window.activeScreen === "screen1"
+                    onClicked: window.interaction.openChannelRack()
+                }
+                Button {
+                    id: returnToScreen1Button
+                    objectName: "returnToScreen1Button"
+                    text: "← Screen 1"
+                    visible: window.activeScreen === "screen2"
+                    onClicked: window.interaction.returnToScreen1()
+                }
+                // #696 secondary display preferences — header overflow only (no permanent settings bar).
+                Item {
+                    Layout.preferredWidth: displayPreferencesOverflow.implicitWidth
+                    Layout.preferredHeight: displayPreferencesOverflow.implicitHeight
+                    ToolButton {
+                        id: displayPreferencesOverflow
+                        objectName: "displayPreferencesOverflow"
+                        visible: window.activeScreen === "screen1"
+                        text: "⋯"
+                        flat: true
+                        implicitWidth: 36
+                        implicitHeight: 32
+                        onClicked: displayPreferencesPopover.open()
+                        Accessible.name: "Display preferences"
                     }
-                    Button {
-                        Layout.fillWidth: true
-                        text: "Reset Layout"
-                        onClicked: {
-                            window.interaction.resetLayoutPreferences()
-                            displayPreferencesPopover.close()
+                    Popup {
+                        id: displayPreferencesPopover
+                        objectName: "displayPreferencesPopover"
+                        x: displayPreferencesOverflow.width - width
+                        y: displayPreferencesOverflow.height + 6
+                        width: 260
+                        padding: 12
+                        modal: false
+                        focus: true
+                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                        background: Rectangle {
+                            color: theme.surfaceElevated
+                            border.color: theme.borderSubtle
+                            radius: 6
                         }
-                    }
-                    Button {
-                        Layout.fillWidth: true
-                        text: "Save Workspace Preset"
-                        onClicked: {
-                            window.interaction.saveWorkspacePreset()
-                            displayPreferencesPopover.close()
-                        }
-                    }
-                    Button {
-                        Layout.fillWidth: true
-                        text: "Set Preset as Startup"
-                        onClicked: {
-                            window.interaction.setWorkspacePresetAsStartup()
-                            displayPreferencesPopover.close()
-                        }
-                    }
-                    Button {
-                        Layout.fillWidth: true
-                        text: "Return to Clean Start"
-                        onClicked: {
-                            window.interaction.returnToCleanStart()
-                            displayPreferencesPopover.close()
+                        ColumnLayout {
+                            anchors.fill: parent
+                            spacing: 8
+                            Label { text: "Density"; color: theme.textSecondary; font.pixelSize: 11 }
+                            Label { text: "Compact"; color: theme.textPrimary; font.pixelSize: 13 }
+                            Label { text: "Motion"; color: theme.textSecondary; font.pixelSize: 11 }
+                            RowLayout {
+                                spacing: 6
+                                Button {
+                                    text: "On"
+                                    checkable: true
+                                    checked: window.interaction.waveformMotionMode === "on"
+                                    onClicked: window.interaction.setWaveformMotionMode("on")
+                                }
+                                Button {
+                                    text: "Reduced"
+                                    checkable: true
+                                    checked: window.interaction.waveformMotionMode === "reduced"
+                                    onClicked: window.interaction.setWaveformMotionMode("reduced")
+                                }
+                                Button {
+                                    text: "Off"
+                                    checkable: true
+                                    checked: window.interaction.waveformMotionMode === "off"
+                                    onClicked: window.interaction.setWaveformMotionMode("off")
+                                }
+                            }
+                            Button {
+                                Layout.fillWidth: true
+                                text: "Reset Layout"
+                                onClicked: {
+                                    window.interaction.resetLayoutPreferences()
+                                    displayPreferencesPopover.close()
+                                }
+                            }
+                            Button {
+                                Layout.fillWidth: true
+                                text: "Save Workspace Preset"
+                                onClicked: {
+                                    window.interaction.saveWorkspacePreset()
+                                    displayPreferencesPopover.close()
+                                }
+                            }
+                            Button {
+                                Layout.fillWidth: true
+                                text: "Set Preset as Startup"
+                                onClicked: {
+                                    window.interaction.setWorkspacePresetAsStartup()
+                                    displayPreferencesPopover.close()
+                                }
+                            }
+                            Button {
+                                Layout.fillWidth: true
+                                text: "Return to Clean Start"
+                                onClicked: {
+                                    window.interaction.returnToCleanStart()
+                                    displayPreferencesPopover.close()
+                                }
+                            }
                         }
                     }
                 }
@@ -2501,25 +2571,6 @@ ApplicationWindow {
                         Label { visible: window.screenData.errorMessage.length > 0; text: window.screenData.errorMessage; color: theme.actionActive; font.pixelSize: 11 }
                     }
                     Item { Layout.fillWidth: true }
-                    Button {
-                        objectName: "harmonicMatchButton"
-                        text: "Harmonic Match"
-                        background: Rectangle {
-                            color: window.interaction.harmonicMatchOpen ? theme.actionActive : theme.surfaceElevated
-                            border.width: window.interaction.harmonicMatchOpen ? 1 : 0
-                            border.color: theme.selectionBorder
-                            radius: 4
-                        }
-                        contentItem: Text {
-                            text: "Harmonic Match"
-                            color: theme.textPrimary
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                            rightPadding: 16
-                            leftPadding: 16
-                        }
-                        onClicked: window.interaction.toggleHarmonicMatch()
-                    }
                     TextField { objectName: "browserSearch"; placeholderText: "Search samples"; placeholderTextColor: theme.textSecondary; Layout.preferredWidth: 230; Layout.minimumWidth: 120
                         background: Rectangle {
                             radius: 6

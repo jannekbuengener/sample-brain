@@ -166,7 +166,6 @@ def validate_case_report_dict(payload: dict[str, Any]) -> list[str]:
 ACCESSIBILITY_FOLLOWUPS_V1: tuple[str, ...] = (
     "Browser ListView rows are not exposed in the Windows UIA tree; sample selection needs Accessible metadata or a dedicated AutomationId.",
     "Harmonic Match pane open-state / 'Harmonic Matches' title is not reliably exposed in UIA; prefer Accessible.name on the pane root.",
-    "harmonicMatchButton currently relies on Button.text for UIA Name; add Accessible.name: \"Harmonic Match\" for stability.",
 )
 
 
