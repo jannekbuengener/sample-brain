@@ -58,9 +58,19 @@ def collect_canon_drift() -> list[str]:
     strategy = _read("docs/BOOTLOADER_AND_CONTEXT_STRATEGY.md")
     if "docs/CANON_INDEX.md" not in bootloader:
         problems.append("SB.BOOTLOADER does not route through docs/CANON_INDEX.md")
-    if "live #691" not in bootloader:
-        problems.append("SB.BOOTLOADER does not route Screen-1 work through live #691")
-    if "#503/#579 are historical" not in bootloader:
+    if "live #691" in bootloader:
+        problems.append(
+            "SB.BOOTLOADER still routes Screen-1 work through live #691 as an active parent"
+        )
+    if "new scoped" not in bootloader.lower():
+        problems.append(
+            "SB.BOOTLOADER does not require a new scoped issue for Screen-1 work"
+        )
+    if "#691" not in bootloader or "historical" not in bootloader.lower():
+        problems.append(
+            "SB.BOOTLOADER does not classify #691 as closed/historical delivered authority"
+        )
+    if "#503/#579" not in bootloader or "historical" not in bootloader.lower():
         problems.append("SB.BOOTLOADER does not classify #503/#579 as historical")
     if "Explicit current canon / supersession map" not in bootloader:
         problems.append("SB.BOOTLOADER lacks explicit canon/supersession precedence")

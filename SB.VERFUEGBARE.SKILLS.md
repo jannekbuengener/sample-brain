@@ -72,25 +72,25 @@ Unklarer Bug mit CI-/Tooling-/Infrastruktur-Ursache -> sample-brain-root-cause -
 Unklarer Bug mit Docs-/Contract-Ursache -> sample-brain-root-cause -> jMerta/docs-sync; sample-brain-test-first nur bei einer späteren genehmigten Produktcode-Aenderung
 Bekannter Defekt -> sample-brain-regression-gap -> sample-brain-test-first
 Issue geplant + expliziter Jules-Dispatch -> sample-brain-jules-dispatch -> unabhängige lokale Rückprüfung
-Screen-1 UI/QML visual change -> automated validation -> visual fixture/runtime evidence -> OWNER VISUAL ACCEPTANCE -> VISUAL_ACCEPT_PENDING|PASS|FAIL
+Screen-1 UI/QML visual change -> automated validation -> visual fixture/runtime evidence -> AGENT VISUAL ACCEPTANCE -> VISUAL_ACCEPT_PASS|FAIL
 ```
 
 ## Screen-1 Visual Acceptance
 
-For Screen-1 UI/QML visual work, automated tests are necessary but not sufficient. Owner visual acceptance is required.
+For Screen-1 UI/QML visual work, automated tests are necessary but not sufficient. Agents own technical/runtime/visual acceptance using fixtures, screenshots, MCP/UI automation, plugins, skills, and reviewers. Owner does not run operative acceptance loops.
 
 Sequence:
 
 ```text
 automated validation
 visual fixture/runtime evidence
-OWNER VISUAL ACCEPTANCE
-VISUAL_ACCEPT_PENDING | VISUAL_ACCEPT_PASS | VISUAL_ACCEPT_FAIL
+AGENT VISUAL ACCEPTANCE
+VISUAL_ACCEPT_PASS | VISUAL_ACCEPT_FAIL
 ```
 
 Status values: `VISUAL_ACCEPT_PENDING`, `VISUAL_ACCEPT_PASS`, `VISUAL_ACCEPT_FAIL`
 
-No AI pixel judge. Owner visual judgment is not replaced by automated tests.
+Agents own visual/runtime acceptance via fixtures, screenshots, MCP/UI automation, plugins, skills, and reviewers. `VISUAL_ACCEPT_PENDING` means agent evidence is incomplete — not an Owner wait state. Owner does not run operative acceptance loops. Automated tests alone are not sufficient.
 
 ## Repository Hygiene
 
@@ -110,6 +110,7 @@ These tracks are parked/HOLD. Do not auto-route or reactivate them.
 - #680
 - VST3 #469
 - Bitwig #620
+- Panel reordering research #697
 
 Reactivation: `explicit_owner_go` only.
 

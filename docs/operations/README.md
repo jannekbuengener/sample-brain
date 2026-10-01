@@ -72,11 +72,14 @@ For UI/QML visual work:
 ```text
 automated validation
 -> visual fixture/runtime evidence
--> OWNER VISUAL ACCEPTANCE
--> VISUAL_ACCEPT_PENDING | VISUAL_ACCEPT_PASS | VISUAL_ACCEPT_FAIL
+-> AGENT VISUAL ACCEPTANCE
+-> VISUAL_ACCEPT_PASS | VISUAL_ACCEPT_FAIL
 ```
 
-No AI pixel judge. Owner judgment is not replaced by tests.
+Agents own technical/runtime/visual acceptance (fixtures, screenshots, MCP/UI
+automation, plugins, skills, reviewers). `VISUAL_ACCEPT_PENDING` means agent
+evidence is still incomplete — not an Owner wait state. Owner does not run
+operative acceptance loops. Automated tests alone are not sufficient.
 
 ## Repository hygiene
 

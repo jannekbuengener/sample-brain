@@ -708,16 +708,16 @@
     {
       "id": "workflow-screen1-visual-acceptance",
       "type": "workflow",
-      "purpose": "Owner visual acceptance gate for Screen-1 UI/QML after automated validation.",
-      "problem_solved": "Owner visual micro-repair loops without an explicit status contract.",
+      "purpose": "Agent-owned visual/runtime acceptance gate for Screen-1 UI/QML after automated validation.",
+      "problem_solved": "Screen-1 UI slices need an explicit visual/runtime acceptance status without Owner operative loops.",
       "trigger": ["Screen-1 UI/QML visual change"],
-      "inputs": ["automated test evidence", "visual fixture/runtime evidence", "owner judgment"],
+      "inputs": ["automated test evidence", "visual fixture/runtime evidence", "agent reviewer/automation evidence"],
       "outputs": ["VISUAL_ACCEPT_PENDING|PASS|FAIL"],
       "authority": "local-repo-operations",
       "mutation_level": "process-gate",
       "dependencies": ["sample-brain-test-first"],
-      "fallback": "keep VISUAL_ACCEPT_PENDING; do not close UI slice",
-      "canonical_source": "NOT_APPLICABLE",
+      "fallback": "keep VISUAL_ACCEPT_PENDING while agent evidence is incomplete; do not wait for Owner operative acceptance",
+      "canonical_source": "docs/WORKBENCH_VISUAL_ACCEPTANCE.md",
       "source_kind": "local",
       "repo_areas": ["screen-1", "validation"],
       "validation": "statuses present in generated routing block",
@@ -885,16 +885,16 @@
       "Unklarer Bug mit Docs-/Contract-Ursache -> sample-brain-root-cause -> jMerta/docs-sync; sample-brain-test-first nur bei einer späteren genehmigten Produktcode-Aenderung",
       "Bekannter Defekt -> sample-brain-regression-gap -> sample-brain-test-first",
       "Issue geplant + expliziter Jules-Dispatch -> sample-brain-jules-dispatch -> unabhängige lokale Rückprüfung",
-      "Screen-1 UI/QML visual change -> automated validation -> visual fixture/runtime evidence -> OWNER VISUAL ACCEPTANCE -> VISUAL_ACCEPT_PENDING|PASS|FAIL"
+      "Screen-1 UI/QML visual change -> automated validation -> visual fixture/runtime evidence -> AGENT VISUAL ACCEPTANCE -> VISUAL_ACCEPT_PASS|FAIL"
     ],
     "special_routes": {
       "screen1_visual_acceptance": {
-        "summary": "For Screen-1 UI/QML visual work, automated tests are necessary but not sufficient. Owner visual acceptance is required.",
+        "summary": "For Screen-1 UI/QML visual work, automated tests are necessary but not sufficient. Agents own technical/runtime/visual acceptance using fixtures, screenshots, MCP/UI automation, plugins, skills, and reviewers. Owner does not run operative acceptance loops.",
         "sequence": [
           "automated validation",
           "visual fixture/runtime evidence",
-          "OWNER VISUAL ACCEPTANCE",
-          "VISUAL_ACCEPT_PENDING | VISUAL_ACCEPT_PASS | VISUAL_ACCEPT_FAIL"
+          "AGENT VISUAL ACCEPTANCE",
+          "VISUAL_ACCEPT_PASS | VISUAL_ACCEPT_FAIL"
         ],
         "statuses": [
           "VISUAL_ACCEPT_PENDING",
@@ -917,7 +917,8 @@
           "Screen 3 #679",
           "#680",
           "VST3 #469",
-          "Bitwig #620"
+          "Bitwig #620",
+          "Panel reordering research #697"
         ],
         "reactivation": "explicit_owner_go"
       },

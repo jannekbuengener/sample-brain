@@ -24,10 +24,11 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 | Realtime Workbench boundary | `docs/REALTIME_WORKBENCH_SCOPE.md` | ACTIVE_CANON | Local realtime scope; not a general DAW authorization. |
 | Data / artifacts | `docs/DATA_AND_ARTIFACT_POLICY.md` | ACTIVE_CANON | Private/local/generated data boundary. |
 | Local Measurement Layer | `docs/adr/ADR-0006-measurement-contract-v1.md` | ACTIVE_SUPPORTING | Provider-neutral local measurement vs forbidden external telemetry in core; Mixpanel only as optional future sink. |
-| Screen-1 renderer | `docs/WORKBENCH_QML_PROOF_SPIKE.md` | ACTIVE_SUPPORTING | `LOCK_PYSIDE6_QML`; current live work is under #691, not closed #503/#579. |
+| Screen-1 renderer | `docs/WORKBENCH_QML_PROOF_SPIKE.md` | ACTIVE_SUPPORTING | `LOCK_PYSIDE6_QML`; #503/#579/#691 are delivered historical evidence. New Screen-1 work needs a new scoped issue. |
 | Screen-1 preview playhead | `docs/WORKBENCH_PREVIEW_PLAYHEAD_CONTRACT.md` | ACTIVE_SUPPORTING | #738; Canvas body + thin overlay; engine-backed progress only. |
 | Screen-1 display preferences | `docs/WORKBENCH_DISPLAY_PREFERENCES.md` | ACTIVE_SUPPORTING | #696; density/motion/layout reset/startup presets; header overflow only. |
 | Screen-1 Browser column resize | `docs/WORKBENCH_BROWSER_COLUMN_RESIZE_CONTRACT.md` | ACTIVE_SUPPORTING | #780; subtle dividers + runtime resize; one interactive meta handle; narrow mode preserves #692 defaults. |
+| Screen-1 visual acceptance | `docs/WORKBENCH_VISUAL_ACCEPTANCE.md` | ACTIVE_SUPPORTING | Agents own technical/runtime/visual acceptance; Owner does not run operative acceptance loops. |
 | Semantic search | `docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md` | ACTIVE_SUPPORTING | NumPy default, sqlite-vec opt-in, VST-first historical framing is superseded. |
 | Screen-2 ownership | `docs/SESSION_OWNERSHIP_CONTRACT.md` | ACTIVE_SUPPORTING | Python-owned session state. |
 | Pattern core | `docs/PATTERN_CORE_CONTRACT.md` | ACTIVE_SUPPORTING | Pattern/trigger truth. |
@@ -47,16 +48,18 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 |---|---|---|
 | `docs/product/05_VST_PRODUCING_WORKSPACE_SPEC.md` | SUPERSEDED_RECORD | VST3 primary-path framing is parked under #469; current path is `PRODUCT_WORKFLOW_CANON.md`. |
 | `knowledge/roadmap/adr/ADR-0002-local-vector-index-strategy.md` | SUPERSEDED_RECORD | FAISS strategy was superseded by ADR-0004; retained as ADR history. |
-| Screen-1 Epic #503 / Governance #579 | HISTORICAL_LEDGER | Delivered migration/governance evidence; current Screen-1 parent is #691. |
+| Screen-1 Epic #503 / Governance #579 / Epic #691 | HISTORICAL_LEDGER | Delivered migration/governance/Calm Adaptive Workspace evidence; not an active Screen-1 parent. |
 | Historical benchmark/evidence documents | HISTORICAL_LEDGER | Keep measured results and capture commands tied to their recorded environment; do not treat them as current setup instructions unless explicitly marked current. |
 
 ## Task routing
 
-- **Screen 1:** live #691 + scoped child, then Screen-1 authorities above.
+- **Screen 1:** live GitHub + a **new scoped issue** (closed #691 is delivered historical authority, not an active parent), then Screen-1 authorities above. Do not reopen #691 for new slices.
 - **Screen 2:** closed #675/#678 (evidence) + `PRODUCT_WORKFLOW_CANON.md` and Screen-2 supporting contracts. Foundations (#676/#677/#681/#698) and Screen-2 QML (#678 / PR #755) are **DONE**; do not reopen Screen-2 product work without explicit Owner-GO.
-- **Search:** EPIC-2 spec + active ADRs + current code/tests.
-- **CI/governance:** GitHub live rules/checks first; docs describe policy, not current API state.
+- **Screen 3 / VST / Bitwig / #697:** parked or research-only; explicit reactivation required. Do not auto-route.
+- **Search:** EPIC-2 spec + active ADRs + current code/tests. #74 is upstream ANN watch only.
+- **CI/governance:** GitHub live rules/checks first; docs describe policy, not current API state. Closed #494/#703 are historical.
 - **Repository hygiene:** `DATA_AND_ARTIFACT_POLICY.md` + live working-tree/worktree state.
+- **Visual acceptance:** agents own fixture/runtime/screenshot/reviewer acceptance; do not wait on Owner operative visual acceptance as the normal end-state.
 - **Historical research:** use historical records as evidence only; do not promote them over active canon.
 
 ## Operations / capability (not product canon)

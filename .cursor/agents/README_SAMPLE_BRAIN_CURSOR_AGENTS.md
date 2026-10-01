@@ -36,7 +36,7 @@ For concrete work:
 - PR review: `sample-brain-code-reviewer`
 - docs drift: `sample-brain-docs-sync-maintainer`
 - implementation: `sample-brain-implementation-engineer`
-- Screen-1/UI work: read the locked renderer canon in `docs/TARGET_ARCHITECTURE.md` and `docs/WORKBENCH_QML_PROOF_SPIKE.md`, then verify live #691 + the scoped child; #503/#579 are historical evidence only
+- Screen-1/UI work: read the locked renderer canon in `docs/TARGET_ARCHITECTURE.md` and `docs/WORKBENCH_QML_PROOF_SPIKE.md`, then verify live `main` + a **new scoped Screen-1 issue**; closed #691 is delivered historical authority (not an active parent); #503/#579 are historical evidence only
 - security audit: `sample-brain-security-triage`
 - dependency bump: `sample-brain-dependency-upgrader`
 - release/PR packaging: `sample-brain-pr-packager`

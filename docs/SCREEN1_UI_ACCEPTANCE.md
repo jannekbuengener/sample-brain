@@ -9,9 +9,9 @@ UI change:
 PRECHECK → START_APP → FOCUS_APP → SNAPSHOT_INITIAL → RUN_CASES → RESTORE → CAPTURE_EVIDENCE → FINAL_RESULT
 ```
 
-This is **not** Owner Visual Acceptance (`docs/WORKBENCH_VISUAL_ACCEPTANCE.md`).
-It is a fail-closed desktop smoke/acceptance contract for Cursor agents on a
-local Windows host.
+This is **not** the Screen-1 visual acceptance gate
+(`docs/WORKBENCH_VISUAL_ACCEPTANCE.md`). It is a fail-closed desktop
+smoke/acceptance contract for Cursor agents on a local Windows host.
 
 ## Entry point
 

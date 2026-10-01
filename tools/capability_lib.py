@@ -166,7 +166,11 @@ def render_generated_routing_block(registry: dict[str, Any]) -> str:
         lines.append("Status values: " + ", ".join(f"`{s}`" for s in visual.get("statuses", [])))
         lines.append("")
         lines.append(
-            "No AI pixel judge. Owner visual judgment is not replaced by automated tests."
+            "Agents own visual/runtime acceptance via fixtures, screenshots, "
+            "MCP/UI automation, plugins, skills, and reviewers. "
+            "`VISUAL_ACCEPT_PENDING` means agent evidence is incomplete — not an "
+            "Owner wait state. Owner does not run operative acceptance loops. "
+            "Automated tests alone are not sufficient."
         )
         lines.append("")
 

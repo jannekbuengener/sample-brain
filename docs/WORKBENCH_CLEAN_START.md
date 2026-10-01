@@ -238,8 +238,9 @@ Additional #725 Runtime-/Interaction-Captures (not a parallel fixture family):
 - `opened-no-source`
 - `active-source` (maps to `screen1-active-source`)
 
-Evidence stays outside the repository. Owner Visual Acceptance remains separate
-from agent self-attestation. Historical v1 evidence stays frozen.
+Evidence stays outside the repository. Agent visual/runtime acceptance owns
+closure; see `WORKBENCH_VISUAL_ACCEPTANCE.md` operative rule. Historical v1
+evidence stays frozen.
 
 ## Non-goals
 
