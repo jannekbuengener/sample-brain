@@ -597,19 +597,23 @@ def _file_stat(audio_path: Path) -> tuple[int, int] | None:
         return None
 
 
-def analyze_folder_for_workbench(
-    folder: Path | str,
-    limit: int | None = None,
+def analyze_audio_paths_for_workbench(
+    root: Path | str,
+    audio_paths: list[Path] | tuple[Path, ...],
     progress_callback: ProgressCallback | None = None,
     should_cancel: ShouldCancel | None = None,
     *,
     use_cache: bool = True,
     library_db_path: Path | None = None,
+    folder_id: int | None = None,
 ) -> WorkbenchResult:
-    """Scan *folder* for audio files, analyze each, and return playlist rows."""
-    root = Path(folder).expanduser().resolve()
-    if not root.is_dir():
-        raise ValueError(f"Not a directory: {root}")
+    """Analyze an explicit bounded path list with the canonical Workbench analyzer.
+
+    Folder analysis and inbound DnD targeted analysis share this seam so the same
+    extractors, analyzer version, cache persistence, and error contracts apply.
+    """
+    root_path = Path(root).expanduser().resolve()
+    paths = [Path(path).expanduser().resolve() for path in audio_paths]
 
     def _cancelled() -> bool:
         return should_cancel is not None and should_cancel()
@@ -617,28 +621,11 @@ def analyze_folder_for_workbench(
     cache_db = (
         library_db_path if library_db_path is not None else workbench_library_db_path()
     )
-    folder_id: int | None = None
-    if use_cache:
-        folder_id = upsert_folder(root, db_path=cache_db)
+    resolved_folder_id = folder_id
+    if use_cache and resolved_folder_id is None:
+        resolved_folder_id = upsert_folder(root_path, db_path=cache_db)
 
-    _emit_progress(progress_callback, 0, 0, "", "scanning")
-    if _cancelled():
-        _emit_progress(progress_callback, 0, 0, "", "cancelled")
-        return WorkbenchResult(
-            summary={
-                "files_found": 0,
-                "analyzed_count": 0,
-                "error_count": 0,
-                "cache_hits": 0,
-                "cache_misses": 0,
-                "cancelled": 1,
-            },
-            rows=[],
-        )
-
-    audio_paths = _collect_audio_paths(root, limit)
-    total = len(audio_paths)
-    # Folder total known; current stays completed-count (0 before first sample).
+    total = len(paths)
     _emit_progress(progress_callback, 0, total, "", "scanning")
 
     rows: list[WorkbenchRow] = []
@@ -647,17 +634,20 @@ def analyze_folder_for_workbench(
     cache_hits = 0
     cache_misses = 0
 
-    for index, audio_path in enumerate(audio_paths, start=1):
+    for index, audio_path in enumerate(paths, start=1):
         if _cancelled():
             _emit_progress(progress_callback, index - 1, total, "", "cancelled")
             break
-        rel = str(audio_path.relative_to(root))
+        try:
+            rel = str(audio_path.relative_to(root_path))
+        except ValueError:
+            rel = audio_path.name
         display_name = normalize_display_name(audio_path.name)
         # current = completed files so far; display_name = sample now in flight.
         _emit_progress(progress_callback, index - 1, total, display_name, "analyzing")
 
         stat = _file_stat(audio_path)
-        if use_cache and folder_id is not None and stat is not None:
+        if use_cache and resolved_folder_id is not None and stat is not None:
             size_bytes, mtime_ns = stat
             cached = lookup_sample(audio_path, size_bytes, mtime_ns, db_path=cache_db)
             if cached is not None and cached.analyzer_version == WORKBENCH_ANALYZER_VERSION:
@@ -689,9 +679,9 @@ def analyze_folder_for_workbench(
                     error_detail=error_detail,
                 )
                 rows.append(row)
-                if use_cache and folder_id is not None and stat is not None:
+                if use_cache and resolved_folder_id is not None and stat is not None:
                     upsert_sample(
-                        folder_id,
+                        resolved_folder_id,
                         row,
                         size_bytes=stat[0],
                         mtime_ns=stat[1],
@@ -741,9 +731,9 @@ def analyze_folder_for_workbench(
             )
             rows.append(row)
             analyzed_count += 1
-            if use_cache and folder_id is not None and stat is not None:
+            if use_cache and resolved_folder_id is not None and stat is not None:
                 upsert_sample(
-                    folder_id,
+                    resolved_folder_id,
                     row,
                     size_bytes=stat[0],
                     mtime_ns=stat[1],
@@ -763,9 +753,9 @@ def analyze_folder_for_workbench(
                 error_detail=detail[:200],
             )
             rows.append(row)
-            if use_cache and folder_id is not None and stat is not None:
+            if use_cache and resolved_folder_id is not None and stat is not None:
                 upsert_sample(
-                    folder_id,
+                    resolved_folder_id,
                     row,
                     size_bytes=stat[0],
                     mtime_ns=stat[1],
@@ -784,6 +774,57 @@ def analyze_folder_for_workbench(
     if _cancelled():
         summary["cancelled"] = 1
     return WorkbenchResult(summary=summary, rows=rows)
+
+
+def analyze_folder_for_workbench(
+    folder: Path | str,
+    limit: int | None = None,
+    progress_callback: ProgressCallback | None = None,
+    should_cancel: ShouldCancel | None = None,
+    *,
+    use_cache: bool = True,
+    library_db_path: Path | None = None,
+) -> WorkbenchResult:
+    """Scan *folder* for audio files, analyze each, and return playlist rows."""
+    root = Path(folder).expanduser().resolve()
+    if not root.is_dir():
+        raise ValueError(f"Not a directory: {root}")
+
+    def _cancelled() -> bool:
+        return should_cancel is not None and should_cancel()
+
+    cache_db = (
+        library_db_path if library_db_path is not None else workbench_library_db_path()
+    )
+    folder_id: int | None = None
+    if use_cache:
+        folder_id = upsert_folder(root, db_path=cache_db)
+
+    _emit_progress(progress_callback, 0, 0, "", "scanning")
+    if _cancelled():
+        _emit_progress(progress_callback, 0, 0, "", "cancelled")
+        return WorkbenchResult(
+            summary={
+                "files_found": 0,
+                "analyzed_count": 0,
+                "error_count": 0,
+                "cache_hits": 0,
+                "cache_misses": 0,
+                "cancelled": 1,
+            },
+            rows=[],
+        )
+
+    audio_paths = _collect_audio_paths(root, limit)
+    return analyze_audio_paths_for_workbench(
+        root,
+        audio_paths,
+        progress_callback=progress_callback,
+        should_cancel=should_cancel,
+        use_cache=use_cache,
+        library_db_path=cache_db,
+        folder_id=folder_id,
+    )
 
 
 def row_as_dict(row: WorkbenchRow) -> dict[str, Any]:
@@ -2338,6 +2379,7 @@ __all__ = [
     "WorkbenchResult",
     "add_workbench_library_folder",
     "add_workbench_row_to_playlist",
+    "analyze_audio_paths_for_workbench",
     "analyze_folder_for_workbench",
     "apply_workbench_filters",
     "apply_workbench_structured_filters",
