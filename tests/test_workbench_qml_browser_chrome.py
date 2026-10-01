@@ -176,6 +176,18 @@ def test_browser_density_waveform_and_divider_invariants():
     assert "color: theme.dividerDefault" in delegate
 
 
+def test_browser_alternating_row_shading_preserves_state_priority():
+    """#781: selection > hover > subtle odd/even base shading."""
+    delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
+    expected = (
+        'color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface '
+        ': (rowSelection.containsMouse ? theme.surfaceElevated '
+        ': (index % 2 === 1 ? theme.surfacePanel : "transparent"))'
+    )
+    assert expected in delegate
+    assert "reuseItems: true" in QML_SOURCE
+
+
 def test_browser_shared_column_spec_uses_single_definition_each():
     for role in _SHARED_DENSITY_ROLES + _SHARED_BROWSER_COLUMN_ROLES:
         assert QML_SOURCE.count(f"property int {role}:") == 1
