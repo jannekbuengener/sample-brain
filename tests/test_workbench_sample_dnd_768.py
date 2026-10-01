@@ -6,6 +6,7 @@ TEST_FREEZE: do not weaken assertions to fit implementation.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import os
 import shutil
 from pathlib import Path
@@ -559,6 +560,126 @@ def test_collision_race_exclusive_create_preserves_existing(
     assert result.skipped_conflict[0].error_code == "collision"
     assert _file_digest(existing) == existing_digest
     assert existing.read_bytes() != challenger.read_bytes()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
+)
+def test_inbound_completion_must_not_steal_newer_library_selection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Stale inbound completion must not overwrite a newer Library selection (#768 P1)."""
+    from src.workbench_library import upsert_folder, workbench_library_db_path
+    from src.workbench_library_navigation import (
+        LibraryNodeKind,
+        WorkbenchLibraryNavigation,
+    )
+    from src.workbench_qml import Screen1QmlRuntimeComposition, Screen1QmlViewModel
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+    from src.workbench_qml_spike import _qml_engine
+    from src.workbench_sample_dnd import (
+        DropDestination,
+        ImportAnalyzeResult,
+        InboundFileResult,
+        InboundImportResult,
+    )
+    from tests.audio_fixtures import write_major_chord_wav
+
+    state_dir = tmp_path / "workbench_state"
+    state_dir.mkdir(exist_ok=True)
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(state_dir))
+
+    db = workbench_library_db_path()
+    drop_root = tmp_path / "drop_target"
+    other_root = tmp_path / "other_source"
+    drop_root.mkdir()
+    other_root.mkdir()
+    write_major_chord_wav(drop_root / "a.wav")
+    write_major_chord_wav(other_root / "b.wav")
+    drop_id = upsert_folder(drop_root, db_path=db)
+    other_id = upsert_folder(other_root, db_path=db)
+    drop_node = f"root:{drop_id}"
+    other_node = f"root:{other_id}"
+
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    app, engine, window = _qml_engine(view_model, runtime_composition=composition)
+    window.show()
+    bridge = engine._screen1_library_bridge
+    library_model = engine._screen1_library_model
+    finish = engine._screen1_finish_inbound_import
+    token_box = engine._screen1_inbound_import_token
+    selection_at_start = engine._screen1_inbound_import_selection_at_start
+    try:
+        library_model.state.fetch_children("container:sample-sources")
+        roots = [
+            node
+            for node in navigation.children("container:sample-sources")
+            if node.kind is LibraryNodeKind.REGISTERED_ROOT
+        ]
+        assert {node.node_id for node in roots} >= {drop_node, other_node}
+
+        bridge.selectLibraryNode(drop_node)
+        assert composition.selected_node_id == drop_node
+        assert library_model.state.selected_node_id == drop_node
+
+        # Simulate import-start capture + a mid-flight Library selection change.
+        token_box["value"] += 1
+        token = token_box["value"]
+        selection_at_start[token] = drop_node
+        bridge.selectLibraryNode(other_node)
+        assert composition.selected_node_id == other_node
+        assert library_model.state.selected_node_id == other_node
+
+        imported_path = (drop_root / "imported.wav").resolve()
+        result = ImportAnalyzeResult(
+            import_result=InboundImportResult(
+                imported=(
+                    InboundFileResult(
+                        source_path=tmp_path / "external.wav",
+                        status="imported",
+                        destination_path=imported_path,
+                    ),
+                ),
+                destination=DropDestination(
+                    folder_id=drop_id,
+                    source_root=drop_root.resolve(),
+                    destination_dir=drop_root.resolve(),
+                    node_id=drop_node,
+                ),
+            ),
+            should_refresh_browser=True,
+            should_auto_audition=False,
+        )
+        finish(token, drop_node, result)
+
+        assert library_model.state.selected_node_id == other_node
+        assert composition.selected_node_id == other_node
+        assert token not in selection_at_start
+    finally:
+        window.close()
+        app.processEvents()
+        timer = getattr(engine, "_screen1_waveform_timer", None)
+        if timer is not None:
+            timer.stop()
+        loader = getattr(engine, "_screen1_waveform_loader", None)
+        if loader is not None:
+            loader.close()
+        coordinator = getattr(engine, "_screen1_analysis_coordinator", None)
+        if coordinator is not None:
+            coordinator.close()
 
 
 def test_concurrent_same_name_inbound_no_silent_overwrite(

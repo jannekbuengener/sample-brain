@@ -5069,6 +5069,19 @@ def _qml_engine(
 
     inbound_import_token = {"value": 0}
     inbound_import_workers: list[object] = []
+    # token -> Library selection captured when the import job started
+    inbound_import_selection_at_start: dict[int, str | None] = {}
+
+    def _prune_inbound_import_workers() -> None:
+        alive: list[object] = []
+        for thread in inbound_import_workers:
+            try:
+                if hasattr(thread, "isRunning") and bool(thread.isRunning()):
+                    alive.append(thread)
+            except RuntimeError:
+                # Qt C++ object already deleted via deleteLater.
+                continue
+        inbound_import_workers[:] = alive
 
     def can_accept_drop(node_id: str) -> bool:
         if runtime_composition is None:
@@ -5082,11 +5095,15 @@ def _qml_engine(
 
     def finish_inbound_import(token: int, node_id: str, result_obj: object) -> None:
         if token != inbound_import_token["value"]:
+            inbound_import_selection_at_start.pop(token, None)
             return
         from .workbench_sample_dnd import ImportAnalyzeResult, format_inbound_status
 
         if not isinstance(result_obj, ImportAnalyzeResult):
+            inbound_import_selection_at_start.pop(token, None)
             return
+        # Captured at import start; kept for job hygiene / future diagnostics.
+        inbound_import_selection_at_start.pop(token, None)
         status = format_inbound_status(result_obj)
         show_status = bool(
             result_obj.import_result.skipped_conflict
@@ -5094,8 +5111,15 @@ def _qml_engine(
             or result_obj.import_result.error_code
             or result_obj.import_result.imported
         )
+        current_selected = library_model.state.selected_node_id
+        # Stale completion must not overwrite a newer Library selection (#768).
+        selection_still_on_destination = current_selected == node_id
         # Never auto-audition newly imported samples; preserve focus semantics.
-        if result_obj.should_refresh_browser and library_model.selectNode(node_id):
+        if (
+            result_obj.should_refresh_browser
+            and selection_still_on_destination
+            and library_model.selectNode(node_id)
+        ):
             intent = library_model.state.selection_intent
             if intent is not None and runtime_composition is not None:
                 runtime_composition.dispatch_selection(intent)
@@ -5148,8 +5172,10 @@ def _qml_engine(
             bridge.refreshState()
             return False
 
+        _prune_inbound_import_workers()
         inbound_import_token["value"] += 1
         token = inbound_import_token["value"]
+        inbound_import_selection_at_start[token] = library_model.state.selected_node_id
         library_db_path = runtime_composition.library_db_path
 
         try:
@@ -5194,8 +5220,10 @@ def _qml_engine(
         def _on_completed(job_token: int, dest_node: str, result_obj: object) -> None:
             finish_inbound_import(job_token, dest_node, result_obj)
             thread.quit()
+            _prune_inbound_import_workers()
 
         def _on_failed(job_token: int, dest_node: str, message: str) -> None:
+            inbound_import_selection_at_start.pop(job_token, None)
             if job_token == inbound_import_token["value"]:
                 view_model.set_browser_state(
                     rows=tuple(row.source_row for row in view_model.browser_rows),
@@ -5206,6 +5234,7 @@ def _qml_engine(
                 refresh_browser_scope()
                 bridge.refreshState()
             thread.quit()
+            _prune_inbound_import_workers()
 
         worker.completed.connect(_on_completed)
         worker.failed.connect(_on_failed)
@@ -5315,6 +5344,12 @@ def _qml_engine(
     engine._screen1_channel_rack_bridge = channel_rack_bridge
     engine._screen1_runtime_composition = runtime_composition
     engine._screen1_analysis_coordinator = analysis_coordinator
+    engine._screen1_finish_inbound_import = finish_inbound_import
+    engine._screen1_inbound_import_token = inbound_import_token
+    engine._screen1_inbound_import_selection_at_start = (
+        inbound_import_selection_at_start
+    )
+    engine._screen1_inbound_import_workers = inbound_import_workers
     engine._screen1_waveform_cache = waveform_cache
     engine._screen1_waveform_loader = waveform_loader
     engine._screen1_waveform_timer = None
