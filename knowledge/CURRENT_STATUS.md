@@ -1,6 +1,6 @@
 # CURRENT_STATUS
 
-**Last reconciled:** 2026-09-30
+**Last reconciled:** 2026-10-01
 
 ## Truth Rule
 
@@ -17,16 +17,17 @@ Do **not** infer current issue counts, PR counts, or the current `main` SHA from
 
 ## Current Operational Picture
 
-At the 2026-09-30 reconciliation, GitHub live shows the following durable work classes. This is orientation, not a frozen issue count; query GitHub before execution. Open issues are not automatically active work.
+At the 2026-10-01 reconciliation, durable system state is as follows. This is orientation, not a frozen issue count; query GitHub before execution. Open issues are not automatically active work.
 
-### Active product/UI delivery
+### No currently authorized product implementation slice
 
-- [#691](https://github.com/jannekbuengener/sample-brain/issues/691) — **Screen 1 Calm Adaptive Workspace**. Follow-up product/UI work after the closed #503 migration baseline. Children cover compact density, clean start, elastic panel layout, waveform research, preferences and parked reordering. Current product/UI delivery stays Screen-1-scoped.
+- There is **no active Screen-1 product epic**. Closed [#691](https://github.com/jannekbuengener/sample-brain/issues/691) is delivered historical authority, not an active parent for new work. New Screen-1 work needs a **new scoped issue**.
+- Closed [#494](https://github.com/jannekbuengener/sample-brain/issues/494) and [#703](https://github.com/jannekbuengener/sample-brain/issues/703) are historical governance/audit evidence, not active campaigns.
+- Parked/open research issues (#697, #679, #680, #469, #615/#620, #74) are **not** Active product tracks.
 
-### Governance / audit / validation
+### Shipped — Screen 1 runtime capabilities
 
-- [#494](https://github.com/jannekbuengener/sample-brain/issues/494) — migrate the temporary active `main` ruleset to the stable canon-aligned strict ruleset. The older #405 branch-protection gap is closed and must not be treated as the current governance state.
-- [#703](https://github.com/jannekbuengener/sample-brain/issues/703) — repository truth/drift/hygiene reconciliation campaign.
+Screen-1 on `main` includes Calm/Clean Start, compact Browser, elastic layout, Display Preferences, Browser column resize, bidirectional sample DnD (#768 DONE), Theme Authority (#785 DONE), Brand/Motion analysis surface (#786 DONE), and selection-steal hardening. `LOCK_PYSIDE6_QML` remains the renderer contract for any future Screen-1 visuals.
 
 ### Shipped — Screen 2 Channel Rack
 
@@ -34,14 +35,15 @@ At the 2026-09-30 reconciliation, GitHub live shows the following durable work c
 
 ### Parked / external-dependency / R&D tracks
 
+- [#697](https://github.com/jannekbuengener/sample-brain/issues/697) — Panel reordering. **PARKED / RESEARCH ONLY**; explicit reactivation required. Do not implement opportunistically.
 - [#468](https://github.com/jannekbuengener/sample-brain/issues/468) — Techno listening/stem pilot. Existing canary/listening evidence remains historically valid; the track is **PARKED / NOT ACTIVE**. No further Listening-/Stem-/Demucs-canaries, Track-02–05 runs, or scorecard campaign without explicit Owner reactivation.
 - [#469](https://github.com/jannekbuengener/sample-brain/issues/469) — VST3 integration is explicitly **parked / not active**.
-- [#74](https://github.com/jannekbuengener/sample-brain/issues/74) — upstream sqlite-vec ANN readiness tracker; no private ANN replacement.
-- [#615](https://github.com/jannekbuengener/sample-brain/issues/615) and scoped children — Bitwig is an **R&D playground only**, not a Sample-Brain product integration decision.
+- [#74](https://github.com/jannekbuengener/sample-brain/issues/74) — upstream sqlite-vec ANN readiness tracker only; no private ANN replacement.
+- [#615](https://github.com/jannekbuengener/sample-brain/issues/615) / [#620](https://github.com/jannekbuengener/sample-brain/issues/620) — Bitwig is an **R&D playground only**, not a Sample-Brain product integration decision.
 - [#679](https://github.com/jannekbuengener/sample-brain/issues/679) — Screen 3 Arrangement is **parked / future product scope**.
 - [#680](https://github.com/jannekbuengener/sample-brain/issues/680) — vocal/beatbox → sample-pattern is **parked / future R&D**.
 
-Closed historical work such as #392, #405, #503, #579, #196, #198 and #73 remains useful evidence but is not active roadmap work.
+Closed historical work such as #392, #405, #503, #579, #196, #198, #73, #494, #691, and #703 remains useful evidence but is not active roadmap work.
 
 Transient PRs and exact `main` SHA are intentionally not frozen here. Query GitHub live.
 
@@ -67,9 +69,10 @@ Transient PRs and exact `main` SHA are intentionally not frozen here. Query GitH
 
 - The local Workbench and native-audio contracts are established.
 - `LOCK_PYSIDE6_QML` remains the renderer canon for new Screen-1 visual/product work; `src/workbench_qml.py` is the canonical QML Screen-1 shell and Tkinter is legacy/fallback plus behavioral reference.
-- Screen-1 Theme Core + QML Theme Authority (#785) provides preset-based dark appearance (Blood A default) with local custom themes; Display Preferences hosts Appearance without a second theme store.
-- Screen-1 Brand/Motion analysis loading (#786) is DONE_MERGED_CLOSED: Owner-approved brain on the analysis surface only, real `AnalysisUiState` progress projection, motion `on`/`reduced`/`off` with static fallback, no permanent header brand lockup; consumes `themeAuthority` tokens (no second color authority).
-- The original Screen-1 migration epic #503 is closed. Current Screen-1 refinement continues under #691; agents must not route new work through #503 as though it were still active.
+- Screen-1 Theme Core + QML Theme Authority (#785) is **DONE**: preset-based dark appearance (Blood A default) with local custom themes; Display Preferences hosts Appearance without a second theme store.
+- Screen-1 Brand/Motion analysis loading (#786) is **DONE**: brain on the analysis surface only, real `AnalysisUiState` progress projection, motion `on`/`reduced`/`off` with static fallback, no permanent header brand lockup; consumes `themeAuthority` tokens (no second color authority).
+- Sample DnD (#768) and selection-steal hardening are integrated on `main`.
+- Migration epic #503 and Calm Adaptive Workspace epic #691 are closed/delivered. Agents must not route new Screen-1 work through closed #691 as an active parent; open a new scoped issue instead.
 - Screen-2 delivery on `main` includes session ownership, Pattern Core, sequencer scheduling/PCM, Channel Rack Python core, and Screen-2 QML Channel Rack (#678 / PR #755); parent epic #675 is CLOSED.
 - native audio core and deterministic transport/key-lock test surface remain part of the shipped foundation.
 - Quick Capture voice-to-issue flow uses local recording + local whisper.cpp + GitHub CLI. Private/local path and obvious secret redaction applies before public issue creation; see [`docs/QUICK_CAPTURE.md`](../docs/QUICK_CAPTURE.md).
@@ -116,7 +119,7 @@ Pull requests now have a repository-wide `Full core pytest` job in addition to f
 
 CodeQL, Gitleaks, Dependency Review, Python smoke, and focused Core pytest jobs remain part of the normal GitHub evidence surface.
 
-**Important:** The original unprotected-`main` gap tracked by #405 is historical/closed. Current repository-governance migration is tracked by #494; always read the live Ruleset state before making a merge-policy claim.
+**Important:** The original unprotected-`main` gap tracked by #405 and the Phase-A ruleset migration tracked by #494 are historical/closed. Always read the live Ruleset state before making a merge-policy claim.
 
 ## Known Product / Operational Constraints
 

@@ -208,4 +208,4 @@ Geometry ratios remain owned by #694. Clean Start visibility remains owned by
 
 - Synthetic fixtures only; evidence outside the repository.
 - Prefer #700 v2 state IDs; do not invent a parallel fixture family.
-- Owner Visual Acceptance remains separate from agent self-attestation.
+- Agent visual/runtime acceptance owns closure; see `WORKBENCH_VISUAL_ACCEPTANCE.md` operative rule (Owner does not run operative acceptance loops).

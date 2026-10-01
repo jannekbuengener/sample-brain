@@ -127,4 +127,4 @@ is the intended seam. This slice does not implement it.
   `reuseItems: true`).
 - Real PySide6/QML runtime evidence at `1600×900` and `1120×640`, including a
   synthetic divider drag, captured **outside** the repository.
-- Owner Visual Acceptance remains separate from agent self-attestation.
+- Agent visual/runtime acceptance owns closure; see `WORKBENCH_VISUAL_ACCEPTANCE.md` operative rule (Owner does not run operative acceptance loops).

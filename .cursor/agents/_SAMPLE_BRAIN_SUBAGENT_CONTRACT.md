@@ -34,7 +34,7 @@ If a required file is missing, report it exactly and continue only with an expli
 When a task touches Screen-1 visuals, Workbench UI, QML, or Tkinter UI:
 
 1. Read `docs/TARGET_ARCHITECTURE.md` and `docs/WORKBENCH_QML_PROOF_SPIKE.md` before planning or implementation.
-2. Fetch live `main`, Parent #691, and the relevant scoped child issue before making a plan or status claim. Closed #503/#579 are historical evidence only unless the current child explicitly references them.
+2. Fetch live `main` and the relevant **new scoped Screen-1 issue** before making a plan or status claim. Closed #691 is delivered historical authority (not an active parent). Closed #503/#579 are historical evidence only unless the current child explicitly references them.
 3. Apply the locked contract: `SCREEN1_RENDERER = LOCK_PYSIDE6_QML`; new visual/product work uses PySide6 / Qt Quick / QML.
 4. Treat Tkinter as the functional legacy/fallback path and behavioral/integration reference only. Keep Python Core/Controller/Audio/Catalog contracts authoritative and reused through thin renderer adapters.
 

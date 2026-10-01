@@ -173,4 +173,5 @@ territory ([`WORKBENCH_DISPLAY_PREFERENCES.md`](WORKBENCH_DISPLAY_PREFERENCES.md
 11. Browser keyboard / Search focus / Esc remain intact  
 
 Runtime acceptance sizes: 1600×900, 1280×720, 1120×640; Harmony open/closed;
-100% / 125% / 150% DPI. Owner Visual Acceptance required before merge.
+100% / 125% / 150% DPI. Agent visual/runtime acceptance required before merge
+(see `WORKBENCH_VISUAL_ACCEPTANCE.md` operative rule).

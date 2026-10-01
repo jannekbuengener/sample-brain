@@ -12,11 +12,21 @@ For execution state, fetch GitHub and repo live first. If this roadmap conflicts
 
 This roadmap intentionally groups durable work rather than mirroring every open issue.
 
-### Active — Screen 1 product refinement
+### Active — no authorized product implementation slice
 
-**[#691 — Calm Adaptive Workspace](https://github.com/jannekbuengener/sample-brain/issues/691)**
+There is **no currently authorized product implementation track** on the live board.
 
-Current sequence is owned by #691 and its scoped children: shared visual acceptance, compact Browser/Harmonic density, elastic coupled panels, Clean Start/progressive disclosure, waveform rendering research, then display/startup preferences. Panel reordering remains parked until the layout foundation is accepted. Current product/UI delivery stays Screen-1-scoped.
+Authorized Screen-1 delivery under historical [#691](https://github.com/jannekbuengener/sample-brain/issues/691) is complete on `main` (Calm/Clean Start, compact Browser, elastic layout, Display Preferences, Browser Column Resize, Sample DnD, Theme Authority, Brand/Motion analysis surface, selection-steal hardening). Closed #691 is **delivered authority / historical parent**, not an active epic for new work. New Screen-1 product work requires a **new scoped issue** plus live GitHub confirmation.
+
+Closed governance/audit campaigns [#494](https://github.com/jannekbuengener/sample-brain/issues/494) and [#703](https://github.com/jannekbuengener/sample-brain/issues/703) are historical evidence, not active campaigns.
+
+Next product work must be selected from live product gaps and opened as a new scoped issue. Do not invent an Active track from parked/open research issues.
+
+### Shipped — Screen 1 Calm Adaptive Workspace cluster
+
+**[#691 — Calm Adaptive Workspace](https://github.com/jannekbuengener/sample-brain/issues/691)** (CLOSED / delivered)
+
+Shipped Screen-1 runtime capabilities on `main` include Clean Start, compact Browser density, elastic coupled panels, Display Preferences, Browser column resize, bidirectional sample DnD (#768), Theme Authority (#785), Brand/Motion analysis surface (#786), and selection-steal hardening. Treat #691 as historical delivery authority only.
 
 ### Shipped — Screen 2 Channel Rack
 
@@ -25,20 +35,16 @@ Current sequence is owned by #691 and its scoped children: shared visual accepta
 
 Python/session/sequencer foundations and Screen-2 QML Channel Rack are **DONE** on `main` (PR #755; epic #675 CLOSED). Keep Screen 2 distinct from the parked Screen-3 arrangement timeline (#679); do not reopen Screen-2 product work without explicit Owner-GO.
 
-### Active — repository governance and reconciliation
-
-- [#494](https://github.com/jannekbuengener/sample-brain/issues/494) — move from the temporary active main ruleset to the stable canon-aligned strict model without a protection gap.
-- [#703](https://github.com/jannekbuengener/sample-brain/issues/703) — reconcile repository truth, docs, status, agents, CI, validation evidence and artifact hygiene.
-
 ### Watch / parked — do not promote implicitly
 
+- [#697](https://github.com/jannekbuengener/sample-brain/issues/697) — **PARKED / RESEARCH ONLY**. Panel reordering research; no implementation without explicit reactivation. Do not treat open research as an Active product track.
 - [#468](https://github.com/jannekbuengener/sample-brain/issues/468) — **PARKED / NOT ACTIVE**. Existing canary/listening evidence remains historically valid; do not run further Listening-/Stem-validation without explicit Owner reactivation.
-- [#74](https://github.com/jannekbuengener/sample-brain/issues/74) — wait for a stable documented sqlite-vec ANN release; NumPy remains the default search backend.
+- [#74](https://github.com/jannekbuengener/sample-brain/issues/74) — external upstream sqlite-vec ANN tracker only; NumPy remains the default search backend; no private ANN substitute.
 - [#469](https://github.com/jannekbuengener/sample-brain/issues/469) — VST3 product integration is parked.
-- [#615](https://github.com/jannekbuengener/sample-brain/issues/615) — Bitwig work is R&D/playground only.
+- [#615](https://github.com/jannekbuengener/sample-brain/issues/615) / [#620](https://github.com/jannekbuengener/sample-brain/issues/620) — Bitwig work is R&D/playground only; no product integration.
 - [#679](https://github.com/jannekbuengener/sample-brain/issues/679) / [#680](https://github.com/jannekbuengener/sample-brain/issues/680) — future arrangement and input-mode ideas, not current delivery blockers.
 
-Closed #392/#405/#503/#579/#196/#198/#73 are historical evidence, not current roadmap items.
+Closed #392/#405/#503/#579/#196/#198/#73/#494/#703 are historical evidence, not current roadmap items.
 
 ## Shipped Foundations
 
@@ -68,11 +74,11 @@ The following are no longer roadmap work and should not be represented as open e
 - native audio transport and recording path.
 - Quick Capture local voice-to-GitHub-issue flow.
 
-### Screen-1 QML foundation and current refinement
+### Screen-1 QML foundation (delivered)
 
 - `LOCK_PYSIDE6_QML` remains the decided renderer contract for new Screen-1 visual/product work.
 - `src/workbench_qml.py` is the production QML shell and remains a thin renderer/intent layer over Python-authoritative Core/Controller/Audio/Catalog contracts.
-- The original migration epic #503 is closed. Current refinement is tracked under #691; Tkinter remains legacy/fallback and behavioral reference, not the target for new Screen-1 visuals.
+- Migration epic #503 and follow-up epic #691 are both closed/delivered. New Screen-1 product visuals still use QML; Tkinter remains legacy/fallback and behavioral reference. Do not route new work through closed #691 as though it were still an active parent.
 
 ### Screen-2 foundation
 

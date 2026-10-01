@@ -1,5 +1,20 @@
 # Screen-1 Visual Acceptance
 
+## Operative acceptance rule (current)
+
+Owner does **not** run manual operative visual/runtime acceptance loops.
+Agents own technical/runtime/visual acceptance using fixtures, screenshots,
+MCP/UI automation, plugins, skills, and reviewers.
+
+Statuses:
+
+- `VISUAL_ACCEPT_PENDING` — agent evidence still incomplete (not an Owner wait)
+- `VISUAL_ACCEPT_PASS` / `VISUAL_ACCEPT_FAIL` — agent-owned closure outcomes
+
+Historical sections below that mention Owner PASS remain evidence contracts for
+delivered slices; they do **not** authorize a new Owner acceptance gate for
+active routing.
+
 ## v1 — historical #503 evidence (frozen)
 
 Run only from a verified dedicated runtime:
