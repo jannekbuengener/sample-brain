@@ -295,7 +295,9 @@ def test_play_transport_start_failure_does_not_advertise_playing():
     Controller = _require(module, "ChannelRackController")
     engine = MagicMock()
     transport = _fake_transport(engine=engine)
-    transport.start = MagicMock(side_effect=RuntimeError("device busy"))
+    transport.play = MagicMock(side_effect=RuntimeError("device busy"))
+    # Prefer play() over legacy start() alias.
+    del transport.start
     controller = Controller(live_kit=_kit_with_samples(), transport=transport)
     controller.enter_screen2()
     with pytest.raises(RuntimeError, match="transport failed to start"):
@@ -850,10 +852,20 @@ def test_qml_runtime_add_assign_selected_toggle_play(tmp_path):
             controller.state.pattern.triggers
         )
 
-        # Play fails soft without native engine in this harness — still refreshable.
+        # Play: fail-soft without native engine; with engine, Screen-2 loops until Stop (#810).
         channel_rack.play()
         app.processEvents()
-        assert controller.is_playing is False
+        transport = controller.transport
+        native_engine = None
+        if hasattr(transport, "get_native_engine"):
+            native_engine = transport.get_native_engine()
+        if native_engine is None:
+            assert controller.is_playing is False
+        else:
+            assert controller.is_playing is True
+            channel_rack.stop()
+            app.processEvents()
+            assert controller.is_playing is False
 
         rack_screen = window.findChild(QQuickItem, "channelRackScreen")
         assert rack_screen is not None and rack_screen.property("visible") is True

@@ -2,8 +2,10 @@
 
 Owns one :class:`ChannelRackState` per Workbench session, projects it for QML,
 and routes Play/Stop through ``play_channel_rack_once`` / ``PatternPassPlayer``.
-Does not own Live Kit, TempoMap, or the native audio engine; those stay on the
-shared session transport. QML never holds pattern shadow truth.
+Screen-2 Play loops by orchestrating successive finite one-pass players until
+Stop (#810). Does not own Live Kit, TempoMap, or the native audio engine; those
+stay on the shared session transport. QML never holds pattern or loop shadow
+truth.
 """
 
 from __future__ import annotations
@@ -25,12 +27,50 @@ from .channel_rack import (
 )
 from .pattern_core import Trigger
 from .sequencer_pcm import SequencerPcmProvider
+from .session_grid import TempoMap
 from .workbench_live_kit import LIVE_KIT_SLOT_MAPPING, LiveKitState
 
 DEFAULT_LOOKAHEAD_FRAMES = 4800
 USER_GROUP_NAME = "User"
 SCREEN1 = "screen1"
 SCREEN2 = "screen2"
+
+
+def pattern_pass_start_frames(
+    tempo_map: TempoMap,
+    *,
+    anchor_quarter: Fraction,
+    anchor_engine_frame: int,
+    pass_index: int,
+    length_quarter_notes: Fraction,
+) -> tuple[Fraction, int]:
+    """Map loop pass index → (musical start quarter, engine-frame anchor).
+
+    Musical authority is ``TempoMap`` quarter-note positions. Engine anchors are
+    derived as a session-frame delta from the play-time anchor — never by adding
+    a constant pattern frame duration (tempo changes between passes must apply).
+    """
+    if pass_index < 0:
+        raise ValueError("pass_index must be >= 0")
+    start_quarter = anchor_quarter + (pass_index * length_quarter_notes)
+    start_session = tempo_map.quarter_note_to_frame(start_quarter)
+    anchor_session = tempo_map.quarter_note_to_frame(anchor_quarter)
+    start_engine = int(anchor_engine_frame) + (start_session - anchor_session)
+    return start_quarter, start_engine
+
+
+def _read_transport_session_frame(transport: Any) -> int:
+    getter = getattr(transport, "get_session_frame", None)
+    if callable(getter):
+        return int(getter() or 0)
+    return int(getattr(transport, "session_frame", 0) or 0)
+
+
+def _read_transport_engine_frame(transport: Any) -> int:
+    getter = getattr(transport, "get_engine_frame", None)
+    if callable(getter):
+        return int(getter() or 0)
+    return int(getattr(transport, "engine_frame", 0) or 0)
 
 
 class _SequencerEngineAdapter:
@@ -152,7 +192,12 @@ def _sync_live_kit_sample_paths(
 
 
 class ChannelRackController:
-    """Session-owned Screen-2 rack: project + commands + one pattern-pass player."""
+    """Session-owned Screen-2 rack: project + commands + looping one-pass player.
+
+    Each Play starts a finite ``PatternPassPlayer``. When that pass completes,
+    the controller plans the next finite pass from the live ``ChannelRackState``
+    at the next musical pattern boundary until Stop / leave Screen 2.
+    """
 
     def __init__(
         self,
@@ -178,6 +223,10 @@ class ChannelRackController:
         self._active_screen = SCREEN1
         self._play_handle: ChannelRackPlayHandle | None = None
         self._playing = False
+        self._loop_active = False
+        self._loop_pass_index = 0
+        self._loop_anchor_quarter = Fraction(0, 1)
+        self._loop_anchor_engine_frame = 0
         self._on_claim_audio_focus = on_claim_audio_focus
         self._on_release_to_screen1 = on_release_to_screen1
 
@@ -271,56 +320,112 @@ class ChannelRackController:
         )
         return self._state
 
+    def _clear_loop_session(self) -> None:
+        self._loop_active = False
+        self._loop_pass_index = 0
+        self._loop_anchor_quarter = Fraction(0, 1)
+        self._loop_anchor_engine_frame = 0
+
+    def _resolve_engine_adapter(self) -> _SequencerEngineAdapter:
+        if hasattr(self._transport, "ensure_engine_running"):
+            self._transport.ensure_engine_running()
+        raw_engine = None
+        if hasattr(self._transport, "get_native_engine"):
+            raw_engine = self._transport.get_native_engine()
+        if raw_engine is None:
+            raise RuntimeError("Native audio engine is required for Channel Rack playback")
+        return _SequencerEngineAdapter(raw_engine)
+
+    def _start_pattern_pass(
+        self,
+        *,
+        pass_index: int,
+        engine: _SequencerEngineAdapter,
+    ) -> ChannelRackPlayHandle:
+        if self._state is None:
+            raise RuntimeError("Channel Rack is not active; call enter_screen2() first")
+        start_quarter, start_engine = pattern_pass_start_frames(
+            self._transport.tempo_map,
+            anchor_quarter=self._loop_anchor_quarter,
+            anchor_engine_frame=self._loop_anchor_engine_frame,
+            pass_index=pass_index,
+            length_quarter_notes=self._state.pattern.length_quarter_notes,
+        )
+        warm_channel_rack_pcm(self._state, self._pcm_provider)
+        return play_channel_rack_once(
+            self._state,
+            tempo_map=self._transport.tempo_map,
+            pattern_start_quarter=start_quarter,
+            pattern_start_engine_frame=start_engine,
+            engine=engine,
+            lookahead_frames=self._lookahead_frames,
+            pcm_provider=self._pcm_provider,
+            allocate_voice_id=self._allocate_voice_id,
+        )
+
+    def _adopt_pass_handle(self, handle: ChannelRackPlayHandle, *, pass_index: int) -> bool:
+        """Install handle when playable; return False when empty-pass honesty fails closed."""
+        if handle.player.done and int(handle.scheduled_count) == 0:
+            self._play_handle = None
+            self._playing = False
+            self._clear_loop_session()
+            return False
+        self._play_handle = handle
+        self._loop_pass_index = pass_index
+        self._playing = True
+        return True
+
     def play(self) -> ChannelRackPlayHandle | None:
         if self._state is None:
             raise RuntimeError("Channel Rack is not active; call enter_screen2() first")
         self._claim_audio_focus()
         self.stop()
 
-        engine = None
-        if hasattr(self._transport, "ensure_engine_running"):
-            self._transport.ensure_engine_running()
-        if hasattr(self._transport, "get_native_engine"):
-            engine = self._transport.get_native_engine()
-        if engine is None:
-            raise RuntimeError("Native audio engine is required for Channel Rack playback")
-        engine = _SequencerEngineAdapter(engine)
+        try:
+            engine = self._resolve_engine_adapter()
+        except RuntimeError:
+            self._clear_loop_session()
+            raise
 
-        if hasattr(self._transport, "start"):
+        starter = None
+        if callable(getattr(self._transport, "play", None)):
+            # Production WorkbenchTransportAdapter / SessionTransport clock.
+            starter = self._transport.play
+        elif callable(getattr(self._transport, "start", None)):
+            # Test doubles / compatibility alias.
+            starter = self._transport.start
+        if starter is not None:
             try:
-                self._transport.start()
+                starter()
             except Exception as exc:
                 # Fail closed: never advertise playing without a live transport clock.
                 self._playing = False
                 self._play_handle = None
+                self._clear_loop_session()
                 raise RuntimeError(
                     f"Channel Rack transport failed to start: {exc}"
                 ) from exc
 
-        warm_channel_rack_pcm(self._state, self._pcm_provider)
-        start_frame = int(getattr(self._transport, "engine_frame", 0) or 0)
-        handle = play_channel_rack_once(
-            self._state,
-            tempo_map=self._transport.tempo_map,
-            pattern_start_quarter=Fraction(0, 1),
-            pattern_start_engine_frame=start_frame,
-            engine=engine,
-            lookahead_frames=self._lookahead_frames,
-            pcm_provider=self._pcm_provider,
-            allocate_voice_id=self._allocate_voice_id,
+        # Play anchor: musical quarter from live session position + current engine
+        # clock. Do not assume session quarter 0 after seek / prior transport use.
+        session_frame = _read_transport_session_frame(self._transport)
+        engine_frame = _read_transport_engine_frame(self._transport)
+        self._loop_anchor_quarter = self._transport.tempo_map.frame_to_quarter_note(
+            session_frame
         )
+        self._loop_anchor_engine_frame = engine_frame
+        self._loop_pass_index = 0
+        self._loop_active = True
+
+        handle = self._start_pattern_pass(pass_index=0, engine=engine)
         # Honesty: do not advertise playing when the first tick already finished
         # with nothing scheduled (missing PCM / empty pass soft-skip).
-        if handle.player.done and int(handle.scheduled_count) == 0:
-            self._play_handle = None
-            self._playing = False
+        if not self._adopt_pass_handle(handle, pass_index=0):
             return handle
-        self._play_handle = handle
-        self._playing = True
         return handle
 
     def tick_playback(self) -> Mapping[str, Any] | None:
-        """Advance one PatternPassPlayer tick; used by the QML timer bridge."""
+        """Advance the current pass; start the next finite pass when looping."""
         if not self._playing or self._play_handle is None:
             return None
         raw_engine = self._transport.get_native_engine()
@@ -328,12 +433,12 @@ class ChannelRackController:
             self.stop()
             return None
         engine = _SequencerEngineAdapter(raw_engine)
-        engine_frame = int(getattr(self._transport, "engine_frame", 0) or 0)
+        engine_frame = _read_transport_engine_frame(self._transport)
         # Prefer live native snapshot when available so scheduling tracks audio clock.
         try:
             if hasattr(self._transport, "poll"):
                 self._transport.poll()
-                engine_frame = int(getattr(self._transport, "engine_frame", engine_frame))
+                engine_frame = _read_transport_engine_frame(self._transport)
         except Exception:
             pass
         tick = self._play_handle.player.tick(
@@ -343,8 +448,30 @@ class ChannelRackController:
             allocate_voice_id=self._allocate_voice_id,
         )
         if self._play_handle.player.done:
+            if self._loop_active and self._state is not None:
+                next_index = self._loop_pass_index + 1
+                next_handle = self._start_pattern_pass(
+                    pass_index=next_index,
+                    engine=engine,
+                )
+                # play_channel_rack_once already performed the initial tick.
+                if not self._adopt_pass_handle(next_handle, pass_index=next_index):
+                    # Empty / unplayable follow-up pass: fail closed, no busy loop.
+                    return {
+                        "scheduled_count": 0,
+                        "pending_count": 0,
+                        "live_voice_count": 0,
+                        "playing": False,
+                    }
+                return {
+                    "scheduled_count": int(next_handle.scheduled_count),
+                    "pending_count": int(next_handle.player.pending_count),
+                    "live_voice_count": int(next_handle.player.live_voice_count),
+                    "playing": self._playing,
+                }
             self._playing = False
             self._play_handle = None
+            self._loop_active = False
         return {
             "scheduled_count": tick.scheduled_count,
             "pending_count": tick.pending_count,
@@ -356,6 +483,7 @@ class ChannelRackController:
         handle = self._play_handle
         self._play_handle = None
         self._playing = False
+        self._clear_loop_session()
         if handle is None:
             return
         raw_engine = None
@@ -371,5 +499,6 @@ __all__ = [
     "SCREEN1",
     "SCREEN2",
     "USER_GROUP_NAME",
+    "pattern_pass_start_frames",
     "project_channel_rack_for_qml",
 ]
