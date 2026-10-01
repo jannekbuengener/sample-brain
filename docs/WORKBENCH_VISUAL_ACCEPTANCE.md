@@ -150,10 +150,33 @@ Evidence stays **outside** the repository. Synthetic fixture paths only. Owner
 Visual Acceptance remains separate from agent self-attestation. Capture helper:
 `run_qml_visual_acceptance_744` in `src/workbench_qml_spike.py`.
 
+### #786 Brand / analysis motion Runtime-Evidence
+
+Additive capture labels for the analysis brand/motion layer (real
+`AnalysisUiState` + `project_analysis_motion` only; no second progress clock).
+Do **not** add competing `REQUIRED_STATE_IDS_V2` entries.
+
+| Evidence ID | Intent |
+|-------------|--------|
+| `786-idle-header-clean` | Clean start; Screen-1 header has no brain logo / SAMPLE BRAIN wordmark / claim |
+| `786-scanning-indeterminate` | Phase `scanning`; indeterminate progress; brain on analysis surface |
+| `786-analyzing-determinate-mid` | Phase `analyzing`; mid `current/total`; real `display_name` |
+| `786-analyzing-full` | Determinate near/full progress |
+| `786-motion-on` | Motion `on`; calm organic activity only while analyzing |
+| `786-motion-reduced` | Motion `reduced`; distinct reduced path (not merely slower full motion) |
+| `786-motion-off` | Motion `off`; static high-quality fallback; status still clear |
+| `786-error` | Error phase; no decorative motion requirement |
+| `786-stale-ignored` | Stale token projection does not drive sample-name / progress motion |
+
+Evidence stays **outside** the repository. Synthetic fixture paths only.
+Capture helper: `run_qml_visual_acceptance_786` in `src/workbench_qml_spike.py`
+(`tools/screen1_brand_motion_786_evidence.py`).
+
 ## Brand identity references
 
-Byte-identische Owner Brand-Assets (Reference only in this slice — no header,
-scope-icon, splash-runtime, or packaging wiring):
+Byte-identische Owner Brand-Assets. Analysis/loading runtime may bind the
+primary brain symbol via `workbench_brand_motion.resolve_brand_slots` —
+never as permanent Screen-1 header chrome:
 
 | Role | Repo path | SHA-256 |
 |------|-----------|---------|

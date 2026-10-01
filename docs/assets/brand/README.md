@@ -1,6 +1,8 @@
 # Brand asset slots
 
-Status: **slot contract only** for #786.
+Status: **ACTIVE** Screen-1 analysis/loading brand + motion runtime for #786
+(Python Core `#795` + QML visualization). Theme color authority remains #785 /
+`workbench_theme` — this layer does not invent a second palette.
 
 ## Superdesign project (canonical)
 
@@ -17,6 +19,23 @@ Status: **slot contract only** for #786.
 | Symbol + Wordmark Lockup | Presentation / website | No |
 | Splash / Loading | Brand layer | No |
 | Analysis Motion Reference | Consumes real analysis/progress state | No |
+
+## Runtime contract (#786)
+
+- Python owns analysis truth (`AnalysisUiState` + `AnalysisJobCoordinator`) and
+  projects motion hints via `src/workbench_brand_motion.py`.
+- QML visualizes the projection on the analysis/loading surface only.
+- No permanent brain logo / `SAMPLE BRAIN` wordmark / claim in the Screen-1
+  header chrome. Product identity text (`Sample Brain`) remains header copy,
+  not brand-lockup chrome.
+- Claim `Sample Brain — Frech aber im Flow.` is allowed on splash/external
+  surfaces only — not as permanent Screen-1 header chrome.
+- Progress: `total <= 0` → indeterminate (no fake %); `total > 0` →
+  `current/total` clamped. Sample name only from real `display_name`.
+- Motion preferences `on` / `reduced` / `off` must all be real paths:
+  reduced is not merely slower full motion; off uses a clear static fallback.
+- Subtle breathe/flow only while phase is `scanning` or `analyzing` and motion
+  is not off. Status text remains understandable without animation.
 
 ## Rules
 

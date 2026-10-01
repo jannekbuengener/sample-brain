@@ -100,10 +100,15 @@ def test_qml_declares_744_loading_surface_structure():
     cancel_idx = QML_SOURCE.index("objectName: \"analysisCancelButton\"")
     assert blocker_idx < card_idx < cancel_idx
     # No fake progress clock in the loading surface.
+    # #786 may add brandMotionLayer animations; progress fill must stay static.
     surface_start = QML_SOURCE.index("id: analysisWorkingSurface")
-    surface_chunk = QML_SOURCE[surface_start : surface_start + 4500]
+    surface_end = QML_SOURCE.index("id: browserPane", surface_start)
+    surface_chunk = QML_SOURCE[surface_start:surface_end]
     assert "Timer {" not in surface_chunk
-    assert "NumberAnimation" not in surface_chunk
+    fill_idx = surface_chunk.index('objectName: "analysisProgressFill"')
+    fill_chunk = surface_chunk[fill_idx : fill_idx + 700]
+    assert "NumberAnimation" not in fill_chunk
+    assert "Behavior on width" not in fill_chunk
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")

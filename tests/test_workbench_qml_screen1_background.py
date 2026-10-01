@@ -39,13 +39,12 @@ def test_qml_source_uses_stretch_background_image_without_crop_or_gradients():
     source = workbench_qml.QML_SOURCE
     assert "objectName: \"screen1Background\"" in source
     assert "source: screen1BackgroundUrl" in source
-    assert "fillMode: Image.Stretch" in source
-    assert "PreserveAspectCrop" not in source
-    assert "PreserveAspectFit" not in source
     assert "Gradient" not in source
     assert "LinearGradient" not in source
     assert "RadialGradient" not in source
-    # No decorative ambient overlays / colorize on the background image.
+    # Background image must stretch full-bleed — crop/fit modes are forbidden
+    # on screen1Background only. Other Images (e.g. #786 brand brain) may use
+    # PreserveAspectFit inside their own slots.
     bg_block = re.search(
         r"Image\s*\{[^}]*objectName:\s*\"screen1Background\".*?\}",
         source,
@@ -53,6 +52,10 @@ def test_qml_source_uses_stretch_background_image_without_crop_or_gradients():
     )
     assert bg_block is not None
     block = bg_block.group(0)
+    assert "fillMode: Image.Stretch" in block
+    assert "PreserveAspectCrop" not in block
+    assert "PreserveAspectFit" not in block
+    # No decorative ambient overlays / colorize on the background image.
     assert "colorize" not in block.casefold()
     assert "opacity:" not in block.casefold() or "opacity: 1" in block
     assert "layer.enabled" not in block.casefold()
