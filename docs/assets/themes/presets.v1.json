@@ -7,7 +7,7 @@
     "Derived tokens are computed and must not be edited independently.",
     "Blood primary_candidate is stage A (#8f0e24). Blood B (#d4143a) remains a brighter-crimson comparison variant.",
     "Not a QML runtime contract. Product implementation is out of scope for this slice.",
-    "Issues #785/#786 remain open."
+    "Issues #785 remains open for Theme QML runtime; #786 is DONE_MERGED_CLOSED."
   ],
   "derivation": {
     "textPrimary": "foreground",

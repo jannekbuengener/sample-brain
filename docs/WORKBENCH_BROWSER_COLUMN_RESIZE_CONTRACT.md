@@ -114,7 +114,7 @@ is the intended seam. This slice does not implement it.
 - Header-cell drag handles or header/row column-structure realignment
   (pre-existing #767/#776 concern).
 - Panel docking/reordering (#697), DnD (#768), Theme (#785), Brand/Motion
-  (#786), Screen 2/3, packaging, general Settings redesign.
+  (#786 DONE_MERGED_CLOSED), Screen 2/3, packaging, general Settings redesign.
 - Width persistence (documented seam only).
 
 ## Validation
