@@ -18,7 +18,14 @@ import re
 from src.workbench_qml import QML_SOURCE
 
 BROWSER_ROW_DELEGATE_MARKER = "delegate: Rectangle { id: browserRow"
-BROWSER_ROW_DELEGATE_SPAN = 14000  # through compact row + Favorite + Add + bottom divider; stops before Live Kit
+# Span the full row delegate (through the bottom divider) but stop before the
+# panel resize handle, so panel-resize (layoutModel) code never leaks into
+# delegate assertions. #780 added per-column dividers inside the delegate, which
+# grew it past the previous fixed 14000-char window; derive the span instead.
+BROWSER_ROW_DELEGATE_SPAN = (
+    QML_SOURCE.index('objectName: "elasticHandleAfterBrowser"')
+    - QML_SOURCE.index(BROWSER_ROW_DELEGATE_MARKER)
+)
 SEARCH_MARKER = 'objectName: "browserSearch"'
 COLUMN_HEADER_MARKER = 'text: "SAMPLE NAME"'
 
@@ -288,3 +295,154 @@ def test_browser_density_tokens_unchanged_by_767():
     assert _int_property(QML_SOURCE, "densityRowSpacing") == 8
     assert _int_property(QML_SOURCE, "densityDividerHeight") == 1
     assert _int_property(QML_SOURCE, "densityActionHitTarget") == 24
+
+
+# ---------------------------------------------------------------------------
+# #780 — subtle Browser column dividers with resize handles
+# ---------------------------------------------------------------------------
+
+# Resizable columns each paint a right-edge divider inside the row delegate.
+# Key is visual-only (BPM owns the sole interactive meta handle).
+_COLUMN_DIVIDER_OBJECTNAMES = (
+    'objectName: "browserColumnDivider_waveform"',
+    'objectName: "browserColumnDivider_bpm"',
+    'objectName: "browserColumnDivider_favorite"',
+    'objectName: "browserColumnDivider_key"',
+    'objectName: "browserColumnDivider_length"',
+)
+_INTERACTIVE_COLUMN_DIVIDER_COUNT = 4  # Key divider has no MouseArea
+_META_RESIZE_CALL = 'browserPane.resizeColumn("meta"'
+
+
+def _browser_delegate_full(source: str) -> str:
+    """Delegate body from its marker up to (not into) the panel resize handle.
+
+    Robust to delegate growth: always covers the full row delegate incl. the
+    bottom divider, and always stops before ``elasticHandleAfterBrowser`` so
+    panel-resize (``layoutModel``) code never leaks into delegate assertions.
+    """
+    start = source.index(BROWSER_ROW_DELEGATE_MARKER)
+    end = source.index('objectName: "elasticHandleAfterBrowser"', start)
+    return source[start:end]
+
+
+def test_browser_columns_have_subtle_resizable_dividers():
+    """#780: a subtle vertical divider exists per resizable browser column."""
+    delegate = _browser_delegate_full(QML_SOURCE)
+    for name in _COLUMN_DIVIDER_OBJECTNAMES:
+        assert name in delegate, f"fehlender Browser-Column-Divider {name}"
+    # Visible line reuses the existing divider token (no new color), ~1 DIP.
+    assert delegate.count("color: theme.dividerDefault") >= len(
+        _COLUMN_DIVIDER_OBJECTNAMES
+    ) + 1  # 5 vertical dividers + existing bottom row divider
+    assert delegate.count("width: window.densityDividerHeight") >= len(
+        _COLUMN_DIVIDER_OBJECTNAMES
+    )
+
+
+def test_browser_column_resize_hit_target_is_wider_than_visible_line():
+    """#780: invisible grab target is wider than the ~1 DIP visible line."""
+    delegate = _browser_delegate_full(QML_SOURCE)
+    assert (
+        delegate.count("cursorShape: Qt.SizeHorCursor")
+        == _INTERACTIVE_COLUMN_DIVIDER_COUNT
+    )
+    assert (
+        delegate.count("preventStealing: true") == _INTERACTIVE_COLUMN_DIVIDER_COUNT
+    )
+    assert "anchors.leftMargin: -browserPane.browserColumnHandlePadding" in delegate
+    assert "anchors.rightMargin: -browserPane.browserColumnHandlePadding" in delegate
+    # Centralized, deterministic padding (not an inline magic number).
+    padding = _int_property(QML_SOURCE, "browserColumnHandlePadding")
+    divider = _int_property(QML_SOURCE, "densityDividerHeight")
+    assert padding >= 4 and padding > divider
+
+
+def test_browser_column_width_state_has_exactly_one_owner():
+    """#780: browserPane is the only writer of column width truth."""
+    assert QML_SOURCE.count("function resizeColumn(") == 1
+    for prop in (
+        "waveformUserWidth",
+        "metaUserWidth",
+        "favoriteUserWidth",
+        "lengthUserWidth",
+    ):
+        assert QML_SOURCE.count(f"property int {prop}:") == 1
+    delegate = _browser_delegate_full(QML_SOURCE)
+    # Interactive handles only; Key is visual-only for the shared meta role.
+    assert (
+        delegate.count("browserPane.resizeColumn(") == _INTERACTIVE_COLUMN_DIVIDER_COUNT
+    )
+    # Exactly one meta writer (BPM). Dual Key+BPM meta calls would apply 2Δ.
+    assert delegate.count(_META_RESIZE_CALL) == 1
+    bpm_div = delegate.index('objectName: "browserColumnDivider_bpm"')
+    key_div = delegate.index('objectName: "browserColumnDivider_key"')
+    length_div = delegate.index('objectName: "browserColumnDivider_length"')
+    meta_call = delegate.index(_META_RESIZE_CALL)
+    assert bpm_div < meta_call < key_div
+    assert "MouseArea" not in delegate[key_div:length_div]
+    # No competing geometry truth is built inside the delegate.
+    assert "property int effectiveBrowser" not in delegate
+    # Browser-column resize stays independent of panel resize.
+    assert "layoutModel.applyDrag" not in delegate
+
+
+def test_browser_column_resize_ignores_user_overrides_when_narrow():
+    """#780/#692: narrow mode keeps responsive defaults over runtime overrides."""
+    assert "function _resolveColumn(" in QML_SOURCE
+    # Narrow must short-circuit user overrides (browserNarrowColumns || user < 0).
+    assert (
+        "(browserNarrowColumns || user < 0) ? dflt : user" in QML_SOURCE
+        or "(browserNarrowColumns || user < 0)? dflt : user" in QML_SOURCE
+    )
+    # Narrow responsive defaults still feed _resolveColumn / effective* widths.
+    assert (
+        "browserNarrowColumns ? window.browserWaveformMin : window.browserWaveformWidth"
+        in QML_SOURCE
+    )
+    assert (
+        "browserNarrowColumns ? browserMetaColumnMin : window.browserMetaColumnWidth"
+        in QML_SOURCE
+    )
+    assert (
+        "browserNarrowColumns ? browserLengthColumnMin : window.browserLengthColumnWidth"
+        in QML_SOURCE
+    )
+
+
+def test_browser_column_resize_minimums_are_deterministic():
+    """#780: usable, deterministic min/max per resizable column."""
+    waveform_min = _int_property(QML_SOURCE, "browserWaveformMin")
+    waveform_max = _int_property(QML_SOURCE, "browserWaveformMax")
+    assert waveform_min >= 140
+    assert waveform_max > waveform_min
+    meta_min = _int_property(QML_SOURCE, "browserMetaColumnMin")
+    meta_max = _int_property(QML_SOURCE, "browserMetaColumnMax")
+    # Contract mins equal narrow-mode fallbacks (#692 / #780 table).
+    assert meta_min == 40
+    assert meta_max == 96
+    fav_min = _int_property(QML_SOURCE, "browserFavoriteColumnMin")
+    fav_max = _int_property(QML_SOURCE, "browserFavoriteColumnMax")
+    assert fav_min == 24
+    assert fav_max == 48
+    length_min = _int_property(QML_SOURCE, "browserLengthColumnMin")
+    length_max = _int_property(QML_SOURCE, "browserLengthColumnMax")
+    assert length_min == 52
+    assert length_max == 120
+
+
+def test_browser_column_resize_reuses_shared_header_row_geometry():
+    """#780: header + delegate keep reading one shared effective geometry."""
+    for role in (
+        "effectiveBrowserWaveformWidth",
+        "effectiveBrowserMetaColumnWidth",
+        "effectiveBrowserFavoriteColumnWidth",
+        "effectiveBrowserLengthColumnWidth",
+    ):
+        assert QML_SOURCE.count(f"property int {role}:") == 1
+        assert QML_SOURCE.count(f"browserPane.{role}") >= 2
+    # Virtualization and existing row intents remain intact alongside resize.
+    assert QML_SOURCE.count("reuseItems: true") == 2
+    assert QML_SOURCE.count("previewRow(index)") == 1
+    assert QML_SOURCE.count("addToKit(index)") == 1
+    assert QML_SOURCE.count("toggleFavorite(index)") == 1
