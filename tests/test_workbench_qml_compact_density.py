@@ -131,10 +131,25 @@ def test_interaction_contracts_preserved_under_compact_density():
 
 def test_owner_visual_repair_preserves_required_browser_columns_at_narrow_width():
     assert "property bool browserNarrowColumns: width < 700" in QML_SOURCE
-    assert "property int effectiveBrowserWaveformWidth: browserNarrowColumns ? window.browserWaveformMin : window.browserWaveformWidth" in QML_SOURCE
-    assert "property int effectiveBrowserMetaColumnWidth: browserNarrowColumns ? 40 : window.browserMetaColumnWidth" in QML_SOURCE
-    assert "property int effectiveBrowserLengthColumnWidth: browserNarrowColumns ? 52 : window.browserLengthColumnWidth" in QML_SOURCE
+    # #780: effectiveBrowser* now fold runtime resize overrides in via
+    # _resolveColumn, but the narrow-width responsive defaults are preserved.
+    # (Narrow-mode minimums keep the historical #692 values, asserted below.)
+    assert (
+        "browserNarrowColumns ? window.browserWaveformMin : window.browserWaveformWidth"
+        in QML_SOURCE
+    )
+    assert (
+        "browserNarrowColumns ? browserMetaColumnMin : window.browserMetaColumnWidth"
+        in QML_SOURCE
+    )
+    assert (
+        "browserNarrowColumns ? browserLengthColumnMin : window.browserLengthColumnWidth"
+        in QML_SOURCE
+    )
     assert "property int effectiveBrowserAddColumnWidth: browserNarrowColumns ? 56 : window.browserAddColumnWidth" in QML_SOURCE
+    assert _int_property(QML_SOURCE, "browserWaveformMin") == 140
+    assert _int_property(QML_SOURCE, "browserMetaColumnMin") == 40
+    assert _int_property(QML_SOURCE, "browserLengthColumnMin") == 52
 
     delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
     assert "visible: !browserPane.browserNarrowColumns" in delegate
