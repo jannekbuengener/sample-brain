@@ -36,7 +36,7 @@ Do not start Screen-2 UI before those docs gates.
 | Domain | Documents |
 |--------|-----------|
 | Screen 1 / UI | `docs/TARGET_ARCHITECTURE.md`, `docs/WORKBENCH_QML_PROOF_SPIKE.md`, `docs/PRODUCT_WORKFLOW_CANON.md`, live #691 and the scoped child issue; #503/#579 are historical migration/governance evidence only |
-| Channel Rack / Screen 2 | `docs/PRODUCT_WORKFLOW_CANON.md`, live #675/#678, `docs/SESSION_OWNERSHIP_CONTRACT.md`, `docs/PATTERN_CORE_CONTRACT.md`, `docs/SEQUENCER_PLAYBACK_CONTRACT.md` |
+| Channel Rack / Screen 2 | `docs/PRODUCT_WORKFLOW_CANON.md`, closed #675/#678 (evidence), `docs/SESSION_OWNERSHIP_CONTRACT.md`, `docs/PATTERN_CORE_CONTRACT.md`, `docs/SEQUENCER_PLAYBACK_CONTRACT.md` |
 | EPIC 2 (Semantic Search) | `docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md`, ADR-0001–0005 |
 | DAW / Export | `docs/DAW_INTEGRATION_SPEC.md`, `src/export_fl.py` (legacy/fallback; VST parked #469) |
 | CI / Merge Governance | `docs/CI_DEGRADED_MODE.md`, `knowledge/governance/GOVERNANCE.md` |

@@ -1,6 +1,6 @@
 # ACTIVE_ROADMAP
 
-**Last reconciled:** 2026-09-30
+**Last reconciled:** 2026-10-01
 
 ## How to Use This Roadmap
 
@@ -18,12 +18,12 @@ This roadmap intentionally groups durable work rather than mirroring every open 
 
 Current sequence is owned by #691 and its scoped children: shared visual acceptance, compact Browser/Harmonic density, elastic coupled panels, Clean Start/progressive disclosure, waveform rendering research, then display/startup preferences. Panel reordering remains parked until the layout foundation is accepted. Current product/UI delivery stays Screen-1-scoped.
 
-### Active — Screen 2 Channel Rack
+### Shipped — Screen 2 Channel Rack
 
 **[#675 — Live Kit → Channel Rack](https://github.com/jannekbuengener/sample-brain/issues/675)**  
 **[#678 — Screen-2 QML Channel Rack](https://github.com/jannekbuengener/sample-brain/issues/678)**
 
-Python/session/sequencer foundations remain shipped foundation truth. #678 is **ACTIVE** under explicit Owner-GO (not gated by #727). Keep Screen 2 distinct from the parked Screen-3 arrangement timeline (#679).
+Python/session/sequencer foundations and Screen-2 QML Channel Rack are **DONE** on `main` (PR #755; epic #675 CLOSED). Keep Screen 2 distinct from the parked Screen-3 arrangement timeline (#679); do not reopen Screen-2 product work without explicit Owner-GO.
 
 ### Active — repository governance and reconciliation
 
@@ -76,8 +76,8 @@ The following are no longer roadmap work and should not be represented as open e
 
 ### Screen-2 foundation
 
-- Session ownership, Pattern Core, sequencer scheduling/PCM and Channel Rack Python core are established.
-- Product/UI tracks #675/#678 are **ACTIVE** under explicit Owner-GO for Screen-2 QML Channel Rack.
+- Session ownership, Pattern Core, sequencer scheduling/PCM, Channel Rack Python core, and Screen-2 QML Channel Rack are established on `main`.
+- Product/UI tracks #675/#678 are **DONE** (PR #755; epic CLOSED). Do not reopen without explicit Owner-GO.
 - Screen 3 arrangement remains separately parked under #679; do not pull arrangement/timeline scope into Screen 2.
 
 ### Track deconstruction / performance packs

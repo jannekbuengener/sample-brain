@@ -496,7 +496,7 @@ Canonical path: [`docs/PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md).
 
 **Primary — Local Workbench:**
 - Screen 1: Library + Live Kit (partially on `main`; `LOCK_PYSIDE6_QML` for new visuals)
-- Screen 2: Channel Rack (patterns/triggers) — Python foundations are **implemented** (#647/#656/#663/#667/#676/#677/#681/#698); QML (#678) is **ACTIVE** under explicit Owner-GO (not gated by [#727](https://github.com/jannekbuengener/sample-brain/issues/727))
+- Screen 2: Channel Rack (patterns/triggers) — **DONE** on `main` (#647/#656/#663/#667/#676/#677/#681/#698/#678 / PR #755; parent epic #675 CLOSED)
 - Screen 3: Arrangement mode — later; not Screen-2 scope
 - Shared cores: Library Intelligence, Matching, Context, optional Transform
 - External DAW is **not** part of the core workflow
@@ -505,7 +505,7 @@ Canonical path: [`docs/PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md).
 - Optional later DAW-inline surface over the same core
 - Historical specs under `docs/product/05_VST_PRODUCING_WORKSPACE_SPEC.md` are archived design notes, not the current primary path
 
-**Status:** Workbench Screen 1 / Live Kit advancing on `main` toward pilot gate #727. Screen-2 QML Channel Rack (#678) is active under Owner-GO. VST remains parked.
+**Status:** Workbench Screen 1 / Live Kit advancing on `main` toward pilot gate #727. Screen-2 Channel Rack (#675/#678) is DONE on `main`. VST remains parked.
 
 ### 10.3 Desktop UI (EPIC 4 — superseded)
 
