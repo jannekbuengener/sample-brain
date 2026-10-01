@@ -39,7 +39,7 @@ from .workbench_qml_library import (
     WorkbenchLibraryTreeState,
     create_qt_library_tree_model,
 )
-from .workbench_qml_runtime import Screen1QmlRuntimeComposition
+from .workbench_qml_runtime import Screen1BrowserState, Screen1QmlRuntimeComposition
 from .workbench_qml_elastic import create_elastic_layout_bridge
 from .workbench_qml_startup import (
     WorkspaceMode,
@@ -2264,6 +2264,7 @@ ApplicationWindow {
                         contentItem: Item {
                             implicitHeight: 34
                             implicitWidth: libraryTree.width
+                            property bool dropHover: false
                             TapHandler {
                                 onTapped: {
                                     if (model.error) {
@@ -2274,6 +2275,34 @@ ApplicationWindow {
                                         libraryInteraction.selectLibraryNode(model.nodeId)
                                     }
                                 }
+                            }
+                            DropArea {
+                                anchors.fill: parent
+                                keys: ["text/uri-list"]
+                                onEntered: function(drag) {
+                                    if (libraryInteraction.canAcceptSampleDrop(model.nodeId)) {
+                                        drag.accept(Qt.CopyAction)
+                                        parent.dropHover = true
+                                    } else {
+                                        drag.accepted = false
+                                        parent.dropHover = false
+                                    }
+                                }
+                                onExited: parent.dropHover = false
+                                onDropped: function(drop) {
+                                    parent.dropHover = false
+                                    var urls = []
+                                    for (var i = 0; i < drop.urls.length; i++)
+                                        urls.push(drop.urls[i].toString())
+                                    libraryInteraction.importDroppedUrls(model.nodeId, urls)
+                                }
+                            }
+                            Rectangle {
+                                anchors.fill: parent
+                                visible: parent.dropHover
+                                color: theme.selectionSurface
+                                opacity: 0.55
+                                z: -1
                             }
                             RowLayout {
                                 anchors.fill: parent
@@ -2675,7 +2704,42 @@ ApplicationWindow {
                     }
                     delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface : (rowSelection.containsMouse ? theme.surfaceElevated : (index % 2 === 1 ? theme.surfacePanel : "transparent")); border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0; border.color: theme.selectionBorder
                         Component.onCompleted: window.browserDelegateCreations += 1
-                        MouseArea { id: rowSelection; anchors.fill: parent; z: 0; hoverEnabled: true; onClicked: { browser.forceActiveFocus(); window.interaction.selectRow(index) } }
+                        property string outboundUrl: window.interaction.outboundFileUrl(index)
+                        Drag.active: rowSelection.dragActive
+                        Drag.dragType: Drag.Automatic
+                        Drag.supportedActions: Qt.CopyAction
+                        Drag.mimeData: browserRow.outboundUrl.length > 0 ? { "text/uri-list": browserRow.outboundUrl } : {}
+                        Drag.onDragFinished: rowSelection.dragActive = false
+                        MouseArea {
+                            id: rowSelection
+                            anchors.fill: parent
+                            z: 0
+                            hoverEnabled: true
+                            property bool dragActive: false
+                            property real pressX: 0
+                            property real pressY: 0
+                            onPressed: function(mouse) {
+                                dragActive = false
+                                pressX = mouse.x
+                                pressY = mouse.y
+                                browserRow.outboundUrl = window.interaction.outboundFileUrl(index)
+                            }
+                            onPositionChanged: function(mouse) {
+                                if (!pressed || dragActive)
+                                    return
+                                if (browserRow.outboundUrl.length === 0)
+                                    return
+                                if (Math.abs(mouse.x - pressX) < 8 && Math.abs(mouse.y - pressY) < 8)
+                                    return
+                                dragActive = true
+                            }
+                            onClicked: {
+                                if (dragActive)
+                                    return
+                                browser.forceActiveFocus()
+                                window.interaction.selectRow(index)
+                            }
+                        }
                         RowLayout { id: rowBody; anchors.fill: parent; anchors.leftMargin: window.densityHorizontalInset; anchors.rightMargin: window.densityHorizontalInset; anchors.topMargin: window.densityVerticalInset; anchors.bottomMargin: window.densityVerticalInset; spacing: window.densityRowSpacing; z: 1
                             Item { id: waveformSurface; objectName: "browserWaveformSurface"; Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth; Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth; Layout.preferredHeight: window.densityWaveformHeight; Layout.maximumHeight: window.densityWaveformHeight
                                 Canvas { id: waveformCanvas; anchors.fill: parent; property var envelope: modelData.waveform
@@ -3742,6 +3806,16 @@ def _qml_interaction_bridge(
             adapter.navigate_browser(direction, browser_has_focus=True)
             self._refresh()
 
+        @Slot(int, result=str)
+        def outboundFileUrl(self, index: int) -> str:
+            """Expose the existing original sample as a standard local file URL."""
+            from .workbench_sample_dnd import outbound_local_file_url
+
+            if not 0 <= index < len(adapter.view_model.browser_rows):
+                return ""
+            path = adapter.view_model.browser_rows[index].source_row.path
+            return outbound_local_file_url(path) or ""
+
         @Slot()
         def toggleHarmonicMatch(self) -> None:
             adapter.toggle_harmonic_match()
@@ -3897,6 +3971,8 @@ def _qml_library_interaction_bridge(
     on_add_source: Callable[[str], bool] | None = None,
     on_prepare_remove: Callable[[int], object | None] | None = None,
     on_confirm_remove: Callable[[int], bool] | None = None,
+    on_can_accept_drop: Callable[[str], bool] | None = None,
+    on_import_drop: Callable[[str, list[str]], bool] | None = None,
 ):
     """Expose tree intent and source actions without owning domain logic."""
     from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
@@ -3969,6 +4045,34 @@ def _qml_library_interaction_bridge(
             path = candidate.toLocalFile() if candidate.isLocalFile() else url
             if on_add_source is not None and on_add_source(path):
                 self.state_changed.emit()
+
+        @Slot(str, result=bool)
+        def canAcceptSampleDrop(self, node_id: str) -> bool:
+            if on_can_accept_drop is None:
+                return False
+            try:
+                return bool(on_can_accept_drop(node_id))
+            except Exception:
+                return False
+
+        @Slot(str, "QVariantList", result=bool)
+        def importDroppedUrls(self, node_id: str, urls) -> bool:
+            if on_import_drop is None:
+                return False
+            normalized: list[str] = []
+            for item in list(urls or []):
+                text = str(item)
+                if hasattr(item, "toString"):
+                    try:
+                        text = str(item.toString())
+                    except Exception:
+                        text = str(item)
+                if text:
+                    normalized.append(text)
+            try:
+                return bool(on_import_drop(str(node_id), normalized))
+            except Exception:
+                return False
 
         @Slot()
         def prepareRemoveSource(self) -> None:
@@ -4347,6 +4451,164 @@ def _qml_engine(
         if view_model.analysis_folder_id is not None:
             analysis_coordinator.cancel(view_model.analysis_folder_id)
 
+    inbound_import_token = {"value": 0}
+    inbound_import_workers: list[object] = []
+
+    def can_accept_drop(node_id: str) -> bool:
+        if runtime_composition is None:
+            return False
+        from .workbench_sample_dnd import can_accept_sample_drop
+
+        return can_accept_sample_drop(
+            node_id,
+            library_db_path=runtime_composition.library_db_path,
+        )
+
+    def finish_inbound_import(token: int, node_id: str, result_obj: object) -> None:
+        if token != inbound_import_token["value"]:
+            return
+        from .workbench_sample_dnd import ImportAnalyzeResult, format_inbound_status
+
+        if not isinstance(result_obj, ImportAnalyzeResult):
+            return
+        status = format_inbound_status(result_obj)
+        show_status = bool(
+            result_obj.import_result.skipped_conflict
+            or result_obj.import_result.failed
+            or result_obj.import_result.error_code
+            or result_obj.import_result.imported
+        )
+        # Never auto-audition newly imported samples; preserve focus semantics.
+        if result_obj.should_refresh_browser and library_model.selectNode(node_id):
+            intent = library_model.state.selection_intent
+            if intent is not None and runtime_composition is not None:
+                runtime_composition.dispatch_selection(intent)
+                if show_status and status:
+                    state = runtime_composition.browser_state
+                    runtime_composition.browser_state = Screen1BrowserState(
+                        rows=state.rows,
+                        selected_index=state.selected_index,
+                        browser_context=state.browser_context,
+                        scope=state.scope,
+                        error=status,
+                    )
+                _sync_runtime_browser_state(view_model, adapter, runtime_composition)
+                request_visible_browser_waveforms_from_window()
+                refresh_browser_scope()
+                bridge.refreshState()
+                layout_model.syncFromInteraction()
+                return
+        if show_status and status:
+            view_model.set_browser_state(
+                rows=tuple(row.source_row for row in view_model.browser_rows),
+                selected_index=view_model.selected_browser_index,
+                browser_context=view_model.browser_context,
+                error=status,
+            )
+            refresh_browser_scope()
+            bridge.refreshState()
+
+    def start_inbound_import(node_id: str, urls: list[str]) -> bool:
+        if runtime_composition is None:
+            return False
+        from .workbench_sample_dnd import (
+            import_and_analyze_dropped_files,
+            resolve_drop_destination,
+        )
+
+        resolution = resolve_drop_destination(
+            node_id,
+            library_db_path=runtime_composition.library_db_path,
+        )
+        if not resolution.ok:
+            message = resolution.error_message or "Drop-Ziel abgelehnt."
+            view_model.set_browser_state(
+                rows=tuple(row.source_row for row in view_model.browser_rows),
+                selected_index=view_model.selected_browser_index,
+                browser_context=view_model.browser_context,
+                error=message,
+            )
+            refresh_browser_scope()
+            bridge.refreshState()
+            return False
+
+        inbound_import_token["value"] += 1
+        token = inbound_import_token["value"]
+        library_db_path = runtime_composition.library_db_path
+
+        try:
+            from PySide6.QtCore import QObject, QThread, Signal, Slot
+        except ModuleNotFoundError:
+            result = import_and_analyze_dropped_files(
+                urls,
+                destination_node_id=node_id,
+                library_db_path=library_db_path,
+            )
+            finish_inbound_import(token, node_id, result)
+            return bool(result.import_result.imported)
+
+        class _InboundImportWorker(QObject):
+            completed = Signal(int, str, object)
+            failed = Signal(int, str, str)
+
+            def __init__(self, job_token: int, dest_node: str, file_urls: list[str]) -> None:
+                super().__init__()
+                self._token = job_token
+                self._node_id = dest_node
+                self._urls = list(file_urls)
+
+            @Slot()
+            def run(self) -> None:
+                try:
+                    result = import_and_analyze_dropped_files(
+                        self._urls,
+                        destination_node_id=self._node_id,
+                        library_db_path=library_db_path,
+                    )
+                except Exception as exc:
+                    self.failed.emit(self._token, self._node_id, str(exc))
+                else:
+                    self.completed.emit(self._token, self._node_id, result)
+
+        thread = QThread()
+        worker = _InboundImportWorker(token, node_id, urls)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+
+        def _on_completed(job_token: int, dest_node: str, result_obj: object) -> None:
+            finish_inbound_import(job_token, dest_node, result_obj)
+            thread.quit()
+
+        def _on_failed(job_token: int, dest_node: str, message: str) -> None:
+            if job_token == inbound_import_token["value"]:
+                view_model.set_browser_state(
+                    rows=tuple(row.source_row for row in view_model.browser_rows),
+                    selected_index=view_model.selected_browser_index,
+                    browser_context=view_model.browser_context,
+                    error=message or "Import fehlgeschlagen.",
+                )
+                refresh_browser_scope()
+                bridge.refreshState()
+            thread.quit()
+
+        worker.completed.connect(_on_completed)
+        worker.failed.connect(_on_failed)
+        worker.completed.connect(worker.deleteLater)
+        worker.failed.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        inbound_import_workers.append(thread)
+        thread.start()
+        # Bounded status without invented percentages.
+        view_model.set_browser_state(
+            rows=tuple(row.source_row for row in view_model.browser_rows),
+            selected_index=view_model.selected_browser_index,
+            browser_context=view_model.browser_context,
+            error="Importiere und analysiere Drop…",
+        )
+        refresh_browser_scope()
+        bridge.refreshState()
+        return True
+
     if runtime_composition is not None:
         analysis_coordinator = create_qt_analysis_coordinator(
             library_db_path=runtime_composition.library_db_path,
@@ -4399,6 +4661,8 @@ def _qml_engine(
         on_add_source=register_source,
         on_prepare_remove=prepare_remove,
         on_confirm_remove=confirm_remove,
+        on_can_accept_drop=can_accept_drop,
+        on_import_drop=start_inbound_import,
     )
     if runtime_composition is not None:
         library_model.selection_invalidated.connect(dispatch_library_selection)
