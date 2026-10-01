@@ -33,7 +33,7 @@ from .workbench_library import (
     toggle_sample_favorite,
     workbench_library_db_path,
 )
-from .workbench_library_navigation import LibraryNodeKind
+from .workbench_library_navigation import LibraryNodeKind, LibraryScopeKind
 from .workbench_qml_analysis import AnalysisUiState, create_qt_analysis_coordinator
 from .workbench_qml_library import (
     WorkbenchLibraryTreeState,
@@ -975,6 +975,18 @@ class Screen1QmlInteractionAdapter:
         row = self.view_model.browser_rows[index].source_row
         path = str(row.path)
         result = toggle_sample_favorite(path, db_path=self._library_db_path)
+        composition = self._runtime_composition
+        if (
+            composition is not None
+            and composition.browser_state.scope is not None
+            and composition.browser_state.scope.kind is LibraryScopeKind.FAVORITES
+        ):
+            node_id = composition.selected_node_id or "scope:favorites"
+            intent = composition.library_tree.select(node_id)
+            if intent is not None:
+                composition.dispatch_selection(intent)
+                _sync_runtime_browser_state(self.view_model, self, composition)
+                return result
         self.view_model.set_browser_favorite(path, is_favorite=result)
         # Keep resolved-path projection coherent when row.path is unresolved.
         try:
@@ -1837,6 +1849,69 @@ ApplicationWindow {
                                 Component.onCompleted: requestPaint()
                                 Connections {
                                     target: catalogScopeButton
+                                    function onCheckedChanged() { parent.requestPaint() }
+                                    function onHoveredChanged() { parent.requestPaint() }
+                                }
+                            }
+                        }
+                    }
+                    ToolButton {
+                        id: favoritesScopeButton
+                        objectName: "libraryFavoritesScopeButton"
+                        text: ""
+                        flat: true
+                        checkable: true
+                        checked: libraryScopeBar.mode === "favorites"
+                        Layout.preferredWidth: libraryScopeBar.controlSize
+                        Layout.preferredHeight: libraryScopeBar.controlSize
+                        onClicked: {
+                            libraryScopeBar.mode = "favorites"
+                            libraryInteraction.selectLibraryNode("scope:favorites")
+                        }
+                        Accessible.name: "Favorites"
+                        background: Rectangle {
+                            radius: 4
+                            color: libraryScopeBar.scopeFill(favoritesScopeButton.checked, favoritesScopeButton.hovered)
+                            border.width: favoritesScopeButton.checked ? 1 : 0
+                            border.color: libraryScopeBar.scopeStroke(favoritesScopeButton.checked)
+                        }
+                        contentItem: Item {
+                            anchors.fill: parent
+                            Canvas {
+                                anchors.fill: parent
+                                anchors.margins: libraryScopeBar.iconPad
+                                onPaint: {
+                                    var ctx = getContext("2d")
+                                    ctx.reset()
+                                    ctx.strokeStyle = libraryScopeBar.scopeInk(favoritesScopeButton.checked)
+                                    ctx.fillStyle = libraryScopeBar.scopeInk(favoritesScopeButton.checked)
+                                    ctx.lineWidth = 1.5
+                                    var cx = width / 2
+                                    var cy = height / 2
+                                    var r = Math.min(width, height) / 2 - 0.5
+                                    ctx.beginPath()
+                                    for (var i = 0; i < 5; i++) {
+                                        var a = -Math.PI / 2 + i * 2 * Math.PI / 5
+                                        var x = cx + Math.cos(a) * r
+                                        var y = cy + Math.sin(a) * r
+                                        if (i === 0)
+                                            ctx.moveTo(x, y)
+                                        else
+                                            ctx.lineTo(x, y)
+                                        var b = a + Math.PI / 5
+                                        var ix = cx + Math.cos(b) * (r * 0.45)
+                                        var iy = cy + Math.sin(b) * (r * 0.45)
+                                        ctx.lineTo(ix, iy)
+                                    }
+                                    ctx.closePath()
+                                    if (favoritesScopeButton.checked)
+                                        ctx.fill()
+                                    else
+                                        ctx.stroke()
+                                }
+                                Component.onCompleted: requestPaint()
+                                Connections {
+                                    target: favoritesScopeButton
                                     function onCheckedChanged() { parent.requestPaint() }
                                     function onHoveredChanged() { parent.requestPaint() }
                                 }

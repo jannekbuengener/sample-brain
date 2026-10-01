@@ -23,6 +23,7 @@ class LibraryNodeKind(str, Enum):
     SUBFOLDER = "subfolder"
     ALL_SAMPLES = "all_samples"
     CATALOG = "catalog"
+    FAVORITES = "favorites"
     COLLECTIONS = "collections"
     COLLECTION = "collection"
     STATUS = "status"
@@ -40,6 +41,7 @@ class LibraryScopeKind(str, Enum):
     SUBFOLDER = "subfolder"
     ALL_SAMPLES = "all_samples"
     CATALOG = "catalog"
+    FAVORITES = "favorites"
     COLLECTION = "collection"
 
 
@@ -71,6 +73,7 @@ class LibraryScope:
 _SAMPLE_SOURCES_ID = "container:sample-sources"
 _ALL_SAMPLES_ID = "scope:all-library"
 _CATALOG_ID = "scope:catalog-readonly"
+_FAVORITES_ID = "scope:favorites"
 _COLLECTIONS_ID = "container:collections"
 
 
@@ -238,6 +241,15 @@ class WorkbenchLibraryNavigation:
                 catalog_state,
             ),
             LibraryNode(
+                _FAVORITES_ID,
+                LibraryNodeKind.FAVORITES,
+                "Favorites",
+                None,
+                True,
+                False,
+                LibraryAvailability.AVAILABLE,
+            ),
+            LibraryNode(
                 _COLLECTIONS_ID,
                 LibraryNodeKind.COLLECTIONS,
                 "Collections",
@@ -284,6 +296,8 @@ class WorkbenchLibraryNavigation:
     def resolve_scope(self, node_id: str) -> LibraryScope | None:
         if node_id == _ALL_SAMPLES_ID:
             return LibraryScope(LibraryScopeKind.ALL_SAMPLES)
+        if node_id == _FAVORITES_ID:
+            return LibraryScope(LibraryScopeKind.FAVORITES)
         if node_id == _CATALOG_ID:
             return LibraryScope(
                 LibraryScopeKind.CATALOG,

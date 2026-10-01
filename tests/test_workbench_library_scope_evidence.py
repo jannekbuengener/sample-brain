@@ -137,7 +137,7 @@ PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
-    """Runtime: libraryScopeBar stays under header for Sources/All/Catalog/Collections."""
+    """Runtime: libraryScopeBar stays under header for Sources/All/Catalog/Favorites/Collections."""
     from PySide6.QtQuick import QQuickItem
 
     from src.workbench_library_navigation import WorkbenchLibraryNavigation
@@ -188,6 +188,7 @@ def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
             ("sources", None),
             ("all", "scope:all-library"),
             ("catalog", "scope:catalog-readonly"),
+            ("favorites", "scope:favorites"),
             ("collections", None),
         ):
             bar = window.findChild(QQuickItem, "libraryScopeBar")
@@ -202,7 +203,9 @@ def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
             tree = window.findChild(QQuickItem, "libraryTree")
             coll = window.findChild(QQuickItem, "libraryCollectionList")
             host = window.findChild(QQuickItem, "libraryContentHost")
+            fav = window.findChild(QQuickItem, "libraryFavoritesScopeButton")
             assert bar is not None and host is not None
+            assert fav is not None
             bar_ys[mode] = float(bar.y())
             assert float(bar.y()) < 80.0, f"{mode} scope bar drifted: y={bar.y()}"
             if mode == "sources":
@@ -218,6 +221,7 @@ def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
         # All secondary modes share the Sources pin position.
         assert abs(bar_ys["all"] - bar_ys["sources"]) < 1.0
         assert abs(bar_ys["catalog"] - bar_ys["sources"]) < 1.0
+        assert abs(bar_ys["favorites"] - bar_ys["sources"]) < 1.0
         assert abs(bar_ys["collections"] - bar_ys["sources"]) < 1.0
     finally:
         window.close()

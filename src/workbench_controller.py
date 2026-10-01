@@ -45,6 +45,7 @@ from .workbench_library import (
     add_sample_to_playlist,
     get_or_create_playlist,
     get_playlist_by_name,
+    list_favorite_sample_paths,
     list_library_folders,
     list_playlist_sample_paths,
     list_playlists,
@@ -2080,6 +2081,61 @@ def load_playlist_workbench_rows(
     return rows
 
 
+def _workbench_row_for_favorite_sample_path(
+    sample_path: str,
+    *,
+    library_db_path: Path,
+) -> WorkbenchRow:
+    """Resolve a favorited sample path without playlist ownership or audio mutation."""
+    path = Path(sample_path)
+    display = normalize_display_name(path.name) if path.name else sample_path
+    if not path.is_file():
+        return _make_error_row(
+            display_name=display,
+            rel=path.name or sample_path,
+            path=path,
+            error_code="unsupported_or_unreadable_audio",
+            error_detail="file not found",
+        )
+
+    cached = load_sample_by_path(sample_path, db_path=library_db_path)
+    if cached is not None:
+        # Cache may be current or stale; Favorites is path-owned identity.
+        return cached.to_workbench_row()
+
+    return WorkbenchRow(
+        display_name=display,
+        relative_path=path.name,
+        path=str(path.resolve()),
+        bpm=None,
+        key=None,
+        key_conf=None,
+        loudness=None,
+        brightness=None,
+        sample_class=None,
+        pred_type=None,
+        status="ok",
+        details={},
+    )
+
+
+def load_favorite_workbench_rows(
+    *,
+    library_db_path: Path | None = None,
+) -> list[WorkbenchRow]:
+    """Load Browser rows for persisted Favorites paths (oldest assignment first)."""
+    db = library_db_path if library_db_path is not None else workbench_library_db_path()
+    rows: list[WorkbenchRow] = []
+    for sample_path in list_favorite_sample_paths(db_path=db):
+        rows.append(
+            _workbench_row_for_favorite_sample_path(
+                sample_path,
+                library_db_path=db,
+            )
+        )
+    return rows
+
+
 def format_playlist_load_status(playlist_name: str, rows: list[WorkbenchRow]) -> str:
     """Format a user-facing status message after loading a playlist."""
     return f'Playlist "{playlist_name}" geladen: {len(rows)} Samples'
@@ -2351,6 +2407,7 @@ __all__ = [
     "load_cached_subfolder_rows",
     "load_catalog_rows",
     "load_playlist_workbench_rows",
+    "load_favorite_workbench_rows",
     "load_workbench_analysis_limit",
     "load_workbench_last_folder",
     "load_workbench_view_settings",

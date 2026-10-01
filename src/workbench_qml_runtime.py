@@ -13,6 +13,7 @@ from .workbench_controller import (
     load_cached_folder_rows,
     load_cached_subfolder_rows,
     load_catalog_rows,
+    load_favorite_workbench_rows,
     load_playlist_workbench_rows,
     preview_workbench_library_folder_removal,
     remove_workbench_library_folder,
@@ -272,6 +273,8 @@ class Screen1QmlRuntimeComposition:
                 or scope.catalog_limit < 0
             ):
                 return "Catalog ohne gültiges catalog_limit."
+        elif kind is LibraryScopeKind.FAVORITES:
+            return None
         elif kind is not LibraryScopeKind.ALL_SAMPLES:
             return "Unbekannter Library-Scope."
         return None
@@ -310,6 +313,10 @@ class Screen1QmlRuntimeComposition:
                     library_db_path=self.library_db_path,
                 )
             return load_playlist_workbench_rows(scope.playlist_name)
+        if scope.kind is LibraryScopeKind.FAVORITES:
+            if self._explicit_library_db_path:
+                return load_favorite_workbench_rows(library_db_path=self.library_db_path)
+            return load_favorite_workbench_rows()
         raise ValueError("Unbekannter Library-Scope.")
 
     def refresh_target(self, scope: LibraryScope) -> SourceRegistration | None:
@@ -392,6 +399,8 @@ class Screen1QmlRuntimeComposition:
             return f"Collection · {scope.playlist_name}"
         if scope.kind is LibraryScopeKind.ALL_SAMPLES:
             return "All Samples"
+        if scope.kind is LibraryScopeKind.FAVORITES:
+            return "Favorites"
         return intent.node.label
 
     def _set_no_scope(self, error: str | None = None) -> Screen1BrowserState:

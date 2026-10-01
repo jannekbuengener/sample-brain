@@ -101,6 +101,15 @@ class FakeNavigation:
                 LibraryAvailability.AVAILABLE,
             ),
             LibraryNode(
+                "scope:favorites",
+                LibraryNodeKind.FAVORITES,
+                "Favorites",
+                None,
+                True,
+                False,
+                LibraryAvailability.AVAILABLE,
+            ),
+            LibraryNode(
                 "container:collections",
                 LibraryNodeKind.COLLECTIONS,
                 "Collections",
@@ -139,6 +148,7 @@ class FakeNavigation:
                 LibraryScopeKind.CATALOG,
                 catalog_limit=17,
             ),
+            "scope:favorites": LibraryScope(LibraryScopeKind.FAVORITES),
             COLLECTION_ID: LibraryScope(
                 LibraryScopeKind.COLLECTION,
                 playlist_id=7,
@@ -191,6 +201,11 @@ def test_scope_dispatch_uses_each_existing_loader_once_and_sets_visual_selection
         "load_playlist_workbench_rows",
         lambda name: calls.append(("collection", name)) or [_row("collection")],
     )
+    monkeypatch.setattr(
+        runtime,
+        "load_favorite_workbench_rows",
+        lambda: calls.append(("favorites", None)) or [_row("favorites")],
+    )
 
     nav = composition.library_tree.navigation
     cases = (
@@ -198,6 +213,7 @@ def test_scope_dispatch_uses_each_existing_loader_once_and_sets_visual_selection
         (nav.subfolder, nav.resolve_scope(SUBFOLDER_ID), "subfolder"),
         (nav.top[1], nav.resolve_scope("scope:all-library"), "all"),
         (nav.top[2], nav.resolve_scope("scope:catalog-readonly"), "catalog"),
+        (nav.top[3], nav.resolve_scope("scope:favorites"), "favorites"),
         (nav.collection, nav.resolve_scope(COLLECTION_ID), "collection"),
     )
 
@@ -212,6 +228,7 @@ def test_scope_dispatch_uses_each_existing_loader_once_and_sets_visual_selection
         ("subfolder", (1, "Drums")),
         ("all", None),
         ("catalog", 17),
+        ("favorites", None),
         ("collection", "Set A"),
     ]
 
@@ -238,6 +255,7 @@ def test_incomplete_scope_is_fail_closed_without_loader_dispatch(
         "load_all_cached_rows",
         "load_catalog_rows",
         "load_playlist_workbench_rows",
+        "load_favorite_workbench_rows",
     ):
         monkeypatch.setattr(runtime, name, lambda *args, _name=name, **kwargs: calls.append(_name))
 
@@ -1064,11 +1082,13 @@ def test_refresh_target_never_targets_non_folder_scopes(tmp_path: Path):
         LibraryScopeKind.COLLECTION, playlist_name="Set A"
     )
     catalog = LibraryScope(LibraryScopeKind.CATALOG, catalog_limit=17)
+    favorites = LibraryScope(LibraryScopeKind.FAVORITES)
     incomplete_subfolder = LibraryScope(LibraryScopeKind.SUBFOLDER, folder_id=1)
 
     assert composition.refresh_target(all_samples) is None
     assert composition.refresh_target(collection) is None
     assert composition.refresh_target(catalog) is None
+    assert composition.refresh_target(favorites) is None
     assert composition.refresh_target(incomplete_subfolder) is None
 
 

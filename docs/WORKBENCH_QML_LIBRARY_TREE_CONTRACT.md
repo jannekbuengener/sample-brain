@@ -32,20 +32,24 @@ header. `action:add-source` is no longer emitted by the navigation model.
 
 ## Compact secondary icon navigation
 
-A compact icon-only row above the Source tree exposes the existing secondary
-Library concepts:
+A compact icon-only row above the Source tree exposes the secondary Library
+concepts:
 
 - **Sample Sources** — returns the pane to the real Source tree;
 - **All Samples** — selects `scope:all-library`;
 - **Catalog** — selects `scope:catalog-readonly`;
+- **Favorites** — selects `scope:favorites` (`LibraryScopeKind.FAVORITES`);
 - **Collections** — reveals the existing persisted Workbench playlists.
 
-Favorites is intentionally not implemented by #765; #766 owns that feature and
-will join the same icon row.
+Favorites (#766) joins the same icon row as a dedicated user-organization
+scope. It is not a Source-tree folder and is not modeled as a playlist /
+Collection alias. Persistence and path→row projection follow
+`docs/WORKBENCH_FAVORITES_PERSISTENCE_CONTRACT.md`.
 
 The icon row is presentation only. Stable node IDs and `LibraryScope`
-resolution remain authoritative. All Samples, Catalog, and collection entries
-flow through the exact same typed selection intent used by Source rows.
+resolution remain authoritative. All Samples, Catalog, Favorites, and
+collection entries flow through the exact same typed selection intent used by
+Source rows.
 
 Every icon-only control exposes a stable object/semantic identity and accessible
 name. #770 owns the later shared context-hint display; #765 does not implement
@@ -97,6 +101,7 @@ Presentation rule for the Library pane (no opacity-only hide with active input):
 | Sources | visible + focusable/interactive | — |
 | All Samples | not visible; not focusable; no input | — |
 | Catalog | not visible; not focusable; no input | — |
+| Favorites | not visible; not focusable; no input | — |
 | Collections | not visible; not focusable; no input | Collection list visible |
 
 `libraryScopeBar` is permanent Library chrome under the LIBRARY / Add Source
@@ -135,13 +140,15 @@ Regression coverage now freezes:
 
 - one visible Source-tree root;
 - no `action:add-source` child;
-- All Samples / Catalog / Collections remembered as secondary nodes;
+- All Samples / Catalog / Favorites / Collections remembered as secondary nodes;
 - secondary selections use the same typed intent/scope authority;
-- persisted collection entries remain loadable;
+- Favorites lists only persisted favorite paths via existing Browser rows;
+- persisted collection entries remain loadable and remain distinct from Favorites;
 - Source lazy loading, retry, offline, keyboard, and focus behavior remain intact.
 
 ## Dependency boundary
 
-#765 does not implement Favorites (#766), Browser column arrangement (#767),
-sample Drag & Drop (#768), the bottom-center context hint (#770), or the future
-modular snap/docking system. Packaging/installer work is also out of scope.
+#765 delivered the compact icon-bar presentation. #766 completes Favorites in
+that bar. This contract still excludes sample Drag & Drop (#768), the
+bottom-center context hint (#770), and the future modular snap/docking system.
+Packaging/installer work is also out of scope.

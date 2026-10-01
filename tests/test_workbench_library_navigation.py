@@ -76,6 +76,7 @@ def test_navigation_emits_stable_taxonomy_ids_and_typed_scopes(
     assert [(node.node_id, node.kind) for node in secondary] == [
         ("scope:all-library", LibraryNodeKind.ALL_SAMPLES),
         ("scope:catalog-readonly", LibraryNodeKind.CATALOG),
+        ("scope:favorites", LibraryNodeKind.FAVORITES),
         ("container:collections", LibraryNodeKind.COLLECTIONS),
     ]
 
@@ -119,6 +120,8 @@ def test_navigation_emits_stable_taxonomy_ids_and_typed_scopes(
     catalog_scope = navigation.resolve_scope("scope:catalog-readonly")
     assert catalog_scope is not None and catalog_scope.kind is LibraryScopeKind.CATALOG
     assert catalog_scope.catalog_limit == DEFAULT_CATALOG_LOAD_LIMIT
+    favorites_scope = navigation.resolve_scope("scope:favorites")
+    assert favorites_scope is not None and favorites_scope.kind is LibraryScopeKind.FAVORITES
 
     collection = _node(navigation.children("container:collections"), f"collection:{playlist.id}")
     collection_scope = navigation.resolve_scope(collection.node_id)
@@ -168,16 +171,20 @@ def test_temp_like_roots_remain_registered_sources(
     assert node.selectable
 
 
-def test_favorites_are_not_emitted_without_a_persistent_contract(
+def test_favorites_live_in_secondary_bar_not_source_tree(
     library_db: Path,
 ) -> None:
     navigation = WorkbenchLibraryNavigation(library_db_path=library_db)
-    node_ids = [node.node_id for node in navigation.top_level_nodes()]
-    node_ids.extend(node.node_id for node in navigation.secondary_nodes())
-    node_ids.extend(node.node_id for node in navigation.children("container:sample-sources"))
-    node_ids.extend(node.node_id for node in navigation.children("container:collections"))
-
-    assert not any("favorite" in node_id.lower() for node_id in node_ids)
+    source_ids = [node.node_id for node in navigation.top_level_nodes()]
+    source_ids.extend(
+        node.node_id for node in navigation.children("container:sample-sources")
+    )
+    source_ids.extend(
+        node.node_id for node in navigation.children("container:collections")
+    )
+    assert not any("favorite" in node_id.lower() for node_id in source_ids)
+    secondary_ids = [node.node_id for node in navigation.secondary_nodes()]
+    assert "scope:favorites" in secondary_ids
 
 
 def test_offline_root_stays_visible_cache_selectable_and_not_expandable(
