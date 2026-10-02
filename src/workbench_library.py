@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import sqlite3
 import tempfile
 from contextlib import contextmanager
@@ -107,6 +106,33 @@ def connect_workbench_library(path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+def _capture_sqlite_main_and_wal(resolved: Path, snap_db: Path) -> None:
+    """Copy main DB + WAL bytes as one stable capture (retry on concurrent change).
+
+    A checkpoint/truncate between independent copies can pair a pre-checkpoint
+    main file with a post-checkpoint WAL and miss committed rows. Re-read both
+    until the pair is stable, then write that pair into ``snap_db``.
+    """
+    wal_src = Path(f"{resolved}-wal")
+    snap_wal = Path(f"{snap_db}-wal")
+    main_bytes = b""
+    wal_bytes: bytes | None = None
+    for _ in range(8):
+        main_bytes = resolved.read_bytes()
+        wal_bytes = wal_src.read_bytes() if wal_src.is_file() else None
+        main_again = resolved.read_bytes()
+        wal_again = wal_src.read_bytes() if wal_src.is_file() else None
+        if main_bytes == main_again and wal_bytes == wal_again:
+            break
+        main_bytes = main_again
+        wal_bytes = wal_again
+    snap_db.write_bytes(main_bytes)
+    if wal_bytes is not None:
+        snap_wal.write_bytes(wal_bytes)
+    elif snap_wal.exists():
+        snap_wal.unlink()
+
+
 @contextmanager
 def _connect_workbench_library_readonly(db_path: Path) -> Iterator[sqlite3.Connection]:
     """Open an existing library DB via a temp read-snapshot.
@@ -117,10 +143,10 @@ def _connect_workbench_library_readonly(db_path: Path) -> Iterator[sqlite3.Conne
     - still observe committed frames that currently live only in an existing
       source ``-wal`` (``immutable=1`` on the original path would miss those)
 
-    Implementation: copy the main DB and, when present, the ``-wal`` into a
-    private temp directory; open that snapshot with ``mode=ro`` +
-    ``PRAGMA query_only=ON``. SQLite may create read-side artifacts only under
-    the temp dir. The source ``-shm`` is intentionally not copied.
+    Implementation: capture a stable main+WAL byte pair into a private temp
+    directory; open that snapshot with ``mode=ro`` + ``PRAGMA query_only=ON``.
+    SQLite may create read-side artifacts only under the temp dir. The source
+    ``-shm`` is intentionally not copied.
     """
     resolved = Path(db_path).resolve()
     tmp = tempfile.TemporaryDirectory(prefix="sample-brain-wb-lib-ro-")
@@ -133,10 +159,7 @@ def _connect_workbench_library_readonly(db_path: Path) -> Iterator[sqlite3.Conne
             raise RuntimeError(
                 "refusing readonly snapshot inside source library directory"
             )
-        shutil.copyfile(resolved, snap_db)
-        wal_src = Path(f"{resolved}-wal")
-        if wal_src.is_file():
-            shutil.copyfile(wal_src, Path(f"{snap_db}-wal"))
+        _capture_sqlite_main_and_wal(resolved, snap_db)
         uri = f"file:{quote(str(snap_db).replace(chr(92), '/'))}?mode=ro"
         conn = sqlite3.connect(uri, uri=True)
         conn.row_factory = sqlite3.Row

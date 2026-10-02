@@ -398,9 +398,11 @@ def test_rehydrate_wal_library_does_not_create_sidecars(tmp_path: Path) -> None:
 
 def test_rehydrate_includes_committed_wal_only_catalog_row(tmp_path: Path) -> None:
     """Resume must rehydrate BPM/Key from committed WAL frames, not miss them."""
+    import src.workbench_library as workbench_library
+
     state_dir = tmp_path / "state"
-    library_db = tmp_path / "library" / "library.db"
-    library_db.parent.mkdir()
+    live_db = tmp_path / "live" / "library.db"
+    live_db.parent.mkdir()
     folder = tmp_path / "samples"
     audio = folder / "kick.wav"
     audio.parent.mkdir(parents=True, exist_ok=True)
@@ -412,67 +414,65 @@ def test_rehydrate_includes_committed_wal_only_catalog_row(tmp_path: Path) -> No
     a.live_kit.assign("Kick + Bass", "Kick", _minimal_row("kick.wav", kick))
     a.transport.close()
 
-    init_workbench_library(library_db)
-    with sqlite3.connect(library_db) as conn:
+    init_workbench_library(live_db)
+    with sqlite3.connect(live_db) as conn:
         assert conn.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal"
         conn.execute("PRAGMA wal_autocheckpoint=0")
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         conn.commit()
 
-    # Keep a live connection so the committed row is not final-checkpointed into
-    # the main DB file (crash / concurrent-open resume scenario).
-    holder = sqlite3.connect(library_db)
+    # Capture an orphaned crash-style library (main + WAL, no live connections /
+    # no SHM) while a holder keeps frames out of the live main file.
+    holder = sqlite3.connect(live_db)
     holder.execute("PRAGMA wal_autocheckpoint=0")
     try:
-        folder_id = upsert_folder(folder, db_path=library_db)
+        folder_id = upsert_folder(folder, db_path=live_db)
         upsert_sample(
             folder_id,
             _minimal_row(audio.name, kick, bpm=128.0, key="Am"),
             size_bytes=44,
             mtime_ns=1_700_000_000_000_000_000,
-            db_path=library_db,
+            db_path=live_db,
         )
-        wal_path = Path(f"{library_db}-wal")
-        shm_path = Path(f"{library_db}-shm")
-        assert wal_path.is_file() and wal_path.stat().st_size > 0
-
-        # Prove the row is not fully checkpointed into the main DB alone.
-        with sqlite3.connect(
-            f"file:{library_db.resolve().as_posix()}?mode=ro&immutable=1",
-            uri=True,
-        ) as conn:
-            assert (
-                conn.execute(
-                    "SELECT 1 FROM samples WHERE original_path = ?",
-                    (kick,),
-                ).fetchone()
-                is None
-            )
-
-        before = _library_dir_fingerprint(library_db)
-        assert "library.db-wal" in before["names"]
-        # Holder must stay alive across resume so WAL frames remain uncheckpointed.
-        assert holder.execute("SELECT 1").fetchone() == (1,)
-        b = compose_workbench_session(state_dir=state_dir, library_db_path=library_db)
-        restored = _kick_slot(b)
-        assert holder.execute("SELECT 1").fetchone() == (1,)
-        after = _library_dir_fingerprint(library_db)
-
-        assert restored is not None
-        assert restored.path == kick
-        assert restored.bpm == pytest.approx(128.0)
-        assert restored.key == "Am"
-        # Durable source state must stay byte-identical. Entry set must not gain
-        # or lose files. SHM content may change under a live holder (volatile
-        # index); resume must neither create nor delete the SHM file.
-        assert after["names"] == before["names"]
-        assert after["hashes"]["library.db"] == before["hashes"]["library.db"]
-        assert after["hashes"]["library.db-wal"] == before["hashes"]["library.db-wal"]
-        assert wal_path.is_file() and wal_path.stat().st_size > 0
-        assert shm_path.is_file()
-        b.transport.close()
+        assert Path(f"{live_db}-wal").is_file()
+        assert Path(f"{live_db}-wal").stat().st_size > 0
+        frozen_db = tmp_path / "frozen" / "library.db"
+        frozen_db.parent.mkdir()
+        workbench_library._capture_sqlite_main_and_wal(live_db.resolve(), frozen_db)
     finally:
         holder.close()
+
+    wal_path = Path(f"{frozen_db}-wal")
+    shm_path = Path(f"{frozen_db}-shm")
+    assert wal_path.is_file() and wal_path.stat().st_size > 0
+    assert not shm_path.exists()
+
+    # Prove the frozen main alone does not contain the row.
+    with sqlite3.connect(
+        f"file:{frozen_db.resolve().as_posix()}?mode=ro&immutable=1",
+        uri=True,
+    ) as conn:
+        assert (
+            conn.execute(
+                "SELECT 1 FROM samples WHERE original_path = ?",
+                (kick,),
+            ).fetchone()
+            is None
+        )
+
+    before = _library_dir_fingerprint(frozen_db)
+    b = compose_workbench_session(state_dir=state_dir, library_db_path=frozen_db)
+    restored = _kick_slot(b)
+    after = _library_dir_fingerprint(frozen_db)
+
+    assert restored is not None
+    assert restored.path == kick
+    assert restored.bpm == pytest.approx(128.0)
+    assert restored.key == "Am"
+    assert after == before
+    assert wal_path.is_file() and wal_path.stat().st_size > 0
+    assert not shm_path.exists()
+    b.transport.close()
 
 
 def test_rehydrate_incompatible_library_schema_fail_soft_without_migration(
