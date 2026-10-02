@@ -892,3 +892,537 @@ def test_one_pass_primitive_and_forbidden_loop_api_remain():
     rack = importlib.import_module("src.channel_rack")
     assert hasattr(rack, "play_channel_rack_once")
     assert not hasattr(rack, "loop_pattern_forever")
+
+
+# ---------------------------------------------------------------------------
+# #821 — Deterministic Channel Rack loop soak / voice reclaim gate
+# ---------------------------------------------------------------------------
+#
+# N=64 generations: long enough to catch monotonic voice growth that the
+# short 2–4 pass lifecycle tests miss, short enough for CI with 8-frame
+# synthetic PCM + FakeNativeEngine (no WASAPI / wall-clock sleeps).
+SOAK_GENERATIONS = 64
+# Single-step pattern + reclaim should keep owned registered voices tiny;
+# bound far below SB_MAX_VOICES so growth regressions trip early.
+SOAK_OWNED_VOICE_BOUND = 4
+
+
+def _owned_registered_voice_count(engine: FakeNativeEngine) -> int:
+    return sum(1 for meta in engine._voices.values() if not meta.get("foreign"))
+
+
+def _foreign_voice_still_registered(engine: FakeNativeEngine, voice_id: int) -> bool:
+    meta = engine._voices.get(voice_id)
+    return meta is not None and bool(meta.get("foreign"))
+
+
+def _record_soak_voice_snapshot(
+    engine: FakeNativeEngine,
+    *,
+    foreign_id: int,
+    owned_counts: list[int],
+    total_counts: list[int],
+) -> None:
+    snap = engine.get_snapshot()
+    owned = _owned_registered_voice_count(engine)
+    owned_counts.append(owned)
+    total_counts.append(int(snap.total_voice_count))
+    assert snap.total_voice_count <= SB_MAX_VOICES
+    assert owned <= SOAK_OWNED_VOICE_BOUND
+    assert _foreign_voice_still_registered(engine, foreign_id)
+    assert foreign_id not in engine.stop_voice_calls
+    assert foreign_id not in engine.remove_voice_calls
+
+
+# Deterministic fallback for unregistered soak paths (distinct from wav markers).
+_SOAK_PCM_FALLBACK_SEED = 0.11
+
+
+def _path_pcm_seed(path: str, markers: dict[str, float]) -> float:
+    return float(markers.get(str(path), _SOAK_PCM_FALLBACK_SEED))
+
+
+def _path_distinct_pcm_provider(
+    decode_paths: list[str],
+    markers: dict[str, float],
+) -> SequencerPcmProvider:
+    """Synthetic PCM keyed by path so sample-replace create is observable."""
+
+    def decode_fn(path, *, sample_rate, start_ms=0):
+        del sample_rate, start_ms
+        decode_paths.append(str(path))
+        seed = _path_pcm_seed(str(path), markers)
+        return np.full(PCM_FRAMES, seed, dtype=np.float32), 1
+
+    return SequencerPcmProvider(sample_rate=SAMPLE_RATE, decode_fn=decode_fn)
+
+
+def _create_call_matches_path_seed(
+    config: VoiceConfig, path: str, markers: dict[str, float]
+) -> bool:
+    if config.pcm_buffer is None:
+        return False
+    samples = config.pcm_buffer.samples
+    if samples.size == 0:
+        return False
+    return abs(float(samples.flat[0]) - _path_pcm_seed(path, markers)) < 1e-6
+
+
+def _pass_event_engine_frame(
+    transport,
+    controller,
+    *,
+    pass_index: int,
+    trigger_quarter: Fraction,
+) -> int:
+    module = _controller_module()
+    helper = _require(module, "pattern_pass_start_frames")
+    start_q, start_e = helper(
+        transport.tempo_map,
+        anchor_quarter=controller._loop_anchor_quarter,
+        anchor_engine_frame=controller._loop_anchor_engine_frame,
+        pass_index=pass_index,
+        length_quarter_notes=controller.state.pattern.length_quarter_notes,
+    )
+    return int(
+        start_e
+        + (
+            transport.tempo_map.quarter_note_to_frame(start_q + trigger_quarter)
+            - transport.tempo_map.quarter_note_to_frame(start_q)
+        )
+    )
+
+
+def _materialize_until_frame_scheduled(
+    controller,
+    transport,
+    engine,
+    *,
+    target_frame: int,
+    schedule_from: int,
+    max_steps: int = 64,
+) -> None:
+    """Advance/tick until ``target_frame`` appears in new schedule calls."""
+    for _ in range(max_steps):
+        if any(
+            frame == target_frame
+            for _vid, frame in engine.schedule_calls[schedule_from:]
+        ):
+            return
+        remaining = target_frame + PCM_FRAMES - transport.engine_frame
+        transport.advance(max(1, min(4800, max(remaining, 1))))
+        engine.advance_to(transport.engine_frame)
+        controller.tick_playback()
+    pytest.fail(f"expected schedule frame {target_frame} within materialize budget")
+
+
+def _owned_has_state(engine: FakeNativeEngine, state: int) -> bool:
+    return any(
+        not meta.get("foreign") and int(meta["state"]) == state
+        for meta in engine._voices.values()
+    )
+
+
+def _drain_full_pass_until_boundary(
+    controller,
+    transport,
+    engine,
+    *,
+    max_ticks: int = 256,
+    lifecycle: dict[str, int] | None = None,
+):
+    """Advance through the current pass with mid-pass ticks, then cross the seam.
+
+    Unlike `_drain_until_pass_boundary` (step-0 shortcut) and a single jump to
+    ``next_e``, this helper steps in small increments so the player observes
+    SCHEDULED → PLAYING → IDLE reclaim before starting the next generation.
+    """
+    length = controller.state.pattern.length_quarter_notes
+    module = _controller_module()
+    helper = _require(module, "pattern_pass_start_frames")
+    current_index = int(controller._loop_pass_index)
+    next_index = current_index + 1
+    _cur_q, start_e = helper(
+        transport.tempo_map,
+        anchor_quarter=controller._loop_anchor_quarter,
+        anchor_engine_frame=controller._loop_anchor_engine_frame,
+        pass_index=current_index,
+        length_quarter_notes=length,
+    )
+    _next_q, next_e = helper(
+        transport.tempo_map,
+        anchor_quarter=controller._loop_anchor_quarter,
+        anchor_engine_frame=controller._loop_anchor_engine_frame,
+        pass_index=next_index,
+        length_quarter_notes=length,
+    )
+    del _cur_q, _next_q
+
+    saw_playing = False
+    removes_before = len(engine.remove_voice_calls)
+
+    def _finish_if_advanced(before: int, tick):
+        if controller._loop_pass_index <= before:
+            return None
+        if lifecycle is not None:
+            lifecycle["playing_passes"] = lifecycle.get("playing_passes", 0) + int(
+                saw_playing
+            )
+            lifecycle["reclaim_passes"] = lifecycle.get("reclaim_passes", 0) + int(
+                len(engine.remove_voice_calls) > removes_before
+            )
+        return tick
+
+    # 1) Materialize near pass start and observe active PLAYING one-shots.
+    mid_target = int(start_e) + 1
+    if transport.engine_frame < mid_target:
+        transport.advance(mid_target - transport.engine_frame)
+        engine.advance_to(transport.engine_frame)
+    before = controller._loop_pass_index
+    tick = controller.tick_playback()
+    if _owned_has_state(engine, SB_VOICE_PLAYING):
+        saw_playing = True
+    done = _finish_if_advanced(before, tick)
+    if done is not None:
+        return done
+
+    # 2) Nudge past one-shot EOF so IDLE reclaim runs on the control thread.
+    idle_target = int(start_e) + PCM_FRAMES + 1
+    if transport.engine_frame < idle_target:
+        transport.advance(idle_target - transport.engine_frame)
+        engine.advance_to(transport.engine_frame)
+    before = controller._loop_pass_index
+    tick = controller.tick_playback()
+    done = _finish_if_advanced(before, tick)
+    if done is not None:
+        return done
+
+    # 3) Walk remaining bar in lookahead chunks (covers mid-bar step edits).
+    while transport.engine_frame < int(next_e):
+        before = controller._loop_pass_index
+        chunk = min(4800, int(next_e) - transport.engine_frame)
+        if chunk <= 0:
+            break
+        transport.advance(chunk)
+        engine.advance_to(transport.engine_frame)
+        if _owned_has_state(engine, SB_VOICE_PLAYING):
+            saw_playing = True
+        tick = controller.tick_playback()
+        if tick is None:
+            return None
+        done = _finish_if_advanced(before, tick)
+        if done is not None:
+            return done
+
+    # 4) Land just past the next-pass seam and tick until the generation advances.
+    target = int(next_e) + PCM_FRAMES + 1
+    transport.advance(max(0, target - transport.engine_frame))
+    engine.advance_to(transport.engine_frame)
+    for _ in range(max_ticks):
+        before = controller._loop_pass_index
+        if _owned_has_state(engine, SB_VOICE_PLAYING):
+            saw_playing = True
+        tick = controller.tick_playback()
+        if tick is None:
+            return None
+        done = _finish_if_advanced(before, tick)
+        if done is not None:
+            return done
+        transport.advance(max(PCM_FRAMES, 4800))
+        engine.advance_to(transport.engine_frame)
+    pytest.fail("expected full-pass loop boundary within tick budget")
+
+
+def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
+    """Frozen reliability soak (#821): many loop generations under Flow-F edits.
+
+    Covers repeated generations, mid-soak step edit, user-channel sample
+    replace, tempo change, stop/play restart, final clean stop. Proves owned
+    voices stay bounded (no monotonic unbounded growth), foreign voices are
+    not stolen, and stop leaves is_playing=False with loop runtime cleared.
+    """
+    from tests.audio_fixtures import write_sine_wav
+
+    wav_a = write_sine_wav(
+        tmp_path / "user_a.wav",
+        duration_sec=0.05,
+        frequency_hz=440.0,
+        sr=SAMPLE_RATE,
+    )
+    wav_b = write_sine_wav(
+        tmp_path / "user_b.wav",
+        duration_sec=0.05,
+        frequency_hz=550.0,
+        sr=SAMPLE_RATE,
+    )
+    pcm_markers = {
+        str(wav_a): 0.31,
+        str(wav_b): 0.67,
+    }
+
+    foreign_id = 42
+    engine = FakeNativeEngine()
+    engine.seed_foreign_voice(foreign_id, pcm_frames=10_000)
+    transport = LoopTransport(engine)
+    decode_paths: list[str] = []
+    pcm_provider = _path_distinct_pcm_provider(decode_paths, pcm_markers)
+    module = _controller_module()
+    Controller = _require(module, "ChannelRackController")
+    controller = Controller(
+        live_kit=_kit_with_kick(),
+        transport=transport,
+        pcm_provider=pcm_provider,
+        lookahead_frames=4800,
+    )
+    controller.enter_screen2()
+    # Minimal kick trigger + user channel (assign path exercises #808 replace).
+    controller._state = _minimal_kick_state()
+    controller.add_user_channel()
+    user = next(
+        ch
+        for ch in controller.state.channels
+        if ch.channel_id.startswith(USER_CHANNEL_ID_PREFIX)
+    )
+    controller.assign_user_channel_sample(user.channel_id, str(wav_a))
+    # Keep user channel silent until replace checkpoint (one kick step only).
+    for step in range(16):
+        if Trigger(channel_id=user.channel_id, position=Fraction(step, 4)) in (
+            controller.state.pattern.triggers
+        ):
+            controller.toggle_step(user.channel_id, step)
+
+    handle = controller.play()
+    assert handle is not None
+    assert controller.is_playing is True
+
+    owned_counts: list[int] = []
+    total_counts: list[int] = []
+    lifecycle: dict[str, int] = {"playing_passes": 0, "reclaim_passes": 0}
+    # Segment A: continuous loop with mid-soak mutations (no pass-index reset).
+    segment_a = 56
+    step_edit_at = 16
+    sample_replace_at = 32
+    tempo_change_at = 48
+    create_marker_before_replace = len(engine.create_calls)
+    schedule_marker_before_replace = len(engine.schedule_calls)
+    schedule_marker_after_edit = 0
+    schedule_marker_before_tempo = len(engine.schedule_calls)
+    expected_tempo_event_frame: int | None = None
+
+    for generation in range(1, segment_a + 1):
+        _drain_full_pass_until_boundary(
+            controller, transport, engine, lifecycle=lifecycle
+        )
+        assert controller._loop_pass_index == generation
+        assert controller.is_playing is True
+        _record_soak_voice_snapshot(
+            engine,
+            foreign_id=foreign_id,
+            owned_counts=owned_counts,
+            total_counts=total_counts,
+        )
+
+        if generation == step_edit_at:
+            # Mid-soak step edit: disable beat 0, enable beat 1 (next pass only).
+            controller.toggle_step("ch_kick", 0)
+            controller.toggle_step("ch_kick", 4)
+            assert Trigger(channel_id="ch_kick", position=Fraction(1, 1)) in (
+                controller.state.pattern.triggers
+            )
+            schedule_marker_after_edit = len(engine.schedule_calls)
+
+        if generation == step_edit_at + 1:
+            # Replanned pass must schedule kick at quarter 1 (not this pass's q0).
+            expected_kick_q1 = _pass_event_engine_frame(
+                transport,
+                controller,
+                pass_index=generation,
+                trigger_quarter=Fraction(1, 1),
+            )
+            stale_kick_q0 = _pass_event_engine_frame(
+                transport,
+                controller,
+                pass_index=generation,
+                trigger_quarter=Fraction(0, 1),
+            )
+            _materialize_until_frame_scheduled(
+                controller,
+                transport,
+                engine,
+                target_frame=expected_kick_q1,
+                schedule_from=schedule_marker_after_edit,
+            )
+            new_frames = [
+                frame
+                for _vid, frame in engine.schedule_calls[schedule_marker_after_edit:]
+            ]
+            assert expected_kick_q1 in new_frames
+            assert stale_kick_q0 not in new_frames
+
+        if generation == sample_replace_at:
+            controller.assign_user_channel_sample(user.channel_id, str(wav_b))
+            replaced = next(
+                ch for ch in controller.state.channels if ch.channel_id == user.channel_id
+            )
+            assert replaced.sample_path == str(wav_b)
+            # Arm one user step so replace is on the playable path for later gens.
+            if Trigger(channel_id=user.channel_id, position=Fraction(0, 1)) not in (
+                controller.state.pattern.triggers
+            ):
+                controller.toggle_step(user.channel_id, 0)
+            create_marker_before_replace = len(engine.create_calls)
+            schedule_marker_before_replace = len(engine.schedule_calls)
+
+        if generation == sample_replace_at + 1:
+            # Replacement must reach a created AND scheduled voice, not only warm-decode.
+            created_after = engine.create_calls[create_marker_before_replace:]
+            matched_ids = [
+                int(cfg.id)
+                for cfg in created_after
+                if _create_call_matches_path_seed(cfg, str(wav_b), pcm_markers)
+            ]
+            assert matched_ids, (
+                "expected a created voice seeded from replaced user sample wav_b"
+            )
+            scheduled_ids = {
+                int(vid)
+                for vid, _frame in engine.schedule_calls[schedule_marker_before_replace:]
+            }
+            # Correlate create→schedule by voice id so an unscheduled wav_b create fails.
+            assert any(vid in scheduled_ids for vid in matched_ids), (
+                f"wav_b voice ids {matched_ids} were created but not scheduled"
+            )
+
+        if generation == tempo_change_at:
+            module = _controller_module()
+            helper = _require(module, "pattern_pass_start_frames")
+            _q_cur, e_cur = helper(
+                transport.tempo_map,
+                anchor_quarter=controller._loop_anchor_quarter,
+                anchor_engine_frame=controller._loop_anchor_engine_frame,
+                pass_index=generation,
+                length_quarter_notes=Fraction(4, 1),
+            )
+            _q_next, e_next_before = helper(
+                transport.tempo_map,
+                anchor_quarter=controller._loop_anchor_quarter,
+                anchor_engine_frame=controller._loop_anchor_engine_frame,
+                pass_index=generation + 1,
+                length_quarter_notes=Fraction(4, 1),
+            )
+            del _q_cur, _q_next
+            old_pass_span = int(e_next_before) - int(e_cur)
+            change_frame = transport.set_tempo(180)
+            assert isinstance(change_frame, int)
+            assert change_frame >= 0
+            schedule_marker_before_tempo = len(engine.schedule_calls)
+            expected_tempo_event_frame = _pass_event_engine_frame(
+                transport,
+                controller,
+                pass_index=generation + 1,
+                trigger_quarter=Fraction(1, 1),
+            )
+            _q2, e_next2_after = helper(
+                transport.tempo_map,
+                anchor_quarter=controller._loop_anchor_quarter,
+                anchor_engine_frame=controller._loop_anchor_engine_frame,
+                pass_index=generation + 2,
+                length_quarter_notes=Fraction(4, 1),
+            )
+            del _q2
+            _q1a, e_next_after = helper(
+                transport.tempo_map,
+                anchor_quarter=controller._loop_anchor_quarter,
+                anchor_engine_frame=controller._loop_anchor_engine_frame,
+                pass_index=generation + 1,
+                length_quarter_notes=Fraction(4, 1),
+            )
+            del _q1a
+            # Baseline = one preceding old-tempo pass span, not anchor→pass distance.
+            constant_e2 = int(e_next_after) + old_pass_span
+            assert int(e_next2_after) != constant_e2
+
+        if generation == tempo_change_at + 1:
+            assert expected_tempo_event_frame is not None
+            _materialize_until_frame_scheduled(
+                controller,
+                transport,
+                engine,
+                target_frame=expected_tempo_event_frame,
+                schedule_from=schedule_marker_before_tempo,
+            )
+            new_frames = [
+                frame
+                for _vid, frame in engine.schedule_calls[schedule_marker_before_tempo:]
+            ]
+            assert expected_tempo_event_frame in new_frames
+
+    # Stop/Play restart mid-session: clean stop, then fresh loop segment.
+    controller.stop()
+    assert controller.is_playing is False
+    assert getattr(controller, "_loop_active", False) is False
+    assert controller._play_handle is None
+    assert _foreign_voice_still_registered(engine, foreign_id)
+    owned_after_stop = _owned_registered_voice_count(engine)
+    assert owned_after_stop == 0
+
+    restarted = controller.play()
+    assert restarted is not None
+    assert controller.is_playing is True
+    assert controller._loop_pass_index == 0
+
+    # Segment B: remaining generations after restart (pass index restarts at 0).
+    segment_b = SOAK_GENERATIONS - segment_a
+    assert segment_b >= 8
+    for generation in range(1, segment_b + 1):
+        _drain_full_pass_until_boundary(
+            controller, transport, engine, lifecycle=lifecycle
+        )
+        assert controller._loop_pass_index == generation
+        assert controller.is_playing is True
+        _record_soak_voice_snapshot(
+            engine,
+            foreign_id=foreign_id,
+            owned_counts=owned_counts,
+            total_counts=total_counts,
+        )
+
+    assert len(owned_counts) == SOAK_GENERATIONS
+    # Most generations must exercise active PLAYING and IDLE reclaim (Codex P2).
+    assert lifecycle["playing_passes"] >= SOAK_GENERATIONS // 2
+    assert lifecycle["reclaim_passes"] >= SOAK_GENERATIONS // 2
+
+    # No monotonic unbounded growth: late window must not exceed early window
+    # by more than reclaim slack (growth linear in generation count is a fail).
+    early = owned_counts[:8]
+    late = owned_counts[-8:]
+    assert max(late) <= max(early) + 1
+    assert max(owned_counts) <= SOAK_OWNED_VOICE_BOUND
+    assert max(total_counts) <= SB_MAX_VOICES
+    # Voice id allocator may increment, but registered ownership must reclaim.
+    assert max(owned_counts) < SOAK_GENERATIONS // 4
+
+    controller.stop()
+    assert controller.is_playing is False
+    assert getattr(controller, "_loop_active", False) is False
+    assert controller._play_handle is None
+    assert controller._loop_pass_index == 0
+    assert _foreign_voice_still_registered(engine, foreign_id)
+    assert foreign_id not in engine.stop_voice_calls
+    assert foreign_id not in engine.remove_voice_calls
+    owned_live = [
+        vid
+        for vid, meta in engine._voices.items()
+        if not meta.get("foreign") and meta["state"] != SB_VOICE_IDLE
+    ]
+    assert owned_live == []
+    # Owned IDLE leftovers may exist only until explicit remove; stop must
+    # leave no owned registered voices (PatternPassPlayer.stop contract).
+    assert _owned_registered_voice_count(engine) == 0
+
+    # Tick after stop must not resurrect loop runtime.
+    transport.advance(200_000)
+    engine.advance_to(transport.engine_frame)
+    for _ in range(8):
+        assert controller.tick_playback() is None
+    assert controller.is_playing is False
