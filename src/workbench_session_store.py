@@ -99,6 +99,27 @@ def workbench_row_from_sample_ref(path: str) -> WorkbenchRow:
     )
 
 
+def _hydrate_row_from_cached_sample(row: WorkbenchRow, cached: Any) -> WorkbenchRow:
+    """Apply cached library analysis fields while keeping session path identity."""
+    hydrated = cached.to_workbench_row()
+    return WorkbenchRow(
+        display_name=hydrated.display_name or row.display_name,
+        relative_path=hydrated.relative_path or row.relative_path,
+        path=row.path,
+        bpm=hydrated.bpm,
+        key=hydrated.key,
+        key_conf=hydrated.key_conf,
+        loudness=hydrated.loudness,
+        brightness=hydrated.brightness,
+        sample_class=hydrated.sample_class,
+        pred_type=hydrated.pred_type,
+        status=hydrated.status or row.status,
+        error=hydrated.error,
+        error_code=hydrated.error_code,
+        details=dict(hydrated.details) if hydrated.details else {},
+    )
+
+
 def rehydrate_workbench_row_from_library(
     row: WorkbenchRow,
     *,
@@ -120,24 +141,7 @@ def rehydrate_workbench_row_from_library(
         return row
     if cached is None:
         return row
-    hydrated = cached.to_workbench_row()
-    # Keep the persisted session path string as identity authority.
-    return WorkbenchRow(
-        display_name=hydrated.display_name or row.display_name,
-        relative_path=hydrated.relative_path or row.relative_path,
-        path=row.path,
-        bpm=hydrated.bpm,
-        key=hydrated.key,
-        key_conf=hydrated.key_conf,
-        loudness=hydrated.loudness,
-        brightness=hydrated.brightness,
-        sample_class=hydrated.sample_class,
-        pred_type=hydrated.pred_type,
-        status=hydrated.status or row.status,
-        error=hydrated.error,
-        error_code=hydrated.error_code,
-        details=dict(hydrated.details) if hydrated.details else {},
-    )
+    return _hydrate_row_from_cached_sample(row, cached)
 
 
 def rehydrate_live_kit_from_library(
@@ -148,17 +152,36 @@ def rehydrate_live_kit_from_library(
     """Rehydrate all assigned Live Kit rows from ``library_db_path`` (fail soft)."""
     if library_db_path is None:
         return
-    for group, slots in LIVE_KIT_SLOT_MAPPING:
-        for slot in slots:
-            current = live_kit.assignment_for(group, slot)
-            if current is None:
-                continue
-            hydrated = rehydrate_workbench_row_from_library(
-                current, library_db_path=library_db_path
-            )
-            if hydrated is current:
-                continue
-            live_kit.assign(group, slot, hydrated)
+    try:
+        from .workbench_library import (
+            query_sample_by_path_on_readonly_connection,
+            workbench_library_readonly_connection,
+        )
+    except Exception:
+        return
+
+    try:
+        with workbench_library_readonly_connection(library_db_path) as conn:
+            if conn is None:
+                return
+            for group, slots in LIVE_KIT_SLOT_MAPPING:
+                for slot in slots:
+                    current = live_kit.assignment_for(group, slot)
+                    if current is None:
+                        continue
+                    try:
+                        cached = query_sample_by_path_on_readonly_connection(
+                            conn, current.path
+                        )
+                    except Exception:
+                        continue
+                    if cached is None:
+                        continue
+                    live_kit.assign(
+                        group, slot, _hydrate_row_from_cached_sample(current, cached)
+                    )
+    except Exception:
+        return
 
 
 def _reject_unknown_keys(

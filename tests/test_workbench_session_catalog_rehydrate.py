@@ -109,6 +109,60 @@ def _vm_kick_row(session) -> WorkbenchRow | None:
     return None
 
 
+def test_multi_slot_rehydrate_uses_one_readonly_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Live Kit resume must not copy the library once per assigned slot."""
+    import src.workbench_library as workbench_library
+
+    state_dir = tmp_path / "state"
+    library_db = tmp_path / "library.db"
+    folder = tmp_path / "samples"
+    kick = _seed_library_row(
+        library_db=library_db,
+        folder=folder,
+        audio=folder / "kick.wav",
+        bpm=128.0,
+        key="Am",
+    )
+    bass = _seed_library_row(
+        library_db=library_db,
+        folder=folder,
+        audio=folder / "bass.wav",
+        bpm=130.0,
+        key="C",
+    )
+    hat = _seed_library_row(
+        library_db=library_db,
+        folder=folder,
+        audio=folder / "hat.wav",
+        bpm=132.0,
+        key="G",
+    )
+
+    a = compose_workbench_session(state_dir=state_dir)
+    a.live_kit.assign("Kick + Bass", "Kick", _minimal_row("kick.wav", kick))
+    a.live_kit.assign("Kick + Bass", "Bass", _minimal_row("bass.wav", bass))
+    a.live_kit.assign("Drums", "Closed Hat", _minimal_row("hat.wav", hat))
+    a.transport.close()
+
+    snapshot_dirs = {"n": 0}
+    real_td = workbench_library.tempfile.TemporaryDirectory
+
+    def _counting_td(*args, **kwargs):
+        snapshot_dirs["n"] += 1
+        return real_td(*args, **kwargs)
+
+    monkeypatch.setattr(workbench_library.tempfile, "TemporaryDirectory", _counting_td)
+
+    b = compose_workbench_session(state_dir=state_dir, library_db_path=library_db)
+    assert snapshot_dirs["n"] == 1
+    assert b.live_kit.assignment_for("Kick + Bass", "Kick").bpm == pytest.approx(128.0)
+    assert b.live_kit.assignment_for("Kick + Bass", "Bass").bpm == pytest.approx(130.0)
+    assert b.live_kit.assignment_for("Drums", "Closed Hat").bpm == pytest.approx(132.0)
+    b.transport.close()
+
+
 def test_restore_catalog_hit_rehydrates_bpm_and_key(tmp_path: Path) -> None:
     state_dir = tmp_path / "state"
     library_db = tmp_path / "library.db"

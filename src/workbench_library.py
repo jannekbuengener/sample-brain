@@ -928,6 +928,52 @@ def load_sample_by_path(
     return _cached_row_from_sqlite_row(row)
 
 
+def query_sample_by_path_on_readonly_connection(
+    conn: sqlite3.Connection,
+    original_path: Path | str,
+) -> CachedWorkbenchRow | None:
+    """Lookup one sample on an already-open readonly snapshot connection."""
+    path = str(Path(original_path).expanduser().resolve())
+    row = conn.execute(
+        """
+        SELECT s.*, f.path AS library_folder_path
+        FROM samples s
+        JOIN folders f ON f.id = s.folder_id
+        WHERE s.original_path = ?
+        """,
+        (path,),
+    ).fetchone()
+    if row is None:
+        return None
+    return _cached_row_from_sqlite_row(row)
+
+
+@contextmanager
+def workbench_library_readonly_connection(
+    db_path: Path | None = None,
+) -> Iterator[sqlite3.Connection | None]:
+    """Yield one temp read-snapshot connection for batch resume lookups.
+
+    Yields ``None`` when the library file is missing or cannot be opened
+    read-only. Callers must treat that as a catalog miss for every path.
+    Query errors raised by the caller are not converted into ``None`` here.
+    """
+    resolved_db = Path(db_path) if db_path is not None else workbench_library_db_path()
+    if not resolved_db.is_file():
+        yield None
+        return
+    try:
+        connect_cm = _connect_workbench_library_readonly(resolved_db)
+        conn = connect_cm.__enter__()
+    except (OSError, sqlite3.Error):
+        yield None
+        return
+    try:
+        yield conn
+    finally:
+        connect_cm.__exit__(None, None, None)
+
+
 def query_sample_by_path_readonly(
     original_path: Path | str,
     *,
@@ -937,28 +983,16 @@ def query_sample_by_path_readonly(
 
     Never creates the DB file or parent directories, never runs schema DDL or
     migrations, and never writes/commits. Missing or incompatible libraries
-    return ``None`` (catalog miss).
+    return ``None`` (catalog miss). Includes committed WAL frames via a temp
+    read-snapshot without mutating the original library directory.
     """
-    resolved_db = Path(db_path) if db_path is not None else workbench_library_db_path()
-    if not resolved_db.is_file():
-        return None
-    path = str(Path(original_path).expanduser().resolve())
     try:
-        with _connect_workbench_library_readonly(resolved_db) as conn:
-            row = conn.execute(
-                """
-                SELECT s.*, f.path AS library_folder_path
-                FROM samples s
-                JOIN folders f ON f.id = s.folder_id
-                WHERE s.original_path = ?
-                """,
-                (path,),
-            ).fetchone()
+        with workbench_library_readonly_connection(db_path) as conn:
+            if conn is None:
+                return None
+            return query_sample_by_path_on_readonly_connection(conn, original_path)
     except (OSError, sqlite3.Error):
         return None
-    if row is None:
-        return None
-    return _cached_row_from_sqlite_row(row)
 
 
 def load_folder_samples(
@@ -1249,6 +1283,8 @@ __all__ = [
     "load_folder_subtree_samples",
     "load_sample_by_path",
     "query_sample_by_path_readonly",
+    "query_sample_by_path_on_readonly_connection",
+    "workbench_library_readonly_connection",
     "load_sample_cue",
     "lookup_sample",
     "mark_folder_opened",
