@@ -120,22 +120,27 @@ def _stream_file_signature(path: Path) -> tuple[int, str]:
     return size, digest.hexdigest()
 
 
-def _stream_copy_file(src: Path, dst: Path) -> None:
+def _stream_copy_and_signature(src: Path, dst: Path) -> tuple[int, str]:
+    """Copy ``src`` to ``dst`` while hashing; one sequential read of ``src``."""
+    digest = hashlib.sha256()
+    size = 0
     with src.open("rb") as incoming, dst.open("wb") as outgoing:
         while True:
             chunk = incoming.read(1024 * 1024)
             if not chunk:
                 break
+            size += len(chunk)
+            digest.update(chunk)
             outgoing.write(chunk)
+    return size, digest.hexdigest()
 
 
 def _capture_sqlite_main_and_wal(resolved: Path, snap_db: Path) -> None:
     """Copy main DB + WAL/journal as one stable capture with bounded memory.
 
-    A checkpoint/truncate or rollback-journal rewrite between independent copies
-    can pair inconsistent sidecar state with the main file. Stream signatures
-    until the trio is stable, then stream-copy that capture into ``snap_db``
-    without buffering whole-database bytearrays in RAM.
+    Stream-copy while hashing (one pass per source file), then verify the
+    source signatures once more. Sidecar disappearance mid-copy is treated as
+    an unstable attempt and retried. No whole-database bytearrays are retained.
 
     Raises ``OSError`` if no stable capture is observed so callers can fail soft
     instead of opening an unverified snapshot.
@@ -145,50 +150,42 @@ def _capture_sqlite_main_and_wal(resolved: Path, snap_db: Path) -> None:
     snap_wal = Path(f"{snap_db}-wal")
     snap_journal = Path(f"{snap_db}-journal")
     for _ in range(8):
-        main_sig = _stream_file_signature(resolved)
-        wal_sig = _stream_file_signature(wal_src) if wal_src.is_file() else None
-        journal_sig = (
-            _stream_file_signature(journal_src) if journal_src.is_file() else None
-        )
-        if (
-            _stream_file_signature(resolved) != main_sig
-            or (
-                (_stream_file_signature(wal_src) if wal_src.is_file() else None)
-                != wal_sig
-            )
-            or (
-                (
-                    _stream_file_signature(journal_src)
-                    if journal_src.is_file()
-                    else None
-                )
-                != journal_sig
-            )
-        ):
+        try:
+            had_wal = wal_src.is_file()
+            had_journal = journal_src.is_file()
+            main_sig = _stream_copy_and_signature(resolved, snap_db)
+            if had_wal:
+                if not wal_src.is_file():
+                    continue
+                wal_sig = _stream_copy_and_signature(wal_src, snap_wal)
+            else:
+                wal_sig = None
+                if snap_wal.exists():
+                    snap_wal.unlink()
+            if had_journal:
+                if not journal_src.is_file():
+                    continue
+                journal_sig = _stream_copy_and_signature(journal_src, snap_journal)
+            else:
+                journal_sig = None
+                if snap_journal.exists():
+                    snap_journal.unlink()
+        except FileNotFoundError:
+            # Sidecar vanished during copy (checkpoint/close race) → retry.
             continue
-        _stream_copy_file(resolved, snap_db)
-        if wal_sig is not None:
-            _stream_copy_file(wal_src, snap_wal)
-        elif snap_wal.exists():
-            snap_wal.unlink()
-        if journal_sig is not None:
-            _stream_copy_file(journal_src, snap_journal)
-        elif snap_journal.exists():
-            snap_journal.unlink()
-        if (
-            _stream_file_signature(resolved) != main_sig
-            or (
-                (_stream_file_signature(wal_src) if wal_src.is_file() else None)
-                != wal_sig
-            )
-            or (
-                (
-                    _stream_file_signature(journal_src)
-                    if journal_src.is_file()
-                    else None
-                )
-                != journal_sig
-            )
+        if _stream_file_signature(resolved) != main_sig:
+            continue
+        if wal_sig is None:
+            if wal_src.is_file():
+                continue
+        elif (not wal_src.is_file()) or _stream_file_signature(wal_src) != wal_sig:
+            continue
+        if journal_sig is None:
+            if journal_src.is_file():
+                continue
+        elif (
+            (not journal_src.is_file())
+            or _stream_file_signature(journal_src) != journal_sig
         ):
             continue
         return

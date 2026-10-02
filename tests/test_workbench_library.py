@@ -260,17 +260,47 @@ def test_capture_sqlite_main_and_wal_fails_when_never_stable(
     db.write_bytes(b"abc")
     snap = tmp_path / "snap.db"
     flips = {"n": 0}
+    real_sig = workbench_library._stream_file_signature
 
-    def _unstable_sig(path: Path) -> tuple[int, str]:
+    def _unstable_verify(path: Path) -> tuple[int, str]:
         if path.resolve() == db.resolve():
             flips["n"] += 1
             return (3, "even" if flips["n"] % 2 == 0 else "odd")
-        return workbench_library._stream_file_signature(path)
+        return real_sig(path)
 
-    monkeypatch.setattr(workbench_library, "_stream_file_signature", _unstable_sig)
+    monkeypatch.setattr(workbench_library, "_stream_file_signature", _unstable_verify)
     with pytest.raises(OSError, match="did not stabilize"):
         workbench_library._capture_sqlite_main_and_wal(db.resolve(), snap)
-    assert not snap.exists()
+
+
+def test_capture_combines_copy_and_hash_on_stable_library(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stable capture must not pre-hash the whole DB before copying it."""
+    db = tmp_path / "library.db"
+    db.write_bytes(b"main-bytes-stable")
+    snap = tmp_path / "snap.db"
+    copy_calls = {"n": 0}
+    verify_calls = {"n": 0}
+    real_copy = workbench_library._stream_copy_and_signature
+    real_sig = workbench_library._stream_file_signature
+
+    def _counting_copy(src: Path, dst: Path) -> tuple[int, str]:
+        copy_calls["n"] += 1
+        return real_copy(src, dst)
+
+    def _counting_verify(path: Path) -> tuple[int, str]:
+        verify_calls["n"] += 1
+        return real_sig(path)
+
+    monkeypatch.setattr(workbench_library, "_stream_copy_and_signature", _counting_copy)
+    monkeypatch.setattr(workbench_library, "_stream_file_signature", _counting_verify)
+    workbench_library._capture_sqlite_main_and_wal(db.resolve(), snap)
+
+    assert snap.read_bytes() == b"main-bytes-stable"
+    # One combined copy+hash pass and one post-copy verify pass for the main file.
+    assert copy_calls["n"] == 1
+    assert verify_calls["n"] == 1
 
 
 def test_query_sample_by_path_readonly_misses_when_snapshot_unstable(
@@ -455,19 +485,22 @@ def test_capture_sqlite_main_and_wal_retries_across_checkpoint(
             db_path=live_db,
         )
 
-        reads = {"main": 0}
-        real_sig = workbench_library._stream_file_signature
+        copies = {"main": 0}
+        real_copy = workbench_library._stream_copy_and_signature
 
-        def _flaky_sig(path: Path) -> tuple[int, str]:
-            if path.resolve() == live_db.resolve():
-                reads["main"] += 1
-                if reads["main"] == 1:
+        def _flaky_copy(src: Path, dst: Path) -> tuple[int, str]:
+            sig = real_copy(src, dst)
+            if src.resolve() == live_db.resolve():
+                copies["main"] += 1
+                if copies["main"] == 1:
                     with sqlite3.connect(live_db) as conn:
                         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                         conn.commit()
-            return real_sig(path)
+            return sig
 
-        monkeypatch.setattr(workbench_library, "_stream_file_signature", _flaky_sig)
+        monkeypatch.setattr(
+            workbench_library, "_stream_copy_and_signature", _flaky_copy
+        )
         snap_db = tmp_path / "snap" / "readonly_snapshot.db"
         snap_db.parent.mkdir()
         workbench_library._capture_sqlite_main_and_wal(live_db.resolve(), snap_db)
@@ -475,6 +508,87 @@ def test_capture_sqlite_main_and_wal_retries_across_checkpoint(
         holder.close()
 
     with sqlite3.connect(f"file:{snap_db.resolve().as_posix()}?mode=ro", uri=True) as conn:
+        assert (
+            conn.execute(
+                "SELECT bpm, key FROM samples WHERE original_path = ?",
+                (resolved_audio,),
+            ).fetchone()
+            == (128.0, "Am")
+        )
+
+
+def test_capture_retries_when_wal_disappears_during_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """WAL vanishing mid-copy must retry, not fail the whole resume lookup."""
+    live_db = tmp_path / "live" / "workbench_library.db"
+    live_db.parent.mkdir()
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    resolved_audio = str(audio.resolve())
+
+    init_workbench_library(live_db)
+    with sqlite3.connect(live_db) as conn:
+        assert conn.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal"
+        conn.execute("PRAGMA wal_autocheckpoint=0")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+
+    holder = sqlite3.connect(live_db)
+    holder.execute("PRAGMA wal_autocheckpoint=0")
+    try:
+        folder_id = upsert_folder(folder, db_path=live_db)
+        upsert_sample(
+            folder_id,
+            WorkbenchRow(
+                display_name="kick",
+                relative_path="kick.wav",
+                path=resolved_audio,
+                bpm=128.0,
+                key="Am",
+                key_conf=0.9,
+                loudness=-10.0,
+                brightness=1800.0,
+                sample_class="loop",
+                pred_type="Kick",
+                status="ok",
+            ),
+            size_bytes=(fp := _file_fingerprint(audio))[0],
+            mtime_ns=fp[1],
+            db_path=live_db,
+        )
+        wal_path = Path(f"{live_db}-wal")
+        assert wal_path.is_file() and wal_path.stat().st_size > 0
+
+        wal_copies = {"n": 0}
+        real_copy = workbench_library._stream_copy_and_signature
+
+        def _wal_vanish_copy(src: Path, dst: Path) -> tuple[int, str]:
+            if src.resolve() == wal_path.resolve():
+                wal_copies["n"] += 1
+                if wal_copies["n"] == 1:
+                    # Checkpoint moves committed frames into main, then simulate the
+                    # WAL vanishing mid-copy. Do not unlink under an open holder —
+                    # Windows keeps the WAL locked (WinError 32).
+                    with sqlite3.connect(live_db) as conn:
+                        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                        conn.commit()
+                    raise FileNotFoundError(str(src))
+            return real_copy(src, dst)
+
+        monkeypatch.setattr(
+            workbench_library, "_stream_copy_and_signature", _wal_vanish_copy
+        )
+        snap_db = tmp_path / "snap" / "readonly_snapshot.db"
+        snap_db.parent.mkdir()
+        workbench_library._capture_sqlite_main_and_wal(live_db.resolve(), snap_db)
+    finally:
+        holder.close()
+
+    assert wal_copies["n"] >= 1
+    with sqlite3.connect(snap_db) as conn:
         assert (
             conn.execute(
                 "SELECT bpm, key FROM samples WHERE original_path = ?",
