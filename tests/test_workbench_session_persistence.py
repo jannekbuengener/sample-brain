@@ -1494,6 +1494,25 @@ def test_load_outcome_status_codes_are_stable_contract() -> None:
         _assert_status_safe(code)
 
 
+def test_non_utf8_session_file_is_rejected_corrupt(tmp_path: Path) -> None:
+    from src.workbench_session_store import (
+        PERSISTENCE_STATUS_REJECTED_CORRUPT,
+        load_workbench_session_outcome,
+        workbench_session_path,
+    )
+
+    path = workbench_session_path(state_dir=tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\xff\xfe{not-utf8")
+    outcome = load_workbench_session_outcome(state_dir=tmp_path)
+    assert outcome.status == PERSISTENCE_STATUS_REJECTED_CORRUPT
+    assert outcome.snapshot is None
+    session = compose_workbench_session(state_dir=tmp_path)
+    assert session.persistence_status == PERSISTENCE_STATUS_REJECTED_CORRUPT
+    assert session.channel_rack.state is None
+    session.transport.close()
+
+
 def test_unreadable_session_file_is_rejected_corrupt_not_fresh(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

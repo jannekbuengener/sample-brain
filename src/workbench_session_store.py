@@ -420,12 +420,7 @@ def load_workbench_session_outcome(
             status=PERSISTENCE_STATUS_FRESH_MISSING,
             snapshot=None,
         )
-    except IsADirectoryError:
-        return WorkbenchSessionLoadOutcome(
-            status=PERSISTENCE_STATUS_REJECTED_CORRUPT,
-            snapshot=None,
-        )
-    except OSError:
+    except (IsADirectoryError, OSError, UnicodeError):
         return WorkbenchSessionLoadOutcome(
             status=PERSISTENCE_STATUS_REJECTED_CORRUPT,
             snapshot=None,
