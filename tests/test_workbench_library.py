@@ -29,6 +29,7 @@ from src.workbench_library import (
     load_folder_subtree_samples,
     load_sample_cue,
     lookup_sample,
+    query_sample_by_path_readonly,
     normalize_display_name,
     normalize_playlist_name,
     register_library_folder,
@@ -63,6 +64,73 @@ def test_workbench_library_db_path_uses_state_dir(library_state: Path):
 
 def test_init_workbench_library_creates_schema(library_db: Path):
     assert library_db.is_file()
+
+
+def test_query_sample_by_path_readonly_misses_without_creating_db(tmp_path: Path) -> None:
+    missing_parent = tmp_path / "no-library-parent"
+    missing_db = missing_parent / "workbench_library.db"
+    sample = tmp_path / "kick.wav"
+    sample.write_bytes(b"RIFF")
+
+    assert query_sample_by_path_readonly(sample, db_path=missing_db) is None
+    assert not missing_db.exists()
+    assert not missing_parent.exists()
+
+
+def test_query_sample_by_path_readonly_incompatible_schema_is_fail_soft(
+    tmp_path: Path,
+) -> None:
+    incompatible_db = tmp_path / "incompatible.db"
+    with sqlite3.connect(incompatible_db) as conn:
+        conn.execute("CREATE TABLE unrelated (id INTEGER PRIMARY KEY)")
+        conn.commit()
+    before = incompatible_db.read_bytes()
+    sample = tmp_path / "kick.wav"
+    sample.write_bytes(b"RIFF")
+
+    assert query_sample_by_path_readonly(sample, db_path=incompatible_db) is None
+    assert incompatible_db.read_bytes() == before
+    with sqlite3.connect(f"file:{incompatible_db.resolve().as_posix()}?mode=ro", uri=True) as conn:
+        names = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+    assert names == {"unrelated"}
+
+
+def test_query_sample_by_path_readonly_hit(library_db: Path, tmp_path: Path) -> None:
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    folder_id = upsert_folder(folder, db_path=library_db)
+    upsert_sample(
+        folder_id,
+        WorkbenchRow(
+            display_name="kick",
+            relative_path="kick.wav",
+            path=str(audio.resolve()),
+            bpm=128.0,
+            key="Am",
+            key_conf=0.9,
+            loudness=-10.0,
+            brightness=1800.0,
+            sample_class="loop",
+            pred_type="Kick",
+            status="ok",
+        ),
+        size_bytes=4,
+        mtime_ns=100,
+        db_path=library_db,
+    )
+
+    cached = query_sample_by_path_readonly(audio, db_path=library_db)
+    assert cached is not None
+    assert cached.bpm == 128.0
+    assert cached.key == "Am"
+    assert cached.original_path == str(audio.resolve())
 
 
 @pytest.mark.parametrize(

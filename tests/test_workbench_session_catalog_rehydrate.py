@@ -10,6 +10,7 @@ Frozen product rules:
 - with library_db_path: best-effort read-only rehydrate of Live Kit rows
 - catalog hit → BPM/Key (and related analysis fields) on restored WorkbenchRow
 - catalog miss / missing library → keep minimal path row; no crash
+- missing/incompatible library must NOT create DB, parent dirs, or schema DDL
 - rehydrate completes before first Live Kit / QML projection
 - SYNC tempo path can use restored source BPM
 - #817 DEFAULT_ON heal semantics remain unchanged (covered elsewhere)
@@ -18,6 +19,7 @@ Frozen product rules:
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -241,6 +243,7 @@ def test_rehydrate_is_read_only_and_fail_soft_on_bad_library(tmp_path: Path) -> 
     state_dir = tmp_path / "state"
     bad_db = tmp_path / "not-a-db.txt"
     bad_db.write_text("not sqlite", encoding="utf-8")
+    before = bad_db.read_bytes()
     kick = str((tmp_path / "kick.wav").resolve())
     Path(kick).write_bytes(b"RIFF")
 
@@ -253,4 +256,65 @@ def test_rehydrate_is_read_only_and_fail_soft_on_bad_library(tmp_path: Path) -> 
     assert restored is not None
     assert restored.bpm is None
     assert restored.key is None
+    assert bad_db.read_bytes() == before
+    b.transport.close()
+
+
+def test_rehydrate_missing_library_db_does_not_create_file_or_parent(tmp_path: Path) -> None:
+    state_dir = tmp_path / "state"
+    missing_parent = tmp_path / "absent-library-dir"
+    missing_db = missing_parent / "library.db"
+    kick = str((tmp_path / "kick.wav").resolve())
+    Path(kick).write_bytes(b"RIFF")
+
+    a = compose_workbench_session(state_dir=state_dir)
+    a.live_kit.assign("Kick + Bass", "Kick", _minimal_row("kick.wav", kick))
+    a.transport.close()
+
+    assert not missing_parent.exists()
+    assert not missing_db.exists()
+
+    b = compose_workbench_session(state_dir=state_dir, library_db_path=missing_db)
+    restored = _kick_slot(b)
+    assert restored is not None
+    assert restored.path == kick
+    assert restored.bpm is None
+    assert restored.key is None
+    assert not missing_db.exists()
+    assert not missing_parent.exists()
+    b.transport.close()
+
+
+def test_rehydrate_incompatible_library_schema_fail_soft_without_migration(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / "state"
+    incompatible_db = tmp_path / "incompatible.db"
+    with sqlite3.connect(incompatible_db) as conn:
+        conn.execute("CREATE TABLE unrelated (id INTEGER PRIMARY KEY)")
+        conn.commit()
+    before = incompatible_db.read_bytes()
+    kick = str((tmp_path / "kick.wav").resolve())
+    Path(kick).write_bytes(b"RIFF")
+
+    a = compose_workbench_session(state_dir=state_dir)
+    a.live_kit.assign("Kick + Bass", "Kick", _minimal_row("kick.wav", kick))
+    a.transport.close()
+
+    b = compose_workbench_session(state_dir=state_dir, library_db_path=incompatible_db)
+    restored = _kick_slot(b)
+    assert restored is not None
+    assert restored.bpm is None
+    assert restored.key is None
+    assert incompatible_db.read_bytes() == before
+    with sqlite3.connect(f"file:{incompatible_db.resolve().as_posix()}?mode=ro", uri=True) as conn:
+        names = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+    assert "samples" not in names
+    assert "folders" not in names
+    assert "unrelated" in names
     b.transport.close()

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
 from typing import Any, Literal, Mapping
+from urllib.parse import quote
 
 # v2: mode-aware key analysis (KEY_ANALYSIS_CONTRACT_VERSION) is part of the
 # persisted analysis contract. Cache rows written before this bump (root-only
@@ -99,6 +100,17 @@ def connect_workbench_library(path: Path | None = None) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def _connect_workbench_library_readonly(db_path: Path) -> sqlite3.Connection:
+    """Open an existing library DB read-only; never creates parents or schema."""
+    # URI mode=ro rejects writes and does not create a missing file.
+    uri = f"file:{quote(str(Path(db_path).resolve()).replace(chr(92), '/'))}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA query_only = ON")
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
@@ -882,6 +894,39 @@ def load_sample_by_path(
     return _cached_row_from_sqlite_row(row)
 
 
+def query_sample_by_path_readonly(
+    original_path: Path | str,
+    *,
+    db_path: Path | None = None,
+) -> CachedWorkbenchRow | None:
+    """Query-only sample lookup for resume/rehydrate paths.
+
+    Never creates the DB file or parent directories, never runs schema DDL or
+    migrations, and never writes/commits. Missing or incompatible libraries
+    return ``None`` (catalog miss).
+    """
+    resolved_db = Path(db_path) if db_path is not None else workbench_library_db_path()
+    if not resolved_db.is_file():
+        return None
+    path = str(Path(original_path).expanduser().resolve())
+    try:
+        with _connect_workbench_library_readonly(resolved_db) as conn:
+            row = conn.execute(
+                """
+                SELECT s.*, f.path AS library_folder_path
+                FROM samples s
+                JOIN folders f ON f.id = s.folder_id
+                WHERE s.original_path = ?
+                """,
+                (path,),
+            ).fetchone()
+    except sqlite3.Error:
+        return None
+    if row is None:
+        return None
+    return _cached_row_from_sqlite_row(row)
+
+
 def load_folder_samples(
     folder_path: Path | str,
     *,
@@ -1169,6 +1214,7 @@ __all__ = [
     "load_folder_samples",
     "load_folder_subtree_samples",
     "load_sample_by_path",
+    "query_sample_by_path_readonly",
     "load_sample_cue",
     "lookup_sample",
     "mark_folder_opened",

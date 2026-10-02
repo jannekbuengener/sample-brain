@@ -113,9 +113,9 @@ def rehydrate_workbench_row_from_library(
     if library_db_path is None:
         return row
     try:
-        from .workbench_library import load_sample_by_path
+        from .workbench_library import query_sample_by_path_readonly
 
-        cached = load_sample_by_path(row.path, db_path=library_db_path)
+        cached = query_sample_by_path_readonly(row.path, db_path=library_db_path)
     except Exception:
         return row
     if cached is None:
