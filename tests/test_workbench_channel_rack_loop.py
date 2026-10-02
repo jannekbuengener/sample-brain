@@ -934,29 +934,38 @@ def _record_soak_voice_snapshot(
     assert foreign_id not in engine.remove_voice_calls
 
 
-def _path_pcm_seed(path: str) -> float:
-    return 0.05 + (abs(hash(str(path))) % 50) / 1000.0
+# Deterministic fallback for unregistered soak paths (distinct from wav markers).
+_SOAK_PCM_FALLBACK_SEED = 0.11
 
 
-def _path_distinct_pcm_provider(decode_paths: list[str]) -> SequencerPcmProvider:
-    """Synthetic PCM keyed by path so sample-replace decode is observable."""
+def _path_pcm_seed(path: str, markers: dict[str, float]) -> float:
+    return float(markers.get(str(path), _SOAK_PCM_FALLBACK_SEED))
+
+
+def _path_distinct_pcm_provider(
+    decode_paths: list[str],
+    markers: dict[str, float],
+) -> SequencerPcmProvider:
+    """Synthetic PCM keyed by path so sample-replace create is observable."""
 
     def decode_fn(path, *, sample_rate, start_ms=0):
         del sample_rate, start_ms
         decode_paths.append(str(path))
-        seed = _path_pcm_seed(str(path))
+        seed = _path_pcm_seed(str(path), markers)
         return np.full(PCM_FRAMES, seed, dtype=np.float32), 1
 
     return SequencerPcmProvider(sample_rate=SAMPLE_RATE, decode_fn=decode_fn)
 
 
-def _create_call_matches_path_seed(config: VoiceConfig, path: str) -> bool:
+def _create_call_matches_path_seed(
+    config: VoiceConfig, path: str, markers: dict[str, float]
+) -> bool:
     if config.pcm_buffer is None:
         return False
     samples = config.pcm_buffer.samples
     if samples.size == 0:
         return False
-    return abs(float(samples.flat[0]) - _path_pcm_seed(path)) < 1e-6
+    return abs(float(samples.flat[0]) - _path_pcm_seed(path, markers)) < 1e-6
 
 
 def _pass_event_engine_frame(
@@ -1146,13 +1155,17 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
         frequency_hz=550.0,
         sr=SAMPLE_RATE,
     )
+    pcm_markers = {
+        str(wav_a): 0.31,
+        str(wav_b): 0.67,
+    }
 
     foreign_id = 42
     engine = FakeNativeEngine()
     engine.seed_foreign_voice(foreign_id, pcm_frames=10_000)
     transport = LoopTransport(engine)
     decode_paths: list[str] = []
-    pcm_provider = _path_distinct_pcm_provider(decode_paths)
+    pcm_provider = _path_distinct_pcm_provider(decode_paths, pcm_markers)
     module = _controller_module()
     Controller = _require(module, "ChannelRackController")
     controller = Controller(
@@ -1262,7 +1275,8 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
             # Replacement must reach a created/scheduled voice, not only warm-decode.
             created_after = engine.create_calls[create_marker_before_replace:]
             assert any(
-                _create_call_matches_path_seed(cfg, str(wav_b)) for cfg in created_after
+                _create_call_matches_path_seed(cfg, str(wav_b), pcm_markers)
+                for cfg in created_after
             ), "expected a scheduled voice seeded from replaced user sample wav_b"
 
         if generation == tempo_change_at:
