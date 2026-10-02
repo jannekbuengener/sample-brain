@@ -12,6 +12,7 @@ Frozen product rules:
 - catalog miss / missing library → keep minimal path row; no crash
 - missing/incompatible library must NOT create DB, parent dirs, or schema DDL
 - read-only resume must not create WAL/SHM sidecars on a clean WAL library
+- committed WAL frames must still be visible (no immutable=1 false Catalog Miss)
 - rehydrate completes before first Live Kit / QML projection
 - SYNC tempo path can use restored source BPM
 - #817 DEFAULT_ON heal semantics remain unchanged (covered elsewhere)
@@ -19,6 +20,7 @@ Frozen product rules:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import sqlite3
@@ -28,9 +30,20 @@ import pytest
 
 from src.session_grid import compute_sync_playback_rate
 from src.workbench_controller import WorkbenchRow
-from src.workbench_library import upsert_folder, upsert_sample
+from src.workbench_library import init_workbench_library, upsert_folder, upsert_sample
 from src.workbench_session import compose_workbench_session
 from src.workbench_session_store import workbench_session_path
+
+
+def _library_dir_fingerprint(db_path: Path) -> dict[str, object]:
+    parent = db_path.parent
+    names = sorted(p.name for p in parent.iterdir())
+    hashes: dict[str, str] = {}
+    for name in names:
+        path = parent / name
+        if path.is_file():
+            hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return {"names": names, "hashes": hashes}
 
 
 def _minimal_row(name: str, path: str, *, bpm: float | None = None, key: str | None = None) -> WorkbenchRow:
@@ -312,7 +325,7 @@ def test_rehydrate_wal_library_does_not_create_sidecars(tmp_path: Path) -> None:
     shm_path = Path(f"{library_db}-shm")
     assert not wal_path.exists()
     assert not shm_path.exists()
-    before = library_db.read_bytes()
+    before = _library_dir_fingerprint(library_db)
 
     a = compose_workbench_session(state_dir=state_dir)
     a.live_kit.assign("Kick + Bass", "Kick", _minimal_row("kick.wav", kick))
@@ -323,10 +336,89 @@ def test_rehydrate_wal_library_does_not_create_sidecars(tmp_path: Path) -> None:
     assert restored is not None
     assert restored.bpm == 128.0
     assert restored.key == "Am"
-    assert library_db.read_bytes() == before
+    assert _library_dir_fingerprint(library_db) == before
     assert not wal_path.exists()
     assert not shm_path.exists()
     b.transport.close()
+
+
+def test_rehydrate_includes_committed_wal_only_catalog_row(tmp_path: Path) -> None:
+    """Resume must rehydrate BPM/Key from committed WAL frames, not miss them."""
+    state_dir = tmp_path / "state"
+    library_db = tmp_path / "library" / "library.db"
+    library_db.parent.mkdir()
+    folder = tmp_path / "samples"
+    audio = folder / "kick.wav"
+    audio.parent.mkdir(parents=True, exist_ok=True)
+    audio.write_bytes(b"RIFF" + b"\x00" * 40)
+    kick = str(audio.resolve())
+
+    # Persist path-only session before the WAL-only library exists.
+    a = compose_workbench_session(state_dir=state_dir)
+    a.live_kit.assign("Kick + Bass", "Kick", _minimal_row("kick.wav", kick))
+    a.transport.close()
+
+    init_workbench_library(library_db)
+    with sqlite3.connect(library_db) as conn:
+        assert conn.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal"
+        conn.execute("PRAGMA wal_autocheckpoint=0")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+
+    # Keep a live connection so the committed row is not final-checkpointed into
+    # the main DB file (crash / concurrent-open resume scenario).
+    holder = sqlite3.connect(library_db)
+    holder.execute("PRAGMA wal_autocheckpoint=0")
+    try:
+        folder_id = upsert_folder(folder, db_path=library_db)
+        upsert_sample(
+            folder_id,
+            _minimal_row(audio.name, kick, bpm=128.0, key="Am"),
+            size_bytes=44,
+            mtime_ns=1_700_000_000_000_000_000,
+            db_path=library_db,
+        )
+        wal_path = Path(f"{library_db}-wal")
+        shm_path = Path(f"{library_db}-shm")
+        assert wal_path.is_file() and wal_path.stat().st_size > 0
+
+        # Prove the row is not fully checkpointed into the main DB alone.
+        with sqlite3.connect(
+            f"file:{library_db.resolve().as_posix()}?mode=ro&immutable=1",
+            uri=True,
+        ) as conn:
+            assert (
+                conn.execute(
+                    "SELECT 1 FROM samples WHERE original_path = ?",
+                    (kick,),
+                ).fetchone()
+                is None
+            )
+
+        before = _library_dir_fingerprint(library_db)
+        assert "library.db-wal" in before["names"]
+        # Holder must stay alive across resume so WAL frames remain uncheckpointed.
+        assert holder.execute("SELECT 1").fetchone() == (1,)
+        b = compose_workbench_session(state_dir=state_dir, library_db_path=library_db)
+        restored = _kick_slot(b)
+        assert holder.execute("SELECT 1").fetchone() == (1,)
+        after = _library_dir_fingerprint(library_db)
+
+        assert restored is not None
+        assert restored.path == kick
+        assert restored.bpm == pytest.approx(128.0)
+        assert restored.key == "Am"
+        # Durable source state must stay byte-identical. Entry set must not gain
+        # or lose files. SHM content may change under a live holder (volatile
+        # index); resume must neither create nor delete the SHM file.
+        assert after["names"] == before["names"]
+        assert after["hashes"]["library.db"] == before["hashes"]["library.db"]
+        assert after["hashes"]["library.db-wal"] == before["hashes"]["library.db-wal"]
+        assert wal_path.is_file() and wal_path.stat().st_size > 0
+        assert shm_path.is_file()
+        b.transport.close()
+    finally:
+        holder.close()
 
 
 def test_rehydrate_incompatible_library_schema_fail_soft_without_migration(

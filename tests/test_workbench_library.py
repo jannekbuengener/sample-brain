@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import sqlite3
@@ -134,6 +135,18 @@ def test_query_sample_by_path_readonly_hit(library_db: Path, tmp_path: Path) -> 
     assert cached.original_path == str(audio.resolve())
 
 
+def _library_dir_fingerprint(db_path: Path) -> dict[str, object]:
+    """Capture directory membership + content hashes for immutability asserts."""
+    parent = db_path.parent
+    names = sorted(p.name for p in parent.iterdir())
+    hashes: dict[str, str] = {}
+    for name in names:
+        path = parent / name
+        if path.is_file():
+            hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return {"names": names, "hashes": hashes}
+
+
 def test_query_sample_by_path_readonly_does_not_create_wal_sidecars(
     tmp_path: Path,
 ) -> None:
@@ -177,16 +190,107 @@ def test_query_sample_by_path_readonly_does_not_create_wal_sidecars(
     shm_path = Path(f"{library_db}-shm")
     assert not wal_path.exists()
     assert not shm_path.exists()
-    before = library_db.read_bytes()
+    before = _library_dir_fingerprint(library_db)
 
     cached = query_sample_by_path_readonly(audio, db_path=library_db)
 
     assert cached is not None
     assert cached.bpm == 128.0
     assert cached.key == "Am"
-    assert library_db.read_bytes() == before
+    assert _library_dir_fingerprint(library_db) == before
     assert not wal_path.exists()
     assert not shm_path.exists()
+
+
+def test_query_sample_by_path_readonly_includes_committed_wal_frames(
+    tmp_path: Path,
+) -> None:
+    """Committed catalog rows that still live in WAL must be visible on resume."""
+    library_db = tmp_path / "library" / "workbench_library.db"
+    library_db.parent.mkdir()
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    resolved_audio = str(audio.resolve())
+
+    init_workbench_library(library_db)
+    with sqlite3.connect(library_db) as conn:
+        assert conn.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal"
+        conn.execute("PRAGMA wal_autocheckpoint=0")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+
+    # Keep a live connection so the committed row is not final-checkpointed into
+    # the main DB file (crash / concurrent-open resume scenario).
+    holder = sqlite3.connect(library_db)
+    holder.execute("PRAGMA wal_autocheckpoint=0")
+    try:
+        folder_id = upsert_folder(folder, db_path=library_db)
+        upsert_sample(
+            folder_id,
+            WorkbenchRow(
+                display_name="kick",
+                relative_path="kick.wav",
+                path=resolved_audio,
+                bpm=128.0,
+                key="Am",
+                key_conf=0.9,
+                loudness=-10.0,
+                brightness=1800.0,
+                sample_class="loop",
+                pred_type="Kick",
+                status="ok",
+            ),
+            size_bytes=4,
+            mtime_ns=100,
+            db_path=library_db,
+        )
+        wal_path = Path(f"{library_db}-wal")
+        shm_path = Path(f"{library_db}-shm")
+        assert wal_path.is_file()
+        assert wal_path.stat().st_size > 0
+
+        # Control: ordinary RO sees the WAL row; immutable=1 does not.
+        with sqlite3.connect(
+            f"file:{library_db.resolve().as_posix()}?mode=ro", uri=True
+        ) as conn:
+            assert (
+                conn.execute(
+                    "SELECT bpm, key FROM samples WHERE original_path = ?",
+                    (resolved_audio,),
+                ).fetchone()
+                == (128.0, "Am")
+            )
+        with sqlite3.connect(
+            f"file:{library_db.resolve().as_posix()}?mode=ro&immutable=1",
+            uri=True,
+        ) as conn:
+            assert (
+                conn.execute(
+                    "SELECT bpm, key FROM samples WHERE original_path = ?",
+                    (resolved_audio,),
+                ).fetchone()
+                is None
+            )
+
+        before = _library_dir_fingerprint(library_db)
+        cached = query_sample_by_path_readonly(audio, db_path=library_db)
+        after = _library_dir_fingerprint(library_db)
+
+        assert cached is not None
+        assert cached.bpm == 128.0
+        assert cached.key == "Am"
+        assert after["names"] == before["names"]
+        assert after["hashes"][library_db.name] == before["hashes"][library_db.name]
+        assert (
+            after["hashes"][f"{library_db.name}-wal"]
+            == before["hashes"][f"{library_db.name}-wal"]
+        )
+        assert wal_path.is_file()
+        assert shm_path.is_file()
+    finally:
+        holder.close()
 
 
 @pytest.mark.parametrize(

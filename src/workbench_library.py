@@ -4,11 +4,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sqlite3
+import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
-from typing import Any, Literal, Mapping
+from typing import Any, Iterator, Literal, Mapping
 from urllib.parse import quote
 
 # v2: mode-aware key analysis (KEY_ANALYSIS_CONTRACT_VERSION) is part of the
@@ -104,22 +107,46 @@ def connect_workbench_library(path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
-def _connect_workbench_library_readonly(db_path: Path) -> sqlite3.Connection:
-    """Open an existing library DB read-only; never creates parents or schema.
+@contextmanager
+def _connect_workbench_library_readonly(db_path: Path) -> Iterator[sqlite3.Connection]:
+    """Open an existing library DB via a temp read-snapshot.
 
-    ``mode=ro`` alone can still create ``-wal``/``-shm`` sidecars for WAL
-    databases. ``immutable=1`` keeps this resume/rehydrate lookup from creating
-    sidecars or requiring a writable containing directory.
+    Resume/rehydrate must:
+    - leave the original library directory byte-/entry-unchanged (no ``-wal`` /
+      ``-shm`` create or modify in the source dir)
+    - still observe committed frames that currently live only in an existing
+      source ``-wal`` (``immutable=1`` on the original path would miss those)
+
+    Implementation: copy the main DB and, when present, the ``-wal`` into a
+    private temp directory; open that snapshot with ``mode=ro`` +
+    ``PRAGMA query_only=ON``. SQLite may create read-side artifacts only under
+    the temp dir. The source ``-shm`` is intentionally not copied.
     """
-    uri = (
-        f"file:{quote(str(Path(db_path).resolve()).replace(chr(92), '/'))}"
-        "?mode=ro&immutable=1"
-    )
-    conn = sqlite3.connect(uri, uri=True)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA query_only = ON")
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    resolved = Path(db_path).resolve()
+    tmp = tempfile.TemporaryDirectory(prefix="sample-brain-wb-lib-ro-")
+    conn: sqlite3.Connection | None = None
+    try:
+        # Stable snapshot basename avoids colliding with other temp DBs that share
+        # the source file's leaf name in the same process.
+        snap_db = Path(tmp.name) / "readonly_snapshot.db"
+        if snap_db.resolve().parent == resolved.parent:
+            raise RuntimeError(
+                "refusing readonly snapshot inside source library directory"
+            )
+        shutil.copyfile(resolved, snap_db)
+        wal_src = Path(f"{resolved}-wal")
+        if wal_src.is_file():
+            shutil.copyfile(wal_src, Path(f"{snap_db}-wal"))
+        uri = f"file:{quote(str(snap_db).replace(chr(92), '/'))}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA query_only = ON")
+        conn.execute("PRAGMA foreign_keys = ON")
+        yield conn
+    finally:
+        if conn is not None:
+            conn.close()
+        tmp.cleanup()
 
 
 def init_workbench_library(db_path: Path | None = None) -> None:
@@ -927,7 +954,7 @@ def query_sample_by_path_readonly(
                 """,
                 (path,),
             ).fetchone()
-    except sqlite3.Error:
+    except (OSError, sqlite3.Error):
         return None
     if row is None:
         return None
