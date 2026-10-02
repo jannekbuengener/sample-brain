@@ -128,6 +128,32 @@ def test_qml_persistence_bridge_refresh_after_autosave_failed(
     session.transport.close()
 
 
+def test_qml_engine_retains_persistence_bridge_on_injected_adapter_path() -> None:
+    """Injected-adapter harnesses must keep sessionPersistenceModel reachable."""
+    from src.workbench_qml import (
+        Screen1QmlInteractionAdapter,
+        Screen1QmlViewModel,
+        _qml_engine,
+        _settle_qml_frame,
+    )
+
+    view_model = Screen1QmlViewModel.baseline("screen1-default-3panel")
+    adapter = Screen1QmlInteractionAdapter(view_model=view_model)
+    app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+    window.show()
+    _settle_qml_frame(app)
+    try:
+        bridge = engine.rootContext().contextProperty("sessionPersistenceModel")
+        retained = getattr(engine, "_screen1_session_persistence_bridge", None)
+        assert bridge is not None
+        assert retained is bridge
+        assert bridge.statusCode == "fresh_missing"
+        assert bridge.attention is False
+    finally:
+        window.close()
+        engine.deleteLater()
+
+
 def test_qml_runtime_persistence_status_label_calm_attention(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

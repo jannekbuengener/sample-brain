@@ -411,13 +411,26 @@ def load_workbench_session_outcome(
 ) -> WorkbenchSessionLoadOutcome:
     """Load/validate with honesty status. Never returns a partial snapshot."""
     path = workbench_session_path(state_dir=state_dir, env=env)
-    if not path.is_file():
+    try:
+        # Read first so permission/IO errors classify as rejected_corrupt
+        # rather than Path.is_file() silently reporting fresh_missing.
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
         return WorkbenchSessionLoadOutcome(
             status=PERSISTENCE_STATUS_FRESH_MISSING,
             snapshot=None,
         )
+    except IsADirectoryError:
+        return WorkbenchSessionLoadOutcome(
+            status=PERSISTENCE_STATUS_REJECTED_CORRUPT,
+            snapshot=None,
+        )
+    except OSError:
+        return WorkbenchSessionLoadOutcome(
+            status=PERSISTENCE_STATUS_REJECTED_CORRUPT,
+            snapshot=None,
+        )
     try:
-        text = path.read_text(encoding="utf-8")
         data = json.loads(text)
         snapshot = _parse_snapshot(data)
     except _SessionSchemaError:
@@ -430,7 +443,7 @@ def load_workbench_session_outcome(
             status=PERSISTENCE_STATUS_REJECTED_SEMANTIC,
             snapshot=None,
         )
-    except (OSError, UnicodeError, json.JSONDecodeError):
+    except (UnicodeError, json.JSONDecodeError):
         return WorkbenchSessionLoadOutcome(
             status=PERSISTENCE_STATUS_REJECTED_CORRUPT,
             snapshot=None,

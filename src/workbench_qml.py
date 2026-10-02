@@ -5665,6 +5665,7 @@ def _qml_engine(
     engine.rootContext().setContextProperty(
         "sessionPersistenceModel", persistence_bridge
     )
+    engine._screen1_session_persistence_bridge = persistence_bridge
     theme_authority = _qml_theme_authority_bridge()
     engine.rootContext().setContextProperty("themeAuthority", theme_authority)
     engine.rootContext().setContextProperty(

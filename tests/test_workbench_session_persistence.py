@@ -1492,3 +1492,33 @@ def test_load_outcome_status_codes_are_stable_contract() -> None:
     )
     for code in PERSISTENCE_STATUS_CODES:
         _assert_status_safe(code)
+
+
+def test_unreadable_session_file_is_rejected_corrupt_not_fresh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Permission/IO errors must not silently look like a clean missing start."""
+    from src.workbench_session_store import (
+        PERSISTENCE_STATUS_REJECTED_CORRUPT,
+        load_workbench_session_outcome,
+        workbench_session_path,
+    )
+
+    path = workbench_session_path(state_dir=tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('{"schema_version": 1, "live_kit": {}, "channel_rack": null}\n', encoding="utf-8")
+
+    original_read_text = Path.read_text
+
+    def boom(self, *args, **kwargs):
+        if self == path:
+            raise PermissionError("simulated ACL deny")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", boom)
+    outcome = load_workbench_session_outcome(state_dir=tmp_path)
+    assert outcome.status == PERSISTENCE_STATUS_REJECTED_CORRUPT
+    assert outcome.snapshot is None
+    session = compose_workbench_session(state_dir=tmp_path)
+    assert session.persistence_status == PERSISTENCE_STATUS_REJECTED_CORRUPT
+    session.transport.close()
