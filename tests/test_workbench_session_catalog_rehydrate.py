@@ -11,6 +11,7 @@ Frozen product rules:
 - catalog hit → BPM/Key (and related analysis fields) on restored WorkbenchRow
 - catalog miss / missing library → keep minimal path row; no crash
 - missing/incompatible library must NOT create DB, parent dirs, or schema DDL
+- read-only resume must not create WAL/SHM sidecars on a clean WAL library
 - rehydrate completes before first Live Kit / QML projection
 - SYNC tempo path can use restored source BPM
 - #817 DEFAULT_ON heal semantics remain unchanged (covered elsewhere)
@@ -19,6 +20,7 @@ Frozen product rules:
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -282,6 +284,48 @@ def test_rehydrate_missing_library_db_does_not_create_file_or_parent(tmp_path: P
     assert restored.key is None
     assert not missing_db.exists()
     assert not missing_parent.exists()
+    b.transport.close()
+
+
+def test_rehydrate_wal_library_does_not_create_sidecars(tmp_path: Path) -> None:
+    state_dir = tmp_path / "state"
+    seed_db = tmp_path / "seed" / "library.db"
+    seed_db.parent.mkdir()
+    folder = tmp_path / "samples"
+    audio = folder / "kick.wav"
+    kick = _seed_library_row(
+        library_db=seed_db,
+        folder=folder,
+        audio=audio,
+        bpm=128.0,
+        key="Am",
+    )
+    with sqlite3.connect(seed_db) as conn:
+        assert conn.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal"
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+    # Fresh main-file copy: WAL journal_mode in header, no sidecars present.
+    library_db = tmp_path / "clean" / "library.db"
+    library_db.parent.mkdir()
+    shutil.copy2(seed_db, library_db)
+    wal_path = Path(f"{library_db}-wal")
+    shm_path = Path(f"{library_db}-shm")
+    assert not wal_path.exists()
+    assert not shm_path.exists()
+    before = library_db.read_bytes()
+
+    a = compose_workbench_session(state_dir=state_dir)
+    a.live_kit.assign("Kick + Bass", "Kick", _minimal_row("kick.wav", kick))
+    a.transport.close()
+
+    b = compose_workbench_session(state_dir=state_dir, library_db_path=library_db)
+    restored = _kick_slot(b)
+    assert restored is not None
+    assert restored.bpm == 128.0
+    assert restored.key == "Am"
+    assert library_db.read_bytes() == before
+    assert not wal_path.exists()
+    assert not shm_path.exists()
     b.transport.close()
 
 

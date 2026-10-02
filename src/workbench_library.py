@@ -105,9 +105,16 @@ def connect_workbench_library(path: Path | None = None) -> sqlite3.Connection:
 
 
 def _connect_workbench_library_readonly(db_path: Path) -> sqlite3.Connection:
-    """Open an existing library DB read-only; never creates parents or schema."""
-    # URI mode=ro rejects writes and does not create a missing file.
-    uri = f"file:{quote(str(Path(db_path).resolve()).replace(chr(92), '/'))}?mode=ro"
+    """Open an existing library DB read-only; never creates parents or schema.
+
+    ``mode=ro`` alone can still create ``-wal``/``-shm`` sidecars for WAL
+    databases. ``immutable=1`` keeps this resume/rehydrate lookup from creating
+    sidecars or requiring a writable containing directory.
+    """
+    uri = (
+        f"file:{quote(str(Path(db_path).resolve()).replace(chr(92), '/'))}"
+        "?mode=ro&immutable=1"
+    )
     conn = sqlite3.connect(uri, uri=True)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA query_only = ON")

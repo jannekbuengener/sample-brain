@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -131,6 +132,61 @@ def test_query_sample_by_path_readonly_hit(library_db: Path, tmp_path: Path) -> 
     assert cached.bpm == 128.0
     assert cached.key == "Am"
     assert cached.original_path == str(audio.resolve())
+
+
+def test_query_sample_by_path_readonly_does_not_create_wal_sidecars(
+    tmp_path: Path,
+) -> None:
+    """Resume lookup must not create WAL/SHM sidecars on a clean WAL DB."""
+    seed_db = tmp_path / "seed" / "workbench_library.db"
+    seed_db.parent.mkdir()
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    init_workbench_library(seed_db)
+    folder_id = upsert_folder(folder, db_path=seed_db)
+    upsert_sample(
+        folder_id,
+        WorkbenchRow(
+            display_name="kick",
+            relative_path="kick.wav",
+            path=str(audio.resolve()),
+            bpm=128.0,
+            key="Am",
+            key_conf=0.9,
+            loudness=-10.0,
+            brightness=1800.0,
+            sample_class="loop",
+            pred_type="Kick",
+            status="ok",
+        ),
+        size_bytes=4,
+        mtime_ns=100,
+        db_path=seed_db,
+    )
+    with sqlite3.connect(seed_db) as conn:
+        assert conn.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal"
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+    # Fresh main-file copy: WAL journal_mode in header, no sidecars present.
+    library_db = tmp_path / "clean" / "workbench_library.db"
+    library_db.parent.mkdir()
+    shutil.copy2(seed_db, library_db)
+    wal_path = Path(f"{library_db}-wal")
+    shm_path = Path(f"{library_db}-shm")
+    assert not wal_path.exists()
+    assert not shm_path.exists()
+    before = library_db.read_bytes()
+
+    cached = query_sample_by_path_readonly(audio, db_path=library_db)
+
+    assert cached is not None
+    assert cached.bpm == 128.0
+    assert cached.key == "Am"
+    assert library_db.read_bytes() == before
+    assert not wal_path.exists()
+    assert not shm_path.exists()
 
 
 @pytest.mark.parametrize(
