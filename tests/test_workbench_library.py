@@ -45,6 +45,11 @@ from src.workbench_library import (
 from src.workbench_controller import WorkbenchRow
 
 
+def _file_fingerprint(path: Path) -> tuple[int, int]:
+    stat = path.stat()
+    return int(stat.st_size), int(stat.st_mtime_ns)
+
+
 @pytest.fixture
 def library_state(tmp_path: Path) -> Path:
     state_dir = tmp_path / "state"
@@ -102,13 +107,29 @@ def test_query_sample_by_path_readonly_incompatible_schema_is_fail_soft(
     assert names == {"unrelated"}
 
 
-def test_query_sample_by_path_readonly_ignores_stale_analyzer_version(
+def test_capture_sqlite_main_and_wal_includes_rollback_journal(tmp_path: Path) -> None:
+    db = tmp_path / "library.db"
+    db.write_bytes(b"main-bytes")
+    journal = Path(f"{db}-journal")
+    journal.write_bytes(b"journal-bytes")
+    snap = tmp_path / "snap" / "readonly_snapshot.db"
+    snap.parent.mkdir()
+
+    workbench_library._capture_sqlite_main_and_wal(db.resolve(), snap)
+
+    assert snap.read_bytes() == b"main-bytes"
+    assert Path(f"{snap}-journal").read_bytes() == b"journal-bytes"
+    assert not Path(f"{snap}-wal").exists()
+
+
+def test_query_sample_by_path_readonly_ignores_stale_file_fingerprint(
     library_db: Path, tmp_path: Path
 ) -> None:
     folder = tmp_path / "samples"
     folder.mkdir()
     audio = folder / "kick.wav"
     audio.write_bytes(b"data")
+    size_bytes, mtime_ns = _file_fingerprint(audio)
     folder_id = upsert_folder(folder, db_path=library_db)
     upsert_sample(
         folder_id,
@@ -125,8 +146,42 @@ def test_query_sample_by_path_readonly_ignores_stale_analyzer_version(
             pred_type="Kick",
             status="ok",
         ),
-        size_bytes=4,
-        mtime_ns=100,
+        size_bytes=size_bytes,
+        mtime_ns=mtime_ns,
+        db_path=library_db,
+    )
+    # Same path, different content/mtime after cache write.
+    audio.write_bytes(b"changed-bytes")
+
+    assert query_sample_by_path_readonly(audio, db_path=library_db) is None
+
+
+def test_query_sample_by_path_readonly_ignores_stale_analyzer_version(
+    library_db: Path, tmp_path: Path
+) -> None:
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    size_bytes, mtime_ns = _file_fingerprint(audio)
+    folder_id = upsert_folder(folder, db_path=library_db)
+    upsert_sample(
+        folder_id,
+        WorkbenchRow(
+            display_name="kick",
+            relative_path="kick.wav",
+            path=str(audio.resolve()),
+            bpm=128.0,
+            key="Am",
+            key_conf=0.9,
+            loudness=-10.0,
+            brightness=1800.0,
+            sample_class="loop",
+            pred_type="Kick",
+            status="ok",
+        ),
+        size_bytes=size_bytes,
+        mtime_ns=mtime_ns,
         db_path=library_db,
         analyzer_version="workbench_v2",
     )
@@ -180,8 +235,8 @@ def test_query_sample_by_path_readonly_misses_when_snapshot_unstable(
             pred_type="Kick",
             status="ok",
         ),
-        size_bytes=4,
-        mtime_ns=100,
+        size_bytes=_file_fingerprint(audio)[0],
+        mtime_ns=_file_fingerprint(audio)[1],
         db_path=library_db,
     )
 
@@ -215,8 +270,8 @@ def test_query_sample_by_path_readonly_hit(library_db: Path, tmp_path: Path) -> 
             pred_type="Kick",
             status="ok",
         ),
-        size_bytes=4,
-        mtime_ns=100,
+        size_bytes=_file_fingerprint(audio)[0],
+        mtime_ns=_file_fingerprint(audio)[1],
         db_path=library_db,
     )
 
@@ -266,8 +321,8 @@ def test_query_sample_by_path_readonly_does_not_create_wal_sidecars(
             pred_type="Kick",
             status="ok",
         ),
-        size_bytes=4,
-        mtime_ns=100,
+        size_bytes=_file_fingerprint(audio)[0],
+        mtime_ns=_file_fingerprint(audio)[1],
         db_path=seed_db,
     )
     with sqlite3.connect(seed_db) as conn:
@@ -332,8 +387,8 @@ def test_capture_sqlite_main_and_wal_retries_across_checkpoint(
                 pred_type="Kick",
                 status="ok",
             ),
-            size_bytes=4,
-            mtime_ns=100,
+            size_bytes=_file_fingerprint(audio)[0],
+            mtime_ns=_file_fingerprint(audio)[1],
             db_path=live_db,
         )
 
@@ -407,8 +462,8 @@ def test_query_sample_by_path_readonly_includes_committed_wal_frames(
                 pred_type="Kick",
                 status="ok",
             ),
-            size_bytes=4,
-            mtime_ns=100,
+            size_bytes=_file_fingerprint(audio)[0],
+            mtime_ns=_file_fingerprint(audio)[1],
             db_path=live_db,
         )
         assert Path(f"{live_db}-wal").is_file()

@@ -107,31 +107,58 @@ def connect_workbench_library(path: Path | None = None) -> sqlite3.Connection:
 
 
 def _capture_sqlite_main_and_wal(resolved: Path, snap_db: Path) -> None:
-    """Copy main DB + WAL bytes as one stable capture (retry on concurrent change).
+    """Copy main DB + WAL/journal bytes as one stable capture.
 
-    A checkpoint/truncate between independent copies can pair a pre-checkpoint
-    main file with a post-checkpoint WAL and miss committed rows. Re-read both
-    until the pair is stable, then write that pair into ``snap_db``.
+    A checkpoint/truncate or rollback-journal rewrite between independent copies
+    can pair inconsistent sidecar state with the main file. Re-read main, WAL,
+    and rollback journal until the trio is stable, then write that capture into
+    ``snap_db``.
 
-    Raises ``OSError`` if no stable pair is observed so callers can fail soft
+    Raises ``OSError`` if no stable capture is observed so callers can fail soft
     instead of opening an unverified snapshot.
     """
     wal_src = Path(f"{resolved}-wal")
+    journal_src = Path(f"{resolved}-journal")
     snap_wal = Path(f"{snap_db}-wal")
+    snap_journal = Path(f"{snap_db}-journal")
     for _ in range(8):
         main_bytes = resolved.read_bytes()
         wal_bytes = wal_src.read_bytes() if wal_src.is_file() else None
+        journal_bytes = journal_src.read_bytes() if journal_src.is_file() else None
         main_again = resolved.read_bytes()
         wal_again = wal_src.read_bytes() if wal_src.is_file() else None
-        if main_bytes != main_again or wal_bytes != wal_again:
+        journal_again = (
+            journal_src.read_bytes() if journal_src.is_file() else None
+        )
+        if (
+            main_bytes != main_again
+            or wal_bytes != wal_again
+            or journal_bytes != journal_again
+        ):
             continue
         snap_db.write_bytes(main_bytes)
         if wal_bytes is not None:
             snap_wal.write_bytes(wal_bytes)
         elif snap_wal.exists():
             snap_wal.unlink()
+        if journal_bytes is not None:
+            snap_journal.write_bytes(journal_bytes)
+        elif snap_journal.exists():
+            snap_journal.unlink()
         return
     raise OSError("workbench library readonly snapshot did not stabilize")
+
+
+def _cached_sample_file_fingerprint_matches(cached: CachedWorkbenchRow) -> bool:
+    """Return True when the on-disk sample still matches the cached fingerprint."""
+    try:
+        stat = Path(cached.original_path).stat()
+    except OSError:
+        return False
+    mtime_ns = getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))
+    return int(stat.st_size) == int(cached.size_bytes) and int(mtime_ns) == int(
+        cached.mtime_ns
+    )
 
 
 @contextmanager
@@ -144,10 +171,10 @@ def _connect_workbench_library_readonly(db_path: Path) -> Iterator[sqlite3.Conne
     - still observe committed frames that currently live only in an existing
       source ``-wal`` (``immutable=1`` on the original path would miss those)
 
-    Implementation: capture a stable main+WAL byte pair into a private temp
-    directory; open that snapshot with ``mode=ro`` + ``PRAGMA query_only=ON``.
-    SQLite may create read-side artifacts only under the temp dir. The source
-    ``-shm`` is intentionally not copied.
+    Implementation: capture a stable main + WAL/journal byte set into a private
+    temp directory; open that snapshot with ``mode=ro`` +
+    ``PRAGMA query_only=ON``. SQLite may create read-side artifacts only under
+    the temp dir. The source ``-shm`` is intentionally not copied.
     """
     resolved = Path(db_path).resolve()
     tmp = tempfile.TemporaryDirectory(prefix="sample-brain-wb-lib-ro-")
@@ -959,8 +986,8 @@ def query_sample_by_path_on_readonly_connection(
     """Lookup one sample on an already-open readonly snapshot connection.
 
     Rows whose ``analyzer_version`` does not match
-    ``WORKBENCH_ANALYZER_VERSION`` are treated as catalog misses so resume
-    does not restore obsolete BPM/key generations.
+    ``WORKBENCH_ANALYZER_VERSION``, or whose cached size/mtime fingerprint no
+    longer matches the on-disk sample, are treated as catalog misses.
     """
     path = str(Path(original_path).expanduser().resolve())
     row = conn.execute(
@@ -976,6 +1003,8 @@ def query_sample_by_path_on_readonly_connection(
         return None
     cached = _cached_row_from_sqlite_row(row)
     if cached.analyzer_version != WORKBENCH_ANALYZER_VERSION:
+        return None
+    if not _cached_sample_file_fingerprint_matches(cached):
         return None
     return cached
 

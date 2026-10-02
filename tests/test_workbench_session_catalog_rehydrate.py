@@ -74,12 +74,13 @@ def _seed_library_row(
     folder.mkdir(parents=True, exist_ok=True)
     audio.write_bytes(b"RIFF" + b"\x00" * 40)
     resolved = str(audio.resolve())
+    stat = audio.stat()
     folder_id = upsert_folder(folder, db_path=library_db)
     upsert_sample(
         folder_id,
         _minimal_row(audio.name, resolved, bpm=bpm, key=key),
-        size_bytes=44,
-        mtime_ns=1_700_000_000_000_000_000,
+        size_bytes=int(stat.st_size),
+        mtime_ns=int(stat.st_mtime_ns),
         db_path=library_db,
     )
     return resolved
@@ -427,11 +428,12 @@ def test_rehydrate_includes_committed_wal_only_catalog_row(tmp_path: Path) -> No
     holder.execute("PRAGMA wal_autocheckpoint=0")
     try:
         folder_id = upsert_folder(folder, db_path=live_db)
+        stat = audio.stat()
         upsert_sample(
             folder_id,
             _minimal_row(audio.name, kick, bpm=128.0, key="Am"),
-            size_bytes=44,
-            mtime_ns=1_700_000_000_000_000_000,
+            size_bytes=int(stat.st_size),
+            mtime_ns=int(stat.st_mtime_ns),
             db_path=live_db,
         )
         assert Path(f"{live_db}-wal").is_file()
