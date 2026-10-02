@@ -102,6 +102,98 @@ def test_query_sample_by_path_readonly_incompatible_schema_is_fail_soft(
     assert names == {"unrelated"}
 
 
+def test_query_sample_by_path_readonly_ignores_stale_analyzer_version(
+    library_db: Path, tmp_path: Path
+) -> None:
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    folder_id = upsert_folder(folder, db_path=library_db)
+    upsert_sample(
+        folder_id,
+        WorkbenchRow(
+            display_name="kick",
+            relative_path="kick.wav",
+            path=str(audio.resolve()),
+            bpm=128.0,
+            key="Am",
+            key_conf=0.9,
+            loudness=-10.0,
+            brightness=1800.0,
+            sample_class="loop",
+            pred_type="Kick",
+            status="ok",
+        ),
+        size_bytes=4,
+        mtime_ns=100,
+        db_path=library_db,
+        analyzer_version="workbench_v2",
+    )
+
+    assert query_sample_by_path_readonly(audio, db_path=library_db) is None
+
+
+def test_capture_sqlite_main_and_wal_fails_when_never_stable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = tmp_path / "library.db"
+    db.write_bytes(b"abc")
+    snap = tmp_path / "snap.db"
+    flips = {"n": 0}
+    real_read = Path.read_bytes
+
+    def _unstable_read(self: Path) -> bytes:
+        if self.resolve() == db.resolve():
+            flips["n"] += 1
+            return b"even" if flips["n"] % 2 == 0 else b"odd"
+        return real_read(self)
+
+    monkeypatch.setattr(Path, "read_bytes", _unstable_read)
+    with pytest.raises(OSError, match="did not stabilize"):
+        workbench_library._capture_sqlite_main_and_wal(db.resolve(), snap)
+    assert not snap.exists()
+
+
+def test_query_sample_by_path_readonly_misses_when_snapshot_unstable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    library_db = tmp_path / "library.db"
+    init_workbench_library(library_db)
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    folder_id = upsert_folder(folder, db_path=library_db)
+    upsert_sample(
+        folder_id,
+        WorkbenchRow(
+            display_name="kick",
+            relative_path="kick.wav",
+            path=str(audio.resolve()),
+            bpm=128.0,
+            key="Am",
+            key_conf=0.9,
+            loudness=-10.0,
+            brightness=1800.0,
+            sample_class="loop",
+            pred_type="Kick",
+            status="ok",
+        ),
+        size_bytes=4,
+        mtime_ns=100,
+        db_path=library_db,
+    )
+
+    def _always_unstable(resolved: Path, snap_db: Path) -> None:
+        raise OSError("workbench library readonly snapshot did not stabilize")
+
+    monkeypatch.setattr(
+        workbench_library, "_capture_sqlite_main_and_wal", _always_unstable
+    )
+    assert query_sample_by_path_readonly(audio, db_path=library_db) is None
+
+
 def test_query_sample_by_path_readonly_hit(library_db: Path, tmp_path: Path) -> None:
     folder = tmp_path / "samples"
     folder.mkdir()

@@ -112,25 +112,26 @@ def _capture_sqlite_main_and_wal(resolved: Path, snap_db: Path) -> None:
     A checkpoint/truncate between independent copies can pair a pre-checkpoint
     main file with a post-checkpoint WAL and miss committed rows. Re-read both
     until the pair is stable, then write that pair into ``snap_db``.
+
+    Raises ``OSError`` if no stable pair is observed so callers can fail soft
+    instead of opening an unverified snapshot.
     """
     wal_src = Path(f"{resolved}-wal")
     snap_wal = Path(f"{snap_db}-wal")
-    main_bytes = b""
-    wal_bytes: bytes | None = None
     for _ in range(8):
         main_bytes = resolved.read_bytes()
         wal_bytes = wal_src.read_bytes() if wal_src.is_file() else None
         main_again = resolved.read_bytes()
         wal_again = wal_src.read_bytes() if wal_src.is_file() else None
-        if main_bytes == main_again and wal_bytes == wal_again:
-            break
-        main_bytes = main_again
-        wal_bytes = wal_again
-    snap_db.write_bytes(main_bytes)
-    if wal_bytes is not None:
-        snap_wal.write_bytes(wal_bytes)
-    elif snap_wal.exists():
-        snap_wal.unlink()
+        if main_bytes != main_again or wal_bytes != wal_again:
+            continue
+        snap_db.write_bytes(main_bytes)
+        if wal_bytes is not None:
+            snap_wal.write_bytes(wal_bytes)
+        elif snap_wal.exists():
+            snap_wal.unlink()
+        return
+    raise OSError("workbench library readonly snapshot did not stabilize")
 
 
 @contextmanager
@@ -955,7 +956,12 @@ def query_sample_by_path_on_readonly_connection(
     conn: sqlite3.Connection,
     original_path: Path | str,
 ) -> CachedWorkbenchRow | None:
-    """Lookup one sample on an already-open readonly snapshot connection."""
+    """Lookup one sample on an already-open readonly snapshot connection.
+
+    Rows whose ``analyzer_version`` does not match
+    ``WORKBENCH_ANALYZER_VERSION`` are treated as catalog misses so resume
+    does not restore obsolete BPM/key generations.
+    """
     path = str(Path(original_path).expanduser().resolve())
     row = conn.execute(
         """
@@ -968,7 +974,10 @@ def query_sample_by_path_on_readonly_connection(
     ).fetchone()
     if row is None:
         return None
-    return _cached_row_from_sqlite_row(row)
+    cached = _cached_row_from_sqlite_row(row)
+    if cached.analyzer_version != WORKBENCH_ANALYZER_VERSION:
+        return None
+    return cached
 
 
 @contextmanager
