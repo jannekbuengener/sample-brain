@@ -46,6 +46,8 @@ __all__ = [
     "apply_snapshot_to_live_kit",
     "channel_rack_state_from_snapshot",
     "load_workbench_session_snapshot",
+    "rehydrate_live_kit_from_library",
+    "rehydrate_workbench_row_from_library",
     "resume_master_bpm_from_transport",
     "save_workbench_session_snapshot",
     "snapshot_from_musical_state",
@@ -74,7 +76,11 @@ def workbench_session_path(
 
 
 def workbench_row_from_sample_ref(path: str) -> WorkbenchRow:
-    """Deterministic minimal WorkbenchRow from a durable sample path ref."""
+    """Deterministic minimal WorkbenchRow from a durable sample path ref.
+
+    Persistence authority stays path-only. Optional catalog enrichment belongs
+    in :func:`rehydrate_workbench_row_from_library` after restore.
+    """
     text = str(path)
     name = Path(text).name or text
     return WorkbenchRow(
@@ -91,6 +97,68 @@ def workbench_row_from_sample_ref(path: str) -> WorkbenchRow:
         status="ok",
         details={},
     )
+
+
+def rehydrate_workbench_row_from_library(
+    row: WorkbenchRow,
+    *,
+    library_db_path: Path | None,
+) -> WorkbenchRow:
+    """Best-effort read-only fill of analysis fields from the local library.
+
+    Path identity from the session ref remains authoritative. Catalog miss,
+    missing DB, or any read failure keeps the existing minimal row.
+    Never mutates the library/catalog.
+    """
+    if library_db_path is None:
+        return row
+    try:
+        from .workbench_library import load_sample_by_path
+
+        cached = load_sample_by_path(row.path, db_path=library_db_path)
+    except Exception:
+        return row
+    if cached is None:
+        return row
+    hydrated = cached.to_workbench_row()
+    # Keep the persisted session path string as identity authority.
+    return WorkbenchRow(
+        display_name=hydrated.display_name or row.display_name,
+        relative_path=hydrated.relative_path or row.relative_path,
+        path=row.path,
+        bpm=hydrated.bpm,
+        key=hydrated.key,
+        key_conf=hydrated.key_conf,
+        loudness=hydrated.loudness,
+        brightness=hydrated.brightness,
+        sample_class=hydrated.sample_class,
+        pred_type=hydrated.pred_type,
+        status=hydrated.status or row.status,
+        error=hydrated.error,
+        error_code=hydrated.error_code,
+        details=dict(hydrated.details) if hydrated.details else {},
+    )
+
+
+def rehydrate_live_kit_from_library(
+    live_kit: LiveKitState,
+    *,
+    library_db_path: Path | None,
+) -> None:
+    """Rehydrate all assigned Live Kit rows from ``library_db_path`` (fail soft)."""
+    if library_db_path is None:
+        return
+    for group, slots in LIVE_KIT_SLOT_MAPPING:
+        for slot in slots:
+            current = live_kit.assignment_for(group, slot)
+            if current is None:
+                continue
+            hydrated = rehydrate_workbench_row_from_library(
+                current, library_db_path=library_db_path
+            )
+            if hydrated is current:
+                continue
+            live_kit.assign(group, slot, hydrated)
 
 
 def _reject_unknown_keys(
