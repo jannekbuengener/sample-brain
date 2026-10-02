@@ -46,7 +46,7 @@ QML Screen-1 / future Screen-2
 2. **QML remains projection + intent.** Assign/audition/toggle go through the existing adapter style (`Screen1QmlInteractionAdapter` / `LiveKitPresenter` wrapping the **shared** state).
 3. **QML production path must inject native preview/transport**, not construct `WorkbenchPreviewPlayer` as the default for producer launches that expose Live Kit audition.
 4. **Audition stays monophonic** under `TransportAwarePreview`. Polyphonic pattern playback is a **later** owner (sequencer slice), not this slice.
-5. **#647 deferred kit persistence** (in-memory only for that slice). **#809** adds local musical resume state: versioned `workbench_session.json` under `workbench_state_dir()` / `SAMPLE_BRAIN_WORKBENCH_STATE_DIR`, owned by Python session composition (`src/workbench_session_store.py`). Persist Live Kit path refs + Channel Rack channels/triggers only. Not cloud sync, not named projects, not transport/loop/audition runtime.
+5. **#647 deferred kit persistence** (in-memory only for that slice). **#809** / **#818** add local musical resume state: versioned `workbench_session.json` under `workbench_state_dir()` / `SAMPLE_BRAIN_WORKBENCH_STATE_DIR`, owned by Python session composition (`src/workbench_session_store.py`). Persist Live Kit path refs, Channel Rack channels/triggers, and session clock resume fields (`master_bpm` + `sync_enabled`) only. Not cloud sync, not named projects, not playback/loop/audition/engine-frame runtime. `WorkbenchTransportAdapter` remains the sole MASTER/SYNC authority; QML and Display Preferences never own a second clock store.
 6. **No Pattern / Channel Rack UI** in the #647 ownership slice (Screen-2 / Pattern Core landed separately).
 
 ## Cross-screen audio focus (#807)

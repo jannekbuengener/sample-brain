@@ -1,23 +1,26 @@
-"""TEST_GATE / TEST_FREEZE — Workbench musical session persistence (#809).
+"""TEST_GATE / TEST_FREEZE — Workbench musical session persistence (#809 / #818).
 
 Canonical authority:
 - docs/SESSION_OWNERSHIP_CONTRACT.md
 - docs/DATA_AND_ARTIFACT_POLICY.md
 - docs/PATTERN_CORE_CONTRACT.md
-- Issue #809
+- Issue #809 / #817 / #818
 
 Frozen product rules:
 - versioned local JSON under workbench_state_dir (workbench_session.json)
-- Live Kit path refs + Channel Rack channels/triggers only
+- Live Kit path refs + Channel Rack channels/triggers + MASTER BPM + SYNC
+- schema writer = v2; reader accepts v1 (default MASTER + SYNC off) and v2
 - all-or-nothing fail-closed restore
 - no autosave callbacks during restore
 - edited triggers are authority (no DEFAULT_ON re-seed on restore)
 - playback/loop runtime never persisted; restore is quiet/stopped
+- resume MASTER prefers pending tempo target when scheduled
 """
 
 from __future__ import annotations
 
 import json
+import math
 import os
 from fractions import Fraction
 from pathlib import Path
@@ -30,6 +33,7 @@ from src.pattern_core import CHANNEL_ID_BY_LIVE_KIT_SLOT, allocate_user_channel_
 from src.workbench_controller import WorkbenchRow
 from src.workbench_live_kit import LIVE_KIT_SLOT_MAPPING, LiveKitState
 from src.workbench_session import compose_workbench_session
+from src.workbench_transport_ui import DEFAULT_TEMPO_BPM
 
 
 def _row(name: str, path: str) -> WorkbenchRow:
@@ -66,6 +70,10 @@ def _write_raw(state_dir: Path, payload: Any) -> Path:
     return path
 
 
+def _empty_live_kit_payload() -> dict[str, dict[str, None]]:
+    return {group: {slot: None for slot in slots} for group, slots in LIVE_KIT_SLOT_MAPPING}
+
+
 # --- 1. Missing file → fresh -------------------------------------------------
 
 
@@ -78,6 +86,11 @@ def test_missing_session_file_yields_fresh_empty_session(tmp_path: Path) -> None
     )
     assert session.channel_rack.state is None
     assert session.channel_rack.is_playing is False
+    assert session.transport.get_current_tempo() == pytest.approx(DEFAULT_TEMPO_BPM)
+    assert session.transport.is_sync_enabled() is False
+    assert session.transport.get_snapshot()["next_tempo_bpm"] is None
+    assert session.transport.playing is False
+    session.transport.close()
     assert session.channel_rack.projection()["groups"] == []
 
 
@@ -825,3 +838,472 @@ def test_live_kit_assign_without_rack_keeps_channel_rack_null(tmp_path: Path) ->
     assert b.channel_rack.state is None
     built = b.enter_screen2()
     assert len(_triggers_for(built, "ch_kick")) == 16
+
+# --- #818 MASTER + SYNC persistence ------------------------------------------
+
+
+def test_v2_tempo_and_sync_round_trip_across_compose(tmp_path: Path) -> None:
+    """Case 1: set MASTER 140 + SYNC on → restart restores both."""
+    a = compose_workbench_session(state_dir=tmp_path)
+    a.transport.set_tempo(140.0)
+    a.transport.set_sync_enabled(True)
+    assert a.transport.get_current_tempo() == pytest.approx(140.0)
+    assert a.transport.is_sync_enabled() is True
+    a.transport.close()
+
+    data = json.loads(_session_path(tmp_path).read_text(encoding="utf-8"))
+    assert data["schema_version"] == 2
+    assert data["master_bpm"] == pytest.approx(140.0)
+    assert data["sync_enabled"] is True
+
+    b = compose_workbench_session(state_dir=tmp_path)
+    assert b.transport.get_current_tempo() == pytest.approx(140.0)
+    assert b.transport.is_sync_enabled() is True
+    assert b.transport.get_snapshot()["next_tempo_bpm"] is None
+    assert b.transport.playing is False
+    b.transport.close()
+
+
+def test_fresh_session_defaults_master_and_sync_off(tmp_path: Path) -> None:
+    """Case 2: fresh compose uses canonical default MASTER and SYNC off."""
+    session = compose_workbench_session(state_dir=tmp_path)
+    assert session.transport.get_current_tempo() == pytest.approx(DEFAULT_TEMPO_BPM)
+    assert session.transport.is_sync_enabled() is False
+    assert not _session_path(tmp_path).is_file()
+    session.transport.close()
+
+
+def test_legacy_v1_restore_defaults_clock_and_next_mutation_writes_v2(
+    tmp_path: Path,
+) -> None:
+    """Case 3: valid v1 file restores kit; default MASTER + SYNC off; mutation → v2."""
+    kick = str(tmp_path / "kick.wav")
+    Path(kick).write_bytes(b"RIFF")
+    _write_raw(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "live_kit": {
+                group: {
+                    slot: ({"path": kick} if (group, slot) == ("Kick + Bass", "Kick") else None)
+                    for slot in slots
+                }
+                for group, slots in LIVE_KIT_SLOT_MAPPING
+            },
+            "channel_rack": None,
+        },
+    )
+    path = _session_path(tmp_path)
+    content_before = path.read_text(encoding="utf-8")
+
+    session = compose_workbench_session(state_dir=tmp_path)
+    assert session.live_kit.assignment_for("Kick + Bass", "Kick").path == kick
+    assert session.transport.get_current_tempo() == pytest.approx(DEFAULT_TEMPO_BPM)
+    assert session.transport.is_sync_enabled() is False
+    # Restore must not rewrite the v1 file.
+    assert path.read_text(encoding="utf-8") == content_before
+    assert json.loads(content_before)["schema_version"] == 1
+
+    session.transport.set_tempo(128.0)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["schema_version"] == 2
+    assert data["master_bpm"] == pytest.approx(128.0)
+    assert data["sync_enabled"] is False
+    assert data["live_kit"]["Kick + Bass"]["Kick"]["path"] == kick
+    session.transport.close()
+
+
+def test_tempo_only_mutation_autosaves_without_kit_change(tmp_path: Path) -> None:
+    """Case 4: set_tempo alone updates workbench_session.json."""
+    session = compose_workbench_session(state_dir=tmp_path)
+    path = _session_path(tmp_path)
+    assert not path.is_file()
+    session.transport.set_tempo(150.0)
+    assert path.is_file()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["schema_version"] == 2
+    assert data["master_bpm"] == pytest.approx(150.0)
+    assert data["sync_enabled"] is False
+    session.transport.close()
+
+
+def test_sync_only_mutation_autosaves_without_kit_change(tmp_path: Path) -> None:
+    """Case 5: toggle_sync alone updates workbench_session.json."""
+    session = compose_workbench_session(state_dir=tmp_path)
+    path = _session_path(tmp_path)
+    session.transport.toggle_sync()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["schema_version"] == 2
+    assert data["sync_enabled"] is True
+    assert data["master_bpm"] == pytest.approx(DEFAULT_TEMPO_BPM)
+    session.transport.close()
+
+
+def test_pending_tempo_persists_target_not_current_effective(
+    tmp_path: Path,
+) -> None:
+    """Case 6: while playing, scheduled set_tempo target is the resume MASTER."""
+    from types import SimpleNamespace
+
+    from src.session_grid import MusicalPosition
+
+    class _SnapEngine:
+        def __init__(self) -> None:
+            self.engine_frame = 0
+            self.running = False
+
+        def start(self) -> None:
+            self.running = True
+
+        def stop(self) -> None:
+            self.running = False
+
+        def close(self) -> None:
+            return None
+
+        def snapshot(self):
+            return SimpleNamespace(engine_frame=self.engine_frame, running=self.running)
+
+    a = compose_workbench_session(state_dir=tmp_path)
+    transport = a.transport
+    engine = _SnapEngine()
+    with transport._lock:
+        transport._native_engine = engine
+        transport._native_available = True
+        transport._native_owned = False
+        transport._native_opened = True
+    assert transport.get_current_tempo() == pytest.approx(132.0)
+    bar_one = transport.tempo_map.bar_beat_to_frame(MusicalPosition(1, 0))
+    transport.seek(bar_one)
+    transport.play()
+    assert transport.playing is True
+    effective = transport.set_tempo(140.0)
+    snap = transport.get_snapshot()
+    assert snap["current_tempo"] == pytest.approx(132.0)
+    assert snap["next_tempo_bpm"] == pytest.approx(140.0)
+    assert effective > transport.get_session_frame()
+
+    data = json.loads(_session_path(tmp_path).read_text(encoding="utf-8"))
+    assert data["master_bpm"] == pytest.approx(140.0)
+    assert "next_tempo_frame" not in data
+    a.transport.close()
+
+    b = compose_workbench_session(state_dir=tmp_path)
+    assert b.transport.get_current_tempo() == pytest.approx(140.0)
+    assert b.transport.get_snapshot()["next_tempo_bpm"] is None
+    assert b.transport.playing is False
+    b.transport.close()
+
+
+@pytest.mark.parametrize(
+    "bad_bpm",
+    [0, -1, float("nan"), float("inf"), float("-inf"), True, "132", None],
+)
+def test_invalid_v2_master_bpm_fail_closed(tmp_path: Path, bad_bpm: object) -> None:
+    """Case 7: invalid master_bpm → whole snapshot discarded."""
+    kick = str(tmp_path / "kick.wav")
+    Path(kick).write_bytes(b"RIFF")
+    payload: dict[str, Any] = {
+        "schema_version": 2,
+        "master_bpm": bad_bpm,
+        "sync_enabled": False,
+        "live_kit": {
+            group: {
+                slot: ({"path": kick} if (group, slot) == ("Kick + Bass", "Kick") else None)
+                for slot in slots
+            }
+            for group, slots in LIVE_KIT_SLOT_MAPPING
+        },
+        "channel_rack": None,
+    }
+    # JSON cannot encode NaN/Inf with default allow_nan=False; write via dumps allow_nan.
+    path = _session_path(tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(bad_bpm, float) and not math.isfinite(bad_bpm):
+        path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True, allow_nan=True) + "\n",
+            encoding="utf-8",
+        )
+    else:
+        _write_raw(tmp_path, payload)
+
+    session = compose_workbench_session(state_dir=tmp_path)
+    assert session.live_kit.assignment_for("Kick + Bass", "Kick") is None
+    assert session.transport.get_current_tempo() == pytest.approx(DEFAULT_TEMPO_BPM)
+    assert session.transport.is_sync_enabled() is False
+    session.transport.close()
+
+
+@pytest.mark.parametrize("bad_sync", [0, 1, "true", "false", None, 1.0])
+def test_invalid_v2_sync_enabled_fail_closed(tmp_path: Path, bad_sync: object) -> None:
+    """Case 8: non-bool sync_enabled → whole snapshot discarded."""
+    kick = str(tmp_path / "kick.wav")
+    Path(kick).write_bytes(b"RIFF")
+    _write_raw(
+        tmp_path,
+        {
+            "schema_version": 2,
+            "master_bpm": 140.0,
+            "sync_enabled": bad_sync,
+            "live_kit": {
+                group: {
+                    slot: ({"path": kick} if (group, slot) == ("Kick + Bass", "Kick") else None)
+                    for slot in slots
+                }
+                for group, slots in LIVE_KIT_SLOT_MAPPING
+            },
+            "channel_rack": None,
+        },
+    )
+    session = compose_workbench_session(state_dir=tmp_path)
+    assert session.live_kit.assignment_for("Kick + Bass", "Kick") is None
+    assert session.transport.get_current_tempo() == pytest.approx(DEFAULT_TEMPO_BPM)
+    session.transport.close()
+
+
+def test_unknown_root_key_v2_fail_closed(tmp_path: Path) -> None:
+    """Case 9: unknown root keys remain fail-closed on v2."""
+    _write_raw(
+        tmp_path,
+        {
+            "schema_version": 2,
+            "master_bpm": 140.0,
+            "sync_enabled": True,
+            "live_kit": _empty_live_kit_payload(),
+            "channel_rack": None,
+            "playing": True,
+        },
+    )
+    session = compose_workbench_session(state_dir=tmp_path)
+    assert session.channel_rack.state is None
+    assert session.transport.get_current_tempo() == pytest.approx(DEFAULT_TEMPO_BPM)
+    assert session.transport.is_sync_enabled() is False
+    session.transport.close()
+
+
+def test_clock_restore_leaves_playback_runtime_absent(tmp_path: Path) -> None:
+    """Case 10: restart is stopped with no pending tempo / loop / handles."""
+    a = compose_workbench_session(state_dir=tmp_path)
+    a.transport.set_tempo(144.0)
+    a.transport.set_sync_enabled(True)
+    # Dirty in-memory playback flags must not leak into the resume file.
+    a.channel_rack._playing = True
+    a.channel_rack._loop_active = True
+    a.channel_rack._loop_pass_index = 2
+    a.channel_rack._play_handle = object()  # type: ignore[assignment]
+    a.transport.close()
+
+    b = compose_workbench_session(state_dir=tmp_path)
+    assert b.transport.get_current_tempo() == pytest.approx(144.0)
+    assert b.transport.is_sync_enabled() is True
+    assert b.transport.playing is False
+    assert b.transport.get_snapshot()["next_tempo_bpm"] is None
+    assert b.channel_rack.is_playing is False
+    assert b.channel_rack._loop_active is False
+    assert b.channel_rack._loop_pass_index == 0
+    assert b.channel_rack._play_handle is None
+    b.transport.close()
+
+
+def test_restored_transport_is_shared_tempo_map_authority(tmp_path: Path) -> None:
+    """Case 12: session.transport.tempo_map is channel_rack.transport.tempo_map."""
+    a = compose_workbench_session(state_dir=tmp_path)
+    a.transport.set_tempo(138.0)
+    a.transport.close()
+
+    b = compose_workbench_session(state_dir=tmp_path)
+    assert b.channel_rack.transport is b.transport
+    assert b.channel_rack.transport.tempo_map is b.transport.tempo_map
+    assert b.transport.get_current_tempo() == pytest.approx(138.0)
+    assert b.transport.tempo_map.segments[0].bpm == pytest.approx(138.0)
+    b.transport.close()
+
+
+def test_restore_v2_clock_does_not_autosave(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Case 14: composing a valid v2 snapshot must not write during restore."""
+    _write_raw(
+        tmp_path,
+        {
+            "schema_version": 2,
+            "master_bpm": 140.0,
+            "sync_enabled": True,
+            "live_kit": _empty_live_kit_payload(),
+            "channel_rack": None,
+        },
+    )
+    path = _session_path(tmp_path)
+    content_before = path.read_text(encoding="utf-8")
+    mtime_before = path.stat().st_mtime_ns
+
+    import src.workbench_session as session_mod
+
+    save_calls: list[int] = []
+    real_save = session_mod.save_workbench_session_snapshot
+
+    def counting_save(*args, **kwargs):
+        save_calls.append(1)
+        return real_save(*args, **kwargs)
+
+    monkeypatch.setattr(session_mod, "save_workbench_session_snapshot", counting_save)
+    session = compose_workbench_session(state_dir=tmp_path)
+    assert save_calls == []
+    assert path.read_text(encoding="utf-8") == content_before
+    assert path.stat().st_mtime_ns == mtime_before
+    assert session.transport.get_current_tempo() == pytest.approx(140.0)
+    assert session.transport.is_sync_enabled() is True
+    session.transport.close()
+
+
+def test_set_sync_enabled_noop_does_not_autosave(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = compose_workbench_session(state_dir=tmp_path)
+    import src.workbench_session as session_mod
+
+    save_calls: list[int] = []
+    real_save = session_mod.save_workbench_session_snapshot
+
+    def counting_save(*args, **kwargs):
+        save_calls.append(1)
+        return real_save(*args, **kwargs)
+
+    monkeypatch.setattr(session_mod, "save_workbench_session_snapshot", counting_save)
+    assert session.transport.is_sync_enabled() is False
+    session.transport.set_sync_enabled(False)
+    assert save_calls == []
+    session.transport.set_tempo(DEFAULT_TEMPO_BPM)
+    # Identical resume MASTER should not notify/autosave.
+    assert save_calls == []
+    session.transport.close()
+
+
+def test_include_tk_workbench_restores_same_adapter_clock(tmp_path: Path) -> None:
+    """Tk compose path must apply persisted clock onto the shared adapter."""
+    a = compose_workbench_session(state_dir=tmp_path)
+    a.transport.set_tempo(141.0)
+    a.transport.set_sync_enabled(True)
+    a.transport.close()
+
+    b = compose_workbench_session(state_dir=tmp_path, include_tk_workbench=True)
+    try:
+        assert b.tk_workbench is not None
+        assert b.transport is b.tk_workbench._transport_adapter
+        assert b.transport.get_current_tempo() == pytest.approx(141.0)
+        assert b.transport.is_sync_enabled() is True
+        assert b.channel_rack.transport is b.transport
+    finally:
+        b.transport.close()
+        if b.tk_workbench is not None:
+            b.tk_workbench.root.destroy()
+
+
+def test_pending_adjust_delta_persists_final_resume_target(tmp_path: Path) -> None:
+    """Pending MASTER + user ± deltas persist the final resume target."""
+    from types import SimpleNamespace
+
+    from src.session_grid import MusicalPosition
+
+    class _SnapEngine:
+        def __init__(self) -> None:
+            self.engine_frame = 0
+            self.running = False
+
+        def start(self) -> None:
+            self.running = True
+
+        def stop(self) -> None:
+            self.running = False
+
+        def close(self) -> None:
+            return None
+
+        def snapshot(self):
+            return SimpleNamespace(engine_frame=self.engine_frame, running=self.running)
+
+    a = compose_workbench_session(state_dir=tmp_path)
+    transport = a.transport
+    with transport._lock:
+        transport._native_engine = _SnapEngine()
+        transport._native_available = True
+        transport._native_owned = False
+        transport._native_opened = True
+    bar_one = transport.tempo_map.bar_beat_to_frame(MusicalPosition(1, 0))
+    transport.seek(bar_one)
+    transport.play()
+    transport.set_tempo(140.0)
+    assert transport.get_resume_master_bpm() == pytest.approx(140.0)
+
+    # Mimic QML/Tk adjust seams: resume base + delta.
+    transport.set_tempo(transport.get_resume_master_bpm() + 1.0)
+    assert transport.get_resume_master_bpm() == pytest.approx(141.0)
+    transport.set_tempo(transport.get_resume_master_bpm() - 2.0)
+    assert transport.get_resume_master_bpm() == pytest.approx(139.0)
+    data = json.loads(_session_path(tmp_path).read_text(encoding="utf-8"))
+    assert data["master_bpm"] == pytest.approx(139.0)
+    a.transport.close()
+
+    b = compose_workbench_session(state_dir=tmp_path)
+    assert b.transport.get_current_tempo() == pytest.approx(139.0)
+    assert b.transport.get_snapshot()["next_tempo_bpm"] is None
+    assert b.transport.playing is False
+    b.transport.close()
+
+
+def test_set_tempo_autosaves_exactly_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import src.workbench_session as session_mod
+
+    save_calls: list[Any] = []
+    real_save = session_mod.save_workbench_session_snapshot
+
+    def _counting_save(snapshot, **kwargs):
+        save_calls.append(snapshot)
+        return real_save(snapshot, **kwargs)
+
+    monkeypatch.setattr(session_mod, "save_workbench_session_snapshot", _counting_save)
+    session = compose_workbench_session(state_dir=tmp_path)
+    save_calls.clear()
+    session.transport.set_tempo(145.0)
+    assert len(save_calls) == 1
+    assert save_calls[0].master_bpm == pytest.approx(145.0)
+    session.transport.close()
+
+
+def test_toggle_sync_autosaves_exactly_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import src.workbench_session as session_mod
+
+    save_calls: list[Any] = []
+    real_save = session_mod.save_workbench_session_snapshot
+
+    def _counting_save(snapshot, **kwargs):
+        save_calls.append(snapshot)
+        return real_save(snapshot, **kwargs)
+
+    monkeypatch.setattr(session_mod, "save_workbench_session_snapshot", _counting_save)
+    session = compose_workbench_session(state_dir=tmp_path)
+    save_calls.clear()
+    session.transport.toggle_sync()
+    assert len(save_calls) == 1
+    assert save_calls[0].sync_enabled is True
+    session.transport.close()
+
+
+def test_atomic_write_rejects_non_finite_master_bpm(tmp_path: Path) -> None:
+    """Defense-in-depth: allow_nan=False blocks non-finite JSON emission."""
+    from src.workbench_session_store import (
+        WorkbenchSessionSnapshot,
+        save_workbench_session_snapshot,
+    )
+
+    snapshot = WorkbenchSessionSnapshot(
+        live_kit=_empty_live_kit_payload(),
+        channel_rack=None,
+        master_bpm=float("nan"),
+        sync_enabled=False,
+    )
+    with pytest.raises(ValueError):
+        save_workbench_session_snapshot(snapshot, state_dir=tmp_path)
+    assert not _session_path(tmp_path).exists()

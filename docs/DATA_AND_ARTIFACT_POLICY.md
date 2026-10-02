@@ -81,7 +81,7 @@ The following may exist on the local filesystem but must never appear in `git st
 | FL Studio tags | User-specified path (e.g. `Documents/Image-Line/Settings/Browser/Tags`) | Exported browser tags | ✅ Yes — `sample-brain export_fl` |
 | Agent session state | `knowledge/SHARED.WORKING.MEMORY.md`, `knowledge/logs/` | Private working memory and logs | N/A — explicitly excluded |
 | Measurement sidecar | User-local path outside the repo (default under `%LOCALAPPDATA%/sample-brain/measurement/` or `$XDG_CACHE_HOME/sample-brain/measurement/`; override via `SAMPLE_BRAIN_MEASUREMENT_DB_PATH` / profile). **Never** `data/catalog.db` | Redacted Measurement Contract v1 events (ADR-0006); engineering/evaluation/product-evidence trends | ✅ Optional — delete sidecar to reset; not required for core rebuild |
-| Workbench session resume | User-local Workbench state dir (default `~/.sample-brain/workbench_session.json`; override via `SAMPLE_BRAIN_WORKBENCH_STATE_DIR`). **Never** inside the repo checkout | Live Kit path refs + Channel Rack pattern/channels (#809). May contain private sample paths; never commit or copy into `evidence/` | ✅ Optional — delete file for a fresh empty musical session |
+| Workbench session resume | User-local Workbench state dir (default `~/.sample-brain/workbench_session.json`; override via `SAMPLE_BRAIN_WORKBENCH_STATE_DIR`). **Never** inside the repo checkout | Live Kit path refs + Channel Rack pattern/channels + MASTER BPM / SYNC resume (#809/#818). May contain private sample paths; never commit or copy into `evidence/` | ✅ Optional — delete file for a fresh empty musical session |
 
 ### 4.1 Rules for local state
 

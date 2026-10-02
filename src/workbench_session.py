@@ -8,9 +8,10 @@ Cross-screen audio focus (#807) is owned here: entering Screen 2 / claiming
 Channel Rack playback releases Screen-1 audition; returning to Screen 1 leaves
 a quiet surface and never auto-resumes the previous audition.
 
-Musical session persistence (#809): load/validate a local snapshot under the
-Workbench state dir before first projection, then wire autosave callbacks only
-after a successful all-or-nothing restore (or fresh empty session).
+Musical session persistence (#809 / #818): load/validate a local snapshot under
+the Workbench state dir, apply MASTER/SYNC onto the shared transport before
+first projection, restore kit/rack, then wire autosave callbacks only after a
+successful all-or-nothing restore (or fresh empty session).
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from .workbench_qml import (
     Screen1QmlViewModel,
 )
 from .workbench_session_store import (
+    DEFAULT_TEMPO_BPM,
     apply_snapshot_to_live_kit,
     channel_rack_state_from_snapshot,
     load_workbench_session_snapshot,
@@ -121,12 +123,15 @@ def _autosave_musical_session(
     *,
     live_kit: LiveKitState,
     channel_rack: ChannelRackController,
+    transport: WorkbenchTransportAdapter,
     state_dir: Path | None,
     env: Mapping[str, str] | None,
 ) -> None:
     """Persist current musical state. IO failures must not corrupt memory."""
     try:
-        snapshot = snapshot_from_musical_state(live_kit, channel_rack.state)
+        snapshot = snapshot_from_musical_state(
+            live_kit, channel_rack.state, transport
+        )
         save_workbench_session_snapshot(snapshot, state_dir=state_dir, env=env)
     except OSError:
         # Last good on-disk snapshot remains; in-memory state stays authoritative.
@@ -142,19 +147,22 @@ def compose_workbench_session(
 ) -> WorkbenchSession:
     """Compose one shared Live Kit + one TransportAwarePreview audition owner.
 
-    Restores a validated musical session snapshot from the Workbench state dir
-    before the first projection. Autosave callbacks are wired only after restore
-    (or fresh empty construction) completes.
+    Restore order (#818):
+    load/validate → resolve MASTER/SYNC → construct/apply transport clock →
+    restore Live Kit → restore Channel Rack → presentation → wire autosave.
     """
 
     snapshot = load_workbench_session_snapshot(state_dir=state_dir, env=env)
-
-    # Restore without autosave observers so assign/restore cannot rewrite disk.
-    live_kit = LiveKitState()
     if snapshot is not None:
-        apply_snapshot_to_live_kit(snapshot, live_kit)
+        master_bpm = float(snapshot.master_bpm)
+        sync_enabled = bool(snapshot.sync_enabled)
+    else:
+        master_bpm = float(DEFAULT_TEMPO_BPM)
+        sync_enabled = False
 
-    presenter = LiveKitPresenter(state=live_kit)
+    # Empty kit first so Tk can adopt the same LiveKitState instance; clock is
+    # applied before kit/rack restore and before any presentation projection.
+    live_kit = LiveKitState()
     tk_workbench: WorkbenchApp | None = None
 
     if include_tk_workbench:
@@ -171,9 +179,20 @@ def compose_workbench_session(
             raise RuntimeError(
                 "Tk WorkbenchApp must expose TransportAwarePreview as session audition."
             )
+        # Apply persisted clock onto the existing adapter (no second authority).
+        transport.set_tempo(master_bpm)
+        transport.set_sync_enabled(sync_enabled)
     else:
-        transport = WorkbenchTransportAdapter()
+        transport = WorkbenchTransportAdapter(
+            initial_bpm=master_bpm,
+            initial_sync_enabled=sync_enabled,
+        )
         audition = TransportAwarePreview(WorkbenchPreviewPlayer(), transport)
+
+    if snapshot is not None:
+        apply_snapshot_to_live_kit(snapshot, live_kit)
+
+    presenter = LiveKitPresenter(state=live_kit)
 
     view_model = Screen1QmlViewModel(
         state_id="screen1-default-3panel",
@@ -234,6 +253,7 @@ def compose_workbench_session(
         _autosave_musical_session(
             live_kit=live_kit,
             channel_rack=channel_rack,
+            transport=transport,
             state_dir=state_dir,
             env=env,
         )
@@ -245,12 +265,24 @@ def compose_workbench_session(
         _autosave_musical_session(
             live_kit=live_kit,
             channel_rack=channel_rack,
+            transport=transport,
+            state_dir=state_dir,
+            env=env,
+        )
+
+    def _on_session_clock_mutation() -> None:
+        # Clock-only intent → one full coherent session save (includes kit/rack).
+        _autosave_musical_session(
+            live_kit=live_kit,
+            channel_rack=channel_rack,
+            transport=transport,
             state_dir=state_dir,
             env=env,
         )
 
     live_kit.set_on_assignment_changed(_on_live_kit_mutation)
     channel_rack.set_on_musical_state_changed(_on_channel_rack_mutation)
+    transport.set_on_session_clock_changed(_on_session_clock_mutation)
     return session
 
 
