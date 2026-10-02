@@ -1282,14 +1282,22 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
         if generation == tempo_change_at:
             module = _controller_module()
             helper = _require(module, "pattern_pass_start_frames")
-            _q1_before, e1_before = helper(
+            _q_cur, e_cur = helper(
+                transport.tempo_map,
+                anchor_quarter=controller._loop_anchor_quarter,
+                anchor_engine_frame=controller._loop_anchor_engine_frame,
+                pass_index=generation,
+                length_quarter_notes=Fraction(4, 1),
+            )
+            _q_next, e_next_before = helper(
                 transport.tempo_map,
                 anchor_quarter=controller._loop_anchor_quarter,
                 anchor_engine_frame=controller._loop_anchor_engine_frame,
                 pass_index=generation + 1,
                 length_quarter_notes=Fraction(4, 1),
             )
-            del _q1_before
+            del _q_cur, _q_next
+            old_pass_span = int(e_next_before) - int(e_cur)
             change_frame = transport.set_tempo(180)
             assert isinstance(change_frame, int)
             assert change_frame >= 0
@@ -1300,7 +1308,7 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
                 pass_index=generation + 1,
                 trigger_quarter=Fraction(1, 1),
             )
-            _q2, e2_after = helper(
+            _q2, e_next2_after = helper(
                 transport.tempo_map,
                 anchor_quarter=controller._loop_anchor_quarter,
                 anchor_engine_frame=controller._loop_anchor_engine_frame,
@@ -1308,11 +1316,17 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
                 length_quarter_notes=Fraction(4, 1),
             )
             del _q2
-            constant_e2 = e1_before + (
-                e1_before - controller._loop_anchor_engine_frame
+            _q1a, e_next_after = helper(
+                transport.tempo_map,
+                anchor_quarter=controller._loop_anchor_quarter,
+                anchor_engine_frame=controller._loop_anchor_engine_frame,
+                pass_index=generation + 1,
+                length_quarter_notes=Fraction(4, 1),
             )
-            # TempoMap must diverge from constant-frame extrapolation on a later pass.
-            assert e2_after != constant_e2
+            del _q1a
+            # Baseline = one preceding old-tempo pass span, not anchor→pass distance.
+            constant_e2 = int(e_next_after) + old_pass_span
+            assert int(e_next2_after) != constant_e2
 
         if generation == tempo_change_at + 1:
             assert expected_tempo_event_frame is not None
