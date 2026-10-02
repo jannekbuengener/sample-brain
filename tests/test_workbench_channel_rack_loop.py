@@ -934,22 +934,52 @@ def _record_soak_voice_snapshot(
     assert foreign_id not in engine.remove_voice_calls
 
 
+def _path_distinct_pcm_provider(decode_paths: list[str]) -> SequencerPcmProvider:
+    """Synthetic PCM keyed by path so sample-replace decode is observable."""
+
+    def decode_fn(path, *, sample_rate, start_ms=0):
+        del sample_rate, start_ms
+        decode_paths.append(str(path))
+        # Distinct amplitude fingerprint per path; length stays PCM_FRAMES.
+        seed = 0.05 + (abs(hash(str(path))) % 50) / 1000.0
+        return np.full(PCM_FRAMES, seed, dtype=np.float32), 1
+
+    return SequencerPcmProvider(sample_rate=SAMPLE_RATE, decode_fn=decode_fn)
+
+
+def _owned_has_state(engine: FakeNativeEngine, state: int) -> bool:
+    return any(
+        not meta.get("foreign") and int(meta["state"]) == state
+        for meta in engine._voices.values()
+    )
+
+
 def _drain_full_pass_until_boundary(
     controller,
     transport,
     engine,
     *,
     max_ticks: int = 256,
+    lifecycle: dict[str, int] | None = None,
 ):
-    """Advance to the next musical pass start, then tick reclaim + loop seam.
+    """Advance through the current pass with mid-pass ticks, then cross the seam.
 
-    Unlike `_drain_until_pass_boundary` (optimized for step-0 one-shots), this
-    covers mid-bar step edits by jumping near the TempoMap next-pass frame.
+    Unlike `_drain_until_pass_boundary` (step-0 shortcut) and a single jump to
+    ``next_e``, this helper steps in small increments so the player observes
+    SCHEDULED → PLAYING → IDLE reclaim before starting the next generation.
     """
     length = controller.state.pattern.length_quarter_notes
     module = _controller_module()
     helper = _require(module, "pattern_pass_start_frames")
-    next_index = int(controller._loop_pass_index) + 1
+    current_index = int(controller._loop_pass_index)
+    next_index = current_index + 1
+    _cur_q, start_e = helper(
+        transport.tempo_map,
+        anchor_quarter=controller._loop_anchor_quarter,
+        anchor_engine_frame=controller._loop_anchor_engine_frame,
+        pass_index=current_index,
+        length_quarter_notes=length,
+    )
     _next_q, next_e = helper(
         transport.tempo_map,
         anchor_quarter=controller._loop_anchor_quarter,
@@ -957,18 +987,78 @@ def _drain_full_pass_until_boundary(
         pass_index=next_index,
         length_quarter_notes=length,
     )
-    del _next_q
-    # Land just past the next-pass seam so late triggers finish and reclaim.
+    del _cur_q, _next_q
+
+    saw_playing = False
+    removes_before = len(engine.remove_voice_calls)
+
+    def _finish_if_advanced(before: int, tick):
+        if controller._loop_pass_index <= before:
+            return None
+        if lifecycle is not None:
+            lifecycle["playing_passes"] = lifecycle.get("playing_passes", 0) + int(
+                saw_playing
+            )
+            lifecycle["reclaim_passes"] = lifecycle.get("reclaim_passes", 0) + int(
+                len(engine.remove_voice_calls) > removes_before
+            )
+        return tick
+
+    # 1) Materialize near pass start and observe active PLAYING one-shots.
+    mid_target = int(start_e) + 1
+    if transport.engine_frame < mid_target:
+        transport.advance(mid_target - transport.engine_frame)
+        engine.advance_to(transport.engine_frame)
+    before = controller._loop_pass_index
+    tick = controller.tick_playback()
+    if _owned_has_state(engine, SB_VOICE_PLAYING):
+        saw_playing = True
+    done = _finish_if_advanced(before, tick)
+    if done is not None:
+        return done
+
+    # 2) Nudge past one-shot EOF so IDLE reclaim runs on the control thread.
+    idle_target = int(start_e) + PCM_FRAMES + 1
+    if transport.engine_frame < idle_target:
+        transport.advance(idle_target - transport.engine_frame)
+        engine.advance_to(transport.engine_frame)
+    before = controller._loop_pass_index
+    tick = controller.tick_playback()
+    done = _finish_if_advanced(before, tick)
+    if done is not None:
+        return done
+
+    # 3) Walk remaining bar in lookahead chunks (covers mid-bar step edits).
+    while transport.engine_frame < int(next_e):
+        before = controller._loop_pass_index
+        chunk = min(4800, int(next_e) - transport.engine_frame)
+        if chunk <= 0:
+            break
+        transport.advance(chunk)
+        engine.advance_to(transport.engine_frame)
+        if _owned_has_state(engine, SB_VOICE_PLAYING):
+            saw_playing = True
+        tick = controller.tick_playback()
+        if tick is None:
+            return None
+        done = _finish_if_advanced(before, tick)
+        if done is not None:
+            return done
+
+    # 4) Land just past the next-pass seam and tick until the generation advances.
     target = int(next_e) + PCM_FRAMES + 1
     transport.advance(max(0, target - transport.engine_frame))
     engine.advance_to(transport.engine_frame)
     for _ in range(max_ticks):
         before = controller._loop_pass_index
+        if _owned_has_state(engine, SB_VOICE_PLAYING):
+            saw_playing = True
         tick = controller.tick_playback()
         if tick is None:
             return None
-        if controller._loop_pass_index > before:
-            return tick
+        done = _finish_if_advanced(before, tick)
+        if done is not None:
+            return done
         transport.advance(max(PCM_FRAMES, 4800))
         engine.advance_to(transport.engine_frame)
     pytest.fail("expected full-pass loop boundary within tick budget")
@@ -1001,12 +1091,14 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
     engine = FakeNativeEngine()
     engine.seed_foreign_voice(foreign_id, pcm_frames=10_000)
     transport = LoopTransport(engine)
+    decode_paths: list[str] = []
+    pcm_provider = _path_distinct_pcm_provider(decode_paths)
     module = _controller_module()
     Controller = _require(module, "ChannelRackController")
     controller = Controller(
         live_kit=_kit_with_kick(),
         transport=transport,
-        pcm_provider=_pcm_provider(),
+        pcm_provider=pcm_provider,
         lookahead_frames=4800,
     )
     controller.enter_screen2()
@@ -1032,14 +1124,18 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
 
     owned_counts: list[int] = []
     total_counts: list[int] = []
+    lifecycle: dict[str, int] = {"playing_passes": 0, "reclaim_passes": 0}
     # Segment A: continuous loop with mid-soak mutations (no pass-index reset).
     segment_a = 56
     step_edit_at = 16
     sample_replace_at = 32
     tempo_change_at = 48
+    decode_marker_before_replace = len(decode_paths)
 
     for generation in range(1, segment_a + 1):
-        _drain_full_pass_until_boundary(controller, transport, engine)
+        _drain_full_pass_until_boundary(
+            controller, transport, engine, lifecycle=lifecycle
+        )
         assert controller._loop_pass_index == generation
         assert controller.is_playing is True
         _record_soak_voice_snapshot(
@@ -1068,11 +1164,18 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
                 controller.state.pattern.triggers
             ):
                 controller.toggle_step(user.channel_id, 0)
+            decode_marker_before_replace = len(decode_paths)
 
         if generation == tempo_change_at:
             change_frame = transport.set_tempo(180)
             assert isinstance(change_frame, int)
             assert change_frame >= 0
+
+    # After replace+arm, subsequent passes must decode/use wav_b (not only state).
+    post_replace_paths = decode_paths[decode_marker_before_replace:]
+    assert any(str(wav_b) == p or str(wav_b) in p for p in post_replace_paths), (
+        f"expected post-replace decode of {wav_b}, got {post_replace_paths[-8:]}"
+    )
 
     # Stop/Play restart mid-session: clean stop, then fresh loop segment.
     controller.stop()
@@ -1092,7 +1195,9 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
     segment_b = SOAK_GENERATIONS - segment_a
     assert segment_b >= 8
     for generation in range(1, segment_b + 1):
-        _drain_full_pass_until_boundary(controller, transport, engine)
+        _drain_full_pass_until_boundary(
+            controller, transport, engine, lifecycle=lifecycle
+        )
         assert controller._loop_pass_index == generation
         assert controller.is_playing is True
         _record_soak_voice_snapshot(
@@ -1103,6 +1208,9 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
         )
 
     assert len(owned_counts) == SOAK_GENERATIONS
+    # Most generations must exercise active PLAYING and IDLE reclaim (Codex P2).
+    assert lifecycle["playing_passes"] >= SOAK_GENERATIONS // 2
+    assert lifecycle["reclaim_passes"] >= SOAK_GENERATIONS // 2
 
     # No monotonic unbounded growth: late window must not exceed early window
     # by more than reclaim slack (growth linear in generation count is a fail).
