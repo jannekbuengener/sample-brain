@@ -892,3 +892,249 @@ def test_one_pass_primitive_and_forbidden_loop_api_remain():
     rack = importlib.import_module("src.channel_rack")
     assert hasattr(rack, "play_channel_rack_once")
     assert not hasattr(rack, "loop_pattern_forever")
+
+
+# ---------------------------------------------------------------------------
+# #821 — Deterministic Channel Rack loop soak / voice reclaim gate
+# ---------------------------------------------------------------------------
+#
+# N=64 generations: long enough to catch monotonic voice growth that the
+# short 2–4 pass lifecycle tests miss, short enough for CI with 8-frame
+# synthetic PCM + FakeNativeEngine (no WASAPI / wall-clock sleeps).
+SOAK_GENERATIONS = 64
+# Single-step pattern + reclaim should keep owned registered voices tiny;
+# bound far below SB_MAX_VOICES so growth regressions trip early.
+SOAK_OWNED_VOICE_BOUND = 4
+
+
+def _owned_registered_voice_count(engine: FakeNativeEngine) -> int:
+    return sum(1 for meta in engine._voices.values() if not meta.get("foreign"))
+
+
+def _foreign_voice_still_registered(engine: FakeNativeEngine, voice_id: int) -> bool:
+    meta = engine._voices.get(voice_id)
+    return meta is not None and bool(meta.get("foreign"))
+
+
+def _record_soak_voice_snapshot(
+    engine: FakeNativeEngine,
+    *,
+    foreign_id: int,
+    owned_counts: list[int],
+    total_counts: list[int],
+) -> None:
+    snap = engine.get_snapshot()
+    owned = _owned_registered_voice_count(engine)
+    owned_counts.append(owned)
+    total_counts.append(int(snap.total_voice_count))
+    assert snap.total_voice_count <= SB_MAX_VOICES
+    assert owned <= SOAK_OWNED_VOICE_BOUND
+    assert _foreign_voice_still_registered(engine, foreign_id)
+    assert foreign_id not in engine.stop_voice_calls
+    assert foreign_id not in engine.remove_voice_calls
+
+
+def _drain_full_pass_until_boundary(
+    controller,
+    transport,
+    engine,
+    *,
+    max_ticks: int = 256,
+):
+    """Advance to the next musical pass start, then tick reclaim + loop seam.
+
+    Unlike `_drain_until_pass_boundary` (optimized for step-0 one-shots), this
+    covers mid-bar step edits by jumping near the TempoMap next-pass frame.
+    """
+    length = controller.state.pattern.length_quarter_notes
+    module = _controller_module()
+    helper = _require(module, "pattern_pass_start_frames")
+    next_index = int(controller._loop_pass_index) + 1
+    _next_q, next_e = helper(
+        transport.tempo_map,
+        anchor_quarter=controller._loop_anchor_quarter,
+        anchor_engine_frame=controller._loop_anchor_engine_frame,
+        pass_index=next_index,
+        length_quarter_notes=length,
+    )
+    del _next_q
+    # Land just past the next-pass seam so late triggers finish and reclaim.
+    target = int(next_e) + PCM_FRAMES + 1
+    transport.advance(max(0, target - transport.engine_frame))
+    engine.advance_to(transport.engine_frame)
+    for _ in range(max_ticks):
+        before = controller._loop_pass_index
+        tick = controller.tick_playback()
+        if tick is None:
+            return None
+        if controller._loop_pass_index > before:
+            return tick
+        transport.advance(max(PCM_FRAMES, 4800))
+        engine.advance_to(transport.engine_frame)
+    pytest.fail("expected full-pass loop boundary within tick budget")
+
+
+def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
+    """Frozen reliability soak (#821): many loop generations under Flow-F edits.
+
+    Covers repeated generations, mid-soak step edit, user-channel sample
+    replace, tempo change, stop/play restart, final clean stop. Proves owned
+    voices stay bounded (no monotonic unbounded growth), foreign voices are
+    not stolen, and stop leaves is_playing=False with loop runtime cleared.
+    """
+    from tests.audio_fixtures import write_sine_wav
+
+    wav_a = write_sine_wav(
+        tmp_path / "user_a.wav",
+        duration_sec=0.05,
+        frequency_hz=440.0,
+        sr=SAMPLE_RATE,
+    )
+    wav_b = write_sine_wav(
+        tmp_path / "user_b.wav",
+        duration_sec=0.05,
+        frequency_hz=550.0,
+        sr=SAMPLE_RATE,
+    )
+
+    foreign_id = 42
+    engine = FakeNativeEngine()
+    engine.seed_foreign_voice(foreign_id, pcm_frames=10_000)
+    transport = LoopTransport(engine)
+    module = _controller_module()
+    Controller = _require(module, "ChannelRackController")
+    controller = Controller(
+        live_kit=_kit_with_kick(),
+        transport=transport,
+        pcm_provider=_pcm_provider(),
+        lookahead_frames=4800,
+    )
+    controller.enter_screen2()
+    # Minimal kick trigger + user channel (assign path exercises #808 replace).
+    controller._state = _minimal_kick_state()
+    controller.add_user_channel()
+    user = next(
+        ch
+        for ch in controller.state.channels
+        if ch.channel_id.startswith(USER_CHANNEL_ID_PREFIX)
+    )
+    controller.assign_user_channel_sample(user.channel_id, str(wav_a))
+    # Keep user channel silent until replace checkpoint (one kick step only).
+    for step in range(16):
+        if Trigger(channel_id=user.channel_id, position=Fraction(step, 4)) in (
+            controller.state.pattern.triggers
+        ):
+            controller.toggle_step(user.channel_id, step)
+
+    handle = controller.play()
+    assert handle is not None
+    assert controller.is_playing is True
+
+    owned_counts: list[int] = []
+    total_counts: list[int] = []
+    # Segment A: continuous loop with mid-soak mutations (no pass-index reset).
+    segment_a = 56
+    step_edit_at = 16
+    sample_replace_at = 32
+    tempo_change_at = 48
+
+    for generation in range(1, segment_a + 1):
+        _drain_full_pass_until_boundary(controller, transport, engine)
+        assert controller._loop_pass_index == generation
+        assert controller.is_playing is True
+        _record_soak_voice_snapshot(
+            engine,
+            foreign_id=foreign_id,
+            owned_counts=owned_counts,
+            total_counts=total_counts,
+        )
+
+        if generation == step_edit_at:
+            # Mid-soak step edit: disable beat 0, enable beat 1 (next pass only).
+            controller.toggle_step("ch_kick", 0)
+            controller.toggle_step("ch_kick", 4)
+            assert Trigger(channel_id="ch_kick", position=Fraction(1, 1)) in (
+                controller.state.pattern.triggers
+            )
+
+        if generation == sample_replace_at:
+            controller.assign_user_channel_sample(user.channel_id, str(wav_b))
+            replaced = next(
+                ch for ch in controller.state.channels if ch.channel_id == user.channel_id
+            )
+            assert replaced.sample_path == str(wav_b)
+            # Arm one user step so replace is on the playable path for later gens.
+            if Trigger(channel_id=user.channel_id, position=Fraction(0, 1)) not in (
+                controller.state.pattern.triggers
+            ):
+                controller.toggle_step(user.channel_id, 0)
+
+        if generation == tempo_change_at:
+            change_frame = transport.set_tempo(180)
+            assert isinstance(change_frame, int)
+            assert change_frame >= 0
+
+    # Stop/Play restart mid-session: clean stop, then fresh loop segment.
+    controller.stop()
+    assert controller.is_playing is False
+    assert getattr(controller, "_loop_active", False) is False
+    assert controller._play_handle is None
+    assert _foreign_voice_still_registered(engine, foreign_id)
+    owned_after_stop = _owned_registered_voice_count(engine)
+    assert owned_after_stop == 0
+
+    restarted = controller.play()
+    assert restarted is not None
+    assert controller.is_playing is True
+    assert controller._loop_pass_index == 0
+
+    # Segment B: remaining generations after restart (pass index restarts at 0).
+    segment_b = SOAK_GENERATIONS - segment_a
+    assert segment_b >= 8
+    for generation in range(1, segment_b + 1):
+        _drain_full_pass_until_boundary(controller, transport, engine)
+        assert controller._loop_pass_index == generation
+        assert controller.is_playing is True
+        _record_soak_voice_snapshot(
+            engine,
+            foreign_id=foreign_id,
+            owned_counts=owned_counts,
+            total_counts=total_counts,
+        )
+
+    assert len(owned_counts) == SOAK_GENERATIONS
+
+    # No monotonic unbounded growth: late window must not exceed early window
+    # by more than reclaim slack (growth linear in generation count is a fail).
+    early = owned_counts[:8]
+    late = owned_counts[-8:]
+    assert max(late) <= max(early) + 1
+    assert max(owned_counts) <= SOAK_OWNED_VOICE_BOUND
+    assert max(total_counts) <= SB_MAX_VOICES
+    # Voice id allocator may increment, but registered ownership must reclaim.
+    assert max(owned_counts) < SOAK_GENERATIONS // 4
+
+    controller.stop()
+    assert controller.is_playing is False
+    assert getattr(controller, "_loop_active", False) is False
+    assert controller._play_handle is None
+    assert controller._loop_pass_index == 0
+    assert _foreign_voice_still_registered(engine, foreign_id)
+    assert foreign_id not in engine.stop_voice_calls
+    assert foreign_id not in engine.remove_voice_calls
+    owned_live = [
+        vid
+        for vid, meta in engine._voices.items()
+        if not meta.get("foreign") and meta["state"] != SB_VOICE_IDLE
+    ]
+    assert owned_live == []
+    # Owned IDLE leftovers may exist only until explicit remove; stop must
+    # leave no owned registered voices (PatternPassPlayer.stop contract).
+    assert _owned_registered_voice_count(engine) == 0
+
+    # Tick after stop must not resurrect loop runtime.
+    transport.advance(200_000)
+    engine.advance_to(transport.engine_frame)
+    for _ in range(8):
+        assert controller.tick_playback() is None
+    assert controller.is_playing is False
