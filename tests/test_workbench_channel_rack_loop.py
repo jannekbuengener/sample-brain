@@ -934,17 +934,77 @@ def _record_soak_voice_snapshot(
     assert foreign_id not in engine.remove_voice_calls
 
 
+def _path_pcm_seed(path: str) -> float:
+    return 0.05 + (abs(hash(str(path))) % 50) / 1000.0
+
+
 def _path_distinct_pcm_provider(decode_paths: list[str]) -> SequencerPcmProvider:
     """Synthetic PCM keyed by path so sample-replace decode is observable."""
 
     def decode_fn(path, *, sample_rate, start_ms=0):
         del sample_rate, start_ms
         decode_paths.append(str(path))
-        # Distinct amplitude fingerprint per path; length stays PCM_FRAMES.
-        seed = 0.05 + (abs(hash(str(path))) % 50) / 1000.0
+        seed = _path_pcm_seed(str(path))
         return np.full(PCM_FRAMES, seed, dtype=np.float32), 1
 
     return SequencerPcmProvider(sample_rate=SAMPLE_RATE, decode_fn=decode_fn)
+
+
+def _create_call_matches_path_seed(config: VoiceConfig, path: str) -> bool:
+    if config.pcm_buffer is None:
+        return False
+    samples = config.pcm_buffer.samples
+    if samples.size == 0:
+        return False
+    return abs(float(samples.flat[0]) - _path_pcm_seed(path)) < 1e-6
+
+
+def _pass_event_engine_frame(
+    transport,
+    controller,
+    *,
+    pass_index: int,
+    trigger_quarter: Fraction,
+) -> int:
+    module = _controller_module()
+    helper = _require(module, "pattern_pass_start_frames")
+    start_q, start_e = helper(
+        transport.tempo_map,
+        anchor_quarter=controller._loop_anchor_quarter,
+        anchor_engine_frame=controller._loop_anchor_engine_frame,
+        pass_index=pass_index,
+        length_quarter_notes=controller.state.pattern.length_quarter_notes,
+    )
+    return int(
+        start_e
+        + (
+            transport.tempo_map.quarter_note_to_frame(start_q + trigger_quarter)
+            - transport.tempo_map.quarter_note_to_frame(start_q)
+        )
+    )
+
+
+def _materialize_until_frame_scheduled(
+    controller,
+    transport,
+    engine,
+    *,
+    target_frame: int,
+    schedule_from: int,
+    max_steps: int = 64,
+) -> None:
+    """Advance/tick until ``target_frame`` appears in new schedule calls."""
+    for _ in range(max_steps):
+        if any(
+            frame == target_frame
+            for _vid, frame in engine.schedule_calls[schedule_from:]
+        ):
+            return
+        remaining = target_frame + PCM_FRAMES - transport.engine_frame
+        transport.advance(max(1, min(4800, max(remaining, 1))))
+        engine.advance_to(transport.engine_frame)
+        controller.tick_playback()
+    pytest.fail(f"expected schedule frame {target_frame} within materialize budget")
 
 
 def _owned_has_state(engine: FakeNativeEngine, state: int) -> bool:
@@ -1130,7 +1190,10 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
     step_edit_at = 16
     sample_replace_at = 32
     tempo_change_at = 48
-    decode_marker_before_replace = len(decode_paths)
+    create_marker_before_replace = len(engine.create_calls)
+    schedule_marker_after_edit = 0
+    schedule_marker_before_tempo = len(engine.schedule_calls)
+    expected_tempo_event_frame: int | None = None
 
     for generation in range(1, segment_a + 1):
         _drain_full_pass_until_boundary(
@@ -1152,6 +1215,35 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
             assert Trigger(channel_id="ch_kick", position=Fraction(1, 1)) in (
                 controller.state.pattern.triggers
             )
+            schedule_marker_after_edit = len(engine.schedule_calls)
+
+        if generation == step_edit_at + 1:
+            # Replanned pass must schedule kick at quarter 1 (not this pass's q0).
+            expected_kick_q1 = _pass_event_engine_frame(
+                transport,
+                controller,
+                pass_index=generation,
+                trigger_quarter=Fraction(1, 1),
+            )
+            stale_kick_q0 = _pass_event_engine_frame(
+                transport,
+                controller,
+                pass_index=generation,
+                trigger_quarter=Fraction(0, 1),
+            )
+            _materialize_until_frame_scheduled(
+                controller,
+                transport,
+                engine,
+                target_frame=expected_kick_q1,
+                schedule_from=schedule_marker_after_edit,
+            )
+            new_frames = [
+                frame
+                for _vid, frame in engine.schedule_calls[schedule_marker_after_edit:]
+            ]
+            assert expected_kick_q1 in new_frames
+            assert stale_kick_q0 not in new_frames
 
         if generation == sample_replace_at:
             controller.assign_user_channel_sample(user.channel_id, str(wav_b))
@@ -1164,18 +1256,64 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
                 controller.state.pattern.triggers
             ):
                 controller.toggle_step(user.channel_id, 0)
-            decode_marker_before_replace = len(decode_paths)
+            create_marker_before_replace = len(engine.create_calls)
+
+        if generation == sample_replace_at + 1:
+            # Replacement must reach a created/scheduled voice, not only warm-decode.
+            created_after = engine.create_calls[create_marker_before_replace:]
+            assert any(
+                _create_call_matches_path_seed(cfg, str(wav_b)) for cfg in created_after
+            ), "expected a scheduled voice seeded from replaced user sample wav_b"
 
         if generation == tempo_change_at:
+            module = _controller_module()
+            helper = _require(module, "pattern_pass_start_frames")
+            _q1_before, e1_before = helper(
+                transport.tempo_map,
+                anchor_quarter=controller._loop_anchor_quarter,
+                anchor_engine_frame=controller._loop_anchor_engine_frame,
+                pass_index=generation + 1,
+                length_quarter_notes=Fraction(4, 1),
+            )
+            del _q1_before
             change_frame = transport.set_tempo(180)
             assert isinstance(change_frame, int)
             assert change_frame >= 0
+            schedule_marker_before_tempo = len(engine.schedule_calls)
+            expected_tempo_event_frame = _pass_event_engine_frame(
+                transport,
+                controller,
+                pass_index=generation + 1,
+                trigger_quarter=Fraction(1, 1),
+            )
+            _q2, e2_after = helper(
+                transport.tempo_map,
+                anchor_quarter=controller._loop_anchor_quarter,
+                anchor_engine_frame=controller._loop_anchor_engine_frame,
+                pass_index=generation + 2,
+                length_quarter_notes=Fraction(4, 1),
+            )
+            del _q2
+            constant_e2 = e1_before + (
+                e1_before - controller._loop_anchor_engine_frame
+            )
+            # TempoMap must diverge from constant-frame extrapolation on a later pass.
+            assert e2_after != constant_e2
 
-    # After replace+arm, subsequent passes must decode/use wav_b (not only state).
-    post_replace_paths = decode_paths[decode_marker_before_replace:]
-    assert any(str(wav_b) == p or str(wav_b) in p for p in post_replace_paths), (
-        f"expected post-replace decode of {wav_b}, got {post_replace_paths[-8:]}"
-    )
+        if generation == tempo_change_at + 1:
+            assert expected_tempo_event_frame is not None
+            _materialize_until_frame_scheduled(
+                controller,
+                transport,
+                engine,
+                target_frame=expected_tempo_event_frame,
+                schedule_from=schedule_marker_before_tempo,
+            )
+            new_frames = [
+                frame
+                for _vid, frame in engine.schedule_calls[schedule_marker_before_tempo:]
+            ]
+            assert expected_tempo_event_frame in new_frames
 
     # Stop/Play restart mid-session: clean stop, then fresh loop segment.
     controller.stop()
