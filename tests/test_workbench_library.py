@@ -260,15 +260,14 @@ def test_capture_sqlite_main_and_wal_fails_when_never_stable(
     db.write_bytes(b"abc")
     snap = tmp_path / "snap.db"
     flips = {"n": 0}
-    real_read = Path.read_bytes
 
-    def _unstable_read(self: Path) -> bytes:
-        if self.resolve() == db.resolve():
+    def _unstable_sig(path: Path) -> tuple[int, str]:
+        if path.resolve() == db.resolve():
             flips["n"] += 1
-            return b"even" if flips["n"] % 2 == 0 else b"odd"
-        return real_read(self)
+            return (3, "even" if flips["n"] % 2 == 0 else "odd")
+        return workbench_library._stream_file_signature(path)
 
-    monkeypatch.setattr(Path, "read_bytes", _unstable_read)
+    monkeypatch.setattr(workbench_library, "_stream_file_signature", _unstable_sig)
     with pytest.raises(OSError, match="did not stabilize"):
         workbench_library._capture_sqlite_main_and_wal(db.resolve(), snap)
     assert not snap.exists()
@@ -457,19 +456,18 @@ def test_capture_sqlite_main_and_wal_retries_across_checkpoint(
         )
 
         reads = {"main": 0}
-        real_read_bytes = Path.read_bytes
+        real_sig = workbench_library._stream_file_signature
 
-        def _flaky_read_bytes(self: Path) -> bytes:
-            data = real_read_bytes(self)
-            if self.resolve() == live_db.resolve():
+        def _flaky_sig(path: Path) -> tuple[int, str]:
+            if path.resolve() == live_db.resolve():
                 reads["main"] += 1
                 if reads["main"] == 1:
                     with sqlite3.connect(live_db) as conn:
                         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                         conn.commit()
-            return data
+            return real_sig(path)
 
-        monkeypatch.setattr(Path, "read_bytes", _flaky_read_bytes)
+        monkeypatch.setattr(workbench_library, "_stream_file_signature", _flaky_sig)
         snap_db = tmp_path / "snap" / "readonly_snapshot.db"
         snap_db.parent.mkdir()
         workbench_library._capture_sqlite_main_and_wal(live_db.resolve(), snap_db)

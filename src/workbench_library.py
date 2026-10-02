@@ -1,6 +1,7 @@
 """Persistent workbench library cache (user-local SQLite, separate from catalog.db)."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -105,13 +106,36 @@ def connect_workbench_library(path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+def _stream_file_signature(path: Path) -> tuple[int, str]:
+    """Return (size, sha256) while streaming; avoids loading the whole file."""
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            digest.update(chunk)
+    return size, digest.hexdigest()
+
+
+def _stream_copy_file(src: Path, dst: Path) -> None:
+    with src.open("rb") as incoming, dst.open("wb") as outgoing:
+        while True:
+            chunk = incoming.read(1024 * 1024)
+            if not chunk:
+                break
+            outgoing.write(chunk)
+
+
 def _capture_sqlite_main_and_wal(resolved: Path, snap_db: Path) -> None:
-    """Copy main DB + WAL/journal bytes as one stable capture.
+    """Copy main DB + WAL/journal as one stable capture with bounded memory.
 
     A checkpoint/truncate or rollback-journal rewrite between independent copies
-    can pair inconsistent sidecar state with the main file. Re-read main, WAL,
-    and rollback journal until the trio is stable, then write that capture into
-    ``snap_db``.
+    can pair inconsistent sidecar state with the main file. Stream signatures
+    until the trio is stable, then stream-copy that capture into ``snap_db``
+    without buffering whole-database bytearrays in RAM.
 
     Raises ``OSError`` if no stable capture is observed so callers can fail soft
     instead of opening an unverified snapshot.
@@ -121,29 +145,52 @@ def _capture_sqlite_main_and_wal(resolved: Path, snap_db: Path) -> None:
     snap_wal = Path(f"{snap_db}-wal")
     snap_journal = Path(f"{snap_db}-journal")
     for _ in range(8):
-        main_bytes = resolved.read_bytes()
-        wal_bytes = wal_src.read_bytes() if wal_src.is_file() else None
-        journal_bytes = journal_src.read_bytes() if journal_src.is_file() else None
-        main_again = resolved.read_bytes()
-        wal_again = wal_src.read_bytes() if wal_src.is_file() else None
-        journal_again = (
-            journal_src.read_bytes() if journal_src.is_file() else None
+        main_sig = _stream_file_signature(resolved)
+        wal_sig = _stream_file_signature(wal_src) if wal_src.is_file() else None
+        journal_sig = (
+            _stream_file_signature(journal_src) if journal_src.is_file() else None
         )
         if (
-            main_bytes != main_again
-            or wal_bytes != wal_again
-            or journal_bytes != journal_again
+            _stream_file_signature(resolved) != main_sig
+            or (
+                (_stream_file_signature(wal_src) if wal_src.is_file() else None)
+                != wal_sig
+            )
+            or (
+                (
+                    _stream_file_signature(journal_src)
+                    if journal_src.is_file()
+                    else None
+                )
+                != journal_sig
+            )
         ):
             continue
-        snap_db.write_bytes(main_bytes)
-        if wal_bytes is not None:
-            snap_wal.write_bytes(wal_bytes)
+        _stream_copy_file(resolved, snap_db)
+        if wal_sig is not None:
+            _stream_copy_file(wal_src, snap_wal)
         elif snap_wal.exists():
             snap_wal.unlink()
-        if journal_bytes is not None:
-            snap_journal.write_bytes(journal_bytes)
+        if journal_sig is not None:
+            _stream_copy_file(journal_src, snap_journal)
         elif snap_journal.exists():
             snap_journal.unlink()
+        if (
+            _stream_file_signature(resolved) != main_sig
+            or (
+                (_stream_file_signature(wal_src) if wal_src.is_file() else None)
+                != wal_sig
+            )
+            or (
+                (
+                    _stream_file_signature(journal_src)
+                    if journal_src.is_file()
+                    else None
+                )
+                != journal_sig
+            )
+        ):
+            continue
         return
     raise OSError("workbench library readonly snapshot did not stabilize")
 
