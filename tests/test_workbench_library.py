@@ -107,6 +107,70 @@ def test_query_sample_by_path_readonly_incompatible_schema_is_fail_soft(
     assert names == {"unrelated"}
 
 
+def test_query_sample_by_path_readonly_recovers_hot_delete_journal(
+    tmp_path: Path,
+) -> None:
+    """Private snapshot must recover a hot -journal before mode=ro lookup."""
+    library_db = tmp_path / "library.db"
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    size_bytes, mtime_ns = _file_fingerprint(audio)
+
+    init_workbench_library(library_db)
+    with sqlite3.connect(library_db) as conn:
+        assert conn.execute("PRAGMA journal_mode=DELETE").fetchone()[0].lower() == "delete"
+    folder_id = upsert_folder(folder, db_path=library_db)
+    upsert_sample(
+        folder_id,
+        WorkbenchRow(
+            display_name="kick",
+            relative_path="kick.wav",
+            path=str(audio.resolve()),
+            bpm=128.0,
+            key="Am",
+            key_conf=0.9,
+            loudness=-10.0,
+            brightness=1800.0,
+            sample_class="loop",
+            pred_type="Kick",
+            status="ok",
+        ),
+        size_bytes=size_bytes,
+        mtime_ns=mtime_ns,
+        db_path=library_db,
+    )
+
+    # Leave a hot rollback journal beside a copied main file (crash-style).
+    frozen_db = tmp_path / "frozen" / "library.db"
+    frozen_db.parent.mkdir()
+    writer = sqlite3.connect(library_db)
+    writer.isolation_level = None
+    writer.execute("PRAGMA journal_mode=DELETE")
+    writer.execute("BEGIN IMMEDIATE")
+    writer.execute(
+        "UPDATE samples SET bpm = 999.0 WHERE original_path = ?",
+        (str(audio.resolve()),),
+    )
+    shutil.copyfile(library_db, frozen_db)
+    journal = Path(f"{library_db}-journal")
+    assert journal.is_file()
+    shutil.copyfile(journal, Path(f"{frozen_db}-journal"))
+    writer.execute("ROLLBACK")
+    writer.close()
+
+    before = _library_dir_fingerprint(frozen_db)
+    cached = query_sample_by_path_readonly(audio, db_path=frozen_db)
+    after = _library_dir_fingerprint(frozen_db)
+
+    # Recovery must expose the last committed row (128), not the aborted 999.
+    assert cached is not None
+    assert cached.bpm == 128.0
+    assert cached.key == "Am"
+    assert after == before
+
+
 def test_capture_sqlite_main_and_wal_includes_rollback_journal(tmp_path: Path) -> None:
     db = tmp_path / "library.db"
     db.write_bytes(b"main-bytes")
@@ -235,8 +299,8 @@ def test_query_sample_by_path_readonly_misses_when_snapshot_unstable(
             pred_type="Kick",
             status="ok",
         ),
-        size_bytes=_file_fingerprint(audio)[0],
-        mtime_ns=_file_fingerprint(audio)[1],
+        size_bytes=(fp := _file_fingerprint(audio))[0],
+        mtime_ns=fp[1],
         db_path=library_db,
     )
 
@@ -270,8 +334,8 @@ def test_query_sample_by_path_readonly_hit(library_db: Path, tmp_path: Path) -> 
             pred_type="Kick",
             status="ok",
         ),
-        size_bytes=_file_fingerprint(audio)[0],
-        mtime_ns=_file_fingerprint(audio)[1],
+        size_bytes=(fp := _file_fingerprint(audio))[0],
+        mtime_ns=fp[1],
         db_path=library_db,
     )
 
@@ -321,8 +385,8 @@ def test_query_sample_by_path_readonly_does_not_create_wal_sidecars(
             pred_type="Kick",
             status="ok",
         ),
-        size_bytes=_file_fingerprint(audio)[0],
-        mtime_ns=_file_fingerprint(audio)[1],
+        size_bytes=(fp := _file_fingerprint(audio))[0],
+        mtime_ns=fp[1],
         db_path=seed_db,
     )
     with sqlite3.connect(seed_db) as conn:
@@ -387,8 +451,8 @@ def test_capture_sqlite_main_and_wal_retries_across_checkpoint(
                 pred_type="Kick",
                 status="ok",
             ),
-            size_bytes=_file_fingerprint(audio)[0],
-            mtime_ns=_file_fingerprint(audio)[1],
+            size_bytes=(fp := _file_fingerprint(audio))[0],
+            mtime_ns=fp[1],
             db_path=live_db,
         )
 
@@ -462,8 +526,8 @@ def test_query_sample_by_path_readonly_includes_committed_wal_frames(
                 pred_type="Kick",
                 status="ok",
             ),
-            size_bytes=_file_fingerprint(audio)[0],
-            mtime_ns=_file_fingerprint(audio)[1],
+            size_bytes=(fp := _file_fingerprint(audio))[0],
+            mtime_ns=fp[1],
             db_path=live_db,
         )
         assert Path(f"{live_db}-wal").is_file()

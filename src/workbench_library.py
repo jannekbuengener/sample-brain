@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
 from typing import Any, Iterator, Literal, Mapping
-from urllib.parse import quote
 
 # v2: mode-aware key analysis (KEY_ANALYSIS_CONTRACT_VERSION) is part of the
 # persisted analysis contract. Cache rows written before this bump (root-only
@@ -172,9 +171,9 @@ def _connect_workbench_library_readonly(db_path: Path) -> Iterator[sqlite3.Conne
       source ``-wal`` (``immutable=1`` on the original path would miss those)
 
     Implementation: capture a stable main + WAL/journal byte set into a private
-    temp directory; open that snapshot with ``mode=ro`` +
-    ``PRAGMA query_only=ON``. SQLite may create read-side artifacts only under
-    the temp dir. The source ``-shm`` is intentionally not copied.
+    temp directory; open that snapshot (recovering hot journals there), then
+    enable ``PRAGMA query_only=ON``. SQLite may create read-side artifacts only
+    under the temp dir. The source ``-shm`` is intentionally not copied.
     """
     resolved = Path(db_path).resolve()
     tmp = tempfile.TemporaryDirectory(prefix="sample-brain-wb-lib-ro-")
@@ -188,9 +187,13 @@ def _connect_workbench_library_readonly(db_path: Path) -> Iterator[sqlite3.Conne
                 "refusing readonly snapshot inside source library directory"
             )
         _capture_sqlite_main_and_wal(resolved, snap_db)
-        uri = f"file:{quote(str(snap_db).replace(chr(92), '/'))}?mode=ro"
-        conn = sqlite3.connect(uri, uri=True)
+        # Open the private snapshot writable so hot DELETE journals (and WAL
+        # captures) can recover here. mode=ro cannot apply rollback recovery.
+        # After recovery, lock the connection down with query_only. Only the
+        # temp snapshot is mutated; the original library directory is untouched.
+        conn = sqlite3.connect(snap_db)
         conn.row_factory = sqlite3.Row
+        conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
         conn.execute("PRAGMA query_only = ON")
         conn.execute("PRAGMA foreign_keys = ON")
         yield conn
