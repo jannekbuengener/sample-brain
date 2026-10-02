@@ -1204,6 +1204,7 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
     sample_replace_at = 32
     tempo_change_at = 48
     create_marker_before_replace = len(engine.create_calls)
+    schedule_marker_before_replace = len(engine.schedule_calls)
     schedule_marker_after_edit = 0
     schedule_marker_before_tempo = len(engine.schedule_calls)
     expected_tempo_event_frame: int | None = None
@@ -1270,14 +1271,27 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
             ):
                 controller.toggle_step(user.channel_id, 0)
             create_marker_before_replace = len(engine.create_calls)
+            schedule_marker_before_replace = len(engine.schedule_calls)
 
         if generation == sample_replace_at + 1:
-            # Replacement must reach a created/scheduled voice, not only warm-decode.
+            # Replacement must reach a created AND scheduled voice, not only warm-decode.
             created_after = engine.create_calls[create_marker_before_replace:]
-            assert any(
-                _create_call_matches_path_seed(cfg, str(wav_b), pcm_markers)
+            matched_ids = [
+                int(cfg.id)
                 for cfg in created_after
-            ), "expected a scheduled voice seeded from replaced user sample wav_b"
+                if _create_call_matches_path_seed(cfg, str(wav_b), pcm_markers)
+            ]
+            assert matched_ids, (
+                "expected a created voice seeded from replaced user sample wav_b"
+            )
+            scheduled_ids = {
+                int(vid)
+                for vid, _frame in engine.schedule_calls[schedule_marker_before_replace:]
+            }
+            # Correlate create→schedule by voice id so an unscheduled wav_b create fails.
+            assert any(vid in scheduled_ids for vid in matched_ids), (
+                f"wav_b voice ids {matched_ids} were created but not scheduled"
+            )
 
         if generation == tempo_change_at:
             module = _controller_module()
