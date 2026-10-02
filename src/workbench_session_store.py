@@ -1,9 +1,13 @@
-"""Local Workbench musical session persistence (#809 / #818).
+"""Local Workbench musical session persistence (#809 / #818 / #819).
 
 Versioned JSON under ``workbench_state_dir()`` resumes Live Kit path refs,
 Channel Rack channels/triggers, and session clock resume fields (MASTER BPM +
 SYNC). Fail-closed, all-or-nothing, atomic writes. Never stores
 playback/loop/audition/engine-frame/QML runtime.
+
+#819 adds Python-owned resume/autosave honesty status codes. Corrupt files are
+left in place (no required quarantine/rename) so the next boot still reports
+``rejected_corrupt``; status strings never include private paths or dumps.
 """
 
 from __future__ import annotations
@@ -32,6 +36,23 @@ SCHEMA_VERSION = 2
 SCHEMA_VERSION_V1 = 1
 WORKBENCH_SESSION_FILENAME = "workbench_session.json"
 
+PERSISTENCE_STATUS_FRESH_MISSING = "fresh_missing"
+PERSISTENCE_STATUS_RESTORED_OK = "restored_ok"
+PERSISTENCE_STATUS_REJECTED_CORRUPT = "rejected_corrupt"
+PERSISTENCE_STATUS_REJECTED_SCHEMA = "rejected_schema"
+PERSISTENCE_STATUS_REJECTED_SEMANTIC = "rejected_semantic"
+PERSISTENCE_STATUS_AUTOSAVE_FAILED = "autosave_failed"
+PERSISTENCE_STATUS_CODES = frozenset(
+    {
+        PERSISTENCE_STATUS_FRESH_MISSING,
+        PERSISTENCE_STATUS_RESTORED_OK,
+        PERSISTENCE_STATUS_REJECTED_CORRUPT,
+        PERSISTENCE_STATUS_REJECTED_SCHEMA,
+        PERSISTENCE_STATUS_REJECTED_SEMANTIC,
+        PERSISTENCE_STATUS_AUTOSAVE_FAILED,
+    }
+)
+
 _ROOT_KEYS_V1 = frozenset({"schema_version", "live_kit", "channel_rack"})
 _ROOT_KEYS_V2 = frozenset(
     {"schema_version", "live_kit", "channel_rack", "master_bpm", "sync_enabled"}
@@ -39,19 +60,37 @@ _ROOT_KEYS_V2 = frozenset(
 
 __all__ = [
     "DEFAULT_TEMPO_BPM",
+    "PERSISTENCE_STATUS_AUTOSAVE_FAILED",
+    "PERSISTENCE_STATUS_CODES",
+    "PERSISTENCE_STATUS_FRESH_MISSING",
+    "PERSISTENCE_STATUS_REJECTED_CORRUPT",
+    "PERSISTENCE_STATUS_REJECTED_SCHEMA",
+    "PERSISTENCE_STATUS_REJECTED_SEMANTIC",
+    "PERSISTENCE_STATUS_RESTORED_OK",
     "SCHEMA_VERSION",
     "SCHEMA_VERSION_V1",
     "WORKBENCH_SESSION_FILENAME",
+    "WorkbenchSessionLoadOutcome",
     "WorkbenchSessionSnapshot",
     "apply_snapshot_to_live_kit",
     "channel_rack_state_from_snapshot",
+    "load_workbench_session_outcome",
     "load_workbench_session_snapshot",
+    "persistence_status_label",
     "resume_master_bpm_from_transport",
     "save_workbench_session_snapshot",
     "snapshot_from_musical_state",
     "workbench_row_from_sample_ref",
     "workbench_session_path",
 ]
+
+
+class _SessionSchemaError(ValueError):
+    """Unsupported / malformed schema_version (not musical content)."""
+
+
+class _SessionSemanticError(ValueError):
+    """Musically / structurally invalid snapshot payload."""
 
 
 @dataclass(frozen=True)
@@ -62,6 +101,27 @@ class WorkbenchSessionSnapshot:
     channel_rack: ChannelRackState | None
     master_bpm: float
     sync_enabled: bool
+
+
+@dataclass(frozen=True)
+class WorkbenchSessionLoadOutcome:
+    """Fail-closed load result with honesty status (no paths/dumps)."""
+
+    status: str
+    snapshot: WorkbenchSessionSnapshot | None
+
+
+def persistence_status_label(status: str) -> str:
+    """Calm producer-facing label for a stable status code (no paths)."""
+    labels = {
+        PERSISTENCE_STATUS_FRESH_MISSING: "",
+        PERSISTENCE_STATUS_RESTORED_OK: "",
+        PERSISTENCE_STATUS_REJECTED_CORRUPT: "Session nicht geladen (beschädigt)",
+        PERSISTENCE_STATUS_REJECTED_SCHEMA: "Session nicht geladen (Schema)",
+        PERSISTENCE_STATUS_REJECTED_SEMANTIC: "Session nicht geladen (ungültig)",
+        PERSISTENCE_STATUS_AUTOSAVE_FAILED: "Autosave fehlgeschlagen",
+    }
+    return labels.get(str(status), "")
 
 
 def workbench_session_path(
@@ -304,31 +364,85 @@ def _align_rack_to_live_kit(
 
 def _parse_snapshot(data: object) -> WorkbenchSessionSnapshot:
     if not isinstance(data, Mapping):
-        raise ValueError("session root must be an object")
+        raise _SessionSemanticError("session root must be an object")
     version = data.get("schema_version")
     if type(version) is not int or isinstance(version, bool):
-        raise ValueError("schema_version must be an exact int")
+        raise _SessionSchemaError("schema_version must be an exact int")
     if version == SCHEMA_VERSION_V1:
-        _reject_unknown_keys(data, _ROOT_KEYS_V1, name="session root")
+        try:
+            _reject_unknown_keys(data, _ROOT_KEYS_V1, name="session root")
+        except ValueError as exc:
+            raise _SessionSemanticError(str(exc)) from exc
         master_bpm = float(DEFAULT_TEMPO_BPM)
         sync_enabled = False
     elif version == SCHEMA_VERSION:
-        _reject_unknown_keys(data, _ROOT_KEYS_V2, name="session root")
+        try:
+            _reject_unknown_keys(data, _ROOT_KEYS_V2, name="session root")
+        except ValueError as exc:
+            raise _SessionSemanticError(str(exc)) from exc
         if "master_bpm" not in data or "sync_enabled" not in data:
-            raise ValueError("schema v2 requires master_bpm and sync_enabled")
-        master_bpm = _parse_master_bpm(data.get("master_bpm"))
-        sync_enabled = _parse_sync_enabled(data.get("sync_enabled"))
+            raise _SessionSchemaError("schema v2 requires master_bpm and sync_enabled")
+        try:
+            master_bpm = _parse_master_bpm(data.get("master_bpm"))
+            sync_enabled = _parse_sync_enabled(data.get("sync_enabled"))
+        except ValueError as exc:
+            raise _SessionSemanticError(str(exc)) from exc
     else:
-        raise ValueError(f"unsupported schema_version: {version}")
-    live_kit = _parse_live_kit(data.get("live_kit"))
-    channel_rack = _align_rack_to_live_kit(
-        live_kit, _parse_channel_rack(data.get("channel_rack"))
-    )
+        raise _SessionSchemaError(f"unsupported schema_version: {version}")
+    try:
+        live_kit = _parse_live_kit(data.get("live_kit"))
+        channel_rack = _align_rack_to_live_kit(
+            live_kit, _parse_channel_rack(data.get("channel_rack"))
+        )
+    except (TypeError, ValueError) as exc:
+        raise _SessionSemanticError(str(exc)) from exc
     return WorkbenchSessionSnapshot(
         live_kit=live_kit,
         channel_rack=channel_rack,
         master_bpm=master_bpm,
         sync_enabled=sync_enabled,
+    )
+
+
+def load_workbench_session_outcome(
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> WorkbenchSessionLoadOutcome:
+    """Load/validate with honesty status. Never returns a partial snapshot."""
+    path = workbench_session_path(state_dir=state_dir, env=env)
+    if not path.is_file():
+        return WorkbenchSessionLoadOutcome(
+            status=PERSISTENCE_STATUS_FRESH_MISSING,
+            snapshot=None,
+        )
+    try:
+        text = path.read_text(encoding="utf-8")
+        data = json.loads(text)
+        snapshot = _parse_snapshot(data)
+    except _SessionSchemaError:
+        return WorkbenchSessionLoadOutcome(
+            status=PERSISTENCE_STATUS_REJECTED_SCHEMA,
+            snapshot=None,
+        )
+    except _SessionSemanticError:
+        return WorkbenchSessionLoadOutcome(
+            status=PERSISTENCE_STATUS_REJECTED_SEMANTIC,
+            snapshot=None,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return WorkbenchSessionLoadOutcome(
+            status=PERSISTENCE_STATUS_REJECTED_CORRUPT,
+            snapshot=None,
+        )
+    except (TypeError, ValueError):
+        return WorkbenchSessionLoadOutcome(
+            status=PERSISTENCE_STATUS_REJECTED_SEMANTIC,
+            snapshot=None,
+        )
+    return WorkbenchSessionLoadOutcome(
+        status=PERSISTENCE_STATUS_RESTORED_OK,
+        snapshot=snapshot,
     )
 
 
@@ -342,15 +456,7 @@ def load_workbench_session_snapshot(
     Missing file, corrupt JSON, unknown schema, or any semantic validation
     failure → None (all-or-nothing; never a partial musical session).
     """
-    path = workbench_session_path(state_dir=state_dir, env=env)
-    if not path.is_file():
-        return None
-    try:
-        text = path.read_text(encoding="utf-8")
-        data = json.loads(text)
-        return _parse_snapshot(data)
-    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
-        return None
+    return load_workbench_session_outcome(state_dir=state_dir, env=env).snapshot
 
 
 def resume_master_bpm_from_transport(transport: Any) -> float:

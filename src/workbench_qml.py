@@ -1519,6 +1519,7 @@ ApplicationWindow {
     property var interaction: interactionModel
     property var channelRack: channelRackModel
     property var tempoSync: tempoSyncModel
+    property var sessionPersistence: sessionPersistenceModel
     readonly property string activeScreen: channelRack.activeScreen
     // Screen-1 Theme Authority (#785): Theme Core owns colors; QML binds semantics.
     // No competing HEX palette here — see docs/assets/themes/ and workbench_theme.py.
@@ -1846,6 +1847,19 @@ ApplicationWindow {
                 }
             }
             Item { width: 16 }
+            // #819: calm Python-owned persistence honesty (hidden when OK/fresh).
+            Label {
+                objectName: "sessionPersistenceStatusLabel"
+                visible: window.sessionPersistence.attention
+                text: window.sessionPersistence.statusLabel
+                color: theme.textSecondary
+                font.pixelSize: 11
+                Layout.alignment: Qt.AlignVCenter
+                Accessible.name: "Session persistence status"
+            }
+            Item {
+                width: window.sessionPersistence.attention ? 16 : 0
+            }
             Button {
                 objectName: "harmonicMatchButton"
                 text: "Harmonic Match"
@@ -4313,6 +4327,69 @@ def _qml_transport_bridge(transport):
     return QmlTransportBridge()
 
 
+def _qml_session_persistence_bridge(session):
+    """Thin QML projection of Python-owned persistence honesty status (#819).
+
+    ``WorkbenchSession.persistence_status`` remains the sole authority. QML
+    never invents restore/autosave outcomes or stores a second status machine.
+    When ``session`` is ``None`` (injected Screen-1 harnesses), project
+    ``fresh_missing`` with no attention chrome.
+    """
+    from PySide6.QtCore import QObject, Property, Signal, Slot
+
+    from .workbench_session_store import (
+        PERSISTENCE_STATUS_AUTOSAVE_FAILED,
+        PERSISTENCE_STATUS_FRESH_MISSING,
+        PERSISTENCE_STATUS_REJECTED_CORRUPT,
+        PERSISTENCE_STATUS_REJECTED_SCHEMA,
+        PERSISTENCE_STATUS_REJECTED_SEMANTIC,
+        persistence_status_label,
+    )
+
+    _ATTENTION = frozenset(
+        {
+            PERSISTENCE_STATUS_REJECTED_CORRUPT,
+            PERSISTENCE_STATUS_REJECTED_SCHEMA,
+            PERSISTENCE_STATUS_REJECTED_SEMANTIC,
+            PERSISTENCE_STATUS_AUTOSAVE_FAILED,
+        }
+    )
+
+    class QmlSessionPersistenceBridge(QObject):
+        state_changed = Signal()
+
+        def __init__(self) -> None:
+            super().__init__()
+            self._session = session
+            if session is not None:
+                add = getattr(session, "add_persistence_status_listener", None)
+                if callable(add):
+                    add(self.refresh)
+
+        def _status_code(self) -> str:
+            if self._session is None:
+                return PERSISTENCE_STATUS_FRESH_MISSING
+            return str(getattr(self._session, "persistence_status", PERSISTENCE_STATUS_FRESH_MISSING))
+
+        @Slot()
+        def refresh(self) -> None:
+            self.state_changed.emit()
+
+        @Property(str, notify=state_changed)
+        def statusCode(self) -> str:
+            return self._status_code()
+
+        @Property(str, notify=state_changed)
+        def statusLabel(self) -> str:
+            return persistence_status_label(self._status_code())
+
+        @Property(bool, notify=state_changed)
+        def attention(self) -> bool:
+            return self._status_code() in _ATTENTION
+
+    return QmlSessionPersistenceBridge()
+
+
 def _qml_channel_rack_bridge(
     controller,
     *,
@@ -5536,6 +5613,7 @@ def _qml_engine(
         ),
     )
     transport_bridge = _qml_transport_bridge(session_transport)
+    persistence_bridge = _qml_session_persistence_bridge(session)
 
     def open_channel_rack() -> None:
         # Prefer session orchestration so open always goes through the
@@ -5584,6 +5662,9 @@ def _qml_engine(
     engine.rootContext().setContextProperty("libraryInteraction", library_bridge)
     engine.rootContext().setContextProperty("channelRackModel", channel_rack_bridge)
     engine.rootContext().setContextProperty("tempoSyncModel", transport_bridge)
+    engine.rootContext().setContextProperty(
+        "sessionPersistenceModel", persistence_bridge
+    )
     theme_authority = _qml_theme_authority_bridge()
     engine.rootContext().setContextProperty("themeAuthority", theme_authority)
     engine.rootContext().setContextProperty(
