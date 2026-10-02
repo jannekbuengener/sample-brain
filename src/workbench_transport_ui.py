@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from .session_grid import TimeSignature
-from .workbench_transport_adapter import WorkbenchTransportAdapter
+from .workbench_transport_adapter import DEFAULT_TEMPO_BPM, WorkbenchTransportAdapter
 from .workbench_transport_preview import (
     PreviewPlaybackSnapshot,
     TransportAwarePreview,
@@ -27,7 +27,6 @@ from .workbench_transport_preview import (
 from .workbench_waveform import read_audio_duration_ms
 
 TRANSPORT_POLL_MS = 50
-DEFAULT_TEMPO_BPM = 132.0
 
 
 def format_transport_tempo_label(bpm: float) -> str:
@@ -131,9 +130,9 @@ class WorkbenchTransportUiController:
         self.app._sync_control = self.sync_control
 
     def adjust_tempo(self, delta_bpm: float) -> int:
-        snapshot = self.transport.get_snapshot()
-        current = float(snapshot["current_tempo"])
-        target = max(1.0, current + float(delta_bpm))
+        # User MASTER deltas use resume intent (pending target if scheduled).
+        base = float(self.transport.get_resume_master_bpm())
+        target = max(1.0, base + float(delta_bpm))
         effective_frame = self.transport.set_tempo(target)
         self.refresh_snapshot()
         return effective_frame

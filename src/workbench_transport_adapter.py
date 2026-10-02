@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import math
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Optional
 
@@ -22,6 +23,8 @@ from src import native_audio as _native_audio
 from src.session_grid import SessionTransport, compute_sync_playback_rate
 
 warn = logging.getLogger(__name__.partition(".")[2]).warning
+
+DEFAULT_TEMPO_BPM = 132.0
 
 
 def _clamp_bpm(value: float) -> float:
@@ -54,10 +57,13 @@ class WorkbenchTransportAdapter:
         self,
         *,
         sample_rate: int = 48_000,
-        initial_bpm: float = 132.0,
+        initial_bpm: float = DEFAULT_TEMPO_BPM,
+        initial_sync_enabled: bool = False,
         transport: Optional[SessionTransport] = None,
         native_engine: object | None = None,
     ) -> None:
+        if type(initial_sync_enabled) is not bool:
+            raise TypeError("initial_sync_enabled must be an exact bool")
         self._lock = threading.RLock()
         self._transport = transport or SessionTransport(
             sample_rate=sample_rate,
@@ -82,11 +88,12 @@ class WorkbenchTransportAdapter:
                     self._native_engine = None
                     self._native_available = False
 
-        self._sync_enabled = False
+        self._sync_enabled = initial_sync_enabled
         self._keylock_enabled = False
         self._source_bpm: float | None = None
         self._current_rate = 1.0
         self._sync_status = "sync"
+        self._on_session_clock_changed: Callable[[], None] | None = None
 
         # --- Authoritative source playhead for HÄFTIG (#327) -----------------
         # ``_source_frame`` is integrated piecewise from the actual engine/session
@@ -390,10 +397,33 @@ class WorkbenchTransportAdapter:
     # Tempo
     # ------------------------------------------------------------------
 
+    def set_on_session_clock_changed(
+        self, callback: Callable[[], None] | None
+    ) -> None:
+        """Bind or clear post-mutation observer for MASTER/SYNC persistence (#818).
+
+        Callbacks fire only after the transport lock is released so callers may
+        safely snapshot / autosave without IO under the lock.
+        """
+        with self._lock:
+            self._on_session_clock_changed = callback
+
+    def _resume_master_bpm_unlocked(self) -> float:
+        if self._pending_tempo is not None:
+            return float(self._pending_tempo)
+        return self._effective_tempo_unlocked()
+
+    def get_resume_master_bpm(self) -> float:
+        """Latest user-requested MASTER: pending target if any, else current."""
+        with self._lock:
+            self._refresh_from_native_unlocked()
+            return self._resume_master_bpm_unlocked()
+
     def set_tempo(self, bpm: float) -> int:
         bpm = _clamp_bpm(bpm)
         with self._lock:
             self._refresh_from_native_unlocked()
+            before = self._resume_master_bpm_unlocked()
             effective_frame = self._transport.set_tempo(bpm)
             if effective_frame > self._transport.session_frame:
                 self._pending_tempo = bpm
@@ -402,7 +432,12 @@ class WorkbenchTransportAdapter:
                 self._pending_tempo = None
                 self._pending_tempo_frame = None
                 self._update_sync_rates_unlocked()
-            return effective_frame
+            after = self._resume_master_bpm_unlocked()
+            changed = after != before
+            callback = self._on_session_clock_changed
+        if changed and callback is not None:
+            callback()
+        return effective_frame
 
     def get_current_tempo(self) -> float:
         """Return the tempo effective *now*, never a future scheduled target."""
@@ -422,7 +457,30 @@ class WorkbenchTransportAdapter:
             self._refresh_from_native_unlocked()
             self._sync_enabled = not self._sync_enabled
             self._update_sync_rates_unlocked()
-            return self._sync_enabled
+            enabled = self._sync_enabled
+            callback = self._on_session_clock_changed
+        if callback is not None:
+            callback()
+        return enabled
+
+    def set_sync_enabled(self, enabled: bool) -> bool:
+        """Deterministic SYNC setter for restore and Python callers (#818).
+
+        Exact bool contract. No-op when the value is already identical. Uses the
+        same native rate reconciliation as :meth:`toggle_sync`.
+        """
+        if type(enabled) is not bool:
+            raise TypeError("enabled must be an exact bool")
+        with self._lock:
+            if self._sync_enabled is enabled:
+                return enabled
+            self._refresh_from_native_unlocked()
+            self._sync_enabled = enabled
+            self._update_sync_rates_unlocked()
+            callback = self._on_session_clock_changed
+        if callback is not None:
+            callback()
+        return enabled
 
     def is_sync_enabled(self) -> bool:
         with self._lock:

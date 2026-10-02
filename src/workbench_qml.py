@@ -4296,8 +4296,9 @@ def _qml_transport_bridge(transport):
         def adjustTempo(self, delta_bpm: float) -> None:
             if self._transport is None:
                 return
-            current = float(self._transport.get_current_tempo())
-            target = max(1.0, current + float(delta_bpm))
+            # User MASTER deltas use resume intent (pending target if scheduled).
+            base = float(self._transport.get_resume_master_bpm())
+            target = max(1.0, base + float(delta_bpm))
             self._transport.set_tempo(target)
             self.refresh()
 

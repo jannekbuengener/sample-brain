@@ -73,6 +73,7 @@ class FakeRoot:
 class FakeTransport:
     def __init__(self, *, time_signature: TimeSignature | None = None) -> None:
         self.tempo = 132.0
+        self.pending_tempo: float | None = None
         self.sync = False
         self.playing = False
         self.source_bpm = None
@@ -97,7 +98,7 @@ class FakeTransport:
             "sync_enabled": self.sync,
             "sync_rate": None,
             "sync_status": None,
-            "next_tempo_bpm": None,
+            "next_tempo_bpm": self.pending_tempo,
             "next_tempo_frame": None,
             "native_available": False,
             "bar": 0,
@@ -106,8 +107,18 @@ class FakeTransport:
 
     def set_tempo(self, bpm: float) -> int:
         self.set_tempo_calls.append(float(bpm))
-        self.tempo = float(bpm)
+        target = float(bpm)
+        if self.playing and target != self.tempo:
+            self.pending_tempo = target
+        else:
+            self.tempo = target
+            self.pending_tempo = None
         return 123
+
+    def get_resume_master_bpm(self) -> float:
+        if self.pending_tempo is not None:
+            return float(self.pending_tempo)
+        return float(self.tempo)
 
     def is_sync_enabled(self) -> bool:
         self.is_sync_enabled_calls += 1
@@ -256,6 +267,32 @@ def test_tempo_buttons_change_the_shared_transport_and_refresh_label():
     assert transport.set_tempo_calls == [133.0, 132.0]
     assert transport.tempo == 132.0
     assert app._tempo_var.get() == "MASTER 132 BPM"
+
+    controller.close()
+
+
+def test_adjust_tempo_uses_pending_resume_master_not_effective_current():
+    """#818: pending MASTER is the user-intent base for ± deltas."""
+    app = _fake_app()
+    transport = FakeTransport()
+    transport.tempo = 132.0
+    transport.playing = True
+    transport.pending_tempo = 140.0
+    controller = WorkbenchTransportUiController(
+        app,
+        transport=transport,
+        ui_apis=_fake_ui_apis(),
+    )
+
+    assert controller.adjust_tempo(1.0) == 123
+    assert transport.set_tempo_calls[-1] == pytest.approx(141.0)
+    assert transport.pending_tempo == pytest.approx(141.0)
+    assert transport.tempo == pytest.approx(132.0)
+
+    assert controller.adjust_tempo(-2.0) == 123
+    assert transport.set_tempo_calls[-1] == pytest.approx(139.0)
+    assert transport.pending_tempo == pytest.approx(139.0)
+    assert transport.tempo == pytest.approx(132.0)
 
     controller.close()
 

@@ -234,3 +234,76 @@ def test_runtime_producer_zone_geometry_stable_with_transport_controls(size):
         transport = getattr(engine, "_screen1_transport", None)
         if transport is not None:
             transport.close()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_adjust_tempo_uses_pending_resume_master_not_effective_current():
+    """#818: QML adjustTempo bases deltas on pending resume MASTER."""
+    from types import SimpleNamespace
+
+    from src.session_grid import MusicalPosition
+    from src.workbench_qml import _qml_transport_bridge
+    from src.workbench_transport_adapter import WorkbenchTransportAdapter
+
+    class _SnapEngine:
+        def __init__(self) -> None:
+            self.engine_frame = 0
+            self.running = False
+
+        def start(self) -> None:
+            self.running = True
+
+        def stop(self) -> None:
+            self.running = False
+
+        def close(self) -> None:
+            return None
+
+        def snapshot(self):
+            return SimpleNamespace(engine_frame=self.engine_frame, running=self.running)
+
+    adapter = WorkbenchTransportAdapter(
+        sample_rate=48_000,
+        initial_bpm=132.0,
+        native_engine=_SnapEngine(),
+    )
+    bridge = _qml_transport_bridge(adapter)
+    bar_one = adapter.tempo_map.bar_beat_to_frame(MusicalPosition(1, 0))
+    adapter.seek(bar_one)
+    adapter.play()
+    adapter.set_tempo(140.0)
+    assert adapter.get_current_tempo() == pytest.approx(132.0)
+    assert adapter.get_resume_master_bpm() == pytest.approx(140.0)
+
+    bridge.adjustTempo(1.0)
+    assert adapter.get_resume_master_bpm() == pytest.approx(141.0)
+    assert adapter.get_current_tempo() == pytest.approx(132.0)
+
+    bridge.adjustTempo(-2.0)
+    assert adapter.get_resume_master_bpm() == pytest.approx(139.0)
+    assert adapter.get_current_tempo() == pytest.approx(132.0)
+    adapter.close()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_compose_restart_first_bridge_projection_already_restored(tmp_path):
+    """Case 11: first tempoSyncModel projection shows restored MASTER/SYNC."""
+    from src.workbench_qml import _qml_transport_bridge
+    from src.workbench_session import compose_workbench_session
+
+    a = compose_workbench_session(state_dir=tmp_path)
+    a.transport.set_tempo(140.0)
+    a.transport.set_sync_enabled(True)
+    a.transport.close()
+
+    b = compose_workbench_session(state_dir=tmp_path)
+    try:
+        bridge = _qml_transport_bridge(b.transport)
+        assert float(bridge.masterTempo) == pytest.approx(140.0)
+        assert bridge.masterTempoText == "140"
+        assert bridge.syncEnabled is True
+        ts = b.transport.tempo_map.time_signature
+        assert bridge.gridText == f"{ts.numerator}/{ts.denominator}"
+        assert b.channel_rack.transport.tempo_map is b.transport.tempo_map
+    finally:
+        b.transport.close()

@@ -1,13 +1,15 @@
-"""Local Workbench musical session persistence (#809).
+"""Local Workbench musical session persistence (#809 / #818).
 
-Versioned JSON under ``workbench_state_dir()`` resumes Live Kit path refs and
-Channel Rack channels/triggers across restarts. Fail-closed, all-or-nothing,
-atomic writes. Never stores playback/loop/audition/QML runtime.
+Versioned JSON under ``workbench_state_dir()`` resumes Live Kit path refs,
+Channel Rack channels/triggers, and session clock resume fields (MASTER BPM +
+SYNC). Fail-closed, all-or-nothing, atomic writes. Never stores
+playback/loop/audition/engine-frame/QML runtime.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -24,17 +26,27 @@ from .pattern_core import (
 )
 from .workbench_controller import WorkbenchRow, workbench_state_dir
 from .workbench_live_kit import LIVE_KIT_SLOT_MAPPING, LiveKitState
+from .workbench_transport_adapter import DEFAULT_TEMPO_BPM
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+SCHEMA_VERSION_V1 = 1
 WORKBENCH_SESSION_FILENAME = "workbench_session.json"
 
+_ROOT_KEYS_V1 = frozenset({"schema_version", "live_kit", "channel_rack"})
+_ROOT_KEYS_V2 = frozenset(
+    {"schema_version", "live_kit", "channel_rack", "master_bpm", "sync_enabled"}
+)
+
 __all__ = [
+    "DEFAULT_TEMPO_BPM",
     "SCHEMA_VERSION",
+    "SCHEMA_VERSION_V1",
     "WORKBENCH_SESSION_FILENAME",
     "WorkbenchSessionSnapshot",
     "apply_snapshot_to_live_kit",
     "channel_rack_state_from_snapshot",
     "load_workbench_session_snapshot",
+    "resume_master_bpm_from_transport",
     "save_workbench_session_snapshot",
     "snapshot_from_musical_state",
     "workbench_row_from_sample_ref",
@@ -44,10 +56,12 @@ __all__ = [
 
 @dataclass(frozen=True)
 class WorkbenchSessionSnapshot:
-    """Validated musical resume snapshot (kit refs + optional rack)."""
+    """Validated musical resume snapshot (kit refs + optional rack + clock)."""
 
     live_kit: Mapping[str, Mapping[str, str | None]]
     channel_rack: ChannelRackState | None
+    master_bpm: float
+    sync_enabled: bool
 
 
 def workbench_session_path(
@@ -81,7 +95,7 @@ def workbench_row_from_sample_ref(path: str) -> WorkbenchRow:
 
 def _reject_unknown_keys(
     payload: Mapping[object, object],
-    allowed: set[str],
+    allowed: set[str] | frozenset[str],
     *,
     name: str,
 ) -> None:
@@ -93,6 +107,24 @@ def _reject_unknown_keys(
 def _exact_int(value: object, *, name: str) -> int:
     if type(value) is not int:
         raise ValueError(f"{name} must be an exact int (got {type(value).__name__})")
+    return value
+
+
+def _parse_master_bpm(value: object) -> float:
+    """Strict MASTER BPM for schema v2 — no silent coercion."""
+    if isinstance(value, bool) or value is None:
+        raise ValueError("master_bpm must be a finite JSON number > 0")
+    if type(value) is not int and type(value) is not float:
+        raise ValueError("master_bpm must be a finite JSON number > 0")
+    bpm = float(value)
+    if not math.isfinite(bpm) or bpm <= 0.0:
+        raise ValueError("master_bpm must be a finite JSON number > 0")
+    return bpm
+
+
+def _parse_sync_enabled(value: object) -> bool:
+    if type(value) is not bool:
+        raise ValueError("sync_enabled must be an exact bool")
     return value
 
 
@@ -246,38 +278,58 @@ def _parse_channel_rack(payload: object) -> ChannelRackState | None:
     return ChannelRackState(channels=channels, pattern=pattern, step_count=step_count)
 
 
+def _align_rack_to_live_kit(
+    live_kit: Mapping[str, Mapping[str, str | None]],
+    channel_rack: ChannelRackState | None,
+) -> ChannelRackState | None:
+    if channel_rack is None:
+        return None
+    aligned: list[Channel] = []
+    for channel in channel_rack.channels:
+        if channel.live_kit_group is None:
+            aligned.append(channel)
+            continue
+        kit_path = live_kit[channel.live_kit_group][channel.live_kit_slot]
+        if channel.sample_path != kit_path:
+            raise ValueError(
+                f"seed channel {channel.channel_id!r} sample_path must match live_kit"
+            )
+        aligned.append(channel)
+    return ChannelRackState(
+        channels=tuple(aligned),
+        pattern=channel_rack.pattern,
+        step_count=channel_rack.step_count,
+    )
+
+
 def _parse_snapshot(data: object) -> WorkbenchSessionSnapshot:
     if not isinstance(data, Mapping):
         raise ValueError("session root must be an object")
-    _reject_unknown_keys(
-        data, {"schema_version", "live_kit", "channel_rack"}, name="session root"
-    )
     version = data.get("schema_version")
     if type(version) is not int or isinstance(version, bool):
         raise ValueError("schema_version must be an exact int")
-    if version != SCHEMA_VERSION:
+    if version == SCHEMA_VERSION_V1:
+        _reject_unknown_keys(data, _ROOT_KEYS_V1, name="session root")
+        master_bpm = float(DEFAULT_TEMPO_BPM)
+        sync_enabled = False
+    elif version == SCHEMA_VERSION:
+        _reject_unknown_keys(data, _ROOT_KEYS_V2, name="session root")
+        if "master_bpm" not in data or "sync_enabled" not in data:
+            raise ValueError("schema v2 requires master_bpm and sync_enabled")
+        master_bpm = _parse_master_bpm(data.get("master_bpm"))
+        sync_enabled = _parse_sync_enabled(data.get("sync_enabled"))
+    else:
         raise ValueError(f"unsupported schema_version: {version}")
     live_kit = _parse_live_kit(data.get("live_kit"))
-    channel_rack = _parse_channel_rack(data.get("channel_rack"))
-    if channel_rack is not None:
-        # Align seed sample_path with live_kit authority (reject drift)
-        aligned: list[Channel] = []
-        for channel in channel_rack.channels:
-            if channel.live_kit_group is None:
-                aligned.append(channel)
-                continue
-            kit_path = live_kit[channel.live_kit_group][channel.live_kit_slot]
-            if channel.sample_path != kit_path:
-                raise ValueError(
-                    f"seed channel {channel.channel_id!r} sample_path must match live_kit"
-                )
-            aligned.append(channel)
-        channel_rack = ChannelRackState(
-            channels=tuple(aligned),
-            pattern=channel_rack.pattern,
-            step_count=channel_rack.step_count,
-        )
-    return WorkbenchSessionSnapshot(live_kit=live_kit, channel_rack=channel_rack)
+    channel_rack = _align_rack_to_live_kit(
+        live_kit, _parse_channel_rack(data.get("channel_rack"))
+    )
+    return WorkbenchSessionSnapshot(
+        live_kit=live_kit,
+        channel_rack=channel_rack,
+        master_bpm=master_bpm,
+        sync_enabled=sync_enabled,
+    )
 
 
 def load_workbench_session_snapshot(
@@ -301,16 +353,30 @@ def load_workbench_session_snapshot(
         return None
 
 
+def resume_master_bpm_from_transport(transport: Any) -> float:
+    """Latest user-requested MASTER: pending target if any, else current tempo."""
+    getter = getattr(transport, "get_resume_master_bpm", None)
+    if callable(getter):
+        return float(getter())
+    snap = transport.get_snapshot()
+    pending = snap.get("next_tempo_bpm")
+    if pending is not None:
+        return float(pending)
+    return float(snap["current_tempo"])
+
+
 def snapshot_from_musical_state(
     live_kit: LiveKitState,
     channel_rack_state: ChannelRackState | None,
+    transport: Any,
 ) -> WorkbenchSessionSnapshot:
     """Build a snapshot; seed paths come from LiveKitState (kit authority).
 
     Serializes only. Musical empty→assigned DEFAULT_ON heal belongs in
     :meth:`ChannelRackController.reconcile_live_kit_state` before save (#817).
     Seed ``sample_path`` is still aligned to Live Kit defensively; triggers are
-    never invented or repaired here.
+    never invented or repaired here. Resume MASTER prefers a pending tempo
+    target over the currently effective tempo (#818).
     """
     live_paths = _empty_live_kit_paths()
     for group, slots in LIVE_KIT_SLOT_MAPPING:
@@ -320,8 +386,16 @@ def snapshot_from_musical_state(
                 str(assignment.path) if assignment is not None else None
             )
 
+    master_bpm = resume_master_bpm_from_transport(transport)
+    sync_enabled = bool(transport.is_sync_enabled())
+
     if channel_rack_state is None:
-        return WorkbenchSessionSnapshot(live_kit=live_paths, channel_rack=None)
+        return WorkbenchSessionSnapshot(
+            live_kit=live_paths,
+            channel_rack=None,
+            master_bpm=master_bpm,
+            sync_enabled=sync_enabled,
+        )
 
     channels: list[Channel] = []
     for channel in channel_rack_state.channels:
@@ -343,7 +417,12 @@ def snapshot_from_musical_state(
         pattern=channel_rack_state.pattern,
         step_count=channel_rack_state.step_count,
     )
-    return WorkbenchSessionSnapshot(live_kit=live_paths, channel_rack=aligned)
+    return WorkbenchSessionSnapshot(
+        live_kit=live_paths,
+        channel_rack=aligned,
+        master_bpm=master_bpm,
+        sync_enabled=sync_enabled,
+    )
 
 
 def _snapshot_to_json_dict(snapshot: WorkbenchSessionSnapshot) -> dict[str, Any]:
@@ -381,6 +460,8 @@ def _snapshot_to_json_dict(snapshot: WorkbenchSessionSnapshot) -> dict[str, Any]
         }
     return {
         "schema_version": SCHEMA_VERSION,
+        "master_bpm": float(snapshot.master_bpm),
+        "sync_enabled": bool(snapshot.sync_enabled),
         "live_kit": live_kit,
         "channel_rack": channel_rack,
     }
@@ -391,7 +472,7 @@ def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
     temp = path.with_name(f".{path.name}.tmp")
     try:
         temp.write_text(
-            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + "\n",
             encoding="utf-8",
         )
         os.replace(temp, path)
