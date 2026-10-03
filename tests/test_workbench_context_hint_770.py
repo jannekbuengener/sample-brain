@@ -20,18 +20,18 @@ PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 EXPECTED_DESCRIPTORS: dict[str, tuple[str, str]] = {
     "library.scope.sources": ("Sample Sources", "analysierte Sample-Quellen"),
     "library.scope.all_samples": ("All Samples", "alle Samples im Workspace"),
-    "library.scope.catalog": ("Catalog", "schreibgeschützter Sample-Katalog"),
-    "library.scope.favorites": ("Favorites", "markierte Samples"),
     "library.scope.collections": ("Collections", "gespeicherte Sample-Sammlungen"),
+    "library.scope.favorites": ("Favorites", "markierte Samples"),
+    "library.scope.recordings": ("Recordings", "lokale Aufnahmen"),
     "library.add_source": ("Add Source", "lokalen Sample-Ordner hinzufügen"),
 }
 
 SCOPE_BUTTON_HINT_IDS: dict[str, str] = {
     "librarySourcesScopeButton": "library.scope.sources",
     "libraryAllSamplesScopeButton": "library.scope.all_samples",
-    "libraryCatalogScopeButton": "library.scope.catalog",
-    "libraryFavoritesScopeButton": "library.scope.favorites",
     "libraryCollectionsScopeButton": "library.scope.collections",
+    "libraryFavoritesScopeButton": "library.scope.favorites",
+    "libraryRecordingsScopeButton": "library.scope.recordings",
 }
 
 
@@ -48,8 +48,10 @@ def test_context_hint_contract_doc_exists() -> None:
     assert "bottom" in text.lower()
     assert "library.scope.favorites" in text
     assert "library.scope.collections" in text
+    assert "library.scope.recordings" in text
     assert "markierte Samples" in text
     assert "gespeicherte Sample-Sammlungen" in text
+    assert "lokale Aufnahmen" in text
 
 
 def test_descriptor_seam_is_shared_and_placement_decoupled() -> None:
@@ -83,9 +85,11 @@ def test_supported_controls_register_stable_distinct_descriptors() -> None:
 
     fav_help = EXPECTED_DESCRIPTORS["library.scope.favorites"][1]
     coll_help = EXPECTED_DESCRIPTORS["library.scope.collections"][1]
-    assert fav_help != coll_help
+    rec_help = EXPECTED_DESCRIPTORS["library.scope.recordings"][1]
+    assert fav_help != coll_help != rec_help
     assert source.count(fav_help) == 1
     assert source.count(coll_help) == 1
+    assert source.count(rec_help) == 1
 
     for object_name, hint_id in SCOPE_BUTTON_HINT_IDS.items():
         assert f'objectName: "{object_name}"' in source
@@ -98,9 +102,11 @@ def test_supported_controls_register_stable_distinct_descriptors() -> None:
 
     assert 'Accessible.name: "Favorites"' in source
     assert 'Accessible.name: "Collections"' in source
+    assert 'Accessible.name: "Recordings"' in source
+    assert 'objectName: "libraryCatalogScopeButton"' not in source
     # Scope controls must not depend on classic ToolTip for discoverability.
     scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
-        'objectName: "libraryContentHost"', 1
+        'objectName: "elasticHandleAfterLibrary"', 1
     )[0]
     assert "ToolTip." not in scope_block
 

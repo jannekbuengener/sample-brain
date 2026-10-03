@@ -75,9 +75,9 @@ def test_navigation_emits_stable_taxonomy_ids_and_typed_scopes(
     secondary = navigation.secondary_nodes()
     assert [(node.node_id, node.kind) for node in secondary] == [
         ("scope:all-library", LibraryNodeKind.ALL_SAMPLES),
-        ("scope:catalog-readonly", LibraryNodeKind.CATALOG),
-        ("scope:favorites", LibraryNodeKind.FAVORITES),
         ("container:collections", LibraryNodeKind.COLLECTIONS),
+        ("scope:favorites", LibraryNodeKind.FAVORITES),
+        ("scope:recordings", LibraryNodeKind.RECORDINGS),
     ]
 
     source_children = navigation.children("container:sample-sources")
@@ -122,6 +122,8 @@ def test_navigation_emits_stable_taxonomy_ids_and_typed_scopes(
     assert catalog_scope.catalog_limit == DEFAULT_CATALOG_LOAD_LIMIT
     favorites_scope = navigation.resolve_scope("scope:favorites")
     assert favorites_scope is not None and favorites_scope.kind is LibraryScopeKind.FAVORITES
+    recordings_scope = navigation.resolve_scope("scope:recordings")
+    assert recordings_scope is not None and recordings_scope.kind is LibraryScopeKind.RECORDINGS
 
     collection = _node(navigation.children("container:collections"), f"collection:{playlist.id}")
     collection_scope = navigation.resolve_scope(collection.node_id)

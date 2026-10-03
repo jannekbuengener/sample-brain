@@ -48,12 +48,12 @@ class FakeNavigation:
                 LibraryAvailability.AVAILABLE,
             ),
             LibraryNode(
-                "scope:catalog-readonly",
-                LibraryNodeKind.CATALOG,
-                "Catalog",
+                COLLECTIONS,
+                LibraryNodeKind.COLLECTIONS,
+                "Collections",
                 None,
-                True,
                 False,
+                True,
                 LibraryAvailability.AVAILABLE,
             ),
             LibraryNode(
@@ -66,12 +66,12 @@ class FakeNavigation:
                 LibraryAvailability.AVAILABLE,
             ),
             LibraryNode(
-                COLLECTIONS,
-                LibraryNodeKind.COLLECTIONS,
-                "Collections",
+                "scope:recordings",
+                LibraryNodeKind.RECORDINGS,
+                "Recordings",
                 None,
-                False,
                 True,
+                False,
                 LibraryAvailability.AVAILABLE,
             ),
         )
@@ -174,6 +174,7 @@ class FakeNavigation:
                 LibraryScopeKind.CATALOG, catalog_limit=17
             ),
             "scope:favorites": LibraryScope(LibraryScopeKind.FAVORITES),
+            "scope:recordings": LibraryScope(LibraryScopeKind.RECORDINGS),
             "collection:7": LibraryScope(
                 LibraryScopeKind.COLLECTION, playlist_id=7, playlist_name="Set A"
             ),
@@ -230,13 +231,15 @@ def test_qml_library_model_uses_exact_canonical_taxonomy_without_fake_surface() 
     assert 'objectName: "libraryScopeBar"' in source
     assert 'objectName: "librarySourcesScopeButton"' in source
     assert 'objectName: "libraryAllSamplesScopeButton"' in source
-    assert 'objectName: "libraryCatalogScopeButton"' in source
+    assert 'objectName: "libraryCatalogScopeButton"' not in source
     assert 'objectName: "libraryCollectionsScopeButton"' in source
+    assert 'objectName: "libraryRecordingsScopeButton"' in source
     assert 'Accessible.name: "Sample Sources"' in source
     assert 'Accessible.name: "All Samples"' in source
-    assert 'Accessible.name: "Catalog"' in source
+    assert 'Accessible.name: "Catalog"' not in source
     assert 'Accessible.name: "Favorites"' in source
     assert 'Accessible.name: "Collections"' in source
+    assert 'Accessible.name: "Recordings"' in source
     assert 'model.kind === "add_source"' not in source
     assert "libraryLabels" not in source
     assert 'objectName: "libraryFavoritesScopeButton"' in source
@@ -255,13 +258,16 @@ def test_library_scope_bar_visual_polish_contract() -> None:
 
     source = workbench_qml.QML_SOURCE
     scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
-        'objectName: "libraryCollectionList"', 1
+        'objectName: "elasticHandleAfterLibrary"', 1
     )[0]
     tree_block = source.split('objectName: "libraryTree"', 1)[1].split(
         "delegate: TreeViewDelegate", 1
     )[0]
     collection_block = source.split('objectName: "libraryCollectionList"', 1)[1].split(
         'objectName: "libraryTree"', 1
+    )[0]
+    pane_block = source.split('id: libraryPane', 1)[1].split(
+        'objectName: "elasticHandleAfterLibrary"', 1
     )[0]
 
     for glyph in ("⌁", "≡", "◉", "▣"):
@@ -270,6 +276,9 @@ def test_library_scope_bar_visual_polish_contract() -> None:
     assert "theme.selectionSurface" in scope_block
     assert "theme.selectionBorder" in scope_block or "theme.actionActive" in scope_block
     assert "theme.surfaceElevated" in scope_block
+    assert pane_block.find('objectName: "libraryContentHost"') < pane_block.find(
+        'objectName: "libraryScopeBar"'
+    )
 
     assert 'visible: libraryScopeBar.mode === "sources"' in tree_block
     assert 'enabled: libraryScopeBar.mode === "sources"' in tree_block
@@ -315,9 +324,9 @@ def test_tree_state_initializes_only_top_level_and_fetches_direct_children_once(
     ]
     assert [node.node_id for node in state.secondary_nodes()] == [
         "scope:all-library",
-        "scope:catalog-readonly",
-        "scope:favorites",
         COLLECTIONS,
+        "scope:favorites",
+        "scope:recordings",
     ]
     assert navigation.calls == []
 
@@ -371,9 +380,18 @@ def test_secondary_icon_nodes_use_the_same_typed_selection_authority() -> None:
     assert all_samples is not None
     assert all_samples.scope.kind is LibraryScopeKind.ALL_SAMPLES
 
-    catalog = state.select("scope:catalog-readonly")
-    assert catalog is not None
-    assert catalog.scope.kind is LibraryScopeKind.CATALOG
+    favorites = state.select("scope:favorites")
+    assert favorites is not None
+    assert favorites.scope.kind is LibraryScopeKind.FAVORITES
+
+    recordings = state.select("scope:recordings")
+    assert recordings is not None
+    assert recordings.scope.kind is LibraryScopeKind.RECORDINGS
+
+    # Catalog remains resolvable via navigation core even without a secondary icon.
+    catalog_scope = navigation.resolve_scope("scope:catalog-readonly")
+    assert catalog_scope is not None
+    assert catalog_scope.kind is LibraryScopeKind.CATALOG
 
     state.fetch_children(COLLECTIONS)
     collection = state.select("collection:7")

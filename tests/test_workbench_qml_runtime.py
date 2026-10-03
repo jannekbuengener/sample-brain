@@ -72,6 +72,24 @@ class FakeNavigation:
             LibraryAvailability.AVAILABLE,
             playlist_id=7,
         )
+        self.catalog = LibraryNode(
+            "scope:catalog-readonly",
+            LibraryNodeKind.CATALOG,
+            "Catalog",
+            None,
+            True,
+            False,
+            LibraryAvailability.AVAILABLE,
+        )
+        self.recordings = LibraryNode(
+            "scope:recordings",
+            LibraryNodeKind.RECORDINGS,
+            "Recordings",
+            None,
+            True,
+            False,
+            LibraryAvailability.AVAILABLE,
+        )
         self.top = (
             LibraryNode(
                 SAMPLE_SOURCES,
@@ -92,12 +110,12 @@ class FakeNavigation:
                 LibraryAvailability.AVAILABLE,
             ),
             LibraryNode(
-                "scope:catalog-readonly",
-                LibraryNodeKind.CATALOG,
-                "Catalog",
+                "container:collections",
+                LibraryNodeKind.COLLECTIONS,
+                "Collections",
                 None,
-                True,
                 False,
+                True,
                 LibraryAvailability.AVAILABLE,
             ),
             LibraryNode(
@@ -109,15 +127,7 @@ class FakeNavigation:
                 False,
                 LibraryAvailability.AVAILABLE,
             ),
-            LibraryNode(
-                "container:collections",
-                LibraryNodeKind.COLLECTIONS,
-                "Collections",
-                None,
-                False,
-                True,
-                LibraryAvailability.AVAILABLE,
-            ),
+            self.recordings,
         )
         self.sample_roots = [self.root]
         self.root_children_enabled = True
@@ -149,6 +159,7 @@ class FakeNavigation:
                 catalog_limit=17,
             ),
             "scope:favorites": LibraryScope(LibraryScopeKind.FAVORITES),
+            "scope:recordings": LibraryScope(LibraryScopeKind.RECORDINGS),
             COLLECTION_ID: LibraryScope(
                 LibraryScopeKind.COLLECTION,
                 playlist_id=7,
@@ -206,14 +217,20 @@ def test_scope_dispatch_uses_each_existing_loader_once_and_sets_visual_selection
         "load_favorite_workbench_rows",
         lambda: calls.append(("favorites", None)) or [_row("favorites")],
     )
+    monkeypatch.setattr(
+        runtime,
+        "load_recording_workbench_rows",
+        lambda: calls.append(("recordings", None)) or [_row("recordings")],
+    )
 
     nav = composition.library_tree.navigation
     cases = (
         (nav.root, nav.resolve_scope(ROOT_ID), "root"),
         (nav.subfolder, nav.resolve_scope(SUBFOLDER_ID), "subfolder"),
         (nav.top[1], nav.resolve_scope("scope:all-library"), "all"),
-        (nav.top[2], nav.resolve_scope("scope:catalog-readonly"), "catalog"),
+        (nav.catalog, nav.resolve_scope("scope:catalog-readonly"), "catalog"),
         (nav.top[3], nav.resolve_scope("scope:favorites"), "favorites"),
+        (nav.recordings, nav.resolve_scope("scope:recordings"), "recordings"),
         (nav.collection, nav.resolve_scope(COLLECTION_ID), "collection"),
     )
 
@@ -229,6 +246,7 @@ def test_scope_dispatch_uses_each_existing_loader_once_and_sets_visual_selection
         ("all", None),
         ("catalog", 17),
         ("favorites", None),
+        ("recordings", None),
         ("collection", "Set A"),
     ]
 

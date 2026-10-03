@@ -72,9 +72,9 @@ def test_favorites_scope_is_secondary_not_source_tree(library_db: Path) -> None:
     ]
     assert [(node.node_id, node.kind) for node in secondary] == [
         ("scope:all-library", LibraryNodeKind.ALL_SAMPLES),
-        ("scope:catalog-readonly", LibraryNodeKind.CATALOG),
-        ("scope:favorites", LibraryNodeKind.FAVORITES),
         ("container:collections", LibraryNodeKind.COLLECTIONS),
+        ("scope:favorites", LibraryNodeKind.FAVORITES),
+        ("scope:recordings", LibraryNodeKind.RECORDINGS),
     ]
     source_ids = [node.node_id for node in navigation.children("container:sample-sources")]
     assert not any("favorite" in node_id.lower() for node_id in source_ids)
@@ -94,7 +94,7 @@ def test_library_scope_bar_exposes_distinct_favorites_control() -> None:
     assert 'objectName: "libraryCollectionsScopeButton"' in source
     # Favorites must remain distinct from Collections and must not use emoji glyphs.
     favorites_block = source.split('objectName: "libraryFavoritesScopeButton"', 1)[1].split(
-        'objectName: "libraryCollectionsScopeButton"', 1
+        'objectName: "libraryRecordingsScopeButton"', 1
     )[0]
     assert "★" not in favorites_block
     assert "⭐" not in favorites_block
@@ -304,7 +304,7 @@ def test_automated_runtime_visual_acceptance_favorites_scope(
         coll = window.findChild(QQuickItem, "libraryCollectionList")
         assert tree is not None and not tree.isVisible()
         assert coll is not None and not coll.isVisible()
-        assert float(bar.y()) < 80.0
+        assert float(bar.y()) > 80.0
 
         drop_index = next(
             index

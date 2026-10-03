@@ -7,7 +7,7 @@ from enum import Enum
 import os
 from pathlib import Path
 
-from .workbench_catalog import DEFAULT_CATALOG_LOAD_LIMIT, catalog_available
+from .workbench_catalog import DEFAULT_CATALOG_LOAD_LIMIT
 from .workbench_library import (
     LibraryFolder,
     WorkbenchPlaylist,
@@ -24,6 +24,7 @@ class LibraryNodeKind(str, Enum):
     ALL_SAMPLES = "all_samples"
     CATALOG = "catalog"
     FAVORITES = "favorites"
+    RECORDINGS = "recordings"
     COLLECTIONS = "collections"
     COLLECTION = "collection"
     STATUS = "status"
@@ -42,6 +43,7 @@ class LibraryScopeKind(str, Enum):
     ALL_SAMPLES = "all_samples"
     CATALOG = "catalog"
     FAVORITES = "favorites"
+    RECORDINGS = "recordings"
     COLLECTION = "collection"
 
 
@@ -74,6 +76,7 @@ _SAMPLE_SOURCES_ID = "container:sample-sources"
 _ALL_SAMPLES_ID = "scope:all-library"
 _CATALOG_ID = "scope:catalog-readonly"
 _FAVORITES_ID = "scope:favorites"
+_RECORDINGS_ID = "scope:recordings"
 _COLLECTIONS_ID = "container:collections"
 
 
@@ -215,35 +218,16 @@ class WorkbenchLibraryNavigation:
         )
 
     def secondary_nodes(self) -> tuple[LibraryNode, ...]:
-        """Return non-folder Library scopes rendered by the compact icon bar."""
-        catalog_state = (
-            LibraryAvailability.AVAILABLE
-            if catalog_available(self._catalog_path)
-            else LibraryAvailability.OFFLINE
-        )
+        """Return non-folder Library scopes rendered by the bottom icon bar.
+
+        Catalog remains resolvable via ``resolve_scope`` / loaders, but #837
+        removes the visible Catalog navigation entry from this presentation list.
+        """
         return (
             LibraryNode(
                 _ALL_SAMPLES_ID,
                 LibraryNodeKind.ALL_SAMPLES,
                 "All Samples",
-                None,
-                True,
-                False,
-                LibraryAvailability.AVAILABLE,
-            ),
-            LibraryNode(
-                _CATALOG_ID,
-                LibraryNodeKind.CATALOG,
-                "Catalog",
-                None,
-                True,
-                False,
-                catalog_state,
-            ),
-            LibraryNode(
-                _FAVORITES_ID,
-                LibraryNodeKind.FAVORITES,
-                "Favorites",
                 None,
                 True,
                 False,
@@ -256,6 +240,24 @@ class WorkbenchLibraryNavigation:
                 None,
                 False,
                 True,
+                LibraryAvailability.AVAILABLE,
+            ),
+            LibraryNode(
+                _FAVORITES_ID,
+                LibraryNodeKind.FAVORITES,
+                "Favorites",
+                None,
+                True,
+                False,
+                LibraryAvailability.AVAILABLE,
+            ),
+            LibraryNode(
+                _RECORDINGS_ID,
+                LibraryNodeKind.RECORDINGS,
+                "Recordings",
+                None,
+                True,
+                False,
                 LibraryAvailability.AVAILABLE,
             ),
         )
@@ -298,6 +300,8 @@ class WorkbenchLibraryNavigation:
             return LibraryScope(LibraryScopeKind.ALL_SAMPLES)
         if node_id == _FAVORITES_ID:
             return LibraryScope(LibraryScopeKind.FAVORITES)
+        if node_id == _RECORDINGS_ID:
+            return LibraryScope(LibraryScopeKind.RECORDINGS)
         if node_id == _CATALOG_ID:
             return LibraryScope(
                 LibraryScopeKind.CATALOG,

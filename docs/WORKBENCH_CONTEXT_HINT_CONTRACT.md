@@ -59,13 +59,15 @@ Display format:
 |-------------|-------|------|
 | `library.scope.sources` | Sample Sources | analysierte Sample-Quellen |
 | `library.scope.all_samples` | All Samples | alle Samples im Workspace |
-| `library.scope.catalog` | Catalog | schreibgeschützter Sample-Katalog |
-| `library.scope.favorites` | Favorites | markierte Samples |
 | `library.scope.collections` | Collections | gespeicherte Sample-Sammlungen |
+| `library.scope.favorites` | Favorites | markierte Samples |
+| `library.scope.recordings` | Recordings | lokale Aufnahmen |
 | `library.add_source` | Add Source | lokalen Sample-Ordner hinzufügen |
 
-Favorites and Collections must remain distinct. Help strings must not
-contradict each other across duplicate registrations.
+#837 removes the visible Catalog navigation control; Catalog core/loaders remain
+outside this hint table. Favorites, Collections, and Recordings must remain
+distinct. Help strings must not contradict each other across duplicate
+registrations.
 
 `library.add_source` may bind the existing compact Calm-Canvas `+` control.
 The permanent text `Add Source` header button is not required for V1.

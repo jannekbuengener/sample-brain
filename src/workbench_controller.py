@@ -2122,6 +2122,19 @@ def load_playlist_workbench_rows(
     return rows
 
 
+def load_recording_workbench_rows(
+    *,
+    library_db_path: Path | None = None,
+) -> list[WorkbenchRow]:
+    """Project existing Recordings playlist takes without new audio ownership."""
+    from .recording_take import RECORDINGS_PLAYLIST_NAME
+
+    return load_playlist_workbench_rows(
+        RECORDINGS_PLAYLIST_NAME,
+        library_db_path=library_db_path,
+    )
+
+
 def _workbench_row_for_favorite_sample_path(
     sample_path: str,
     *,
@@ -2449,6 +2462,7 @@ __all__ = [
     "load_cached_subfolder_rows",
     "load_catalog_rows",
     "load_playlist_workbench_rows",
+    "load_recording_workbench_rows",
     "load_favorite_workbench_rows",
     "load_workbench_analysis_limit",
     "load_workbench_last_folder",
