@@ -1,13 +1,24 @@
 {
+  "capture_provenance": {
+    "capture_method": "QQuickWindow.grabWindow",
+    "display": "xvfb",
+    "harness": "screen1_visual_fixture_v1 via workbench_qml_spike production adapter",
+    "platform_note": "Linux Cloud Agent adaptation of Windows BitBlt v1 path",
+    "pyside6_version": "6.11.2",
+    "qt_quick_backend": "software",
+    "qt_scale_factor": "1.0",
+    "renderer": "PySide6/QtQuick/QML",
+    "shell_module": "src.workbench_qml"
+  },
   "channel": "main",
   "client_height": 900,
   "client_width": 1600,
-  "commit": "2f63d94fe5e2e0528da71b24cf56d6ee7903500b",
-  "created_at": "2026-09-11T16:56:37.452544+00:00",
+  "commit": "5602d801dc8b52a691e6cb99ad45377dc715eebf",
+  "created_at": "2026-10-03T15:47:37.103284+00:00",
   "dpi": 100,
   "fixture": "screen1_visual_fixture_v1",
-  "os": "Windows 11",
-  "python": "CPython 3.12.10",
+  "os": "Linux 6.12.94+",
+  "python": "CPython 3.12.3",
   "runtime_status": "valid",
   "sanity_results": {
     "screen1-default-3panel": {
@@ -15,20 +26,27 @@
       "exists": true,
       "non_black": true,
       "panel_structure": true,
-      "pass": true
+      "pass": true,
+      "real_harmony_matches": true
     },
     "screen1-harmonic-4panel": {
       "dimensions": true,
       "exists": true,
+      "harmonic_relations": [
+        "direct",
+        "related",
+        "transpose"
+      ],
       "non_black": true,
       "panel_structure": true,
-      "pass": true
+      "pass": true,
+      "real_harmony_matches": true
     }
   },
   "schema": 1,
   "screenshot_hashes": {
-    "screen1-default-3panel": "1da49fc093c91005de520860fa8298cadea9ebcc71aa5695f0e1768658938085",
-    "screen1-harmonic-4panel": "b00cce02d1e5493d4d97d26882e825e8db8af542b51c4f70535aecbdbfaafe54"
+    "screen1-default-3panel": "a295b593d0a808b51bb0dffe856ce7f44091346a3219ee5505685772cbf4b206",
+    "screen1-harmonic-4panel": "c53a6460bb34871490d5d68b67929ffeaec16a68e2d237cb080fdccbbbe7d553"
   },
   "states": [
     "screen1-default-3panel",
