@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import os
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -29,6 +31,7 @@ from src.workbench_library import (
     load_folder_subtree_samples,
     load_sample_cue,
     lookup_sample,
+    query_sample_by_path_readonly,
     normalize_display_name,
     normalize_playlist_name,
     register_library_folder,
@@ -40,6 +43,11 @@ from src.workbench_library import (
     workbench_library_db_path,
 )
 from src.workbench_controller import WorkbenchRow
+
+
+def _file_fingerprint(path: Path) -> tuple[int, int]:
+    stat = path.stat()
+    return int(stat.st_size), int(stat.st_mtime_ns)
 
 
 @pytest.fixture
@@ -63,6 +71,818 @@ def test_workbench_library_db_path_uses_state_dir(library_state: Path):
 
 def test_init_workbench_library_creates_schema(library_db: Path):
     assert library_db.is_file()
+
+
+def test_query_sample_by_path_readonly_misses_without_creating_db(tmp_path: Path) -> None:
+    missing_parent = tmp_path / "no-library-parent"
+    missing_db = missing_parent / "workbench_library.db"
+    sample = tmp_path / "kick.wav"
+    sample.write_bytes(b"RIFF")
+
+    assert query_sample_by_path_readonly(sample, db_path=missing_db) is None
+    assert not missing_db.exists()
+    assert not missing_parent.exists()
+
+
+def test_query_sample_by_path_readonly_incompatible_schema_is_fail_soft(
+    tmp_path: Path,
+) -> None:
+    incompatible_db = tmp_path / "incompatible.db"
+    with sqlite3.connect(incompatible_db) as conn:
+        conn.execute("CREATE TABLE unrelated (id INTEGER PRIMARY KEY)")
+        conn.commit()
+    before = incompatible_db.read_bytes()
+    sample = tmp_path / "kick.wav"
+    sample.write_bytes(b"RIFF")
+
+    assert query_sample_by_path_readonly(sample, db_path=incompatible_db) is None
+    assert incompatible_db.read_bytes() == before
+    with sqlite3.connect(f"file:{incompatible_db.resolve().as_posix()}?mode=ro", uri=True) as conn:
+        names = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+    assert names == {"unrelated"}
+
+
+def test_query_sample_by_path_readonly_recovers_hot_delete_journal(
+    tmp_path: Path,
+) -> None:
+    """Private snapshot must recover a hot -journal before mode=ro lookup."""
+    library_db = tmp_path / "library.db"
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    size_bytes, mtime_ns = _file_fingerprint(audio)
+
+    init_workbench_library(library_db)
+    with sqlite3.connect(library_db) as conn:
+        assert conn.execute("PRAGMA journal_mode=DELETE").fetchone()[0].lower() == "delete"
+    folder_id = upsert_folder(folder, db_path=library_db)
+    upsert_sample(
+        folder_id,
+        WorkbenchRow(
+            display_name="kick",
+            relative_path="kick.wav",
+            path=str(audio.resolve()),
+            bpm=128.0,
+            key="Am",
+            key_conf=0.9,
+            loudness=-10.0,
+            brightness=1800.0,
+            sample_class="loop",
+            pred_type="Kick",
+            status="ok",
+        ),
+        size_bytes=size_bytes,
+        mtime_ns=mtime_ns,
+        db_path=library_db,
+    )
+
+    # Leave a hot rollback journal beside a copied main file (crash-style).
+    frozen_db = tmp_path / "frozen" / "library.db"
+    frozen_db.parent.mkdir()
+    writer = sqlite3.connect(library_db)
+    writer.isolation_level = None
+    writer.execute("PRAGMA journal_mode=DELETE")
+    writer.execute("BEGIN IMMEDIATE")
+    writer.execute(
+        "UPDATE samples SET bpm = 999.0 WHERE original_path = ?",
+        (str(audio.resolve()),),
+    )
+    shutil.copyfile(library_db, frozen_db)
+    journal = Path(f"{library_db}-journal")
+    assert journal.is_file()
+    shutil.copyfile(journal, Path(f"{frozen_db}-journal"))
+    writer.execute("ROLLBACK")
+    writer.close()
+
+    before = _library_dir_fingerprint(frozen_db)
+    cached = query_sample_by_path_readonly(audio, db_path=frozen_db)
+    after = _library_dir_fingerprint(frozen_db)
+
+    # Recovery must expose the last committed row (128), not the aborted 999.
+    assert cached is not None
+    assert cached.bpm == 128.0
+    assert cached.key == "Am"
+    assert after == before
+
+
+def test_capture_sqlite_main_and_wal_includes_rollback_journal(tmp_path: Path) -> None:
+    db = tmp_path / "library.db"
+    db.write_bytes(b"main-bytes")
+    journal = Path(f"{db}-journal")
+    journal.write_bytes(b"journal-bytes")
+    snap = tmp_path / "snap" / "readonly_snapshot.db"
+    snap.parent.mkdir()
+
+    workbench_library._capture_sqlite_main_and_wal(db.resolve(), snap)
+
+    assert snap.read_bytes() == b"main-bytes"
+    assert Path(f"{snap}-journal").read_bytes() == b"journal-bytes"
+    assert not Path(f"{snap}-wal").exists()
+
+
+def test_query_sample_by_path_readonly_ignores_stale_file_fingerprint(
+    library_db: Path, tmp_path: Path
+) -> None:
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    size_bytes, mtime_ns = _file_fingerprint(audio)
+    folder_id = upsert_folder(folder, db_path=library_db)
+    upsert_sample(
+        folder_id,
+        WorkbenchRow(
+            display_name="kick",
+            relative_path="kick.wav",
+            path=str(audio.resolve()),
+            bpm=128.0,
+            key="Am",
+            key_conf=0.9,
+            loudness=-10.0,
+            brightness=1800.0,
+            sample_class="loop",
+            pred_type="Kick",
+            status="ok",
+        ),
+        size_bytes=size_bytes,
+        mtime_ns=mtime_ns,
+        db_path=library_db,
+    )
+    # Same path, different content/mtime after cache write.
+    audio.write_bytes(b"changed-bytes")
+
+    assert query_sample_by_path_readonly(audio, db_path=library_db) is None
+
+
+def test_query_sample_by_path_readonly_ignores_stale_analyzer_version(
+    library_db: Path, tmp_path: Path
+) -> None:
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    size_bytes, mtime_ns = _file_fingerprint(audio)
+    folder_id = upsert_folder(folder, db_path=library_db)
+    upsert_sample(
+        folder_id,
+        WorkbenchRow(
+            display_name="kick",
+            relative_path="kick.wav",
+            path=str(audio.resolve()),
+            bpm=128.0,
+            key="Am",
+            key_conf=0.9,
+            loudness=-10.0,
+            brightness=1800.0,
+            sample_class="loop",
+            pred_type="Kick",
+            status="ok",
+        ),
+        size_bytes=size_bytes,
+        mtime_ns=mtime_ns,
+        db_path=library_db,
+        analyzer_version="workbench_v2",
+    )
+
+    assert query_sample_by_path_readonly(audio, db_path=library_db) is None
+
+
+def test_capture_sqlite_main_and_wal_fails_when_never_stable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = tmp_path / "library.db"
+    db.write_bytes(b"abc")
+    snap = tmp_path / "snap.db"
+    flips = {"n": 0}
+    real_sig = workbench_library._stream_file_signature
+
+    def _unstable_verify(path: Path) -> tuple[int, str]:
+        if path.resolve() == db.resolve():
+            flips["n"] += 1
+            return (3, "even" if flips["n"] % 2 == 0 else "odd")
+        return real_sig(path)
+
+    monkeypatch.setattr(workbench_library, "_stream_file_signature", _unstable_verify)
+    with pytest.raises(OSError, match="did not stabilize"):
+        workbench_library._capture_sqlite_main_and_wal(db.resolve(), snap)
+
+
+def test_capture_combines_copy_and_hash_on_stable_library(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stable capture must not pre-hash the whole DB before copying it."""
+    db = tmp_path / "library.db"
+    db.write_bytes(b"main-bytes-stable")
+    snap = tmp_path / "snap.db"
+    copy_calls = {"n": 0}
+    verify_calls = {"n": 0}
+    real_copy = workbench_library._stream_copy_and_signature
+    real_sig = workbench_library._stream_file_signature
+
+    def _counting_copy(src: Path, dst: Path) -> tuple[int, str]:
+        copy_calls["n"] += 1
+        return real_copy(src, dst)
+
+    def _counting_verify(path: Path) -> tuple[int, str]:
+        verify_calls["n"] += 1
+        return real_sig(path)
+
+    monkeypatch.setattr(workbench_library, "_stream_copy_and_signature", _counting_copy)
+    monkeypatch.setattr(workbench_library, "_stream_file_signature", _counting_verify)
+    workbench_library._capture_sqlite_main_and_wal(db.resolve(), snap)
+
+    assert snap.read_bytes() == b"main-bytes-stable"
+    # One combined copy+hash pass and one post-copy verify pass for the main file.
+    assert copy_calls["n"] == 1
+    assert verify_calls["n"] == 1
+
+
+def test_query_sample_by_path_readonly_misses_when_snapshot_unstable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    library_db = tmp_path / "library.db"
+    init_workbench_library(library_db)
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    folder_id = upsert_folder(folder, db_path=library_db)
+    upsert_sample(
+        folder_id,
+        WorkbenchRow(
+            display_name="kick",
+            relative_path="kick.wav",
+            path=str(audio.resolve()),
+            bpm=128.0,
+            key="Am",
+            key_conf=0.9,
+            loudness=-10.0,
+            brightness=1800.0,
+            sample_class="loop",
+            pred_type="Kick",
+            status="ok",
+        ),
+        size_bytes=(fp := _file_fingerprint(audio))[0],
+        mtime_ns=fp[1],
+        db_path=library_db,
+    )
+
+    def _always_unstable(resolved: Path, snap_db: Path) -> None:
+        raise OSError("workbench library readonly snapshot did not stabilize")
+
+    monkeypatch.setattr(
+        workbench_library, "_capture_sqlite_main_and_wal", _always_unstable
+    )
+    assert query_sample_by_path_readonly(audio, db_path=library_db) is None
+
+
+def test_query_sample_by_path_readonly_hit(library_db: Path, tmp_path: Path) -> None:
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    folder_id = upsert_folder(folder, db_path=library_db)
+    upsert_sample(
+        folder_id,
+        WorkbenchRow(
+            display_name="kick",
+            relative_path="kick.wav",
+            path=str(audio.resolve()),
+            bpm=128.0,
+            key="Am",
+            key_conf=0.9,
+            loudness=-10.0,
+            brightness=1800.0,
+            sample_class="loop",
+            pred_type="Kick",
+            status="ok",
+        ),
+        size_bytes=(fp := _file_fingerprint(audio))[0],
+        mtime_ns=fp[1],
+        db_path=library_db,
+    )
+
+    cached = query_sample_by_path_readonly(audio, db_path=library_db)
+    assert cached is not None
+    assert cached.bpm == 128.0
+    assert cached.key == "Am"
+    assert cached.original_path == str(audio.resolve())
+
+
+def _library_dir_fingerprint(db_path: Path) -> dict[str, object]:
+    """Capture directory membership + content hashes for immutability asserts."""
+    parent = db_path.parent
+    names = sorted(p.name for p in parent.iterdir())
+    hashes: dict[str, str] = {}
+    for name in names:
+        path = parent / name
+        if path.is_file():
+            hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return {"names": names, "hashes": hashes}
+
+
+def test_query_sample_by_path_readonly_does_not_create_wal_sidecars(
+    tmp_path: Path,
+) -> None:
+    """Resume lookup must not create WAL/SHM sidecars on a clean WAL DB."""
+    seed_db = tmp_path / "seed" / "workbench_library.db"
+    seed_db.parent.mkdir()
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    init_workbench_library(seed_db)
+    folder_id = upsert_folder(folder, db_path=seed_db)
+    upsert_sample(
+        folder_id,
+        WorkbenchRow(
+            display_name="kick",
+            relative_path="kick.wav",
+            path=str(audio.resolve()),
+            bpm=128.0,
+            key="Am",
+            key_conf=0.9,
+            loudness=-10.0,
+            brightness=1800.0,
+            sample_class="loop",
+            pred_type="Kick",
+            status="ok",
+        ),
+        size_bytes=(fp := _file_fingerprint(audio))[0],
+        mtime_ns=fp[1],
+        db_path=seed_db,
+    )
+    with sqlite3.connect(seed_db) as conn:
+        assert conn.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal"
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+    # Fresh main-file copy: WAL journal_mode in header, no sidecars present.
+    library_db = tmp_path / "clean" / "workbench_library.db"
+    library_db.parent.mkdir()
+    shutil.copy2(seed_db, library_db)
+    wal_path = Path(f"{library_db}-wal")
+    shm_path = Path(f"{library_db}-shm")
+    assert not wal_path.exists()
+    assert not shm_path.exists()
+    before = _library_dir_fingerprint(library_db)
+
+    cached = query_sample_by_path_readonly(audio, db_path=library_db)
+
+    assert cached is not None
+    assert cached.bpm == 128.0
+    assert cached.key == "Am"
+    assert _library_dir_fingerprint(library_db) == before
+    assert not wal_path.exists()
+    assert not shm_path.exists()
+
+
+def _seed_readonly_lookup_library(tmp_path: Path) -> tuple[Path, Path]:
+    library_db = tmp_path / "library" / "workbench_library.db"
+    library_db.parent.mkdir()
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    init_workbench_library(library_db)
+    folder_id = upsert_folder(folder, db_path=library_db)
+    upsert_sample(
+        folder_id,
+        WorkbenchRow(
+            display_name="kick",
+            relative_path="kick.wav",
+            path=str(audio.resolve()),
+            bpm=128.0,
+            key="Am",
+            key_conf=0.9,
+            loudness=-10.0,
+            brightness=1800.0,
+            sample_class="loop",
+            pred_type="Kick",
+            status="ok",
+        ),
+        size_bytes=(fp := _file_fingerprint(audio))[0],
+        mtime_ns=fp[1],
+        db_path=library_db,
+    )
+    with sqlite3.connect(library_db) as conn:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+    return library_db, audio
+
+
+def test_readonly_snapshot_stays_outside_library_when_temp_is_library_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TMP pointing at the library dir must not place the snapshot inside it."""
+    library_db, audio = _seed_readonly_lookup_library(tmp_path)
+    library_dir = library_db.parent.resolve()
+    before = _library_dir_fingerprint(library_db)
+    for key in ("TMP", "TEMP", "TMPDIR", "LOCALAPPDATA", "SYSTEMROOT", "WINDIR"):
+        monkeypatch.setenv(key, str(library_dir))
+    gettempdir_calls = {"n": 0}
+
+    def _forbidden_gettempdir() -> str:
+        gettempdir_calls["n"] += 1
+        raise AssertionError("tempfile.gettempdir must not probe the library dir")
+
+    monkeypatch.setattr(
+        workbench_library.tempfile, "gettempdir", _forbidden_gettempdir
+    )
+    roots: list[Path] = []
+    real_temporary_directory = workbench_library.tempfile.TemporaryDirectory
+
+    def _track_temporary_directory(*args, **kwargs):
+        roots.append(Path(kwargs["dir"]))
+        return real_temporary_directory(*args, **kwargs)
+
+    monkeypatch.setattr(
+        workbench_library.tempfile,
+        "TemporaryDirectory",
+        _track_temporary_directory,
+    )
+
+    cached = query_sample_by_path_readonly(audio, db_path=library_db)
+
+    assert cached is not None
+    assert cached.bpm == 128.0
+    assert gettempdir_calls["n"] == 0
+    assert roots
+    for root in roots:
+        assert not workbench_library._path_is_inside(root, library_dir)
+    assert _library_dir_fingerprint(library_db) == before
+    assert not any(
+        path.name.startswith("sample-brain-wb-lib-ro-") for path in library_dir.iterdir()
+    )
+
+
+def test_external_temp_roots_never_calls_gettempdir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Candidate selection must not probe TMP via tempfile.gettempdir()."""
+    library_dir = (tmp_path / "lib").resolve()
+    library_dir.mkdir()
+    monkeypatch.setenv("TMP", str(library_dir))
+    monkeypatch.setenv("TEMP", str(library_dir))
+    monkeypatch.setenv("TMPDIR", str(library_dir))
+    monkeypatch.setattr(
+        workbench_library.tempfile,
+        "gettempdir",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("gettempdir must not be called")
+        ),
+    )
+    roots = workbench_library._external_temp_roots(library_dir)
+    assert all(not workbench_library._path_is_inside(root, library_dir) for root in roots)
+
+
+def test_readonly_snapshot_refuses_when_every_temp_root_is_inside_library(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No external temp root fails soft and does not create a snapshot inside."""
+    library_db, audio = _seed_readonly_lookup_library(tmp_path)
+    library_dir = library_db.parent.resolve()
+    before = _library_dir_fingerprint(library_db)
+    monkeypatch.setattr(
+        workbench_library,
+        "_external_temp_roots",
+        lambda source_dir: (source_dir,),
+    )
+    calls = {"n": 0}
+    real_temporary_directory = workbench_library.tempfile.TemporaryDirectory
+
+    def _count_temporary_directory(*args, **kwargs):
+        calls["n"] += 1
+        return real_temporary_directory(*args, **kwargs)
+
+    monkeypatch.setattr(
+        workbench_library.tempfile,
+        "TemporaryDirectory",
+        _count_temporary_directory,
+    )
+
+    assert query_sample_by_path_readonly(audio, db_path=library_db) is None
+    assert calls["n"] == 0
+    assert _library_dir_fingerprint(library_db) == before
+
+
+def test_capture_sqlite_main_and_wal_retries_across_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Main+WAL capture must not pair pre-checkpoint main with post-checkpoint WAL."""
+    live_db = tmp_path / "live" / "workbench_library.db"
+    live_db.parent.mkdir()
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    resolved_audio = str(audio.resolve())
+
+    init_workbench_library(live_db)
+    with sqlite3.connect(live_db) as conn:
+        assert conn.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal"
+        conn.execute("PRAGMA wal_autocheckpoint=0")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+
+    holder = sqlite3.connect(live_db)
+    holder.execute("PRAGMA wal_autocheckpoint=0")
+    try:
+        folder_id = upsert_folder(folder, db_path=live_db)
+        upsert_sample(
+            folder_id,
+            WorkbenchRow(
+                display_name="kick",
+                relative_path="kick.wav",
+                path=resolved_audio,
+                bpm=128.0,
+                key="Am",
+                key_conf=0.9,
+                loudness=-10.0,
+                brightness=1800.0,
+                sample_class="loop",
+                pred_type="Kick",
+                status="ok",
+            ),
+            size_bytes=(fp := _file_fingerprint(audio))[0],
+            mtime_ns=fp[1],
+            db_path=live_db,
+        )
+
+        copies = {"main": 0}
+        real_copy = workbench_library._stream_copy_and_signature
+
+        def _flaky_copy(src: Path, dst: Path) -> tuple[int, str]:
+            sig = real_copy(src, dst)
+            if src.resolve() == live_db.resolve():
+                copies["main"] += 1
+                if copies["main"] == 1:
+                    with sqlite3.connect(live_db) as conn:
+                        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                        conn.commit()
+            return sig
+
+        monkeypatch.setattr(
+            workbench_library, "_stream_copy_and_signature", _flaky_copy
+        )
+        snap_db = tmp_path / "snap" / "readonly_snapshot.db"
+        snap_db.parent.mkdir()
+        workbench_library._capture_sqlite_main_and_wal(live_db.resolve(), snap_db)
+    finally:
+        holder.close()
+
+    with sqlite3.connect(f"file:{snap_db.resolve().as_posix()}?mode=ro", uri=True) as conn:
+        assert (
+            conn.execute(
+                "SELECT bpm, key FROM samples WHERE original_path = ?",
+                (resolved_audio,),
+            ).fetchone()
+            == (128.0, "Am")
+        )
+
+
+def test_capture_retries_when_wal_disappears_during_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """WAL vanishing mid-copy must retry, not fail the whole resume lookup."""
+    live_db = tmp_path / "live" / "workbench_library.db"
+    live_db.parent.mkdir()
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    resolved_audio = str(audio.resolve())
+
+    init_workbench_library(live_db)
+    with sqlite3.connect(live_db) as conn:
+        assert conn.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal"
+        conn.execute("PRAGMA wal_autocheckpoint=0")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+
+    holder = sqlite3.connect(live_db)
+    holder.execute("PRAGMA wal_autocheckpoint=0")
+    try:
+        folder_id = upsert_folder(folder, db_path=live_db)
+        upsert_sample(
+            folder_id,
+            WorkbenchRow(
+                display_name="kick",
+                relative_path="kick.wav",
+                path=resolved_audio,
+                bpm=128.0,
+                key="Am",
+                key_conf=0.9,
+                loudness=-10.0,
+                brightness=1800.0,
+                sample_class="loop",
+                pred_type="Kick",
+                status="ok",
+            ),
+            size_bytes=(fp := _file_fingerprint(audio))[0],
+            mtime_ns=fp[1],
+            db_path=live_db,
+        )
+        wal_path = Path(f"{live_db}-wal")
+        assert wal_path.is_file() and wal_path.stat().st_size > 0
+
+        wal_copies = {"n": 0}
+        real_copy = workbench_library._stream_copy_and_signature
+
+        def _wal_vanish_copy(src: Path, dst: Path) -> tuple[int, str]:
+            if src.resolve() == wal_path.resolve():
+                wal_copies["n"] += 1
+                if wal_copies["n"] == 1:
+                    # Checkpoint moves committed frames into main, then simulate the
+                    # WAL vanishing mid-copy. Do not unlink under an open holder —
+                    # Windows keeps the WAL locked (WinError 32).
+                    with sqlite3.connect(live_db) as conn:
+                        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                        conn.commit()
+                    raise FileNotFoundError(str(src))
+            return real_copy(src, dst)
+
+        monkeypatch.setattr(
+            workbench_library, "_stream_copy_and_signature", _wal_vanish_copy
+        )
+        snap_db = tmp_path / "snap" / "readonly_snapshot.db"
+        snap_db.parent.mkdir()
+        workbench_library._capture_sqlite_main_and_wal(live_db.resolve(), snap_db)
+    finally:
+        holder.close()
+
+    assert wal_copies["n"] >= 1
+    with sqlite3.connect(snap_db) as conn:
+        assert (
+            conn.execute(
+                "SELECT bpm, key FROM samples WHERE original_path = ?",
+                (resolved_audio,),
+            ).fetchone()
+            == (128.0, "Am")
+        )
+
+
+def test_capture_retries_when_wal_disappears_during_signature_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """WAL vanishing between is_file() and the post-copy hash must retry."""
+    live_db = tmp_path / "live" / "workbench_library.db"
+    live_db.parent.mkdir()
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    resolved_audio = str(audio.resolve())
+
+    init_workbench_library(live_db)
+    with sqlite3.connect(live_db) as conn:
+        assert conn.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal"
+        conn.execute("PRAGMA wal_autocheckpoint=0")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+
+    holder = sqlite3.connect(live_db)
+    holder.execute("PRAGMA wal_autocheckpoint=0")
+    try:
+        folder_id = upsert_folder(folder, db_path=live_db)
+        upsert_sample(
+            folder_id,
+            WorkbenchRow(
+                display_name="kick",
+                relative_path="kick.wav",
+                path=resolved_audio,
+                bpm=128.0,
+                key="Am",
+                key_conf=0.9,
+                loudness=-10.0,
+                brightness=1800.0,
+                sample_class="loop",
+                pred_type="Kick",
+                status="ok",
+            ),
+            size_bytes=(fp := _file_fingerprint(audio))[0],
+            mtime_ns=fp[1],
+            db_path=live_db,
+        )
+        wal_path = Path(f"{live_db}-wal")
+        assert wal_path.is_file() and wal_path.stat().st_size > 0
+
+        wal_sigs = {"n": 0}
+        real_signature = workbench_library._stream_file_signature
+
+        def _wal_vanish_signature(path: Path) -> tuple[int, str]:
+            if path.resolve() == wal_path.resolve():
+                wal_sigs["n"] += 1
+                if wal_sigs["n"] == 1:
+                    raise FileNotFoundError(str(path))
+            return real_signature(path)
+
+        monkeypatch.setattr(
+            workbench_library, "_stream_file_signature", _wal_vanish_signature
+        )
+        snap_db = tmp_path / "snap" / "readonly_snapshot.db"
+        snap_db.parent.mkdir()
+        workbench_library._capture_sqlite_main_and_wal(live_db.resolve(), snap_db)
+    finally:
+        holder.close()
+
+    assert wal_sigs["n"] >= 1
+    with sqlite3.connect(snap_db) as conn:
+        assert (
+            conn.execute(
+                "SELECT bpm, key FROM samples WHERE original_path = ?",
+                (resolved_audio,),
+            ).fetchone()
+            == (128.0, "Am")
+        )
+
+
+def test_query_sample_by_path_readonly_includes_committed_wal_frames(
+    tmp_path: Path,
+) -> None:
+    """Committed catalog rows that still live in WAL must be visible on resume."""
+    live_db = tmp_path / "live" / "workbench_library.db"
+    live_db.parent.mkdir()
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    resolved_audio = str(audio.resolve())
+
+    init_workbench_library(live_db)
+    with sqlite3.connect(live_db) as conn:
+        assert conn.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal"
+        conn.execute("PRAGMA wal_autocheckpoint=0")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+
+    # Hold the live DB open while capturing an orphaned crash-style snapshot
+    # (main older than committed WAL frames), then close the live writer.
+    holder = sqlite3.connect(live_db)
+    holder.execute("PRAGMA wal_autocheckpoint=0")
+    try:
+        folder_id = upsert_folder(folder, db_path=live_db)
+        upsert_sample(
+            folder_id,
+            WorkbenchRow(
+                display_name="kick",
+                relative_path="kick.wav",
+                path=resolved_audio,
+                bpm=128.0,
+                key="Am",
+                key_conf=0.9,
+                loudness=-10.0,
+                brightness=1800.0,
+                sample_class="loop",
+                pred_type="Kick",
+                status="ok",
+            ),
+            size_bytes=(fp := _file_fingerprint(audio))[0],
+            mtime_ns=fp[1],
+            db_path=live_db,
+        )
+        assert Path(f"{live_db}-wal").is_file()
+        assert Path(f"{live_db}-wal").stat().st_size > 0
+
+        frozen_db = tmp_path / "frozen" / "workbench_library.db"
+        frozen_db.parent.mkdir()
+        workbench_library._capture_sqlite_main_and_wal(live_db.resolve(), frozen_db)
+    finally:
+        holder.close()
+
+    wal_path = Path(f"{frozen_db}-wal")
+    shm_path = Path(f"{frozen_db}-shm")
+    assert wal_path.is_file() and wal_path.stat().st_size > 0
+    assert not shm_path.exists()
+
+    # Control: immutable=1 ignores orphaned WAL frames; ordinary RO would see them.
+    with sqlite3.connect(
+        f"file:{frozen_db.resolve().as_posix()}?mode=ro&immutable=1",
+        uri=True,
+    ) as conn:
+        assert (
+            conn.execute(
+                "SELECT bpm, key FROM samples WHERE original_path = ?",
+                (resolved_audio,),
+            ).fetchone()
+            is None
+        )
+
+    before = _library_dir_fingerprint(frozen_db)
+    cached = query_sample_by_path_readonly(audio, db_path=frozen_db)
+    after = _library_dir_fingerprint(frozen_db)
+
+    assert cached is not None
+    assert cached.bpm == 128.0
+    assert cached.key == "Am"
+    assert after == before
+    assert wal_path.is_file()
+    assert not shm_path.exists()
 
 
 @pytest.mark.parametrize(

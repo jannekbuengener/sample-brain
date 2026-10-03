@@ -8,11 +8,13 @@ Cross-screen audio focus (#807) is owned here: entering Screen 2 / claiming
 Channel Rack playback releases Screen-1 audition; returning to Screen 1 leaves
 a quiet surface and never auto-resumes the previous audition.
 
-Musical session persistence (#809 / #818 / #819): load/validate a local snapshot
-under the Workbench state dir, apply MASTER/SYNC onto the shared transport
-before first projection, restore kit/rack, expose persistence honesty status,
-then wire autosave callbacks only after a successful all-or-nothing restore
-(or fresh empty session).
+Musical session persistence (#809 / #818 / #819 / #820): load/validate a local
+snapshot under the Workbench state dir, apply MASTER/SYNC onto the shared
+transport before first projection, restore kit/rack path refs, expose
+persistence honesty status, best-effort rehydrate Live Kit analysis fields
+from the local library when ``library_db_path`` is present, then wire autosave
+callbacks only after a successful all-or-nothing restore (or fresh empty
+session).
 """
 
 from __future__ import annotations
@@ -39,6 +41,7 @@ from .workbench_session_store import (
     apply_snapshot_to_live_kit,
     channel_rack_state_from_snapshot,
     load_workbench_session_outcome,
+    rehydrate_live_kit_from_library,
     save_workbench_session_snapshot,
     snapshot_from_musical_state,
 )
@@ -190,10 +193,10 @@ def compose_workbench_session(
 ) -> WorkbenchSession:
     """Compose one shared Live Kit + one TransportAwarePreview audition owner.
 
-    Restore order (#818 / #819):
+    Restore order (#818 / #819 / #820):
     load/validate (+ honesty status) → resolve MASTER/SYNC → construct/apply
-    transport clock → restore Live Kit → restore Channel Rack → presentation →
-    wire autosave.
+    transport clock → restore Live Kit path refs → optional library rehydrate →
+    first projection → restore Channel Rack → wire autosave.
     """
 
     load_outcome = load_workbench_session_outcome(state_dir=state_dir, env=env)
@@ -237,6 +240,8 @@ def compose_workbench_session(
 
     if snapshot is not None:
         apply_snapshot_to_live_kit(snapshot, live_kit)
+        # #820: enrich restored path refs from local library before projection.
+        rehydrate_live_kit_from_library(live_kit, library_db_path=library_db_path)
 
     presenter = LiveKitPresenter(state=live_kit)
 

@@ -1,14 +1,17 @@
 """Persistent workbench library cache (user-local SQLite, separate from catalog.db)."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import sqlite3
+import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
-from typing import Any, Literal, Mapping
+from typing import Any, Iterator, Literal, Mapping
 
 # v2: mode-aware key analysis (KEY_ANALYSIS_CONTRACT_VERSION) is part of the
 # persisted analysis contract. Cache rows written before this bump (root-only
@@ -101,6 +104,221 @@ def connect_workbench_library(path: Path | None = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
+
+
+def _stream_file_signature(path: Path) -> tuple[int, str]:
+    """Return (size, sha256) while streaming; avoids loading the whole file."""
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            digest.update(chunk)
+    return size, digest.hexdigest()
+
+
+def _stream_copy_and_signature(src: Path, dst: Path) -> tuple[int, str]:
+    """Copy ``src`` to ``dst`` while hashing; one sequential read of ``src``."""
+    digest = hashlib.sha256()
+    size = 0
+    with src.open("rb") as incoming, dst.open("wb") as outgoing:
+        while True:
+            chunk = incoming.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            digest.update(chunk)
+            outgoing.write(chunk)
+    return size, digest.hexdigest()
+
+
+def _capture_sqlite_main_and_wal(resolved: Path, snap_db: Path) -> None:
+    """Copy main DB + WAL/journal as one stable capture with bounded memory.
+
+    Stream-copy while hashing (one pass per source file), then verify the
+    source signatures once more. Sidecar disappearance during the copy or
+    during that signature check is an unstable attempt and is retried. No
+    whole-database bytearrays are retained.
+
+    Raises ``OSError`` if no stable capture is observed so callers can fail soft
+    instead of opening an unverified snapshot.
+    """
+    wal_src = Path(f"{resolved}-wal")
+    journal_src = Path(f"{resolved}-journal")
+    snap_wal = Path(f"{snap_db}-wal")
+    snap_journal = Path(f"{snap_db}-journal")
+    for _ in range(8):
+        try:
+            had_wal = wal_src.is_file()
+            had_journal = journal_src.is_file()
+            main_sig = _stream_copy_and_signature(resolved, snap_db)
+            if had_wal:
+                if not wal_src.is_file():
+                    continue
+                wal_sig = _stream_copy_and_signature(wal_src, snap_wal)
+            else:
+                wal_sig = None
+                if snap_wal.exists():
+                    snap_wal.unlink()
+            if had_journal:
+                if not journal_src.is_file():
+                    continue
+                journal_sig = _stream_copy_and_signature(journal_src, snap_journal)
+            else:
+                journal_sig = None
+                if snap_journal.exists():
+                    snap_journal.unlink()
+            if _stream_file_signature(resolved) != main_sig:
+                continue
+            if wal_sig is None:
+                if wal_src.is_file():
+                    continue
+            elif (not wal_src.is_file()) or _stream_file_signature(wal_src) != wal_sig:
+                continue
+            if journal_sig is None:
+                if journal_src.is_file():
+                    continue
+            elif (
+                (not journal_src.is_file())
+                or _stream_file_signature(journal_src) != journal_sig
+            ):
+                continue
+            return
+        except FileNotFoundError:
+            # Sidecar vanished during copy or signature check → retry.
+            continue
+    raise OSError("workbench library readonly snapshot did not stabilize")
+
+
+def _cached_sample_file_fingerprint_matches(cached: CachedWorkbenchRow) -> bool:
+    """Return True when the on-disk sample still matches the cached fingerprint."""
+    try:
+        stat = Path(cached.original_path).stat()
+    except OSError:
+        return False
+    mtime_ns = getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))
+    return int(stat.st_size) == int(cached.size_bytes) and int(mtime_ns) == int(
+        cached.mtime_ns
+    )
+
+
+def _path_is_inside(path: Path, root: Path) -> bool:
+    """True when ``path`` is ``root`` or a descendant, after resolving symlinks."""
+    try:
+        return path.resolve().is_relative_to(root.resolve())
+    except OSError:
+        return False
+
+
+def _external_temp_roots(source_dir: Path) -> tuple[Path, ...]:
+    """Candidate snapshot roots that are not the source library directory.
+
+    Do not call ``tempfile.gettempdir()``: on first use it probes TMP/TEMP/TMPDIR
+    by creating a file there, which would mutate the library directory when those
+    env vars point at it. Read env paths as plain Paths and prefer known external
+    roots first.
+    """
+    candidates: list[Path] = []
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        candidates.append(Path(local_app_data) / "Temp")
+    system_root = os.environ.get("SYSTEMROOT") or os.environ.get("WINDIR")
+    if system_root:
+        candidates.append(Path(system_root) / "Temp")
+    candidates.append(Path("/tmp"))
+    if source_dir.parent != source_dir:
+        candidates.append(source_dir.parent)
+    for key in ("TMPDIR", "TEMP", "TMP"):
+        value = os.environ.get(key)
+        if value:
+            candidates.append(Path(value))
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        key = os.path.normcase(str(resolved))
+        if key in seen or _path_is_inside(resolved, source_dir) or not resolved.is_dir():
+            continue
+        seen.add(key)
+        roots.append(resolved)
+    return tuple(roots)
+
+
+def _readonly_snapshot_directory(source_db: Path) -> tempfile.TemporaryDirectory[str]:
+    """Create a snapshot dir outside the source library directory.
+
+    ``TMP`` / ``TEMP`` / ``TMPDIR`` may point at that directory. A child created
+    there is still inside the library, so the root is chosen explicitly and any
+    path inside the source directory is never used.
+    """
+    source_dir = source_db.resolve().parent
+    last_error: OSError | None = None
+    for root in _external_temp_roots(source_dir):
+        if _path_is_inside(root, source_dir):
+            continue
+        try:
+            tmp = tempfile.TemporaryDirectory(
+                prefix="sample-brain-wb-lib-ro-",
+                dir=root,
+            )
+        except OSError as exc:
+            last_error = exc
+            continue
+        if _path_is_inside(Path(tmp.name), source_dir):
+            tmp.cleanup()
+            continue
+        return tmp
+    raise OSError(
+        "refusing readonly snapshot inside source library directory"
+    ) from last_error
+
+
+@contextmanager
+def _connect_workbench_library_readonly(db_path: Path) -> Iterator[sqlite3.Connection]:
+    """Open an existing library DB via a temp read-snapshot.
+
+    Resume/rehydrate must:
+    - leave the original library directory byte-/entry-unchanged (no ``-wal`` /
+      ``-shm`` create or modify in the source dir)
+    - still observe committed frames that currently live only in an existing
+      source ``-wal`` (``immutable=1`` on the original path would miss those)
+
+    Implementation: capture a stable main + WAL/journal byte set into a private
+    temp directory outside the source library directory; open that snapshot
+    (recovering hot journals there), then enable ``PRAGMA query_only=ON``.
+    SQLite may create read-side artifacts only under the temp dir. The source
+    ``-shm`` is intentionally not copied.
+    """
+    resolved = Path(db_path).resolve()
+    tmp = _readonly_snapshot_directory(resolved)
+    conn: sqlite3.Connection | None = None
+    try:
+        # Stable snapshot basename avoids colliding with other temp DBs that share
+        # the source file's leaf name in the same process.
+        snap_db = Path(tmp.name) / "readonly_snapshot.db"
+        if _path_is_inside(snap_db, resolved.parent):
+            raise OSError("refusing readonly snapshot inside source library directory")
+        _capture_sqlite_main_and_wal(resolved, snap_db)
+        # Open the private snapshot writable so hot DELETE journals (and WAL
+        # captures) can recover here. mode=ro cannot apply rollback recovery.
+        # After recovery, lock the connection down with query_only. Only the
+        # temp snapshot is mutated; the original library directory is untouched.
+        conn = sqlite3.connect(snap_db)
+        conn.row_factory = sqlite3.Row
+        conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
+        conn.execute("PRAGMA query_only = ON")
+        conn.execute("PRAGMA foreign_keys = ON")
+        yield conn
+    finally:
+        if conn is not None:
+            conn.close()
+        tmp.cleanup()
 
 
 def init_workbench_library(db_path: Path | None = None) -> None:
@@ -882,6 +1100,83 @@ def load_sample_by_path(
     return _cached_row_from_sqlite_row(row)
 
 
+def query_sample_by_path_on_readonly_connection(
+    conn: sqlite3.Connection,
+    original_path: Path | str,
+) -> CachedWorkbenchRow | None:
+    """Lookup one sample on an already-open readonly snapshot connection.
+
+    Rows whose ``analyzer_version`` does not match
+    ``WORKBENCH_ANALYZER_VERSION``, or whose cached size/mtime fingerprint no
+    longer matches the on-disk sample, are treated as catalog misses.
+    """
+    path = str(Path(original_path).expanduser().resolve())
+    row = conn.execute(
+        """
+        SELECT s.*, f.path AS library_folder_path
+        FROM samples s
+        JOIN folders f ON f.id = s.folder_id
+        WHERE s.original_path = ?
+        """,
+        (path,),
+    ).fetchone()
+    if row is None:
+        return None
+    cached = _cached_row_from_sqlite_row(row)
+    if cached.analyzer_version != WORKBENCH_ANALYZER_VERSION:
+        return None
+    if not _cached_sample_file_fingerprint_matches(cached):
+        return None
+    return cached
+
+
+@contextmanager
+def workbench_library_readonly_connection(
+    db_path: Path | None = None,
+) -> Iterator[sqlite3.Connection | None]:
+    """Yield one temp read-snapshot connection for batch resume lookups.
+
+    Yields ``None`` when the library file is missing or cannot be opened
+    read-only. Callers must treat that as a catalog miss for every path.
+    Query errors raised by the caller are not converted into ``None`` here.
+    """
+    resolved_db = Path(db_path) if db_path is not None else workbench_library_db_path()
+    if not resolved_db.is_file():
+        yield None
+        return
+    try:
+        connect_cm = _connect_workbench_library_readonly(resolved_db)
+        conn = connect_cm.__enter__()
+    except (OSError, sqlite3.Error):
+        yield None
+        return
+    try:
+        yield conn
+    finally:
+        connect_cm.__exit__(None, None, None)
+
+
+def query_sample_by_path_readonly(
+    original_path: Path | str,
+    *,
+    db_path: Path | None = None,
+) -> CachedWorkbenchRow | None:
+    """Query-only sample lookup for resume/rehydrate paths.
+
+    Never creates the DB file or parent directories, never runs schema DDL or
+    migrations, and never writes/commits. Missing or incompatible libraries
+    return ``None`` (catalog miss). Includes committed WAL frames via a temp
+    read-snapshot without mutating the original library directory.
+    """
+    try:
+        with workbench_library_readonly_connection(db_path) as conn:
+            if conn is None:
+                return None
+            return query_sample_by_path_on_readonly_connection(conn, original_path)
+    except (OSError, sqlite3.Error):
+        return None
+
+
 def load_folder_samples(
     folder_path: Path | str,
     *,
@@ -1169,6 +1464,9 @@ __all__ = [
     "load_folder_samples",
     "load_folder_subtree_samples",
     "load_sample_by_path",
+    "query_sample_by_path_readonly",
+    "query_sample_by_path_on_readonly_connection",
+    "workbench_library_readonly_connection",
     "load_sample_cue",
     "lookup_sample",
     "mark_folder_opened",
