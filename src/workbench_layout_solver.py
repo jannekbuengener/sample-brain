@@ -75,23 +75,42 @@ def normalize_ratios(ratios: Mapping[str, float]) -> dict[str, float]:
     return {panel_id: values[panel_id] / total for panel_id in PANEL_IDS}
 
 
+def presentation_collapse_combo_is_valid(
+    *,
+    browser_collapsed: bool,
+    harmonic_open: bool,
+    live_kit_collapsed: bool,
+) -> bool:
+    """Pure validation helper for #845 presentation combinations.
+
+    Not a state authority — adapter flags + Harmony close contract own state.
+    ``live_kit_collapsed`` is accepted for call-site symmetry; validity today
+    only forbids Matches OPEN while Browser is COLLAPSED.
+    """
+    del live_kit_collapsed  # reserved for call-site symmetry / future guards
+    return not (browser_collapsed and harmonic_open)
+
+
 def visible_panel_ids(
     *,
     harmony_open: bool,
     has_active_source: bool,
     live_kit_visible: bool = True,
     library_visible: bool = True,
+    browser_visible: bool = True,
 ) -> tuple[str, ...]:
     # Clean Start: calm canvas is not a weighted panel; elastic is inactive.
     if not has_active_source:
         return ()
-    # Only actually materialised panes participate (#742 / #725).
+    # Only actually materialised panes participate (#742 / #725 / #845).
     panels: list[str] = []
     if library_visible:
         panels.append("library")
-    panels.append("browser")
-    if harmony_open:
-        panels.append("harmony")
+    if browser_visible:
+        panels.append("browser")
+        # Matches ⊂ Browser — never participate without a visible Browser.
+        if harmony_open:
+            panels.append("harmony")
     if live_kit_visible:
         panels.append("livekit")
     return tuple(panels)
@@ -110,6 +129,7 @@ def solve_widths(
     has_active_source: bool,
     live_kit_visible: bool = True,
     library_visible: bool = True,
+    browser_visible: bool = True,
     handle_width: float = HANDLE_WIDTH_PX,
 ) -> LayoutSolution:
     stored = normalize_ratios(ratios)
@@ -118,6 +138,7 @@ def solve_widths(
         has_active_source=has_active_source,
         live_kit_visible=live_kit_visible,
         library_visible=library_visible,
+        browser_visible=browser_visible,
     )
     if available_width <= 0 or not math.isfinite(available_width):
         raise ValueError("available_width must be finite and > 0")
@@ -165,6 +186,7 @@ def apply_divider_drag(
     has_active_source: bool,
     live_kit_visible: bool = True,
     library_visible: bool = True,
+    browser_visible: bool = True,
     decay: float = DEFAULT_DECAY,
     handle_width: float = HANDLE_WIDTH_PX,
 ) -> dict[str, float]:
@@ -180,6 +202,7 @@ def apply_divider_drag(
             has_active_source=has_active_source,
             live_kit_visible=live_kit_visible,
             library_visible=library_visible,
+            browser_visible=browser_visible,
         )
     )
     if divider_after not in visible:
@@ -197,6 +220,7 @@ def apply_divider_drag(
         has_active_source=has_active_source,
         live_kit_visible=live_kit_visible,
         library_visible=library_visible,
+        browser_visible=browser_visible,
         handle_width=handle_width,
     )
     if solution.fallback is not None:
@@ -243,6 +267,7 @@ def apply_divider_drag(
         has_active_source=has_active_source,
         live_kit_visible=live_kit_visible,
         library_visible=library_visible,
+        browser_visible=browser_visible,
         handle_width=handle_width,
     ):
         return candidate
@@ -259,6 +284,7 @@ def apply_divider_drag(
         has_active_source=has_active_source,
         live_kit_visible=live_kit_visible,
         library_visible=library_visible,
+        browser_visible=browser_visible,
         handle_width=handle_width,
     ):
         return inverted
@@ -547,6 +573,7 @@ def _ratios_realize_widths(
     handle_width: float,
     live_kit_visible: bool = True,
     library_visible: bool = True,
+    browser_visible: bool = True,
     tolerance_px: float = 0.51,
 ) -> bool:
     solution = solve_widths(
@@ -556,6 +583,7 @@ def _ratios_realize_widths(
         has_active_source=has_active_source,
         live_kit_visible=live_kit_visible,
         library_visible=library_visible,
+        browser_visible=browser_visible,
         handle_width=handle_width,
     )
     if solution.fallback is not None:
@@ -579,6 +607,7 @@ __all__ = [
     "layout_preferences_path",
     "load_layout_preferences",
     "normalize_ratios",
+    "presentation_collapse_combo_is_valid",
     "save_layout_preferences",
     "set_harmony_open",
     "solve_widths",

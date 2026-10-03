@@ -800,6 +800,9 @@ class Screen1QmlInteractionAdapter:
         self.view_model = view_model
         self.harmony_controller = harmony_controller
         self.harmonic_match_open = view_model.panel_count == 4
+        # #845 session-transient presentation only — not domain / disclosure state.
+        self.browser_collapsed = False
+        self.live_kit_collapsed = False
         self._on_preview_requested = on_preview_requested
         self._preview_request_accepts_start_ms = _callback_accepts_start_ms(
             on_preview_requested
@@ -919,6 +922,9 @@ class Screen1QmlInteractionAdapter:
         self.stop_preview()
         if self.harmonic_match_open:
             self.harmonic_match_open = False
+        # #845 presentation flags are session-transient; never survive Clean Start.
+        self.browser_collapsed = False
+        self.live_kit_collapsed = False
         if self._runtime_composition is not None:
             self._runtime_composition.clear_no_scope()
         self.view_model.set_browser_state(
@@ -1415,12 +1421,43 @@ class Screen1QmlInteractionAdapter:
             self.harmony_controller.status = "Harmonic Match ist ausgeschaltet."
         self._harmonic_match_session_scope = None
 
+    def _close_harmonic_match_presentation(self) -> None:
+        """Non-destructive Matches close — preserves rows/anchor/matching context.
+
+        Shared by the existing Harmonic Match toggle and Browser presentation
+        collapse (#845) so both paths keep one close semantics.
+        """
+        if not self.harmonic_match_open:
+            return
+        self.harmonic_match_open = False
+        self.view_model.state_id = "screen1-default-3panel"
+        self.view_model.harmony_status = "Harmonic Match ist ausgeschaltet."
+
+    def toggle_browser_collapsed(self) -> bool:
+        """Toggle Browser presentation collapse without clearing domain state."""
+        if self.browser_collapsed:
+            self.browser_collapsed = False
+            return False
+        if self.harmonic_match_open:
+            # Reuse the existing Harmony close contract (no second close path).
+            self._close_harmonic_match_presentation()
+        self.browser_collapsed = True
+        return True
+
+    def toggle_live_kit_collapsed(self) -> bool:
+        """Toggle Live Kit presentation after materialization; never unmaterialize."""
+        if not bool(self.view_model.live_kit_materialized):
+            return False
+        self.live_kit_collapsed = not self.live_kit_collapsed
+        return bool(self.live_kit_collapsed)
+
     def toggle_harmonic_match(self) -> bool:
         """Open/close the existing harmony controller without mutating other state."""
         if self.harmonic_match_open:
-            self.harmonic_match_open = False
-            self.view_model.state_id = "screen1-default-3panel"
-            self.view_model.harmony_status = "Harmonic Match ist ausgeschaltet."
+            self._close_harmonic_match_presentation()
+            return False
+        # Matches ⊂ Browser — fail closed while Browser presentation is collapsed.
+        if self.browser_collapsed:
             return False
         if not self.view_model.browser_rows:
             self.view_model.harmony_rows = ()
@@ -1514,6 +1551,10 @@ ApplicationWindow {
     width: 1600; height: 900
     minimumWidth: 1120; minimumHeight: 640
     color: theme.surfaceRoot
+    // Single QML call site for Harmonic Match toggle (#845 handles reuse this).
+    function activateHarmonicMatchToggle() {
+        window.interaction.toggleHarmonicMatch()
+    }
     title: "Sample Brain"
     property var screenData: screenModel
     property var interaction: interactionModel
@@ -1880,7 +1921,7 @@ ApplicationWindow {
                     rightPadding: 16
                     leftPadding: 16
                 }
-                onClicked: window.interaction.toggleHarmonicMatch()
+                onClicked: window.activateHarmonicMatchToggle()
             }
         }
 
@@ -2969,7 +3010,56 @@ ApplicationWindow {
                 }
             }
         }
-        Rectangle { id: browserPane; objectName: "browserPane"; visible: window.interaction.hasActiveSource; width: visible ? layoutModel.browserWidth : 0; height: parent.height; color: theme.surfaceBrowser; border.color: theme.borderSubtle
+        Rectangle { id: browserPane; objectName: "browserPane"; visible: window.interaction.hasActiveSource && !window.interaction.browserCollapsed; width: visible ? layoutModel.browserWidth : 0; height: parent.height; color: theme.surfaceBrowser; border.color: theme.borderSubtle
+            // #845 OPEN collapse handle — left mid-edge of Browser so it does not
+            // share the right residual with harmonyCollapseAffordance.
+            Item {
+                id: browserCollapseHandle
+                objectName: "browserCollapseHandle"
+                z: 30
+                width: 14
+                height: 56
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                visible: browserPane.visible
+                activeFocusOnTab: visible
+                Accessible.name: "Collapse Browser"
+                property bool hovered: false
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 3
+                    color: browserCollapseHandle.hovered ? theme.surfaceElevated : "transparent"
+                    opacity: browserCollapseHandle.hovered ? 0.92 : 0.45
+                    border.width: browserCollapseHandle.activeFocus ? 1 : 0
+                    border.color: theme.selectionBorder
+                }
+                Text {
+                    anchors.centerIn: parent
+                    text: "‹"
+                    color: theme.textSecondary
+                    opacity: browserCollapseHandle.hovered || browserCollapseHandle.activeFocus ? 1.0 : 0.55
+                    font.pixelSize: 14
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onEntered: browserCollapseHandle.hovered = true
+                    onExited: browserCollapseHandle.hovered = false
+                    onClicked: {
+                        browserCollapseHandle.forceActiveFocus()
+                        window.interaction.toggleBrowserCollapsed()
+                    }
+                }
+                Keys.onReturnPressed: window.interaction.toggleBrowserCollapsed()
+                Keys.onEnterPressed: window.interaction.toggleBrowserCollapsed()
+                Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Space) {
+                        window.interaction.toggleBrowserCollapsed()
+                        event.accepted = true
+                    }
+                }
+            }
             // #692 owner-visual repair: preserve required scan columns when the
             // workspace is narrow. Type is optional; sample identity is not.
             property bool browserNarrowColumns: width < 700
@@ -3330,7 +3420,9 @@ ApplicationWindow {
             id: handleAfterBrowser
             objectName: "elasticHandleAfterBrowser"
             visible: window.interaction.hasActiveSource
-                     && (window.interaction.harmonicMatchOpen || window.interaction.liveKitRevealed)
+                     && !window.interaction.browserCollapsed
+                     && (window.interaction.harmonicMatchOpen
+                         || (window.interaction.liveKitRevealed && !window.interaction.liveKitCollapsed))
             width: visible ? layoutModel.handleWidth : 0
             height: parent.height
             Rectangle {
@@ -3371,6 +3463,54 @@ ApplicationWindow {
             height: parent.height
             color: theme.surfacePanel
             border.color: theme.borderSubtle
+            // #845 OPEN collapse handle — pane-local; only when Matches are open.
+            Item {
+                id: harmonyCollapseHandle
+                objectName: "harmonyCollapseHandle"
+                z: 30
+                width: 14
+                height: 56
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                visible: window.interaction.harmonicMatchOpen && !window.interaction.browserCollapsed
+                activeFocusOnTab: visible
+                Accessible.name: "Collapse Harmonic Matches"
+                property bool hovered: false
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 3
+                    color: harmonyCollapseHandle.hovered ? theme.surfaceElevated : "transparent"
+                    opacity: harmonyCollapseHandle.hovered ? 0.92 : 0.45
+                    border.width: harmonyCollapseHandle.activeFocus ? 1 : 0
+                    border.color: theme.selectionBorder
+                }
+                Text {
+                    anchors.centerIn: parent
+                    text: "‹"
+                    color: theme.textSecondary
+                    opacity: harmonyCollapseHandle.hovered || harmonyCollapseHandle.activeFocus ? 1.0 : 0.55
+                    font.pixelSize: 14
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onEntered: harmonyCollapseHandle.hovered = true
+                    onExited: harmonyCollapseHandle.hovered = false
+                    onClicked: {
+                        harmonyCollapseHandle.forceActiveFocus()
+                        window.activateHarmonicMatchToggle()
+                    }
+                }
+                Keys.onReturnPressed: window.activateHarmonicMatchToggle()
+                Keys.onEnterPressed: window.activateHarmonicMatchToggle()
+                Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Space) {
+                        window.activateHarmonicMatchToggle()
+                        event.accepted = true
+                    }
+                }
+            }
             property bool harmonyOpen: window.interaction.harmonicMatchOpen
             onHarmonyOpenChanged: {
                 layoutModel.syncFromInteraction()
@@ -3514,6 +3654,7 @@ ApplicationWindow {
             visible: window.interaction.hasActiveSource
                      && window.interaction.harmonicMatchOpen
                      && window.interaction.liveKitRevealed
+                     && !window.interaction.liveKitCollapsed
             width: visible ? layoutModel.handleWidth : 0
             height: parent.height
             Rectangle {
@@ -3542,7 +3683,55 @@ ApplicationWindow {
                 onReleased: layoutModel.endDrag()
             }
         }
-        Rectangle { id: liveKitPane; objectName: "liveKitPane"; visible: window.interaction.hasActiveSource && window.interaction.liveKitRevealed; width: visible ? layoutModel.liveKitWidth : 0; height: parent.height; color: theme.surfacePanel; border.color: theme.borderSubtle
+        Rectangle { id: liveKitPane; objectName: "liveKitPane"; visible: window.interaction.hasActiveSource && window.interaction.liveKitRevealed && !window.interaction.liveKitCollapsed; width: visible ? layoutModel.liveKitWidth : 0; height: parent.height; color: theme.surfacePanel; border.color: theme.borderSubtle
+            // #845 OPEN collapse handle — pane-local mid-edge; click/activate only.
+            Item {
+                id: liveKitCollapseHandle
+                objectName: "liveKitCollapseHandle"
+                z: 30
+                width: 14
+                height: 56
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                visible: liveKitPane.visible
+                activeFocusOnTab: visible
+                Accessible.name: "Collapse Live Kit"
+                property bool hovered: false
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 3
+                    color: liveKitCollapseHandle.hovered ? theme.surfaceElevated : "transparent"
+                    opacity: liveKitCollapseHandle.hovered ? 0.92 : 0.45
+                    border.width: liveKitCollapseHandle.activeFocus ? 1 : 0
+                    border.color: theme.selectionBorder
+                }
+                Text {
+                    anchors.centerIn: parent
+                    text: "›"
+                    color: theme.textSecondary
+                    opacity: liveKitCollapseHandle.hovered || liveKitCollapseHandle.activeFocus ? 1.0 : 0.55
+                    font.pixelSize: 14
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onEntered: liveKitCollapseHandle.hovered = true
+                    onExited: liveKitCollapseHandle.hovered = false
+                    onClicked: {
+                        liveKitCollapseHandle.forceActiveFocus()
+                        window.interaction.toggleLiveKitCollapsed()
+                    }
+                }
+                Keys.onReturnPressed: window.interaction.toggleLiveKitCollapsed()
+                Keys.onEnterPressed: window.interaction.toggleLiveKitCollapsed()
+                Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Space) {
+                        window.interaction.toggleLiveKitCollapsed()
+                        event.accepted = true
+                    }
+                }
+            }
             ColumnLayout { anchors.fill: parent; anchors.margins: 14; spacing: 8
                 RowLayout { Layout.fillWidth: true
                     Label { text: "LIVE KIT"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
@@ -3924,6 +4113,169 @@ ApplicationWindow {
             onClicked: window.interaction.revealLibrary()
         }
     }
+
+    // #845 COLLAPSED reopen affordances — overlay siblings, not zero-width pane children.
+    Item {
+        id: browserCollapseAffordance
+        objectName: "browserCollapseAffordance"
+        z: 21
+        width: 18
+        height: 72
+        visible: window.activeScreen === "screen1"
+                 && window.interaction.hasActiveSource
+                 && window.interaction.browserCollapsed
+        // Overlay the Library trailing edge. When Browser+Live Kit are both
+        // collapsed the solver gives Library the full width — an after-width
+        // x would leave the reopen control off-screen.
+        x: workspaceRow.x + Math.max(0, layoutModel.libraryWidth - width - 2)
+        y: workspaceRow.y + Math.max(0, (workspaceRow.height - height) / 2)
+           - (window.interaction.liveKitCollapsed ? 44 : 0)
+        activeFocusOnTab: visible
+        Accessible.name: "Expand Browser"
+        property bool hovered: false
+        Rectangle {
+            anchors.fill: parent
+            radius: 3
+            // Collapsed reopen must stay discoverable without hover (#845).
+            color: theme.surfaceElevated
+            opacity: browserCollapseAffordance.hovered || browserCollapseAffordance.activeFocus ? 0.95 : 0.72
+            border.width: browserCollapseAffordance.activeFocus ? 1 : 0
+            border.color: theme.selectionBorder
+        }
+        Text {
+            anchors.centerIn: parent
+            text: "›"
+            color: theme.textSecondary
+            opacity: browserCollapseAffordance.hovered || browserCollapseAffordance.activeFocus ? 1.0 : 0.85
+            font.pixelSize: 16
+        }
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onEntered: browserCollapseAffordance.hovered = true
+            onExited: browserCollapseAffordance.hovered = false
+            onClicked: {
+                browserCollapseAffordance.forceActiveFocus()
+                window.interaction.toggleBrowserCollapsed()
+            }
+        }
+        Keys.onReturnPressed: window.interaction.toggleBrowserCollapsed()
+        Keys.onEnterPressed: window.interaction.toggleBrowserCollapsed()
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Space) {
+                window.interaction.toggleBrowserCollapsed()
+                event.accepted = true
+            }
+        }
+    }
+
+    Item {
+        id: harmonyCollapseAffordance
+        objectName: "harmonyCollapseAffordance"
+        z: 21
+        width: 18
+        height: 72
+        // Only while Browser is OPEN — never create Browser COLLAPSED + Matches OPEN.
+        visible: window.activeScreen === "screen1"
+                 && window.interaction.hasActiveSource
+                 && !window.interaction.browserCollapsed
+                 && !window.interaction.harmonicMatchOpen
+        x: workspaceRow.x + layoutModel.libraryWidth
+           + ((window.interaction.libraryRevealed && layoutModel.libraryWidth > 0)
+              ? layoutModel.handleWidth : 0)
+           + layoutModel.browserWidth - width
+        y: workspaceRow.y + Math.max(0, (workspaceRow.height - height) / 2)
+        activeFocusOnTab: visible
+        Accessible.name: "Expand Harmonic Matches"
+        property bool hovered: false
+        Rectangle {
+            anchors.fill: parent
+            radius: 3
+            color: theme.surfaceElevated
+            opacity: harmonyCollapseAffordance.hovered || harmonyCollapseAffordance.activeFocus ? 0.95 : 0.72
+            border.width: harmonyCollapseAffordance.activeFocus ? 1 : 0
+            border.color: theme.selectionBorder
+        }
+        Text {
+            anchors.centerIn: parent
+            text: "›"
+            color: theme.textSecondary
+            opacity: harmonyCollapseAffordance.hovered || harmonyCollapseAffordance.activeFocus ? 1.0 : 0.85
+            font.pixelSize: 16
+        }
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onEntered: harmonyCollapseAffordance.hovered = true
+            onExited: harmonyCollapseAffordance.hovered = false
+            onClicked: {
+                harmonyCollapseAffordance.forceActiveFocus()
+                window.activateHarmonicMatchToggle()
+            }
+        }
+        Keys.onReturnPressed: window.activateHarmonicMatchToggle()
+        Keys.onEnterPressed: window.activateHarmonicMatchToggle()
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Space) {
+                window.activateHarmonicMatchToggle()
+                event.accepted = true
+            }
+        }
+    }
+
+    Item {
+        id: liveKitCollapseAffordance
+        objectName: "liveKitCollapseAffordance"
+        z: 21
+        width: 18
+        height: 72
+        visible: window.activeScreen === "screen1"
+                 && window.interaction.hasActiveSource
+                 && window.interaction.liveKitRevealed
+                 && window.interaction.liveKitCollapsed
+        x: workspaceRow.x + workspaceRow.width - width
+        y: workspaceRow.y + Math.max(0, (workspaceRow.height - height) / 2)
+           + (window.interaction.browserCollapsed ? 44 : 0)
+        activeFocusOnTab: visible
+        Accessible.name: "Expand Live Kit"
+        property bool hovered: false
+        Rectangle {
+            anchors.fill: parent
+            radius: 3
+            color: theme.surfaceElevated
+            opacity: liveKitCollapseAffordance.hovered || liveKitCollapseAffordance.activeFocus ? 0.95 : 0.72
+            border.width: liveKitCollapseAffordance.activeFocus ? 1 : 0
+            border.color: theme.selectionBorder
+        }
+        Text {
+            anchors.centerIn: parent
+            text: "‹"
+            color: theme.textSecondary
+            opacity: liveKitCollapseAffordance.hovered || liveKitCollapseAffordance.activeFocus ? 1.0 : 0.85
+            font.pixelSize: 16
+        }
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onEntered: liveKitCollapseAffordance.hovered = true
+            onExited: liveKitCollapseAffordance.hovered = false
+            onClicked: {
+                liveKitCollapseAffordance.forceActiveFocus()
+                window.interaction.toggleLiveKitCollapsed()
+            }
+        }
+        Keys.onReturnPressed: window.interaction.toggleLiveKitCollapsed()
+        Keys.onEnterPressed: window.interaction.toggleLiveKitCollapsed()
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Space) {
+                window.interaction.toggleLiveKitCollapsed()
+                event.accepted = true
+            }
+        }
+    }
 }
 '''
 
@@ -3974,6 +4326,14 @@ def _qml_interaction_bridge(
         @Property(bool, notify=state_changed)
         def harmonicMatchOpen(self) -> bool:
             return adapter.harmonic_match_open
+
+        @Property(bool, notify=state_changed)
+        def browserCollapsed(self) -> bool:
+            return bool(adapter.browser_collapsed)
+
+        @Property(bool, notify=state_changed)
+        def liveKitCollapsed(self) -> bool:
+            return bool(adapter.live_kit_collapsed)
 
         @Property(bool, notify=state_changed)
         def hasActiveSource(self) -> bool:
@@ -4234,6 +4594,16 @@ def _qml_interaction_bridge(
         @Slot()
         def toggleHarmonicMatch(self) -> None:
             adapter.toggle_harmonic_match()
+            self._refresh()
+
+        @Slot()
+        def toggleBrowserCollapsed(self) -> None:
+            adapter.toggle_browser_collapsed()
+            self._refresh()
+
+        @Slot()
+        def toggleLiveKitCollapsed(self) -> None:
+            adapter.toggle_live_kit_collapsed()
             self._refresh()
 
         @Slot()
@@ -5237,6 +5607,9 @@ def _qml_engine(
                 )
             )
         adapter.harmonic_match_open = False
+        # #845 presentation flags must not sticky-survive analysis fail-closed.
+        adapter.browser_collapsed = False
+        adapter.live_kit_collapsed = False
         adapter.stop_preview()
 
     def dispatch_library_selection() -> None:
@@ -5594,7 +5967,12 @@ def _qml_engine(
         harmony_open=lambda: bool(adapter.harmonic_match_open),
         has_active_source=lambda: bool(adapter.view_model.has_active_source),
         library_revealed=lambda: bool(adapter.view_model.library_revealed),
-        live_kit_visible=lambda: bool(adapter.view_model.live_kit_materialized),
+        # #845: presentation collapse is orthogonal to progressive disclosure.
+        live_kit_visible=lambda: (
+            bool(adapter.view_model.live_kit_materialized)
+            and not bool(adapter.live_kit_collapsed)
+        ),
+        browser_visible=lambda: not bool(adapter.browser_collapsed),
     )
 
     def on_interaction_state_changed() -> None:
