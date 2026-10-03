@@ -345,11 +345,10 @@ def create_qt_library_tree_model(state: WorkbenchLibraryTreeState, parent=None):
             if item is None:
                 return bool(self._items.get(None))
             node_id = self._node_id(item)
-            return (
-                bool(self._items.get(node_id))
-                or bool(self.state.visible_children(node_id))
-                or self.state.can_fetch_more(node_id)
-            )
+            # Only advertise children that are already indexed or still fetchable.
+            # Prefetched-but-unsynced state must go through hydrate/ensureChildren
+            # before hasChildren becomes true (#836 Codex follow-up).
+            return bool(self._items.get(node_id)) or self.state.can_fetch_more(node_id)
 
         def canFetchMore(self, parent=QModelIndex()):
             item = self._item(parent)
@@ -435,6 +434,38 @@ def create_qt_library_tree_model(state: WorkbenchLibraryTreeState, parent=None):
         @Slot(str, result=bool)
         def retryNode(self, node_id: str) -> bool:
             return self.replaceBranch(node_id)
+
+        @Slot(str, result=bool)
+        def ensureChildren(self, node_id: str) -> bool:
+            """Fetch one branch and insert any new rows into the Qt index.
+
+            Use this instead of ``state.fetch_children`` after model construction
+            so TreeView never sees a loaded-but-empty expandable branch (#836).
+            """
+            item = next(
+                (
+                    child
+                    for children in self._items.values()
+                    for child in children
+                    if child.get("node_id") == node_id
+                ),
+                None,
+            )
+            if item is None:
+                return False
+            parent_index = self._parent_index(node_id)
+            before = len(self._items.get(node_id, []))
+            self.state.fetch_children(node_id)
+            after = len(self.state.visible_children(node_id))
+            if after > before:
+                self.beginInsertRows(parent_index, before, after - 1)
+                self._sync_children(node_id)
+                self.endInsertRows()
+            else:
+                self._items.setdefault(node_id, [])
+                self._sync_children(node_id)
+            self.dataChanged.emit(parent_index, parent_index, [])
+            return True
 
         @Slot(str, result=bool)
         def replaceBranch(self, node_id: str) -> bool:

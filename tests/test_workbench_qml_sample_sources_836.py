@@ -215,6 +215,41 @@ def test_source_switch_clears_stale_browser_rows_and_selection(tmp_path: Path) -
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_ensure_children_syncs_post_construction_state_fetch(tmp_path: Path) -> None:
+    """Analysis completion must not leave expandable-but-empty Qt branches."""
+    from PySide6.QtCore import QCoreApplication
+
+    from src.workbench_qml_library import create_qt_library_tree_model
+
+    app = QCoreApplication.instance() or QCoreApplication([])
+    del app
+
+    db = _isolated_db(tmp_path)
+    source = _source_tree(tmp_path, "source_a")
+    register_library_folder(source, db_path=db)
+
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    tree = WorkbenchLibraryTreeState(navigation)
+    model = create_qt_library_tree_model(tree)
+    sample_index = model.index(0, 0)
+    model.fetchMore(sample_index)
+    root_index = model.index(0, 0, sample_index)
+    assert model.rowCount(root_index) == 0
+
+    # Simulate the old post-construction state-only prefetch gap.
+    tree.fetch_children("root:1")
+    assert [node.label for node in tree.visible_children("root:1")] == ["Child"]
+    assert model.rowCount(root_index) == 0
+    assert model.hasChildren(root_index) is False
+    assert model.canFetchMore(root_index) is False
+
+    assert model.ensureChildren("root:1") is True
+    assert model.rowCount(root_index) == 1
+    assert model.hasChildren(root_index) is True
+    assert model.data(model.index(0, 0, root_index), model.DisplayRole) == "Child"
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 def test_empty_offline_and_error_source_states_are_honest(tmp_path: Path) -> None:
     from PySide6.QtCore import QCoreApplication
 
