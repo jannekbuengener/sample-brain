@@ -54,11 +54,11 @@ Any KPI with `classification: UNKNOWN` in the contract, and any snapshot field w
 
 ### 9. What is parked?
 Registry `routing.special_routes.parked_tracks`:
-- Screen 2 #675/#678
 - Screen 3 #679
 - #680
 - VST3 #469
 - Bitwig #620
+- Panel reordering research #697
 
 Reactivation requires **explicit Owner GO**.
 

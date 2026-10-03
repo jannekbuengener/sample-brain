@@ -21,7 +21,7 @@ They are optimized for SampleBrain's current workflow:
 - small Python CLI/core/project maintenance and bounded PySide6 / Qt Quick / QML Screen-1 implementation
 - docs-first bootstrap and backlog hygiene
 - GitHub Actions checks: Python smoke, CodeQL, dependency-review, gitleaks, Cursor Bugbot
-- SkillForge routing via `docs/SKILL_INTEGRATION_PLAN.md` and `.cursor/rules/skill-routing.mdc`
+- Capability routing via machine authority `docs/operations/CAPABILITY_REGISTRY.json` (ops front door: `docs/operations/README.md`); generated view `.cursor/rules/skill-routing.mdc`; human narrative `docs/SKILL_INTEGRATION_PLAN.md` (not authority)
 - PR-based local-to-remote workflow
 
 ## Recommended usage
