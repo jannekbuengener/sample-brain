@@ -1,9 +1,10 @@
 # Screen-1 Elastic Coupled Layout (#694)
 
-Parent: [#691](https://github.com/jannekbuengener/sample-brain/issues/691).  
-Depends on: [#692](https://github.com/jannekbuengener/sample-brain/issues/692) density / minimum geometry (DONE).  
-Shared states: [#700](https://github.com/jannekbuengener/sample-brain/issues/700) / [`WORKBENCH_VISUAL_ACCEPTANCE.md`](WORKBENCH_VISUAL_ACCEPTANCE.md).  
+Parent: [#691](https://github.com/jannekbuengener/sample-brain/issues/691).
+Depends on: [#692](https://github.com/jannekbuengener/sample-brain/issues/692) density / minimum geometry (DONE).
+Shared states: [#700](https://github.com/jannekbuengener/sample-brain/issues/700) / [`WORKBENCH_VISUAL_ACCEPTANCE.md`](WORKBENCH_VISUAL_ACCEPTANCE.md).
 Clean Start visibility: [#693](https://github.com/jannekbuengener/sample-brain/issues/693) / [`WORKBENCH_CLEAN_START.md`](WORKBENCH_CLEAN_START.md).
+Presentation collapse / mid-edge handles: [#845](https://github.com/jannekbuengener/sample-brain/issues/845) (parent [#844](https://github.com/jannekbuengener/sample-brain/issues/844)).
 
 ## Authority
 
@@ -11,8 +12,14 @@ On Startup / Density / Panel geometry / Persistence conflicts:
 
 `scoped #691 child (#694) > #691 > #700 > historical #503/#564 fixed-width geometry`
 
+On Active-Source **presentation collapse** / mid-edge reopen handles:
+
+`scoped #845 > this elastic layout visibility contract > #694 drag geometry`
+
 #564 remains authoritative for Harmonic Match toggle / anchor / focus / finder.
 #694 supersedes #564 **only** for fixed pixel restore-width geometry.
+#845 owns OPEN/COLLAPSED presentation for Browser, Harmonic Matches, and Live Kit
+pane visibility; it does **not** redesign elastic drag or column resize.
 
 ## Product goal
 
@@ -149,6 +156,96 @@ territory ([`WORKBENCH_DISPLAY_PREFERENCES.md`](WORKBENCH_DISPLAY_PREFERENCES.md
 - QML must not become a second layout authority.
 - No domain / audio work on the drag path.
 
+## Presentation collapse (#845)
+
+Active-Source pane collapse is **presentation state only**. It feeds the same
+solver visibility inputs as other disclosure flags; it does not reset domain
+data and does not add a second layout authority.
+
+### Ownership
+
+| Pane | Ownership | Collapse semantics |
+|------|-----------|--------------------|
+| Browser | Main Active-Source surface | OPEN / COLLAPSED |
+| Harmonic Matches | Extension of the Browser area (`Matches ⊂ Browser`) | OPEN / COLLAPSED |
+| Live Kit | Independent right pane | OPEN / COLLAPSED once materialized |
+
+Library / Clean Start reveal (`#725`) remains a separate No-Source contract.
+
+### Presentation flags (session-transient)
+
+- `browser_collapsed` — Browser presentation; does not clear selection / rows
+- `harmonic_match_open` — existing Matches open flag (OPEN when true)
+- `live_kit_collapsed` — Live Kit presentation **after** materialization
+- `live_kit_materialized` — progressive disclosure (#742); **must not** flip
+  false solely because the pane was collapsed
+
+Solver visibility (Active Source):
+
+- `browser_visible = not browser_collapsed`
+- `harmony_open` only when Matches are OPEN **and** Browser is OPEN
+- `live_kit_visible = live_kit_materialized and not live_kit_collapsed`
+
+Collapse is never persisted by #845. Existing ratio persistence stays ratios-only.
+Display-preference `panel_visibility` (#696) is an adjacent seam and is **not**
+extended by this slice.
+
+### State preservation
+
+| Surface | On collapse / reopen |
+|---------|----------------------|
+| Browser | Selection preserved; scroll/view only as existing contracts already keep |
+| Harmonic Matches | Reference + results preserved; no rematch solely due to collapse |
+| Live Kit | Slots / content preserved; materialization flag unchanged |
+
+### Fachlich gültige Kombinationen
+
+Not every boolean tuple is valid. Ownership forbids Matches OPEN while Browser
+is COLLAPSED.
+
+| Browser | Matches | Live Kit (materialized) | Valid? |
+|---------|---------|-------------------------|--------|
+| OPEN | OPEN | OPEN | yes |
+| OPEN | COLLAPSED | OPEN | yes |
+| OPEN | OPEN | COLLAPSED | yes |
+| OPEN | COLLAPSED | COLLAPSED | yes |
+| COLLAPSED | COLLAPSED | OPEN | yes |
+| COLLAPSED | COLLAPSED | COLLAPSED | yes |
+| COLLAPSED | OPEN | * | **invalid** — force Matches COLLAPSED |
+
+Rules:
+
+- Collapsing Browser **must** force Matches presentation COLLAPSED.
+- Reopening Browser does **not** auto-reopen Matches; Matches reopen only via
+  their own handle / existing toggle.
+- Live Kit may OPEN/COLLAPSE independently of Browser once materialized.
+- Unmaterialized Live Kit has no collapse UX (no pane → no residual handle).
+- Every valid COLLAPSED pane keeps a reachable reopen path (visible residual
+  mid-edge handle + keyboard focus/activation). Hover may emphasize the handle
+  but must not be the only operable path.
+
+### Mid-edge handles vs resize intents
+
+Collapse handles are **click/activate** controls centered on the relevant pane
+edge (`PointingHandCursor`). Elastic panel dividers (`elasticHandleAfter*`) and
+Browser column resize (#780) remain **drag** controls (`SizeHorCursor`).
+
+- Distinct `objectName`s and hit areas; no shared MouseArea that both drags and
+  collapses.
+- #845 does not redesign divider/column-resize chrome.
+- [#846](https://github.com/jannekbuengener/sample-brain/issues/846) owns calming
+  permanent column dividers / ephemeral resize styling afterward.
+- [#843](https://github.com/jannekbuengener/sample-brain/issues/843) owns Matches
+  open-from-context-menu embedding; close/reopen via panel handles stays #845.
+
+### Non-goals (#845)
+
+- New docking / reordering / free-canvas architecture
+- New persistence architecture for collapse flags
+- Matching algorithm / Browser column data projection changes
+- Audio, BPM/Key, Step Sequencer, Arrangement
+- Implementing #846 or #843 in the same slice
+
 ## Non-scope
 
 - Panel reordering / docking / free canvas
@@ -157,21 +254,29 @@ territory ([`WORKBENCH_DISPLAY_PREFERENCES.md`](WORKBENCH_DISPLAY_PREFERENCES.md
 - Audio / matching / catalog domain changes
 - #725 collapsed First View / reveal affordance (No-Source presentation only;
   does not invent a second ratio model)
+- #846 divider / resize visual calming (follow-up)
+- #843 Harmonic Matches context-menu embedding (separate)
 
 ## Validation contracts (minimum)
 
-1. Ratios finite, positive, normalisable  
-2. Sum(visible widths) + handles = available content width  
-3. Direct neighbour reacts stronger than farther same-side panel  
-4. Min saturation redistributes residual delta  
-5. ≥1000 deterministic drag steps: no relevant ratio drift  
-6. Window resize preserves ratios  
-7. 3↔4 panel toggle stable  
-8. Harmony open/close without drift  
-9. Drag-end persist + restart restore (ratios only)  
-10. Corrupt / NaN / Inf / unknown IDs fail closed  
-11. Browser keyboard / Search focus / Esc remain intact  
+1. Ratios finite, positive, normalisable
+2. Sum(visible widths) + handles = available content width
+3. Direct neighbour reacts stronger than farther same-side panel
+4. Min saturation redistributes residual delta
+5. ≥1000 deterministic drag steps: no relevant ratio drift
+6. Window resize preserves ratios
+7. 3↔4 panel toggle stable
+8. Harmony open/close without drift
+9. Drag-end persist + restart restore (ratios only)
+10. Corrupt / NaN / Inf / unknown IDs fail closed
+11. Browser keyboard / Search focus / Esc remain intact
+12. #845: valid OPEN/COLLAPSED combinations only; Browser COLLAPSED ⇒ Matches COLLAPSED
+13. #845: collapse preserves Browser selection, Matches reference/results, Live Kit content
+14. #845: `live_kit_materialized` unchanged by Live Kit collapse/reopen
+15. #845: mid-edge collapse handles keyboard-activatable; residual reopen reachable
+16. #845: collapse hit-areas do not share drag intent with elastic/column resize
 
 Runtime acceptance sizes: 1600×900, 1280×720, 1120×640; Harmony open/closed;
-100% / 125% / 150% DPI. Agent visual/runtime acceptance required before merge
+panel collapse combinations from the #845 table; 100% / 125% / 150% DPI.
+Agent visual/runtime acceptance required before merge
 (see `WORKBENCH_VISUAL_ACCEPTANCE.md` operative rule).

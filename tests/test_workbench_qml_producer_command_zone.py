@@ -57,7 +57,9 @@ def test_producer_command_zone_keeps_master_grid_sync_and_moves_harmonic_match()
     assert 'text: "GRID"' in center
     assert 'text: "SYNC"' in center
     assert 'objectName: "harmonicMatchButton"' in center
-    assert "toggleHarmonicMatch()" in center
+    # #845: header routes through a single QML helper; the helper owns the
+    # one interaction.toggleHarmonicMatch() call site (see chrome contract).
+    assert "activateHarmonicMatchToggle()" in center
     assert 'Accessible.name: "Harmonic Match"' in center
 
     right = header[header.index('objectName: "headerRightZone"') :]
