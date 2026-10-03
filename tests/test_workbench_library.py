@@ -598,6 +598,81 @@ def test_capture_retries_when_wal_disappears_during_copy(
         )
 
 
+def test_capture_retries_when_wal_disappears_during_signature_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """WAL vanishing between is_file() and the post-copy hash must retry."""
+    live_db = tmp_path / "live" / "workbench_library.db"
+    live_db.parent.mkdir()
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    resolved_audio = str(audio.resolve())
+
+    init_workbench_library(live_db)
+    with sqlite3.connect(live_db) as conn:
+        assert conn.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal"
+        conn.execute("PRAGMA wal_autocheckpoint=0")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+
+    holder = sqlite3.connect(live_db)
+    holder.execute("PRAGMA wal_autocheckpoint=0")
+    try:
+        folder_id = upsert_folder(folder, db_path=live_db)
+        upsert_sample(
+            folder_id,
+            WorkbenchRow(
+                display_name="kick",
+                relative_path="kick.wav",
+                path=resolved_audio,
+                bpm=128.0,
+                key="Am",
+                key_conf=0.9,
+                loudness=-10.0,
+                brightness=1800.0,
+                sample_class="loop",
+                pred_type="Kick",
+                status="ok",
+            ),
+            size_bytes=(fp := _file_fingerprint(audio))[0],
+            mtime_ns=fp[1],
+            db_path=live_db,
+        )
+        wal_path = Path(f"{live_db}-wal")
+        assert wal_path.is_file() and wal_path.stat().st_size > 0
+
+        wal_sigs = {"n": 0}
+        real_signature = workbench_library._stream_file_signature
+
+        def _wal_vanish_signature(path: Path) -> tuple[int, str]:
+            if path.resolve() == wal_path.resolve():
+                wal_sigs["n"] += 1
+                if wal_sigs["n"] == 1:
+                    raise FileNotFoundError(str(path))
+            return real_signature(path)
+
+        monkeypatch.setattr(
+            workbench_library, "_stream_file_signature", _wal_vanish_signature
+        )
+        snap_db = tmp_path / "snap" / "readonly_snapshot.db"
+        snap_db.parent.mkdir()
+        workbench_library._capture_sqlite_main_and_wal(live_db.resolve(), snap_db)
+    finally:
+        holder.close()
+
+    assert wal_sigs["n"] >= 1
+    with sqlite3.connect(snap_db) as conn:
+        assert (
+            conn.execute(
+                "SELECT bpm, key FROM samples WHERE original_path = ?",
+                (resolved_audio,),
+            ).fetchone()
+            == (128.0, "Am")
+        )
+
+
 def test_query_sample_by_path_readonly_includes_committed_wal_frames(
     tmp_path: Path,
 ) -> None:

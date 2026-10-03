@@ -139,8 +139,9 @@ def _capture_sqlite_main_and_wal(resolved: Path, snap_db: Path) -> None:
     """Copy main DB + WAL/journal as one stable capture with bounded memory.
 
     Stream-copy while hashing (one pass per source file), then verify the
-    source signatures once more. Sidecar disappearance mid-copy is treated as
-    an unstable attempt and retried. No whole-database bytearrays are retained.
+    source signatures once more. Sidecar disappearance during the copy or
+    during that signature check is an unstable attempt and is retried. No
+    whole-database bytearrays are retained.
 
     Raises ``OSError`` if no stable capture is observed so callers can fail soft
     instead of opening an unverified snapshot.
@@ -170,25 +171,25 @@ def _capture_sqlite_main_and_wal(resolved: Path, snap_db: Path) -> None:
                 journal_sig = None
                 if snap_journal.exists():
                     snap_journal.unlink()
+            if _stream_file_signature(resolved) != main_sig:
+                continue
+            if wal_sig is None:
+                if wal_src.is_file():
+                    continue
+            elif (not wal_src.is_file()) or _stream_file_signature(wal_src) != wal_sig:
+                continue
+            if journal_sig is None:
+                if journal_src.is_file():
+                    continue
+            elif (
+                (not journal_src.is_file())
+                or _stream_file_signature(journal_src) != journal_sig
+            ):
+                continue
+            return
         except FileNotFoundError:
-            # Sidecar vanished during copy (checkpoint/close race) → retry.
+            # Sidecar vanished during copy or signature check → retry.
             continue
-        if _stream_file_signature(resolved) != main_sig:
-            continue
-        if wal_sig is None:
-            if wal_src.is_file():
-                continue
-        elif (not wal_src.is_file()) or _stream_file_signature(wal_src) != wal_sig:
-            continue
-        if journal_sig is None:
-            if journal_src.is_file():
-                continue
-        elif (
-            (not journal_src.is_file())
-            or _stream_file_signature(journal_src) != journal_sig
-        ):
-            continue
-        return
     raise OSError("workbench library readonly snapshot did not stabilize")
 
 
