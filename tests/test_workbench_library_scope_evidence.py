@@ -1,4 +1,4 @@
-"""Fail-closed capture + scope-bar pin contracts for #779 repair."""
+"""Fail-closed capture + bottom scope-bar pin contracts for #837."""
 
 from __future__ import annotations
 
@@ -9,8 +9,9 @@ import pytest
 from src.workbench_library_scope_evidence import (
     EVIDENCE_FILENAMES,
     SCOPE_ALL,
-    SCOPE_CATALOG,
     SCOPE_COLLECTIONS,
+    SCOPE_FAVORITES,
+    SCOPE_RECORDINGS,
     SCOPE_SOURCES,
     ScopeCaptureError,
     assert_distinct_secondary_scope_hashes,
@@ -20,17 +21,17 @@ from src.workbench_library_scope_evidence import (
 )
 
 
-def test_capture_helper_rejects_mislabeled_all_samples_as_catalog() -> None:
+def test_capture_helper_rejects_mislabeled_all_samples_as_favorites() -> None:
     observed = expected_presentation(
         SCOPE_ALL,
         browser_title="All Samples",
         tree_visible=False,
         collections_visible=False,
-        scope_bar_y=28.0,
+        scope_bar_y=568.0,
         header_bottom_y=23.0,
     )
     with pytest.raises(ScopeCaptureError, match="scope mode mismatch"):
-        assert_presentation_matches(SCOPE_CATALOG, observed)
+        assert_presentation_matches(SCOPE_FAVORITES, observed)
 
 
 def test_capture_helper_rejects_visible_tree_for_secondary_scopes() -> None:
@@ -39,24 +40,24 @@ def test_capture_helper_rejects_visible_tree_for_secondary_scopes() -> None:
         browser_title="All Samples",
         tree_visible=True,
         collections_visible=False,
-        scope_bar_y=28.0,
+        scope_bar_y=568.0,
         header_bottom_y=23.0,
     )
     with pytest.raises(ScopeCaptureError, match="hidden Source Tree"):
         assert_presentation_matches(SCOPE_ALL, observed)
 
 
-def test_capture_helper_rejects_unpinned_scope_bar() -> None:
+def test_capture_helper_rejects_header_pinned_scope_bar() -> None:
     observed = expected_presentation(
-        SCOPE_CATALOG,
-        browser_title="Catalog · read-only",
+        SCOPE_FAVORITES,
+        browser_title="Favorites",
         tree_visible=False,
         collections_visible=False,
-        scope_bar_y=568.0,
+        scope_bar_y=28.0,
         header_bottom_y=23.0,
     )
     with pytest.raises(ScopeCaptureError, match="not pinned"):
-        assert_presentation_matches(SCOPE_CATALOG, observed)
+        assert_presentation_matches(SCOPE_FAVORITES, observed)
 
 
 def test_capture_helper_accepts_distinct_presentation_states() -> None:
@@ -68,7 +69,7 @@ def test_capture_helper_accepts_distinct_presentation_states() -> None:
                 browser_title="Samples",
                 tree_visible=True,
                 collections_visible=False,
-                scope_bar_y=28.0,
+                scope_bar_y=568.0,
                 header_bottom_y=23.0,
             ),
         ),
@@ -79,18 +80,29 @@ def test_capture_helper_accepts_distinct_presentation_states() -> None:
                 browser_title="All Samples",
                 tree_visible=False,
                 collections_visible=False,
-                scope_bar_y=28.0,
+                scope_bar_y=568.0,
                 header_bottom_y=23.0,
             ),
         ),
         (
-            SCOPE_CATALOG,
+            SCOPE_FAVORITES,
             expected_presentation(
-                SCOPE_CATALOG,
-                browser_title="Catalog · read-only",
+                SCOPE_FAVORITES,
+                browser_title="Favorites",
                 tree_visible=False,
                 collections_visible=False,
-                scope_bar_y=28.0,
+                scope_bar_y=568.0,
+                header_bottom_y=23.0,
+            ),
+        ),
+        (
+            SCOPE_RECORDINGS,
+            expected_presentation(
+                SCOPE_RECORDINGS,
+                browser_title="Recordings",
+                tree_visible=False,
+                collections_visible=False,
+                scope_bar_y=568.0,
                 header_bottom_y=23.0,
             ),
         ),
@@ -98,10 +110,10 @@ def test_capture_helper_accepts_distinct_presentation_states() -> None:
             SCOPE_COLLECTIONS,
             expected_presentation(
                 SCOPE_COLLECTIONS,
-                browser_title="Favorites",
+                browser_title="Collections",
                 tree_visible=False,
                 collections_visible=True,
-                scope_bar_y=28.0,
+                scope_bar_y=568.0,
                 header_bottom_y=23.0,
             ),
         ),
@@ -115,7 +127,8 @@ def test_evidence_integrity_guard_rejects_identical_secondary_hashes() -> None:
     hashes = {
         EVIDENCE_FILENAMES[SCOPE_SOURCES]: sha256_bytes(b"sources"),
         EVIDENCE_FILENAMES[SCOPE_ALL]: poison,
-        EVIDENCE_FILENAMES[SCOPE_CATALOG]: poison,
+        EVIDENCE_FILENAMES[SCOPE_FAVORITES]: poison,
+        EVIDENCE_FILENAMES[SCOPE_RECORDINGS]: poison,
         EVIDENCE_FILENAMES[SCOPE_COLLECTIONS]: poison,
     }
     with pytest.raises(ScopeCaptureError, match="byte-identical"):
@@ -126,7 +139,8 @@ def test_evidence_integrity_guard_accepts_distinct_secondary_hashes() -> None:
     hashes = {
         EVIDENCE_FILENAMES[SCOPE_SOURCES]: sha256_bytes(b"sources"),
         EVIDENCE_FILENAMES[SCOPE_ALL]: sha256_bytes(b"all"),
-        EVIDENCE_FILENAMES[SCOPE_CATALOG]: sha256_bytes(b"catalog"),
+        EVIDENCE_FILENAMES[SCOPE_FAVORITES]: sha256_bytes(b"favorites"),
+        EVIDENCE_FILENAMES[SCOPE_RECORDINGS]: sha256_bytes(b"recordings"),
         EVIDENCE_FILENAMES[SCOPE_COLLECTIONS]: sha256_bytes(b"collections"),
     }
     assert_distinct_secondary_scope_hashes(hashes)
@@ -137,9 +151,10 @@ PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
-    """Runtime: libraryScopeBar stays under header for Sources/All/Catalog/Favorites/Collections."""
+    """Runtime: libraryScopeBar stays at Library pane bottom above footer (#837)."""
     from PySide6.QtQuick import QQuickItem
 
+    from src.workbench_library import init_workbench_library
     from src.workbench_library_navigation import WorkbenchLibraryNavigation
     from src.workbench_qml import (
         Screen1QmlRuntimeComposition,
@@ -151,6 +166,7 @@ def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
     from src.workbench_qml_spike import _settle_qml_frame
 
     db = tmp_path / "library.db"
+    init_workbench_library(db)
     state_dir = tmp_path / "state"
     state_dir.mkdir()
     navigation = WorkbenchLibraryNavigation(library_db_path=db)
@@ -187,8 +203,8 @@ def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
         for mode, node_id in (
             ("sources", None),
             ("all", "scope:all-library"),
-            ("catalog", "scope:catalog-readonly"),
             ("favorites", "scope:favorites"),
+            ("recordings", "scope:recordings"),
             ("collections", None),
         ):
             bar = window.findChild(QQuickItem, "libraryScopeBar")
@@ -204,10 +220,12 @@ def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
             coll = window.findChild(QQuickItem, "libraryCollectionList")
             host = window.findChild(QQuickItem, "libraryContentHost")
             fav = window.findChild(QQuickItem, "libraryFavoritesScopeButton")
+            catalog = window.findChild(QQuickItem, "libraryCatalogScopeButton")
             assert bar is not None and host is not None
             assert fav is not None
+            assert catalog is None
             bar_ys[mode] = float(bar.y())
-            assert float(bar.y()) < 80.0, f"{mode} scope bar drifted: y={bar.y()}"
+            assert float(bar.y()) > 80.0, f"{mode} scope bar not at pane bottom: y={bar.y()}"
             if mode == "sources":
                 assert tree is not None and tree.isVisible()
                 assert coll is not None and not coll.isVisible()
@@ -217,11 +235,10 @@ def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
             else:
                 assert tree is not None and not tree.isVisible()
                 assert coll is not None and not coll.isVisible()
-            assert float(host.y()) > float(bar.y())
-        # All secondary modes share the Sources pin position.
+            assert float(host.y()) < float(bar.y())
         assert abs(bar_ys["all"] - bar_ys["sources"]) < 1.0
-        assert abs(bar_ys["catalog"] - bar_ys["sources"]) < 1.0
         assert abs(bar_ys["favorites"] - bar_ys["sources"]) < 1.0
+        assert abs(bar_ys["recordings"] - bar_ys["sources"]) < 1.0
         assert abs(bar_ys["collections"] - bar_ys["sources"]) < 1.0
     finally:
         window.close()

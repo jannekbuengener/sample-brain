@@ -62,6 +62,7 @@ class WorkbenchLibraryTreeState:
                 LibraryNodeKind.ALL_SAMPLES,
                 LibraryNodeKind.CATALOG,
                 LibraryNodeKind.FAVORITES,
+                LibraryNodeKind.RECORDINGS,
                 LibraryNodeKind.COLLECTIONS,
             }
             secondary = tuple(node for node in top_level if node.kind in secondary_kinds)
