@@ -17,11 +17,13 @@ import re
 
 from src.workbench_qml import QML_SOURCE
 
+# Hex color literals in QML (not issue markers like "#846").
+_HEX_COLOR_RE = re.compile(r"#[0-9a-fA-F]{3,8}\b")
+
 BROWSER_ROW_DELEGATE_MARKER = "delegate: Rectangle { id: browserRow"
-# Span the full row delegate (through the bottom divider) but stop before the
-# panel resize handle, so panel-resize (layoutModel) code never leaks into
-# delegate assertions. #780 added per-column dividers inside the delegate, which
-# grew it past the previous fixed 14000-char window; derive the span instead.
+# Span the full row delegate (through the bottom horizontal divider) but stop
+# before the panel resize handle, so panel-resize (layoutModel) code never leaks
+# into delegate assertions. Derive the span from elasticHandleAfterBrowser.
 BROWSER_ROW_DELEGATE_SPAN = (
     QML_SOURCE.index('objectName: "elasticHandleAfterBrowser"')
     - QML_SOURCE.index(BROWSER_ROW_DELEGATE_MARKER)
@@ -299,19 +301,23 @@ def test_browser_density_tokens_unchanged_by_767():
 
 
 # ---------------------------------------------------------------------------
-# #780 — subtle Browser column dividers with resize handles
+# #846 — header-owned ephemeral column resize (supersedes #780 presentation)
 # ---------------------------------------------------------------------------
 
-# Resizable columns each paint a right-edge divider inside the row delegate.
-# Key is visual-only (BPM owns the sole interactive meta handle).
-_COLUMN_DIVIDER_OBJECTNAMES = (
+_HEADER_RESIZE_OBJECTNAMES = (
+    'objectName: "browserColumnResize_waveform"',
+    'objectName: "browserColumnResize_meta"',
+    'objectName: "browserColumnResize_favorite"',
+    'objectName: "browserColumnResize_length"',
+)
+_LEGACY_ROW_COLUMN_DIVIDER_OBJECTNAMES = (
     'objectName: "browserColumnDivider_waveform"',
     'objectName: "browserColumnDivider_bpm"',
     'objectName: "browserColumnDivider_favorite"',
     'objectName: "browserColumnDivider_key"',
     'objectName: "browserColumnDivider_length"',
 )
-_INTERACTIVE_COLUMN_DIVIDER_COUNT = 4  # Key divider has no MouseArea
+_INTERACTIVE_HEADER_RESIZE_COUNT = 4
 _META_RESIZE_CALL = 'browserPane.resizeColumn("meta"'
 
 
@@ -319,48 +325,107 @@ def _browser_delegate_full(source: str) -> str:
     """Delegate body from its marker up to (not into) the panel resize handle.
 
     Robust to delegate growth: always covers the full row delegate incl. the
-    bottom divider, and always stops before ``elasticHandleAfterBrowser`` so
-    panel-resize (``layoutModel``) code never leaks into delegate assertions.
+    bottom horizontal divider, and always stops before ``elasticHandleAfterBrowser``
+    so panel-resize (``layoutModel``) code never leaks into delegate assertions.
     """
     start = source.index(BROWSER_ROW_DELEGATE_MARKER)
     end = source.index('objectName: "elasticHandleAfterBrowser"', start)
     return source[start:end]
 
 
-def test_browser_columns_have_subtle_resizable_dividers():
-    """#780: a subtle vertical divider exists per resizable browser column."""
-    delegate = _browser_delegate_full(QML_SOURCE)
-    for name in _COLUMN_DIVIDER_OBJECTNAMES:
-        assert name in delegate, f"fehlender Browser-Column-Divider {name}"
-    # Visible line reuses the existing divider token (no new color), ~1 DIP.
-    assert delegate.count("color: theme.dividerDefault") >= len(
-        _COLUMN_DIVIDER_OBJECTNAMES
-    ) + 1  # 5 vertical dividers + existing bottom row divider
-    assert delegate.count("width: window.densityDividerHeight") >= len(
-        _COLUMN_DIVIDER_OBJECTNAMES
-    )
+def _browser_header_block(source: str) -> str:
+    """Header label row through ListView start (column header chrome only)."""
+    # The Browser header RowLayout that carries SAMPLE NAME / BPM / … labels.
+    marker = 'Label { text: "SAMPLE NAME"'
+    start = source.index(marker)
+    # Walk backward to the enclosing RowLayout opening for this header strip.
+    row_start = source.rfind("RowLayout", 0, start)
+    end = source.index('objectName: "browserList"', start)
+    return source[row_start:end]
 
 
-def test_browser_column_resize_hit_target_is_wider_than_visible_line():
-    """#780: invisible grab target is wider than the ~1 DIP visible line."""
+def _header_resize_window(source: str, object_name: str, span: int = 900) -> str:
+    token = f'objectName: "{object_name}"'
+    idx = source.index(token)
+    return source[idx : idx + span]
+
+
+def test_browser_rows_have_no_permanent_vertical_column_dividers():
+    """#846: row delegates must not paint permanent vertical column dividers."""
     delegate = _browser_delegate_full(QML_SOURCE)
-    assert (
-        delegate.count("cursorShape: Qt.SizeHorCursor")
-        == _INTERACTIVE_COLUMN_DIVIDER_COUNT
-    )
-    assert (
-        delegate.count("preventStealing: true") == _INTERACTIVE_COLUMN_DIVIDER_COUNT
-    )
-    assert "anchors.leftMargin: -browserPane.browserColumnHandlePadding" in delegate
-    assert "anchors.rightMargin: -browserPane.browserColumnHandlePadding" in delegate
-    # Centralized, deterministic padding (not an inline magic number).
-    padding = _int_property(QML_SOURCE, "browserColumnHandlePadding")
-    divider = _int_property(QML_SOURCE, "densityDividerHeight")
-    assert padding >= 4 and padding > divider
+    for name in _LEGACY_ROW_COLUMN_DIVIDER_OBJECTNAMES:
+        assert name not in delegate, f"legacy vertical column divider still present: {name}"
+    # Horizontal row chrome may still use dividerDefault / densityDividerHeight.
+    assert "height: window.densityDividerHeight" in delegate
+    assert "color: theme.dividerDefault" in delegate
+
+
+def test_browser_rows_have_no_column_resize_mouse_areas():
+    """#846: column resize MouseAreas leave the virtualized row delegate."""
+    delegate = _browser_delegate_full(QML_SOURCE)
+    assert "cursorShape: Qt.SizeHorCursor" not in delegate
+    assert "browserPane.resizeColumn(" not in delegate
+    assert "columnResizeWaveform" not in delegate
+    assert "columnResizeBpm" not in delegate
+    assert "columnResizeFavorite" not in delegate
+    assert "columnResizeLength" not in delegate
+
+
+def test_browser_column_resize_lives_in_header_overlays():
+    """#846: exactly four header-owned resize overlays; not RowLayout width consumers."""
+    header = _browser_header_block(QML_SOURCE)
+    for name in _HEADER_RESIZE_OBJECTNAMES:
+        assert name in header, f"missing header resize surface {name}"
+        assert QML_SOURCE.count(name) == 1
+    # Overlay geometry: anchored to the right cell edge; must not declare
+    # Layout.preferredWidth/minimumWidth on the resize Item itself.
+    for object_name in (
+        "browserColumnResize_waveform",
+        "browserColumnResize_meta",
+        "browserColumnResize_favorite",
+        "browserColumnResize_length",
+    ):
+        window = _header_resize_window(QML_SOURCE, object_name)
+        assert "anchors.right" in window
+        assert "Layout.preferredWidth" not in window
+        assert "Layout.minimumWidth" not in window
+        assert "cursorShape: Qt.SizeHorCursor" in window
+        assert "preventStealing: true" in window
+        assert "browserPane.resizeColumn(" in window
+
+
+def test_browser_column_resize_ephemeral_hover_focus_drag_states():
+    """#846: handle visible on hover / focus-visible / drag; quiet otherwise."""
+    for object_name in (
+        "browserColumnResize_waveform",
+        "browserColumnResize_meta",
+        "browserColumnResize_favorite",
+        "browserColumnResize_length",
+    ):
+        window = _header_resize_window(QML_SOURCE, object_name, span=1200)
+        assert "hovered" in window or "containsMouse" in window
+        assert "activeFocus" in window
+        assert "pressed" in window
+        # Focus chrome uses Theme focus semantic — not a local HEX.
+        assert "theme.focusRing" in window or "theme.selectionBorder" in window
+        # Hover/elevated chrome uses an existing semantic surface token.
+        assert (
+            "theme.surfaceElevated" in window
+            or "theme.borderSubtle" in window
+            or "theme.textSecondary" in window
+        )
+        assert _HEX_COLOR_RE.search(window) is None
+        # No faux keyboard resize / splitter semantics.
+        assert "Keys.onPressed" not in window
+        assert "Keys.onReturnPressed" not in window
+        assert "Keys.onSpacePressed" not in window
+        assert "Accessible.role" not in window
+        assert "Splitter" not in window
+        assert "activeFocusOnTab: true" in window or "activeFocusOnTab: visible" in window
 
 
 def test_browser_column_width_state_has_exactly_one_owner():
-    """#780: browserPane is the only writer of column width truth."""
+    """#780/#846: browserPane remains the only writer of column width truth."""
     assert QML_SOURCE.count("function resizeColumn(") == 1
     for prop in (
         "waveformUserWidth",
@@ -369,23 +434,35 @@ def test_browser_column_width_state_has_exactly_one_owner():
         "lengthUserWidth",
     ):
         assert QML_SOURCE.count(f"property int {prop}:") == 1
-    delegate = _browser_delegate_full(QML_SOURCE)
-    # Interactive handles only; Key is visual-only for the shared meta role.
+    # Header surfaces are the only resizeColumn call sites (four interactive roles).
     assert (
-        delegate.count("browserPane.resizeColumn(") == _INTERACTIVE_COLUMN_DIVIDER_COUNT
+        QML_SOURCE.count("browserPane.resizeColumn(") == _INTERACTIVE_HEADER_RESIZE_COUNT
     )
-    # Exactly one meta writer (BPM). Dual Key+BPM meta calls would apply 2Δ.
-    assert delegate.count(_META_RESIZE_CALL) == 1
-    bpm_div = delegate.index('objectName: "browserColumnDivider_bpm"')
-    key_div = delegate.index('objectName: "browserColumnDivider_key"')
-    length_div = delegate.index('objectName: "browserColumnDivider_length"')
-    meta_call = delegate.index(_META_RESIZE_CALL)
-    assert bpm_div < meta_call < key_div
-    assert "MouseArea" not in delegate[key_div:length_div]
-    # No competing geometry truth is built inside the delegate.
+    assert QML_SOURCE.count(_META_RESIZE_CALL) == 1
+    meta_window = _header_resize_window(QML_SOURCE, "browserColumnResize_meta")
+    assert _META_RESIZE_CALL in meta_window
+    # Key / Type / Add never gain resize writers.
+    assert 'objectName: "browserColumnResize_key"' not in QML_SOURCE
+    assert 'objectName: "browserColumnResize_type"' not in QML_SOURCE
+    assert 'resizeColumn("type"' not in QML_SOURCE
+    delegate = _browser_delegate_full(QML_SOURCE)
     assert "property int effectiveBrowser" not in delegate
-    # Browser-column resize stays independent of panel resize.
     assert "layoutModel.applyDrag" not in delegate
+
+
+def test_browser_column_resize_hit_target_wider_than_visible_handle():
+    """#846: hit-area padding stays larger than the quiet visible handle."""
+    padding = _int_property(QML_SOURCE, "browserColumnHandlePadding")
+    assert padding >= 4
+    for object_name in (
+        "browserColumnResize_waveform",
+        "browserColumnResize_meta",
+        "browserColumnResize_favorite",
+        "browserColumnResize_length",
+    ):
+        window = _header_resize_window(QML_SOURCE, object_name)
+        assert "browserColumnHandlePadding" in window or "leftMargin" in window
+        assert "anchors.leftMargin" in window or "width:" in window
 
 
 def test_browser_column_resize_ignores_user_overrides_when_narrow():
@@ -433,7 +510,7 @@ def test_browser_column_resize_minimums_are_deterministic():
 
 
 def test_browser_column_resize_reuses_shared_header_row_geometry():
-    """#780: header + delegate keep reading one shared effective geometry."""
+    """#780/#846: header + delegate keep reading one shared effective geometry."""
     for role in (
         "effectiveBrowserWaveformWidth",
         "effectiveBrowserMetaColumnWidth",
@@ -447,3 +524,23 @@ def test_browser_column_resize_reuses_shared_header_row_geometry():
     assert QML_SOURCE.count("previewRow(index)") == 1
     assert QML_SOURCE.count("addToKit(index)") == 1
     assert QML_SOURCE.count("toggleFavorite(index)") == 1
+    # Horizontal row divider / alternating shading remain (#781 / density).
+    delegate = _browser_delegate_full(QML_SOURCE)
+    assert "height: window.densityDividerHeight" in delegate
+    assert "index % 2 === 1 ? theme.surfacePanel" in QML_SOURCE
+
+
+def test_browser_column_resize_does_not_collide_with_panel_collapse_845():
+    """#846 must not put SizeHorCursor / applyDrag on #845 collapse handles."""
+    assert 'objectName: "browserCollapseHandle"' in QML_SOURCE
+    assert 'objectName: "browserCollapseAffordance"' in QML_SOURCE
+    for handle in (
+        "browserCollapseHandle",
+        "harmonyCollapseHandle",
+        "liveKitCollapseHandle",
+    ):
+        idx = QML_SOURCE.index(f'objectName: "{handle}"')
+        window = QML_SOURCE[idx : idx + 1200]
+        assert "SizeHorCursor" not in window
+        assert "layoutModel.applyDrag" not in window
+        assert "browserPane.resizeColumn" not in window
