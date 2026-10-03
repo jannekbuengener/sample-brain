@@ -16,9 +16,13 @@ Waveform / Preview
 → Favorite
 → Key
 → Length
+→ Type (wide mode only; secondary)
 ```
 
-Scan intent: audio shape → identity → tempo → personal marker → harmony → duration.
+Scan intent: audio shape → identity → tempo → personal marker → harmony → duration → type.
+
+Primary scan columns through Length are owned by #767. Type is secondary after
+Length and must not displace that primary order (#767/#850).
 
 ## Favorite (not a rating)
 
@@ -40,8 +44,15 @@ navigation/scope in the compact top icon bar is owned by #766
 - BPM / Favorite / Key / Length use fixed/preferred widths and stay aligned
   between header and row.
 - Favorite is a small fixed interaction column.
-- Sample Type may remain secondary (for example after Length) but must not
-  displace the default order above.
+- Sample Type is secondary after Length. In wide mode the Type header and the
+  Type value cell share one width role and the same visibility gate so Length
+  never visually hosts Type labels (and Type never hosts duration) — see #850.
+- In narrow mode (`browserNarrowColumns`, pane width `< 700`) Type is omitted
+  from both header and row; primary columns through Length stay aligned.
+- Field assignment is geometric and projection-owned: Length binds only the
+  projected duration string (formatted existing duration, or the existing
+  Missing-State `—`); Type binds only sample type. QML must not invent a second
+  metadata truth.
 - Add-to-Kit remains available and must not dominate the metadata scan path.
 
 ## Density (frozen for this slice)
