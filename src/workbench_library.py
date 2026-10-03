@@ -205,6 +205,70 @@ def _cached_sample_file_fingerprint_matches(cached: CachedWorkbenchRow) -> bool:
     )
 
 
+def _path_is_inside(path: Path, root: Path) -> bool:
+    """True when ``path`` is ``root`` or a descendant, after resolving symlinks."""
+    try:
+        return path.resolve().is_relative_to(root.resolve())
+    except OSError:
+        return False
+
+
+def _external_temp_roots(source_dir: Path) -> tuple[Path, ...]:
+    """Candidate snapshot roots that are not the source library directory."""
+    candidates: list[Path] = [Path(tempfile.gettempdir())]
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        candidates.append(Path(local_app_data) / "Temp")
+    system_root = os.environ.get("SYSTEMROOT") or os.environ.get("WINDIR")
+    if system_root:
+        candidates.append(Path(system_root) / "Temp")
+    candidates.append(Path("/tmp"))
+    if source_dir.parent != source_dir:
+        candidates.append(source_dir.parent)
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        key = os.path.normcase(str(resolved))
+        if key in seen or _path_is_inside(resolved, source_dir) or not resolved.is_dir():
+            continue
+        seen.add(key)
+        roots.append(resolved)
+    return tuple(roots)
+
+
+def _readonly_snapshot_directory(source_db: Path) -> tempfile.TemporaryDirectory[str]:
+    """Create a snapshot dir outside the source library directory.
+
+    ``TMP`` / ``TEMP`` / ``TMPDIR`` may point at that directory. A child created
+    there is still inside the library, so the root is chosen explicitly and any
+    path inside the source directory is never used.
+    """
+    source_dir = source_db.resolve().parent
+    last_error: OSError | None = None
+    for root in _external_temp_roots(source_dir):
+        if _path_is_inside(root, source_dir):
+            continue
+        try:
+            tmp = tempfile.TemporaryDirectory(
+                prefix="sample-brain-wb-lib-ro-",
+                dir=root,
+            )
+        except OSError as exc:
+            last_error = exc
+            continue
+        if _path_is_inside(Path(tmp.name), source_dir):
+            tmp.cleanup()
+            continue
+        return tmp
+    raise OSError(
+        "refusing readonly snapshot inside source library directory"
+    ) from last_error
+
+
 @contextmanager
 def _connect_workbench_library_readonly(db_path: Path) -> Iterator[sqlite3.Connection]:
     """Open an existing library DB via a temp read-snapshot.
@@ -216,21 +280,20 @@ def _connect_workbench_library_readonly(db_path: Path) -> Iterator[sqlite3.Conne
       source ``-wal`` (``immutable=1`` on the original path would miss those)
 
     Implementation: capture a stable main + WAL/journal byte set into a private
-    temp directory; open that snapshot (recovering hot journals there), then
-    enable ``PRAGMA query_only=ON``. SQLite may create read-side artifacts only
-    under the temp dir. The source ``-shm`` is intentionally not copied.
+    temp directory outside the source library directory; open that snapshot
+    (recovering hot journals there), then enable ``PRAGMA query_only=ON``.
+    SQLite may create read-side artifacts only under the temp dir. The source
+    ``-shm`` is intentionally not copied.
     """
     resolved = Path(db_path).resolve()
-    tmp = tempfile.TemporaryDirectory(prefix="sample-brain-wb-lib-ro-")
+    tmp = _readonly_snapshot_directory(resolved)
     conn: sqlite3.Connection | None = None
     try:
         # Stable snapshot basename avoids colliding with other temp DBs that share
         # the source file's leaf name in the same process.
         snap_db = Path(tmp.name) / "readonly_snapshot.db"
-        if snap_db.resolve().parent == resolved.parent:
-            raise RuntimeError(
-                "refusing readonly snapshot inside source library directory"
-            )
+        if _path_is_inside(snap_db, resolved.parent):
+            raise OSError("refusing readonly snapshot inside source library directory")
         _capture_sqlite_main_and_wal(resolved, snap_db)
         # Open the private snapshot writable so hot DELETE journals (and WAL
         # captures) can recover here. mode=ro cannot apply rollback recovery.

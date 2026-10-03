@@ -442,6 +442,108 @@ def test_query_sample_by_path_readonly_does_not_create_wal_sidecars(
     assert not shm_path.exists()
 
 
+def _seed_readonly_lookup_library(tmp_path: Path) -> tuple[Path, Path]:
+    library_db = tmp_path / "library" / "workbench_library.db"
+    library_db.parent.mkdir()
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    audio = folder / "kick.wav"
+    audio.write_bytes(b"data")
+    init_workbench_library(library_db)
+    folder_id = upsert_folder(folder, db_path=library_db)
+    upsert_sample(
+        folder_id,
+        WorkbenchRow(
+            display_name="kick",
+            relative_path="kick.wav",
+            path=str(audio.resolve()),
+            bpm=128.0,
+            key="Am",
+            key_conf=0.9,
+            loudness=-10.0,
+            brightness=1800.0,
+            sample_class="loop",
+            pred_type="Kick",
+            status="ok",
+        ),
+        size_bytes=(fp := _file_fingerprint(audio))[0],
+        mtime_ns=fp[1],
+        db_path=library_db,
+    )
+    with sqlite3.connect(library_db) as conn:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+    return library_db, audio
+
+
+def test_readonly_snapshot_stays_outside_library_when_temp_is_library_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TMP pointing at the library dir must not place the snapshot inside it."""
+    library_db, audio = _seed_readonly_lookup_library(tmp_path)
+    library_dir = library_db.parent.resolve()
+    before = _library_dir_fingerprint(library_db)
+    for key in ("TMP", "TEMP", "TMPDIR", "LOCALAPPDATA", "SYSTEMROOT", "WINDIR"):
+        monkeypatch.setenv(key, str(library_dir))
+    monkeypatch.setattr(
+        workbench_library.tempfile, "gettempdir", lambda: str(library_dir)
+    )
+    roots: list[Path] = []
+    real_temporary_directory = workbench_library.tempfile.TemporaryDirectory
+
+    def _track_temporary_directory(*args, **kwargs):
+        roots.append(Path(kwargs["dir"]))
+        return real_temporary_directory(*args, **kwargs)
+
+    monkeypatch.setattr(
+        workbench_library.tempfile,
+        "TemporaryDirectory",
+        _track_temporary_directory,
+    )
+
+    cached = query_sample_by_path_readonly(audio, db_path=library_db)
+
+    assert cached is not None
+    assert cached.bpm == 128.0
+    assert roots
+    for root in roots:
+        assert not workbench_library._path_is_inside(root, library_dir)
+    assert _library_dir_fingerprint(library_db) == before
+    assert not any(
+        path.name.startswith("sample-brain-wb-lib-ro-") for path in library_dir.iterdir()
+    )
+
+
+def test_readonly_snapshot_refuses_when_every_temp_root_is_inside_library(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No external temp root fails soft and does not create a snapshot inside."""
+    library_db, audio = _seed_readonly_lookup_library(tmp_path)
+    library_dir = library_db.parent.resolve()
+    before = _library_dir_fingerprint(library_db)
+    monkeypatch.setattr(
+        workbench_library,
+        "_external_temp_roots",
+        lambda source_dir: (source_dir,),
+    )
+    calls = {"n": 0}
+    real_temporary_directory = workbench_library.tempfile.TemporaryDirectory
+
+    def _count_temporary_directory(*args, **kwargs):
+        calls["n"] += 1
+        return real_temporary_directory(*args, **kwargs)
+
+    monkeypatch.setattr(
+        workbench_library.tempfile,
+        "TemporaryDirectory",
+        _count_temporary_directory,
+    )
+
+    assert query_sample_by_path_readonly(audio, db_path=library_db) is None
+    assert calls["n"] == 0
+    assert _library_dir_fingerprint(library_db) == before
+
+
 def test_capture_sqlite_main_and_wal_retries_across_checkpoint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
