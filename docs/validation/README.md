@@ -3,6 +3,12 @@
 Sample Brain's local validation report closes the original `PROJECT_META.md`
 validation contract without exposing private sample paths.
 
+This README is a **how-to for generating a local report**. It is not a live
+product-status surface. Committed Markdown files in this directory
+(`issue-328-validation-report.md`, `ISSUE_418_KEY_BASELINE.md`,
+`ISSUE_632_JOINT_PROFILE_PROTOTYPE.md`) are **historical / issue-specific
+evidence** only — do not treat them as current product or analyzer authority.
+
 Run it against a local catalog:
 
 ```powershell
