@@ -5,13 +5,16 @@ independent from the CDB runner infrastructure.
 
 ## Quick Start
 
+Run these from the repository root. Compose resolves `.env.runner` next to
+`infrastructure/actions-runner/docker-compose.yml`.
+
 ```bash
 # 1. Generate a registration token:
 #    GitHub repo > Settings > Actions > Runners > New runner > copy token
 
-# 2. Configure environment
-cp .env.example .env.runner
-# Paste RUNNER_TOKEN into .env.runner
+# 2. Configure environment (path relative to repo root)
+cp infrastructure/actions-runner/.env.example infrastructure/actions-runner/.env.runner
+# Paste RUNNER_TOKEN into infrastructure/actions-runner/.env.runner
 
 # 3. Build and start
 docker compose -f infrastructure/actions-runner/docker-compose.yml up -d --build
@@ -25,12 +28,14 @@ docker compose -f infrastructure/actions-runner/docker-compose.yml logs -f
 
 | Label | Origin | Purpose |
 |-------|--------|---------|
-| `self-hosted` | automatic | Standard GitHub label |
-| `sample-brain` | explicit | Primary identifier for Sample-Brain jobs |
-| `linux` | explicit | Operating system |
-| `x64` | explicit | Architecture |
+| `self-hosted` | GitHub automatic (+ set in compose) | Standard GitHub self-hosted label |
+| `sample-brain` | compose `RUNNER_LABELS` | Primary identifier for Sample-Brain jobs |
 
-Workflows target: `runs-on: [self-hosted, sample-brain]`.
+Current compose sets `RUNNER_LABELS=self-hosted,sample-brain`. Entrypoint
+defaults (`sample-brain,linux,x64`) apply only when `RUNNER_LABELS` is unset.
+
+Workflows target: `runs-on: [self-hosted, sample-brain]`
+(see `.github/workflows/ci-smoke-self-hosted.yml`).
 
 ## Architecture
 
@@ -88,18 +93,21 @@ Then remove the runner from GitHub UI: Settings > Actions > Runners.
 
 ## Rollback
 
-1. Stop the container: `docker compose down`
+From the repository root:
+
+1. Stop the container: `docker compose -f infrastructure/actions-runner/docker-compose.yml down`
 2. Remove the new state: `docker volume rm sample-brain-runner-state`
 3. Generate a fresh `RUNNER_TOKEN`
-4. Update `.env.runner` with the new token
-5. Rebuild and start: `docker compose up -d --build`
+4. Update `infrastructure/actions-runner/.env.runner` with the new token
+5. Rebuild and start: `docker compose -f infrastructure/actions-runner/docker-compose.yml up -d --build`
 6. Remove the old runner entry from GitHub UI if it didn't deregister cleanly
 
 ## Security Notes
 
 - No secrets in workflow files — `contents: read` is sufficient for smoke tests.
-- `workflow_dispatch` only — no automatic pull_request or push triggers.
+- Self-hosted smoke workflow is `workflow_dispatch` only
+  (`.github/workflows/ci-smoke-self-hosted.yml`) — no automatic pull_request or push triggers.
 - Isolated Docker network — no access to CDB containers or networks.
 - Runner runs as non-root user (`runner` UID 1001) inside the container.
-- No shared workdir with CDB — dedicated `sb-runner-work` volume.
+- No shared workdir with CDB — dedicated `sample-brain-runner-work` volume.
 - The Docker socket mount is optional and disabled by default in compose.

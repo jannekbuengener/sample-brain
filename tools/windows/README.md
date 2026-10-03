@@ -48,14 +48,17 @@ distributable.
 Portable Windows ZIP for external testers (no Python/Git/checkout):
 
 ```powershell
-# From a packaging venv with Python 3.12.10 + pip install -e ".[qtquick]"
-# + tools/windows/requirements-packaging.txt
+# Packaging venv: exact Python 3.12.10
+python -m pip install -e .
+python -m pip install -r tools/windows/requirements-packaging.txt
 powershell -ExecutionPolicy Bypass -File .\tools\windows\build_distributable.ps1 -BuildNative
 ```
 
-Pipeline: preferred `pyside6-deploy` → Nuitka `standalone`. If Nuitka hits the documented
-librosa/lazy_loader blocker, the build script uses **PyInstaller onedir** fallback.
-Output: `SampleBrain-Screen1-Pilot-<build-id>-win64.zip` with `SampleBrain.exe` (QML Screen 1).
-See `TESTER_NOTE.md`.
+Pipeline: `pyside6-deploy --dry-run` documents the preferred Nuitka `standalone`
+invocation. The documented librosa/lazy_loader Nuitka blocker routes the build to
+**PyInstaller onedir** (`sample_brain_screen1.spec`).
+Output: `dist/packaging/SampleBrain-Screen1-Pilot-<build-id>-win64.zip` with
+`SampleBrain/SampleBrain.exe` (QML Screen 1).
+See `PACKAGING.md` and `TESTER_NOTE.md`.
 
 No OneFile / MSI / installer / auto-updater in this slice.
