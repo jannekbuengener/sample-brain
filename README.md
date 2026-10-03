@@ -1,6 +1,6 @@
 # Sample Brain
 
-Sample Brain ist ein lokales Werkzeug für Sample-Analyse, musikalisches Matching, Track-Zerlegung und wiederverwendbare Performance Packs für Producing-Workflows.
+Sample Brain ist ein lokales, Workbench-first Producing-System für Sample-Analyse, musikalisches Matching, Track-Zerlegung und Performance Packs — von der Library über Live Kit bis zum Channel Rack.
 
 ---
 
@@ -8,7 +8,7 @@ Sample Brain ist ein lokales Werkzeug für Sample-Analyse, musikalisches Matchin
 
 **Sample Brain** löst ein Problem aus meiner eigenen Musikproduktion: Große lokale Sample-Libraries enthalten viel musikalisches Potenzial, aber Dateinamen und Ordnerstrukturen helfen nur begrenzt dabei, im richtigen Moment den passenden Sound zu finden.
 
-Das Projekt übersetzt dieses Problem in ein **local-first Producing-System**: Samples werden lokal analysiert, katalogisiert, musikalisch verglichen und in einem Workbench-Workflow nutzbar gemacht. Private Audiodateien bleiben auf dem Rechner; die Kernfunktionen benötigen keine Cloud.
+Das Projekt übersetzt dieses Problem in ein **local-first Producing-System**: Samples werden lokal analysiert, katalogisiert, musikalisch verglichen und im Workbench-Pfad nutzbar gemacht (`Library / Screen 1 → Live Kit → Channel Rack / Screen 2`; Arrangement / Screen 3 später). Private Audiodateien bleiben auf dem Rechner; die Kernfunktionen benötigen keine Cloud. VST3 / Host-Plugin bleibt geparkt und ist nicht der Primärpfad.
 
 ### Was heute tatsächlich funktioniert
 
@@ -19,9 +19,10 @@ Auf `main` sind unter anderem verfügbar:
 - Track-Context-Analyse ohne Katalog-Mutation,
 - NumPy-basierte Suche sowie optionale experimentelle CLAP-/sqlite-vec-Pfade,
 - Track-Deconstruction und portable Performance Packs,
-- lokaler Workbench mit Library, Preview, Matching und Live-Kit-Funktionen.
+- Screen-1 Workbench (Library, Preview, Matching, Live Kit) mit QML-Produktionsrichtung (`LOCK_PYSIDE6_QML`; Start via `workbench --qml-screen1`),
+- Screen-2 Channel Rack (Pattern/Trigger über Live-Kit-Kanäle) auf `main`.
 
-**Nicht als fertig dargestellt werden:** VST3, Realtime Fit & Transform und alle Funktionen, deren Evidence noch nicht für einen Produktionsclaim reicht. Die detaillierte Statusmatrix steht direkt im nächsten Abschnitt.
+**Nicht als fertig dargestellt werden:** geparktes VST3, Realtime Fit & Transform, Arrangement / Screen 3 und alle Funktionen, deren Evidence noch nicht für einen Produktionsclaim reicht. Die detaillierte Statusmatrix steht direkt im nächsten Abschnitt.
 
 ### Meine Rolle / AI-assisted Development Model
 
@@ -43,8 +44,9 @@ flowchart LR
     A[Lokale Sample Library] --> B[Scan & Analyse]
     B --> C[Katalog & Metadaten]
     C --> D[Search & Matching]
-    D --> E[Workbench]
-    E --> F[Live Kit / Producer Workflow]
+    D --> E[Screen 1 Workbench]
+    E --> F[Live Kit]
+    F --> J[Channel Rack / Screen 2]
     B --> G[Track Context]
     G --> H[Deconstruction]
     H --> I[Performance Packs]
@@ -52,7 +54,7 @@ flowchart LR
 
 ### Visuelle Produkt-Evidence
 
-**CURRENT PRODUCT / RUNTIME** — Screen-1 des lokalen Workbench, aufgenommen aus einem verifizierten Build (Runtime-Provenance `VALID`, deterministisches Screen-1-Acceptance-Fixture). Erzeugt über den [Visual-Acceptance-Pfad](docs/WORKBENCH_VISUAL_ACCEPTANCE.md); Provenance inkl. Commit in [runtime/manifest.json](docs/assets/portfolio/runtime/manifest.json):
+**CURRENT PRODUCT / RUNTIME** — Screen-1 des lokalen Workbench, aufgenommen aus einem verifizierten Production-QML-Build (Runtime-Provenance `VALID`, deterministisches Screen-1-Acceptance-Fixture). Erzeugt über den [Visual-Acceptance-Pfad](docs/WORKBENCH_VISUAL_ACCEPTANCE.md); Capture-Commit, Timestamp und Hashes stehen in [runtime/manifest.json](docs/assets/portfolio/runtime/manifest.json) (Evidence-Refresh folgt separat, wenn `main`-UI stabil ist):
 
 ![Sample Brain Workbench — Library/Browser & Live Kit (CURRENT PRODUCT / RUNTIME)](docs/assets/portfolio/runtime/screen1-default-3panel.png)
 
@@ -80,7 +82,7 @@ flowchart LR
 
 1. **CLAP Search:** auf synthetischen Fixtures gemessen, aber keine Produktionsreife auf echten Producer-Libraries behauptet.
 2. **sqlite-vec:** Performance-Vorteile dokumentiert, Default-Wechsel aber wegen Qualitäts-/Gate-Abwägungen blockiert.
-3. **Stem Separation:** technisch getestet, aber wegen ungeklärter Weight-Lizenz kein Produktions-Default.
+3. **Stem Separation:** technisch getestet, aber wegen Weight-Lizenz (**RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED**) kein Produktions-Default.
 
 Diese Entscheidungen sind Teil des Produkts: Sample Brain soll Unsicherheit sichtbar machen, statt Zielvision und belegte Realität zu vermischen.
 
@@ -88,13 +90,17 @@ Diese Entscheidungen sind Teil des Produkts: Sample Brain soll Unsicherheit sich
 
 ```bash
 python -m venv .venv
-. .venv\Scripts\activate
+# Windows: .\.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
 python -m src.cli --help
+python -m src.cli workbench --qml-screen1   # Screen-1 QML (Produktionsrichtung)
+# python -m src.cli workbench               # Tk-Default / Legacy-Fallback
 ```
 
-Für die Produktstory und Entscheidungen siehe [Case Study](docs/CASE_STUDY.md). Für den vollständigen Setup- und Feature-Quickstart siehe die technischen Abschnitte weiter unten.
+Für die Produktstory und Entscheidungen siehe [Case Study](docs/CASE_STUDY.md). Canon-Einstiege: [Canon Index](docs/CANON_INDEX.md), [Product Workflow Canon](docs/PRODUCT_WORKFLOW_CANON.md). Für den vollständigen Setup- und Feature-Quickstart siehe die technischen Abschnitte weiter unten.
 
 ---
 
@@ -108,24 +114,24 @@ Für die Produktstory und Entscheidungen siehe [Case Study](docs/CASE_STUDY.md).
 | **Search (Core)** | ✅ verfügbar | NumPy-Suche (Default), Metadaten-Filter (BPM-Range, Key, Type, Tags, Pred-Type), Hybrid-Reranking (BPM/Key-Gewichte). |
 | **Search (CLAP, optional)** | 🧪 optional / experimentell | `laion/clap-htsat-unfused` (512-d), Text- und Audio-Embeddings, reproduzierbarer lokaler Tier-B Runtime-Pfad. Qualität auf synthetischen Fixtures gemessen: 6/6 Tier-B-Query-Klassen evaluiert (Text + Audio getrennt; finaler Run P@5 Text=0.185 / Audio=0.345, MRR@10 Text=0.420 / Audio=0.848, R@10 Audio=0.924). Audio auf diesen Fixtures deutlich stärker als Text. Weiterhin experimentell; keine Produktionsreife auf echten Producer-Libraries bewiesen. Kein CI-Model-Download. |
 | **Search (sqlite-vec)** | 🧪 optional / experimentell | Opt-in via `--search-backend sqlite-vec` oder Profil. Nicht Default (Latency-Gates nicht alle PASS). Gate Evidence: `docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md`. |
-| **Track Deconstruction** | ✅ verfügbar | `deconstruct <track> --pack-root <dir>` analysiert Track, erzeugt Track Map, Arrangement (optional), Loop-/Section-Kandidaten, Bewertung, Rendering, Asset-Reanalyse. Schreibt `deconstruct_run.json` als Zwischen-Evidence. Resume/Cache-Reuse (pack-lokal, #262). Track Analysis Cache Integration (#237). |
-| **Performance Packs** | ✅ verfügbar | Portable Pack-Struktur (`manifest.json`, `analysis/`, `loops/`, `sections/`, optional `stems/`). Pack-Import in Katalog (`pack-import`). Wiederaufnahme (pack-lokal #262) + wiederverwendbarer Track-Analyse-Cache (#237). |
-| **Stem Separation** | 🧪 optional / experimentell | Technisch validiert: `htdemucs` & `htdemucs_ft` getestet (8/8 Runs), blinder Hörvergleich: `htdemucs` 4/4 bevorzugt, ~2× schneller. Aber: Weight-Lizenz **UNKNOWN/UNVERIFIED** für beide Modelle. Noch **kein** Produktions-Default, **nicht** im Standard-Deconstruction/Pack-Flow. Issues #247/#248/#249/#261 offen. |
-| **Workbench** | ✅ verfügbar | Lokaler Tkinter-Workbench (`workbench`) für Playlist-Ansicht, Sample-Preview, Matching-Vorschläge und Harmonie-Finder (zweite Notebook-Seite: verwandte geladene Samples als Direkt/Verwandt/Transpose/Unsicher, siehe #213). Tkinter bleibt der funktionale Legacy-/Fallback-Pfad; die optionale QML-Screen-1-Shell ist die Produktionsrichtung. Kein VST3-Produkt. |
-| **VST3 / Realtime Transform** | 🚧 noch nicht fertig | Produktziel, aber nicht implementiert. |
+| **Track Deconstruction** | ✅ verfügbar | `deconstruct <track> --pack-root <dir>` analysiert Track, erzeugt Track Map, Arrangement (optional), Loop-/Section-Kandidaten, Bewertung, Rendering, Asset-Reanalyse. Schreibt `deconstruct_run.json` als Zwischen-Evidence. Resume/Cache-Reuse (pack-lokal; historische Delivery #262). Track Analysis Cache Integration (historisch #237). |
+| **Performance Packs** | ✅ verfügbar | Portable Pack-Struktur (`manifest.json`, `analysis/`, `loops/`, `sections/`, optional `stems/`). Pack-Import in Katalog (`pack-import`). Wiederaufnahme (pack-lokal; historisch #262) + wiederverwendbarer Track-Analyse-Cache (historisch #237). |
+| **Stem Separation** | 🧪 optional / experimentell | Technisch validiert: `htdemucs` & `htdemucs_ft` getestet (8/8 Runs), blinder Hörvergleich: `htdemucs` 4/4 bevorzugt, ~2× schneller (`docs/STEM_MODEL_BENCHMARK_V1.md`). Weight-Status für beide Modelle: **RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED** — deshalb **kein** Produktions-Default. Optionaler Stem-Pfad in Deconstruction/Packs existiert; Core-Flow bleibt ohne Stem-Pflicht. |
+| **Workbench / Screen 1** | ✅ verfügbar | Lokaler Workbench: Library, Preview, Matching, Live Kit, Harmonie-Finder. **Produktionsrichtung Screen 1:** PySide6 / Qt Quick / QML (`LOCK_PYSIDE6_QML`, `src/workbench_qml.py`, Start: `workbench --qml-screen1`). **Tkinter** (`workbench` ohne Flag) bleibt funktionaler Default sowie Legacy-/Fallback- und Verhaltensreferenz — nicht die Autorisierung für neue Screen-1-Visuals. |
+| **Channel Rack / Screen 2** | ✅ verfügbar | Pattern/Trigger-Channel-Rack auf `main` (Python-Core + Screen-2-QML; historische Delivery #675/#678). Arrangement / Screen 3 ist nicht Teil dieses Claims. |
+| **VST3 / Realtime Transform** | 🚧 geparkt / nicht shipped | VST3 / Host-Plugin ist **geparkt** und kein Primärpfad. Realtime Fit & Transform ist Zielvision, nicht als fertiges Produkt shipped. |
 
 ---
 
 ## Was noch nicht fertig ist
 
-- VST3 Plugin
+- VST3 / Host-Plugin (geparkt, nicht aktiver Primärpfad)
 - Realtime Fit & Transform Engine
-- Finaler Stem-Default + Stem-Pack-Integration (#247, #249, #261)
-- CLAP-Qualität auf echten Producer-Libraries ist noch nicht validiert; aktuelle Tier-B-Evidence (#216/#217 gemessen, #219 konsolidiert) ist synthetisch (6/6 Klassen, Text + Audio getrennt).
+- Arrangement / Screen 3
+- Stem-Produktions-Default (Weight-Lizenz blockiert kommerziellen Default; optionaler technischer Pfad existiert)
+- CLAP-Qualität auf echten Producer-Libraries ist noch nicht validiert; aktuelle Tier-B-Evidence (historisch #216/#217 gemessen, #219 konsolidiert) ist synthetisch (6/6 Klassen, Text + Audio getrennt).
 - Relative Key / Camelot / Circle-of-Fifths Kompatibilität im Matching
 - Groove / Loop-Length Fit im Matching
-- Producer Groups / Kick-Bass Rekonstruktion (#268)
-- End-to-End-Privatpilot (#264)
 
 ---
 
@@ -141,13 +147,14 @@ Tkinter -> funktionierender Legacy-/Fallback-Pfad und Verhaltensreferenz
 Python Core/Controller/Audio/Catalog -> autoritativ und wiederzuverwenden
 ```
 
-`src/workbench_qml.py` ist die kanonische QML-Shell. Das ursprüngliche
-Screen-1-Epic #503 und das Calm-Adaptive-Workspace-Epic #691 sind geschlossen /
-geliefert; das ist **kein** Claim, dass jede mögliche UI-Verfeinerung erledigt
-ist. Neue Screen-1-Slices brauchen ein **neues scoped Issue**, den
-Renderer-Canon und den GitHub-Live-State — nicht #691 als aktiven Parent.
-Diese Festlegung entfernt Tkinter nicht und dupliziert keine bestehende Python-
-oder Audio-Logik in QML.
+`src/workbench_qml.py` ist die kanonische QML-Shell. Geschlossene Screen-1-
+Epics (#503 Migration, #691 Calm Adaptive Workspace) sind **historische
+Evidence**, kein aktiver Arbeitsstatus und kein Parent für neue Slices. Neue
+Screen-1-Arbeit braucht ein **neues scoped Issue**, den Renderer-Canon und den
+GitHub-Live-State. Tkinter bleibt als Legacy/Fallback/Verhaltensreferenz
+erhalten; neue Screen-1-Visuals werden nicht in Tk autorisiert. Python
+Core/Controller/Audio/Catalog bleiben autoritativ und werden in QML nur dünn
+adaptiert.
 
 ---
 
@@ -187,8 +194,10 @@ pack-import <OUT> [--dry-run]                          # Loops/Sections in Katal
 
 ```bash
 python -m venv .venv
-. .venv\Scripts\activate      # Windows
-# source .venv/bin/activate   # macOS/Linux
+# Windows:
+.\.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
 
 pip install -r requirements.txt
 pip install -e .
@@ -256,7 +265,13 @@ python -m src.cli export_fl --fl-user-data "<FL_USER_DATA_PATH>" --max-tags 3
 
 # DB Diagnostics
 python -m src.cli db doctor
+
+# Workbench
+python -m src.cli workbench --qml-screen1   # Screen-1 QML (LOCK_PYSIDE6_QML)
+python -m src.cli workbench                 # Tk Default / Legacy-Fallback
 ```
+
+Windows-Hilfen für Runtime-Installer, Desktop-Shortcut und Tester-Builds liegen unter [`tools/windows/`](tools/windows/README.md) (keine privaten Pfade nötig).
 
 ### CLAP-spezifischer Block (nur mit `[clap]` Extra)
 
@@ -324,8 +339,12 @@ python -m src.cli pack-import "<OUTPUT_DIR>"
 
 Der vollständige Navigations-Index liegt in [docs/README.md](docs/README.md).
 
+- [Canon Index](docs/CANON_INDEX.md) — Authority-Map (aktiv vs. supporting vs. historisch)
+- [Product Workflow Canon](docs/PRODUCT_WORKFLOW_CANON.md) — Workbench-first Producer-Pfad
 - [Portfolio Case Study](docs/CASE_STUDY.md) — Produktstory, Rolle, Product Decisions, Evidence
 - [Screen-1 Visual Acceptance](docs/WORKBENCH_VISUAL_ACCEPTANCE.md) — Runtime-Capture-Pfad für UI-Evidence
+- [Workbench QML Proof / Renderer](docs/WORKBENCH_QML_PROOF_SPIKE.md) — `LOCK_PYSIDE6_QML` und Evidence-Grenze
+- [Realtime Workbench Scope](docs/REALTIME_WORKBENCH_SCOPE.md) — lokale Realtime-Grenze (#318)
 - [Product Requirements](docs/PRODUCT_REQUIREMENTS.md) — Vision, Audience, MVP Scope
 - [System Requirements](docs/SYSTEM_REQUIREMENTS.md) — funktionale / nicht-funktionale Requirements
 - [Target Architecture](docs/TARGET_ARCHITECTURE.md) — Modulgrenzen, Pipeline-Verträge
@@ -340,7 +359,8 @@ Der vollständige Navigations-Index liegt in [docs/README.md](docs/README.md).
 - [Harmonic & Rhythmic Matching Spec](docs/product/02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md) — Matching-Logik (shipped vs. target)
 - [CLAP Tier-B Evidence & Runtime](docs/benchmarks/SEARCH_QUALITY_EVIDENCE.md) — final 6/6 Tier-B Evidence, reproduzierbarer CLAP-Lauf
 - [Search Quality Evidence](docs/benchmarks/SEARCH_QUALITY_EVIDENCE.md) — gemessene P@K/R@K (Tier A + B)
-- [Issue Backlog](docs/ISSUE_BACKLOG.md) — geplante Arbeit
+- [sqlite-vec Gate Evidence](docs/benchmarks/SQLITE_VEC_GATE_EVIDENCE.md) — warum NumPy Default bleibt
+- [Issue Backlog](docs/ISSUE_BACKLOG.md) — HISTORICAL_LEDGER (kein Live-Board)
 
 ---
 
