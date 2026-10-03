@@ -183,7 +183,25 @@ def test_theme_authority_bridge_corrupt_prefs_fail_closed_to_blood_a(tmp_path: P
 
 
 def test_column_resize_contract_survives_theme_wiring() -> None:
-    """#792 must not regress while wiring Theme Authority."""
-    assert 'browserPane.resizeColumn(' in QML_SOURCE
-    assert "theme.dividerDefault" in QML_SOURCE
-    assert "#780 Browser column resize" in QML_SOURCE
+    """#792/#846: Theme Authority remains; column-resize chrome uses semantics."""
+    # Width authority stays on browserPane (not Theme Authority).
+    assert "browserPane.resizeColumn(" in QML_SOURCE
+    assert "function resizeColumn(" in QML_SOURCE
+    # #846 header-owned ephemeral surfaces (not permanent row dividers).
+    assert 'objectName: "browserColumnResize_waveform"' in QML_SOURCE
+    assert 'objectName: "browserColumnResize_meta"' in QML_SOURCE
+    # Focus / hover chrome must use existing theme semantics — no HEX palette.
+    assert "theme.focusRing" in QML_SOURCE or "theme.selectionBorder" in QML_SOURCE
+    resize_idx = QML_SOURCE.index('objectName: "browserColumnResize_waveform"')
+    resize_window = QML_SOURCE[resize_idx : resize_idx + 1200]
+    assert (
+        "theme.surfaceElevated" in resize_window
+        or "theme.borderSubtle" in resize_window
+        or "theme.textSecondary" in resize_window
+        or "theme.focusRing" in resize_window
+    )
+    import re
+
+    assert re.search(r"#[0-9a-fA-F]{3,8}\b", resize_window) is None
+    # Permanent vertical column-divider proof is intentionally retired (#846).
+    assert 'objectName: "browserColumnDivider_waveform"' not in QML_SOURCE
