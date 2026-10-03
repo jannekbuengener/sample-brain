@@ -54,7 +54,7 @@ flowchart LR
 
 ### Visuelle Produkt-Evidence
 
-**CURRENT PRODUCT / RUNTIME** — Screen-1 des lokalen Workbench, aufgenommen aus einem verifizierten Production-QML-Build (Runtime-Provenance `VALID`, deterministisches Screen-1-Acceptance-Fixture). Erzeugt über den [Visual-Acceptance-Pfad](docs/WORKBENCH_VISUAL_ACCEPTANCE.md); Capture-Commit, Timestamp und Hashes stehen in [runtime/manifest.json](docs/assets/portfolio/runtime/manifest.json) (Evidence-Refresh folgt separat, wenn `main`-UI stabil ist):
+**CURRENT PRODUCT / RUNTIME** — Screen-1 des lokalen Workbench, aufgenommen aus einem verifizierten Production-QML-Build (Runtime-Provenance `VALID`, deterministisches Screen-1-Acceptance-Fixture `screen1_visual_fixture_v1`). Capture auf `main` Commit `5602d801dc8b52a691e6cb99ad45377dc715eebf` (2026-10-03), Renderer PySide6/Qt Quick/QML via `src.workbench_qml`, erzeugt über den [Visual-Acceptance-Pfad](docs/WORKBENCH_VISUAL_ACCEPTANCE.md). Provenance, Timestamp und SHA-256-Hashes: [runtime/manifest.json](docs/assets/portfolio/runtime/manifest.json):
 
 ![Sample Brain Workbench — Library/Browser & Live Kit (CURRENT PRODUCT / RUNTIME)](docs/assets/portfolio/runtime/screen1-default-3panel.png)
 
