@@ -5305,7 +5305,8 @@ def _qml_engine(
             target_node_id.startswith(f"folder:{folder_id}:")
             and library_model.state.node(f"root:{folder_id}") is not None
         ):
-            library_model.state.fetch_children(f"root:{folder_id}")
+            # Keep Qt item index in sync with navigation state (#836).
+            library_model.ensureChildren(f"root:{folder_id}")
         # #742: Live Kit stays hidden after success; Browser materializes via sync.
         if runtime_composition is not None:
             runtime_composition.clear_live_kit_disclosure()
