@@ -20,9 +20,9 @@ External skills remain routing references; their bodies are not copied here.
 
 ## Skill Relationships
 
-All four core skills are **standalone** — each runs independently with complete
-inputs. Other skill outputs are optional context enhancements, not mandatory
-predecessors.
+All five repository-owned skills are **standalone** — each runs independently
+with complete inputs. Other skill outputs are optional context enhancements,
+not mandatory predecessors.
 
 ### Standalone Guarantee
 
@@ -43,12 +43,14 @@ Each skill includes a `## Relationships` section with:
 
 ### Global Routing Entry Point
 
-The **initial entry point** to the skill network is determined by
-`.cursor/rules/skill-routing.mdc`, not by individual skills. This routing file
-handles:
+Machine routing authority is
+[`docs/operations/CAPABILITY_REGISTRY.json`](../operations/CAPABILITY_REGISTRY.json)
+(front door: [`docs/operations/README.md`](../operations/README.md)).
+`.cursor/rules/skill-routing.mdc` is a **generated view** of that registry
+(marked blocks only), not a second authority. Use the registry / generated
+view for:
 - Slice classification (product_code, docs, ci_tooling, etc.)
 - Direct first-skill selection
-- No second routing authority
 
 Once the first skill is selected, routing between skills is governed by each
 skill's `## Relationships` section.

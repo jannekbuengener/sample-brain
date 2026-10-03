@@ -18,11 +18,13 @@ internal agent- and process docs are clearly separated.
 
 | Document | What it is |
 |---|---|
+| [Canon Index](CANON_INDEX.md) | Authority map: active canon vs supporting / snapshot / historical (front door) |
+| [Product Workflow Canon](PRODUCT_WORKFLOW_CANON.md) | Workbench-first producing path; overrides stale VST-first framing |
 | [Product Requirements](PRODUCT_REQUIREMENTS.md) | Vision, audience, MVP scope |
 | [System Requirements](SYSTEM_REQUIREMENTS.md) | Functional / non-functional requirements |
 | [Product Pillar Specs](product/README.md) | Historical capability pillar specs; VST-first framing is parked/superseded as primary path |
 | [Realtime Workbench Scope](REALTIME_WORKBENCH_SCOPE.md) | Boundary of the local real-time workbench |
-| [Issue Backlog](ISSUE_BACKLOG.md) | Historical backlog/PR ledger; use GitHub live + CURRENT_STATUS/ACTIVE_ROADMAP for current work |
+| [Screen-1 QML Proof / Renderer](WORKBENCH_QML_PROOF_SPIKE.md) | `LOCK_PYSIDE6_QML`; proof vs production-shell boundary |
 
 ## Architecture & Decisions
 
@@ -45,7 +47,7 @@ internal agent- and process docs are clearly separated.
 | [sqlite-vec Gate Evidence](benchmarks/SQLITE_VEC_GATE_EVIDENCE.md) | Latency/quality gates |
 | [Key Confidence Evidence](benchmarks/KEY_CONF_EVIDENCE.md) | Key analysis confidence |
 | [BPM Half/Double Evidence](benchmarks/BPM_HALF_DOUBLE_EVIDENCE.md) | BPM ambiguity evaluation |
-| [Validation Reports](validation/README.md) | Contract validation summaries |
+| [Validation Reports](validation/README.md) | Local validate_report how-to; committed files there are historical issue evidence |
 
 ## Operations, Process & Infrastructure (internal)
 
@@ -53,11 +55,13 @@ These support the development process, not the product itself:
 
 | Document | What it is |
 |---|---|
+| [Operations / Capabilities](operations/README.md) | Capability registry front door (process/routing; not product canon) |
 | [Pipeline runbook](PIPELINE.md) | Legacy title-suggestion pipeline |
 | [CI Degraded Mode](CI_DEGRADED_MODE.md) | CI fallback policy |
 | [Branch Protection](BRANCH_PROTECTION.md) | Merge governance |
 | [MCP Setup](MCP_SETUP.md) | Local MCP / agent tooling |
 | [Bootloader & Context Strategy](BOOTLOADER_AND_CONTEXT_STRATEGY.md) | Agent session context |
+| [Issue Backlog](ISSUE_BACKLOG.md) | HISTORICAL_LEDGER only; use GitHub live for open/closed work |
 | Runbooks | [Self-hosted runner](runbooks/SAMPLE_BRAIN_SELF_HOSTED_RUNNER.md) |
 
 Historical single-documents (kept for evidence, no longer current): [`docs/archive/`](archive/).

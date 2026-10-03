@@ -2,7 +2,7 @@
 
 Capability specs for library, matching, context, and transform cores that feed the **local Workbench**. Primary producing path: [`docs/PRODUCT_WORKFLOW_CANON.md`](../PRODUCT_WORKFLOW_CANON.md). Parent vision: [`docs/PRODUCT_REQUIREMENTS.md`](../PRODUCT_REQUIREMENTS.md) §5–6.
 
-**Supersession:** The historical “VST-first producing workspace” framing (#90 / #93) is **parked** ([#469](https://github.com/jannekbuengener/sample-brain/issues/469)). Pillar specs remain useful for **core capability contracts**; they do **not** authorize VST as the main product interface.
+**Supersession:** The historical “VST-first producing workspace” framing (#90 / #93) is **parked** (historical #469; issue record deleted). Pillar specs remain useful for **core capability contracts**; they do **not** authorize VST as the main product interface.
 
 ## Pillar index
 
@@ -13,7 +13,7 @@ Capability specs for library, matching, context, and transform cores that feed t
 | **[MATCHING]** Harmonic & Rhythmic Matching | [#91](https://github.com/jannekbuengener/sample-brain/issues/91) | [`02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md`](02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md) | **Done** (PR #105) |
 | **[CONTEXT]** Track Context Analysis | [#95](https://github.com/jannekbuengener/sample-brain/issues/95) | [`03_TRACK_CONTEXT_ANALYSIS_SPEC.md`](03_TRACK_CONTEXT_ANALYSIS_SPEC.md) | **Done** (PR #106) |
 | **[TRANSFORM]** Realtime Fit & Transform Engine | [#92](https://github.com/jannekbuengener/sample-brain/issues/92) | [`04_REALTIME_FIT_TRANSFORM_SPEC.md`](04_REALTIME_FIT_TRANSFORM_SPEC.md) | **Done** (PR #106) |
-| **[WORKSPACE]** Producing Workspace | [#93](https://github.com/jannekbuengener/sample-brain/issues/93) | [`05_VST_PRODUCING_WORKSPACE_SPEC.md`](05_VST_PRODUCING_WORKSPACE_SPEC.md) | Spec exists; **VST UI parked** — Workbench Screens 1–3 are the active workspace path |
+| **[WORKSPACE]** Producing Workspace | [#93](https://github.com/jannekbuengener/sample-brain/issues/93) | [`05_VST_PRODUCING_WORKSPACE_SPEC.md`](05_VST_PRODUCING_WORKSPACE_SPEC.md) | Spec exists; **VST UI parked** (historical #469) — Workbench Screens 1–2 are the active workspace path; Screen 3 Arrangement remains future/parked |
 
 ## Dependency order
 
@@ -23,10 +23,10 @@ Capability specs for library, matching, context, and transform cores that feed t
 3. Context (#95)     →  track profile
 4. Transform (#92)   →  playable variants (optional for Channel Rack v1)
 5. Workbench UI      →  Screen 1 → Live Kit → Channel Rack → Arrangement
-   (VST shell #93 UI remains parked under #469)
+   (VST shell #93 UI remains parked; historical #469)
 ```
 
-Runtime on `main` today: CLI scan → analyze → autotype → export_fl (legacy FL); optional embed/index/search; matching / context / deconstruct / pack-import as documented; Workbench Screen 1 + Live Kit (Tk + QML path); Pattern Core, the sequencer scheduling seam, Channel Rack Python core, and the production sequencer PCM cache/decode provider (#676). Screen-2 QML UI, Arrangement mode, and VST3 plugin are **not** implemented.
+Runtime on `main` today: CLI scan → analyze → autotype → export_fl (legacy FL); optional embed/index/search; matching / context / deconstruct / pack-import as documented; Workbench Screen 1 + Live Kit (QML production path; Tk legacy/fallback); Pattern Core, the sequencer scheduling seam, Channel Rack Python core, the production sequencer PCM cache/decode provider (#676), and Screen-2 QML Channel Rack (#678 / PR #755). Arrangement mode (Screen 3) and VST3 plugin remain **not** implemented / parked.
 
 ## Related documents
 
