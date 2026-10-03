@@ -485,8 +485,14 @@ def test_readonly_snapshot_stays_outside_library_when_temp_is_library_dir(
     before = _library_dir_fingerprint(library_db)
     for key in ("TMP", "TEMP", "TMPDIR", "LOCALAPPDATA", "SYSTEMROOT", "WINDIR"):
         monkeypatch.setenv(key, str(library_dir))
+    gettempdir_calls = {"n": 0}
+
+    def _forbidden_gettempdir() -> str:
+        gettempdir_calls["n"] += 1
+        raise AssertionError("tempfile.gettempdir must not probe the library dir")
+
     monkeypatch.setattr(
-        workbench_library.tempfile, "gettempdir", lambda: str(library_dir)
+        workbench_library.tempfile, "gettempdir", _forbidden_gettempdir
     )
     roots: list[Path] = []
     real_temporary_directory = workbench_library.tempfile.TemporaryDirectory
@@ -505,6 +511,7 @@ def test_readonly_snapshot_stays_outside_library_when_temp_is_library_dir(
 
     assert cached is not None
     assert cached.bpm == 128.0
+    assert gettempdir_calls["n"] == 0
     assert roots
     for root in roots:
         assert not workbench_library._path_is_inside(root, library_dir)
@@ -512,6 +519,26 @@ def test_readonly_snapshot_stays_outside_library_when_temp_is_library_dir(
     assert not any(
         path.name.startswith("sample-brain-wb-lib-ro-") for path in library_dir.iterdir()
     )
+
+
+def test_external_temp_roots_never_calls_gettempdir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Candidate selection must not probe TMP via tempfile.gettempdir()."""
+    library_dir = (tmp_path / "lib").resolve()
+    library_dir.mkdir()
+    monkeypatch.setenv("TMP", str(library_dir))
+    monkeypatch.setenv("TEMP", str(library_dir))
+    monkeypatch.setenv("TMPDIR", str(library_dir))
+    monkeypatch.setattr(
+        workbench_library.tempfile,
+        "gettempdir",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("gettempdir must not be called")
+        ),
+    )
+    roots = workbench_library._external_temp_roots(library_dir)
+    assert all(not workbench_library._path_is_inside(root, library_dir) for root in roots)
 
 
 def test_readonly_snapshot_refuses_when_every_temp_root_is_inside_library(

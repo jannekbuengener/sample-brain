@@ -214,8 +214,14 @@ def _path_is_inside(path: Path, root: Path) -> bool:
 
 
 def _external_temp_roots(source_dir: Path) -> tuple[Path, ...]:
-    """Candidate snapshot roots that are not the source library directory."""
-    candidates: list[Path] = [Path(tempfile.gettempdir())]
+    """Candidate snapshot roots that are not the source library directory.
+
+    Do not call ``tempfile.gettempdir()``: on first use it probes TMP/TEMP/TMPDIR
+    by creating a file there, which would mutate the library directory when those
+    env vars point at it. Read env paths as plain Paths and prefer known external
+    roots first.
+    """
+    candidates: list[Path] = []
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
         candidates.append(Path(local_app_data) / "Temp")
@@ -225,6 +231,10 @@ def _external_temp_roots(source_dir: Path) -> tuple[Path, ...]:
     candidates.append(Path("/tmp"))
     if source_dir.parent != source_dir:
         candidates.append(source_dir.parent)
+    for key in ("TMPDIR", "TEMP", "TMP"):
+        value = os.environ.get(key)
+        if value:
+            candidates.append(Path(value))
     roots: list[Path] = []
     seen: set[str] = set()
     for candidate in candidates:
