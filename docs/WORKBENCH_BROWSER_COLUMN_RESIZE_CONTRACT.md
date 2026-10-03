@@ -46,11 +46,9 @@ two never share state.
 Dividers/handles are rendered **inside the row delegate** (not the header). All
 rows share one delegate, so the vertical separators align perfectly down the
 list and stay virtualization-safe (`reuseItems: true`, no per-row model growth).
-The header label row keeps its existing layout: the header and the data rows use
-different trailing column structures (the delegate carries an optional `type`
-column the header never had under #767/#776), so painting header dividers would
-not line up with the data grid. Dividers therefore live where alignment is
-guaranteed: the data rows.
+Header and data rows share the same trailing column structure, including the
+wide-mode Type column after Length (#850). Dividers still live in the data rows
+so every virtualized row paints the same separators; Type remains non-resizable.
 
 Each resizable column paints a 1-DIP line at its right edge with a wider
 `MouseArea` hit target that owns the pointer (`preventStealing`, accepted press)
@@ -111,8 +109,8 @@ is the intended seam. This slice does not implement it.
 ## Non-scope
 
 - Column reordering, sorting/filter redesign, spreadsheet grid.
-- Header-cell drag handles or header/row column-structure realignment
-  (pre-existing #767/#776 concern).
+- Header-cell drag handles (header/row column structure for Type is owned by
+  #850; this contract does not reopen column reordering).
 - Panel docking/reordering (#697), DnD (#768), Brand/Motion (#786
   DONE_MERGED_CLOSED), Screen 2/3, packaging, general Settings redesign.
   Theme (#785 DONE_MERGED_CLOSED) owns appearance tokens via Theme Core /

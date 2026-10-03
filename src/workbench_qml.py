@@ -1636,6 +1636,7 @@ ApplicationWindow {
     property int browserMetaColumnWidth: 48
     property int browserFavoriteColumnWidth: 28
     property int browserLengthColumnWidth: 62
+    property int browserTypeColumnWidth: 72
     property int browserAddColumnWidth: 96
     property int harmonicWaveformWidth: 72
     property int harmonicRelationColumnWidth: 72
@@ -3064,7 +3065,10 @@ ApplicationWindow {
                     Label { text: "BPM"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
                     Label { text: "FAV"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserFavoriteColumnWidth; horizontalAlignment: Text.AlignHCenter; font.pixelSize: window.textCaption; font.bold: true }
                     Label { text: "KEY"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
-                    Label { text: "LENGTH"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
+                    Label { objectName: "browserColumnHeader_length"; text: "LENGTH"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
+                    // #850: Type header shares visibility + width with the Type value cell so
+                    // Length never visually hosts Type labels under a shifted trailing geometry.
+                    Label { objectName: "browserColumnHeader_type"; visible: !browserPane.browserNarrowColumns; text: "TYPE"; color: theme.textSecondary; Layout.preferredWidth: window.browserTypeColumnWidth; Layout.maximumWidth: 88; horizontalAlignment: Text.AlignLeft; font.pixelSize: window.textCaption; font.bold: true }
                     Item { Layout.preferredWidth: browserPane.effectiveBrowserAddColumnWidth }
                 }
                 ListView { id: browser; objectName: "browserList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: window.densityRowHeight; implicitHeight: window.densityRowHeight * 2
@@ -3196,8 +3200,8 @@ ApplicationWindow {
                                 }
                             }
                             Label { id: keyCell; text: modelData.key; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
-                            Label { id: lengthCell; text: modelData.duration; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
-                            Label { visible: !browserPane.browserNarrowColumns; text: modelData.type; color: theme.textSecondary; font.pixelSize: window.textCaption; elide: Text.ElideRight; Layout.preferredWidth: 72; Layout.maximumWidth: 88; verticalAlignment: Text.AlignVCenter }
+                            Label { id: lengthCell; objectName: "browserLengthCell"; text: modelData.duration; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta; elide: Text.ElideRight; clip: true }
+                            Label { id: typeCell; objectName: "browserTypeCell"; visible: !browserPane.browserNarrowColumns; text: modelData.type; color: theme.textSecondary; font.pixelSize: window.textCaption; elide: Text.ElideRight; Layout.preferredWidth: window.browserTypeColumnWidth; Layout.maximumWidth: 88; verticalAlignment: Text.AlignVCenter }
                             Rectangle {
                                 id: addButton
                                 Layout.preferredWidth: browserPane.effectiveBrowserAddColumnWidth

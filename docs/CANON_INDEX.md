@@ -27,7 +27,8 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 | Screen-1 renderer | `docs/WORKBENCH_QML_PROOF_SPIKE.md` | ACTIVE_SUPPORTING | `LOCK_PYSIDE6_QML`; #503/#579/#691 are delivered historical evidence. New Screen-1 work needs a new scoped issue. |
 | Screen-1 preview playhead | `docs/WORKBENCH_PREVIEW_PLAYHEAD_CONTRACT.md` | ACTIVE_SUPPORTING | #738; Canvas body + thin overlay; engine-backed progress only. |
 | Screen-1 display preferences | `docs/WORKBENCH_DISPLAY_PREFERENCES.md` | ACTIVE_SUPPORTING | #696; density/motion/layout reset/startup presets; header overflow only. |
-| Screen-1 Browser column resize | `docs/WORKBENCH_BROWSER_COLUMN_RESIZE_CONTRACT.md` | ACTIVE_SUPPORTING | #780; subtle dividers + runtime resize; one interactive meta handle; narrow mode preserves #692 defaults. |
+| Screen-1 Browser column arrangement | `docs/WORKBENCH_BROWSER_COLUMN_ARRANGEMENT_CONTRACT.md` | ACTIVE_SUPPORTING | #767 order; #850 header/delegate Type alignment so Length/Type never swap visually. |
+| Screen-1 Browser column resize | `docs/WORKBENCH_BROWSER_COLUMN_RESIZE_CONTRACT.md` | ACTIVE_SUPPORTING | #780; subtle dividers + runtime resize; one interactive meta handle; narrow mode preserves #692 defaults; Type non-resizable. |
 | Screen-1 visual acceptance | `docs/WORKBENCH_VISUAL_ACCEPTANCE.md` | ACTIVE_SUPPORTING | Agents own technical/runtime/visual acceptance; Owner does not run operative acceptance loops. |
 | Semantic search | `docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md` | ACTIVE_SUPPORTING | NumPy default, sqlite-vec opt-in, VST-first historical framing is superseded. |
 | Screen-2 ownership | `docs/SESSION_OWNERSHIP_CONTRACT.md` | ACTIVE_SUPPORTING | Python-owned session state. |
