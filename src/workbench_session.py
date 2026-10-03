@@ -8,18 +8,19 @@ Cross-screen audio focus (#807) is owned here: entering Screen 2 / claiming
 Channel Rack playback releases Screen-1 audition; returning to Screen 1 leaves
 a quiet surface and never auto-resumes the previous audition.
 
-Musical session persistence (#809 / #818 / #820): load/validate a local
+Musical session persistence (#809 / #818 / #819 / #820): load/validate a local
 snapshot under the Workbench state dir, apply MASTER/SYNC onto the shared
-transport before first projection, restore kit/rack path refs, best-effort
-rehydrate Live Kit analysis fields from the local library when
-``library_db_path`` is present, then wire autosave callbacks only after a
-successful all-or-nothing restore (or fresh empty session).
+transport before first projection, restore kit/rack path refs, expose
+persistence honesty status, best-effort rehydrate Live Kit analysis fields
+from the local library when ``library_db_path`` is present, then wire autosave
+callbacks only after a successful all-or-nothing restore (or fresh empty
+session).
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -35,9 +36,11 @@ from .workbench_qml import (
 )
 from .workbench_session_store import (
     DEFAULT_TEMPO_BPM,
+    PERSISTENCE_STATUS_AUTOSAVE_FAILED,
+    PERSISTENCE_STATUS_FRESH_MISSING,
     apply_snapshot_to_live_kit,
     channel_rack_state_from_snapshot,
-    load_workbench_session_snapshot,
+    load_workbench_session_outcome,
     rehydrate_live_kit_from_library,
     save_workbench_session_snapshot,
     snapshot_from_musical_state,
@@ -62,6 +65,43 @@ class WorkbenchSession:
     channel_rack: ChannelRackController
     tk_workbench: WorkbenchApp | None = None
     measurement_session_id: str | None = None
+    persistence_status: str = PERSISTENCE_STATUS_FRESH_MISSING
+    _resume_persistence_status: str = field(
+        default=PERSISTENCE_STATUS_FRESH_MISSING,
+        repr=False,
+        compare=False,
+    )
+    _persistence_status_listeners: list[Any] = field(
+        default_factory=list,
+        repr=False,
+        compare=False,
+    )
+
+    def add_persistence_status_listener(self, callback: Any) -> None:
+        """Register a no-arg callback for persistence_status changes (#819)."""
+        if callback is not None and callback not in self._persistence_status_listeners:
+            self._persistence_status_listeners.append(callback)
+
+    def _notify_persistence_status(self) -> None:
+        for callback in tuple(self._persistence_status_listeners):
+            try:
+                callback()
+            except Exception:
+                continue
+
+    def note_autosave_failed(self) -> None:
+        """Mark durable save failure without altering in-memory musical state."""
+        if self.persistence_status == PERSISTENCE_STATUS_AUTOSAVE_FAILED:
+            return
+        self.persistence_status = PERSISTENCE_STATUS_AUTOSAVE_FAILED
+        self._notify_persistence_status()
+
+    def note_autosave_succeeded(self) -> None:
+        """Clear autosave failure honesty back to the compose-time resume code."""
+        if self.persistence_status != PERSISTENCE_STATUS_AUTOSAVE_FAILED:
+            return
+        self.persistence_status = self._resume_persistence_status
+        self._notify_persistence_status()
 
     def release_screen1_audition(self) -> None:
         """Stop Screen-1 monophonic audition and clear adapter projection.
@@ -124,6 +164,7 @@ class _SessionAuditionPlayRow:
 
 def _autosave_musical_session(
     *,
+    session: WorkbenchSession,
     live_kit: LiveKitState,
     channel_rack: ChannelRackController,
     transport: WorkbenchTransportAdapter,
@@ -138,7 +179,9 @@ def _autosave_musical_session(
         save_workbench_session_snapshot(snapshot, state_dir=state_dir, env=env)
     except OSError:
         # Last good on-disk snapshot remains; in-memory state stays authoritative.
+        session.note_autosave_failed()
         return
+    session.note_autosave_succeeded()
 
 
 def compose_workbench_session(
@@ -150,13 +193,15 @@ def compose_workbench_session(
 ) -> WorkbenchSession:
     """Compose one shared Live Kit + one TransportAwarePreview audition owner.
 
-    Restore order (#818 / #820):
-    load/validate → resolve MASTER/SYNC → construct/apply transport clock →
-    restore Live Kit path refs → optional library rehydrate → first projection
-    → restore Channel Rack → wire autosave.
+    Restore order (#818 / #819 / #820):
+    load/validate (+ honesty status) → resolve MASTER/SYNC → construct/apply
+    transport clock → restore Live Kit path refs → optional library rehydrate →
+    first projection → restore Channel Rack → wire autosave.
     """
 
-    snapshot = load_workbench_session_snapshot(state_dir=state_dir, env=env)
+    load_outcome = load_workbench_session_outcome(state_dir=state_dir, env=env)
+    snapshot = load_outcome.snapshot
+    resume_status = load_outcome.status
     if snapshot is not None:
         master_bpm = float(snapshot.master_bpm)
         sync_enabled = bool(snapshot.sync_enabled)
@@ -247,6 +292,8 @@ def compose_workbench_session(
         channel_rack=channel_rack,
         tk_workbench=tk_workbench,
         measurement_session_id=measurement_session_id,
+        persistence_status=resume_status,
+        _resume_persistence_status=resume_status,
     )
     # Single ownership: Channel Rack enter/play/leave claim/release Screen-1
     # audition through the session policy, including bridge-direct paths.
@@ -257,6 +304,7 @@ def compose_workbench_session(
 
     def _on_channel_rack_mutation() -> None:
         _autosave_musical_session(
+            session=session,
             live_kit=live_kit,
             channel_rack=channel_rack,
             transport=transport,
@@ -269,6 +317,7 @@ def compose_workbench_session(
         # notify=False avoids nested rack→autosave doubling the Live Kit write.
         channel_rack.reconcile_live_kit_state(notify=False)
         _autosave_musical_session(
+            session=session,
             live_kit=live_kit,
             channel_rack=channel_rack,
             transport=transport,
@@ -279,6 +328,7 @@ def compose_workbench_session(
     def _on_session_clock_mutation() -> None:
         # Clock-only intent → one full coherent session save (includes kit/rack).
         _autosave_musical_session(
+            session=session,
             live_kit=live_kit,
             channel_rack=channel_rack,
             transport=transport,

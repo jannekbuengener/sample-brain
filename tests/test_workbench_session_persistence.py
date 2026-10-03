@@ -1,10 +1,10 @@
-"""TEST_GATE / TEST_FREEZE — Workbench musical session persistence (#809 / #818).
+"""TEST_GATE / TEST_FREEZE — Workbench musical session persistence (#809 / #818 / #819).
 
 Canonical authority:
 - docs/SESSION_OWNERSHIP_CONTRACT.md
 - docs/DATA_AND_ARTIFACT_POLICY.md
 - docs/PATTERN_CORE_CONTRACT.md
-- Issue #809 / #817 / #818
+- Issue #809 / #817 / #818 / #819
 
 Frozen product rules:
 - versioned local JSON under workbench_state_dir (workbench_session.json)
@@ -15,6 +15,7 @@ Frozen product rules:
 - edited triggers are authority (no DEFAULT_ON re-seed on restore)
 - playback/loop runtime never persisted; restore is quiet/stopped
 - resume MASTER prefers pending tempo target when scheduled
+- Python-owned persistence_status honesty codes (#819); no private paths in status
 """
 
 from __future__ import annotations
@@ -1307,3 +1308,236 @@ def test_atomic_write_rejects_non_finite_master_bpm(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         save_workbench_session_snapshot(snapshot, state_dir=tmp_path)
     assert not _session_path(tmp_path).exists()
+
+
+# --- #819 Persistence / resume honesty status (TEST_FREEZE) ------------------
+
+
+def _assert_status_safe(status: str) -> None:
+    """Status strings must stay reason-code sized — no paths/secrets/dumps."""
+    assert status
+    assert "\\" not in status
+    assert "/" not in status or status.count("/") == 0
+    assert "Traceback" not in status
+    assert "OSError" not in status
+    assert "C:" not in status
+    assert "D:" not in status
+
+
+def test_fresh_missing_status_when_no_session_file(tmp_path: Path) -> None:
+    from src.workbench_session_store import PERSISTENCE_STATUS_FRESH_MISSING
+
+    session = compose_workbench_session(state_dir=tmp_path)
+    assert session.persistence_status == PERSISTENCE_STATUS_FRESH_MISSING
+    _assert_status_safe(session.persistence_status)
+    session.transport.close()
+
+
+def test_restored_ok_status_after_successful_resume(tmp_path: Path) -> None:
+    from src.workbench_session_store import PERSISTENCE_STATUS_RESTORED_OK
+
+    kick = str(tmp_path / "kick.wav")
+    Path(kick).write_bytes(b"RIFF")
+    a = compose_workbench_session(state_dir=tmp_path)
+    a.live_kit.assign("Kick + Bass", "Kick", _row("kick.wav", kick))
+    a.transport.set_tempo(128.0)
+    a.transport.close()
+
+    b = compose_workbench_session(state_dir=tmp_path)
+    assert b.persistence_status == PERSISTENCE_STATUS_RESTORED_OK
+    assert b.live_kit.assignment_for("Kick + Bass", "Kick") is not None
+    assert b.transport.get_current_tempo() == pytest.approx(128.0)
+    _assert_status_safe(b.persistence_status)
+    b.transport.close()
+
+
+def test_corrupt_json_status_is_rejected_corrupt_and_empty(tmp_path: Path) -> None:
+    from src.workbench_session_store import PERSISTENCE_STATUS_REJECTED_CORRUPT
+
+    path = _session_path(tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{not-json", encoding="utf-8")
+
+    session = compose_workbench_session(state_dir=tmp_path)
+    assert session.persistence_status == PERSISTENCE_STATUS_REJECTED_CORRUPT
+    assert session.live_kit.assignment_for("Kick + Bass", "Kick") is None
+    assert session.channel_rack.state is None
+    # Corrupt file remains (no required quarantine); status is the honesty surface.
+    assert path.is_file()
+    assert path.read_text(encoding="utf-8") == "{not-json"
+    _assert_status_safe(session.persistence_status)
+    session.transport.close()
+
+
+def test_wrong_schema_status_is_rejected_schema_and_empty(tmp_path: Path) -> None:
+    from src.workbench_session_store import PERSISTENCE_STATUS_REJECTED_SCHEMA
+
+    _write_raw(
+        tmp_path,
+        {"schema_version": 99, "live_kit": {}, "channel_rack": None},
+    )
+    session = compose_workbench_session(state_dir=tmp_path)
+    assert session.persistence_status == PERSISTENCE_STATUS_REJECTED_SCHEMA
+    assert session.channel_rack.state is None
+    assert all(
+        session.live_kit.assignment_for(g, s) is None
+        for g, slots in LIVE_KIT_SLOT_MAPPING
+        for s in slots
+    )
+    _assert_status_safe(session.persistence_status)
+    session.transport.close()
+
+
+def test_semantically_invalid_status_is_rejected_semantic_and_empty(
+    tmp_path: Path,
+) -> None:
+    from src.workbench_session_store import PERSISTENCE_STATUS_REJECTED_SEMANTIC
+
+    _write_raw(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "live_kit": {
+                "Kick + Bass": {
+                    "Kick": {"path": str(tmp_path / "k.wav")},
+                    "Bass": None,
+                },
+            },
+            "channel_rack": {
+                "pattern_id": "screen2-main",
+                "length_quarter_notes": {"numerator": 4, "denominator": 1},
+                "step_count": 16,
+                "channels": [
+                    {
+                        "channel_id": "ch_kick",
+                        "live_kit_group": "Kick + Bass",
+                        "live_kit_slot": "Kick",
+                        "sample_path": str(tmp_path / "k.wav"),
+                    }
+                ],
+                "triggers": [
+                    {
+                        "channel_id": "ch_unknown",
+                        "position": {"numerator": 0, "denominator": 4},
+                    }
+                ],
+            },
+        },
+    )
+    session = compose_workbench_session(state_dir=tmp_path)
+    assert session.persistence_status == PERSISTENCE_STATUS_REJECTED_SEMANTIC
+    assert session.live_kit.assignment_for("Kick + Bass", "Kick") is None
+    assert session.channel_rack.state is None
+    _assert_status_safe(session.persistence_status)
+    session.transport.close()
+
+
+def test_autosave_oserror_sets_autosave_failed_keeps_memory_and_last_good(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src import workbench_session_store as store_mod
+    from src.workbench_session_store import (
+        PERSISTENCE_STATUS_AUTOSAVE_FAILED,
+        PERSISTENCE_STATUS_RESTORED_OK,
+    )
+
+    kick = str(tmp_path / "kick.wav")
+    Path(kick).write_bytes(b"RIFF")
+    session = compose_workbench_session(state_dir=tmp_path)
+    session.live_kit.assign("Kick + Bass", "Kick", _row("kick.wav", kick))
+    path = _session_path(tmp_path)
+    previous = path.read_text(encoding="utf-8")
+    # Successful mutation save leaves resume honesty as restored_ok after recompose,
+    # but within the same process the compose status was fresh_missing then mutated.
+    # Recompose to establish restored_ok as the baseline honesty code.
+    session.transport.close()
+    session = compose_workbench_session(state_dir=tmp_path)
+    assert session.persistence_status == PERSISTENCE_STATUS_RESTORED_OK
+
+    def boom(src, dst):
+        raise OSError("simulated replace failure")
+
+    monkeypatch.setattr(store_mod.os, "replace", boom)
+    session.live_kit.assign(
+        "Melodic", "Pad", _row("pad.wav", str(tmp_path / "pad.wav"))
+    )
+    assert session.persistence_status == PERSISTENCE_STATUS_AUTOSAVE_FAILED
+    assert path.read_text(encoding="utf-8") == previous
+    assert session.live_kit.assignment_for("Melodic", "Pad") is not None
+    assert session.live_kit.assignment_for("Kick + Bass", "Kick").path == kick
+    _assert_status_safe(session.persistence_status)
+    session.transport.close()
+
+
+def test_load_outcome_status_codes_are_stable_contract() -> None:
+    from src.workbench_session_store import (
+        PERSISTENCE_STATUS_AUTOSAVE_FAILED,
+        PERSISTENCE_STATUS_FRESH_MISSING,
+        PERSISTENCE_STATUS_REJECTED_CORRUPT,
+        PERSISTENCE_STATUS_REJECTED_SCHEMA,
+        PERSISTENCE_STATUS_REJECTED_SEMANTIC,
+        PERSISTENCE_STATUS_RESTORED_OK,
+        PERSISTENCE_STATUS_CODES,
+    )
+
+    assert PERSISTENCE_STATUS_CODES == frozenset(
+        {
+            PERSISTENCE_STATUS_FRESH_MISSING,
+            PERSISTENCE_STATUS_RESTORED_OK,
+            PERSISTENCE_STATUS_REJECTED_CORRUPT,
+            PERSISTENCE_STATUS_REJECTED_SCHEMA,
+            PERSISTENCE_STATUS_REJECTED_SEMANTIC,
+            PERSISTENCE_STATUS_AUTOSAVE_FAILED,
+        }
+    )
+    for code in PERSISTENCE_STATUS_CODES:
+        _assert_status_safe(code)
+
+
+def test_non_utf8_session_file_is_rejected_corrupt(tmp_path: Path) -> None:
+    from src.workbench_session_store import (
+        PERSISTENCE_STATUS_REJECTED_CORRUPT,
+        load_workbench_session_outcome,
+        workbench_session_path,
+    )
+
+    path = workbench_session_path(state_dir=tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\xff\xfe{not-utf8")
+    outcome = load_workbench_session_outcome(state_dir=tmp_path)
+    assert outcome.status == PERSISTENCE_STATUS_REJECTED_CORRUPT
+    assert outcome.snapshot is None
+    session = compose_workbench_session(state_dir=tmp_path)
+    assert session.persistence_status == PERSISTENCE_STATUS_REJECTED_CORRUPT
+    assert session.channel_rack.state is None
+    session.transport.close()
+
+
+def test_unreadable_session_file_is_rejected_corrupt_not_fresh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Permission/IO errors must not silently look like a clean missing start."""
+    from src.workbench_session_store import (
+        PERSISTENCE_STATUS_REJECTED_CORRUPT,
+        load_workbench_session_outcome,
+        workbench_session_path,
+    )
+
+    path = workbench_session_path(state_dir=tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('{"schema_version": 1, "live_kit": {}, "channel_rack": null}\n', encoding="utf-8")
+
+    original_read_text = Path.read_text
+
+    def boom(self, *args, **kwargs):
+        if self == path:
+            raise PermissionError("simulated ACL deny")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", boom)
+    outcome = load_workbench_session_outcome(state_dir=tmp_path)
+    assert outcome.status == PERSISTENCE_STATUS_REJECTED_CORRUPT
+    assert outcome.snapshot is None
+    session = compose_workbench_session(state_dir=tmp_path)
+    assert session.persistence_status == PERSISTENCE_STATUS_REJECTED_CORRUPT
+    session.transport.close()
