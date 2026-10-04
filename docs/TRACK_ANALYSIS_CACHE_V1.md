@@ -112,7 +112,7 @@ Nur Werte, die das Analyseergebnis fachlich bestimmen:
 
 | Key | Quelle |
 |-----|--------|
-| `bpm_normalization` | Aufrufparameter (`none` / `heuristic`). |
+| `bpm_normalization` | Aufrufparameter (`none` / `heuristic` / `domain_110_170`; Default `none`). Teil von Cache-Key und `parameter_fingerprint`; ein Moduswechsel trennt Cache-Wiederverwendung fachlich (**MISS**, siehe Invalidation Matrix). |
 | `canonical_sample_rate_hz` | `canon_audio.CANONICAL_SAMPLE_RATE` (44100). |
 | `canonical_channels` | `canon_audio.CANONICAL_CHANNELS` (1). |
 | `analyze_sr` | `config.ANALYZE_SR`. |
