@@ -17,6 +17,8 @@ from .screen1_ui_acceptance_contract import (
     CASE_HARMONIC_MATCH,
     DISPLAY_PREFERENCES_NAME,
     DISPLAY_PREFERENCES_OPEN_MARKERS,
+    HARMONIC_MATCH_COLLAPSE_NAME,
+    HARMONIC_MATCH_EXPAND_NAME,
     HARMONIC_MATCH_NAME,
     CaseReport,
     CaseResult,
@@ -290,20 +292,16 @@ def run_case_harmonic_match(
     report = CaseReport(case=CASE_HARMONIC_MATCH, discovery=DiscoveryMethod.UIA.value)
     try:
         info = _focus(expected_pid=expected_pid, starter_pid=starter_pid)
-        if not uia.element_exists(info.hwnd, HARMONIC_MATCH_NAME):
-            report.result = CaseResult.FAIL.value
-            report.discovery = DiscoveryMethod.NOT_AVAILABLE.value
-            report.verification.append("harmonic_match_button_missing")
-            return report
-
         before_shot = evidence_dir / "case_harmonic_before.bmp"
         uia.capture_window_bmp(info.hwnd, before_shot)
         report.evidence.append(str(before_shot))
 
+        # #843: open via Sample Context Menu action (header button removed).
         report.discovery = DiscoveryMethod.VISUAL_FALLBACK.value
         report.notes.append(
             "sample_row_selection=VISUAL_FALLBACK (browser ListView rows absent from UIA)"
         )
+        report.notes.append("harmonic_open_via=context_menu_Harmonic_Matches")
         open_ok = False
         open_verification: list[str] = []
         open_notes: list[str] = []
@@ -328,6 +326,12 @@ def run_case_harmonic_match(
                 )
                 report.evidence.append(str(before_shot_toggle))
 
+                uia.send_context_menu_key()
+                time.sleep(0.35)
+                info = _focus(expected_pid=expected_pid, starter_pid=starter_pid)
+                if not uia.element_exists(info.hwnd, HARMONIC_MATCH_NAME):
+                    open_verification = ["harmonic_context_action_missing"]
+                    continue
                 uia.invoke_by_name(info.hwnd, HARMONIC_MATCH_NAME)
                 time.sleep(1.0)
                 info = _focus(expected_pid=expected_pid, starter_pid=starter_pid)
@@ -345,8 +349,9 @@ def run_case_harmonic_match(
                 if open_ok:
                     report.notes.append(f"sample_row_anchor_index={idx}")
                     break
-                uia.invoke_by_name(info.hwnd, HARMONIC_MATCH_NAME)
-                time.sleep(0.4)
+                if uia.element_exists(info.hwnd, HARMONIC_MATCH_COLLAPSE_NAME):
+                    uia.invoke_by_name(info.hwnd, HARMONIC_MATCH_COLLAPSE_NAME)
+                    time.sleep(0.4)
         except (FocusGuardError, OverflowError, ArgumentError) as exc:
             # Visual-fallback probing can hit host z-order/input races; do not
             # convert a missing visual proof into a false FAIL/PASS.
@@ -365,7 +370,11 @@ def run_case_harmonic_match(
         restore_luma = after_luma
         visual_closed = False
         for _ in range(3):
-            uia.invoke_by_name(info.hwnd, HARMONIC_MATCH_NAME)
+            # #845 collapse handle is the sole presentation close path.
+            if uia.element_exists(info.hwnd, HARMONIC_MATCH_COLLAPSE_NAME):
+                uia.invoke_by_name(info.hwnd, HARMONIC_MATCH_COLLAPSE_NAME)
+            elif uia.element_exists(info.hwnd, HARMONIC_MATCH_EXPAND_NAME):
+                break
             time.sleep(0.7)
             info = _focus(expected_pid=expected_pid, starter_pid=starter_pid)
             uia.capture_window_bmp(info.hwnd, restore_shot)

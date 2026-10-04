@@ -826,9 +826,9 @@ class Screen1QmlInteractionAdapter:
         self._harmonic_match_scroll_y = 0.0
         self._harmonic_match_browser_scope: object | None = None
         self._harmonic_match_session_scope: object | None = None
-        # Selection index recorded on #845 non-destructive Matches close so reopen
-        # can restore a context-bound anchor unless the user changed selection.
-        self._harmonic_match_selection_at_close: int | None = None
+        # Stable selected-row path recorded on #845 non-destructive Matches close
+        # so reopen can restore a context-bound anchor unless selection identity changed.
+        self._harmonic_match_selection_path_at_close: str | None = None
         self._waveform_motion_mode = "on"
         self._preview_playback_cache: object | None = None
         # Optional #742 disclosure owner (set by production engine wiring).
@@ -1501,7 +1501,11 @@ class Screen1QmlInteractionAdapter:
         """
         if not self.harmonic_match_open:
             return
-        self._harmonic_match_selection_at_close = int(self.view_model.selected_browser_index)
+        selected_path: str | None = None
+        index = int(self.view_model.selected_browser_index)
+        if 0 <= index < len(self.view_model.browser_rows):
+            selected_path = str(self.view_model.browser_rows[index].source_row.path)
+        self._harmonic_match_selection_path_at_close = selected_path
         self.harmonic_match_open = False
         self.view_model.state_id = "screen1-default-3panel"
         self.view_model.harmony_status = "Harmonic Match ist ausgeschaltet."
@@ -1562,20 +1566,29 @@ class Screen1QmlInteractionAdapter:
         if self.browser_collapsed:
             return False
         # After #845 non-destructive close: restore the preserved harmony session
-        # when Browser selection did not change while collapsed. If the user
-        # changed selection, treat toggle-open as selection-based open (legacy).
+        # when Browser selection identity did not change while collapsed. If the
+        # user selected a different sample, treat toggle-open as selection-based.
         preserved = (
             self.harmony_controller is not None
             and self.harmony_controller.anchor is not None
             and self._harmonic_match_context_fingerprint is not None
         )
+        current_selected_path: str | None = None
+        index = int(self.view_model.selected_browser_index)
+        if 0 <= index < len(self.view_model.browser_rows):
+            current_selected_path = str(self.view_model.browser_rows[index].source_row.path)
         selection_unchanged = (
-            self._harmonic_match_selection_at_close is not None
-            and int(self.view_model.selected_browser_index)
-            == int(self._harmonic_match_selection_at_close)
+            self._harmonic_match_selection_path_at_close is not None
+            and current_selected_path == self._harmonic_match_selection_path_at_close
         )
         if preserved and selection_unchanged:
-            return self.open_harmonic_matches_for_row(self.harmony_controller.anchor)
+            restore_row = self.harmony_controller.anchor
+            # Rebind preserved anchor to the current Browser WorkbenchRow by path.
+            for qml_row in self.view_model.browser_rows:
+                if str(qml_row.source_row.path) == str(restore_row.path):
+                    restore_row = qml_row.source_row
+                    break
+            return self.open_harmonic_matches_for_row(restore_row)
         if not self.view_model.browser_rows:
             self.view_model.harmony_rows = ()
             self.view_model.harmony_anchor = ""

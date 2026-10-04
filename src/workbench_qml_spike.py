@@ -542,17 +542,12 @@ def run_qml_visual_acceptance(*, runtime_root: Path, evidence_dir: Path) -> dict
             window.show()
             _settle_qml_frame(app)
             if state_id.endswith("4panel"):
-                from PySide6.QtCore import QPointF, Qt
-                from PySide6.QtQuick import QQuickItem
-                from PySide6.QtTest import QTest
-
-                control = window.findChild(QQuickItem, "harmonicMatchButton")
-                if control is None:
-                    raise RuntimeError("Harmonic-Match-Control fehlt in der Production-QML-Shell.")
-                QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, control.mapToScene(QPointF(8, 8)).toPoint())
+                # #843: header button removed; open via adapter open/retarget seam.
+                if not adapter.toggle_harmonic_match():
+                    raise RuntimeError("Harmonic Matches pane could not be opened for visual acceptance.")
                 _settle_qml_frame(app)
                 if not adapter.harmonic_match_open:
-                    raise RuntimeError("Harmonic-Match-Control konnte den Pane nicht öffnen.")
+                    raise RuntimeError("Harmonic Matches pane could not be opened for visual acceptance.")
             target = evidence_dir / f"{state_id}.png"
             capture_windows_client_window(int(window.winId()), target)
             check = validate_capture_sanity(
@@ -835,23 +830,13 @@ def run_qml_visual_acceptance_v2(
 
             state = resolve_screen1_visual_state_v2(fixture, state_id)
             if state.layout.harmonic_visible:
-                from PySide6.QtCore import QPointF, Qt
-                from PySide6.QtQuick import QQuickItem
-                from PySide6.QtTest import QTest
-
-                control = window.findChild(QQuickItem, "harmonicMatchButton")
-                if control is None:
-                    raise RuntimeError("Harmonic-Match-Control fehlt in der Production-QML-Shell.")
-                QTest.mouseClick(
-                    window,
-                    Qt.LeftButton,
-                    Qt.NoModifier,
-                    control.mapToScene(QPointF(8, 8)).toPoint(),
-                )
+                # #843: header button removed; open via adapter open/retarget seam.
+                if not adapter.toggle_harmonic_match():
+                    raise RuntimeError("Harmonic Matches Pane konnte nicht geöffnet werden.")
                 _settle_qml_frame(app)
                 _settle_qml_frame(app)
                 if not adapter.harmonic_match_open:
-                    raise RuntimeError("Harmonic-Match-Control konnte den Pane nicht öffnen.")
+                    raise RuntimeError("Harmonic Matches Pane konnte nicht geöffnet werden.")
 
             target = evidence_dir / f"{state_id}.png"
             # GDI BitBlt can miss Qt Quick scene-graph updates; grab the QML
