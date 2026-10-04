@@ -2289,7 +2289,7 @@ ApplicationWindow {
             id: headerNavZone
             objectName: "headerNavZone"
             // Symmetric side reserves keep the nav band geometrically centered
-            // while still excluding left identity and right transport hit areas.
+            // while still excluding left identity and right tempo-zone hit areas.
             readonly property real sideReserve: Math.max(
                 headerLeftZone.x + headerLeftZone.width + 12,
                 parent.width - headerTransportZone.x + 12
