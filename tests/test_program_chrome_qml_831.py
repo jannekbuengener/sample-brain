@@ -90,6 +90,42 @@ def test_live_kit_nav_inert_before_materialization_in_qml() -> None:
     assert "liveKitRevealed" in block or "enabled:" in block
 
 
+def test_program_nav_browser_handler_reveals_collapsed_browser() -> None:
+    """#831 P2: Browser nav must use #845 reveal when Browser is collapsed."""
+    block = QML_SOURCE.split('objectName: "programNavBrowser"', 1)[1].split(
+        "ToolButton", 1
+    )[0]
+    assert "browserCollapsed" in block
+    assert "toggleBrowserCollapsed" in block
+
+
+def test_program_nav_live_kit_handler_reveals_after_screen2_return() -> None:
+    """#831 P2: Live Kit nav must reveal after returnToScreen1 in one activation."""
+    block = QML_SOURCE.split('objectName: "programNavLiveKit"', 1)[1].split(
+        "ToolButton", 1
+    )[0]
+    assert "returnToScreen1" in block
+    assert "liveKitCollapsed" in block
+    assert "toggleLiveKitCollapsed" in block
+    # Must not be an exclusive if/else that skips reveal after Screen-2 return.
+    assert "else if (window.interaction.liveKitCollapsed)" not in block
+
+
+def test_program_chrome_header_reserves_three_zones_without_free_center_overlap() -> None:
+    """#831 P2: nav zone is bounded by left/right reserves (no free float overlap)."""
+    header = _header_block()
+    nav = header[
+        header.index('objectName: "headerNavZone"') : header.index(
+            'objectName: "headerTransportZone"'
+        )
+    ]
+    assert "sideReserve" in nav
+    assert "headerLeftZone" in nav
+    assert "headerTransportZone" in nav
+    assert "anchors.leftMargin: sideReserve" in nav
+    assert "anchors.rightMargin: sideReserve" in nav
+
+
 def _zone_center_x(item) -> float:
     return float(item.x()) + float(item.width()) / 2.0
 
@@ -102,7 +138,11 @@ def _assert_centered(zone, reference, *, label: str) -> None:
     assert delta <= tol, f"{label}: center delta={delta:.1f}px tol={tol:.1f}px"
 
 
-def _build_screen1_window(*, live_kit_materialized: bool = True):
+def _build_screen1_window(
+    *,
+    live_kit_materialized: bool = True,
+    with_session: bool = False,
+):
     from src.workbench_harmony import HarmonicMatchLibraryController
     from src.workbench_qml import Screen1QmlInteractionAdapter
     from src.workbench_qml_spike import (
@@ -121,11 +161,22 @@ def _build_screen1_window(*, live_kit_materialized: bool = True):
         browser_materialized=True,
         live_kit_materialized=live_kit_materialized,
     )
-    adapter = Screen1QmlInteractionAdapter(
-        view_model=view_model,
-        harmony_controller=HarmonicMatchLibraryController(),
+    if with_session:
+        # Compose-owned Channel Rack / Screen-2 navigation (#678).
+        app, engine, window = _qml_engine(view_model)
+        adapter = engine._screen1_interaction_adapter
+    else:
+        adapter = Screen1QmlInteractionAdapter(
+            view_model=view_model,
+            harmony_controller=HarmonicMatchLibraryController(),
+        )
+        app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+    view_model.set_workspace_materialization(
+        has_active_source=True,
+        calm_canvas_visible=False,
+        browser_materialized=True,
+        live_kit_materialized=live_kit_materialized,
     )
-    app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
     window.show()
     _settle_qml_frame(app)
     return app, engine, window, adapter, _settle_qml_frame
@@ -163,6 +214,212 @@ def test_runtime_nav_centered_transport_on_right(size) -> None:
         bar_in_footer = bar.mapToItem(footer, QPointF(0, 0))
         assert bar_in_footer.x() >= -1.0
         assert bar_in_footer.y() >= -1.0
+    finally:
+        window.close()
+        app.processEvents()
+
+
+def _click_item(window, item, settle, app) -> None:
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    point = item.mapToScene(item.boundingRect().center()).toPoint()
+    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
+    settle(app)
+    settle(app)
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_runtime_browser_nav_noop_when_already_open() -> None:
+    from PySide6.QtQuick import QQuickItem
+
+    app, engine, window, adapter, settle = _build_screen1_window()
+    try:
+        assert adapter.browser_collapsed is False
+        browser = window.findChild(QQuickItem, "browserPane")
+        nav = window.findChild(QQuickItem, "programNavBrowser")
+        assert browser is not None and nav is not None
+        selected_before = adapter.selected_browser_index
+        _click_item(window, nav, settle, app)
+        assert adapter.browser_collapsed is False
+        assert adapter.selected_browser_index == selected_before
+        assert browser.isVisible()
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_runtime_browser_nav_reveals_collapsed_browser_on_screen1() -> None:
+    from PySide6.QtQuick import QQuickItem
+
+    app, engine, window, adapter, settle = _build_screen1_window()
+    try:
+        adapter.toggle_browser_collapsed()
+        settle(app)
+        assert adapter.browser_collapsed is True
+        nav = window.findChild(QQuickItem, "programNavBrowser")
+        browser = window.findChild(QQuickItem, "browserPane")
+        assert nav is not None and browser is not None
+        _click_item(window, nav, settle, app)
+        assert adapter.browser_collapsed is False
+        assert browser.isVisible()
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_runtime_browser_nav_from_screen2_returns_and_reveals() -> None:
+    from PySide6.QtQuick import QQuickItem
+
+    app, engine, window, adapter, settle = _build_screen1_window(with_session=True)
+    try:
+        adapter.toggle_browser_collapsed()
+        settle(app)
+        assert adapter.browser_collapsed is True
+        channel_rack = engine.rootContext().contextProperty("channelRackModel")
+        assert channel_rack is not None
+        channel_rack.openChannelRack()
+        settle(app)
+        assert window.property("activeScreen") == "screen2"
+        nav = window.findChild(QQuickItem, "programNavBrowser")
+        assert nav is not None
+        _click_item(window, nav, settle, app)
+        assert window.property("activeScreen") == "screen1"
+        assert adapter.browser_collapsed is False
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_runtime_live_kit_nav_inert_when_unmaterialized() -> None:
+    from PySide6.QtQuick import QQuickItem
+
+    app, engine, window, adapter, settle = _build_screen1_window(
+        live_kit_materialized=False
+    )
+    try:
+        nav = window.findChild(QQuickItem, "programNavLiveKit")
+        assert nav is not None
+        assert nav.isEnabled() is False
+        assert adapter.live_kit_collapsed is False
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_runtime_live_kit_nav_keeps_visible_materialized() -> None:
+    from PySide6.QtQuick import QQuickItem
+
+    app, engine, window, adapter, settle = _build_screen1_window(
+        live_kit_materialized=True
+    )
+    try:
+        assert adapter.live_kit_collapsed is False
+        nav = window.findChild(QQuickItem, "programNavLiveKit")
+        pane = window.findChild(QQuickItem, "liveKitPane")
+        assert nav is not None and pane is not None
+        _click_item(window, nav, settle, app)
+        assert adapter.live_kit_collapsed is False
+        assert pane.isVisible()
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_runtime_live_kit_nav_reveals_collapsed_on_screen1() -> None:
+    from PySide6.QtQuick import QQuickItem
+
+    app, engine, window, adapter, settle = _build_screen1_window(
+        live_kit_materialized=True
+    )
+    try:
+        adapter.toggle_live_kit_collapsed()
+        settle(app)
+        assert adapter.live_kit_collapsed is True
+        nav = window.findChild(QQuickItem, "programNavLiveKit")
+        pane = window.findChild(QQuickItem, "liveKitPane")
+        assert nav is not None and pane is not None
+        _click_item(window, nav, settle, app)
+        assert adapter.live_kit_collapsed is False
+        assert pane.isVisible()
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_runtime_live_kit_nav_from_screen2_returns_and_reveals() -> None:
+    from PySide6.QtQuick import QQuickItem
+
+    app, engine, window, adapter, settle = _build_screen1_window(
+        live_kit_materialized=True,
+        with_session=True,
+    )
+    try:
+        adapter.toggle_live_kit_collapsed()
+        settle(app)
+        assert adapter.live_kit_collapsed is True
+        channel_rack = engine.rootContext().contextProperty("channelRackModel")
+        assert channel_rack is not None
+        channel_rack.openChannelRack()
+        settle(app)
+        assert window.property("activeScreen") == "screen2"
+        nav = window.findChild(QQuickItem, "programNavLiveKit")
+        assert nav is not None
+        assert nav.isEnabled() is True
+        _click_item(window, nav, settle, app)
+        assert window.property("activeScreen") == "screen1"
+        assert adapter.live_kit_collapsed is False
+        pane = window.findChild(QQuickItem, "liveKitPane")
+        assert pane is not None and pane.isVisible()
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+@pytest.mark.parametrize("size", [(1120, 640), (1600, 900)])
+def test_runtime_header_zones_do_not_overlap(size) -> None:
+    from PySide6.QtCore import QPointF
+    from PySide6.QtQuick import QQuickItem
+
+    width, height = size
+    app, engine, window, adapter, settle = _build_screen1_window()
+    try:
+        window.setWidth(width)
+        window.setHeight(height)
+        settle(app)
+        settle(app)
+        # Long attention label case (secondary text may elide; must not overlap nav).
+        persistence = engine.rootContext().contextProperty("sessionPersistenceModel")
+        if persistence is not None:
+            persistence._session = type(
+                "S",
+                (),
+                {"persistence_status": "autosave_failed"},
+            )()
+            persistence.refresh()
+            settle(app)
+
+        header = window.findChild(QQuickItem, "screen1Header")
+        left = window.findChild(QQuickItem, "headerLeftZone")
+        nav = window.findChild(QQuickItem, "headerNavZone")
+        transport = window.findChild(QQuickItem, "headerTransportZone")
+        assert all(x is not None for x in (header, left, nav, transport))
+
+        left_right = float(left.mapToItem(header, QPointF(left.width(), 0)).x())
+        nav_left = float(nav.mapToItem(header, QPointF(0, 0)).x())
+        nav_right = float(nav.mapToItem(header, QPointF(nav.width(), 0)).x())
+        transport_left = float(transport.mapToItem(header, QPointF(0, 0)).x())
+        assert left_right <= nav_left + 1.0
+        assert nav_right <= transport_left + 1.0
+        assert float(nav.width()) > 8.0
+        assert float(transport.width()) > 8.0
     finally:
         window.close()
         app.processEvents()

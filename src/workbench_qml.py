@@ -2274,6 +2274,7 @@ ApplicationWindow {
             anchors.verticalCenter: parent.verticalCenter
             height: parent.height
             width: productIdentity.implicitWidth
+            z: 2
             Label {
                 id: productIdentity
                 anchors.verticalCenter: parent.verticalCenter
@@ -2284,61 +2285,88 @@ ApplicationWindow {
             }
         }
 
-        RowLayout {
+        Item {
             id: headerNavZone
             objectName: "headerNavZone"
-            anchors.horizontalCenter: parent.horizontalCenter
+            // Symmetric side reserves keep the nav band geometrically centered
+            // while still excluding left identity and right transport hit areas.
+            readonly property real sideReserve: Math.max(
+                headerLeftZone.x + headerLeftZone.width + 12,
+                parent.width - headerTransportZone.x + 12
+            )
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: sideReserve
+            anchors.rightMargin: sideReserve
             anchors.verticalCenter: parent.verticalCenter
-            spacing: 2
-            ToolButton {
-                objectName: "programNavBrowser"
-                text: "Browser"
-                flat: true
-                font.pixelSize: 12
-                onClicked: {
-                    if (window.activeScreen === "screen2")
-                        window.interaction.returnToScreen1()
+            height: parent.height
+            clip: true
+            z: 1
+            RowLayout {
+                id: headerNavRow
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.min(implicitWidth, parent.width)
+                spacing: 2
+                ToolButton {
+                    objectName: "programNavBrowser"
+                    text: "Browser"
+                    flat: true
+                    font.pixelSize: 12
+                    onClicked: {
+                        if (window.activeScreen === "screen2")
+                            window.interaction.returnToScreen1()
+                        if (window.interaction.browserCollapsed)
+                            window.interaction.toggleBrowserCollapsed()
+                    }
                 }
-            }
-            ToolButton {
-                objectName: "programNavLiveKit"
-                text: "Live Kit"
-                flat: true
-                font.pixelSize: 12
-                enabled: window.interaction.liveKitRevealed
-                onClicked: {
-                    if (window.activeScreen === "screen2")
-                        window.interaction.returnToScreen1()
-                    else if (window.interaction.liveKitCollapsed)
-                        window.interaction.toggleLiveKitCollapsed()
+                ToolButton {
+                    objectName: "programNavLiveKit"
+                    text: "Live Kit"
+                    flat: true
+                    font.pixelSize: 12
+                    enabled: window.interaction.liveKitRevealed
+                    onClicked: {
+                        if (window.activeScreen === "screen2")
+                            window.interaction.returnToScreen1()
+                        if (window.interaction.liveKitCollapsed)
+                            window.interaction.toggleLiveKitCollapsed()
+                    }
                 }
-            }
-            ToolButton {
-                objectName: "programNavStepSequencer"
-                text: "Step Sequencer"
-                flat: true
-                font.pixelSize: 12
-                onClicked: {
-                    if (window.activeScreen === "screen1")
-                        window.interaction.openChannelRack()
+                ToolButton {
+                    objectName: "programNavStepSequencer"
+                    text: "Step Sequencer"
+                    flat: true
+                    font.pixelSize: 12
+                    onClicked: {
+                        if (window.activeScreen === "screen1")
+                            window.interaction.openChannelRack()
+                    }
                 }
-            }
-            ToolButton {
-                objectName: "programNavArrangement"
-                text: "Arrangement"
-                flat: true
-                font.pixelSize: 12
-                enabled: false
+                ToolButton {
+                    objectName: "programNavArrangement"
+                    text: "Arrangement"
+                    flat: true
+                    font.pixelSize: 12
+                    enabled: false
+                }
             }
         }
 
-        RowLayout {
+        Item {
             id: headerTransportZone
             objectName: "headerTransportZone"
             anchors.right: parent.right
             anchors.rightMargin: 22
             anchors.verticalCenter: parent.verticalCenter
-            spacing: 0
+            height: parent.height
+            width: headerTransportRow.implicitWidth
+            z: 2
+            RowLayout {
+                id: headerTransportRow
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 0
             // #805: MASTER/GRID/SYNC project session tempo/SYNC authority only.
             Label { text: "MASTER"; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignVCenter }
             Button {
@@ -2429,6 +2457,8 @@ ApplicationWindow {
                 color: theme.textSecondary
                 font.pixelSize: 11
                 Layout.alignment: Qt.AlignVCenter
+                Layout.maximumWidth: 160
+                elide: Text.ElideRight
                 Accessible.name: "Session persistence status"
             }
             Item {
@@ -2617,6 +2647,7 @@ ApplicationWindow {
                         }
                     }
                 }
+            }
             }
         }
     }
