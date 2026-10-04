@@ -38,9 +38,10 @@ Library header. `action:add-source` is not emitted by the navigation model.
 
 ## Bottom secondary icon navigation (#837)
 
-A compact icon-only row sits at the **bottom of the left Library/Browser pane**,
-directly above the existing ApplicationWindow footer (context-hint placement).
-It is Library-panel chrome, not part of the footer.
+Historical #837 placement was a compact icon-only row at the bottom of the left Library/Browser pane, directly above the ApplicationWindow footer. #830
+(`docs/PROGRAM_CHROME_CONTRACT.md`) moves that existing utility onto the left of
+the global footer band. This section still owns the scope set and the intent
+dispatch. Do not render the same scope twice.
 
 Visible secondary controls:
 
@@ -169,7 +170,7 @@ Regression coverage now freezes:
 
 - one visible Source-tree root;
 - no `action:add-source` child;
-- secondary icons at the Library pane bottom, above the app footer;
+- secondary icons reuse the #837 scope set; #830 places that utility on the left of the global footer band instead of a separate row above it;
 - All Samples / Favorites / Collections / Recordings remembered as secondary
   nodes;
 - no visible Catalog navigation control;

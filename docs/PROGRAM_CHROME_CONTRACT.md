@@ -1,0 +1,73 @@
+# Program chrome contract (#830)
+
+**Status:** ACTIVE_SUPPORTING  
+**Issue:** [#830](https://github.com/jannekbuengener/sample-brain/issues/830) under [#829](https://github.com/jannekbuengener/sample-brain/issues/829)  
+**Renderer:** PySide6 / Qt Quick / QML. This file does not change runtime.
+
+## Reference
+
+Owner decision 2026-10-04 names one design authority for the global program frame:
+
+| Field | Value |
+|---|---|
+| Asset | `docs/assets/portfolio/references/program_chrome/owner_program_chrome_ba928fbe.jpg` |
+| SHA-256 | `5ae5703a74d02af175d2f47b8802f4a96b3783b8be69ad6be86ef4f832a20183` |
+| Origin | SuperDesign draft `ba928fbe-e27d-4177-8d13-608e9eb2a7e0` (v8, Step Sequencer Grouped) |
+| Preview | https://p.superdesign.dev/draft/ba928fbe-e27d-4177-8d13-608e9eb2a7e0 |
+
+The file is the Owner screenshot, stored byte-identical. Do not recompress, crop, recolor, or redraw it. The draft id is provenance, not a second authority.
+
+Do not read pixel, hex, or spacing numbers out of the scaled screenshot. Preserve the low, calm bar height, dark neutral ground, fine separators, restrained accent, and the horizontal hierarchy.
+
+## What the image authorizes
+
+Only the global frame:
+
+1. **Top program bar**
+   - Product identity on the left: existing text `Sample Brain`. Not the brain signet, not the `SAMPLE BRAIN` lockup, not the claim.
+   - Screen navigation in the center, in this order: Browser, Live Kit, Step Sequencer, Arrangement.
+   - Global transport / tempo on the right: existing transport, BPM, time signature, SYNC, and controls that already live in that global zone (including the display-preferences overflow).
+2. **Bottom footer**
+   - A short footer band.
+   - Existing navigation / utility on the left.
+   - Existing status on the right.
+
+Changes to this frame need an explicit Owner decision.
+
+## What the image does not authorize
+
+The rest of the screenshot is context only. Do not adopt or redesign:
+
+- the Pattern / BARS / 8 · 16 · 32 row
+- Bars 1–8 of 16
+- Song time
+- `+ Channel`
+- step-sequencer rows, lanes, groups, mute/solo, or arrangement mini-maps
+- any other screen-specific body
+
+Pattern Core, sequencer playback, and Screen 2 stay on their own contracts. This file does not rename modules, issues, or Python types from Channel Rack to Step Sequencer. The center label **Step Sequencer** is chrome copy for the existing Screen-2 route.
+
+**Arrangement** is a reserved center label. Screen 3 is not built (`PRODUCT_WORKFLOW_CANON.md`). Do not add an Arrangement workspace, route, or command to imitate the label.
+
+**Live Kit** stays the existing Screen-1 panel. The center item focuses that panel through the current reveal/collapse contract. It is not a new screen.
+
+## Footer reuse
+
+[#837](https://github.com/jannekbuengener/sample-brain/issues/837) still owns which Library scopes exist and that they dispatch the existing scope intents. This contract supersedes only the geometric claim that those icons must sit strictly above a separate hint-only footer: the approved band places existing utility on the left and existing status on the right.
+
+- Reuse Collections and Favorites. Do not add a second copy in the Library pane.
+- Sample Sources, All Samples, and Recordings stay available through the existing #837 scope set. Do not delete them to match the crop, and do not invent a new control for them.
+- Do not add Song clock, pattern-step counters, or a `Local` badge unless a current projection already exposes that text.
+- [#770](https://github.com/jannekbuengener/sample-brain/issues/770) still owns hint priority and the rule that the hint surface takes no focus. Horizontal centering is superseded: the hint shares this footer band and must not overlap the utility or status hit areas.
+
+## Narrow supersession
+
+| Older rule | Still true | Superseded for this frame only |
+|---|---|---|
+| #782 header comment: identity left, producer center, secondary right | Tempo, SYNC, and display-preferences ownership | Zone order. Navigation is center. Transport/tempo is right. |
+| #786 / brand README: no brain logo, lockup, or claim in the header | That prohibition | Nothing. Identity stays product text. |
+| #843: Harmonic Match is not a header button | That removal. The reference does not put it back. | Nothing. |
+| #770: hint is bottom-center | Hint semantics | Horizontal placement inside the footer band. |
+| #837: secondary icons above a hint-only footer | Scope set and intent dispatch | Those icons may occupy the left side of this footer band. |
+
+Screen-1 colors stay on Theme Core. This reference is not a palette.

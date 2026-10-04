@@ -33,6 +33,7 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 | Screen-1 sample context menu | `docs/WORKBENCH_SAMPLE_CONTEXT_MENU_CONTRACT.md` | ACTIVE_SUPPORTING | #839 wine-red Browser sample context menu; Python-owned stable target ≠ selection; #840 makes Context Menu the sole visible Browser Add-to-Kit route (row chrome + Add-column geometry removed); #843 owns header Harmonic Match removal / panel bind. |
 | Screen-1 Harmonic Match reference eligibility | `docs/product/02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md` §9.1 | ACTIVE_SUPPORTING | #842: effective key = eligible V2 claim else product `row.key`; root-only fail-closed; Browser display key ≠ matching authority; #847/#848 gates analysis-algorithm changes. |
 | Screen-1 visual acceptance | `docs/WORKBENCH_VISUAL_ACCEPTANCE.md` | ACTIVE_SUPPORTING | Agents own technical/runtime/visual acceptance; Owner does not run operative acceptance loops. |
+| Global program chrome | `docs/PROGRAM_CHROME_CONTRACT.md` | ACTIVE_SUPPORTING | #830; Owner frame is top bar (identity left, navigation center, transport right) plus footer. Pattern/Bars/Song in the reference image is not authority. |
 | Semantic search | `docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md` | ACTIVE_SUPPORTING | NumPy default, sqlite-vec opt-in, VST-first historical framing is superseded. |
 | Screen-2 ownership | `docs/SESSION_OWNERSHIP_CONTRACT.md` | ACTIVE_SUPPORTING | Python-owned session state. |
 | Pattern core | `docs/PATTERN_CORE_CONTRACT.md` | ACTIVE_SUPPORTING | Pattern/trigger truth. |
