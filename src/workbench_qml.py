@@ -1740,7 +1740,6 @@ ApplicationWindow {
     property int browserFavoriteColumnWidth: 28
     property int browserLengthColumnWidth: 62
     property int browserTypeColumnWidth: 72
-    property int browserAddColumnWidth: 96
     property int harmonicWaveformWidth: 72
     property int harmonicRelationColumnWidth: 72
     property int harmonicAddColumnWidth: 44
@@ -3287,7 +3286,6 @@ ApplicationWindow {
             property int effectiveBrowserMetaColumnWidth: _resolveColumn(metaUserWidth, browserNarrowColumns ? browserMetaColumnMin : window.browserMetaColumnWidth, browserMetaColumnMin, browserMetaColumnMax)
             property int effectiveBrowserFavoriteColumnWidth: _resolveColumn(favoriteUserWidth, browserNarrowColumns ? browserFavoriteColumnMin : window.browserFavoriteColumnWidth, browserFavoriteColumnMin, browserFavoriteColumnMax)
             property int effectiveBrowserLengthColumnWidth: _resolveColumn(lengthUserWidth, browserNarrowColumns ? browserLengthColumnMin : window.browserLengthColumnWidth, browserLengthColumnMin, browserLengthColumnMax)
-            property int effectiveBrowserAddColumnWidth: browserNarrowColumns ? 56 : window.browserAddColumnWidth
             ColumnLayout { anchors.fill: parent; anchors.margins: 18; spacing: 10
                 RowLayout { Layout.fillWidth: true
                     ColumnLayout { Layout.fillWidth: true; spacing: 2
@@ -3399,7 +3397,6 @@ ApplicationWindow {
                         // Issue 850: Type header shares visibility + width with the Type value cell so
                         // Length never visually hosts Type labels under a shifted trailing geometry.
                         Label { objectName: "browserColumnHeader_type"; visible: !browserPane.browserNarrowColumns; text: "TYPE"; color: theme.textSecondary; Layout.preferredWidth: window.browserTypeColumnWidth; Layout.maximumWidth: 88; horizontalAlignment: Text.AlignLeft; font.pixelSize: window.textCaption; font.bold: true }
-                        Item { Layout.preferredWidth: browserPane.effectiveBrowserAddColumnWidth }
                     }
                 }
                 ListView { id: browser; objectName: "browserList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: window.densityRowHeight; implicitHeight: window.densityRowHeight * 2
@@ -3547,33 +3544,6 @@ ApplicationWindow {
                             Label { id: keyCell; text: modelData.key; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
                             Label { id: lengthCell; objectName: "browserLengthCell"; text: modelData.duration; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta; elide: Text.ElideRight; clip: true }
                             Label { id: typeCell; objectName: "browserTypeCell"; visible: !browserPane.browserNarrowColumns; text: modelData.type; color: theme.textSecondary; font.pixelSize: window.textCaption; elide: Text.ElideRight; Layout.preferredWidth: window.browserTypeColumnWidth; Layout.maximumWidth: 88; verticalAlignment: Text.AlignVCenter }
-                            Rectangle {
-                                id: addButton
-                                Layout.preferredWidth: browserPane.effectiveBrowserAddColumnWidth
-                                Layout.preferredHeight: Math.min(window.densityActionHitTarget, window.densityRowHeight - 2 * window.densityVerticalInset)
-                                Layout.maximumHeight: window.densityRowHeight - 2 * window.densityVerticalInset
-                                radius: 3
-                                property bool hovered: addButtonMouse.containsMouse
-                                color: addButtonMouse.pressed ? theme.selectionSurface : (addButtonMouse.containsMouse ? theme.selectionSurface : "transparent")
-                                border.color: addButtonMouse.containsMouse || index === window.screenData.selectedBrowserIndex ? theme.actionActive : "transparent"
-                                Label {
-                                    anchors.fill: parent
-                                    text: browserPane.browserNarrowColumns ? "+ Add" : "+ Add to Kit"
-                                    color: addButtonMouse.pressed || addButtonMouse.containsMouse || index === window.screenData.selectedBrowserIndex ? theme.actionActive : theme.textSecondary
-                                    horizontalAlignment: browserPane.browserNarrowColumns ? Text.AlignHCenter : Text.AlignRight
-                                    verticalAlignment: Text.AlignVCenter
-                                    font.pixelSize: window.textCaption
-                                }
-                                MouseArea {
-                                    id: addButtonMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    onClicked: {
-                                        browser.forceActiveFocus()
-                                        window.interaction.addToKit(index)
-                                    }
-                                }
-                            }
                         }
                         // #846: permanent vertical column dividers removed. Column resize
                         // lives on header overlays; rows keep horizontal chrome only.

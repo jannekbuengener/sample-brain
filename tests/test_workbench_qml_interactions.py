@@ -781,12 +781,12 @@ def test_qml_real_interaction_smoke_click_arrows_focus_and_harmonic_toggle():
         app.processEvents()
         assert window.property("interaction").property("previewActive") is False
 
+        # #840: Browser Add-to-Kit is context-menu only (no trailing row chrome).
         add_intents = []
-        engine._screen1_interaction_bridge.addToKitIntent.connect(add_intents.append)
-        add_point = browser.mapToScene(
-            QPointF(float(browser.property("width")) - 48, 4 * row_height + row_height / 2)
-        ).toPoint()
-        QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, add_point)
+        bridge = engine._screen1_interaction_bridge
+        bridge.addToKitIntent.connect(add_intents.append)
+        bridge.openSampleContext(4)
+        bridge.contextAddToKit()
         app.processEvents()
         assert add_intents == [fixture.browser_rows[4].relative_path]
         assert view_model.selected_browser_index == 3
