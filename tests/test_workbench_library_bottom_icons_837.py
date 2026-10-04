@@ -130,12 +130,16 @@ def test_qml_bottom_icon_bar_contract_and_accessible_names() -> None:
     assert "★" not in favorites_block
     assert "⭐" not in favorites_block
     assert "for (var i = 0; i < 5; i++)" in favorites_block
-    # #830: scope bar belongs in the global footer. This source check no longer
-    # freezes the pre-move "above the footer" pane slot. #831 places the bar.
-    contract = Path("docs/WORKBENCH_QML_LIBRARY_TREE_CONTRACT.md").read_text(encoding="utf-8")
-    assert "left side of the global footer band" in contract
-    assert "must not relocate it into the footer" not in contract
+    # Pre-#831 CURRENT RUNTIME: scope bar remains pane-local until #831 migrates it.
+    pane_block = source.split('id: libraryPane', 1)[1].split(
+        'objectName: "elasticHandleAfterLibrary"', 1
+    )[0]
+    host_pos = pane_block.find('objectName: "libraryContentHost"')
+    bar_pos = pane_block.find('objectName: "libraryScopeBar"')
+    assert host_pos >= 0 and bar_pos >= 0
+    assert host_pos < bar_pos, "libraryScopeBar must sit below libraryContentHost"
     footer_block = source.split("footer:", 1)[1].split("header:", 1)[0]
+    assert 'objectName: "libraryScopeBar"' not in footer_block
     assert 'objectName: "contextHintPlacement"' in footer_block
     # Icon bar must not depend on classic ToolTips for discoverability.
     scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(

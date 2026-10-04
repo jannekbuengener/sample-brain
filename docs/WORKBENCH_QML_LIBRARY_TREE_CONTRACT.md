@@ -65,9 +65,10 @@ collection entries flow through the same typed selection intent used by Source
 rows.
 
 Every icon-only control exposes a stable object/semantic identity and accessible
-name. #770 owns the shared bottom-center context-hint display; the icon row
-reports hover/focus intents into that seam and does not rely on classic
-cursor-adjacent ToolTips for Library scope discoverability.
+name. #770 owns the shared context-hint display; #830 places that hint on the
+footer band (right). Scope controls report hover/focus intents into that seam
+and do not rely on classic cursor-adjacent ToolTips for Library scope
+discoverability.
 
 ## Recordings projection
 
@@ -188,9 +189,9 @@ Regression coverage now freezes:
 
 ## Dependency boundary
 
-#836 owns Sample Sources expand/hydrate reliability. #837 owns bottom secondary
-icon placement and Recordings navigation projection. #770 delivers the shared
-bottom-center context-hint seam for those icon-only controls. This contract
-still excludes sample Drag & Drop ownership changes, Add Source relocation, and
+#836 owns Sample Sources expand/hydrate reliability. #837 owns secondary scope
+intents and Recordings navigation projection. #770 delivers the shared
+context-hint seam for those icon-only controls; #830 owns footer-band geometry
+(utility left, hint right). This contract still excludes sample Drag & Drop ownership changes, Add Source relocation, and
 the future modular snap/docking system. Packaging/installer work is also out of
 scope.
