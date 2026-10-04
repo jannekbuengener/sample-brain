@@ -785,6 +785,8 @@ class Screen1QmlInteractionAdapter:
     ``HarmonicMatchLibraryController``.
     """
 
+    _HARMONIC_CLOSE_SELECTION_UNSET: object = object()
+
     def __init__(
         self,
         *,
@@ -828,7 +830,11 @@ class Screen1QmlInteractionAdapter:
         self._harmonic_match_session_scope: object | None = None
         # Stable selected-row path recorded on #845 non-destructive Matches close
         # so reopen can restore a context-bound anchor unless selection identity changed.
-        self._harmonic_match_selection_path_at_close: str | None = None
+        # Sentinel distinguishes "never closed" from "closed with no Browser selection"
+        # (selected_index=-1 → path None), which is a valid unchanged identity (#843).
+        self._harmonic_match_selection_path_at_close: object | None = (
+            self._HARMONIC_CLOSE_SELECTION_UNSET
+        )
         self._waveform_motion_mode = "on"
         self._preview_playback_cache: object | None = None
         # Optional #742 disclosure owner (set by production engine wiring).
@@ -1597,18 +1603,27 @@ class Screen1QmlInteractionAdapter:
         index = int(self.view_model.selected_browser_index)
         if 0 <= index < len(self.view_model.browser_rows):
             current_selected_path = str(self.view_model.browser_rows[index].source_row.path)
+        recorded_close = self._harmonic_match_selection_path_at_close
         selection_unchanged = (
-            self._harmonic_match_selection_path_at_close is not None
-            and current_selected_path == self._harmonic_match_selection_path_at_close
+            recorded_close is not self._HARMONIC_CLOSE_SELECTION_UNSET
+            and current_selected_path == recorded_close
         )
         if preserved and selection_unchanged:
             restore_row = self.harmony_controller.anchor
             # Rebind preserved anchor to the current Browser WorkbenchRow by path.
+            resolved: WorkbenchRow | None = None
             for qml_row in self.view_model.browser_rows:
                 if str(qml_row.source_row.path) == str(restore_row.path):
-                    restore_row = qml_row.source_row
+                    resolved = qml_row.source_row
                     break
-            return self.open_harmonic_matches_for_row(restore_row)
+            if resolved is not None:
+                return self.open_harmonic_matches_for_row(resolved)
+            # Preserved anchor disappeared from Browser — drop stale session and
+            # fall through to selection-based open (or empty fail-closed).
+            self._harmonic_match_context_fingerprint = None
+            self._harmonic_match_selection_path_at_close = (
+                self._HARMONIC_CLOSE_SELECTION_UNSET
+            )
         if not self.view_model.browser_rows:
             self.view_model.harmony_rows = ()
             self.view_model.harmony_anchor = ""
@@ -3286,7 +3301,9 @@ ApplicationWindow {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: browserPane.visible
                 activeFocusOnTab: visible
+                Accessible.role: Accessible.Button
                 Accessible.name: "Collapse Browser"
+                Accessible.onPressAction: window.interaction.toggleBrowserCollapsed()
                 property bool hovered: false
                 Rectangle {
                     anchors.fill: parent
@@ -3302,6 +3319,7 @@ ApplicationWindow {
                     color: theme.textSecondary
                     opacity: browserCollapseHandle.hovered || browserCollapseHandle.activeFocus ? 1.0 : 0.55
                     font.pixelSize: 14
+                    Accessible.ignored: true
                 }
                 MouseArea {
                     anchors.fill: parent
@@ -3690,7 +3708,9 @@ ApplicationWindow {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: window.interaction.harmonicMatchOpen && !window.interaction.browserCollapsed
                 activeFocusOnTab: visible
+                Accessible.role: Accessible.Button
                 Accessible.name: "Collapse Harmonic Matches"
+                Accessible.onPressAction: window.activateHarmonicMatchToggle()
                 property bool hovered: false
                 Rectangle {
                     anchors.fill: parent
@@ -3706,6 +3726,7 @@ ApplicationWindow {
                     color: theme.textSecondary
                     opacity: harmonyCollapseHandle.hovered || harmonyCollapseHandle.activeFocus ? 1.0 : 0.55
                     font.pixelSize: 14
+                    Accessible.ignored: true
                 }
                 MouseArea {
                     anchors.fill: parent
@@ -3918,7 +3939,9 @@ ApplicationWindow {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: liveKitPane.visible
                 activeFocusOnTab: visible
+                Accessible.role: Accessible.Button
                 Accessible.name: "Collapse Live Kit"
+                Accessible.onPressAction: window.interaction.toggleLiveKitCollapsed()
                 property bool hovered: false
                 Rectangle {
                     anchors.fill: parent
@@ -4354,7 +4377,9 @@ ApplicationWindow {
         y: workspaceRow.y + Math.max(0, (workspaceRow.height - height) / 2)
            - (window.interaction.liveKitCollapsed ? 44 : 0)
         activeFocusOnTab: visible
+        Accessible.role: Accessible.Button
         Accessible.name: "Expand Browser"
+        Accessible.onPressAction: window.interaction.toggleBrowserCollapsed()
         property bool hovered: false
         Rectangle {
             anchors.fill: parent
@@ -4410,7 +4435,9 @@ ApplicationWindow {
            + layoutModel.browserWidth - width
         y: workspaceRow.y + Math.max(0, (workspaceRow.height - height) / 2)
         activeFocusOnTab: visible
+        Accessible.role: Accessible.Button
         Accessible.name: "Expand Harmonic Matches"
+        Accessible.onPressAction: window.activateHarmonicMatchToggle()
         property bool hovered: false
         Rectangle {
             anchors.fill: parent
@@ -4426,6 +4453,7 @@ ApplicationWindow {
             color: theme.textSecondary
             opacity: harmonyCollapseAffordance.hovered || harmonyCollapseAffordance.activeFocus ? 1.0 : 0.85
             font.pixelSize: 16
+            Accessible.ignored: true
         }
         MouseArea {
             anchors.fill: parent
@@ -4462,7 +4490,9 @@ ApplicationWindow {
         y: workspaceRow.y + Math.max(0, (workspaceRow.height - height) / 2)
            + (window.interaction.browserCollapsed ? 44 : 0)
         activeFocusOnTab: visible
+        Accessible.role: Accessible.Button
         Accessible.name: "Expand Live Kit"
+        Accessible.onPressAction: window.interaction.toggleLiveKitCollapsed()
         property bool hovered: false
         Rectangle {
             anchors.fill: parent
