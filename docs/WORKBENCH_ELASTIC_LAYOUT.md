@@ -235,8 +235,13 @@ Browser column resize (#780) remain **drag** controls (`SizeHorCursor`).
 - #845 does not redesign divider/column-resize chrome.
 - [#846](https://github.com/jannekbuengener/sample-brain/issues/846) owns calming
   permanent column dividers / ephemeral resize styling afterward.
-- [#843](https://github.com/jannekbuengener/sample-brain/issues/843) owns Matches
-  open-from-context-menu embedding; close/reopen via panel handles stays #845.
+- [#843](https://github.com/jannekbuengener/sample-brain/issues/843) uses the
+  **existing** Harmonic Matches pane as a Browser extension
+  (Browser → Matches → Live Kit). It owns context-menu **open/retarget** of that
+  pane and removes the header `harmonicMatchButton` producer entry. It does
+  **not** add a second Matches surface, docking model, or close/X/ON/OFF chrome.
+  Close/reopen presentation remains sole #845 handle ownership; collapsing
+  Matches must preserve the current harmony anchor/results for later reopen.
 
 ### Non-goals (#845)
 
@@ -255,7 +260,8 @@ Browser column resize (#780) remain **drag** controls (`SizeHorCursor`).
 - #725 collapsed First View / reveal affordance (No-Source presentation only;
   does not invent a second ratio model)
 - #846 divider / resize visual calming (follow-up)
-- #843 Harmonic Matches context-menu embedding (separate)
+- #843 Harmonic Matches context open/retarget + header entry removal (separate;
+  reuses this elastic Matches pane; does not redefine collapse)
 
 ## Validation contracts (minimum)
 

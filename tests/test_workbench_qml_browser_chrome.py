@@ -216,7 +216,8 @@ def test_browser_intent_keyboard_and_virtualization_contracts_preserved():
     # stopPreview() gehört zwei Flächen: Browser-Escape UND Harmonic-Panel (vorbestehend).
     assert 'else if (event.key === Qt.Key_Escape) { window.interaction.stopPreview(); event.accepted = true }' in QML_SOURCE
     assert "Keys.onEscapePressed: window.interaction.stopPreview()" in QML_SOURCE
-    assert QML_SOURCE.count('objectName: "harmonicMatchButton"') == 1
+    # #843: header button removed; #845 toggle helper call site remains.
+    assert 'objectName: "harmonicMatchButton"' not in QML_SOURCE
     assert QML_SOURCE.count("toggleHarmonicMatch()") == 1
     assert 'text: "Play"' not in QML_SOURCE
     assert 'text: "▶"' not in QML_SOURCE

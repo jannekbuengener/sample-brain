@@ -228,9 +228,10 @@ def test_context_add_reveals_live_kit_materialization_like_index_path():
 # --- Preserved surfaces / non-regression markers ------------------------------
 
 
-def test_harmonic_result_add_and_header_button_remain_until_843():
+def test_harmonic_result_add_remains_and_header_button_removed_after_843():
+    """#843 removes header producer entry; result-row Add and toggle helper stay."""
     assert "addHarmonyToKit(index)" in QML_SOURCE
-    assert 'objectName: "harmonicMatchButton"' in QML_SOURCE
+    assert 'objectName: "harmonicMatchButton"' not in QML_SOURCE
     assert "toggleHarmonicMatch()" in QML_SOURCE
 
 

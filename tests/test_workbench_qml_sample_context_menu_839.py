@@ -220,14 +220,17 @@ def test_context_add_to_kit_never_reenters_index_based_request_add_to_kit():
 
 
 def test_context_harmonic_matches_dispatches_one_intent_for_b_without_toggle_path():
-    harmonic_intents = []
-    fixture, view_model, adapter = _adapter(
-        context_harmonic_command=harmonic_intents.append,
+    """#843 supersedes intent-only: default path open/retargets, never toggles."""
+    from src.workbench_harmony import HarmonicMatchLibraryController, find_harmony_matches
+
+    fixture, view_model, adapter = _adapter()
+    # Production-shaped adapter: controller present, no observer override.
+    adapter.harmony_controller = HarmonicMatchLibraryController(
+        finder=find_harmony_matches
     )
     _require_context_api(adapter)
     adapter.select_row(0)
     row_b = fixture.browser_rows[1]
-    open_before = bool(adapter.harmonic_match_open)
 
     toggle_calls = []
     original_toggle = adapter.toggle_harmonic_match
@@ -242,10 +245,13 @@ def test_context_harmonic_matches_dispatches_one_intent_for_b_without_toggle_pat
     result = adapter.request_context_harmonic_matches()
 
     assert result is row_b
-    assert harmonic_intents == [row_b]
     assert view_model.selected_browser_index == 0
-    assert adapter.harmonic_match_open is open_before
     assert toggle_calls == []
+    # #843: context path must open/retarget via open_harmonic_matches_for_row.
+    assert callable(getattr(adapter, "open_harmonic_matches_for_row", None))
+    assert adapter.harmonic_match_open is True
+    assert adapter.harmony_controller.anchor is row_b
+    assert adapter.sample_context_target is None
 
 
 # --- Lifecycle ----------------------------------------------------------------
@@ -402,13 +408,9 @@ def test_qml_source_wires_right_click_and_keyboard_context_open():
     assert "CloseOnPressOutside" in text
 
 
-def test_qml_source_keeps_harmonic_header_button_and_browser_virtualization():
-    """#843 owns harmonic header removal; virtualization stays locked.
-
-    #840 supersedes the temporary #839 coexistence assertion that required
-    visible Browser row ``addToKit(index)`` chrome.
-    """
-    assert 'objectName: "harmonicMatchButton"' in QML_SOURCE
+def test_qml_source_removes_harmonic_header_button_and_keeps_browser_virtualization():
+    """#843 removes header harmonicMatchButton; virtualization stays locked."""
+    assert 'objectName: "harmonicMatchButton"' not in QML_SOURCE
     assert "reuseItems: true" in QML_SOURCE
     browser_idx = QML_SOURCE.index('objectName: "browserList"')
     browser_window = QML_SOURCE[browser_idx : browser_idx + 400]

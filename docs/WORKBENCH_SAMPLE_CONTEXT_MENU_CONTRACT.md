@@ -1,14 +1,17 @@
-# Workbench Sample Context Menu Contract (#839 / #840)
+# Workbench Sample Context Menu Contract (#839 / #840 / #843)
 
 **Status:** ACTIVE_SUPPORTING (Screen-1 child of #838)  
 **Issues:** [#839](https://github.com/jannekbuengener/sample-brain/issues/839)
 (menu + stable target — delivered),
 [#840](https://github.com/jannekbuengener/sample-brain/issues/840)
-(Browser Add-to-Kit via context menu only)  
+(Browser Add-to-Kit via context menu only — delivered),
+[#843](https://github.com/jannekbuengener/sample-brain/issues/843)
+(context Harmonic Matches open/retarget + header producer-entry removal)  
 **Parent UX meta:** [#838](https://github.com/jannekbuengener/sample-brain/issues/838)  
-**Downstream (do not implement in #840):**
-[#843](https://github.com/jannekbuengener/sample-brain/issues/843) (Harmonic panel bind),
-[#842](https://github.com/jannekbuengener/sample-brain/issues/842) (matching/eligibility repair)  
+**Matching authority (delivered):**
+[#842](https://github.com/jannekbuengener/sample-brain/issues/842)  
+**Collapse/reopen presentation (delivered):**
+[#845](https://github.com/jannekbuengener/sample-brain/issues/845)  
 **Renderer:** `LOCK_PYSIDE6_QML` — presentation lives in `src/workbench_qml.py`
 (`QML_SOURCE`). Python Core/Controller/Audio/Catalog remain authoritative.
 Tkinter remains legacy/fallback only.
@@ -39,7 +42,9 @@ User opens context on Sample B
 | Stable context target identity | Python `Screen1QmlInteractionAdapter` |
 | Browser selection | Existing selection seams (unchanged by open) |
 | Add-to-Kit domain / slot assign | Existing Live Kit seams (reuse; no new kit domain) |
-| Harmonic matching / panel open | #842 / #843 — not #839 |
+| Harmonic matching domain | #842 — `HarmonicMatchLibraryController` / `find_harmony_matches` |
+| Harmonic panel open/retarget | #843 — adapter `open_harmonic_matches_for_row` |
+| Harmonic collapse/reopen chrome | #845 — panel handles; not context menu |
 | Theme tokens | Theme Core / QML semantic facade |
 | QML presentation | Thin intent + themed Popup chrome only |
 
@@ -54,6 +59,7 @@ open_sample_context(index: int) -> WorkbenchRow
 close_sample_context() -> None
 request_context_add_to_kit() -> WorkbenchRow
 request_context_harmonic_matches() -> WorkbenchRow
+open_harmonic_matches_for_row(row: WorkbenchRow) -> bool
 ```
 
 Rules:
@@ -129,36 +135,95 @@ After #840:
   as non-visible harness/API seams when tests need them; they must not form a
   competing visible Browser row route.
 - Harmonic Matches **result-row** `addHarmonyToKit(index)` is a separate surface
-  and remains unchanged. Header `harmonicMatchButton` remains until #843.
+  and remains unchanged.
 
-## Harmonic Matches intent
+## Harmonic Matches — context open/retarget (#843)
 
-`request_context_harmonic_matches()` dispatches exactly one target-bound intent
-for `sample_context_target` through:
+Central producer entry for Harmonic Matches is the Sample Context Menu action
+`Harmonic Matches`. The header producer-zone control `harmonicMatchButton` is
+**removed** structurally (not `visible: false`); its slot must not remain as an
+empty phantom. Internal presentation helpers such as
+`activateHarmonicMatchToggle()` / `toggleHarmonicMatch()` /
+`toggle_harmonic_match()` may remain when #845 collapse/reopen or internal
+tests still need them — #843 removes the visible header entry point, not every
+method containing the word toggle.
+
+### Authoritative Python seam (single open/retarget authority)
 
 ```text
-on_context_harmonic_match_requested: Callable[[WorkbenchRow], object] | None
+open_harmonic_matches_for_row(row: WorkbenchRow) -> bool
 ```
 
-(or an equivalent registered adapter intent seam).
+Owned by `Screen1QmlInteractionAdapter`. It:
 
-#839:
+1. accepts a concrete stable `WorkbenchRow` (context target B, not selection)
+2. reuses the existing `HarmonicMatchLibraryController` (one controller)
+3. calls `set_anchor(row, browser candidates)` so prior results invalidate
+4. projects anchor / results / status into the existing Matches presentation
+5. opens the existing Harmonic Matches pane (Browser → Matches → Live Kit)
+6. does **not** change Browser selection
+7. does **not** start preview / audition
+8. contains no new matching domain (still #842 authority)
+9. respects `Matches ⊂ Browser` (#845): fail-closed while Browser is collapsed
 
-- dispatches B
-- does not change Browser selection
-- does **not** call `toggle_harmonic_match()`
-- does not compute matches
-- does not open/fix the Matches panel
-- does not mutate key/eligibility/matching domain
+Semantics are **OPEN / RETARGET**, never panel toggle:
 
-#843 binds this intent to the authoritative matching/panel path.
-#839 keeps the header `harmonicMatchButton`. Removal/replacement belongs to #843.
+| Prior panel state | Context action for B | Result |
+|-------------------|----------------------|--------|
+| closed | context B | OPEN for B |
+| open for A | context B | stays OPEN; atomic RETARGET to B |
+| open for B | context B | stays OPEN; no accidental close |
 
-#842 owns reference-key / eligibility / matching-path diagnosis (not panel bind).
+Closing / reopening Matches presentation remains sole ownership of #845 panel
+handles. Context action must not invent a second X / ON/OFF / close control.
+
+### Context intent routing
+
+```text
+request_context_harmonic_matches()
+  → require sample_context_target B
+  → open_harmonic_matches_for_row(B)          # default production authority
+  → optional on_context_harmonic_match_requested(B)  # harness observer only
+  → close_sample_context()
+  → return B
+```
+
+Production session composition (`compose_workbench_session`) constructs the
+adapter with `HarmonicMatchLibraryController` and leaves
+`on_context_harmonic_match_requested` unbound (`None`). The adapter default
+seam is the production bind — no fragile constructor-order closure required.
+
+`request_context_harmonic_matches()` must **not** call `toggle_harmonic_match()`.
+Legacy `toggle_harmonic_match()` may internally reuse
+`open_harmonic_matches_for_row` for its selection-based open path when tests or
+#845 still need toggle close/open, but context never routes through toggle.
+
+### Lifecycle separation
+
+| Identity | Lifecycle |
+|----------|-----------|
+| `sample_context_target` | Cleared after the Harmonic context action (#839) |
+| Harmony controller anchor | Remains B after the action; independent of context clear |
+
+### Focus
+
+Context action originates from a Popup. After activation:
+
+- Popup closes
+- Browser selection stays A
+- Browser context receives a sensible focus return
+- Opening/retargeting Matches must **not** auto-`forceActiveFocus()` onto the
+  results list solely because the panel opened
+- Matches remains normally reachable later via Tab / explicit focus
+- ↑/↓ Browser navigation and Esc Preview Stop stay protected
+
+### Matching boundary (#842)
+
 Root-only visible keys (for example Browser `"G"`) remain fail-closed for
 Harmonic Match when no modeful authoritative key exists; display text must not
-be fabricated into `Gmaj`/`Gmin`. See
-`docs/product/02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md` §9.1.
+be fabricated into `Gmaj`/`Gmin`. Ineligible/empty/error still open the panel
+for the concrete reference with truthful status and stable geometry. See
+`docs/product/02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md` §9.1 and §9.2.
 
 ## Lifecycle and invalidation
 
@@ -231,15 +296,14 @@ No new local palette. Portfolio mockups deleted on `main` (#863/#864) are
 
 ### Still out of scope here
 
-- Removing header Harmonic Match button → #843
-- Binding Harmonic context intent to panel/matching → #843
-- Matching/eligibility repair → #842
-- Harmony panel layout/embed → #843
-- Harmonic result-row Add-to-Kit changes
+- Matching relation/scoring / eligibility algorithm changes → #842 / #847/#848
+- New Matches close/X/ON/OFF chrome → forbidden; #845 owns collapse
+- New docking / reordering / tabs / modal / second Matches window
+- Harmonic result-row Add-to-Kit redesign
 - Live Kit domain redesign / slot UX redesign
 - Browser column reordering or #846 resize seam changes
 - Extra menu commands (Rename/Delete/Favorite/…)
-- Persistenz, audio engine, Step Sequencer, Arrangement, docking/reordering
+- Persistenz, audio engine, Step Sequencer, Arrangement
 
 ## Validation
 

@@ -587,10 +587,11 @@ def test_harmonic_bpm_fingerprint_normalizes_edge_values(bpm, expected):
     assert adapter._harmonic_match_bpm_fingerprint(bpm) == expected
 
 
-def test_harmonic_single_control_button_without_secondary_close_and_on_off_controls():
+def test_harmonic_no_header_button_without_secondary_close_and_on_off_controls():
     from src.workbench_qml import QML_SOURCE
 
-    assert QML_SOURCE.count('objectName: "harmonicMatchButton"') == 1
+    # #843: visible header producer entry removed; internal toggle helper remains.
+    assert 'objectName: "harmonicMatchButton"' not in QML_SOURCE
     assert QML_SOURCE.count("toggleHarmonicMatch()") == 1
     assert "onHarmonyOpenChanged" in QML_SOURCE
     assert "Qt.callLater" in QML_SOURCE
@@ -628,7 +629,7 @@ def test_harmonic_qml_forwards_only_controller_data_without_music_theory():
     reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
 )
 def test_qml_harmonic_toggle_roundtrip_restores_focus_and_scroll_without_refetch():
-    from PySide6.QtCore import QPointF, Qt
+    from PySide6.QtCore import Qt
     from PySide6.QtQuick import QQuickItem
     from PySide6.QtTest import QTest
 
@@ -658,20 +659,25 @@ def test_qml_harmonic_toggle_roundtrip_restores_focus_and_scroll_without_refetch
     _settle_qml_frame(app)
     try:
         browser = window.findChild(QQuickItem, "browserList")
-        toggle = window.findChild(QQuickItem, "harmonicMatchButton")
+        header_btn = window.findChild(QQuickItem, "harmonicMatchButton")
         harmony = window.findChild(QQuickItem, "harmonicMatchList")
-        assert browser is not None and toggle is not None and harmony is not None
+        assert browser is not None and harmony is not None
+        assert header_btn is None  # #843 header entry removed
+        bridge = engine._screen1_interaction_bridge
 
-        def click_toggle():
-            point = toggle.mapToScene(QPointF(8, 8)).toPoint()
-            QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
+        def toggle_panel():
+            bridge.toggleHarmonicMatch()
             app.processEvents()
 
-        click_toggle()
+        toggle_panel()
         assert adapter.harmonic_match_open is True
         assert adapter.harmony_controller.anchor is anchor
         assert len(finder_calls) == 1
         assert len(view_model.harmony_rows) == 11
+        _settle_qml_frame(app)
+        # #843: open must not auto-steal focus onto results; explicit focus for keys.
+        assert harmony.property("activeFocus") is not True
+        harmony.forceActiveFocus()
         _settle_qml_frame(app)
         assert harmony.property("activeFocus") is True
 
@@ -686,7 +692,7 @@ def test_qml_harmonic_toggle_roundtrip_restores_focus_and_scroll_without_refetch
         app.processEvents()
         assert adapter.harmonic_match_scroll_y > 1.0
 
-        click_toggle()
+        toggle_panel()
         assert adapter.harmonic_match_open is False
         _settle_qml_frame(app)
         assert browser.property("activeFocus") is True
@@ -696,11 +702,12 @@ def test_qml_harmonic_toggle_roundtrip_restores_focus_and_scroll_without_refetch
         app.processEvents()
         assert view_model.selected_browser_index == max(before - 1, 0)
 
-        click_toggle()
+        toggle_panel()
         assert adapter.harmonic_match_open is True
         assert len(finder_calls) == 1
         _settle_qml_frame(app)
-        assert harmony.property("activeFocus") is True
+        harmony.forceActiveFocus()
+        _settle_qml_frame(app)
         restored = float(harmony.property("contentY"))
         assert abs(restored - adapter.harmonic_match_scroll_y) <= 2.0
     finally:
@@ -747,8 +754,9 @@ def test_qml_real_interaction_smoke_click_arrows_focus_and_harmonic_toggle():
     try:
         browser = window.findChild(QQuickItem, "browserList")
         search = window.findChild(QObject, "browserSearch")
-        toggle = window.findChild(QQuickItem, "harmonicMatchButton")
-        assert browser is not None and search is not None and toggle is not None
+        header_btn = window.findChild(QQuickItem, "harmonicMatchButton")
+        assert browser is not None and search is not None
+        assert header_btn is None  # #843
 
         row_height = int(window.property("densityRowHeight"))
         assert row_height == 30
@@ -791,8 +799,8 @@ def test_qml_real_interaction_smoke_click_arrows_focus_and_harmonic_toggle():
         assert add_intents == [fixture.browser_rows[4].relative_path]
         assert view_model.selected_browser_index == 3
 
-        toggle_point = toggle.mapToScene(QPointF(8, 8)).toPoint()
-        QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, toggle_point)
+        # #843/#845: open Matches via bridge toggle helper (no header button).
+        bridge.toggleHarmonicMatch()
         app.processEvents()
         assert window.property("interaction").property("harmonicMatchOpen") is True
         assert engine._screen1_interaction_adapter.harmony_controller.anchor is fixture.browser_rows[3]
@@ -820,7 +828,8 @@ def _click_item(app, window, item):
     importlib.util.find_spec("PySide6") is None,
     reason="PySide6 Qt Quick ist in dieser Testumgebung nicht installiert.",
 )
-def test_qml_harmonic_button_background_uses_accent_when_open_and_panel_alt_when_closed():
+def test_qml_harmonic_header_button_absent_and_panel_toggle_via_bridge():
+    """#843 removes header button chrome; open/close remains via #845 helper."""
     from PySide6.QtQuick import QQuickItem
 
     from src.workbench_qml_spike import _qml_engine, _settle_qml_frame
@@ -839,21 +848,18 @@ def test_qml_harmonic_button_background_uses_accent_when_open_and_panel_alt_when
     _settle_qml_frame(app)
     try:
         toggle = window.findChild(QQuickItem, "harmonicMatchButton")
-        assert toggle is not None
-        background = toggle.property("background")
-        assert background is not None
-        closed_color = background.property("color").name()
-        assert closed_color == "#1a1a1b"
+        harmony = window.findChild(QQuickItem, "harmonicMatchList")
+        assert toggle is None
+        assert harmony is not None
+        bridge = engine._screen1_interaction_bridge
 
-        _click_item(app, window, toggle)
+        bridge.toggleHarmonicMatch()
         _settle_qml_frame(app)
         assert window.property("interaction").property("harmonicMatchOpen") is True
-        assert background.property("color").name() == "#8f0e24"
 
-        _click_item(app, window, toggle)
+        bridge.toggleHarmonicMatch()
         _settle_qml_frame(app)
         assert window.property("interaction").property("harmonicMatchOpen") is False
-        assert background.property("color").name() == "#1a1a1b"
     finally:
         window.close()
         app.processEvents()
