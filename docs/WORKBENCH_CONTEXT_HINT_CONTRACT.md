@@ -13,7 +13,7 @@ controls.
 is status text inside that band, on the right, display-only. It must not cover
 utility hit areas and it is not its own centered strip.
 
-- inside the program footer, right side
+- at the bottom of the window, inside the program footer, on the right
 - visually small and calm
 - uses existing Screen-1 theme tokens
 - does not steal unnecessary workspace height
