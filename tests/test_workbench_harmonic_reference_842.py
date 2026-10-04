@@ -262,13 +262,13 @@ def test_matching_domain_not_duplicated_in_qml_source() -> None:
     assert "is_harmonic_match_claim_eligible" not in QML_SOURCE
 
 
-def test_context_menu_harmonic_intent_remains_target_bound_not_panel_bind() -> None:
-    """#839/#840 remain; #843 panel bind is out of this freeze."""
+def test_context_menu_harmonic_intent_remains_target_bound_not_qml_panel_alias() -> None:
+    """#839/#840 remain; #843 Python open/retarget must not invent a QML alias API."""
     from src.workbench_qml import QML_SOURCE, Screen1QmlInteractionAdapter
 
     assert "contextHarmonicMatches" in QML_SOURCE
     assert "contextAddToKit" in QML_SOURCE
     assert hasattr(Screen1QmlInteractionAdapter, "request_context_harmonic_matches")
     assert hasattr(Screen1QmlInteractionAdapter, "request_context_add_to_kit")
-    # #843 owns embedding the intent into the Matches panel; freeze must not add it.
+    # QML must not grow a parallel openHarmonicMatchesPanel alias.
     assert "function openHarmonicMatchesPanel" not in QML_SOURCE

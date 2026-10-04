@@ -110,6 +110,18 @@ def send_escape() -> None:
     user32.keybd_event(VK_ESCAPE, 0, KEYEVENTF_KEYUP, 0)
 
 
+def send_context_menu_key() -> None:
+    """Open the focused control's context menu (Apps / Shift+F10)."""
+    VK_SHIFT = 0x10
+    VK_F10 = 0x79
+    KEYEVENTF_KEYUP = 0x0002
+    user32.keybd_event(VK_SHIFT, 0, 0, 0)
+    user32.keybd_event(VK_F10, 0, 0, 0)
+    time.sleep(0.05)
+    user32.keybd_event(VK_F10, 0, KEYEVENTF_KEYUP, 0)
+    user32.keybd_event(VK_SHIFT, 0, KEYEVENTF_KEYUP, 0)
+
+
 def click_screen(x: int, y: int) -> None:
     # Clamp to signed 32-bit for Win32 APIs (multi-monitor coords can be negative).
     xi = max(-2147483648, min(2147483647, int(x)))

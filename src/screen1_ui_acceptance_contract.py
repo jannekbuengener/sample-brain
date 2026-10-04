@@ -42,7 +42,10 @@ CASE_DISPLAY_PREFERENCES = "display_preferences"
 CASE_HARMONIC_MATCH = "harmonic_match"
 
 DISPLAY_PREFERENCES_NAME = "Display preferences"
-HARMONIC_MATCH_NAME = "Harmonic Match"
+# #843: header producer entry removed; context-menu action + #845 handles.
+HARMONIC_MATCH_NAME = "Harmonic Matches"
+HARMONIC_MATCH_COLLAPSE_NAME = "Collapse Harmonic Matches"
+HARMONIC_MATCH_EXPAND_NAME = "Expand Harmonic Matches"
 APP_WINDOW_TITLE = "Sample Brain"
 
 DISPLAY_PREFERENCES_OPEN_MARKERS: tuple[str, ...] = (

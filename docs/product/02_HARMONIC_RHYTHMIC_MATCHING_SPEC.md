@@ -255,6 +255,63 @@ eligible modeful V2 claim is present on that row. Eligible V1 modeful and
 eligible V2 modeful references already deliver results through the existing
 domain. See `tests/test_workbench_harmonic_reference_842.py`.
 
+### 9.2 Screen-1 context open / retarget (#843)
+
+Producer entry for Harmonic Matches is the Sample Context Menu action on a
+stable Python `WorkbenchRow` (not Browser selection). See
+`docs/WORKBENCH_SAMPLE_CONTEXT_MENU_CONTRACT.md`.
+
+| Concern | Authority |
+|---------|-----------|
+| Context target B | `sample_context_target` (#839) |
+| Open / retarget presentation | `Screen1QmlInteractionAdapter.open_harmonic_matches_for_row(row)` |
+| Matching refresh | existing `HarmonicMatchLibraryController.set_anchor` |
+| Collapse / reopen chrome | #845 panel handles only |
+| Visible producer entry | Context Menu `Harmonic Matches` (header `harmonicMatchButton` removed) |
+
+**Context target → harmony anchor:**
+
+```text
+selected A + context B → Harmonic Matches
+→ open_harmonic_matches_for_row(B)
+→ controller.anchor = B
+→ results/status belong to B
+→ sample_context_target cleared
+→ Browser selection remains A
+```
+
+Context-target lifecycle and harmony-anchor lifecycle are separate. Clearing
+the menu target must not clear the harmony anchor.
+
+**Open ≠ toggle:**
+
+- Panel closed + context B → OPEN B
+- Panel open A + context B → stays OPEN; atomic RETARGET to B
+- Panel open B + context B → stays OPEN (no accidental close)
+- Context path must not call `toggle_harmonic_match()`
+
+**Atomic reference switch:**
+
+`set_anchor` already clears prior results before validation/matching. A→B must
+not present a stable mixed frame (header B + rows A, or header A + rows B).
+Status and reference label must follow B.
+
+**Ineligible / empty / error (still open the pane for B):**
+
+- Root-only B (for example `"G"`): panel open, empty results, status
+  `Harmonic Match benötigt einen auswertbaren Referenz-Key.` (or current
+  canonical text from §9.1)
+- Empty eligible candidate set: panel open, truthful empty status
+- Invalid / fail-closed: no stale prior results; stable geometry
+- No QML matching; no display-key fabrication into maj/min
+
+**Focus:** opening/retargeting from the context Popup must not auto-steal
+keyboard focus onto the Matches results list solely because the pane opened.
+Browser keeps a sensible focus return; Matches remains Tab-reachable.
+
+**Non-goals for #843:** second controller, second result list, second matching
+domain, new close/X/ON/OFF, docking/reorder, Live Kit redesign, analysis math.
+
 ## 10. References
 
 - `src/matching.py`, `tests/test_matching.py`, CLI `match` in `src/cli.py`
