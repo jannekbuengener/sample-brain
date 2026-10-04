@@ -26,7 +26,7 @@ Only the global frame:
 1. **Top program bar**
    - Product identity on the left: existing text `Sample Brain`. Not the brain signet, not the `SAMPLE BRAIN` lockup, not the claim.
    - Screen navigation in the center, in this order: Browser, Live Kit, Step Sequencer, Arrangement.
-   - Global transport / tempo on the right: existing transport, BPM, time signature, SYNC, and controls that already live in that global zone (including the display-preferences overflow).
+   - Global transport / tempo on the right: existing transport, BPM, time signature, SYNC, and controls that already live in that global zone (including the display-preferences overflow and the current Harmonic Match control).
 2. **Bottom footer**
    - A short footer band.
    - Existing navigation / utility on the left.
@@ -66,7 +66,7 @@ Pattern Core, sequencer playback, and Screen 2 stay on their own contracts. This
 |---|---|---|
 | #782 header comment: identity left, producer center, secondary right | Tempo, SYNC, and display-preferences ownership | Zone order. Navigation is center. Transport/tempo is right. |
 | #786 / brand README: no brain logo, lockup, or claim in the header | That prohibition | Nothing. Identity stays product text. |
-| #843: Harmonic Match is not a header button | That removal. The reference does not put it back. | Nothing. |
+| #843 (open): Harmonic Match leaves the header when that slice lands | The single existing control and its one dispatch | Nothing in this frame. The reference omits the button; that omission does not delete it here. It stays with the other global controls on the right until #843. |
 | #770: hint is bottom-center | Hint semantics | Horizontal placement inside the footer band. |
 | #837: secondary icons above a hint-only footer | Scope set and intent dispatch | Those icons may occupy the left side of this footer band. |
 
