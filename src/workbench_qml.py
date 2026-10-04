@@ -794,6 +794,7 @@ class Screen1QmlInteractionAdapter:
         on_preview_stopped: Callable[[], object] | None = None,
         on_preview_snapshot: Callable[[], object] | None = None,
         on_add_to_kit_requested: Callable[[WorkbenchRow], object] | None = None,
+        on_context_harmonic_match_requested: Callable[[WorkbenchRow], object] | None = None,
         live_kit: LiveKitPresenter | None = None,
         library_db_path: Path | None = None,
     ) -> None:
@@ -810,9 +811,12 @@ class Screen1QmlInteractionAdapter:
         self._on_preview_stopped = on_preview_stopped
         self._on_preview_snapshot = on_preview_snapshot
         self._on_add_to_kit_requested = on_add_to_kit_requested
+        self._on_context_harmonic_match_requested = on_context_harmonic_match_requested
+        self._on_sample_context_closed: Callable[[], object] | None = None
         self._live_kit = live_kit
         self._library_db_path = library_db_path
         self._pending_live_kit_row: WorkbenchRow | None = None
+        self._sample_context_target: WorkbenchRow | None = None
         self._preview_active = False
         self._auditioning_live_kit_slot: tuple[str, str] | None = None
         self._live_kit_export_status = ""
@@ -826,6 +830,70 @@ class Screen1QmlInteractionAdapter:
         self._preview_playback_cache: object | None = None
         # Optional #742 disclosure owner (set by production engine wiring).
         self._runtime_composition: Screen1QmlRuntimeComposition | None = None
+        self._install_browser_projection_invalidation()
+
+    def _install_browser_projection_invalidation(self) -> None:
+        """Clear context target before any visible Browser re-projection (#839)."""
+        vm = self.view_model
+        original_set_state = vm.set_browser_state
+        original_set_search = vm.set_browser_search_query
+
+        def set_browser_state(*args, **kwargs):
+            self.close_sample_context()
+            return original_set_state(*args, **kwargs)
+
+        def set_browser_search_query(*args, **kwargs):
+            self.close_sample_context()
+            return original_set_search(*args, **kwargs)
+
+        vm.set_browser_state = set_browser_state  # type: ignore[method-assign]
+        vm.set_browser_search_query = set_browser_search_query  # type: ignore[method-assign]
+
+    @property
+    def sample_context_target(self) -> WorkbenchRow | None:
+        return self._sample_context_target
+
+    def open_sample_context(self, index: int) -> WorkbenchRow:
+        """Resolve visible row index once into a stable context target (#839)."""
+        if not 0 <= index < len(self.view_model.browser_rows):
+            raise IndexError("Browser-Zeilenindex außerhalb des sichtbaren Modells.")
+        row = self.view_model.browser_rows[index].source_row
+        self._sample_context_target = row
+        return row
+
+    def close_sample_context(self) -> None:
+        """Clear session-transient sample context target (#839)."""
+        had_target = self._sample_context_target is not None
+        self._sample_context_target = None
+        if had_target and self._on_sample_context_closed is not None:
+            self._on_sample_context_closed()
+
+    def _request_add_to_kit_row(self, row: WorkbenchRow) -> WorkbenchRow:
+        """Shared Add-to-Kit intent seam for index and context routes (#839)."""
+        self._pending_live_kit_row = row
+        self._reveal_live_kit_pane()
+        if self._on_add_to_kit_requested is not None:
+            self._on_add_to_kit_requested(row)
+        return row
+
+    def request_context_add_to_kit(self) -> WorkbenchRow:
+        """Dispatch Add-to-Kit for the stored context target (not a stale index)."""
+        target = self._sample_context_target
+        if target is None:
+            raise ValueError("No sample context target")
+        result = self._request_add_to_kit_row(target)
+        self.close_sample_context()
+        return result
+
+    def request_context_harmonic_matches(self) -> WorkbenchRow:
+        """Emit one target-bound Harmonic Matches intent for #843 (#839)."""
+        target = self._sample_context_target
+        if target is None:
+            raise ValueError("No sample context target")
+        if self._on_context_harmonic_match_requested is not None:
+            self._on_context_harmonic_match_requested(target)
+        self.close_sample_context()
+        return target
 
     def _reveal_live_kit_pane(self) -> None:
         """UI disclosure only — does not mutate Live-Kit domain assignments."""
@@ -919,6 +987,7 @@ class Screen1QmlInteractionAdapter:
         """Clear transient workspace context; keep Sources/presets/display prefs."""
         from .workbench_display_preferences import return_to_clean_start
 
+        self.close_sample_context()
         self.stop_preview()
         if self.harmonic_match_open:
             self.harmonic_match_open = False
@@ -1111,11 +1180,7 @@ class Screen1QmlInteractionAdapter:
         First Add-to-Kit also reveals the Live Kit pane (#742 disclosure).
         """
         row = self.view_model.browser_rows[index].source_row
-        self._pending_live_kit_row = row
-        self._reveal_live_kit_pane()
-        if self._on_add_to_kit_requested is not None:
-            self._on_add_to_kit_requested(row)
-        return row
+        return self._request_add_to_kit_row(row)
 
     @property
     def pending_live_kit_add(self) -> str:
@@ -1357,11 +1422,7 @@ class Screen1QmlInteractionAdapter:
 
     def request_add_harmonic_match_to_kit(self, index: int) -> WorkbenchRow:
         row = self.select_harmonic_match(index)
-        self._pending_live_kit_row = row
-        self._reveal_live_kit_pane()
-        if self._on_add_to_kit_requested is not None:
-            self._on_add_to_kit_requested(row)
-        return row
+        return self._request_add_to_kit_row(row)
 
     def set_harmonic_match_scroll_y(self, value: float) -> None:
         if not self.harmonic_match_open:
@@ -1377,6 +1438,7 @@ class Screen1QmlInteractionAdapter:
         open computes the new scope's anchor and candidate pool exactly once.
         Same-scope reloads keep the existing close/reopen reuse intact.
         """
+        self.close_sample_context()
         self._harmonic_match_browser_scope = scope
         if scope is not None and scope == self._harmonic_match_session_scope:
             if not self.harmonic_match_open:
@@ -3011,6 +3073,132 @@ ApplicationWindow {
             }
         }
         Rectangle { id: browserPane; objectName: "browserPane"; visible: window.interaction.hasActiveSource && !window.interaction.browserCollapsed; width: visible ? layoutModel.browserWidth : 0; height: parent.height; color: theme.surfaceBrowser; border.color: theme.borderSubtle
+            function openSampleContextMenu(index, localX, localY) {
+                window.interaction.openSampleContext(index)
+                sampleContextMenu.focusedAction = 0
+                sampleContextMenu.x = Math.max(8, Math.min(localX, Math.max(8, width - 220)))
+                sampleContextMenu.y = Math.max(8, Math.min(localY, Math.max(8, height - 96)))
+                sampleContextMenu.open()
+                sampleContextMenu.forceActiveFocus()
+            }
+            Popup {
+                id: sampleContextMenu
+                objectName: "sampleContextMenu"
+                // Theme: theme.selectionSurface / theme.textPrimary / theme.focusRing
+                property string actionAddLabel: "Add to Kit"
+                property string actionHarmonicLabel: "Harmonic Matches"
+                width: 208
+                padding: 6
+                modal: false
+                focus: true
+                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                property int focusedAction: 0
+                background: Rectangle {
+                    color: theme.selectionSurface
+                    border.color: theme.selectionBorder
+                    border.width: 1
+                    radius: 6
+                }
+                onClosed: {
+                    window.interaction.closeSampleContext()
+                    browser.forceActiveFocus()
+                }
+                Connections {
+                    target: window.interaction
+                    function onSampleContextClosed() {
+                        if (sampleContextMenu.visible)
+                            sampleContextMenu.close()
+                    }
+                }
+                function activateFocused() {
+                    if (focusedAction === 0)
+                        window.interaction.contextAddToKit()
+                    else
+                        window.interaction.contextHarmonicMatches()
+                    close()
+                }
+                Column {
+                    width: parent.width
+                    spacing: 2
+                    Rectangle {
+                        id: contextAddToKitItem
+                        width: parent.width
+                        height: 32
+                        radius: 4
+                        color: sampleContextMenu.focusedAction === 0 || contextAddHover.containsMouse ? theme.surfaceElevated : "transparent"
+                        border.width: sampleContextMenu.focusedAction === 0 ? 1 : 0
+                        border.color: theme.focusRing
+                        Label {
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 10
+                            text: sampleContextMenu.actionAddLabel
+                            color: theme.textPrimary
+                            verticalAlignment: Text.AlignVCenter
+                            font.pixelSize: window.textBody
+                        }
+                        MouseArea {
+                            id: contextAddHover
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: {
+                                sampleContextMenu.focusedAction = 0
+                                sampleContextMenu.activateFocused()
+                            }
+                            onEntered: sampleContextMenu.focusedAction = 0
+                        }
+                    }
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: theme.dividerDefault
+                        opacity: 0.7
+                    }
+                    Rectangle {
+                        id: contextHarmonicItem
+                        width: parent.width
+                        height: 32
+                        radius: 4
+                        color: sampleContextMenu.focusedAction === 1 || contextHarmonicHover.containsMouse ? theme.surfaceElevated : "transparent"
+                        border.width: sampleContextMenu.focusedAction === 1 ? 1 : 0
+                        border.color: theme.focusRing
+                        Label {
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 10
+                            text: sampleContextMenu.actionHarmonicLabel
+                            color: theme.textSecondary
+                            verticalAlignment: Text.AlignVCenter
+                            font.pixelSize: window.textBody
+                        }
+                        MouseArea {
+                            id: contextHarmonicHover
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: {
+                                sampleContextMenu.focusedAction = 1
+                                sampleContextMenu.activateFocused()
+                            }
+                            onEntered: sampleContextMenu.focusedAction = 1
+                        }
+                    }
+                }
+                Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Down) {
+                        focusedAction = Math.min(1, focusedAction + 1)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_Up) {
+                        focusedAction = Math.max(0, focusedAction - 1)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                        activateFocused()
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_Escape) {
+                        close()
+                        event.accepted = true
+                    }
+                }
+            }
             // #845 OPEN collapse handle — left mid-edge of Browser so it does not
             // share the right residual with harmonyCollapseAffordance.
             Item {
@@ -3231,6 +3419,12 @@ ApplicationWindow {
                         if (event.key === Qt.Key_Down) { window.interaction.navigateBrowser(1); event.accepted = true }
                         else if (event.key === Qt.Key_Up) { window.interaction.navigateBrowser(-1); event.accepted = true }
                         else if (event.key === Qt.Key_Escape) { window.interaction.stopPreview(); event.accepted = true }
+                        else if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
+                            if (window.screenData.selectedBrowserIndex >= 0) {
+                                browserPane.openSampleContextMenu(window.screenData.selectedBrowserIndex, browser.width * 0.35, browser.mapToItem(browserPane, 0, browser.height * 0.25).y)
+                                event.accepted = true
+                            }
+                        }
                     }
                     delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface : (rowSelection.containsMouse ? theme.surfaceElevated : (index % 2 === 1 ? theme.surfacePanel : "transparent")); border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0; border.color: theme.selectionBorder
                         Component.onCompleted: window.browserDelegateCreations += 1
@@ -3245,10 +3439,13 @@ ApplicationWindow {
                             anchors.fill: parent
                             z: 0
                             hoverEnabled: true
+                            acceptedButtons: Qt.LeftButton | Qt.RightButton
                             property bool dragActive: false
                             property real pressX: 0
                             property real pressY: 0
                             onPressed: function(mouse) {
+                                if (mouse.button === Qt.RightButton)
+                                    return
                                 dragActive = false
                                 pressX = mouse.x
                                 pressY = mouse.y
@@ -3263,7 +3460,12 @@ ApplicationWindow {
                                     return
                                 dragActive = true
                             }
-                            onClicked: {
+                            onClicked: function(mouse) {
+                                if (mouse.button === Qt.RightButton) {
+                                    var local = mapToItem(browserPane, mouse.x, mouse.y)
+                                    browserPane.openSampleContextMenu(index, local.x, local.y)
+                                    return
+                                }
                                 if (dragActive)
                                     return
                                 browser.forceActiveFocus()
@@ -4272,6 +4474,14 @@ def _qml_interaction_bridge(
     class QmlInteractionBridge(QObject):
         state_changed = Signal()
         addToKitIntent = Signal(str)
+        sampleContextClosed = Signal()
+
+        def __init__(self) -> None:
+            super().__init__()
+            adapter._on_sample_context_closed = self._emit_sample_context_closed
+
+        def _emit_sample_context_closed(self) -> None:
+            self.sampleContextClosed.emit()
 
         def _refresh(self) -> None:
             adapter.sync_visible_state_labels()
@@ -4434,6 +4644,31 @@ def _qml_interaction_bridge(
         def addToKit(self, index: int) -> None:
             row = adapter.request_add_to_kit(index)
             self.addToKitIntent.emit(row.relative_path or str(row.path))
+            self._refresh()
+
+        @Slot(int)
+        def openSampleContext(self, index: int) -> None:
+            adapter.open_sample_context(index)
+            self._refresh()
+
+        @Slot()
+        def closeSampleContext(self) -> None:
+            adapter.close_sample_context()
+            self._refresh()
+
+        @Slot()
+        def contextAddToKit(self) -> None:
+            if adapter.sample_context_target is None:
+                return
+            row = adapter.request_context_add_to_kit()
+            self.addToKitIntent.emit(row.relative_path or str(row.path))
+            self._refresh()
+
+        @Slot()
+        def contextHarmonicMatches(self) -> None:
+            if adapter.sample_context_target is None:
+                return
+            adapter.request_context_harmonic_matches()
             self._refresh()
 
         @Slot(int)

@@ -30,6 +30,7 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 | Screen-1 Browser column arrangement | `docs/WORKBENCH_BROWSER_COLUMN_ARRANGEMENT_CONTRACT.md` | ACTIVE_SUPPORTING | #767 order; #850 header/delegate Type alignment so Length/Type never swap visually. |
 | Screen-1 Browser column resize | `docs/WORKBENCH_BROWSER_COLUMN_RESIZE_CONTRACT.md` | ACTIVE_SUPPORTING | #780 width authority/runtime resize; #846 header-owned ephemeral resize affordances, no permanent vertical column dividers; one interactive meta handle; narrow mode preserves #692 defaults; Type non-resizable. |
 | Screen-1 panel collapse | `docs/WORKBENCH_ELASTIC_LAYOUT.md` | ACTIVE_SUPPORTING | #845 presentation OPEN/COLLAPSED for Browser / Matches / Live Kit; absorbed into elastic visibility (no separate collapse contract file). |
+| Screen-1 sample context menu | `docs/WORKBENCH_SAMPLE_CONTEXT_MENU_CONTRACT.md` | ACTIVE_SUPPORTING | #839 wine-red Browser sample context menu; Python-owned stable target ≠ selection; Add to Kit + Harmonic Matches intents; #840/#843 own chrome removal and panel bind. |
 | Screen-1 visual acceptance | `docs/WORKBENCH_VISUAL_ACCEPTANCE.md` | ACTIVE_SUPPORTING | Agents own technical/runtime/visual acceptance; Owner does not run operative acceptance loops. |
 | Semantic search | `docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md` | ACTIVE_SUPPORTING | NumPy default, sqlite-vec opt-in, VST-first historical framing is superseded. |
 | Screen-2 ownership | `docs/SESSION_OWNERSHIP_CONTRACT.md` | ACTIVE_SUPPORTING | Python-owned session state. |
