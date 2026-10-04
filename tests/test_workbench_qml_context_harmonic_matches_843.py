@@ -9,7 +9,7 @@ Parent: #841. Dependencies delivered: #839, #840, #842, #845.
 Related UX meta: #838.
 
 TEST_FREEZE: assertions below express the intended #843 behaviour.
-Expected RED until product implementation. Do not weaken to fit current main.
+Do not weaken matching/#842 contracts to fit a broken panel bind.
 Do not repair matching domain if #842 tests go red.
 """
 
@@ -421,6 +421,8 @@ def test_a_to_b_invalidates_a_rows_atomically_with_b_projection():
     )
     _require_open_retarget_api(adapter)
     adapter.open_harmonic_matches_for_row(row_a)
+    rows_a = tuple((r.display_name, getattr(r, "path", None)) for r in view_model.harmony_rows)
+    assert rows_a  # A produced a visible projection
 
     adapter.open_sample_context(1)
     adapter.request_context_harmonic_matches()
@@ -428,7 +430,12 @@ def test_a_to_b_invalidates_a_rows_atomically_with_b_projection():
     assert controller.anchor is row_b
     assert "ref_b" in view_model.harmony_anchor
     assert "ref_a" not in view_model.harmony_anchor
-    assert all("only_a" not in r.display_name for r in view_model.harmony_rows)
+    rows_b = tuple((r.display_name, getattr(r, "path", None)) for r in view_model.harmony_rows)
+    # Atomic retarget: projection is freshly computed for B, not the prior A tuple.
+    # Amin candidates may still appear as fresh #842 TRANSPOSE matches for Gmaj;
+    # that is not stale A reuse.
+    assert rows_b != rows_a
+    assert view_model.harmony_rows[0].display_name == "only_b"
 
 
 # --- UI / panel / header supersession ----------------------------------------

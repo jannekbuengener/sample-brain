@@ -182,8 +182,10 @@ handles. Context action must not invent a second X / ON/OFF / close control.
 ```text
 request_context_harmonic_matches()
   → require sample_context_target B
-  → open_harmonic_matches_for_row(B)          # default production authority
-  → optional on_context_harmonic_match_requested(B)  # harness observer only
+  → if on_context_harmonic_match_requested is set:
+        callback(B)                            # harness/injection override
+     else:
+        open_harmonic_matches_for_row(B)       # default production authority
   → close_sample_context()
   → return B
 ```

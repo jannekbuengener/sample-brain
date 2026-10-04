@@ -826,6 +826,9 @@ class Screen1QmlInteractionAdapter:
         self._harmonic_match_scroll_y = 0.0
         self._harmonic_match_browser_scope: object | None = None
         self._harmonic_match_session_scope: object | None = None
+        # Selection index recorded on #845 non-destructive Matches close so reopen
+        # can restore a context-bound anchor unless the user changed selection.
+        self._harmonic_match_selection_at_close: int | None = None
         self._waveform_motion_mode = "on"
         self._preview_playback_cache: object | None = None
         # Optional #742 disclosure owner (set by production engine wiring).
@@ -886,12 +889,19 @@ class Screen1QmlInteractionAdapter:
         return result
 
     def request_context_harmonic_matches(self) -> WorkbenchRow:
-        """Emit one target-bound Harmonic Matches intent for #843 (#839)."""
+        """Open/retarget Harmonic Matches for the stored context target (#843).
+
+        Production default (no callback): ``open_harmonic_matches_for_row``.
+        An explicit callback remains an injection/override seam for harnesses.
+        Never routes through ``toggle_harmonic_match``.
+        """
         target = self._sample_context_target
         if target is None:
             raise ValueError("No sample context target")
         if self._on_context_harmonic_match_requested is not None:
             self._on_context_harmonic_match_requested(target)
+        else:
+            self.open_harmonic_matches_for_row(target)
         self.close_sample_context()
         return target
 
@@ -1491,6 +1501,7 @@ class Screen1QmlInteractionAdapter:
         """
         if not self.harmonic_match_open:
             return
+        self._harmonic_match_selection_at_close = int(self.view_model.selected_browser_index)
         self.harmonic_match_open = False
         self.view_model.state_id = "screen1-default-3panel"
         self.view_model.harmony_status = "Harmonic Match ist ausgeschaltet."
@@ -1513,14 +1524,58 @@ class Screen1QmlInteractionAdapter:
         self.live_kit_collapsed = not self.live_kit_collapsed
         return bool(self.live_kit_collapsed)
 
-    def toggle_harmonic_match(self) -> bool:
-        """Open/close the existing harmony controller without mutating other state."""
-        if self.harmonic_match_open:
-            self._close_harmonic_match_presentation()
-            return False
+    def open_harmonic_matches_for_row(self, row: WorkbenchRow) -> bool:
+        """Open or retarget Harmonic Matches for an explicit row (#843).
+
+        Semantically OPEN/RETARGET — never toggles the panel closed. Reuses the
+        existing ``HarmonicMatchLibraryController`` (one controller, one result
+        list, one anchor authority). Browser selection and preview are untouched.
+        """
         # Matches ⊂ Browser — fail closed while Browser presentation is collapsed.
         if self.browser_collapsed:
             return False
+
+        fingerprint = self._current_harmonic_match_fingerprint(row)
+        same_context = fingerprint == self._harmonic_match_context_fingerprint
+        rebound = self._rebind_harmonic_match_rows(row) if same_context else False
+        if not same_context or not rebound:
+            if self.harmony_controller is not None:
+                self.harmony_controller.set_anchor(
+                    row,
+                    tuple(browser_row.source_row for browser_row in self.view_model.browser_rows),
+                )
+            self._harmonic_match_context_fingerprint = fingerprint
+            self._harmonic_match_selected_index = 0
+            self._harmonic_match_scroll_y = 0.0
+
+        self._harmonic_match_session_scope = self._harmonic_match_browser_scope
+        self.harmonic_match_open = True
+        self._project_harmonic_match(row)
+        self.view_model.state_id = "screen1-harmonic-4panel"
+        return True
+
+    def toggle_harmonic_match(self) -> bool:
+        """Open/close Matches presentation; open path reuses open/retarget (#845)."""
+        if self.harmonic_match_open:
+            self._close_harmonic_match_presentation()
+            return False
+        if self.browser_collapsed:
+            return False
+        # After #845 non-destructive close: restore the preserved harmony session
+        # when Browser selection did not change while collapsed. If the user
+        # changed selection, treat toggle-open as selection-based open (legacy).
+        preserved = (
+            self.harmony_controller is not None
+            and self.harmony_controller.anchor is not None
+            and self._harmonic_match_context_fingerprint is not None
+        )
+        selection_unchanged = (
+            self._harmonic_match_selection_at_close is not None
+            and int(self.view_model.selected_browser_index)
+            == int(self._harmonic_match_selection_at_close)
+        )
+        if preserved and selection_unchanged:
+            return self.open_harmonic_matches_for_row(self.harmony_controller.anchor)
         if not self.view_model.browser_rows:
             self.view_model.harmony_rows = ()
             self.view_model.harmony_anchor = ""
@@ -1532,18 +1587,7 @@ class Screen1QmlInteractionAdapter:
             self.view_model.harmony_status = "Kein Sample als Harmonic-Match-Referenz ausgewählt."
             return False
         anchor = self.view_model.browser_rows[self.selected_browser_index].source_row
-        fingerprint = self._current_harmonic_match_fingerprint(anchor)
-        if fingerprint != self._harmonic_match_context_fingerprint or not self._rebind_harmonic_match_rows(anchor):
-            if self.harmony_controller is not None:
-                self.harmony_controller.set_anchor(anchor, tuple(row.source_row for row in self.view_model.browser_rows))
-            self._harmonic_match_context_fingerprint = fingerprint
-            self._harmonic_match_selected_index = 0
-            self._harmonic_match_scroll_y = 0.0
-        self._harmonic_match_session_scope = self._harmonic_match_browser_scope
-        self.harmonic_match_open = True
-        self._project_harmonic_match(anchor)
-        self.view_model.state_id = "screen1-harmonic-4panel"
-        return True
+        return self.open_harmonic_matches_for_row(anchor)
 
 
 def qml_runtime_available() -> bool:
@@ -1963,27 +2007,8 @@ ApplicationWindow {
             Item {
                 width: window.sessionPersistence.attention ? 16 : 0
             }
-            Button {
-                objectName: "harmonicMatchButton"
-                text: "Harmonic Match"
-                Accessible.name: "Harmonic Match"
-                Layout.alignment: Qt.AlignVCenter
-                background: Rectangle {
-                    color: window.interaction.harmonicMatchOpen ? theme.actionActive : theme.surfaceElevated
-                    border.width: window.interaction.harmonicMatchOpen ? 1 : 0
-                    border.color: theme.selectionBorder
-                    radius: 4
-                }
-                contentItem: Text {
-                    text: "Harmonic Match"
-                    color: theme.textPrimary
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    rightPadding: 16
-                    leftPadding: 16
-                }
-                onClicked: window.activateHarmonicMatchToggle()
-            }
+            // #843: Harmonic Matches producer entry is the Sample Context Menu.
+            // #845 collapse/reopen keeps activateHarmonicMatchToggle() as the sole helper.
         }
 
         Item {
@@ -3651,7 +3676,8 @@ ApplicationWindow {
             onHarmonyOpenChanged: {
                 layoutModel.syncFromInteraction()
                 if (harmonyOpen) {
-                    harmonicMatchList.forceActiveFocus()
+                    // #843: do not auto-steal keyboard focus onto results on open.
+                    // Matches remains Tab-/click-focusable; Browser keeps a sensible flow.
                     Qt.callLater(function() {
                         if (window.interaction.harmonyScrollY > 0) {
                             harmonicMatchList.contentY = window.interaction.harmonyScrollY
@@ -3669,7 +3695,7 @@ ApplicationWindow {
                 Label { text: "Harmonic Matches"; color: theme.textPrimary; font.pixelSize: 18; font.bold: true }
                 Label { text: window.screenData.harmonyAnchor; color: theme.textSecondary; font.pixelSize: 12 }
                 Label { text: window.screenData.harmonyStatus; color: theme.textSecondary; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true }
-                ListView { id: harmonicMatchList; objectName: "harmonicMatchList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.harmonyRows; clip: true; reuseItems: true; focus: window.interaction.harmonicMatchOpen
+                ListView { id: harmonicMatchList; objectName: "harmonicMatchList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.harmonyRows; clip: true; reuseItems: true; focus: false; activeFocusOnTab: window.interaction.harmonicMatchOpen
                     Keys.onUpPressed: {
                         window.interaction.navigateHarmony(-1)
                         harmonicMatchList.currentIndex = window.interaction.selectedHarmonyIndex
