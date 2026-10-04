@@ -244,7 +244,9 @@ def test_browser_qml_uses_waveform_intent_and_has_no_row_play_button():
 
     assert "Canvas" in QML_SOURCE
     assert "previewRow(index)" in QML_SOURCE
-    assert "addToKit(index)" in QML_SOURCE
+    # #840: visible Browser Add-to-Kit is context-menu only.
+    assert "window.interaction.addToKit(index)" not in QML_SOURCE
+    assert "contextAddToKit" in QML_SOURCE
     assert "stopPreview()" in QML_SOURCE
     assert 'text: "Play"' not in QML_SOURCE
     assert 'text: "▶"' not in QML_SOURCE
@@ -779,12 +781,12 @@ def test_qml_real_interaction_smoke_click_arrows_focus_and_harmonic_toggle():
         app.processEvents()
         assert window.property("interaction").property("previewActive") is False
 
+        # #840: Browser Add-to-Kit is context-menu only (no trailing row chrome).
         add_intents = []
-        engine._screen1_interaction_bridge.addToKitIntent.connect(add_intents.append)
-        add_point = browser.mapToScene(
-            QPointF(float(browser.property("width")) - 48, 4 * row_height + row_height / 2)
-        ).toPoint()
-        QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, add_point)
+        bridge = engine._screen1_interaction_bridge
+        bridge.addToKitIntent.connect(add_intents.append)
+        bridge.openSampleContext(4)
+        bridge.contextAddToKit()
         app.processEvents()
         assert add_intents == [fixture.browser_rows[4].relative_path]
         assert view_model.selected_browser_index == 3

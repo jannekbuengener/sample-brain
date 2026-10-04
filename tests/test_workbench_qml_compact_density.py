@@ -19,7 +19,7 @@ from src.workbench_qml import QML_SOURCE
 
 BROWSER_ROW_DELEGATE_MARKER = "delegate: Rectangle { id: browserRow"
 HARMONIC_LIST_MARKER = 'objectName: "harmonicMatchList"'
-BROWSER_ROW_DELEGATE_SPAN = 14000  # Favorite column grows the compact row; include divider + Add-to-Kit
+BROWSER_ROW_DELEGATE_SPAN = 14000  # Favorite column grows the compact row; include divider
 HARMONIC_LIST_SPAN = 9000
 _SHARED_DENSITY_ROLES = (
     "densityRowHeight",
@@ -117,7 +117,9 @@ def test_interaction_contracts_preserved_under_compact_density():
     assert "navigateHarmony(1)" in QML_SOURCE
     assert "navigateHarmony(-1)" in QML_SOURCE
     assert "stopPreview()" in QML_SOURCE
-    assert "addToKit(index)" in QML_SOURCE
+    # #840: Browser Add-to-Kit is context-menu only; Harmonic result Add stays.
+    assert "window.interaction.addToKit(index)" not in QML_SOURCE
+    assert "contextAddToKit" in QML_SOURCE
     assert "addHarmonyToKit(index)" in QML_SOURCE
     assert 'text: "Play"' not in QML_SOURCE
     assert 'text: "▶"' not in QML_SOURCE
@@ -149,7 +151,9 @@ def test_owner_visual_repair_preserves_required_browser_columns_at_narrow_width(
         "browserNarrowColumns ? browserLengthColumnMin : window.browserLengthColumnWidth"
         in QML_SOURCE
     )
-    assert "property int effectiveBrowserAddColumnWidth: browserNarrowColumns ? 56 : window.browserAddColumnWidth" in QML_SOURCE
+    # #840: trailing Browser Add-column geometry is gone (context menu owns Add).
+    assert "browserAddColumnWidth" not in QML_SOURCE
+    assert "effectiveBrowserAddColumnWidth" not in QML_SOURCE
     assert _int_property(QML_SOURCE, "browserWaveformMin") == 140
     assert _int_property(QML_SOURCE, "browserMetaColumnMin") == 40
     assert _int_property(QML_SOURCE, "browserLengthColumnMin") == 52
@@ -157,10 +161,11 @@ def test_owner_visual_repair_preserves_required_browser_columns_at_narrow_width(
     delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
     assert "visible: !browserPane.browserNarrowColumns" in delegate
     assert "Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120" in delegate
-    assert 'text: browserPane.browserNarrowColumns ? "+ Add" : "+ Add to Kit"' in delegate
+    assert 'text: browserPane.browserNarrowColumns ? "+ Add" : "+ Add to Kit"' not in delegate
+    assert "window.interaction.addToKit(index)" not in delegate
     assert "browserPane.effectiveBrowserMetaColumnWidth" in delegate
     assert "browserPane.effectiveBrowserLengthColumnWidth" in delegate
-    assert "browserPane.effectiveBrowserAddColumnWidth" in delegate
+    assert "browserPane.effectiveBrowserAddColumnWidth" not in delegate
 
 
 def test_harmonic_compact_columns_preserve_sample_identity():
