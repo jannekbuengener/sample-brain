@@ -258,7 +258,7 @@ def test_library_scope_bar_visual_polish_contract() -> None:
 
     source = workbench_qml.QML_SOURCE
     scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
-        'objectName: "elasticHandleAfterLibrary"', 1
+        'Item { Layout.fillWidth: true }', 1
     )[0]
     tree_block = source.split('objectName: "libraryTree"', 1)[1].split(
         "delegate: TreeViewDelegate", 1
@@ -269,16 +269,17 @@ def test_library_scope_bar_visual_polish_contract() -> None:
     pane_block = source.split('id: libraryPane', 1)[1].split(
         'objectName: "elasticHandleAfterLibrary"', 1
     )[0]
+    assert 'objectName: "libraryScopeBar"' not in pane_block
+    footer_block = source.split("footer:", 1)[1].split("header:", 1)[0]
+    assert pane_block.find('objectName: "libraryContentHost"') >= 0
+    assert 'objectName: "libraryScopeBar"' in footer_block
 
-    for glyph in ("⌁", "≡", "◉", "▣"):
+    for glyph in ("⌁", "≡", "▣"):
         assert f'text: "{glyph}"' not in source
 
     assert "theme.selectionSurface" in scope_block
     assert "theme.selectionBorder" in scope_block or "theme.actionActive" in scope_block
     assert "theme.surfaceElevated" in scope_block
-    assert pane_block.find('objectName: "libraryContentHost"') < pane_block.find(
-        'objectName: "libraryScopeBar"'
-    )
 
     assert 'visible: libraryScopeBar.mode === "sources"' in tree_block
     assert 'enabled: libraryScopeBar.mode === "sources"' in tree_block

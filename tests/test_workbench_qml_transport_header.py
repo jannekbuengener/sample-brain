@@ -6,7 +6,7 @@ Frozen acceptance:
 - Tempo change updates QML and the same TempoMap Channel Rack uses
 - SYNC toggle updates authority + QML
 - No second tempo/sync store in QML
-- Producer command zone geometry remains centered
+- Producer transport zone remains on the header right; navigation is centered (#831)
 """
 
 from __future__ import annotations
@@ -24,15 +24,15 @@ CENTER_TOLERANCE_RATIO = 0.04
 CENTER_TOLERANCE_MIN_PX = 24
 
 
-def _header_center_snip() -> str:
-    start = QML_SOURCE.index('objectName: "producerCommandZone"')
-    end = QML_SOURCE.index('objectName: "headerRightZone"', start)
+def _header_transport_snip() -> str:
+    start = QML_SOURCE.index('objectName: "headerTransportZone"')
+    end = QML_SOURCE.index('objectName: "workspaceRow"', start)
     return QML_SOURCE[start:end]
 
 
 def test_qml_source_has_no_hardcoded_decorative_transport_truth():
     """QML must not paint a second BPM/SYNC truth independent of the bridge."""
-    center = _header_center_snip()
+    center = _header_transport_snip()
     # Decorative literals from pre-#805 chrome must be gone.
     assert re.search(r'text:\s*"132"', center) is None
     assert re.search(r'text:\s*"4/4"', center) is None
@@ -47,7 +47,8 @@ def test_qml_source_has_no_hardcoded_decorative_transport_truth():
     # Live-kit audition guard forbids domain tokens inside QML_SOURCE;
     # projection uses tempoSync naming while Python still owns the adapter.
     assert "WorkbenchTransportAdapter" not in QML_SOURCE
-    assert "transport" not in QML_SOURCE
+    transport_snip = _header_transport_snip()
+    assert "WorkbenchTransport" not in transport_snip
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
@@ -220,14 +221,15 @@ def test_runtime_producer_zone_geometry_stable_with_transport_controls(size):
         _settle_qml_frame(app)
 
         header = window.findChild(QQuickItem, "screen1Header")
-        center = window.findChild(QQuickItem, "producerCommandZone")
-        assert header is not None and center is not None
+        transport = window.findChild(QQuickItem, "headerTransportZone")
+        nav = window.findChild(QQuickItem, "headerNavZone")
+        assert header is not None and transport is not None and nav is not None
         ref_center = float(header.width()) / 2.0
-        zone_center = float(center.x()) + float(center.width()) / 2.0
+        nav_center = float(nav.x()) + float(nav.width()) / 2.0
         tol = max(CENTER_TOLERANCE_MIN_PX, float(header.width()) * CENTER_TOLERANCE_RATIO)
-        assert abs(zone_center - ref_center) <= tol
-        assert center.x() >= 0
-        assert center.x() + center.width() <= header.width() + 1.0
+        assert abs(nav_center - ref_center) <= tol
+        transport_in_header = transport.mapToItem(header, 0, 0)
+        assert transport_in_header.x() > header.width() * 0.45
     finally:
         window.close()
         app.processEvents()

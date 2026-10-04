@@ -29,7 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def _header_block() -> str:
     start = QML_SOURCE.index('objectName: "screen1Header"')
     # Producer zone follows immediately after the left identity.
-    end = QML_SOURCE.index('objectName: "producerCommandZone"', start)
+    end = QML_SOURCE.index('objectName: "headerNavZone"', start)
     return QML_SOURCE[start:end]
 
 
