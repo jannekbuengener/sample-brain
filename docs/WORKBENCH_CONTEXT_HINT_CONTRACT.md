@@ -2,19 +2,18 @@
 
 ## Purpose
 
-Screen 1 shows a small **bottom-center context hint / legend** for icon-only
-controls. Hover or keyboard focus on a supported control updates one shared
-hint surface. Cursor-adjacent tooltips are not the primary discoverability
-path for these controls.
+Screen 1 shows a small context hint / legend for icon-only controls. Hover or
+keyboard focus on a supported control updates one shared hint surface.
+Cursor-adjacent tooltips are not the primary discoverability path for these
+controls.
 
 ## Placement
 
 #830 (`docs/PROGRAM_CHROME_CONTRACT.md`) owns the global footer band. The hint
-stays inside that band, display-only, and must not cover utility or status hit
-areas. The earlier bottom-center lock applies only to hint semantics, not to a
-separate centered strip.
+is status text inside that band, on the right, display-only. It must not cover
+utility hit areas and it is not its own centered strip.
 
-- bottom-aligned, inside the program footer
+- inside the program footer, right side
 - visually small and calm
 - uses existing Screen-1 theme tokens
 - does not steal unnecessary workspace height

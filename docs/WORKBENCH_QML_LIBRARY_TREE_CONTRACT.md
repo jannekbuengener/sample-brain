@@ -131,11 +131,11 @@ Presentation rule for the Library pane (no opacity-only hide with active input):
 | Recordings | not visible; not focusable; no input | — |
 | Collections | not visible; not focusable; no input | Collection list visible |
 
-`libraryScopeBar` is permanent Library chrome at the **bottom** of the Library
-pane (above the app footer). Mode switches must not relocate it into the footer
-or above the header: tree/list visibility is hosted inside a single
-`libraryContentHost` (`Layout.fillHeight`) so the content host fills the space
-between the Library header and the bottom icon bar.
+`libraryScopeBar` is the left side of the global footer band
+(`docs/PROGRAM_CHROME_CONTRACT.md`, #830). It is not a second row inside the
+Library pane, and mode switches must not move it above the Library header.
+Tree/list visibility stays in one `libraryContentHost` (`Layout.fillHeight`),
+which fills the Library pane under the Library header.
 
 Returning to Sources keeps the existing Tree expand/selection state; do not
 reload navigation solely because of a scope-bar mode switch.
