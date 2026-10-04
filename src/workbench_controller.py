@@ -282,6 +282,7 @@ def filter_workbench_rows(rows: list[WorkbenchRow], query: str) -> list[Workbenc
         return list(rows)
 
     def _haystack(row: WorkbenchRow) -> str:
+        error_text = row.error if isinstance(row.error, str) else ""
         parts = [
             row.display_name,
             row.relative_path,
@@ -289,7 +290,7 @@ def filter_workbench_rows(rows: list[WorkbenchRow], query: str) -> list[Workbenc
             row.pred_type or "",
             row.sample_class or "",
             row.status,
-            row.error or "",
+            error_text,
         ]
         library_folder = row.details.get("library_folder")
         if library_folder:
