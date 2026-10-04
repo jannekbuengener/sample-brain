@@ -27,15 +27,16 @@ backend and no renderer, dialog, audio, scan, or analysis behavior.
 The renderer-neutral authority still owns Sample Sources, All Samples,
 Catalog (resolve/load), Collections, Favorites, and Recordings.
 
-Presentation split (owned by the QML Library Tree contract / #837; geometry
-superseded for footer placement by `docs/PROGRAM_CHROME_CONTRACT.md` #830):
+Presentation split:
 
 - **Source tree:** Sample Sources with registered roots and lazy subfolders.
   Add Source lives in the Library header, not inside the tree.
-- **Secondary scope controls:** All Samples, Collections, Favorites
-  (geometric star), and Recordings — same scope intents as #837; #830 moves their
-  presentation into the global footer utility band (left), not a Library-pane row
-  above the footer. The visible Catalog control is not presented.
+- **Secondary scope controls (intent authority):** All Samples, Collections,
+  Favorites (geometric star), and Recordings — same scope set and dispatch as
+  #837 / the QML Library Tree contract. No new Library intents and no new scopes.
+- **Secondary scope controls (placement authority):** `#830`
+  (`docs/PROGRAM_CHROME_CONTRACT.md`) owns presentation placement in the
+  **global footer** utility band (left). This navigation contract no longer authorizes a competing Library-pane row directly above the footer. Do not keep a second copy in the Library pane after #831. The visible Catalog control is not presented.
 
 Favorites is a dedicated user-organization scope
 (`scope:favorites` / `LibraryScopeKind.FAVORITES`). Recordings is a dedicated

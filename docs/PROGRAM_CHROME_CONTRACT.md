@@ -26,7 +26,12 @@ Only the global frame:
 1. **Top program bar**
    - Product identity on the left: existing text `Sample Brain`. Not the brain signet, not the `SAMPLE BRAIN` lockup, not the claim.
    - Screen navigation in the center, in this order: Browser, Live Kit, Step Sequencer, Arrangement.
-   - Global transport / tempo on the right: existing transport, BPM, time signature, SYNC, and controls that already live in that global zone (including the display-preferences overflow and the current Harmonic Match control).
+   - Global transport / tempo on the right: existing transport, BPM / Tempo,
+     time signature, SYNC, and other current global controls that already live
+     in that zone (including the display-preferences overflow).
+     **No Harmonic Match header button** — #843 removed `harmonicMatchButton`;
+     Harmonic Matches open/retarget from the Sample Context Menu, and #845
+     remains collapse/reopen owner.
 2. **Bottom footer**
    - A short footer band.
    - Existing navigation / utility on the left.
@@ -49,12 +54,17 @@ Pattern Core, sequencer playback, and Screen 2 stay on their own contracts. This
 
 **Arrangement** is a reserved center label. Screen 3 is not built (`PRODUCT_WORKFLOW_CANON.md`). Do not add an Arrangement workspace, route, or command to imitate the label.
 
-**Live Kit** stays the existing Screen-1 panel. The center **Live Kit** item uses the
-existing reveal/collapse and Live Kit panel contracts. It does not add a new screen
-or bypass progressive disclosure: before Live Kit is materialized, the control
-follows the same existing Screen-1 interaction path as today (reveal/focus the Live
-Kit pane through current adapter commands, without a second loader). #831 must not
-invent a parallel Live Kit state owner.
+**Live Kit** stays the existing Screen-1 panel. The center **Live Kit** item is
+chrome navigation only — it does not add a new screen, a new Live Kit state, or a
+second disclosure/materialization authority.
+
+| Session state | Center **Live Kit** chrome |
+|---|---|
+| Active source, `live_kit_materialized == false` | Visible label may name Live Kit; the action is **disabled / inert**. It must **not** materialize the Live Kit merely by activating this program-chrome control. Progressive disclosure stays owned by the existing Add-to-Kit / materialization path. |
+| After materialization (`live_kit_materialized == true`) | Uses **only** the existing Live Kit presentation / reveal / collapse seams (#845 and current adapter commands). No second loader, no new panel owner. |
+
+#831 must implement that table; it must not invent a parallel Live Kit domain or
+materialization path from program chrome.
 
 **Browser** selects Screen 1 workspace focus through existing navigation. **Step
 Sequencer** routes through the existing Screen-2 open command (`openChannelRack` /
@@ -76,26 +86,31 @@ route, disabled or non-navigating until a future scoped issue authorizes it.
 |---|---|---|
 | #782 header comment: identity left, producer center, secondary right | Tempo, SYNC, and display-preferences ownership | Zone order. Navigation is center. Transport/tempo is right. |
 | #786 / brand README: no brain logo, lockup, or claim in the header | That prohibition | Nothing. Identity stays product text. |
-| #843 (open): Harmonic Match leaves the header when that slice lands | The single existing control and its one dispatch | Nothing in this frame. The reference omits the button; that omission does not delete it here. It stays with the other global controls on the right until #843. |
+| #843 (DONE_MERGED_CLOSED): Harmonic Matches from Sample Context Menu | Open/retarget via `open_harmonic_matches_for_row`; #845 collapse ownership | Header `harmonicMatchButton` is gone. Right program-chrome must not reintroduce it. |
 | #770: hint is bottom-center | Hint semantics | Horizontal placement inside the footer band. |
-| #837: secondary icons above a hint-only footer | Scope set and intent dispatch | Those icons may occupy the left side of this footer band. |
-| `WORKBENCH_LIBRARY_NAVIGATION_CONTRACT.md` pane-bottom bar wording | Scope intents and Catalog invisibility | Footer-band placement geometry (#830). |
+| #837: secondary icons above a hint-only footer | Scope set and intent dispatch | Those icons occupy the left side of this footer band (no second Library-pane copy). |
+| `WORKBENCH_LIBRARY_NAVIGATION_CONTRACT.md` historical pane-bottom bar wording | Scope intents and Catalog invisibility | **Placement authority is this file (#830):** global footer left. The navigation contract no longer authorizes a competing pane-local geometry. |
 
 Screen-1 colors stay on Theme Core. This reference is not a palette.
 
 ## Implementation test supersession (#831)
 
-This file is docs/canon-only. The following frozen tests still describe the pre-#830
-runtime header and must be retargeted in #831 together with the QML layout change.
-Do not treat them as authority over this contract.
+This file is docs/canon-only. #830 does **not** rewrite product/QML runtime
+tests onto the not-yet-implemented #831 end state.
 
-| Frozen test area | What #831 must change |
-|---|---|
-| `tests/test_workbench_qml_producer_command_zone.py` | Stop requiring MASTER/GRID/SYNC/Harmonic Match in `producerCommandZone`; require center navigation and right transport zone instead. |
-| `tests/test_workbench_qml_screen2_channel_rack.py` | Allow the reserved **Arrangement** label in the program-chrome navigation only; keep forbidding Screen 3 / Playlist / Mixer surfaces. |
-| `tests/test_workbench_library_bottom_icons_837.py` | Runtime geometry: scope utility lives in the global footer band, not above it. |
-| `tests/test_workbench_library_scope_evidence.py` | Pane-local `libraryScopeBar` placement assertions must move with the footer band. |
-| `tests/test_workbench_context_hint_770.py` | Hint placement inside the footer band (right), not a separate centered strip. |
+The following frozen tests still describe **pre-#831 / current `main` runtime**
+geometry (including pane-local Library scope chrome). #831 must retarget them
+together with the actual QML migration. Until then they remain green CURRENT
+RUNTIME freezes — **not** authority against this #830 canon.
 
-Until #831 lands, those tests continue to describe current `main` runtime geometry.
-They do not block acceptance of this canon document.
+| Frozen test area | Pre-#831 meaning | What #831 must change |
+|---|---|---|
+| `tests/test_workbench_qml_producer_command_zone.py` | Current producer/header zone layout | Require center navigation and right transport zone (no Harmonic Match header button — already removed by #843). |
+| `tests/test_workbench_qml_screen2_channel_rack.py` | Screen-2 surface forbids | Allow reserved **Arrangement** label in program-chrome navigation only; keep forbidding Screen 3 / Playlist / Mixer surfaces. |
+| `tests/test_workbench_library_bottom_icons_837.py` | Pane-local bottom icon geometry above the app footer | Move scope utility into the global footer band (left). |
+| `tests/test_workbench_library_scope_evidence.py` | Pane-local `libraryScopeBar` geometry (`bar.y() > 80`, below `libraryContentHost`, etc.) | Retarget those placement assertions with the QML footer migration. Do **not** treat the current pane-local freeze as a veto of #830 footer placement. |
+| `tests/test_workbench_context_hint_770.py` | Current hint placement freeze | Hint placement inside the footer band (right), not a separate centered strip. |
+
+Until #831 lands, those tests continue to describe current `main` runtime
+geometry. They do not block acceptance of this canon document, and #830 must
+not weaken them prematurely.

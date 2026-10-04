@@ -25,3 +25,30 @@ def test_program_chrome_contract_documents_831_test_supersession() -> None:
     assert "Implementation test supersession (#831)" in text
     assert "test_workbench_qml_producer_command_zone.py" in text
     assert "test_workbench_qml_screen2_channel_rack.py" in text
+    assert "test_workbench_library_scope_evidence.py" in text
+    assert "authority against this #830 canon" in text
+    assert "pre-#831" in text or "pre-#831 / current" in text
+
+
+def test_program_chrome_live_kit_inert_before_materialization() -> None:
+    text = Path("docs/PROGRAM_CHROME_CONTRACT.md").read_text(encoding="utf-8")
+    assert "live_kit_materialized == false" in text
+    assert "disabled / inert" in text or "disabled/inert" in text
+    assert "must **not** materialize" in text or "must not materialize" in text
+
+
+def test_program_chrome_reconciles_843_header_removal() -> None:
+    text = Path("docs/PROGRAM_CHROME_CONTRACT.md").read_text(encoding="utf-8")
+    assert "#843 (open)" not in text
+    assert "harmonicMatchButton" in text
+    assert "No Harmonic Match header button" in text
+    assert "Sample Context Menu" in text
+
+
+def test_library_navigation_defers_placement_to_830() -> None:
+    text = Path("docs/WORKBENCH_LIBRARY_NAVIGATION_CONTRACT.md").read_text(
+        encoding="utf-8"
+    )
+    assert "PROGRAM_CHROME_CONTRACT.md" in text
+    assert "global footer" in text.lower()
+    assert "no longer authorizes a competing Library-pane row" in text

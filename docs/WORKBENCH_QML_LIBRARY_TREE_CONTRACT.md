@@ -14,8 +14,10 @@ and placed `Add Source…` inside `Sample Sources`. It also supersedes the
 #765/#766 compact icon row that sat **above** the Source tree and exposed a
 visible Catalog control.
 
-#837 is the current presentation authority for secondary icon placement and
-visible secondary scopes.
+#837 remains the authority for which secondary scopes are visible and which
+intents they dispatch. #830 (`docs/PROGRAM_CHROME_CONTRACT.md`) owns the global
+footer placement of that utility set; #837 no longer competes as a pane-local
+geometry authority for those icons.
 
 ## Source tree taxonomy
 
@@ -36,12 +38,12 @@ convenience folders.
 The single primary Add Source affordance remains the existing button in the
 Library header. `action:add-source` is not emitted by the navigation model.
 
-## Bottom secondary icon navigation (#837)
+## Bottom secondary icon navigation (#837 scope set; #830 placement)
 
-Historical #837 placement was a compact icon-only row at the bottom of the left Library/Browser pane, directly above the ApplicationWindow footer. #830
-(`docs/PROGRAM_CHROME_CONTRACT.md`) moves that existing utility onto the left of
-the global footer band. This section still owns the scope set and the intent
-dispatch. Do not render the same scope twice.
+Historical #837 placement was a compact icon-only row at the bottom of the left Library/Browser pane, directly above the ApplicationWindow footer. That
+pane-local geometry is superseded for #831 by #830: the same utility set moves
+onto the left of the global footer band. This section still owns the scope set
+and the intent dispatch only. Do not render the same scope twice.
 
 Visible secondary controls:
 
