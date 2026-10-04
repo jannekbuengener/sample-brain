@@ -192,6 +192,16 @@ Evidence stays **outside** the repository. Synthetic fixture paths only.
 Capture helper: `run_qml_visual_acceptance_786` in `src/workbench_qml_spike.py`
 (`tools/screen1_brand_motion_786_evidence.py`).
 
+## Global program chrome reference (#830)
+
+Design authority for the top program bar and the footer band only:
+
+`docs/assets/portfolio/references/program_chrome/owner_program_chrome_ba928fbe.jpg`
+
+Contract: `docs/PROGRAM_CHROME_CONTRACT.md`. Pattern, Bars, Song, channel rows,
+and the rest of that image are not acceptance targets. Do not invent pixel or
+hex values from the screenshot. Agent-owned visual acceptance still applies.
+
 ## Brand identity references
 
 Byte-identische Owner Brand-Assets. Analysis/loading runtime may bind the

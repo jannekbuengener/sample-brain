@@ -67,13 +67,16 @@ def test_descriptor_seam_is_shared_and_placement_decoupled() -> None:
     assert "anchors." not in state_block
     assert re.search(r"\bx:\s*", state_block) is None
     assert re.search(r"\by:\s*", state_block) is None
-    # V1 placement is bottom-center via dedicated placement surface.
+    # Pre-#831 CURRENT RUNTIME: hint remains horizontally centered in footer band.
     place_block = source.split('objectName: "contextHintPlacement"', 1)[1].split(
         "header:", 1
     )[0]
     assert "contextHintDisplay" in place_block
     assert "horizontalCenter" in place_block or "AlignHCenter" in place_block
     assert "footer:" in source.split('objectName: "contextHintPlacement"', 1)[0][-80:]
+    hint_doc = Path("docs/WORKBENCH_CONTEXT_HINT_CONTRACT.md").read_text(encoding="utf-8")
+    assert "bottom-center" not in hint_doc.lower()
+    assert "right side" in hint_doc or "on the right" in hint_doc
 
 
 def test_supported_controls_register_stable_distinct_descriptors() -> None:

@@ -130,7 +130,7 @@ def test_qml_bottom_icon_bar_contract_and_accessible_names() -> None:
     assert "★" not in favorites_block
     assert "⭐" not in favorites_block
     assert "for (var i = 0; i < 5; i++)" in favorites_block
-    # Scope bar is Library-pane chrome after the content host, not ApplicationWindow footer.
+    # Pre-#831 CURRENT RUNTIME: scope bar remains pane-local until #831 migrates it.
     pane_block = source.split('id: libraryPane', 1)[1].split(
         'objectName: "elasticHandleAfterLibrary"', 1
     )[0]
