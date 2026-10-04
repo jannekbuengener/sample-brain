@@ -1,11 +1,12 @@
 """#839 Sample context menu — frozen contracts.
 
 Canon: docs/WORKBENCH_SAMPLE_CONTEXT_MENU_CONTRACT.md
-Parent: #838. Boundaries: #840 (row Add-to-Kit removal), #842 (matching),
-#843 (harmonic panel bind).
+Parent: #838. Boundaries: #840 (row Add-to-Kit removal — supersedes temporary
+coexistence chrome assertions below), #842 (matching), #843 (harmonic panel bind).
 
-TEST_FREEZE: assertions below express the intended #839 behaviour. Do not weaken
-them to fit incomplete product code. Expected RED until implementation.
+TEST_FREEZE: target/lifecycle/context assertions remain authoritative. The
+temporary #839 coexistence assertion that required visible row Add-to-Kit was
+retargeted for #840.
 """
 
 from __future__ import annotations
@@ -401,14 +402,33 @@ def test_qml_source_wires_right_click_and_keyboard_context_open():
     assert "CloseOnPressOutside" in text
 
 
-def test_qml_source_keeps_row_add_to_kit_and_harmonic_header_button():
-    """#839 must not remove chrome owned by #840 / #843."""
-    assert "addToKit(index)" in QML_SOURCE
+def test_qml_source_keeps_harmonic_header_button_and_browser_virtualization():
+    """#843 owns harmonic header removal; virtualization stays locked.
+
+    #840 supersedes the temporary #839 coexistence assertion that required
+    visible Browser row ``addToKit(index)`` chrome.
+    """
     assert 'objectName: "harmonicMatchButton"' in QML_SOURCE
     assert "reuseItems: true" in QML_SOURCE
     browser_idx = QML_SOURCE.index('objectName: "browserList"')
     browser_window = QML_SOURCE[browser_idx : browser_idx + 400]
     assert "reuseItems: true" in browser_window
+
+
+def test_qml_source_has_no_visible_browser_row_add_to_kit_after_840():
+    """#840: Context Menu is the sole visible Browser Add-to-Kit route."""
+    browser_idx = QML_SOURCE.index('objectName: "browserList"')
+    end = QML_SOURCE.index('objectName: "elasticHandleAfterBrowser"', browser_idx)
+    browser_panel = QML_SOURCE[browser_idx:end]
+    assert "window.interaction.addToKit(index)" not in browser_panel
+    assert 'id: addButton' not in browser_panel
+    assert 'id: addButtonMouse' not in browser_panel
+    assert '"+ Add to Kit"' not in browser_panel
+    assert 'browserPane.browserNarrowColumns ? "+ Add" : "+ Add to Kit"' not in browser_panel
+    assert "browserAddColumnWidth" not in browser_panel
+    assert "effectiveBrowserAddColumnWidth" not in browser_panel
+    assert 'objectName: "sampleContextMenu"' in QML_SOURCE
+    assert "contextAddToKit" in QML_SOURCE
 
 
 def test_qml_source_preserves_845_collapse_and_846_resize_markers():

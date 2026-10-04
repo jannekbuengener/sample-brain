@@ -244,7 +244,9 @@ def test_browser_qml_uses_waveform_intent_and_has_no_row_play_button():
 
     assert "Canvas" in QML_SOURCE
     assert "previewRow(index)" in QML_SOURCE
-    assert "addToKit(index)" in QML_SOURCE
+    # #840: visible Browser Add-to-Kit is context-menu only.
+    assert "window.interaction.addToKit(index)" not in QML_SOURCE
+    assert "contextAddToKit" in QML_SOURCE
     assert "stopPreview()" in QML_SOURCE
     assert 'text: "Play"' not in QML_SOURCE
     assert 'text: "▶"' not in QML_SOURCE

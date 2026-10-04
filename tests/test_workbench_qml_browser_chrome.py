@@ -43,13 +43,13 @@ _SHARED_DENSITY_ROLES = (
 )
 
 # Browser-specific column widths stay browser-local but shared between header + row.
+# #840 removes trailing Add-column geometry; Sample Name fill-width absorbs space.
 _SHARED_BROWSER_COLUMN_ROLES = (
     "browserWaveformWidth",
     "browserWaveformMin",
     "browserMetaColumnWidth",
     "browserFavoriteColumnWidth",
     "browserLengthColumnWidth",
-    "browserAddColumnWidth",
 )
 
 # #767 default Browser scan order markers for row delegate.
@@ -82,7 +82,7 @@ def _column_header_layout(source: str) -> str:
 
 
 def _full_browser_column_header(source: str) -> str:
-    """Header RowLayout through the trailing Add-column spacer (before ListView)."""
+    """Header RowLayout through the end of the column header (before ListView)."""
     marker = source.index(COLUMN_HEADER_MARKER)
     start = source.rfind("RowLayout { Layout.fillWidth: true", 0, marker)
     assert start != -1, "Spalten-Header-RowLayout fehlt"
@@ -117,11 +117,13 @@ def test_browser_column_spec_is_shared_between_header_and_rows():
         "effectiveBrowserMetaColumnWidth",
         "effectiveBrowserFavoriteColumnWidth",
         "effectiveBrowserLengthColumnWidth",
-        "effectiveBrowserAddColumnWidth",
     ):
         assert QML_SOURCE.count(f"browserPane.{role}") >= 2, (
             f"Responsive Column-Spec {role} wird nicht von Header UND Delegate geteilt"
         )
+    # #840: no reserved trailing Add-column geometry.
+    assert "browserAddColumnWidth" not in QML_SOURCE
+    assert "effectiveBrowserAddColumnWidth" not in QML_SOURCE
     assert QML_SOURCE.count("anchors.leftMargin: window.densityHorizontalInset") >= 2
     assert QML_SOURCE.count("anchors.rightMargin: window.densityHorizontalInset") >= 2
 
@@ -206,8 +208,11 @@ def test_browser_shared_column_spec_uses_single_definition_each():
 
 def test_browser_intent_keyboard_and_virtualization_contracts_preserved():
     assert QML_SOURCE.count("previewRow(index)") == 1
-    assert QML_SOURCE.count("addToKit(index)") == 1
     assert QML_SOURCE.count("toggleFavorite(index)") == 1
+    # #840: Browser Add-to-Kit is context-menu only (no visible row addToKit route).
+    assert "window.interaction.addToKit(index)" not in QML_SOURCE
+    assert "contextAddToKit" in QML_SOURCE
+    assert 'objectName: "sampleContextMenu"' in QML_SOURCE
     # stopPreview() gehört zwei Flächen: Browser-Escape UND Harmonic-Panel (vorbestehend).
     assert 'else if (event.key === Qt.Key_Escape) { window.interaction.stopPreview(); event.accepted = true }' in QML_SOURCE
     assert "Keys.onEscapePressed: window.interaction.stopPreview()" in QML_SOURCE
@@ -282,12 +287,32 @@ def test_browser_sample_type_does_not_displace_default_column_order():
     assert type_pos > delegate.index('objectName: "browserFavoriteButton"')
 
 
-def test_browser_add_to_kit_remains_available_without_owning_scan_path():
+def test_browser_add_to_kit_is_context_menu_only_without_row_column():
+    """#840 supersedes visible per-row Add-to-Kit chrome + Add-column geometry."""
     delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
-    add_pos = delegate.index("window.interaction.addToKit(index)")
-    assert add_pos > delegate.index("text: modelData.duration")
-    assert '"+ Add to Kit"' in delegate
-    assert "effectiveBrowserAddColumnWidth" in delegate
+    header = _full_browser_column_header(QML_SOURCE)
+    assert "window.interaction.addToKit(index)" not in delegate
+    assert 'id: addButton' not in delegate
+    assert 'id: addButtonMouse' not in delegate
+    assert '"+ Add to Kit"' not in delegate
+    assert 'browserPane.browserNarrowColumns ? "+ Add" : "+ Add to Kit"' not in delegate
+    assert "effectiveBrowserAddColumnWidth" not in delegate
+    assert "effectiveBrowserAddColumnWidth" not in header
+    assert "browserAddColumnWidth" not in QML_SOURCE
+    assert 'objectName: "sampleContextMenu"' in QML_SOURCE
+    menu_idx = QML_SOURCE.index('objectName: "sampleContextMenu"')
+    menu_window = QML_SOURCE[menu_idx : menu_idx + 2500]
+    assert "Add to Kit" in menu_window
+    assert "contextAddToKit" in QML_SOURCE
+    # Remaining shared columns stay header/delegate aligned.
+    for role in (
+        "effectiveBrowserWaveformWidth",
+        "effectiveBrowserMetaColumnWidth",
+        "effectiveBrowserFavoriteColumnWidth",
+        "effectiveBrowserLengthColumnWidth",
+    ):
+        assert f"browserPane.{role}" in header
+        assert f"browserPane.{role}" in delegate
 
 
 def test_browser_density_tokens_unchanged_by_767():
@@ -522,8 +547,10 @@ def test_browser_column_resize_reuses_shared_header_row_geometry():
     # Virtualization and existing row intents remain intact alongside resize.
     assert QML_SOURCE.count("reuseItems: true") == 2
     assert QML_SOURCE.count("previewRow(index)") == 1
-    assert QML_SOURCE.count("addToKit(index)") == 1
     assert QML_SOURCE.count("toggleFavorite(index)") == 1
+    # #840: no visible Browser row Add-to-Kit; context menu owns the route.
+    assert "window.interaction.addToKit(index)" not in QML_SOURCE
+    assert "contextAddToKit" in QML_SOURCE
     # Horizontal row divider / alternating shading remain (#781 / density).
     delegate = _browser_delegate_full(QML_SOURCE)
     assert "height: window.densityDividerHeight" in delegate

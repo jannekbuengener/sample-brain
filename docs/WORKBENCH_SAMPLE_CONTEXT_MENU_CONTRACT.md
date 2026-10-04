@@ -1,10 +1,12 @@
-# Workbench Sample Context Menu Contract (#839)
+# Workbench Sample Context Menu Contract (#839 / #840)
 
 **Status:** ACTIVE_SUPPORTING (Screen-1 child of #838)  
-**Issue:** [#839](https://github.com/jannekbuengener/sample-brain/issues/839)  
+**Issues:** [#839](https://github.com/jannekbuengener/sample-brain/issues/839)
+(menu + stable target — delivered),
+[#840](https://github.com/jannekbuengener/sample-brain/issues/840)
+(Browser Add-to-Kit via context menu only)  
 **Parent UX meta:** [#838](https://github.com/jannekbuengener/sample-brain/issues/838)  
-**Downstream (do not implement here):**
-[#840](https://github.com/jannekbuengener/sample-brain/issues/840) (row Add-to-Kit removal),
+**Downstream (do not implement in #840):**
 [#843](https://github.com/jannekbuengener/sample-brain/issues/843) (Harmonic panel bind),
 [#842](https://github.com/jannekbuengener/sample-brain/issues/842) (matching/eligibility repair)  
 **Renderer:** `LOCK_PYSIDE6_QML` — presentation lives in `src/workbench_qml.py`
@@ -104,7 +106,30 @@ One Add-to-Kit domain/intent semantics path. Context must never call
 `request_add_to_kit(old_index)` after open, because filter/reload/virtualization
 can change which sample occupies that index.
 
-#839 keeps the visible per-row Add-to-Kit chrome. Removal belongs to #840.
+### #840 — Context menu is the sole visible Browser Add-to-Kit route
+
+Supersedes the temporary #839 coexistence clause
+(“#839 keeps the visible per-row Add-to-Kit chrome. Removal belongs to #840.”).
+
+After #840:
+
+- The Sample Context Menu is the **only** visible Browser Add-to-Kit route.
+- Visible per-row Browser Add-to-Kit chrome is removed
+  (`addButton` / `addButtonMouse`, `"+ Add"` / `"+ Add to Kit"` labels,
+  and any row call to `window.interaction.addToKit(index)`).
+- Trailing Browser Add-column presentation geometry is removed with the action:
+  no `browserAddColumnWidth`, no `effectiveBrowserAddColumnWidth`, no header
+  Add-column spacer, and no empty reserved Add column in rows. Freed width is
+  absorbed by the existing fill-width Sample Name / Browser layout.
+- Stable Python `sample_context_target` remains target authority.
+- Existing Add-to-Kit domain seam
+  (`_request_add_to_kit_row` / Live Kit pending / assign / replace / cancel)
+  remains reused — #840 builds no second kit domain.
+- Index-based `request_add_to_kit(index)` / bridge `addToKit(index)` may remain
+  as non-visible harness/API seams when tests need them; they must not form a
+  competing visible Browser row route.
+- Harmonic Matches **result-row** `addHarmonyToKit(index)` is a separate surface
+  and remains unchanged. Header `harmonicMatchButton` remains until #843.
 
 ## Harmonic Matches intent
 
@@ -190,12 +215,23 @@ Preferred semantic bindings:
 No new local palette. Portfolio mockups deleted on `main` (#863/#864) are
 **not** dependencies and must not be restored for this contract.
 
-## #839 non-goals
+## Non-goals
 
-- Removing visible row Add-to-Kit chrome → #840
+### Owned by #840 (this contract slice)
+
+- Remove visible Browser row Add-to-Kit chrome and Add-column geometry
+- Keep Context Popup `Add to Kit` + `contextAddToKit()` as the Browser route
+- Preserve Live Kit domain semantics via the shared seam
+
+### Still out of scope here
+
 - Removing header Harmonic Match button → #843
+- Binding Harmonic context intent to panel/matching → #843
 - Matching/eligibility repair → #842
 - Harmony panel layout/embed → #843
+- Harmonic result-row Add-to-Kit changes
+- Live Kit domain redesign / slot UX redesign
+- Browser column reordering or #846 resize seam changes
 - Extra menu commands (Rename/Delete/Favorite/…)
 - Persistenz, audio engine, Step Sequencer, Arrangement, docking/reordering
 
