@@ -46,7 +46,8 @@ def test_header_exposes_left_center_right_zones():
     )
 
 
-def test_producer_command_zone_keeps_master_grid_sync_and_moves_harmonic_match():
+def test_producer_command_zone_keeps_master_grid_sync_without_harmonic_header():
+    """#843: Harmonic Matches producer entry leaves the header; MASTER/GRID/SYNC stay."""
     header = _header_block()
     center = header[
         header.index('objectName: "producerCommandZone"') : header.index(
@@ -56,11 +57,11 @@ def test_producer_command_zone_keeps_master_grid_sync_and_moves_harmonic_match()
     assert 'text: "MASTER"' in center
     assert 'text: "GRID"' in center
     assert 'text: "SYNC"' in center
-    assert 'objectName: "harmonicMatchButton"' in center
-    # #845: header routes through a single QML helper; the helper owns the
-    # one interaction.toggleHarmonicMatch() call site (see chrome contract).
-    assert "activateHarmonicMatchToggle()" in center
-    assert 'Accessible.name: "Harmonic Match"' in center
+    assert 'objectName: "harmonicMatchButton"' not in center
+    assert 'Accessible.name: "Harmonic Match"' not in center
+    # #845: single QML helper remains for collapse/reopen (not a header button).
+    assert "activateHarmonicMatchToggle()" in QML_SOURCE
+    assert QML_SOURCE.count("toggleHarmonicMatch()") == 1
 
     right = header[header.index('objectName: "headerRightZone"') :]
     assert 'objectName: "openChannelRackButton"' in right
@@ -69,8 +70,8 @@ def test_producer_command_zone_keeps_master_grid_sync_and_moves_harmonic_match()
     assert 'objectName: "browserSearch"' not in header
 
 
-def test_harmonic_match_is_single_control_not_in_browser_chrome():
-    assert QML_SOURCE.count('objectName: "harmonicMatchButton"') == 1
+def test_harmonic_match_header_button_removed_and_not_in_browser_chrome():
+    assert 'objectName: "harmonicMatchButton"' not in QML_SOURCE
     assert QML_SOURCE.count("toggleHarmonicMatch()") == 1
     browser = _browser_chrome_block()
     assert 'objectName: "harmonicMatchButton"' not in browser
@@ -158,8 +159,10 @@ def test_runtime_producer_zone_is_geometrically_centered(size):
 
         assert all(
             item is not None
-            for item in (header, left, center, right, harmonic, search, channel, prefs)
+            for item in (header, left, center, right, search, channel, prefs)
         )
+        # #843: header Harmonic Match button is structurally gone.
+        assert harmonic is None
         assert left.x() < center.x()
         assert center.x() >= left.x() + left.width() - 1.0
         assert center.x() + center.width() <= right.x() + 1.0
@@ -168,9 +171,6 @@ def test_runtime_producer_zone_is_geometrically_centered(size):
         browser = window.findChild(QQuickItem, "browserPane")
         assert browser is not None
         assert search.mapToItem(browser, 0, 0).y() >= 0
-        harmonic_in_header = harmonic.mapToItem(header, 0, 0)
-        assert 0 <= harmonic_in_header.y() < header.height()
-        assert 0 <= harmonic_in_header.x() < header.width()
 
         _assert_centered(center, header, label=f"{width}x{height}")
 
@@ -182,9 +182,6 @@ def test_runtime_producer_zone_is_geometrically_centered(size):
         assert channel_in_header.x() > header.width() * 0.55
         prefs_in_header = prefs.mapToItem(header, 0, 0)
         assert prefs_in_header.x() > header.width() * 0.55
-        assert abs(
-            (harmonic_in_header.x() + harmonic.width() / 2.0) - (header.width() / 2.0)
-        ) < header.width() * 0.20
     finally:
         window.close()
         app.processEvents()
@@ -233,10 +230,9 @@ def test_runtime_center_stable_across_pane_disclosure_states():
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
-def test_runtime_harmonic_match_from_center_zone_roundtrip():
-    from PySide6.QtCore import QPointF, Qt
+def test_runtime_harmonic_match_roundtrip_via_845_helper_not_header_button():
+    """#843 removes header button; #845 toggle helper remains for open/close."""
     from PySide6.QtQuick import QQuickItem
-    from PySide6.QtTest import QTest
 
     app, engine, window, adapter, settle = _build_screen1_window()
     try:
@@ -247,18 +243,18 @@ def test_runtime_harmonic_match_from_center_zone_roundtrip():
         toggle = window.findChild(QQuickItem, "harmonicMatchButton")
         harmony = window.findChild(QQuickItem, "harmonicMatchList")
         search = window.findChild(QQuickItem, "browserSearch")
-        assert toggle is not None and harmony is not None and search is not None
+        assert toggle is None
+        assert harmony is not None and search is not None
 
-        point = toggle.mapToScene(QPointF(8, 8)).toPoint()
-        QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
+        bridge = engine._screen1_interaction_bridge
+        bridge.toggleHarmonicMatch()
         settle(app)
         assert adapter.harmonic_match_open is True
 
-        QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, point)
+        bridge.toggleHarmonicMatch()
         settle(app)
         assert adapter.harmonic_match_open is False
 
-        # Browser search still focusable after migration.
         search.forceActiveFocus()
         settle(app)
         assert search.property("activeFocus") is True

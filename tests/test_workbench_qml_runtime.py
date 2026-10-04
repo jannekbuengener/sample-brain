@@ -1383,6 +1383,145 @@ def test_harmonic_same_scope_reload_and_reopen_reuse_stays_intact(tmp_path: Path
     assert len(controller.set_anchor_calls) == 1
 
 
+def test_same_scope_refresh_preserves_context_anchor_when_selection_differs():
+    """#843: context B with selection A must survive same-scope reload as B."""
+    from src.workbench_qml import (
+        Screen1QmlInteractionAdapter,
+        Screen1QmlViewModel,
+    )
+
+    row_a = _row("A")
+    row_b = _row("B")
+    rows = (row_a, row_b)
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    view_model.set_browser_state(
+        rows=rows,
+        selected_index=0,
+        browser_context="Samples",
+        error=None,
+    )
+    controller = _ReturningHarmonyController()
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        harmony_controller=controller,
+    )
+    scope = LibraryScope(LibraryScopeKind.ROOT, folder_id=1)
+    adapter.replace_browser_scope(scope)
+
+    adapter.open_sample_context(1)
+    adapter.request_context_harmonic_matches()
+    assert adapter.harmonic_match_open is True
+    assert adapter.selected_browser_index == 0
+    assert controller.anchor is not None
+    assert str(controller.anchor.path) == str(row_b.path)
+    assert len(controller.set_anchor_calls) == 1
+
+    # Same-scope analysis/import refresh must not retarget Matches to selected A.
+    adapter.replace_browser_scope(scope)
+    assert adapter.harmonic_match_open is True
+    assert controller.anchor is not None
+    assert str(controller.anchor.path) == str(row_b.path)
+    assert "Reference:" in view_model.harmony_anchor
+    assert "B" in view_model.harmony_anchor
+    assert len(controller.set_anchor_calls) == 1
+
+
+def test_collapse_reopen_restores_context_anchor_with_no_browser_selection():
+    """#843/#845: selected_index=-1 close records None; reopen must restore B."""
+    from src.workbench_qml import (
+        Screen1QmlInteractionAdapter,
+        Screen1QmlViewModel,
+    )
+
+    row_a = _row("A")
+    row_b = _row("B")
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    view_model.set_browser_state(
+        rows=(row_a, row_b),
+        selected_index=0,
+        browser_context="Samples",
+        error=None,
+    )
+    # Mimic dispatch_selection starting with no active Browser selection.
+    view_model.selected_browser_index = -1
+    controller = _ReturningHarmonyController()
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        harmony_controller=controller,
+    )
+
+    adapter.open_sample_context(1)
+    adapter.request_context_harmonic_matches()
+    assert adapter.harmonic_match_open is True
+    assert str(controller.anchor.path) == str(row_b.path)
+
+    assert adapter.toggle_harmonic_match() is False
+    assert adapter.harmonic_match_open is False
+    assert view_model.selected_browser_index == -1
+
+    assert adapter.toggle_harmonic_match() is True
+    assert adapter.harmonic_match_open is True
+    assert str(controller.anchor.path) == str(row_b.path)
+
+
+def test_reopen_falls_through_when_preserved_anchor_disappears_from_browser():
+    """#843/#845: do not reopen a stale controller anchor missing from Browser."""
+    from src.workbench_qml import (
+        Screen1QmlInteractionAdapter,
+        Screen1QmlViewModel,
+        _qml_row,
+    )
+
+    row_a = _row("A")
+    row_b = _row("B")
+    view_model = Screen1QmlViewModel(
+        state_id="screen1-default-3panel",
+        library_labels=(),
+        browser_rows=(),
+        selected_browser_index=-1,
+        harmony_rows=(),
+        live_kit_groups=(),
+    )
+    view_model.set_browser_state(
+        rows=(row_a, row_b),
+        selected_index=0,
+        browser_context="Samples",
+        error=None,
+    )
+    controller = _ReturningHarmonyController()
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        harmony_controller=controller,
+    )
+
+    adapter.open_sample_context(1)
+    adapter.request_context_harmonic_matches()
+    assert adapter.toggle_harmonic_match() is False
+
+    # Same-scope browser refresh removes B while selection A is unchanged.
+    view_model.browser_rows = (_qml_row(row_a),)
+    view_model._browser_rows_all = view_model.browser_rows
+    view_model.selected_browser_index = 0
+
+    assert adapter.toggle_harmonic_match() is True
+    assert adapter.harmonic_match_open is True
+    assert str(controller.anchor.path) == str(row_a.path)
+
+
 def test_harmonic_session_closes_when_browser_scope_becomes_unresolved():
     from src.workbench_qml import (
         Screen1QmlInteractionAdapter,

@@ -289,7 +289,9 @@ def test_qml_header_and_panels_remain_structurally_stable():
     assert "property bool harmonyOpen: window.interaction.harmonicMatchOpen" in QML_SOURCE
     assert "layoutModel.harmonyWidth" in QML_SOURCE
     assert "Layout.preferredWidth: visible ? 360 : 0" not in QML_SOURCE
-    assert 'objectName: "harmonicMatchButton"' in QML_SOURCE
+    # #843: header Harmonic Match button removed; Matches pane remains.
+    assert 'objectName: "harmonicMatchButton"' not in QML_SOURCE
+    assert 'objectName: "harmonyPane"' in QML_SOURCE
 
 
 def test_qml_exposes_pending_and_slot_action_wiring():
