@@ -71,3 +71,19 @@ Pattern Core, sequencer playback, and Screen 2 stay on their own contracts. This
 | #837: secondary icons above a hint-only footer | Scope set and intent dispatch | Those icons may occupy the left side of this footer band. |
 
 Screen-1 colors stay on Theme Core. This reference is not a palette.
+
+## Implementation test supersession (#831)
+
+This file is docs/canon-only. The following frozen tests still describe the pre-#830
+runtime header and must be retargeted in #831 together with the QML layout change.
+Do not treat them as authority over this contract.
+
+| Frozen test area | What #831 must change |
+|---|---|
+| `tests/test_workbench_qml_producer_command_zone.py` | Stop requiring MASTER/GRID/SYNC/Harmonic Match in `producerCommandZone`; require center navigation and right transport zone instead. |
+| `tests/test_workbench_qml_screen2_channel_rack.py` | Allow the reserved **Arrangement** label in the program-chrome navigation only; keep forbidding Screen 3 / Playlist / Mixer surfaces. |
+| `tests/test_workbench_library_bottom_icons_837.py` | Runtime geometry: scope utility lives in the global footer band, not above it. |
+| `tests/test_workbench_context_hint_770.py` | Hint placement inside the footer band (right), not a separate centered strip. |
+
+Until #831 lands, those tests continue to describe current `main` runtime geometry.
+They do not block acceptance of this canon document.
