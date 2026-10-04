@@ -3304,7 +3304,6 @@ ApplicationWindow {
                             color: "transparent"
                         }
                         onTextChanged: window.interaction.setBrowserSearch(text)
-                        onTextEdited: if (sampleContextMenu.visible) sampleContextMenu.close()
                     }
                 }
                 RowLayout {
