@@ -206,6 +206,22 @@ def _extract_bpm_scalar(tempo) -> float | None:
     return scalar if scalar > 0 else None
 
 
+# Frozen techno/dancefloor domain contract (#872 / PIR after #869).
+# tol is half max adjacent librosa.tempo_frequencies spacing in [55, 85]
+# at ANALYZE_SR=44100 with beat_track hop=512 — not testset-tuned.
+_DOMAIN_110_170_LO = 110.0
+_DOMAIN_110_170_HI = 170.0
+_DOMAIN_110_170_TOL = 0.683232
+
+
+def _bpm_in_domain_110_170(bpm: float) -> bool:
+    return (
+        _DOMAIN_110_170_LO - _DOMAIN_110_170_TOL
+        <= bpm
+        <= _DOMAIN_110_170_HI + _DOMAIN_110_170_TOL
+    )
+
+
 def normalize_bpm(bpm: float | None, mode: str = "none") -> float | None:
     if bpm is None:
         return None
@@ -215,6 +231,14 @@ def normalize_bpm(bpm: float | None, mode: str = "none") -> float | None:
         if bpm < 90:
             return bpm * 2.0
         if bpm > 200:
+            return bpm / 2.0
+        return bpm
+    if mode == "domain_110_170":
+        if _bpm_in_domain_110_170(bpm):
+            return bpm
+        if _bpm_in_domain_110_170(2.0 * bpm):
+            return 2.0 * bpm
+        if _bpm_in_domain_110_170(bpm / 2.0):
             return bpm / 2.0
         return bpm
     if mode != "none":
