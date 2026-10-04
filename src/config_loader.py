@@ -35,7 +35,7 @@ _ENV_KEY_MAP: dict[str, tuple[str, ...]] = {
 
 _VALID_EMBEDDING_BACKENDS = {"noop", "clap"}
 _VALID_SEARCH_BACKENDS = {"numpy", "sqlite-vec"}
-_VALID_BPM_NORMALIZATION_MODES = {"none", "heuristic"}
+_VALID_BPM_NORMALIZATION_MODES = {"none", "heuristic", "domain_110_170"}
 
 
 def load_profiles(
