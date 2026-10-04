@@ -49,7 +49,17 @@ Pattern Core, sequencer playback, and Screen 2 stay on their own contracts. This
 
 **Arrangement** is a reserved center label. Screen 3 is not built (`PRODUCT_WORKFLOW_CANON.md`). Do not add an Arrangement workspace, route, or command to imitate the label.
 
-**Live Kit** stays the existing Screen-1 panel. The center item focuses that panel through the current reveal/collapse contract. It is not a new screen.
+**Live Kit** stays the existing Screen-1 panel. The center **Live Kit** item uses the
+existing reveal/collapse and Live Kit panel contracts. It does not add a new screen
+or bypass progressive disclosure: before Live Kit is materialized, the control
+follows the same existing Screen-1 interaction path as today (reveal/focus the Live
+Kit pane through current adapter commands, without a second loader). #831 must not
+invent a parallel Live Kit state owner.
+
+**Browser** selects Screen 1 workspace focus through existing navigation. **Step
+Sequencer** routes through the existing Screen-2 open command (`openChannelRack` /
+return path). **Arrangement** is visible but inert: reserved label only, no Screen 3
+route, disabled or non-navigating until a future scoped issue authorizes it.
 
 ## Footer reuse
 
@@ -69,6 +79,7 @@ Pattern Core, sequencer playback, and Screen 2 stay on their own contracts. This
 | #843 (open): Harmonic Match leaves the header when that slice lands | The single existing control and its one dispatch | Nothing in this frame. The reference omits the button; that omission does not delete it here. It stays with the other global controls on the right until #843. |
 | #770: hint is bottom-center | Hint semantics | Horizontal placement inside the footer band. |
 | #837: secondary icons above a hint-only footer | Scope set and intent dispatch | Those icons may occupy the left side of this footer band. |
+| `WORKBENCH_LIBRARY_NAVIGATION_CONTRACT.md` pane-bottom bar wording | Scope intents and Catalog invisibility | Footer-band placement geometry (#830). |
 
 Screen-1 colors stay on Theme Core. This reference is not a palette.
 
@@ -83,6 +94,7 @@ Do not treat them as authority over this contract.
 | `tests/test_workbench_qml_producer_command_zone.py` | Stop requiring MASTER/GRID/SYNC/Harmonic Match in `producerCommandZone`; require center navigation and right transport zone instead. |
 | `tests/test_workbench_qml_screen2_channel_rack.py` | Allow the reserved **Arrangement** label in the program-chrome navigation only; keep forbidding Screen 3 / Playlist / Mixer surfaces. |
 | `tests/test_workbench_library_bottom_icons_837.py` | Runtime geometry: scope utility lives in the global footer band, not above it. |
+| `tests/test_workbench_library_scope_evidence.py` | Pane-local `libraryScopeBar` placement assertions must move with the footer band. |
 | `tests/test_workbench_context_hint_770.py` | Hint placement inside the footer band (right), not a separate centered strip. |
 
 Until #831 lands, those tests continue to describe current `main` runtime geometry.

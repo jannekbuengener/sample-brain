@@ -27,13 +27,15 @@ backend and no renderer, dialog, audio, scan, or analysis behavior.
 The renderer-neutral authority still owns Sample Sources, All Samples,
 Catalog (resolve/load), Collections, Favorites, and Recordings.
 
-Presentation split (owned by the QML Library Tree contract / #837):
+Presentation split (owned by the QML Library Tree contract / #837; geometry
+superseded for footer placement by `docs/PROGRAM_CHROME_CONTRACT.md` #830):
 
 - **Source tree:** Sample Sources with registered roots and lazy subfolders.
   Add Source lives in the Library header, not inside the tree.
-- **Bottom secondary icon bar:** All Samples, Collections, Favorites
-  (geometric star), and Recordings — at the bottom of the Library pane,
-  directly above the app footer. The visible Catalog control is not presented.
+- **Secondary scope controls:** All Samples, Collections, Favorites
+  (geometric star), and Recordings — same scope intents as #837; #830 moves their
+  presentation into the global footer utility band (left), not a Library-pane row
+  above the footer. The visible Catalog control is not presented.
 
 Favorites is a dedicated user-organization scope
 (`scope:favorites` / `LibraryScopeKind.FAVORITES`). Recordings is a dedicated
