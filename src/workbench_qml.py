@@ -3165,6 +3165,13 @@ ApplicationWindow {
                         color: sampleContextMenu.focusedAction === 0 || contextAddHover.containsMouse ? theme.surfaceElevated : "transparent"
                         border.width: sampleContextMenu.focusedAction === 0 ? 1 : 0
                         border.color: theme.focusRing
+                        // Invokable control for AT / Windows UIA (InvokePattern).
+                        Accessible.role: Accessible.Button
+                        Accessible.name: sampleContextMenu.actionAddLabel
+                        Accessible.onPressAction: {
+                            sampleContextMenu.focusedAction = 0
+                            sampleContextMenu.activateFocused()
+                        }
                         Label {
                             anchors.fill: parent
                             anchors.leftMargin: 10
@@ -3173,6 +3180,7 @@ ApplicationWindow {
                             color: theme.textPrimary
                             verticalAlignment: Text.AlignVCenter
                             font.pixelSize: window.textBody
+                            Accessible.ignored: true
                         }
                         MouseArea {
                             id: contextAddHover
@@ -3190,15 +3198,24 @@ ApplicationWindow {
                         height: 1
                         color: theme.dividerDefault
                         opacity: 0.7
+                        Accessible.ignored: true
                     }
                     Rectangle {
                         id: contextHarmonicItem
+                        objectName: "contextHarmonicItem"
                         width: parent.width
                         height: 32
                         radius: 4
                         color: sampleContextMenu.focusedAction === 1 || contextHarmonicHover.containsMouse ? theme.surfaceElevated : "transparent"
                         border.width: sampleContextMenu.focusedAction === 1 ? 1 : 0
                         border.color: theme.focusRing
+                        // #843 sole producer entry must be UIA-invokable after header button removal.
+                        Accessible.role: Accessible.Button
+                        Accessible.name: sampleContextMenu.actionHarmonicLabel
+                        Accessible.onPressAction: {
+                            sampleContextMenu.focusedAction = 1
+                            sampleContextMenu.activateFocused()
+                        }
                         Label {
                             anchors.fill: parent
                             anchors.leftMargin: 10
@@ -3207,6 +3224,7 @@ ApplicationWindow {
                             color: theme.textSecondary
                             verticalAlignment: Text.AlignVCenter
                             font.pixelSize: window.textBody
+                            Accessible.ignored: true
                         }
                         MouseArea {
                             id: contextHarmonicHover
@@ -3637,6 +3655,10 @@ ApplicationWindow {
             height: parent.height
             color: theme.surfacePanel
             border.color: theme.borderSubtle
+            // Pane-root name for UIA title evidence; keep distinct from the
+            // context-menu Button so FindFirst prefers the invokable action
+            // while the menu is open (browser subtree precedes this pane).
+            Accessible.name: window.interaction.harmonicMatchOpen ? "Harmonic Matches" : ""
             // #845 OPEN collapse handle — pane-local; only when Matches are open.
             Item {
                 id: harmonyCollapseHandle
@@ -3705,7 +3727,13 @@ ApplicationWindow {
                 }
             }
             ColumnLayout { anchors.fill: parent; anchors.margins: 14
-                Label { text: "Harmonic Matches"; color: theme.textPrimary; font.pixelSize: 18; font.bold: true }
+                Label {
+                    text: "Harmonic Matches"
+                    color: theme.textPrimary
+                    font.pixelSize: 18
+                    font.bold: true
+                    Accessible.ignored: true
+                }
                 Label { text: window.screenData.harmonyAnchor; color: theme.textSecondary; font.pixelSize: 12 }
                 Label { text: window.screenData.harmonyStatus; color: theme.textSecondary; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true }
                 ListView { id: harmonicMatchList; objectName: "harmonicMatchList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.harmonyRows; clip: true; reuseItems: true; focus: false; activeFocusOnTab: window.interaction.harmonicMatchOpen
