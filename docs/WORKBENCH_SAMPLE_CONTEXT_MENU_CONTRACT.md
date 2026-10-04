@@ -154,6 +154,12 @@ on_context_harmonic_match_requested: Callable[[WorkbenchRow], object] | None
 #843 binds this intent to the authoritative matching/panel path.
 #839 keeps the header `harmonicMatchButton`. Removal/replacement belongs to #843.
 
+#842 owns reference-key / eligibility / matching-path diagnosis (not panel bind).
+Root-only visible keys (for example Browser `"G"`) remain fail-closed for
+Harmonic Match when no modeful authoritative key exists; display text must not
+be fabricated into `Gmaj`/`Gmin`. See
+`docs/product/02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md` §9.1.
+
 ## Lifecycle and invalidation
 
 Clear `sample_context_target` (and close the presentation) when:
