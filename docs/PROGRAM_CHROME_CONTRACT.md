@@ -109,6 +109,7 @@ RUNTIME freezes — **not** authority against this #830 canon.
 | `tests/test_workbench_qml_screen2_channel_rack.py` | Screen-2 surface forbids | Allow reserved **Arrangement** label in program-chrome navigation only; keep forbidding Screen 3 / Playlist / Mixer surfaces. |
 | `tests/test_workbench_library_bottom_icons_837.py` | Pane-local bottom icon geometry above the app footer | Move scope utility into the global footer band (left). |
 | `tests/test_workbench_library_scope_evidence.py` | Pane-local `libraryScopeBar` geometry (`bar.y() > 80`, below `libraryContentHost`, etc.) | Retarget those placement assertions with the QML footer migration. Do **not** treat the current pane-local freeze as a veto of #830 footer placement. |
+| `tests/test_workbench_qml_library_tree.py` | `libraryScopeBar` must follow `libraryContentHost` inside `libraryPane` | Retarget when the bar moves into the global footer band. |
 | `tests/test_workbench_context_hint_770.py` | Current hint placement freeze | Hint placement inside the footer band (right), not a separate centered strip. |
 
 Until #831 lands, those tests continue to describe current `main` runtime

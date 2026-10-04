@@ -25,6 +25,7 @@ def test_program_chrome_contract_documents_831_test_supersession() -> None:
     assert "Implementation test supersession (#831)" in text
     assert "test_workbench_qml_producer_command_zone.py" in text
     assert "test_workbench_qml_screen2_channel_rack.py" in text
+    assert "test_workbench_qml_library_tree.py" in text
     assert "test_workbench_library_scope_evidence.py" in text
     assert "authority against this #830 canon" in text
     assert "pre-#831" in text or "pre-#831 / current" in text
