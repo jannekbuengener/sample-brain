@@ -1439,6 +1439,26 @@ class Screen1QmlInteractionAdapter:
             return
         self._harmonic_match_scroll_y = max(0.0, float(value))
 
+    def _resolve_live_harmony_anchor(self) -> WorkbenchRow | None:
+        """Resolve the open Matches session anchor against current Browser rows.
+
+        Prefers the controller's live anchor identity so a context-opened
+        Matches pane for B is not silently retargeted to selected A on
+        same-scope refresh (#843). Falls back to the selected Browser row
+        when no controller anchor is available (legacy toggle-open path).
+        """
+        preferred: WorkbenchRow | None = None
+        if self.harmony_controller is not None and self.harmony_controller.anchor is not None:
+            preferred = self.harmony_controller.anchor
+            for qml_row in self.view_model.browser_rows:
+                if str(qml_row.source_row.path) == str(preferred.path):
+                    return qml_row.source_row
+            return None
+        index = int(self.view_model.selected_browser_index)
+        if 0 <= index < len(self.view_model.browser_rows):
+            return self.view_model.browser_rows[index].source_row
+        return None
+
     def replace_browser_scope(self, scope: object) -> None:
         """Central hook after a successful browser-scope replacement.
 
@@ -1456,10 +1476,10 @@ class Screen1QmlInteractionAdapter:
             if not self.view_model.browser_rows:
                 self._invalidate_harmonic_session()
                 return
-            if not 0 <= self.view_model.selected_browser_index < len(self.view_model.browser_rows):
+            anchor = self._resolve_live_harmony_anchor()
+            if anchor is None:
                 self._invalidate_harmonic_session()
                 return
-            anchor = self.view_model.browser_rows[self.selected_browser_index].source_row
             fingerprint = self._current_harmonic_match_fingerprint(anchor)
             if fingerprint == self._harmonic_match_context_fingerprint and self._rebind_harmonic_match_rows(anchor):
                 self._project_harmonic_match(anchor)
