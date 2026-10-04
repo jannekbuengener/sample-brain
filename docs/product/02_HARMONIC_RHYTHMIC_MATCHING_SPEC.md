@@ -198,6 +198,63 @@ A second `ttk.Notebook` page in the Workbench (`src/workbench_harmony.py`, `find
 - Scoring: `total_score = 0.75 * harmony + 0.25 * BPM`, reusing `src/matching.py` BPM scoring. Reference excluded from results; in-memory key override only (never mutates row/DB).
 - Similar-V1 (`src/matching.py` / `compute_workbench_similar_suggestions`) is unchanged.
 
+### 9.1 Screen-1 Harmonic Match reference eligibility (#842)
+
+Authoritative matching remains Python-owned in `src/workbench_harmony.py`
+(`find_harmony_matches` / `rate_harmony` / `HarmonicMatchLibraryController`).
+QML must not invent matching logic or fabricate a modeful key from a display string.
+
+| Concern | Authority |
+|---------|-----------|
+| Effective Harmonic Match key | `harmonic_match_key_for_row(row)` |
+| V2 claim eligibility | `is_harmonic_match_claim_eligible(claim)` |
+| Anchor gate | `HarmonicMatchLibraryController.set_anchor` |
+| Browser display key | `_qml_row` → `row.key or "—"` (presentation only) |
+
+**Authoritative key resolution (order):**
+
+1. Prefer a **modeful valid V2** `key_analysis_claim` when
+   `is_harmonic_match_claim_eligible(claim)` is true
+   (`valid`, `contract_version == 2`, `mode in {maj,min}`, parsable claim key,
+   claim mode matches parsed mode).
+2. Otherwise fall back to product `WorkbenchRow.key` (V1 / library-analyzed).
+3. `matching_eligible` on the claim is **not** an extra gate in the eligibility
+   helper (current contract).
+
+**Fail-closed / uncertain:**
+
+- Root-only product keys such as `"G"` are **displayable** but **not** modeful
+  enough for safe Harmonic Match. Controller status:
+  `Harmonic Match benötigt einen auswertbaren Referenz-Key.`
+- Do **not** invent `Gmaj` / `Gmin` from a visible root-only `"G"`.
+- Invalid / malformed V2 claims fail closed; no fabricated matches.
+- A visible Browser key is **not** automatically matching authority. Catalog V2
+  may keep `row.key is None` (Browser shows `—`) while an eligible claim still
+  supplies the effective Harmonic Match key.
+
+**Stale reference / cache fingerprint:**
+
+- `set_anchor` clears prior results before validation/matching.
+- Harmonic reopen fingerprint uses path, **effective** harmonic key, BPM
+  fingerprint, and display name. Changing the authoritative reference must not
+  leave previous results visible under the new anchor.
+
+**#847 / #848 boundary:**
+
+- Restoring projection / cache / eligibility / consumer transport is in #842
+  scope when proven.
+- Changing BPM/key analysis algorithms, estimators, V2 analysis math, or
+  calibration thresholds requires Owner Rekordbox + Traktor reference exports
+  (#847/#848). Do not force #847 when the proven defect is only projection,
+  cache, claim transport, eligibility, or selection.
+
+**#842 diagnosis (live baseline `43780f9`):** Owner symptom
+`Browser shows G` + panel `kein auswertbarer Referenz-Key` is
+**EXPECTED_INELIGIBLE** when the product/library key is root-only `"G"` and no
+eligible modeful V2 claim is present on that row. Eligible V1 modeful and
+eligible V2 modeful references already deliver results through the existing
+domain. See `tests/test_workbench_harmonic_reference_842.py`.
+
 ## 10. References
 
 - `src/matching.py`, `tests/test_matching.py`, CLI `match` in `src/cli.py`

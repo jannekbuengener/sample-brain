@@ -116,6 +116,12 @@ well below it.
 - **Track-analysis cache**: fingerprint includes the key-analysis contract version.
 - **SQLite features**: #418 persists `quality_note`, `key_mode`, and
   `key_mode_evidence` so normal `run_analyze()` no longer drops uncertainty data.
+- **Workbench Harmonic Match** (`workbench_harmony`): requires a **modeful**
+  effective key (V2 eligible claim preferred, else product `row.key`). Root-only
+  values such as `"G"` remain fail-closed for matching and must not be upgraded
+  to `Gmaj`/`Gmin` from display text. Browser `_qml_row` shows product `row.key`
+  only; that display string is not matching authority. Full reference contract:
+  `docs/product/02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md` §9.1 (#842).
 
 ## 7. Synthetic validation baseline
 
