@@ -82,17 +82,21 @@ def test_nav_zone_uses_geometric_center_anchor():
             'objectName: "headerTransportZone"'
         )
     ]
-    assert "anchors.horizontalCenter" in nav_snip
+    assert "headerNavRow" in nav_snip or "anchors.horizontalCenter" in nav_snip
+    assert "idealX" in nav_snip or "anchors.horizontalCenter" in nav_snip
     assert 'objectName: "producerCommandZone"' not in header
 
 
-def _zone_center_x(item) -> float:
-    return float(item.x()) + float(item.width()) / 2.0
+def _zone_center_x(item, reference=None) -> float:
+    if reference is None:
+        return float(item.x()) + float(item.width()) / 2.0
+    mapped = item.mapToItem(reference, 0, 0)
+    return float(mapped.x()) + float(item.width()) / 2.0
 
 
 def _assert_centered(zone, reference, *, label: str) -> None:
     ref_center = float(reference.width()) / 2.0
-    zone_center = _zone_center_x(zone)
+    zone_center = _zone_center_x(zone, reference)
     tol = max(CENTER_TOLERANCE_MIN_PX, float(reference.width()) * CENTER_TOLERANCE_RATIO)
     delta = abs(zone_center - ref_center)
     assert delta <= tol, f"{label}: center delta={delta:.1f}px tol={tol:.1f}px"
@@ -144,6 +148,7 @@ def test_runtime_nav_zone_is_geometrically_centered(size):
         header = window.findChild(QQuickItem, "screen1Header")
         left = window.findChild(QQuickItem, "headerLeftZone")
         nav = window.findChild(QQuickItem, "headerNavZone")
+        nav_row = window.findChild(QQuickItem, "headerNavRow")
         transport = window.findChild(QQuickItem, "headerTransportZone")
         harmonic = window.findChild(QQuickItem, "harmonicMatchButton")
         search = window.findChild(QQuickItem, "browserSearch")
@@ -152,7 +157,7 @@ def test_runtime_nav_zone_is_geometrically_centered(size):
 
         assert all(
             item is not None
-            for item in (header, left, nav, transport, search, step_seq, prefs)
+            for item in (header, left, nav, nav_row, transport, search, step_seq, prefs)
         )
         assert harmonic is None
         assert left.x() < nav.x()
@@ -162,7 +167,7 @@ def test_runtime_nav_zone_is_geometrically_centered(size):
         assert browser is not None
         assert search.mapToItem(browser, 0, 0).y() >= 0
 
-        _assert_centered(nav, header, label=f"{width}x{height}")
+        _assert_centered(nav_row, header, label=f"{width}x{height}")
 
         assert nav.x() >= 0
         assert nav.x() + nav.width() <= header.width() + 1.0
@@ -186,8 +191,8 @@ def test_runtime_center_stable_across_pane_disclosure_states():
         settle(app)
 
         header = window.findChild(QQuickItem, "screen1Header")
-        nav = window.findChild(QQuickItem, "headerNavZone")
-        assert header is not None and nav is not None
+        nav_row = window.findChild(QQuickItem, "headerNavRow")
+        assert header is not None and nav_row is not None
 
         centers: list[float] = []
 
@@ -196,8 +201,8 @@ def test_runtime_center_stable_across_pane_disclosure_states():
             engine._screen1_interaction_bridge.refreshState()
             engine._screen1_layout_model.syncFromInteraction()
             settle(app)
-            _assert_centered(nav, header, label=label)
-            centers.append(_zone_center_x(nav))
+            _assert_centered(nav_row, header, label=label)
+            centers.append(_zone_center_x(nav_row, header))
 
         capture("library+browser+livekit")
 

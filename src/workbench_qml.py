@@ -2288,23 +2288,22 @@ ApplicationWindow {
         Item {
             id: headerNavZone
             objectName: "headerNavZone"
-            // Symmetric side reserves keep the nav band geometrically centered
-            // while still excluding left identity and right tempo-zone hit areas.
-            readonly property real sideReserve: Math.max(
-                headerLeftZone.x + headerLeftZone.width + 12,
-                parent.width - headerTransportZone.x + 12
-            )
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.leftMargin: sideReserve
-            anchors.rightMargin: sideReserve
+            // Three-zone geometry: occupy only the band between identity and
+            // the right tempo/master zone so hit areas cannot overlap.
+            readonly property real leftEdge: headerLeftZone.x + headerLeftZone.width + 12
+            readonly property real rightEdge: headerTransportZone.x - 12
+            x: leftEdge
+            width: Math.max(0, rightEdge - leftEdge)
             anchors.verticalCenter: parent.verticalCenter
             height: parent.height
             clip: true
             z: 1
             RowLayout {
                 id: headerNavRow
-                anchors.horizontalCenter: parent.horizontalCenter
+                objectName: "headerNavRow"
+                // Keep labels window-centered when they fit; otherwise pack into the zone.
+                readonly property real idealX: (screen1Header.width - implicitWidth) / 2 - parent.x
+                x: Math.min(Math.max(0, idealX), Math.max(0, parent.width - width))
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.min(implicitWidth, parent.width)
                 spacing: 2
@@ -2360,13 +2359,20 @@ ApplicationWindow {
             anchors.rightMargin: 22
             anchors.verticalCenter: parent.verticalCenter
             height: parent.height
-            width: headerTransportRow.implicitWidth
+            // Reserve a usable nav band (~380px) for four destinations at min width.
+            readonly property real maxWidth: Math.max(
+                260,
+                parent.width - headerLeftZone.width - 380 - 68
+            )
+            width: Math.min(headerTransportRow.implicitWidth, maxWidth)
+            clip: true
             z: 2
             RowLayout {
                 id: headerTransportRow
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 0
+                width: implicitWidth
             // #805: MASTER/GRID/SYNC project session tempo/SYNC authority only.
             Label { text: "MASTER"; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignVCenter }
             Button {
@@ -2457,7 +2463,8 @@ ApplicationWindow {
                 color: theme.textSecondary
                 font.pixelSize: 11
                 Layout.alignment: Qt.AlignVCenter
-                Layout.maximumWidth: 160
+                // Secondary honesty may compact; critical tempo/SYNC controls stay.
+                Layout.maximumWidth: screen1Header.width < 1200 ? 88 : 160
                 elide: Text.ElideRight
                 Accessible.name: "Session persistence status"
             }

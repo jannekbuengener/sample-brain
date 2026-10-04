@@ -68,7 +68,7 @@ def test_program_chrome_transport_on_right_without_harmonic_header() -> None:
             'objectName: "headerTransportZone"'
         )
     ]
-    assert "anchors.horizontalCenter" in nav_snip
+    assert "idealX" in nav_snip or "anchors.horizontalCenter" in nav_snip
     assert 'objectName: "masterTempoValue"' in transport
 
 
@@ -112,27 +112,34 @@ def test_program_nav_live_kit_handler_reveals_after_screen2_return() -> None:
 
 
 def test_program_chrome_header_reserves_three_zones_without_free_center_overlap() -> None:
-    """#831 P2: nav zone is bounded by left/right reserves (no free float overlap)."""
+    """#831 P2: nav zone is bounded by left/right zones (no free float overlap)."""
     header = _header_block()
     nav = header[
         header.index('objectName: "headerNavZone"') : header.index(
             'objectName: "headerTransportZone"'
         )
     ]
-    assert "sideReserve" in nav
+    assert "leftEdge" in nav
+    assert "rightEdge" in nav
     assert "headerLeftZone" in nav
     assert "headerTransportZone" in nav
-    assert "anchors.leftMargin: sideReserve" in nav
-    assert "anchors.rightMargin: sideReserve" in nav
+    assert "headerTransportZone.x - 12" in nav
+    tempo = header[header.index('objectName: "headerTransportZone"') :]
+    assert "maxWidth" in tempo
 
 
-def _zone_center_x(item) -> float:
-    return float(item.x()) + float(item.width()) / 2.0
+def _zone_center_x(item, reference=None) -> float:
+    from PySide6.QtCore import QPointF
+
+    if reference is None:
+        return float(item.x()) + float(item.width()) / 2.0
+    origin = item.mapToItem(reference, QPointF(0, 0))
+    return float(origin.x()) + float(item.width()) / 2.0
 
 
 def _assert_centered(zone, reference, *, label: str) -> None:
     ref_center = float(reference.width()) / 2.0
-    zone_center = _zone_center_x(zone)
+    zone_center = _zone_center_x(zone, reference)
     tol = max(CENTER_TOLERANCE_MIN_PX, float(reference.width()) * CENTER_TOLERANCE_RATIO)
     delta = abs(zone_center - ref_center)
     assert delta <= tol, f"{label}: center delta={delta:.1f}px tol={tol:.1f}px"
@@ -198,15 +205,18 @@ def test_runtime_nav_centered_transport_on_right(size) -> None:
 
         header = window.findChild(QQuickItem, "screen1Header")
         nav = window.findChild(QQuickItem, "headerNavZone")
+        nav_row = window.findChild(QQuickItem, "headerNavRow")
         transport = window.findChild(QQuickItem, "headerTransportZone")
         bar = window.findChild(QQuickItem, "libraryScopeBar")
         footer = window.findChild(QQuickItem, "programFooterBand") or window.findChild(
             QQuickItem, "contextHintPlacement"
         )
         assert header is not None and nav is not None and transport is not None
+        assert nav_row is not None
         assert bar is not None and footer is not None
 
-        _assert_centered(nav, header, label=f"nav {width}x{height}")
+        # Nav labels stay window-centered; the zone itself is the non-overlap band.
+        _assert_centered(nav_row, header, label=f"nav row {width}x{height}")
         transport_in_header = transport.mapToItem(header, QPointF(0, 0))
         assert transport_in_header.x() + transport.width() <= header.width() + 2.0
         assert transport_in_header.x() > header.width() * 0.45
@@ -418,8 +428,23 @@ def test_runtime_header_zones_do_not_overlap(size) -> None:
         transport_left = float(transport.mapToItem(header, QPointF(0, 0)).x())
         assert left_right <= nav_left + 1.0
         assert nav_right <= transport_left + 1.0
-        assert float(nav.width()) > 8.0
+        # Usable nav band must fit the four program-nav destinations.
+        assert float(nav.width()) >= 360.0
         assert float(transport.width()) > 8.0
+
+        for name in (
+            "programNavBrowser",
+            "programNavLiveKit",
+            "programNavStepSequencer",
+            "programNavArrangement",
+        ):
+            btn = window.findChild(QQuickItem, name)
+            assert btn is not None
+            btn_left = float(btn.mapToItem(header, QPointF(0, 0)).x())
+            btn_right = float(btn.mapToItem(header, QPointF(btn.width(), 0)).x())
+            assert btn_left >= nav_left - 1.0
+            assert btn_right <= nav_right + 1.0
+            assert btn_right <= transport_left + 1.0
     finally:
         window.close()
         app.processEvents()

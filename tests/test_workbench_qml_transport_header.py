@@ -222,10 +222,13 @@ def test_runtime_producer_zone_geometry_stable_with_transport_controls(size):
 
         header = window.findChild(QQuickItem, "screen1Header")
         transport = window.findChild(QQuickItem, "headerTransportZone")
-        nav = window.findChild(QQuickItem, "headerNavZone")
-        assert header is not None and transport is not None and nav is not None
+        nav_row = window.findChild(QQuickItem, "headerNavRow")
+        assert header is not None and transport is not None and nav_row is not None
         ref_center = float(header.width()) / 2.0
-        nav_center = float(nav.x()) + float(nav.width()) / 2.0
+        nav_center = float(nav_row.x()) + float(nav_row.width()) / 2.0
+        # headerNavRow.x is relative to headerNavZone; map to header for center check.
+        nav_in_header = nav_row.mapToItem(header, 0, 0)
+        nav_center = float(nav_in_header.x()) + float(nav_row.width()) / 2.0
         tol = max(CENTER_TOLERANCE_MIN_PX, float(header.width()) * CENTER_TOLERANCE_RATIO)
         assert abs(nav_center - ref_center) <= tol
         transport_in_header = transport.mapToItem(header, 0, 0)
