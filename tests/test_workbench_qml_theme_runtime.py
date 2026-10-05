@@ -122,7 +122,10 @@ def test_theme_authority_bridge_defaults_to_blood_a(tmp_path: Path) -> None:
     bridge = _qml_theme_authority_bridge(state_dir=tmp_path)
     assert bridge.selectedThemeName == "Blood"
     assert bridge.actionActive.lower() == BLOOD_A_ACCENT
-    assert bridge.surfaceRoot.lower() == "#050506"
+    blood = theme.resolve_theme("Blood")
+    assert bridge.surfaceHeader.lower() == blood.background.lower()
+    assert bridge.surfaceRoot.lower() == blood.as_dict()["surfaceWorkspace"].lower()
+    assert bridge.surfaceRoot.lower() == "#0b0b0c"
     assert bridge.textPrimary.lower() == "#eceef1"
     assert bridge.focusRing.lower() == BLOOD_A_ACCENT
     assert bridge.textOnAction.lower() == "#ffffff"
@@ -137,7 +140,8 @@ def test_theme_authority_bridge_switches_presets_and_persists(tmp_path: Path) ->
     bridge.selectTheme("Carbon")
     assert bridge.selectedThemeName == "Carbon"
     assert bridge.actionActive.lower() == carbon.accent.lower()
-    assert bridge.surfaceRoot.lower() == carbon.background.lower()
+    assert bridge.surfaceRoot.lower() == carbon.as_dict()["surfaceWorkspace"].lower()
+    assert bridge.surfaceHeader.lower() == carbon.background.lower()
 
     again = _qml_theme_authority_bridge(state_dir=tmp_path)
     assert again.selectedThemeName == "Carbon"

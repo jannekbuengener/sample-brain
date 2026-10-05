@@ -18,11 +18,31 @@ Base tokens alone define a theme:
 - `background`
 - `foreground`
 
-Derived tokens (`textPrimary`, `textSecondary`, `surface`, `surfaceRaised`,
-`divider`, `hover`, `selected`, `focusRing`) are computed from base tokens and
-must not be edited independently.
+Derived tokens (`textPrimary`, `textSecondary`, `surfaceWorkspace`, `surface`,
+`surfaceRaised`, `divider`, `hover`, `selected`, `focusRing`) are computed from
+base tokens and must not be edited independently.
 
 See `presets.v1.json` for values and derivation formulas.
+
+## Dark surface hierarchy (CURRENT → TARGET)
+
+Authority for hierarchy is Theme Core + this canon — not screenshot pixels.
+
+| Role | QML semantic | Theme Core token | CURRENT (pre-polish) | TARGET |
+|------|--------------|------------------|----------------------|--------|
+| Program Chrome (header / footer band) | `surfaceHeader` | `background` | darkest base | darkest — unchanged role |
+| Main Workspace (root / calm canvas / analysis deep surface) | `surfaceRoot` | `surfaceWorkspace` | same as chrome (`background`) — **flat** | minimally lighter than chrome |
+| Panels (Library / Browser / Harmony / status cards) | `surfacePanel` / `surfaceBrowser` | `surface` | slightly above chrome; equal to each other | subtly above workspace |
+| Elevated / hover lifts | `surfaceElevated` / `hoverSurface` | `surfaceRaised` / `hover` | raised overlays | unchanged role |
+| Borders / dividers | `borderSubtle` / `dividerDefault` | `divider` | quiet separation | quiet separation; not a gray-tool frame |
+
+**Feel:** very dark, elegant, deep, premium, calm. No flat `#000000` product
+surfaces. No gray “tool” look. Subtle cool / red-blue depth comes from existing
+preset base tints + foreground mixes — not from a second colorful palette.
+
+**OUT of this polish:** chrome geometry, footer-context behavior, nav, list
+layout, Live Kit IA, Add Source styling, general buttons, Pattern/Bars/Song,
+audio, new presets unless required for hierarchy tokens.
 
 ## Presets
 

@@ -32,6 +32,7 @@ DERIVED_KEYS = frozenset(
     {
         "textPrimary",
         "textSecondary",
+        "surfaceWorkspace",
         "surface",
         "surfaceRaised",
         "divider",
@@ -45,8 +46,9 @@ PERSIST_ALLOWED_KEYS = frozenset(
 )
 
 # Theme Core token → existing QML semantic names (mapping helper only).
+# Dark surface hierarchy: chrome=background, workspace=surfaceWorkspace, panels=surface.
 QML_SEMANTIC_EXPECTATIONS = {
-    "surfaceRoot": "background",
+    "surfaceRoot": "surfaceWorkspace",
     "surfaceHeader": "background",
     "surfaceBrowser": "surface",
     "surfacePanel": "surface",

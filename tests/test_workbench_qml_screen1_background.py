@@ -75,7 +75,9 @@ def test_qml_palette_tokens_are_near_black_with_functional_accent_only():
     mapped = theme_core.theme_tokens_to_qml_semantics(blood)
     assert blood.accent.lower() == "#8f0e24"
     assert mapped["actionActive"].lower() == "#8f0e24"
-    assert mapped["surfaceRoot"].lower() == "#050506"
+    assert mapped["surfaceRoot"].lower() == blood.as_dict()["surfaceWorkspace"].lower()
+    assert mapped["surfaceHeader"].lower() == blood.background.lower()
+    assert mapped["surfaceRoot"].lower() != mapped["surfaceHeader"].lower()
     # Accent stays blood-red functional; no orange / blue brand accents.
     assert "#ff4500" not in source.casefold()
     assert '"#b1122b"' not in source

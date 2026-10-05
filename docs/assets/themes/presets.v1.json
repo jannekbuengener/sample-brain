@@ -7,11 +7,13 @@
     "Derived tokens are computed and must not be edited independently.",
     "Blood primary_candidate is stage A (#8f0e24). Blood B (#d4143a) remains a brighter-crimson comparison variant.",
     "Loaded by src/workbench_theme.py; Screen-1 QML consumes via themeAuthority (#785).",
-    "Custom themes persist base tokens only; derived tokens are never a second persistence truth."
+    "Custom themes persist base tokens only; derived tokens are never a second persistence truth.",
+    "Dark surface hierarchy: background (chrome) < surfaceWorkspace (main) < surface (panels) < surfaceRaised (elevated)."
   ],
   "derivation": {
     "textPrimary": "foreground",
     "textSecondary": "mix(foreground, background, 0.45)",
+    "surfaceWorkspace": "mix(background, foreground, 0.025)",
     "surface": "mix(background, foreground, 0.045)",
     "surfaceRaised": "mix(background, foreground, 0.09)",
     "divider": "mix(background, foreground, 0.16)",
@@ -30,6 +32,7 @@
       "derived": {
         "textPrimary": "#eceef1",
         "textSecondary": "#848587",
+        "surfaceWorkspace": "#0b0b0c",
         "surface": "#0f0f11",
         "surfaceRaised": "#1a1a1b",
         "divider": "#2a2a2c",
@@ -49,6 +52,7 @@
           "derived": {
             "textPrimary": "#eceef1",
             "textSecondary": "#848587",
+            "surfaceWorkspace": "#0b0b0c",
             "surface": "#0f0f11",
             "surfaceRaised": "#1a1a1b",
             "divider": "#2a2a2c",
@@ -68,6 +72,7 @@
           "derived": {
             "textPrimary": "#eceef1",
             "textSecondary": "#848587",
+            "surfaceWorkspace": "#0b0b0c",
             "surface": "#0f0f11",
             "surfaceRaised": "#1a1a1b",
             "divider": "#2a2a2c",
@@ -89,6 +94,7 @@
       "derived": {
         "textPrimary": "#eaecf0",
         "textSecondary": "#838487",
+        "surfaceWorkspace": "#0b0c0d",
         "surface": "#0f1011",
         "surfaceRaised": "#1a1b1c",
         "divider": "#2a2b2c",
@@ -108,6 +114,7 @@
       "derived": {
         "textPrimary": "#e8edf2",
         "textSecondary": "#828588",
+        "surfaceWorkspace": "#0b0c0d",
         "surface": "#0f1012",
         "surfaceRaised": "#191b1c",
         "divider": "#292b2d",
@@ -127,6 +134,7 @@
       "derived": {
         "textPrimary": "#eee8ec",
         "textSecondary": "#868285",
+        "surfaceWorkspace": "#0e0c0e",
         "surface": "#121012",
         "surfaceRaised": "#1d1a1d",
         "divider": "#2d2a2c",
@@ -146,6 +154,7 @@
       "derived": {
         "textPrimary": "#e8eee9",
         "textSecondary": "#828683",
+        "surfaceWorkspace": "#0c0e0d",
         "surface": "#101211",
         "surfaceRaised": "#1a1d1b",
         "divider": "#2a2d2b",

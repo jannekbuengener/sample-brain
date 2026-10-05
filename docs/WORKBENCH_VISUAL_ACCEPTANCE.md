@@ -251,12 +251,28 @@ Layers:
 2. **Theme Core base tokens** — `accent` / `background` / `foreground` (Blood A
    default `#8f0e24` / `#050506` / `#eceef1`).
 3. **Derived Theme Core tokens** — deterministic mixes (`textPrimary`,
-   `textSecondary`, `surface`, `surfaceRaised`, `divider`, `hover`, `selected`,
-   `focusRing`).
+   `textSecondary`, `surfaceWorkspace`, `surface`, `surfaceRaised`, `divider`,
+   `hover`, `selected`, `focusRing`).
 4. **QML semantic facade** — `theme.<semanticToken>` binds `themeAuthority.*`
    (mapped via `theme_tokens_to_qml_semantics`).
 5. **UI components** — use `theme.<semanticToken>` only (optional thin
    `window.*` aliases may mirror tokens for runtime property reads).
+
+### Dark surface hierarchy (semantic, not screenshot pixels)
+
+Dark Screen-1 must read as depth, not one flat black slab. Theme Core owns the
+steps; QML only binds semantics.
+
+| Step | Role | Semantic → token |
+|------|------|------------------|
+| 1 | Program Chrome (darkest) | `surfaceHeader` → `background` |
+| 2 | Main Workspace (minimally lighter) | `surfaceRoot` → `surfaceWorkspace` |
+| 3 | Panels (subtly separated) | `surfacePanel` / `surfaceBrowser` → `surface` |
+
+Borders use `divider` / `borderSubtle` for quiet edges. Product surfaces must
+not collapse chrome and workspace to the same fill. No flat `#000000` hierarchy
+base. Feel: very dark, elegant, deep, premium, calm — not a gray tool UI.
+See `docs/assets/themes/README.md` CURRENT→TARGET table.
 
 ### Functional accent rule
 
@@ -270,4 +286,5 @@ accent is `#8f0e24` (Blood B `#d4143a` is comparison-only).
 Screen-1 QML must not introduce direct HEX colors outside Theme Core /
 `themeAuthority`. Named `transparent` remains a technical exception. Contract
 tests under `tests/test_workbench_qml_screen1_color_contract.py` and
-`tests/test_workbench_qml_theme_runtime.py` guard this.
+`tests/test_workbench_qml_theme_runtime.py` guard this. Hierarchy relations are
+covered by `tests/test_workbench_dark_surface_hierarchy.py`.
