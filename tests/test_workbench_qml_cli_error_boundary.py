@@ -17,7 +17,7 @@ import sys
 class PySide6Blocker:
     def find_spec(self, fullname, path, target=None):
         if fullname == "PySide6" or fullname.startswith("PySide6."):
-            raise ModuleNotFoundError(f"No module named '{fullname}'")
+            raise ModuleNotFoundError("No module named '" + fullname + "'")
         return None
 
 sys.meta_path.insert(0, PySide6Blocker())
