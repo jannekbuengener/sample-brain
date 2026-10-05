@@ -35,7 +35,9 @@ Only the global frame:
 2. **Bottom footer**
    - A short footer band.
    - Existing navigation / utility on the left.
-   - Existing status on the right.
+   - Context info in a true center layer, geometrically centered on the full
+     footer width (not RowLayout leftover between left and right).
+   - Existing status on the right (may be empty/neutral; must not steal center).
 
 Changes to this frame need an explicit Owner decision.
 
@@ -73,12 +75,12 @@ route, disabled or non-navigating until a future scoped issue authorizes it.
 
 ## Footer reuse
 
-[#837](https://github.com/jannekbuengener/sample-brain/issues/837) still owns which Library scopes exist and that they dispatch the existing scope intents. This contract supersedes only the geometric claim that those icons must sit strictly above a separate hint-only footer: the approved band places existing utility on the left and existing status on the right.
+[#837](https://github.com/jannekbuengener/sample-brain/issues/837) still owns which Library scopes exist and that they dispatch the existing scope intents. This contract supersedes only the geometric claim that those icons must sit strictly above a separate hint-only footer: the approved band places existing utility on the left, context info in a true full-width center layer, and existing status on the right.
 
 - Reuse Collections and Favorites. Do not add a second copy in the Library pane.
 - Sample Sources, All Samples, and Recordings stay available through the existing #837 scope set. Do not delete them to match the crop, and do not invent a new control for them.
 - Do not add Song clock, pattern-step counters, or a `Local` badge unless a current projection already exposes that text.
-- [#770](https://github.com/jannekbuengener/sample-brain/issues/770) still owns hint priority and the rule that the hint surface takes no focus. Horizontal centering is superseded: the hint shares this footer band and must not overlap the utility or status hit areas.
+- [#770](https://github.com/jannekbuengener/sample-brain/issues/770) still owns hint priority (Hover > Selection/focus > Default/empty) and the rule that the hint surface takes no focus. The focused footer-context centering slice re-authorizes geometric centering on the full footer midpoint inside this band; the hint must not overlap the utility or status hit areas.
 
 ## Narrow supersession
 
@@ -87,7 +89,7 @@ route, disabled or non-navigating until a future scoped issue authorizes it.
 | #782 header comment: identity left, producer center, secondary right | Tempo, SYNC, and display-preferences ownership | Zone order. Navigation is center. Transport/tempo is right. |
 | #786 / brand README: no brain logo, lockup, or claim in the header | That prohibition | Nothing. Identity stays product text. |
 | #843 (DONE_MERGED_CLOSED): Harmonic Matches from Sample Context Menu | Open/retarget via `open_harmonic_matches_for_row`; #845 collapse ownership | Header `harmonicMatchButton` is gone. Right program-chrome must not reintroduce it. |
-| #770: hint is bottom-center | Hint semantics | Horizontal placement inside the footer band. |
+| #770: hint is bottom-center | Hint semantics; Hover > Selection/focus > empty | #831 temporarily placed the hint on the right. The focused footer-context centering slice restores full-footer-width geometric centering inside this band (not a separate strip outside the footer). |
 | #837: secondary icons above a hint-only footer | Scope set and intent dispatch | Those icons occupy the left side of this footer band (no second Library-pane copy). |
 | `WORKBENCH_LIBRARY_NAVIGATION_CONTRACT.md` historical pane-bottom bar wording | Scope intents and Catalog invisibility | **Placement authority is this file (#830):** global footer left. The navigation contract no longer authorizes a competing pane-local geometry. |
 
@@ -110,8 +112,8 @@ RUNTIME freezes — **not** authority against this #830 canon.
 | `tests/test_workbench_library_bottom_icons_837.py` | Pane-local bottom icon geometry above the app footer | Move scope utility into the global footer band (left). |
 | `tests/test_workbench_library_scope_evidence.py` | Pane-local `libraryScopeBar` geometry (`bar.y() > 80`, below `libraryContentHost`, etc.) | Retarget those placement assertions with the QML footer migration. Do **not** treat the current pane-local freeze as a veto of #830 footer placement. |
 | `tests/test_workbench_qml_library_tree.py` | `libraryScopeBar` must follow `libraryContentHost` inside `libraryPane` | Retarget when the bar moves into the global footer band. |
-| `tests/test_workbench_context_hint_770.py` | Current hint placement freeze | Hint placement inside the footer band (right), not a separate centered strip. |
+| `tests/test_workbench_context_hint_770.py` | Historical right-side footer placement freeze from #831 | Retarget to full-footer-width geometric centering inside the footer band (true center layer; not RowLayout leftover). |
 
-Until #831 lands, those tests continue to describe current `main` runtime
-geometry. They do not block acceptance of this canon document, and #830 must
-not weaken them prematurely.
+#831 has landed. Remaining rows above that still describe historical pre-migration
+freezes must be retargeted only with the scoped product change that owns the new
+geometry (including the footer-context centering slice for hint placement).
