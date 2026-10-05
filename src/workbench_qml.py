@@ -1765,10 +1765,6 @@ ApplicationWindow {
         readonly property color actionActive: themeAuthority.actionActive
         readonly property color focusRing: themeAuthority.focusRing
         readonly property color hoverSurface: themeAuthority.hoverSurface
-        // Cinematic-noir soft-ellipse atmosphere (Theme-rendered PNG overlay URLs).
-        readonly property url atmosphereWorkspace: themeAuthority.atmosphereWorkspaceUrl
-        readonly property url atmospherePanel: themeAuthority.atmospherePanelUrl
-        readonly property real atmosphereOpacity: themeAuthority.atmosphereOverlayOpacity
     }
     // #770 shared context-hint content seam (ephemeral UI state; placement is separate).
     QtObject {
@@ -2934,18 +2930,7 @@ ApplicationWindow {
         Component.onCompleted: layoutModel.setContentWidth(width)
 
         Rectangle { id: libraryPane; objectName: "libraryPane"; width: layoutModel.libraryWidth; height: parent.height; visible: width > 0; color: theme.surfacePanel; border.color: theme.borderSubtle
-            // Theme soft-ellipse atmosphere — Library must not read as a flat black slab.
-            Image {
-                id: libraryNoirAtmosphere
-                objectName: "libraryNoirAtmosphere"
-                anchors.fill: parent
-                z: 0
-                source: theme.atmospherePanel
-                fillMode: Image.Stretch
-                asynchronous: true
-                opacity: theme.atmosphereOpacity
-            }
-            ColumnLayout { anchors.fill: parent; anchors.margins: 16; z: 1
+            ColumnLayout { anchors.fill: parent; anchors.margins: 16
                 RowLayout { id: libraryHeaderRow; Layout.fillWidth: true
                     Label { text: "LIBRARY"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
                     Button { text: "Add Source"; onClicked: addSourceDialog.open() }
@@ -3148,24 +3133,12 @@ ApplicationWindow {
                      && window.screenData.analysisStatus !== "error"
             width: visible ? Math.max(0, parent.width - libraryPane.width) : 0
             height: parent.height
-            // Dark surface hierarchy: main workspace fill (not pure-black PNG bleed).
-            // Background Image remains under panels; calm canvas paints Theme workspace
-            // plus soft-ellipse atmosphere so the center is not a flat black slab.
+            // Dark surface hierarchy: main workspace solid fill (not pure-black PNG bleed).
+            // Background Image remains under panels; calm canvas paints Theme workspace only.
             color: theme.surfaceRoot
-            Image {
-                id: workspaceNoirAtmosphere
-                objectName: "workspaceNoirAtmosphere"
-                anchors.fill: parent
-                z: 0
-                source: theme.atmosphereWorkspace
-                fillMode: Image.Stretch
-                asynchronous: true
-                opacity: theme.atmosphereOpacity
-            }
             ColumnLayout {
                 anchors.centerIn: parent
                 spacing: 10
-                z: 1
                 // #725 Owner Visual: primary First View CTA — "Add Source" above large +.
                 // Branding stays in the header only (not Calm Canvas).
                 Label {
@@ -3488,17 +3461,6 @@ ApplicationWindow {
             }
         }
         Rectangle { id: browserPane; objectName: "browserPane"; visible: window.interaction.hasActiveSource && !window.interaction.browserCollapsed; width: visible ? layoutModel.browserWidth : 0; height: parent.height; color: theme.surfaceBrowser; border.color: theme.borderSubtle
-            // Active-source center pane: same Theme panel atmosphere as Library.
-            Image {
-                id: browserNoirAtmosphere
-                objectName: "browserNoirAtmosphere"
-                anchors.fill: parent
-                z: 0
-                source: theme.atmospherePanel
-                fillMode: Image.Stretch
-                asynchronous: true
-                opacity: theme.atmosphereOpacity
-            }
             function openSampleContextMenu(index, localX, localY) {
                 window.interaction.openSampleContext(index)
                 sampleContextMenu.focusedAction = 0
@@ -4047,17 +4009,6 @@ ApplicationWindow {
             height: parent.height
             color: theme.surfacePanel
             border.color: theme.borderSubtle
-            // Same Theme panel atmosphere as Library/Browser — uniform noir family.
-            Image {
-                id: harmonyNoirAtmosphere
-                objectName: "harmonyNoirAtmosphere"
-                anchors.fill: parent
-                z: 0
-                source: theme.atmospherePanel
-                fillMode: Image.Stretch
-                asynchronous: true
-                opacity: theme.atmosphereOpacity
-            }
             // Pane-root name for UIA title evidence; keep distinct from the
             // context-menu Button so FindFirst prefers the invokable action
             // while the menu is open (browser subtree precedes this pane).
@@ -4132,7 +4083,7 @@ ApplicationWindow {
                     browser.forceActiveFocus()
                 }
             }
-            ColumnLayout { anchors.fill: parent; anchors.margins: 14; z: 1
+            ColumnLayout { anchors.fill: parent; anchors.margins: 14
                 Label {
                     text: "Harmonic Matches"
                     color: theme.textPrimary
@@ -4293,17 +4244,6 @@ ApplicationWindow {
             }
         }
         Rectangle { id: liveKitPane; objectName: "liveKitPane"; visible: window.interaction.hasActiveSource && window.interaction.liveKitRevealed && !window.interaction.liveKitCollapsed; width: visible ? layoutModel.liveKitWidth : 0; height: parent.height; color: theme.surfacePanel; border.color: theme.borderSubtle
-            // Same Theme panel atmosphere as Library/Browser — uniform noir family.
-            Image {
-                id: liveKitNoirAtmosphere
-                objectName: "liveKitNoirAtmosphere"
-                anchors.fill: parent
-                z: 0
-                source: theme.atmospherePanel
-                fillMode: Image.Stretch
-                asynchronous: true
-                opacity: theme.atmosphereOpacity
-            }
             // #845 OPEN collapse handle — pane-local mid-edge; click/activate only.
             Item {
                 id: liveKitCollapseHandle
@@ -4354,7 +4294,7 @@ ApplicationWindow {
                     }
                 }
             }
-            ColumnLayout { anchors.fill: parent; anchors.margins: 14; spacing: 8; z: 1
+            ColumnLayout { anchors.fill: parent; anchors.margins: 14; spacing: 8
                 RowLayout { Layout.fillWidth: true
                     Label { text: "LIVE KIT"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
                     Label { text: window.screenData.liveKitAssignedCount + " / " + window.screenData.liveKitTotalSlotCount; color: theme.textSecondary; font.pixelSize: 11 }
@@ -5779,18 +5719,6 @@ def _qml_theme_authority_bridge(
             self._draft_background = self._tokens.background
             self._draft_foreground = self._tokens.foreground
             self._draft_name = self._tokens.name
-            self._atmosphere_workspace_url = ""
-            self._atmosphere_panel_url = ""
-            self._refresh_atmosphere(self._tokens)
-
-        def _refresh_atmosphere(self, tokens: theme_mod.ThemeTokens) -> None:
-            paths = theme_mod.ensure_atmosphere_overlays(
-                tokens,
-                state_dir=self._state_dir,
-                env=self._env,
-            )
-            self._atmosphere_workspace_url = paths["workspace"].resolve().as_uri()
-            self._atmosphere_panel_url = paths["panel"].resolve().as_uri()
 
         def _reload(self, tokens: theme_mod.ThemeTokens | None = None) -> None:
             self._tokens = tokens or theme_mod.resolve_theme(
@@ -5802,7 +5730,6 @@ def _qml_theme_authority_bridge(
             self._draft_background = self._tokens.background
             self._draft_foreground = self._tokens.foreground
             self._draft_name = self._tokens.name
-            self._refresh_atmosphere(self._tokens)
             self.themeChanged.emit()
 
         def _preview_from_draft(self) -> None:
@@ -5822,7 +5749,6 @@ def _qml_theme_authority_bridge(
                 base_preset=self._tokens.base_preset,
             )
             self._semantics = theme_mod.theme_tokens_to_qml_semantics(preview)
-            self._refresh_atmosphere(preview)
             self.themeChanged.emit()
 
         def _color(self, key: str) -> str:
@@ -5949,18 +5875,6 @@ def _qml_theme_authority_bridge(
         @Property(str, notify=themeChanged)
         def hoverSurface(self) -> str:
             return self._color("hoverSurface")
-
-        @Property(str, notify=themeChanged)
-        def atmosphereWorkspaceUrl(self) -> str:
-            return self._atmosphere_workspace_url
-
-        @Property(str, notify=themeChanged)
-        def atmospherePanelUrl(self) -> str:
-            return self._atmosphere_panel_url
-
-        @Property(float, notify=themeChanged)
-        def atmosphereOverlayOpacity(self) -> float:
-            return float(theme_mod.ATMOSPHERE_OVERLAY_OPACITY)
 
         @Slot(str)
         def selectTheme(self, name: str) -> None:
