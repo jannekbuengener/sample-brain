@@ -199,6 +199,17 @@ def _qml_row(row: WorkbenchRow, *, is_favorite: bool = False) -> QmlBrowserRow:
     )
 
 
+def format_selected_sample_context_hint(row: QmlBrowserRow | None) -> str:
+    """Compact footer selection context from existing Browser row projection.
+
+    Single formatter authority for ``Name · BPM · Key · Type``. Reuses projected
+    missing-state tokens (``—``). Empty when there is no selected row.
+    """
+    if row is None:
+        return ""
+    return f"{row.display_name} · {row.bpm} · {row.key} · {row.sample_type}"
+
+
 def _qml_harmony_row(suggestion: HarmonySuggestion) -> QmlHarmonyRow:
     row = suggestion.row
     return QmlHarmonyRow(
@@ -313,6 +324,14 @@ class Screen1QmlViewModel:
         if self._on_browser_selected is not None:
             self._on_browser_selected(row)
         return row
+
+    @property
+    def selected_sample_context_hint(self) -> str:
+        """Footer SELECTION fallback from existing browser selection index."""
+        index = self.selected_browser_index
+        if not 0 <= index < len(self.browser_rows):
+            return ""
+        return format_selected_sample_context_hint(self.browser_rows[index])
 
     def set_browser_state(
         self,
@@ -477,6 +496,7 @@ class Screen1QmlViewModel:
         return {
             "panelCount": self.panel_count,
             "selectedBrowserIndex": self.selected_browser_index,
+            "selectedSampleContextHint": self.selected_sample_context_hint,
             "browserContext": self.browser_context,
             "errorMessage": self.browser_error or "",
             "analysisStatus": self.analysis_status,
@@ -599,6 +619,7 @@ def _qml_screen_data_bridge(
     class QmlScreenDataBridge(QObject):
         browserRowsChanged = Signal()
         selectedBrowserIndexChanged = Signal()
+        selectedSampleContextHintChanged = Signal()
         browserContextChanged = Signal()
         errorMessageChanged = Signal()
         analysisStatusChanged = Signal()
@@ -619,6 +640,10 @@ def _qml_screen_data_bridge(
         @Property(int, notify=selectedBrowserIndexChanged)
         def selectedBrowserIndex(self) -> int:
             return view_model.selected_browser_index
+
+        @Property(str, notify=selectedSampleContextHintChanged)
+        def selectedSampleContextHint(self) -> str:
+            return view_model.selected_sample_context_hint
 
         @Property(str, notify=browserContextChanged)
         def browserContext(self) -> str:
@@ -727,6 +752,7 @@ def _qml_screen_data_bridge(
         @Slot()
         def refresh(self) -> None:
             self.selectedBrowserIndexChanged.emit()
+            self.selectedSampleContextHintChanged.emit()
             self.browserContextChanged.emit()
             self.errorMessageChanged.emit()
             self.analysisStatusChanged.emit()
@@ -743,6 +769,7 @@ def _qml_screen_data_bridge(
         @Slot()
         def refresh_browser_rows(self) -> None:
             self.browserRowsChanged.emit()
+            self.selectedSampleContextHintChanged.emit()
 
         @Slot()
         def refresh_browser_scope(self) -> None:
@@ -1756,7 +1783,10 @@ ApplicationWindow {
         property string activeId: ""
         property string activeLabel: ""
         property string activeHelp: ""
-        readonly property string displayText: activeId.length === 0 ? "" : (activeLabel + " — " + activeHelp)
+        // Hover/focus control descriptors win; else existing browser selection hint.
+        readonly property string displayText: activeId.length > 0
+            ? (activeLabel + " — " + activeHelp)
+            : (window.screenData.selectedSampleContextHint || "")
 
         function resolveActiveId() {
             if (hoveredId.length > 0)
