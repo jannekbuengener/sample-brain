@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import inspect
 import re
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -99,6 +101,97 @@ def test_hidden_historical_background_settles_two_frames_before_capture():
     )[0]
 
     assert hidden_branch.count("_settle_qml_frame(app)") == 2
+
+
+def test_v7_725_invalid_capture_fails_closed_without_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An all-black #725 grab must not publish partial evidence."""
+    from src.workbench_visual_acceptance import EvidenceError
+
+    qtquick = types.ModuleType("PySide6.QtQuick")
+    qtquick.QQuickItem = object
+    pyside6 = types.ModuleType("PySide6")
+    pyside6.__path__ = []
+    pyside6.QtQuick = qtquick
+    monkeypatch.setitem(sys.modules, "PySide6", pyside6)
+    monkeypatch.setitem(sys.modules, "PySide6.QtQuick", qtquick)
+
+    class FakeWindow:
+        def setWidth(self, _width: int) -> None:
+            pass
+
+        def setHeight(self, _height: int) -> None:
+            pass
+
+        def show(self) -> None:
+            pass
+
+        def winId(self) -> int:
+            return 1
+
+    grabs: list[Path] = []
+    manifests: list[Path] = []
+    fake_window = FakeWindow()
+    fake_app = types.SimpleNamespace(processEvents=lambda: None)
+    fake_engine = types.SimpleNamespace()
+    fake_report = types.SimpleNamespace(
+        manifest=types.SimpleNamespace(commit="a" * 40, channel="test")
+    )
+
+    monkeypatch.setattr(workbench_qml_spike, "_require_fresh_qml_capture_process", lambda: None)
+    monkeypatch.setattr(
+        workbench_qml_spike, "validate_qml_renderer_provenance", lambda _root: fake_report
+    )
+    monkeypatch.setattr(
+        workbench_qml_spike,
+        "build_screen1_visual_fixture_v2",
+        lambda: types.SimpleNamespace(version="fixture"),
+    )
+    monkeypatch.setattr(workbench_qml_spike, "resolve_screen1_visual_state_v2", lambda *_args: object())
+    monkeypatch.setattr(workbench_qml_spike, "Screen1QmlViewModel", lambda **_kwargs: object())
+    monkeypatch.setattr(
+        workbench_qml_spike, "Screen1QmlInteractionAdapter", lambda **_kwargs: object()
+    )
+    monkeypatch.setattr(workbench_qml_spike, "apply_screen1_visual_state_v2", lambda *_args: None)
+    monkeypatch.setattr(
+        workbench_qml_spike,
+        "_qml_engine",
+        lambda *_args, **_kwargs: (fake_app, fake_engine, fake_window),
+    )
+    monkeypatch.setattr(workbench_qml_spike, "_settle_qml_frame", lambda _app: None)
+    monkeypatch.setattr(
+        workbench_qml_spike, "_wait_for_screen1_background_ready", lambda *_args: None
+    )
+    monkeypatch.setattr(workbench_qml_spike, "_require_v2_capture_dpi_100", lambda _hwnd: 100)
+
+    def grab(_window: object, target: Path, *, engine: object) -> None:
+        assert engine is fake_engine
+        grabs.append(target)
+        target.write_bytes(b"all-black")
+
+    monkeypatch.setattr(workbench_qml_spike, "_grab_qml_window_png", grab)
+    monkeypatch.setattr(
+        workbench_qml_spike,
+        "validate_capture_sanity",
+        lambda *_args, **_kwargs: {"pass": False, "reason": "all-black"},
+    )
+    monkeypatch.setattr(
+        workbench_qml_spike,
+        "write_visual_evidence_manifest",
+        lambda path, _manifest: manifests.append(path),
+    )
+
+    with pytest.raises(EvidenceError, match="clean-start-collapsed") as error:
+        workbench_qml_spike.run_qml_visual_acceptance_725(
+            runtime_root=tmp_path,
+            evidence_dir=tmp_path / "evidence",
+        )
+
+    assert "all-black" in str(error.value)
+    assert len(grabs) == 1
+    assert manifests == []
 
 
 @pytest.mark.skipif(

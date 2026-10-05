@@ -892,6 +892,8 @@ def run_qml_visual_acceptance_725(
         check = validate_capture_sanity(
             target, expected_width=CLIENT_WIDTH, expected_height=CLIENT_HEIGHT
         )
+        if not bool(check["pass"]):
+            raise EvidenceError(f"{label}: Capture-Sanity fehlgeschlagen: {check!r}")
         check["v2_state_id"] = v2_state
         check["capture_label"] = label
         check["pass"] = bool(check["pass"])
