@@ -17,7 +17,7 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 
 | Topic | Authority | Class | Notes |
 |---|---|---|---|
-| Product producing flow | `docs/PRODUCT_WORKFLOW_CANON.md` | ACTIVE_CANON | Workbench-first; Screen 1 → Live Kit → Channel Rack → later Arrangement. VST3 remains parked. |
+| Product producing flow | `docs/PRODUCT_WORKFLOW_CANON.md` | ACTIVE_CANON | Remains formal ACTIVE_CANON entry until #906 migrates it. Multi-screen `Screen 1 → Screen 2 → Screen 3` navigation therein is already superseded by #905 + `docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md` for product-navigation conflicts. VST3 remains parked. |
 | Product requirements | `docs/PRODUCT_REQUIREMENTS.md` | ACTIVE_CANON | Product intent and non-goals; newer explicit canon overrides superseded historical framing. |
 | System requirements | `docs/SYSTEM_REQUIREMENTS.md` | ACTIVE_CANON | Functional/non-functional system contract. |
 | Architecture | `docs/TARGET_ARCHITECTURE.md` | ACTIVE_CANON | Current vs target architecture and ownership boundaries. |
@@ -34,6 +34,7 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 | Screen-1 Harmonic Match reference eligibility | `docs/product/02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md` §9.1–§9.2 | ACTIVE_SUPPORTING | #842: effective key = eligible V2 claim else product `row.key`; root-only fail-closed; Browser display key ≠ matching authority; #843: context target → harmony anchor open/retarget (not toggle); #847/#848 gates analysis-algorithm changes. |
 | Screen-1 visual acceptance | `docs/WORKBENCH_VISUAL_ACCEPTANCE.md` | ACTIVE_SUPPORTING | Agents own technical/runtime/visual acceptance; Owner does not run operative acceptance loops. |
 | Global program chrome | `docs/PROGRAM_CHROME_CONTRACT.md` | ACTIVE_SUPPORTING | #830; Owner frame is top bar (identity left, navigation center, transport/tempo right — no Harmonic Match header button after #843) plus footer (Library utility left, context info true-center on full footer width, status right). Pattern/Bars/Song in the reference image is not authority. Live Kit chrome is inert before materialization. |
+| Single Workspace product navigation | `docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md` | ACTIVE_SUPPORTING | Owner Decision A (#905): one persistent Workbench + progressive disclosure. Binding for product-navigation conflicts with multi-screen wording still present in `PRODUCT_WORKFLOW_CANON.md` until #906 physically migrates remaining canon. #907 owns audio/session-focus audit; #908 is bottom Rack projection after those gates; #679 Arrangement stays PARKED / UNDESIGNED. |
 | Semantic search | `docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md` | ACTIVE_SUPPORTING | NumPy default, sqlite-vec opt-in, VST-first historical framing is superseded. |
 | Screen-2 ownership | `docs/SESSION_OWNERSHIP_CONTRACT.md` | ACTIVE_SUPPORTING | Python-owned session state. |
 | Pattern core | `docs/PATTERN_CORE_CONTRACT.md` | ACTIVE_SUPPORTING | Pattern/trigger truth. |
