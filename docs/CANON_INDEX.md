@@ -17,27 +17,27 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 
 | Topic | Authority | Class | Notes |
 |---|---|---|---|
-| Product producing flow | `docs/PRODUCT_WORKFLOW_CANON.md` | ACTIVE_CANON | Remains formal ACTIVE_CANON entry until #906 migrates it. Multi-screen `Screen 1 → Screen 2 → Screen 3` navigation therein is already superseded by #905 + `docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md` for product-navigation conflicts. VST3 remains parked. |
+| Product producing flow | `docs/PRODUCT_WORKFLOW_CANON.md` | ACTIVE_CANON | Workbench-first Single Workspace; one persistent Workbench + progressive disclosure. VST3 remains parked. |
+| Single Workspace product navigation | `docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md` | ACTIVE_SUPPORTING | Owner Decision A (#905) Owner-reviewed / approved. Binding product-navigation / workspace-geometry authority. #907 owns audio/session-focus audit; #908 is bottom Rack projection after those gates; #679 Arrangement stays PARKED / UNDESIGNED. |
 | Product requirements | `docs/PRODUCT_REQUIREMENTS.md` | ACTIVE_CANON | Product intent and non-goals; newer explicit canon overrides superseded historical framing. |
 | System requirements | `docs/SYSTEM_REQUIREMENTS.md` | ACTIVE_CANON | Functional/non-functional system contract. |
 | Architecture | `docs/TARGET_ARCHITECTURE.md` | ACTIVE_CANON | Current vs target architecture and ownership boundaries. |
 | Realtime Workbench boundary | `docs/REALTIME_WORKBENCH_SCOPE.md` | ACTIVE_CANON | Local realtime scope; not a general DAW authorization. |
 | Data / artifacts | `docs/DATA_AND_ARTIFACT_POLICY.md` | ACTIVE_CANON | Private/local/generated data boundary. |
 | Local Measurement Layer | `docs/adr/ADR-0006-measurement-contract-v1.md` | ACTIVE_SUPPORTING | Provider-neutral local measurement vs forbidden external telemetry in core; Mixpanel only as optional future sink. |
-| Screen-1 renderer | `docs/WORKBENCH_QML_PROOF_SPIKE.md` | ACTIVE_SUPPORTING | `LOCK_PYSIDE6_QML`; #503/#579/#691 are delivered historical evidence. New Screen-1 work needs a new scoped issue. |
-| Screen-1 preview playhead | `docs/WORKBENCH_PREVIEW_PLAYHEAD_CONTRACT.md` | ACTIVE_SUPPORTING | #738; Canvas body + thin overlay; engine-backed progress only. |
-| Screen-1 display preferences | `docs/WORKBENCH_DISPLAY_PREFERENCES.md` | ACTIVE_SUPPORTING | #696; density/motion/layout reset/startup presets; header overflow only. |
+| Workbench QML renderer | `docs/WORKBENCH_QML_PROOF_SPIKE.md` | ACTIVE_SUPPORTING | `LOCK_PYSIDE6_QML`; #503/#579/#691 are delivered historical evidence. New Workbench visual work needs a new scoped issue under #905. |
+| Workbench preview playhead | `docs/WORKBENCH_PREVIEW_PLAYHEAD_CONTRACT.md` | ACTIVE_SUPPORTING | #738; Canvas body + thin overlay; engine-backed progress only. Historical “Screen-1” wording in the contract is delivery evidence. |
+| Workbench display preferences | `docs/WORKBENCH_DISPLAY_PREFERENCES.md` | ACTIVE_SUPPORTING | #696; density/motion/layout reset/startup presets; header overflow only. |
 | Workbench functional feature settings | `docs/WORKBENCH_FEATURE_SETTINGS.md` | ACTIVE_SUPPORTING | #910; reusable functional toggles (`WorkbenchFeatureSettings`); distinct from view/display/theme/layout; `gesture_rack_apply_enabled` default disabled; no Rack mutation in the enabler. |
-| Screen-1 Browser column arrangement | `docs/WORKBENCH_BROWSER_COLUMN_ARRANGEMENT_CONTRACT.md` | ACTIVE_SUPPORTING | #767 order; #850 header/delegate Type alignment so Length/Type never swap visually. |
-| Screen-1 Browser column resize | `docs/WORKBENCH_BROWSER_COLUMN_RESIZE_CONTRACT.md` | ACTIVE_SUPPORTING | #780 width authority/runtime resize; #846 header-owned ephemeral resize affordances, no permanent vertical column dividers; one interactive meta handle; narrow mode preserves #692 defaults; Type non-resizable. |
-| Screen-1 panel collapse | `docs/WORKBENCH_ELASTIC_LAYOUT.md` | ACTIVE_SUPPORTING | #845 presentation OPEN/COLLAPSED for Browser / Matches / Live Kit; absorbed into elastic visibility (no separate collapse contract file). |
-| Screen-1 sample context menu | `docs/WORKBENCH_SAMPLE_CONTEXT_MENU_CONTRACT.md` | ACTIVE_SUPPORTING | #839 wine-red Browser sample context menu; Python-owned stable target ≠ selection; #840 Context Menu sole visible Browser Add-to-Kit route; #843 context Harmonic Matches open/retarget via `open_harmonic_matches_for_row`, header `harmonicMatchButton` removed, #845 remains collapse owner. |
-| Screen-1 Harmonic Match reference eligibility | `docs/product/02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md` §9.1–§9.2 | ACTIVE_SUPPORTING | #842: effective key = eligible V2 claim else product `row.key`; root-only fail-closed; Browser display key ≠ matching authority; #843: context target → harmony anchor open/retarget (not toggle); #847/#848 gates analysis-algorithm changes. |
-| Screen-1 visual acceptance | `docs/WORKBENCH_VISUAL_ACCEPTANCE.md` | ACTIVE_SUPPORTING | Agents own technical/runtime/visual acceptance; Owner does not run operative acceptance loops. |
-| Global program chrome | `docs/PROGRAM_CHROME_CONTRACT.md` | ACTIVE_SUPPORTING | #830; Owner frame is top bar (identity left, navigation center, transport/tempo right — no Harmonic Match header button after #843) plus footer (Library utility left, context info true-center on full footer width, status right). Pattern/Bars/Song in the reference image is not authority. Live Kit chrome is inert before materialization. |
-| Single Workspace product navigation | `docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md` | ACTIVE_SUPPORTING | Owner Decision A (#905): one persistent Workbench + progressive disclosure. Binding for product-navigation conflicts with multi-screen wording still present in `PRODUCT_WORKFLOW_CANON.md` until #906 physically migrates remaining canon. #907 owns audio/session-focus audit; #908 is bottom Rack projection after those gates; #679 Arrangement stays PARKED / UNDESIGNED. |
+| Workbench Browser column arrangement | `docs/WORKBENCH_BROWSER_COLUMN_ARRANGEMENT_CONTRACT.md` | ACTIVE_SUPPORTING | #767 order; #850 header/delegate Type alignment so Length/Type never swap visually. |
+| Workbench Browser column resize | `docs/WORKBENCH_BROWSER_COLUMN_RESIZE_CONTRACT.md` | ACTIVE_SUPPORTING | #780 width authority/runtime resize; #846 header-owned ephemeral resize affordances, no permanent vertical column dividers; one interactive meta handle; narrow mode preserves #692 defaults; Type non-resizable. |
+| Workbench panel collapse | `docs/WORKBENCH_ELASTIC_LAYOUT.md` | ACTIVE_SUPPORTING | #845 presentation OPEN/COLLAPSED for Browser / Matches / Live Kit; absorbed into elastic visibility (no separate collapse contract file). |
+| Workbench sample context menu | `docs/WORKBENCH_SAMPLE_CONTEXT_MENU_CONTRACT.md` | ACTIVE_SUPPORTING | #839 wine-red Browser sample context menu; Python-owned stable target ≠ selection; #840 Context Menu sole visible Browser Add-to-Kit route; #843 context Harmonic Matches open/retarget via `open_harmonic_matches_for_row`, header `harmonicMatchButton` removed, #845 remains collapse owner. |
+| Harmonic Match reference eligibility | `docs/product/02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md` §9.1–§9.2 | ACTIVE_SUPPORTING | #842: effective key = eligible V2 claim else product `row.key`; root-only fail-closed; Browser display key ≠ matching authority; #843: context target → harmony anchor open/retarget (not toggle); #847/#848 gates analysis-algorithm changes. |
+| Workbench visual acceptance | `docs/WORKBENCH_VISUAL_ACCEPTANCE.md` | ACTIVE_SUPPORTING | Agents own technical/runtime/visual acceptance; Owner does not run operative acceptance loops. |
+| Global program chrome | `docs/PROGRAM_CHROME_CONTRACT.md` | ACTIVE_SUPPORTING | #830; Owner frame is top bar (identity left, navigation center, transport/tempo right — no Harmonic Match header button after #843) plus footer (Library utility left, context info true-center on full footer width, status right). Pattern/Bars/Song in the reference image is not authority. Live Kit chrome is inert before materialization. Chrome route labels may remain historical/runtime wording; product navigation authority is Single Workspace (#905). |
 | Semantic search | `docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md` | ACTIVE_SUPPORTING | NumPy default, sqlite-vec opt-in, VST-first historical framing is superseded. |
-| Screen-2 ownership | `docs/SESSION_OWNERSHIP_CONTRACT.md` | ACTIVE_SUPPORTING | Python-owned session state. |
+| Session ownership | `docs/SESSION_OWNERSHIP_CONTRACT.md` | ACTIVE_SUPPORTING | Python-owned session state. Screen-transition seam names (`enter_screen2` / `return_to_screen1`) are runtime ownership hooks, not product-page navigation; #907 owns audit/repair. |
 | Pattern core | `docs/PATTERN_CORE_CONTRACT.md` | ACTIVE_SUPPORTING | Pattern/trigger truth. |
 | Sequencer playback | `docs/SEQUENCER_PLAYBACK_CONTRACT.md` | ACTIVE_SUPPORTING | Scheduling/PCM boundary. |
 
@@ -54,15 +54,20 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 | Surface | Class | Current authority |
 |---|---|---|
 | `docs/product/05_VST_PRODUCING_WORKSPACE_SPEC.md` | SUPERSEDED_RECORD | VST3 primary-path framing is parked under #469; current path is `PRODUCT_WORKFLOW_CANON.md`. |
+| Former multi-screen product navigation `Screen 1 → Screen 2 → Screen 3` | SUPERSEDED_RECORD | Superseded by #905 + `WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md` + migrated `PRODUCT_WORKFLOW_CANON.md`. Closed #675/#678 remain historical Rack delivery evidence. |
 | `knowledge/roadmap/adr/ADR-0002-local-vector-index-strategy.md` | SUPERSEDED_RECORD | FAISS strategy was superseded by ADR-0004; retained as ADR history. |
-| Screen-1 Epic #503 / Governance #579 / Epic #691 | HISTORICAL_LEDGER | Delivered migration/governance/Calm Adaptive Workspace evidence; not an active Screen-1 parent. |
+| Historical Workbench UI epics #503 / #579 / #691 | HISTORICAL_LEDGER | Delivered migration/governance/Calm Adaptive Workspace evidence; not an active Workbench parent. |
 | Historical benchmark/evidence documents | HISTORICAL_LEDGER | Keep measured results and capture commands tied to their recorded environment; do not treat them as current setup instructions unless explicitly marked current. |
 
 ## Task routing
 
-- **Screen 1:** live GitHub + a **new scoped issue** (closed #691 is delivered historical authority, not an active parent), then Screen-1 authorities above. Do not reopen #691 for new slices.
-- **Screen 2:** closed #675/#678 (evidence) + `PRODUCT_WORKFLOW_CANON.md` and Screen-2 supporting contracts. Foundations (#676/#677/#681/#698) and Screen-2 QML (#678 / PR #755) are **DONE**; do not reopen Screen-2 product work without explicit Owner-GO.
-- **Screen 3 / VST / Bitwig / #697:** parked or research-only; explicit reactivation required. Do not auto-route.
+- **Single Workspace / Workbench product:** live GitHub + [#905](https://github.com/jannekbuengener/sample-brain/issues/905) and a **new scoped child issue**. Do not route new product work as Screen 1 / Screen 2 / Screen 3 page navigation.
+- **Canon / docs alignment:** [#906](https://github.com/jannekbuengener/sample-brain/issues/906) (this migration track).
+- **Session / audio-focus for Rack embed:** [#907](https://github.com/jannekbuengener/sample-brain/issues/907) — audit only until Owner-authorized repair; do not invent second transport/QML musical truth.
+- **Bottom Live Kit / Rack projection:** [#908](https://github.com/jannekbuengener/sample-brain/issues/908) after #906/#907.
+- **Channel Rack domain foundations:** closed [#675](https://github.com/jannekbuengener/sample-brain/issues/675)/[#678](https://github.com/jannekbuengener/sample-brain/issues/678) are **historical delivery evidence**; reuse contracts, do not reopen without explicit Owner-GO.
+- **Arrangement:** [#679](https://github.com/jannekbuengener/sample-brain/issues/679) — **PARKED / UNDESIGNED — requires later explicit Owner design decision**. Do not auto-route.
+- **VST / Bitwig / #697:** parked or research-only; explicit reactivation required. Do not auto-route.
 - **Search:** EPIC-2 spec + active ADRs + current code/tests. #74 is upstream ANN watch only.
 - **CI/governance:** GitHub live rules/checks first; docs describe policy, not current API state. Closed #494/#703 are historical.
 - **Repository hygiene:** `DATA_AND_ARTIFACT_POLICY.md` + live working-tree/worktree state.

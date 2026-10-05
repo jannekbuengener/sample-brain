@@ -1,8 +1,8 @@
 # Workbench Single Workspace Contract (#905)
 
-**Status:** ACTIVE_SUPPORTING (Owner design freeze; `SPEC_REVIEW_PENDING` until Owner reviews this written record)
+**Status:** ACTIVE_SUPPORTING — Owner-reviewed / approved (2026-10-05). Binding product-navigation authority for Single Workspace.
 
-**Issues:** [#905](https://github.com/jannekbuengener/sample-brain/issues/905) (epic), [#906](https://github.com/jannekbuengener/sample-brain/issues/906) (canon migration after review)
+**Issues:** [#905](https://github.com/jannekbuengener/sample-brain/issues/905) (epic), [#906](https://github.com/jannekbuengener/sample-brain/issues/906) (canon migration)
 
 **Renderer:** `LOCK_PYSIDE6_QML` remains binding for current Workbench UI. This file does not change runtime.
 
@@ -10,11 +10,11 @@ This document freezes Owner Decision **A — Stable Workspace + Progressive Disc
 
 ## Authority for product navigation
 
-| Surface | Role after this design freeze |
+| Surface | Role |
 |---|---|
-| [#905](https://github.com/jannekbuengener/sample-brain/issues/905) + this contract | Binding authority for **product navigation / workspace geometry** when wording conflicts |
-| [`docs/PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md) | Remains a formal `ACTIVE_CANON` index entry until [#906](https://github.com/jannekbuengener/sample-brain/issues/906) migrates it; its multi-screen `Screen 1 → Screen 2 → Screen 3` navigation model is **already superseded** by #905 + this contract |
-| [#906](https://github.com/jannekbuengener/sample-brain/issues/906) | Owns physical migration of remaining canon/docs so temporary wording inconsistency is fully resolved after Owner review of this record |
+| [#905](https://github.com/jannekbuengener/sample-brain/issues/905) + this contract | Binding authority for **product navigation / workspace geometry** |
+| [`docs/PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md) | ACTIVE_CANON producing-flow companion; must align with Single Workspace (migrated under #906) |
+| [#906](https://github.com/jannekbuengener/sample-brain/issues/906) | Canon/docs migration that removes superseded multi-screen product-navigation wording from current authority surfaces |
 | [#907](https://github.com/jannekbuengener/sample-brain/issues/907) | Owns session/audio-focus audit before Rack embed |
 | [#908](https://github.com/jannekbuengener/sample-brain/issues/908) | Owns bottom Live Kit / Rack projection implementation after #906/#907 |
 | [#679](https://github.com/jannekbuengener/sample-brain/issues/679) | Arrangement interaction model — parked |
@@ -227,18 +227,18 @@ Fail closed against:
 
 ## 13. Validation strategy
 
-### This design-freeze PR (docs only)
+### Validation for this contract and its canon companions
 
 - `git diff --check`
 - `python tools/check_canon_drift.py`
-- scope check: only this contract and the required [`CANON_INDEX.md`](CANON_INDEX.md) link
 - self-review: placeholder scan, internal consistency, scope, ambiguity
+- after #906: no current-authority product docs may require Screen 1 → Screen 2 → Screen 3 navigation
 
-### Later gates (not this PR)
+### Follow-up gates
 
 | Gate | Owner |
 |---|---|
-| Owner review of this written record | `SPEC_REVIEW_PENDING` → Owner |
+| Owner review of this written record | **PASS** (2026-10-05) |
 | Physical canon/docs migration | #906 |
 | Session/audio-focus audit outcome | #907 |
 | Bottom Live Kit / Rack projection + runtime/visual acceptance | #908 after #906/#907 |
@@ -250,7 +250,6 @@ This contract does **not** authorize:
 
 - product / QML / runtime implementation
 - session or audio behavior changes
-- rewriting [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md), README, Bootloader, or knowledge snapshots in the same PR as this freeze (that is #906 after Owner review)
 - Arrangement / timeline / mixer / piano-roll design
 - generalized docking or window management
 - mechanical module renames for historical screen terminology
@@ -258,20 +257,21 @@ This contract does **not** authorize:
 - VST3 / host-plugin primary path
 - cloud producing or full DAW replacement
 
+Canon/docs alignment of remaining multi-screen product-navigation wording is owned by [#906](https://github.com/jannekbuengener/sample-brain/issues/906) and must not change runtime seams owned by [#907](https://github.com/jannekbuengener/sample-brain/issues/907).
 ## 15. Migration / decomposition
 
 | Issue | Role |
 |---|---|
 | [#905](https://github.com/jannekbuengener/sample-brain/issues/905) | Epic: Single Workspace — focus-driven progressive disclosure |
-| [#906](https://github.com/jannekbuengener/sample-brain/issues/906) | After Owner review of this record: migrate remaining product canon/docs so multi-screen navigation is no longer written as current authority |
+| [#906](https://github.com/jannekbuengener/sample-brain/issues/906) | Canon/docs migration so multi-screen navigation is no longer written as current product authority |
 | [#907](https://github.com/jannekbuengener/sample-brain/issues/907) | Audit session/audio-focus assumptions; separate navigation-coupled seams from domain audio ownership before Rack embed |
 | [#908](https://github.com/jannekbuengener/sample-brain/issues/908) | Bottom Live Kit / Rack / Step-Sequencer projection in the one Workbench; depends on #906 and #907 |
 | [#679](https://github.com/jannekbuengener/sample-brain/issues/679) | Future Arrangement inside Single Workspace — **PARKED / UNDESIGNED — requires later explicit Owner design decision** |
 
-Recommended sequence after Owner accepts this written freeze:
+Recommended sequence after Owner acceptance of this freeze:
 
 ```text
-Owner SPEC review
+Owner SPEC review (PASS)
   → #906 canon migration
   → #907 audio/session-focus audit (and any minimal seam repair slice it names)
   → #908 bottom Rack projection (test-first / runtime / visual acceptance)

@@ -11,9 +11,10 @@ Minimal session startup sequence for agents working on `jannekbuengener/sample-b
 3. `.cursor/rules/sample-brain-project.mdc` — project guardrails
 4. `.cursor/rules/skill-routing.mdc` — task-to-skill mapping (generated from `docs/operations/CAPABILITY_REGISTRY.json`)
 4b. `docs/operations/README.md` — operations/capability front door (not product canon)
-5. `docs/TARGET_ARCHITECTURE.md` — current and target architecture, including the locked Screen-1 renderer
-6. `docs/PRODUCT_WORKFLOW_CANON.md` — Workbench-first producing path (Screen 1 → Live Kit → Channel Rack → Arrangement); overrides stale VST-first wording elsewhere
-7. `docs/WORKBENCH_QML_PROOF_SPIKE.md` — Screen-1 QML shell and proof/evidence boundary
+5. `docs/TARGET_ARCHITECTURE.md` — current and target architecture, including the locked Workbench QML renderer
+6. `docs/PRODUCT_WORKFLOW_CANON.md` — Workbench-first Single Workspace producing path; overrides stale VST-first and multi-screen page wording elsewhere
+6b. `docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md` — Owner-approved Single Workspace geometry / progressive-disclosure product-navigation authority (#905)
+7. `docs/WORKBENCH_QML_PROOF_SPIKE.md` — Workbench QML shell and proof/evidence boundary (`LOCK_PYSIDE6_QML`)
 8. `README.md` — product one-liner, quickstart
 9. `knowledge/CURRENT_STATUS.md` — current state, what works
 10. `knowledge/ACTIVE_ROADMAP.md` — completed work, next priorities
@@ -21,22 +22,24 @@ Minimal session startup sequence for agents working on `jannekbuengener/sample-b
 12. `docs/SYSTEM_REQUIREMENTS.md` — functional/non-functional requirements
 13. `docs/DATA_AND_ARTIFACT_POLICY.md` — committed vs untracked artifacts
 
-For any Screen-1/UI task, the renderer gate above is mandatory before planning or
-implementation: `SCREEN1_RENDERER = LOCK_PYSIDE6_QML`. New visual/product work
+For any Workbench UI / visual task, the renderer gate above is mandatory before planning or
+implementation: `SCREEN1_RENDERER = LOCK_PYSIDE6_QML` (historical lock name). New visual/product work
 uses PySide6 / Qt Quick / QML; Tkinter remains legacy/fallback and behavioral
 reference only. Reuse the Python Core/Controller/Audio/Catalog contracts and do
-not reopen the renderer decision.
+not reopen the renderer decision. Current product navigation is Single Workspace (#905), not Screen 1/2/3 pages.
 
-For Channel Rack / Screen-2 work, follow the build order in
+For Channel Rack / Pattern domain work, follow the build-order evidence in
 `docs/PRODUCT_WORKFLOW_CANON.md` (ownership → pattern core → sequencer → UI).
-Do not start Screen-2 UI before those docs gates.
+New Single Workspace Rack projection is [#908](https://github.com/jannekbuengener/sample-brain/issues/908) after [#907](https://github.com/jannekbuengener/sample-brain/issues/907); do not invent a second musical state owner.
 
 ## Task-Specific Context
 
 | Domain | Documents |
 |--------|-----------|
-| Screen 1 / UI | `docs/TARGET_ARCHITECTURE.md`, `docs/WORKBENCH_QML_PROOF_SPIKE.md`, `docs/PRODUCT_WORKFLOW_CANON.md`, live `main` + a **new scoped Screen-1 issue**; closed/historical #691 is delivered Calm Adaptive Workspace authority (not an active parent); #503/#579 remain historical migration/governance evidence only |
-| Channel Rack / Screen 2 | `docs/PRODUCT_WORKFLOW_CANON.md`, closed #675/#678 (evidence), `docs/SESSION_OWNERSHIP_CONTRACT.md`, `docs/PATTERN_CORE_CONTRACT.md`, `docs/SEQUENCER_PLAYBACK_CONTRACT.md` |
+| Single Workspace / Workbench UI | `docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`, `docs/TARGET_ARCHITECTURE.md`, `docs/WORKBENCH_QML_PROOF_SPIKE.md`, `docs/PRODUCT_WORKFLOW_CANON.md`, live `main` + [#905](https://github.com/jannekbuengener/sample-brain/issues/905) / a **new scoped child issue**; closed/historical #691/#503/#579 are delivery evidence only |
+| Channel Rack / Pattern domain | `docs/PRODUCT_WORKFLOW_CANON.md`, closed #675/#678 (historical evidence), `docs/SESSION_OWNERSHIP_CONTRACT.md`, `docs/PATTERN_CORE_CONTRACT.md`, `docs/SEQUENCER_PLAYBACK_CONTRACT.md`; bottom projection #908 after #907 |
+| Session / audio-focus audit | [#907](https://github.com/jannekbuengener/sample-brain/issues/907), `docs/SESSION_OWNERSHIP_CONTRACT.md` (runtime seams are not product-page authority) |
+| Arrangement | [#679](https://github.com/jannekbuengener/sample-brain/issues/679) — **PARKED / UNDESIGNED — requires later explicit Owner design decision** |
 | EPIC 2 (Semantic Search) | `docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md`, ADR-0001–0005 |
 | DAW / Export | `docs/DAW_INTEGRATION_SPEC.md`, `src/export_fl.py` (legacy/fallback; VST parked #469) |
 | CI / Merge Governance | `docs/CI_DEGRADED_MODE.md`, `knowledge/governance/GOVERNANCE.md` |
@@ -53,7 +56,7 @@ Never read these automatically: `knowledge/SHARED.WORKING.MEMORY.md`, `knowledge
 1. `git fetch origin --prune && git status -sb`
 2. Confirm branch matches intended work target
 3. Read mandatory documents (above)
-4. For Screen-1/UI work, fetch live `main` and the relevant **new scoped issue** before planning or implementation; treat closed/historical #691 as delivered authority only (not an active parent); use closed #503/#579 only as historical evidence when the child explicitly references them
+4. For Workbench UI work, fetch live `main` and the relevant **scoped #905 child issue** before planning or implementation; treat closed/historical #691/#503/#579 as delivered authority only
 5. Classify task → load task-specific documents
 6. Confirm no forbidden sources touched
 7. Begin work
@@ -63,7 +66,7 @@ Never read these automatically: `knowledge/SHARED.WORKING.MEMORY.md`, `knowledge
 | Priority | Category |
 |----------|----------|
 | 0 (live truth) | GitHub / Repo live execution evidence |
-| 1 | Explicit current canon / supersession map (`docs/CANON_INDEX.md`, `docs/PRODUCT_WORKFLOW_CANON.md`) |
+| 1 | Explicit current canon / supersession map (`docs/CANON_INDEX.md`, `docs/PRODUCT_WORKFLOW_CANON.md`, `docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`) |
 | 2 | Product Requirements |
 | 3 | System Requirements |
 | 4 | Target Architecture |
