@@ -234,3 +234,76 @@ class TestConfigBpmNormalization:
             local_path=None,
         )
         assert config.get("analyze", {}).get("bpm_normalization") == "none"
+
+
+class TestTechnoPerformanceProfile:
+    """Frozen #876 contract: explicit opt-in techno/performance named profile."""
+
+    @staticmethod
+    def _example_path():
+        from pathlib import Path
+
+        return Path(__file__).resolve().parents[1] / "config" / "profiles.example.yaml"
+
+    def test_techno_performance_sets_domain_110_170(self):
+        config = resolve_profile(
+            profile_name="techno-performance",
+            example_path=self._example_path(),
+            local_path=None,
+        )
+        assert config.get("analyze", {}).get("bpm_normalization") == "domain_110_170"
+
+    def test_default_remains_none(self):
+        config = resolve_profile(
+            profile_name="default",
+            example_path=self._example_path(),
+            local_path=None,
+        )
+        assert config.get("analyze", {}).get("bpm_normalization") == "none"
+
+    def test_minimal_demo_remains_none(self):
+        config = resolve_profile(
+            profile_name="minimal-demo",
+            example_path=self._example_path(),
+            local_path=None,
+        )
+        assert config.get("analyze", {}).get("bpm_normalization") == "none"
+
+    def test_selectable_via_env_profile(self):
+        config = resolve_profile(
+            example_path=self._example_path(),
+            local_path=None,
+            env={"SAMPLE_BRAIN_PROFILE": "techno-performance"},
+        )
+        assert config.get("analyze", {}).get("bpm_normalization") == "domain_110_170"
+
+    def test_env_bpm_normalization_overrides_profile(self):
+        config = resolve_profile(
+            profile_name="techno-performance",
+            example_path=self._example_path(),
+            local_path=None,
+            env={"SAMPLE_BRAIN_BPM_NORMALIZATION": "none"},
+        )
+        assert config.get("analyze", {}).get("bpm_normalization") == "none"
+
+    def test_unknown_profile_fail_closed(self):
+        with pytest.raises(ConfigError, match="Unknown profile"):
+            resolve_profile(
+                profile_name="techno-performance-typo",
+                example_path=self._example_path(),
+                local_path=None,
+            )
+
+    def test_unknown_mode_fail_closed(self, tmp_path):
+        example_path = tmp_path / "profiles.example.yaml"
+        example_path.write_text(
+            "profiles:\n  techno-performance:\n    library_roots:\n      - /tmp/samples\n"
+            "    database:\n      path: data/catalog.db\n"
+            "    analyze:\n      bpm_normalization: not_a_mode\n"
+        )
+        with pytest.raises(ConfigError, match="bpm_normalization"):
+            resolve_profile(
+                profile_name="techno-performance",
+                example_path=example_path,
+                local_path=None,
+            )

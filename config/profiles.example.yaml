@@ -70,3 +70,33 @@ profiles:
 
     search:
       backend: "numpy"
+
+  # Explicit opt-in techno/dancefloor performance profile (#876).
+  # Does not change the global default (none). Select via --profile or
+  # SAMPLE_BRAIN_PROFILE=techno-performance. Not related to title-pipeline
+  # profiles/techno.yaml.
+  techno-performance:
+    library_roots:
+      - "<SAMPLE_LIBRARY_ROOT>"
+
+    fl_user_data_path: "<FL_USER_DATA_PATH>"
+
+    database:
+      path: "data/catalog.db"
+
+    export:
+      max_tags: 5
+
+    autotype:
+      use_knn: true
+      knn_min_conf: 0.55
+
+    analyze:
+      bpm_normalization: "domain_110_170"
+
+    embedding:
+      backend: "noop"
+      model_cache_dir: "<MODEL_CACHE_DIR>"
+
+    search:
+      backend: "numpy"
