@@ -167,10 +167,11 @@ Point-trigger-safe one-shot rows may render the normal Step Grid in the #908 bot
 Loop-class / sustained-sample semantics are frozen in [`LOOP_ROW_PLAYBACK_CONTRACT.md`](LOOP_ROW_PLAYBACK_CONTRACT.md) (#920):
 
 - architecture outcome: `LOOP_ROW_DISTINCT_PROJECTION_REQUIRED`;
+- loop playback mode for explicit `loop`: `NATURAL_CYCLE_REPEAT` (absolute `play_anchor + i * cycle_duration`; continues across pattern passes until Stop);
 - loop / ambiguous rows keep identity projection (no DEFAULT_ON 16-step grid);
-- explicit `loop` class: one start per Rack Play, natural PCM length to EOF, no pass retrigger, SYNC fail-closed without valid source BPM;
-- ambiguous / unknown class: identity + audition only (no Rack loop auto-start);
-- Pattern Core `Trigger` shapes stay point-fire for oneshots; loop rows must not be seeded as DEFAULT_ON triggers;
+- ambiguous / unknown class: identity + audition only; no loop auto-start; no point-trigger Rack playback; do not destroy persisted triggers for missing metadata;
+- Pattern Core `Trigger` shapes stay point-fire for oneshots; explicit loop rows must not be seeded as DEFAULT_ON triggers;
+- native unavailable → loop Rack playback fail-closed (no preview fallback), SYNC on or off;
 - no clip launcher, Arrangement, PCM wrap-loop engine, or new transport owner in this freeze;
 - runtime implementation is a separate follow-up slice after Owner/Lead contract review — not part of #908.
 

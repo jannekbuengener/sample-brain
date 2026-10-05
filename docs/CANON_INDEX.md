@@ -40,7 +40,7 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 | Session ownership | `docs/SESSION_OWNERSHIP_CONTRACT.md` | ACTIVE_SUPPORTING | Python-owned session state. Screen-transition seam names (`enter_screen2` / `return_to_screen1`) are runtime ownership hooks, not product-page navigation; #907 owns audit/repair. |
 | Pattern core | `docs/PATTERN_CORE_CONTRACT.md` | ACTIVE_SUPPORTING | Pattern/trigger truth. |
 | Sequencer playback | `docs/SEQUENCER_PLAYBACK_CONTRACT.md` | ACTIVE_SUPPORTING | Scheduling/PCM boundary. |
-| Loop-row Rack playback | `docs/LOOP_ROW_PLAYBACK_CONTRACT.md` | ACTIVE_SUPPORTING | #920 freeze: `LOOP_ROW_DISTINCT_PROJECTION_REQUIRED`; loop rows are not DEFAULT_ON point triggers; start-once natural-length + SYNC fail-closed; runtime follow-up separate. |
+| Loop-row Rack playback | `docs/LOOP_ROW_PLAYBACK_CONTRACT.md` | ACTIVE_SUPPORTING | #920 freeze: `LOOP_ROW_DISTINCT_PROJECTION_REQUIRED` + `NATURAL_CYCLE_REPEAT` for explicit `loop`; non-destructive classification/restore; native-only fail-closed; runtime follow-up separate. |
 
 ## Durable orientation — not live trackers
 
