@@ -24,7 +24,10 @@ from .gesture_rack_integration import (
     plan_gesture_rack_integration,
 )
 from .gesture_timing_projection import project_gesture_timing
-from .workbench_channel_rack import ChannelRackController
+from .workbench_channel_rack import (
+    ChannelRackController,
+    StaleGestureRackIntegrationPlanError,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -58,11 +61,6 @@ def _result(
     )
 
 
-def _is_stale_base_state_error(exc: ValueError) -> bool:
-    message = str(exc).lower()
-    return "stale" in message or "expected_base_state" in message
-
-
 def prepare_and_apply_gesture_rack(
     audio_path: pathlib.Path | str,
     channel_rack: ChannelRackController,
@@ -80,6 +78,11 @@ def prepare_and_apply_gesture_rack(
     Stages 1–7 are pure/plan/read-only. The sole musical mutation is
     ``channel_rack.apply_gesture_integration_plan``. Never calls
     ``ensure_state``, session store, or Feature Settings I/O.
+
+    ``stale_base_state`` is reported only for the typed pre-mutation rejection
+    ``StaleGestureRackIntegrationPlanError``. No generic ``ValueError`` is
+    caught around apply, so a post-mutation observer failure propagates rather
+    than being reported as a zero-mutation status.
     """
     analysis = analyze_gesture_audio(audio_path)
     if analysis.status != "ok":
@@ -145,15 +148,18 @@ def prepare_and_apply_gesture_rack(
             rack_plan,
             feature_enabled=feature_enabled,
         )
-    except ValueError as exc:
-        if _is_stale_base_state_error(exc):
-            return _result(
-                status="stale_base_state",
-                binding_plan=binding_plan,
-                rack_plan=rack_plan,
-                analysis_status=analysis.status,
-            )
-        raise
+    except StaleGestureRackIntegrationPlanError:
+        # Typed, pre-mutation rejection only (#921 validates expected_base_state
+        # before stop / state assignment / observer). Every other exception —
+        # including observer failures raised after the Rack was already
+        # replaced — propagates, so a mutation that happened is never reported
+        # as a zero-mutation stale status.
+        return _result(
+            status="stale_base_state",
+            binding_plan=binding_plan,
+            rack_plan=rack_plan,
+            analysis_status=analysis.status,
+        )
 
     return _result(
         status="applied",

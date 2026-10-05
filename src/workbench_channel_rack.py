@@ -45,6 +45,25 @@ _POINT_TRIGGER_SAFE_CLASSES = frozenset({"one_shot", "oneshot"})
 _LOOP_CLASSES = frozenset({"loop"})
 
 
+class StaleGestureRackIntegrationPlanError(ValueError):
+    """Pre-mutation rejection of a stale ``GestureRackIntegrationPlan`` (#921).
+
+    Raised by :meth:`ChannelRackController.apply_gesture_integration_plan`
+    **only** when the live controller state no longer matches the plan's
+    ``expected_base_state``. That check runs before ``stop()``, before the
+    state assignment, and before the musical-state observer, so catching this
+    type is always safe and never implies the Rack was already mutated.
+
+    Callers must not infer this from a message match. Exceptions raised *after*
+    the state assignment — notably from the observer callback — are ordinary
+    exceptions and may surface the same words; treating those as stale would
+    report a mutation that already happened as a zero-mutation rejection.
+
+    Subclasses :class:`ValueError` for backward compatibility with existing
+    ``pytest.raises(ValueError)`` call sites.
+    """
+
+
 def _normalize_sample_class(value: object | None) -> str:
     return str(value or "").strip().lower().replace("-", "_")
 
@@ -575,7 +594,7 @@ class ChannelRackController:
             )
         current = self._require_state()
         if current != plan.expected_base_state:
-            raise ValueError(
+            raise StaleGestureRackIntegrationPlanError(
                 "stale GestureRackIntegrationPlan: "
                 "controller state does not match expected_base_state"
             )
@@ -781,6 +800,7 @@ __all__ = [
     "ROW_KIND_STEP",
     "SCREEN1",
     "SCREEN2",
+    "StaleGestureRackIntegrationPlanError",
     "USER_GROUP_NAME",
     "pattern_pass_start_frames",
     "project_bottom_rack_for_qml",

@@ -1,6 +1,8 @@
 # Gesture Rack Headless Action R&D — Slice 10 (#680 / #925)
 
-**Status:** `TEST_FREEZE` — contract + focused acceptance frozen; Action module absent by design.
+**Status:** `IMPLEMENTED` — frozen Slice-10 contract satisfied by `src/gesture_rack_headless_action.py`. Lifecycle tracked by [#925](https://github.com/jannekbuengener/sample-brain/issues/925) / PR #928 (open, not yet merged).
+
+> **Historical — TEST_FREEZE stage.** At `TEST_FREEZE` (baseline `c693d792`, contract + focused acceptance commit `b39d375b`) the Action module was **absent by design** and the document below was frozen against it. That wording is retained here as freeze-time history only; it does **not** describe the current tree. Where this document says "absent at `TEST_FREEZE`", read it as "did not exist at the freeze baseline".
 
 **Parent:** [#680](https://github.com/jannekbuengener/sample-brain/issues/680) (remains OPEN)
 
@@ -25,13 +27,15 @@ Live `main` baseline for this freeze:
 
 `c693d792ca025cabad26ff5de51d7b3e03a62d58`
 
-**BLOCKER check:** `NO_BLOCKER` — intermediate contracts present on baseline; missing piece is this Action seam only.
+**BLOCKER check:** `NO_BLOCKER` — *(freeze-time check)* intermediate contracts were present on the baseline and the Action seam was the only missing piece. *Current state:* the Action seam is implemented; the remaining gate is review/approval of PR #928.
 
 ## Goal
 
-Freeze and later prove one **standalone headless orchestrator** that prepares a
-gesture audio → Rack integration plan through existing Stages 1–7 and, when
-gates pass, applies it **once** through the Slice 9 controller seam.
+Deliver one **standalone headless orchestrator** that prepares a gesture audio
+→ Rack integration plan through existing Stages 1–7 and, when gates pass,
+applies it **once** through the Slice 9 controller seam. *(Delivered as of the
+implementation commit; the frozen contract and acceptance were proven against
+this seam as specified.)*
 
 ```text
 audio_path
@@ -49,7 +53,7 @@ audio_path
 
 ## Ownership decision
 
-**Chosen:** new module `src/gesture_rack_headless_action.py` (absent at `TEST_FREEZE`).
+**Chosen:** new module `src/gesture_rack_headless_action.py` — **implemented and live in this tree**; it was absent at the `TEST_FREEZE` baseline.
 
 **Rejected:**
 
@@ -61,7 +65,7 @@ audio_path
 
 ## Public seam (frozen)
 
-Module: `src/gesture_rack_headless_action.py` (absent at `TEST_FREEZE`).
+Module: `src/gesture_rack_headless_action.py` (present in this tree; absent at the `TEST_FREEZE` baseline).
 
 ```python
 prepare_and_apply_gesture_rack(
@@ -101,7 +105,7 @@ class GestureRackHeadlessActionResult:
 | `state_none` | `channel_rack.state is None`; **no** `ensure_state()`; zero mutation |
 | `feature_disabled` | `feature_enabled is not True`; zero mutation |
 | `not_ready_for_apply` | Rack plan `ready_for_apply is not True` (e.g. replacement refused); zero mutation |
-| `stale_base_state` | Public state no longer matches plan `expected_base_state` before/at apply; zero mutation |
+| `stale_base_state` | Typed **pre-mutation** rejection `StaleGestureRackIntegrationPlanError` (#921): public state does not match plan `expected_base_state` **before** any `stop()` / state assignment / observer; zero mutation |
 
 ## Stage order (frozen Action call sequence)
 
@@ -170,7 +174,8 @@ by the Action; success autosave happens only via existing controller
 
 ### Pre-apply failure side effects
 
-On any non-`applied` status (and on caught stale reject from #921):
+On any non-`applied` status (and on the caught typed pre-mutation stale reject
+from #921):
 
 - zero `stop()`
 - zero rack state mutation
@@ -178,6 +183,17 @@ On any non-`applied` status (and on caught stale reject from #921):
 - zero autosave
 - zero `workbench_session_store` writes
 - zero Settings I/O
+
+`stale_base_state` is reached **only** by catching
+`StaleGestureRackIntegrationPlanError`, which #921 raises in its
+`expected_base_state` validation branch — ahead of `stop()`, the state
+assignment, and the observer. The Action catches **no** generic `ValueError`
+around apply and performs no message-based classification.
+
+Consequence, enforced by regression coverage: an exception raised *after* the
+state assignment (e.g. from the musical-state observer callback) propagates
+out of the Action. A mutation that already happened is therefore never reported
+as a zero-mutation status, and never yields a stale retry signal.
 
 ### Final guarded apply route
 
@@ -215,6 +231,7 @@ channel_rack.apply_gesture_integration_plan(rack_plan, feature_enabled=True)
 - Direct `workbench_session_store` writes
 - Settings JSON load/save inside Action
 - `restore_state(...)` as live apply shortcut
+- Substring/message-based stale classification (catch `StaleGestureRackIntegrationPlanError`, never `except ValueError` around apply)
 - `add_user_channel` / DEFAULT_ON seeding
 - Rewriting Slice 1–9 stage modules or `apply_gesture_integration_plan` body
 - QML gesture workflow / microphone UI
