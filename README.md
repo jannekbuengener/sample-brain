@@ -1,6 +1,6 @@
 # Sample Brain
 
-Sample Brain ist ein lokales, Workbench-first Producing-System für Sample-Analyse, musikalisches Matching, Track-Zerlegung und Performance Packs — von der Library über Live Kit bis zum Channel Rack.
+Sample Brain ist ein lokales, Workbench-first Producing-System für Sample-Analyse, musikalisches Matching, Track-Zerlegung und Performance Packs — in **einem persistenten Workbench** von Library über Live Kit bis zum Channel-Rack-/Pattern-Domain.
 
 ---
 
@@ -8,7 +8,7 @@ Sample Brain ist ein lokales, Workbench-first Producing-System für Sample-Analy
 
 **Sample Brain** löst ein Problem aus meiner eigenen Musikproduktion: Große lokale Sample-Libraries enthalten viel musikalisches Potenzial, aber Dateinamen und Ordnerstrukturen helfen nur begrenzt dabei, im richtigen Moment den passenden Sound zu finden.
 
-Das Projekt übersetzt dieses Problem in ein **local-first Producing-System**: Samples werden lokal analysiert, katalogisiert, musikalisch verglichen und im Workbench-Pfad nutzbar gemacht (`Library / Screen 1 → Live Kit → Channel Rack / Screen 2`; Arrangement / Screen 3 später). Private Audiodateien bleiben auf dem Rechner; die Kernfunktionen benötigen keine Cloud. VST3 / Host-Plugin bleibt geparkt und ist nicht der Primärpfad.
+Das Projekt übersetzt dieses Problem in ein **local-first Producing-System**: Samples werden lokal analysiert, katalogisiert, musikalisch verglichen und im **einen persistenten Workbench** nutzbar gemacht (Library / Sources + Playlist + kontextuelle Harmonic Matches + Live Kit / Rack / Step-Sequencer; Progressive Disclosure). Private Audiodateien bleiben auf dem Rechner; die Kernfunktionen benötigen keine Cloud. VST3 / Host-Plugin bleibt geparkt und ist nicht der Primärpfad. Das frühere Produkt-Navigationsmodell `Screen 1 → Screen 2 → Screen 3` ist superseded ([#905](https://github.com/jannekbuengener/sample-brain/issues/905)).
 
 ### Was heute tatsächlich funktioniert
 
@@ -19,10 +19,10 @@ Auf `main` sind unter anderem verfügbar:
 - Track-Context-Analyse ohne Katalog-Mutation,
 - NumPy-basierte Suche sowie optionale experimentelle CLAP-/sqlite-vec-Pfade,
 - Track-Deconstruction und portable Performance Packs,
-- Screen-1 Workbench (Library, Preview, Matching, Live Kit) mit QML-Produktionsrichtung (`LOCK_PYSIDE6_QML`; Start via `workbench --qml-screen1`),
-- Screen-2 Channel Rack (Pattern/Trigger über Live-Kit-Kanäle) auf `main`.
+- Workbench (Library, Preview, Matching, Live Kit) mit QML-Produktionsrichtung (`LOCK_PYSIDE6_QML`; Start via `workbench --qml-screen1`),
+- Channel Rack / Pattern-Domain (Pattern/Trigger über Live-Kit-Kanäle) auf `main` (historische Delivery #675/#678).
 
-**Nicht als fertig dargestellt werden:** geparktes VST3, Realtime Fit & Transform, Arrangement / Screen 3 und alle Funktionen, deren Evidence noch nicht für einen Produktionsclaim reicht. Die detaillierte Statusmatrix steht direkt im nächsten Abschnitt.
+**Nicht als fertig dargestellt werden:** geparktes VST3, Realtime Fit & Transform, Arrangement (**PARKED / UNDESIGNED — requires later explicit Owner design decision**, [#679](https://github.com/jannekbuengener/sample-brain/issues/679)), Bottom-Rack-Projektion in den Single Workspace ([#908](https://github.com/jannekbuengener/sample-brain/issues/908) nach [#907](https://github.com/jannekbuengener/sample-brain/issues/907)), und alle Funktionen, deren Evidence noch nicht für einen Produktionsclaim reicht. Die detaillierte Statusmatrix steht direkt im nächsten Abschnitt.
 
 ### Meine Rolle / AI-assisted Development Model
 
@@ -44,9 +44,9 @@ flowchart LR
     A[Lokale Sample Library] --> B[Scan & Analyse]
     B --> C[Katalog & Metadaten]
     C --> D[Search & Matching]
-    D --> E[Screen 1 Workbench]
-    E --> F[Live Kit]
-    F --> J[Channel Rack / Screen 2]
+    D --> E[One persistent Workbench]
+    E --> F[Library / Live Kit]
+    E --> J[Channel Rack / Pattern domain]
     B --> G[Track Context]
     G --> H[Deconstruction]
     H --> I[Performance Packs]
@@ -54,7 +54,7 @@ flowchart LR
 
 ### Visuelle Produkt-Evidence
 
-**CURRENT PRODUCT / RUNTIME** — Screen-1 des lokalen Workbench, aufgenommen aus einem verifizierten Production-QML-Build (Runtime-Provenance `VALID`, deterministisches Screen-1-Acceptance-Fixture `screen1_visual_fixture_v1`). Capture auf `main` Commit `5602d801dc8b52a691e6cb99ad45377dc715eebf` (2026-10-03), Renderer PySide6/Qt Quick/QML via `src.workbench_qml`, erzeugt über den [Visual-Acceptance-Pfad](docs/WORKBENCH_VISUAL_ACCEPTANCE.md). Provenance, Timestamp und SHA-256-Hashes: [runtime/manifest.json](docs/assets/portfolio/runtime/manifest.json):
+**CURRENT PRODUCT / RUNTIME** — Workbench-Library/Live-Kit-Ansicht (historische Capture-Benennung „Screen-1“), aufgenommen aus einem verifizierten Production-QML-Build (Runtime-Provenance `VALID`, deterministisches Acceptance-Fixture `screen1_visual_fixture_v1`). Capture auf `main` Commit `5602d801dc8b52a691e6cb99ad45377dc715eebf` (2026-10-03), Renderer PySide6/Qt Quick/QML via `src.workbench_qml`, erzeugt über den [Visual-Acceptance-Pfad](docs/WORKBENCH_VISUAL_ACCEPTANCE.md). Provenance, Timestamp und SHA-256-Hashes: [runtime/manifest.json](docs/assets/portfolio/runtime/manifest.json):
 
 ![Sample Brain Workbench — Library/Browser & Live Kit (CURRENT PRODUCT / RUNTIME)](docs/assets/portfolio/runtime/screen1-default-3panel.png)
 
@@ -117,8 +117,8 @@ Für die Produktstory und Entscheidungen siehe [Case Study](docs/CASE_STUDY.md).
 | **Track Deconstruction** | ✅ verfügbar | `deconstruct <track> --pack-root <dir>` analysiert Track, erzeugt Track Map, Arrangement (optional), Loop-/Section-Kandidaten, Bewertung, Rendering, Asset-Reanalyse. Schreibt `deconstruct_run.json` als Zwischen-Evidence. Resume/Cache-Reuse (pack-lokal; historische Delivery #262). Track Analysis Cache Integration (historisch #237). |
 | **Performance Packs** | ✅ verfügbar | Portable Pack-Struktur (`manifest.json`, `analysis/`, `loops/`, `sections/`, optional `stems/`). Pack-Import in Katalog (`pack-import`). Wiederaufnahme (pack-lokal; historisch #262) + wiederverwendbarer Track-Analyse-Cache (historisch #237). |
 | **Stem Separation** | 🧪 optional / experimentell | Technisch validiert: `htdemucs` & `htdemucs_ft` getestet (8/8 Runs), blinder Hörvergleich: `htdemucs` 4/4 bevorzugt, ~2× schneller (`docs/STEM_MODEL_BENCHMARK_V1.md`). Weight-Status für beide Modelle: **RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED** — deshalb **kein** Produktions-Default. Optionaler Stem-Pfad in Deconstruction/Packs existiert; Core-Flow bleibt ohne Stem-Pflicht. |
-| **Workbench / Screen 1** | ✅ verfügbar | Lokaler Workbench: Library, Preview, Matching, Live Kit, Harmonie-Finder. **Produktionsrichtung Screen 1:** PySide6 / Qt Quick / QML (`LOCK_PYSIDE6_QML`, `src/workbench_qml.py`, Start: `workbench --qml-screen1`). **Tkinter** (`workbench` ohne Flag) bleibt funktionaler Default sowie Legacy-/Fallback- und Verhaltensreferenz — nicht die Autorisierung für neue Screen-1-Visuals. |
-| **Channel Rack / Screen 2** | ✅ verfügbar | Pattern/Trigger-Channel-Rack auf `main` (Python-Core + Screen-2-QML; historische Delivery #675/#678). Arrangement / Screen 3 ist nicht Teil dieses Claims. |
+| **Workbench** | ✅ verfügbar | Ein persistenter lokaler Workbench: Library, Preview, Matching, Live Kit, Harmonie-Finder. **Produktionsrichtung Visuals:** PySide6 / Qt Quick / QML (`LOCK_PYSIDE6_QML`, `src/workbench_qml.py`, Start: `workbench --qml-screen1`). **Tkinter** (`workbench` ohne Flag) bleibt funktionaler Default sowie Legacy-/Fallback- und Verhaltensreferenz — nicht die Autorisierung für neue Workbench-Visuals. |
+| **Channel Rack / Pattern domain** | ✅ verfügbar | Pattern/Trigger-Channel-Rack-Domain auf `main` (Python-Core + QML; historische Delivery #675/#678). Bottom-Workspace-Projektion in den Single Workspace ist #908 (nach #907). Arrangement ist nicht Teil dieses Claims. |
 | **VST3 / Realtime Transform** | 🚧 geparkt / nicht shipped | VST3 / Host-Plugin ist **geparkt** und kein Primärpfad. Realtime Fit & Transform ist Zielvision, nicht als fertiges Produkt shipped. |
 
 ---
@@ -127,7 +127,7 @@ Für die Produktstory und Entscheidungen siehe [Case Study](docs/CASE_STUDY.md).
 
 - VST3 / Host-Plugin (geparkt, nicht aktiver Primärpfad)
 - Realtime Fit & Transform Engine
-- Arrangement / Screen 3
+- Arrangement (**PARKED / UNDESIGNED — requires later explicit Owner design decision**, #679)
 - Stem-Produktions-Default (Weight-Lizenz blockiert kommerziellen Default; optionaler technischer Pfad existiert)
 - CLAP-Qualität auf echten Producer-Libraries ist noch nicht validiert; aktuelle Tier-B-Evidence (historisch #216/#217 gemessen, #219 konsolidiert) ist synthetisch (6/6 Klassen, Text + Audio getrennt).
 - Relative Key / Camelot / Circle-of-Fifths Kompatibilität im Matching
@@ -135,26 +135,27 @@ Für die Produktstory und Entscheidungen siehe [Case Study](docs/CASE_STUDY.md).
 
 ---
 
-## Screen-1-Renderer-Contract
+## Workbench-Renderer-Contract
 
-Für neue visuelle Produktarbeit in Screen 1 gilt der bereits entschiedene
+Für neue visuelle Produktarbeit im Workbench gilt der bereits entschiedene
 Renderer-Canon:
 
 ```text
-SCREEN1_RENDERER = LOCK_PYSIDE6_QML
-Neue Screen-1-Visual-/Produktimplementierung -> PySide6 / Qt Quick / QML
+SCREEN1_RENDERER = LOCK_PYSIDE6_QML   # historical lock name
+Neue Workbench-Visual-/Produktimplementierung -> PySide6 / Qt Quick / QML
 Tkinter -> funktionierender Legacy-/Fallback-Pfad und Verhaltensreferenz
 Python Core/Controller/Audio/Catalog -> autoritativ und wiederzuverwenden
 ```
 
-`src/workbench_qml.py` ist die kanonische QML-Shell. Geschlossene Screen-1-
-Epics (#503 Migration, #691 Calm Adaptive Workspace) sind **historische
-Evidence**, kein aktiver Arbeitsstatus und kein Parent für neue Slices. Neue
-Screen-1-Arbeit braucht ein **neues scoped Issue**, den Renderer-Canon und den
-GitHub-Live-State. Tkinter bleibt als Legacy/Fallback/Verhaltensreferenz
-erhalten; neue Screen-1-Visuals werden nicht in Tk autorisiert. Python
-Core/Controller/Audio/Catalog bleiben autoritativ und werden in QML nur dünn
-adaptiert.
+`src/workbench_qml.py` ist die kanonische QML-Shell. Geschlossene historische
+UI-Epics (#503 Migration, #691 Calm Adaptive Workspace; frühere „Screen-1“-
+Benennung) sind **historische Evidence**, kein aktiver Arbeitsstatus und kein
+Parent für neue Slices. Neue Workbench-Arbeit braucht ein **neues scoped Issue
+unter #905**, den Renderer-Canon und den GitHub-Live-State. Tkinter bleibt als
+Legacy/Fallback/Verhaltensreferenz erhalten; neue Workbench-Visuals werden nicht
+in Tk autorisiert. Python Core/Controller/Audio/Catalog bleiben autoritativ und
+werden in QML nur dünn adaptiert. Aktuelle Produktnavigation ist Single Workspace,
+nicht Screen-1/2/3-Seiten.
 
 ---
 

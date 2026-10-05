@@ -2,13 +2,13 @@
 
 ## 1. Product Vision
 
-Sample Brain is a **local-first, agent-shepherded sample, harmony and producing assistant**.  
-The **primary producing path** is the local Workbench workflow:
+Sample Brain is a **local-first, agent-shepherded sample, harmony and producing assistant**.
+The **primary producing path** is **one persistent local Workbench** with Stable Workspace + Progressive Disclosure:
 
-`Library / Screen 1 → Live Kit → Channel Rack / Screen 2 → later Arrangement / Screen 3`
+`Library / Sources + main playlist + contextual Harmonic Matches + bottom Live Kit / Rack / Step-Sequencer`
 
-Canonical decision: [`docs/PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md).  
-A VST3 / host plugin remains a **parked optional path** ([#469](https://github.com/jannekbuengener/sample-brain/issues/469)); it is **not** the main product interface. Historical pillar notes [#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95) describe library/matching/context/transform capabilities that still feed the Workbench, not a VST-first product body.
+Canonical decisions: [`docs/PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md), [`docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md) ([#905](https://github.com/jannekbuengener/sample-brain/issues/905)).
+A VST3 / host plugin remains a **parked optional path** ([#469](https://github.com/jannekbuengener/sample-brain/issues/469)); it is **not** the main product interface. Historical pillar notes [#90](https://github.com/jannekbuengener/sample-brain/issues/90)–[#95](https://github.com/jannekbuengener/sample-brain/issues/95) describe library/matching/context/transform capabilities that still feed the Workbench, not a VST-first product body. The former multi-screen navigation model `Screen 1 → Screen 2 → Screen 3` is superseded as product navigation.
 
 ## 2. Target Audience
 
@@ -49,7 +49,7 @@ Sample Brain solves this by providing a local-first producing intelligence stack
 - **Local-first** — all processing runs on the producer's machine. No cloud dependency for core functionality.
 - **Private by default** — audio data never leaves the local filesystem. Analysis results stay in a local SQLite database.
 - **Library intelligence plus local producing surfaces** — the system analyzes, categorises, retrieves, and (progressively) lets producers assign kits and program patterns locally. It does not generate finished songs.
-- **Workbench-first producing assistant** — Screen 1 → Live Kit → Channel Rack → later Arrangement is the primary product path ([`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md)). VST/host plugin is parked, not primary.
+- **Workbench-first producing assistant** — one persistent Workbench with progressive disclosure is the primary product path ([`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md), [`WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md)). VST/host plugin is parked, not primary.
 - **Agent-shepherded** — the repository is curated by specialized agents, not human-audit-grade governance.
 
 ### What Sample Brain is not
@@ -89,23 +89,24 @@ Scan  →  Analyze  →  Autotype  →  Export (FL fallback)
 Local Workbench (MVP): folder → analyze in-process → playlist + detail. Shipped follow-ups (#117, PRs #119–#149): cancel, path entry, filter, sort, detail path polish, last-folder memory, CSV export, library cache v1, library folder list, audio preview, read-only waveform envelope, **cue metadata v1**, preview from saved cue, **waveform play controls**, **Shift+click permanent cue set**, **loop region display + loop edit mode**, **attack marker + attack edit mode**, **attack suggestion (analysis + UI)**, **loop once-preview (`Loop vorhören`)**. Endless loop playback: follow-up. Original sample files never modified by workbench.
 ```
 
-**Local Workbench MVP** started as a tkinter-based local purpose UI and now also has a locked QML Screen-1 renderer path (`LOCK_PYSIDE6_QML`). It exposes scan/analyze/classify logic plus Live Kit assignment without requiring a DAW host. **Shipped:** waveform as play surface; cue/loop/attack metadata; attack suggestion; loop once/repeat preview; library folder cache; **global library view + cross-folder text search** ([`WORKBENCH_CATALOG_UNIFICATION_PLAN.md`](WORKBENCH_CATALOG_UNIFICATION_PLAN.md)); **read-only catalog bridge** ([`WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md`](WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md)); Live Kit taxonomy + QML Live Kit baseline. **Planned (Workbench-first):** Channel Rack / Screen 2 and later Arrangement / Screen 3 per [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md); structured local filters ([`WORKBENCH_SEARCH_UI_PLAN.md`](WORKBENCH_SEARCH_UI_PLAN.md)); controlled catalog→cache import ([`WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md`](WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md)). Start: `python -m src.cli workbench` (optional `--qml-screen1`). GUI smoke: [`WORKBENCH_GUI_SMOKE.md`](WORKBENCH_GUI_SMOKE.md).
+**Local Workbench MVP** started as a tkinter-based local purpose UI and now also has a locked QML Workbench renderer path (`LOCK_PYSIDE6_QML`; CLI flag `--qml-screen1` is historical naming). It exposes scan/analyze/classify logic plus Live Kit assignment without requiring a DAW host. **Shipped:** waveform as play surface; cue/loop/attack metadata; attack suggestion; loop once/repeat preview; library folder cache; **global library view + cross-folder text search** ([`WORKBENCH_CATALOG_UNIFICATION_PLAN.md`](WORKBENCH_CATALOG_UNIFICATION_PLAN.md)); **read-only catalog bridge** ([`WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md`](WORKBENCH_CATALOG_READONLY_BRIDGE_PLAN.md)); Live Kit taxonomy + QML Live Kit baseline; Channel Rack / Pattern domain foundations (historical delivery [#675](https://github.com/jannekbuengener/sample-brain/issues/675)/[#678](https://github.com/jannekbuengener/sample-brain/issues/678)). **Planned (Single Workspace):** bottom Live Kit / Rack projection ([#908](https://github.com/jannekbuengener/sample-brain/issues/908) after [#907](https://github.com/jannekbuengener/sample-brain/issues/907)); Arrangement remains **PARKED / UNDESIGNED — requires later explicit Owner design decision** ([#679](https://github.com/jannekbuengener/sample-brain/issues/679)); structured local filters ([`WORKBENCH_SEARCH_UI_PLAN.md`](WORKBENCH_SEARCH_UI_PLAN.md)); controlled catalog→cache import ([`WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md`](WORKBENCH_CATALOG_CACHE_IMPORT_PLAN.md)). Start: `python -m src.cli workbench` (optional `--qml-screen1`). GUI smoke: [`WORKBENCH_GUI_SMOKE.md`](WORKBENCH_GUI_SMOKE.md).
 
 On Windows, producer use starts from a dedicated, provenance-checked local runtime: run `git fetch origin --prune`, then `powershell -ExecutionPolicy Bypass -File .\tools\windows\install_runtime_workbench.ps1 -CreateShortcut` from a checkout. Direct `python -m src.cli workbench` remains the explicit developer-checkout path. See [`tools/windows/README.md`](../tools/windows/README.md).
 
 ### 5.2 Workbench-first producing target
 
-Primary producing path: local Workbench screens (see [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md)). Capability pillars (library, matching, context, transform) still apply as **core services** consumed by the Workbench; historical VST workspace framing is superseded / parked (#469).
+Primary producing path: one persistent local Workbench (see [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md), [`WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md)). Capability pillars (library, matching, context, transform) still apply as **core services** consumed by the Workbench; historical VST workspace framing is superseded / parked (#469). The former multi-screen page model is superseded.
 
 | Capability | Description | Notes |
 |---|---|---|
-| **Screen 1 + Live Kit** | Library browse, assign samples into canonical kit slots | Partially shipped (Tk + QML) |
-| **Channel Rack / Screen 2** | Pattern/trigger programming over kit-referenced channels | Not built — after ownership + pattern core + sequencer playback |
-| **Arrangement / Screen 3** | Place patterns in session time | Later; not Screen-2 scope |
+| **Library / Sources + playlist + Harmonic Matches** | Browse/select samples; Harmonic Matches contextual | Partially shipped (Tk + QML) inside one Workbench |
+| **Live Kit** | Assign samples into canonical kit slots | Shipped domain capability |
+| **Channel Rack / Pattern / Step-Sequencer** | Pattern/trigger programming over kit-referenced and user channels | Domain foundations shipped (historical #675/#678); bottom-workspace projection is #908 after #907 |
+| **Arrangement** | Future song-structure capability inside the same Workbench | **PARKED / UNDESIGNED — requires later explicit Owner design decision** (#679) |
 | **Library browse / matching / context / transform** | Catalog intelligence feeding Workbench | Specs under [`docs/product/`](product/README.md); VST UI parts parked |
 | **Optional VST/host plugin** | Parked DAW-inline surface over the same core | [#469](https://github.com/jannekbuengener/sample-brain/issues/469) — not primary |
 
-**Not in the near Workbench slices:** mixer/sends/buses, piano-roll editor, vocal→pattern pipeline, pitching/stretch as Channel Rack prerequisite, VST shell.
+**Not in the near Workbench slices:** mixer/sends/buses, piano-roll editor, vocal→pattern pipeline, pitching/stretch as Channel Rack prerequisite, VST shell, Arrangement design.
 
 ### 5.3 Explicitly out of scope
 
@@ -140,29 +141,29 @@ Scan  →  Analyze  →  Embed  →  Index  →  Search  →  Export
 
 ### Workbench-first Product Target
 
-Canonical workflow: [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md).
+Canonical workflow: [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md), [`WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md).
 
 ```text
-┌────────────────────────────────────────────────────────┐
-│              Local Workbench (primary)                  │
-│  Screen 1 Library + Live Kit                            │
-│       → Screen 2 Channel Rack (patterns/triggers)       │
-│       → Screen 3 Arrangement (later)                    │
-│  fed by: Library / Matching / Context / Transform cores │
-└────────────────────────────────────────────────────────┘
-         optional parked path: VST/host plugin (#469)
+┌─────────────┬──────────────────────────────────────────────┐
+│             │  ALL SAMPLES        HARMONIC MATCHES        │
+│  LIBRARY    │                                              │
+│  / SOURCES  ├──────────────────────────────────────────────┤
+│             │  LIVE KIT / RACK / STEP-SEQUENCER           │
+└─────────────┴──────────────────────────────────────────────┘
+  fed by: Library / Matching / Context / Transform cores
+  optional parked path: VST/host plugin (#469)
 ```
 
 - **Library Intelligence** — scan, audio analysis, autotype, keywords, title normalisation, canonical metadata
 - **Harmonic & Rhythmic Matching** — key/BPM compatibility, semi-tone suggestions, groove-fit
 - **Track Context Analysis** — derive track profile and missing-layer hypotheses from marked files or stems
 - **Realtime Fit & Transform Engine** — variant-based recommendations (optional; not required for Channel Rack v1)
-- **Local Producing Workspace** — Workbench screens above; VST-first workspace language is superseded
+- **Local Producing Workspace** — one persistent Workbench above; VST-first and multi-screen page language are superseded
 
 ### Long-term (EPIC 3-6 + beyond)
 
 ```text
-CLI Library  →  Local Workbench (Screens 1–3)
+CLI Library  →  One persistent local Workbench
                   │
                   ├── Hybrid ranking (semantic + structured metadata)
                   ├── Optional local FastAPI service
@@ -172,7 +173,7 @@ CLI Library  →  Local Workbench (Screens 1–3)
 
 - FL Studio Browser export remains **legacy/fallback**
 - External DAW hosting is optional, not the core workflow
-- User-authored patterns and later Arrangement mode are **in** product intent; generative songwriting remains **out**
+- User-authored patterns are **in** product intent; Arrangement remains **PARKED / UNDESIGNED — requires later explicit Owner design decision**; generative songwriting remains **out**
 
 ## 7. User Stories
 

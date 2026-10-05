@@ -21,17 +21,18 @@ At the 2026-10-01 reconciliation, durable system state is as follows. This is or
 
 ### No currently authorized product implementation slice
 
-- There is **no active Screen-1 product epic**. Closed [#691](https://github.com/jannekbuengener/sample-brain/issues/691) is delivered historical authority, not an active parent for new work. New Screen-1 work needs a **new scoped issue**.
+- There is **no active multi-screen product epic**. Closed [#691](https://github.com/jannekbuengener/sample-brain/issues/691) is delivered historical authority, not an active parent for new work. New Workbench visual/product work needs a **new scoped issue under [#905](https://github.com/jannekbuengener/sample-brain/issues/905)**.
 - Closed [#494](https://github.com/jannekbuengener/sample-brain/issues/494) and [#703](https://github.com/jannekbuengener/sample-brain/issues/703) are historical governance/audit evidence, not active campaigns.
 - Parked/open research issues (#697, #679, #680, #469, #615/#620, #74) are **not** Active product tracks.
+- Single Workspace canon: [#905](https://github.com/jannekbuengener/sample-brain/issues/905) / [`docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](../docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md). Docs migration [#906](https://github.com/jannekbuengener/sample-brain/issues/906); audio-focus audit [#907](https://github.com/jannekbuengener/sample-brain/issues/907); bottom Rack projection [#908](https://github.com/jannekbuengener/sample-brain/issues/908) after those gates.
 
-### Shipped — Screen 1 runtime capabilities
+### Shipped — Workbench Library / Live Kit runtime capabilities (historical “Screen 1” delivery)
 
-Screen-1 on `main` includes Calm/Clean Start, compact Browser, elastic layout, Display Preferences, Browser column resize, bidirectional sample DnD (#768 DONE), Theme Authority (#785 DONE), Brand/Motion analysis surface (#786 DONE), and selection-steal hardening. `LOCK_PYSIDE6_QML` remains the renderer contract for any future Screen-1 visuals.
+Workbench Library/Live Kit surfaces on `main` include Calm/Clean Start, compact Browser, elastic layout, Display Preferences, Browser column resize, bidirectional sample DnD (#768 DONE), Theme Authority (#785 DONE), Brand/Motion analysis surface (#786 DONE), and selection-steal hardening. `LOCK_PYSIDE6_QML` remains the renderer contract for any future Workbench visuals. Historical “Screen-1” issue/CLI naming remains delivery evidence only.
 
-### Shipped — Screen 2 Channel Rack
+### Shipped — Channel Rack / Pattern domain (historical “Screen 2” delivery)
 
-- [#675](https://github.com/jannekbuengener/sample-brain/issues/675) / [#678](https://github.com/jannekbuengener/sample-brain/issues/678) — Screen 2 Channel Rack. Foundations and Screen-2 QML (#678 / PR #755) are **DONE**; parent epic #675 is CLOSED. Do not reopen without explicit Owner-GO.
+- [#675](https://github.com/jannekbuengener/sample-brain/issues/675) / [#678](https://github.com/jannekbuengener/sample-brain/issues/678) — Channel Rack domain foundations and QML delivery. Foundations and QML (#678 / PR #755) are **DONE**; parent epic #675 is CLOSED. Do not reopen without explicit Owner-GO. Current product navigation treats this as a domain capability inside Single Workspace, not a separate page.
 
 ### Parked / external-dependency / R&D tracks
 
@@ -40,7 +41,7 @@ Screen-1 on `main` includes Calm/Clean Start, compact Browser, elastic layout, D
 - [#469](https://github.com/jannekbuengener/sample-brain/issues/469) — VST3 integration is explicitly **parked / not active**.
 - [#74](https://github.com/jannekbuengener/sample-brain/issues/74) — upstream sqlite-vec ANN readiness tracker only; no private ANN replacement.
 - [#615](https://github.com/jannekbuengener/sample-brain/issues/615) / [#620](https://github.com/jannekbuengener/sample-brain/issues/620) — Bitwig is an **R&D playground only**, not a Sample-Brain product integration decision.
-- [#679](https://github.com/jannekbuengener/sample-brain/issues/679) — Screen 3 Arrangement is **parked / future product scope**.
+- [#679](https://github.com/jannekbuengener/sample-brain/issues/679) — Arrangement is **PARKED / UNDESIGNED — requires later explicit Owner design decision** (future capability inside Single Workspace; not a separate Screen-3 page).
 - [#680](https://github.com/jannekbuengener/sample-brain/issues/680) — vocal/beatbox → sample-pattern is **parked / future R&D**.
 
 Closed historical work such as #392, #405, #503, #579, #196, #198, #73, #494, #691, and #703 remains useful evidence but is not active roadmap work.
@@ -67,13 +68,13 @@ Transient PRs and exact `main` SHA are intentionally not frozen here. Query GitH
 
 ### Workbench and native audio
 
-- The local Workbench and native-audio contracts are established.
-- `LOCK_PYSIDE6_QML` remains the renderer canon for new Screen-1 visual/product work; `src/workbench_qml.py` is the canonical QML Screen-1 shell and Tkinter is legacy/fallback plus behavioral reference.
-- Screen-1 Theme Core + QML Theme Authority (#785) is **DONE**: preset-based dark appearance (Blood A default) with local custom themes; Display Preferences hosts Appearance without a second theme store.
-- Screen-1 Brand/Motion analysis loading (#786) is **DONE**: brain on the analysis surface only, real `AnalysisUiState` progress projection, motion `on`/`reduced`/`off` with static fallback, no permanent header brand lockup; consumes `themeAuthority` tokens (no second color authority).
+- The local Workbench and native-audio contracts are established. Current product navigation is Single Workspace (#905), not Screen 1/2/3 pages.
+- `LOCK_PYSIDE6_QML` remains the renderer canon for new Workbench visual/product work; `src/workbench_qml.py` is the canonical QML shell and Tkinter is legacy/fallback plus behavioral reference. Historical “Screen-1” naming remains delivery evidence.
+- Workbench Theme Core + QML Theme Authority (#785) is **DONE**: preset-based dark appearance (Blood A default) with local custom themes; Display Preferences hosts Appearance without a second theme store.
+- Workbench Brand/Motion analysis loading (#786) is **DONE**: brain on the analysis surface only, real `AnalysisUiState` progress projection, motion `on`/`reduced`/`off` with static fallback, no permanent header brand lockup; consumes `themeAuthority` tokens (no second color authority).
 - Sample DnD (#768) and selection-steal hardening are integrated on `main`.
-- Migration epic #503 and Calm Adaptive Workspace epic #691 are closed/delivered. Agents must not route new Screen-1 work through closed #691 as an active parent; open a new scoped issue instead.
-- Screen-2 delivery on `main` includes session ownership, Pattern Core, sequencer scheduling/PCM, Channel Rack Python core, and Screen-2 QML Channel Rack (#678 / PR #755); parent epic #675 is CLOSED.
+- Migration epic #503 and Calm Adaptive Workspace epic #691 are closed/delivered. Agents must not route new Workbench work through closed #691 as an active parent; open a new scoped issue under #905 instead.
+- Channel Rack domain delivery on `main` includes session ownership, Pattern Core, sequencer scheduling/PCM, Channel Rack Python core, and Channel Rack QML (#678 / PR #755); parent epic #675 is CLOSED (historical “Screen 2” evidence).
 - native audio core and deterministic transport/key-lock test surface remain part of the shipped foundation.
 - Quick Capture voice-to-issue flow uses local recording + local whisper.cpp + GitHub CLI. Private/local path and obvious secret redaction applies before public issue creation; see [`docs/QUICK_CAPTURE.md`](../docs/QUICK_CAPTURE.md).
 

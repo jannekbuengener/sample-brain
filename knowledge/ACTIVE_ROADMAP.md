@@ -12,28 +12,28 @@ For execution state, fetch GitHub and repo live first. If this roadmap conflicts
 
 This roadmap intentionally groups durable work rather than mirroring every open issue.
 
-### Active — no authorized product implementation slice
+### Active — Single Workspace docs/architecture track; no unauthorized product UI slice
 
-There is **no currently authorized product implementation track** on the live board.
+Product-navigation authority is Single Workspace ([#905](https://github.com/jannekbuengener/sample-brain/issues/905), [`WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](../docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md)). Canon migration is [#906](https://github.com/jannekbuengener/sample-brain/issues/906). Do **not** start bottom Rack UI (#908) or invent audio ownership before [#907](https://github.com/jannekbuengener/sample-brain/issues/907).
 
-Authorized Screen-1 delivery under historical [#691](https://github.com/jannekbuengener/sample-brain/issues/691) is complete on `main` (Calm/Clean Start, compact Browser, elastic layout, Display Preferences, Browser Column Resize, Sample DnD, Theme Authority, Brand/Motion analysis surface, selection-steal hardening). Closed #691 is **delivered authority / historical parent**, not an active epic for new work. New Screen-1 product work requires a **new scoped issue** plus live GitHub confirmation.
+Authorized historical Workbench UI delivery under [#691](https://github.com/jannekbuengener/sample-brain/issues/691) is complete on `main` (Calm/Clean Start, compact Browser, elastic layout, Display Preferences, Browser Column Resize, Sample DnD, Theme Authority, Brand/Motion analysis surface, selection-steal hardening). Closed #691 is **delivered authority / historical parent**, not an active epic for new work. New Workbench product work requires a **new scoped issue under #905** plus live GitHub confirmation.
 
 Closed governance/audit campaigns [#494](https://github.com/jannekbuengener/sample-brain/issues/494) and [#703](https://github.com/jannekbuengener/sample-brain/issues/703) are historical evidence, not active campaigns.
 
-Next product work must be selected from live product gaps and opened as a new scoped issue. Do not invent an Active track from parked/open research issues.
+Next product implementation work must be selected from live product gaps and opened as a new scoped #905 child. Do not invent an Active track from parked/open research issues, and do not restore Screen 1/2/3 page navigation as current authority.
 
-### Shipped — Screen 1 Calm Adaptive Workspace cluster
+### Shipped — Workbench Library / Live Kit cluster (historical “Screen 1”)
 
 **[#691 — Calm Adaptive Workspace](https://github.com/jannekbuengener/sample-brain/issues/691)** (CLOSED / delivered)
 
-Shipped Screen-1 runtime capabilities on `main` include Clean Start, compact Browser density, elastic coupled panels, Display Preferences, Browser column resize, bidirectional sample DnD (#768), Theme Authority (#785), Brand/Motion analysis surface (#786), and selection-steal hardening. Treat #691 as historical delivery authority only.
+Shipped Library/Live Kit runtime capabilities on `main` include Clean Start, compact Browser density, elastic coupled panels, Display Preferences, Browser column resize, bidirectional sample DnD (#768), Theme Authority (#785), Brand/Motion analysis surface (#786), and selection-steal hardening. Treat #691 as historical delivery authority only.
 
-### Shipped — Screen 2 Channel Rack
+### Shipped — Channel Rack / Pattern domain (historical “Screen 2”)
 
 **[#675 — Live Kit → Channel Rack](https://github.com/jannekbuengener/sample-brain/issues/675)**  
-**[#678 — Screen-2 QML Channel Rack](https://github.com/jannekbuengener/sample-brain/issues/678)**
+**[#678 — Screen-2 QML Channel Rack](https://github.com/jannekbuengener/sample-brain/issues/678)** (historical issue title)
 
-Python/session/sequencer foundations and Screen-2 QML Channel Rack are **DONE** on `main` (PR #755; epic #675 CLOSED). Keep Screen 2 distinct from the parked Screen-3 arrangement timeline (#679); do not reopen Screen-2 product work without explicit Owner-GO.
+Python/session/sequencer foundations and Channel Rack QML are **DONE** on `main` (PR #755; epic #675 CLOSED). Current product model treats Channel Rack as a domain capability inside Single Workspace; bottom projection is #908 after #907. Arrangement remains **PARKED / UNDESIGNED — requires later explicit Owner design decision** (#679); do not reopen Channel Rack product work without explicit Owner-GO.
 
 ### Watch / parked — do not promote implicitly
 
@@ -42,7 +42,7 @@ Python/session/sequencer foundations and Screen-2 QML Channel Rack are **DONE** 
 - [#74](https://github.com/jannekbuengener/sample-brain/issues/74) — external upstream sqlite-vec ANN tracker only; NumPy remains the default search backend; no private ANN substitute.
 - [#469](https://github.com/jannekbuengener/sample-brain/issues/469) — VST3 product integration is parked.
 - [#615](https://github.com/jannekbuengener/sample-brain/issues/615) / [#620](https://github.com/jannekbuengener/sample-brain/issues/620) — Bitwig work is R&D/playground only; no product integration.
-- [#679](https://github.com/jannekbuengener/sample-brain/issues/679) / [#680](https://github.com/jannekbuengener/sample-brain/issues/680) — future arrangement and input-mode ideas, not current delivery blockers.
+- [#679](https://github.com/jannekbuengener/sample-brain/issues/679) / [#680](https://github.com/jannekbuengener/sample-brain/issues/680) — Arrangement is **PARKED / UNDESIGNED — requires later explicit Owner design decision**; vocal/beatbox input-mode remains future R&D — not current delivery blockers.
 
 Closed #392/#405/#503/#579/#196/#198/#73/#494/#703/#468 are historical evidence, not current roadmap items.
 
@@ -74,17 +74,17 @@ The following are no longer roadmap work and should not be represented as open e
 - native audio transport and recording path.
 - Quick Capture local voice-to-GitHub-issue flow.
 
-### Screen-1 QML foundation (delivered)
+### Workbench QML foundation (delivered)
 
-- `LOCK_PYSIDE6_QML` remains the decided renderer contract for new Screen-1 visual/product work.
+- `LOCK_PYSIDE6_QML` remains the decided renderer contract for new Workbench visual/product work.
 - `src/workbench_qml.py` is the production QML shell and remains a thin renderer/intent layer over Python-authoritative Core/Controller/Audio/Catalog contracts.
-- Migration epic #503 and follow-up epic #691 are both closed/delivered. New Screen-1 product visuals still use QML; Tkinter remains legacy/fallback and behavioral reference. Do not route new work through closed #691 as though it were still an active parent.
+- Migration epic #503 and follow-up epic #691 are both closed/delivered. New Workbench product visuals still use QML; Tkinter remains legacy/fallback and behavioral reference. Do not route new work through closed #691 as though it were still an active parent. Historical “Screen-1” naming remains evidence only.
 
-### Screen-2 foundation
+### Channel Rack / Pattern foundation
 
-- Session ownership, Pattern Core, sequencer scheduling/PCM, Channel Rack Python core, and Screen-2 QML Channel Rack are established on `main`.
-- Product/UI tracks #675/#678 are **DONE** (PR #755; epic CLOSED). Do not reopen without explicit Owner-GO.
-- Screen 3 arrangement remains separately parked under #679; do not pull arrangement/timeline scope into Screen 2.
+- Session ownership, Pattern Core, sequencer scheduling/PCM, Channel Rack Python core, and Channel Rack QML are established on `main`.
+- Product/UI tracks #675/#678 are **DONE** (PR #755; epic CLOSED). Do not reopen without explicit Owner-GO. Historical “Screen 2” wording is delivery evidence; current navigation is Single Workspace.
+- Arrangement remains **PARKED / UNDESIGNED — requires later explicit Owner design decision** under #679; do not pull arrangement/timeline scope into Rack slices.
 
 ### Track deconstruction / performance packs
 
