@@ -821,6 +821,7 @@ class Screen1QmlInteractionAdapter:
         harmony_controller: HarmonicMatchLibraryController | None = None,
         on_preview_requested: Callable[[WorkbenchRow], object] | None = None,
         on_preview_stopped: Callable[[], object] | None = None,
+        on_preview_released: Callable[[], object] | None = None,
         on_preview_snapshot: Callable[[], object] | None = None,
         on_add_to_kit_requested: Callable[[WorkbenchRow], object] | None = None,
         on_context_harmonic_match_requested: Callable[[WorkbenchRow], object] | None = None,
@@ -838,6 +839,7 @@ class Screen1QmlInteractionAdapter:
             on_preview_requested
         )
         self._on_preview_stopped = on_preview_stopped
+        self._on_preview_released = on_preview_released
         self._on_preview_snapshot = on_preview_snapshot
         self._on_add_to_kit_requested = on_add_to_kit_requested
         self._on_context_harmonic_match_requested = on_context_harmonic_match_requested
@@ -1179,13 +1181,20 @@ class Screen1QmlInteractionAdapter:
         return True
 
     def quiet_audition(self) -> None:
-        """Authoritative Screen-1 quiet for cross-screen audio focus (#807).
+        """Authoritative audition quiet for domain audio focus (#807 / #916).
 
-        Always stops the shared preview owner and clears Live Kit audition
+        Always releases the shared preview voice and clears Live Kit audition
         projection, even when the adapter already believes preview is idle.
+        Prefer ``on_preview_released`` (voice-only) so focus transfer does not
+        tear down the shared session transport while Rack may still own playback.
+        Falls back to ``on_preview_stopped`` when no release hook is wired.
         Does not resume later — callers must start a new explicit audition.
         """
-        self._stop_preview_authoritative()
+        self._preview_active = False
+        if self._on_preview_released is not None:
+            self._on_preview_released()
+        elif self._on_preview_stopped is not None:
+            self._on_preview_stopped()
         self._clear_live_kit_audition_projection()
         self.preview_playback_snapshot()
 

@@ -1,12 +1,14 @@
-"""Session ownership seam for Live Kit + shared audition + Screen-2 rack.
+"""Session ownership seam for Live Kit + shared audition + Channel Rack.
 
 One composed session owns exactly one :class:`LiveKitState`, exactly one
-:class:`TransportAwarePreview` audition owner, and one Screen-2
+:class:`TransportAwarePreview` audition owner, and one
 :class:`ChannelRackController` that reuses the same kit + transport.
 
-Cross-screen audio focus (#807) is owned here: entering Screen 2 / claiming
-Channel Rack playback releases Screen-1 audition; returning to Screen 1 leaves
-a quiet surface and never auto-resumes the previous audition.
+Domain audio focus (#807 / #916) is owned here: last explicit playback intent
+wins. Rack Play releases audition voice/projection without tearing down the
+shared transport for focus transfer; Preview Play while Rack is playing stops
+Rack first. Returning from legacy Screen-2 leaves a quiet surface and never
+auto-resumes the previous audition.
 
 Musical session persistence (#809 / #818 / #819 / #820): load/validate a local
 snapshot under the Workbench state dir, apply MASTER/SYNC onto the shared
@@ -104,15 +106,16 @@ class WorkbenchSession:
         self._notify_persistence_status()
 
     def release_screen1_audition(self) -> None:
-        """Stop Screen-1 monophonic audition and clear adapter projection.
+        """Release audition voice + projection without shared-transport teardown.
 
-        Idempotent. Never resumes a previous audition — callers must start a
-        new explicit preview/Live Kit audition intent.
+        Idempotent focus-transfer seam (#807 / #916). Never resumes a previous
+        audition — callers must start a new explicit preview/Live Kit intent.
+        Does not stop the shared session transport solely for focus transfer.
         """
         self.qml_interaction_adapter.quiet_audition()
 
     def enter_screen2(self) -> ChannelRackState:
-        """Claim Channel Rack focus: quiet Screen-1 audition, then enter Screen 2."""
+        """Legacy Screen-2 enter: claim focus, ensure Rack state, set screen."""
         return self.channel_rack.enter_screen2()
 
     def return_to_screen1(self) -> None:
@@ -130,18 +133,24 @@ class _SessionAuditionPlayRow:
     ``start_ms=None`` (Browser) resolves the saved cue via
     :func:`get_preview_start_ms`. Explicit offsets (Live Kit ``0``) are
     forwarded unchanged — never coerced ``None -> 0``.
+
+    When a Channel Rack holder is bound and Rack is playing, Rack is stopped
+    first (last explicit playback intent wins — #916). Failed preview after
+    that stop does not restart Rack.
     """
 
-    __slots__ = ("_audition", "_library_db_path")
+    __slots__ = ("_audition", "_library_db_path", "_rack_holder")
 
     def __init__(
         self,
         audition: TransportAwarePreview,
         *,
         library_db_path: Path | None = None,
+        rack_holder: list[ChannelRackController | None] | None = None,
     ) -> None:
         self._audition = audition
         self._library_db_path = library_db_path
+        self._rack_holder = rack_holder if rack_holder is not None else [None]
 
     @property
     def __self__(self) -> TransportAwarePreview:
@@ -152,6 +161,9 @@ class _SessionAuditionPlayRow:
         return type(self._audition).play_row
 
     def __call__(self, row: WorkbenchRow, *, start_ms: int | None = None) -> object:
+        rack = self._rack_holder[0]
+        if rack is not None and rack.is_playing:
+            rack.stop()
         if start_ms is None:
             resolved = get_preview_start_ms(
                 row.path,
@@ -262,6 +274,9 @@ def compose_workbench_session(
     except Exception:
         match_observer = None
         measurement_session_id = None
+
+    # Late-bound so preview start can arbitrate against Rack after controller exists.
+    rack_holder: list[ChannelRackController | None] = [None]
     adapter = Screen1QmlInteractionAdapter(
         view_model=view_model,
         harmony_controller=HarmonicMatchLibraryController(
@@ -270,14 +285,17 @@ def compose_workbench_session(
         on_preview_requested=_SessionAuditionPlayRow(
             audition,
             library_db_path=library_db_path,
+            rack_holder=rack_holder,
         ),
         on_preview_stopped=audition.stop,
+        on_preview_released=audition.release_voice,
         on_preview_snapshot=audition.playback_snapshot,
         live_kit=presenter,
         library_db_path=library_db_path,
     )
 
     channel_rack = ChannelRackController(live_kit=live_kit, transport=transport)
+    rack_holder[0] = channel_rack
     if snapshot is not None:
         rack_state = channel_rack_state_from_snapshot(snapshot)
         if rack_state is not None:
@@ -295,11 +313,21 @@ def compose_workbench_session(
         persistence_status=resume_status,
         _resume_persistence_status=resume_status,
     )
-    # Single ownership: Channel Rack enter/play/leave claim/release Screen-1
-    # audition through the session policy, including bridge-direct paths.
+    # Single ownership: Channel Rack enter/play/leave claim/release audition
+    # through the session policy, including bridge-direct paths. Focus release
+    # uses voice-only quiet; explicit preview stop reconciles Rack before any
+    # shared-transport teardown (#916).
     channel_rack.set_audio_focus_hooks(
         on_claim_focus=session.release_screen1_audition,
         on_release_to_screen1=session.release_screen1_audition,
+    )
+
+    def _reconcile_rack_before_shared_transport_stop() -> None:
+        if channel_rack.is_playing:
+            channel_rack.stop()
+
+    audition.set_before_shared_transport_stop(
+        _reconcile_rack_before_shared_transport_stop
     )
 
     def _on_channel_rack_mutation() -> None:

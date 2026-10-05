@@ -81,6 +81,21 @@ def _track_preview_stops(session) -> list[str]:
     return stops
 
 
+def _track_preview_releases(session) -> list[str]:
+    """Focus transfer uses voice-only release (#916), not full audition.stop."""
+    releases: list[str] = []
+    adapter = session.qml_interaction_adapter
+    original = adapter._on_preview_released
+
+    def tracked() -> None:
+        releases.append("audition.release_voice")
+        if original is not None:
+            original()
+
+    adapter._on_preview_released = tracked
+    return releases
+
+
 def test_session_exposes_cross_screen_audio_focus_api():
     session = compose_workbench_session()
     assert callable(session.release_screen1_audition)
@@ -91,7 +106,7 @@ def test_session_exposes_cross_screen_audio_focus_api():
 def test_enter_screen2_stops_active_screen1_preview_projection():
     session = compose_workbench_session()
     adapter = session.qml_interaction_adapter
-    stop_calls = _track_preview_stops(session)
+    release_calls = _track_preview_releases(session)
     adapter._preview_active = True
     adapter.view_model.auditioning_live_kit_slot = ("Kick + Bass", "Kick")
     adapter._auditioning_live_kit_slot = ("Kick + Bass", "Kick")
@@ -102,7 +117,7 @@ def test_enter_screen2_stops_active_screen1_preview_projection():
     assert session.channel_rack.active_screen == "screen2"
     assert adapter.preview_active is False
     assert adapter.auditioning_live_kit_slot is None
-    assert stop_calls == ["audition.stop"]
+    assert release_calls == ["audition.release_voice"]
 
 
 def test_channel_rack_enter_screen2_claims_focus_via_session_hook():
@@ -137,7 +152,7 @@ def test_pattern_play_releases_screen1_audition_before_scheduling(monkeypatch):
     kit = session.live_kit
     kit.assign("Kick + Bass", "Kick", _row("kick.wav"))
 
-    stop_calls = _track_preview_stops(session)
+    stop_calls = _track_preview_releases(session)
     adapter._preview_active = True
     session.audition._active_voice_id = 42
 
@@ -176,28 +191,28 @@ def test_pattern_play_releases_screen1_audition_before_scheduling(monkeypatch):
 
     session.enter_screen2()
     assert adapter.preview_active is False
-    assert "audition.stop" in stop_calls
+    assert "audition.release_voice" in stop_calls
 
     # Simulate leftover projection if producer re-auditioned somehow before play.
     adapter._preview_active = True
     session.audition._active_voice_id = 99
     stop_calls.clear()
 
-    original_stop = session.audition.stop
+    original_release = session.audition.release_voice
 
-    def stop_and_clear() -> None:
-        stop_calls.append("audition.stop")
+    def release_and_clear() -> None:
+        stop_calls.append("audition.release_voice")
         session.audition._active_voice_id = None
-        original_stop()
+        original_release()
 
-    adapter._on_preview_stopped = stop_and_clear
+    adapter._on_preview_released = release_and_clear
 
     handle = session.channel_rack.play()
     assert handle is not None
     assert session.channel_rack.is_playing is True
     assert adapter.preview_active is False
     assert session.audition.active_voice_id is None
-    assert stop_calls == ["audition.stop"]
+    assert stop_calls == ["audition.release_voice"]
     assert play_calls[0]["preview_active"] is False
 
 

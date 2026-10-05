@@ -50,26 +50,46 @@ QML Screen-1 / future Screen-2
 6. **#819 persistence honesty status** is Python-owned on `WorkbenchSession.persistence_status` (stable codes from `src/workbench_session_store.py`). Fail-closed empty musical restore stays; non-OK codes must be programmatically visible. QML may project the code/calm label thinly — no second status state machine, no private paths/secrets/exception dumps in status strings. Corrupt-file quarantine/rename is optional and not required for honesty.
 7. **No Pattern / Channel Rack UI** in the #647 ownership slice (Screen-2 / Pattern Core landed separately).
 
-## Cross-screen audio focus (#807)
+## Cross-screen audio focus (#807) → Single Workspace domain focus (#916)
 
-Python owns one Cross-Screen Audio Focus Policy on `WorkbenchSession`. QML stays intent/presentation only — no second transport, no second preview state, no QML-owned stop policy.
+Python owns one domain audio-focus policy on `WorkbenchSession`. QML stays
+intent/presentation only — no second transport, no second preview state, no
+QML-owned stop/arbitration policy.
+
+Frozen v1 policy: **last explicit playback intent wins**.
 
 ```text
-enter Screen 2 / before pattern play
-  → release Screen-1 audition (TransportAwarePreview + adapter projection)
-  → Channel Rack owns the active musical playback surface
+Rack materialization
+  → ChannelRackController.ensure_state()
+  → build/reconcile from Live Kit
+  → does NOT claim focus, mutate active_screen, or start/stop playback
 
-pattern Stop
-  → ends pattern pass only
-  → does NOT auto-restart Screen-1 preview
+Rack Play
+  → release audition voice + projection (TransportAwarePreview.release_voice)
+  → do NOT tear down shared WorkbenchTransportAdapter solely for focus transfer
+  → ChannelRackController starts pattern playback on the shared transport
 
-return Screen 1
-  → stop Channel Rack pattern
-  → Screen 1 starts quiet
-  → previous audition is NOT resumed
+Preview / Audition Play while Rack is playing
+  → ChannelRackController.stop() first
+  → then TransportAwarePreview play path
+  → channel_rack.is_playing must be False afterward
+
+Stop
+  → no automatic resume of the previously active playback domain
+  → never leave transport stopped while channel_rack.is_playing remains True
+  → explicit preview stop may stop shared transport only after Rack is reconciled
 ```
 
-Owner seam: `WorkbenchSession.release_screen1_audition` / `enter_screen2` / `return_to_screen1`, wired into `ChannelRackController` claim/release hooks so bridge and session paths share one authority.
+Legacy Screen-2 navigation (`enter_screen2` / `leave_screen2` / `active_screen`)
+may remain for historical QML/tests until #908 removes the old page projection.
+New Single-Workspace code must use domain seams (`ensure_state`, voice-only
+audition release, session-owned preview arbitration) rather than screen
+navigation as product authority.
+
+Owner seams: `WorkbenchSession.release_screen1_audition` (voice-only quiet),
+`ChannelRackController.ensure_state` / `play` / `stop`, and session-composed
+preview start arbitration wired into `ChannelRackController` claim/release
+hooks so bridge and session paths share one authority.
 
 ## Likely paths (implementation later)
 
