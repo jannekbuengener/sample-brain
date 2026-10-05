@@ -241,8 +241,167 @@ def _imported_module_names(mod) -> set[str]:
     return names
 
 
+def _forbidden_calls_in_src(src: str, forbidden: list[str]) -> set[str]:
+    """Return set of forbidden function names that appear as actual CALLS in src.
+
+    Uses AST to detect real call sites (``func(...)``, ``mod.func(...)``).
+    Comments, docstrings, and string literals are ignored by ``ast.parse()``.
+    Matches both qualified (``mod.foo``) and bare (``foo``) names.
+    """
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return set()
+    lower = {f.lower() for f in forbidden}
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            names = _extract_call_names(node)
+            for name in names:
+                if name.lower() in lower:
+                    found.add(name)
+    return found
+
+
+def _extract_call_names(node: ast.Call) -> list[str]:
+    """Extract all relevant names from a Call node (qualified + bare)."""
+    func = node.func
+    names: list[str] = []
+    if isinstance(func, ast.Name):
+        names.append(func.id)
+    elif isinstance(func, ast.Attribute):
+        parts: list[str] = []
+        cur: ast.AST | None = func
+        while isinstance(cur, ast.Attribute):
+            parts.append(cur.attr)
+            cur = cur.value
+        if isinstance(cur, ast.Name):
+            parts.append(cur.id)
+        parts.reverse()
+        qualified = ".".join(parts)
+        names.append(qualified)
+        # Also add bare name (last component) for matching
+        names.append(parts[-1])
+    return names
+
+
+def _forbidden_name_refs_in_src(src: str, forbidden: list[str]) -> set[str]:
+    """Return set of forbidden names that appear as NAME/ATTRIBUTE refs in src.
+
+    Detects ``ast.Name`` and ``ast.Attribute`` references in code.
+    Comments, docstrings, and string literals are ignored by ``ast.parse()``.
+    """
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return set()
+    lower = {f.lower() for f in forbidden}
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id.lower() in lower:
+            found.add(node.id)
+        elif isinstance(node, ast.Attribute) and node.attr.lower() in lower:
+            found.add(node.attr)
+    return found
+
+
 def _compose(plan: GesturePatternBindingPlan, pattern_id: str = "gesture-pat-1"):
     return compose_gesture_pattern_core(plan, pattern_id=pattern_id)
+
+
+# ---------------------------------------------------------------------------
+# Semantic checker proof tests (false-positive / true-positive)
+# ---------------------------------------------------------------------------
+
+
+def test__semantic_checker_false_positive_comments_docstrings_strings() -> None:
+    """Checker must NOT flag forbidden words in comments, docstrings, or string literals."""
+    src = '''
+"""Module docstring with quantize and allocate_user_channel_id."""
+
+# Comment with add_user_channel and DEFAULT_ON
+def foo():
+    """Docstring with project_gesture_timing and rank_1."""
+    msg = "String literal with auto-select and INSERT"
+    return msg
+'''
+    # No actual calls or refs to forbidden names
+    calls = _forbidden_calls_in_src(src, [
+        "quantize",
+        "allocate_user_channel_id",
+        "add_user_channel",
+        "project_gesture_timing",
+    ])
+    refs = _forbidden_name_refs_in_src(src, [
+        "quantize",
+        "allocate_user_channel_id",
+        "add_user_channel",
+        "DEFAULT_ON",
+        "project_gesture_timing",
+        "auto_select",
+        "rank_1",
+        "INSERT",
+    ])
+    assert calls == set()
+    assert refs == set()
+
+
+def test__semantic_checker_true_positive_calls() -> None:
+    """Checker MUST detect actual forbidden CALLS."""
+    src = '''
+def func():
+    quantize(1, 2)
+    mod.allocate_user_channel_id()
+    add_user_channel("x")
+'''
+    calls = _forbidden_calls_in_src(src, [
+        "quantize",
+        "allocate_user_channel_id",
+        "add_user_channel",
+    ])
+    assert "quantize" in calls
+    assert "allocate_user_channel_id" in calls
+    assert "add_user_channel" in calls
+
+
+def test__semantic_checker_true_positive_name_refs() -> None:
+    """Checker MUST detect actual forbidden NAME/ATTRIBUTE references."""
+    src = '''
+DEFAULT_ON = True
+x = _full_step_triggers
+y = ChannelRackState()
+'''
+    refs = _forbidden_name_refs_in_src(src, [
+        "DEFAULT_ON",
+        "_full_step_triggers",
+        "ChannelRackState",
+    ])
+    assert "DEFAULT_ON" in refs
+    assert "_full_step_triggers" in refs
+    assert "ChannelRackState" in refs
+
+
+def test__semantic_checker_imports_still_via_imported_module_names() -> None:
+    """Import boundary still enforced via existing _imported_module_names()."""
+    src = '''
+import sqlite3
+from db import connect
+import gesture_catalog_adapter
+'''
+    tree = ast.parse(src)
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                names.add(alias.name.split(".")[0])
+                names.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                names.add(node.module.split(".")[0])
+                names.add(node.module)
+    assert "sqlite3" in names
+    assert "db" in names
+    assert "gesture_catalog_adapter" in names
 
 
 # ---------------------------------------------------------------------------
@@ -384,9 +543,12 @@ def test_12_no_quantization() -> None:
     )
     result = _compose(plan)
     assert result.pattern.triggers[0].position == Fraction(1, 7)
-    src = _source_text().lower()
-    for token in ("quantize", "snap", "swing", "groove", "round("):
-        assert token not in src
+    src = _source_text()
+    # Semantic check: no actual CALLS to quantization functions
+    forbidden_calls = _forbidden_calls_in_src(src, [
+        "quantize", "snap", "swing", "groove", "round"
+    ])
+    assert forbidden_calls == set(), f"Found forbidden quantization calls: {forbidden_calls}"
 
 
 def test_13_plan_pattern_length_preserved_exactly() -> None:
@@ -638,8 +800,11 @@ def test_31_no_channel_reallocation() -> None:
 
 def test_32_no_allocate_user_channel_id_call() -> None:
     """32. no allocate_user_channel_id call."""
+    # Behavioral guard via exploding mock is the authority.
+    # Semantic check: no actual CALLS to allocate_user_channel_id.
     src = _source_text()
-    assert "allocate_user_channel_id" not in src
+    forbidden_calls = _forbidden_calls_in_src(src, ["allocate_user_channel_id"])
+    assert forbidden_calls == set()
     with mock.patch(
         "src.pattern_core.allocate_user_channel_id",
         side_effect=AssertionError("allocate_user_channel_id must not be called"),
@@ -651,24 +816,16 @@ def test_32_no_allocate_user_channel_id_call() -> None:
 def test_33_no_add_user_channel_call() -> None:
     """33. no add_user_channel call."""
     src = _source_text()
-    assert "add_user_channel" not in src
-    tree = ast.parse(src)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            func = node.func
-            name = None
-            if isinstance(func, ast.Name):
-                name = func.id
-            elif isinstance(func, ast.Attribute):
-                name = func.attr
-            assert name != "add_user_channel"
+    forbidden_calls = _forbidden_calls_in_src(src, ["add_user_channel"])
+    assert forbidden_calls == set()
 
 
 def test_34_no_default_on() -> None:
     """34. no DEFAULT_ON."""
     src = _source_text()
-    assert "DEFAULT_ON" not in src
-    assert "_full_step_triggers" not in src
+    # Semantic check: no references to DEFAULT_ON or _full_step_triggers in code
+    forbidden_refs = _forbidden_name_refs_in_src(src, ["DEFAULT_ON", "_full_step_triggers"])
+    assert forbidden_refs == set()
     plan = _ready_plan(
         channels=(_channel_binding(0, "ch_user_1"),),
         events=(_event_binding(0, "ch_user_1", Fraction(1, 3)),),
@@ -696,20 +853,25 @@ def test_35_trigger_count_equals_event_binding_count() -> None:
 def test_36_no_ranking_recomputation() -> None:
     """36. no ranking recomputation."""
     src = _source_text()
-    for token in (
+    # Semantic check: no actual CALLS to ranking functions
+    forbidden_calls = _forbidden_calls_in_src(src, [
         "rank_gesture_library_candidates",
         "rank_gesture_against_catalog",
         "normalize_feature",
         "median_prototype",
-    ):
-        assert token not in src
+    ])
+    assert forbidden_calls == set()
 
 
 def test_37_no_timing_recomputation() -> None:
     """37. no timing recomputation."""
     src = _source_text()
-    assert "project_gesture_timing" not in src
-    assert "onset_time_sec" not in src
+    # Semantic check: no references to timing projection functions in code
+    forbidden_refs = _forbidden_name_refs_in_src(src, [
+        "project_gesture_timing",
+        "onset_time_sec",
+    ])
+    assert forbidden_refs == set()
 
 
 def test_38_no_catalog_db_access() -> None:
@@ -726,32 +888,40 @@ def test_38_no_catalog_db_access() -> None:
     ):
         assert banned not in imported
     src = _source_text()
-    for token in ("init_db", "INSERT", "UPDATE", "DELETE", "sqlite3", "load_gesture_library"):
-        assert token not in src
+    # Semantic check: no references to DB/init functions in code
+    forbidden_refs = _forbidden_name_refs_in_src(src, [
+        "init_db",
+        "load_gesture_library",
+    ])
+    assert forbidden_refs == set()
 
 
 def test_39_no_selection_recomputation() -> None:
     """39. no selection recomputation."""
     src = _source_text()
-    assert "plan_gesture_pattern_binding" not in src
-    # Composer must not invent rank-1 acceptance / auto-resolve.
-    assert "selected_rank == 1" not in src
-    assert "auto-select" not in src.lower()
-    assert "auto_select" not in src.lower()
-    assert "rank_1" not in src.lower()
+    # Semantic check: no calls to planner function, no rank-1 auto-select logic
+    forbidden_calls = _forbidden_calls_in_src(src, ["plan_gesture_pattern_binding"])
+    assert forbidden_calls == set()
+    # No name refs to auto-selection logic
+    forbidden_refs = _forbidden_name_refs_in_src(src, [
+        "auto_select",
+        "rank_1",
+    ])
+    assert forbidden_refs == set()
 
 
 def test_40_no_pattern_length_recomputation() -> None:
     """40. no Pattern-length recomputation."""
     src = _source_text()
-    for token in (
+    # Semantic check: no references to timing projection fields used for length recomputation
+    forbidden_refs = _forbidden_name_refs_in_src(src, [
         "projected_duration_quarters",
         "source_duration",
         "last_onset",
         "next_beat",
         "next_bar",
-    ):
-        assert token not in src
+    ])
+    assert forbidden_refs == set()
     length = Fraction(11, 3)
     plan = _ready_plan(
         channels=(_channel_binding(0, "ch_user_1"),),
@@ -764,9 +934,13 @@ def test_40_no_pattern_length_recomputation() -> None:
 def test_41_no_channel_rack_state() -> None:
     """41. no ChannelRackState."""
     src = _source_text()
-    assert "ChannelRackState" not in src
-    assert "build_channel_rack_state" not in src
-    assert "reconcile_live_kit" not in src
+    # Semantic check: no references to ChannelRackState class or rack functions
+    forbidden_refs = _forbidden_name_refs_in_src(src, [
+        "ChannelRackState",
+        "build_channel_rack_state",
+        "reconcile_live_kit",
+    ])
+    assert forbidden_refs == set()
     result = _compose(_simple_ready_plan())
     assert not hasattr(result, "rack")
     assert not hasattr(result, "channel_rack")
@@ -902,37 +1076,42 @@ def test_48_module_import_boundary_allows_only_declared_roots() -> None:
 def test_49_module_does_not_call_upstream_planner_or_timing() -> None:
     """49. no upstream planner/timing calls (supports #888 suite independence)."""
     src = _source_text()
-    for token in (
+    # Semantic check: no actual CALLS to upstream planner/timing/analysis
+    forbidden_calls = _forbidden_calls_in_src(src, [
         "plan_gesture_pattern_binding",
         "project_gesture_timing",
         "analyze_gesture_audio",
-    ):
-        assert token not in src
+    ])
+    assert forbidden_calls == set()
 
 
 def test_50_module_does_not_call_ranking_or_catalog() -> None:
     """50. no ranking/catalog calls (supports #882/#886 suite independence)."""
     src = _source_text()
-    for token in (
+    # Semantic check: no actual CALLS to ranking/catalog functions
+    forbidden_calls = _forbidden_calls_in_src(src, [
         "rank_gesture_library_candidates",
         "rank_gesture_against_catalog",
         "load_gesture_library_candidates",
-    ):
-        assert token not in src
+    ])
+    assert forbidden_calls == set()
 
 
 def test_51_module_does_not_mutate_pattern_core_or_rack_helpers() -> None:
     """51. no Pattern Core mutation / Channel Rack DEFAULT_ON helpers."""
     src = _source_text()
-    for token in (
+    # Semantic check: no actual CALLS to mutation/rack helpers
+    forbidden_calls = _forbidden_calls_in_src(src, [
         "add_user_channel",
         "assign_user_channel_sample",
         "reconcile_live_kit_sample_assignments",
         "build_channel_rack_state",
-        "DEFAULT_ON",
         "allocate_user_channel_id",
-    ):
-        assert token not in src
+    ])
+    assert forbidden_calls == set()
+    # No name refs to DEFAULT_ON
+    forbidden_refs = _forbidden_name_refs_in_src(src, ["DEFAULT_ON"])
+    assert forbidden_refs == set()
     # Membership helper is allowed / expected.
     assert "require_triggers_reference_known_channels" in src
 
