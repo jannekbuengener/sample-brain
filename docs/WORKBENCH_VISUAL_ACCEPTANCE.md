@@ -249,7 +249,7 @@ Layers:
 
 1. **Background reference** — unchanged PNG above; not a color palette source.
 2. **Theme Core base tokens** — `accent` / `background` / `foreground` (Blood A
-   default `#8f0e24` / `#030304` / `#e4e6ea`).
+   default `#8f0e24` / `#020203` / `#e4e6ea`).
 3. **Derived Theme Core tokens** — deterministic mixes (`textPrimary`,
    `textSecondary`, `surfaceWorkspace`, `surface`, `surfaceRaised`, `divider`,
    `hover`, `selected`, `focusRing`).

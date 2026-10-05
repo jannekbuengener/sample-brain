@@ -1,15 +1,17 @@
 """Dark workspace surface hierarchy polish — FROZEN CONTRACT.
 
-Status: TEST_FREEZE (noir density tightening)
+Status: TEST_FREEZE (noir density + Superdesign deep/zinc solid map)
 Canon:
-  - docs/assets/themes/README.md (CURRENT→TARGET + root cause)
+  - docs/assets/themes/README.md (CURRENT→TARGET + Superdesign mapping)
   - docs/assets/themes/presets.v1.json
   - docs/WORKBENCH_VISUAL_ACCEPTANCE.md (dark surface hierarchy)
   - src/workbench_theme.py (Theme Authority sole owner)
 
 Intent: cinematic noir with three calm depth steps — Program Chrome darkest
 ink floor, Main Workspace barely raised, Panels subtly separated with low
-mass. Semantic relations only; screenshot pixels are not absolute truth.
+mass. Superdesign cinematic-noir deep/zinc solids map via Theme bases only
+(no QML radial/grain). Semantic relations only; screenshot pixels are not
+absolute truth.
 """
 
 from __future__ import annotations
@@ -25,18 +27,22 @@ from src import workbench_theme as theme
 PRESET_ORDER = ("Blood", "Carbon", "Arctic", "Rose", "Forest")
 PURE_BLACK = "#000000"
 
-# Blood noir TARGET (docs/assets/themes/README.md)
-BLOOD_CHROME = "#030304"
-BLOOD_WORKSPACE = "#060607"
-BLOOD_PANEL = "#09090a"
-BLOOD_DIVIDER = "#1a1a1b"
+# Blood noir TARGET (docs/assets/themes/README.md) — deep/zinc solid map
+BLOOD_CHROME = "#020203"
+BLOOD_WORKSPACE = "#050506"
+BLOOD_PANEL = "#080809"
+BLOOD_DIVIDER = "#19191a"
 BLOOD_TEXT_PRIMARY = "#e4e6ea"
 BLOOD_TEXT_SECONDARY = "#68696b"
 
 # Previous polish values that Owner rejected as too open/gray — must stay darker.
+PRIOR_OPEN_CHROME = "#050506"
 PRIOR_OPEN_WORKSPACE = "#0b0b0c"
 PRIOR_OPEN_PANEL = "#0f0f11"
 PRIOR_OPEN_DIVIDER = "#2a2a2c"
+# Mid noir pass before Superdesign deep-black floor tighten.
+PRIOR_NOIR_CHROME = "#030304"
+PRIOR_NOIR_WORKSPACE = "#060607"
 
 WORKSPACE_MIX = 0.012
 SURFACE_MIX = 0.028
@@ -163,13 +169,26 @@ def test_blood_noir_density_darker_than_prior_open_gray_polish() -> None:
     assert _normalize_hex(tokens["textPrimary"]) == BLOOD_TEXT_PRIMARY
     assert _normalize_hex(tokens["textSecondary"]) == BLOOD_TEXT_SECONDARY
 
+    assert _relative_luminance(tokens["background"]) < _relative_luminance(
+        PRIOR_OPEN_CHROME
+    )
+    assert _relative_luminance(tokens["background"]) < _relative_luminance(
+        PRIOR_NOIR_CHROME
+    )
     assert _relative_luminance(tokens["surfaceWorkspace"]) < _relative_luminance(
         PRIOR_OPEN_WORKSPACE
+    )
+    assert _relative_luminance(tokens["surfaceWorkspace"]) < _relative_luminance(
+        PRIOR_NOIR_WORKSPACE
     )
     assert _relative_luminance(tokens["surface"]) < _relative_luminance(PRIOR_OPEN_PANEL)
     assert _relative_luminance(tokens["divider"]) < _relative_luminance(
         PRIOR_OPEN_DIVIDER
     )
+    # Superdesign deep-black floor maps short of pure black product surfaces.
+    assert _normalize_hex(tokens["background"]) != PURE_BLACK
+    # Panels stay near reference zinc-black (#09090b) without opening to surface-gray.
+    assert _relative_luminance(tokens["surface"]) < _relative_luminance("#18181b")
 
 
 def test_qml_semantics_map_hierarchy_roles() -> None:

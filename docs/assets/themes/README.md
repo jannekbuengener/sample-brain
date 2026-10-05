@@ -48,11 +48,11 @@ was still too bright/gray for cinematic noir.
 
 | Role | QML semantic | Theme Core token | CURRENT (pre-noir) | TARGET (noir) |
 |------|--------------|------------------|--------------------|---------------|
-| Program Chrome (header / footer band) | `surfaceHeader` | `background` | `#050506` (Blood) | ink floor `#030304` (Blood); darkest role |
-| Main Workspace (root / calm canvas) | `surfaceRoot` | `surfaceWorkspace` | `#0b0b0c` @ `0.025` | `#060607` @ `0.012` — barely raised charcoal/ink |
-| Panels (Library / Browser / Harmony) | `surfacePanel` / `surfaceBrowser` | `surface` | `#0f0f11` @ `0.045` | `#09090a` @ `0.028` — subtle, not gray cards |
+| Program Chrome (header / footer band) | `surfaceHeader` | `background` | `#050506` (Blood) | ink floor `#020203` (Blood); deepest role short of pure black |
+| Main Workspace (root / calm canvas) | `surfaceRoot` | `surfaceWorkspace` | `#0b0b0c` @ `0.025` | `#050506` @ `0.012` — barely raised charcoal/ink |
+| Panels (Library / Browser / Harmony) | `surfacePanel` / `surfaceBrowser` | `surface` | `#0f0f11` @ `0.045` | `#080809` @ `0.028` — subtle, near zinc-black, not gray cards |
 | Elevated / hover lifts | `surfaceElevated` / `hoverSurface` | `surfaceRaised` / `hover` | `0.09` / `0.11` | `0.06` / `0.075` — quieter lifts |
-| Borders / dividers | `borderSubtle` / `dividerDefault` | `divider` | `#2a2a2c` @ `0.16` | `#1a1a1b` @ `0.10` — fine restrained edges |
+| Borders / dividers | `borderSubtle` / `dividerDefault` | `divider` | `#2a2a2c` @ `0.16` | `#19191a` @ `0.10` — fine restrained edges |
 | Typography | `textPrimary` / `textSecondary` | `foreground` / mix | `#eceef1` / `#848587` @ `0.45` | `#e4e6ea` / `#68696b` @ `0.55` — calmer, finer mood |
 
 **Feel:** cinematic noir — very dark, elegant, deep, premium, calm, little visible
@@ -60,6 +60,28 @@ UI mass. No flat `#000000` product surfaces. No open gray tool slabs. Subtle coo
 red-blue depth from preset base tints + tighter mixes — not a second palette.
 Style intent references Superdesign cinematic noir / “Schrift und Minimalismus”;
 do **not** copy-paste Superdesign layout.
+
+### Superdesign cinematic noir reference (style intent, not layout)
+
+Source: `https://superdesign.dev/library/cinematic-noir-style` (prompt-library
+slug `cinematic-noir-style`, fetched via `api.superdesign.dev`).
+
+How that page builds background / atmosphere (concrete tokens):
+
+| Technique | Reference values | Map into Sample Brain? |
+|-----------|------------------|------------------------|
+| Deep black floor | `#000000` | Yes → Theme `background` ink floor `#020203` (never pure `#000000`) |
+| Zinc / mid dark | `#09090b` | Yes → panels land near this via `surface` mix (`#080809` Blood) |
+| Surface gray (cards) | `#18181b` | Partial → `surfaceRaised` stays darker/quieter (`#101011`) for low UI mass |
+| Warm radial atmosphere | `radial-gradient(ellipse at center, rgba(139,69,69,0.4) 0%, rgba(20,20,20,0.8) 60%, rgba(0,0,0,0.95) 100%)` | No — Screen-1 forbids `Gradient`/`RadialGradient` in `QML_SOURCE`; accent is functional-only (not ambient fills) |
+| Grain / noise overlay | 15% opacity, `mix-blend-overlay` | No — landing-page film grain; not Workbench surface hierarchy |
+| Glass / blur | not a core requirement; sharp architectural edges | No |
+| Typography mood | fg `#e5e5e5`, muted `#888`, extreme display scale | Partial → Theme `foreground` `#e4e6ea` + calmer `textSecondary` `#68696b` (Schrift / Minimalismus); no display-font / layout copy |
+| Selection red | `#ef4444` | No — Blood accent remains `#8f0e24` (product accent contract) |
+
+**Mapped in this slice:** deeper Theme-owned solid hierarchy (chrome → workspace →
+panels) toward the reference deep/zinc ladder. **Not mapped:** radial/grain/glass
+QML effects, layout/parallax, second palette.
 
 **OUT of this polish:** chrome geometry (#880), footer-context behavior (#885),
 nav, list layout, Live Kit IA, Add Source control redesign, Pattern/Bars/Song,

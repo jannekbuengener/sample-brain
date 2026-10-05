@@ -195,7 +195,8 @@ def mix_hex(color_a: str, color_b: str, amount: float) -> str:
 def _blood_a_base() -> ThemeBase:
     return ThemeBase(
         accent=BLOOD_A_ACCENT,
-        background="#030304",
+        # Superdesign cinematic-noir deep-black floor (#000000) → ink short of pure black.
+        background="#020203",
         foreground="#e4e6ea",
     )
 
@@ -299,7 +300,7 @@ def blood_variants() -> dict[str, dict[str, str]]:
     if "B" not in out:
         out["B"] = ThemeBase(
             accent=BLOOD_B_ACCENT,
-            background="#030304",
+            background="#020203",
             foreground="#e4e6ea",
         ).as_dict()
     return out

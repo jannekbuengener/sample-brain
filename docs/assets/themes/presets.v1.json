@@ -9,7 +9,8 @@
     "Loaded by src/workbench_theme.py; Screen-1 QML consumes via themeAuthority (#785).",
     "Custom themes persist base tokens only; derived tokens are never a second persistence truth.",
     "Dark surface hierarchy (cinematic noir): background (chrome) < surfaceWorkspace (main) < surface (panels) < surfaceRaised (elevated).",
-    "Noir density: ink/charcoal bases + tighter surface mixes; no open gray tool slabs."
+    "Noir density: ink/charcoal bases + tighter surface mixes; no open gray tool slabs.",
+    "Superdesign cinematic-noir-style: map deep/zinc solids via Theme bases only; no QML radial/grain second palette."
   ],
   "derivation": {
     "textPrimary": "foreground",
@@ -27,18 +28,18 @@
       "role": "primary_candidate",
       "base": {
         "accent": "#8f0e24",
-        "background": "#030304",
+        "background": "#020203",
         "foreground": "#e4e6ea"
       },
       "derived": {
         "textPrimary": "#e4e6ea",
         "textSecondary": "#68696b",
-        "surfaceWorkspace": "#060607",
-        "surface": "#09090a",
-        "surfaceRaised": "#101112",
-        "divider": "#1a1a1b",
-        "hover": "#141415",
-        "selected": "#22050b",
+        "surfaceWorkspace": "#050506",
+        "surface": "#080809",
+        "surfaceRaised": "#101011",
+        "divider": "#19191a",
+        "hover": "#131314",
+        "selected": "#21050a",
         "focusRing": "#8f0e24"
       },
       "derived_from": "base_only",
@@ -47,18 +48,18 @@
           "label": "deeper blood · primary_candidate",
           "base": {
             "accent": "#8f0e24",
-            "background": "#030304",
+            "background": "#020203",
             "foreground": "#e4e6ea"
           },
           "derived": {
             "textPrimary": "#e4e6ea",
             "textSecondary": "#68696b",
-            "surfaceWorkspace": "#060607",
-            "surface": "#09090a",
-            "surfaceRaised": "#101112",
-            "divider": "#1a1a1b",
-            "hover": "#141415",
-            "selected": "#22050b",
+            "surfaceWorkspace": "#050506",
+            "surface": "#080809",
+            "surfaceRaised": "#101011",
+            "divider": "#19191a",
+            "hover": "#131314",
+            "selected": "#21050a",
             "focusRing": "#8f0e24"
           },
           "derived_from": "base_only"
@@ -67,18 +68,18 @@
           "label": "brighter crimson · comparison",
           "base": {
             "accent": "#d4143a",
-            "background": "#030304",
+            "background": "#020203",
             "foreground": "#e4e6ea"
           },
           "derived": {
             "textPrimary": "#e4e6ea",
             "textSecondary": "#68696b",
-            "surfaceWorkspace": "#060607",
-            "surface": "#09090a",
-            "surfaceRaised": "#101112",
-            "divider": "#1a1a1b",
-            "hover": "#141415",
-            "selected": "#310710",
+            "surfaceWorkspace": "#050506",
+            "surface": "#080809",
+            "surfaceRaised": "#101011",
+            "divider": "#19191a",
+            "hover": "#131314",
+            "selected": "#30060f",
             "focusRing": "#d4143a"
           },
           "derived_from": "base_only"
