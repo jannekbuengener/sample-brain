@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from urllib.parse import quote
 
 import numpy as np
 
@@ -56,7 +57,7 @@ def load_gesture_library_candidates(
         return ()
 
     try:
-        conn = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
+        conn = sqlite3.connect(_readonly_uri(db_path), uri=True)
     except sqlite3.Error:
         return ()
 
@@ -89,6 +90,13 @@ def rank_gesture_against_catalog(
     """Load catalog candidates and rank via the existing #882 seam only."""
     candidates = load_gesture_library_candidates(catalog_path)
     return rank_gesture_library_candidates(analysis, candidates, top_n=top_n)
+
+
+def _readonly_uri(db_path: Path) -> str:
+    """Build a SQLite read-only URI with a percent-encoded filesystem path."""
+    # Keep path separators and Windows drive colon; encode # ? % space etc.
+    encoded = quote(db_path.resolve().as_posix(), safe="/:")
+    return f"file:{encoded}?mode=ro"
 
 
 def _resolve_catalog_path(catalog_path: Path | str | None) -> Path | None:
