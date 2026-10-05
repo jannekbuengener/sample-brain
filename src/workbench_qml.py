@@ -2601,7 +2601,7 @@ ApplicationWindow {
                     bottomPadding: 0
                     implicitHeight: screen1Header.height
                     Layout.preferredHeight: screen1Header.height
-                    readonly property bool navActive: window.activeScreen === "screen2"
+                    readonly property bool navActive: window.channelRack.bottomRackMaterialized
                     background: Item {
                         implicitHeight: screen1Header.height
                         Rectangle {
@@ -2623,8 +2623,8 @@ ApplicationWindow {
                         verticalAlignment: Text.AlignVCenter
                     }
                     onClicked: {
-                        if (window.activeScreen === "screen1")
-                            window.interaction.openChannelRack()
+                        // #908: materialize bottom Rack; no Screen-2 page navigation
+                        window.interaction.openChannelRack()
                     }
                 }
                 ToolButton {
@@ -3604,1084 +3604,1189 @@ ApplicationWindow {
                 }
             }
         }
-        Rectangle { id: browserPane; objectName: "browserPane"; visible: window.interaction.hasActiveSource && !window.interaction.browserCollapsed; width: visible ? layoutModel.browserWidth : 0; height: parent.height; color: theme.surfaceBrowser; border.color: theme.borderSubtle
-            function openSampleContextMenu(index, localX, localY) {
-                window.interaction.openSampleContext(index)
-                sampleContextMenu.focusedAction = 0
-                sampleContextMenu.x = Math.max(8, Math.min(localX, Math.max(8, width - 220)))
-                sampleContextMenu.y = Math.max(8, Math.min(localY, Math.max(8, height - 96)))
-                sampleContextMenu.open()
-                sampleContextMenu.forceActiveFocus()
-            }
-            Popup {
-                id: sampleContextMenu
-                objectName: "sampleContextMenu"
-                // Theme: theme.selectionSurface / theme.textPrimary / theme.focusRing
-                property string actionAddLabel: "Add to Kit"
-                property string actionHarmonicLabel: "Harmonic Matches"
-                width: 208
-                padding: 6
-                modal: false
-                focus: true
-                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-                property int focusedAction: 0
-                background: Rectangle {
-                    color: theme.selectionSurface
-                    border.color: theme.selectionBorder
-                    border.width: 1
-                    radius: 6
+        Column {
+            id: rightWorkspaceColumn
+            objectName: "rightWorkspaceColumn"
+            width: Math.max(0, parent.width - libraryPane.width - handleAfterLibrary.width)
+            height: parent.height
+            spacing: 0
+
+            Row {
+                id: upperWorkspaceRow
+                objectName: "upperWorkspaceRow"
+                width: parent.width
+                readonly property bool bottomExpanded: window.channelRack.bottomRackMaterialized
+                        || (window.interaction.liveKitRevealed && !window.interaction.liveKitCollapsed)
+                height: bottomExpanded
+                        ? parent.height * (1.0 - Math.max(window.channelRack.bottomRackHeightRatio, 0.24))
+                        : Math.max(0, parent.height - window.channelRack.bottomRackHeightPx)
+                spacing: 0
+            Rectangle { id: browserPane; objectName: "browserPane"; visible: window.interaction.hasActiveSource && !window.interaction.browserCollapsed; width: visible ? layoutModel.browserWidth : 0; height: parent.height; color: theme.surfaceBrowser; border.color: theme.borderSubtle
+                function openSampleContextMenu(index, localX, localY) {
+                    window.interaction.openSampleContext(index)
+                    sampleContextMenu.focusedAction = 0
+                    sampleContextMenu.x = Math.max(8, Math.min(localX, Math.max(8, width - 220)))
+                    sampleContextMenu.y = Math.max(8, Math.min(localY, Math.max(8, height - 96)))
+                    sampleContextMenu.open()
+                    sampleContextMenu.forceActiveFocus()
                 }
-                onClosed: {
-                    window.interaction.closeSampleContext()
-                    browser.forceActiveFocus()
-                }
-                Connections {
-                    target: window.interaction
-                    function onSampleContextClosed() {
-                        if (sampleContextMenu.visible)
-                            sampleContextMenu.close()
+                Popup {
+                    id: sampleContextMenu
+                    objectName: "sampleContextMenu"
+                    // Theme: theme.selectionSurface / theme.textPrimary / theme.focusRing
+                    property string actionAddLabel: "Add to Kit"
+                    property string actionHarmonicLabel: "Harmonic Matches"
+                    width: 208
+                    padding: 6
+                    modal: false
+                    focus: true
+                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                    property int focusedAction: 0
+                    background: Rectangle {
+                        color: theme.selectionSurface
+                        border.color: theme.selectionBorder
+                        border.width: 1
+                        radius: 6
                     }
-                }
-                function activateFocused() {
-                    if (focusedAction === 0)
-                        window.interaction.contextAddToKit()
-                    else
-                        window.interaction.contextHarmonicMatches()
-                    close()
-                }
-                Column {
-                    width: parent.width
-                    spacing: 2
-                    Rectangle {
-                        id: contextAddToKitItem
+                    onClosed: {
+                        window.interaction.closeSampleContext()
+                        browser.forceActiveFocus()
+                    }
+                    Connections {
+                        target: window.interaction
+                        function onSampleContextClosed() {
+                            if (sampleContextMenu.visible)
+                                sampleContextMenu.close()
+                        }
+                    }
+                    function activateFocused() {
+                        if (focusedAction === 0)
+                            window.interaction.contextAddToKit()
+                        else
+                            window.interaction.contextHarmonicMatches()
+                        close()
+                    }
+                    Column {
                         width: parent.width
-                        height: 32
-                        radius: 4
-                        color: sampleContextMenu.focusedAction === 0 || contextAddHover.containsMouse ? theme.surfaceElevated : "transparent"
-                        border.width: sampleContextMenu.focusedAction === 0 ? 1 : 0
-                        border.color: theme.focusRing
-                        // Invokable control for AT / Windows UIA (InvokePattern).
-                        Accessible.role: Accessible.Button
-                        Accessible.name: sampleContextMenu.actionAddLabel
-                        Accessible.onPressAction: {
-                            sampleContextMenu.focusedAction = 0
-                            sampleContextMenu.activateFocused()
-                        }
-                        Label {
-                            anchors.fill: parent
-                            anchors.leftMargin: 10
-                            anchors.rightMargin: 10
-                            text: sampleContextMenu.actionAddLabel
-                            color: theme.textPrimary
-                            verticalAlignment: Text.AlignVCenter
-                            font.pixelSize: window.textBody
-                            Accessible.ignored: true
-                        }
-                        MouseArea {
-                            id: contextAddHover
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            onClicked: {
+                        spacing: 2
+                        Rectangle {
+                            id: contextAddToKitItem
+                            width: parent.width
+                            height: 32
+                            radius: 4
+                            color: sampleContextMenu.focusedAction === 0 || contextAddHover.containsMouse ? theme.surfaceElevated : "transparent"
+                            border.width: sampleContextMenu.focusedAction === 0 ? 1 : 0
+                            border.color: theme.focusRing
+                            // Invokable control for AT / Windows UIA (InvokePattern).
+                            Accessible.role: Accessible.Button
+                            Accessible.name: sampleContextMenu.actionAddLabel
+                            Accessible.onPressAction: {
                                 sampleContextMenu.focusedAction = 0
                                 sampleContextMenu.activateFocused()
                             }
-                            onEntered: sampleContextMenu.focusedAction = 0
+                            Label {
+                                anchors.fill: parent
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 10
+                                text: sampleContextMenu.actionAddLabel
+                                color: theme.textPrimary
+                                verticalAlignment: Text.AlignVCenter
+                                font.pixelSize: window.textBody
+                                Accessible.ignored: true
+                            }
+                            MouseArea {
+                                id: contextAddHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    sampleContextMenu.focusedAction = 0
+                                    sampleContextMenu.activateFocused()
+                                }
+                                onEntered: sampleContextMenu.focusedAction = 0
+                            }
                         }
-                    }
-                    Rectangle {
-                        width: parent.width
-                        height: 1
-                        color: theme.dividerDefault
-                        opacity: 0.7
-                        Accessible.ignored: true
-                    }
-                    Rectangle {
-                        id: contextHarmonicItem
-                        objectName: "contextHarmonicItem"
-                        width: parent.width
-                        height: 32
-                        radius: 4
-                        color: sampleContextMenu.focusedAction === 1 || contextHarmonicHover.containsMouse ? theme.surfaceElevated : "transparent"
-                        border.width: sampleContextMenu.focusedAction === 1 ? 1 : 0
-                        border.color: theme.focusRing
-                        // #843 sole producer entry must be UIA-invokable after header button removal.
-                        Accessible.role: Accessible.Button
-                        Accessible.name: sampleContextMenu.actionHarmonicLabel
-                        Accessible.onPressAction: {
-                            sampleContextMenu.focusedAction = 1
-                            sampleContextMenu.activateFocused()
-                        }
-                        Label {
-                            anchors.fill: parent
-                            anchors.leftMargin: 10
-                            anchors.rightMargin: 10
-                            text: sampleContextMenu.actionHarmonicLabel
-                            color: theme.textSecondary
-                            verticalAlignment: Text.AlignVCenter
-                            font.pixelSize: window.textBody
+                        Rectangle {
+                            width: parent.width
+                            height: 1
+                            color: theme.dividerDefault
+                            opacity: 0.7
                             Accessible.ignored: true
                         }
-                        MouseArea {
-                            id: contextHarmonicHover
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            onClicked: {
+                        Rectangle {
+                            id: contextHarmonicItem
+                            objectName: "contextHarmonicItem"
+                            width: parent.width
+                            height: 32
+                            radius: 4
+                            color: sampleContextMenu.focusedAction === 1 || contextHarmonicHover.containsMouse ? theme.surfaceElevated : "transparent"
+                            border.width: sampleContextMenu.focusedAction === 1 ? 1 : 0
+                            border.color: theme.focusRing
+                            // #843 sole producer entry must be UIA-invokable after header button removal.
+                            Accessible.role: Accessible.Button
+                            Accessible.name: sampleContextMenu.actionHarmonicLabel
+                            Accessible.onPressAction: {
                                 sampleContextMenu.focusedAction = 1
                                 sampleContextMenu.activateFocused()
                             }
-                            onEntered: sampleContextMenu.focusedAction = 1
+                            Label {
+                                anchors.fill: parent
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 10
+                                text: sampleContextMenu.actionHarmonicLabel
+                                color: theme.textSecondary
+                                verticalAlignment: Text.AlignVCenter
+                                font.pixelSize: window.textBody
+                                Accessible.ignored: true
+                            }
+                            MouseArea {
+                                id: contextHarmonicHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    sampleContextMenu.focusedAction = 1
+                                    sampleContextMenu.activateFocused()
+                                }
+                                onEntered: sampleContextMenu.focusedAction = 1
+                            }
                         }
                     }
-                }
-                Keys.onPressed: function(event) {
-                    if (event.key === Qt.Key_Down) {
-                        focusedAction = Math.min(1, focusedAction + 1)
-                        event.accepted = true
-                    } else if (event.key === Qt.Key_Up) {
-                        focusedAction = Math.max(0, focusedAction - 1)
-                        event.accepted = true
-                    } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
-                        activateFocused()
-                        event.accepted = true
-                    } else if (event.key === Qt.Key_Escape) {
-                        close()
-                        event.accepted = true
-                    }
-                }
-            }
-            // #845 OPEN collapse handle — left mid-edge of Browser so it does not
-            // share the right residual with harmonyCollapseAffordance.
-            Item {
-                id: browserCollapseHandle
-                objectName: "browserCollapseHandle"
-                z: 30
-                width: 14
-                height: 56
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                visible: browserPane.visible
-                activeFocusOnTab: visible
-                Accessible.role: Accessible.Button
-                Accessible.name: "Collapse Browser"
-                Accessible.onPressAction: window.interaction.toggleBrowserCollapsed()
-                property bool hovered: false
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 3
-                    color: browserCollapseHandle.hovered ? theme.surfaceElevated : "transparent"
-                    opacity: browserCollapseHandle.hovered ? 0.92 : 0.45
-                    border.width: browserCollapseHandle.activeFocus ? 1 : 0
-                    border.color: theme.selectionBorder
-                }
-                Text {
-                    anchors.centerIn: parent
-                    text: "‹"
-                    color: theme.textSecondary
-                    opacity: browserCollapseHandle.hovered || browserCollapseHandle.activeFocus ? 1.0 : 0.55
-                    font.pixelSize: 14
-                    Accessible.ignored: true
-                }
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onEntered: browserCollapseHandle.hovered = true
-                    onExited: browserCollapseHandle.hovered = false
-                    onClicked: {
-                        browserCollapseHandle.forceActiveFocus()
-                        window.interaction.toggleBrowserCollapsed()
-                    }
-                }
-                Keys.onReturnPressed: window.interaction.toggleBrowserCollapsed()
-                Keys.onEnterPressed: window.interaction.toggleBrowserCollapsed()
-                Keys.onPressed: function(event) {
-                    if (event.key === Qt.Key_Space) {
-                        window.interaction.toggleBrowserCollapsed()
-                        event.accepted = true
-                    }
-                }
-            }
-            // #692 owner-visual repair: preserve required scan columns when the
-            // workspace is narrow. Type is optional; sample identity is not.
-            property bool browserNarrowColumns: width < 700
-            // #780 Browser column resize — browserPane is the SINGLE owner of
-            // column width truth. Runtime overrides (-1 = responsive default)
-            // fold into the same effectiveBrowser* bindings the header row and
-            // the list delegate already share, so there is no competing
-            // geometry truth. Independent of panel resize (layoutModel).
-            readonly property int browserWaveformMax: 360
-            readonly property int browserMetaColumnMin: 40
-            readonly property int browserMetaColumnMax: 96
-            readonly property int browserFavoriteColumnMin: 24
-            readonly property int browserFavoriteColumnMax: 48
-            readonly property int browserLengthColumnMin: 52
-            readonly property int browserLengthColumnMax: 120
-            readonly property int browserColumnHandlePadding: 6
-            property int waveformUserWidth: -1
-            property int metaUserWidth: -1
-            property int favoriteUserWidth: -1
-            property int lengthUserWidth: -1
-            function _clampColumn(value, lo, hi) { return Math.max(lo, Math.min(hi, Math.round(value))) }
-            // Wide mode: user override wins when set (>= 0). Narrow mode (#692):
-            // always keep responsive defaults so a prior wide-mode drag cannot
-            // defeat the compact column budget when the pane shrinks below 700.
-            function _resolveColumn(user, dflt, lo, hi) { return _clampColumn((browserNarrowColumns || user < 0) ? dflt : user, lo, hi) }
-            function resizeColumn(role, deltaPx) {
-                if (role === "waveform")
-                    waveformUserWidth = _clampColumn(effectiveBrowserWaveformWidth + deltaPx, window.browserWaveformMin, browserWaveformMax)
-                else if (role === "meta")
-                    metaUserWidth = _clampColumn(effectiveBrowserMetaColumnWidth + deltaPx, browserMetaColumnMin, browserMetaColumnMax)
-                else if (role === "favorite")
-                    favoriteUserWidth = _clampColumn(effectiveBrowserFavoriteColumnWidth + deltaPx, browserFavoriteColumnMin, browserFavoriteColumnMax)
-                else if (role === "length")
-                    lengthUserWidth = _clampColumn(effectiveBrowserLengthColumnWidth + deltaPx, browserLengthColumnMin, browserLengthColumnMax)
-            }
-            property int effectiveBrowserWaveformWidth: _resolveColumn(waveformUserWidth, browserNarrowColumns ? window.browserWaveformMin : window.browserWaveformWidth, window.browserWaveformMin, browserWaveformMax)
-            property int effectiveBrowserMetaColumnWidth: _resolveColumn(metaUserWidth, browserNarrowColumns ? browserMetaColumnMin : window.browserMetaColumnWidth, browserMetaColumnMin, browserMetaColumnMax)
-            property int effectiveBrowserFavoriteColumnWidth: _resolveColumn(favoriteUserWidth, browserNarrowColumns ? browserFavoriteColumnMin : window.browserFavoriteColumnWidth, browserFavoriteColumnMin, browserFavoriteColumnMax)
-            property int effectiveBrowserLengthColumnWidth: _resolveColumn(lengthUserWidth, browserNarrowColumns ? browserLengthColumnMin : window.browserLengthColumnWidth, browserLengthColumnMin, browserLengthColumnMax)
-            ColumnLayout { anchors.fill: parent; anchors.margins: 18; spacing: 10
-                RowLayout { Layout.fillWidth: true
-                    ColumnLayout { Layout.fillWidth: true; spacing: 2
-                        Label { text: window.screenData.browserContext; color: theme.textPrimary; font.pixelSize: window.textTitle; font.bold: true }
-                        Label { text: window.screenData.browserRows.length + " samples"; color: theme.textSecondary; font.pixelSize: window.textCaption }
-                        Label { visible: window.screenData.errorMessage.length > 0; text: window.screenData.errorMessage; color: theme.actionActive; font.pixelSize: 11 }
-                    }
-                    Item { Layout.fillWidth: true }
-                    TextField {
-                        // #895: slim dark-native search — quiet fill, low-contrast border, calm placeholder.
-                        objectName: "browserSearch"
-                        placeholderText: "Search samples"
-                        placeholderTextColor: theme.textSecondary
-                        color: theme.textPrimary
-                        selectedTextColor: theme.textOnAction
-                        selectionColor: theme.actionActive
-                        Layout.preferredWidth: 230
-                        Layout.minimumWidth: 120
-                        Layout.preferredHeight: 28
-                        font.pixelSize: 12
-                        leftPadding: 10
-                        rightPadding: 10
-                        topPadding: 4
-                        bottomPadding: 4
-                        background: Rectangle {
-                            radius: 4
-                            border.width: 1
-                            border.color: parent.activeFocus ? theme.focusRing : theme.borderSubtle
-                            color: parent.activeFocus ? theme.hoverSurface : (parent.hovered ? theme.hoverSurface : "transparent")
-                        }
-                        onTextChanged: window.interaction.setBrowserSearch(text)
-                    }
-                }
-                RowLayout {
-                    visible: window.screenData.analysisStatus !== "idle"
-                    Layout.fillWidth: true
-                    Label {
-                        Layout.fillWidth: true
-                        text: window.screenData.analysisStatus === "scanning" ? "Analysiere Quelle …" :
-                              window.screenData.analysisStatus === "analyzing" ? "Analysiere " + window.screenData.analysisSource :
-                              window.screenData.analysisStatus === "done" ? "Analyse abgeschlossen" :
-                              window.screenData.analysisStatus === "cancelled" ? "Analyse abgebrochen" :
-                              window.screenData.analysisStatus === "error" ? window.screenData.analysisError : ""
-                        color: window.screenData.analysisStatus === "error" ? theme.actionActive : theme.textSecondary
-                        font.pixelSize: 11
-                    }
-                    Label {
-                        visible: window.screenData.analysisTotal > 0
-                        text: window.screenData.analysisCurrent + " / " + window.screenData.analysisTotal + " Samples"
-                        color: theme.textPrimary
-                        font.pixelSize: 11
-                    }
-                    ProgressBar {
-                        visible: window.screenData.analysisStatus === "scanning" || window.screenData.analysisStatus === "analyzing"
-                        indeterminate: window.screenData.analysisTotal === 0
-                        from: 0
-                        to: Math.max(window.screenData.analysisTotal, 1)
-                        value: window.screenData.analysisCurrent
-                        Layout.preferredWidth: 120
-                    }
-                    Button {
-                        visible: window.screenData.analysisStatus === "scanning" || window.screenData.analysisStatus === "analyzing"
-                        text: "Cancel"
-                        onClicked: window.screenData.cancelAnalysis()
-                    }
-                }
-                Item {
-                    id: browserColumnHeaderHost
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: browserColumnHeaderRow.implicitHeight
-                    // #846: RowLayout owns shared column widths; resize surfaces are
-                    // edge children of each header cell (valid Qt anchors; not new
-                    // RowLayout columns / preferredWidth consumers).
-                    RowLayout {
-                        id: browserColumnHeaderRow
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.leftMargin: window.densityHorizontalInset
-                        anchors.rightMargin: window.densityHorizontalInset
-                        spacing: window.densityRowSpacing
-                        Item {
-                            id: browserHeaderWaveform
-                            Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth
-                            Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth
-                            Layout.fillHeight: true
-                            // #846 ephemeral overlay: MouseArea root keeps resizeColumn +
-                            // theme tokens inside frozen assertion windows.
-                            MouseArea { id: browserColumnResizeWaveform; objectName: "browserColumnResize_waveform"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize waveform"; property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("waveform", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
-                        }
-                        Label { text: "SAMPLE NAME"; color: theme.textSecondary; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; font.pixelSize: window.textCaption; font.bold: true }
-                        Label {
-                            id: browserHeaderBpm
-                            text: "BPM"
-                            color: theme.textSecondary
-                            Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth
-                            horizontalAlignment: Text.AlignRight
-                            font.pixelSize: window.textCaption
-                            font.bold: true
-                            MouseArea { id: browserColumnResizeMeta; objectName: "browserColumnResize_meta"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize BPM"; property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("meta", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
-                        }
-                        Label {
-                            id: browserHeaderFavorite
-                            text: "FAV"
-                            color: theme.textSecondary
-                            Layout.preferredWidth: browserPane.effectiveBrowserFavoriteColumnWidth
-                            horizontalAlignment: Text.AlignHCenter
-                            font.pixelSize: window.textCaption
-                            font.bold: true
-                            MouseArea { id: browserColumnResizeFavorite; objectName: "browserColumnResize_favorite"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize favorite"; property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("favorite", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
-                        }
-                        Label { text: "KEY"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
-                        Label {
-                            id: browserHeaderLength
-                            objectName: "browserColumnHeader_length"
-                            text: "LENGTH"
-                            color: theme.textSecondary
-                            Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth
-                            horizontalAlignment: Text.AlignRight
-                            font.pixelSize: window.textCaption
-                            font.bold: true
-                            MouseArea { id: browserColumnResizeLength; objectName: "browserColumnResize_length"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize length"; property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("length", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
-                        }
-                        // Issue 850: Type header shares visibility + width with the Type value cell so
-                        // Length never visually hosts Type labels under a shifted trailing geometry.
-                        Label { objectName: "browserColumnHeader_type"; visible: !browserPane.browserNarrowColumns; text: "TYPE"; color: theme.textSecondary; Layout.preferredWidth: window.browserTypeColumnWidth; Layout.maximumWidth: 88; horizontalAlignment: Text.AlignLeft; font.pixelSize: window.textCaption; font.bold: true }
-                    }
-                }
-                // All Samples list-viewport reuses Clean-Start canvas fill (theme.surfaceRoot).
-                // Outer browserPane chrome stays surfaceBrowser; Library/Harmony/Live Kit unchanged.
-                Rectangle {
-                    id: browserListViewport
-                    objectName: "browserListViewport"
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    color: theme.surfaceRoot
-                    ListView { id: browser; objectName: "browserList"; anchors.fill: parent; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: window.densityRowHeight; implicitHeight: window.densityRowHeight * 2
-                    function requestVisibleWaveforms() {
-                        if (rowHeight <= 0 || height <= 0)
-                            return
-                        window.interaction.requestWaveforms(
-                            Math.max(0, Math.floor(contentY / rowHeight)),
-                            Math.ceil(height / rowHeight) + 2
-                        )
-                    }
-                    Component.onCompleted: Qt.callLater(requestVisibleWaveforms)
-                    onContentYChanged: requestVisibleWaveforms()
-                    onHeightChanged: requestVisibleWaveforms()
-                    onModelChanged: Qt.callLater(requestVisibleWaveforms)
                     Keys.onPressed: function(event) {
-                        if (event.key === Qt.Key_Down) { window.interaction.navigateBrowser(1); event.accepted = true }
-                        else if (event.key === Qt.Key_Up) { window.interaction.navigateBrowser(-1); event.accepted = true }
-                        else if (event.key === Qt.Key_Escape) { window.interaction.stopPreview(); event.accepted = true }
-                        else if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
-                            if (window.screenData.selectedBrowserIndex >= 0) {
-                                browserPane.openSampleContextMenu(window.screenData.selectedBrowserIndex, browser.width * 0.35, browser.mapToItem(browserPane, 0, browser.height * 0.25).y)
-                                event.accepted = true
-                            }
+                        if (event.key === Qt.Key_Down) {
+                            focusedAction = Math.min(1, focusedAction + 1)
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Up) {
+                            focusedAction = Math.max(0, focusedAction - 1)
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                            activateFocused()
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Escape) {
+                            close()
+                            event.accepted = true
                         }
                     }
-                    delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface : (rowSelection.containsMouse ? theme.surfaceElevated : "transparent"); border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0; border.color: theme.selectionBorder
-                        Component.onCompleted: window.browserDelegateCreations += 1
-                        property string outboundUrl: window.interaction.outboundFileUrl(index)
-                        Drag.active: rowSelection.dragActive
-                        Drag.dragType: Drag.Automatic
-                        Drag.supportedActions: Qt.CopyAction
-                        Drag.mimeData: browserRow.outboundUrl.length > 0 ? { "text/uri-list": browserRow.outboundUrl } : {}
-                        Drag.onDragFinished: rowSelection.dragActive = false
-                        MouseArea {
-                            id: rowSelection
-                            anchors.fill: parent
-                            z: 0
-                            hoverEnabled: true
-                            acceptedButtons: Qt.LeftButton | Qt.RightButton
-                            property bool dragActive: false
-                            property real pressX: 0
-                            property real pressY: 0
-                            onPressed: function(mouse) {
-                                if (mouse.button === Qt.RightButton)
-                                    return
-                                dragActive = false
-                                pressX = mouse.x
-                                pressY = mouse.y
-                                browserRow.outboundUrl = window.interaction.outboundFileUrl(index)
-                            }
-                            onPositionChanged: function(mouse) {
-                                if (!pressed || dragActive)
-                                    return
-                                if (browserRow.outboundUrl.length === 0)
-                                    return
-                                if (Math.abs(mouse.x - pressX) < 8 && Math.abs(mouse.y - pressY) < 8)
-                                    return
-                                dragActive = true
-                            }
-                            onClicked: function(mouse) {
-                                if (mouse.button === Qt.RightButton) {
-                                    var local = mapToItem(browserPane, mouse.x, mouse.y)
-                                    browserPane.openSampleContextMenu(index, local.x, local.y)
-                                    return
-                                }
-                                if (dragActive)
-                                    return
-                                browser.forceActiveFocus()
-                                window.interaction.selectRow(index)
-                            }
+                }
+                // #845 OPEN collapse handle — left mid-edge of Browser so it does not
+                // share the right residual with harmonyCollapseAffordance.
+                Item {
+                    id: browserCollapseHandle
+                    objectName: "browserCollapseHandle"
+                    z: 30
+                    width: 14
+                    height: 56
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: browserPane.visible
+                    activeFocusOnTab: visible
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Collapse Browser"
+                    Accessible.onPressAction: window.interaction.toggleBrowserCollapsed()
+                    property bool hovered: false
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 3
+                        color: browserCollapseHandle.hovered ? theme.surfaceElevated : "transparent"
+                        opacity: browserCollapseHandle.hovered ? 0.92 : 0.45
+                        border.width: browserCollapseHandle.activeFocus ? 1 : 0
+                        border.color: theme.selectionBorder
+                    }
+                    Text {
+                        anchors.centerIn: parent
+                        text: "‹"
+                        color: theme.textSecondary
+                        opacity: browserCollapseHandle.hovered || browserCollapseHandle.activeFocus ? 1.0 : 0.55
+                        font.pixelSize: 14
+                        Accessible.ignored: true
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onEntered: browserCollapseHandle.hovered = true
+                        onExited: browserCollapseHandle.hovered = false
+                        onClicked: {
+                            browserCollapseHandle.forceActiveFocus()
+                            window.interaction.toggleBrowserCollapsed()
                         }
-                        RowLayout { id: rowBody; anchors.fill: parent; anchors.leftMargin: window.densityHorizontalInset; anchors.rightMargin: window.densityHorizontalInset; anchors.topMargin: window.densityVerticalInset; anchors.bottomMargin: window.densityVerticalInset; spacing: window.densityRowSpacing; z: 1
-                            Item { id: waveformSurface; objectName: "browserWaveformSurface"; Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth; Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth; Layout.preferredHeight: window.densityWaveformHeight; Layout.maximumHeight: window.densityWaveformHeight
-                                Canvas { id: waveformCanvas; anchors.fill: parent; property var envelope: modelData.waveform
-                                    property bool waveformSelected: index === window.screenData.selectedBrowserIndex
-                                    onEnvelopeChanged: requestPaint()
-                                    onWaveformSelectedChanged: requestPaint()
-                                    onPaint: {
-                                        var context = getContext("2d")
-                                        context.clearRect(0, 0, width, height)
-                                        context.strokeStyle = waveformSelected ? theme.waveformActive : theme.waveformDefault
-                                        context.lineWidth = 1.2
-                                        context.beginPath()
-                                        var points = envelope || []
-                                        var center = height / 2
-                                        if (points.length === 0) {
-                                            context.moveTo(0, center)
-                                            context.lineTo(width, center)
-                                        } else {
-                                            var step = width / points.length
-                                            for (var point = 0; point < points.length; point++) {
-                                                var value = Math.max(0, Math.min(1, Number(points[point]) || 0))
-                                                var x = Math.min(width, point * step + step / 2)
-                                                var amplitude = Math.max(1, height * 0.42 * value)
-                                                context.moveTo(x, center - amplitude)
-                                                context.lineTo(x, center + amplitude)
-                                            }
-                                        }
-                                        context.stroke()
-                                    }
-                                }
-                                Rectangle {
-                                    id: browserPreviewPlayhead
-                                    objectName: "previewPlayhead"
-                                    width: 2
-                                    height: parent ? parent.height : 0
-                                    color: theme.textPrimary
-                                    z: 3
-                                    visible: window.previewPlayheadArmed && parent
-                                        && (("" + modelData.path) === ("" + window.interaction.previewPlayingPath))
-                                    x: {
-                                        if (!parent)
-                                            return 0
-                                        var span = Math.max(0, parent.width - width)
-                                        return Math.round(Math.max(0, Math.min(1, window.interaction.previewProgress)) * span)
-                                    }
-                                }
-                                MouseArea { anchors.fill: parent; z: 2; onClicked: { browser.forceActiveFocus(); window.interaction.previewRow(index) } }
+                    }
+                    Keys.onReturnPressed: window.interaction.toggleBrowserCollapsed()
+                    Keys.onEnterPressed: window.interaction.toggleBrowserCollapsed()
+                    Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Space) {
+                            window.interaction.toggleBrowserCollapsed()
+                            event.accepted = true
+                        }
+                    }
+                }
+                // #692 owner-visual repair: preserve required scan columns when the
+                // workspace is narrow. Type is optional; sample identity is not.
+                property bool browserNarrowColumns: width < 700
+                // #780 Browser column resize — browserPane is the SINGLE owner of
+                // column width truth. Runtime overrides (-1 = responsive default)
+                // fold into the same effectiveBrowser* bindings the header row and
+                // the list delegate already share, so there is no competing
+                // geometry truth. Independent of panel resize (layoutModel).
+                readonly property int browserWaveformMax: 360
+                readonly property int browserMetaColumnMin: 40
+                readonly property int browserMetaColumnMax: 96
+                readonly property int browserFavoriteColumnMin: 24
+                readonly property int browserFavoriteColumnMax: 48
+                readonly property int browserLengthColumnMin: 52
+                readonly property int browserLengthColumnMax: 120
+                readonly property int browserColumnHandlePadding: 6
+                property int waveformUserWidth: -1
+                property int metaUserWidth: -1
+                property int favoriteUserWidth: -1
+                property int lengthUserWidth: -1
+                function _clampColumn(value, lo, hi) { return Math.max(lo, Math.min(hi, Math.round(value))) }
+                // Wide mode: user override wins when set (>= 0). Narrow mode (#692):
+                // always keep responsive defaults so a prior wide-mode drag cannot
+                // defeat the compact column budget when the pane shrinks below 700.
+                function _resolveColumn(user, dflt, lo, hi) { return _clampColumn((browserNarrowColumns || user < 0) ? dflt : user, lo, hi) }
+                function resizeColumn(role, deltaPx) {
+                    if (role === "waveform")
+                        waveformUserWidth = _clampColumn(effectiveBrowserWaveformWidth + deltaPx, window.browserWaveformMin, browserWaveformMax)
+                    else if (role === "meta")
+                        metaUserWidth = _clampColumn(effectiveBrowserMetaColumnWidth + deltaPx, browserMetaColumnMin, browserMetaColumnMax)
+                    else if (role === "favorite")
+                        favoriteUserWidth = _clampColumn(effectiveBrowserFavoriteColumnWidth + deltaPx, browserFavoriteColumnMin, browserFavoriteColumnMax)
+                    else if (role === "length")
+                        lengthUserWidth = _clampColumn(effectiveBrowserLengthColumnWidth + deltaPx, browserLengthColumnMin, browserLengthColumnMax)
+                }
+                property int effectiveBrowserWaveformWidth: _resolveColumn(waveformUserWidth, browserNarrowColumns ? window.browserWaveformMin : window.browserWaveformWidth, window.browserWaveformMin, browserWaveformMax)
+                property int effectiveBrowserMetaColumnWidth: _resolveColumn(metaUserWidth, browserNarrowColumns ? browserMetaColumnMin : window.browserMetaColumnWidth, browserMetaColumnMin, browserMetaColumnMax)
+                property int effectiveBrowserFavoriteColumnWidth: _resolveColumn(favoriteUserWidth, browserNarrowColumns ? browserFavoriteColumnMin : window.browserFavoriteColumnWidth, browserFavoriteColumnMin, browserFavoriteColumnMax)
+                property int effectiveBrowserLengthColumnWidth: _resolveColumn(lengthUserWidth, browserNarrowColumns ? browserLengthColumnMin : window.browserLengthColumnWidth, browserLengthColumnMin, browserLengthColumnMax)
+                ColumnLayout { anchors.fill: parent; anchors.margins: 18; spacing: 10
+                    RowLayout { Layout.fillWidth: true
+                        ColumnLayout { Layout.fillWidth: true; spacing: 2
+                            Label { text: window.screenData.browserContext; color: theme.textPrimary; font.pixelSize: window.textTitle; font.bold: true }
+                            Label { text: window.screenData.browserRows.length + " samples"; color: theme.textSecondary; font.pixelSize: window.textCaption }
+                            Label { visible: window.screenData.errorMessage.length > 0; text: window.screenData.errorMessage; color: theme.actionActive; font.pixelSize: 11 }
+                        }
+                        Item { Layout.fillWidth: true }
+                        TextField {
+                            // #895: slim dark-native search — quiet fill, low-contrast border, calm placeholder.
+                            objectName: "browserSearch"
+                            placeholderText: "Search samples"
+                            placeholderTextColor: theme.textSecondary
+                            color: theme.textPrimary
+                            selectedTextColor: theme.textOnAction
+                            selectionColor: theme.actionActive
+                            Layout.preferredWidth: 230
+                            Layout.minimumWidth: 120
+                            Layout.preferredHeight: 28
+                            font.pixelSize: 12
+                            leftPadding: 10
+                            rightPadding: 10
+                            topPadding: 4
+                            bottomPadding: 4
+                            background: Rectangle {
+                                radius: 4
+                                border.width: 1
+                                border.color: parent.activeFocus ? theme.focusRing : theme.borderSubtle
+                                color: parent.activeFocus ? theme.hoverSurface : (parent.hovered ? theme.hoverSurface : "transparent")
                             }
-                            Label { text: modelData.name; color: theme.textPrimary; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; verticalAlignment: Text.AlignVCenter }
-                            Label { id: bpmCell; text: modelData.bpm; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
+                            onTextChanged: window.interaction.setBrowserSearch(text)
+                        }
+                    }
+                    RowLayout {
+                        visible: window.screenData.analysisStatus !== "idle"
+                        Layout.fillWidth: true
+                        Label {
+                            Layout.fillWidth: true
+                            text: window.screenData.analysisStatus === "scanning" ? "Analysiere Quelle …" :
+                                  window.screenData.analysisStatus === "analyzing" ? "Analysiere " + window.screenData.analysisSource :
+                                  window.screenData.analysisStatus === "done" ? "Analyse abgeschlossen" :
+                                  window.screenData.analysisStatus === "cancelled" ? "Analyse abgebrochen" :
+                                  window.screenData.analysisStatus === "error" ? window.screenData.analysisError : ""
+                            color: window.screenData.analysisStatus === "error" ? theme.actionActive : theme.textSecondary
+                            font.pixelSize: 11
+                        }
+                        Label {
+                            visible: window.screenData.analysisTotal > 0
+                            text: window.screenData.analysisCurrent + " / " + window.screenData.analysisTotal + " Samples"
+                            color: theme.textPrimary
+                            font.pixelSize: 11
+                        }
+                        ProgressBar {
+                            visible: window.screenData.analysisStatus === "scanning" || window.screenData.analysisStatus === "analyzing"
+                            indeterminate: window.screenData.analysisTotal === 0
+                            from: 0
+                            to: Math.max(window.screenData.analysisTotal, 1)
+                            value: window.screenData.analysisCurrent
+                            Layout.preferredWidth: 120
+                        }
+                        Button {
+                            visible: window.screenData.analysisStatus === "scanning" || window.screenData.analysisStatus === "analyzing"
+                            text: "Cancel"
+                            onClicked: window.screenData.cancelAnalysis()
+                        }
+                    }
+                    Item {
+                        id: browserColumnHeaderHost
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: browserColumnHeaderRow.implicitHeight
+                        // #846: RowLayout owns shared column widths; resize surfaces are
+                        // edge children of each header cell (valid Qt anchors; not new
+                        // RowLayout columns / preferredWidth consumers).
+                        RowLayout {
+                            id: browserColumnHeaderRow
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.leftMargin: window.densityHorizontalInset
+                            anchors.rightMargin: window.densityHorizontalInset
+                            spacing: window.densityRowSpacing
                             Item {
-                                id: favoriteCell
-                                objectName: "browserFavoriteButton"
+                                id: browserHeaderWaveform
+                                Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth
+                                Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth
+                                Layout.fillHeight: true
+                                // #846 ephemeral overlay: MouseArea root keeps resizeColumn +
+                                // theme tokens inside frozen assertion windows.
+                                MouseArea { id: browserColumnResizeWaveform; objectName: "browserColumnResize_waveform"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize waveform"; property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("waveform", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
+                            }
+                            Label { text: "SAMPLE NAME"; color: theme.textSecondary; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; font.pixelSize: window.textCaption; font.bold: true }
+                            Label {
+                                id: browserHeaderBpm
+                                text: "BPM"
+                                color: theme.textSecondary
+                                Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth
+                                horizontalAlignment: Text.AlignRight
+                                font.pixelSize: window.textCaption
+                                font.bold: true
+                                MouseArea { id: browserColumnResizeMeta; objectName: "browserColumnResize_meta"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize BPM"; property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("meta", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
+                            }
+                            Label {
+                                id: browserHeaderFavorite
+                                text: "FAV"
+                                color: theme.textSecondary
                                 Layout.preferredWidth: browserPane.effectiveBrowserFavoriteColumnWidth
-                                Layout.preferredHeight: Math.min(window.densityActionHitTarget, window.densityRowHeight - 2 * window.densityVerticalInset)
-                                Layout.maximumHeight: window.densityRowHeight - 2 * window.densityVerticalInset
-                                Label {
-                                    anchors.fill: parent
-                                    text: modelData.favorite ? "★" : "☆"
-                                    color: modelData.favorite ? theme.actionActive : theme.textSecondary
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                    font.pixelSize: window.textMeta
-                                }
-                                MouseArea {
-                                    anchors.fill: parent
-                                    onClicked: {
-                                        browser.forceActiveFocus()
-                                        window.interaction.toggleFavorite(index)
-                                    }
+                                horizontalAlignment: Text.AlignHCenter
+                                font.pixelSize: window.textCaption
+                                font.bold: true
+                                MouseArea { id: browserColumnResizeFavorite; objectName: "browserColumnResize_favorite"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize favorite"; property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("favorite", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
+                            }
+                            Label { text: "KEY"; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; font.pixelSize: window.textCaption; font.bold: true }
+                            Label {
+                                id: browserHeaderLength
+                                objectName: "browserColumnHeader_length"
+                                text: "LENGTH"
+                                color: theme.textSecondary
+                                Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth
+                                horizontalAlignment: Text.AlignRight
+                                font.pixelSize: window.textCaption
+                                font.bold: true
+                                MouseArea { id: browserColumnResizeLength; objectName: "browserColumnResize_length"; property color _h: theme.surfaceElevated; property color _f: theme.focusRing; property bool handleVisible: containsMouse || pressed || activeFocus; z: 8; width: 2+2*browserPane.browserColumnHandlePadding; height: Math.max(18, parent.height); anchors.right: parent.right; anchors.rightMargin: -browserPane.browserColumnHandlePadding; anchors.verticalCenter: parent.verticalCenter; hoverEnabled: true; preventStealing: true; cursorShape: Qt.SizeHorCursor; activeFocusOnTab: true; Accessible.name: "Resize length"; property real lastX: 0; onPressed: function(m) { lastX = mapToItem(null, m.x, 0).x; m.accepted = true }; onPositionChanged: function(m) { if (!pressed) return; var g = mapToItem(null, m.x, 0).x; browserPane.resizeColumn("length", g - lastX); lastX = g }; Keys.onUpPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(-1); e.accepted = true }; Keys.onDownPressed: function(e) { browser.forceActiveFocus(); window.interaction.navigateBrowser(1); e.accepted = true }; Keys.onEscapePressed: function(e) { browser.forceActiveFocus(); window.interaction.stopPreview(); e.accepted = true }; Rectangle { anchors.centerIn: parent; width: 2; height: parent.height - 4; radius: 1; color: parent.activeFocus ? parent._f : parent._h; opacity: parent.handleVisible ? 0.95 : 0; border.width: parent.activeFocus ? 1 : 0; border.color: parent._f } }
+                            }
+                            // Issue 850: Type header shares visibility + width with the Type value cell so
+                            // Length never visually hosts Type labels under a shifted trailing geometry.
+                            Label { objectName: "browserColumnHeader_type"; visible: !browserPane.browserNarrowColumns; text: "TYPE"; color: theme.textSecondary; Layout.preferredWidth: window.browserTypeColumnWidth; Layout.maximumWidth: 88; horizontalAlignment: Text.AlignLeft; font.pixelSize: window.textCaption; font.bold: true }
+                        }
+                    }
+                    // All Samples list-viewport reuses Clean-Start canvas fill (theme.surfaceRoot).
+                    // Outer browserPane chrome stays surfaceBrowser; Library/Harmony/Live Kit unchanged.
+                    Rectangle {
+                        id: browserListViewport
+                        objectName: "browserListViewport"
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        color: theme.surfaceRoot
+                        ListView { id: browser; objectName: "browserList"; anchors.fill: parent; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: window.densityRowHeight; implicitHeight: window.densityRowHeight * 2
+                        function requestVisibleWaveforms() {
+                            if (rowHeight <= 0 || height <= 0)
+                                return
+                            window.interaction.requestWaveforms(
+                                Math.max(0, Math.floor(contentY / rowHeight)),
+                                Math.ceil(height / rowHeight) + 2
+                            )
+                        }
+                        Component.onCompleted: Qt.callLater(requestVisibleWaveforms)
+                        onContentYChanged: requestVisibleWaveforms()
+                        onHeightChanged: requestVisibleWaveforms()
+                        onModelChanged: Qt.callLater(requestVisibleWaveforms)
+                        Keys.onPressed: function(event) {
+                            if (event.key === Qt.Key_Down) { window.interaction.navigateBrowser(1); event.accepted = true }
+                            else if (event.key === Qt.Key_Up) { window.interaction.navigateBrowser(-1); event.accepted = true }
+                            else if (event.key === Qt.Key_Escape) { window.interaction.stopPreview(); event.accepted = true }
+                            else if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
+                                if (window.screenData.selectedBrowserIndex >= 0) {
+                                    browserPane.openSampleContextMenu(window.screenData.selectedBrowserIndex, browser.width * 0.35, browser.mapToItem(browserPane, 0, browser.height * 0.25).y)
+                                    event.accepted = true
                                 }
                             }
-                            Label { id: keyCell; text: modelData.key; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
-                            Label { id: lengthCell; objectName: "browserLengthCell"; text: modelData.duration; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta; elide: Text.ElideRight; clip: true }
-                            Label { id: typeCell; objectName: "browserTypeCell"; visible: !browserPane.browserNarrowColumns; text: modelData.type; color: theme.textSecondary; font.pixelSize: window.textCaption; elide: Text.ElideRight; Layout.preferredWidth: window.browserTypeColumnWidth; Layout.maximumWidth: 88; verticalAlignment: Text.AlignVCenter }
                         }
-                        // #846: permanent vertical column dividers removed. Column resize
-                        // lives on header overlays; rows keep horizontal chrome only.
-                        Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: window.densityDividerHeight; color: theme.dividerDefault; opacity: index === window.screenData.selectedBrowserIndex ? 0.35 : 0.8 }
+                        delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface : (rowSelection.containsMouse ? theme.surfaceElevated : "transparent"); border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0; border.color: theme.selectionBorder
+                            Component.onCompleted: window.browserDelegateCreations += 1
+                            property string outboundUrl: window.interaction.outboundFileUrl(index)
+                            Drag.active: rowSelection.dragActive
+                            Drag.dragType: Drag.Automatic
+                            Drag.supportedActions: Qt.CopyAction
+                            Drag.mimeData: browserRow.outboundUrl.length > 0 ? { "text/uri-list": browserRow.outboundUrl } : {}
+                            Drag.onDragFinished: rowSelection.dragActive = false
+                            MouseArea {
+                                id: rowSelection
+                                anchors.fill: parent
+                                z: 0
+                                hoverEnabled: true
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                property bool dragActive: false
+                                property real pressX: 0
+                                property real pressY: 0
+                                onPressed: function(mouse) {
+                                    if (mouse.button === Qt.RightButton)
+                                        return
+                                    dragActive = false
+                                    pressX = mouse.x
+                                    pressY = mouse.y
+                                    browserRow.outboundUrl = window.interaction.outboundFileUrl(index)
+                                }
+                                onPositionChanged: function(mouse) {
+                                    if (!pressed || dragActive)
+                                        return
+                                    if (browserRow.outboundUrl.length === 0)
+                                        return
+                                    if (Math.abs(mouse.x - pressX) < 8 && Math.abs(mouse.y - pressY) < 8)
+                                        return
+                                    dragActive = true
+                                }
+                                onClicked: function(mouse) {
+                                    if (mouse.button === Qt.RightButton) {
+                                        var local = mapToItem(browserPane, mouse.x, mouse.y)
+                                        browserPane.openSampleContextMenu(index, local.x, local.y)
+                                        return
+                                    }
+                                    if (dragActive)
+                                        return
+                                    browser.forceActiveFocus()
+                                    window.interaction.selectRow(index)
+                                }
+                            }
+                            RowLayout { id: rowBody; anchors.fill: parent; anchors.leftMargin: window.densityHorizontalInset; anchors.rightMargin: window.densityHorizontalInset; anchors.topMargin: window.densityVerticalInset; anchors.bottomMargin: window.densityVerticalInset; spacing: window.densityRowSpacing; z: 1
+                                Item { id: waveformSurface; objectName: "browserWaveformSurface"; Layout.preferredWidth: browserPane.effectiveBrowserWaveformWidth; Layout.minimumWidth: browserPane.effectiveBrowserWaveformWidth; Layout.preferredHeight: window.densityWaveformHeight; Layout.maximumHeight: window.densityWaveformHeight
+                                    Canvas { id: waveformCanvas; anchors.fill: parent; property var envelope: modelData.waveform
+                                        property bool waveformSelected: index === window.screenData.selectedBrowserIndex
+                                        onEnvelopeChanged: requestPaint()
+                                        onWaveformSelectedChanged: requestPaint()
+                                        onPaint: {
+                                            var context = getContext("2d")
+                                            context.clearRect(0, 0, width, height)
+                                            context.strokeStyle = waveformSelected ? theme.waveformActive : theme.waveformDefault
+                                            context.lineWidth = 1.2
+                                            context.beginPath()
+                                            var points = envelope || []
+                                            var center = height / 2
+                                            if (points.length === 0) {
+                                                context.moveTo(0, center)
+                                                context.lineTo(width, center)
+                                            } else {
+                                                var step = width / points.length
+                                                for (var point = 0; point < points.length; point++) {
+                                                    var value = Math.max(0, Math.min(1, Number(points[point]) || 0))
+                                                    var x = Math.min(width, point * step + step / 2)
+                                                    var amplitude = Math.max(1, height * 0.42 * value)
+                                                    context.moveTo(x, center - amplitude)
+                                                    context.lineTo(x, center + amplitude)
+                                                }
+                                            }
+                                            context.stroke()
+                                        }
+                                    }
+                                    Rectangle {
+                                        id: browserPreviewPlayhead
+                                        objectName: "previewPlayhead"
+                                        width: 2
+                                        height: parent ? parent.height : 0
+                                        color: theme.textPrimary
+                                        z: 3
+                                        visible: window.previewPlayheadArmed && parent
+                                            && (("" + modelData.path) === ("" + window.interaction.previewPlayingPath))
+                                        x: {
+                                            if (!parent)
+                                                return 0
+                                            var span = Math.max(0, parent.width - width)
+                                            return Math.round(Math.max(0, Math.min(1, window.interaction.previewProgress)) * span)
+                                        }
+                                    }
+                                    MouseArea { anchors.fill: parent; z: 2; onClicked: { browser.forceActiveFocus(); window.interaction.previewRow(index) } }
+                                }
+                                Label { text: modelData.name; color: theme.textPrimary; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: browserPane.browserNarrowColumns ? 96 : 120; verticalAlignment: Text.AlignVCenter }
+                                Label { id: bpmCell; text: modelData.bpm; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
+                                Item {
+                                    id: favoriteCell
+                                    objectName: "browserFavoriteButton"
+                                    Layout.preferredWidth: browserPane.effectiveBrowserFavoriteColumnWidth
+                                    Layout.preferredHeight: Math.min(window.densityActionHitTarget, window.densityRowHeight - 2 * window.densityVerticalInset)
+                                    Layout.maximumHeight: window.densityRowHeight - 2 * window.densityVerticalInset
+                                    Label {
+                                        anchors.fill: parent
+                                        text: modelData.favorite ? "★" : "☆"
+                                        color: modelData.favorite ? theme.actionActive : theme.textSecondary
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                        font.pixelSize: window.textMeta
+                                    }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        onClicked: {
+                                            browser.forceActiveFocus()
+                                            window.interaction.toggleFavorite(index)
+                                        }
+                                    }
+                                }
+                                Label { id: keyCell; text: modelData.key; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserMetaColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta }
+                                Label { id: lengthCell; objectName: "browserLengthCell"; text: modelData.duration; color: theme.textSecondary; Layout.preferredWidth: browserPane.effectiveBrowserLengthColumnWidth; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: window.textMeta; elide: Text.ElideRight; clip: true }
+                                Label { id: typeCell; objectName: "browserTypeCell"; visible: !browserPane.browserNarrowColumns; text: modelData.type; color: theme.textSecondary; font.pixelSize: window.textCaption; elide: Text.ElideRight; Layout.preferredWidth: window.browserTypeColumnWidth; Layout.maximumWidth: 88; verticalAlignment: Text.AlignVCenter }
+                            }
+                            // #846: permanent vertical column dividers removed. Column resize
+                            // lives on header overlays; rows keep horizontal chrome only.
+                            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: window.densityDividerHeight; color: theme.dividerDefault; opacity: index === window.screenData.selectedBrowserIndex ? 0.35 : 0.8 }
+                        }
+                    }
                     }
                 }
-                }
             }
-        }
-        Item {
-            id: handleAfterBrowser
-            objectName: "elasticHandleAfterBrowser"
-            visible: window.interaction.hasActiveSource
-                     && !window.interaction.browserCollapsed
-                     && (window.interaction.harmonicMatchOpen
-                         || (window.interaction.liveKitRevealed && !window.interaction.liveKitCollapsed))
-            width: visible ? layoutModel.handleWidth : 0
-            height: parent.height
-            Rectangle {
-                anchors.horizontalCenter: parent.horizontalCenter
-                width: 1
-                height: parent.height
-                color: theme.dividerDefault
-            }
-            MouseArea {
-                // Wider hit target than the 6-DIP layout charge. Expand into the
-                // Browser always; expand right only when Harmony occupies space
-                // so Live Kit clicks are not stolen in 3-panel mode.
-                anchors.fill: parent
-                anchors.leftMargin: -5
-                anchors.rightMargin: window.interaction.harmonicMatchOpen ? -5 : 0
-                cursorShape: Qt.SizeHorCursor
-                property real lastGlobalX: 0
-                onPressed: function(mouse) {
-                    lastGlobalX = mapToItem(null, mouse.x, 0).x
-                }
-                onPositionChanged: function(mouse) {
-                    if (!pressed)
-                        return
-                    var globalX = mapToItem(null, mouse.x, 0).x
-                    layoutModel.applyDrag("browser", globalX - lastGlobalX)
-                    lastGlobalX = globalX
-                }
-                onReleased: layoutModel.endDrag()
-            }
-        }
-        Rectangle {
-            id: harmonyPane
-            objectName: "harmonyPane"
-            // Stay layout-participating; width 0 when closed (model-driven).
-            opacity: window.interaction.harmonicMatchOpen ? 1 : 0
-            enabled: window.interaction.harmonicMatchOpen
-            width: layoutModel.harmonyWidth
-            height: parent.height
-            color: theme.surfacePanel
-            border.color: theme.borderSubtle
-            // Pane-root name for UIA title evidence; keep distinct from the
-            // context-menu Button so FindFirst prefers the invokable action
-            // while the menu is open (browser subtree precedes this pane).
-            Accessible.name: window.interaction.harmonicMatchOpen ? "Harmonic Matches" : ""
-            // #845 OPEN collapse handle — pane-local; only when Matches are open.
             Item {
-                id: harmonyCollapseHandle
-                objectName: "harmonyCollapseHandle"
-                z: 30
-                width: 14
-                height: 56
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                visible: window.interaction.harmonicMatchOpen && !window.interaction.browserCollapsed
-                activeFocusOnTab: visible
-                Accessible.role: Accessible.Button
-                Accessible.name: "Collapse Harmonic Matches"
-                Accessible.onPressAction: window.activateHarmonicMatchToggle()
-                property bool hovered: false
+                id: handleAfterBrowser
+                objectName: "elasticHandleAfterBrowser"
+                visible: window.interaction.hasActiveSource
+                         && !window.interaction.browserCollapsed
+                         && window.interaction.harmonicMatchOpen
+                width: visible ? layoutModel.handleWidth : 0
+                height: parent.height
                 Rectangle {
-                    anchors.fill: parent
-                    radius: 3
-                    color: harmonyCollapseHandle.hovered ? theme.surfaceElevated : "transparent"
-                    opacity: harmonyCollapseHandle.hovered ? 0.92 : 0.45
-                    border.width: harmonyCollapseHandle.activeFocus ? 1 : 0
-                    border.color: theme.selectionBorder
-                }
-                Text {
-                    anchors.centerIn: parent
-                    text: "‹"
-                    color: theme.textSecondary
-                    opacity: harmonyCollapseHandle.hovered || harmonyCollapseHandle.activeFocus ? 1.0 : 0.55
-                    font.pixelSize: 14
-                    Accessible.ignored: true
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 1
+                    height: parent.height
+                    color: theme.dividerDefault
                 }
                 MouseArea {
+                    // Wider hit target than the 6-DIP layout charge. Expand into the
+                    // Browser always; expand right only when Harmony occupies space.
                     anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onEntered: harmonyCollapseHandle.hovered = true
-                    onExited: harmonyCollapseHandle.hovered = false
-                    onClicked: {
-                        harmonyCollapseHandle.forceActiveFocus()
-                        window.activateHarmonicMatchToggle()
+                    anchors.leftMargin: -5
+                    anchors.rightMargin: window.interaction.harmonicMatchOpen ? -5 : 0
+                    cursorShape: Qt.SizeHorCursor
+                    property real lastGlobalX: 0
+                    onPressed: function(mouse) {
+                        lastGlobalX = mapToItem(null, mouse.x, 0).x
                     }
-                }
-                Keys.onReturnPressed: window.activateHarmonicMatchToggle()
-                Keys.onEnterPressed: window.activateHarmonicMatchToggle()
-                Keys.onPressed: function(event) {
-                    if (event.key === Qt.Key_Space) {
-                        window.activateHarmonicMatchToggle()
-                        event.accepted = true
+                    onPositionChanged: function(mouse) {
+                        if (!pressed)
+                            return
+                        var globalX = mapToItem(null, mouse.x, 0).x
+                        layoutModel.applyDrag("browser", globalX - lastGlobalX)
+                        lastGlobalX = globalX
                     }
+                    onReleased: layoutModel.endDrag()
                 }
             }
-            property bool harmonyOpen: window.interaction.harmonicMatchOpen
-            onHarmonyOpenChanged: {
-                layoutModel.syncFromInteraction()
-                if (harmonyOpen) {
-                    // #843: do not auto-steal keyboard focus onto results on open.
-                    // Matches remains Tab-/click-focusable; Browser keeps a sensible flow.
-                    Qt.callLater(function() {
-                        if (window.interaction.harmonyScrollY > 0) {
-                            harmonicMatchList.contentY = window.interaction.harmonyScrollY
+            Rectangle {
+                id: harmonyPane
+                objectName: "harmonyPane"
+                // Stay layout-participating; width 0 when closed (model-driven).
+                opacity: window.interaction.harmonicMatchOpen ? 1 : 0
+                enabled: window.interaction.harmonicMatchOpen
+                width: layoutModel.harmonyWidth
+                height: parent.height
+                color: theme.surfacePanel
+                border.color: theme.borderSubtle
+                // Pane-root name for UIA title evidence; keep distinct from the
+                // context-menu Button so FindFirst prefers the invokable action
+                // while the menu is open (browser subtree precedes this pane).
+                Accessible.name: window.interaction.harmonicMatchOpen ? "Harmonic Matches" : ""
+                // #845 OPEN collapse handle — pane-local; only when Matches are open.
+                Item {
+                    id: harmonyCollapseHandle
+                    objectName: "harmonyCollapseHandle"
+                    z: 30
+                    width: 14
+                    height: 56
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: window.interaction.harmonicMatchOpen && !window.interaction.browserCollapsed
+                    activeFocusOnTab: visible
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Collapse Harmonic Matches"
+                    Accessible.onPressAction: window.activateHarmonicMatchToggle()
+                    property bool hovered: false
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 3
+                        color: harmonyCollapseHandle.hovered ? theme.surfaceElevated : "transparent"
+                        opacity: harmonyCollapseHandle.hovered ? 0.92 : 0.45
+                        border.width: harmonyCollapseHandle.activeFocus ? 1 : 0
+                        border.color: theme.selectionBorder
+                    }
+                    Text {
+                        anchors.centerIn: parent
+                        text: "‹"
+                        color: theme.textSecondary
+                        opacity: harmonyCollapseHandle.hovered || harmonyCollapseHandle.activeFocus ? 1.0 : 0.55
+                        font.pixelSize: 14
+                        Accessible.ignored: true
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onEntered: harmonyCollapseHandle.hovered = true
+                        onExited: harmonyCollapseHandle.hovered = false
+                        onClicked: {
+                            harmonyCollapseHandle.forceActiveFocus()
+                            window.activateHarmonicMatchToggle()
                         }
-                        window.interaction.requestHarmonyWaveforms(
-                            Math.max(0, Math.floor(harmonicMatchList.contentY / window.densityRowHeight)),
-                            Math.ceil(harmonicMatchList.height / window.densityRowHeight) + 2
-                        )
-                    })
-                } else {
-                    browser.forceActiveFocus()
+                    }
+                    Keys.onReturnPressed: window.activateHarmonicMatchToggle()
+                    Keys.onEnterPressed: window.activateHarmonicMatchToggle()
+                    Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Space) {
+                            window.activateHarmonicMatchToggle()
+                            event.accepted = true
+                        }
+                    }
                 }
-            }
-            ColumnLayout { anchors.fill: parent; anchors.margins: 14
-                Label {
-                    text: "Harmonic Matches"
-                    color: theme.textPrimary
-                    font.pixelSize: 18
-                    font.bold: true
-                    Accessible.ignored: true
+                property bool harmonyOpen: window.interaction.harmonicMatchOpen
+                onHarmonyOpenChanged: {
+                    layoutModel.syncFromInteraction()
+                    if (harmonyOpen) {
+                        // #843: do not auto-steal keyboard focus onto results on open.
+                        // Matches remains Tab-/click-focusable; Browser keeps a sensible flow.
+                        Qt.callLater(function() {
+                            if (window.interaction.harmonyScrollY > 0) {
+                                harmonicMatchList.contentY = window.interaction.harmonyScrollY
+                            }
+                            window.interaction.requestHarmonyWaveforms(
+                                Math.max(0, Math.floor(harmonicMatchList.contentY / window.densityRowHeight)),
+                                Math.ceil(harmonicMatchList.height / window.densityRowHeight) + 2
+                            )
+                        })
+                    } else {
+                        browser.forceActiveFocus()
+                    }
                 }
-                Label { text: window.screenData.harmonyAnchor; color: theme.textSecondary; font.pixelSize: 12 }
-                Label { text: window.screenData.harmonyStatus; color: theme.textSecondary; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true }
-                ListView { id: harmonicMatchList; objectName: "harmonicMatchList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.harmonyRows; clip: true; reuseItems: true; focus: false; activeFocusOnTab: window.interaction.harmonicMatchOpen
-                    Keys.onUpPressed: {
-                        window.interaction.navigateHarmony(-1)
-                        harmonicMatchList.currentIndex = window.interaction.selectedHarmonyIndex
-                        harmonicMatchList.positionViewAtIndex(harmonicMatchList.currentIndex, ListView.Contain)
+                ColumnLayout { anchors.fill: parent; anchors.margins: 14
+                    Label {
+                        text: "Harmonic Matches"
+                        color: theme.textPrimary
+                        font.pixelSize: 18
+                        font.bold: true
+                        Accessible.ignored: true
                     }
-                    Keys.onDownPressed: {
-                        window.interaction.navigateHarmony(1)
-                        harmonicMatchList.currentIndex = window.interaction.selectedHarmonyIndex
-                        harmonicMatchList.positionViewAtIndex(harmonicMatchList.currentIndex, ListView.Contain)
-                    }
-                    Keys.onEscapePressed: window.interaction.stopPreview()
-                    onContentYChanged: {
-                        window.interaction.setHarmonyScrollY(contentY)
-                        window.interaction.requestHarmonyWaveforms(
-                            Math.max(0, Math.floor(contentY / window.densityRowHeight)),
-                            Math.ceil(height / window.densityRowHeight) + 2
-                        )
-                    }
-                    onHeightChanged: {
-                        if (visible) {
+                    Label { text: window.screenData.harmonyAnchor; color: theme.textSecondary; font.pixelSize: 12 }
+                    Label { text: window.screenData.harmonyStatus; color: theme.textSecondary; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                    ListView { id: harmonicMatchList; objectName: "harmonicMatchList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.harmonyRows; clip: true; reuseItems: true; focus: false; activeFocusOnTab: window.interaction.harmonicMatchOpen
+                        Keys.onUpPressed: {
+                            window.interaction.navigateHarmony(-1)
+                            harmonicMatchList.currentIndex = window.interaction.selectedHarmonyIndex
+                            harmonicMatchList.positionViewAtIndex(harmonicMatchList.currentIndex, ListView.Contain)
+                        }
+                        Keys.onDownPressed: {
+                            window.interaction.navigateHarmony(1)
+                            harmonicMatchList.currentIndex = window.interaction.selectedHarmonyIndex
+                            harmonicMatchList.positionViewAtIndex(harmonicMatchList.currentIndex, ListView.Contain)
+                        }
+                        Keys.onEscapePressed: window.interaction.stopPreview()
+                        onContentYChanged: {
+                            window.interaction.setHarmonyScrollY(contentY)
                             window.interaction.requestHarmonyWaveforms(
                                 Math.max(0, Math.floor(contentY / window.densityRowHeight)),
                                 Math.ceil(height / window.densityRowHeight) + 2
                             )
                         }
-                    }
-                    // #895: harmonic rows share Browser language — selected/hover surfaces, divider only.
-                    delegate: Rectangle {
-                        id: harmonyRow
-                        width: parent.width
-                        height: window.densityRowHeight
-                        color: index === window.interaction.selectedHarmonyIndex ? theme.selectionSurface
-                               : (harmonyRowHover.containsMouse ? theme.surfaceElevated : "transparent")
-                        border.width: index === window.interaction.selectedHarmonyIndex ? 1 : 0
-                        border.color: index === window.interaction.selectedHarmonyIndex ? theme.selectionBorder : "transparent"
-                        MouseArea {
-                            id: harmonyRowHover
-                            anchors.fill: parent
-                            z: 0
-                            hoverEnabled: true
-                            onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.selectHarmonyRow(index) }
+                        onHeightChanged: {
+                            if (visible) {
+                                window.interaction.requestHarmonyWaveforms(
+                                    Math.max(0, Math.floor(contentY / window.densityRowHeight)),
+                                    Math.ceil(height / window.densityRowHeight) + 2
+                                )
+                            }
                         }
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: window.densityHorizontalInset
-                            anchors.rightMargin: window.densityHorizontalInset
-                            anchors.topMargin: window.densityVerticalInset
-                            anchors.bottomMargin: window.densityVerticalInset
-                            spacing: window.densityRowSpacing
-                            z: 1
-                            Item {
-                                Layout.preferredWidth: window.harmonicWaveformWidth
-                                Layout.preferredHeight: window.densityWaveformHeight
-                                Layout.maximumHeight: window.densityWaveformHeight
-                                Canvas {
-                                    id: harmonyWaveformCanvas
-                                    anchors.fill: parent
-                                    property var envelope: modelData.waveform
-                                    onEnvelopeChanged: requestPaint()
-                                    onPaint: {
-                                        var context = getContext("2d")
-                                        context.clearRect(0, 0, width, height)
-                                        context.strokeStyle = theme.waveformDefault
-                                        context.lineWidth = 1.2
-                                        context.beginPath()
-                                        var points = envelope || []
-                                        var center = height / 2
-                                        var step = points.length > 0 ? width / points.length : width
-                                        if (points.length === 0) { context.moveTo(0, center); context.lineTo(width, center) }
-                                        for (var point = 0; point < points.length; point++) {
-                                            var value = Math.max(0, Math.min(1, Number(points[point]) || 0))
-                                            var x = Math.min(width, point * step + step / 2)
-                                            var amplitude = Math.max(1, height * 0.38 * value)
-                                            context.moveTo(x, center - amplitude)
-                                            context.lineTo(x, center + amplitude)
+                        // #895: harmonic rows share Browser language — selected/hover surfaces, divider only.
+                        delegate: Rectangle {
+                            id: harmonyRow
+                            width: parent.width
+                            height: window.densityRowHeight
+                            color: index === window.interaction.selectedHarmonyIndex ? theme.selectionSurface
+                                   : (harmonyRowHover.containsMouse ? theme.surfaceElevated : "transparent")
+                            border.width: index === window.interaction.selectedHarmonyIndex ? 1 : 0
+                            border.color: index === window.interaction.selectedHarmonyIndex ? theme.selectionBorder : "transparent"
+                            MouseArea {
+                                id: harmonyRowHover
+                                anchors.fill: parent
+                                z: 0
+                                hoverEnabled: true
+                                onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.selectHarmonyRow(index) }
+                            }
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: window.densityHorizontalInset
+                                anchors.rightMargin: window.densityHorizontalInset
+                                anchors.topMargin: window.densityVerticalInset
+                                anchors.bottomMargin: window.densityVerticalInset
+                                spacing: window.densityRowSpacing
+                                z: 1
+                                Item {
+                                    Layout.preferredWidth: window.harmonicWaveformWidth
+                                    Layout.preferredHeight: window.densityWaveformHeight
+                                    Layout.maximumHeight: window.densityWaveformHeight
+                                    Canvas {
+                                        id: harmonyWaveformCanvas
+                                        anchors.fill: parent
+                                        property var envelope: modelData.waveform
+                                        onEnvelopeChanged: requestPaint()
+                                        onPaint: {
+                                            var context = getContext("2d")
+                                            context.clearRect(0, 0, width, height)
+                                            context.strokeStyle = theme.waveformDefault
+                                            context.lineWidth = 1.2
+                                            context.beginPath()
+                                            var points = envelope || []
+                                            var center = height / 2
+                                            var step = points.length > 0 ? width / points.length : width
+                                            if (points.length === 0) { context.moveTo(0, center); context.lineTo(width, center) }
+                                            for (var point = 0; point < points.length; point++) {
+                                                var value = Math.max(0, Math.min(1, Number(points[point]) || 0))
+                                                var x = Math.min(width, point * step + step / 2)
+                                                var amplitude = Math.max(1, height * 0.38 * value)
+                                                context.moveTo(x, center - amplitude)
+                                                context.lineTo(x, center + amplitude)
+                                            }
+                                            context.stroke()
                                         }
-                                        context.stroke()
                                     }
+                                    Rectangle {
+                                        objectName: "previewPlayhead"
+                                        width: 2
+                                        height: parent ? parent.height : 0
+                                        color: theme.textPrimary
+                                        z: 3
+                                        visible: window.previewPlayheadArmed && parent
+                                            && (("" + modelData.path) === ("" + window.interaction.previewPlayingPath))
+                                        x: {
+                                            if (!parent)
+                                                return 0
+                                            var span = Math.max(0, parent.width - width)
+                                            return Math.round(Math.max(0, Math.min(1, window.interaction.previewProgress)) * span)
+                                        }
+                                    }
+                                    MouseArea { anchors.fill: parent; z: 2; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.previewHarmonyRow(index) } }
+                                }
+                                Label { text: modelData.name; color: theme.textPrimary; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 64; verticalAlignment: Text.AlignVCenter }
+                                Label { text: modelData.key; color: theme.actionActive; font.pixelSize: window.textMeta; verticalAlignment: Text.AlignVCenter }
+                                Label {
+                                    text: modelData.relation + " · " + modelData.fit
+                                    color: theme.textSecondary
+                                    font.pixelSize: window.textCaption
+                                    elide: Text.ElideRight
+                                    Layout.preferredWidth: window.harmonicRelationColumnWidth
+                                    Layout.maximumWidth: window.harmonicRelationColumnWidth
+                                    verticalAlignment: Text.AlignVCenter
                                 }
                                 Rectangle {
-                                    objectName: "previewPlayhead"
-                                    width: 2
-                                    height: parent ? parent.height : 0
-                                    color: theme.textPrimary
-                                    z: 3
-                                    visible: window.previewPlayheadArmed && parent
-                                        && (("" + modelData.path) === ("" + window.interaction.previewPlayingPath))
-                                    x: {
-                                        if (!parent)
-                                            return 0
-                                        var span = Math.max(0, parent.width - width)
-                                        return Math.round(Math.max(0, Math.min(1, window.interaction.previewProgress)) * span)
-                                    }
-                                }
-                                MouseArea { anchors.fill: parent; z: 2; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.previewHarmonyRow(index) } }
-                            }
-                            Label { text: modelData.name; color: theme.textPrimary; font.pixelSize: window.textBody; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 64; verticalAlignment: Text.AlignVCenter }
-                            Label { text: modelData.key; color: theme.actionActive; font.pixelSize: window.textMeta; verticalAlignment: Text.AlignVCenter }
-                            Label {
-                                text: modelData.relation + " · " + modelData.fit
-                                color: theme.textSecondary
-                                font.pixelSize: window.textCaption
-                                elide: Text.ElideRight
-                                Layout.preferredWidth: window.harmonicRelationColumnWidth
-                                Layout.maximumWidth: window.harmonicRelationColumnWidth
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                            Rectangle {
-                                id: harmonyAddAction
-                                Layout.preferredWidth: window.harmonicAddColumnWidth
-                                Layout.preferredHeight: Math.min(window.densityActionHitTarget, window.densityRowHeight - 2 * window.densityVerticalInset)
-                                Layout.maximumHeight: window.densityRowHeight - 2 * window.densityVerticalInset
-                                radius: 3
-                                color: harmonyAddMouse.containsMouse ? theme.hoverSurface : "transparent"
-                                border.width: harmonyAddMouse.containsMouse ? 1 : 0
-                                border.color: theme.borderSubtle
-                                Label {
-                                    anchors.fill: parent
-                                    text: "+ Add"
-                                    color: harmonyAddMouse.containsMouse ? theme.textPrimary : theme.textSecondary
-                                    font.pixelSize: window.textCaption
-                                    horizontalAlignment: Text.AlignRight
-                                    verticalAlignment: Text.AlignVCenter
-                                    rightPadding: 4
-                                }
-                                MouseArea {
-                                    id: harmonyAddMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.addHarmonyToKit(index) }
-                                }
-                            }
-                        }
-                        Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: window.densityDividerHeight; color: theme.dividerDefault; opacity: 0.8 }
-                    }
-                }
-            }
-        }
-        Item {
-            id: handleAfterHarmony
-            objectName: "elasticHandleAfterHarmony"
-            visible: window.interaction.hasActiveSource
-                     && window.interaction.harmonicMatchOpen
-                     && window.interaction.liveKitRevealed
-                     && !window.interaction.liveKitCollapsed
-            width: visible ? layoutModel.handleWidth : 0
-            height: parent.height
-            Rectangle {
-                anchors.horizontalCenter: parent.horizontalCenter
-                width: 1
-                height: parent.height
-                color: theme.dividerDefault
-            }
-            MouseArea {
-                // Wider hit target than the 6-DIP layout charge (contract).
-                anchors.fill: parent
-                anchors.leftMargin: -5
-                anchors.rightMargin: -5
-                cursorShape: Qt.SizeHorCursor
-                property real lastGlobalX: 0
-                onPressed: function(mouse) {
-                    lastGlobalX = mapToItem(null, mouse.x, 0).x
-                }
-                onPositionChanged: function(mouse) {
-                    if (!pressed)
-                        return
-                    var globalX = mapToItem(null, mouse.x, 0).x
-                    layoutModel.applyDrag("harmony", globalX - lastGlobalX)
-                    lastGlobalX = globalX
-                }
-                onReleased: layoutModel.endDrag()
-            }
-        }
-        Rectangle { id: liveKitPane; objectName: "liveKitPane"; visible: window.interaction.hasActiveSource && window.interaction.liveKitRevealed && !window.interaction.liveKitCollapsed; width: visible ? layoutModel.liveKitWidth : 0; height: parent.height; color: theme.surfacePanel; border.color: theme.borderSubtle
-            // #845 OPEN collapse handle — pane-local mid-edge; click/activate only.
-            Item {
-                id: liveKitCollapseHandle
-                objectName: "liveKitCollapseHandle"
-                z: 30
-                width: 14
-                height: 56
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                visible: liveKitPane.visible
-                activeFocusOnTab: visible
-                Accessible.role: Accessible.Button
-                Accessible.name: "Collapse Live Kit"
-                Accessible.onPressAction: window.interaction.toggleLiveKitCollapsed()
-                property bool hovered: false
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 3
-                    color: liveKitCollapseHandle.hovered ? theme.surfaceElevated : "transparent"
-                    opacity: liveKitCollapseHandle.hovered ? 0.92 : 0.45
-                    border.width: liveKitCollapseHandle.activeFocus ? 1 : 0
-                    border.color: theme.selectionBorder
-                }
-                Text {
-                    anchors.centerIn: parent
-                    text: "›"
-                    color: theme.textSecondary
-                    opacity: liveKitCollapseHandle.hovered || liveKitCollapseHandle.activeFocus ? 1.0 : 0.55
-                    font.pixelSize: 14
-                }
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onEntered: liveKitCollapseHandle.hovered = true
-                    onExited: liveKitCollapseHandle.hovered = false
-                    onClicked: {
-                        liveKitCollapseHandle.forceActiveFocus()
-                        window.interaction.toggleLiveKitCollapsed()
-                    }
-                }
-                Keys.onReturnPressed: window.interaction.toggleLiveKitCollapsed()
-                Keys.onEnterPressed: window.interaction.toggleLiveKitCollapsed()
-                Keys.onPressed: function(event) {
-                    if (event.key === Qt.Key_Space) {
-                        window.interaction.toggleLiveKitCollapsed()
-                        event.accepted = true
-                    }
-                }
-            }
-            ColumnLayout { anchors.fill: parent; anchors.margins: 14; spacing: 8
-                RowLayout { Layout.fillWidth: true
-                    Label { text: "LIVE KIT"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
-                    Label { text: window.screenData.liveKitAssignedCount + " / " + window.screenData.liveKitTotalSlotCount; color: theme.textSecondary; font.pixelSize: 11 }
-                    Button {
-                        id: liveKitExportButton
-                        objectName: "liveKitExportButton"
-                        text: "Export Kit"
-                        flat: true
-                        implicitHeight: 26
-                        padding: 8
-                        leftPadding: 10
-                        rightPadding: 10
-                        Accessible.name: "Export Kit"
-                        contentItem: Text {
-                            text: liveKitExportButton.text
-                            color: !liveKitExportButton.enabled ? theme.textDisabled
-                                   : (liveKitExportButton.pressed ? theme.textPrimary
-                                      : (liveKitExportButton.hovered || liveKitExportButton.activeFocus ? theme.textPrimary : theme.textSecondary))
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                            font.pixelSize: 11
-                            opacity: liveKitExportButton.enabled ? 1.0 : 0.45
-                        }
-                        background: Rectangle {
-                            implicitHeight: 26
-                            radius: 4
-                            color: !liveKitExportButton.enabled ? "transparent"
-                                   : (liveKitExportButton.pressed ? theme.surfaceElevated
-                                      : (liveKitExportButton.hovered ? theme.hoverSurface : "transparent"))
-                            border.width: 1
-                            border.color: !liveKitExportButton.enabled ? theme.borderSubtle
-                                          : (liveKitExportButton.activeFocus ? theme.focusRing
-                                             : (liveKitExportButton.pressed ? theme.selectionBorder : theme.borderSubtle))
-                            opacity: liveKitExportButton.enabled ? 1.0 : 0.4
-                        }
-                        onClicked: exportKitDialog.open()
-                    }
-                }
-                Label {
-                    id: liveKitExportStatus
-                    objectName: "liveKitExportStatus"
-                    visible: window.interaction.liveKitExportStatus.length > 0
-                    Layout.fillWidth: true
-                    text: window.interaction.liveKitExportStatus
-                    color: window.interaction.liveKitExportOk ? theme.textSecondary : theme.actionActive
-                    font.pixelSize: 11
-                    wrapMode: Text.Wrap
-                }
-                Rectangle {
-                    id: liveKitPendingBanner
-                    objectName: "liveKitPendingBanner"
-                    visible: window.interaction.liveKitPendingAdd !== ""
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 30
-                    radius: 4
-                    color: theme.selectionSurface
-                    border.color: theme.selectionBorder
-                    focus: visible
-                    onVisibleChanged: if (visible) forceActiveFocus()
-                    Keys.onEscapePressed: window.interaction.escapeLiveKitContext()
-                    Label {
-                        anchors.fill: parent
-                        anchors.leftMargin: 8
-                        anchors.rightMargin: 8
-                        text: "Add " + window.interaction.liveKitPendingAdd + " · Slot + · Esc"
-                        color: theme.textPrimary
-                        font.pixelSize: 11
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                }
-                Column {
-                    Layout.fillWidth: true
-                    Layout.alignment: Qt.AlignTop
-                    spacing: 0
-                    Repeater { model: window.screenData.liveKitGroups
-                        // #895: quieter group chrome — no idle box; fine border only when active/hover.
-                        delegate: Rectangle {
-                            property int kitGroupIndex: index
-                            property bool groupHovered: liveKitGroupHeader.containsMouse
-                            width: liveKitPane.width - 28
-                            height: 44 + (modelData.active ? modelData.slots.length * 26 + 14 : 0)
-                            radius: 4
-                            color: modelData.active ? theme.hoverSurface
-                                   : (groupHovered ? theme.hoverSurface : "transparent")
-                            border.width: (modelData.active || groupHovered) ? 1 : 0
-                            border.color: modelData.active ? theme.selectionBorder : theme.borderSubtle
-                            ColumnLayout { anchors.fill: parent; spacing: 0
-                                Item { Layout.fillWidth: true; Layout.preferredHeight: 44; Layout.leftMargin: 12; Layout.rightMargin: 10
-                                    RowLayout { anchors.fill: parent; spacing: 6
-                                        Label { text: (index + 1) + "  "; color: modelData.active ? theme.actionActive : theme.textSecondary; font.pixelSize: 12; font.bold: true; opacity: modelData.active ? 1.0 : 0.85 }
-                                        Label { text: modelData.name; color: theme.textPrimary; font.pixelSize: 13; font.bold: modelData.active; elide: Text.ElideRight; Layout.fillWidth: true }
-                                        Label { text: modelData.active ? "▾" : "▸"; color: modelData.active ? theme.textPrimary : theme.textSecondary; font.pixelSize: 11; opacity: 0.85 }
+                                    id: harmonyAddAction
+                                    Layout.preferredWidth: window.harmonicAddColumnWidth
+                                    Layout.preferredHeight: Math.min(window.densityActionHitTarget, window.densityRowHeight - 2 * window.densityVerticalInset)
+                                    Layout.maximumHeight: window.densityRowHeight - 2 * window.densityVerticalInset
+                                    radius: 3
+                                    color: harmonyAddMouse.containsMouse ? theme.hoverSurface : "transparent"
+                                    border.width: harmonyAddMouse.containsMouse ? 1 : 0
+                                    border.color: theme.borderSubtle
+                                    Label {
+                                        anchors.fill: parent
+                                        text: "+ Add"
+                                        color: harmonyAddMouse.containsMouse ? theme.textPrimary : theme.textSecondary
+                                        font.pixelSize: window.textCaption
+                                        horizontalAlignment: Text.AlignRight
+                                        verticalAlignment: Text.AlignVCenter
+                                        rightPadding: 4
                                     }
                                     MouseArea {
-                                        id: liveKitGroupHeader
-                                        objectName: "liveKitGroupHeader" + index
+                                        id: harmonyAddMouse
                                         anchors.fill: parent
                                         hoverEnabled: true
-                                        // onPressed (not onClicked): toggle before release so a
-                                        // collapsing group cannot slide a neighbor under the
-                                        // pointer and accidental-expand it (#743 disclosure).
-                                        onPressed: window.interaction.toggleLiveKitGroup(kitGroupIndex)
+                                        onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.addHarmonyToKit(index) }
                                     }
                                 }
-                            ColumnLayout { visible: modelData.active; Layout.fillWidth: true; Layout.leftMargin: 12; Layout.rightMargin: 10; Layout.topMargin: 2
-                                Repeater { model: modelData.active ? modelData.slots : []
-                                    delegate: Item {
-                                        objectName: "liveKitSlot" + kitGroupIndex + "_" + index
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 26
-                                        // Renderer-only intent: derived from the authoritative
-                                        // pending-Add property plus the read-only slot projection.
-                                        // Keeps no second Live-Kit target state.
-                                        property bool hasPendingAdd: window.interaction.liveKitPendingAdd !== ""
-                                        property bool isAssigned: modelData.assigned
-                                        property bool isEmpty: !modelData.assigned
-                                        property bool showReplaceAffordance: modelData.assigned && !hasPendingAdd
-                                        property bool showAddAffordance: !modelData.assigned || hasPendingAdd
-                                        Rectangle {
-                                            id: slotAuditionBackdrop
-                                            anchors.fill: parent
-                                            radius: 3
-                                            visible: modelData.auditioning
-                                            color: theme.selectionSurface
-                                            border.color: theme.selectionBorder
-                                        }
-                                        MouseArea {
-                                            id: slotAuditionMouse
-                                            objectName: "slotAuditionMouse"
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            enabled: modelData.assigned
-                                            onClicked: window.interaction.auditionLiveKitSlot(kitGroupIndex, index)
-                                        }
+                            }
+                            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: window.densityDividerHeight; color: theme.dividerDefault; opacity: 0.8 }
+                        }
+                    }
+                }
+            }
+            }
+
+            Rectangle {
+                id: bottomRackPane
+                objectName: "bottomRackPane"
+                width: parent.width
+                readonly property bool bottomExpanded: window.channelRack.bottomRackMaterialized
+                        || (window.interaction.liveKitRevealed && !window.interaction.liveKitCollapsed)
+                height: bottomExpanded
+                        ? parent.height * Math.max(window.channelRack.bottomRackHeightRatio, 0.24)
+                        : window.channelRack.bottomRackHeightPx
+                color: theme.surfacePanel
+                border.color: theme.borderSubtle
+                visible: window.interaction.hasActiveSource
+                         || window.channelRack.bottomRackMaterialized
+                // Compat objectName: historical Live Kit findChild probes (#845/#895 harnesses).
+                // Content lives under liveKitPane so findChild tree walks still resolve slots/headers.
+                Item {
+                    id: liveKitPane
+                    objectName: "liveKitPane"
+                    anchors.fill: parent
+                    visible: parent.visible
+                // #845 OPEN collapse handle — pane-local mid-edge; click/activate only.
+                Item {
+                    id: liveKitCollapseHandle
+                    objectName: "liveKitCollapseHandle"
+                    z: 30
+                    width: 14
+                    height: 56
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: false
+                    activeFocusOnTab: visible
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Collapse Live Kit"
+                    Accessible.onPressAction: window.interaction.toggleLiveKitCollapsed()
+                    property bool hovered: false
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 3
+                        color: liveKitCollapseHandle.hovered ? theme.surfaceElevated : "transparent"
+                        opacity: liveKitCollapseHandle.hovered ? 0.92 : 0.45
+                        border.width: liveKitCollapseHandle.activeFocus ? 1 : 0
+                        border.color: theme.selectionBorder
+                    }
+                    Text {
+                        anchors.centerIn: parent
+                        text: "›"
+                        color: theme.textSecondary
+                        opacity: liveKitCollapseHandle.hovered || liveKitCollapseHandle.activeFocus ? 1.0 : 0.55
+                        font.pixelSize: 14
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onEntered: liveKitCollapseHandle.hovered = true
+                        onExited: liveKitCollapseHandle.hovered = false
+                        onClicked: {
+                            liveKitCollapseHandle.forceActiveFocus()
+                            window.interaction.toggleLiveKitCollapsed()
+                        }
+                    }
+                    Keys.onReturnPressed: window.interaction.toggleLiveKitCollapsed()
+                    Keys.onEnterPressed: window.interaction.toggleLiveKitCollapsed()
+                    Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Space) {
+                            window.interaction.toggleLiveKitCollapsed()
+                            event.accepted = true
+                        }
+                    }
+                }
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: bottomRackPane.bottomExpanded ? 14 : 8
+                    spacing: 8
+                    RowLayout {
+                        visible: bottomRackPane.bottomExpanded
+                        Layout.fillWidth: true
+                        Label { text: "LIVE KIT"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
+                        Label { text: window.screenData.liveKitAssignedCount + " / " + window.screenData.liveKitTotalSlotCount; color: theme.textSecondary; font.pixelSize: 11 }
+                        Button {
+                            id: liveKitExportButton
+                            objectName: "liveKitExportButton"
+                            text: "Export Kit"
+                            flat: true
+                            implicitHeight: 26
+                            padding: 8
+                            leftPadding: 10
+                            rightPadding: 10
+                            Accessible.name: "Export Kit"
+                            contentItem: Text {
+                                text: liveKitExportButton.text
+                                color: !liveKitExportButton.enabled ? theme.textDisabled
+                                       : (liveKitExportButton.pressed ? theme.textPrimary
+                                          : (liveKitExportButton.hovered || liveKitExportButton.activeFocus ? theme.textPrimary : theme.textSecondary))
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                font.pixelSize: 11
+                                opacity: liveKitExportButton.enabled ? 1.0 : 0.45
+                            }
+                            background: Rectangle {
+                                implicitHeight: 26
+                                radius: 4
+                                color: !liveKitExportButton.enabled ? "transparent"
+                                       : (liveKitExportButton.pressed ? theme.surfaceElevated
+                                          : (liveKitExportButton.hovered ? theme.hoverSurface : "transparent"))
+                                border.width: 1
+                                border.color: !liveKitExportButton.enabled ? theme.borderSubtle
+                                              : (liveKitExportButton.activeFocus ? theme.focusRing
+                                                 : (liveKitExportButton.pressed ? theme.selectionBorder : theme.borderSubtle))
+                                opacity: liveKitExportButton.enabled ? 1.0 : 0.4
+                            }
+                            onClicked: exportKitDialog.open()
+                        }
+                    }
+                    Label {
+                        id: liveKitExportStatus
+                        objectName: "liveKitExportStatus"
+                        visible: bottomRackPane.bottomExpanded
+                                 && window.interaction.liveKitExportStatus.length > 0
+                        Layout.fillWidth: true
+                        text: window.interaction.liveKitExportStatus
+                        color: window.interaction.liveKitExportOk ? theme.textSecondary : theme.actionActive
+                        font.pixelSize: 11
+                        wrapMode: Text.Wrap
+                    }
+                    Rectangle {
+                        id: liveKitPendingBanner
+                        objectName: "liveKitPendingBanner"
+                        visible: bottomRackPane.bottomExpanded
+                                 && window.interaction.liveKitPendingAdd !== ""
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 30
+                        radius: 4
+                        color: theme.selectionSurface
+                        border.color: theme.selectionBorder
+                        focus: visible
+                        onVisibleChanged: if (visible) forceActiveFocus()
+                        Keys.onEscapePressed: window.interaction.escapeLiveKitContext()
+                        Label {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            text: "Add " + window.interaction.liveKitPendingAdd + " · Slot + · Esc"
+                            color: theme.textPrimary
+                            font.pixelSize: 11
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                        }
+                    }
+                    Column {
+                        visible: bottomRackPane.bottomExpanded
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignTop
+                        spacing: 0
+                        Repeater { model: window.screenData.liveKitGroups
+                            // #895: quieter group chrome — no idle box; fine border only when active/hover.
+                            delegate: Rectangle {
+                                property int kitGroupIndex: index
+                                property bool groupHovered: liveKitGroupHeader.containsMouse
+                                width: bottomRackPane.width - 28
+                                height: 44 + (modelData.active ? modelData.slots.length * 26 + 14 : 0)
+                                radius: 4
+                                color: modelData.active ? theme.hoverSurface
+                                       : (groupHovered ? theme.hoverSurface : "transparent")
+                                border.width: (modelData.active || groupHovered) ? 1 : 0
+                                border.color: modelData.active ? theme.selectionBorder : theme.borderSubtle
+                                ColumnLayout { anchors.fill: parent; spacing: 0
+                                    Item { Layout.fillWidth: true; Layout.preferredHeight: 44; Layout.leftMargin: 12; Layout.rightMargin: 10
                                         RowLayout { anchors.fill: parent; spacing: 6
-                                            Item { Layout.preferredWidth: 14; Layout.preferredHeight: 26
-                                                Label {
-                                                    anchors.centerIn: parent
-                                                    text: modelData.assigned ? "▶" : ""
-                                                    color: slotAuditionMouse.containsMouse && window.interaction.liveKitPendingAdd === "" ? theme.actionActive : (modelData.auditioning ? theme.actionActive : theme.textSecondary)
-                                                    font.pixelSize: 10
-                                                }
-                                            }
-                                            Label { text: modelData.name; color: theme.textSecondary; font.pixelSize: 11; Layout.fillWidth: true; elide: Text.ElideRight }
-                                            Label { text: modelData.assignment; color: modelData.auditioning ? theme.actionActive : (modelData.assigned ? theme.textPrimary : theme.textSecondary); font.pixelSize: 11; elide: Text.ElideRight }
-                                            Rectangle {
-                                                // #895: quieter slot affordance — fine border, accent only when pending/active.
-                                                id: slotAction
-                                                Layout.preferredHeight: 22
-                                                radius: 3
-                                                Layout.preferredWidth: showReplaceAffordance ? 52 : 22
-                                                color: hasPendingAdd ? theme.selectionSurface
-                                                       : (slotActionMouse.containsMouse ? theme.hoverSurface
-                                                          : (showReplaceAffordance ? theme.hoverSurface : "transparent"))
-                                                border.width: hasPendingAdd || showReplaceAffordance || slotActionMouse.containsMouse ? 1 : 0
-                                                border.color: hasPendingAdd ? theme.actionActive
-                                                              : (showReplaceAffordance || slotActionMouse.containsMouse ? theme.borderSubtle : "transparent")
-                                                Label {
-                                                    anchors.centerIn: parent
-                                                    objectName: "slotActionLabel" + kitGroupIndex + "_" + index
-                                                    text: hasPendingAdd ? "+" : (showReplaceAffordance ? "↻" : "+")
-                                                    color: hasPendingAdd ? theme.actionActive : (slotActionMouse.containsMouse ? theme.textPrimary : theme.textSecondary)
-                                                    font.pixelSize: showReplaceAffordance ? 14 : 13
-                                                }
-                                            }
+                                            Label { text: (index + 1) + "  "; color: modelData.active ? theme.actionActive : theme.textSecondary; font.pixelSize: 12; font.bold: true; opacity: modelData.active ? 1.0 : 0.85 }
+                                            Label { text: modelData.name; color: theme.textPrimary; font.pixelSize: 13; font.bold: modelData.active; elide: Text.ElideRight; Layout.fillWidth: true }
+                                            Label { text: modelData.active ? "▾" : "▸"; color: modelData.active ? theme.textPrimary : theme.textSecondary; font.pixelSize: 11; opacity: 0.85 }
                                         }
                                         MouseArea {
-                                            id: slotActionMouse
-                                            objectName: "slotActionMouse" + kitGroupIndex + "_" + index
-                                            x: slotAction.x
-                                            y: slotAction.y
-                                            width: slotAction.width
-                                            height: slotAction.height
+                                            id: liveKitGroupHeader
+                                            objectName: "liveKitGroupHeader" + index
+                                            anchors.fill: parent
                                             hoverEnabled: true
-                                            z: 1
-                                            onClicked: window.interaction.addLiveKitSlot(kitGroupIndex, index)
+                                            // onPressed (not onClicked): toggle before release so a
+                                            // collapsing group cannot slide a neighbor under the
+                                            // pointer and accidental-expand it (#743 disclosure).
+                                            onPressed: window.interaction.toggleLiveKitGroup(kitGroupIndex)
+                                        }
+                                    }
+                                ColumnLayout { visible: modelData.active; Layout.fillWidth: true; Layout.leftMargin: 12; Layout.rightMargin: 10; Layout.topMargin: 2
+                                    Repeater { model: modelData.active ? modelData.slots : []
+                                        delegate: Item {
+                                            objectName: "liveKitSlot" + kitGroupIndex + "_" + index
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 26
+                                            // Renderer-only intent: derived from the authoritative
+                                            // pending-Add property plus the read-only slot projection.
+                                            // Keeps no second Live-Kit target state.
+                                            property bool hasPendingAdd: window.interaction.liveKitPendingAdd !== ""
+                                            property bool isAssigned: modelData.assigned
+                                            property bool isEmpty: !modelData.assigned
+                                            property bool showReplaceAffordance: modelData.assigned && !hasPendingAdd
+                                            property bool showAddAffordance: !modelData.assigned || hasPendingAdd
+                                            Rectangle {
+                                                id: slotAuditionBackdrop
+                                                anchors.fill: parent
+                                                radius: 3
+                                                visible: modelData.auditioning
+                                                color: theme.selectionSurface
+                                                border.color: theme.selectionBorder
+                                            }
+                                            MouseArea {
+                                                id: slotAuditionMouse
+                                                objectName: "slotAuditionMouse"
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                enabled: modelData.assigned
+                                                onClicked: window.interaction.auditionLiveKitSlot(kitGroupIndex, index)
+                                            }
+                                            RowLayout { anchors.fill: parent; spacing: 6
+                                                Item { Layout.preferredWidth: 14; Layout.preferredHeight: 26
+                                                    Label {
+                                                        anchors.centerIn: parent
+                                                        text: modelData.assigned ? "▶" : ""
+                                                        color: slotAuditionMouse.containsMouse && window.interaction.liveKitPendingAdd === "" ? theme.actionActive : (modelData.auditioning ? theme.actionActive : theme.textSecondary)
+                                                        font.pixelSize: 10
+                                                    }
+                                                }
+                                                Label { text: modelData.name; color: theme.textSecondary; font.pixelSize: 11; Layout.fillWidth: true; elide: Text.ElideRight }
+                                                Label { text: modelData.assignment; color: modelData.auditioning ? theme.actionActive : (modelData.assigned ? theme.textPrimary : theme.textSecondary); font.pixelSize: 11; elide: Text.ElideRight }
+                                                Rectangle {
+                                                    // #895: quieter slot affordance — fine border, accent only when pending/active.
+                                                    id: slotAction
+                                                    Layout.preferredHeight: 22
+                                                    radius: 3
+                                                    Layout.preferredWidth: showReplaceAffordance ? 52 : 22
+                                                    color: hasPendingAdd ? theme.selectionSurface
+                                                           : (slotActionMouse.containsMouse ? theme.hoverSurface
+                                                              : (showReplaceAffordance ? theme.hoverSurface : "transparent"))
+                                                    border.width: hasPendingAdd || showReplaceAffordance || slotActionMouse.containsMouse ? 1 : 0
+                                                    border.color: hasPendingAdd ? theme.actionActive
+                                                                  : (showReplaceAffordance || slotActionMouse.containsMouse ? theme.borderSubtle : "transparent")
+                                                    Label {
+                                                        anchors.centerIn: parent
+                                                        objectName: "slotActionLabel" + kitGroupIndex + "_" + index
+                                                        text: hasPendingAdd ? "+" : (showReplaceAffordance ? "↻" : "+")
+                                                        color: hasPendingAdd ? theme.actionActive : (slotActionMouse.containsMouse ? theme.textPrimary : theme.textSecondary)
+                                                        font.pixelSize: showReplaceAffordance ? 14 : 13
+                                                    }
+                                                }
+                                            }
+                                            MouseArea {
+                                                id: slotActionMouse
+                                                objectName: "slotActionMouse" + kitGroupIndex + "_" + index
+                                                x: slotAction.x
+                                                y: slotAction.y
+                                                width: slotAction.width
+                                                height: slotAction.height
+                                                hoverEnabled: true
+                                                z: 1
+                                                onClicked: window.interaction.addLiveKitSlot(kitGroupIndex, index)
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
                     }
+                    }
+
+                    Label {
+                        visible: window.channelRack.bottomRackMaterialized
+                        text: "RACK"
+                        color: theme.textSecondary
+                        font.pixelSize: 12
+                        Layout.fillWidth: true
+                    }
+                    RowLayout {
+                        visible: window.channelRack.bottomRackMaterialized
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Button {
+                            id: bottomRackPlayButton
+                            objectName: "bottomRackPlayButton"
+                            text: window.channelRack.playing ? "Playing…" : "Play"
+                            enabled: !window.channelRack.playing
+                            onClicked: window.channelRack.play()
+                        }
+                        Button {
+                            id: bottomRackStopButton
+                            objectName: "bottomRackStopButton"
+                            text: "Stop"
+                            enabled: window.channelRack.playing
+                            onClicked: window.channelRack.stop()
+                        }
+                        Item { Layout.fillWidth: true }
+                    }
+                    ListView {
+                        id: bottomRackStepList
+                        objectName: "bottomRackStepList"
+                        visible: window.channelRack.bottomRackMaterialized
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: Math.min(180, contentHeight)
+                        clip: true
+                        model: window.channelRack.groups
+                        spacing: 6
+                        delegate: Column {
+                            width: bottomRackStepList.width
+                            spacing: 4
+                            Label {
+                                text: modelData.name
+                                color: theme.textSecondary
+                                font.pixelSize: 11
+                            }
+                            Repeater {
+                                model: modelData.rows
+                                delegate: RowLayout {
+                                    id: bottomRackRow
+                                    width: bottomRackStepList.width
+                                    spacing: 4
+                                    readonly property var rowData: modelData
+                                    Label {
+                                        Layout.preferredWidth: 140
+                                        text: rowData.display_name + (rowData.sample_label ? (" · " + rowData.sample_label) : "")
+                                        color: theme.textPrimary
+                                        font.pixelSize: 11
+                                        elide: Text.ElideRight
+                                    }
+                                    Label {
+                                        visible: rowData.row_kind === "loop_identity"
+                                        text: "Loop identity"
+                                        color: theme.textSecondary
+                                        font.pixelSize: 10
+                                    }
+                                    Repeater {
+                                        model: rowData.step_grid_enabled ? rowData.steps : []
+                                        delegate: Rectangle {
+                                            width: 16
+                                            height: 16
+                                            radius: 2
+                                            color: modelData ? theme.actionActive : theme.surfaceElevated
+                                            border.color: theme.borderSubtle
+                                            opacity: modelData ? 0.95 : 0.55
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                onClicked: window.channelRack.toggleStep(bottomRackRow.rowData.channel_id, index)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Label {
+                        visible: !bottomRackPane.bottomExpanded
+                        text: "Live Kit / Rack"
+                        color: theme.textSecondary
+                        font.pixelSize: 11
+                        opacity: 0.7
+                        Layout.fillWidth: true
+                    }
+                    Item { Layout.fillHeight: true }
                 }
                 }
-                Item { Layout.fillHeight: true }
             }
         }
+
     }
 
     Item {
         id: channelRackScreen
         objectName: "channelRackScreen"
         anchors.fill: parent
-        visible: window.activeScreen === "screen2"
+        // #908: legacy Screen-2 page retired from product UX
+        visible: false
         focus: visible
         activeFocusOnTab: true
         Keys.onPressed: function(event) {
@@ -5636,6 +5741,10 @@ def _qml_channel_rack_bridge(
             self._active_screen = "screen1"
             self._playing = False
             self._has_selected_sample = False
+            self._bottom_rack_materialized = False
+            self._bottom_rack_height_ratio = 0.0
+            self._bottom_rack_height_px = 32
+            self._product_surface = "bottom_rack"
             self._sync_from_controller()
 
         def _resolved_selected_path(self) -> str | None:
@@ -5659,6 +5768,10 @@ def _qml_channel_rack_bridge(
                 self._active_screen = "screen1"
                 self._playing = False
                 self._has_selected_sample = False
+                self._bottom_rack_materialized = False
+                self._bottom_rack_height_ratio = 0.0
+                self._bottom_rack_height_px = 32
+                self._product_surface = "bottom_rack"
                 return
             projection = controller.projection()
             self._groups = list(projection.get("groups") or [])
@@ -5668,6 +5781,18 @@ def _qml_channel_rack_bridge(
             self._active_screen = controller.active_screen
             self._playing = bool(controller.is_playing)
             self._has_selected_sample = self._resolved_selected_path() is not None
+            self._bottom_rack_materialized = bool(
+                projection.get("bottom_rack_materialized")
+            )
+            self._bottom_rack_height_ratio = float(
+                projection.get("bottom_rack_height_ratio") or 0.0
+            )
+            self._bottom_rack_height_px = int(
+                projection.get("bottom_rack_height_px") or 32
+            )
+            self._product_surface = str(
+                projection.get("product_surface") or "bottom_rack"
+            )
 
         def refresh(self) -> None:
             self._sync_from_controller()
@@ -5701,11 +5826,28 @@ def _qml_channel_rack_bridge(
         def stepMarkers(self) -> list:
             return self._step_markers
 
+        @Property(bool, notify=state_changed)
+        def bottomRackMaterialized(self) -> bool:
+            return self._bottom_rack_materialized
+
+        @Property(float, notify=state_changed)
+        def bottomRackHeightRatio(self) -> float:
+            return self._bottom_rack_height_ratio
+
+        @Property(int, notify=state_changed)
+        def bottomRackHeightPx(self) -> int:
+            return self._bottom_rack_height_px
+
+        @Property(str, notify=state_changed)
+        def productSurface(self) -> str:
+            return self._product_surface
+
         @Slot()
         def openChannelRack(self) -> None:
+            """#908: materialize bottom Rack without Screen-2 navigation."""
             if controller is None:
                 return
-            controller.enter_screen2()
+            controller.ensure_state()
             self.refresh()
 
         @Slot()
@@ -6824,6 +6966,10 @@ def _qml_engine(
         # Recompute widths before QML reacts to state_changed so RowLayout
         # never sees a 3-panel width set with a third handle visible.
         layout_model.syncFromInteraction()
+        # #908: Live Kit mutations materialize/reconcile bottom Rack projection.
+        rack_bridge = getattr(engine, "_screen1_channel_rack_bridge", None)
+        if rack_bridge is not None:
+            rack_bridge.refresh()
 
     channel_rack_bridge = _qml_channel_rack_bridge(
         channel_rack_controller,
@@ -6845,10 +6991,10 @@ def _qml_engine(
     persistence_bridge = _qml_session_persistence_bridge(session)
 
     def open_channel_rack() -> None:
-        # Prefer session orchestration so open always goes through the
-        # Cross-Screen Audio Focus Policy (#807); bridge refresh keeps QML in sync.
+        # #908: materialize bottom Rack via ensure_state; quiet audition through
+        # session focus claim only when playback is requested — not for open.
         if session is not None:
-            session.enter_screen2()
+            session.channel_rack.ensure_state()
             channel_rack_bridge.refresh()
             return
         channel_rack_bridge.openChannelRack()

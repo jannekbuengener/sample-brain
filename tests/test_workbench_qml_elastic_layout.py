@@ -27,14 +27,16 @@ def test_qml_projects_layout_model_widths_and_handles():
     assert "width: layoutModel.libraryWidth" in QML_SOURCE
     assert "layoutModel.browserWidth" in QML_SOURCE
     assert "layoutModel.harmonyWidth" in QML_SOURCE
-    assert "layoutModel.liveKitWidth" in QML_SOURCE
+    # #908: liveKitWidth remains on the Python elastic bridge (always 0).
     assert 'objectName: "elasticHandleAfterLibrary"' in QML_SOURCE
     assert 'objectName: "elasticHandleAfterBrowser"' in QML_SOURCE
-    assert 'objectName: "elasticHandleAfterHarmony"' in QML_SOURCE
     assert 'objectName: "harmonyPane"' in QML_SOURCE
+    assert 'objectName: "bottomRackPane"' in QML_SOURCE
+    assert 'objectName: "rightWorkspaceColumn"' in QML_SOURCE
+    # Horizontal handle after Harmony retired with horizontal Live Kit (#908).
+    assert 'objectName: "elasticHandleAfterHarmony"' not in QML_SOURCE
     assert 'layoutModel.applyDrag("library"' in QML_SOURCE
     assert 'layoutModel.applyDrag("browser"' in QML_SOURCE
-    assert 'layoutModel.applyDrag("harmony"' in QML_SOURCE
     assert "layoutModel.endDrag()" in QML_SOURCE
     assert "layoutModel.syncFromInteraction()" in QML_SOURCE
     # Hit target wider than the 6-DIP layout charge (visual strip stays thin).
@@ -109,14 +111,15 @@ def test_elastic_bridge_solves_3_and_4_panel_and_persists(tmp_path: Path):
     )
     available = 1600.0
     bridge.setContentWidth(available)
-    widths_3 = (
+    # #908: horizontal solve is library + browser (+ harmony); Live Kit is vertical.
+    widths_2 = (
         bridge.libraryWidth
         + bridge.browserWidth
-        + bridge.liveKitWidth
-        + 2 * HANDLE_WIDTH_PX
+        + 1 * HANDLE_WIDTH_PX
     )
-    assert abs(widths_3 - available) < 1.0
+    assert abs(widths_2 - available) < 1.0
     assert bridge.harmonyWidth == 0.0
+    assert bridge.liveKitWidth == 0.0
 
     before = dict(bridge.current_ratios())
     bridge.applyDrag("library", 30.0)
@@ -130,15 +133,16 @@ def test_elastic_bridge_solves_3_and_4_panel_and_persists(tmp_path: Path):
 
     harmony["value"] = True
     bridge.syncFromInteraction()
-    widths_4 = (
+    widths_3 = (
         bridge.libraryWidth
         + bridge.browserWidth
         + bridge.harmonyWidth
         + bridge.liveKitWidth
-        + 3 * HANDLE_WIDTH_PX
+        + 2 * HANDLE_WIDTH_PX
     )
-    assert abs(widths_4 - available) < 1.0
+    assert abs(widths_3 - available) < 1.0
     assert bridge.harmonyWidth > 0.0
+    assert bridge.liveKitWidth == 0.0
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
@@ -173,20 +177,24 @@ def test_qml_runtime_elastic_handles_and_esc_search_intact():
         library = window.findChild(QQuickItem, "libraryPane")
         browser = window.findChild(QQuickItem, "browserPane")
         live_kit = window.findChild(QQuickItem, "liveKitPane")
+        bottom = window.findChild(QQuickItem, "bottomRackPane")
         handle_lib = window.findChild(QQuickItem, "elasticHandleAfterLibrary")
         handle_browser = window.findChild(QQuickItem, "elasticHandleAfterBrowser")
         handle_harmony = window.findChild(QQuickItem, "elasticHandleAfterHarmony")
         search = window.findChild(QObject, "browserSearch")
         assert all(
             item is not None
-            for item in (library, browser, live_kit, handle_lib, handle_browser, search)
+            for item in (library, browser, live_kit, bottom, handle_lib, handle_browser, search)
         )
         assert handle_lib.isVisible()
-        assert handle_browser.isVisible()
-        assert handle_harmony is not None and not handle_harmony.isVisible()
+        # #908: browser/harmony handle only when Harmonic Matches is open.
+        assert not handle_browser.isVisible()
+        assert handle_harmony is None
         assert library.width() > 0
         assert browser.width() > 0
+        # Compat liveKitPane fills bottom band; horizontal width comes from column.
         assert live_kit.width() > 0
+        assert bottom.height() > 0
 
         search.forceActiveFocus()
         selected_before = view_model.selected_browser_index
@@ -209,18 +217,23 @@ def test_qml_runtime_elastic_handles_and_esc_search_intact():
         assert layout_model.harmonyWidth > 0
         harmony = window.findChild(QQuickItem, "harmonyPane")
         assert harmony is not None and harmony.opacity() > 0.0 and harmony.width() > 0
-        assert handle_harmony.isVisible()
+        assert handle_browser.isVisible()
         workspace = window.findChild(QQuickItem, "workspaceRow")
-        assert workspace is not None
+        right = window.findChild(QQuickItem, "rightWorkspaceColumn")
+        assert workspace is not None and right is not None
+        # Horizontal: Library + handle + right column.
         assert abs(
             library.width()
-            + browser.width()
-            + harmony.width()
-            + live_kit.width()
             + handle_lib.width()
-            + handle_browser.width()
-            + handle_harmony.width()
+            + right.width()
             - workspace.width()
+        ) < 2.0
+        # Upper row: browser + handle + harmony fills right column width.
+        assert abs(
+            browser.width()
+            + handle_browser.width()
+            + harmony.width()
+            - right.width()
         ) < 2.0
     finally:
         window.close()
@@ -231,6 +244,8 @@ def test_qml_runtime_elastic_handles_and_esc_search_intact():
         loader = getattr(engine, "_screen1_waveform_loader", None)
         if loader is not None:
             loader.close()
+        engine.deleteLater()
+        app.processEvents()
 
 
 def test_canonical_defaults_exported_for_qml_bridge():

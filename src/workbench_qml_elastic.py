@@ -40,15 +40,16 @@ def create_elastic_layout_bridge(
         "library": 300.0,
         "browser": 800.0,
         "harmony": 0.0,
-        "livekit": 300.0,
+        "livekit": 0.0,
     }
     persistable = bool(loaded.persistable)
     layout_revision = 0
     # Default True preserves legacy active-workspace callers; production passes
     # #725 library_revealed so collapsed Library reserves no elastic width.
     revealed = library_revealed if library_revealed is not None else (lambda: True)
-    # Default True preserves pre-#742 bridge callers; production passes disclosure.
-    kit_visible = live_kit_visible if live_kit_visible is not None else (lambda: True)
+    # #908: Live Kit is bottom-band only; horizontal livekit width stays 0.
+    # Parameter retained for call-site compatibility.
+    _ = live_kit_visible
     # Default True preserves pre-#845 callers; production passes presentation collapse.
     browser_is_visible = (
         browser_visible if browser_visible is not None else (lambda: True)
@@ -88,14 +89,14 @@ def create_elastic_layout_bridge(
                 harmony_open=bool(harmony_open()),
                 has_active_source=True,
                 library_visible=bool(revealed()),
-                live_kit_visible=bool(kit_visible()),
+                live_kit_visible=False,
                 browser_visible=bool(browser_is_visible()),
             )
             widths = {
                 "library": float(solution.widths.get("library", 0.0)),
                 "browser": float(solution.widths.get("browser", 0.0)),
                 "harmony": float(solution.widths.get("harmony", 0.0)),
-                "livekit": float(solution.widths.get("livekit", 0.0)),
+                "livekit": 0.0,
             }
 
         @Property(int, notify=changed)
@@ -120,7 +121,8 @@ def create_elastic_layout_bridge(
 
         @Property(float, notify=changed)
         def liveKitWidth(self) -> float:
-            return widths["livekit"]
+            # #908: Live Kit is no longer a horizontal elastic panel.
+            return 0.0
 
         @Slot(float)
         def setContentWidth(self, width: float) -> None:
@@ -150,7 +152,7 @@ def create_elastic_layout_bridge(
                 harmony_open=bool(harmony_open()),
                 has_active_source=True,
                 library_visible=bool(revealed()),
-                live_kit_visible=bool(kit_visible()),
+                live_kit_visible=False,
                 browser_visible=bool(browser_is_visible()),
             )
             self._recompute()

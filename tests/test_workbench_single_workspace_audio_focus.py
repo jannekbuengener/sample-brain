@@ -158,16 +158,16 @@ def _install_playable_rack(session, monkeypatch) -> None:
 
 def test_ensure_state_materializes_rack_without_enter_screen2():
     session = compose_workbench_session()
-    session.live_kit.assign("Kick + Bass", "Kick", _row("kick.wav"))
-
-    assert hasattr(session.channel_rack, "ensure_state")
     assert session.channel_rack.state is None
+    assert hasattr(session.channel_rack, "ensure_state")
+
+    # #908: Live Kit assign materializes Rack through ensure_state (no Screen-2).
+    session.live_kit.assign("Kick + Bass", "Kick", _row("kick.wav"))
+    assert session.channel_rack.state is not None
     assert session.channel_rack.active_screen == "screen1"
 
     state = session.channel_rack.ensure_state()
-
-    assert state is not None
-    assert session.channel_rack.state is state
+    assert state is session.channel_rack.state
     assert session.channel_rack.active_screen == "screen1"
 
 

@@ -77,7 +77,7 @@ def test_solver_excludes_collapsed_browser_from_visible_panels():
         browser_visible=False,
         live_kit_visible=True,
         library_visible=True,
-    ) == ("library", "livekit")
+    ) == ("library",)
 
 
 def test_solver_forces_harmony_out_when_browser_not_visible():
@@ -102,24 +102,24 @@ def test_solver_collapsed_browser_with_live_kit_renormalises_without_ratio_drift
         live_kit_visible=True,
         library_visible=True,
     )
-    assert set(solution.widths) == {"library", "livekit"}
-    handle_budget = HANDLE_WIDTH_PX * (len(solution.widths) - 1)
-    assert abs(sum(solution.widths.values()) + handle_budget - available) < 1e-6
+    # #908: Live Kit no longer takes horizontal width.
+    assert set(solution.widths) == {"library"}
+    assert abs(solution.widths["library"] - available) < 1e-6
     assert solution.ratios == CANONICAL_DEFAULT_RATIOS
 
 
 def test_solver_browser_visible_default_preserves_pre845_panel_sets():
-    """Default browser_visible=True must not change existing 3/4-panel sets."""
+    """Default browser_visible=True; #908 drops horizontal livekit."""
     assert visible_panel_ids(
         harmony_open=False,
         has_active_source=True,
         live_kit_visible=True,
-    ) == ("library", "browser", "livekit")
+    ) == ("library", "browser")
     assert visible_panel_ids(
         harmony_open=True,
         has_active_source=True,
         live_kit_visible=True,
-    ) == ("library", "browser", "harmony", "livekit")
+    ) == ("library", "browser", "harmony")
 
 
 # --- QML source contracts: handles vs resize ---------------------------------
@@ -143,11 +143,11 @@ def test_qml_collapse_handles_use_click_cursor_not_resize_cursor():
     # Existing elastic resize contract remains present and unchanged in intent.
     assert 'objectName: "elasticHandleAfterLibrary"' in QML_SOURCE
     assert 'objectName: "elasticHandleAfterBrowser"' in QML_SOURCE
-    assert 'objectName: "elasticHandleAfterHarmony"' in QML_SOURCE
+    assert 'objectName: "elasticHandleAfterHarmony"' not in QML_SOURCE
     assert "Qt.SizeHorCursor" in QML_SOURCE
     assert 'layoutModel.applyDrag("library"' in QML_SOURCE
     assert 'layoutModel.applyDrag("browser"' in QML_SOURCE
-    assert 'layoutModel.applyDrag("harmony"' in QML_SOURCE
+    assert 'layoutModel.applyDrag("harmony"' not in QML_SOURCE
 
 
 def test_qml_collapse_handles_are_keyboard_activatable():
@@ -167,7 +167,8 @@ def test_qml_collapse_handles_are_keyboard_activatable():
 
 def test_qml_collapse_handles_do_not_share_apply_drag_mouse_area():
     """Collapse click/activate must not live inside elastic drag MouseAreas."""
-    assert QML_SOURCE.count("layoutModel.applyDrag(") == 3
+    # #908: library + browser handles only.
+    assert QML_SOURCE.count("layoutModel.applyDrag(") == 2
     for handle in (
         "browserCollapseHandle",
         "harmonyCollapseHandle",

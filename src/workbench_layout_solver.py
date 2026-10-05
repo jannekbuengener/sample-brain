@@ -14,25 +14,24 @@ from typing import Mapping
 
 from .workbench_controller import workbench_state_dir
 
-PANEL_IDS: tuple[str, ...] = ("library", "browser", "harmony", "livekit")
+PANEL_IDS: tuple[str, ...] = ("library", "browser", "harmony")
 
 CANONICAL_DEFAULT_RATIOS: dict[str, float] = {
     "library": 0.18,
-    "browser": 0.50,
+    "browser": 0.64,
     "harmony": 0.18,
-    "livekit": 0.14,
 }
 
 HANDLE_WIDTH_PX = 6.0
 DEFAULT_DECAY = 0.55
 LAYOUT_PREFERENCES_SCHEMA_VERSION = 1
 _LAYOUT_PREFERENCES_FILENAME = "screen1_layout_preferences.json"
+_LEGACY_HORIZONTAL_LIVEKIT_ID = "livekit"
 
 PANEL_MIN_WIDTH: dict[str, float] = {
     "library": 230.0,
     "browser": 480.0,
     "harmony": 280.0,
-    "livekit": 220.0,
 }
 
 # Higher = more protected against crush. Browser is highest.
@@ -40,7 +39,6 @@ PANEL_PRIORITY: dict[str, int] = {
     "browser": 100,
     "library": 50,
     "harmony": 40,
-    "livekit": 30,
 }
 
 
@@ -102,7 +100,10 @@ def visible_panel_ids(
     # Clean Start: calm canvas is not a weighted panel; elastic is inactive.
     if not has_active_source:
         return ()
-    # Only actually materialised panes participate (#742 / #725 / #845).
+    # #908: Live Kit / Rack lives in the bottom band — not a horizontal elastic
+    # panel. ``live_kit_visible`` remains accepted for call-site compatibility
+    # but never allocates horizontal width.
+    del live_kit_visible
     panels: list[str] = []
     if library_visible:
         panels.append("library")
@@ -111,9 +112,23 @@ def visible_panel_ids(
         # Matches ⊂ Browser — never participate without a visible Browser.
         if harmony_open:
             panels.append("harmony")
-    if live_kit_visible:
-        panels.append("livekit")
     return tuple(panels)
+
+
+def _migrate_horizontal_ratios(panel_ratios: Mapping[str, object]) -> dict[str, float]:
+    """Drop legacy horizontal livekit weight and keep library/browser/harmony (#908)."""
+    migrated: dict[str, float] = {}
+    for panel_id in PANEL_IDS:
+        if panel_id not in panel_ratios:
+            continue
+        migrated[panel_id] = float(panel_ratios[panel_id])
+    if len(migrated) != len(PANEL_IDS):
+        # Incomplete legacy payload — fall back to defaults via normalize error path.
+        raise ValueError("legacy panel_ratios missing required horizontal panels")
+    # If livekit was present, its share is simply dropped and remaining ratios
+    # renormalize — deterministic and backwards-safe.
+    _ = panel_ratios.get(_LEGACY_HORIZONTAL_LIVEKIT_ID)
+    return normalize_ratios(migrated)
 
 
 def set_harmony_open(ratios: Mapping[str, float], _open: bool) -> dict[str, float]:
@@ -360,7 +375,7 @@ def load_layout_preferences(
             persistable=False,
         )
     try:
-        normalized = normalize_ratios(panel_ratios)
+        normalized = _migrate_horizontal_ratios(panel_ratios)
     except (TypeError, ValueError):
         return LayoutPreferencesLoadResult(
             ratios=defaults,

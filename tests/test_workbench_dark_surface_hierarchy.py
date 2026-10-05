@@ -333,9 +333,10 @@ def test_qml_primary_surfaces_have_no_atmosphere_overlays() -> None:
     assert "theme.surfacePanel" in harmony
     assert "NoirAtmosphere" not in harmony
 
-    live_kit = QML_SOURCE.split('objectName: "liveKitPane"', 1)[1][:1600]
-    assert "theme.surfacePanel" in live_kit
-    assert "NoirAtmosphere" not in live_kit
+    # #908: Live Kit content sits under bottomRackPane; panel fill is on the parent.
+    bottom = QML_SOURCE.split('objectName: "bottomRackPane"', 1)[1][:1600]
+    assert "theme.surfacePanel" in bottom
+    assert "NoirAtmosphere" not in bottom
 
 
 def test_theme_authority_bridge_exposes_hierarchy_without_atmosphere(

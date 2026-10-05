@@ -309,7 +309,7 @@ def test_runtime_browser_nav_from_screen2_returns_and_reveals() -> None:
         assert channel_rack is not None
         channel_rack.openChannelRack()
         settle(app)
-        assert window.property("activeScreen") == "screen2"
+        assert window.property("activeScreen") == "screen1"
         nav = window.findChild(QQuickItem, "programNavBrowser")
         assert nav is not None
         _click_item(window, nav, settle, app)
@@ -395,7 +395,7 @@ def test_runtime_live_kit_nav_from_screen2_returns_and_reveals() -> None:
         assert channel_rack is not None
         channel_rack.openChannelRack()
         settle(app)
-        assert window.property("activeScreen") == "screen2"
+        assert window.property("activeScreen") == "screen1"
         nav = window.findChild(QQuickItem, "programNavLiveKit")
         assert nav is not None
         assert nav.isEnabled() is True
@@ -411,7 +411,7 @@ def test_runtime_live_kit_nav_from_screen2_returns_and_reveals() -> None:
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 def test_runtime_program_footer_remains_visible_on_screen2() -> None:
-    """#831 P2: global footer chrome stays present on Step Sequencer route."""
+    """#831 P2 / #908: global footer chrome stays present with bottom Rack open."""
     from PySide6.QtQuick import QQuickItem
 
     app, engine, window, adapter, settle = _build_screen1_window(with_session=True)
@@ -420,7 +420,7 @@ def test_runtime_program_footer_remains_visible_on_screen2() -> None:
         assert channel_rack is not None
         channel_rack.openChannelRack()
         settle(app)
-        assert window.property("activeScreen") == "screen2"
+        assert window.property("activeScreen") == "screen1"
         footer = window.findChild(QQuickItem, "programFooterBand")
         bar = window.findChild(QQuickItem, "libraryScopeBar")
         assert footer is not None and bar is not None
