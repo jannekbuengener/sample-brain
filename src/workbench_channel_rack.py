@@ -26,6 +26,11 @@ from .channel_rack import (
     warm_channel_rack_pcm,
 )
 from .gesture_rack_integration import GestureRackIntegrationPlan
+from .loop_rack_playback import (
+    LoopCycleSpec,
+    NaturalCycleLoopPlayer,
+    build_loop_cycle_specs,
+)
 from .pattern_core import Trigger
 from .sequencer_pcm import SequencerPcmProvider
 from .session_grid import TempoMap
@@ -374,6 +379,10 @@ class ChannelRackController:
         self._loop_pass_index = 0
         self._loop_anchor_quarter = Fraction(0, 1)
         self._loop_anchor_engine_frame = 0
+        self._natural_loop_player: NaturalCycleLoopPlayer | None = None
+        self._frozen_loop_specs: tuple[LoopCycleSpec, ...] = ()
+        self._frozen_sync_enabled: bool | None = None
+        self._frozen_master_bpm: float | None = None
         self._on_claim_audio_focus = on_claim_audio_focus
         self._on_release_to_screen1 = on_release_to_screen1
         self._on_musical_state_changed = on_musical_state_changed
@@ -606,6 +615,53 @@ class ChannelRackController:
         self._loop_pass_index = 0
         self._loop_anchor_quarter = Fraction(0, 1)
         self._loop_anchor_engine_frame = 0
+        self._natural_loop_player = None
+        self._frozen_loop_specs = ()
+        self._frozen_sync_enabled = None
+        self._frozen_master_bpm = None
+
+    def _read_sync_enabled(self) -> bool:
+        getter = getattr(self._transport, "is_sync_enabled", None)
+        if callable(getter):
+            return bool(getter())
+        return bool(getattr(self._transport, "sync_enabled", False))
+
+    def _read_master_bpm(self) -> float:
+        getter = getattr(self._transport, "get_current_tempo", None)
+        if callable(getter):
+            return float(getter())
+        return float(getattr(self._transport, "bpm", 120.0) or 120.0)
+
+    def _start_natural_loop_player(self, *, engine: _SequencerEngineAdapter) -> None:
+        """Freeze Play-time loop specs and start NATURAL_CYCLE_REPEAT scheduler."""
+        sync_enabled = self._read_sync_enabled()
+        master_bpm = self._read_master_bpm()
+        self._frozen_sync_enabled = sync_enabled
+        self._frozen_master_bpm = master_bpm
+        warm_channel_rack_pcm(self._state, self._pcm_provider)
+        specs = build_loop_cycle_specs(
+            state=self._state,
+            live_kit=self._live_kit,
+            pcm_for_path=self._pcm_provider.pcm_for_path,
+            play_anchor_engine_frame=self._loop_anchor_engine_frame,
+            sync_enabled=sync_enabled,
+            master_bpm=master_bpm,
+        )
+        self._frozen_loop_specs = specs
+        if not specs:
+            self._natural_loop_player = None
+            return
+        player = NaturalCycleLoopPlayer(
+            specs,
+            pcm_for_path=self._pcm_provider.pcm_for_path,
+            lookahead_frames=self._lookahead_frames,
+        )
+        player.tick(
+            engine_frame=self._loop_anchor_engine_frame,
+            engine=engine,
+            allocate_voice_id=self._allocate_voice_id,
+        )
+        self._natural_loop_player = player
 
     def _resolve_engine_adapter(self) -> _SequencerEngineAdapter:
         if hasattr(self._transport, "ensure_engine_running"):
@@ -644,9 +700,13 @@ class ChannelRackController:
             live_kit=self._live_kit,
         )
 
+    def _has_active_natural_loops(self) -> bool:
+        return self._natural_loop_player is not None and bool(self._frozen_loop_specs)
+
     def _adopt_pass_handle(self, handle: ChannelRackPlayHandle, *, pass_index: int) -> bool:
         """Install handle when playable; return False when empty-pass honesty fails closed."""
-        if handle.player.done and int(handle.scheduled_count) == 0:
+        empty_pass = handle.player.done and int(handle.scheduled_count) == 0
+        if empty_pass and not self._has_active_natural_loops():
             self._play_handle = None
             self._playing = False
             self._clear_loop_session()
@@ -697,16 +757,19 @@ class ChannelRackController:
         self._loop_pass_index = 0
         self._loop_active = True
 
+        # Freeze loop specs for this Play (DEFER_UNTIL_NEXT_RACK_PLAY).
+        self._start_natural_loop_player(engine=engine)
+
         handle = self._start_pattern_pass(pass_index=0, engine=engine)
         # Honesty: do not advertise playing when the first tick already finished
-        # with nothing scheduled (missing PCM / empty pass soft-skip).
+        # with nothing scheduled (missing PCM / empty pass soft-skip) and no loops.
         if not self._adopt_pass_handle(handle, pass_index=0):
             return handle
         return handle
 
     def tick_playback(self) -> Mapping[str, Any] | None:
         """Advance the current pass; start the next finite pass when looping."""
-        if not self._playing or self._play_handle is None:
+        if not self._playing:
             return None
         raw_engine = self._transport.get_native_engine()
         if raw_engine is None:
@@ -721,6 +784,22 @@ class ChannelRackController:
                 engine_frame = _read_transport_engine_frame(self._transport)
         except Exception:
             pass
+
+        if self._natural_loop_player is not None:
+            self._natural_loop_player.tick(
+                engine_frame=engine_frame,
+                engine=engine,
+                allocate_voice_id=self._allocate_voice_id,
+            )
+
+        if self._play_handle is None:
+            return {
+                "scheduled_count": 0,
+                "pending_count": 0,
+                "live_voice_count": 0,
+                "playing": self._playing,
+            }
+
         tick = self._play_handle.player.tick(
             engine_frame=engine_frame,
             engine=engine,
@@ -736,7 +815,18 @@ class ChannelRackController:
                 )
                 # play_channel_rack_once already performed the initial tick.
                 if not self._adopt_pass_handle(next_handle, pass_index=next_index):
-                    # Empty / unplayable follow-up pass: fail closed, no busy loop.
+                    # Empty / unplayable follow-up pass: fail closed, no busy loop
+                    # unless natural-cycle loops are still owning playback.
+                    if self._has_active_natural_loops():
+                        self._play_handle = next_handle
+                        self._loop_pass_index = next_index
+                        self._playing = True
+                        return {
+                            "scheduled_count": 0,
+                            "pending_count": 0,
+                            "live_voice_count": 0,
+                            "playing": True,
+                        }
                     return {
                         "scheduled_count": 0,
                         "pending_count": 0,
@@ -748,6 +838,14 @@ class ChannelRackController:
                     "pending_count": int(next_handle.player.pending_count),
                     "live_voice_count": int(next_handle.player.live_voice_count),
                     "playing": self._playing,
+                }
+            if self._has_active_natural_loops():
+                self._play_handle = None
+                return {
+                    "scheduled_count": tick.scheduled_count,
+                    "pending_count": 0,
+                    "live_voice_count": tick.live_voice_count,
+                    "playing": True,
                 }
             self._playing = False
             self._play_handle = None
@@ -761,17 +859,19 @@ class ChannelRackController:
 
     def stop(self) -> None:
         handle = self._play_handle
+        loop_player = self._natural_loop_player
         self._play_handle = None
         self._playing = False
         self._clear_loop_session()
-        if handle is None:
-            return
         raw_engine = None
         if hasattr(self._transport, "get_native_engine"):
             raw_engine = self._transport.get_native_engine()
         if raw_engine is not None:
-            handle.player.stop(_SequencerEngineAdapter(raw_engine))
-
+            adapter = _SequencerEngineAdapter(raw_engine)
+            if loop_player is not None:
+                loop_player.stop(adapter)
+            if handle is not None:
+                handle.player.stop(adapter)
 
 __all__ = [
     "BOTTOM_RACK_EMPTY_STRIP_PX",
