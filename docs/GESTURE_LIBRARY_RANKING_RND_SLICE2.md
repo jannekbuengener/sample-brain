@@ -123,7 +123,7 @@ ClusterRanking (frozen)
 
 **Decision:** median. Slice-1 clustering already prefers similar events, but median remains robust if a borderline event joins a cluster. Consistent across reruns; no RNG.
 
-Prototype lives in **raw gesture space** (RMS amplitude, Hz, MFCC13), then a single alignment step is applied.
+Prototype lives in **raw gesture space** (RMS amplitude, Hz, MFCC13), then a single alignment step is applied. Any non-finite raw feature among cluster events fail-closes that cluster (no silent NaN imputation).
 
 ### 2. Feature alignment
 
@@ -198,6 +198,6 @@ See `tests/test_gesture_library_ranking_882.py` (frozen at TEST_FREEZE).
 | Field | Value |
 |-------|-------|
 | Implementation module / seam | `src/gesture_library_ranking.py` → `rank_gesture_library_candidates(...)` |
-| Measured tests | Focused `tests/test_gesture_library_ranking_882.py`: **22 passed**; Slice-1 `tests/test_gesture_analysis.py`: **9 passed**; protected Pattern/Channel/analyze-feature group: **100 passed** |
+| Measured tests | Focused `tests/test_gesture_library_ranking_882.py`: **23 passed** (incl. mixed non-finite fail-closed); Slice-1 `tests/test_gesture_analysis.py`: **9 passed**; protected Pattern/Channel/analyze-feature group: **100 passed** |
 | R&D EXIT | `DETERMINISTIC_FEATURE_RANKING_VIABLE` |
 | Producer-quality limitation | `PRODUCER_QUALITY_NOT_VALIDATED` — synthetic contract only; no musical/producer-quality claim |

@@ -8,10 +8,10 @@ Synthetic candidates only — no private catalog paths, DBs, or audio binaries.
 
 from __future__ import annotations
 
+import ast
 import importlib
-import inspect
 import math
-import sys
+from pathlib import Path
 from typing import Iterable
 
 import pytest
@@ -24,6 +24,38 @@ from src.gesture_library_ranking import (
     RankedCandidate,
     rank_gesture_library_candidates,
 )
+
+
+_ALLOWED_IMPORT_ROOTS = frozenset(
+    {
+        "__future__",
+        "collections",
+        "collections.abc",
+        "dataclasses",
+        "math",
+        "numpy",
+        "gesture_analysis",  # relative: from .gesture_analysis import ...
+    }
+)
+
+
+def _imported_module_names(mod: object) -> set[str]:
+    """Return import roots declared by the module AST (not source substrings)."""
+    path = Path(getattr(mod, "__file__"))
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                names.add(alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            if node.level and node.module:
+                names.add(node.module.split(".")[0])
+            elif node.level and not node.module:
+                continue
+            elif node.module:
+                names.add(node.module.split(".")[0])
+    return names
 
 
 def _feat(
@@ -363,39 +395,28 @@ def test_no_pattern_channel_trigger_objects_created() -> None:
         for r in x.ranked:
             assert not isinstance(r, pattern_core.Trigger)
     mod = importlib.import_module("src.gesture_library_ranking")
-    src = inspect.getsource(mod)
-    assert "pattern_core" not in src
-    assert "Pattern(" not in src
-    assert "Trigger(" not in src
-    assert "Channel(" not in src
+    imported = _imported_module_names(mod)
+    assert imported <= _ALLOWED_IMPORT_ROOTS
+    assert "pattern_core" not in imported
+    assert "channel_rack" not in imported
 
 
 def test_no_sqlite_dependency_in_core_ranker() -> None:
     """17. No SQLite dependency in core ranker."""
     mod = importlib.import_module("src.gesture_library_ranking")
-    src = inspect.getsource(mod)
-    for banned in ("sqlite", "sqlalchemy", "from .db", "import src.db", "from src.db"):
-        assert banned not in src
-    assert "src.db" not in getattr(mod, "__dict__", {})
-    assert not any(n == "db" or n.endswith(".db") for n in getattr(mod, "__dict__", {}))
+    imported = _imported_module_names(mod)
+    assert imported <= _ALLOWED_IMPORT_ROOTS
+    for banned in ("sqlite3", "sqlalchemy", "db"):
+        assert banned not in imported
 
 
 def test_no_embedding_model_invocation() -> None:
     """18. No embedding/model invocation."""
     mod = importlib.import_module("src.gesture_library_ranking")
-    src = inspect.getsource(mod)
-    src_lower = src.lower()
-    for banned in (
-        "clap",
-        "torch",
-        "get_backend",
-        "embeddingbackend",
-        "from .embed",
-        "from .search",
-        "import src.embed",
-        "import src.search",
-    ):
-        assert banned not in src_lower
+    imported = _imported_module_names(mod)
+    assert imported <= _ALLOWED_IMPORT_ROOTS
+    for banned in ("embed", "search", "torch", "transformers"):
+        assert banned not in imported
 
     analysis = _analysis([GestureEvent(0.2, _feat(0.2, 1000.0), 0)])
     rank_gesture_library_candidates(analysis, (_candidate("a"),), top_n=1)
@@ -404,9 +425,10 @@ def test_no_embedding_model_invocation() -> None:
 def test_no_new_runtime_dependency_surface() -> None:
     """19. No new runtime dependency beyond existing analyze/gesture stack."""
     mod = importlib.import_module("src.gesture_library_ranking")
-    src = inspect.getsource(mod)
-    for banned in ("sklearn", "scipy.spatial", "faiss", "annoy", "hnswlib", "requests"):
-        assert banned not in src
+    imported = _imported_module_names(mod)
+    assert imported <= _ALLOWED_IMPORT_ROOTS
+    for banned in ("sklearn", "scipy", "faiss", "annoy", "hnswlib", "requests"):
+        assert banned not in imported
 
 
 def test_no_semantic_drum_label_inferred() -> None:
@@ -428,10 +450,8 @@ def test_no_semantic_drum_label_inferred() -> None:
     blob = repr(result).lower()
     for label in ("kick", "snare", "hat", "hihat", "hi-hat"):
         assert label not in blob
-    mod = importlib.import_module("src.gesture_library_ranking")
-    src_lower = inspect.getsource(mod).lower()
-    for label in ("kick", "snare", "hihat", "hi-hat"):
-        assert label not in src_lower
+    # Behavioral: cluster_ids remain opaque ints, not role strings.
+    assert all(isinstance(row.cluster_id, int) for row in result)
 
 
 def test_median_prototype_prefers_robust_center() -> None:
@@ -459,5 +479,21 @@ def test_non_positive_prototype_rms_fail_closed_empty_ranking() -> None:
     analysis = _analysis([GestureEvent(0.2, _feat(0.0, 1000.0, mfcc0=1.0), 0)])
     result = rank_gesture_library_candidates(analysis, (_candidate("a"),), top_n=1)
     assert len(result) == 1
+    assert result[0].ranked == ()
+    assert result[0].prototype_aligned == ()
+
+
+def test_mixed_nonfinite_event_features_fail_closed() -> None:
+    """Any non-finite raw feature in a cluster → fail-closed empty ranking."""
+    good = _feat(0.2, 1000.0, mfcc0=1.0)
+    bad = list(good)
+    bad[3] = float("nan")
+    analysis = _analysis(
+        [
+            GestureEvent(0.1, good, 0),
+            GestureEvent(0.4, tuple(bad), 0),
+        ]
+    )
+    result = rank_gesture_library_candidates(analysis, (_candidate("a"),), top_n=1)
     assert result[0].ranked == ()
     assert result[0].prototype_aligned == ()

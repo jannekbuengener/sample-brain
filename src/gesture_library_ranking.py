@@ -151,9 +151,12 @@ def _median_prototype(vectors: Sequence[tuple[float, ...]]) -> tuple[float, ...]
     matrix = np.asarray(vectors, dtype=np.float64)
     if matrix.ndim != 2 or matrix.shape[1] != FEATURE_DIM:
         return None
-    # Non-finite raw dims → NaN median → fail closed at alignment.
-    clean = np.where(np.isfinite(matrix), matrix, np.nan)
-    med = np.nanmedian(clean, axis=0)
+    # Any non-finite raw value fail-closes the cluster (no silent imputation).
+    if not np.isfinite(matrix).all():
+        return None
+    med = np.median(matrix, axis=0)
+    if not np.isfinite(med).all():
+        return None
     return tuple(float(x) for x in med)
 
 
