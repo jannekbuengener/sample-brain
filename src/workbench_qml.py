@@ -3892,7 +3892,7 @@ ApplicationWindow {
                         Label { objectName: "browserColumnHeader_type"; visible: !browserPane.browserNarrowColumns; text: "TYPE"; color: theme.textSecondary; Layout.preferredWidth: window.browserTypeColumnWidth; Layout.maximumWidth: 88; horizontalAlignment: Text.AlignLeft; font.pixelSize: window.textCaption; font.bold: true }
                     }
                 }
-                // Playlist list-viewport reuses Clean-Start canvas fill (theme.surfaceRoot).
+                // All Samples list-viewport reuses Clean-Start canvas fill (theme.surfaceRoot).
                 // Outer browserPane chrome stays surfaceBrowser; Library/Harmony/Live Kit unchanged.
                 Rectangle {
                     id: browserListViewport
