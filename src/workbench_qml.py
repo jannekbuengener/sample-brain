@@ -1894,31 +1894,32 @@ ApplicationWindow {
     }
 
     // #831 program footer band — scope utility left, context hint right (#830 / #770).
+    // #880: slim/premium footer geometry (chosen ~28; not screenshot-pixel truth).
     // Global program chrome: keep the footer present on Screen 1 and Screen 2.
     footer: Item {
         id: programFooterBand
         objectName: "programFooterBand"
-        height: 40
+        height: 28
         Rectangle {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
             height: 1
             color: theme.dividerDefault
-            opacity: 0.45
+            opacity: 0.35
         }
         RowLayout {
             anchors.fill: parent
             anchors.leftMargin: 8
             anchors.rightMargin: 12
-            spacing: 8
+            spacing: 6
             RowLayout {
                 id: libraryScopeBar
                 objectName: "libraryScopeBar"
-                spacing: 6
+                spacing: 4
                 property string mode: "sources"
-                readonly property int controlSize: 28
-                readonly property int iconPad: 6
+                readonly property int controlSize: 22
+                readonly property int iconPad: 4
 
                 function scopeFill(active, hovered) {
                     if (active)
@@ -1958,7 +1959,7 @@ ApplicationWindow {
                             contextHintState.clearFocus("library.scope.sources")
                     }
                     background: Rectangle {
-                        radius: 4
+                        radius: 2
                         color: libraryScopeBar.scopeFill(sourcesScopeButton.checked, sourcesScopeButton.hovered)
                         border.width: sourcesScopeButton.checked ? 1 : 0
                         border.color: libraryScopeBar.scopeStroke(sourcesScopeButton.checked)
@@ -2015,7 +2016,7 @@ ApplicationWindow {
                             contextHintState.clearFocus("library.scope.all_samples")
                     }
                     background: Rectangle {
-                        radius: 4
+                        radius: 2
                         color: libraryScopeBar.scopeFill(allSamplesScopeButton.checked, allSamplesScopeButton.hovered)
                         border.width: allSamplesScopeButton.checked ? 1 : 0
                         border.color: libraryScopeBar.scopeStroke(allSamplesScopeButton.checked)
@@ -2070,7 +2071,7 @@ ApplicationWindow {
                             contextHintState.clearFocus("library.scope.collections")
                     }
                     background: Rectangle {
-                        radius: 4
+                        radius: 2
                         color: libraryScopeBar.scopeFill(collectionsScopeButton.checked, collectionsScopeButton.hovered)
                         border.width: collectionsScopeButton.checked ? 1 : 0
                         border.color: libraryScopeBar.scopeStroke(collectionsScopeButton.checked)
@@ -2124,7 +2125,7 @@ ApplicationWindow {
                             contextHintState.clearFocus("library.scope.favorites")
                     }
                     background: Rectangle {
-                        radius: 4
+                        radius: 2
                         color: libraryScopeBar.scopeFill(favoritesScopeButton.checked, favoritesScopeButton.hovered)
                         border.width: favoritesScopeButton.checked ? 1 : 0
                         border.color: libraryScopeBar.scopeStroke(favoritesScopeButton.checked)
@@ -2200,7 +2201,7 @@ ApplicationWindow {
                             contextHintState.clearFocus("library.scope.recordings")
                     }
                     background: Rectangle {
-                        radius: 4
+                        radius: 2
                         color: libraryScopeBar.scopeFill(recordingsScopeButton.checked, recordingsScopeButton.hovered)
                         border.width: recordingsScopeButton.checked ? 1 : 0
                         border.color: libraryScopeBar.scopeStroke(recordingsScopeButton.checked)
@@ -2259,18 +2260,27 @@ ApplicationWindow {
     }
 
     // #831 program chrome — identity left / navigation center / tempo zone right (#830).
+    // #880: slim/premium header geometry (chosen ~36; not screenshot-pixel truth).
     header: Rectangle {
         id: screen1Header
         objectName: "screen1Header"
-        height: 54
+        height: 36
         color: theme.surfaceHeader
-        border.color: theme.borderSubtle
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: 1
+            color: theme.dividerDefault
+            opacity: 0.35
+            z: 3
+        }
 
         Item {
             id: headerLeftZone
             objectName: "headerLeftZone"
             anchors.left: parent.left
-            anchors.leftMargin: 22
+            anchors.leftMargin: 14
             anchors.verticalCenter: parent.verticalCenter
             height: parent.height
             width: productIdentity.implicitWidth
@@ -2278,10 +2288,10 @@ ApplicationWindow {
             Label {
                 id: productIdentity
                 anchors.verticalCenter: parent.verticalCenter
-                text: "◉  Sample Brain"
+                text: "Sample Brain"
                 color: theme.textPrimary
-                font.pixelSize: 18
-                font.bold: true
+                font.pixelSize: 13
+                font.bold: false
             }
         }
 
@@ -2306,12 +2316,40 @@ ApplicationWindow {
                 x: Math.min(Math.max(0, idealX), Math.max(0, parent.width - width))
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.min(implicitWidth, parent.width)
-                spacing: 2
+                spacing: 4
                 ToolButton {
+                    id: programNavBrowser
                     objectName: "programNavBrowser"
                     text: "Browser"
                     flat: true
-                    font.pixelSize: 12
+                    font.pixelSize: 11
+                    padding: 0
+                    leftPadding: 8
+                    rightPadding: 8
+                    topPadding: 2
+                    bottomPadding: 4
+                    implicitHeight: 22
+                    Layout.preferredHeight: 22
+                    readonly property bool navActive: window.activeScreen === "screen1"
+                    background: Item {
+                        implicitHeight: 22
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            height: 1
+                            color: theme.actionActive
+                            visible: programNavBrowser.navActive
+                            opacity: 0.95
+                        }
+                    }
+                    contentItem: Text {
+                        text: programNavBrowser.text
+                        font: programNavBrowser.font
+                        color: programNavBrowser.navActive ? theme.textPrimary : theme.textSecondary
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
                     onClicked: {
                         if (window.activeScreen === "screen2")
                             window.interaction.returnToScreen1()
@@ -2320,11 +2358,42 @@ ApplicationWindow {
                     }
                 }
                 ToolButton {
+                    id: programNavLiveKit
                     objectName: "programNavLiveKit"
                     text: "Live Kit"
                     flat: true
-                    font.pixelSize: 12
+                    font.pixelSize: 11
+                    padding: 0
+                    leftPadding: 8
+                    rightPadding: 8
+                    topPadding: 2
+                    bottomPadding: 4
+                    implicitHeight: 22
+                    Layout.preferredHeight: 22
                     enabled: window.interaction.liveKitRevealed
+                    readonly property bool navActive: false
+                    background: Item {
+                        implicitHeight: 22
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            height: 1
+                            color: theme.actionActive
+                            visible: programNavLiveKit.navActive
+                            opacity: 0.95
+                        }
+                    }
+                    contentItem: Text {
+                        text: programNavLiveKit.text
+                        font: programNavLiveKit.font
+                        color: programNavLiveKit.enabled
+                            ? (programNavLiveKit.navActive ? theme.textPrimary : theme.textSecondary)
+                            : theme.textDisabled
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        opacity: programNavLiveKit.enabled ? 1.0 : 0.45
+                    }
                     onClicked: {
                         if (window.activeScreen === "screen2")
                             window.interaction.returnToScreen1()
@@ -2333,21 +2402,66 @@ ApplicationWindow {
                     }
                 }
                 ToolButton {
+                    id: programNavStepSequencer
                     objectName: "programNavStepSequencer"
                     text: "Step Sequencer"
                     flat: true
-                    font.pixelSize: 12
+                    font.pixelSize: 11
+                    padding: 0
+                    leftPadding: 8
+                    rightPadding: 8
+                    topPadding: 2
+                    bottomPadding: 4
+                    implicitHeight: 22
+                    Layout.preferredHeight: 22
+                    readonly property bool navActive: window.activeScreen === "screen2"
+                    background: Item {
+                        implicitHeight: 22
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            height: 1
+                            color: theme.actionActive
+                            visible: programNavStepSequencer.navActive
+                            opacity: 0.95
+                        }
+                    }
+                    contentItem: Text {
+                        text: programNavStepSequencer.text
+                        font: programNavStepSequencer.font
+                        color: programNavStepSequencer.navActive ? theme.textPrimary : theme.textSecondary
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
                     onClicked: {
                         if (window.activeScreen === "screen1")
                             window.interaction.openChannelRack()
                     }
                 }
                 ToolButton {
+                    id: programNavArrangement
                     objectName: "programNavArrangement"
                     text: "Arrangement"
                     flat: true
-                    font.pixelSize: 12
+                    font.pixelSize: 11
+                    padding: 0
+                    leftPadding: 8
+                    rightPadding: 8
+                    topPadding: 2
+                    bottomPadding: 4
+                    implicitHeight: 22
+                    Layout.preferredHeight: 22
                     enabled: false
+                    background: Item { implicitHeight: 22 }
+                    contentItem: Text {
+                        text: programNavArrangement.text
+                        font: programNavArrangement.font
+                        color: theme.textDisabled
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        opacity: 0.45
+                    }
                 }
             }
         }
@@ -2356,7 +2470,7 @@ ApplicationWindow {
             id: headerTransportZone
             objectName: "headerTransportZone"
             anchors.right: parent.right
-            anchors.rightMargin: 22
+            anchors.rightMargin: 14
             anchors.verticalCenter: parent.verticalCenter
             height: parent.height
             // Reserve a usable nav band (~380px) for four destinations at min width.
@@ -2374,21 +2488,22 @@ ApplicationWindow {
                 spacing: 0
                 width: implicitWidth
             // #805: MASTER/GRID/SYNC project session tempo/SYNC authority only.
-            Label { text: "MASTER"; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignVCenter }
+            // #880: lighter transport typography / compact SYNC chip.
+            Label { text: "MASTER"; color: theme.textSecondary; font.pixelSize: 10; Layout.alignment: Qt.AlignVCenter }
             Button {
                 objectName: "tempoDownButton"
                 text: "−"
                 Accessible.name: "Tempo down"
                 flat: true
-                implicitWidth: 22
-                implicitHeight: 24
+                implicitWidth: 18
+                implicitHeight: 20
                 Layout.alignment: Qt.AlignVCenter
                 contentItem: Text {
                     text: "−"
                     color: theme.textSecondary
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
-                    font.pixelSize: 14
+                    font.pixelSize: 12
                 }
                 background: Item {}
                 onClicked: window.tempoSync.adjustTempo(-1.0)
@@ -2397,8 +2512,8 @@ ApplicationWindow {
                 objectName: "masterTempoValue"
                 text: window.tempoSync.masterTempoText
                 color: theme.textPrimary
-                font.pixelSize: 20
-                font.bold: true
+                font.pixelSize: 13
+                font.bold: false
                 Layout.alignment: Qt.AlignVCenter
             }
             Button {
@@ -2406,39 +2521,39 @@ ApplicationWindow {
                 text: "+"
                 Accessible.name: "Tempo up"
                 flat: true
-                implicitWidth: 22
-                implicitHeight: 24
+                implicitWidth: 18
+                implicitHeight: 20
                 Layout.alignment: Qt.AlignVCenter
                 contentItem: Text {
                     text: "+"
                     color: theme.textSecondary
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
-                    font.pixelSize: 14
+                    font.pixelSize: 12
                 }
                 background: Item {}
                 onClicked: window.tempoSync.adjustTempo(1.0)
             }
-            Label { text: "BPM"; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignVCenter }
-            Item { width: 24 }
-            Label { text: "GRID"; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignVCenter }
+            Label { text: "BPM"; color: theme.textSecondary; font.pixelSize: 10; Layout.alignment: Qt.AlignVCenter }
+            Item { width: 10 }
+            Label { text: "GRID"; color: theme.textSecondary; font.pixelSize: 10; Layout.alignment: Qt.AlignVCenter }
             Label {
                 objectName: "gridValue"
                 text: window.tempoSync.gridText
                 color: theme.textPrimary
-                font.pixelSize: 20
-                font.bold: true
+                font.pixelSize: 13
+                font.bold: false
                 Layout.alignment: Qt.AlignVCenter
             }
-            Item { width: 24 }
-            Label { text: "SYNC"; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignVCenter }
+            Item { width: 10 }
+            Label { text: "SYNC"; color: theme.textSecondary; font.pixelSize: 10; Layout.alignment: Qt.AlignVCenter }
             Rectangle {
                 id: syncIndicator
                 objectName: "syncIndicator"
-                width: 48; height: 25; radius: 4
-                color: window.tempoSync.syncEnabled ? theme.actionActive : theme.surfaceElevated
-                border.width: window.tempoSync.syncEnabled ? 0 : 1
-                border.color: theme.borderSubtle
+                width: 34; height: 18; radius: 2
+                color: window.tempoSync.syncEnabled ? theme.actionActive : "transparent"
+                border.width: 1
+                border.color: window.tempoSync.syncEnabled ? theme.actionActive : theme.borderSubtle
                 Layout.alignment: Qt.AlignVCenter
                 Accessible.name: "SYNC"
                 Label {
@@ -2446,7 +2561,8 @@ ApplicationWindow {
                     anchors.centerIn: parent
                     text: window.tempoSync.syncEnabled ? "ON" : "OFF"
                     color: window.tempoSync.syncEnabled ? theme.textOnAction : theme.textSecondary
-                    font.bold: true
+                    font.pixelSize: 9
+                    font.bold: false
                 }
                 MouseArea {
                     anchors.fill: parent
@@ -2454,14 +2570,14 @@ ApplicationWindow {
                     onClicked: window.tempoSync.toggleSync()
                 }
             }
-            Item { width: 16 }
+            Item { width: 8 }
             // #819: calm Python-owned persistence honesty (hidden when OK/fresh).
             Label {
                 objectName: "sessionPersistenceStatusLabel"
                 visible: window.sessionPersistence.attention
                 text: window.sessionPersistence.statusLabel
                 color: theme.textSecondary
-                font.pixelSize: 11
+                font.pixelSize: 10
                 Layout.alignment: Qt.AlignVCenter
                 // Secondary honesty may compact; critical tempo/SYNC controls stay.
                 Layout.maximumWidth: screen1Header.width < 1200 ? 88 : 160
@@ -2469,7 +2585,7 @@ ApplicationWindow {
                 Accessible.name: "Session persistence status"
             }
             Item {
-                width: window.sessionPersistence.attention ? 16 : 0
+                width: window.sessionPersistence.attention ? 8 : 0
             }
             // #843: Harmonic Matches producer entry is the Sample Context Menu.
             // #845 collapse/reopen keeps activateHarmonicMatchToggle() as the sole helper.
@@ -2482,8 +2598,17 @@ ApplicationWindow {
                     visible: window.activeScreen === "screen1"
                     text: "⋯"
                     flat: true
-                    implicitWidth: 36
-                    implicitHeight: 32
+                    implicitWidth: 24
+                    implicitHeight: 22
+                    padding: 0
+                    background: Item {}
+                    contentItem: Text {
+                        text: "⋯"
+                        color: theme.textSecondary
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        font.pixelSize: 14
+                    }
                     onClicked: displayPreferencesPopover.open()
                     Accessible.name: "Display preferences"
                 }

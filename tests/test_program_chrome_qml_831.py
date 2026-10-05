@@ -416,7 +416,8 @@ def test_runtime_program_footer_remains_visible_on_screen2() -> None:
         bar = window.findChild(QQuickItem, "libraryScopeBar")
         assert footer is not None and bar is not None
         assert footer.isVisible() is True
-        assert float(footer.height()) >= 40.0
+        # #880: footer must stay globally present, but no longer lock #831 mass (>=40).
+        assert 24.0 <= float(footer.height()) <= 32.0
         assert bar.isVisible() is True
     finally:
         window.close()
@@ -502,7 +503,9 @@ def test_automated_runtime_visual_acceptance_program_chrome_831(tmp_path) -> Non
         footer = window.findChild(QQuickItem, "programFooterBand")
         bar = window.findChild(QQuickItem, "libraryScopeBar")
         assert all(x is not None for x in (header, nav, transport, footer, bar))
-        assert float(header.height()) <= 60.0
+        # #880 slim corridor (clearly under #831 mass of 54); not screenshot-pixel truth.
+        assert 24.0 <= float(header.height()) <= 40.0
+        assert 24.0 <= float(footer.height()) <= 32.0
         grab = window.grabWindow()
         out = evidence / "screen1_program_chrome_1600x900.png"
         assert grab.save(str(out))
