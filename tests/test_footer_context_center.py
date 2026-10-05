@@ -12,7 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from src.workbench_qml import QML_SOURCE
+from src.workbench_controller import WorkbenchRow
+from src.workbench_qml import QML_SOURCE, _qml_row, format_selected_sample_context_hint
 
 PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 
@@ -34,6 +35,29 @@ def _footer_block() -> str:
     return QML_SOURCE.split("footer:", 1)[1].split("header:", 1)[0]
 
 
+def _sample_row(
+    *,
+    name: str = "kick_01.wav",
+    bpm: float | None = 128.0,
+    key: str | None = "Am",
+    pred_type: str | None = "Kick",
+) -> WorkbenchRow:
+    return WorkbenchRow(
+        display_name=name,
+        relative_path=name,
+        path=f"/synthetic/{name}",
+        bpm=bpm,
+        key=key,
+        key_conf=0.9 if key else None,
+        loudness=None,
+        brightness=None,
+        sample_class="one_shot",
+        pred_type=pred_type,
+        status="ok",
+        details={},
+    )
+
+
 def test_contract_docs_require_full_footer_centering_and_priority() -> None:
     hint = Path("docs/WORKBENCH_CONTEXT_HINT_CONTRACT.md").read_text(encoding="utf-8")
     chrome = Path("docs/PROGRAM_CHROME_CONTRACT.md").read_text(encoding="utf-8")
@@ -41,8 +65,20 @@ def test_contract_docs_require_full_footer_centering_and_priority() -> None:
     assert "geometrically centered" in hint.lower() or "true center" in hint.lower()
     assert "RowLayout" in hint
     assert "HOVER" in hint and "SELECTION" in hint and "DEFAULT" in hint
+    assert "selectedBrowserIndex" in hint or "browser sample selection" in hint.lower()
+    assert "·" in hint  # sample selection compact separator
     assert "true center" in chrome.lower() or "full-width center" in chrome.lower()
     assert "Pattern" in hint or "Pattern/Bars/Song" in hint
+
+
+def test_selected_sample_context_hint_formats_existing_projection_fields() -> None:
+    projected = _qml_row(
+        _sample_row(name="pad_soft.wav", bpm=140.0, key="Fm", pred_type="Pad")
+    )
+    assert format_selected_sample_context_hint(projected) == "pad_soft.wav · 140 · Fm · Pad"
+    assert format_selected_sample_context_hint(None) == ""
+    missing = _qml_row(_sample_row(name="raw.wav", bpm=None, key=None, pred_type=None))
+    assert format_selected_sample_context_hint(missing) == "raw.wav · — · — · —"
 
 
 def test_qml_encodes_true_center_layer_not_rowlayout_leftover() -> None:
@@ -83,9 +119,26 @@ def test_priority_resolve_order_is_hover_then_selection_then_empty() -> None:
     assert hover_pos < selection_pos
     assert 'property string hoveredId' in QML_SOURCE
     assert 'property string focusedId' in QML_SOURCE
+    # Sample selection is a display fallback after control hover/focus, not a
+    # parallel selection owner — must reuse selectedSampleContextHint / index.
+    state_block = QML_SOURCE.split('objectName: "contextHintState"', 1)[1].split(
+        "onFocusedIdChanged", 1
+    )[0]
+    assert "selectedSampleContextHint" in state_block or "selectedSampleContextHint" in QML_SOURCE
+    display_bind = QML_SOURCE.split('objectName: "contextHintDisplay"', 1)[1].split(
+        "Accessible.ignored", 1
+    )[0]
+    assert "contextHintState.displayText" in display_bind
 
 
-def _open_screen1(tmp_path: Path, *, width: int = 1600, height: int = 900):
+def _open_screen1(
+    tmp_path: Path,
+    *,
+    width: int = 1600,
+    height: int = 900,
+    sample_rows: tuple[WorkbenchRow, ...] = (),
+    selected_browser_index: int = -1,
+):
     from PySide6.QtQuick import QQuickItem
 
     from src.workbench_library_navigation import WorkbenchLibraryNavigation
@@ -106,11 +159,12 @@ def _open_screen1(tmp_path: Path, *, width: int = 1600, height: int = 900):
         library_db_path=db,
         tree_state=WorkbenchLibraryTreeState(navigation),
     )
+    projected = tuple(_qml_row(row) for row in sample_rows)
     view_model = Screen1QmlViewModel(
         state_id="screen1-default-3panel",
         library_labels=(),
-        browser_rows=(),
-        selected_browser_index=-1,
+        browser_rows=projected,
+        selected_browser_index=selected_browser_index,
         harmony_rows=(),
         live_kit_groups=(),
         library_tree=composition.library_tree,
@@ -123,6 +177,14 @@ def _open_screen1(tmp_path: Path, *, width: int = 1600, height: int = 900):
         browser_materialized=True,
         live_kit_materialized=False,
     )
+    if sample_rows:
+        # Keep the explicit selection after clean-start materialization.
+        view_model.set_browser_state(
+            rows=sample_rows,
+            selected_index=selected_browser_index,
+            browser_context="All Samples",
+            error=None,
+        )
     from PySide6.QtGui import QGuiApplication
 
     app, engine, window = _qml_engine(view_model, runtime_composition=composition)
@@ -131,6 +193,8 @@ def _open_screen1(tmp_path: Path, *, width: int = 1600, height: int = 900):
     window.show()
     window.requestActivate()
     engine._screen1_interaction_bridge.refreshState()
+    engine._screen1_screen_model.refresh()
+    engine._screen1_screen_model.refresh_browser_rows()
     engine._screen1_layout_model.syncFromInteraction()
     _settle_qml_frame(app)
     return app, engine, window, view_model, _settle_qml_frame, QQuickItem
@@ -219,7 +283,7 @@ def test_runtime_left_right_width_changes_do_not_shift_center(tmp_path: Path) ->
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 def test_runtime_priority_hover_over_selection_restore_and_default(tmp_path: Path) -> None:
-    from PySide6.QtCore import QObject, QPoint
+    from PySide6.QtCore import QObject
     from PySide6.QtTest import QTest
 
     app, _engine, window, _vm, settle, QQuickItem = _open_screen1(tmp_path)
@@ -261,6 +325,109 @@ def test_runtime_priority_hover_over_selection_restore_and_default(tmp_path: Pat
         state.setProperty("focusedId", "")
         settle(app)
         assert state.property("displayText") in ("", None)
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_runtime_sample_selection_hover_override_restore_and_clear(
+    tmp_path: Path,
+) -> None:
+    """Owner finding: selected sample must drive footer center when not hovering."""
+    from PySide6.QtCore import QObject
+    from PySide6.QtTest import QTest
+
+    rows = (
+        _sample_row(name="kick_01.wav", bpm=128.0, key="Am", pred_type="Kick"),
+        _sample_row(name="snare_02.wav", bpm=130.0, key="Cm", pred_type="Snare"),
+    )
+    expected_selection = format_selected_sample_context_hint(_qml_row(rows[0]))
+    app, engine, window, view_model, settle, QQuickItem = _open_screen1(
+        tmp_path,
+        sample_rows=rows,
+        selected_browser_index=0,
+    )
+    try:
+        state = window.findChild(QObject, "contextHintState")
+        display = window.findChild(QQuickItem, "contextHintDisplay")
+        footer = window.findChild(QQuickItem, "programFooterBand")
+        coll = window.findChild(QQuickItem, "libraryCollectionsScopeButton")
+        assert state and display and footer and coll
+        _enable_control_hover(coll)
+
+        # 1) Sample selected + no hover → Selection-Context visible
+        assert view_model.selected_browser_index == 0
+        assert state.property("hoveredId") in ("", None)
+        assert state.property("focusedId") in ("", None)
+        assert state.property("displayText") == expected_selection
+        assert display.property("text") == expected_selection
+
+        # 2) Sample selected + hover on another contextual element → Hover
+        def scene_point(item):
+            return item.mapToScene(item.boundingRect().center()).toPoint()
+
+        QTest.mouseMove(window, scene_point(coll))
+        settle(app)
+        assert state.property("displayText") == _display(
+            *EXPECTED_DESCRIPTORS["library.scope.collections"]
+        )
+        # Existing browser selection identity must survive temporary hover.
+        assert view_model.selected_browser_index == 0
+
+        # 3) Hover ends → Selection-Context returns
+        QTest.mouseMove(window, scene_point(footer))
+        settle(app)
+        assert state.property("displayText") == expected_selection
+        assert display.property("text") == expected_selection
+
+        # 4) Selection cleared + no hover → Default/empty
+        view_model.selected_browser_index = -1
+        engine._screen1_screen_data_bridge.refresh()
+        settle(app)
+        assert state.property("displayText") in ("", None)
+        assert display.property("text") in ("", None)
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_runtime_long_sample_selection_elides_without_overlap_or_jump(
+    tmp_path: Path,
+) -> None:
+    from PySide6.QtCore import QObject
+
+    long_name = "very_long_sample_name_for_footer_elide_" + ("x" * 80) + ".wav"
+    rows = (_sample_row(name=long_name, bpm=128.0, key="Am", pred_type="Kick"),)
+    app, _engine, window, _vm, settle, QQuickItem = _open_screen1(
+        tmp_path / "long",
+        width=1120,
+        height=640,
+        sample_rows=rows,
+        selected_browser_index=0,
+    )
+    try:
+        footer = window.findChild(QQuickItem, "programFooterBand")
+        display = window.findChild(QQuickItem, "contextHintDisplay")
+        state = window.findChild(QObject, "contextHintState")
+        left = window.findChild(QQuickItem, "libraryScopeBar")
+        right = window.findChild(QQuickItem, "footerStatusZone")
+        assert footer and display and state and left and right
+
+        footer_h = float(footer.height())
+        settle(app)
+        assert long_name.split(".")[0][:20] in str(state.property("displayText") or "")
+        assert float(footer.height()) == footer_h
+        left_right = float(left.x()) + float(left.width())
+        right_left = (
+            float(right.x())
+            if float(right.width()) > 2.0
+            else float(footer.width()) - 8.0
+        )
+        assert float(display.x()) >= left_right - 1.0
+        assert float(display.x()) + float(display.width()) <= right_left + 1.0
+        assert abs(_center_x(display) - float(footer.width()) / 2.0) <= 2.0
     finally:
         window.close()
         app.processEvents()
