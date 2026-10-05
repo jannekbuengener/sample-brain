@@ -400,7 +400,7 @@ merge policy, Arrangement/Screen 3, DB/schema change, `docs/CANON_INDEX.md` chur
 | Implementation seam | `src/gesture_rack_integration.py` — `plan_gesture_rack_integration(base_state, composition, *, allow_pattern_replacement) -> GestureRackIntegrationPlan` |
 | Result model | frozen `GestureRackIntegrationPlan` with `expected_base_state`, target channels/pattern/`step_count`, append/replace evidence, `off_grid_event_count`, `ready_for_apply` |
 | Focused validation | `tests/test_gesture_rack_session_integration_899.py` — **40 passed** |
-| Protected validation | `#893` / `#891` / Pattern Core / Channel Rack / DEFAULT_ON / session persistence — **298+ passed** (includes focused; +3 fail-closed cases after review) |
+| Protected validation | `#893` / `#891` / Pattern Core / Channel Rack / DEFAULT_ON / session persistence — **301 passed** (includes focused) |
 | Static / hygiene | `ruff check` PASS; `git diff --check` PASS; `python tools/check_canon_drift.py` PASS |
 | R&D EXIT | `EXPLICIT_RACK_REPLACEMENT_PLAN_VIABLE` |
 | Mutation claim | `RACK_SESSION_STATE_NOT_MUTATED` |
