@@ -10,7 +10,8 @@
     "Custom themes persist base tokens only; derived tokens are never a second persistence truth.",
     "Dark surface hierarchy (cinematic noir): background (chrome) < surfaceWorkspace (main) < surface (panels) < surfaceRaised (elevated).",
     "Noir density: ink/charcoal bases + tighter surface mixes; no open gray tool slabs.",
-    "Superdesign cinematic-noir-style: map deep/zinc solids via Theme bases only; no QML radial/grain second palette."
+    "Superdesign cinematic-noir-style: map deep/zinc solids via Theme bases; map soft-ellipse atmosphere via Theme PNG overlays (not QML Gradient; not foreign hex).",
+    "Atmosphere overlays (runtime, not persisted): atmosphereWorkspace / atmospherePanel soft-ellipse PNGs from Theme stop mixes."
   ],
   "derivation": {
     "textPrimary": "foreground",
@@ -21,7 +22,13 @@
     "divider": "mix(background, foreground, 0.10)",
     "hover": "mix(background, foreground, 0.075)",
     "selected": "mix(background, accent, 0.22)",
-    "focusRing": "accent"
+    "focusRing": "accent",
+    "atmosphereWorkspaceCore": "mix(mix(surfaceWorkspace, accent, 0.14), foreground, 0.03)",
+    "atmosphereWorkspaceMid": "surfaceWorkspace",
+    "atmosphereWorkspaceEdge": "mix(surfaceWorkspace, background, 0.65)",
+    "atmospherePanelCore": "mix(mix(surface, accent, 0.12), foreground, 0.02)",
+    "atmospherePanelMid": "surface",
+    "atmospherePanelEdge": "mix(surface, background, 0.50)"
   },
   "presets": {
     "Blood": {

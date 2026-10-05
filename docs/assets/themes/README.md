@@ -57,9 +57,42 @@ was still too bright/gray for cinematic noir.
 
 **Feel:** cinematic noir — very dark, elegant, deep, premium, calm, little visible
 UI mass. No flat `#000000` product surfaces. No open gray tool slabs. Subtle cool /
-red-blue depth from preset base tints + tighter mixes — not a second palette.
-Style intent references Superdesign cinematic noir / “Schrift und Minimalismus”;
-do **not** copy-paste Superdesign layout.
+red-blue depth from preset base tints + Theme atmosphere overlays — not a second
+palette. Style intent references Superdesign cinematic noir / “Schrift und
+Minimalismus”; do **not** copy-paste Superdesign layout.
+
+### Atmosphere on both main surfaces (Library + center workspace)
+
+Solid hierarchy alone still reads as two flat black slabs at noir density
+(`#050506` vs `#080809`). Owner asks for the Superdesign cinematic-noir
+**background method** (soft elliptical depth) on **both**:
+
+| Surface | Role fill | Atmosphere overlay |
+|---------|-----------|--------------------|
+| Left Library pane | `surfacePanel` → `surface` | Theme `atmospherePanel` Image (soft ellipse) |
+| Center empty / calm canvas | `surfaceRoot` → `surfaceWorkspace` | Theme `atmosphereWorkspace` Image (soft ellipse) |
+| Center active Browser pane | `surfaceBrowser` → `surface` | Theme `atmospherePanel` Image (same panel atmosphere) |
+
+**How (allowed path):** Theme Core derives stop colors from our base combo and
+renders a soft elliptical PNG. QML binds `theme.atmosphereWorkspace` /
+`theme.atmospherePanel` as `Image` fills. This keeps `Gradient` /
+`RadialGradient` out of `QML_SOURCE` (Screen-1 background contract) while still
+delivering radial depth. No Superdesign hex copy. No grain/glass.
+
+Blood stop formulas (Theme Core only — not persisted customs):
+
+| Overlay | Stop | Derivation | Blood example |
+|---------|------|------------|---------------|
+| Workspace | core | `mix(mix(surfaceWorkspace, accent, 0.14), foreground, 0.03)` | `#1e0d11` |
+| Workspace | mid | `surfaceWorkspace` | `#050506` |
+| Workspace | edge | `mix(surfaceWorkspace, background, 0.65)` | `#030304` |
+| Panel | core | `mix(mix(surface, accent, 0.12), foreground, 0.02)` | `#1c0d10` |
+| Panel | mid | `surface` | `#080809` |
+| Panel | edge | `mix(surface, background, 0.50)` | `#050506` |
+
+Atmosphere uses a **tiny accent bleed into ink** for cool red-blue noir depth.
+That is not functional accent chrome and must stay near-black (never colorful
+panel fills). Accent control states remain selection / focus / primary action.
 
 ### Superdesign cinematic noir reference (style intent, not layout)
 
@@ -73,15 +106,16 @@ How that page builds background / atmosphere (concrete tokens):
 | Deep black floor | `#000000` | Yes → Theme `background` ink floor `#020203` (never pure `#000000`) |
 | Zinc / mid dark | `#09090b` | Yes → panels land near this via `surface` mix (`#080809` Blood) |
 | Surface gray (cards) | `#18181b` | Partial → `surfaceRaised` stays darker/quieter (`#101011`) for low UI mass |
-| Warm radial atmosphere | `radial-gradient(ellipse at center, rgba(139,69,69,0.4) 0%, rgba(20,20,20,0.8) 60%, rgba(0,0,0,0.95) 100%)` | No — Screen-1 forbids `Gradient`/`RadialGradient` in `QML_SOURCE`; accent is functional-only (not ambient fills) |
+| Warm radial atmosphere | `radial-gradient(ellipse at center, rgba(139,69,69,0.4) 0%, rgba(20,20,20,0.8) 60%, rgba(0,0,0,0.95) 100%)` | Yes — **technique only** via Theme-owned soft-ellipse PNG overlays using our Blood/Theme stop mixes (above). Not QML `Gradient`/`RadialGradient`. Not their rgba/hex. |
 | Grain / noise overlay | 15% opacity, `mix-blend-overlay` | No — landing-page film grain; not Workbench surface hierarchy |
 | Glass / blur | not a core requirement; sharp architectural edges | No |
 | Typography mood | fg `#e5e5e5`, muted `#888`, extreme display scale | Partial → Theme `foreground` `#e4e6ea` + calmer `textSecondary` `#68696b` (Schrift / Minimalismus); no display-font / layout copy |
 | Selection red | `#ef4444` | No — Blood accent remains `#8f0e24` (product accent contract) |
 
 **Mapped in this slice:** deeper Theme-owned solid hierarchy (chrome → workspace →
-panels) toward the reference deep/zinc ladder. **Not mapped:** radial/grain/glass
-QML effects, layout/parallax, second palette.
+panels) **plus** Theme atmosphere overlays on Library and center workspace.
+**Not mapped:** QML `Gradient`/`RadialGradient`, grain/glass, layout/parallax,
+second palette / Superdesign hex.
 
 **OUT of this polish:** chrome geometry (#880), footer-context behavior (#885),
 nav, list layout, Live Kit IA, Add Source control redesign, Pattern/Bars/Song,
@@ -94,14 +128,18 @@ the product default Blood base. Stage **B** (`accent #d4143a`) remains a
 brighter-crimson comparison variant only.
 
 Carbon, Arctic, Rose, and Forest stay in the same dark Sample Brain family;
-only base tokens vary. Accent is a sparse signal (selection, focus, primary
-action, small status), not atmosphere.
+only base tokens vary. Accent remains a sparse control signal (selection, focus,
+primary action, small status). Theme atmosphere may use a tiny accent bleed into
+ink for noir depth (see atmosphere stop table).
 
 ## Runtime wiring
 
 - Python Theme Core resolves presets/customs and persists base tokens only in
   `workbench_state_dir` (`screen1_theme_preferences.json`).
-- QML `theme` QtObject is a thin facade over `themeAuthority` semantic colors.
+- Atmosphere PNGs are runtime Theme artifacts (cache under state dir); not
+  persisted theme preference keys.
+- QML `theme` QtObject is a thin facade over `themeAuthority` semantic colors
+  and atmosphere URLs.
 - Display Preferences hosts Appearance controls; it does not own a second theme
   store.
 - Corrupt preference payloads fail closed to Blood A.

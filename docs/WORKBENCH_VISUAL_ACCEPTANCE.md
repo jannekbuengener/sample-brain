@@ -269,6 +269,12 @@ an open gray tool UI. Theme Core owns the steps; QML only binds semantics.
 | 2 | Main Workspace (barely raised charcoal) | `surfaceRoot` → `surfaceWorkspace` |
 | 3 | Panels (subtly separated, low mass) | `surfacePanel` / `surfaceBrowser` → `surface` |
 
+**Atmosphere (both main surfaces):** Library (`libraryPane`) and center workspace
+(`calmCanvas` empty; `browserPane` when active) must paint Theme soft-ellipse
+overlays (`theme.atmospherePanel` / `theme.atmosphereWorkspace`) so depth is
+visible — not identical flat solids. Overlays are Theme-rendered PNGs (no QML
+`Gradient`). See `docs/assets/themes/README.md` atmosphere stop table.
+
 Borders use `divider` / `borderSubtle` for fine restrained edges. Product
 surfaces must not collapse chrome and workspace to the same fill. No flat
 `#000000` hierarchy base. Typography mood stays calm/minimal (`textPrimary` /
@@ -278,10 +284,14 @@ CURRENT→TARGET table (root cause + Blood noir example values).
 
 ### Functional accent rule
 
-Accent is functional-only: selection, active toggle, harmonic-match active
-state, clear focus/active affordances, primary active action. Not for panel
-fills, ambient backgrounds, decoration, or passive chrome. Default Blood A
-accent is `#8f0e24` (Blood B `#d4143a` is comparison-only).
+Accent is functional-only for controls: selection, active toggle, harmonic-match
+active state, clear focus/active affordances, primary active action. Not for
+solid panel fills, decoration, or passive chrome. Default Blood A accent is
+`#8f0e24` (Blood B `#d4143a` is comparison-only).
+
+**Narrow Theme exception:** cinematic-noir atmosphere stop mixes may include a
+tiny accent bleed into ink (Theme Core only) so Library/center read cool
+red-blue depth. That is not a colorful ambient wash and must stay near-black.
 
 ### No arbitrary hardcodes rule
 

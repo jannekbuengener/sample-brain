@@ -1,6 +1,6 @@
 """Dark workspace surface hierarchy polish — FROZEN CONTRACT.
 
-Status: TEST_FREEZE (noir density + Superdesign deep/zinc solid map)
+Status: TEST_FREEZE (noir density + Superdesign deep/zinc + atmosphere overlays)
 Canon:
   - docs/assets/themes/README.md (CURRENT→TARGET + Superdesign mapping)
   - docs/assets/themes/presets.v1.json
@@ -9,9 +9,10 @@ Canon:
 
 Intent: cinematic noir with three calm depth steps — Program Chrome darkest
 ink floor, Main Workspace barely raised, Panels subtly separated with low
-mass. Superdesign cinematic-noir deep/zinc solids map via Theme bases only
-(no QML radial/grain). Semantic relations only; screenshot pixels are not
-absolute truth.
+mass — PLUS Theme soft-ellipse atmosphere on Library and center workspace.
+Superdesign cinematic-noir deep/zinc solids map via Theme bases; radial
+atmosphere maps via Theme PNG overlays (not QML Gradient/RadialGradient).
+Semantic relations only; screenshot pixels are not absolute truth.
 """
 
 from __future__ import annotations
@@ -34,6 +35,12 @@ BLOOD_PANEL = "#080809"
 BLOOD_DIVIDER = "#19191a"
 BLOOD_TEXT_PRIMARY = "#e4e6ea"
 BLOOD_TEXT_SECONDARY = "#68696b"
+BLOOD_ATMOSPHERE_WORKSPACE_CORE = "#1e0d11"
+BLOOD_ATMOSPHERE_WORKSPACE_MID = "#050506"
+BLOOD_ATMOSPHERE_WORKSPACE_EDGE = "#030304"
+BLOOD_ATMOSPHERE_PANEL_CORE = "#1c0d10"
+BLOOD_ATMOSPHERE_PANEL_MID = "#080809"
+BLOOD_ATMOSPHERE_PANEL_EDGE = "#050506"
 
 # Previous polish values that Owner rejected as too open/gray — must stay darker.
 PRIOR_OPEN_CHROME = "#050506"
@@ -244,6 +251,82 @@ def test_qml_calm_canvas_paints_workspace_surface_root() -> None:
     assert 'color: "transparent"' not in calm
 
 
+def test_canon_documents_atmosphere_stop_derivation() -> None:
+    canon = _canon()
+    derivation = canon["derivation"]
+    assert derivation["atmosphereWorkspaceCore"] == (
+        "mix(mix(surfaceWorkspace, accent, 0.14), foreground, 0.03)"
+    )
+    assert derivation["atmosphereWorkspaceMid"] == "surfaceWorkspace"
+    assert derivation["atmosphereWorkspaceEdge"] == (
+        "mix(surfaceWorkspace, background, 0.65)"
+    )
+    assert derivation["atmospherePanelCore"] == (
+        "mix(mix(surface, accent, 0.12), foreground, 0.02)"
+    )
+    assert derivation["atmospherePanelMid"] == "surface"
+    assert derivation["atmospherePanelEdge"] == (
+        "mix(surface, background, 0.50)"
+    )
+
+
+def test_theme_core_blood_atmosphere_stops_match_canon() -> None:
+    stops = theme.atmosphere_stop_colors(theme.resolve_theme("Blood"))
+    assert _normalize_hex(stops["workspace"]["core"]) == BLOOD_ATMOSPHERE_WORKSPACE_CORE
+    assert _normalize_hex(stops["workspace"]["mid"]) == BLOOD_ATMOSPHERE_WORKSPACE_MID
+    assert _normalize_hex(stops["workspace"]["edge"]) == BLOOD_ATMOSPHERE_WORKSPACE_EDGE
+    assert _normalize_hex(stops["panel"]["core"]) == BLOOD_ATMOSPHERE_PANEL_CORE
+    assert _normalize_hex(stops["panel"]["mid"]) == BLOOD_ATMOSPHERE_PANEL_MID
+    assert _normalize_hex(stops["panel"]["edge"]) == BLOOD_ATMOSPHERE_PANEL_EDGE
+    # Soft ellipse must lift the core above the edge (visible depth).
+    assert _relative_luminance(stops["workspace"]["core"]) > _relative_luminance(
+        stops["workspace"]["edge"]
+    )
+    assert _relative_luminance(stops["panel"]["core"]) > _relative_luminance(
+        stops["panel"]["edge"]
+    )
+    # Stay noir — not a colorful wash.
+    assert _relative_luminance(stops["workspace"]["core"]) < _relative_luminance(
+        "#3a2024"
+    )
+    assert _relative_luminance(stops["panel"]["core"]) < _relative_luminance("#3a2024")
+
+
+def test_theme_core_writes_atmosphere_png_overlays(tmp_path: Path) -> None:
+    tokens = theme.resolve_theme("Blood")
+    paths = theme.ensure_atmosphere_overlays(tokens, cache_dir=tmp_path)
+    assert paths["workspace"].is_file()
+    assert paths["panel"].is_file()
+    assert paths["workspace"].read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    assert paths["panel"].read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    # Distinct overlays for workspace vs panel roles.
+    assert paths["workspace"].read_bytes() != paths["panel"].read_bytes()
+
+
+def test_qml_library_and_center_bind_atmosphere_overlays() -> None:
+    """Both Owner-facing main surfaces must bind Theme atmosphere Images."""
+    from src.workbench_qml import QML_SOURCE
+
+    assert "readonly property url atmosphereWorkspace: themeAuthority.atmosphereWorkspaceUrl" in QML_SOURCE
+    assert "readonly property url atmospherePanel: themeAuthority.atmospherePanelUrl" in QML_SOURCE
+    # Keep Screen-1 background contract: no QML gradient element types.
+    assert "\n    Gradient" not in QML_SOURCE
+    assert "RadialGradient" not in QML_SOURCE
+    assert "LinearGradient" not in QML_SOURCE
+
+    library = QML_SOURCE.split('objectName: "libraryPane"', 1)[1][:1600]
+    assert 'objectName: "libraryNoirAtmosphere"' in library
+    assert "theme.atmospherePanel" in library
+
+    calm = QML_SOURCE.split('objectName: "calmCanvas"', 1)[1][:1600]
+    assert 'objectName: "workspaceNoirAtmosphere"' in calm
+    assert "theme.atmosphereWorkspace" in calm
+
+    browser = QML_SOURCE.split('objectName: "browserPane"', 1)[1][:1600]
+    assert 'objectName: "browserNoirAtmosphere"' in browser
+    assert "theme.atmospherePanel" in browser
+
+
 def test_theme_authority_bridge_exposes_hierarchy(tmp_path: Path) -> None:
     pytest.importorskip("PySide6")
     from src.workbench_qml import _qml_theme_authority_bridge
@@ -260,3 +343,8 @@ def test_theme_authority_bridge_exposes_hierarchy(tmp_path: Path) -> None:
     assert bridge.surfaceRoot.lower() == BLOOD_WORKSPACE
     assert bridge.textPrimary.lower() == BLOOD_TEXT_PRIMARY
     assert bridge.textSecondary.lower() == BLOOD_TEXT_SECONDARY
+    workspace_url = str(bridge.atmosphereWorkspaceUrl)
+    panel_url = str(bridge.atmospherePanelUrl)
+    assert workspace_url.startswith("file:")
+    assert panel_url.startswith("file:")
+    assert workspace_url != panel_url
