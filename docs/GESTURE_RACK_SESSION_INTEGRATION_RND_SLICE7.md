@@ -423,11 +423,13 @@ merge policy, Arrangement/Screen 3, DB/schema change, `docs/CANON_INDEX.md` chur
 |-------|-------|
 | Implementation seam | `src/gesture_rack_integration.py` — `plan_gesture_rack_integration(base_state, composition, *, allow_pattern_replacement) -> GestureRackIntegrationPlan` |
 | Result model | frozen `GestureRackIntegrationPlan` with `expected_base_state`, target channels/pattern/`step_count`, append/replace evidence, `off_grid_event_count`, `ready_for_apply` |
-| Focused validation | `tests/test_gesture_rack_session_integration_899.py` — **40 passed** |
-| Protected validation | `#893` / `#891` / Pattern Core / Channel Rack / DEFAULT_ON / session persistence — **301 passed** (includes focused) |
+| Focused validation | `tests/test_gesture_rack_session_integration_899.py` — **41 passed** |
+| Protected validation | `#893` / `#891` / Pattern Core / Channel Rack / DEFAULT_ON / session persistence — **302 passed** (includes focused) |
 | Static / hygiene | `ruff check` PASS; `git diff --check` PASS; `python tools/check_canon_drift.py` PASS |
 | R&D EXIT | `EXPLICIT_RACK_REPLACEMENT_PLAN_VIABLE` |
 | Mutation claim | `RACK_SESSION_STATE_NOT_MUTATED` |
+| Merge SHA | `bb9ff56ce51aec599974393bd61af954d1c8aec3` (PR #901 initial delivery) |
+| Follow-up | Pattern/grid-span compatibility fail-closed (`length >= Fraction(step_count, 4)`) |
 
 Viable here means only: a `#893` composition can be deterministically planned as an
 explicit replacement of the single active Rack Pattern while preserving the existing
