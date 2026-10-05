@@ -143,13 +143,13 @@ The `analysis` block holds the overall status plus musical, audio-summary, and t
 | `bpm.status` | string | yes | Individual status (Section 10). |
 | `bpm.value` | number | conditional | Primary BPM value (float). Present when status is `ok` or `partial`. |
 | `bpm.unit` | string | conditional | Must be `"bpm"` when `value` is present. |
-| `bpm.normalization` | string | conditional | Required when `value` is present. Actually applied tempo normalization strategy (e.g. `"none"`, `"heuristic"`). Part of the applied analysis configuration; not a display-only concern. |
+| `bpm.normalization` | string | conditional | Required when `value` is present. Actually applied tempo normalization strategy (e.g. `"none"`, `"heuristic"`, `"domain_110_170"`). Part of the applied analysis configuration; not a display-only concern. |
 | `bpm.source_ref` | string | conditional | Key into `provenance.components`. Required when `value` is present. |
 
 **Rules:**
 
 - No invented `bpm.confidence` field. Confidence is not part of the v1 BPM contract.
-- `bpm.value` may be the raw librosa tempo estimate; BPM normalization is captured in `bpm.normalization` as the actually applied strategy (e.g. `"none"`, `"heuristic"`). No contract default for normalization semantics.
+- `bpm.value` may be the raw librosa tempo estimate; BPM normalization is captured in `bpm.normalization` as the actually applied strategy (e.g. `"none"`, `"heuristic"`, `"domain_110_170"`). No contract default for normalization semantics.
 - `bpm.normalization` is required whenever `bpm.value` is emitted, is part of the actually applied analysis configuration, and must not be removed from the contract as a mere display topic.
 
 ### 6.3 Key
