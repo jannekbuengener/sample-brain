@@ -1,6 +1,6 @@
 # Gesture Rack/Session Integration Plan R&D — Slice 7 (#680 / #899)
 
-**Status:** Contract frozen at `TEST_FREEZE` (implementation follows; update post-result).
+**Status:** Implemented — `EXPLICIT_RACK_REPLACEMENT_PLAN_VIABLE` (post-`TEST_FREEZE`).
 
 **Parent:** [#680](https://github.com/jannekbuengener/sample-brain/issues/680)
 **Child:** [#899](https://github.com/jannekbuengener/sample-brain/issues/899)
@@ -397,10 +397,19 @@ merge policy, Arrangement/Screen 3, DB/schema change, `docs/CANON_INDEX.md` chur
 
 | Field | Value |
 |-------|-------|
-| Implementation seam | *(filled after IMPLEMENTATION)* |
-| Result model | *(filled after IMPLEMENTATION)* |
-| Focused validation | *(filled after CHECKS)* |
-| Protected validation | *(filled after CHECKS)* |
-| Static / hygiene | *(filled after CHECKS)* |
-| R&D EXIT | *(filled after CHECKS)* |
+| Implementation seam | `src/gesture_rack_integration.py` — `plan_gesture_rack_integration(base_state, composition, *, allow_pattern_replacement) -> GestureRackIntegrationPlan` |
+| Result model | frozen `GestureRackIntegrationPlan` with `expected_base_state`, target channels/pattern/`step_count`, append/replace evidence, `off_grid_event_count`, `ready_for_apply` |
+| Focused validation | `tests/test_gesture_rack_session_integration_899.py` — **37 passed** |
+| Protected validation | `#893` / `#891` / Pattern Core / Channel Rack / DEFAULT_ON / session persistence — **298 passed** (includes focused) |
+| Static / hygiene | `ruff check` PASS; `git diff --check` PASS; `python tools/check_canon_drift.py` PASS |
+| R&D EXIT | `EXPLICIT_RACK_REPLACEMENT_PLAN_VIABLE` |
 | Mutation claim | `RACK_SESSION_STATE_NOT_MUTATED` |
+
+Viable here means only: a `#893` composition can be deterministically planned as an
+explicit replacement of the single active Rack Pattern while preserving the existing
+channel universe, appending collision-free gesture channels, carrying off-grid and
+stale-state evidence, and remaining ready only under explicit replacement authority —
+without mutating Rack/session/persistence/QML state.
+
+Parent `#680` remains OPEN. Next slice (not this PR): guarded controller/session apply
+under this frozen plan contract.

@@ -343,12 +343,14 @@ def test_replacement_not_allowed_plan_not_ready_no_fallback_merge():
 
 
 def test_composition_channel_id_collision_with_base_fail_closed():
+    # Collide with an existing base *user* channel id. Canonical Live Kit ids
+    # cannot be constructed as user Channels (Pattern Core provenance rule).
     base = _base_state()
     composition = _composition(
-        channels=(_user_channel("ch_kick", sample_path="collide.wav"),),
+        channels=(_user_channel("ch_user_9", sample_path="collide.wav"),),
         pattern=_pattern(
             "gesture-pat-x",
-            triggers=(Trigger(channel_id="ch_kick", position=Fraction(0, 4)),),
+            triggers=(Trigger(channel_id="ch_user_9", position=Fraction(0, 4)),),
         ),
     )
     with pytest.raises(ValueError, match="collision|already exist|duplicate"):
