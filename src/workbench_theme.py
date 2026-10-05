@@ -195,8 +195,8 @@ def mix_hex(color_a: str, color_b: str, amount: float) -> str:
 def _blood_a_base() -> ThemeBase:
     return ThemeBase(
         accent=BLOOD_A_ACCENT,
-        background="#050506",
-        foreground="#eceef1",
+        background="#030304",
+        foreground="#e4e6ea",
     )
 
 
@@ -216,13 +216,14 @@ def derive_tokens(base: Mapping[str, Any] | ThemeBase) -> dict[str, str]:
         raise ValueError("invalid theme base tokens")
     return {
         "textPrimary": foreground,
-        "textSecondary": mix_hex(foreground, background, 0.45),
-        # Minimally lighter than chrome (background); panels use surface above this.
-        "surfaceWorkspace": mix_hex(background, foreground, 0.025),
-        "surface": mix_hex(background, foreground, 0.045),
-        "surfaceRaised": mix_hex(background, foreground, 0.09),
-        "divider": mix_hex(background, foreground, 0.16),
-        "hover": mix_hex(background, foreground, 0.11),
+        # Calmer secondary labels (cinematic noir typography restraint).
+        "textSecondary": mix_hex(foreground, background, 0.55),
+        # Barely raised ink workspace; panels stay subtly above — low UI mass.
+        "surfaceWorkspace": mix_hex(background, foreground, 0.012),
+        "surface": mix_hex(background, foreground, 0.028),
+        "surfaceRaised": mix_hex(background, foreground, 0.06),
+        "divider": mix_hex(background, foreground, 0.10),
+        "hover": mix_hex(background, foreground, 0.075),
         "selected": mix_hex(background, accent, 0.22),
         "focusRing": accent,
     }
@@ -298,8 +299,8 @@ def blood_variants() -> dict[str, dict[str, str]]:
     if "B" not in out:
         out["B"] = ThemeBase(
             accent=BLOOD_B_ACCENT,
-            background="#050506",
-            foreground="#eceef1",
+            background="#030304",
+            foreground="#e4e6ea",
         ).as_dict()
     return out
 
