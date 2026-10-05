@@ -189,14 +189,20 @@ def test_browser_density_waveform_and_divider_invariants():
 
 
 def test_browser_alternating_row_shading_preserves_state_priority():
-    """#781: selection > hover > subtle odd/even base shading."""
+    """#781 + playlist workspace surface: selection > hover > transparent base.
+
+    Odd/even panel zebra was visually identical to the old browserPane fill.
+    With the list-viewport on theme.surfaceRoot (Clean-Start canvas reuse),
+    opaque odd-row panel fills would invent new striping — keep normal rows
+    transparent so the reused workspace surface remains visible and uniform.
+    """
     delegate = _snippet(QML_SOURCE, BROWSER_ROW_DELEGATE_MARKER, BROWSER_ROW_DELEGATE_SPAN)
     expected = (
         'color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface '
-        ': (rowSelection.containsMouse ? theme.surfaceElevated '
-        ': (index % 2 === 1 ? theme.surfacePanel : "transparent"))'
+        ': (rowSelection.containsMouse ? theme.surfaceElevated : "transparent")'
     )
     assert expected in delegate
+    assert 'index % 2 === 1 ? theme.surfacePanel' not in delegate
     assert "reuseItems: true" in QML_SOURCE
 
 
@@ -552,10 +558,12 @@ def test_browser_column_resize_reuses_shared_header_row_geometry():
     # #840: no visible Browser row Add-to-Kit; context menu owns the route.
     assert "window.interaction.addToKit(index)" not in QML_SOURCE
     assert "contextAddToKit" in QML_SOURCE
-    # Horizontal row divider / alternating shading remain (#781 / density).
+    # Horizontal row divider remains (#781 / density); base row fill is transparent
+    # so the playlist workspace surface (surfaceRoot) stays visible.
     delegate = _browser_delegate_full(QML_SOURCE)
     assert "height: window.densityDividerHeight" in delegate
-    assert "index % 2 === 1 ? theme.surfacePanel" in QML_SOURCE
+    assert 'rowSelection.containsMouse ? theme.surfaceElevated : "transparent"' in delegate
+    assert 'index % 2 === 1 ? theme.surfacePanel' not in QML_SOURCE
 
 
 def test_browser_column_resize_does_not_collide_with_panel_collapse_845():

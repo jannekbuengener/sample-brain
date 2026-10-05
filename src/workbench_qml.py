@@ -3892,7 +3892,15 @@ ApplicationWindow {
                         Label { objectName: "browserColumnHeader_type"; visible: !browserPane.browserNarrowColumns; text: "TYPE"; color: theme.textSecondary; Layout.preferredWidth: window.browserTypeColumnWidth; Layout.maximumWidth: 88; horizontalAlignment: Text.AlignLeft; font.pixelSize: window.textCaption; font.bold: true }
                     }
                 }
-                ListView { id: browser; objectName: "browserList"; Layout.fillWidth: true; Layout.fillHeight: true; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: window.densityRowHeight; implicitHeight: window.densityRowHeight * 2
+                // Playlist list-viewport reuses Clean-Start canvas fill (theme.surfaceRoot).
+                // Outer browserPane chrome stays surfaceBrowser; Library/Harmony/Live Kit unchanged.
+                Rectangle {
+                    id: browserListViewport
+                    objectName: "browserListViewport"
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    color: theme.surfaceRoot
+                    ListView { id: browser; objectName: "browserList"; anchors.fill: parent; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: window.densityRowHeight; implicitHeight: window.densityRowHeight * 2
                     function requestVisibleWaveforms() {
                         if (rowHeight <= 0 || height <= 0)
                             return
@@ -3916,7 +3924,7 @@ ApplicationWindow {
                             }
                         }
                     }
-                    delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface : (rowSelection.containsMouse ? theme.surfaceElevated : (index % 2 === 1 ? theme.surfacePanel : "transparent")); border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0; border.color: theme.selectionBorder
+                    delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface : (rowSelection.containsMouse ? theme.surfaceElevated : "transparent"); border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0; border.color: theme.selectionBorder
                         Component.onCompleted: window.browserDelegateCreations += 1
                         property string outboundUrl: window.interaction.outboundFileUrl(index)
                         Drag.active: rowSelection.dragActive
@@ -4042,6 +4050,7 @@ ApplicationWindow {
                         // lives on header overlays; rows keep horizontal chrome only.
                         Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: window.densityDividerHeight; color: theme.dividerDefault; opacity: index === window.screenData.selectedBrowserIndex ? 0.35 : 0.8 }
                     }
+                }
                 }
             }
         }
