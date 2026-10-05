@@ -117,9 +117,16 @@ panels) only.
 **Not mapped:** soft-ellipse / atmosphere PNG overlays, QML `Gradient` /
 `RadialGradient`, grain/glass, layout/parallax, second palette / Superdesign hex.
 
-**OUT of this polish:** chrome geometry (#880), footer-context behavior (#885),
-nav, list layout, Live Kit IA, Add Source control redesign, Pattern/Bars/Song,
-audio, Screen-2/3, broad Secondary-Control polish.
+**OUT of this polish (#894 hierarchy):** chrome geometry (#880), footer-context
+behavior (#885), nav, list layout, Live Kit IA, Pattern/Bars/Song, audio,
+Screen-2/3.
+
+**Secondary control chrome (#895):** Add Source / Remove / Search / Live Kit
+slot cards / Harmonic secondary row chrome reuse existing Theme semantics
+(`hoverSurface`, `borderSubtle`, `focusRing`, `surfaceElevated`, text tokens,
+`actionActive` for focus/active only). No second QML palette and no new Theme
+base tokens unless reuse is insufficient. See
+`docs/WORKBENCH_VISUAL_ACCEPTANCE.md` § Secondary control and panel chrome.
 
 ## Presets
 

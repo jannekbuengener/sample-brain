@@ -2931,10 +2931,78 @@ ApplicationWindow {
 
         Rectangle { id: libraryPane; objectName: "libraryPane"; width: layoutModel.libraryWidth; height: parent.height; visible: width > 0; color: theme.surfacePanel; border.color: theme.borderSubtle
             ColumnLayout { anchors.fill: parent; anchors.margins: 16
-                RowLayout { id: libraryHeaderRow; Layout.fillWidth: true
+                RowLayout { id: libraryHeaderRow; Layout.fillWidth: true; spacing: 6
                     Label { text: "LIBRARY"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
-                    Button { text: "Add Source"; onClicked: addSourceDialog.open() }
-                    Button { visible: libraryInteraction.canRemoveSelectedSource; text: "Remove"; onClicked: libraryInteraction.prepareRemoveSource() }
+                    // #895: secondary control chrome — dark/flat Theme Authority (no default white Button).
+                    Button {
+                        id: libraryAddSourceButton
+                        objectName: "libraryAddSourceButton"
+                        text: "Add Source"
+                        flat: true
+                        implicitHeight: 26
+                        padding: 8
+                        leftPadding: 10
+                        rightPadding: 10
+                        Accessible.name: "Add Source"
+                        contentItem: Text {
+                            text: libraryAddSourceButton.text
+                            color: !libraryAddSourceButton.enabled ? theme.textDisabled
+                                   : (libraryAddSourceButton.pressed ? theme.textPrimary
+                                      : (libraryAddSourceButton.hovered || libraryAddSourceButton.activeFocus ? theme.textPrimary : theme.textSecondary))
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            font.pixelSize: 11
+                            opacity: libraryAddSourceButton.enabled ? 1.0 : 0.45
+                        }
+                        background: Rectangle {
+                            implicitHeight: 26
+                            radius: 4
+                            color: !libraryAddSourceButton.enabled ? "transparent"
+                                   : (libraryAddSourceButton.pressed ? theme.surfaceElevated
+                                      : (libraryAddSourceButton.hovered ? theme.hoverSurface : "transparent"))
+                            border.width: 1
+                            border.color: !libraryAddSourceButton.enabled ? theme.borderSubtle
+                                          : (libraryAddSourceButton.activeFocus ? theme.focusRing
+                                             : (libraryAddSourceButton.pressed ? theme.selectionBorder : theme.borderSubtle))
+                            opacity: libraryAddSourceButton.enabled ? 1.0 : 0.4
+                        }
+                        onClicked: addSourceDialog.open()
+                    }
+                    Button {
+                        id: libraryRemoveSourceButton
+                        objectName: "libraryRemoveSourceButton"
+                        visible: libraryInteraction.canRemoveSelectedSource
+                        text: "Remove"
+                        flat: true
+                        implicitHeight: 26
+                        padding: 8
+                        leftPadding: 10
+                        rightPadding: 10
+                        Accessible.name: "Remove"
+                        contentItem: Text {
+                            text: libraryRemoveSourceButton.text
+                            color: !libraryRemoveSourceButton.enabled ? theme.textDisabled
+                                   : (libraryRemoveSourceButton.pressed ? theme.textPrimary
+                                      : (libraryRemoveSourceButton.hovered || libraryRemoveSourceButton.activeFocus ? theme.textPrimary : theme.textSecondary))
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            font.pixelSize: 11
+                            opacity: libraryRemoveSourceButton.enabled ? 1.0 : 0.45
+                        }
+                        background: Rectangle {
+                            implicitHeight: 26
+                            radius: 4
+                            color: !libraryRemoveSourceButton.enabled ? "transparent"
+                                   : (libraryRemoveSourceButton.pressed ? theme.surfaceElevated
+                                      : (libraryRemoveSourceButton.hovered ? theme.hoverSurface : "transparent"))
+                            border.width: 1
+                            border.color: !libraryRemoveSourceButton.enabled ? theme.borderSubtle
+                                          : (libraryRemoveSourceButton.activeFocus ? theme.focusRing
+                                             : (libraryRemoveSourceButton.pressed ? theme.selectionBorder : theme.borderSubtle))
+                            opacity: libraryRemoveSourceButton.enabled ? 1.0 : 0.4
+                        }
+                        onClicked: libraryInteraction.prepareRemoveSource()
+                    }
                 }
                 Item {
                     id: libraryContentHost
@@ -3704,12 +3772,27 @@ ApplicationWindow {
                         Label { visible: window.screenData.errorMessage.length > 0; text: window.screenData.errorMessage; color: theme.actionActive; font.pixelSize: 11 }
                     }
                     Item { Layout.fillWidth: true }
-                    TextField { objectName: "browserSearch"; placeholderText: "Search samples"; placeholderTextColor: theme.textSecondary; Layout.preferredWidth: 230; Layout.minimumWidth: 120
+                    TextField {
+                        // #895: slim dark-native search — quiet fill, low-contrast border, calm placeholder.
+                        objectName: "browserSearch"
+                        placeholderText: "Search samples"
+                        placeholderTextColor: theme.textSecondary
+                        color: theme.textPrimary
+                        selectedTextColor: theme.textOnAction
+                        selectionColor: theme.actionActive
+                        Layout.preferredWidth: 230
+                        Layout.minimumWidth: 120
+                        Layout.preferredHeight: 28
+                        font.pixelSize: 12
+                        leftPadding: 10
+                        rightPadding: 10
+                        topPadding: 4
+                        bottomPadding: 4
                         background: Rectangle {
-                            radius: 6
+                            radius: 4
                             border.width: 1
                             border.color: parent.activeFocus ? theme.focusRing : theme.borderSubtle
-                            color: "transparent"
+                            color: parent.activeFocus ? theme.hoverSurface : (parent.hovered ? theme.hoverSurface : "transparent")
                         }
                         onTextChanged: window.interaction.setBrowserSearch(text)
                     }
@@ -4120,8 +4203,22 @@ ApplicationWindow {
                             )
                         }
                     }
-                    delegate: Rectangle { width: parent.width; height: window.densityRowHeight; color: index === window.interaction.selectedHarmonyIndex ? theme.surfaceElevated : "transparent"; border.color: theme.borderSubtle
-                        MouseArea { anchors.fill: parent; z: 0; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.selectHarmonyRow(index) } }
+                    // #895: harmonic rows share Browser language — selected/hover surfaces, divider only.
+                    delegate: Rectangle {
+                        id: harmonyRow
+                        width: parent.width
+                        height: window.densityRowHeight
+                        color: index === window.interaction.selectedHarmonyIndex ? theme.selectionSurface
+                               : (harmonyRowHover.containsMouse ? theme.surfaceElevated : "transparent")
+                        border.width: index === window.interaction.selectedHarmonyIndex ? 1 : 0
+                        border.color: index === window.interaction.selectedHarmonyIndex ? theme.selectionBorder : "transparent"
+                        MouseArea {
+                            id: harmonyRowHover
+                            anchors.fill: parent
+                            z: 0
+                            hoverEnabled: true
+                            onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.selectHarmonyRow(index) }
+                        }
                         RowLayout {
                             anchors.fill: parent
                             anchors.leftMargin: window.densityHorizontalInset
@@ -4188,19 +4285,29 @@ ApplicationWindow {
                                 verticalAlignment: Text.AlignVCenter
                             }
                             Rectangle {
+                                id: harmonyAddAction
                                 Layout.preferredWidth: window.harmonicAddColumnWidth
                                 Layout.preferredHeight: Math.min(window.densityActionHitTarget, window.densityRowHeight - 2 * window.densityVerticalInset)
                                 Layout.maximumHeight: window.densityRowHeight - 2 * window.densityVerticalInset
-                                color: "transparent"
+                                radius: 3
+                                color: harmonyAddMouse.containsMouse ? theme.hoverSurface : "transparent"
+                                border.width: harmonyAddMouse.containsMouse ? 1 : 0
+                                border.color: theme.borderSubtle
                                 Label {
                                     anchors.fill: parent
                                     text: "+ Add"
-                                    color: theme.textSecondary
+                                    color: harmonyAddMouse.containsMouse ? theme.textPrimary : theme.textSecondary
                                     font.pixelSize: window.textCaption
                                     horizontalAlignment: Text.AlignRight
                                     verticalAlignment: Text.AlignVCenter
+                                    rightPadding: 4
                                 }
-                                MouseArea { anchors.fill: parent; onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.addHarmonyToKit(index) } }
+                                MouseArea {
+                                    id: harmonyAddMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.addHarmonyToKit(index) }
+                                }
                             }
                         }
                         Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: window.densityDividerHeight; color: theme.dividerDefault; opacity: 0.8 }
@@ -4303,6 +4410,33 @@ ApplicationWindow {
                         objectName: "liveKitExportButton"
                         text: "Export Kit"
                         flat: true
+                        implicitHeight: 26
+                        padding: 8
+                        leftPadding: 10
+                        rightPadding: 10
+                        Accessible.name: "Export Kit"
+                        contentItem: Text {
+                            text: liveKitExportButton.text
+                            color: !liveKitExportButton.enabled ? theme.textDisabled
+                                   : (liveKitExportButton.pressed ? theme.textPrimary
+                                      : (liveKitExportButton.hovered || liveKitExportButton.activeFocus ? theme.textPrimary : theme.textSecondary))
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            font.pixelSize: 11
+                            opacity: liveKitExportButton.enabled ? 1.0 : 0.45
+                        }
+                        background: Rectangle {
+                            implicitHeight: 26
+                            radius: 4
+                            color: !liveKitExportButton.enabled ? "transparent"
+                                   : (liveKitExportButton.pressed ? theme.surfaceElevated
+                                      : (liveKitExportButton.hovered ? theme.hoverSurface : "transparent"))
+                            border.width: 1
+                            border.color: !liveKitExportButton.enabled ? theme.borderSubtle
+                                          : (liveKitExportButton.activeFocus ? theme.focusRing
+                                             : (liveKitExportButton.pressed ? theme.selectionBorder : theme.borderSubtle))
+                            opacity: liveKitExportButton.enabled ? 1.0 : 0.4
+                        }
                         onClicked: exportKitDialog.open()
                     }
                 }
@@ -4344,24 +4478,29 @@ ApplicationWindow {
                     Layout.alignment: Qt.AlignTop
                     spacing: 0
                     Repeater { model: window.screenData.liveKitGroups
+                        // #895: quieter group chrome — no idle box; fine border only when active/hover.
                         delegate: Rectangle {
                             property int kitGroupIndex: index
+                            property bool groupHovered: liveKitGroupHeader.containsMouse
                             width: liveKitPane.width - 28
                             height: 44 + (modelData.active ? modelData.slots.length * 26 + 14 : 0)
-                            radius: 6
-                            color: modelData.active ? theme.surfaceElevated : "transparent"
-                            border.color: modelData.active ? theme.actionActive : theme.borderSubtle
+                            radius: 4
+                            color: modelData.active ? theme.hoverSurface
+                                   : (groupHovered ? theme.hoverSurface : "transparent")
+                            border.width: (modelData.active || groupHovered) ? 1 : 0
+                            border.color: modelData.active ? theme.selectionBorder : theme.borderSubtle
                             ColumnLayout { anchors.fill: parent; spacing: 0
                                 Item { Layout.fillWidth: true; Layout.preferredHeight: 44; Layout.leftMargin: 12; Layout.rightMargin: 10
                                     RowLayout { anchors.fill: parent; spacing: 6
-                                        Label { text: (index + 1) + "  "; color: modelData.active ? theme.actionActive : theme.textSecondary; font.pixelSize: 13; font.bold: true }
-                                        Label { text: modelData.name; color: theme.textPrimary; font.pixelSize: 14; font.bold: modelData.active; elide: Text.ElideRight; Layout.fillWidth: true }
-                                        Label { text: modelData.active ? "▾" : "▸"; color: modelData.active ? theme.actionActive : theme.textSecondary; font.pixelSize: 12 }
+                                        Label { text: (index + 1) + "  "; color: modelData.active ? theme.actionActive : theme.textSecondary; font.pixelSize: 12; font.bold: true; opacity: modelData.active ? 1.0 : 0.85 }
+                                        Label { text: modelData.name; color: theme.textPrimary; font.pixelSize: 13; font.bold: modelData.active; elide: Text.ElideRight; Layout.fillWidth: true }
+                                        Label { text: modelData.active ? "▾" : "▸"; color: modelData.active ? theme.textPrimary : theme.textSecondary; font.pixelSize: 11; opacity: 0.85 }
                                     }
                                     MouseArea {
                                         id: liveKitGroupHeader
                                         objectName: "liveKitGroupHeader" + index
                                         anchors.fill: parent
+                                        hoverEnabled: true
                                         // onPressed (not onClicked): toggle before release so a
                                         // collapsing group cannot slide a neighbor under the
                                         // pointer and accidental-expand it (#743 disclosure).
@@ -4410,12 +4549,17 @@ ApplicationWindow {
                                             Label { text: modelData.name; color: theme.textSecondary; font.pixelSize: 11; Layout.fillWidth: true; elide: Text.ElideRight }
                                             Label { text: modelData.assignment; color: modelData.auditioning ? theme.actionActive : (modelData.assigned ? theme.textPrimary : theme.textSecondary); font.pixelSize: 11; elide: Text.ElideRight }
                                             Rectangle {
+                                                // #895: quieter slot affordance — fine border, accent only when pending/active.
                                                 id: slotAction
                                                 Layout.preferredHeight: 22
                                                 radius: 3
                                                 Layout.preferredWidth: showReplaceAffordance ? 52 : 22
-                                                color: hasPendingAdd ? theme.selectionSurface : (showReplaceAffordance ? theme.selectionSurface : "transparent")
-                                                border.color: hasPendingAdd ? theme.actionActive : (showReplaceAffordance ? theme.actionActive : "transparent")
+                                                color: hasPendingAdd ? theme.selectionSurface
+                                                       : (slotActionMouse.containsMouse ? theme.hoverSurface
+                                                          : (showReplaceAffordance ? theme.hoverSurface : "transparent"))
+                                                border.width: hasPendingAdd || showReplaceAffordance || slotActionMouse.containsMouse ? 1 : 0
+                                                border.color: hasPendingAdd ? theme.actionActive
+                                                              : (showReplaceAffordance || slotActionMouse.containsMouse ? theme.borderSubtle : "transparent")
                                                 Label {
                                                     anchors.centerIn: parent
                                                     objectName: "slotActionLabel" + kitGroupIndex + "_" + index

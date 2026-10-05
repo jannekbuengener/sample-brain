@@ -299,3 +299,41 @@ Screen-1 QML must not introduce direct HEX colors outside Theme Core /
 tests under `tests/test_workbench_qml_screen1_color_contract.py` and
 `tests/test_workbench_qml_theme_runtime.py` guard this. Hierarchy relations are
 covered by `tests/test_workbench_dark_surface_hierarchy.py`.
+
+## Secondary control and panel chrome (#895)
+
+Presentation-only polish for secondary Library / Browser / Live Kit / Harmonic
+controls so they share the slim, dark, flat, restrained noir language already
+approved via #880 / #885 / #894. Theme Core remains color authority; no second
+QML palette. Layout, IA, and behavior stay unchanged.
+
+### CURRENT → TARGET (presentation)
+
+| Surface | CURRENT (runtime look) | TARGET |
+|---------|------------------------|--------|
+| Library **Add Source** / **Remove** | Default Qt Quick `Button` chrome (bright / raised utility widget) | Dark/transparent baseline, fine `borderSubtle` outline, theme text; hover = quiet `hoverSurface`; pressed clearer but not massive; focus = thin `focusRing`; disabled recessed; accent only for active/focus — **not** a white CTA slab |
+| Browser **Search** (`browserSearch`) | Theme border/focus already, but still classic form-field presence | Slim dark-native field: quiet fill (`hoverSurface` or transparent-on-panel), low-contrast border, calm placeholder (`textSecondary`), focus accent via `focusRing`, `textPrimary` ink; no browser/form widget look |
+| Live Kit group / slot chrome | Boxed card mass (`radius` + elevated fill + strong border) | Same slot structure; finer borders, lower card mass, quieter active/hover; number / title / affordance hierarchy retained; no form-field card look |
+| Harmonic Matching rows / secondary actions | Row chrome / action labels that can read as a second UI dialect | Same row/control language as Browser / Live Kit; theme-bound only; matching logic untouched |
+
+### Control-state contract
+
+Hover, pressed, focus, and disabled presentation must be present, consistent, and
+restrained across the polished secondary controls. Accent remains functional-only
+(see Functional accent rule). Do not invent new Theme tokens unless reuse of
+`hoverSurface` / `borderSubtle` / `focusRing` / `surfaceElevated` /
+`textPrimary` / `textSecondary` / `textDisabled` / `actionActive` is insufficient.
+
+### Evidence (runtime, outside repo)
+
+At least 1600×900 production QML captures (synthetic fixture paths only):
+
+| Evidence ID | Intent |
+|-------------|--------|
+| `895-browser-library-controls` | Library with Add Source (+ Remove when selectable); Browser Search visible |
+| `895-live-kit` | Live Kit pane/slots visible |
+| `895-harmonic-matching` | Harmonic Matching pane/rows visible |
+
+Optional focused crops of individual controls. Mockup-only acceptance is not
+sufficient. Agent may report internal `VISUAL_ACCEPT_PASS` with evidence; delivery
+state remains `READY_FOR_OWNER_VISUAL_REVIEW` until Owner visual acceptance.
