@@ -193,6 +193,10 @@ Synthetic tests prove the algorithmic contract; they cannot alone prove producer
 
 See `tests/test_gesture_library_ranking_882.py` (frozen at TEST_FREEZE).
 
+## Next slice
+
+Catalog projection into `LibraryCandidate` is Slice 3 (#886); see `docs/GESTURE_CATALOG_ADAPTER_RND_SLICE3.md`.
+
 ## Post-implementation result
 
 | Field | Value |
