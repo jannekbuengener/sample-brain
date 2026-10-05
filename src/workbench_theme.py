@@ -10,10 +10,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import struct
+import zlib
 from pathlib import Path
 from typing import Any, Mapping
 
 from .workbench_controller import workbench_state_dir
+
+# Soft-ellipse atmosphere overlays (runtime cache; not preference persistence).
+_ATMOSPHERE_SIZE = 256
+_ATMOSPHERE_CACHE_DIRNAME = "theme_atmosphere"
 
 THEME_PREFERENCES_SCHEMA = "sample_brain.theme_preferences"
 THEME_PREFERENCES_SCHEMA_VERSION = 1
@@ -667,6 +673,167 @@ def theme_tokens_to_qml_semantics(tokens: Mapping[str, Any] | ThemeTokens) -> di
     return out
 
 
+def atmosphere_stop_colors(
+    tokens: Mapping[str, Any] | ThemeTokens,
+) -> dict[str, dict[str, str]]:
+    """Derive soft-ellipse stop colors from Theme bases (our combo only)."""
+    if isinstance(tokens, ThemeTokens):
+        source = tokens.as_dict()
+    else:
+        source = {str(k): str(v) for k, v in tokens.items()}
+    accent = _normalize_hex(source.get("accent"))
+    background = _normalize_hex(source.get("background"))
+    foreground = _normalize_hex(source.get("foreground"))
+    workspace = _normalize_hex(source.get("surfaceWorkspace"))
+    panel = _normalize_hex(source.get("surface"))
+    if None in (accent, background, foreground, workspace, panel):
+        raise ValueError("invalid theme tokens for atmosphere stops")
+    assert accent and background and foreground and workspace and panel
+    return {
+        "workspace": {
+            "core": mix_hex(mix_hex(workspace, accent, 0.14), foreground, 0.03),
+            "mid": workspace,
+            "edge": mix_hex(workspace, background, 0.65),
+        },
+        "panel": {
+            "core": mix_hex(mix_hex(panel, accent, 0.12), foreground, 0.02),
+            "mid": panel,
+            "edge": mix_hex(panel, background, 0.50),
+        },
+    }
+
+
+def _lerp_channel(a: int, b: int, t: float) -> int:
+    return max(0, min(255, int(round(a + (b - a) * t))))
+
+
+def _lerp_rgb(
+    color_a: tuple[int, int, int],
+    color_b: tuple[int, int, int],
+    t: float,
+) -> tuple[int, int, int]:
+    return (
+        _lerp_channel(color_a[0], color_b[0], t),
+        _lerp_channel(color_a[1], color_b[1], t),
+        _lerp_channel(color_a[2], color_b[2], t),
+    )
+
+
+def _sample_atmosphere_stops(
+    *,
+    core: tuple[int, int, int],
+    mid: tuple[int, int, int],
+    edge: tuple[int, int, int],
+    t: float,
+) -> tuple[int, int, int]:
+    """Map Superdesign-style 0/0.55/1.0 elliptical stops into RGB."""
+    u = max(0.0, min(1.0, float(t)))
+    if u <= 0.55:
+        local = u / 0.55
+        return _lerp_rgb(core, mid, local)
+    local = (u - 0.55) / 0.45
+    return _lerp_rgb(mid, edge, local)
+
+
+def _png_chunk(tag: bytes, data: bytes) -> bytes:
+    return (
+        struct.pack(">I", len(data))
+        + tag
+        + data
+        + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+    )
+
+
+def render_atmosphere_ellipse_png(
+    *,
+    core: str,
+    mid: str,
+    edge: str,
+    width: int = _ATMOSPHERE_SIZE,
+    height: int = _ATMOSPHERE_SIZE,
+) -> bytes:
+    """Render a soft elliptical noir atmosphere PNG (stdlib only; no QML Gradient)."""
+    w = max(8, int(width))
+    h = max(8, int(height))
+    core_rgb = _parse_rgb(core)
+    mid_rgb = _parse_rgb(mid)
+    edge_rgb = _parse_rgb(edge)
+    cx = (w - 1) * 0.5
+    cy = (h - 1) * 0.5
+    # Slightly wide ellipse so stretched workspace panes keep cinematic falloff.
+    rx = max(1.0, w * 0.58)
+    ry = max(1.0, h * 0.52)
+    rows: list[bytes] = []
+    for y in range(h):
+        row = bytearray()
+        row.append(0)  # filter None
+        for x in range(w):
+            nx = (x - cx) / rx
+            ny = (y - cy) / ry
+            dist = (nx * nx + ny * ny) ** 0.5
+            r, g, b = _sample_atmosphere_stops(
+                core=core_rgb,
+                mid=mid_rgb,
+                edge=edge_rgb,
+                t=dist,
+            )
+            row.extend((r, g, b, 255))
+        rows.append(bytes(row))
+    raw = b"".join(rows)
+    ihdr = struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)
+    return b"".join(
+        (
+            b"\x89PNG\r\n\x1a\n",
+            _png_chunk(b"IHDR", ihdr),
+            _png_chunk(b"IDAT", zlib.compress(raw, 9)),
+            _png_chunk(b"IEND", b""),
+        )
+    )
+
+
+def atmosphere_cache_dir(
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+    cache_dir: Path | None = None,
+) -> Path:
+    if cache_dir is not None:
+        return Path(cache_dir)
+    base = state_dir if state_dir is not None else workbench_state_dir(env=env)
+    return Path(base) / _ATMOSPHERE_CACHE_DIRNAME
+
+
+def ensure_atmosphere_overlays(
+    tokens: Mapping[str, Any] | ThemeTokens,
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+    cache_dir: Path | None = None,
+) -> dict[str, Path]:
+    """Write/reuse Theme-owned atmosphere PNGs for workspace + panel roles."""
+    stops = atmosphere_stop_colors(tokens)
+    out_dir = atmosphere_cache_dir(state_dir=state_dir, env=env, cache_dir=cache_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths: dict[str, Path] = {}
+    for role in ("workspace", "panel"):
+        role_stops = stops[role]
+        stem = (
+            f"noir_{role}_"
+            f"{role_stops['core'][1:]}_{role_stops['mid'][1:]}_{role_stops['edge'][1:]}"
+        )
+        path = out_dir / f"{stem}.png"
+        if not path.is_file():
+            path.write_bytes(
+                render_atmosphere_ellipse_png(
+                    core=role_stops["core"],
+                    mid=role_stops["mid"],
+                    edge=role_stops["edge"],
+                )
+            )
+        paths[role] = path
+    return paths
+
+
 __all__ = [
     "BLOOD_A_ACCENT",
     "BLOOD_B_ACCENT",
@@ -677,16 +844,20 @@ __all__ = [
     "THEME_PREFERENCES_SCHEMA_VERSION",
     "ThemeBase",
     "ThemeTokens",
+    "atmosphere_cache_dir",
+    "atmosphere_stop_colors",
     "blood_variants",
     "create_custom_theme",
     "default_preset_name",
     "delete_custom_theme",
     "derive_tokens",
+    "ensure_atmosphere_overlays",
     "list_custom_themes",
     "list_presets",
     "mix_hex",
     "presets_canon_path",
     "rename_custom_theme",
+    "render_atmosphere_ellipse_png",
     "reset_custom_theme",
     "resolve_theme",
     "save_custom_theme",
