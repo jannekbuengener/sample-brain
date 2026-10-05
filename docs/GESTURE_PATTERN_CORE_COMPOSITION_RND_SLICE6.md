@@ -1,6 +1,6 @@
 # Gesture Pattern Core Composition R&D — Slice 6 (#680 / #893)
 
-**Status:** R&D contract frozen at `TEST_FREEZE`; composition module not yet implemented.
+**Status:** Implemented — `READY_BINDING_PLAN_TO_PATTERN_CORE_VIABLE` (post-`TEST_FREEZE`).
 
 **Parent:** [#680](https://github.com/jannekbuengener/sample-brain/issues/680)
 **Child:** [#893](https://github.com/jannekbuengener/sample-brain/issues/893)
@@ -368,10 +368,34 @@ churn, PR `#889` theme/QML paths.
 
 ## Concurrent work notice
 
-Open PR `#889` is Theme/QML/visual only. This slice must not touch:
+PR `#889` (Theme/QML) was merged on `main` after `TEST_FREEZE` and integrated via
+normal merge into this branch during `DRIFT_GATE`. This slice still must not own
+Theme/QML paths:
 
 - `docs/WORKBENCH_VISUAL_ACCEPTANCE.md`
 - `docs/assets/themes/*`
 - `src/workbench_qml.py`
 - `src/workbench_theme.py`
 - related Theme/QML tests
+
+## Post-implementation result
+
+| Field | Value |
+|-------|-------|
+| Implementation seam | `src/gesture_pattern_core_composition.py` — `compose_gesture_pattern_core(plan, *, pattern_id) -> GesturePatternCoreComposition` |
+| Result model | frozen `GesturePatternCoreComposition(channels: tuple[Channel, ...], pattern: Pattern)` using real Pattern-Core types |
+| Order invariant | explicit `ValueError` if `Pattern` normalization would change composed trigger order (no Python `assert`) |
+| Focused validation | `tests/test_gesture_pattern_core_composition_893.py` — **52 passed** |
+| Protected validation | `#891`/`#888`/`#882`/`#886`, Pattern Core, Channel Rack / DEFAULT_ON, sequencer playback/PCM — **319 passed** |
+| Static / hygiene | `ruff check` PASS; `git diff --check` PASS; `python tools/check_canon_drift.py` PASS |
+| R&D EXIT | `READY_BINDING_PLAN_TO_PATTERN_CORE_VIABLE` |
+| Quality claim | `PATTERN_CORE_COMPOSITION_ONLY — RACK_SESSION_INTEGRATION_NOT_YET_VALIDATED` |
+
+Viable here means only: a ready `#891` plan plus explicit `pattern_id` translates
+deterministically and losslessly into existing `Channel` / `Trigger` / `Pattern`
+objects with fail-closed structural validation, empty-ready preserved, orphan
+planned channels rejected, and no Channel Rack mutation / DEFAULT_ON /
+upstream recomputation.
+
+Parent `#680` remains OPEN. Next contract slice (not this PR): explicit integration
+of `GesturePatternCoreComposition` into a target ChannelRack/session.

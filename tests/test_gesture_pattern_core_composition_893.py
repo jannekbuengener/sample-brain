@@ -2,7 +2,7 @@
 
 Docs authority: docs/GESTURE_PATTERN_CORE_COMPOSITION_RND_SLICE6.md
 
-Intentionally RED until src/gesture_pattern_core_composition.py exists.
+Frozen acceptance for implemented src/gesture_pattern_core_composition.py.
 Synthetic fixtures only — no audio, no DB, no private catalogs.
 """
 
@@ -92,12 +92,13 @@ _BANNED_IMPORT_ROOTS = frozenset(
 
 
 def _candidate(sample_id: str, path: str | None = None) -> LibraryCandidate:
+    # Align fixture fields with live #882 LibraryCandidate (freeze typo repair).
     return LibraryCandidate(
         sample_id=sample_id,
         path=path if path is not None else f"{sample_id}.wav",
-        duration_sec=0.2,
-        rms=0.1,
-        spectral_centroid=1000.0,
+        audio_class="oneshot",
+        loudness=0.1,
+        brightness=1000.0,
         mfcc13=tuple(float(i) for i in range(13)),
     )
 
@@ -557,7 +558,7 @@ def test_26_event_position_equal_length_rejected() -> None:
     length = Fraction(4, 1)
     plan = _ready_plan(
         channels=(_channel_binding(0, "ch_user_1"),),
-        events=(_event_binding(0, "ch_user_1", length)),
+        events=(_event_binding(0, "ch_user_1", length),),
         length=length,
     )
     with pytest.raises((TypeError, ValueError)):
@@ -568,7 +569,7 @@ def test_27_event_position_greater_than_length_rejected() -> None:
     """27. event position > length rejected."""
     plan = _ready_plan(
         channels=(_channel_binding(0, "ch_user_1"),),
-        events=(_event_binding(0, "ch_user_1", Fraction(5, 1))),
+        events=(_event_binding(0, "ch_user_1", Fraction(5, 1)),),
         length=Fraction(4, 1),
     )
     with pytest.raises((TypeError, ValueError)):
@@ -581,7 +582,7 @@ def test_28_valid_exclusive_end_position_accepted() -> None:
     just_before = length - Fraction(1, 16)
     plan = _ready_plan(
         channels=(_channel_binding(0, "ch_user_1"),),
-        events=(_event_binding(0, "ch_user_1", just_before)),
+        events=(_event_binding(0, "ch_user_1", just_before),),
         length=length,
     )
     result = _compose(plan)
