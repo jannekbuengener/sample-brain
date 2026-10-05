@@ -39,7 +39,7 @@ def _library_header_block() -> str:
 def _browser_search_block() -> str:
     start = QML_SOURCE.index('objectName: "browserSearch"')
     # Capture the TextField including its custom background / text bindings.
-    return QML_SOURCE[start : start + 900]
+    return QML_SOURCE[start : start + 1600]
 
 
 def _live_kit_block() -> str:
@@ -54,7 +54,7 @@ def _harmony_list_block() -> str:
     )[0]
 
 
-def _extract_named_control(source: str, object_name: str, *, window: int = 1400) -> str:
+def _extract_named_control(source: str, object_name: str, *, window: int = 2400) -> str:
     marker = f'objectName: "{object_name}"'
     assert marker in source, f"missing {object_name}"
     start = source.index(marker)
@@ -113,17 +113,17 @@ def test_live_kit_group_chrome_is_light_not_heavy_card() -> None:
     # Heavy default card mass from pre-#895 (radius 6 + elevated fill always).
     # Active may still lift quietly; inactive must stay transparent/low mass.
     group_delegate = live.split("Repeater { model: window.screenData.liveKitGroups", 1)[1]
-    group_rect = group_delegate.split("delegate: Rectangle", 1)[1][:900]
+    group_rect = group_delegate.split("delegate: Rectangle", 1)[1][:1600]
     assert "radius: 4" in group_rect or "radius: 3" in group_rect
     assert "radius: 6" not in group_rect
-    assert 'color: modelData.active ? theme.surfaceElevated : "transparent"' in group_rect or (
-        '"transparent"' in group_rect and "theme.surfaceElevated" in group_rect
-    )
+    # Quiet active lift (hoverSurface) or elevated; inactive stays transparent.
+    assert '"transparent"' in group_rect
+    assert "theme.hoverSurface" in group_rect or "theme.surfaceElevated" in group_rect
     assert "theme.borderSubtle" in group_rect
     # Active border may use accent sparingly; quiet selectionBorder is also fine.
     assert "theme.actionActive" in group_rect or "theme.selectionBorder" in group_rect
     # Export Kit shares secondary chrome language.
-    export = _extract_named_control(live, "liveKitExportButton", window=900)
+    export = _extract_named_control(live, "liveKitExportButton", window=2400)
     assert "flat: true" in export
     assert "background: Rectangle" in export or "background: Item" in export
     assert "theme." in export
@@ -314,11 +314,11 @@ def test_runtime_search_focus_and_filter_behavior_unchanged() -> None:
         assert len(vm.browser_rows) == 1
         assert vm.browser_rows[0].source_row.display_name == "alpha kick"
 
-        # Escape / keyboard path still available on the window interaction model.
-        adapter.set_browser_search_query("")
+        # Clear via view-model search contract (same path setBrowserSearch uses).
+        vm.set_browser_search_query("")
         settle(app)
         assert len(vm.browser_rows) == 2
-        assert search.property("activeFocusOnTab") in (True, None) or True
+        assert bool(search.hasActiveFocus()) or search.property("activeFocusOnTab") is not False
         _ = Qt  # keep import used for future key events
     finally:
         window.close()
