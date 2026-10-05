@@ -1,6 +1,6 @@
 # Gesture Catalog Adapter R&D — Slice 3 (#680 / #886)
 
-**Status:** R&D contract frozen at DOCS_GATE / TEST_GATE. Product module not implemented in this gate run.
+**Status:** R&D contract frozen; implementation delivered. See post-implementation result.
 
 **Parent:** [#680](https://github.com/jannekbuengener/sample-brain/issues/680)
 **Child:** [#886](https://github.com/jannekbuengener/sample-brain/issues/886)
@@ -154,3 +154,13 @@ See `tests/test_gesture_catalog_adapter_886.py`.
 ## Non-goals
 
 No ranking algorithm/weight changes, embeddings/CLAP/vector search, Pattern/Channel/Trigger, BPM/seconds→beats/quantization, QML/UI, DB migration/writes, drum labels, auto-accept rank 1, producer-quality claim, `#884` / `docs/CANON_INDEX.md` edits.
+
+## Post-implementation result
+
+| Field | Value |
+|-------|-------|
+| Implementation seam | `src/gesture_catalog_adapter.py` — `load_gesture_library_candidates` + `rank_gesture_against_catalog` |
+| Measured tests | Focused `tests/test_gesture_catalog_adapter_886.py`: **30 passed**; `#882`: **23 passed**; Slice-1: **9 passed**; protected Workbench/analyze/DB/Pattern/Channel group: **129 passed** (161 with `#882`+Slice-1) |
+| Read-only evidence | Temp catalog mtime + table/feature snapshots unchanged across load+rank (frozen test 21) |
+| R&D EXIT | `CATALOG_ADAPTER_VIABLE` |
+| Quality claim | `CATALOG_INTEGRATION_ONLY — PRODUCER_QUALITY_NOT_VALIDATED` |
