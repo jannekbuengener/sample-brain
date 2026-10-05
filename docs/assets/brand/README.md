@@ -32,6 +32,9 @@ pending Owner VA for this close).
 - No permanent brain logo / `SAMPLE BRAIN` wordmark / claim in the Screen-1
   header chrome. Product identity text (`Sample Brain`) remains header copy,
   not brand-lockup chrome.
+- Program-bar zone order (identity left, navigation center, transport right)
+  is owned by `docs/PROGRAM_CHROME_CONTRACT.md` (#830). That contract does not
+  authorize the brain signet or lockup in the bar.
 - Claim `Sample Brain — Frech aber im Flow.` is allowed on splash/external
   surfaces only — not as permanent Screen-1 header chrome.
 - Progress: `total <= 0` → indeterminate (no fake %); `total > 0` →

@@ -130,20 +130,20 @@ def test_qml_bottom_icon_bar_contract_and_accessible_names() -> None:
     assert "★" not in favorites_block
     assert "⭐" not in favorites_block
     assert "for (var i = 0; i < 5; i++)" in favorites_block
-    # Scope bar is Library-pane chrome after the content host, not ApplicationWindow footer.
+    # #831: scope bar lives in the global program footer band (left).
+    footer_block = source.split("footer:", 1)[1].split("header:", 1)[0]
+    assert 'objectName: "libraryScopeBar"' in footer_block
+    assert 'objectName: "programFooterBand"' in footer_block
     pane_block = source.split('id: libraryPane', 1)[1].split(
         'objectName: "elasticHandleAfterLibrary"', 1
     )[0]
+    assert 'objectName: "libraryScopeBar"' not in pane_block
     host_pos = pane_block.find('objectName: "libraryContentHost"')
-    bar_pos = pane_block.find('objectName: "libraryScopeBar"')
-    assert host_pos >= 0 and bar_pos >= 0
-    assert host_pos < bar_pos, "libraryScopeBar must sit below libraryContentHost"
-    footer_block = source.split("footer:", 1)[1].split("header:", 1)[0]
-    assert 'objectName: "libraryScopeBar"' not in footer_block
-    assert 'objectName: "contextHintPlacement"' in footer_block
+    assert host_pos >= 0
+    assert pane_block.find('objectName: "libraryScopeBar"') < 0
     # Icon bar must not depend on classic ToolTips for discoverability.
     scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
-        'objectName: "elasticHandleAfterLibrary"', 1
+        'Item { Layout.fillWidth: true }', 1
     )[0]
     assert "ToolTip." not in scope_block
     assert "contextHintState.reportHover" in scope_block
@@ -305,7 +305,7 @@ def test_runtime_bottom_icon_bar_above_footer_not_in_footer(tmp_path: Path) -> N
             pane = window.findChild(QQuickItem, "libraryPane")
             host = window.findChild(QQuickItem, "libraryContentHost")
             bar = window.findChild(QQuickItem, "libraryScopeBar")
-            footer = window.findChild(QQuickItem, "contextHintPlacement")
+            footer = window.findChild(QQuickItem, "programFooterBand")
             catalog = window.findChild(QQuickItem, "libraryCatalogScopeButton")
             favorites = window.findChild(QQuickItem, "libraryFavoritesScopeButton")
             collections = window.findChild(QQuickItem, "libraryCollectionsScopeButton")
@@ -321,24 +321,10 @@ def test_runtime_bottom_icon_bar_above_footer_not_in_footer(tmp_path: Path) -> N
             assert all_samples is not None and all_samples.isVisible()
             assert sources is not None and sources.isVisible()
 
-            # Geometry: content host above bar; bar above footer; bar inside pane.
-            host_bottom = float(host.mapToItem(pane, QPointF(0, host.height())).y())
-            bar_top = float(bar.mapToItem(pane, QPointF(0, 0)).y())
-            bar_bottom_global = float(bar.mapToItem(window.contentItem(), QPointF(0, bar.height())).y())
-            footer_top_global = float(
-                footer.mapToItem(window.contentItem(), QPointF(0, 0)).y()
-            )
-            assert bar_top >= host_bottom - 1.0, (
-                f"{tag}: scope bar must sit below content host "
-                f"(host_bottom={host_bottom}, bar_top={bar_top})"
-            )
-            assert bar_bottom_global <= footer_top_global + 1.0, (
-                f"{tag}: scope bar must remain above app footer "
-                f"(bar_bottom={bar_bottom_global}, footer_top={footer_top_global})"
-            )
-            assert float(bar.y()) > 80.0, (
-                f"{tag}: bottom icon bar must not remain under the header (y={bar.y()})"
-            )
+            # Geometry: scope bar in global footer band; library host fills pane.
+            bar_in_footer = bar.mapToItem(footer, QPointF(0, 0))
+            assert bar_in_footer.y() >= -1.0 and bar_in_footer.x() >= -1.0
+            assert bar_in_footer.y() <= float(footer.height()) + 2.0
 
             # Activate each secondary control; tree retreats except Sources.
             bridge = engine._screen1_library_bridge
@@ -366,10 +352,10 @@ def test_runtime_bottom_icon_bar_above_footer_not_in_footer(tmp_path: Path) -> N
                 else:
                     assert not tree.isVisible()
                     assert not coll.isVisible()
-                # Mode switches must not relocate the bar into the footer.
+                # Mode switches must not relocate the bar out of the footer band.
                 bar2 = window.findChild(QQuickItem, "libraryScopeBar")
                 assert bar2 is not None
-                assert float(bar2.mapToItem(pane, QPointF(0, 0)).y()) >= host_bottom - 1.0
+                assert abs(bar2.mapToItem(footer, QPointF(0, 0)).y()) < 8.0
 
             grab = window.grabWindow()
             out = evidence_dir / f"library_bottom_icons_{tag}.png"

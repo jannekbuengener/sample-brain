@@ -14,8 +14,10 @@ and placed `Add Source…` inside `Sample Sources`. It also supersedes the
 #765/#766 compact icon row that sat **above** the Source tree and exposed a
 visible Catalog control.
 
-#837 is the current presentation authority for secondary icon placement and
-visible secondary scopes.
+#837 remains the authority for which secondary scopes are visible and which
+intents they dispatch. #830 (`docs/PROGRAM_CHROME_CONTRACT.md`) owns the global
+footer placement of that utility set; #837 no longer competes as a pane-local
+geometry authority for those icons.
 
 ## Source tree taxonomy
 
@@ -36,11 +38,12 @@ convenience folders.
 The single primary Add Source affordance remains the existing button in the
 Library header. `action:add-source` is not emitted by the navigation model.
 
-## Bottom secondary icon navigation (#837)
+## Bottom secondary icon navigation (#837 scope set; #830 placement)
 
-A compact icon-only row sits at the **bottom of the left Library/Browser pane**,
-directly above the existing ApplicationWindow footer (context-hint placement).
-It is Library-panel chrome, not part of the footer.
+Historical #837 placement was a compact icon-only row at the bottom of the left Library/Browser pane, directly above the ApplicationWindow footer. That
+pane-local geometry is superseded for #831 by #830: the same utility set moves
+onto the left of the global footer band. This section still owns the scope set
+and the intent dispatch only. Do not render the same scope twice.
 
 Visible secondary controls:
 
@@ -62,9 +65,10 @@ collection entries flow through the same typed selection intent used by Source
 rows.
 
 Every icon-only control exposes a stable object/semantic identity and accessible
-name. #770 owns the shared bottom-center context-hint display; the icon row
-reports hover/focus intents into that seam and does not rely on classic
-cursor-adjacent ToolTips for Library scope discoverability.
+name. #770 owns the shared context-hint display; #830 places that hint on the
+footer band (right). Scope controls report hover/focus intents into that seam
+and do not rely on classic cursor-adjacent ToolTips for Library scope
+discoverability.
 
 ## Recordings projection
 
@@ -130,11 +134,11 @@ Presentation rule for the Library pane (no opacity-only hide with active input):
 | Recordings | not visible; not focusable; no input | — |
 | Collections | not visible; not focusable; no input | Collection list visible |
 
-`libraryScopeBar` is permanent Library chrome at the **bottom** of the Library
-pane (above the app footer). Mode switches must not relocate it into the footer
-or above the header: tree/list visibility is hosted inside a single
-`libraryContentHost` (`Layout.fillHeight`) so the content host fills the space
-between the Library header and the bottom icon bar.
+`libraryScopeBar` is the left side of the global footer band
+(`docs/PROGRAM_CHROME_CONTRACT.md`, #830). It is not a second row inside the
+Library pane, and mode switches must not move it above the Library header.
+Tree/list visibility stays in one `libraryContentHost` (`Layout.fillHeight`),
+which fills the Library pane under the Library header.
 
 Returning to Sources keeps the existing Tree expand/selection state; do not
 reload navigation solely because of a scope-bar mode switch.
@@ -169,7 +173,7 @@ Regression coverage now freezes:
 
 - one visible Source-tree root;
 - no `action:add-source` child;
-- secondary icons at the Library pane bottom, above the app footer;
+- secondary icons reuse the #837 scope set; #830 places that utility on the left of the global footer band instead of a separate row above it;
 - All Samples / Favorites / Collections / Recordings remembered as secondary
   nodes;
 - no visible Catalog navigation control;
@@ -185,9 +189,9 @@ Regression coverage now freezes:
 
 ## Dependency boundary
 
-#836 owns Sample Sources expand/hydrate reliability. #837 owns bottom secondary
-icon placement and Recordings navigation projection. #770 delivers the shared
-bottom-center context-hint seam for those icon-only controls. This contract
-still excludes sample Drag & Drop ownership changes, Add Source relocation, and
+#836 owns Sample Sources expand/hydrate reliability. #837 owns secondary scope
+intents and Recordings navigation projection. #770 delivers the shared
+context-hint seam for those icon-only controls; #830 owns footer-band geometry
+(utility left, hint right). This contract still excludes sample Drag & Drop ownership changes, Add Source relocation, and
 the future modular snap/docking system. Packaging/installer work is also out of
 scope.
