@@ -1,4 +1,4 @@
-"""Contracts for the Screen-1 canonical background reference (#691 visual surface)."""
+"""Historical Screen-1 background evidence and visible V7 root contracts."""
 
 from __future__ import annotations
 
@@ -35,16 +35,15 @@ def test_screen1_background_url_points_at_repo_reference():
     assert path.as_posix().lower() in url.replace("\\", "/").lower() or path.name in url
 
 
-def test_qml_source_uses_stretch_background_image_without_crop_or_gradients():
+def test_qml_source_keeps_historical_background_non_composited_without_effects():
     source = workbench_qml.QML_SOURCE
     assert "objectName: \"screen1Background\"" in source
     assert "source: screen1BackgroundUrl" in source
     assert "Gradient" not in source
     assert "LinearGradient" not in source
     assert "RadialGradient" not in source
-    # Background image must stretch full-bleed — crop/fit modes are forbidden
-    # on screen1Background only. Other Images (e.g. #786 brand brain) may use
-    # PreserveAspectFit inside their own slots.
+    # The immutable asset/URL helper stays for historical evidence, but may not
+    # cover the V7 root chrome after it has loaded.
     bg_block = re.search(
         r"Image\s*\{[^}]*objectName:\s*\"screen1Background\".*?\}",
         source,
@@ -52,12 +51,11 @@ def test_qml_source_uses_stretch_background_image_without_crop_or_gradients():
     )
     assert bg_block is not None
     block = bg_block.group(0)
-    assert "fillMode: Image.Stretch" in block
-    assert "PreserveAspectCrop" not in block
-    assert "PreserveAspectFit" not in block
-    # No decorative ambient overlays / colorize on the background image.
+    assert "visible: false" in block
+    # No opacity/tint workaround or decorative effect may replace the explicit
+    # non-composited state.
     assert "colorize" not in block.casefold()
-    assert "opacity:" not in block.casefold() or "opacity: 1" in block
+    assert "opacity:" not in block.casefold()
     assert "layer.enabled" not in block.casefold()
     assert "FastBlur" not in block
     assert "Glow" not in block
@@ -87,7 +85,7 @@ def test_qml_palette_tokens_are_near_black_with_functional_accent_only():
     not workbench_qml.qml_runtime_available(),
     reason="PySide6 unavailable",
 )
-def test_qml_runtime_exposes_background_image_with_stretch_fill():
+def test_qml_runtime_paints_v7_chrome_while_historical_background_stays_hidden():
     from PySide6.QtQuick import QQuickItem
 
     from src.workbench_harmony import HarmonicMatchLibraryController
@@ -118,10 +116,10 @@ def test_qml_runtime_exposes_background_image_with_stretch_fill():
         assert background is not None
         source = str(background.property("source"))
         assert "screen1_background_reference.png" in source.replace("\\", "/")
-        # fillMode enum is not always convertible via property(); QML_SOURCE
-        # contract already asserts Image.Stretch. Confirm image is loaded.
-        assert float(background.property("paintedWidth") or 0) > 0
-        assert float(background.property("paintedHeight") or 0) > 0
+        # Runtime proof: an opaque historical image cannot cover the actual V7
+        # ApplicationWindow chrome layer after asynchronous loading.
+        assert not background.isVisible()
+        assert window.property("color").name().lower() == "#020203"
         assert window.property("accent").name() == "#8f0e24"
         assert window.property("panel").name() == "#080809"
         assert window.property("panelAlt").name() == "#101011"
@@ -140,8 +138,8 @@ def test_qml_runtime_exposes_background_image_with_stretch_fill():
     not workbench_qml.qml_runtime_available(),
     reason="PySide6 unavailable",
 )
-def test_wait_for_screen1_background_ready_before_capture():
-    """#725/#731: first Clean Start capture must not race the async Image load."""
+def test_historical_background_helper_allows_v7_capture_without_a_visible_image():
+    """Legacy capture setup stays callable after the V7 root supersession."""
     from PySide6.QtQuick import QQuickItem
 
     from src.workbench_qml import Screen1QmlInteractionAdapter, Screen1QmlViewModel
@@ -175,8 +173,7 @@ def test_wait_for_screen1_background_ready_before_capture():
         _wait_for_screen1_background_ready(window, app)
         background = window.findChild(QQuickItem, "screen1Background")
         assert background is not None
-        assert float(background.property("paintedWidth") or 0) > 0
-        assert float(background.property("paintedHeight") or 0) > 0
+        assert not background.isVisible()
     finally:
         window.close()
         app.processEvents()

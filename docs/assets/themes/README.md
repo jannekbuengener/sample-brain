@@ -40,23 +40,14 @@ remains `presets.v1.json` plus the deterministic derivation in
 facade. Existing preference infrastructure is not a second V7 authority and is
 not migrated by this background/depth slice.
 
-### V7 color and atmosphere rule
+### V7 runtime color rule — solid fills only
 
-- Alpha-derived colors may use only the RGB sources in the locked table.
-- The only approved atmospheric treatment is:
-
-  ```text
-  linear-gradient(
-    120deg,
-    rgba(143,14,36,.015),
-    transparent 38%
-  ),
-  #020203
-  ```
-
-  Its shadow source, if an explicitly scoped future slice needs one, is
-  `rgba(2,2,3,x)`. This V7 runtime slice deliberately uses the simpler solid
-  chrome/workspace hierarchy and adds neither a gradient nor an alpha layer.
+- #929/#930 authorize the locked solid chrome → workspace → surface → raised
+  hierarchy only. No V7 root/background alpha or atmospheric layer is
+  authorized.
+- Atmosphere and gradients are **not** authorized by #929/#930. If either is
+  requested later, it requires its own explicitly scoped slice and contract;
+  this V7 token freeze grants no future runtime option.
 - Do not introduce `rgba(0,0,0,...)`, `#6f9fbf`, arbitrary blue tints, a new
   gray palette, a new accent, neon/glow, glass, or a decorative asset to this
   foundation.

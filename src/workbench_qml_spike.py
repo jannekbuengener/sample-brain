@@ -328,11 +328,11 @@ def _grab_qml_window_png(window: object, target: Path, *, engine: object | None 
     _write_png(target, width, height, rgba)
 
 def _wait_for_screen1_background_ready(window: object, app: object, *, timeout_ms: int = 3000) -> None:
-    """Block until the canonical Screen-1 background Image has painted.
+    """Settle the historical background seam before a Screen-1 capture.
 
-    Visual-acceptance captures must not race the async Image load; otherwise the
-    first Clean Start frame can be pure black while later frames show the
-    reference texture (#731 / #725 evidence).
+    #929/#930 retain the immutable Image and URL only as historical evidence.
+    The V7 runtime deliberately does not composite it over the Theme Core root,
+    so a capture must not wait for a non-visible image to paint.
     """
     from PySide6.QtCore import QElapsedTimer
     from PySide6.QtQuick import QQuickItem
@@ -340,6 +340,10 @@ def _wait_for_screen1_background_ready(window: object, app: object, *, timeout_m
     background = window.findChild(QQuickItem, "screen1Background")
     if background is None:
         raise RuntimeError("screen1Background fehlt vor Visual-Acceptance-Capture.")
+
+    if not background.isVisible():
+        _settle_qml_frame(app)
+        return
 
     timer = QElapsedTimer()
     timer.start()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from src import workbench_theme as theme
@@ -37,6 +38,9 @@ def test_v7_canon_records_the_approved_traceability_and_exact_tokens() -> None:
     assert "47e8bb1a-efce-43bd-a97f-c05c9750d726" in canon
     assert "2fa91842-f07f-4d70-9d12-de9622744191" in canon
     assert "Accepted version: `7`" in canon
+    assert "solid fills only" in canon.lower()
+    assert "not** authorized by #929/#930" in canon
+    assert "linear-gradient" not in canon.lower()
     for token in V7_TOKENS.values():
         assert token in canon
 
@@ -66,6 +70,16 @@ def test_v7_root_uses_chrome_while_workspace_uses_workspace_depth() -> None:
 
     assert "color: theme.surfaceHeader" in root
     assert "color: theme.surfaceRoot" not in root
+
+    background_match = re.search(
+        r'Image\s*\{[^}]*objectName:\s*"screen1Background".*?\}',
+        QML_SOURCE,
+        re.DOTALL,
+    )
+    assert background_match is not None
+    historical_background = background_match.group(0)
+    assert "visible: false" in historical_background
+    assert "opacity:" not in historical_background.casefold()
 
     assert "color: theme.surfaceRoot" in _qml_block("calmCanvas")
     assert "color: theme.surfaceRoot" in _qml_block("analysisWorkingSurface")
