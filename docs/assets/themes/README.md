@@ -4,6 +4,76 @@ Status: **runtime-backed design canon** for #785. Theme Core
 (`src/workbench_theme.py`) loads these presets; Screen-1 QML consumes them via
 `themeAuthority` semantic tokens (no second hardcoded palette).
 
+## Asset Foundation — Token Freeze V7
+
+**Status:** `TOKEN_FREEZE_PASS`
+
+**Owner visual acceptance:** `PASS`
+**Scope:** Default Blood-A foundation for the global Single Workspace background
+and depth hierarchy. This is a bounded visual foundation, not a layout or
+component redesign.
+
+### Approved traceability
+
+- Superdesign project: `47e8bb1a-efce-43bd-a97f-c05c9750d726`
+- Draft: `2fa91842-f07f-4d70-9d12-de9622744191`
+- Accepted version: `7`
+
+### Locked V7 tokens
+
+| Semantic role | Theme Core token | Exact value |
+|---|---|---|
+| Chrome / background | `background` | `#020203` |
+| Workspace | `surfaceWorkspace` | `#040405` |
+| Surface / panel | `surface` | `#080809` |
+| Raised | `surfaceRaised` | `#101011` |
+| Hover | `hover` | `#131314` |
+| Hairline | `divider` | `#19191a` |
+| Blood-A accent | `accent` / `focusRing` | `#8f0e24` |
+| Selected deep red | `selected` | `#21050a` |
+| Primary foreground | `foreground` / `textPrimary` | `#e4e6ea` |
+| Muted foreground | `textSecondary` | `#68696b` |
+
+These values are exact for the default Blood-A foundation. Their runtime source
+remains `presets.v1.json` plus the deterministic derivation in
+`src/workbench_theme.py`; QML consumes only the semantic `themeAuthority`
+facade. Existing preference infrastructure is not a second V7 authority and is
+not migrated by this background/depth slice.
+
+### V7 color and atmosphere rule
+
+- Alpha-derived colors may use only the RGB sources in the locked table.
+- The only approved atmospheric treatment is:
+
+  ```text
+  linear-gradient(
+    120deg,
+    rgba(143,14,36,.015),
+    transparent 38%
+  ),
+  #020203
+  ```
+
+  Its shadow source, if an explicitly scoped future slice needs one, is
+  `rgba(2,2,3,x)`. This V7 runtime slice deliberately uses the simpler solid
+  chrome/workspace hierarchy and adds neither a gradient nor an alpha layer.
+- Do not introduce `rgba(0,0,0,...)`, `#6f9fbf`, arbitrary blue tints, a new
+  gray palette, a new accent, neon/glow, glass, or a decorative asset to this
+  foundation.
+
+### V7 visual principles and slice boundary
+
+The application reads almost black at first glance. Depth comes from quiet
+chrome → workspace → surface → raised separation, restrained hairlines, and
+hover weaker than selected. Blood-A is a sparse semantic signal, never a broad
+panel fill or ambient red wash.
+
+This slice changes only the global root/background depth contract. It must not
+change Library, Browser, Harmony, Bottom Rack, component styling, typography,
+navigation, docking, audio, persistence, or interaction behavior. The existing
+background reference asset remains untouched; V7 adds no image asset and does
+not derive its palette from that reference.
+
 ## Superdesign project (canonical)
 
 - Title: `Sample Brain — Workbench Screen 1`
@@ -24,7 +94,7 @@ base tokens and must not be edited independently.
 
 See `presets.v1.json` for values and derivation formulas.
 
-## Dark surface hierarchy (CURRENT → TARGET)
+## Dark surface hierarchy (historical transition → V7 applied result)
 
 Authority for hierarchy is Theme Core + this canon — not screenshot pixels.
 

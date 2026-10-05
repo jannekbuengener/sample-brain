@@ -1792,7 +1792,7 @@ ApplicationWindow {
     visible: true
     width: 1600; height: 900
     minimumWidth: 1120; minimumHeight: 640
-    color: theme.surfaceRoot
+    color: theme.surfaceHeader
     // Single QML call site for Harmonic Match toggle (#845 handles reuse this).
     function activateHarmonicMatchToggle() {
         window.interaction.toggleHarmonicMatch()
