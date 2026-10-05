@@ -128,6 +128,10 @@ panel fills). Accent control states remain selection / focus / primary action.
 Core luminance must stay close to mid (subliminal) — prior visible cores
 `#1e0d11` / `#1c0d10` are rejected.
 
+QML atmosphere `Image` overlays bind Theme `ATMOSPHERE_OVERLAY_OPACITY`
+(`0.40`) so any remaining core lift stays almost invisible against the solid
+panel/workspace fill.
+
 ### Superdesign cinematic noir reference (style intent, not layout)
 
 Source: `https://superdesign.dev/library/cinematic-noir-style` (prompt-library

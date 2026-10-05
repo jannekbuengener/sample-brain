@@ -336,6 +336,7 @@ def test_qml_panel_family_binds_atmosphere_overlays() -> None:
 
     assert "readonly property url atmosphereWorkspace: themeAuthority.atmosphereWorkspaceUrl" in QML_SOURCE
     assert "readonly property url atmospherePanel: themeAuthority.atmospherePanelUrl" in QML_SOURCE
+    assert "readonly property real atmosphereOpacity: themeAuthority.atmosphereOverlayOpacity" in QML_SOURCE
     # Keep Screen-1 background contract: no QML gradient element types.
     assert "\n    Gradient" not in QML_SOURCE
     assert "RadialGradient" not in QML_SOURCE
@@ -344,22 +345,32 @@ def test_qml_panel_family_binds_atmosphere_overlays() -> None:
     library = QML_SOURCE.split('objectName: "libraryPane"', 1)[1][:1600]
     assert 'objectName: "libraryNoirAtmosphere"' in library
     assert "theme.atmospherePanel" in library
+    assert "opacity: theme.atmosphereOpacity" in library
 
     calm = QML_SOURCE.split('objectName: "calmCanvas"', 1)[1][:1600]
     assert 'objectName: "workspaceNoirAtmosphere"' in calm
     assert "theme.atmosphereWorkspace" in calm
+    assert "opacity: theme.atmosphereOpacity" in calm
 
     browser = QML_SOURCE.split('objectName: "browserPane"', 1)[1][:1600]
     assert 'objectName: "browserNoirAtmosphere"' in browser
     assert "theme.atmospherePanel" in browser
+    assert "opacity: theme.atmosphereOpacity" in browser
 
     harmony = QML_SOURCE.split('objectName: "harmonyPane"', 1)[1][:1600]
     assert 'objectName: "harmonyNoirAtmosphere"' in harmony
     assert "theme.atmospherePanel" in harmony
+    assert "opacity: theme.atmosphereOpacity" in harmony
 
     live_kit = QML_SOURCE.split('objectName: "liveKitPane"', 1)[1][:1600]
     assert 'objectName: "liveKitNoirAtmosphere"' in live_kit
     assert "theme.atmospherePanel" in live_kit
+    assert "opacity: theme.atmosphereOpacity" in live_kit
+
+
+def test_theme_atmosphere_overlay_opacity_is_subliminal() -> None:
+    assert theme.ATMOSPHERE_OVERLAY_OPACITY == 0.40
+    assert 0.0 < theme.ATMOSPHERE_OVERLAY_OPACITY <= 0.55
 
 
 def test_theme_authority_bridge_exposes_hierarchy(tmp_path: Path) -> None:
@@ -383,3 +394,4 @@ def test_theme_authority_bridge_exposes_hierarchy(tmp_path: Path) -> None:
     assert workspace_url.startswith("file:")
     assert panel_url.startswith("file:")
     assert workspace_url != panel_url
+    assert float(bridge.atmosphereOverlayOpacity) == theme.ATMOSPHERE_OVERLAY_OPACITY

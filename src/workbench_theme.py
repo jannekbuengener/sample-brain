@@ -20,6 +20,8 @@ from .workbench_controller import workbench_state_dir
 # Soft-ellipse atmosphere overlays (runtime cache; not preference persistence).
 _ATMOSPHERE_SIZE = 256
 _ATMOSPHERE_CACHE_DIRNAME = "theme_atmosphere"
+# Subliminal depth only — overlay must not read as a visible glow effect.
+ATMOSPHERE_OVERLAY_OPACITY = 0.40
 
 THEME_PREFERENCES_SCHEMA = "sample_brain.theme_preferences"
 THEME_PREFERENCES_SCHEMA_VERSION = 1
@@ -836,6 +838,7 @@ def ensure_atmosphere_overlays(
 
 
 __all__ = [
+    "ATMOSPHERE_OVERLAY_OPACITY",
     "BLOOD_A_ACCENT",
     "BLOOD_B_ACCENT",
     "DEFAULT_PRESET_NAME",

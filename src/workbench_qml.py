@@ -1768,6 +1768,7 @@ ApplicationWindow {
         // Cinematic-noir soft-ellipse atmosphere (Theme-rendered PNG overlay URLs).
         readonly property url atmosphereWorkspace: themeAuthority.atmosphereWorkspaceUrl
         readonly property url atmospherePanel: themeAuthority.atmospherePanelUrl
+        readonly property real atmosphereOpacity: themeAuthority.atmosphereOverlayOpacity
     }
     // #770 shared context-hint content seam (ephemeral UI state; placement is separate).
     QtObject {
@@ -2942,6 +2943,7 @@ ApplicationWindow {
                 source: theme.atmospherePanel
                 fillMode: Image.Stretch
                 asynchronous: true
+                opacity: theme.atmosphereOpacity
             }
             ColumnLayout { anchors.fill: parent; anchors.margins: 16; z: 1
                 RowLayout { id: libraryHeaderRow; Layout.fillWidth: true
@@ -3158,6 +3160,7 @@ ApplicationWindow {
                 source: theme.atmosphereWorkspace
                 fillMode: Image.Stretch
                 asynchronous: true
+                opacity: theme.atmosphereOpacity
             }
             ColumnLayout {
                 anchors.centerIn: parent
@@ -3494,6 +3497,7 @@ ApplicationWindow {
                 source: theme.atmospherePanel
                 fillMode: Image.Stretch
                 asynchronous: true
+                opacity: theme.atmosphereOpacity
             }
             function openSampleContextMenu(index, localX, localY) {
                 window.interaction.openSampleContext(index)
@@ -4052,6 +4056,7 @@ ApplicationWindow {
                 source: theme.atmospherePanel
                 fillMode: Image.Stretch
                 asynchronous: true
+                opacity: theme.atmosphereOpacity
             }
             // Pane-root name for UIA title evidence; keep distinct from the
             // context-menu Button so FindFirst prefers the invokable action
@@ -4297,6 +4302,7 @@ ApplicationWindow {
                 source: theme.atmospherePanel
                 fillMode: Image.Stretch
                 asynchronous: true
+                opacity: theme.atmosphereOpacity
             }
             // #845 OPEN collapse handle — pane-local mid-edge; click/activate only.
             Item {
@@ -5951,6 +5957,10 @@ def _qml_theme_authority_bridge(
         @Property(str, notify=themeChanged)
         def atmospherePanelUrl(self) -> str:
             return self._atmosphere_panel_url
+
+        @Property(float, notify=themeChanged)
+        def atmosphereOverlayOpacity(self) -> float:
+            return float(theme_mod.ATMOSPHERE_OVERLAY_OPACITY)
 
         @Slot(str)
         def selectTheme(self, name: str) -> None:

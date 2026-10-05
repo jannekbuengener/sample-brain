@@ -274,8 +274,9 @@ center workspace (`calmCanvas` empty; `browserPane` when active), Live Kit
 (`liveKitPane`), and Harmonic Matching (`harmonyPane`) must paint Theme
 soft-ellipse overlays (`theme.atmospherePanel` / `theme.atmosphereWorkspace`) so
 depth is **subliminal** — not a visible glow effect and not a foreign brighter
-pane. Overlays are Theme-rendered PNGs (no QML `Gradient`). See
-`docs/assets/themes/README.md` atmosphere restraint + stop table.
+pane. Overlays are Theme-rendered PNGs at Theme `ATMOSPHERE_OVERLAY_OPACITY`
+(no QML `Gradient`). See `docs/assets/themes/README.md` atmosphere restraint +
+stop table.
 
 Borders use `divider` / `borderSubtle` for fine restrained edges. Product
 surfaces must not collapse chrome and workspace to the same fill. No flat

@@ -13,6 +13,7 @@
     "Superdesign cinematic-noir-style: map deep/zinc solids via Theme bases; map soft-ellipse atmosphere via Theme PNG overlays (not QML Gradient; not foreign hex).",
     "Atmosphere overlays (runtime, not persisted): atmosphereWorkspace / atmospherePanel soft-ellipse PNGs from Theme stop mixes.",
     "Atmosphere restraint: subliminal core strength only (not a visible glow effect).",
+    "Atmosphere overlay opacity: Theme ATMOSPHERE_OVERLAY_OPACITY = 0.40 on all noir atmosphere Images.",
     "Panel uniformity: Library, Browser, Live Kit, and Harmonic Matching share surface + atmospherePanel."
   ],
   "derivation": {
