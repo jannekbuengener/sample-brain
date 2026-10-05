@@ -226,7 +226,7 @@ def derive_tokens(base: Mapping[str, Any] | ThemeBase) -> dict[str, str]:
         # Calmer secondary labels (cinematic noir typography restraint).
         "textSecondary": mix_hex(foreground, background, 0.55),
         # Barely raised ink workspace; panels stay subtly above — low UI mass.
-        "surfaceWorkspace": mix_hex(background, foreground, 0.012),
+        "surfaceWorkspace": mix_hex(background, foreground, 0.008),
         "surface": mix_hex(background, foreground, 0.028),
         "surfaceRaised": mix_hex(background, foreground, 0.06),
         "divider": mix_hex(background, foreground, 0.10),
@@ -689,14 +689,15 @@ def atmosphere_stop_colors(
     if None in (accent, background, foreground, workspace, panel):
         raise ValueError("invalid theme tokens for atmosphere stops")
     assert accent and background and foreground and workspace and panel
+    # Subliminal noir depth only — Owner rejects visible warm glow ovals.
     return {
         "workspace": {
-            "core": mix_hex(mix_hex(workspace, accent, 0.14), foreground, 0.03),
+            "core": mix_hex(mix_hex(workspace, accent, 0.035), foreground, 0.008),
             "mid": workspace,
             "edge": mix_hex(workspace, background, 0.65),
         },
         "panel": {
-            "core": mix_hex(mix_hex(panel, accent, 0.12), foreground, 0.02),
+            "core": mix_hex(mix_hex(panel, accent, 0.03), foreground, 0.006),
             "mid": panel,
             "edge": mix_hex(panel, background, 0.50),
         },

@@ -4043,6 +4043,16 @@ ApplicationWindow {
             height: parent.height
             color: theme.surfacePanel
             border.color: theme.borderSubtle
+            // Same Theme panel atmosphere as Library/Browser — uniform noir family.
+            Image {
+                id: harmonyNoirAtmosphere
+                objectName: "harmonyNoirAtmosphere"
+                anchors.fill: parent
+                z: 0
+                source: theme.atmospherePanel
+                fillMode: Image.Stretch
+                asynchronous: true
+            }
             // Pane-root name for UIA title evidence; keep distinct from the
             // context-menu Button so FindFirst prefers the invokable action
             // while the menu is open (browser subtree precedes this pane).
@@ -4278,6 +4288,16 @@ ApplicationWindow {
             }
         }
         Rectangle { id: liveKitPane; objectName: "liveKitPane"; visible: window.interaction.hasActiveSource && window.interaction.liveKitRevealed && !window.interaction.liveKitCollapsed; width: visible ? layoutModel.liveKitWidth : 0; height: parent.height; color: theme.surfacePanel; border.color: theme.borderSubtle
+            // Same Theme panel atmosphere as Library/Browser — uniform noir family.
+            Image {
+                id: liveKitNoirAtmosphere
+                objectName: "liveKitNoirAtmosphere"
+                anchors.fill: parent
+                z: 0
+                source: theme.atmospherePanel
+                fillMode: Image.Stretch
+                asynchronous: true
+            }
             // #845 OPEN collapse handle — pane-local mid-edge; click/activate only.
             Item {
                 id: liveKitCollapseHandle
