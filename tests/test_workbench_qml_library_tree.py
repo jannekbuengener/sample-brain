@@ -277,9 +277,10 @@ def test_library_scope_bar_visual_polish_contract() -> None:
     for glyph in ("⌁", "≡", "▣"):
         assert f'text: "{glyph}"' not in source
 
-    assert "theme.selectionSurface" in scope_block
-    assert "theme.selectionBorder" in scope_block or "theme.actionActive" in scope_block
-    assert "theme.surfaceElevated" in scope_block
+    # #880: active scope is accent underline + ink tint (no filled toolbar chip).
+    assert "theme.actionActive" in scope_block
+    assert "theme.hoverSurface" in scope_block
+    assert "theme.selectionSurface" not in scope_block
 
     assert 'visible: libraryScopeBar.mode === "sources"' in tree_block
     assert 'enabled: libraryScopeBar.mode === "sources"' in tree_block
