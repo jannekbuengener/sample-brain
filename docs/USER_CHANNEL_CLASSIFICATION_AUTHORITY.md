@@ -173,6 +173,7 @@ The follow-up slice must freeze these before implementation. Today, the ownershi
 ## Follow-up implementation slice (exactly one)
 
 **Title:** `[RUNTIME][#936] Inject Workbench-library user-sample classification into the Channel Rack`
+**Tracked as:** [#952](https://github.com/jannekbuengener/sample-brain/issues/952)
 
 **Required order (no phase may be skipped):**
 
