@@ -86,6 +86,15 @@ def plan_gesture_rack_integration(
         known_channel_ids=[channel.channel_id for channel in target_channels],
     )
 
+    grid_span = Fraction(base_state.step_count, 4)
+    pattern_length = target_pattern.length_quarter_notes
+    if pattern_length < grid_span:
+        raise ValueError(
+            "composition Pattern length "
+            f"{pattern_length} is shorter than preserved step-grid span "
+            f"{grid_span} (step_count={base_state.step_count})"
+        )
+
     on_grid_positions = frozenset(
         Fraction(step_index, 4) for step_index in range(base_state.step_count)
     )

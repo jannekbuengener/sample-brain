@@ -166,6 +166,7 @@ it must never be implicit.
 - inputs are structurally valid
 - channel IDs are collision-free (base unique, composition unique, no intersection)
 - composition Pattern trigger membership is valid against the **target** channel set
+- composition Pattern length is compatible with the preserved base step grid (see §6)
 - `allow_pattern_replacement is True` (exact boolean `True`)
 
 When replacement is not explicitly authorized (`allow_pattern_replacement is not True`):
@@ -233,6 +234,28 @@ timing recomputation, Pattern ID rewrite, or Pattern length rewrite.
 `target_step_count` equals `base_state.step_count`.
 
 Do not derive `step_count` from gesture Pattern length.
+Do not shrink `step_count` to fit a shorter Pattern.
+Do not extend/rewrite the composition Pattern to fit the grid.
+
+#### Minimum Pattern / grid-span compatibility
+
+The preserved Rack grid represents `step_count` canonical 16th-note step positions
+(`Fraction(step_index, 4)` for `step_index in range(step_count)`). Future
+`toggle_step()` addressing may therefore request every index `0 .. step_count-1`,
+whose positions reach up to `Fraction(step_count - 1, 4)`.
+
+`Pattern` forbids triggers at positions `>= length_quarter_notes`. Therefore a
+planned target is only structurally apply-safe when the preserved composition
+Pattern is long enough to cover the preserved grid span:
+
+```text
+composition.pattern.length_quarter_notes
+  >= Fraction(base_state.step_count, 4)
+```
+
+A shorter Pattern **fail-closes** (`ValueError`) before any plan with
+`ready_for_apply=True` is produced. This does not quantize events, does not
+rewrite Pattern length, and does not change `target_step_count`.
 
 ### 7. Off-grid evidence (count only)
 
@@ -331,8 +354,9 @@ Must **not** import/call:
 | duplicate IDs inside composition channels | fail closed |
 | composition ID intersects base IDs | fail closed |
 | composition triggers not subset of target channel IDs | fail closed |
+| Pattern length shorter than preserved grid span `Fraction(step_count, 4)` | fail closed |
 | `allow_pattern_replacement is not True` | plan returned, `ready_for_apply=False` |
-| valid + collision-free + membership OK + replacement `True` | `ready_for_apply=True` |
+| valid + collision-free + membership OK + grid-compatible + replacement `True` | `ready_for_apply=True` |
 
 ## Feature-toggle boundary
 
@@ -399,11 +423,13 @@ merge policy, Arrangement/Screen 3, DB/schema change, `docs/CANON_INDEX.md` chur
 |-------|-------|
 | Implementation seam | `src/gesture_rack_integration.py` — `plan_gesture_rack_integration(base_state, composition, *, allow_pattern_replacement) -> GestureRackIntegrationPlan` |
 | Result model | frozen `GestureRackIntegrationPlan` with `expected_base_state`, target channels/pattern/`step_count`, append/replace evidence, `off_grid_event_count`, `ready_for_apply` |
-| Focused validation | `tests/test_gesture_rack_session_integration_899.py` — **40 passed** |
-| Protected validation | `#893` / `#891` / Pattern Core / Channel Rack / DEFAULT_ON / session persistence — **301 passed** (includes focused) |
+| Focused validation | `tests/test_gesture_rack_session_integration_899.py` — **41 passed** |
+| Protected validation | `#893` / `#891` / Pattern Core / Channel Rack / DEFAULT_ON / session persistence — **302 passed** (includes focused) |
 | Static / hygiene | `ruff check` PASS; `git diff --check` PASS; `python tools/check_canon_drift.py` PASS |
 | R&D EXIT | `EXPLICIT_RACK_REPLACEMENT_PLAN_VIABLE` |
 | Mutation claim | `RACK_SESSION_STATE_NOT_MUTATED` |
+| Merge SHA | `bb9ff56ce51aec599974393bd61af954d1c8aec3` (PR #901 initial delivery) |
+| Follow-up | Pattern/grid-span compatibility fail-closed (`length >= Fraction(step_count, 4)`) |
 
 Viable here means only: a `#893` composition can be deterministically planned as an
 explicit replacement of the single active Rack Pattern while preserving the existing
