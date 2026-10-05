@@ -85,6 +85,14 @@ def test_program_chrome_footer_hosts_scope_bar_and_right_hint() -> None:
     assert 'objectName: "libraryScopeBar"' not in pane
 
 
+def test_program_footer_is_global_chrome_across_screens() -> None:
+    """#831 P2: program footer is global frame chrome, not Screen-1-only."""
+    footer = _footer_block()
+    band = footer.split('objectName: "programFooterBand"', 1)[1].split("Rectangle", 1)[0]
+    assert 'visible: window.activeScreen === "screen1"' not in band
+    assert "height:" in band
+
+
 def test_live_kit_nav_inert_before_materialization_in_qml() -> None:
     block = QML_SOURCE.split('objectName: "programNavLiveKit"', 1)[1].split("ToolButton", 2)[0]
     assert "liveKitRevealed" in block or "enabled:" in block
@@ -387,6 +395,29 @@ def test_runtime_live_kit_nav_from_screen2_returns_and_reveals() -> None:
         assert adapter.live_kit_collapsed is False
         pane = window.findChild(QQuickItem, "liveKitPane")
         assert pane is not None and pane.isVisible()
+    finally:
+        window.close()
+        app.processEvents()
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_runtime_program_footer_remains_visible_on_screen2() -> None:
+    """#831 P2: global footer chrome stays present on Step Sequencer route."""
+    from PySide6.QtQuick import QQuickItem
+
+    app, engine, window, adapter, settle = _build_screen1_window(with_session=True)
+    try:
+        channel_rack = engine.rootContext().contextProperty("channelRackModel")
+        assert channel_rack is not None
+        channel_rack.openChannelRack()
+        settle(app)
+        assert window.property("activeScreen") == "screen2"
+        footer = window.findChild(QQuickItem, "programFooterBand")
+        bar = window.findChild(QQuickItem, "libraryScopeBar")
+        assert footer is not None and bar is not None
+        assert footer.isVisible() is True
+        assert float(footer.height()) >= 40.0
+        assert bar.isVisible() is True
     finally:
         window.close()
         app.processEvents()

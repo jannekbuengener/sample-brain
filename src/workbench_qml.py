@@ -1894,11 +1894,11 @@ ApplicationWindow {
     }
 
     // #831 program footer band — scope utility left, context hint right (#830 / #770).
+    // Global program chrome: keep the footer present on Screen 1 and Screen 2.
     footer: Item {
         id: programFooterBand
         objectName: "programFooterBand"
-        visible: window.activeScreen === "screen1"
-        height: visible ? 40 : 0
+        height: 40
         Rectangle {
             anchors.left: parent.left
             anchors.right: parent.right
