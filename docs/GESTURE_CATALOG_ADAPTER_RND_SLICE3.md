@@ -145,7 +145,7 @@ Exactly one of: `CATALOG_ADAPTER_VIABLE` | `CATALOG_ADAPTER_INSUFFICIENT` | `INS
 
 Viable means only: real catalog schema can be safely and deterministically projected into the `#882` candidate/ranking seam — **not** producer-quality validation.
 
-Seconds→musical-time remains a separate later decision. Parent `#680` stays OPEN.
+Seconds→musical-time is Slice 4 (#888); see `docs/GESTURE_TIMING_PROJECTION_RND_SLICE4.md`. Parent `#680` stays OPEN.
 
 ## Acceptance tests
 
