@@ -1,9 +1,9 @@
 # Gesture Library Ranking R&D — Slice 2 (#680 / #882)
 
-**Status:** R&D contract frozen at DOCS_GATE / TEST_GATE. Implementation follows TEST_FREEZE.
+**Status:** R&D contract frozen; implementation delivered. See post-implementation result.
 
-**Parent:** [#680](https://github.com/jannekbuengener/sample-brain/issues/680)  
-**Child:** [#882](https://github.com/jannekbuengener/sample-brain/issues/882)  
+**Parent:** [#680](https://github.com/jannekbuengener/sample-brain/issues/680)
+**Child:** [#882](https://github.com/jannekbuengener/sample-brain/issues/882)
 **Dependency (DONE):** [#827](https://github.com/jannekbuengener/sample-brain/issues/827) / `docs/GESTURE_ANALYSIS_RND_SLICE1.md`
 
 ## Goal
@@ -192,3 +192,12 @@ Synthetic tests prove the algorithmic contract; they cannot alone prove producer
 ## Acceptance tests
 
 See `tests/test_gesture_library_ranking_882.py` (frozen at TEST_FREEZE).
+
+## Post-implementation result
+
+| Field | Value |
+|-------|-------|
+| Implementation module / seam | `src/gesture_library_ranking.py` → `rank_gesture_library_candidates(...)` |
+| Measured tests | Focused `tests/test_gesture_library_ranking_882.py`: **22 passed**; Slice-1 `tests/test_gesture_analysis.py`: **9 passed**; protected Pattern/Channel/analyze-feature group: **100 passed** |
+| R&D EXIT | `DETERMINISTIC_FEATURE_RANKING_VIABLE` |
+| Producer-quality limitation | `PRODUCER_QUALITY_NOT_VALIDATED` — synthetic contract only; no musical/producer-quality claim |
