@@ -404,6 +404,7 @@ merge policy, Arrangement/Screen 3, DB/schema change, `docs/CANON_INDEX.md` chur
 | Static / hygiene | `ruff check` PASS; `git diff --check` PASS; `python tools/check_canon_drift.py` PASS |
 | R&D EXIT | `EXPLICIT_RACK_REPLACEMENT_PLAN_VIABLE` |
 | Mutation claim | `RACK_SESSION_STATE_NOT_MUTATED` |
+| Merge SHA | `bb9ff56ce51aec599974393bd61af954d1c8aec3` (PR #901) |
 
 Viable here means only: a `#893` composition can be deterministically planned as an
 explicit replacement of the single active Rack Pattern while preserving the existing
