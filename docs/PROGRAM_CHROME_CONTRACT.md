@@ -80,7 +80,7 @@ route, disabled or non-navigating until a future scoped issue authorizes it.
 - Reuse Collections and Favorites. Do not add a second copy in the Library pane.
 - Sample Sources, All Samples, and Recordings stay available through the existing #837 scope set. Do not delete them to match the crop, and do not invent a new control for them.
 - Do not add Song clock, pattern-step counters, or a `Local` badge unless a current projection already exposes that text.
-- [#770](https://github.com/jannekbuengener/sample-brain/issues/770) still owns hint priority (Hover > Selection/focus > Default/empty) and the rule that the hint surface takes no focus. The focused footer-context centering slice re-authorizes geometric centering on the full footer midpoint inside this band; the hint must not overlap the utility or status hit areas.
+- [#770](https://github.com/jannekbuengener/sample-brain/issues/770) still owns hint priority (Hover > Selection/focus > Default/empty) and the rule that the hint surface takes no focus. Selection includes keyboard-focused supported controls and, when none are focused, the existing browser sample selection projection. The focused footer-context centering slice re-authorizes geometric centering on the full footer midpoint inside this band; the hint must not overlap the utility or status hit areas.
 
 ## Narrow supersession
 

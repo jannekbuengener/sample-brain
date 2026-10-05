@@ -39,19 +39,41 @@ layout/snap system can move the surface without rewriting hint semantics.
 ```text
 hovered actionable control          (HOVER)
     >
-keyboard-focused / selected control (SELECTION)
+keyboard-focused control OR browser sample selection (SELECTION)
     >
 neutral / empty                     (DEFAULT)
 ```
 
-SELECTION reuses the existing ephemeral focus/selection fallback on the shared
-hint seam (`focusedId`). Do not invent a parallel state machine or a second
-display string authority.
+SELECTION has two existing sources, resolved in this order after hover clears:
 
-When hover ends but a supported control still has keyboard focus / selection,
-restore the selection hint. When neither hover nor relevant selection is
-active, show the neutral empty state. Hover is temporary and must not destroy
-selection identity. The hint surface itself must never take keyboard focus.
+1. keyboard-focused supported control via the shared hint seam (`focusedId`)
+2. browser sample selection via the existing `selectedBrowserIndex` /
+   `browserRows` projection (no parallel selection state machine)
+
+Do not invent a second selection state machine or a second display-string
+authority for control descriptors. Sample selection display text is a thin
+projection of the already-selected browser row metadata (single formatter on
+the Python/renderer seam), not a new product selection owner.
+
+When hover ends but a supported control still has keyboard focus, restore that
+control hint. When hover ends with no focused control but a browser sample is
+still selected, restore the sample selection context. When neither hover nor
+relevant selection is active, show the neutral empty state. Hover is temporary
+and must not destroy selection identity. The hint surface itself must never
+take keyboard focus.
+
+### Sample selection display (footer center)
+
+When SELECTION resolves to a selected browser sample row, show one quiet
+compact line from existing projected row fields:
+
+```text
+<name> · <bpm> · <key> · <type>
+```
+
+Reuse the existing Browser row projection values (`display_name` / `bpm` /
+`key` / `sample_type`, including their existing missing-state `"—"` tokens).
+Do not invent new metadata, duplicate formatting in QML, or grow footer height.
 
 ## Descriptor / state seam
 
