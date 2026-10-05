@@ -11,6 +11,7 @@ This is intentionally a developer command: it runs the code in that checkout.
 Screen-1 QML (dev):
 
 ```powershell
+python -m pip install -e ".[qtquick]"
 python -m src.cli workbench --qml-screen1
 ```
 
