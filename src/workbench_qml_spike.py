@@ -5,9 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import importlib
 from pathlib import Path
+import struct
 import sys
 from time import perf_counter
 from typing import Callable, Mapping, Sequence
+import zlib
 
 from . import workbench_qml as production
 from .workbench_controller import WorkbenchRow
@@ -326,6 +328,31 @@ def _grab_qml_window_png(window: object, target: Path, *, engine: object | None 
         )
     target.parent.mkdir(parents=True, exist_ok=True)
     _write_png(target, width, height, rgba)
+
+
+def _png_has_color_variation(path: Path) -> bool:
+    """Require composed foreground without restoring the retired texture gate."""
+    try:
+        data = path.read_bytes()
+        width, height = struct.unpack(">II", data[16:24])
+        if width <= 0 or height <= 0:
+            return False
+        raw = zlib.decompress(data[41:-12])
+        stride = width * 4 + 1
+        if len(raw) != stride * height or raw[0] != 0:
+            return False
+        reference = raw[1:4]
+        for row in range(height):
+            offset = row * stride
+            if raw[offset] != 0:
+                return False
+            for pixel in range(offset + 1, offset + stride, 4):
+                if raw[pixel : pixel + 3] != reference:
+                    return True
+    except (OSError, struct.error, zlib.error):
+        return False
+    return False
+
 
 def _wait_for_screen1_background_ready(window: object, app: object, *, timeout_ms: int = 3000) -> None:
     """Settle the historical background seam before a Screen-1 capture.
@@ -893,6 +920,11 @@ def run_qml_visual_acceptance_725(
             target, expected_width=CLIENT_WIDTH, expected_height=CLIENT_HEIGHT
         )
         if not bool(check["pass"]):
+            raise EvidenceError(f"{label}: Capture-Sanity fehlgeschlagen: {check!r}")
+        check["color_variation"] = _png_has_color_variation(target)
+        if not bool(check["color_variation"]):
+            check["reason"] = "flat-non-black"
+            check["pass"] = False
             raise EvidenceError(f"{label}: Capture-Sanity fehlgeschlagen: {check!r}")
         check["v2_state_id"] = v2_state
         check["capture_label"] = label

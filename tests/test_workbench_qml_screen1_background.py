@@ -103,11 +103,21 @@ def test_hidden_historical_background_settles_two_frames_before_capture():
     assert hidden_branch.count("_settle_qml_frame(app)") == 2
 
 
+@pytest.mark.parametrize(
+    ("sanity_check", "color_variation", "reason"),
+    (
+        ({"pass": False, "reason": "all-black"}, True, "all-black"),
+        ({"pass": True}, False, "flat-non-black"),
+    ),
+)
 def test_v7_725_invalid_capture_fails_closed_without_manifest(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    sanity_check: dict[str, bool | str],
+    color_variation: bool,
+    reason: str,
 ) -> None:
-    """An all-black #725 grab must not publish partial evidence."""
+    """Invalid #725 grabs must not publish partial evidence."""
     from src.workbench_visual_acceptance import EvidenceError
 
     qtquick = types.ModuleType("PySide6.QtQuick")
@@ -175,7 +185,13 @@ def test_v7_725_invalid_capture_fails_closed_without_manifest(
     monkeypatch.setattr(
         workbench_qml_spike,
         "validate_capture_sanity",
-        lambda *_args, **_kwargs: {"pass": False, "reason": "all-black"},
+        lambda *_args, **_kwargs: sanity_check.copy(),
+    )
+    monkeypatch.setattr(
+        workbench_qml_spike,
+        "_png_has_color_variation",
+        lambda _target: color_variation,
+        raising=False,
     )
     monkeypatch.setattr(
         workbench_qml_spike,
@@ -189,9 +205,22 @@ def test_v7_725_invalid_capture_fails_closed_without_manifest(
             evidence_dir=tmp_path / "evidence",
         )
 
-    assert "all-black" in str(error.value)
+    assert reason in str(error.value)
     assert len(grabs) == 1
     assert manifests == []
+
+
+def test_v7_725_color_variation_requires_composed_foreground(tmp_path: Path) -> None:
+    """A solid non-black root alone is not successful #725 evidence."""
+    from src.workbench_visual_acceptance import _write_png
+
+    flat = tmp_path / "flat.png"
+    composed = tmp_path / "composed.png"
+    _write_png(flat, 2, 1, b"\x02\x02\x03\xff" * 2)
+    _write_png(composed, 2, 1, b"\x02\x02\x03\xff\xee\xee\xee\xff")
+
+    assert not workbench_qml_spike._png_has_color_variation(flat)
+    assert workbench_qml_spike._png_has_color_variation(composed)
 
 
 @pytest.mark.skipif(
