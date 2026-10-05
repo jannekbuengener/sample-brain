@@ -2488,7 +2488,7 @@ ApplicationWindow {
                 spacing: 0
                 width: implicitWidth
             // #805: MASTER/GRID/SYNC project session tempo/SYNC authority only.
-            // #880: lighter transport typography / compact SYNC chip.
+            // #880: lighter tempo-zone typography / compact SYNC chip.
             Label { text: "MASTER"; color: theme.textSecondary; font.pixelSize: 10; Layout.alignment: Qt.AlignVCenter }
             Button {
                 objectName: "tempoDownButton"
