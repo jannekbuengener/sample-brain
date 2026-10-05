@@ -84,10 +84,12 @@ Unchanged and non-duplicated: `workbench_library.query_sample_by_path_on_readonl
 | # | Boundary | Scope | I/O |
 |---|---|---|---|
 | B1 | `restore_state(...)` | all distinct user-channel paths of the restored state, **one** connection | 1 read-only connection |
-| B2 | `assign_user_channel_sample(cid, path)` when the path actually changed | that one path | 1 read-only connection |
+| B2 | Any public seam that sets a user channel's path to a **non-empty** value it did not already hold: `add_user_channel(sample_path=...)` and `assign_user_channel_sample(cid, path)` | that one new path | 1 read-only connection |
 | B3 | `apply_gesture_integration_plan(...)` after CONSTRUCT TARGET, before STOP | all distinct user-channel paths of `plan.target_channels` | 1 read-only connection |
 | B4 | `refresh_user_channel_metadata()` — explicit session seam for library re-analysis / manual rescan | all distinct user-channel paths | 1 read-only connection |
 | B5 | `ensure_state()`, `reconcile_live_kit_state()`, `projection()`, `play()`, `tick_playback()` | **never resolves** | 0 |
+
+B2 is defined by the *effect* (a user channel's path becomes a new non-empty value), not by one method name, so no current or future path-bearing user-channel creation seam can bypass resolution. `add_user_channel()` with no path, and `assign_user_channel_sample(...)` with the path the channel already holds, are no-ops and resolve nothing.
 
 Restore is one bounded connection for the whole set, never N opens. `rehydrate_live_kit_from_library` remains the Live Kit counterpart and keeps its own single connection.
 
@@ -95,7 +97,8 @@ Restore is one bounded connection for the whole set, never N opens. `rehydrate_l
 
 | Event | Binding | Durable state | Playback |
 |---|---|---|---|
-| empty → path | replace the channel's key | path set; DEFAULT_ON seeding unchanged from #808 | gated by the new classification; `ambiguous` ⇒ silent |
+| `add_user_channel(sample_path=…)` | resolve that path at creation | path set; DEFAULT_ON seeding unchanged from #808 | gated by the new classification; `ambiguous` ⇒ silent |
+| empty → path via `assign_user_channel_sample` | replace the channel's key | path set; DEFAULT_ON seeding unchanged from #808 | gated by the new classification; `ambiguous` ⇒ silent |
 | path A → path B | drop A if no other channel references it; add B | path = B; that channel's triggers preserved bit-identical | B must resolve explicitly, else silent |
 | same path re-assign | no-op | unchanged | unchanged |
 | path → empty | drop the key | path = `None` | excluded from both playback paths (non-bearing) |
@@ -106,7 +109,15 @@ Ordering for B2/B3 is frozen as **resolve → build target state (including any 
 
 ### 6. Library re-analysis
 
-- No implicit refresh. A running Rack Play is never affected: `_frozen_loop_specs` and the active `NaturalCycleLoopPlayer` keep their per-Play snapshot, consistent with `LOOP_ASSIGNMENT_MUTATION_POLICY` = `DEFER_UNTIL_NEXT_RACK_PLAY`.
+- No implicit refresh. A running Rack Play is never affected, for **both** playback owners.
+- The natural-loop specs are already frozen per Play (`_frozen_loop_specs`). Point-trigger eligibility is **not** implicitly frozen by the current pass loop: `_start_pattern_pass` re-plans every pass from live controller state. Therefore this contract adds:
+
+```text
+CLASSIFICATION_MUTATION_POLICY = DEFER_UNTIL_NEXT_RACK_PLAY
+```
+
+  At the Rack Play anchor the controller snapshots the classification binding used for playback, and every pass of that Play — `filter_pattern_for_point_trigger_playback` and `build_loop_cycle_specs` alike — reads that snapshot, exactly as `sync_enabled`, MASTER BPM, and per-loop `source_bpm` / `playback_rate` are already snapshotted. A binding change during Play therefore cannot add or remove point-trigger eligibility mid-Play either, and cannot stop or restart playback.
+- Projection may continue to read the **live** derived binding, because projection is display and not playback. Mid-Play projection and playback may therefore disagree; the divergence resolves on the next explicit Rack Play and must not be presented as a classification change.
 - Refresh happens only through B4, before any next explicit Rack Play.
 - Safety is monotonic: a refresh can only move a channel toward what the library currently states. A fingerprint change makes the library return `None`, degrading the channel to `ambiguous` — it can never silently upgrade `ambiguous` to `oneshot`/`loop` without explicit library evidence.
 
@@ -140,7 +151,7 @@ The follow-up slice must freeze these before implementation. Today, the ownershi
 
 **Already green today (architecture ownership guards):**
 
-1. Low-level Rack/audio modules import no `sqlite3` / `workbench_library` / `db` / config surface.
+1. Low-level Rack/audio modules import no `sqlite3` / `workbench_library` / `db` / config surface, in any import form — relative or absolute `src.`-prefixed, module-level or function-level — plus a non-vacuity self-check proving the guard detects each forbidden form.
 2. `snapshot_from_musical_state(...)` contains no `sample_class` key anywhere, recursively.
 3. `dataclasses.fields(Channel)` is exactly `(channel_id, live_kit_group, live_kit_slot, sample_path)`; `Trigger` unchanged.
 4. `sample_class_for_channel` on a user channel returns `None` for a suggestive filename and with no binding present — no filename/folder heuristic.
@@ -158,7 +169,9 @@ The follow-up slice must freeze these before implementation. Today, the ownershi
 13. Resolve-only emits no musical-state observer call and no autosave; resolve + loop strip emits exactly one.
 14. User loop + SYNC-on with a valid bound `source_bpm` builds a loop spec; missing/invalid BPM stays fail-closed.
 15. `apply_gesture_integration_plan` resolves the appended channels' paths and keeps the single-observer guarantee.
-16. #926 regression suites stay green: `tests/test_channel_rack_loop_classification.py`, `tests/test_workbench_channel_rack_loop.py`, `tests/test_loop_rack_playback.py`, `tests/test_workbench_session_catalog_rehydrate.py`, `tests/test_workbench_session_persistence.py`.
+16. `add_user_channel(sample_path=…)` and `assign_user_channel_sample(...)` are both resolution boundaries; `add_user_channel()` with no path and a same-path re-assign resolve nothing.
+17. `CLASSIFICATION_MUTATION_POLICY`: a binding change during active Rack Play changes neither point-trigger eligibility nor loop specs for any pass of that Play, does not stop or restart playback, and applies on the next explicit Rack Play.
+18. #926 regression suites stay green: `tests/test_channel_rack_loop_classification.py`, `tests/test_workbench_channel_rack_loop.py`, `tests/test_loop_rack_playback.py`, `tests/test_workbench_session_catalog_rehydrate.py`, `tests/test_workbench_session_persistence.py`.
 
 ## Explicit non-goals
 
@@ -182,9 +195,9 @@ DOCS -> TESTS -> TEST FREEZE -> IMPLEMENTATION -> CHECKS
 ```
 
 1. **DOCS** — this freeze is the DOCS_GATE artifact; confirm it against live `main` before code.
-2. **TESTS** — land tests 6–16 above (initially red where they must be red).
-3. **TEST FREEZE** — freeze tests 6–16. Tests 1–5 may only ever be tightened.
-4. **IMPLEMENTATION** — add `src/workbench_user_sample_metadata.py`; thread the optional `user_metadata` binding through `channel_rack` and `loop_rack_playback` as keyword-only, default `None`; inject the resolver in `compose_workbench_session`; implement B1–B4 and the reconcile/observer rules.
+2. **TESTS** — land tests 6–18 above (initially red where they must be red).
+3. **TEST FREEZE** — freeze tests 6–18. Tests 1–5 may only ever be tightened.
+4. **IMPLEMENTATION** — add `src/workbench_user_sample_metadata.py`; thread the optional `user_metadata` binding through `channel_rack` and `loop_rack_playback` as keyword-only, default `None`; inject the resolver in `compose_workbench_session`; implement B1–B4, the reconcile/observer rules, and the per-Play playback snapshot behind `CLASSIFICATION_MUTATION_POLICY`.
 5. **CHECKS** — focused tests, the listed regression suites, then `python -m pytest -q`, `python -m ruff check .`, `python -m py_compile`, and `python tools/check_canon_drift.py`.
 
 **Out of scope for that slice:** classification-quality changes (#946), Pattern Core or session-JSON changes, QML redesign, Arrangement, gesture ranking changes, user-channel DEFAULT_ON changes.

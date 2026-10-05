@@ -69,19 +69,26 @@ FORBIDDEN_IMPORT_ROOTS = frozenset(
 
 
 def _imported_module_roots(path: Path) -> set[str]:
+    """Every dotted component of every imported module and alias name.
+
+    Absolute repo imports (``import src.workbench_library``,
+    ``from src.workbench_library import x``, ``from src import
+    workbench_library``) are in real use in this repository, so the leading
+    package root must never mask a forbidden leaf.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    roots: set[str] = set()
+    components: set[str] = set()
     for node in ast.walk(tree):
+        names: list[str] = []
         if isinstance(node, ast.Import):
-            for alias in node.names:
-                roots.add(alias.name.split(".")[0])
+            names = [alias.name for alias in node.names]
         elif isinstance(node, ast.ImportFrom):
             if node.module:
-                roots.add(node.module.split(".")[0])
-            if node.level and node.module is None:
-                for alias in node.names:
-                    roots.add(alias.name.split(".")[0])
-    return roots
+                names.append(node.module)
+            names.extend(alias.name for alias in node.names)
+        for name in names:
+            components.update(part for part in name.split(".") if part)
+    return components
 
 
 @pytest.mark.parametrize("relative", FORBIDDEN_IO_MODULES)
@@ -92,6 +99,26 @@ def test_low_level_rack_modules_import_no_sqlite_library_or_config(relative: str
     assert leaked == [], (
         f"{relative} must not import SQLite/library/config authority: {leaked}"
     )
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "import sqlite3\n",
+        "from src import workbench_library\n",
+        "import src.workbench_library\n",
+        "from src.workbench_library import query_sample_by_path_readonly\n",
+        "from . import config_loader\n",
+        "from src.config_loader import load_profile\n",
+        "from src import db\n",
+        "def f():\n    import sqlite3\n",
+    ),
+)
+def test_import_guard_detects_forbidden_forms(tmp_path: Path, source: str) -> None:
+    """Guard 1 must be non-vacuous, including absolute ``src.`` imports."""
+    probe = tmp_path / "probe.py"
+    probe.write_text(source, encoding="utf-8")
+    assert _imported_module_roots(probe) & FORBIDDEN_IMPORT_ROOTS
 
 
 def _user_channel(channel_id: str, sample_path: str) -> Channel:
