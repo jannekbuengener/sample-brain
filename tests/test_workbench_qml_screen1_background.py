@@ -75,7 +75,9 @@ def test_qml_palette_tokens_are_near_black_with_functional_accent_only():
     mapped = theme_core.theme_tokens_to_qml_semantics(blood)
     assert blood.accent.lower() == "#8f0e24"
     assert mapped["actionActive"].lower() == "#8f0e24"
-    assert mapped["surfaceRoot"].lower() == "#050506"
+    assert mapped["surfaceRoot"].lower() == blood.as_dict()["surfaceWorkspace"].lower()
+    assert mapped["surfaceHeader"].lower() == blood.background.lower()
+    assert mapped["surfaceRoot"].lower() != mapped["surfaceHeader"].lower()
     # Accent stays blood-red functional; no orange / blue brand accents.
     assert "#ff4500" not in source.casefold()
     assert '"#b1122b"' not in source
@@ -121,8 +123,8 @@ def test_qml_runtime_exposes_background_image_with_stretch_fill():
         assert float(background.property("paintedWidth") or 0) > 0
         assert float(background.property("paintedHeight") or 0) > 0
         assert window.property("accent").name() == "#8f0e24"
-        assert window.property("panel").name() == "#0f0f11"
-        assert window.property("panelAlt").name() == "#1a1a1b"
+        assert window.property("panel").name() == "#080809"
+        assert window.property("panelAlt").name() == "#101011"
     finally:
         window.close()
         app.processEvents()

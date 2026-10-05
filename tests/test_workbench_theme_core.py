@@ -24,14 +24,15 @@ from src import workbench_theme as theme
 PRESET_ORDER = ("Blood", "Carbon", "Arctic", "Rose", "Forest")
 BLOOD_A_ACCENT = "#8f0e24"
 BLOOD_B_ACCENT = "#d4143a"
-BLOOD_BACKGROUND = "#050506"
-BLOOD_FOREGROUND = "#eceef1"
+BLOOD_BACKGROUND = "#020203"
+BLOOD_FOREGROUND = "#e4e6ea"
 
 BASE_KEYS = frozenset({"accent", "background", "foreground"})
 DERIVED_KEYS = frozenset(
     {
         "textPrimary",
         "textSecondary",
+        "surfaceWorkspace",
         "surface",
         "surfaceRaised",
         "divider",
@@ -45,8 +46,9 @@ PERSIST_ALLOWED_KEYS = frozenset(
 )
 
 # Theme Core token → existing QML semantic names (mapping helper only).
+# Dark surface hierarchy: chrome=background, workspace=surfaceWorkspace, panels=surface.
 QML_SEMANTIC_EXPECTATIONS = {
-    "surfaceRoot": "background",
+    "surfaceRoot": "surfaceWorkspace",
     "surfaceHeader": "background",
     "surfaceBrowser": "surface",
     "surfacePanel": "surface",
@@ -155,12 +157,12 @@ def test_derived_tokens_match_canon_formulas_for_all_presets() -> None:
 
 
 def test_mix_formula_is_deterministic() -> None:
-    # mix(foreground, background, 0.45) for Blood → textSecondary #848587
+    # mix(foreground, background, 0.55) for Blood noir → textSecondary #68696b
     assert (
-        _normalize_hex(theme.mix_hex("#eceef1", "#050506", 0.45)) == "#848587"
+        _normalize_hex(theme.mix_hex("#e4e6ea", "#020203", 0.55)) == "#68696b"
     )
     assert (
-        _normalize_hex(theme.mix_hex("#050506", "#8f0e24", 0.22)) == "#23070d"
+        _normalize_hex(theme.mix_hex("#020203", "#8f0e24", 0.22)) == "#21050a"
     )
 
 

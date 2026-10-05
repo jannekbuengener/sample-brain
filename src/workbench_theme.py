@@ -28,6 +28,7 @@ _BASE_KEYS = ("accent", "background", "foreground")
 _DERIVED_KEYS = (
     "textPrimary",
     "textSecondary",
+    "surfaceWorkspace",
     "surface",
     "surfaceRaised",
     "divider",
@@ -40,6 +41,7 @@ _FORBIDDEN_PERSIST_KEYS = frozenset(
     {
         "textPrimary",
         "textSecondary",
+        "surfaceWorkspace",
         "surface",
         "surfaceRaised",
         "divider",
@@ -55,8 +57,9 @@ _FORBIDDEN_PERSIST_KEYS = frozenset(
 )
 
 # Theme Core token → existing QML semantic names (helper only).
+# Dark hierarchy: chrome=background, workspace=surfaceWorkspace, panels=surface.
 _QML_SEMANTIC_MAP = {
-    "surfaceRoot": "background",
+    "surfaceRoot": "surfaceWorkspace",
     "surfaceHeader": "background",
     "surfaceBrowser": "surface",
     "surfacePanel": "surface",
@@ -100,6 +103,7 @@ class ThemeTokens:
     foreground: str
     textPrimary: str
     textSecondary: str
+    surfaceWorkspace: str
     surface: str
     surfaceRaised: str
     divider: str
@@ -116,6 +120,7 @@ class ThemeTokens:
             "foreground": self.foreground,
             "textPrimary": self.textPrimary,
             "textSecondary": self.textSecondary,
+            "surfaceWorkspace": self.surfaceWorkspace,
             "surface": self.surface,
             "surfaceRaised": self.surfaceRaised,
             "divider": self.divider,
@@ -190,8 +195,9 @@ def mix_hex(color_a: str, color_b: str, amount: float) -> str:
 def _blood_a_base() -> ThemeBase:
     return ThemeBase(
         accent=BLOOD_A_ACCENT,
-        background="#050506",
-        foreground="#eceef1",
+        # Superdesign cinematic-noir deep-black floor (#000000) → ink short of pure black.
+        background="#020203",
+        foreground="#e4e6ea",
     )
 
 
@@ -211,11 +217,14 @@ def derive_tokens(base: Mapping[str, Any] | ThemeBase) -> dict[str, str]:
         raise ValueError("invalid theme base tokens")
     return {
         "textPrimary": foreground,
-        "textSecondary": mix_hex(foreground, background, 0.45),
-        "surface": mix_hex(background, foreground, 0.045),
-        "surfaceRaised": mix_hex(background, foreground, 0.09),
-        "divider": mix_hex(background, foreground, 0.16),
-        "hover": mix_hex(background, foreground, 0.11),
+        # Calmer secondary labels (cinematic noir typography restraint).
+        "textSecondary": mix_hex(foreground, background, 0.55),
+        # Barely raised ink workspace; panels stay subtly above — low UI mass.
+        "surfaceWorkspace": mix_hex(background, foreground, 0.008),
+        "surface": mix_hex(background, foreground, 0.028),
+        "surfaceRaised": mix_hex(background, foreground, 0.06),
+        "divider": mix_hex(background, foreground, 0.10),
+        "hover": mix_hex(background, foreground, 0.075),
         "selected": mix_hex(background, accent, 0.22),
         "focusRing": accent,
     }
@@ -234,6 +243,7 @@ def _tokens_from_base(
         foreground=base.foreground,
         textPrimary=derived["textPrimary"],
         textSecondary=derived["textSecondary"],
+        surfaceWorkspace=derived["surfaceWorkspace"],
         surface=derived["surface"],
         surfaceRaised=derived["surfaceRaised"],
         divider=derived["divider"],
@@ -290,8 +300,8 @@ def blood_variants() -> dict[str, dict[str, str]]:
     if "B" not in out:
         out["B"] = ThemeBase(
             accent=BLOOD_B_ACCENT,
-            background="#050506",
-            foreground="#eceef1",
+            background="#020203",
+            foreground="#e4e6ea",
         ).as_dict()
     return out
 
