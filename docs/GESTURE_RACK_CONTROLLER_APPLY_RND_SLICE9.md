@@ -1,7 +1,9 @@
 # Gesture Rack Controller/Session Apply R&D — Slice 9 (#680 / #921)
 
-**Status:** Implemented — `GUARDED_CONTROLLER_SESSION_APPLY_VIABLE`  
-**Parent:** [#680](https://github.com/jannekbuengener/sample-brain/issues/680) (remains OPEN)  
+**Status:** Implemented — `GUARDED_CONTROLLER_SESSION_APPLY_VIABLE`
+
+**Parent:** [#680](https://github.com/jannekbuengener/sample-brain/issues/680) (remains OPEN)
+
 **Child:** [#921](https://github.com/jannekbuengener/sample-brain/issues/921)
 
 ## Delivered dependencies
@@ -115,10 +117,10 @@ Reuse the existing session wiring:
 set_on_musical_state_changed → _autosave_musical_session → snapshot save
 ```
 
-Success: exactly one observer fire → one autosave attempt.  
-Failure paths: observer count = 0, autosave attempts = 0.  
-Save IO failure after valid in-memory mutation follows existing persistence
-honesty (`note_autosave_failed`); memory remains authoritative.
+- Success: exactly one observer fire → one autosave attempt.
+- Failure paths: observer count = 0, autosave attempts = 0.
+- Save IO failure after valid in-memory mutation follows existing persistence
+  honesty (`note_autosave_failed`); memory remains authoritative.
 
 ## Non-goals
 
