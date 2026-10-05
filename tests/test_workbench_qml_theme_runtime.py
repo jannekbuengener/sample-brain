@@ -125,7 +125,7 @@ def test_theme_authority_bridge_defaults_to_blood_a(tmp_path: Path) -> None:
     blood = theme.resolve_theme("Blood")
     assert bridge.surfaceHeader.lower() == blood.background.lower()
     assert bridge.surfaceRoot.lower() == blood.as_dict()["surfaceWorkspace"].lower()
-    assert bridge.surfaceRoot.lower() == "#050506"
+    assert bridge.surfaceRoot.lower() == "#040405"
     assert bridge.textPrimary.lower() == "#e4e6ea"
     assert bridge.focusRing.lower() == BLOOD_A_ACCENT
     assert bridge.textOnAction.lower() == "#ffffff"

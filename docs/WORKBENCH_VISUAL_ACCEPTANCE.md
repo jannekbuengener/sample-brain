@@ -266,14 +266,16 @@ an open gray tool UI. Theme Core owns the steps; QML only binds semantics.
 | Step | Role | Semantic → token |
 |------|------|------------------|
 | 1 | Program Chrome (darkest / ink floor) | `surfaceHeader` → `background` |
-| 2 | Main Workspace (barely raised charcoal) | `surfaceRoot` → `surfaceWorkspace` |
-| 3 | Panels (subtly separated, low mass) | `surfacePanel` / `surfaceBrowser` → `surface` |
+| 2 | Main Workspace (barely raised charcoal/ink) | `surfaceRoot` → `surfaceWorkspace` |
+| 3 | Panels (subtly separated, low mass, one family) | `surfacePanel` / `surfaceBrowser` → `surface` |
 
-**Atmosphere (both main surfaces):** Library (`libraryPane`) and center workspace
-(`calmCanvas` empty; `browserPane` when active) must paint Theme soft-ellipse
-overlays (`theme.atmospherePanel` / `theme.atmosphereWorkspace`) so depth is
-visible — not identical flat solids. Overlays are Theme-rendered PNGs (no QML
-`Gradient`). See `docs/assets/themes/README.md` atmosphere stop table.
+**Atmosphere (uniform panel family + calm workspace):** Library (`libraryPane`),
+center workspace (`calmCanvas` empty; `browserPane` when active), Live Kit
+(`liveKitPane`), and Harmonic Matching (`harmonyPane`) must paint Theme
+soft-ellipse overlays (`theme.atmospherePanel` / `theme.atmosphereWorkspace`) so
+depth is **subliminal** — not a visible glow effect and not a foreign brighter
+pane. Overlays are Theme-rendered PNGs (no QML `Gradient`). See
+`docs/assets/themes/README.md` atmosphere restraint + stop table.
 
 Borders use `divider` / `borderSubtle` for fine restrained edges. Product
 surfaces must not collapse chrome and workspace to the same fill. No flat
@@ -290,8 +292,9 @@ solid panel fills, decoration, or passive chrome. Default Blood A accent is
 `#8f0e24` (Blood B `#d4143a` is comparison-only).
 
 **Narrow Theme exception:** cinematic-noir atmosphere stop mixes may include a
-tiny accent bleed into ink (Theme Core only) so Library/center read cool
-red-blue depth. That is not a colorful ambient wash and must stay near-black.
+tiny accent bleed into ink (Theme Core only) so Library/center/Live Kit/Harmonic
+read cool red-blue depth at **subliminal** strength. That is not a colorful
+ambient wash or visible glow and must stay near-black.
 
 ### No arbitrary hardcodes rule
 

@@ -49,8 +49,8 @@ was still too bright/gray for cinematic noir.
 | Role | QML semantic | Theme Core token | CURRENT (pre-noir) | TARGET (noir) |
 |------|--------------|------------------|--------------------|---------------|
 | Program Chrome (header / footer band) | `surfaceHeader` | `background` | `#050506` (Blood) | ink floor `#020203` (Blood); deepest role short of pure black |
-| Main Workspace (root / calm canvas) | `surfaceRoot` | `surfaceWorkspace` | `#0b0b0c` @ `0.025` | `#050506` @ `0.012` — barely raised charcoal/ink |
-| Panels (Library / Browser / Harmony) | `surfacePanel` / `surfaceBrowser` | `surface` | `#0f0f11` @ `0.045` | `#080809` @ `0.028` — subtle, near zinc-black, not gray cards |
+| Main Workspace (root / calm canvas) | `surfaceRoot` | `surfaceWorkspace` | `#0b0b0c` @ `0.025` → mid `#050506` @ `0.012` | `#040405` @ `0.008` — deeper ink workspace |
+| Panels (Library / Browser / Live Kit / Harmonic) | `surfacePanel` / `surfaceBrowser` | `surface` | `#0f0f11` @ `0.045` | `#080809` @ `0.028` — one panel family, near zinc-black |
 | Elevated / hover lifts | `surfaceElevated` / `hoverSurface` | `surfaceRaised` / `hover` | `0.09` / `0.11` | `0.06` / `0.075` — quieter lifts |
 | Borders / dividers | `borderSubtle` / `dividerDefault` | `divider` | `#2a2a2c` @ `0.16` | `#19191a` @ `0.10` — fine restrained edges |
 | Typography | `textPrimary` / `textSecondary` | `foreground` / mix | `#eceef1` / `#848587` @ `0.45` | `#e4e6ea` / `#68696b` @ `0.55` — calmer, finer mood |
@@ -61,17 +61,49 @@ red-blue depth from preset base tints + Theme atmosphere overlays — not a seco
 palette. Style intent references Superdesign cinematic noir / “Schrift und
 Minimalismus”; do **not** copy-paste Superdesign layout.
 
-### Atmosphere on both main surfaces (Library + center workspace)
+### Atmosphere restraint + panel uniformity (Owner feedback on PR #889)
 
-Solid hierarchy alone still reads as two flat black slabs at noir density
-(`#050506` vs `#080809`). Owner asks for the Superdesign cinematic-noir
-**background method** (soft elliptical depth) on **both**:
+#### Root cause (why atmosphere-on-both still failed Owner review)
+
+| Surface / layer | CURRENT (pre-restraint) | Why it failed |
+|-----------------|-------------------------|---------------|
+| Workspace root | `#050506` @ mix `0.012` | Still a touch open vs deeper noir floor |
+| Atmosphere workspace core | `#1e0d11` @ accent `0.14` + fg `0.03` | Visible warm glow / light oval — reads as an effect, not depth |
+| Atmosphere panel core | `#1c0d10` @ accent `0.12` + fg `0.02` | Same: Library/center mid≈`(28,13,16)` vs edge≈`(5,5,6)` |
+| Library / Browser | `surface` + `atmospherePanel` | Atmosphere present but too bright |
+| Live Kit / Harmonic Matching | `surfacePanel` only, **no** atmosphere | Flat / foreign vs Library+center — broken family |
+| Dividers | `#19191a` @ `0.10` | Acceptable; keep fine/restrained |
+
+Glow tokens are Theme atmosphere stop mixes (`atmosphere_*Core` / Mid / Edge) rendered
+as soft-ellipse PNGs. Brighter panes were not a second palette — Live Kit and
+Harmonic Matching simply lacked the shared panel atmosphere binding.
+
+#### TARGET (subliminal glow + one panel family)
+
+| Role | CURRENT | TARGET |
+|------|---------|--------|
+| Workspace root (`surfaceWorkspace`) | `#050506` @ `0.012` | `#040405` @ `0.008` — slightly deeper ink |
+| Atmosphere workspace core | `#1e0d11` | `#0b0608` — almost subliminal depth only |
+| Atmosphere panel core | `#1c0d10` | `#0d090b` — same restraint on all panels |
+| Panel solids (Library / Browser / Live Kit / Harmonic) | `#080809` | unchanged family fill `#080809` |
+| Dividers | `#19191a` | unchanged fine edge `#19191a` |
+
+**Feel:** very dark, calm, deep, uniform, elegant, minimal, cinematic/noir.
+Glow is **minimal depth only** — not a visible light/glow effect.
+
+### Atmosphere on all primary surfaces (uniform family)
+
+Solid hierarchy alone still reads as flat slabs at noir density. Soft elliptical
+depth must apply across the **whole** Screen-1 panel family — not only Library
+and center:
 
 | Surface | Role fill | Atmosphere overlay |
 |---------|-----------|--------------------|
 | Left Library pane | `surfacePanel` → `surface` | Theme `atmospherePanel` Image (soft ellipse) |
 | Center empty / calm canvas | `surfaceRoot` → `surfaceWorkspace` | Theme `atmosphereWorkspace` Image (soft ellipse) |
 | Center active Browser pane | `surfaceBrowser` → `surface` | Theme `atmospherePanel` Image (same panel atmosphere) |
+| Harmonic Matching pane | `surfacePanel` → `surface` | Theme `atmospherePanel` Image (same panel atmosphere) |
+| Live Kit pane | `surfacePanel` → `surface` | Theme `atmospherePanel` Image (same panel atmosphere) |
 
 **How (allowed path):** Theme Core derives stop colors from our base combo and
 renders a soft elliptical PNG. QML binds `theme.atmosphereWorkspace` /
@@ -79,20 +111,22 @@ renders a soft elliptical PNG. QML binds `theme.atmosphereWorkspace` /
 `RadialGradient` out of `QML_SOURCE` (Screen-1 background contract) while still
 delivering radial depth. No Superdesign hex copy. No grain/glass.
 
-Blood stop formulas (Theme Core only — not persisted customs):
+Blood stop formulas (Theme Core only — not persisted customs) — **subliminal**:
 
 | Overlay | Stop | Derivation | Blood example |
 |---------|------|------------|---------------|
-| Workspace | core | `mix(mix(surfaceWorkspace, accent, 0.14), foreground, 0.03)` | `#1e0d11` |
-| Workspace | mid | `surfaceWorkspace` | `#050506` |
+| Workspace | core | `mix(mix(surfaceWorkspace, accent, 0.035), foreground, 0.008)` | `#0b0608` |
+| Workspace | mid | `surfaceWorkspace` | `#040405` |
 | Workspace | edge | `mix(surfaceWorkspace, background, 0.65)` | `#030304` |
-| Panel | core | `mix(mix(surface, accent, 0.12), foreground, 0.02)` | `#1c0d10` |
+| Panel | core | `mix(mix(surface, accent, 0.03), foreground, 0.006)` | `#0d090b` |
 | Panel | mid | `surface` | `#080809` |
 | Panel | edge | `mix(surface, background, 0.50)` | `#050506` |
 
 Atmosphere uses a **tiny accent bleed into ink** for cool red-blue noir depth.
 That is not functional accent chrome and must stay near-black (never colorful
 panel fills). Accent control states remain selection / focus / primary action.
+Core luminance must stay close to mid (subliminal) — prior visible cores
+`#1e0d11` / `#1c0d10` are rejected.
 
 ### Superdesign cinematic noir reference (style intent, not layout)
 
@@ -113,7 +147,8 @@ How that page builds background / atmosphere (concrete tokens):
 | Selection red | `#ef4444` | No — Blood accent remains `#8f0e24` (product accent contract) |
 
 **Mapped in this slice:** deeper Theme-owned solid hierarchy (chrome → workspace →
-panels) **plus** Theme atmosphere overlays on Library and center workspace.
+panels) **plus** Theme atmosphere overlays on Library, center workspace, Live Kit,
+and Harmonic Matching — subliminal core strength only.
 **Not mapped:** QML `Gradient`/`RadialGradient`, grain/glass, layout/parallax,
 second palette / Superdesign hex.
 

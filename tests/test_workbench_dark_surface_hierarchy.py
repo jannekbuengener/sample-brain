@@ -1,15 +1,17 @@
 """Dark workspace surface hierarchy polish — FROZEN CONTRACT.
 
-Status: TEST_FREEZE (noir density + Superdesign deep/zinc + atmosphere overlays)
+Status: TEST_FREEZE (noir density + subliminal atmosphere + panel uniformity)
 Canon:
-  - docs/assets/themes/README.md (CURRENT→TARGET + Superdesign mapping)
+  - docs/assets/themes/README.md (CURRENT→TARGET + atmosphere restraint)
   - docs/assets/themes/presets.v1.json
   - docs/WORKBENCH_VISUAL_ACCEPTANCE.md (dark surface hierarchy)
   - src/workbench_theme.py (Theme Authority sole owner)
 
 Intent: cinematic noir with three calm depth steps — Program Chrome darkest
 ink floor, Main Workspace barely raised, Panels subtly separated with low
-mass — PLUS Theme soft-ellipse atmosphere on Library and center workspace.
+mass — PLUS Theme soft-ellipse atmosphere at **subliminal** strength on the
+full panel family (Library, Browser, Live Kit, Harmonic Matching) and
+workspace. Glow is minimal depth only — not a visible light effect.
 Superdesign cinematic-noir deep/zinc solids map via Theme bases; radial
 atmosphere maps via Theme PNG overlays (not QML Gradient/RadialGradient).
 Semantic relations only; screenshot pixels are not absolute truth.
@@ -30,15 +32,15 @@ PURE_BLACK = "#000000"
 
 # Blood noir TARGET (docs/assets/themes/README.md) — deep/zinc solid map
 BLOOD_CHROME = "#020203"
-BLOOD_WORKSPACE = "#050506"
+BLOOD_WORKSPACE = "#040405"
 BLOOD_PANEL = "#080809"
 BLOOD_DIVIDER = "#19191a"
 BLOOD_TEXT_PRIMARY = "#e4e6ea"
 BLOOD_TEXT_SECONDARY = "#68696b"
-BLOOD_ATMOSPHERE_WORKSPACE_CORE = "#1e0d11"
-BLOOD_ATMOSPHERE_WORKSPACE_MID = "#050506"
+BLOOD_ATMOSPHERE_WORKSPACE_CORE = "#0b0608"
+BLOOD_ATMOSPHERE_WORKSPACE_MID = "#040405"
 BLOOD_ATMOSPHERE_WORKSPACE_EDGE = "#030304"
-BLOOD_ATMOSPHERE_PANEL_CORE = "#1c0d10"
+BLOOD_ATMOSPHERE_PANEL_CORE = "#0d090b"
 BLOOD_ATMOSPHERE_PANEL_MID = "#080809"
 BLOOD_ATMOSPHERE_PANEL_EDGE = "#050506"
 
@@ -50,13 +52,23 @@ PRIOR_OPEN_DIVIDER = "#2a2a2c"
 # Mid noir pass before Superdesign deep-black floor tighten.
 PRIOR_NOIR_CHROME = "#030304"
 PRIOR_NOIR_WORKSPACE = "#060607"
+# Visible atmosphere cores from the first atmosphere-on-both pass — must stay darker.
+PRIOR_VISIBLE_ATMOSPHERE_WORKSPACE_CORE = "#1e0d11"
+PRIOR_VISIBLE_ATMOSPHERE_PANEL_CORE = "#1c0d10"
+PRIOR_ATMOSPHERE_WORKSPACE = "#050506"
 
-WORKSPACE_MIX = 0.012
+WORKSPACE_MIX = 0.008
 SURFACE_MIX = 0.028
 RAISED_MIX = 0.06
 HOVER_MIX = 0.075
 DIVIDER_MIX = 0.10
 TEXT_SECONDARY_MIX = 0.55
+ATMOSPHERE_WORKSPACE_ACCENT_MIX = 0.035
+ATMOSPHERE_WORKSPACE_FG_MIX = 0.008
+ATMOSPHERE_PANEL_ACCENT_MIX = 0.03
+ATMOSPHERE_PANEL_FG_MIX = 0.006
+# Subliminal depth: core must stay close to mid (not a visible glow oval).
+MAX_ATMOSPHERE_CORE_TO_MID_LUM_RATIO = 2.0
 
 
 def _normalize_hex(value: str) -> str:
@@ -95,7 +107,7 @@ def test_canon_documents_noir_surface_workspace_derivation() -> None:
     canon = _canon()
     assert "surfaceWorkspace" in canon["derivation"]
     assert canon["derivation"]["surfaceWorkspace"] == (
-        "mix(background, foreground, 0.012)"
+        "mix(background, foreground, 0.008)"
     )
     assert canon["derivation"]["surface"] == (
         "mix(background, foreground, 0.028)"
@@ -188,6 +200,9 @@ def test_blood_noir_density_darker_than_prior_open_gray_polish() -> None:
     assert _relative_luminance(tokens["surfaceWorkspace"]) < _relative_luminance(
         PRIOR_NOIR_WORKSPACE
     )
+    assert _relative_luminance(tokens["surfaceWorkspace"]) < _relative_luminance(
+        PRIOR_ATMOSPHERE_WORKSPACE
+    )
     assert _relative_luminance(tokens["surface"]) < _relative_luminance(PRIOR_OPEN_PANEL)
     assert _relative_luminance(tokens["divider"]) < _relative_luminance(
         PRIOR_OPEN_DIVIDER
@@ -255,14 +270,14 @@ def test_canon_documents_atmosphere_stop_derivation() -> None:
     canon = _canon()
     derivation = canon["derivation"]
     assert derivation["atmosphereWorkspaceCore"] == (
-        "mix(mix(surfaceWorkspace, accent, 0.14), foreground, 0.03)"
+        "mix(mix(surfaceWorkspace, accent, 0.035), foreground, 0.008)"
     )
     assert derivation["atmosphereWorkspaceMid"] == "surfaceWorkspace"
     assert derivation["atmosphereWorkspaceEdge"] == (
         "mix(surfaceWorkspace, background, 0.65)"
     )
     assert derivation["atmospherePanelCore"] == (
-        "mix(mix(surface, accent, 0.12), foreground, 0.02)"
+        "mix(mix(surface, accent, 0.03), foreground, 0.006)"
     )
     assert derivation["atmospherePanelMid"] == "surface"
     assert derivation["atmospherePanelEdge"] == (
@@ -278,18 +293,30 @@ def test_theme_core_blood_atmosphere_stops_match_canon() -> None:
     assert _normalize_hex(stops["panel"]["core"]) == BLOOD_ATMOSPHERE_PANEL_CORE
     assert _normalize_hex(stops["panel"]["mid"]) == BLOOD_ATMOSPHERE_PANEL_MID
     assert _normalize_hex(stops["panel"]["edge"]) == BLOOD_ATMOSPHERE_PANEL_EDGE
-    # Soft ellipse must lift the core above the edge (visible depth).
+    # Soft ellipse must lift the core above the edge (depth present).
     assert _relative_luminance(stops["workspace"]["core"]) > _relative_luminance(
         stops["workspace"]["edge"]
     )
     assert _relative_luminance(stops["panel"]["core"]) > _relative_luminance(
         stops["panel"]["edge"]
     )
-    # Stay noir — not a colorful wash.
+    # Subliminal — not a visible glow oval (Owner rejection of #1e0d11 / #1c0d10).
     assert _relative_luminance(stops["workspace"]["core"]) < _relative_luminance(
-        "#3a2024"
+        PRIOR_VISIBLE_ATMOSPHERE_WORKSPACE_CORE
     )
-    assert _relative_luminance(stops["panel"]["core"]) < _relative_luminance("#3a2024")
+    assert _relative_luminance(stops["panel"]["core"]) < _relative_luminance(
+        PRIOR_VISIBLE_ATMOSPHERE_PANEL_CORE
+    )
+    assert (
+        _relative_luminance(stops["workspace"]["core"])
+        / _relative_luminance(stops["workspace"]["mid"])
+        <= MAX_ATMOSPHERE_CORE_TO_MID_LUM_RATIO
+    )
+    assert (
+        _relative_luminance(stops["panel"]["core"])
+        / _relative_luminance(stops["panel"]["mid"])
+        <= MAX_ATMOSPHERE_CORE_TO_MID_LUM_RATIO
+    )
 
 
 def test_theme_core_writes_atmosphere_png_overlays(tmp_path: Path) -> None:
@@ -303,8 +330,8 @@ def test_theme_core_writes_atmosphere_png_overlays(tmp_path: Path) -> None:
     assert paths["workspace"].read_bytes() != paths["panel"].read_bytes()
 
 
-def test_qml_library_and_center_bind_atmosphere_overlays() -> None:
-    """Both Owner-facing main surfaces must bind Theme atmosphere Images."""
+def test_qml_panel_family_binds_atmosphere_overlays() -> None:
+    """Library, Browser, Live Kit, Harmonic Matching share Theme panel atmosphere."""
     from src.workbench_qml import QML_SOURCE
 
     assert "readonly property url atmosphereWorkspace: themeAuthority.atmosphereWorkspaceUrl" in QML_SOURCE
@@ -325,6 +352,14 @@ def test_qml_library_and_center_bind_atmosphere_overlays() -> None:
     browser = QML_SOURCE.split('objectName: "browserPane"', 1)[1][:1600]
     assert 'objectName: "browserNoirAtmosphere"' in browser
     assert "theme.atmospherePanel" in browser
+
+    harmony = QML_SOURCE.split('objectName: "harmonyPane"', 1)[1][:1600]
+    assert 'objectName: "harmonyNoirAtmosphere"' in harmony
+    assert "theme.atmospherePanel" in harmony
+
+    live_kit = QML_SOURCE.split('objectName: "liveKitPane"', 1)[1][:1600]
+    assert 'objectName: "liveKitNoirAtmosphere"' in live_kit
+    assert "theme.atmospherePanel" in live_kit
 
 
 def test_theme_authority_bridge_exposes_hierarchy(tmp_path: Path) -> None:
