@@ -86,7 +86,8 @@ Clustering algorithm: sequential nearest-centroid; join if L2 ≤ threshold, els
 - ML training / new models / cloud inference
 - DB tables / persistence schema
 - Pattern Core / step-sequencer timebase / DEFAULT_ON changes
-- Mapping `cluster → library sample → Channel → Trigger` (Slice 2+)
+- Mapping `cluster → library sample → Channel → Trigger` (later slices)
+- Deterministic cluster → ranked library candidates is Slice 2 (#882); see `docs/GESTURE_LIBRARY_RANKING_RND_SLICE2.md`
 
 ## Acceptance (tests)
 
