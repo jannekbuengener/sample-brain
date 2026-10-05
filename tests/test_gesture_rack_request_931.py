@@ -404,6 +404,14 @@ def _patch_analysis(monkeypatch: pytest.MonkeyPatch, analysis: GestureAnalysis) 
     """Stub Stage 1 wherever the request seam may import it from."""
     stub = mock.Mock(return_value=analysis)
     monkeypatch.setattr("src.gesture_analysis.analyze_gesture_audio", stub)
+    # Slice 11 delegates Stage 1 to Slice 10, which binds it early in its own
+    # module namespace. Same third target as the accepted Slice-10 harness
+    # (tests/test_gesture_rack_headless_action_925.py::_patch_analysis). Test
+    # wiring only - no Slice-10 production code is modified.
+    monkeypatch.setattr(
+        "src.gesture_rack_headless_action.analyze_gesture_audio",
+        stub,
+    )
     import src.gesture_rack_request as request_mod
 
     if hasattr(request_mod, "analyze_gesture_audio"):
@@ -902,8 +910,15 @@ def test_d3_disabled_flag_fails_closed_through_slice10(
     _patch_analysis(monkeypatch, _ok_analysis(cluster_ids=(0, 0, 0)))
 
     observers: list[str] = []
+    # D3-local fixture: #899 preserves the step grid, so the composition length
+    # must satisfy length_quarter_notes >= step_count / 4. The shared
+    # _base_state() default (step_count=16 -> grid span 4) cannot satisfy this
+    # with the frozen SENTINEL_PATTERN_LENGTH 7/2 and would raise before the
+    # feature-flag branch is reached. step_count=12 gives grid span 3 <= 7/2.
+    # No sentinel, shared default, or production behavior is changed.
     controller = _controller(
-        state=_base_state(), on_musical_state_changed=lambda: observers.append("obs")
+        state=_base_state(step_count=12),
+        on_musical_state_changed=lambda: observers.append("obs"),
     )
     before = copy.deepcopy(controller.state)
 
