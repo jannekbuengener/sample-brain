@@ -358,7 +358,8 @@ def test_composition_channel_id_collision_with_base_fail_closed():
 
 
 def test_duplicate_composition_ids_fail_closed():
-    composition = GesturePatternCoreComposition(
+    # #893 composition delta does not uniquify channel IDs; planner must.
+    bad = GesturePatternCoreComposition(
         channels=(
             _user_channel("ch_user_1", sample_path="a.wav"),
             _user_channel("ch_user_1", sample_path="b.wav"),
@@ -368,29 +369,38 @@ def test_duplicate_composition_ids_fail_closed():
             triggers=(Trigger(channel_id="ch_user_1", position=Fraction(0, 4)),),
         ),
     )
-    # ChannelRackState / Pattern membership may not catch composition dupes;
-    # planner must reject independently. Composition type allows constructing
-    # via object.__new__ bypass if frozen validation blocks duplicates — use
-    # a minimal stand-in when GesturePatternCoreComposition construction fails.
-    try:
-        bad = composition
-    except Exception:  # pragma: no cover - defensive
-        bad = None
-    if bad is None or len({c.channel_id for c in bad.channels}) == len(bad.channels):
-        # Construct a composition-like object with duplicate IDs if dataclass
-        # does not validate uniqueness (current #893 delta does not).
-        bad = GesturePatternCoreComposition(
-            channels=(
-                _user_channel("ch_user_1", sample_path="a.wav"),
-                _user_channel("ch_user_1", sample_path="b.wav"),
-            ),
-            pattern=_pattern(
-                "gesture-pat-x",
-                triggers=(Trigger(channel_id="ch_user_1", position=Fraction(0, 4)),),
-            ),
-        )
     with pytest.raises(ValueError, match="duplicate"):
         _plan(_base_state(), bad, allow_pattern_replacement=True)
+
+
+def test_unknown_composition_trigger_channel_fail_closed():
+    composition = GesturePatternCoreComposition(
+        channels=(_user_channel("ch_user_1", sample_path="a.wav"),),
+        pattern=_pattern(
+            "gesture-pat-x",
+            triggers=(Trigger(channel_id="ch_user_99", position=Fraction(0, 4)),),
+        ),
+    )
+    with pytest.raises(ValueError, match="Unknown channel_id|unknown channel"):
+        _plan(_base_state(), composition, allow_pattern_replacement=True)
+
+
+def test_wrong_base_state_type_fail_closed():
+    with pytest.raises(TypeError, match="ChannelRackState"):
+        plan_gesture_rack_integration(
+            object(),  # type: ignore[arg-type]
+            _composition(),
+            allow_pattern_replacement=True,
+        )
+
+
+def test_wrong_composition_type_fail_closed():
+    with pytest.raises(TypeError, match="GesturePatternCoreComposition"):
+        plan_gesture_rack_integration(
+            _base_state(),
+            object(),  # type: ignore[arg-type]
+            allow_pattern_replacement=True,
+        )
 
 
 def test_no_channel_reallocation_helper_used():
