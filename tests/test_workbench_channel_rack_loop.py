@@ -1678,4 +1678,3 @@ def test_next_play_sync_on_missing_bpm_starts_no_loop_voice():
     # Empty oneshot pass + no loops → fail-closed not playing.
     assert controller.is_playing is False
     assert engine.create_calls == []
-
