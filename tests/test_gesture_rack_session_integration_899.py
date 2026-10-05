@@ -297,19 +297,41 @@ def test_incumbent_triggers_not_merged_into_target_pattern():
 
 
 def test_incumbent_pattern_length_does_not_influence_target_length():
+    # Composition length must differ from the incumbent AND remain compatible
+    # with the preserved base grid span Fraction(step_count, 4) == 4.
     base = _base_state(
         pattern=_pattern("screen2-main", length=Fraction(4, 1), triggers=()),
+        step_count=16,
     )
     composition = _composition(
         pattern=_pattern(
             "gesture-pat-1",
-            length=Fraction(7, 2),
+            length=Fraction(5, 1),
             triggers=(Trigger(channel_id="ch_user_1", position=Fraction(0, 1)),),
         )
     )
     plan = _plan(base, composition, allow_pattern_replacement=True)
-    assert plan.target_pattern.length_quarter_notes == Fraction(7, 2)
+    assert plan.target_pattern.length_quarter_notes == Fraction(5, 1)
     assert plan.target_pattern.length_quarter_notes != base.pattern.length_quarter_notes
+    assert plan.target_step_count == 16
+    assert plan.ready_for_apply is True
+
+
+def test_pattern_shorter_than_preserved_step_grid_fail_closed():
+    """16-step base grid span is 4 quarters; Pattern length 7/2 must fail closed."""
+    base = _base_state(
+        pattern=_pattern("screen2-main", length=Fraction(4, 1), triggers=()),
+        step_count=16,
+    )
+    composition = _composition(
+        pattern=_pattern(
+            "gesture-pat-short",
+            length=Fraction(7, 2),
+            triggers=(Trigger(channel_id="ch_user_1", position=Fraction(0, 1)),),
+        )
+    )
+    with pytest.raises(ValueError, match="grid|step_count|length|shorter|span"):
+        _plan(base, composition, allow_pattern_replacement=True)
 
 
 def test_incumbent_pattern_id_does_not_overwrite_composition_pattern_id():
