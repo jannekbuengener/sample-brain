@@ -88,9 +88,11 @@ def test_qml_runtime_pane_x_ordering_four_disclosure_states():
         browser = window.findChild(QQuickItem, "browserPane")
         harmony = window.findChild(QQuickItem, "harmonyPane")
         live_kit = window.findChild(QQuickItem, "liveKitPane")
+        bottom = window.findChild(QQuickItem, "bottomRackPane")
         handle_browser = window.findChild(QQuickItem, "elasticHandleAfterBrowser")
         handle_harmony = window.findChild(QQuickItem, "elasticHandleAfterHarmony")
         workspace = window.findChild(QQuickItem, "workspaceRow")
+        right = window.findChild(QQuickItem, "rightWorkspaceColumn")
         affordance = window.findChild(QQuickItem, "libraryRevealAffordance")
         assert all(
             item is not None
@@ -98,12 +100,14 @@ def test_qml_runtime_pane_x_ordering_four_disclosure_states():
                 browser,
                 harmony,
                 live_kit,
+                bottom,
                 handle_browser,
-                handle_harmony,
                 workspace,
+                right,
                 affordance,
             )
         )
+        assert handle_harmony is None
 
         def settle() -> None:
             engine._screen1_interaction_bridge.refreshState()
@@ -111,14 +115,14 @@ def test_qml_runtime_pane_x_ordering_four_disclosure_states():
             app.processEvents()
             _settle_qml_frame(app)
 
-        # 1) Browser only (Library collapsed, Harmony closed, Live Kit hidden)
+        # 1) Browser only (Library collapsed, Harmony closed, bottom calm strip)
         settle()
         assert browser.isVisible() and browser.width() > 0
         assert browser.x() >= 0
-        assert not live_kit.isVisible() or live_kit.width() == 0
+        assert bottom.isVisible()
         assert harmony.width() == 0 or harmony.opacity() == 0
 
-        # 2) Browser + Harmony
+        # 2) Browser + Harmony (upper row); Live Kit remains bottom band
         adapter.harmonic_match_open = True
         settle()
         assert browser.isVisible() and harmony.isVisible()
@@ -128,8 +132,9 @@ def test_qml_runtime_pane_x_ordering_four_disclosure_states():
         _assert_no_horizontal_overlap(browser, harmony, label="browser/harmony overlap")
         if handle_browser.isVisible() and handle_browser.width() > 0:
             assert browser.x() < handle_browser.x() < harmony.x()
+        assert bottom.y() >= browser.y() + browser.height() - 1.0
 
-        # 3) Browser + Live Kit (Harmony closed)
+        # 3) Browser + Live Kit revealed (Harmony closed) — Live Kit is bottom, not right
         adapter.harmonic_match_open = False
         view_model.set_workspace_materialization(
             has_active_source=True,
@@ -138,34 +143,22 @@ def test_qml_runtime_pane_x_ordering_four_disclosure_states():
             live_kit_materialized=True,
         )
         settle()
-        assert browser.isVisible() and live_kit.isVisible()
+        assert browser.isVisible() and live_kit.isVisible() and bottom.isVisible()
         assert browser.width() > 0 and live_kit.width() > 0
-        assert browser.x() < live_kit.x()
-        assert not (browser.x() == 0 and live_kit.x() == 0)
-        _assert_no_horizontal_overlap(browser, live_kit, label="browser/livekit overlap")
+        assert abs(live_kit.x() - browser.x()) < 2.0 or live_kit.y() >= browser.height() - 1.0
+        assert bottom.y() >= browser.y() + browser.height() - 1.0
 
-        # 4) Browser + Harmony + Live Kit (failure case from RUNTIME_DEFECT_FOUND)
+        # 4) Browser + Harmony + bottom Live Kit
         adapter.harmonic_match_open = True
         settle()
         assert browser.isVisible() and harmony.isVisible() and live_kit.isVisible()
         assert browser.width() > 0 and harmony.width() > 0 and live_kit.width() > 0
-        xs = (browser.x(), harmony.x(), live_kit.x())
-        assert not (xs[0] == 0 and xs[1] == 0 and xs[2] == 0)
-        assert browser.x() < harmony.x() < live_kit.x()
+        assert browser.x() < harmony.x()
         if handle_browser.isVisible() and handle_browser.width() > 0:
             assert browser.x() < handle_browser.x() < harmony.x()
-        if handle_harmony.isVisible() and handle_harmony.width() > 0:
-            assert harmony.x() < handle_harmony.x() < live_kit.x()
         _assert_no_horizontal_overlap(browser, harmony, label="3p browser/harmony")
-        _assert_no_horizontal_overlap(harmony, live_kit, label="3p harmony/livekit")
-        total = (
-            browser.width()
-            + harmony.width()
-            + live_kit.width()
-            + handle_browser.width()
-            + handle_harmony.width()
-        )
-        assert total <= workspace.width() + 2.0
+        assert bottom.y() >= max(browser.y() + browser.height(), harmony.y() + harmony.height()) - 1.0
+        assert right.width() <= workspace.width() + 2.0
         assert affordance.isVisible()
         assert affordance.parentItem() is not workspace
         assert not warnings, f"Row positioner still broken: {warnings}"

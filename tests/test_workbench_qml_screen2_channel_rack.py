@@ -477,19 +477,22 @@ def test_qml_runtime_screen2_navigation_projection_and_step_toggle():
         app.processEvents()
         _settle_qml_frame(app)
 
+        # #908: product surface is bottom Rack; legacy Screen-2 page stays hidden.
         rack_screen = window.findChild(QQuickItem, "channelRackScreen")
-        step_grid = window.findChild(QQuickItem, "channelRackStepGrid")
-        play_btn = window.findChild(QQuickItem, "channelRackPlayButton")
-        stop_btn = window.findChild(QQuickItem, "channelRackStopButton")
-        add_btn = window.findChild(QQuickItem, "addUserChannelButton")
+        bottom = window.findChild(QQuickItem, "bottomRackPane")
+        step_list = window.findChild(QQuickItem, "bottomRackStepList")
+        play_btn = window.findChild(QQuickItem, "bottomRackPlayButton")
+        stop_btn = window.findChild(QQuickItem, "bottomRackStopButton")
         browser_nav = window.findChild(QQuickItem, "programNavBrowser")
-        assert rack_screen is not None and rack_screen.property("visible") is True
-        assert step_grid is not None
-        assert play_btn is not None and stop_btn is not None and add_btn is not None
+        assert rack_screen is not None and rack_screen.property("visible") is False
+        assert bottom is not None and bottom.isVisible()
+        assert step_list is not None and step_list.isVisible()
+        assert play_btn is not None and stop_btn is not None
         assert browser_nav is not None
-        assert window.property("activeScreen") == "screen2"
+        assert window.property("activeScreen") == "screen1"
+        assert channel_rack.bottomRackMaterialized is True
         assert channel_rack.stepCount == 16
-        assert len(channel_rack.groups) >= 4
+        assert len(channel_rack.groups) >= 1
 
         before = controller.state
         assert before is not None
@@ -509,6 +512,7 @@ def test_qml_runtime_screen2_navigation_projection_and_step_toggle():
         assert user_channels[0].live_kit_group is None
 
         pattern_triggers = controller.state.pattern.triggers
+        # returnToScreen1 remains a no-op-safe legacy slot while already on screen1.
         channel_rack.returnToScreen1()
         app.processEvents()
         _settle_qml_frame(app)
@@ -829,7 +833,7 @@ def test_qml_runtime_add_assign_selected_toggle_play(tmp_path):
         channel_rack.openChannelRack()
         app.processEvents()
         _settle_qml_frame(app)
-        assert window.property("activeScreen") == "screen2"
+        assert window.property("activeScreen") == "screen1"
 
         channel_rack.addUserChannel()
         app.processEvents()
@@ -871,7 +875,9 @@ def test_qml_runtime_add_assign_selected_toggle_play(tmp_path):
             assert controller.is_playing is False
 
         rack_screen = window.findChild(QQuickItem, "channelRackScreen")
-        assert rack_screen is not None and rack_screen.property("visible") is True
+        bottom = window.findChild(QQuickItem, "bottomRackPane")
+        assert rack_screen is not None and rack_screen.property("visible") is False
+        assert bottom is not None and bottom.isVisible()
     finally:
         engine.deleteLater()
         app.processEvents()

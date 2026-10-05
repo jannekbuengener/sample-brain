@@ -326,7 +326,10 @@ def test_play_with_zero_schedulable_voices_does_not_advertise_playing(monkeypatc
 
 
 def test_qml_open_channel_rack_routes_through_session_focus_policy():
-    """Production open path must quiet audition, not only flip activeScreen."""
+    """#908 product open materializes bottom Rack without Screen-2 / focus claim.
+
+    Audition quieting remains a play/enter_screen2 concern (#916), not open.
+    """
     from src.workbench_qml import Screen1QmlViewModel, _qml_engine
 
     pytest.importorskip("PySide6.QtQuick")
@@ -345,12 +348,20 @@ def test_qml_open_channel_rack_routes_through_session_focus_policy():
         bridge.openChannelRack()
         app.processEvents()
 
+        # Open must not claim audio focus or flip Screen-2 product navigation.
+        assert adapter.preview_active is True
+        assert adapter.auditioning_live_kit_slot == ("Kick + Bass", "Kick")
+        assert engine._screen1_channel_rack.active_screen == "screen1"
+        assert engine._screen1_channel_rack.state is not None
+
+        # Legacy enter_screen2 still quiets audition (#916).
+        session.enter_screen2()
+        app.processEvents()
         assert adapter.preview_active is False
         assert adapter.auditioning_live_kit_slot is None
         assert bridge.property("previewActive") is False
         assert engine._screen1_channel_rack.active_screen == "screen2"
 
-        # Return must stay quiet and refresh projection (no auto-resume).
         bridge.returnToScreen1()
         app.processEvents()
         assert engine._screen1_channel_rack.active_screen == "screen1"

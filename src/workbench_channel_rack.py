@@ -35,6 +35,32 @@ USER_GROUP_NAME = "User"
 SCREEN1 = "screen1"
 SCREEN2 = "screen2"
 
+# Single Workspace bottom Rack geometry baselines (#908).
+BOTTOM_RACK_HEIGHT_RATIO = 0.24
+BOTTOM_RACK_EMPTY_STRIP_PX = 32
+ROW_KIND_STEP = "step"
+ROW_KIND_LOOP_IDENTITY = "loop_identity"
+_POINT_TRIGGER_SAFE_CLASSES = frozenset({"one_shot", "oneshot"})
+_LOOP_CLASSES = frozenset({"loop"})
+
+
+def _normalize_sample_class(value: object | None) -> str:
+    return str(value or "").strip().lower().replace("-", "_")
+
+
+def _row_kind_for_assignment(assignment: Any) -> str:
+    """Classify occupied Live Kit assignment for bottom Rack projection (#908/#920).
+
+    Point-trigger-safe (one_shot/oneshot) → step grid.
+    Loop-class or missing/ambiguous sample_class → identity only (no step grid).
+    """
+    sample_class = _normalize_sample_class(
+        getattr(assignment, "sample_class", None) if assignment is not None else None
+    )
+    if sample_class in _POINT_TRIGGER_SAFE_CLASSES:
+        return ROW_KIND_STEP
+    return ROW_KIND_LOOP_IDENTITY
+
 
 def pattern_pass_start_frames(
     tempo_map: TempoMap,
@@ -112,7 +138,7 @@ def _step_active(state: ChannelRackState, channel_id: str, step_index: int) -> b
 
 
 def project_channel_rack_for_qml(state: ChannelRackState) -> dict[str, Any]:
-    """Pure projection of rack state for the Screen-2 QML surface."""
+    """Pure projection of rack state for the legacy Screen-2 QML surface."""
 
     steps_by_channel: dict[str, list[bool]] = {
         channel.channel_id: [
@@ -138,6 +164,8 @@ def project_channel_rack_for_qml(state: ChannelRackState) -> dict[str, Any]:
                     "live_kit_slot": channel.live_kit_slot,
                     "is_user_channel": False,
                     "steps": steps_by_channel[channel.channel_id],
+                    "row_kind": ROW_KIND_STEP,
+                    "step_grid_enabled": True,
                 }
             )
         groups.append({"name": group_name, "rows": rows})
@@ -152,6 +180,8 @@ def project_channel_rack_for_qml(state: ChannelRackState) -> dict[str, Any]:
             "live_kit_slot": None,
             "is_user_channel": True,
             "steps": steps_by_channel[channel.channel_id],
+            "row_kind": ROW_KIND_STEP,
+            "step_grid_enabled": True,
         }
         for channel in state.channels
         if channel.live_kit_group is None and channel.live_kit_slot is None
@@ -174,6 +204,121 @@ def project_channel_rack_for_qml(state: ChannelRackState) -> dict[str, Any]:
         "step_count": state.step_count,
         "groups": groups,
         "step_markers": markers,
+        "product_surface": "legacy_screen2",
+        "bottom_rack_materialized": True,
+        "bottom_rack_height_ratio": BOTTOM_RACK_HEIGHT_RATIO,
+        "bottom_rack_height_px": 0,
+    }
+
+
+def project_bottom_rack_for_qml(
+    state: ChannelRackState,
+    live_kit: LiveKitState,
+) -> dict[str, Any]:
+    """Single Workspace bottom Rack projection (#908).
+
+    Occupied Live Kit / user channels only. Empty groups omitted. Point-trigger-
+    safe one-shot rows expose the step grid; loop-class / ambiguous rows expose
+    identity without a misleading DEFAULT_ON step grid (#920 deferred).
+    """
+
+    steps_by_channel: dict[str, list[bool]] = {
+        channel.channel_id: [
+            _step_active(state, channel.channel_id, index)
+            for index in range(state.step_count)
+        ]
+        for channel in state.channels
+    }
+
+    groups: list[dict[str, Any]] = []
+    for group_name, _slots in LIVE_KIT_SLOT_MAPPING:
+        rows: list[dict[str, Any]] = []
+        for channel in state.channels:
+            if channel.live_kit_group != group_name:
+                continue
+            if not channel.sample_path:
+                continue
+            assignment = None
+            if channel.live_kit_slot:
+                assignment = live_kit.assignment_for(group_name, channel.live_kit_slot)
+            row_kind = _row_kind_for_assignment(assignment)
+            step_enabled = row_kind == ROW_KIND_STEP
+            rows.append(
+                {
+                    "channel_id": channel.channel_id,
+                    "display_name": channel.live_kit_slot or channel.channel_id,
+                    "sample_path": channel.sample_path or "",
+                    "sample_label": _sample_label(channel.sample_path),
+                    "live_kit_group": channel.live_kit_group,
+                    "live_kit_slot": channel.live_kit_slot,
+                    "is_user_channel": False,
+                    "steps": steps_by_channel[channel.channel_id] if step_enabled else [],
+                    "row_kind": row_kind,
+                    "step_grid_enabled": step_enabled,
+                }
+            )
+        if rows:
+            groups.append({"name": group_name, "rows": rows})
+
+    user_rows: list[dict[str, Any]] = []
+    for channel in state.channels:
+        if channel.live_kit_group is not None or channel.live_kit_slot is not None:
+            continue
+        if not channel.sample_path:
+            continue
+        # User channels without Live Kit sample_class fail closed (identity only)
+        # unless callers later attach classification through a dedicated seam.
+        user_rows.append(
+            {
+                "channel_id": channel.channel_id,
+                "display_name": channel.channel_id.replace("ch_user_", "User "),
+                "sample_path": channel.sample_path or "",
+                "sample_label": _sample_label(channel.sample_path),
+                "live_kit_group": None,
+                "live_kit_slot": None,
+                "is_user_channel": True,
+                "steps": [],
+                "row_kind": ROW_KIND_LOOP_IDENTITY,
+                "step_grid_enabled": False,
+            }
+        )
+    if user_rows:
+        groups.append({"name": USER_GROUP_NAME, "rows": user_rows})
+
+    materialized = any(group["rows"] for group in groups)
+    markers = []
+    if materialized:
+        for index in range(state.step_count):
+            markers.append(
+                {
+                    "index": index,
+                    "beat_boundary": index % 4 == 0,
+                    "bar_boundary": index % 16 == 0,
+                }
+            )
+
+    return {
+        "pattern_id": state.pattern.pattern_id,
+        "step_count": state.step_count,
+        "groups": groups,
+        "step_markers": markers,
+        "product_surface": "bottom_rack",
+        "bottom_rack_materialized": materialized,
+        "bottom_rack_height_ratio": BOTTOM_RACK_HEIGHT_RATIO if materialized else 0.0,
+        "bottom_rack_height_px": 0 if materialized else BOTTOM_RACK_EMPTY_STRIP_PX,
+    }
+
+
+def _empty_bottom_projection() -> dict[str, Any]:
+    return {
+        "pattern_id": "",
+        "step_count": 16,
+        "groups": [],
+        "step_markers": [],
+        "product_surface": "bottom_rack",
+        "bottom_rack_materialized": False,
+        "bottom_rack_height_ratio": 0.0,
+        "bottom_rack_height_px": BOTTOM_RACK_EMPTY_STRIP_PX,
     }
 
 
@@ -285,12 +430,23 @@ class ChannelRackController:
         return self._voice_seq
 
     def projection(self) -> dict[str, Any]:
+        """Product projection for Single Workspace bottom Rack (#908)."""
+        if self._state is None:
+            return _empty_bottom_projection()
+        return project_bottom_rack_for_qml(self._state, self._live_kit)
+
+    def legacy_screen2_projection(self) -> dict[str, Any]:
+        """Historical full seed-row projection (compatibility / protected tests)."""
         if self._state is None:
             return {
                 "pattern_id": "",
                 "step_count": 16,
                 "groups": [],
                 "step_markers": [],
+                "product_surface": "legacy_screen2",
+                "bottom_rack_materialized": False,
+                "bottom_rack_height_ratio": 0.0,
+                "bottom_rack_height_px": BOTTOM_RACK_EMPTY_STRIP_PX,
             }
         return project_channel_rack_for_qml(self._state)
 
@@ -325,19 +481,21 @@ class ChannelRackController:
             self._notify_musical_state_changed()
         return True
 
-    def ensure_state(self) -> ChannelRackState:
+    def ensure_state(self, *, notify: bool = True) -> ChannelRackState:
         """Materialize/reconcile Rack from Live Kit without screen or focus (#916).
 
         Builds Rack state when absent; reconciles Live Kit sample paths when
-        already materialized. Notifies persistence exactly as materialize /
-        reconcile require. Does not claim audio focus, mutate ``active_screen``,
-        or start/stop playback.
+        already materialized. When ``notify`` is False, skips the musical-state
+        observer so Live Kit mutation can own one coherent autosave (#908).
+        Does not claim audio focus, mutate ``active_screen``, or start/stop
+        playback.
         """
         if self._state is None:
             self._state = build_channel_rack_state(self._live_kit)
-            self._notify_musical_state_changed()
+            if notify:
+                self._notify_musical_state_changed()
         else:
-            self.reconcile_live_kit_state(notify=True)
+            self.reconcile_live_kit_state(notify=notify)
         return self._state
 
     def enter_screen2(self) -> ChannelRackState:
@@ -555,11 +713,16 @@ class ChannelRackController:
 
 
 __all__ = [
+    "BOTTOM_RACK_EMPTY_STRIP_PX",
+    "BOTTOM_RACK_HEIGHT_RATIO",
     "ChannelRackController",
     "DEFAULT_LOOKAHEAD_FRAMES",
+    "ROW_KIND_LOOP_IDENTITY",
+    "ROW_KIND_STEP",
     "SCREEN1",
     "SCREEN2",
     "USER_GROUP_NAME",
     "pattern_pass_start_frames",
+    "project_bottom_rack_for_qml",
     "project_channel_rack_for_qml",
 ]

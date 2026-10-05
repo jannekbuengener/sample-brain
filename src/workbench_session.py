@@ -341,9 +341,9 @@ def compose_workbench_session(
         )
 
     def _on_live_kit_mutation() -> None:
-        # #817: heal existing rack against Live Kit before one coherent autosave.
-        # notify=False avoids nested rack→autosave doubling the Live Kit write.
-        channel_rack.reconcile_live_kit_state(notify=False)
+        # #908 / #916: materialize or heal Rack without Screen navigation.
+        # notify=False — this Live Kit callback owns one coherent autosave.
+        channel_rack.ensure_state(notify=False)
         _autosave_musical_session(
             session=session,
             live_kit=live_kit,

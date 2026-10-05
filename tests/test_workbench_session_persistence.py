@@ -822,21 +822,23 @@ def test_single_live_kit_assign_autosaves_once(tmp_path: Path, monkeypatch: pyte
 
 
 def test_live_kit_assign_without_rack_keeps_channel_rack_null(tmp_path: Path) -> None:
-    """Case 8: never entered Screen2 → assign persists kit only; rack stays null."""
+    """#908: Live Kit assign materializes Rack without Screen-2 enter and persists both."""
     kick = str(tmp_path / "kick.wav")
     Path(kick).write_bytes(b"RIFF")
 
     a = compose_workbench_session(state_dir=tmp_path)
     assert a.channel_rack.state is None
     a.live_kit.assign("Kick + Bass", "Kick", _row("kick.wav", kick))
-    assert a.channel_rack.state is None
+    assert a.channel_rack.state is not None
+    assert a.channel_rack.active_screen == "screen1"
 
     data = json.loads(_session_path(tmp_path).read_text(encoding="utf-8"))
-    assert data["channel_rack"] is None
+    assert data["channel_rack"] is not None
     assert data["live_kit"]["Kick + Bass"]["Kick"]["path"] == kick
 
     b = compose_workbench_session(state_dir=tmp_path)
-    assert b.channel_rack.state is None
+    assert b.channel_rack.state is not None
+    assert len(_triggers_for(b.channel_rack.state, "ch_kick")) == 16
     built = b.enter_screen2()
     assert len(_triggers_for(built, "ch_kick")) == 16
 

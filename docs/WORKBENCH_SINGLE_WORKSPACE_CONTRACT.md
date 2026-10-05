@@ -96,12 +96,15 @@ Conceptual geometry:
 
 ## 6. Live Kit ↔ Rack projection
 
-Later projection (#908) must rest on the same canonical musical truth.
+#908 owns the Single Workspace bottom Live Kit / Rack projection.
 
 When a sample is added to the Live Kit:
 
 - reuse existing session / Live Kit / Channel / Pattern state;
-- the corresponding Rack / Sequencer row becomes available in the bottom workspace;
+- `LiveKitState.assign` materializes/reconciles Rack via `ChannelRackController.ensure_state()` without Screen-2 navigation (#916 seam);
+- the corresponding Rack / Sequencer row becomes available in the bottom workspace when occupied;
+- point-trigger-safe (`one_shot` / `oneshot`) rows expose the Step Grid;
+- loop-class / ambiguous rows show identity only — no DEFAULT_ON 16-step grid (#920 owns loop/sustained-sample semantics);
 - do not introduce a second Live-Kit truth;
 - do not introduce QML-owned Pattern state;
 - do not copy or mirror Rack state into a parallel structure;
@@ -109,9 +112,9 @@ When a sample is added to the Live Kit:
 
 Occupied sample/channel assignments may materialize a visible Rack row. Reuse existing deterministic kit/group provenance (canonical Live Kit groups/slots and seed vs user-channel rules under [`PATTERN_CORE_CONTRACT.md`](PATTERN_CORE_CONTRACT.md) and Live Kit code). Empty or unneeded groups must not permanently claim attention.
 
-Exact remove/hide lifecycle for emptied rows is **not** reinvented here. Existing contracts and live code are evaluated first; any gap becomes a narrow follow-up before #908 implementation.
+Cleared / empty slots follow existing domain reconciliation and disappear from the occupied bottom projection. Empty / no safe rows collapse to a calm minimal bottom strip (~32px). Occupied or Live-Kit-revealed state expands the bottom band (~24% of the right workspace).
 
-Do not implement the end state as a copied former Screen-2 page embedded into a former Screen-1 page. The end state is one Workbench projection over shared Python contracts.
+Do not implement the end state as a copied former Screen-2 page embedded into a former Screen-1 page. The end state is one Workbench projection over shared Python contracts. Product UX must not require `enter_screen2()` / `activeScreen == screen2` for the bottom Rack.
 
 ## 7. State ownership / data flow
 
@@ -159,13 +162,18 @@ Until #907 is resolved:
 
 ## 9. One-shot / loop unresolved boundary
 
-This contract does **not** freeze new one-shot vs loop presentation semantics beyond what live Rack / sequencer contracts already state.
+Point-trigger-safe one-shot rows may render the normal Step Grid in the #908 bottom Rack.
+
+Loop-class / sustained-sample step-grid semantics are owned by [#920](https://github.com/jannekbuengener/sample-brain/issues/920). Until #920:
+
+- loop-class assignments remain assignable/auditionable and may show identity;
+- loop-class rows must not expose the normal 16-step DEFAULT_ON grid;
+- invent no retrigger, clip launch, auto-loop, stretch, or pattern-placement semantics inside #908.
 
 Binding limits:
 
 - evaluate existing Rack / step / sequencer semantics first ([`SEQUENCER_PLAYBACK_CONTRACT.md`](SEQUENCER_PLAYBACK_CONTRACT.md), Pattern Core, Channel Rack controller);
 - do not assert that a loop must share the same step visualization/trigger UX as a Kick/Hat one-shot;
-- if loops need a distinct projection or trigger semantic, create a later narrow contract;
 - invent no implicit repeat / retrigger behavior in this freeze.
 
 ## 10. Arrangement — PARKED / UNDESIGNED

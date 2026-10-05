@@ -118,11 +118,12 @@ def test_visible_panels_browser_only_without_live_kit_reveal():
         has_active_source=True,
         live_kit_visible=False,
     ) == ("library", "browser", "harmony")
+    # #908: live_kit_visible no longer allocates a horizontal panel.
     assert visible_panel_ids(
         harmony_open=False,
         has_active_source=True,
         live_kit_visible=True,
-    ) == ("library", "browser", "livekit")
+    ) == ("library", "browser")
 
 
 def test_visible_panels_exclude_collapsed_library():
@@ -144,7 +145,7 @@ def test_visible_panels_exclude_collapsed_library():
         has_active_source=True,
         library_visible=False,
         live_kit_visible=True,
-    ) == ("browser", "livekit")
+    ) == ("browser",)
 
 
 def test_collapsed_library_gives_browser_full_content_width():
@@ -207,18 +208,20 @@ def test_pane_reveal_hide_does_not_drift_stored_ratios():
     assert clean.ratios == ratios
     assert "livekit" not in browser_only.widths
     assert browser_only.widths["browser"] > 0
-    assert with_kit.widths["livekit"] > 0
+    # #908: live_kit_visible no longer adds a horizontal livekit width.
+    assert "livekit" not in with_kit.widths
+    assert with_kit.widths["browser"] > 0
     assert all(math.isfinite(w) and w > 0 for w in with_harmony.widths.values())
+    assert "livekit" not in with_harmony.widths
 
 
 def test_qml_declares_analysis_surface_and_live_kit_reveal_binding():
     assert "analysisWorkingSurface" in QML_SOURCE
     assert "liveKitRevealed" in QML_SOURCE
     assert "analysisCancelButton" in QML_SOURCE
-    assert (
-        "visible: window.interaction.hasActiveSource && window.interaction.liveKitRevealed"
-        in QML_SOURCE
-    )
+    assert 'objectName: "bottomRackPane"' in QML_SOURCE
+    assert "visible: window.interaction.hasActiveSource" in QML_SOURCE
+    assert "bottomRackMaterialized" in QML_SOURCE
 
 
 def test_disclosure_state_is_not_in_layout_preference_payload(tmp_path: Path):
@@ -331,10 +334,12 @@ def test_add_source_analysis_hides_working_panes_until_success(tmp_path: Path):
 
         browser = window.findChild(QQuickItem, "browserPane")
         live_kit = window.findChild(QQuickItem, "liveKitPane")
+        bottom = window.findChild(QQuickItem, "bottomRackPane")
         analysis_surface = window.findChild(QQuickItem, "analysisWorkingSurface")
         cancel = window.findChild(QQuickItem, "analysisCancelButton")
         assert browser is not None and not browser.isVisible()
         assert live_kit is not None and not live_kit.isVisible()
+        assert bottom is not None and not bottom.isVisible()
         assert analysis_surface is not None and analysis_surface.isVisible()
         assert cancel is not None and cancel.isVisible()
 
@@ -352,7 +357,10 @@ def test_add_source_analysis_hides_working_panes_until_success(tmp_path: Path):
         assert composition.live_kit_revealed is False
         assert view_model.live_kit_materialized is False
         assert browser.isVisible()
-        assert not live_kit.isVisible()
+        # #908: calm bottom strip is present once a source is active (empty Rack).
+        assert live_kit.isVisible()
+        assert bottom.isVisible()
+        assert bottom.height() <= 40
         analysis_surface = window.findChild(QQuickItem, "analysisWorkingSurface")
         assert analysis_surface is None or not analysis_surface.isVisible()
     finally:
@@ -398,9 +406,13 @@ def test_browser_and_harmony_add_to_kit_reveal_live_kit(tmp_path: Path):
 
         browser = window.findChild(QQuickItem, "browserPane")
         live_kit = window.findChild(QQuickItem, "liveKitPane")
+        bottom = window.findChild(QQuickItem, "bottomRackPane")
         assert composition.has_active_source is True
         assert browser is not None and browser.isVisible()
-        assert live_kit is not None and not live_kit.isVisible()
+        assert live_kit is not None and live_kit.isVisible()
+        assert bottom is not None and bottom.isVisible()
+        empty_height = bottom.height()
+        assert empty_height <= 40
         assert composition.live_kit_revealed is False
         assert len(view_model.browser_rows) >= 1
 
@@ -410,6 +422,12 @@ def test_browser_and_harmony_add_to_kit_reveal_live_kit(tmp_path: Path):
         assert composition.live_kit_revealed is True
         assert view_model.live_kit_materialized is True
         assert live_kit.isVisible()
+        # Occupied one-shot assignment expands the bottom Rack band.
+        rack = engine.rootContext().contextProperty("channelRackModel")
+        if rack is not None:
+            rack.refresh()
+            app.processEvents()
+        assert bottom.height() >= empty_height
 
         composition.clear_live_kit_disclosure()
         view_model.set_workspace_materialization(
@@ -420,7 +438,9 @@ def test_browser_and_harmony_add_to_kit_reveal_live_kit(tmp_path: Path):
         )
         engine._screen1_interaction_bridge.refreshState()
         app.processEvents()
-        assert not live_kit.isVisible()
+        # #908: strip remains while source is active; disclosure flag alone does not hide it.
+        assert live_kit.isVisible()
+        assert bottom.isVisible()
 
         adapter.select_row(0)
         assert adapter.toggle_harmonic_match() is True
