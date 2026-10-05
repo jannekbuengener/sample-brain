@@ -19,7 +19,7 @@ from src.channel_rack import (
     reconcile_live_kit_sample_assignments,
     sample_class_for_channel,
 )
-from src.pattern_core import CHANNEL_ID_BY_LIVE_KIT_SLOT, Pattern, Trigger
+from src.pattern_core import CHANNEL_ID_BY_LIVE_KIT_SLOT, Channel, Pattern, Trigger
 from src.workbench_controller import WorkbenchRow
 from src.workbench_live_kit import LiveKitState
 
@@ -213,3 +213,29 @@ def test_ambiguous_keeps_persisted_triggers_in_state():
     assert sample_class_for_channel(
         next(c for c in reconciled.channels if c.channel_id == kick_id), kit
     ) is None
+
+
+def test_unclassified_user_channel_persists_triggers_but_is_excluded_from_playback():
+    user = Channel(
+        channel_id="ch_user_1",
+        live_kit_group=None,
+        live_kit_slot=None,
+        sample_path="synthetic/user.wav",
+    )
+    state = ChannelRackState(
+        channels=(user,),
+        pattern=Pattern(
+            pattern_id="screen2-main",
+            length_quarter_notes=Fraction(4, 1),
+            triggers=(Trigger(channel_id=user.channel_id, position=Fraction(0, 1)),),
+        ),
+        step_count=DEFAULT_STEP_COUNT,
+    )
+
+    filtered = filter_pattern_for_point_trigger_playback(state, LiveKitState())
+
+    assert state.pattern.triggers == (
+        Trigger(channel_id=user.channel_id, position=Fraction(0, 1)),
+    )
+    assert user.channel_id not in point_trigger_eligible_channel_ids(state, LiveKitState())
+    assert filtered.triggers == ()

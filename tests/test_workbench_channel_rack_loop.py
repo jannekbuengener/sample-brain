@@ -743,7 +743,7 @@ def test_later_empty_pass_fails_closed_without_busy_loop():
         assert controller.tick_playback() is None
 
 
-def test_user_channel_loops_repeated_schedule_events(tmp_path: Path):
+def test_unclassified_user_channel_preserves_steps_but_never_schedules_native_playback(tmp_path: Path):
     from tests.audio_fixtures import write_sine_wav
 
     wav = write_sine_wav(
@@ -771,7 +771,8 @@ def test_user_channel_loops_repeated_schedule_events(tmp_path: Path):
         if ch.channel_id.startswith(USER_CHANNEL_ID_PREFIX)
     )
     controller.assign_user_channel_sample(user.channel_id, str(wav))
-    # Keep a single step for deterministic multi-pass schedules.
+    # Keep a single persisted step. User channels have no classification seam,
+    # so #920 requires identity-only Rack projection and no point-trigger play.
     for step in range(16):
         if step == 0:
             continue
@@ -781,15 +782,11 @@ def test_user_channel_loops_repeated_schedule_events(tmp_path: Path):
             controller.toggle_step(user.channel_id, step)
 
     controller.play()
-    assert controller.is_playing is True
-    first = len(engine.schedule_calls)
-    assert first >= 1
-    _drain_until_pass_boundary(controller, transport, engine)
-    assert controller._loop_pass_index == 1
-    assert len(engine.schedule_calls) > first
-    _drain_until_pass_boundary(controller, transport, engine)
-    assert controller._loop_pass_index == 2
-    assert len(engine.schedule_calls) > first + 1
+    assert controller.is_playing is False
+    assert engine.schedule_calls == []
+    assert Trigger(channel_id=user.channel_id, position=Fraction(0, 1)) in (
+        controller.state.pattern.triggers
+    )
     assert str(wav) == controller.state.channels[
         next(
             i
@@ -1286,24 +1283,20 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
             schedule_marker_before_replace = len(engine.schedule_calls)
 
         if generation == sample_replace_at + 1:
-            # Replacement must reach a created AND scheduled voice, not only warm-decode.
+            # TEST_CONTRACT_FIX (#920/#926): unclassified user channels retain
+            # editable state but are excluded from point-trigger playback.
             created_after = engine.create_calls[create_marker_before_replace:]
             matched_ids = [
                 int(cfg.id)
                 for cfg in created_after
                 if _create_call_matches_path_seed(cfg, str(wav_b), pcm_markers)
             ]
-            assert matched_ids, (
-                "expected a created voice seeded from replaced user sample wav_b"
-            )
+            assert matched_ids == []
             scheduled_ids = {
                 int(vid)
                 for vid, _frame in engine.schedule_calls[schedule_marker_before_replace:]
             }
-            # Correlate create→schedule by voice id so an unscheduled wav_b create fails.
-            assert any(vid in scheduled_ids for vid in matched_ids), (
-                f"wav_b voice ids {matched_ids} were created but not scheduled"
-            )
+            assert not (scheduled_ids & set(matched_ids))
 
         if generation == tempo_change_at:
             module = _controller_module()
@@ -1400,9 +1393,11 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
         )
 
     assert len(owned_counts) == SOAK_GENERATIONS
-    # Most generations must exercise active PLAYING and IDLE reclaim (Codex P2).
-    assert lifecycle["playing_passes"] >= SOAK_GENERATIONS // 2
-    assert lifecycle["reclaim_passes"] >= SOAK_GENERATIONS // 2
+    # TEST_CONTRACT_FIX (#920/#926): after the deliberate step-0 edit, the
+    # formerly playable user channel must not supply a point-trigger voice.
+    # The original step-0 kick segment still proves PLAYING and IDLE reclaim.
+    assert lifecycle["playing_passes"] >= step_edit_at
+    assert lifecycle["reclaim_passes"] >= step_edit_at
 
     # No monotonic unbounded growth: late window must not exceed early window
     # by more than reclaim slack (growth linear in generation count is a fail).
@@ -1480,11 +1475,16 @@ def test_natural_cycle_loop_continues_across_pattern_passes():
     assert controller.is_playing is True
     assert controller._natural_loop_player is not None
     assert len(engine.create_calls) >= 1
+    pass_index = controller._loop_pass_index
+    schedules_before = len(engine.schedule_calls)
     for _ in range(3):
-        _drain_until_pass_boundary(controller, transport, engine)
+        transport.advance(PCM_FRAMES)
+        engine.advance_to(transport.engine_frame)
+        controller.tick_playback()
     assert controller.is_playing is True
     assert controller._natural_loop_player is not None
-    assert controller._loop_pass_index >= 1
+    assert controller._loop_pass_index == pass_index
+    assert len(engine.schedule_calls) > schedules_before
 
 
 def test_natural_cycle_loop_no_pass_boundary_retrigger_for_same_cycle():
@@ -1518,11 +1518,28 @@ def test_loop_plus_oneshot_both_schedule_on_play():
 def test_loop_only_play_keeps_playing_without_point_triggers():
     kit = LiveKitState()
     kit.assign("Atmos / FX", "Atmos", _loop_row("loop", "synthetic/loop.wav"))
-    _module, controller, engine, _transport = _controller_with_kit(kit)
+    _module, controller, engine, transport = _controller_with_kit(kit)
     controller.play()
     assert controller.is_playing is True
     assert controller._natural_loop_player is not None
+    assert controller._play_handle is None
     assert len(engine.create_calls) >= 1
+    pass_index = controller._loop_pass_index
+    scheduled_before = len(engine.schedule_calls)
+    for _ in range(100):
+        tick = controller.tick_playback()
+        assert tick is not None
+        assert tick["playing"] is True
+    assert controller._loop_pass_index == pass_index
+    assert controller._play_handle is None
+
+    transport.advance(PCM_FRAMES)
+    engine.advance_to(transport.engine_frame)
+    controller.tick_playback()
+    assert len(engine.schedule_calls) > scheduled_before
+
+    controller.stop()
+    assert engine._voices == {}
 
 
 def test_oneshot_path_unchanged_without_loops():

@@ -75,18 +75,9 @@ def sample_class_for_channel(
 def point_trigger_eligible_channel_ids(
     state: ChannelRackState, live_kit: LiveKitState
 ) -> frozenset[str]:
-    """Explicit oneshot Live Kit channels, plus sample-bearing user channels.
-
-    User-added channels have no classification seam yet (#926). Until one exists
-    they remain point-trigger eligible when sample-bearing so #808/#810 playback
-    does not silently die. Live Kit ambiguous/loop assignments stay excluded.
-    """
+    """Return only channels with explicit one-shot classification authority."""
     eligible: set[str] = set()
     for channel in state.channels:
-        if channel.live_kit_group is None and channel.live_kit_slot is None:
-            if _sample_bearing(channel.sample_path):
-                eligible.add(channel.channel_id)
-            continue
         if is_point_trigger_safe(sample_class_for_channel(channel, live_kit)):
             eligible.add(channel.channel_id)
     return frozenset(eligible)

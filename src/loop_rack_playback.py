@@ -253,8 +253,7 @@ class NaturalCycleLoopPlayer:
             return None
         remaining = self._max_voices - total_voice_count
         if remaining <= 0:
-            if start <= engine_frame:
-                self._skipped_voice_limit_count += 1
+            self._skipped_voice_limit_count += 1
             return None
         pcm = self._pcm_for_path(spec.sample_path)
         if pcm is None:
@@ -299,6 +298,19 @@ class NaturalCycleLoopPlayer:
             channel_state.scheduled_future_voice_id = created_id
         return created_id
 
+    @staticmethod
+    def _first_nonexpired_cycle_index(
+        channel_state: _ChannelCycleState, *, engine_frame: int
+    ) -> int:
+        """Return the first absolute cycle boundary that has not elapsed."""
+        spec = channel_state.spec
+        duration = spec.effective_cycle_duration_frames
+        elapsed = int(engine_frame) - int(spec.play_anchor_engine_frame)
+        if elapsed <= 0:
+            return channel_state.next_cycle_index
+        first_nonexpired = (elapsed + duration - 1) // duration
+        return max(channel_state.next_cycle_index, first_nonexpired)
+
     def tick(
         self,
         *,
@@ -330,6 +342,13 @@ class NaturalCycleLoopPlayer:
                 if meta is not None and int(meta["start_frame"]) <= engine_frame:
                     channel_state.sounding_voice_id = future_id
                     channel_state.scheduled_future_voice_id = None
+
+            # Never materialize stale cycles after a UI stall or voice-budget
+            # pressure. Cycle boundaries remain absolute from the Play anchor.
+            channel_state.next_cycle_index = self._first_nonexpired_cycle_index(
+                channel_state,
+                engine_frame=engine_frame,
+            )
 
             # At most one sounding + one future scheduled ownership per channel.
             while True:

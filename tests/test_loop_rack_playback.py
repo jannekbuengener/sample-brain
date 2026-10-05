@@ -181,6 +181,7 @@ class _FakeEngine:
     create_fail_ids: set[int] = field(default_factory=set)
     schedule_fail_ids: set[int] = field(default_factory=set)
     set_rate_calls: list[tuple[int, float]] = field(default_factory=list)
+    schedule_calls: list[int] = field(default_factory=list)
 
     def create_voice(self, config) -> int:
         voice_id = int(config.id)
@@ -192,6 +193,7 @@ class _FakeEngine:
         return voice_id
 
     def schedule_voice_start(self, voice_id: int, engine_frame: int) -> None:
+        self.schedule_calls.append(int(engine_frame))
         if voice_id in self.schedule_fail_ids:
             raise RuntimeError("schedule failed")
         voice = self.voices[voice_id]
@@ -294,6 +296,48 @@ def test_schedules_future_cycle_inside_lookahead_only():
     player.tick(engine_frame=60, engine=engine, allocate_voice_id=alloc)
     # From 60, cycle 1 at 100 is within lookahead 50.
     assert any(v.start_frame == 100 for v in engine.voices.values())
+
+
+def test_large_engine_frame_jump_skips_expired_cycles_before_scheduling():
+    engine = _FakeEngine()
+    player = NaturalCycleLoopPlayer(
+        [_spec("ch_loop", frames=100)],
+        pcm_for_path=lambda _p: _pcm(100),
+        lookahead_frames=50,
+    )
+
+    player.tick(engine_frame=350, engine=engine, allocate_voice_id=lambda: 1)
+
+    assert engine.schedule_calls == [400]
+    assert player.next_cycle_index_by_channel == {"ch_loop": 5}
+    assert all(start >= 350 for start in engine.schedule_calls)
+
+
+def test_voice_budget_recovery_skips_expired_cycles_without_catch_up_burst():
+    engine = _FakeEngine()
+    for voice_id in range(SB_MAX_VOICES):
+        engine.voices[1000 + voice_id] = _FakeVoice(
+            voice_id=1000 + voice_id,
+            state=SB_VOICE_PLAYING,
+        )
+    player = NaturalCycleLoopPlayer(
+        [_spec("ch_loop", frames=100)],
+        pcm_for_path=lambda _p: _pcm(100),
+        lookahead_frames=50,
+    )
+
+    blocked = player.tick(engine_frame=350, engine=engine, allocate_voice_id=lambda: 1)
+    assert blocked.skipped_voice_limit_count >= 1
+    assert player.next_cycle_index_by_channel == {"ch_loop": 4}
+    assert engine.schedule_calls == []
+
+    engine.voices.clear()
+    recovered = player.tick(engine_frame=350, engine=engine, allocate_voice_id=lambda: 1)
+
+    assert recovered.scheduled_voice_ids == (1,)
+    assert engine.schedule_calls == [400]
+    assert len(engine.schedule_calls) == 1
+    assert all(start >= 350 for start in engine.schedule_calls)
 
 
 def test_no_self_overlap_one_sounding_voice_per_channel():

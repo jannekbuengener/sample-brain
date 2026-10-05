@@ -706,8 +706,15 @@ class ChannelRackController:
     def _adopt_pass_handle(self, handle: ChannelRackPlayHandle, *, pass_index: int) -> bool:
         """Install handle when playable; return False when empty-pass honesty fails closed."""
         empty_pass = handle.player.done and int(handle.scheduled_count) == 0
-        if empty_pass and not self._has_active_natural_loops():
+        if empty_pass:
             self._play_handle = None
+            if self._has_active_natural_loops():
+                # Loop-only playback has no finite point-trigger pass to own.
+                # Keep the frozen natural-cycle session active without giving
+                # tick_playback() a completed handle to repeatedly replace.
+                self._loop_pass_index = pass_index
+                self._playing = True
+                return True
             self._playing = False
             self._clear_loop_session()
             return False
@@ -818,7 +825,7 @@ class ChannelRackController:
                     # Empty / unplayable follow-up pass: fail closed, no busy loop
                     # unless natural-cycle loops are still owning playback.
                     if self._has_active_natural_loops():
-                        self._play_handle = next_handle
+                        self._play_handle = None
                         self._loop_pass_index = next_index
                         self._playing = True
                         return {
