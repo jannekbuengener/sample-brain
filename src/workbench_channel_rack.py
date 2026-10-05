@@ -45,6 +45,19 @@ _POINT_TRIGGER_SAFE_CLASSES = frozenset({"one_shot", "oneshot"})
 _LOOP_CLASSES = frozenset({"loop"})
 
 
+class GestureRackApplyPostMutationError(RuntimeError):
+    """A failure raised *after* ``apply_gesture_integration_plan`` mutated state.
+
+    The Rack state is assigned before the musical-state observer runs, so any
+    exception escaping the observer — including one that happens to be a
+    :class:`StaleGestureRackIntegrationPlanError` from a nested apply — arrives
+    too late to be a zero-mutation rejection. This wrapper preserves that
+    provenance so callers cannot mistake it for a pre-mutation rejection.
+
+    The original exception is available via ``__cause__``.
+    """
+
+
 class StaleGestureRackIntegrationPlanError(ValueError):
     """Pre-mutation rejection of a stale ``GestureRackIntegrationPlan`` (#921).
 
@@ -55,9 +68,9 @@ class StaleGestureRackIntegrationPlanError(ValueError):
     type is always safe and never implies the Rack was already mutated.
 
     Callers must not infer this from a message match. Exceptions raised *after*
-    the state assignment — notably from the observer callback — are ordinary
-    exceptions and may surface the same words; treating those as stale would
-    report a mutation that already happened as a zero-mutation rejection.
+    the state assignment — notably from the observer callback — are wrapped in
+    :class:`GestureRackApplyPostMutationError`, so they can never surface as
+    this type even if the observer raised one itself.
 
     Subclasses :class:`ValueError` for backward compatibility with existing
     ``pytest.raises(ValueError)`` call sites.
@@ -617,7 +630,17 @@ class ChannelRackController:
         # STOP → ATOMIC REPLACE → OBSERVER ONCE
         self.stop()
         self._state = target
-        self._notify_musical_state_changed()
+        try:
+            self._notify_musical_state_changed()
+        except Exception as exc:
+            # State is already replaced here, so this can never be a
+            # zero-mutation rejection. Preserve that provenance so a nested
+            # StaleGestureRackIntegrationPlanError from the observer cannot be
+            # mistaken for the pre-mutation validation branch above.
+            raise GestureRackApplyPostMutationError(
+                "gesture Rack apply observer failed after state replacement: "
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
         return self._state
 
     def _clear_loop_session(self) -> None:
@@ -796,6 +819,7 @@ __all__ = [
     "BOTTOM_RACK_HEIGHT_RATIO",
     "ChannelRackController",
     "DEFAULT_LOOKAHEAD_FRAMES",
+    "GestureRackApplyPostMutationError",
     "ROW_KIND_LOOP_IDENTITY",
     "ROW_KIND_STEP",
     "SCREEN1",

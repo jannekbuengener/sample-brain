@@ -190,10 +190,17 @@ from #921):
 assignment, and the observer. The Action catches **no** generic `ValueError`
 around apply and performs no message-based classification.
 
+The controller additionally wraps any failure escaping the post-mutation observer
+as `GestureRackApplyPostMutationError` (original preserved as `__cause__`).
+That wrapper is a `RuntimeError`, not a `ValueError`, and is never the typed
+stale error — so an observer that itself raises a stale-plan error (e.g. from a
+nested apply) still cannot be mistaken for the pre-mutation branch.
+
 Consequence, enforced by regression coverage: an exception raised *after* the
 state assignment (e.g. from the musical-state observer callback) propagates
-out of the Action. A mutation that already happened is therefore never reported
-as a zero-mutation status, and never yields a stale retry signal.
+out of the Action as `GestureRackApplyPostMutationError`. A mutation that
+already happened is therefore never reported as a zero-mutation status, and
+never yields a stale retry signal.
 
 ### Final guarded apply route
 

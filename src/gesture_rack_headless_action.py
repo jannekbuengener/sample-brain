@@ -81,8 +81,10 @@ def prepare_and_apply_gesture_rack(
 
     ``stale_base_state`` is reported only for the typed pre-mutation rejection
     ``StaleGestureRackIntegrationPlanError``. No generic ``ValueError`` is
-    caught around apply, so a post-mutation observer failure propagates rather
-    than being reported as a zero-mutation status.
+    caught around apply. A failure raised after the state replacement is
+    wrapped by the controller as ``GestureRackApplyPostMutationError`` and
+    propagates, so an already-mutated Rack is never reported as a
+    zero-mutation status.
     """
     analysis = analyze_gesture_audio(audio_path)
     if analysis.status != "ok":
@@ -150,10 +152,11 @@ def prepare_and_apply_gesture_rack(
         )
     except StaleGestureRackIntegrationPlanError:
         # Typed, pre-mutation rejection only (#921 validates expected_base_state
-        # before stop / state assignment / observer). Every other exception —
-        # including observer failures raised after the Rack was already
-        # replaced — propagates, so a mutation that happened is never reported
-        # as a zero-mutation stale status.
+        # before stop / state assignment / observer, and the controller wraps
+        # post-mutation observer failures as
+        # GestureRackApplyPostMutationError so they cannot arrive here). Every
+        # other exception propagates, so a mutation that happened is never
+        # reported as a zero-mutation stale status.
         return _result(
             status="stale_base_state",
             binding_plan=binding_plan,

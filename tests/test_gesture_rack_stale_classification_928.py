@@ -34,6 +34,7 @@ from src.channel_rack import ChannelRackState
 from src.gesture_rack_integration import GestureRackIntegrationPlan
 from src.workbench_channel_rack import (
     ChannelRackController,
+    GestureRackApplyPostMutationError,
     StaleGestureRackIntegrationPlanError,
 )
 
@@ -247,6 +248,7 @@ def test_s3_action_maps_typed_stale_to_status_with_zero_side_effects(
 def test_s4_action_propagates_unrelated_valueerror_from_apply(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A pre-mutation, non-stale ValueError is not converted into a status."""
     audio = _write_placeholder_wav(tmp_path / "gesture.wav")
     catalog = _catalog_with_oneshots(tmp_path)
     _patch_analysis(monkeypatch, _ok_analysis(cluster_ids=(0,)))
@@ -291,9 +293,10 @@ def test_s5_post_mutation_observer_valueerror_propagates(
 
     ``apply_gesture_integration_plan`` assigns ``self._state = target`` and only
     then calls the observer. If that observer raises a ``ValueError`` carrying
-    stale-flavoured words, the Action must let it escape rather than return
-    ``stale_base_state`` with ``applied_state=None`` (which would invite an
-    unsafe retry against an already-mutated Rack).
+    stale-flavoured words, the controller wraps it as
+    ``GestureRackApplyPostMutationError`` and the Action must let it escape
+    rather than return ``stale_base_state`` with ``applied_state=None`` (which
+    would invite an unsafe retry against an already-mutated Rack).
     """
     audio = _write_placeholder_wav(tmp_path / "gesture.wav")
     catalog = _catalog_with_oneshots(tmp_path)
@@ -311,7 +314,7 @@ def test_s5_post_mutation_observer_valueerror_propagates(
         on_musical_state_changed=_explode,
     )
 
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(GestureRackApplyPostMutationError) as excinfo:
         _action_call(
             audio_path=audio,
             channel_rack=controller,
@@ -323,7 +326,9 @@ def test_s5_post_mutation_observer_valueerror_propagates(
     # Reached (and passed) the mutation point, and the failure escaped.
     assert notified == ["obs"]
     assert not isinstance(excinfo.value, StaleGestureRackIntegrationPlanError)
-    assert str(excinfo.value) == observer_message
+    # The original observer error is preserved as the cause.
+    assert isinstance(excinfo.value.__cause__, ValueError)
+    assert str(excinfo.value.__cause__) == observer_message
     # The Rack really was mutated, which is exactly why this must not be
     # reported as a zero-mutation stale rejection.
     assert controller.state is not None
@@ -333,6 +338,81 @@ def test_s5_post_mutation_observer_valueerror_propagates(
 # ---------------------------------------------------------------------------
 # S6. Static guards against reintroducing message-based classification
 # ---------------------------------------------------------------------------
+
+
+def test_s5b_observer_raising_the_typed_stale_error_still_propagates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stale error raised *by the observer* must not map to stale_base_state.
+
+    The observer may itself trigger a nested apply whose validation rejects.
+    That exception is raised after the outer apply already replaced the state,
+    so the controller must wrap it and the Action must let it escape.
+    """
+
+    audio = _write_placeholder_wav(tmp_path / "gesture.wav")
+    catalog = _catalog_with_oneshots(tmp_path)
+    _patch_analysis(monkeypatch, _ok_analysis(cluster_ids=(0,)))
+
+    notified: list[str] = []
+
+    def _nested_stale() -> None:
+        notified.append("obs")
+        raise StaleGestureRackIntegrationPlanError(
+            "stale GestureRackIntegrationPlan: "
+            "nested apply found expected_base_state mismatch"
+        )
+
+    base = _action_base_state()
+    controller = _action_controller(
+        state=base,
+        on_musical_state_changed=_nested_stale,
+    )
+
+    with pytest.raises(GestureRackApplyPostMutationError) as excinfo:
+        _action_call(
+            audio_path=audio,
+            channel_rack=controller,
+            catalog_path=catalog,
+            selections={0: "101"},
+            feature_enabled=True,
+        )
+
+    assert notified == ["obs"]
+    # Provenance preserved: the typed stale error is the cause, not the type
+    # the Action maps to a status.
+    assert isinstance(excinfo.value.__cause__, StaleGestureRackIntegrationPlanError)
+    assert not isinstance(excinfo.value, StaleGestureRackIntegrationPlanError)
+    # And the outer Rack really was mutated.
+    assert controller.state is not None
+    assert controller.state != base
+
+
+def test_s5c_post_mutation_wrapper_is_not_a_valueerror() -> None:
+    """The wrapper must be distinguishable from a pre-mutation rejection."""
+    assert issubclass(GestureRackApplyPostMutationError, RuntimeError)
+    assert not issubclass(GestureRackApplyPostMutationError, ValueError)
+    assert not issubclass(
+        StaleGestureRackIntegrationPlanError, GestureRackApplyPostMutationError
+    )
+
+
+def test_s5d_observer_wrapper_preserves_cause_for_arbitrary_errors() -> None:
+    base = _action_base_state()
+    plan = _build_plan(base)
+    controller = _plan_controller(
+        state=base,
+        on_musical_state_changed=lambda: (_ for _ in ()).throw(
+            RuntimeError("observer boom")
+        ),
+    )
+
+    with pytest.raises(GestureRackApplyPostMutationError) as excinfo:
+        _apply_raw(controller, plan, feature_enabled=True)
+
+    assert isinstance(excinfo.value.__cause__, RuntimeError)
+    assert "observer boom" in str(excinfo.value)
+    assert "observer boom" in str(excinfo.value.__cause__)
 
 
 def test_s6_action_catches_no_bare_value_error() -> None:
@@ -381,6 +461,21 @@ def test_s6c_stale_branch_raises_the_typed_error() -> None:
         and node.exc.func.id == "StaleGestureRackIntegrationPlanError"
     ]
     assert len(typed_raises) == 1, "typed stale error must have exactly one raise site"
+
+    # The post-mutation observer must be guarded, so no observer exception can
+    # escape as the typed stale error.
+    post_mutation_raises = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Raise)
+        and isinstance(node.exc, ast.Call)
+        and isinstance(node.exc.func, ast.Name)
+        and node.exc.func.id == "GestureRackApplyPostMutationError"
+    ]
+    assert len(post_mutation_raises) == 1, (
+        "observer failure must be wrapped exactly once, after the state "
+        "assignment"
+    )
 
 
 # ---------------------------------------------------------------------------
