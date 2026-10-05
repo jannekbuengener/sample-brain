@@ -116,10 +116,12 @@ def test_supported_controls_register_stable_distinct_descriptors() -> None:
     assert 'Accessible.name: "Recordings"' in source
     assert 'objectName: "libraryCatalogScopeButton"' not in source
     # Scope controls must not depend on classic ToolTip for discoverability.
+    # libraryScopeBar is the last footer child; truncate at the next chrome section.
     scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
-        'objectName: "footerContextCenterLayer"', 1
+        "header:", 1
     )[0]
     assert "ToolTip." not in scope_block
+    assert 'objectName: "libraryFavoritesScopeButton"' in scope_block
 
 
 def test_hint_priority_and_focus_guard_are_encoded() -> None:
@@ -185,13 +187,24 @@ def _open_screen1(tmp_path: Path, *, width: int = 1600, height: int = 900):
         browser_materialized=True,
         live_kit_materialized=False,
     )
+    from PySide6.QtGui import QGuiApplication
+
     app, engine, window = _qml_engine(view_model, runtime_composition=composition)
+    QGuiApplication.styleHints().setUseHoverEffects(True)
     window.resize(width, height)
     window.show()
+    window.requestActivate()
     engine._screen1_interaction_bridge.refreshState()
     engine._screen1_layout_model.syncFromInteraction()
     _settle_qml_frame(app)
     return app, engine, window, view_model, _settle_qml_frame, QQuickItem
+
+
+def _enable_control_hover(item) -> None:
+    """Offscreen/xvfb QPA may leave Controls without hover acceptance."""
+    item.setAcceptHoverEvents(True)
+    if item.property("hoverEnabled") is not None:
+        item.setProperty("hoverEnabled", True)
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
@@ -256,6 +269,8 @@ def test_scope_button_hover_and_focus_drive_shared_hint(tmp_path: Path) -> None:
         display = window.findChild(QQuickItem, "contextHintDisplay")
         assert state is not None and fav is not None and coll is not None
         assert display is not None
+        _enable_control_hover(fav)
+        _enable_control_hover(coll)
 
         def scene_point(item: QQuickItem) -> QPoint:
             center = item.mapToScene(item.boundingRect().center())
@@ -339,6 +354,8 @@ def test_automated_runtime_visual_acceptance_context_hint(tmp_path: Path) -> Non
             assert placement.isVisible()
             assert float(placement.height()) > 0
             assert float(placement.height()) <= 48
+            _enable_control_hover(fav)
+            _enable_control_hover(coll)
 
             # Bottom-aligned within the window content area.
             win_h = float(window.height())

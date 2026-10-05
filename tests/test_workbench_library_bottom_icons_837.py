@@ -142,11 +142,10 @@ def test_qml_bottom_icon_bar_contract_and_accessible_names() -> None:
     assert host_pos >= 0
     assert pane_block.find('objectName: "libraryScopeBar"') < 0
     # Icon bar must not depend on classic ToolTips for discoverability.
-    scope_tail = source.split('objectName: "libraryScopeBar"', 1)[1]
-    if 'objectName: "footerContextCenterLayer"' in scope_tail:
-        scope_block = scope_tail.split('objectName: "footerContextCenterLayer"', 1)[0]
-    else:
-        scope_block = scope_tail.split('Item { Layout.fillWidth: true }', 1)[0]
+    # libraryScopeBar is the last footer child; truncate at the next chrome section.
+    scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
+        "header:", 1
+    )[0]
     assert "ToolTip." not in scope_block
     assert "contextHintState.reportHover" in scope_block
     assert "contextHintState.reportFocus" in scope_block

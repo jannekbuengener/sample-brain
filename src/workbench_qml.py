@@ -1893,7 +1893,8 @@ ApplicationWindow {
         asynchronous: true
     }
 
-    // #831 program footer band — scope utility left, context hint right (#830 / #770).
+    // #831 program footer band — scope left / context center / status right (#830 / #770).
+    // Footer-context centering: true center layer on full footer width (not RowLayout leftover).
     // #880: slim status-bar footer (chosen ~22; not screenshot-pixel truth).
     // Global program chrome: keep the footer present on Screen 1 and Screen 2.
     footer: Item {
@@ -1907,19 +1908,80 @@ ApplicationWindow {
             height: 1
             color: theme.dividerDefault
             opacity: 0.28
+            z: 3
         }
-        RowLayout {
+        // CENTER: geometrically centered on full footer midpoint (below hit zones).
+        Item {
+            id: footerContextCenterLayer
+            objectName: "footerContextCenterLayer"
             anchors.fill: parent
-            anchors.leftMargin: 8
+            z: 0
+            // Display-only: never intercept hover/pointer for left/right controls.
+            enabled: false
+            Label {
+                id: contextHintDisplay
+                objectName: "contextHintDisplay"
+                readonly property real leftBound: libraryScopeBar.x + libraryScopeBar.width + 6
+                readonly property real rightBound: footerStatusZone.x - 6
+                readonly property real mid: parent.width / 2
+                readonly property real maxHalf: Math.max(
+                    0,
+                    Math.min(mid - leftBound, rightBound - mid)
+                )
+                width: Math.min(implicitWidth, maxHalf * 2)
+                x: mid - width / 2
+                anchors.verticalCenter: parent.verticalCenter
+                text: contextHintState.displayText
+                color: theme.textSecondary
+                font.pixelSize: window.textCaption
+                opacity: text.length > 0 ? 1.0 : 0.0
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                focus: false
+                activeFocusOnTab: false
+                Accessible.ignored: true
+                Keys.forwardTo: []
+            }
+        }
+        // RIGHT: existing status zone (may be empty/neutral; must not steal center).
+        Item {
+            id: footerStatusZone
+            objectName: "footerStatusZone"
+            anchors.right: parent.right
             anchors.rightMargin: 12
-            spacing: 4
-            RowLayout {
-                id: libraryScopeBar
-                objectName: "libraryScopeBar"
-                spacing: 2
-                property string mode: "sources"
-                readonly property int controlSize: 18
-                readonly property int iconPad: 3
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.max(1, footerStatusLabel.implicitWidth)
+            height: parent.height
+            z: 2
+            Label {
+                id: footerStatusLabel
+                objectName: "footerStatusLabel"
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                text: ""
+                color: theme.textSecondary
+                font.pixelSize: window.textCaption
+                opacity: text.length > 0 ? 1.0 : 0.0
+                elide: Text.ElideRight
+                focus: false
+                activeFocusOnTab: false
+                Accessible.ignored: true
+            }
+        }
+        // LEFT: existing #837 scope utility.
+        RowLayout {
+            id: libraryScopeBar
+            objectName: "libraryScopeBar"
+            anchors.left: parent.left
+            anchors.leftMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            height: parent.height
+            spacing: 2
+            z: 2
+            property string mode: "sources"
+            readonly property int controlSize: 18
+            readonly property int iconPad: 3
 
                 // Active = fine accent underline + ink tint; no filled toolbar chip.
                 function scopeFill(active, hovered) {
@@ -2281,25 +2343,6 @@ ApplicationWindow {
                         }
                     }
                 }
-            }
-
-            Item { Layout.fillWidth: true }
-            Label {
-                id: contextHintDisplay
-                objectName: "contextHintDisplay"
-                Layout.maximumWidth: Math.min(implicitWidth, programFooterBand.width * 0.45)
-                Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
-                text: contextHintState.displayText
-                color: theme.textSecondary
-                font.pixelSize: window.textCaption
-                opacity: text.length > 0 ? 1.0 : 0.0
-                elide: Text.ElideRight
-                horizontalAlignment: Text.AlignRight
-                focus: false
-                activeFocusOnTab: false
-                Accessible.ignored: true
-                Keys.forwardTo: []
-            }
         }
     }
 

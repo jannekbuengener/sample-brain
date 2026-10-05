@@ -123,13 +123,24 @@ def _open_screen1(tmp_path: Path, *, width: int = 1600, height: int = 900):
         browser_materialized=True,
         live_kit_materialized=False,
     )
+    from PySide6.QtGui import QGuiApplication
+
     app, engine, window = _qml_engine(view_model, runtime_composition=composition)
+    QGuiApplication.styleHints().setUseHoverEffects(True)
     window.resize(width, height)
     window.show()
+    window.requestActivate()
     engine._screen1_interaction_bridge.refreshState()
     engine._screen1_layout_model.syncFromInteraction()
     _settle_qml_frame(app)
     return app, engine, window, view_model, _settle_qml_frame, QQuickItem
+
+
+def _enable_control_hover(item) -> None:
+    """Offscreen/xvfb QPA may leave Controls without hover acceptance."""
+    item.setAcceptHoverEvents(True)
+    if item.property("hoverEnabled") is not None:
+        item.setProperty("hoverEnabled", True)
 
 
 def _center_x(item) -> float:
@@ -219,6 +230,8 @@ def test_runtime_priority_hover_over_selection_restore_and_default(tmp_path: Pat
         display = window.findChild(QQuickItem, "contextHintDisplay")
         footer = window.findChild(QQuickItem, "programFooterBand")
         assert state and fav and coll and display and footer
+        _enable_control_hover(fav)
+        _enable_control_hover(coll)
 
         assert state.property("displayText") in ("", None)
 
