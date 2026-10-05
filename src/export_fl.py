@@ -306,7 +306,7 @@ def write_fl_tags(fl_userdata: Path, roots, max_tags=MAX_TAGS):
     )
     for warning in warnings:
         print(warning)
-    print(f"Wrote FL Tags → {tags_path} ({count} samples)")
+    print(f"Wrote FL Tags -> {tags_path} ({count} samples)")
 
 
 def run_export(fl_user_data_folder: str, max_tags=MAX_TAGS, roots=None, *, dry_run: bool = False):
