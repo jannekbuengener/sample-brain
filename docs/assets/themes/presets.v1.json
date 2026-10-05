@@ -7,15 +7,21 @@
     "Derived tokens are computed and must not be edited independently.",
     "Blood primary_candidate is stage A (#8f0e24). Blood B (#d4143a) remains a brighter-crimson comparison variant.",
     "Loaded by src/workbench_theme.py; Screen-1 QML consumes via themeAuthority (#785).",
-    "Custom themes persist base tokens only; derived tokens are never a second persistence truth."
+    "Custom themes persist base tokens only; derived tokens are never a second persistence truth.",
+    "Dark surface hierarchy (cinematic noir): background (chrome) < surfaceWorkspace (main) < surface (panels) < surfaceRaised (elevated).",
+    "Noir density: ink/charcoal bases + tighter surface mixes; no open gray tool slabs.",
+    "Superdesign cinematic-noir-style: map deep/zinc solids via Theme bases only (not QML Gradient; not foreign hex).",
+    "No atmosphere / soft-ellipse / glow overlays: depth comes from solid surface hierarchy only.",
+    "Panel uniformity: Library, Browser, Live Kit, and Harmonic Matching share surface panel fills (no glow layer)."
   ],
   "derivation": {
     "textPrimary": "foreground",
-    "textSecondary": "mix(foreground, background, 0.45)",
-    "surface": "mix(background, foreground, 0.045)",
-    "surfaceRaised": "mix(background, foreground, 0.09)",
-    "divider": "mix(background, foreground, 0.16)",
-    "hover": "mix(background, foreground, 0.11)",
+    "textSecondary": "mix(foreground, background, 0.55)",
+    "surfaceWorkspace": "mix(background, foreground, 0.008)",
+    "surface": "mix(background, foreground, 0.028)",
+    "surfaceRaised": "mix(background, foreground, 0.06)",
+    "divider": "mix(background, foreground, 0.10)",
+    "hover": "mix(background, foreground, 0.075)",
     "selected": "mix(background, accent, 0.22)",
     "focusRing": "accent"
   },
@@ -24,17 +30,18 @@
       "role": "primary_candidate",
       "base": {
         "accent": "#8f0e24",
-        "background": "#050506",
-        "foreground": "#eceef1"
+        "background": "#020203",
+        "foreground": "#e4e6ea"
       },
       "derived": {
-        "textPrimary": "#eceef1",
-        "textSecondary": "#848587",
-        "surface": "#0f0f11",
-        "surfaceRaised": "#1a1a1b",
-        "divider": "#2a2a2c",
-        "hover": "#1e1f20",
-        "selected": "#23070d",
+        "textPrimary": "#e4e6ea",
+        "textSecondary": "#68696b",
+        "surfaceWorkspace": "#040405",
+        "surface": "#080809",
+        "surfaceRaised": "#101011",
+        "divider": "#19191a",
+        "hover": "#131314",
+        "selected": "#21050a",
         "focusRing": "#8f0e24"
       },
       "derived_from": "base_only",
@@ -43,17 +50,18 @@
           "label": "deeper blood · primary_candidate",
           "base": {
             "accent": "#8f0e24",
-            "background": "#050506",
-            "foreground": "#eceef1"
+            "background": "#020203",
+            "foreground": "#e4e6ea"
           },
           "derived": {
-            "textPrimary": "#eceef1",
-            "textSecondary": "#848587",
-            "surface": "#0f0f11",
-            "surfaceRaised": "#1a1a1b",
-            "divider": "#2a2a2c",
-            "hover": "#1e1f20",
-            "selected": "#23070d",
+            "textPrimary": "#e4e6ea",
+            "textSecondary": "#68696b",
+            "surfaceWorkspace": "#040405",
+            "surface": "#080809",
+            "surfaceRaised": "#101011",
+            "divider": "#19191a",
+            "hover": "#131314",
+            "selected": "#21050a",
             "focusRing": "#8f0e24"
           },
           "derived_from": "base_only"
@@ -62,17 +70,18 @@
           "label": "brighter crimson · comparison",
           "base": {
             "accent": "#d4143a",
-            "background": "#050506",
-            "foreground": "#eceef1"
+            "background": "#020203",
+            "foreground": "#e4e6ea"
           },
           "derived": {
-            "textPrimary": "#eceef1",
-            "textSecondary": "#848587",
-            "surface": "#0f0f11",
-            "surfaceRaised": "#1a1a1b",
-            "divider": "#2a2a2c",
-            "hover": "#1e1f20",
-            "selected": "#330811",
+            "textPrimary": "#e4e6ea",
+            "textSecondary": "#68696b",
+            "surfaceWorkspace": "#040405",
+            "surface": "#080809",
+            "surfaceRaised": "#101011",
+            "divider": "#19191a",
+            "hover": "#131314",
+            "selected": "#30060f",
             "focusRing": "#d4143a"
           },
           "derived_from": "base_only"
@@ -83,17 +92,18 @@
       "role": "preset",
       "base": {
         "accent": "#a8b0b8",
-        "background": "#050607",
-        "foreground": "#eaecf0"
+        "background": "#030405",
+        "foreground": "#e2e4e8"
       },
       "derived": {
-        "textPrimary": "#eaecf0",
-        "textSecondary": "#838487",
-        "surface": "#0f1011",
-        "surfaceRaised": "#1a1b1c",
-        "divider": "#2a2b2c",
-        "hover": "#1e1f21",
-        "selected": "#292b2e",
+        "textPrimary": "#e2e4e8",
+        "textSecondary": "#67696b",
+        "surfaceWorkspace": "#050607",
+        "surface": "#090a0b",
+        "surfaceRaised": "#101113",
+        "divider": "#191a1c",
+        "hover": "#141516",
+        "selected": "#272a2c",
         "focusRing": "#a8b0b8"
       },
       "derived_from": "base_only"
@@ -102,17 +112,18 @@
       "role": "preset",
       "base": {
         "accent": "#6f9fbf",
-        "background": "#050607",
-        "foreground": "#e8edf2"
+        "background": "#030405",
+        "foreground": "#e0e6ec"
       },
       "derived": {
-        "textPrimary": "#e8edf2",
-        "textSecondary": "#828588",
-        "surface": "#0f1012",
-        "surfaceRaised": "#191b1c",
-        "divider": "#292b2d",
-        "hover": "#1e1f21",
-        "selected": "#1c282f",
+        "textPrimary": "#e0e6ec",
+        "textSecondary": "#666a6d",
+        "surfaceWorkspace": "#050607",
+        "surface": "#090a0b",
+        "surfaceRaised": "#101213",
+        "divider": "#191b1c",
+        "hover": "#141516",
+        "selected": "#1b262e",
         "focusRing": "#6f9fbf"
       },
       "derived_from": "base_only"
@@ -121,17 +132,18 @@
       "role": "secondary_preset",
       "base": {
         "accent": "#c45a7a",
-        "background": "#080608",
-        "foreground": "#eee8ec"
+        "background": "#050305",
+        "foreground": "#e6e0e4"
       },
       "derived": {
-        "textPrimary": "#eee8ec",
-        "textSecondary": "#868285",
-        "surface": "#121012",
-        "surfaceRaised": "#1d1a1d",
-        "divider": "#2d2a2c",
-        "hover": "#211f21",
-        "selected": "#311821",
+        "textPrimary": "#e6e0e4",
+        "textSecondary": "#6a6669",
+        "surfaceWorkspace": "#070507",
+        "surface": "#0b090b",
+        "surfaceRaised": "#121012",
+        "divider": "#1c191b",
+        "hover": "#161416",
+        "selected": "#2f161f",
         "focusRing": "#c45a7a"
       },
       "derived_from": "base_only"
@@ -140,17 +152,18 @@
       "role": "secondary_preset",
       "base": {
         "accent": "#4f8f6a",
-        "background": "#060807",
-        "foreground": "#e8eee9"
+        "background": "#040604",
+        "foreground": "#e0e6e1"
       },
       "derived": {
-        "textPrimary": "#e8eee9",
-        "textSecondary": "#828683",
-        "surface": "#101211",
-        "surfaceRaised": "#1a1d1b",
-        "divider": "#2a2d2b",
-        "hover": "#1f2120",
-        "selected": "#16261d",
+        "textPrimary": "#e0e6e1",
+        "textSecondary": "#676b67",
+        "surfaceWorkspace": "#060806",
+        "surface": "#0a0c0a",
+        "surfaceRaised": "#111311",
+        "divider": "#1a1c1a",
+        "hover": "#141715",
+        "selected": "#14241a",
         "focusRing": "#4f8f6a"
       },
       "derived_from": "base_only"

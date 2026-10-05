@@ -249,25 +249,53 @@ Layers:
 
 1. **Background reference** — unchanged PNG above; not a color palette source.
 2. **Theme Core base tokens** — `accent` / `background` / `foreground` (Blood A
-   default `#8f0e24` / `#050506` / `#eceef1`).
+   default `#8f0e24` / `#020203` / `#e4e6ea`).
 3. **Derived Theme Core tokens** — deterministic mixes (`textPrimary`,
-   `textSecondary`, `surface`, `surfaceRaised`, `divider`, `hover`, `selected`,
-   `focusRing`).
+   `textSecondary`, `surfaceWorkspace`, `surface`, `surfaceRaised`, `divider`,
+   `hover`, `selected`, `focusRing`).
 4. **QML semantic facade** — `theme.<semanticToken>` binds `themeAuthority.*`
    (mapped via `theme_tokens_to_qml_semantics`).
 5. **UI components** — use `theme.<semanticToken>` only (optional thin
    `window.*` aliases may mirror tokens for runtime property reads).
 
+### Dark surface hierarchy (semantic, not screenshot pixels)
+
+Dark Screen-1 must read as cinematic noir depth, not one flat black slab and not
+an open gray tool UI. Theme Core owns the steps; QML only binds semantics.
+
+| Step | Role | Semantic → token |
+|------|------|------------------|
+| 1 | Program Chrome (darkest / ink floor) | `surfaceHeader` → `background` |
+| 2 | Main Workspace (barely raised charcoal/ink) | `surfaceRoot` → `surfaceWorkspace` |
+| 3 | Panels (subtly separated, low mass, one family) | `surfacePanel` / `surfaceBrowser` → `surface` |
+
+**No glow / atmosphere overlays:** Library (`libraryPane`), center workspace
+(`calmCanvas` empty; `browserPane` when active), Live Kit (`liveKitPane`), and
+Harmonic Matching (`harmonyPane`) paint **solid Theme fills only**. Soft-ellipse
+PNG atmosphere Images, atmosphere stop mixes, and atmosphere opacity bindings
+must not remain in Theme Core or Screen-1 QML. Depth is chrome → workspace →
+panel solids (no QML `Gradient`). See `docs/assets/themes/README.md` no-glow
+TARGET.
+
+Borders use `divider` / `borderSubtle` for fine restrained edges. Product
+surfaces must not collapse chrome and workspace to the same fill. No flat
+`#000000` hierarchy base. Typography mood stays calm/minimal (`textPrimary` /
+`textSecondary` from Theme Core only). Feel: noir, deep, elegant, premium,
+restrained — little visible UI mass. See `docs/assets/themes/README.md`
+CURRENT→TARGET table (root cause + Blood noir example values).
+
 ### Functional accent rule
 
-Accent is functional-only: selection, active toggle, harmonic-match active
-state, clear focus/active affordances, primary active action. Not for panel
-fills, ambient backgrounds, decoration, or passive chrome. Default Blood A
-accent is `#8f0e24` (Blood B `#d4143a` is comparison-only).
+Accent is functional-only for controls: selection, active toggle, harmonic-match
+active state, clear focus/active affordances, primary active action. Not for
+solid panel fills, decoration, passive chrome, or atmosphere/glow washes.
+Default Blood A accent is `#8f0e24` (Blood B `#d4143a` is comparison-only).
+No Theme atmosphere accent-bleed exception.
 
 ### No arbitrary hardcodes rule
 
 Screen-1 QML must not introduce direct HEX colors outside Theme Core /
 `themeAuthority`. Named `transparent` remains a technical exception. Contract
 tests under `tests/test_workbench_qml_screen1_color_contract.py` and
-`tests/test_workbench_qml_theme_runtime.py` guard this.
+`tests/test_workbench_qml_theme_runtime.py` guard this. Hierarchy relations are
+covered by `tests/test_workbench_dark_surface_hierarchy.py`.

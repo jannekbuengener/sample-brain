@@ -1927,10 +1927,16 @@ ApplicationWindow {
     // Footer-context centering: true center layer on full footer width (not RowLayout leftover).
     // #880: slim status-bar footer (chosen ~22; not screenshot-pixel truth).
     // Global program chrome: keep the footer present on Screen 1 and Screen 2.
+    // Dark surface hierarchy: footer paints chrome (surfaceHeader), not workspace root.
     footer: Item {
         id: programFooterBand
         objectName: "programFooterBand"
         height: 22
+        Rectangle {
+            anchors.fill: parent
+            color: theme.surfaceHeader
+            z: -1
+        }
         Rectangle {
             anchors.left: parent.left
             anchors.right: parent.right
@@ -3127,7 +3133,9 @@ ApplicationWindow {
                      && window.screenData.analysisStatus !== "error"
             width: visible ? Math.max(0, parent.width - libraryPane.width) : 0
             height: parent.height
-            color: "transparent"
+            // Dark surface hierarchy: main workspace solid fill (not pure-black PNG bleed).
+            // Background Image remains under panels; calm canvas paints Theme workspace only.
+            color: theme.surfaceRoot
             ColumnLayout {
                 anchors.centerIn: parent
                 spacing: 10
