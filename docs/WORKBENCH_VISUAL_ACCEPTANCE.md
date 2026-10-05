@@ -269,14 +269,13 @@ an open gray tool UI. Theme Core owns the steps; QML only binds semantics.
 | 2 | Main Workspace (barely raised charcoal/ink) | `surfaceRoot` → `surfaceWorkspace` |
 | 3 | Panels (subtly separated, low mass, one family) | `surfacePanel` / `surfaceBrowser` → `surface` |
 
-**Atmosphere (uniform panel family + calm workspace):** Library (`libraryPane`),
-center workspace (`calmCanvas` empty; `browserPane` when active), Live Kit
-(`liveKitPane`), and Harmonic Matching (`harmonyPane`) must paint Theme
-soft-ellipse overlays (`theme.atmospherePanel` / `theme.atmosphereWorkspace`) so
-depth is **subliminal** — not a visible glow effect and not a foreign brighter
-pane. Overlays are Theme-rendered PNGs at Theme `ATMOSPHERE_OVERLAY_OPACITY`
-(no QML `Gradient`). See `docs/assets/themes/README.md` atmosphere restraint +
-stop table.
+**No glow / atmosphere overlays:** Library (`libraryPane`), center workspace
+(`calmCanvas` empty; `browserPane` when active), Live Kit (`liveKitPane`), and
+Harmonic Matching (`harmonyPane`) paint **solid Theme fills only**. Soft-ellipse
+PNG atmosphere Images, atmosphere stop mixes, and atmosphere opacity bindings
+must not remain in Theme Core or Screen-1 QML. Depth is chrome → workspace →
+panel solids (no QML `Gradient`). See `docs/assets/themes/README.md` no-glow
+TARGET.
 
 Borders use `divider` / `borderSubtle` for fine restrained edges. Product
 surfaces must not collapse chrome and workspace to the same fill. No flat
@@ -289,13 +288,9 @@ CURRENT→TARGET table (root cause + Blood noir example values).
 
 Accent is functional-only for controls: selection, active toggle, harmonic-match
 active state, clear focus/active affordances, primary active action. Not for
-solid panel fills, decoration, or passive chrome. Default Blood A accent is
-`#8f0e24` (Blood B `#d4143a` is comparison-only).
-
-**Narrow Theme exception:** cinematic-noir atmosphere stop mixes may include a
-tiny accent bleed into ink (Theme Core only) so Library/center/Live Kit/Harmonic
-read cool red-blue depth at **subliminal** strength. That is not a colorful
-ambient wash or visible glow and must stay near-black.
+solid panel fills, decoration, passive chrome, or atmosphere/glow washes.
+Default Blood A accent is `#8f0e24` (Blood B `#d4143a` is comparison-only).
+No Theme atmosphere accent-bleed exception.
 
 ### No arbitrary hardcodes rule
 
