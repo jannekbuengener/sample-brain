@@ -325,15 +325,27 @@ class ChannelRackController:
             self._notify_musical_state_changed()
         return True
 
-    def enter_screen2(self) -> ChannelRackState:
-        self._claim_audio_focus()
+    def ensure_state(self) -> ChannelRackState:
+        """Materialize/reconcile Rack from Live Kit without screen or focus (#916).
+
+        Builds Rack state when absent; reconciles Live Kit sample paths when
+        already materialized. Notifies persistence exactly as materialize /
+        reconcile require. Does not claim audio focus, mutate ``active_screen``,
+        or start/stop playback.
+        """
         if self._state is None:
             self._state = build_channel_rack_state(self._live_kit)
             self._notify_musical_state_changed()
         else:
             self.reconcile_live_kit_state(notify=True)
-        self._active_screen = SCREEN2
         return self._state
+
+    def enter_screen2(self) -> ChannelRackState:
+        """Legacy Screen-2 enter: claim focus, ensure state, set screen (#916)."""
+        self._claim_audio_focus()
+        state = self.ensure_state()
+        self._active_screen = SCREEN2
+        return state
 
     def leave_screen2(self) -> None:
         self.stop()
@@ -341,16 +353,21 @@ class ChannelRackController:
         if self._on_release_to_screen1 is not None:
             self._on_release_to_screen1()
 
-    def toggle_step(self, channel_id: str, step_index: int) -> ChannelRackState:
+    def _require_state(self) -> ChannelRackState:
         if self._state is None:
-            raise RuntimeError("Channel Rack is not active; call enter_screen2() first")
+            raise RuntimeError(
+                "Channel Rack is not active; call ensure_state() first"
+            )
+        return self._state
+
+    def toggle_step(self, channel_id: str, step_index: int) -> ChannelRackState:
+        self._require_state()
         self._state = toggle_step(self._state, channel_id, step_index)
         self._notify_musical_state_changed()
         return self._state
 
     def add_user_channel(self, sample_path: str | None = None) -> ChannelRackState:
-        if self._state is None:
-            raise RuntimeError("Channel Rack is not active; call enter_screen2() first")
+        self._require_state()
         self._state = add_user_channel(self._state, sample_path=sample_path)
         self._notify_musical_state_changed()
         return self._state
@@ -359,8 +376,7 @@ class ChannelRackController:
         self, channel_id: str, sample_path: str
     ) -> ChannelRackState:
         """Assign a sample path to an existing user channel (#808)."""
-        if self._state is None:
-            raise RuntimeError("Channel Rack is not active; call enter_screen2() first")
+        self._require_state()
         self._state = assign_user_channel_sample(
             self._state, channel_id, sample_path
         )
@@ -389,8 +405,7 @@ class ChannelRackController:
         pass_index: int,
         engine: _SequencerEngineAdapter,
     ) -> ChannelRackPlayHandle:
-        if self._state is None:
-            raise RuntimeError("Channel Rack is not active; call enter_screen2() first")
+        self._require_state()
         start_quarter, start_engine = pattern_pass_start_frames(
             self._transport.tempo_map,
             anchor_quarter=self._loop_anchor_quarter,
@@ -423,8 +438,7 @@ class ChannelRackController:
         return True
 
     def play(self) -> ChannelRackPlayHandle | None:
-        if self._state is None:
-            raise RuntimeError("Channel Rack is not active; call enter_screen2() first")
+        self._require_state()
         self._claim_audio_focus()
         self.stop()
 

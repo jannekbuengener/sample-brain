@@ -87,15 +87,23 @@ class TransportAwarePreview:
         transport: WorkbenchTransportAdapter,
         *,
         pcm_load_fn: PcmLoadFn | None = None,
+        on_before_shared_transport_stop: Callable[[], None] | None = None,
     ) -> None:
         self._preview = preview
         self._transport = transport
         self._pcm_load_fn = pcm_load_fn or _load_native_pcm
+        self._on_before_shared_transport_stop = on_before_shared_transport_stop
         self._active_voice_id: int | None = None
         self._native_current_path: Path | None = None
         self._native_identity_path: str = ""
         self._native_duration_ms: int = 0
         self._next_voice_id = 1
+
+    def set_before_shared_transport_stop(
+        self, callback: Callable[[], None] | None
+    ) -> None:
+        """Bind session policy before shared transport teardown (#916)."""
+        self._on_before_shared_transport_stop = callback
 
     @property
     def current_path(self):
@@ -313,9 +321,25 @@ class TransportAwarePreview:
             return PreviewResult(ok=False, message=f"Wiedergabe fehlgeschlagen: {exc}")
         return PreviewResult(ok=True)
 
-    def stop(self) -> None:
+    def release_voice(self) -> None:
+        """Stop audition voice + legacy preview without shared transport stop (#916).
+
+        Used for focus transfer when Rack playback owns the shared transport.
+        Does not call ``WorkbenchTransportAdapter.stop()``.
+        """
         self._stop_native_voice()
         self._preview.stop()
+
+    def stop(self) -> None:
+        """Explicit audition stop: release voice, then shared transport.
+
+        When a session policy is bound, it may stop Rack playback first so
+        ``channel_rack.is_playing`` cannot remain True against a stopped
+        shared transport (#916 stop invariant).
+        """
+        self.release_voice()
+        if self._on_before_shared_transport_stop is not None:
+            self._on_before_shared_transport_stop()
         self._transport.stop()
 
     def __getattr__(self, name: str):
