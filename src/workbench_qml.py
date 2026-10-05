@@ -4127,7 +4127,7 @@ ApplicationWindow {
                     browser.forceActiveFocus()
                 }
             }
-            ColumnLayout { anchors.fill: parent; anchors.margins: 14
+            ColumnLayout { anchors.fill: parent; anchors.margins: 14; z: 1
                 Label {
                     text: "Harmonic Matches"
                     color: theme.textPrimary
@@ -4348,7 +4348,7 @@ ApplicationWindow {
                     }
                 }
             }
-            ColumnLayout { anchors.fill: parent; anchors.margins: 14; spacing: 8
+            ColumnLayout { anchors.fill: parent; anchors.margins: 14; spacing: 8; z: 1
                 RowLayout { Layout.fillWidth: true
                     Label { text: "LIVE KIT"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
                     Label { text: window.screenData.liveKitAssignedCount + " / " + window.screenData.liveKitTotalSlotCount; color: theme.textSecondary; font.pixelSize: 11 }
