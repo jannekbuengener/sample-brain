@@ -103,19 +103,25 @@ def test_theme_preferences_filename_is_appearance_scoped():
     assert _THEME_PREFERENCES_FILENAME == "screen1_theme_preferences.json"
 
 
-def test_no_ad_hoc_functional_gesture_settings_module_exists():
-    candidates = [
-        REPO_ROOT / "src" / "workbench_feature_settings.py",
+def test_canonical_functional_settings_owner_exists_without_ad_hoc_gesture_modules():
+    """#910 delivered the canonical owner; ad-hoc gesture-local stores remain forbidden."""
+    canonical = REPO_ROOT / "src" / "workbench_feature_settings.py"
+    assert canonical.is_file()
+    text = canonical.read_text(encoding="utf-8")
+    assert "class WorkbenchFeatureSettings" in text
+    assert "gesture_rack_apply_enabled" in text
+    ad_hoc = [
         REPO_ROOT / "src" / "workbench_functional_settings.py",
         REPO_ROOT / "src" / "gesture_feature_settings.py",
         REPO_ROOT / "src" / "feature_toggles.py",
         REPO_ROOT / "src" / "workbench_settings.py",
     ]
-    missing = [path for path in candidates if not path.is_file()]
-    assert missing == candidates
+    missing = [path for path in ad_hoc if not path.is_file()]
+    assert missing == ad_hoc
 
 
-def test_channel_rack_controller_has_no_gesture_apply_seam_while_settings_blocked():
+def test_channel_rack_controller_still_has_no_gesture_apply_seam_after_settings_owner():
+    """Historical #904 blocker: settings owner alone must not introduce apply mutation."""
     assert not hasattr(ChannelRackController, "apply_gesture_integration_plan")
     public_names = {
         name
@@ -133,3 +139,5 @@ def test_slice8_doc_forbids_restore_state_as_live_apply_and_external_state_write
     assert "live-product apply" in text or "live apply" in text
     assert "controller._state" in text
     assert "workbench_session_store" in text
+    # Historical exit remains documented even after #910 unblocks the owner gap.
+    assert "FEATURE_SETTINGS_OWNER_BLOCKED" in text

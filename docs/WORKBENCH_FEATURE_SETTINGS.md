@@ -1,6 +1,6 @@
 # Workbench Functional Feature Settings — Architecture Enabler (#910)
 
-**Status:** ACTIVE_SUPPORTING (architecture enabler under #680)  
+**Status:** Implemented — `CANONICAL_FUNCTIONAL_SETTINGS_OWNER_VIABLE`  
 **Issue:** [#910](https://github.com/jannekbuengener/sample-brain/issues/910)  
 **Parent:** [#680](https://github.com/jannekbuengener/sample-brain/issues/680)  
 **Unblocks:** guarded gesture→Rack apply (historical blocker [#904](https://github.com/jannekbuengener/sample-brain/issues/904) / `FEATURE_SETTINGS_OWNER_BLOCKED`)
