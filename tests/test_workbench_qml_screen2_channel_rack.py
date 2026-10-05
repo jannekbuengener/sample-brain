@@ -688,8 +688,8 @@ def test_controller_assign_rejects_live_kit_and_empty_path():
         controller.assign_user_channel_sample(user_id, "  ")
 
 
-def test_controller_add_assign_toggle_play_with_synthetic_wav(tmp_path):
-    """Runtime flow: add → assign → toggle → play tick reaches assigned channel (#808)."""
+def test_unclassified_user_channel_persists_steps_but_does_not_play(tmp_path):
+    """TEST_CONTRACT_FIX: #920 excludes unclassified user rows from Rack Play."""
     from tests.audio_fixtures import write_sine_wav
 
     module = _controller_module_or_fail()
@@ -728,15 +728,20 @@ def test_controller_add_assign_toggle_play_with_synthetic_wav(tmp_path):
         if ch.channel_id.startswith(USER_CHANNEL_ID_PREFIX)
     )
     controller.assign_user_channel_sample(user_id, str(wav))
-    # Leave only step 0 on so the first tick schedules exactly one voice.
+    # Retain only step 0: persistence/editing is non-destructive even though
+    # this user channel has no explicit classification authority for playback.
     for step in range(1, 16):
         controller.toggle_step(user_id, step)
 
     handle = controller.play()
     assert handle is not None
-    assert handle.scheduled_count >= 1
+    assert handle.scheduled_count == 0
     assert handle.skipped_missing_source_count == 0
-    assert created, "expected at least one voice for assigned user channel"
+    assert created == []
+    assert controller.is_playing is False
+    assert Trigger(channel_id=user_id, position=Fraction(0, 1)) in (
+        controller.state.pattern.triggers
+    )
 
 
 def test_qml_source_exposes_assign_selected_affordance_for_user_rows():

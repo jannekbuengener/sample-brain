@@ -140,10 +140,17 @@ None in v1. No invented BPM, no guessed bar length, no silent auto-wrap, no recu
 | SYNC | Cycle duration |
 |---|---|
 | Off | `effective_cycle_duration_frames = pcm_frame_count` at `rate = 1.0` |
-| On | Valid finite source BPM required; `rate = master_bpm / source_bpm` (RATE_SYNC, clamped to existing valid range); `effective_cycle_duration_frames` derived from `pcm_frame_count` + that rate so absolute starts match native finite-PCM EOF under constant rate |
+| On | Valid finite source BPM required; `rate = compute_sync_playback_rate(master, source, sync_on)` (RATE_SYNC only — no second clamp algorithm); `effective_cycle_duration_frames = ceil(pcm_frame_count / playback_rate)` so absolute starts match native finite-PCM EOF under constant rate |
 | On + invalid/missing BPM | Fail-closed: no start |
 
 Runtime must prove zero cycle-frame drift over many repetitions by using the absolute formula above. KEY_LOCK_SYNC is not required for loop-row v1.
+
+### Mutation policy during active Rack Play (Lead freeze)
+
+| Policy | Value | Behavior |
+|---|---|---|
+| `LOOP_TRANSPORT_MUTATION_POLICY` | `DEFER_UNTIL_NEXT_RACK_PLAY` | On Play, snapshot `sync_enabled`, MASTER BPM, per-loop source BPM, `playback_rate`, and `effective_cycle_duration_frames`. Mid-play MASTER/SYNC changes must not retune sounding/scheduled loop voices or rewrite cycle frames. Stop→Play rebuilds. |
+| `LOOP_ASSIGNMENT_MUTATION_POLICY` | `DEFER_UNTIL_NEXT_RACK_PLAY` | Live Kit assign during Play does not stop play and must not hot-swap loop PCM for the current Play; frozen loop specs continue until Stop. New assignment/class semantics apply on the next explicit Rack Play. |
 
 ### SYNC semantics (loop rows)
 

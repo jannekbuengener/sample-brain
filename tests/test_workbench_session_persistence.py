@@ -37,7 +37,7 @@ from src.workbench_session import compose_workbench_session
 from src.workbench_transport_ui import DEFAULT_TEMPO_BPM
 
 
-def _row(name: str, path: str) -> WorkbenchRow:
+def _row(name: str, path: str, *, sample_class: str | None = "oneshot") -> WorkbenchRow:
     return WorkbenchRow(
         display_name=name,
         relative_path=Path(path).name,
@@ -47,7 +47,7 @@ def _row(name: str, path: str) -> WorkbenchRow:
         key_conf=None,
         loudness=None,
         brightness=None,
-        sample_class=None,
+        sample_class=sample_class,
         pred_type=None,
         status="ok",
         details={},
@@ -1543,3 +1543,155 @@ def test_unreadable_session_file_is_rejected_corrupt_not_fresh(
     session = compose_workbench_session(state_dir=tmp_path)
     assert session.persistence_status == PERSISTENCE_STATUS_REJECTED_CORRUPT
     session.transport.close()
+
+
+# --- #926 classification restore / hydrate -----------------------------------
+
+
+def test_persisted_oneshot_triggers_survive_library_hydrate_bit_identical(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kick = str(tmp_path / "kick.wav")
+    Path(kick).write_bytes(b"RIFF")
+    a = compose_workbench_session(state_dir=tmp_path)
+    a.live_kit.assign("Kick + Bass", "Kick", _row("kick.wav", kick, sample_class="oneshot"))
+    a.enter_screen2()
+    a.channel_rack.toggle_step("ch_kick", 3)
+    a.channel_rack.toggle_step("ch_kick", 7)
+    expected = a.channel_rack.state.pattern.triggers
+    a.transport.close()
+
+    def _fake_hydrate(live_kit, *, library_db_path=None):
+        del library_db_path
+        current = live_kit.assignment_for("Kick + Bass", "Kick")
+        assert current is not None
+        live_kit.assign(
+            "Kick + Bass",
+            "Kick",
+            _row("kick.wav", kick, sample_class="oneshot"),
+        )
+
+    monkeypatch.setattr(
+        "src.workbench_session.rehydrate_live_kit_from_library", _fake_hydrate
+    )
+    b = compose_workbench_session(state_dir=tmp_path, library_db_path=tmp_path / "lib.db")
+    assert b.channel_rack.state is not None
+    assert b.channel_rack.state.pattern.triggers == expected
+    b.transport.close()
+
+
+def test_persisted_triggers_preserved_when_library_db_missing(tmp_path: Path) -> None:
+    kick = str(tmp_path / "kick.wav")
+    Path(kick).write_bytes(b"RIFF")
+    a = compose_workbench_session(state_dir=tmp_path)
+    a.live_kit.assign("Kick + Bass", "Kick", _row("kick.wav", kick, sample_class="oneshot"))
+    a.enter_screen2()
+    a.channel_rack.toggle_step("ch_kick", 1)
+    expected = a.channel_rack.state.pattern.triggers
+    a.transport.close()
+
+    b = compose_workbench_session(
+        state_dir=tmp_path, library_db_path=tmp_path / "missing-catalog.db"
+    )
+    assert b.channel_rack.state is not None
+    assert b.channel_rack.state.pattern.triggers == expected
+    # Path-only restore leaves class unset until hydrate — ambiguous keep.
+    row = b.live_kit.assignment_for("Kick + Bass", "Kick")
+    assert row is not None
+    assert row.sample_class is None
+    b.transport.close()
+
+
+def test_stale_triggers_plus_loop_hydrate_reconciles_and_excludes_from_pattern_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.channel_rack import filter_pattern_for_point_trigger_playback
+
+    loop_path = str(tmp_path / "loop.wav")
+    Path(loop_path).write_bytes(b"RIFF")
+    a = compose_workbench_session(state_dir=tmp_path)
+    # Persist as oneshot first so triggers exist, then hydrate as loop on restore.
+    a.live_kit.assign(
+        "Atmos / FX", "Atmos", _row("loop.wav", loop_path, sample_class="oneshot")
+    )
+    a.enter_screen2()
+    atmos_id = CHANNEL_ID_BY_LIVE_KIT_SLOT[("Atmos / FX", "Atmos")]
+    assert len(_triggers_for(a.channel_rack.state, atmos_id)) == 16
+    a.transport.close()
+
+    def _fake_hydrate(live_kit, *, library_db_path=None):
+        del library_db_path
+        live_kit.assign(
+            "Atmos / FX",
+            "Atmos",
+            _row("loop.wav", loop_path, sample_class="loop"),
+        )
+
+    monkeypatch.setattr(
+        "src.workbench_session.rehydrate_live_kit_from_library", _fake_hydrate
+    )
+    b = compose_workbench_session(state_dir=tmp_path, library_db_path=tmp_path / "lib.db")
+    assert _triggers_for(b.channel_rack.state, atmos_id) == ()
+    filtered = filter_pattern_for_point_trigger_playback(
+        b.channel_rack.state, b.live_kit
+    )
+    assert all(t.channel_id != atmos_id for t in filtered.triggers)
+    b.transport.close()
+
+
+def test_ambiguous_to_loop_hydrate_strips_stale_triggers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = str(tmp_path / "mystery.wav")
+    Path(path).write_bytes(b"RIFF")
+    # Seed oneshot, persist, then on restore hydrate loop (simulates catalog catch-up).
+    a = compose_workbench_session(state_dir=tmp_path)
+    a.live_kit.assign("Atmos / FX", "Atmos", _row("mystery.wav", path, sample_class="oneshot"))
+    a.enter_screen2()
+    atmos_id = CHANNEL_ID_BY_LIVE_KIT_SLOT[("Atmos / FX", "Atmos")]
+    assert len(_triggers_for(a.channel_rack.state, atmos_id)) == 16
+    a.transport.close()
+
+    def _fake_hydrate(live_kit, *, library_db_path=None):
+        del library_db_path
+        live_kit.assign(
+            "Atmos / FX", "Atmos", _row("mystery.wav", path, sample_class="loop")
+        )
+
+    monkeypatch.setattr(
+        "src.workbench_session.rehydrate_live_kit_from_library", _fake_hydrate
+    )
+    b = compose_workbench_session(state_dir=tmp_path, library_db_path=tmp_path / "lib.db")
+    assert _triggers_for(b.channel_rack.state, atmos_id) == ()
+    b.transport.close()
+
+
+def test_ambiguous_to_oneshot_hydrate_preserves_edits_no_reseed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = str(tmp_path / "kick.wav")
+    Path(path).write_bytes(b"RIFF")
+    a = compose_workbench_session(state_dir=tmp_path)
+    a.live_kit.assign("Kick + Bass", "Kick", _row("kick.wav", path, sample_class="oneshot"))
+    a.enter_screen2()
+    # Manual edit: turn most steps off, leave a sparse pattern.
+    for step in range(1, 16):
+        a.channel_rack.toggle_step("ch_kick", step)
+    expected = a.channel_rack.state.pattern.triggers
+    assert len(expected) == 1
+    a.transport.close()
+
+    def _fake_hydrate(live_kit, *, library_db_path=None):
+        del library_db_path
+        live_kit.assign(
+            "Kick + Bass",
+            "Kick",
+            _row("kick.wav", path, sample_class="oneshot"),
+        )
+
+    monkeypatch.setattr(
+        "src.workbench_session.rehydrate_live_kit_from_library", _fake_hydrate
+    )
+    b = compose_workbench_session(state_dir=tmp_path, library_db_path=tmp_path / "lib.db")
+    assert b.channel_rack.state.pattern.triggers == expected
+    b.transport.close()

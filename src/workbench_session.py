@@ -300,6 +300,9 @@ def compose_workbench_session(
         rack_state = channel_rack_state_from_snapshot(snapshot)
         if rack_state is not None:
             channel_rack.restore_state(rack_state)
+            # After library rehydrate, classification-aware reconcile may strip
+            # stale loop-channel triggers without reseeding oneshot/ambiguous.
+            channel_rack.reconcile_live_kit_state(notify=False)
 
     session = WorkbenchSession(
         live_kit=live_kit,

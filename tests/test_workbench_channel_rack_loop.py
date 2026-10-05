@@ -198,6 +198,7 @@ class LoopTransport:
         sample_rate: int = SAMPLE_RATE,
         bpm: float = BPM,
         core: SessionTransport | None = None,
+        sync_enabled: bool = False,
     ) -> None:
         self._engine = engine
         self._core = core or SessionTransport(sample_rate=sample_rate, bpm=bpm)
@@ -205,6 +206,7 @@ class LoopTransport:
         self.start = MagicMock(side_effect=self._on_start)
         self.stop = MagicMock(side_effect=self._on_stop)
         self.poll = MagicMock()
+        self._sync_enabled = bool(sync_enabled)
 
     def _on_start(self) -> None:
         self._core.play()
@@ -243,6 +245,16 @@ class LoopTransport:
 
     def set_tempo(self, bpm: float) -> int:
         return self._core.set_tempo(bpm)
+
+    def get_current_tempo(self) -> float:
+        segment = self._core.tempo_map._segment_for_frame(self._core.session_frame)
+        return float(segment.bpm)
+
+    def is_sync_enabled(self) -> bool:
+        return self._sync_enabled
+
+    def set_sync_enabled(self, enabled: bool) -> None:
+        self._sync_enabled = bool(enabled)
 
     def advance(self, frames: int) -> None:
         if not self._core.playing:
@@ -731,7 +743,7 @@ def test_later_empty_pass_fails_closed_without_busy_loop():
         assert controller.tick_playback() is None
 
 
-def test_user_channel_loops_repeated_schedule_events(tmp_path: Path):
+def test_unclassified_user_channel_preserves_steps_but_never_schedules_native_playback(tmp_path: Path):
     from tests.audio_fixtures import write_sine_wav
 
     wav = write_sine_wav(
@@ -759,7 +771,8 @@ def test_user_channel_loops_repeated_schedule_events(tmp_path: Path):
         if ch.channel_id.startswith(USER_CHANNEL_ID_PREFIX)
     )
     controller.assign_user_channel_sample(user.channel_id, str(wav))
-    # Keep a single step for deterministic multi-pass schedules.
+    # Keep a single persisted step. User channels have no classification seam,
+    # so #920 requires identity-only Rack projection and no point-trigger play.
     for step in range(16):
         if step == 0:
             continue
@@ -769,15 +782,11 @@ def test_user_channel_loops_repeated_schedule_events(tmp_path: Path):
             controller.toggle_step(user.channel_id, step)
 
     controller.play()
-    assert controller.is_playing is True
-    first = len(engine.schedule_calls)
-    assert first >= 1
-    _drain_until_pass_boundary(controller, transport, engine)
-    assert controller._loop_pass_index == 1
-    assert len(engine.schedule_calls) > first
-    _drain_until_pass_boundary(controller, transport, engine)
-    assert controller._loop_pass_index == 2
-    assert len(engine.schedule_calls) > first + 1
+    assert controller.is_playing is False
+    assert engine.schedule_calls == []
+    assert Trigger(channel_id=user.channel_id, position=Fraction(0, 1)) in (
+        controller.state.pattern.triggers
+    )
     assert str(wav) == controller.state.channels[
         next(
             i
@@ -1274,24 +1283,20 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
             schedule_marker_before_replace = len(engine.schedule_calls)
 
         if generation == sample_replace_at + 1:
-            # Replacement must reach a created AND scheduled voice, not only warm-decode.
+            # TEST_CONTRACT_FIX (#920/#926): unclassified user channels retain
+            # editable state but are excluded from point-trigger playback.
             created_after = engine.create_calls[create_marker_before_replace:]
             matched_ids = [
                 int(cfg.id)
                 for cfg in created_after
                 if _create_call_matches_path_seed(cfg, str(wav_b), pcm_markers)
             ]
-            assert matched_ids, (
-                "expected a created voice seeded from replaced user sample wav_b"
-            )
+            assert matched_ids == []
             scheduled_ids = {
                 int(vid)
                 for vid, _frame in engine.schedule_calls[schedule_marker_before_replace:]
             }
-            # Correlate create→schedule by voice id so an unscheduled wav_b create fails.
-            assert any(vid in scheduled_ids for vid in matched_ids), (
-                f"wav_b voice ids {matched_ids} were created but not scheduled"
-            )
+            assert not (scheduled_ids & set(matched_ids))
 
         if generation == tempo_change_at:
             module = _controller_module()
@@ -1388,9 +1393,11 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
         )
 
     assert len(owned_counts) == SOAK_GENERATIONS
-    # Most generations must exercise active PLAYING and IDLE reclaim (Codex P2).
-    assert lifecycle["playing_passes"] >= SOAK_GENERATIONS // 2
-    assert lifecycle["reclaim_passes"] >= SOAK_GENERATIONS // 2
+    # TEST_CONTRACT_FIX (#920/#926): after the deliberate step-0 edit, the
+    # formerly playable user channel must not supply a point-trigger voice.
+    # The original step-0 kick segment still proves PLAYING and IDLE reclaim.
+    assert lifecycle["playing_passes"] >= step_edit_at
+    assert lifecycle["reclaim_passes"] >= step_edit_at
 
     # No monotonic unbounded growth: late window must not exceed early window
     # by more than reclaim slack (growth linear in generation count is a fail).
@@ -1426,3 +1433,265 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
     for _ in range(8):
         assert controller.tick_playback() is None
     assert controller.is_playing is False
+
+
+def _loop_row(name: str, path: str, *, bpm: float | None = 120.0) -> WorkbenchRow:
+    return WorkbenchRow(
+        display_name=name,
+        relative_path=name,
+        path=path,
+        bpm=bpm,
+        key=None,
+        key_conf=None,
+        loudness=None,
+        brightness=None,
+        sample_class="loop",
+        pred_type=None,
+        status="ok",
+        details={},
+    )
+
+
+def _controller_with_kit(kit: LiveKitState, *, sync_enabled: bool = False, bpm: float = BPM):
+    module = _controller_module()
+    Controller = _require(module, "ChannelRackController")
+    engine = FakeNativeEngine()
+    transport = LoopTransport(engine, sync_enabled=sync_enabled, bpm=bpm)
+    controller = Controller(
+        live_kit=kit,
+        transport=transport,
+        pcm_provider=_pcm_provider(),
+        lookahead_frames=4800,
+    )
+    controller.ensure_state()
+    return module, controller, engine, transport
+
+
+def test_natural_cycle_loop_continues_across_pattern_passes():
+    kit = LiveKitState()
+    kit.assign("Atmos / FX", "Atmos", _loop_row("loop", "synthetic/loop.wav"))
+    _module, controller, engine, transport = _controller_with_kit(kit)
+    controller.play()
+    assert controller.is_playing is True
+    assert controller._natural_loop_player is not None
+    assert len(engine.create_calls) >= 1
+    pass_index = controller._loop_pass_index
+    schedules_before = len(engine.schedule_calls)
+    for _ in range(3):
+        transport.advance(PCM_FRAMES)
+        engine.advance_to(transport.engine_frame)
+        controller.tick_playback()
+    assert controller.is_playing is True
+    assert controller._natural_loop_player is not None
+    assert controller._loop_pass_index == pass_index
+    assert len(engine.schedule_calls) > schedules_before
+
+
+def test_natural_cycle_loop_no_pass_boundary_retrigger_for_same_cycle():
+    kit = LiveKitState()
+    kit.assign("Atmos / FX", "Atmos", _loop_row("loop", "synthetic/loop.wav"))
+    _module, controller, engine, transport = _controller_with_kit(kit)
+    controller.play()
+    anchor = controller._loop_anchor_engine_frame
+    assert [frame for _vid, frame in engine.schedule_calls].count(anchor) == 1
+    transport.advance(100)
+    engine.advance_to(transport.engine_frame)
+    controller.tick_playback()
+    assert [frame for _vid, frame in engine.schedule_calls].count(anchor) == 1
+
+
+def test_loop_plus_oneshot_both_schedule_on_play():
+    kit = LiveKitState()
+    kit.assign("Kick + Bass", "Kick", _row("kick", path="synthetic/kick.wav"))
+    kit.assign("Atmos / FX", "Atmos", _loop_row("loop", "synthetic/loop.wav"))
+    _module, controller, engine, transport = _controller_with_kit(kit)
+    del transport
+    controller.play()
+    assert controller.is_playing is True
+    assert controller._play_handle is not None
+    assert controller._play_handle.scheduled_count >= 1
+    assert controller._natural_loop_player is not None
+    assert len(controller._frozen_loop_specs) == 1
+    assert len(engine.create_calls) >= 2
+
+
+def test_loop_only_play_keeps_playing_without_point_triggers():
+    kit = LiveKitState()
+    kit.assign("Atmos / FX", "Atmos", _loop_row("loop", "synthetic/loop.wav"))
+    _module, controller, engine, transport = _controller_with_kit(kit)
+    controller.play()
+    assert controller.is_playing is True
+    assert controller._natural_loop_player is not None
+    assert controller._play_handle is None
+    assert len(engine.create_calls) >= 1
+    pass_index = controller._loop_pass_index
+    scheduled_before = len(engine.schedule_calls)
+    for _ in range(100):
+        tick = controller.tick_playback()
+        assert tick is not None
+        assert tick["playing"] is True
+    assert controller._loop_pass_index == pass_index
+    assert controller._play_handle is None
+
+    transport.advance(PCM_FRAMES)
+    engine.advance_to(transport.engine_frame)
+    controller.tick_playback()
+    assert len(engine.schedule_calls) > scheduled_before
+
+    controller.stop()
+    assert engine._voices == {}
+
+
+def test_oneshot_path_unchanged_without_loops():
+    kit = _kit_with_kick()
+    _module, controller, _engine, _transport = _controller_with_kit(kit)
+    handle = controller.play()
+    assert handle is not None
+    assert controller.is_playing is True
+    assert controller._natural_loop_player is None
+    assert controller._frozen_loop_specs == ()
+
+
+def test_native_unavailable_fail_closed_for_loop_and_oneshot():
+    module = _controller_module()
+    Controller = _require(module, "ChannelRackController")
+
+    class NoNativeTransport(LoopTransport):
+        def get_native_engine(self):
+            return None
+
+    kit = LiveKitState()
+    kit.assign("Atmos / FX", "Atmos", _loop_row("loop", "synthetic/loop.wav"))
+    transport = NoNativeTransport(FakeNativeEngine())
+    controller = Controller(
+        live_kit=kit,
+        transport=transport,
+        pcm_provider=_pcm_provider(),
+        lookahead_frames=4800,
+    )
+    controller.ensure_state()
+    with pytest.raises(RuntimeError, match="Native audio engine"):
+        controller.play()
+    assert controller.is_playing is False
+
+
+def test_play_stop_idempotent_with_natural_loop():
+    kit = LiveKitState()
+    kit.assign("Atmos / FX", "Atmos", _loop_row("loop", "synthetic/loop.wav"))
+    _module, controller, _engine, _transport = _controller_with_kit(kit)
+    controller.play()
+    controller.stop()
+    controller.stop()
+    assert controller.is_playing is False
+    assert controller._natural_loop_player is None
+    controller.play()
+    assert controller.is_playing is True
+    controller.stop()
+
+
+def test_bottom_rack_loop_identity_unchanged_with_natural_cycle_runtime():
+    kit = LiveKitState()
+    kit.assign("Atmos / FX", "Atmos", _loop_row("loop", "synthetic/loop.wav"))
+    module, controller, _engine, _transport = _controller_with_kit(kit)
+    projection = controller.projection()
+    rows = [
+        row
+        for group in projection["groups"]
+        for row in group["rows"]
+        if row.get("live_kit_slot") == "Atmos"
+    ]
+    assert rows
+    assert rows[0]["row_kind"] == module.ROW_KIND_LOOP_IDENTITY
+
+
+def test_loop_transport_mutation_defers_until_next_rack_play():
+    kit = LiveKitState()
+    kit.assign(
+        "Atmos / FX",
+        "Atmos",
+        _loop_row("loop", "synthetic/loop.wav", bpm=100.0),
+    )
+    module, controller, engine, transport = _controller_with_kit(
+        kit, sync_enabled=True, bpm=100.0
+    )
+    controller.play()
+    assert controller._frozen_master_bpm == pytest.approx(100.0)
+    frozen_rate = controller._frozen_loop_specs[0].playback_rate
+    frozen_duration = controller._frozen_loop_specs[0].effective_cycle_duration_frames
+    assert frozen_rate == pytest.approx(1.0)
+
+    transport.set_tempo(200.0)
+    transport.set_sync_enabled(False)
+    transport.advance(50)
+    engine.advance_to(transport.engine_frame)
+    controller.tick_playback()
+
+    assert controller._frozen_master_bpm == pytest.approx(100.0)
+    assert controller._frozen_sync_enabled is True
+    assert controller._frozen_loop_specs[0].playback_rate == pytest.approx(frozen_rate)
+    assert (
+        controller._frozen_loop_specs[0].effective_cycle_duration_frames
+        == frozen_duration
+    )
+    assert all(
+        float(cfg.initial_rate) == pytest.approx(frozen_rate)
+        for cfg in engine.create_calls
+    )
+
+    controller.stop()
+    # Explicit next Rack Play rebuilds frozen transport snapshot at new MASTER.
+    Controller = _require(module, "ChannelRackController")
+    engine2 = FakeNativeEngine()
+    transport2 = LoopTransport(engine2, sync_enabled=True, bpm=200.0)
+    controller2 = Controller(
+        live_kit=kit,
+        transport=transport2,
+        pcm_provider=_pcm_provider(),
+        lookahead_frames=4800,
+    )
+    controller2.ensure_state()
+    controller2.play()
+    assert controller2._frozen_master_bpm == pytest.approx(200.0)
+    assert controller2._frozen_loop_specs[0].playback_rate == pytest.approx(2.0)
+
+
+def test_loop_assignment_mutation_defers_pcm_until_next_rack_play():
+    kit = LiveKitState()
+    kit.assign("Atmos / FX", "Atmos", _loop_row("loop_a", "synthetic/loop_a.wav"))
+    _module, controller, engine, transport = _controller_with_kit(kit)
+    controller.play()
+    frozen_path = controller._frozen_loop_specs[0].sample_path
+    assert frozen_path.endswith("loop_a.wav")
+    creates_before = len(engine.create_calls)
+
+    kit.assign("Atmos / FX", "Atmos", _loop_row("loop_b", "synthetic/loop_b.wav"))
+    controller.reconcile_live_kit_state()
+    transport.advance(20)
+    engine.advance_to(transport.engine_frame)
+    controller.tick_playback()
+
+    assert controller._frozen_loop_specs[0].sample_path == frozen_path
+    assert controller._natural_loop_player is not None
+    assert len(engine.create_calls) >= creates_before
+
+    controller.stop()
+    controller.play()
+    assert controller._frozen_loop_specs[0].sample_path.endswith("loop_b.wav")
+
+
+def test_next_play_sync_on_missing_bpm_starts_no_loop_voice():
+    kit = LiveKitState()
+    kit.assign(
+        "Atmos / FX",
+        "Atmos",
+        _loop_row("loop", "synthetic/loop.wav", bpm=None),
+    )
+    _module, controller, engine, _transport = _controller_with_kit(
+        kit, sync_enabled=True
+    )
+    controller.play()
+    assert controller._frozen_loop_specs == ()
+    assert controller._natural_loop_player is None
+    # Empty oneshot pass + no loops → fail-closed not playing.
+    assert controller.is_playing is False
+    assert engine.create_calls == []
