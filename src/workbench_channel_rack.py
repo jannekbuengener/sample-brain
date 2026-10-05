@@ -25,6 +25,7 @@ from .channel_rack import (
     toggle_step,
     warm_channel_rack_pcm,
 )
+from .gesture_rack_integration import GestureRackIntegrationPlan
 from .pattern_core import Trigger
 from .sequencer_pcm import SequencerPcmProvider
 from .session_grid import TempoMap
@@ -380,6 +381,65 @@ class ChannelRackController:
         self._state = assign_user_channel_sample(
             self._state, channel_id, sample_path
         )
+        self._notify_musical_state_changed()
+        return self._state
+
+    def apply_gesture_integration_plan(
+        self,
+        plan: GestureRackIntegrationPlan,
+        *,
+        feature_enabled: bool,
+    ) -> ChannelRackState:
+        """Apply a ready gesture Rack integration plan atomically (#921).
+
+        Fail-closed order (zero side effects until all gates pass):
+
+        VALIDATE → CONSTRUCT TARGET → STOP → ATOMIC REPLACE → OBSERVER ONCE
+
+        ``feature_enabled`` is injected by the caller from
+        ``WorkbenchFeatureSettings.gesture_rack_apply_enabled``. This method
+        never reads settings files.
+        """
+        # VALIDATE — before stop / mutation / notify
+        if feature_enabled is not True:
+            raise ValueError(
+                "gesture Rack apply is disabled "
+                "(feature_enabled must be True)"
+            )
+        if not isinstance(plan, GestureRackIntegrationPlan):
+            raise TypeError(
+                "plan must be a GestureRackIntegrationPlan "
+                f"(got {type(plan).__name__})"
+            )
+        if plan.ready_for_apply is not True:
+            raise ValueError(
+                "plan is not ready_for_apply; refuse gesture Rack apply"
+            )
+        current = self._require_state()
+        if current != plan.expected_base_state:
+            raise ValueError(
+                "stale GestureRackIntegrationPlan: "
+                "controller state does not match expected_base_state"
+            )
+        grid_span = Fraction(plan.target_step_count, 4)
+        pattern_length = plan.target_pattern.length_quarter_notes
+        if pattern_length < grid_span:
+            raise ValueError(
+                "target Pattern length "
+                f"{pattern_length} is shorter than preserved step-grid span "
+                f"{grid_span} (step_count={plan.target_step_count})"
+            )
+
+        # CONSTRUCT TARGET — still before stop / mutation / notify
+        target = ChannelRackState(
+            channels=plan.target_channels,
+            pattern=plan.target_pattern,
+            step_count=plan.target_step_count,
+        )
+
+        # STOP → ATOMIC REPLACE → OBSERVER ONCE
+        self.stop()
+        self._state = target
         self._notify_musical_state_changed()
         return self._state
 
