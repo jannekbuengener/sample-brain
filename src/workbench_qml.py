@@ -14,7 +14,7 @@ import math
 import os
 import sys
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Mapping
 
 from .workbench_controller import WorkbenchRow, filter_workbench_rows
 from .workbench_browser_rows import (
@@ -863,6 +863,7 @@ class Screen1QmlInteractionAdapter:
             self._HARMONIC_CLOSE_SELECTION_UNSET
         )
         self._waveform_motion_mode = "on"
+        self._gesture_rack_apply_enabled = False
         self._preview_playback_cache: object | None = None
         # Optional #742 disclosure owner (set by production engine wiring).
         self._runtime_composition: Screen1QmlRuntimeComposition | None = None
@@ -993,6 +994,57 @@ class Screen1QmlInteractionAdapter:
         if hasattr(self.view_model, "set_brand_motion_mode"):
             self.view_model.set_brand_motion_mode(normalized)
         return self._waveform_motion_mode
+
+    @property
+    def gesture_rack_apply_enabled(self) -> bool:
+        """Functional #910 toggle — configuration only, not musical state."""
+        return bool(self._gesture_rack_apply_enabled)
+
+    def load_feature_settings(
+        self,
+        *,
+        state_dir: Path | None = None,
+        env: Mapping[str, str] | None = None,
+    ):
+        """Load canonical functional feature settings into the adapter.
+
+        Returns the loaded ``WorkbenchFeatureSettings`` snapshot (not a
+        success/flag boolean).
+        """
+        from .workbench_feature_settings import (
+            WorkbenchFeatureSettings,
+            load_workbench_feature_settings,
+        )
+
+        loaded = load_workbench_feature_settings(state_dir=state_dir, env=env)
+        if not isinstance(loaded, WorkbenchFeatureSettings):
+            loaded = WorkbenchFeatureSettings()
+        self._gesture_rack_apply_enabled = bool(loaded.gesture_rack_apply_enabled)
+        return loaded
+
+    def set_gesture_rack_apply_enabled(
+        self,
+        enabled: bool,
+        *,
+        state_dir: Path | None = None,
+        env: Mapping[str, str] | None = None,
+    ) -> bool:
+        """Persist gesture→Rack apply toggle via WorkbenchFeatureSettings only."""
+        from .workbench_feature_settings import (
+            WorkbenchFeatureSettings,
+            save_workbench_feature_settings,
+        )
+
+        value = bool(enabled)
+        if save_workbench_feature_settings(
+            WorkbenchFeatureSettings(gesture_rack_apply_enabled=value),
+            state_dir=state_dir,
+            env=env,
+        ):
+            self._gesture_rack_apply_enabled = value
+        else:
+            self.load_feature_settings(state_dir=state_dir, env=env)
+        return self._gesture_rack_apply_enabled
 
     def reset_layout_preferences(self) -> None:
         from .workbench_display_preferences import reset_layout
@@ -2874,6 +2926,21 @@ ApplicationWindow {
                                 checked: window.interaction.waveformMotionMode === "off"
                                 onClicked: window.interaction.setWaveformMotionMode("off")
                             }
+                        }
+                        Label { text: "Functional"; color: theme.textSecondary; font.pixelSize: 11 }
+                        Button {
+                            id: gestureRackApplyToggle
+                            objectName: "gestureRackApplyToggle"
+                            Layout.fillWidth: true
+                            text: "Gesture → Rack apply"
+                            checkable: true
+                            checked: window.interaction.gestureRackApplyEnabled
+                            // Toggle from the Python-owned value so a broken
+                            // CheckBox binding cannot leave UI ahead of disk.
+                            onClicked: window.interaction.setGestureRackApplyEnabled(
+                                !window.interaction.gestureRackApplyEnabled
+                            )
+                            Accessible.name: "Gesture Rack apply"
                         }
                         Button {
                             Layout.fillWidth: true
@@ -5126,6 +5193,15 @@ def _qml_interaction_bridge(
                 pass
             self._refresh()
 
+        @Property(bool, notify=state_changed)
+        def gestureRackApplyEnabled(self) -> bool:
+            return adapter.gesture_rack_apply_enabled
+
+        @Slot(bool)
+        def setGestureRackApplyEnabled(self, enabled: bool) -> None:
+            adapter.set_gesture_rack_apply_enabled(bool(enabled))
+            self._refresh()
+
         @Slot()
         def resetLayoutPreferences(self) -> None:
             adapter.reset_layout_preferences()
@@ -6218,6 +6294,10 @@ def _qml_engine(
         from .workbench_display_preferences import load_display_preferences
 
         adapter.set_waveform_motion_mode(load_display_preferences().motion_mode)
+    except Exception:
+        pass
+    try:
+        adapter.load_feature_settings()
     except Exception:
         pass
     library_model = create_qt_library_tree_model(view_model.library_tree)
