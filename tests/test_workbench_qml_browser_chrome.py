@@ -91,7 +91,7 @@ def _full_browser_column_header(source: str) -> str:
 
 
 def test_browser_search_field_is_visually_integrated():
-    search = _snippet(QML_SOURCE, SEARCH_MARKER, 900)
+    search = _snippet(QML_SOURCE, SEARCH_MARKER, 1200)
     assert QML_SOURCE.count(SEARCH_MARKER) == 1
     assert 'placeholderText: "Search samples"' in search
     assert "background: Rectangle" in search

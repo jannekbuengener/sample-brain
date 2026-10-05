@@ -162,14 +162,13 @@ def test_layout_preferences_alone_do_not_auto_resume_source(tmp_path: Path) -> N
     save_layout_preferences(
         {
             "library": 0.12,
-            "browser": 0.60,
+            "browser": 0.74,
             "harmony": 0.14,
-            "livekit": 0.14,
         },
         state_dir=tmp_path,
     )
     loaded = load_layout_preferences(state_dir=tmp_path)
-    assert loaded.ratios["browser"] == pytest.approx(0.60, abs=1e-9)
+    assert loaded.ratios["browser"] == pytest.approx(0.74, abs=1e-9)
     launch = resolve_launch_workspace(preset=None)
     assert launch.mode is WorkspaceMode.CLEAN_START
     assert launch.source_node_id is None
@@ -335,7 +334,6 @@ def test_workspace_preset_round_trip_stable_fields_only(tmp_path: Path) -> None:
             "library": True,
             "browser": True,
             "harmony": False,
-            "livekit": True,
         },
         "density_mode": "compact",
         "motion_mode": "reduced",
@@ -363,7 +361,6 @@ def test_workspace_preset_never_serializes_transient_or_private_paths(
             "library": True,
             "browser": True,
             "harmony": False,
-            "livekit": True,
         },
         "density_mode": "compact",
         "motion_mode": "on",
@@ -403,7 +400,6 @@ def test_save_workspace_preset_does_not_set_startup(tmp_path: Path) -> None:
                 "library": True,
                 "browser": True,
                 "harmony": False,
-                "livekit": True,
             },
             "density_mode": "compact",
             "motion_mode": "on",
@@ -432,7 +428,6 @@ def test_set_as_startup_is_explicit_and_opens_source_without_transient_restore(
                 "library": True,
                 "browser": True,
                 "harmony": True,
-                "livekit": True,
             },
             "density_mode": "compact",
             "motion_mode": "reduced",
@@ -559,7 +554,7 @@ def test_reset_layout_restores_canonical_ratios_without_deleting_presets_or_sour
     api = _api()
     before = _json_files(tmp_path)
     save_layout_preferences(
-        {"library": 0.10, "browser": 0.70, "harmony": 0.10, "livekit": 0.10},
+        {"library": 0.10, "browser": 0.80, "harmony": 0.10},
         state_dir=tmp_path,
     )
     api.save_workspace_preset(

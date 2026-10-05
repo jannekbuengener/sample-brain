@@ -49,8 +49,9 @@ def test_library_harmony_live_kit_remain_panel_surfaces() -> None:
     harmony = _snippet_after('objectName: "harmonyPane"', 500)
     assert "color: theme.surfacePanel" in harmony
 
-    live_kit = _snippet_after('objectName: "liveKitPane"', 360)
-    assert "color: theme.surfacePanel" in live_kit
+    # #908: panel surface color lives on bottomRackPane (compat liveKitPane is an Item).
+    bottom = _snippet_after('objectName: "bottomRackPane"', 900)
+    assert "color: theme.surfacePanel" in bottom
 
 
 def test_browser_pane_chrome_keeps_panel_family_when_viewport_is_workspace() -> None:
@@ -131,13 +132,15 @@ def test_runtime_playlist_viewport_matches_calm_canvas_surface_root(tmp_path) ->
         library = window.findChild(QQuickItem, "libraryPane")
         harmony = window.findChild(QQuickItem, "harmonyPane")
         live_kit = window.findChild(QQuickItem, "liveKitPane")
+        bottom = window.findChild(QQuickItem, "bottomRackPane")
         browser_pane = window.findChild(QQuickItem, "browserPane")
         assert library is not None and harmony is not None and live_kit is not None
-        assert browser_pane is not None
+        assert bottom is not None and browser_pane is not None
         panel = QColor(blood.surface)
         assert QColor(library.property("color")).name() == panel.name()
         assert QColor(harmony.property("color")).name() == panel.name()
-        assert QColor(live_kit.property("color")).name() == panel.name()
+        # #908: panel fill is on bottomRackPane; liveKitPane is a compat Item.
+        assert QColor(bottom.property("color")).name() == panel.name()
         # Outer browser chrome stays panel-family; viewport alone is workspace.
         assert QColor(browser_pane.property("color")).name() == panel.name()
         assert QColor(browser_pane.property("color")).name() != expected.name()
