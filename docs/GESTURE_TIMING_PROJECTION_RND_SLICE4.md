@@ -233,6 +233,8 @@ It does **not** mean BPM inference, quantization, loop length, Pattern generatio
 
 Parent `#680` stays OPEN.
 
+Pattern-binding plan is Slice 5 (#891); see `docs/GESTURE_PATTERN_BINDING_RND_SLICE5.md`.
+
 ## Acceptance tests
 
 See `tests/test_gesture_timing_projection_888.py` (frozen at `TEST_FREEZE`).
