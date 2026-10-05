@@ -692,12 +692,12 @@ def atmosphere_stop_colors(
     # Subliminal noir depth only — Owner rejects visible warm glow ovals.
     return {
         "workspace": {
-            "core": mix_hex(mix_hex(workspace, accent, 0.035), foreground, 0.008),
+            "core": mix_hex(mix_hex(workspace, accent, 0.015), foreground, 0.003),
             "mid": workspace,
             "edge": mix_hex(workspace, background, 0.65),
         },
         "panel": {
-            "core": mix_hex(mix_hex(panel, accent, 0.03), foreground, 0.006),
+            "core": mix_hex(mix_hex(panel, accent, 0.012), foreground, 0.002),
             "mid": panel,
             "edge": mix_hex(panel, background, 0.50),
         },

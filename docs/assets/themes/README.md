@@ -83,8 +83,8 @@ Harmonic Matching simply lacked the shared panel atmosphere binding.
 | Role | CURRENT | TARGET |
 |------|---------|--------|
 | Workspace root (`surfaceWorkspace`) | `#050506` @ `0.012` | `#040405` @ `0.008` — slightly deeper ink |
-| Atmosphere workspace core | `#1e0d11` | `#0b0608` — almost subliminal depth only |
-| Atmosphere panel core | `#1c0d10` | `#0d090b` — same restraint on all panels |
+| Atmosphere workspace core | `#1e0d11` | `#070506` — almost subliminal depth only |
+| Atmosphere panel core | `#1c0d10` | `#0a0809` — same restraint on all panels |
 | Panel solids (Library / Browser / Live Kit / Harmonic) | `#080809` | unchanged family fill `#080809` |
 | Dividers | `#19191a` | unchanged fine edge `#19191a` |
 
@@ -115,10 +115,10 @@ Blood stop formulas (Theme Core only — not persisted customs) — **subliminal
 
 | Overlay | Stop | Derivation | Blood example |
 |---------|------|------------|---------------|
-| Workspace | core | `mix(mix(surfaceWorkspace, accent, 0.035), foreground, 0.008)` | `#0b0608` |
+| Workspace | core | `mix(mix(surfaceWorkspace, accent, 0.015), foreground, 0.003)` | `#070506` |
 | Workspace | mid | `surfaceWorkspace` | `#040405` |
 | Workspace | edge | `mix(surfaceWorkspace, background, 0.65)` | `#030304` |
-| Panel | core | `mix(mix(surface, accent, 0.03), foreground, 0.006)` | `#0d090b` |
+| Panel | core | `mix(mix(surface, accent, 0.012), foreground, 0.002)` | `#0a0809` |
 | Panel | mid | `surface` | `#080809` |
 | Panel | edge | `mix(surface, background, 0.50)` | `#050506` |
 

@@ -25,10 +25,10 @@
     "hover": "mix(background, foreground, 0.075)",
     "selected": "mix(background, accent, 0.22)",
     "focusRing": "accent",
-    "atmosphereWorkspaceCore": "mix(mix(surfaceWorkspace, accent, 0.035), foreground, 0.008)",
+    "atmosphereWorkspaceCore": "mix(mix(surfaceWorkspace, accent, 0.015), foreground, 0.003)",
     "atmosphereWorkspaceMid": "surfaceWorkspace",
     "atmosphereWorkspaceEdge": "mix(surfaceWorkspace, background, 0.65)",
-    "atmospherePanelCore": "mix(mix(surface, accent, 0.03), foreground, 0.006)",
+    "atmospherePanelCore": "mix(mix(surface, accent, 0.012), foreground, 0.002)",
     "atmospherePanelMid": "surface",
     "atmospherePanelEdge": "mix(surface, background, 0.50)"
   },

@@ -37,10 +37,10 @@ BLOOD_PANEL = "#080809"
 BLOOD_DIVIDER = "#19191a"
 BLOOD_TEXT_PRIMARY = "#e4e6ea"
 BLOOD_TEXT_SECONDARY = "#68696b"
-BLOOD_ATMOSPHERE_WORKSPACE_CORE = "#0b0608"
+BLOOD_ATMOSPHERE_WORKSPACE_CORE = "#070506"
 BLOOD_ATMOSPHERE_WORKSPACE_MID = "#040405"
 BLOOD_ATMOSPHERE_WORKSPACE_EDGE = "#030304"
-BLOOD_ATMOSPHERE_PANEL_CORE = "#0d090b"
+BLOOD_ATMOSPHERE_PANEL_CORE = "#0a0809"
 BLOOD_ATMOSPHERE_PANEL_MID = "#080809"
 BLOOD_ATMOSPHERE_PANEL_EDGE = "#050506"
 
@@ -63,12 +63,12 @@ RAISED_MIX = 0.06
 HOVER_MIX = 0.075
 DIVIDER_MIX = 0.10
 TEXT_SECONDARY_MIX = 0.55
-ATMOSPHERE_WORKSPACE_ACCENT_MIX = 0.035
-ATMOSPHERE_WORKSPACE_FG_MIX = 0.008
-ATMOSPHERE_PANEL_ACCENT_MIX = 0.03
-ATMOSPHERE_PANEL_FG_MIX = 0.006
+ATMOSPHERE_WORKSPACE_ACCENT_MIX = 0.015
+ATMOSPHERE_WORKSPACE_FG_MIX = 0.003
+ATMOSPHERE_PANEL_ACCENT_MIX = 0.012
+ATMOSPHERE_PANEL_FG_MIX = 0.002
 # Subliminal depth: core must stay close to mid (not a visible glow oval).
-MAX_ATMOSPHERE_CORE_TO_MID_LUM_RATIO = 2.0
+MAX_ATMOSPHERE_CORE_TO_MID_LUM_RATIO = 1.6
 
 
 def _normalize_hex(value: str) -> str:
@@ -270,14 +270,14 @@ def test_canon_documents_atmosphere_stop_derivation() -> None:
     canon = _canon()
     derivation = canon["derivation"]
     assert derivation["atmosphereWorkspaceCore"] == (
-        "mix(mix(surfaceWorkspace, accent, 0.035), foreground, 0.008)"
+        "mix(mix(surfaceWorkspace, accent, 0.015), foreground, 0.003)"
     )
     assert derivation["atmosphereWorkspaceMid"] == "surfaceWorkspace"
     assert derivation["atmosphereWorkspaceEdge"] == (
         "mix(surfaceWorkspace, background, 0.65)"
     )
     assert derivation["atmospherePanelCore"] == (
-        "mix(mix(surface, accent, 0.03), foreground, 0.006)"
+        "mix(mix(surface, accent, 0.012), foreground, 0.002)"
     )
     assert derivation["atmospherePanelMid"] == "surface"
     assert derivation["atmospherePanelEdge"] == (
