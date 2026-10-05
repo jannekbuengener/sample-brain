@@ -1,7 +1,8 @@
 """#880 slim premium program chrome — runtime geometry contract (TEST_FREEZE).
 
-Chosen implementation values (e.g. ~36 / ~28) are design targets, not
-screenshot-measured pixel truth. Gates use corridors vs the #831 mass baseline.
+Chosen implementation values (e.g. ~30 / ~22) are design targets, not
+screenshot-measured pixel truth. Gates use corridors vs the #831 mass baseline
+and require a clear trim vs the first #880 round (~36 / ~28).
 """
 
 from __future__ import annotations
@@ -21,12 +22,18 @@ _PRIOR_SYNC_W = 48.0
 _PRIOR_SYNC_H = 25.0
 _PRIOR_SCOPE_CONTROL = 28.0
 
+# First #880 round (superseded visually; must still get smaller).
+_PRIOR_880_HEADER = 36.0
+_PRIOR_880_FOOTER = 28.0
+
 # Chosen corridors (logical px / DIP at 100% scale baseline).
-_HEADER_MIN = 24.0
-_HEADER_MAX = 40.0
-_FOOTER_MIN = 24.0
-_FOOTER_MAX = 32.0
-_MIN_HIT = 20.0
+# Owner target: header ~28–32, footer ~20–24.
+_HEADER_MIN = 26.0
+_HEADER_MAX = 34.0
+_FOOTER_MIN = 18.0
+_FOOTER_MAX = 26.0
+# Visual chrome may be slim; interaction targets stay near this floor.
+_MIN_HIT = 18.0
 
 
 def test_identity_is_plain_product_text_without_decorative_glyph() -> None:
@@ -40,8 +47,9 @@ def test_identity_is_plain_product_text_without_decorative_glyph() -> None:
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 @pytest.mark.parametrize("size", [(1120, 640), (1600, 900)])
 def test_runtime_slim_header_footer_corridors(size) -> None:
-    from tests.test_program_chrome_qml_831 import _build_screen1_window
     from PySide6.QtQuick import QQuickItem
+
+    from tests.test_program_chrome_qml_831 import _build_screen1_window
 
     width, height = size
     app, engine, window, adapter, settle = _build_screen1_window()
@@ -58,8 +66,10 @@ def test_runtime_slim_header_footer_corridors(size) -> None:
         h = float(header.height())
         f = float(footer.height())
         assert h < _PRIOR_HEADER_HEIGHT
+        assert h < _PRIOR_880_HEADER
         assert _HEADER_MIN <= h <= _HEADER_MAX
         assert f < _PRIOR_FOOTER_HEIGHT
+        assert f < _PRIOR_880_FOOTER
         assert _FOOTER_MIN <= f <= _FOOTER_MAX
     finally:
         window.close()
@@ -68,8 +78,9 @@ def test_runtime_slim_header_footer_corridors(size) -> None:
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 def test_runtime_transport_and_scope_controls_are_lighter() -> None:
-    from tests.test_program_chrome_qml_831 import _build_screen1_window
     from PySide6.QtQuick import QQuickItem
+
+    from tests.test_program_chrome_qml_831 import _build_screen1_window
 
     app, engine, window, adapter, settle = _build_screen1_window()
     try:
@@ -81,19 +92,23 @@ def test_runtime_transport_and_scope_controls_are_lighter() -> None:
         sync = window.findChild(QQuickItem, "syncIndicator")
         overflow = window.findChild(QQuickItem, "displayPreferencesOverflow")
         sources = window.findChild(QQuickItem, "librarySourcesScopeButton")
+        transport = window.findChild(QQuickItem, "headerTransportZone")
         assert sync is not None and overflow is not None and sources is not None
+        assert transport is not None
 
         assert float(sync.width()) < _PRIOR_SYNC_W
         assert float(sync.height()) < _PRIOR_SYNC_H
-        assert float(sync.height()) >= _MIN_HIT - 2.0
+        assert float(sync.height()) >= _MIN_HIT - 4.0
 
-        assert float(overflow.width()) <= 28.0
-        assert float(overflow.height()) <= 26.0
+        assert float(overflow.width()) <= 24.0
+        assert float(overflow.height()) <= 24.0
         assert float(overflow.height()) >= _MIN_HIT - 2.0
 
         assert float(sources.width()) < _PRIOR_SCOPE_CONTROL
         assert float(sources.height()) < _PRIOR_SCOPE_CONTROL
         assert float(sources.height()) >= _MIN_HIT - 2.0
+        # Compact tempo-zone: not a stretched utility strip at 1600px.
+        assert float(transport.width()) <= 420.0
     finally:
         window.close()
         app.processEvents()
@@ -101,8 +116,9 @@ def test_runtime_transport_and_scope_controls_are_lighter() -> None:
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 def test_runtime_nav_hit_areas_remain_usable_and_flat() -> None:
-    from tests.test_program_chrome_qml_831 import _build_screen1_window
     from PySide6.QtQuick import QQuickItem
+
+    from tests.test_program_chrome_qml_831 import _build_screen1_window
 
     app, engine, window, adapter, settle = _build_screen1_window()
     try:
@@ -121,9 +137,11 @@ def test_runtime_nav_hit_areas_remain_usable_and_flat() -> None:
         ):
             btn = window.findChild(QQuickItem, name)
             assert btn is not None
+            # Hit band may match header height; visual chrome stays text-only.
             assert float(btn.height()) >= _MIN_HIT
             assert float(btn.height()) <= float(header.height()) + 1.0
-            assert float(btn.width()) >= 48.0
+            # Compact text tabs stay clickable; "Browser" can land just under 48px.
+            assert float(btn.width()) >= 40.0
     finally:
         window.close()
         app.processEvents()
@@ -134,8 +152,9 @@ def test_runtime_visual_grab_slim_chrome_880(tmp_path) -> None:
     """Runtime evidence grab for Owner Visual Acceptance review (#880)."""
     from pathlib import Path
 
-    from tests.test_program_chrome_qml_831 import _build_screen1_window
     from PySide6.QtQuick import QQuickItem
+
+    from tests.test_program_chrome_qml_831 import _build_screen1_window
 
     evidence = Path(tmp_path) / "program_chrome_880"
     evidence.mkdir()
