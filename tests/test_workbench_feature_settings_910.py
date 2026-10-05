@@ -251,9 +251,6 @@ def test_adapter_save_failure_does_not_keep_stale_enabled_memory(tmp_path: Path,
 
 
 def test_settings_change_does_not_mutate_rack_or_call_apply_seam(tmp_path: Path):
-    from src.workbench_channel_rack import ChannelRackController
-
-    assert not hasattr(ChannelRackController, "apply_gesture_integration_plan")
     view_model = Screen1QmlViewModel.baseline("screen1-default-3panel")
     adapter = Screen1QmlInteractionAdapter(
         view_model=view_model,
@@ -265,7 +262,11 @@ def test_settings_change_does_not_mutate_rack_or_call_apply_seam(tmp_path: Path)
     assert "restore_state" not in before
     adapter.set_gesture_rack_apply_enabled(True, state_dir=tmp_path)
     # No channel rack controller is attached; settings persist alone.
+    # Enabling the Functional toggle must not itself invoke apply mutation.
     assert load_workbench_feature_settings(state_dir=tmp_path).gesture_rack_apply_enabled is True
+    after = inspect.getsource(Screen1QmlInteractionAdapter.set_gesture_rack_apply_enabled)
+    assert "apply_gesture_integration_plan" not in after
+    assert "restore_state" not in after
 
 
 def test_qml_hosts_functional_section_distinct_from_appearance():

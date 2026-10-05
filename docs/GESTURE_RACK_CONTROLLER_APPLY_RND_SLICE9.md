@@ -1,6 +1,6 @@
 # Gesture Rack Controller/Session Apply R&D — Slice 9 (#680 / #921)
 
-**Status:** TEST_FREEZE — guarded apply seam pending implementation  
+**Status:** Implemented — `GUARDED_CONTROLLER_SESSION_APPLY_VIABLE`  
 **Parent:** [#680](https://github.com/jannekbuengener/sample-brain/issues/680) (remains OPEN)  
 **Child:** [#921](https://github.com/jannekbuengener/sample-brain/issues/921)
 

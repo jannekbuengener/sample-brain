@@ -121,14 +121,28 @@ def test_canonical_functional_settings_owner_exists_without_ad_hoc_gesture_modul
 
 
 def test_channel_rack_controller_still_has_no_gesture_apply_seam_after_settings_owner():
-    """Historical #904 blocker: settings owner alone must not introduce apply mutation."""
-    assert not hasattr(ChannelRackController, "apply_gesture_integration_plan")
+    """Historical #904 meaning: settings owner alone ≠ gesture apply delivery.
+
+    #904 stopped at FEATURE_SETTINGS_OWNER_BLOCKED. #910 later delivered the
+    canonical settings owner without implementing apply mutation. #921 owns the
+    separate guarded apply seam. Keep historical blocker narrative and forbid
+    treating restore_state / settings I/O as live apply shortcuts.
+    """
+    text = SLICE8_DOC.read_text(encoding="utf-8")
+    assert "FEATURE_SETTINGS_OWNER_BLOCKED" in text
+    assert "No product mutation" in text or "no product mutation" in text.lower()
+
+    settings_src = (
+        REPO_ROOT / "src" / "workbench_feature_settings.py"
+    ).read_text(encoding="utf-8")
+    assert "apply_gesture_integration_plan" not in settings_src
+    assert "ChannelRackController" not in settings_src
+
     public_names = {
         name
         for name in dir(ChannelRackController)
         if not name.startswith("_") and callable(getattr(ChannelRackController, name))
     }
-    assert "apply_gesture_integration_plan" not in public_names
     # restore_state remains compose/restore — not a live apply substitute.
     assert "restore_state" in public_names
 
