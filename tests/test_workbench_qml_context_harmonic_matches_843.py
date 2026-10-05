@@ -443,13 +443,13 @@ def test_a_to_b_invalidates_a_rows_atomically_with_b_projection():
 
 def test_harmonic_match_header_button_structurally_removed():
     assert 'objectName: "harmonicMatchButton"' not in QML_SOURCE
-    producer = QML_SOURCE[
-        QML_SOURCE.index('objectName: "producerCommandZone"') : QML_SOURCE.index(
-            'objectName: "headerRightZone"'
+    transport = QML_SOURCE[
+        QML_SOURCE.index('objectName: "headerTransportZone"') : QML_SOURCE.index(
+            'objectName: "workspaceRow"'
         )
     ]
-    assert "harmonicMatchButton" not in producer
-    assert 'Accessible.name: "Harmonic Match"' not in producer
+    assert "harmonicMatchButton" not in transport
+    assert 'Accessible.name: "Harmonic Match"' not in transport
 
 
 def test_context_menu_still_wires_harmonic_matches_action():

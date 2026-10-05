@@ -359,16 +359,20 @@ def test_qml_source_exposes_screen2_channel_rack_surface():
     for token in (
         'objectName: "channelRackScreen"',
         'objectName: "channelRackStepGrid"',
-        'objectName: "openChannelRackButton"',
-        'objectName: "returnToScreen1Button"',
+        'objectName: "programNavStepSequencer"',
+        'objectName: "programNavBrowser"',
         'objectName: "channelRackPlayButton"',
         'objectName: "channelRackStopButton"',
         'objectName: "addUserChannelButton"',
         "Channel Rack",
     ):
         assert token in source
+    nav_block = source.split('objectName: "headerNavZone"', 1)[1].split(
+        'objectName: "headerTransportZone"', 1
+    )[0]
+    assert "Arrangement" in nav_block
+    assert 'objectName: "programNavArrangement"' in nav_block
     for forbidden in (
-        "Arrangement",
         "Playlist",
         "Piano Roll",
         "Mixer",
@@ -464,9 +468,8 @@ def test_qml_runtime_screen2_navigation_projection_and_step_toggle():
     window.show()
     _settle_qml_frame(app)
     try:
-        open_btn = window.findChild(QQuickItem, "openChannelRackButton")
-        assert open_btn is not None
-        assert open_btn.property("visible") is True
+        step_nav = window.findChild(QQuickItem, "programNavStepSequencer")
+        assert step_nav is not None
 
         channel_rack = engine.rootContext().contextProperty("channelRackModel")
         assert channel_rack is not None
@@ -479,11 +482,11 @@ def test_qml_runtime_screen2_navigation_projection_and_step_toggle():
         play_btn = window.findChild(QQuickItem, "channelRackPlayButton")
         stop_btn = window.findChild(QQuickItem, "channelRackStopButton")
         add_btn = window.findChild(QQuickItem, "addUserChannelButton")
-        back_btn = window.findChild(QQuickItem, "returnToScreen1Button")
+        browser_nav = window.findChild(QQuickItem, "programNavBrowser")
         assert rack_screen is not None and rack_screen.property("visible") is True
         assert step_grid is not None
         assert play_btn is not None and stop_btn is not None and add_btn is not None
-        assert back_btn is not None and back_btn.property("visible") is True
+        assert browser_nav is not None
         assert window.property("activeScreen") == "screen2"
         assert channel_rack.stepCount == 16
         assert len(channel_rack.groups) >= 4

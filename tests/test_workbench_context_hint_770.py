@@ -57,7 +57,7 @@ def test_context_hint_contract_doc_exists() -> None:
 def test_descriptor_seam_is_shared_and_placement_decoupled() -> None:
     source = QML_SOURCE
     assert 'objectName: "contextHintState"' in source
-    assert 'objectName: "contextHintPlacement"' in source
+    assert 'objectName: "programFooterBand"' in source
     assert 'objectName: "contextHintDisplay"' in source
     # Content state must not hard-wire placement coordinates into descriptors.
     state_block = source.split('objectName: "contextHintState"', 1)[1].split(
@@ -67,13 +67,13 @@ def test_descriptor_seam_is_shared_and_placement_decoupled() -> None:
     assert "anchors." not in state_block
     assert re.search(r"\bx:\s*", state_block) is None
     assert re.search(r"\by:\s*", state_block) is None
-    # Pre-#831 CURRENT RUNTIME: hint remains horizontally centered in footer band.
-    place_block = source.split('objectName: "contextHintPlacement"', 1)[1].split(
+    # #831: hint sits on the right inside the program footer band.
+    place_block = source.split('objectName: "programFooterBand"', 1)[1].split(
         "header:", 1
     )[0]
     assert "contextHintDisplay" in place_block
-    assert "horizontalCenter" in place_block or "AlignHCenter" in place_block
-    assert "footer:" in source.split('objectName: "contextHintPlacement"', 1)[0][-80:]
+    assert "horizontalCenter" not in place_block.split("contextHintDisplay", 1)[1].split("}", 1)[0]
+    assert "AlignRight" in place_block or "AlignHRight" in place_block
     hint_doc = Path("docs/WORKBENCH_CONTEXT_HINT_CONTRACT.md").read_text(encoding="utf-8")
     assert "bottom-center" not in hint_doc.lower()
     assert "right side" in hint_doc or "on the right" in hint_doc
@@ -109,7 +109,7 @@ def test_supported_controls_register_stable_distinct_descriptors() -> None:
     assert 'objectName: "libraryCatalogScopeButton"' not in source
     # Scope controls must not depend on classic ToolTip for discoverability.
     scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
-        'objectName: "elasticHandleAfterLibrary"', 1
+        'Item { Layout.fillWidth: true }', 1
     )[0]
     assert "ToolTip." not in scope_block
 
@@ -271,7 +271,7 @@ def test_scope_button_hover_and_focus_drive_shared_hint(tmp_path: Path) -> None:
         assert coll.hasActiveFocus()
         # Leave hover while Collections keeps focus → focus hint remains.
         # Move to a neutral chrome area below the scope bar.
-        placement = window.findChild(QQuickItem, "contextHintPlacement")
+        placement = window.findChild(QQuickItem, "programFooterBand")
         assert placement is not None
         QTest.mouseMove(window, scene_point(placement))
         settle(app)
@@ -319,7 +319,7 @@ def test_automated_runtime_visual_acceptance_context_hint(tmp_path: Path) -> Non
         )
         try:
             state = window.findChild(QObject, "contextHintState")
-            placement = window.findChild(QQuickItem, "contextHintPlacement")
+            placement = window.findChild(QQuickItem, "programFooterBand")
             display = window.findChild(QQuickItem, "contextHintDisplay")
             fav = window.findChild(QQuickItem, "libraryFavoritesScopeButton")
             coll = window.findChild(QQuickItem, "libraryCollectionsScopeButton")
@@ -330,17 +330,17 @@ def test_automated_runtime_visual_acceptance_context_hint(tmp_path: Path) -> Non
             assert fav is not None and coll is not None and bar is not None
             assert placement.isVisible()
             assert float(placement.height()) > 0
-            assert float(placement.height()) <= 28
+            assert float(placement.height()) <= 48
 
             # Bottom-aligned within the window content area.
             win_h = float(window.height())
             place_bottom = float(placement.y()) + float(placement.height())
             assert place_bottom >= win_h - float(placement.height()) - 4
 
-            # Horizontally centered display.
-            display_center_x = float(display.x()) + float(display.width()) / 2.0
-            place_center_x = float(placement.width()) / 2.0
-            assert abs(display_center_x - place_center_x) <= 8.0
+            # Hint sits on the right side of the footer band.
+            display_right = float(display.x()) + float(display.width())
+            place_right = float(placement.width())
+            assert display_right >= place_right - 24.0
 
             # Does not cover Browser actionable area (footer sits below panes).
             if browser is not None and browser.isVisible():

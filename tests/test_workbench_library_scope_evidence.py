@@ -151,7 +151,7 @@ PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
-    """Runtime: libraryScopeBar stays at Library pane bottom above footer (#837)."""
+    """Runtime: libraryScopeBar stays in the global footer band (#831)."""
     from PySide6.QtQuick import QQuickItem
 
     from src.workbench_library import init_workbench_library
@@ -208,8 +208,7 @@ def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
             ("collections", None),
         ):
             bar = window.findChild(QQuickItem, "libraryScopeBar")
-            header = window.findChild(QQuickItem, "libraryPane")
-            assert bar is not None and header is not None
+            assert bar is not None
             bar.setProperty("mode", mode)
             if node_id:
                 bridge.selectLibraryNode(node_id)
@@ -218,14 +217,16 @@ def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
             bar = window.findChild(QQuickItem, "libraryScopeBar")
             tree = window.findChild(QQuickItem, "libraryTree")
             coll = window.findChild(QQuickItem, "libraryCollectionList")
+            footer = window.findChild(QQuickItem, "programFooterBand")
             host = window.findChild(QQuickItem, "libraryContentHost")
             fav = window.findChild(QQuickItem, "libraryFavoritesScopeButton")
             catalog = window.findChild(QQuickItem, "libraryCatalogScopeButton")
-            assert bar is not None and host is not None
+            assert bar is not None and footer is not None and host is not None
             assert fav is not None
             assert catalog is None
-            bar_ys[mode] = float(bar.y())
-            assert float(bar.y()) > 80.0, f"{mode} scope bar not at pane bottom: y={bar.y()}"
+            bar_in_footer = bar.mapToItem(footer, 0, 0)
+            bar_ys[mode] = float(bar_in_footer.y())
+            assert abs(bar_in_footer.y()) < 8.0, f"{mode} scope bar not in footer band"
             if mode == "sources":
                 assert tree is not None and tree.isVisible()
                 assert coll is not None and not coll.isVisible()
@@ -235,7 +236,6 @@ def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
             else:
                 assert tree is not None and not tree.isVisible()
                 assert coll is not None and not coll.isVisible()
-            assert float(host.y()) < float(bar.y())
         assert abs(bar_ys["all"] - bar_ys["sources"]) < 1.0
         assert abs(bar_ys["favorites"] - bar_ys["sources"]) < 1.0
         assert abs(bar_ys["recordings"] - bar_ys["sources"]) < 1.0

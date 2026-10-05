@@ -1,7 +1,6 @@
-"""#782 producer command zone — structure, ownership, geometry.
+"""#782 / #831 producer transport zone — structure, ownership, geometry.
 
-Header LEFT / CENTER / RIGHT hierarchy with MASTER/GRID/SYNC + Harmonic Match
-geometrically centered. Browser Search stays contextual. No second music state.
+After #831: header LEFT / NAV center / TRANSPORT right. Browser search stays contextual.
 """
 
 from __future__ import annotations
@@ -14,8 +13,6 @@ from src.workbench_qml import QML_SOURCE
 
 PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 
-# Horizontal center of producerCommandZone must stay within this fraction of
-# header/window half-width (runtime geometry, not source-string).
 CENTER_TOLERANCE_RATIO = 0.04
 CENTER_TOLERANCE_MIN_PX = 24
 
@@ -32,41 +29,40 @@ def _browser_chrome_block() -> str:
     return QML_SOURCE[start:end]
 
 
-def test_header_exposes_left_center_right_zones():
+def test_header_exposes_left_nav_transport_zones():
     header = _header_block()
     assert 'objectName: "headerLeftZone"' in header
-    assert 'objectName: "producerCommandZone"' in header
-    assert 'objectName: "headerRightZone"' in header
+    assert 'objectName: "headerNavZone"' in header
+    assert 'objectName: "headerTransportZone"' in header
     assert "Sample Brain" in header
     assert header.index('objectName: "headerLeftZone"') < header.index(
-        'objectName: "producerCommandZone"'
+        'objectName: "headerNavZone"'
     )
-    assert header.index('objectName: "producerCommandZone"') < header.index(
-        'objectName: "headerRightZone"'
+    assert header.index('objectName: "headerNavZone"') < header.index(
+        'objectName: "headerTransportZone"'
     )
 
 
-def test_producer_command_zone_keeps_master_grid_sync_without_harmonic_header():
+def test_transport_zone_keeps_master_grid_sync_without_harmonic_header():
     """#843: Harmonic Matches producer entry leaves the header; MASTER/GRID/SYNC stay."""
     header = _header_block()
-    center = header[
-        header.index('objectName: "producerCommandZone"') : header.index(
-            'objectName: "headerRightZone"'
-        )
-    ]
-    assert 'text: "MASTER"' in center
-    assert 'text: "GRID"' in center
-    assert 'text: "SYNC"' in center
-    assert 'objectName: "harmonicMatchButton"' not in center
-    assert 'Accessible.name: "Harmonic Match"' not in center
-    # #845: single QML helper remains for collapse/reopen (not a header button).
+    transport = header[header.index('objectName: "headerTransportZone"') :]
+    assert 'text: "MASTER"' in transport
+    assert 'text: "GRID"' in transport
+    assert 'text: "SYNC"' in transport
+    assert 'objectName: "harmonicMatchButton"' not in transport
+    assert 'Accessible.name: "Harmonic Match"' not in transport
     assert "activateHarmonicMatchToggle()" in QML_SOURCE
     assert QML_SOURCE.count("toggleHarmonicMatch()") == 1
 
-    right = header[header.index('objectName: "headerRightZone"') :]
-    assert 'objectName: "openChannelRackButton"' in right
-    assert 'objectName: "displayPreferencesOverflow"' in right
-    assert 'objectName: "harmonicMatchButton"' not in right
+    nav = header[
+        header.index('objectName: "headerNavZone"') : header.index(
+            'objectName: "headerTransportZone"'
+        )
+    ]
+    assert 'objectName: "programNavStepSequencer"' in nav
+    assert 'objectName: "displayPreferencesOverflow"' in transport
+    assert 'objectName: "harmonicMatchButton"' not in header
     assert 'objectName: "browserSearch"' not in header
 
 
@@ -79,27 +75,28 @@ def test_harmonic_match_header_button_removed_and_not_in_browser_chrome():
     assert QML_SOURCE.count('objectName: "browserSearch"') == 1
 
 
-def test_producer_zone_uses_geometric_center_anchor_not_fill_spacer():
+def test_nav_zone_uses_geometric_center_anchor():
     header = _header_block()
-    center_snip = header[
-        header.index('objectName: "producerCommandZone"') : header.index(
-            'objectName: "headerRightZone"'
+    nav_snip = header[
+        header.index('objectName: "headerNavZone"') : header.index(
+            'objectName: "headerTransportZone"'
         )
     ]
-    assert "anchors.horizontalCenter" in center_snip
-    # Old fill-spacer pattern must not own the producer controls.
-    assert "Item { Layout.fillWidth: true }" not in header.split(
-        'objectName: "producerCommandZone"'
-    )[0]
+    assert "headerNavRow" in nav_snip or "anchors.horizontalCenter" in nav_snip
+    assert "idealX" in nav_snip or "anchors.horizontalCenter" in nav_snip
+    assert 'objectName: "producerCommandZone"' not in header
 
 
-def _zone_center_x(item) -> float:
-    return float(item.x()) + float(item.width()) / 2.0
+def _zone_center_x(item, reference=None) -> float:
+    if reference is None:
+        return float(item.x()) + float(item.width()) / 2.0
+    mapped = item.mapToItem(reference, 0, 0)
+    return float(mapped.x()) + float(item.width()) / 2.0
 
 
 def _assert_centered(zone, reference, *, label: str) -> None:
     ref_center = float(reference.width()) / 2.0
-    zone_center = _zone_center_x(zone)
+    zone_center = _zone_center_x(zone, reference)
     tol = max(CENTER_TOLERANCE_MIN_PX, float(reference.width()) * CENTER_TOLERANCE_RATIO)
     delta = abs(zone_center - ref_center)
     assert delta <= tol, f"{label}: center delta={delta:.1f}px tol={tol:.1f}px"
@@ -137,7 +134,7 @@ def _build_screen1_window(*, harmonic_open: bool = False, library_revealed: bool
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 @pytest.mark.parametrize("size", [(1120, 640), (1600, 900)])
-def test_runtime_producer_zone_is_geometrically_centered(size):
+def test_runtime_nav_zone_is_geometrically_centered(size):
     from PySide6.QtQuick import QQuickItem
 
     width, height = size
@@ -150,38 +147,34 @@ def test_runtime_producer_zone_is_geometrically_centered(size):
 
         header = window.findChild(QQuickItem, "screen1Header")
         left = window.findChild(QQuickItem, "headerLeftZone")
-        center = window.findChild(QQuickItem, "producerCommandZone")
-        right = window.findChild(QQuickItem, "headerRightZone")
+        nav = window.findChild(QQuickItem, "headerNavZone")
+        nav_row = window.findChild(QQuickItem, "headerNavRow")
+        transport = window.findChild(QQuickItem, "headerTransportZone")
         harmonic = window.findChild(QQuickItem, "harmonicMatchButton")
         search = window.findChild(QQuickItem, "browserSearch")
-        channel = window.findChild(QQuickItem, "openChannelRackButton")
+        step_seq = window.findChild(QQuickItem, "programNavStepSequencer")
         prefs = window.findChild(QQuickItem, "displayPreferencesOverflow")
 
         assert all(
             item is not None
-            for item in (header, left, center, right, search, channel, prefs)
+            for item in (header, left, nav, nav_row, transport, search, step_seq, prefs)
         )
-        # #843: header Harmonic Match button is structurally gone.
         assert harmonic is None
-        assert left.x() < center.x()
-        assert center.x() >= left.x() + left.width() - 1.0
-        assert center.x() + center.width() <= right.x() + 1.0
+        assert left.x() < nav.x()
+        assert nav.x() + nav.width() <= transport.x() + transport.width() + 1.0
         assert search.parentItem() is not None
-        # Search remains under browser pane, not header.
         browser = window.findChild(QQuickItem, "browserPane")
         assert browser is not None
         assert search.mapToItem(browser, 0, 0).y() >= 0
 
-        _assert_centered(center, header, label=f"{width}x{height}")
+        _assert_centered(nav_row, header, label=f"{width}x{height}")
 
-        # No clipping: center fully inside header bounds.
-        assert center.x() >= 0
-        assert center.x() + center.width() <= header.width() + 1.0
-        # Secondary controls must not own the geometric center strip.
-        channel_in_header = channel.mapToItem(header, 0, 0)
-        assert channel_in_header.x() > header.width() * 0.55
+        assert nav.x() >= 0
+        assert nav.x() + nav.width() <= header.width() + 1.0
+        transport_in_header = transport.mapToItem(header, 0, 0)
+        assert transport_in_header.x() > header.width() * 0.45
         prefs_in_header = prefs.mapToItem(header, 0, 0)
-        assert prefs_in_header.x() > header.width() * 0.55
+        assert prefs_in_header.x() > header.width() * 0.45
     finally:
         window.close()
         app.processEvents()
@@ -198,8 +191,8 @@ def test_runtime_center_stable_across_pane_disclosure_states():
         settle(app)
 
         header = window.findChild(QQuickItem, "screen1Header")
-        center = window.findChild(QQuickItem, "producerCommandZone")
-        assert header is not None and center is not None
+        nav_row = window.findChild(QQuickItem, "headerNavRow")
+        assert header is not None and nav_row is not None
 
         centers: list[float] = []
 
@@ -208,8 +201,8 @@ def test_runtime_center_stable_across_pane_disclosure_states():
             engine._screen1_interaction_bridge.refreshState()
             engine._screen1_layout_model.syncFromInteraction()
             settle(app)
-            _assert_centered(center, header, label=label)
-            centers.append(_zone_center_x(center))
+            _assert_centered(nav_row, header, label=label)
+            centers.append(_zone_center_x(nav_row, header))
 
         capture("library+browser+livekit")
 
@@ -222,7 +215,6 @@ def test_runtime_center_stable_across_pane_disclosure_states():
         adapter.harmonic_match_open = False
         capture("harmony_closed_library_collapsed")
 
-        # Same window width → center must not drift with pane widths.
         assert max(centers) - min(centers) <= CENTER_TOLERANCE_MIN_PX
     finally:
         window.close()
