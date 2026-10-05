@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import re
 from pathlib import Path
 
 import pytest
 
 from src import workbench_qml
+from src import workbench_qml_spike
 
 
 EXPECTED_SHA256 = (
@@ -79,6 +81,14 @@ def test_qml_palette_tokens_are_near_black_with_functional_accent_only():
     # Accent stays blood-red functional; no orange / blue brand accents.
     assert "#ff4500" not in source.casefold()
     assert '"#b1122b"' not in source
+
+
+def test_v7_725_capture_does_not_require_historical_background_texture():
+    """Clean-start evidence remains valid with a solid Theme Core root."""
+    capture_source = inspect.getsource(workbench_qml_spike.run_qml_visual_acceptance_725)
+
+    assert "validate_capture_sanity" in capture_source
+    assert "_png_center_patch_has_texture" not in capture_source
 
 
 @pytest.mark.skipif(

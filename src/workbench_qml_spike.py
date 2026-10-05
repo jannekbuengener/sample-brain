@@ -364,80 +364,6 @@ def _wait_for_screen1_background_ready(window: object, app: object, *, timeout_m
     )
 
 
-def _png_center_patch_has_texture(path: Path, *, x0: int = 300, y0: int = 300, size: int = 200) -> bool:
-    """Return True when a center patch is not a single flat color (background present)."""
-    import struct
-    import zlib
-
-    data = path.read_bytes()
-    if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n":
-        return False
-    pos = 8
-    width = height = 0
-    color_type = 2
-    idat = b""
-    while pos + 8 <= len(data):
-        length = struct.unpack(">I", data[pos : pos + 4])[0]
-        ctype = data[pos + 4 : pos + 8]
-        chunk = data[pos + 8 : pos + 8 + length]
-        pos += 12 + length
-        if ctype == b"IHDR":
-            width, height = struct.unpack(">II", chunk[:8])
-            color_type = chunk[9]
-        elif ctype == b"IDAT":
-            idat += chunk
-        elif ctype == b"IEND":
-            break
-    if width <= 0 or height <= 0 or not idat:
-        return False
-    bpp = {2: 3, 6: 4}.get(int(color_type))
-    if bpp is None:
-        return False
-    raw = zlib.decompress(idat)
-    rows: list[bytes] = []
-    stride = width * bpp
-    index = 0
-    prev = bytearray(stride)
-    for _ in range(height):
-        filt = raw[index]
-        index += 1
-        row = bytearray(raw[index : index + stride])
-        index += stride
-        if filt == 1:
-            for x in range(stride):
-                left = row[x - bpp] if x >= bpp else 0
-                row[x] = (row[x] + left) & 255
-        elif filt == 2:
-            for x in range(stride):
-                row[x] = (row[x] + prev[x]) & 255
-        elif filt == 3:
-            for x in range(stride):
-                left = row[x - bpp] if x >= bpp else 0
-                row[x] = (row[x] + ((left + prev[x]) // 2)) & 255
-        elif filt == 4:
-            for x in range(stride):
-                a = row[x - bpp] if x >= bpp else 0
-                b = prev[x]
-                c = prev[x - bpp] if x >= bpp else 0
-                p = a + b - c
-                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
-                pr = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
-                row[x] = (row[x] + pr) & 255
-        elif filt != 0:
-            return False
-        rows.append(bytes(row))
-        prev = row
-    colors: set[bytes] = set()
-    for y in range(y0, min(height, y0 + size)):
-        row = rows[y]
-        for x in range(x0, min(width, x0 + size)):
-            off = x * bpp
-            colors.add(row[off : off + 3])
-            if len(colors) > 1:
-                return True
-    return False
-
-
 def _is_within(path: Path, root: Path) -> bool:
     try:
         path.resolve().relative_to(root.resolve())
@@ -968,14 +894,6 @@ def run_qml_visual_acceptance_725(
         check["v2_state_id"] = v2_state
         check["capture_label"] = label
         check["pass"] = bool(check["pass"])
-        if label in {"clean-start-collapsed", "clean-start-reveal-hover", "opened-no-source"}:
-            # Calm Canvas states must show the canonical background texture, not a
-            # pure-black race against async Image composition.
-            if not _png_center_patch_has_texture(target):
-                raise EvidenceError(
-                    f"{label}: Screen-1 background texture missing in capture "
-                    "(async Image race / compositor miss)."
-                )
         sanity[label] = check
         captures[label] = target
 
