@@ -131,6 +131,36 @@ def test_parked_and_visual_accept_present() -> None:
     assert "explicit_owner_go" in block
 
 
+def test_routing_auditor_must_not_hardcode_parked_issue_ids(tmp_path: Path) -> None:
+    for rel in (
+        "SB.BOOTLOADER.md",
+        "docs/operations/CAPABILITY_REGISTRY.json",
+    ):
+        src = ROOT / rel
+        dest = tmp_path / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+
+    auditor = tmp_path / ".cursor" / "agents" / "sample-brain-skill-routing-auditor.md"
+    auditor.parent.mkdir(parents=True, exist_ok=True)
+    auditor.write_text(
+        "# routing auditor\n"
+        "- Parked routes (#999) must not be auto-routed.\n"
+        "- Read routing.special_routes.parked_tracks from the registry.\n",
+        encoding="utf-8",
+    )
+
+    problems = caplib.validate_parked_and_hygiene_surfaces(tmp_path)
+    assert any("must not hardcode parked issue IDs" in problem for problem in problems)
+
+    auditor.write_text(
+        "# routing auditor\n"
+        "- Parked routes must not be auto-routed.\n",
+        encoding="utf-8",
+    )
+    problems = caplib.validate_parked_and_hygiene_surfaces(tmp_path)
+    assert any("must source parked routes from registry" in problem for problem in problems)
+
 def test_issue_backlog_not_live_hygiene_authority() -> None:
     boot = (ROOT / "SB.BOOTLOADER.md").read_text(encoding="utf-8")
     for line in boot.splitlines():

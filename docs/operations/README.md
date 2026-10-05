@@ -55,12 +55,15 @@ Any KPI with `classification: UNKNOWN` in the contract, and any snapshot field w
 ### 9. What is parked?
 Registry `routing.special_routes.parked_tracks`:
 - Screen 3 #679
-- #680
-- VST3 #469
-- Bitwig #620
-- Panel reordering research #697
 
-Reactivation requires **explicit Owner GO**.
+Parked-track entries must point to a currently live parked/HOLD authority; closed,
+deleted, completed-research, or reactivated issues must not remain as routing blocks.
+
+Reactivation requires **explicit Owner GO**. When a listed track is reactivated,
+the same governance closeout must update `CAPABILITY_REGISTRY.json` and regenerate
+the derived routing views before workers resume automatic routing. GitHub-live
+reactivation is immediate truth; a stale parked-track mirror is a drift defect,
+not a reason to re-park the work.
 
 ### 10. Where is the product canon?
 [`docs/CANON_INDEX.md`](../CANON_INDEX.md)
