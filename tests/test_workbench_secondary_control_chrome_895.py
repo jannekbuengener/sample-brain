@@ -120,6 +120,10 @@ def test_live_kit_group_chrome_is_light_not_heavy_card() -> None:
     assert '"transparent"' in group_rect
     assert "theme.hoverSurface" in group_rect or "theme.surfaceElevated" in group_rect
     assert "theme.borderSubtle" in group_rect
+    # Idle groups must not keep a permanent box border (form-field look).
+    assert "border.width: (modelData.active || groupHovered) ? 1 : 0" in group_rect or (
+        "border.width:" in group_rect and "groupHovered" in group_rect
+    )
     # Active border may use accent sparingly; quiet selectionBorder is also fine.
     assert "theme.actionActive" in group_rect or "theme.selectionBorder" in group_rect
     # Export Kit shares secondary chrome language.

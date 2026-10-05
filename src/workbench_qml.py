@@ -4478,7 +4478,7 @@ ApplicationWindow {
                     Layout.alignment: Qt.AlignTop
                     spacing: 0
                     Repeater { model: window.screenData.liveKitGroups
-                        // #895: quieter group chrome — fine border, low card mass (same slot IA).
+                        // #895: quieter group chrome — no idle box; fine border only when active/hover.
                         delegate: Rectangle {
                             property int kitGroupIndex: index
                             property bool groupHovered: liveKitGroupHeader.containsMouse
@@ -4487,7 +4487,7 @@ ApplicationWindow {
                             radius: 4
                             color: modelData.active ? theme.hoverSurface
                                    : (groupHovered ? theme.hoverSurface : "transparent")
-                            border.width: 1
+                            border.width: (modelData.active || groupHovered) ? 1 : 0
                             border.color: modelData.active ? theme.selectionBorder : theme.borderSubtle
                             ColumnLayout { anchors.fill: parent; spacing: 0
                                 Item { Layout.fillWidth: true; Layout.preferredHeight: 44; Layout.leftMargin: 12; Layout.rightMargin: 10
