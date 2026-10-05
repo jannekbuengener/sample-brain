@@ -1792,7 +1792,7 @@ ApplicationWindow {
     visible: true
     width: 1600; height: 900
     minimumWidth: 1120; minimumHeight: 640
-    color: theme.surfaceRoot
+    color: theme.surfaceHeader
     // Single QML call site for Harmonic Match toggle (#845 handles reuse this).
     function activateHarmonicMatchToggle() {
         window.interaction.toggleHarmonicMatch()
@@ -1972,13 +1972,14 @@ ApplicationWindow {
         function onRemovalRequested() { removeSourceDialog.open() }
     }
 
-    // Canonical Screen-1 background: full original asset stretched to the
-    // available content area. No crop, tint, blur, glow, or ambient overlays.
+    // Historical Screen-1 reference: retain the named evidence/URL seam, but
+    // never composite the opaque asset over the V7 Theme Core root chrome.
     Image {
         id: screen1Background
         objectName: "screen1Background"
         anchors.fill: parent
         z: -1
+        visible: false
         source: screen1BackgroundUrl
         fillMode: Image.Stretch
         asynchronous: true

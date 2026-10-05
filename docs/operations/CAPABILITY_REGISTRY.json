@@ -914,11 +914,7 @@
       "parked_tracks": {
         "summary": "These tracks are parked/HOLD. Do not auto-route or reactivate them.",
         "tracks": [
-          "Screen 3 #679",
-          "#680",
-          "VST3 #469",
-          "Bitwig #620",
-          "Panel reordering research #697"
+          "Screen 3 #679"
         ],
         "reactivation": "explicit_owner_go"
       },

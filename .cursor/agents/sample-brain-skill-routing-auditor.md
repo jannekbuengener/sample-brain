@@ -26,7 +26,7 @@ Follow [`_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md`](_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md
 - Generated routing blocks in `.cursor/rules/skill-routing.mdc` und `SB.VERFUEGBARE.SKILLS.md` gegen Registry halten (`python tools/check_capability_drift.py`).
 - Skill mirrors `docs/skills` ↔ `.cursor/skills` Contract-Body prüfen.
 - Capability types prüfen (skill vs agent vs helper vs external-tool vs operator-only); `sample-brain-ci-debugger` ist ein Agent.
-- Parked routes (#675/#678, #679, #680, #469, #620) dürfen nicht als aktive Default-Route erscheinen.
+- Parked routes ausschließlich aus `docs/operations/CAPABILITY_REGISTRY.json` → `routing.special_routes.parked_tracks` lesen; keine Issue-IDs statisch duplizieren. Bei verfügbarem GitHub-Live-State closed/deleted/reactivated/completed Einträge als Drift melden, nicht als Routing-Block behandeln.
 - Screen-1 visual-accept path (`VISUAL_ACCEPT_PENDING|PASS|FAIL`) muss vorhanden sein.
 - Discoverability über `docs/operations/README.md` / `AGENTS.md` prüfen.
 

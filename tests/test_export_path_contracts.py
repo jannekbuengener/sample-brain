@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import contextlib
+import io
+import sys
 from pathlib import Path
 
 import pytest
 
+from src import cli
 import src.export_fl as export_fl
 from src.export_fl import resolve_export_path, run_export, write_fl_tags_from_sample_rows
 
@@ -63,6 +67,15 @@ def test_run_export_rejects_empty_fl_user_data():
         run_export(fl_user_data_folder="   ", roots=[])
 
 
+def _run_cli(monkeypatch: pytest.MonkeyPatch, argv: list[str]) -> int:
+    monkeypatch.setattr(sys, "argv", ["src.cli", *argv])
+    try:
+        cli.main()
+        return 0
+    except SystemExit as exc:
+        return int(exc.code or 0)
+
+
 def _sample_rows(root: Path) -> list[tuple]:
     sample = root / "drums" / "kick.wav"
     sample.parent.mkdir(parents=True, exist_ok=True)
@@ -81,6 +94,40 @@ def _sample_rows(root: Path) -> list[tuple]:
             "Kick",
         )
     ]
+
+
+def test_export_fl_cli_succeeds_with_cp1252_stdout_after_writing_tags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    root = tmp_path / "library"
+    rows = _sample_rows(root)
+    fl_user = tmp_path / "fl_user"
+    stdout_bytes = io.BytesIO()
+    cp1252_stdout = io.TextIOWrapper(stdout_bytes, encoding="cp1252")
+
+    monkeypatch.setattr(export_fl, "_load_export_sample_rows", lambda: rows)
+    monkeypatch.setattr(
+        cli,
+        "_resolve_profile_or_exit",
+        lambda _args: {"library_roots": [str(root)], "export": {"max_tags": 5}},
+    )
+    monkeypatch.setattr(cli, "_apply_runtime_db_path", lambda _cfg: None)
+    output_error: Exception | None = None
+    try:
+        with contextlib.redirect_stdout(cp1252_stdout):
+            code = _run_cli(monkeypatch, ["export_fl", "--fl-user-data", str(fl_user)])
+    except Exception as exc:
+        output_error = exc
+        code = None
+    finally:
+        cp1252_stdout.flush()
+
+    assert output_error is None, repr(output_error)
+    assert code == 0
+    assert (fl_user / "FL Studio" / "Settings" / "Browser" / "Tags").is_file()
+    stdout = stdout_bytes.getvalue().decode("cp1252")
+    assert "Wrote FL Tags ->" in stdout
+    assert "FL Tags export completed." in stdout
 
 
 def test_write_fl_tags_from_sample_rows_writes_expected_file(tmp_path: Path):

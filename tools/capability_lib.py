@@ -546,6 +546,21 @@ def validate_parked_and_hygiene_surfaces(root: Path | None = None) -> list[str]:
         problems.append("generated routing missing visual acceptance statuses")
     if "ISSUE_BACKLOG" in block and "Not an active hygiene authority" not in block:
         problems.append("generated hygiene denial missing")
+    auditor_path = base / ".cursor" / "agents" / "sample-brain-skill-routing-auditor.md"
+    if not auditor_path.is_file():
+        problems.append("missing sample-brain-skill-routing-auditor.md")
+    else:
+        auditor = auditor_path.read_text(encoding="utf-8")
+        parked_lines = [
+            line for line in auditor.splitlines() if "parked" in line.lower()
+        ]
+        if not parked_lines:
+            problems.append("routing auditor missing parked-routes responsibility")
+        elif any(re.search(r"#\d+", line) for line in parked_lines):
+            problems.append("routing auditor must not hardcode parked issue IDs")
+        if "routing.special_routes.parked_tracks" not in auditor:
+            problems.append("routing auditor must source parked routes from registry")
+
     # ci-debugger must be typed as agent in typing notes or chains context.
     typing_notes = registry.get("routing", {}).get("special_routes", {}).get(
         "capability_typing_notes", []

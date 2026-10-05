@@ -1,14 +1,18 @@
-"""Contracts for the Screen-1 canonical background reference (#691 visual surface)."""
+"""Historical Screen-1 background evidence and visible V7 root contracts."""
 
 from __future__ import annotations
 
 import hashlib
+import inspect
 import re
+import sys
+import types
 from pathlib import Path
 
 import pytest
 
 from src import workbench_qml
+from src import workbench_qml_spike
 
 
 EXPECTED_SHA256 = (
@@ -35,16 +39,15 @@ def test_screen1_background_url_points_at_repo_reference():
     assert path.as_posix().lower() in url.replace("\\", "/").lower() or path.name in url
 
 
-def test_qml_source_uses_stretch_background_image_without_crop_or_gradients():
+def test_qml_source_keeps_historical_background_non_composited_without_effects():
     source = workbench_qml.QML_SOURCE
     assert "objectName: \"screen1Background\"" in source
     assert "source: screen1BackgroundUrl" in source
     assert "Gradient" not in source
     assert "LinearGradient" not in source
     assert "RadialGradient" not in source
-    # Background image must stretch full-bleed — crop/fit modes are forbidden
-    # on screen1Background only. Other Images (e.g. #786 brand brain) may use
-    # PreserveAspectFit inside their own slots.
+    # The immutable asset/URL helper stays for historical evidence, but may not
+    # cover the V7 root chrome after it has loaded.
     bg_block = re.search(
         r"Image\s*\{[^}]*objectName:\s*\"screen1Background\".*?\}",
         source,
@@ -52,12 +55,11 @@ def test_qml_source_uses_stretch_background_image_without_crop_or_gradients():
     )
     assert bg_block is not None
     block = bg_block.group(0)
-    assert "fillMode: Image.Stretch" in block
-    assert "PreserveAspectCrop" not in block
-    assert "PreserveAspectFit" not in block
-    # No decorative ambient overlays / colorize on the background image.
+    assert "visible: false" in block
+    # No opacity/tint workaround or decorative effect may replace the explicit
+    # non-composited state.
     assert "colorize" not in block.casefold()
-    assert "opacity:" not in block.casefold() or "opacity: 1" in block
+    assert "opacity:" not in block.casefold()
     assert "layer.enabled" not in block.casefold()
     assert "FastBlur" not in block
     assert "Glow" not in block
@@ -83,11 +85,149 @@ def test_qml_palette_tokens_are_near_black_with_functional_accent_only():
     assert '"#b1122b"' not in source
 
 
+def test_v7_725_capture_does_not_require_historical_background_texture():
+    """Clean-start evidence remains valid with a solid Theme Core root."""
+    capture_source = inspect.getsource(workbench_qml_spike.run_qml_visual_acceptance_725)
+
+    assert "validate_capture_sanity" in capture_source
+    assert "_png_center_patch_has_texture" not in capture_source
+
+
+def test_hidden_historical_background_settles_two_frames_before_capture():
+    """The V7 no-image path must still allow Qt Quick to compose a full frame."""
+    helper_source = inspect.getsource(workbench_qml_spike._wait_for_screen1_background_ready)
+    hidden_branch = helper_source.split("if not background.isVisible():", 1)[1].split(
+        "timer =", 1
+    )[0]
+
+    assert hidden_branch.count("_settle_qml_frame(app)") == 2
+
+
+@pytest.mark.parametrize(
+    ("sanity_check", "color_variation", "reason"),
+    (
+        ({"pass": False, "reason": "all-black"}, True, "all-black"),
+        ({"pass": True}, False, "flat-non-black"),
+    ),
+)
+def test_v7_725_invalid_capture_fails_closed_without_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    sanity_check: dict[str, bool | str],
+    color_variation: bool,
+    reason: str,
+) -> None:
+    """Invalid #725 grabs must not publish partial evidence."""
+    from src.workbench_visual_acceptance import EvidenceError
+
+    qtquick = types.ModuleType("PySide6.QtQuick")
+    qtquick.QQuickItem = object
+    pyside6 = types.ModuleType("PySide6")
+    pyside6.__path__ = []
+    pyside6.QtQuick = qtquick
+    monkeypatch.setitem(sys.modules, "PySide6", pyside6)
+    monkeypatch.setitem(sys.modules, "PySide6.QtQuick", qtquick)
+
+    class FakeWindow:
+        def setWidth(self, _width: int) -> None:
+            pass
+
+        def setHeight(self, _height: int) -> None:
+            pass
+
+        def show(self) -> None:
+            pass
+
+        def winId(self) -> int:
+            return 1
+
+    grabs: list[Path] = []
+    manifests: list[Path] = []
+    fake_window = FakeWindow()
+    fake_app = types.SimpleNamespace(processEvents=lambda: None)
+    fake_engine = types.SimpleNamespace()
+    fake_report = types.SimpleNamespace(
+        manifest=types.SimpleNamespace(commit="a" * 40, channel="test")
+    )
+
+    monkeypatch.setattr(workbench_qml_spike, "_require_fresh_qml_capture_process", lambda: None)
+    monkeypatch.setattr(
+        workbench_qml_spike, "validate_qml_renderer_provenance", lambda _root: fake_report
+    )
+    monkeypatch.setattr(
+        workbench_qml_spike,
+        "build_screen1_visual_fixture_v2",
+        lambda: types.SimpleNamespace(version="fixture"),
+    )
+    monkeypatch.setattr(workbench_qml_spike, "resolve_screen1_visual_state_v2", lambda *_args: object())
+    monkeypatch.setattr(workbench_qml_spike, "Screen1QmlViewModel", lambda **_kwargs: object())
+    monkeypatch.setattr(
+        workbench_qml_spike, "Screen1QmlInteractionAdapter", lambda **_kwargs: object()
+    )
+    monkeypatch.setattr(workbench_qml_spike, "apply_screen1_visual_state_v2", lambda *_args: None)
+    monkeypatch.setattr(
+        workbench_qml_spike,
+        "_qml_engine",
+        lambda *_args, **_kwargs: (fake_app, fake_engine, fake_window),
+    )
+    monkeypatch.setattr(workbench_qml_spike, "_settle_qml_frame", lambda _app: None)
+    monkeypatch.setattr(
+        workbench_qml_spike, "_wait_for_screen1_background_ready", lambda *_args: None
+    )
+    monkeypatch.setattr(workbench_qml_spike, "_require_v2_capture_dpi_100", lambda _hwnd: 100)
+
+    def grab(_window: object, target: Path, *, engine: object) -> None:
+        assert engine is fake_engine
+        grabs.append(target)
+        target.write_bytes(b"all-black")
+
+    monkeypatch.setattr(workbench_qml_spike, "_grab_qml_window_png", grab)
+    monkeypatch.setattr(
+        workbench_qml_spike,
+        "validate_capture_sanity",
+        lambda *_args, **_kwargs: sanity_check.copy(),
+    )
+    monkeypatch.setattr(
+        workbench_qml_spike,
+        "_png_has_color_variation",
+        lambda _target: color_variation,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        workbench_qml_spike,
+        "write_visual_evidence_manifest",
+        lambda path, _manifest: manifests.append(path),
+    )
+
+    with pytest.raises(EvidenceError, match="clean-start-collapsed") as error:
+        workbench_qml_spike.run_qml_visual_acceptance_725(
+            runtime_root=tmp_path,
+            evidence_dir=tmp_path / "evidence",
+        )
+
+    assert reason in str(error.value)
+    assert len(grabs) == 1
+    assert manifests == []
+
+
+def test_v7_725_color_variation_requires_composed_foreground(tmp_path: Path) -> None:
+    """A solid non-black root alone is not successful #725 evidence."""
+    from src.workbench_visual_acceptance import _write_png
+
+    flat = tmp_path / "flat.png"
+    composed = tmp_path / "composed.png"
+    _write_png(flat, 2, 1, b"\x02\x02\x03\xff" * 2)
+    _write_png(composed, 2, 1, b"\x02\x02\x03\xff\xee\xee\xee\xff")
+
+    assert not workbench_qml_spike._png_has_color_variation(flat)
+    assert workbench_qml_spike._png_has_color_variation(composed)
+
+
 @pytest.mark.skipif(
     not workbench_qml.qml_runtime_available(),
     reason="PySide6 unavailable",
 )
-def test_qml_runtime_exposes_background_image_with_stretch_fill():
+def test_qml_runtime_paints_v7_chrome_while_historical_background_stays_hidden():
     from PySide6.QtQuick import QQuickItem
 
     from src.workbench_harmony import HarmonicMatchLibraryController
@@ -118,10 +258,10 @@ def test_qml_runtime_exposes_background_image_with_stretch_fill():
         assert background is not None
         source = str(background.property("source"))
         assert "screen1_background_reference.png" in source.replace("\\", "/")
-        # fillMode enum is not always convertible via property(); QML_SOURCE
-        # contract already asserts Image.Stretch. Confirm image is loaded.
-        assert float(background.property("paintedWidth") or 0) > 0
-        assert float(background.property("paintedHeight") or 0) > 0
+        # Runtime proof: an opaque historical image cannot cover the actual V7
+        # ApplicationWindow chrome layer after asynchronous loading.
+        assert not background.isVisible()
+        assert window.property("color").name().lower() == "#020203"
         assert window.property("accent").name() == "#8f0e24"
         assert window.property("panel").name() == "#080809"
         assert window.property("panelAlt").name() == "#101011"
@@ -140,8 +280,8 @@ def test_qml_runtime_exposes_background_image_with_stretch_fill():
     not workbench_qml.qml_runtime_available(),
     reason="PySide6 unavailable",
 )
-def test_wait_for_screen1_background_ready_before_capture():
-    """#725/#731: first Clean Start capture must not race the async Image load."""
+def test_historical_background_helper_allows_v7_capture_without_a_visible_image():
+    """Legacy capture setup stays callable after the V7 root supersession."""
     from PySide6.QtQuick import QQuickItem
 
     from src.workbench_qml import Screen1QmlInteractionAdapter, Screen1QmlViewModel
@@ -175,8 +315,7 @@ def test_wait_for_screen1_background_ready_before_capture():
         _wait_for_screen1_background_ready(window, app)
         background = window.findChild(QQuickItem, "screen1Background")
         assert background is not None
-        assert float(background.property("paintedWidth") or 0) > 0
-        assert float(background.property("paintedHeight") or 0) > 0
+        assert not background.isVisible()
     finally:
         window.close()
         app.processEvents()

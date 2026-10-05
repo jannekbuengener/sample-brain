@@ -134,6 +134,12 @@ filenames for historical Owner Visual Acceptance evidence may include:
 These are capture labels only. Historical v1 evidence under
 `docs/assets/portfolio/runtime/` remains untouched.
 
+After the #929/#930 solid-root supersession, every #725 label must pass normal
+capture sanity and show foreground color variation. A fully flat non-black
+frame is rejected: the solid Theme Core root is expected as the background, but
+does not alone constitute acceptance evidence. The captures must not require
+texture from the historical background reference.
+
 ### #744 Analysis loading Runtime-Evidence
 
 Do **not** add competing `REQUIRED_STATE_IDS_V2` entries. Additive historical Owner Visual
@@ -219,9 +225,10 @@ never as permanent Screen-1 header chrome:
 - Brand Brain is not a Library scope icon. Do not recolor, resize, compress, or
   re-export these files when updating the reference tree.
 
-## Screen-1 canonical background reference
+## Historical Screen-1 background reference (#929/#930 supersession)
 
-Kanonische visuelle Referenz (Reference = Runtime-Asset, eine Datei):
+The immutable reference below remains historical visual evidence. It is **not**
+a visible runtime-root authority for the V7 Single Workspace.
 
 `docs/assets/portfolio/references/screen1_background_reference.png`
 
@@ -229,12 +236,17 @@ Kanonische visuelle Referenz (Reference = Runtime-Asset, eine Datei):
   komprimiert, recolored oder sonst verändert werden.
 - Erwartete SHA-256:
   `2c799440a7b2c9d6e20e8163378ddcbecd29478d76ad8d7ee74835d3b60a47ae`
-- QML bindet dasselbe Asset als Root-Background über `screen1BackgroundUrl`
-  mit `Image.Stretch` (vollständiges Bild über die verfügbare Screen-1-Fläche;
-  **kein** Crop, kein Tint/Colorize/Blur, keine Ambient-Gradient-/Glow-Layer).
-- UI-Palette bleibt near-black / neutral und leitet Surfaces aus der
-  Bildhierarchie ab; Accent (Blood A `#8f0e24`) nur funktional (Selection /
-  Active / Toggle / Focus). Kein dekoratives Rot oder Blau.
+- `screen1BackgroundUrl` and the named historical QML helper remain available
+  for evidence and compatibility only. After #929/#930 the Image is not
+  composited as a visible full-screen root layer, so it cannot cover the V7
+  chrome fill after asynchronous loading.
+- The visible runtime root is the Theme Core `surfaceHeader` / `background`
+  chrome fill. The working canvas is `surfaceRoot` / `surfaceWorkspace`; panels
+  retain their existing semantic solid fills. This is the required
+  chrome → workspace → surface hierarchy.
+- No crop, tint/Colorize, blur, opacity workaround, ambient-gradient, or glow
+  variant of the historical asset is authorized. Accent (Blood A `#8f0e24`)
+  stays functional only (Selection / Active / Toggle / Focus).
 - Frozen v1 Portfolio-Screenshots unter `docs/assets/portfolio/runtime/`
   bleiben unverändert.
 
@@ -247,7 +259,8 @@ QML as `themeAuthority`. The embedded `theme` QtObject in
 
 Layers:
 
-1. **Background reference** — unchanged PNG above; not a color palette source.
+1. **Historical background reference** — unchanged evidence PNG above; not a
+   color palette source and not a composited runtime root layer after #929/#930.
 2. **Theme Core base tokens** — `accent` / `background` / `foreground` (Blood A
    default `#8f0e24` / `#020203` / `#e4e6ea`).
 3. **Derived Theme Core tokens** — deterministic mixes (`textPrimary`,

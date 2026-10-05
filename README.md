@@ -96,8 +96,15 @@ source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
 python -m src.cli --help
+python -m src.cli workbench               # Tk-Default / Legacy-Fallback
+```
+
+Optional die QML-Produktionsrichtung — dafür das bestehende `[qtquick]`-Extra
+(PySide6) installieren, sonst startet `--qml-screen1` nicht:
+
+```bash
+pip install -e ".[qtquick]"
 python -m src.cli workbench --qml-screen1   # Screen-1 QML (Produktionsrichtung)
-# python -m src.cli workbench               # Tk-Default / Legacy-Fallback
 ```
 
 Für die Produktstory und Entscheidungen siehe [Case Study](docs/CASE_STUDY.md). Canon-Einstiege: [Canon Index](docs/CANON_INDEX.md), [Product Workflow Canon](docs/PRODUCT_WORKFLOW_CANON.md). Für den vollständigen Setup- und Feature-Quickstart siehe die technischen Abschnitte weiter unten.
@@ -204,6 +211,20 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
+### Optional: QML-Workbench (PySide6 / Qt Quick)
+
+```bash
+# Basis ZUERST installieren, dann das [qtquick] Extra
+pip install -r requirements.txt
+pip install -e ".[qtquick]"
+python -m src.cli workbench --qml-screen1
+```
+
+> **Hinweis:** PySide6 ist **keine** Core-Dependency und steht nicht in
+> `requirements.txt`. Ohne das `[qtquick]`-Extra läuft die komplette Core-Runtime
+> (Katalog, Analyse, Matching, Export) ohne Qt; ein expliziter QML-Start endet dann
+> mit einem klaren Fehler und fällt nicht auf Tk zurück.
+
 ### Optional: CLAP Embedding Backend
 
 ```bash
@@ -267,7 +288,7 @@ python -m src.cli export_fl --fl-user-data "<FL_USER_DATA_PATH>" --max-tags 3
 # DB Diagnostics
 python -m src.cli db doctor
 
-# Workbench
+# Workbench (QML-Start benötigt das [qtquick]-Extra, siehe Installation)
 python -m src.cli workbench --qml-screen1   # Screen-1 QML (LOCK_PYSIDE6_QML)
 python -m src.cli workbench                 # Tk Default / Legacy-Fallback
 ```
