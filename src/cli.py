@@ -1634,10 +1634,24 @@ def main():
     if args.cmd == "workbench":
         if args.qml_screen1:
             try:
-                from .workbench_qml import run_qml_screen1
+                from .workbench_qml import qml_runtime_available, run_qml_screen1
             except ImportError as e:
                 print(
                     f"[ERROR] Qt Quick Screen-1 Renderer nicht verfügbar: {e}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            if not qml_runtime_available():
+                print(
+                    "[ERROR] Qt Quick Screen-1 Renderer nicht verfügbar.",
+                    file=sys.stderr,
+                )
+                print(
+                    "workbench --qml-screen1 benötigt die optionale QML-Abhängigkeit PySide6.",
+                    file=sys.stderr,
+                )
+                print(
+                    'Installiere sie mit: python -m pip install -e ".[qtquick]"',
                     file=sys.stderr,
                 )
                 sys.exit(1)
