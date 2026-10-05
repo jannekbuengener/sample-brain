@@ -190,7 +190,11 @@ Module seams (extend, do not fork):
 - Waveform renderer rewrite;
 - Screen 2 / Screen 3;
 - Permanent settings bar / Tools panel;
-- Last-session auto-resume.
+- Last-session auto-resume;
+- Functional product feature toggles (owned by
+  [`WORKBENCH_FEATURE_SETTINGS.md`](WORKBENCH_FEATURE_SETTINGS.md) / #910 —
+  may host a compact Functional section in the same overflow popover without
+  expanding this display-preferences schema).
 
 ## Authority
 
