@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Any
+from typing import Any, Literal
 
 from .pattern_core import (
     CHANNEL_ID_BY_LIVE_KIT_SLOT,
@@ -33,6 +33,70 @@ from .workbench_live_kit import LIVE_KIT_SLOT_MAPPING, LiveKitState
 DEFAULT_PATTERN_ID = "screen2-main"
 DEFAULT_STEP_COUNT = 16
 DEFAULT_PATTERN_LENGTH = Fraction(4, 1)
+
+ClassificationKind = Literal["oneshot", "loop", "ambiguous"]
+_POINT_TRIGGER_SAFE_CLASSES = frozenset({"one_shot", "oneshot"})
+_LOOP_CLASSES = frozenset({"loop"})
+
+
+def normalize_sample_class(value: object | None) -> str:
+    return str(value or "").strip().lower().replace("-", "_")
+
+
+def classification_kind(sample_class: object | None) -> ClassificationKind:
+    normalized = normalize_sample_class(sample_class)
+    if normalized in _POINT_TRIGGER_SAFE_CLASSES:
+        return "oneshot"
+    if normalized in _LOOP_CLASSES:
+        return "loop"
+    return "ambiguous"
+
+
+def is_point_trigger_safe(sample_class: object | None) -> bool:
+    return classification_kind(sample_class) == "oneshot"
+
+
+def is_explicit_loop(sample_class: object | None) -> bool:
+    return classification_kind(sample_class) == "loop"
+
+
+def sample_class_for_channel(
+    channel: Channel, live_kit: LiveKitState
+) -> str | None:
+    """Live Kit assignment class for seed channels; None for unclassified user channels."""
+    if channel.live_kit_group is None or channel.live_kit_slot is None:
+        return None
+    assignment = live_kit.assignment_for(channel.live_kit_group, channel.live_kit_slot)
+    if assignment is None:
+        return None
+    return getattr(assignment, "sample_class", None)
+
+
+def point_trigger_eligible_channel_ids(
+    state: ChannelRackState, live_kit: LiveKitState
+) -> frozenset[str]:
+    """Only explicit oneshot channels."""
+    return frozenset(
+        channel.channel_id
+        for channel in state.channels
+        if is_point_trigger_safe(sample_class_for_channel(channel, live_kit))
+    )
+
+
+def filter_pattern_for_point_trigger_playback(
+    state: ChannelRackState, live_kit: LiveKitState
+) -> Pattern:
+    """Pure filter: drop triggers for non-oneshot channels; do not mutate state."""
+    eligible = point_trigger_eligible_channel_ids(state, live_kit)
+    return Pattern(
+        pattern_id=state.pattern.pattern_id,
+        length_quarter_notes=state.pattern.length_quarter_notes,
+        triggers=tuple(
+            trigger
+            for trigger in state.pattern.triggers
+            if trigger.channel_id in eligible
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -82,8 +146,9 @@ class ChannelRackState:
 def build_channel_rack_state(live_kit: LiveKitState) -> ChannelRackState:
     """Project Live Kit assignments into a 16-step rack with DEFAULT_ON seeds.
 
-    Sample-bearing channels start with every step active. Empty channels
-    remain triggerless (no phantom events for vacant Live Kit slots).
+    Explicit one-shot sample-bearing channels start with every step active.
+    Explicit loop / ambiguous / empty channels remain triggerless (no phantom
+    DEFAULT_ON for non-point-trigger-safe material).
     """
 
     channels: list[Channel] = []
@@ -102,10 +167,11 @@ def build_channel_rack_state(live_kit: LiveKitState) -> ChannelRackState:
 
     triggers: list[Trigger] = []
     for channel in channels:
-        if _sample_bearing(channel.sample_path):
-            triggers.extend(
-                _full_step_triggers(channel.channel_id, DEFAULT_STEP_COUNT)
-            )
+        if not _sample_bearing(channel.sample_path):
+            continue
+        if not is_point_trigger_safe(sample_class_for_channel(channel, live_kit)):
+            continue
+        triggers.extend(_full_step_triggers(channel.channel_id, DEFAULT_STEP_COUNT))
 
     return ChannelRackState(
         channels=tuple(channels),
@@ -124,13 +190,16 @@ def reconcile_live_kit_sample_assignments(
 ) -> ChannelRackState:
     """Sync Live Kit seed paths and heal DEFAULT_ON without global pattern reset.
 
-    Per Live Kit seed channel (#806):
+    Per Live Kit seed channel (#806 / #926):
 
-    - empty → newly assigned: seed canonical DEFAULT_ON for that channel only
+    - empty → newly assigned oneshot: seed canonical DEFAULT_ON for that channel
+    - empty → newly assigned loop/ambiguous: set path, do not seed DEFAULT_ON
     - assigned → replaced (still sample-bearing): preserve existing triggers
     - assigned → cleared / empty: strip that channel's triggers (fail-closed)
     - sample-bearing with a manually edited pattern (including all-off): keep it
     - orphan triggers on an empty seed channel: strip them
+    - when classification is securely loop: strip that channel's triggers
+    - ambiguous with persisted triggers: keep them (playback filter excludes)
     - user-added channels: untouched
 
     Does not rebuild the full rack; only paths and per-channel trigger sets change.
@@ -153,6 +222,9 @@ def reconcile_live_kit_sample_assignments(
         new_path = str(assignment.path) if assignment is not None else None
         old_bearing = _sample_bearing(channel.sample_path)
         new_bearing = _sample_bearing(new_path)
+        sample_class = (
+            getattr(assignment, "sample_class", None) if assignment is not None else None
+        )
 
         if new_path != channel.sample_path:
             path_changed = True
@@ -170,7 +242,13 @@ def reconcile_live_kit_sample_assignments(
         if not new_bearing:
             seed_heal[channel.channel_id] = "strip"
         elif not old_bearing:
-            seed_heal[channel.channel_id] = "seed"
+            # New assignment: DEFAULT_ON only for explicit oneshot.
+            seed_heal[channel.channel_id] = (
+                "seed" if is_point_trigger_safe(sample_class) else "keep"
+            )
+        elif is_explicit_loop(sample_class):
+            # Secure loop classification reconciles stale point triggers away.
+            seed_heal[channel.channel_id] = "strip"
         else:
             seed_heal[channel.channel_id] = "keep"
 
@@ -390,6 +468,7 @@ def play_channel_rack_once(
     pcm_for_path: Callable[[str], Any] | None = None,
     pcm_provider: SequencerPcmProvider | None = None,
     allocate_voice_id: Callable[[], int],
+    live_kit: LiveKitState | None = None,
 ) -> ChannelRackPlayHandle:
     """Plan and start one pattern pass via ``PatternPassPlayer``.
 
@@ -398,6 +477,10 @@ def play_channel_rack_once(
     ``lookahead_frames``, and returns a handle so callers can continue ticking
     as the engine clock advances. The eager ``schedule_pattern_once`` helper is
     intentionally not used here.
+
+    When ``live_kit`` is provided, only explicit oneshot triggers are planned
+    (``filter_pattern_for_point_trigger_playback``). Loop/ambiguous triggers
+    remain in Pattern state but do not reach ``PatternPassPlayer``.
 
     Resolution for PCM:
 
@@ -418,8 +501,13 @@ def play_channel_rack_once(
     channels_by_id: Mapping[str, Channel] = {
         channel.channel_id: channel for channel in state.channels
     }
+    pattern = (
+        filter_pattern_for_point_trigger_playback(state, live_kit)
+        if live_kit is not None
+        else state.pattern
+    )
     planned = plan_pattern_once(
-        pattern=state.pattern,
+        pattern=pattern,
         channels_by_id=channels_by_id,
         tempo_map=tempo_map,
         pattern_start_quarter=pattern_start_quarter,
@@ -536,11 +624,19 @@ def warm_channel_rack_pcm(
 __all__ = [
     "ChannelRackPlayHandle",
     "ChannelRackState",
+    "ClassificationKind",
     "add_user_channel",
     "assign_user_channel_sample",
     "build_channel_rack_state",
+    "classification_kind",
+    "filter_pattern_for_point_trigger_playback",
+    "is_explicit_loop",
+    "is_point_trigger_safe",
+    "normalize_sample_class",
     "play_channel_rack_once",
+    "point_trigger_eligible_channel_ids",
     "reconcile_live_kit_sample_assignments",
+    "sample_class_for_channel",
     "toggle_step",
     "warm_channel_rack_pcm",
 ]

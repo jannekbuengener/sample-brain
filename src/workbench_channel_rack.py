@@ -641,6 +641,7 @@ class ChannelRackController:
             lookahead_frames=self._lookahead_frames,
             pcm_provider=self._pcm_provider,
             allocate_voice_id=self._allocate_voice_id,
+            live_kit=self._live_kit,
         )
 
     def _adopt_pass_handle(self, handle: ChannelRackPlayHandle, *, pass_index: int) -> bool:
