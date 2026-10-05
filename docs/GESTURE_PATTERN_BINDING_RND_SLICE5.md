@@ -288,6 +288,11 @@ Tests may assert Pattern-Core `Trigger(position=...)` compatibility TEST-ONLY fr
 
 A later slice may compose `Channel` + `Trigger` + `Pattern` from a **ready** plan only. Non-ready plans must be rejected. That composer must still not invent selection, length, quantization, or DEFAULT_ON semantics.
 
+**Forward link:** Slice 6 (#893) freezes that pure composition contract in
+`docs/GESTURE_PATTERN_CORE_COMPOSITION_RND_SLICE6.md` (`compose_gesture_pattern_core`
+→ `GesturePatternCoreComposition`). Composition still does not mutate
+`ChannelRackState`.
+
 ## Quality / evidence boundary
 
 | Label | Meaning |
