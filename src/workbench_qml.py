@@ -1005,13 +1005,22 @@ class Screen1QmlInteractionAdapter:
         *,
         state_dir: Path | None = None,
         env: Mapping[str, str] | None = None,
-    ) -> bool:
-        """Load canonical functional feature settings into the adapter."""
-        from .workbench_feature_settings import load_workbench_feature_settings
+    ):
+        """Load canonical functional feature settings into the adapter.
+
+        Returns the loaded ``WorkbenchFeatureSettings`` snapshot (not a
+        success/flag boolean).
+        """
+        from .workbench_feature_settings import (
+            WorkbenchFeatureSettings,
+            load_workbench_feature_settings,
+        )
 
         loaded = load_workbench_feature_settings(state_dir=state_dir, env=env)
+        if not isinstance(loaded, WorkbenchFeatureSettings):
+            loaded = WorkbenchFeatureSettings()
         self._gesture_rack_apply_enabled = bool(loaded.gesture_rack_apply_enabled)
-        return self._gesture_rack_apply_enabled
+        return loaded
 
     def set_gesture_rack_apply_enabled(
         self,
@@ -2919,12 +2928,18 @@ ApplicationWindow {
                             }
                         }
                         Label { text: "Functional"; color: theme.textSecondary; font.pixelSize: 11 }
-                        CheckBox {
+                        Button {
                             id: gestureRackApplyToggle
                             objectName: "gestureRackApplyToggle"
+                            Layout.fillWidth: true
                             text: "Gesture → Rack apply"
+                            checkable: true
                             checked: window.interaction.gestureRackApplyEnabled
-                            onToggled: window.interaction.setGestureRackApplyEnabled(checked)
+                            // Toggle from the Python-owned value so a broken
+                            // CheckBox binding cannot leave UI ahead of disk.
+                            onClicked: window.interaction.setGestureRackApplyEnabled(
+                                !window.interaction.gestureRackApplyEnabled
+                            )
                             Accessible.name: "Gesture Rack apply"
                         }
                         Button {

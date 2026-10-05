@@ -224,6 +224,32 @@ def test_adapter_exposes_persisted_gesture_rack_apply_flag(tmp_path: Path, monke
     assert reloaded.gesture_rack_apply_enabled is True
 
 
+def test_adapter_save_failure_does_not_keep_stale_enabled_memory(tmp_path: Path, monkeypatch):
+    from src import workbench_feature_settings as feature_settings
+
+    save_workbench_feature_settings(
+        WorkbenchFeatureSettings(gesture_rack_apply_enabled=False),
+        state_dir=tmp_path,
+    )
+    view_model = Screen1QmlViewModel.baseline("screen1-default-3panel")
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        on_preview_requested=lambda *_a, **_k: None,
+        on_preview_stopped=lambda: None,
+    )
+    adapter.load_feature_settings(state_dir=tmp_path)
+    assert adapter.gesture_rack_apply_enabled is False
+
+    monkeypatch.setattr(
+        feature_settings,
+        "save_workbench_feature_settings",
+        lambda *_a, **_k: False,
+    )
+    assert adapter.set_gesture_rack_apply_enabled(True, state_dir=tmp_path) is False
+    assert adapter.gesture_rack_apply_enabled is False
+    assert load_workbench_feature_settings(state_dir=tmp_path).gesture_rack_apply_enabled is False
+
+
 def test_settings_change_does_not_mutate_rack_or_call_apply_seam(tmp_path: Path):
     from src.workbench_channel_rack import ChannelRackController
 
