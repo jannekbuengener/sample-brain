@@ -55,9 +55,9 @@ Any KPI with `classification: UNKNOWN` in the contract, and any snapshot field w
 ### 9. What is parked?
 Registry `routing.special_routes.parked_tracks`:
 - Screen 3 #679
-- VST3 #469
-- Bitwig #620
-- Panel reordering research #697
+
+Parked-track entries must point to a currently live parked/HOLD authority; closed,
+deleted, completed-research, or reactivated issues must not remain as routing blocks.
 
 Reactivation requires **explicit Owner GO**. When a listed track is reactivated,
 the same governance closeout must update `CAPABILITY_REGISTRY.json` and regenerate
