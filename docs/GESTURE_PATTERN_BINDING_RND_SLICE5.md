@@ -1,6 +1,6 @@
 # Gesture Pattern Binding Plan R&D — Slice 5 (#680 / #891)
 
-**Status:** `TEST_FREEZE: FROZEN` — docs + acceptance tests locked; implementation absent (`src/gesture_pattern_binding.py` not created in this run).
+**Status:** R&D contract frozen; implementation delivered. See post-implementation result.
 
 **Parent:** [#680](https://github.com/jannekbuengener/sample-brain/issues/680)
 **Child:** [#891](https://github.com/jannekbuengener/sample-brain/issues/891)
@@ -320,4 +320,11 @@ No automatic rank1, confidence calibration, Pattern/Channel/Trigger creation, Ch
 
 ## Post-implementation result
 
-_Pending — implementation is outside this TEST_FREEZE run._
+| Field | Value |
+|-------|-------|
+| Implementation seam | `src/gesture_pattern_binding.py` → `plan_gesture_pattern_binding(...)` |
+| Immutable models | `PlannedGestureChannelBinding`, `PlannedGestureEventBinding`, `GesturePatternBindingPlan` (`frozen=True`) |
+| Measured tests | Focused `tests/test_gesture_pattern_binding_891.py`: **61 passed**; protected ranking/catalog/timing/pattern/channel-rack/DEFAULT_ON/sequencer group: **222 passed** |
+| R&D EXIT | `EXPLICIT_SELECTION_BINDING_PLAN_VIABLE` |
+| Quality claim | `BINDING_PLAN_ONLY — FINAL_PATTERN_GENERATION_NOT_YET_VALIDATED` |
+| Limitation boundary | No auto rank-1, no Pattern/Channel/Trigger creation, no DEFAULT_ON / Channel Rack mutation, no ranking/timing recompute; parent `#680` remains OPEN |
