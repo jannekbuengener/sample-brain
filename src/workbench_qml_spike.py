@@ -5,9 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import importlib
 from pathlib import Path
+import struct
 import sys
 from time import perf_counter
 from typing import Callable, Mapping, Sequence
+import zlib
 
 from . import workbench_qml as production
 from .workbench_controller import WorkbenchRow
@@ -327,12 +329,37 @@ def _grab_qml_window_png(window: object, target: Path, *, engine: object | None 
     target.parent.mkdir(parents=True, exist_ok=True)
     _write_png(target, width, height, rgba)
 
-def _wait_for_screen1_background_ready(window: object, app: object, *, timeout_ms: int = 3000) -> None:
-    """Block until the canonical Screen-1 background Image has painted.
 
-    Visual-acceptance captures must not race the async Image load; otherwise the
-    first Clean Start frame can be pure black while later frames show the
-    reference texture (#731 / #725 evidence).
+def _png_has_color_variation(path: Path) -> bool:
+    """Require composed foreground without restoring the retired texture gate."""
+    try:
+        data = path.read_bytes()
+        width, height = struct.unpack(">II", data[16:24])
+        if width <= 0 or height <= 0:
+            return False
+        raw = zlib.decompress(data[41:-12])
+        stride = width * 4 + 1
+        if len(raw) != stride * height or raw[0] != 0:
+            return False
+        reference = raw[1:4]
+        for row in range(height):
+            offset = row * stride
+            if raw[offset] != 0:
+                return False
+            for pixel in range(offset + 1, offset + stride, 4):
+                if raw[pixel : pixel + 3] != reference:
+                    return True
+    except (OSError, struct.error, zlib.error):
+        return False
+    return False
+
+
+def _wait_for_screen1_background_ready(window: object, app: object, *, timeout_ms: int = 3000) -> None:
+    """Settle the historical background seam before a Screen-1 capture.
+
+    #929/#930 retain the immutable Image and URL only as historical evidence.
+    The V7 runtime deliberately does not composite it over the Theme Core root,
+    so a capture must not wait for a non-visible image to paint.
     """
     from PySide6.QtCore import QElapsedTimer
     from PySide6.QtQuick import QQuickItem
@@ -340,6 +367,11 @@ def _wait_for_screen1_background_ready(window: object, app: object, *, timeout_m
     background = window.findChild(QQuickItem, "screen1Background")
     if background is None:
         raise RuntimeError("screen1Background fehlt vor Visual-Acceptance-Capture.")
+
+    if not background.isVisible():
+        _settle_qml_frame(app)
+        _settle_qml_frame(app)
+        return
 
     timer = QElapsedTimer()
     timer.start()
@@ -358,80 +390,6 @@ def _wait_for_screen1_background_ready(window: object, app: object, *, timeout_m
         "screen1Background wurde vor Capture nicht rechtzeitig gemalt "
         f"(timeout_ms={timeout_ms})."
     )
-
-
-def _png_center_patch_has_texture(path: Path, *, x0: int = 300, y0: int = 300, size: int = 200) -> bool:
-    """Return True when a center patch is not a single flat color (background present)."""
-    import struct
-    import zlib
-
-    data = path.read_bytes()
-    if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n":
-        return False
-    pos = 8
-    width = height = 0
-    color_type = 2
-    idat = b""
-    while pos + 8 <= len(data):
-        length = struct.unpack(">I", data[pos : pos + 4])[0]
-        ctype = data[pos + 4 : pos + 8]
-        chunk = data[pos + 8 : pos + 8 + length]
-        pos += 12 + length
-        if ctype == b"IHDR":
-            width, height = struct.unpack(">II", chunk[:8])
-            color_type = chunk[9]
-        elif ctype == b"IDAT":
-            idat += chunk
-        elif ctype == b"IEND":
-            break
-    if width <= 0 or height <= 0 or not idat:
-        return False
-    bpp = {2: 3, 6: 4}.get(int(color_type))
-    if bpp is None:
-        return False
-    raw = zlib.decompress(idat)
-    rows: list[bytes] = []
-    stride = width * bpp
-    index = 0
-    prev = bytearray(stride)
-    for _ in range(height):
-        filt = raw[index]
-        index += 1
-        row = bytearray(raw[index : index + stride])
-        index += stride
-        if filt == 1:
-            for x in range(stride):
-                left = row[x - bpp] if x >= bpp else 0
-                row[x] = (row[x] + left) & 255
-        elif filt == 2:
-            for x in range(stride):
-                row[x] = (row[x] + prev[x]) & 255
-        elif filt == 3:
-            for x in range(stride):
-                left = row[x - bpp] if x >= bpp else 0
-                row[x] = (row[x] + ((left + prev[x]) // 2)) & 255
-        elif filt == 4:
-            for x in range(stride):
-                a = row[x - bpp] if x >= bpp else 0
-                b = prev[x]
-                c = prev[x - bpp] if x >= bpp else 0
-                p = a + b - c
-                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
-                pr = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
-                row[x] = (row[x] + pr) & 255
-        elif filt != 0:
-            return False
-        rows.append(bytes(row))
-        prev = row
-    colors: set[bytes] = set()
-    for y in range(y0, min(height, y0 + size)):
-        row = rows[y]
-        for x in range(x0, min(width, x0 + size)):
-            off = x * bpp
-            colors.add(row[off : off + 3])
-            if len(colors) > 1:
-                return True
-    return False
 
 
 def _is_within(path: Path, root: Path) -> bool:
@@ -961,17 +919,16 @@ def run_qml_visual_acceptance_725(
         check = validate_capture_sanity(
             target, expected_width=CLIENT_WIDTH, expected_height=CLIENT_HEIGHT
         )
+        if not bool(check["pass"]):
+            raise EvidenceError(f"{label}: Capture-Sanity fehlgeschlagen: {check!r}")
+        check["color_variation"] = _png_has_color_variation(target)
+        if not bool(check["color_variation"]):
+            check["reason"] = "flat-non-black"
+            check["pass"] = False
+            raise EvidenceError(f"{label}: Capture-Sanity fehlgeschlagen: {check!r}")
         check["v2_state_id"] = v2_state
         check["capture_label"] = label
         check["pass"] = bool(check["pass"])
-        if label in {"clean-start-collapsed", "clean-start-reveal-hover", "opened-no-source"}:
-            # Calm Canvas states must show the canonical background texture, not a
-            # pure-black race against async Image composition.
-            if not _png_center_patch_has_texture(target):
-                raise EvidenceError(
-                    f"{label}: Screen-1 background texture missing in capture "
-                    "(async Image race / compositor miss)."
-                )
         sanity[label] = check
         captures[label] = target
 
