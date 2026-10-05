@@ -76,6 +76,9 @@ def rank_gesture_library_candidates(
 
     pool = tuple(_filter_candidate(c) for c in candidates)
     pool = tuple(c for c in pool if c is not None)
+    # Canonicalize by stable identity so corpus mean/std are independent of
+    # input iteration order (IEEE reduction order otherwise can drift).
+    pool = tuple(sorted(pool, key=lambda c: c.sample_id))
     pool_matrix = (
         np.stack([_candidate_aligned_vector(c) for c in pool], axis=0).astype(np.float64)
         if pool
