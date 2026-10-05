@@ -123,8 +123,8 @@ def test_qml_runtime_exposes_background_image_with_stretch_fill():
         assert float(background.property("paintedWidth") or 0) > 0
         assert float(background.property("paintedHeight") or 0) > 0
         assert window.property("accent").name() == "#8f0e24"
-        assert window.property("panel").name() == "#0f0f11"
-        assert window.property("panelAlt").name() == "#1a1a1b"
+        assert window.property("panel").name() == "#09090a"
+        assert window.property("panelAlt").name() == "#101112"
     finally:
         window.close()
         app.processEvents()

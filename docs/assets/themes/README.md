@@ -28,21 +28,42 @@ See `presets.v1.json` for values and derivation formulas.
 
 Authority for hierarchy is Theme Core + this canon — not screenshot pixels.
 
-| Role | QML semantic | Theme Core token | CURRENT (pre-polish) | TARGET |
-|------|--------------|------------------|----------------------|--------|
-| Program Chrome (header / footer band) | `surfaceHeader` | `background` | darkest base | darkest — unchanged role |
-| Main Workspace (root / calm canvas / analysis deep surface) | `surfaceRoot` | `surfaceWorkspace` | same as chrome (`background`) — **flat** | minimally lighter than chrome |
-| Panels (Library / Browser / Harmony / status cards) | `surfacePanel` / `surfaceBrowser` | `surface` | slightly above chrome; equal to each other | subtly above workspace |
-| Elevated / hover lifts | `surfaceElevated` / `hoverSurface` | `surfaceRaised` / `hover` | raised overlays | unchanged role |
-| Borders / dividers | `borderSubtle` / `dividerDefault` | `divider` | quiet separation | quiet separation; not a gray-tool frame |
+### Root cause (why the first polish still read bright / open-gray)
 
-**Feel:** very dark, elegant, deep, premium, calm. No flat `#000000` product
-surfaces. No gray “tool” look. Subtle cool / red-blue depth comes from existing
-preset base tints + foreground mixes — not from a second colorful palette.
+Blood example after the first hierarchy pass (still too open for Owner noir review):
 
-**OUT of this polish:** chrome geometry, footer-context behavior, nav, list
-layout, Live Kit IA, Add Source styling, general buttons, Pattern/Bars/Song,
-audio, new presets unless required for hierarchy tokens.
+| Role | Token | Value | Why it failed noir |
+|------|-------|-------|--------------------|
+| Program Chrome | `background` | `#050506` | Near-black but not ink-dense enough as the family floor |
+| Workspace | `surfaceWorkspace` @ mix `0.025` | `#0b0b0c` | Large calm canvas read as open charcoal / gray field |
+| Panels (Library / Browser) | `surface` @ mix `0.045` | `#0f0f11` | Visible gray boxes / card mass |
+| Dividers | `divider` @ mix `0.16` | `#2a2a2c` | Relatively bright tool-frame edges |
+| Primary text | `foreground` | `#eceef1` | High-luma white-gray; less “Schrift und Minimalismus” |
+| Secondary text | mix `0.45` | `#848587` | Mid-gray labels add visual noise |
+
+Hierarchy order was correct (`chrome < workspace < panels`), but **absolute density**
+was still too bright/gray for cinematic noir.
+
+### TARGET (cinematic noir — same hierarchy, deeper)
+
+| Role | QML semantic | Theme Core token | CURRENT (pre-noir) | TARGET (noir) |
+|------|--------------|------------------|--------------------|---------------|
+| Program Chrome (header / footer band) | `surfaceHeader` | `background` | `#050506` (Blood) | ink floor `#030304` (Blood); darkest role |
+| Main Workspace (root / calm canvas) | `surfaceRoot` | `surfaceWorkspace` | `#0b0b0c` @ `0.025` | `#060607` @ `0.012` — barely raised charcoal/ink |
+| Panels (Library / Browser / Harmony) | `surfacePanel` / `surfaceBrowser` | `surface` | `#0f0f11` @ `0.045` | `#09090a` @ `0.028` — subtle, not gray cards |
+| Elevated / hover lifts | `surfaceElevated` / `hoverSurface` | `surfaceRaised` / `hover` | `0.09` / `0.11` | `0.06` / `0.075` — quieter lifts |
+| Borders / dividers | `borderSubtle` / `dividerDefault` | `divider` | `#2a2a2c` @ `0.16` | `#1a1a1b` @ `0.10` — fine restrained edges |
+| Typography | `textPrimary` / `textSecondary` | `foreground` / mix | `#eceef1` / `#848587` @ `0.45` | `#e4e6ea` / `#68696b` @ `0.55` — calmer, finer mood |
+
+**Feel:** cinematic noir — very dark, elegant, deep, premium, calm, little visible
+UI mass. No flat `#000000` product surfaces. No open gray tool slabs. Subtle cool /
+red-blue depth from preset base tints + tighter mixes — not a second palette.
+Style intent references Superdesign cinematic noir / “Schrift und Minimalismus”;
+do **not** copy-paste Superdesign layout.
+
+**OUT of this polish:** chrome geometry (#880), footer-context behavior (#885),
+nav, list layout, Live Kit IA, Add Source control redesign, Pattern/Bars/Song,
+audio, Screen-2/3, broad Secondary-Control polish.
 
 ## Presets
 

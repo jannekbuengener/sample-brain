@@ -249,7 +249,7 @@ Layers:
 
 1. **Background reference** — unchanged PNG above; not a color palette source.
 2. **Theme Core base tokens** — `accent` / `background` / `foreground` (Blood A
-   default `#8f0e24` / `#050506` / `#eceef1`).
+   default `#8f0e24` / `#030304` / `#e4e6ea`).
 3. **Derived Theme Core tokens** — deterministic mixes (`textPrimary`,
    `textSecondary`, `surfaceWorkspace`, `surface`, `surfaceRaised`, `divider`,
    `hover`, `selected`, `focusRing`).
@@ -260,19 +260,21 @@ Layers:
 
 ### Dark surface hierarchy (semantic, not screenshot pixels)
 
-Dark Screen-1 must read as depth, not one flat black slab. Theme Core owns the
-steps; QML only binds semantics.
+Dark Screen-1 must read as cinematic noir depth, not one flat black slab and not
+an open gray tool UI. Theme Core owns the steps; QML only binds semantics.
 
 | Step | Role | Semantic → token |
 |------|------|------------------|
-| 1 | Program Chrome (darkest) | `surfaceHeader` → `background` |
-| 2 | Main Workspace (minimally lighter) | `surfaceRoot` → `surfaceWorkspace` |
-| 3 | Panels (subtly separated) | `surfacePanel` / `surfaceBrowser` → `surface` |
+| 1 | Program Chrome (darkest / ink floor) | `surfaceHeader` → `background` |
+| 2 | Main Workspace (barely raised charcoal) | `surfaceRoot` → `surfaceWorkspace` |
+| 3 | Panels (subtly separated, low mass) | `surfacePanel` / `surfaceBrowser` → `surface` |
 
-Borders use `divider` / `borderSubtle` for quiet edges. Product surfaces must
-not collapse chrome and workspace to the same fill. No flat `#000000` hierarchy
-base. Feel: very dark, elegant, deep, premium, calm — not a gray tool UI.
-See `docs/assets/themes/README.md` CURRENT→TARGET table.
+Borders use `divider` / `borderSubtle` for fine restrained edges. Product
+surfaces must not collapse chrome and workspace to the same fill. No flat
+`#000000` hierarchy base. Typography mood stays calm/minimal (`textPrimary` /
+`textSecondary` from Theme Core only). Feel: noir, deep, elegant, premium,
+restrained — little visible UI mass. See `docs/assets/themes/README.md`
+CURRENT→TARGET table (root cause + Blood noir example values).
 
 ### Functional accent rule
 

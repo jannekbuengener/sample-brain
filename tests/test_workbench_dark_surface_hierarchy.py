@@ -1,15 +1,15 @@
 """Dark workspace surface hierarchy polish — FROZEN CONTRACT.
 
-Status: TEST_FREEZE
+Status: TEST_FREEZE (noir density tightening)
 Canon:
-  - docs/assets/themes/README.md (CURRENT→TARGET table)
+  - docs/assets/themes/README.md (CURRENT→TARGET + root cause)
   - docs/assets/themes/presets.v1.json
   - docs/WORKBENCH_VISUAL_ACCEPTANCE.md (dark surface hierarchy)
   - src/workbench_theme.py (Theme Authority sole owner)
 
-Intent: dark app with three calm depth steps — Program Chrome darkest,
-Main Workspace minimally lighter, Panels subtly separated. Semantic
-relations only; screenshot pixels are not absolute truth.
+Intent: cinematic noir with three calm depth steps — Program Chrome darkest
+ink floor, Main Workspace barely raised, Panels subtly separated with low
+mass. Semantic relations only; screenshot pixels are not absolute truth.
 """
 
 from __future__ import annotations
@@ -24,6 +24,26 @@ from src import workbench_theme as theme
 
 PRESET_ORDER = ("Blood", "Carbon", "Arctic", "Rose", "Forest")
 PURE_BLACK = "#000000"
+
+# Blood noir TARGET (docs/assets/themes/README.md)
+BLOOD_CHROME = "#030304"
+BLOOD_WORKSPACE = "#060607"
+BLOOD_PANEL = "#09090a"
+BLOOD_DIVIDER = "#1a1a1b"
+BLOOD_TEXT_PRIMARY = "#e4e6ea"
+BLOOD_TEXT_SECONDARY = "#68696b"
+
+# Previous polish values that Owner rejected as too open/gray — must stay darker.
+PRIOR_OPEN_WORKSPACE = "#0b0b0c"
+PRIOR_OPEN_PANEL = "#0f0f11"
+PRIOR_OPEN_DIVIDER = "#2a2a2c"
+
+WORKSPACE_MIX = 0.012
+SURFACE_MIX = 0.028
+RAISED_MIX = 0.06
+HOVER_MIX = 0.075
+DIVIDER_MIX = 0.10
+TEXT_SECONDARY_MIX = 0.55
 
 
 def _normalize_hex(value: str) -> str:
@@ -58,11 +78,26 @@ def _canon() -> dict:
     )
 
 
-def test_canon_documents_surface_workspace_derivation() -> None:
+def test_canon_documents_noir_surface_workspace_derivation() -> None:
     canon = _canon()
     assert "surfaceWorkspace" in canon["derivation"]
     assert canon["derivation"]["surfaceWorkspace"] == (
-        "mix(background, foreground, 0.025)"
+        "mix(background, foreground, 0.012)"
+    )
+    assert canon["derivation"]["surface"] == (
+        "mix(background, foreground, 0.028)"
+    )
+    assert canon["derivation"]["surfaceRaised"] == (
+        "mix(background, foreground, 0.06)"
+    )
+    assert canon["derivation"]["divider"] == (
+        "mix(background, foreground, 0.10)"
+    )
+    assert canon["derivation"]["hover"] == (
+        "mix(background, foreground, 0.075)"
+    )
+    assert canon["derivation"]["textSecondary"] == (
+        "mix(foreground, background, 0.55)"
     )
     for name in PRESET_ORDER:
         derived = canon["presets"][name]["derived"]
@@ -70,13 +105,22 @@ def test_canon_documents_surface_workspace_derivation() -> None:
         assert _normalize_hex(derived["surfaceWorkspace"]) != PURE_BLACK
 
 
-def test_theme_core_exposes_surface_workspace_for_all_presets() -> None:
+def test_theme_core_exposes_noir_surface_workspace_for_all_presets() -> None:
     for name in PRESET_ORDER:
         tokens = theme.resolve_theme(name)
         as_dict = tokens.as_dict()
         assert "surfaceWorkspace" in as_dict
-        expected = theme.mix_hex(tokens.background, tokens.foreground, 0.025)
+        expected = theme.mix_hex(tokens.background, tokens.foreground, WORKSPACE_MIX)
         assert _normalize_hex(as_dict["surfaceWorkspace"]) == _normalize_hex(expected)
+        assert _normalize_hex(as_dict["surface"]) == _normalize_hex(
+            theme.mix_hex(tokens.background, tokens.foreground, SURFACE_MIX)
+        )
+        assert _normalize_hex(as_dict["divider"]) == _normalize_hex(
+            theme.mix_hex(tokens.background, tokens.foreground, DIVIDER_MIX)
+        )
+        assert _normalize_hex(as_dict["textSecondary"]) == _normalize_hex(
+            theme.mix_hex(tokens.foreground, tokens.background, TEXT_SECONDARY_MIX)
+        )
         assert _normalize_hex(as_dict["surfaceWorkspace"]) != PURE_BLACK
         assert _normalize_hex(tokens.background) != PURE_BLACK
 
@@ -107,6 +151,25 @@ def test_dark_surface_hierarchy_luminance_steps_for_all_presets() -> None:
         assert step_cw <= step_wp * 1.35, (
             f"{name}: workspace step too large vs panel separation"
         )
+
+
+def test_blood_noir_density_darker_than_prior_open_gray_polish() -> None:
+    """Owner rejection guard: Blood must stay denser than the open-gray pass."""
+    tokens = theme.resolve_theme("Blood").as_dict()
+    assert _normalize_hex(tokens["background"]) == BLOOD_CHROME
+    assert _normalize_hex(tokens["surfaceWorkspace"]) == BLOOD_WORKSPACE
+    assert _normalize_hex(tokens["surface"]) == BLOOD_PANEL
+    assert _normalize_hex(tokens["divider"]) == BLOOD_DIVIDER
+    assert _normalize_hex(tokens["textPrimary"]) == BLOOD_TEXT_PRIMARY
+    assert _normalize_hex(tokens["textSecondary"]) == BLOOD_TEXT_SECONDARY
+
+    assert _relative_luminance(tokens["surfaceWorkspace"]) < _relative_luminance(
+        PRIOR_OPEN_WORKSPACE
+    )
+    assert _relative_luminance(tokens["surface"]) < _relative_luminance(PRIOR_OPEN_PANEL)
+    assert _relative_luminance(tokens["divider"]) < _relative_luminance(
+        PRIOR_OPEN_DIVIDER
+    )
 
 
 def test_qml_semantics_map_hierarchy_roles() -> None:
@@ -175,3 +238,6 @@ def test_theme_authority_bridge_exposes_hierarchy(tmp_path: Path) -> None:
     assert bridge.surfaceRoot.lower() != bridge.surfacePanel.lower()
     assert bridge.surfaceRoot.lower() != PURE_BLACK
     assert bridge.surfaceHeader.lower() != PURE_BLACK
+    assert bridge.surfaceRoot.lower() == BLOOD_WORKSPACE
+    assert bridge.textPrimary.lower() == BLOOD_TEXT_PRIMARY
+    assert bridge.textSecondary.lower() == BLOOD_TEXT_SECONDARY
