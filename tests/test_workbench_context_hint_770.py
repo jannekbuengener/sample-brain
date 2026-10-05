@@ -67,16 +67,24 @@ def test_descriptor_seam_is_shared_and_placement_decoupled() -> None:
     assert "anchors." not in state_block
     assert re.search(r"\bx:\s*", state_block) is None
     assert re.search(r"\by:\s*", state_block) is None
-    # #831: hint sits on the right inside the program footer band.
+    # Footer-context centering: true center layer on full footer width.
     place_block = source.split('objectName: "programFooterBand"', 1)[1].split(
         "header:", 1
     )[0]
     assert "contextHintDisplay" in place_block
-    assert "horizontalCenter" not in place_block.split("contextHintDisplay", 1)[1].split("}", 1)[0]
-    assert "AlignRight" in place_block or "AlignHRight" in place_block
+    assert 'objectName: "footerContextCenterLayer"' in place_block
+    hint_snip = place_block.split("contextHintDisplay", 1)[1].split(
+        "Accessible.ignored", 1
+    )[0]
+    assert (
+        "horizontalCenter" in hint_snip
+        or "parent.width / 2" in hint_snip
+        or "mid -" in hint_snip
+    )
+    assert "AlignRight" not in hint_snip
     hint_doc = Path("docs/WORKBENCH_CONTEXT_HINT_CONTRACT.md").read_text(encoding="utf-8")
-    assert "bottom-center" not in hint_doc.lower()
-    assert "right side" in hint_doc or "on the right" in hint_doc
+    assert "full footer" in hint_doc.lower()
+    assert "geometrically centered" in hint_doc.lower() or "true center" in hint_doc.lower()
 
 
 def test_supported_controls_register_stable_distinct_descriptors() -> None:
@@ -108,10 +116,12 @@ def test_supported_controls_register_stable_distinct_descriptors() -> None:
     assert 'Accessible.name: "Recordings"' in source
     assert 'objectName: "libraryCatalogScopeButton"' not in source
     # Scope controls must not depend on classic ToolTip for discoverability.
+    # libraryScopeBar is the last footer child; truncate at the next chrome section.
     scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
-        'Item { Layout.fillWidth: true }', 1
+        "header:", 1
     )[0]
     assert "ToolTip." not in scope_block
+    assert 'objectName: "libraryFavoritesScopeButton"' in scope_block
 
 
 def test_hint_priority_and_focus_guard_are_encoded() -> None:
@@ -177,13 +187,24 @@ def _open_screen1(tmp_path: Path, *, width: int = 1600, height: int = 900):
         browser_materialized=True,
         live_kit_materialized=False,
     )
+    from PySide6.QtGui import QGuiApplication
+
     app, engine, window = _qml_engine(view_model, runtime_composition=composition)
+    QGuiApplication.styleHints().setUseHoverEffects(True)
     window.resize(width, height)
     window.show()
+    window.requestActivate()
     engine._screen1_interaction_bridge.refreshState()
     engine._screen1_layout_model.syncFromInteraction()
     _settle_qml_frame(app)
     return app, engine, window, view_model, _settle_qml_frame, QQuickItem
+
+
+def _enable_control_hover(item) -> None:
+    """Offscreen/xvfb QPA may leave Controls without hover acceptance."""
+    item.setAcceptHoverEvents(True)
+    if item.property("hoverEnabled") is not None:
+        item.setProperty("hoverEnabled", True)
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
@@ -248,6 +269,8 @@ def test_scope_button_hover_and_focus_drive_shared_hint(tmp_path: Path) -> None:
         display = window.findChild(QQuickItem, "contextHintDisplay")
         assert state is not None and fav is not None and coll is not None
         assert display is not None
+        _enable_control_hover(fav)
+        _enable_control_hover(coll)
 
         def scene_point(item: QQuickItem) -> QPoint:
             center = item.mapToScene(item.boundingRect().center())
@@ -331,16 +354,13 @@ def test_automated_runtime_visual_acceptance_context_hint(tmp_path: Path) -> Non
             assert placement.isVisible()
             assert float(placement.height()) > 0
             assert float(placement.height()) <= 48
+            _enable_control_hover(fav)
+            _enable_control_hover(coll)
 
             # Bottom-aligned within the window content area.
             win_h = float(window.height())
             place_bottom = float(placement.y()) + float(placement.height())
             assert place_bottom >= win_h - float(placement.height()) - 4
-
-            # Hint sits on the right side of the footer band.
-            display_right = float(display.x()) + float(display.width())
-            place_right = float(placement.width())
-            assert display_right >= place_right - 24.0
 
             # Does not cover Browser actionable area (footer sits below panes).
             if browser is not None and browser.isVisible():
@@ -355,6 +375,13 @@ def test_automated_runtime_visual_acceptance_context_hint(tmp_path: Path) -> Non
             assert state.property("displayText") == _display(
                 *EXPECTED_DESCRIPTORS["library.scope.favorites"]
             )
+
+            # Hint is geometrically centered on the full footer width.
+            display_center = float(display.x()) + float(display.width()) / 2.0
+            place_mid = float(placement.width()) / 2.0
+            assert abs(display_center - place_mid) <= 2.0
+            left_right = float(bar.x()) + float(bar.width())
+            assert float(display.x()) >= left_right - 1.0
 
             fav.forceActiveFocus()
             settle(app)

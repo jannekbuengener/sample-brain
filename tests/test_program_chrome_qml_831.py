@@ -72,13 +72,22 @@ def test_program_chrome_transport_on_right_without_harmonic_header() -> None:
     assert 'objectName: "masterTempoValue"' in transport
 
 
-def test_program_chrome_footer_hosts_scope_bar_and_right_hint() -> None:
+def test_program_chrome_footer_hosts_scope_bar_and_centered_hint() -> None:
     footer = _footer_block()
     assert 'objectName: "libraryScopeBar"' in footer
     assert 'objectName: "contextHintPlacement"' in footer or 'objectName: "programFooterBand"' in footer
     assert 'objectName: "contextHintDisplay"' in footer
-    hint_block = footer.split('objectName: "contextHintDisplay"', 1)[1].split("}", 1)[0]
-    assert "horizontalCenter" not in hint_block
+    assert 'objectName: "footerContextCenterLayer"' in footer
+    assert 'objectName: "footerStatusZone"' in footer
+    hint_block = footer.split('objectName: "contextHintDisplay"', 1)[1].split(
+        "Accessible.ignored", 1
+    )[0]
+    assert (
+        "horizontalCenter" in hint_block
+        or "parent.width / 2" in hint_block
+        or "mid -" in hint_block
+    )
+    assert "AlignRight" not in hint_block
     pane = QML_SOURCE.split("id: libraryPane", 1)[1].split(
         'objectName: "elasticHandleAfterLibrary"', 1
     )[0]

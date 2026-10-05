@@ -3,18 +3,28 @@
 ## Purpose
 
 Screen 1 shows a small context hint / legend for icon-only controls. Hover or
-keyboard focus on a supported control updates one shared hint surface.
-Cursor-adjacent tooltips are not the primary discoverability path for these
-controls.
+keyboard focus / selection on a supported control updates one shared hint
+surface. Cursor-adjacent tooltips are not the primary discoverability path for
+these controls.
 
 ## Placement
 
 #830 (`docs/PROGRAM_CHROME_CONTRACT.md`) owns the global footer band. The hint
-is status text inside that band, on the right, display-only. It must not cover
-utility hit areas and it is not its own centered strip.
+is display-only status text inside that band. Placement authority for the
+**central info zone** is the focused footer-context centering slice (issue
+title: `[QML][UX] Centered footer context info with hover/selection priority`;
+refs #770 #837 #880):
 
-- at the bottom of the window, inside the program footer, on the right
-- visually small and calm
+- at the bottom of the window, inside the program footer
+- geometrically centered on the **full footer width** (window/footer midpoint),
+  not merely in the leftover space between left and right controls
+- LEFT zone keeps existing scope/utility (#837); RIGHT zone keeps existing
+  status (may be empty/neutral); CENTER is a true center layer
+- CENTER must not use `RowLayout` leftover width if that shifts optical center
+- long text elides / fail-soft; must not overlap left or right hit areas; no
+  layout jumps when text appears or clears
+- visually small and calm; matches #880 slim footer chrome (no box/chip/
+  background block/toolbar look; no attention-seeking animation)
 - uses existing Screen-1 theme tokens
 - does not steal unnecessary workspace height
 - does not overlap Browser rows, transport, or other actionable chrome
@@ -27,16 +37,43 @@ layout/snap system can move the surface without rewriting hint semantics.
 ## Hint priority (deterministic)
 
 ```text
-hovered actionable control
+hovered actionable control          (HOVER)
     >
-keyboard-focused actionable control
+keyboard-focused control OR browser sample selection (SELECTION)
     >
-neutral / empty
+neutral / empty                     (DEFAULT)
 ```
 
-When hover ends but a supported control still has keyboard focus, restore the
-focus hint. When neither hover nor relevant focus is active, show the neutral
-empty state. The hint surface itself must never take keyboard focus.
+SELECTION has two existing sources, resolved in this order after hover clears:
+
+1. keyboard-focused supported control via the shared hint seam (`focusedId`)
+2. browser sample selection via the existing `selectedBrowserIndex` /
+   `browserRows` projection (no parallel selection state machine)
+
+Do not invent a second selection state machine or a second display-string
+authority for control descriptors. Sample selection display text is a thin
+projection of the already-selected browser row metadata (single formatter on
+the Python/renderer seam), not a new product selection owner.
+
+When hover ends but a supported control still has keyboard focus, restore that
+control hint. When hover ends with no focused control but a browser sample is
+still selected, restore the sample selection context. When neither hover nor
+relevant selection is active, show the neutral empty state. Hover is temporary
+and must not destroy selection identity. The hint surface itself must never
+take keyboard focus.
+
+### Sample selection display (footer center)
+
+When SELECTION resolves to a selected browser sample row, show one quiet
+compact line from existing projected row fields:
+
+```text
+<name> · <bpm> · <key> · <type>
+```
+
+Reuse the existing Browser row projection values (`display_name` / `bpm` /
+`key` / `sample_type`, including their existing missing-state `"—"` tokens).
+Do not invent new metadata, duplicate formatting in QML, or grow footer height.
 
 ## Descriptor / state seam
 
@@ -47,8 +84,8 @@ Supported controls expose:
 - concise help text
 
 A shared ephemeral UI-state seam owns the current hint content. QML may report
-hover/focus intents and render the resolved display text. No new persistence,
-DB, or global product-state authority.
+hover/focus (selection) intents and render the resolved display text. No new
+persistence, DB, or global product-state authority.
 
 Display format:
 
@@ -89,3 +126,6 @@ the Library scope controls.
 - tutorial / onboarding / modal help
 - Screen 2/3, audio/harmony changes
 - general design-system rewrite
+- background colors / surface hierarchy (separate next slice)
+- program chrome height redesign (#880 baseline stands)
+- footer scope control redesign, navigation, Pattern/Bars/Song

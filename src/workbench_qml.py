@@ -199,6 +199,17 @@ def _qml_row(row: WorkbenchRow, *, is_favorite: bool = False) -> QmlBrowserRow:
     )
 
 
+def format_selected_sample_context_hint(row: QmlBrowserRow | None) -> str:
+    """Compact footer selection context from existing Browser row projection.
+
+    Single formatter authority for ``Name · BPM · Key · Type``. Reuses projected
+    missing-state tokens (``—``). Empty when there is no selected row.
+    """
+    if row is None:
+        return ""
+    return f"{row.display_name} · {row.bpm} · {row.key} · {row.sample_type}"
+
+
 def _qml_harmony_row(suggestion: HarmonySuggestion) -> QmlHarmonyRow:
     row = suggestion.row
     return QmlHarmonyRow(
@@ -313,6 +324,14 @@ class Screen1QmlViewModel:
         if self._on_browser_selected is not None:
             self._on_browser_selected(row)
         return row
+
+    @property
+    def selected_sample_context_hint(self) -> str:
+        """Footer SELECTION fallback from existing browser selection index."""
+        index = self.selected_browser_index
+        if not 0 <= index < len(self.browser_rows):
+            return ""
+        return format_selected_sample_context_hint(self.browser_rows[index])
 
     def set_browser_state(
         self,
@@ -477,6 +496,7 @@ class Screen1QmlViewModel:
         return {
             "panelCount": self.panel_count,
             "selectedBrowserIndex": self.selected_browser_index,
+            "selectedSampleContextHint": self.selected_sample_context_hint,
             "browserContext": self.browser_context,
             "errorMessage": self.browser_error or "",
             "analysisStatus": self.analysis_status,
@@ -599,6 +619,7 @@ def _qml_screen_data_bridge(
     class QmlScreenDataBridge(QObject):
         browserRowsChanged = Signal()
         selectedBrowserIndexChanged = Signal()
+        selectedSampleContextHintChanged = Signal()
         browserContextChanged = Signal()
         errorMessageChanged = Signal()
         analysisStatusChanged = Signal()
@@ -619,6 +640,10 @@ def _qml_screen_data_bridge(
         @Property(int, notify=selectedBrowserIndexChanged)
         def selectedBrowserIndex(self) -> int:
             return view_model.selected_browser_index
+
+        @Property(str, notify=selectedSampleContextHintChanged)
+        def selectedSampleContextHint(self) -> str:
+            return view_model.selected_sample_context_hint
 
         @Property(str, notify=browserContextChanged)
         def browserContext(self) -> str:
@@ -727,6 +752,7 @@ def _qml_screen_data_bridge(
         @Slot()
         def refresh(self) -> None:
             self.selectedBrowserIndexChanged.emit()
+            self.selectedSampleContextHintChanged.emit()
             self.browserContextChanged.emit()
             self.errorMessageChanged.emit()
             self.analysisStatusChanged.emit()
@@ -743,6 +769,7 @@ def _qml_screen_data_bridge(
         @Slot()
         def refresh_browser_rows(self) -> None:
             self.browserRowsChanged.emit()
+            self.selectedSampleContextHintChanged.emit()
 
         @Slot()
         def refresh_browser_scope(self) -> None:
@@ -1756,7 +1783,10 @@ ApplicationWindow {
         property string activeId: ""
         property string activeLabel: ""
         property string activeHelp: ""
-        readonly property string displayText: activeId.length === 0 ? "" : (activeLabel + " — " + activeHelp)
+        // Hover/focus control descriptors win; else existing browser selection hint.
+        readonly property string displayText: activeId.length > 0
+            ? (activeLabel + " — " + activeHelp)
+            : (window.screenData.selectedSampleContextHint || "")
 
         function resolveActiveId() {
             if (hoveredId.length > 0)
@@ -1893,7 +1923,8 @@ ApplicationWindow {
         asynchronous: true
     }
 
-    // #831 program footer band — scope utility left, context hint right (#830 / #770).
+    // #831 program footer band — scope left / context center / status right (#830 / #770).
+    // Footer-context centering: true center layer on full footer width (not RowLayout leftover).
     // #880: slim status-bar footer (chosen ~22; not screenshot-pixel truth).
     // Global program chrome: keep the footer present on Screen 1 and Screen 2.
     footer: Item {
@@ -1907,19 +1938,80 @@ ApplicationWindow {
             height: 1
             color: theme.dividerDefault
             opacity: 0.28
+            z: 3
         }
-        RowLayout {
+        // CENTER: geometrically centered on full footer midpoint (below hit zones).
+        Item {
+            id: footerContextCenterLayer
+            objectName: "footerContextCenterLayer"
             anchors.fill: parent
-            anchors.leftMargin: 8
+            z: 0
+            // Display-only: never intercept hover/pointer for left/right controls.
+            enabled: false
+            Label {
+                id: contextHintDisplay
+                objectName: "contextHintDisplay"
+                readonly property real leftBound: libraryScopeBar.x + libraryScopeBar.width + 6
+                readonly property real rightBound: footerStatusZone.x - 6
+                readonly property real mid: parent.width / 2
+                readonly property real maxHalf: Math.max(
+                    0,
+                    Math.min(mid - leftBound, rightBound - mid)
+                )
+                width: Math.min(implicitWidth, maxHalf * 2)
+                x: mid - width / 2
+                anchors.verticalCenter: parent.verticalCenter
+                text: contextHintState.displayText
+                color: theme.textSecondary
+                font.pixelSize: window.textCaption
+                opacity: text.length > 0 ? 1.0 : 0.0
+                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                focus: false
+                activeFocusOnTab: false
+                Accessible.ignored: true
+                Keys.forwardTo: []
+            }
+        }
+        // RIGHT: existing status zone (may be empty/neutral; must not steal center).
+        Item {
+            id: footerStatusZone
+            objectName: "footerStatusZone"
+            anchors.right: parent.right
             anchors.rightMargin: 12
-            spacing: 4
-            RowLayout {
-                id: libraryScopeBar
-                objectName: "libraryScopeBar"
-                spacing: 2
-                property string mode: "sources"
-                readonly property int controlSize: 18
-                readonly property int iconPad: 3
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.max(1, footerStatusLabel.implicitWidth)
+            height: parent.height
+            z: 2
+            Label {
+                id: footerStatusLabel
+                objectName: "footerStatusLabel"
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                text: ""
+                color: theme.textSecondary
+                font.pixelSize: window.textCaption
+                opacity: text.length > 0 ? 1.0 : 0.0
+                elide: Text.ElideRight
+                focus: false
+                activeFocusOnTab: false
+                Accessible.ignored: true
+            }
+        }
+        // LEFT: existing #837 scope utility.
+        RowLayout {
+            id: libraryScopeBar
+            objectName: "libraryScopeBar"
+            anchors.left: parent.left
+            anchors.leftMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            height: parent.height
+            spacing: 2
+            z: 2
+            property string mode: "sources"
+            readonly property int controlSize: 18
+            readonly property int iconPad: 3
 
                 // Active = fine accent underline + ink tint; no filled toolbar chip.
                 function scopeFill(active, hovered) {
@@ -2281,25 +2373,6 @@ ApplicationWindow {
                         }
                     }
                 }
-            }
-
-            Item { Layout.fillWidth: true }
-            Label {
-                id: contextHintDisplay
-                objectName: "contextHintDisplay"
-                Layout.maximumWidth: Math.min(implicitWidth, programFooterBand.width * 0.45)
-                Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
-                text: contextHintState.displayText
-                color: theme.textSecondary
-                font.pixelSize: window.textCaption
-                opacity: text.length > 0 ? 1.0 : 0.0
-                elide: Text.ElideRight
-                horizontalAlignment: Text.AlignRight
-                focus: false
-                activeFocusOnTab: false
-                Accessible.ignored: true
-                Keys.forwardTo: []
-            }
         }
     }
 
