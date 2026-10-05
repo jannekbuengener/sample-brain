@@ -23,6 +23,7 @@ def test_explicit_production_qml_start_never_falls_back_to_tk(monkeypatch):
 
     tk_started: list[bool] = []
     qml = types.ModuleType("src.workbench_qml")
+    qml.qml_runtime_available = lambda: True
 
     def unavailable(*, state_id: str) -> int:
         raise RuntimeError("Qt Quick Production Renderer nicht verfügbar")
