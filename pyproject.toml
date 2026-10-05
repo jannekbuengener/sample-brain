@@ -23,7 +23,7 @@ sample-brain = "src.cli:main"
 
 [project.optional-dependencies]
 clap = [
-    "torch==2.14.0",
+    "torch==2.14.1",
     "transformers==5.17.0",
 ]
 vec = [
