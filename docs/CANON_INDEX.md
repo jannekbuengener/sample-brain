@@ -40,6 +40,7 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 | Session ownership | `docs/SESSION_OWNERSHIP_CONTRACT.md` | ACTIVE_SUPPORTING | Python-owned session state. Screen-transition seam names (`enter_screen2` / `return_to_screen1`) are runtime ownership hooks, not product-page navigation; #907 owns audit/repair. |
 | Pattern core | `docs/PATTERN_CORE_CONTRACT.md` | ACTIVE_SUPPORTING | Pattern/trigger truth. |
 | Sequencer playback | `docs/SEQUENCER_PLAYBACK_CONTRACT.md` | ACTIVE_SUPPORTING | Scheduling/PCM boundary. |
+| Loop-row Rack playback | `docs/LOOP_ROW_PLAYBACK_CONTRACT.md` | ACTIVE_SUPPORTING | #920 freeze: `LOOP_ROW_DISTINCT_PROJECTION_REQUIRED`; loop rows are not DEFAULT_ON point triggers; start-once natural-length + SYNC fail-closed; runtime follow-up separate. |
 
 ## Durable orientation — not live trackers
 
@@ -64,7 +65,8 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 - **Single Workspace / Workbench product:** live GitHub + [#905](https://github.com/jannekbuengener/sample-brain/issues/905) and a **new scoped child issue**. Do not route new product work as Screen 1 / Screen 2 / Screen 3 page navigation.
 - **Canon / docs alignment:** [#906](https://github.com/jannekbuengener/sample-brain/issues/906) (this migration track).
 - **Session / audio-focus for Rack embed:** [#907](https://github.com/jannekbuengener/sample-brain/issues/907) — audit only until Owner-authorized repair; do not invent second transport/QML musical truth.
-- **Bottom Live Kit / Rack projection:** [#908](https://github.com/jannekbuengener/sample-brain/issues/908) after #906/#907.
+- **Bottom Live Kit / Rack projection:** [#908](https://github.com/jannekbuengener/sample-brain/issues/908) after #906/#907 — **DONE_MERGED_CLOSED** on `main`.
+- **Loop-row / sustained-sample Rack semantics:** [#920](https://github.com/jannekbuengener/sample-brain/issues/920) + `docs/LOOP_ROW_PLAYBACK_CONTRACT.md`. Contract-first; no runtime until Owner/Lead review + separate GO.
 - **Channel Rack domain foundations:** closed [#675](https://github.com/jannekbuengener/sample-brain/issues/675)/[#678](https://github.com/jannekbuengener/sample-brain/issues/678) are **historical delivery evidence**; reuse contracts, do not reopen without explicit Owner-GO.
 - **Arrangement:** [#679](https://github.com/jannekbuengener/sample-brain/issues/679) — **PARKED / UNDESIGNED — requires later explicit Owner design decision**. Do not auto-route.
 - **VST / Bitwig / #697:** parked or research-only; explicit reactivation required. Do not auto-route.

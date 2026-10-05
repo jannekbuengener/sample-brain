@@ -104,7 +104,7 @@ When a sample is added to the Live Kit:
 - `LiveKitState.assign` materializes/reconciles Rack via `ChannelRackController.ensure_state()` without Screen-2 navigation (#916 seam);
 - the corresponding Rack / Sequencer row becomes available in the bottom workspace when occupied;
 - point-trigger-safe (`one_shot` / `oneshot`) rows expose the Step Grid;
-- loop-class / ambiguous rows show identity only — no DEFAULT_ON 16-step grid (#920 owns loop/sustained-sample semantics);
+- loop-class / ambiguous rows show identity only — no DEFAULT_ON 16-step grid (binding playback/projection freeze: [`LOOP_ROW_PLAYBACK_CONTRACT.md`](LOOP_ROW_PLAYBACK_CONTRACT.md) / #920);
 - do not introduce a second Live-Kit truth;
 - do not introduce QML-owned Pattern state;
 - do not copy or mirror Rack state into a parallel structure;
@@ -160,21 +160,19 @@ Until #907 is resolved:
 
 #908 must not claim or release cross-screen audio focus as a substitute for that audit.
 
-## 9. One-shot / loop unresolved boundary
+## 9. One-shot / loop boundary
 
 Point-trigger-safe one-shot rows may render the normal Step Grid in the #908 bottom Rack.
 
-Loop-class / sustained-sample step-grid semantics are owned by [#920](https://github.com/jannekbuengener/sample-brain/issues/920). Until #920:
+Loop-class / sustained-sample semantics are frozen in [`LOOP_ROW_PLAYBACK_CONTRACT.md`](LOOP_ROW_PLAYBACK_CONTRACT.md) (#920):
 
-- loop-class assignments remain assignable/auditionable and may show identity;
-- loop-class rows must not expose the normal 16-step DEFAULT_ON grid;
-- invent no retrigger, clip launch, auto-loop, stretch, or pattern-placement semantics inside #908.
-
-Binding limits:
-
-- evaluate existing Rack / step / sequencer semantics first ([`SEQUENCER_PLAYBACK_CONTRACT.md`](SEQUENCER_PLAYBACK_CONTRACT.md), Pattern Core, Channel Rack controller);
-- do not assert that a loop must share the same step visualization/trigger UX as a Kick/Hat one-shot;
-- invent no implicit repeat / retrigger behavior in this freeze.
+- architecture outcome: `LOOP_ROW_DISTINCT_PROJECTION_REQUIRED`;
+- loop / ambiguous rows keep identity projection (no DEFAULT_ON 16-step grid);
+- explicit `loop` class: one start per Rack Play, natural PCM length to EOF, no pass retrigger, SYNC fail-closed without valid source BPM;
+- ambiguous / unknown class: identity + audition only (no Rack loop auto-start);
+- Pattern Core `Trigger` shapes stay point-fire for oneshots; loop rows must not be seeded as DEFAULT_ON triggers;
+- no clip launcher, Arrangement, PCM wrap-loop engine, or new transport owner in this freeze;
+- runtime implementation is a separate follow-up slice after Owner/Lead contract review — not part of #908.
 
 ## 10. Arrangement — PARKED / UNDESIGNED
 
