@@ -1,6 +1,6 @@
 # Gesture Timing Projection R&D — Slice 4 (#680 / #888)
 
-**Status:** `TEST_FREEZE: FROZEN` — docs + acceptance tests locked; implementation absent (`src/gesture_timing_projection.py` not created in this run).
+**Status:** R&D contract frozen; implementation delivered. See post-implementation result.
 
 **Parent:** [#680](https://github.com/jannekbuengener/sample-brain/issues/680)
 **Child:** [#888](https://github.com/jannekbuengener/sample-brain/issues/888)
@@ -243,4 +243,12 @@ No Pattern / Trigger / Channel creation in production; no cluster→channel allo
 
 ## Post-implementation result
 
-_Pending — implementation is outside this TEST_FREEZE run._
+| Field | Value |
+|-------|-------|
+| Implementation seam | `src/gesture_timing_projection.py` → `project_gesture_timing(analysis, reference_bpm) -> GestureTimingProjection` |
+| Immutable models | `ProjectedGestureEvent`, `GestureTimingProjection` (`frozen=True`) |
+| Fraction rule | Strategy A: `Fraction(str(seconds)) * coerce(reference_bpm) / 60` |
+| Measured tests | Focused `tests/test_gesture_timing_projection_888.py`: **57 passed**; protected gesture/ranking/catalog/pattern/session_grid: **97 passed**; channel rack + sequencer playback: **52 passed** |
+| R&D EXIT | `EXPLICIT_BPM_UNQUANTIZED_PROJECTION_VIABLE` |
+| Quality claim | `TIMING_PROJECTION_ONLY — PATTERN_GENERATION_NOT_YET_VALIDATED` |
+| Limitation boundary | No BPM inference, no quantization, no Pattern/Channel/Trigger creation, no Pattern length authority; parent `#680` remains OPEN |
