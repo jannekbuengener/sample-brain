@@ -383,7 +383,7 @@ def test_runtime_sample_selection_hover_override_restore_and_clear(
 
         # 4) Selection cleared + no hover → Default/empty
         view_model.selected_browser_index = -1
-        engine._screen1_screen_data_bridge.refresh()
+        engine._screen1_screen_model.refresh()
         settle(app)
         assert state.property("displayText") in ("", None)
         assert display.property("text") in ("", None)

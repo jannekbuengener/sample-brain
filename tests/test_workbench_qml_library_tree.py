@@ -257,8 +257,10 @@ def test_library_scope_bar_visual_polish_contract() -> None:
     from src import workbench_qml
 
     source = workbench_qml.QML_SOURCE
+    # Footer scope bar ends before program header (#831/#885 centering removed the
+    # old RowLayout fill-width spacer that previously delimited this block).
     scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
-        'Item { Layout.fillWidth: true }', 1
+        "header:", 1
     )[0]
     tree_block = source.split('objectName: "libraryTree"', 1)[1].split(
         "delegate: TreeViewDelegate", 1
