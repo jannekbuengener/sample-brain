@@ -343,6 +343,7 @@ def _wait_for_screen1_background_ready(window: object, app: object, *, timeout_m
 
     if not background.isVisible():
         _settle_qml_frame(app)
+        _settle_qml_frame(app)
         return
 
     timer = QElapsedTimer()

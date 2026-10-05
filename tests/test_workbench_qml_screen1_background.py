@@ -91,6 +91,16 @@ def test_v7_725_capture_does_not_require_historical_background_texture():
     assert "_png_center_patch_has_texture" not in capture_source
 
 
+def test_hidden_historical_background_settles_two_frames_before_capture():
+    """The V7 no-image path must still allow Qt Quick to compose a full frame."""
+    helper_source = inspect.getsource(workbench_qml_spike._wait_for_screen1_background_ready)
+    hidden_branch = helper_source.split("if not background.isVisible():", 1)[1].split(
+        "timer =", 1
+    )[0]
+
+    assert hidden_branch.count("_settle_qml_frame(app)") == 2
+
+
 @pytest.mark.skipif(
     not workbench_qml.qml_runtime_available(),
     reason="PySide6 unavailable",
