@@ -151,6 +151,17 @@ def test_qml_footer_chrome_uses_surface_header_fill() -> None:
     assert "height: 22" in QML_SOURCE.split('objectName: "programFooterBand"', 1)[0][-80:] + footer
 
 
+def test_qml_calm_canvas_paints_workspace_surface_root() -> None:
+    """Main workspace must not bleed pure-black PNG through a transparent canvas."""
+    from src.workbench_qml import QML_SOURCE
+
+    calm = QML_SOURCE.split('objectName: "calmCanvas"', 1)[1].split(
+        "ColumnLayout", 1
+    )[0]
+    assert "theme.surfaceRoot" in calm
+    assert 'color: "transparent"' not in calm
+
+
 def test_theme_authority_bridge_exposes_hierarchy(tmp_path: Path) -> None:
     pytest.importorskip("PySide6")
     from src.workbench_qml import _qml_theme_authority_bridge

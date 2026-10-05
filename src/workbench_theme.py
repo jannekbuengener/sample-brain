@@ -28,6 +28,7 @@ _BASE_KEYS = ("accent", "background", "foreground")
 _DERIVED_KEYS = (
     "textPrimary",
     "textSecondary",
+    "surfaceWorkspace",
     "surface",
     "surfaceRaised",
     "divider",
@@ -40,6 +41,7 @@ _FORBIDDEN_PERSIST_KEYS = frozenset(
     {
         "textPrimary",
         "textSecondary",
+        "surfaceWorkspace",
         "surface",
         "surfaceRaised",
         "divider",
@@ -55,8 +57,9 @@ _FORBIDDEN_PERSIST_KEYS = frozenset(
 )
 
 # Theme Core token → existing QML semantic names (helper only).
+# Dark hierarchy: chrome=background, workspace=surfaceWorkspace, panels=surface.
 _QML_SEMANTIC_MAP = {
-    "surfaceRoot": "background",
+    "surfaceRoot": "surfaceWorkspace",
     "surfaceHeader": "background",
     "surfaceBrowser": "surface",
     "surfacePanel": "surface",
@@ -100,6 +103,7 @@ class ThemeTokens:
     foreground: str
     textPrimary: str
     textSecondary: str
+    surfaceWorkspace: str
     surface: str
     surfaceRaised: str
     divider: str
@@ -116,6 +120,7 @@ class ThemeTokens:
             "foreground": self.foreground,
             "textPrimary": self.textPrimary,
             "textSecondary": self.textSecondary,
+            "surfaceWorkspace": self.surfaceWorkspace,
             "surface": self.surface,
             "surfaceRaised": self.surfaceRaised,
             "divider": self.divider,
@@ -212,6 +217,8 @@ def derive_tokens(base: Mapping[str, Any] | ThemeBase) -> dict[str, str]:
     return {
         "textPrimary": foreground,
         "textSecondary": mix_hex(foreground, background, 0.45),
+        # Minimally lighter than chrome (background); panels use surface above this.
+        "surfaceWorkspace": mix_hex(background, foreground, 0.025),
         "surface": mix_hex(background, foreground, 0.045),
         "surfaceRaised": mix_hex(background, foreground, 0.09),
         "divider": mix_hex(background, foreground, 0.16),
@@ -234,6 +241,7 @@ def _tokens_from_base(
         foreground=base.foreground,
         textPrimary=derived["textPrimary"],
         textSecondary=derived["textSecondary"],
+        surfaceWorkspace=derived["surfaceWorkspace"],
         surface=derived["surface"],
         surfaceRaised=derived["surfaceRaised"],
         divider=derived["divider"],
