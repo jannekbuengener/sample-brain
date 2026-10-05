@@ -134,9 +134,11 @@ filenames for historical Owner Visual Acceptance evidence may include:
 These are capture labels only. Historical v1 evidence under
 `docs/assets/portfolio/runtime/` remains untouched.
 
-After the #929/#930 solid-root supersession, the three clean-start labels use
-normal capture sanity only; they must not require texture from the historical
-background reference. The solid Theme Core root is the expected capture result.
+After the #929/#930 solid-root supersession, every #725 label must pass normal
+capture sanity and show foreground color variation. A fully flat non-black
+frame is rejected: the solid Theme Core root is expected as the background, but
+does not alone constitute acceptance evidence. The captures must not require
+texture from the historical background reference.
 
 ### #744 Analysis loading Runtime-Evidence
 
