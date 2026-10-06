@@ -1,0 +1,295 @@
+"""TEST_GATE / TEST FREEZE — #936 user-channel classification authority.
+
+Canonical authority:
+- docs/USER_CHANNEL_CLASSIFICATION_AUTHORITY.md (architecture outcome
+  ``USER_CHANNEL_CLASSIFICATION_RESOLVER_INJECTED``)
+- docs/LOOP_ROW_PLAYBACK_CONTRACT.md (#920 / #926 playback owners)
+- docs/SESSION_OWNERSHIP_CONTRACT.md
+- Issue #936
+
+This file is the contract-slice validation for the architecture freeze. It pins
+only ownership invariants that are checkable before any runtime implementation
+exists. Guards 1-5 are green on current ``main`` and must never be weakened.
+
+Frozen ownership rules asserted here:
+
+1. Low-level Rack / audio modules own no SQLite, library, or config I/O.
+2. Session JSON stays path-only; no ``sample_class`` is ever persisted.
+3. Pattern Core ``Channel`` / ``Trigger`` shapes are unchanged.
+4. No filename/folder heuristic can produce classification.
+5. Without an injected binding, user channels stay ``ambiguous`` and fail
+   closed on both #926 playback owners.
+
+Implementation-slice tests (resolver present, invalidation, reconcile,
+observer semantics, gesture reuse) belong to the follow-up slice and are
+intentionally absent here.
+"""
+
+from __future__ import annotations
+
+import ast
+import json
+from fractions import Fraction
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from src.channel_rack import (
+    ChannelRackState,
+    classification_kind,
+    point_trigger_eligible_channel_ids,
+    sample_class_for_channel,
+)
+from src.loop_rack_playback import build_loop_cycle_specs
+from src.pattern_core import Channel, Pattern, Trigger
+from src.workbench_live_kit import LiveKitState
+from src.workbench_session import compose_workbench_session
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# Modules that must never gain SQLite / library / config I/O capability.
+FORBIDDEN_IO_MODULES = (
+    "src/channel_rack.py",
+    "src/loop_rack_playback.py",
+    "src/workbench_channel_rack.py",
+    "src/sequencer_playback.py",
+    "src/pattern_core.py",
+)
+
+FORBIDDEN_IMPORT_ROOTS = frozenset(
+    {
+        "sqlite3",
+        "workbench_library",
+        "db",
+        "config",
+        "config_loader",
+    }
+)
+
+
+def _imported_module_roots(path: Path) -> set[str]:
+    """Every dotted component of every imported module and alias name.
+
+    Absolute repo imports (``import src.workbench_library``,
+    ``from src.workbench_library import x``, ``from src import
+    workbench_library``) are in real use in this repository, so the leading
+    package root must never mask a forbidden leaf.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    components: set[str] = set()
+    for node in ast.walk(tree):
+        names: list[str] = []
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                names.append(node.module)
+            names.extend(alias.name for alias in node.names)
+        for name in names:
+            components.update(part for part in name.split(".") if part)
+    return components
+
+
+@pytest.mark.parametrize("relative", FORBIDDEN_IO_MODULES)
+def test_low_level_rack_modules_import_no_sqlite_library_or_config(relative: str) -> None:
+    """Rule 1: the Rack/audio layer must stay I/O-free (#936 §2)."""
+    roots = _imported_module_roots(REPO_ROOT / relative)
+    leaked = sorted(roots & FORBIDDEN_IMPORT_ROOTS)
+    assert leaked == [], (
+        f"{relative} must not import SQLite/library/config authority: {leaked}"
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "import sqlite3\n",
+        "from src import workbench_library\n",
+        "import src.workbench_library\n",
+        "from src.workbench_library import query_sample_by_path_readonly\n",
+        "from . import config_loader\n",
+        "from src.config_loader import load_profile\n",
+        "from src import db\n",
+        "def f():\n    import sqlite3\n",
+    ),
+)
+def test_import_guard_detects_forbidden_forms(tmp_path: Path, source: str) -> None:
+    """Guard 1 must be non-vacuous, including absolute ``src.`` imports."""
+    probe = tmp_path / "probe.py"
+    probe.write_text(source, encoding="utf-8")
+    assert _imported_module_roots(probe) & FORBIDDEN_IMPORT_ROOTS
+
+
+def _user_channel(channel_id: str, sample_path: str) -> Channel:
+    return Channel(
+        channel_id=channel_id,
+        live_kit_group=None,
+        live_kit_slot=None,
+        sample_path=sample_path,
+    )
+
+
+def _user_state(channel: Channel) -> ChannelRackState:
+    return ChannelRackState(
+        channels=(channel,),
+        pattern=Pattern(
+            pattern_id="screen2-main",
+            length_quarter_notes=Fraction(4, 1),
+            triggers=(Trigger(channel_id=channel.channel_id, position=Fraction(0, 1)),),
+        ),
+        step_count=16,
+    )
+
+
+ALLOWED_ROOT_KEYS = frozenset(
+    {"schema_version", "live_kit", "channel_rack", "master_bpm", "sync_enabled"}
+)
+ALLOWED_CHANNEL_RACK_KEYS = frozenset(
+    {"pattern_id", "length_quarter_notes", "step_count", "channels", "triggers"}
+)
+ALLOWED_CHANNEL_KEYS = frozenset(
+    {"channel_id", "live_kit_group", "live_kit_slot", "sample_path"}
+)
+ALLOWED_TRIGGER_KEYS = frozenset({"channel_id", "position"})
+ALLOWED_LIVE_KIT_REF_KEYS = frozenset({"path"})
+
+# Vocabulary that must never appear in durable session state under any spelling.
+# The guard asserts the exact allowed shape *and* rejects this vocabulary, so a
+# derived binding persisted under `user_metadata`, `classification`, `bpm`, or
+# any other name cannot slip through a single-key denylist.
+FORBIDDEN_PERSISTED_KEYS = frozenset(
+    {
+        "sample_class",
+        "classification",
+        "classification_kind",
+        "user_metadata",
+        "user_sample_metadata",
+        "user_metadata_binding",
+        "pred_type",
+        "source_bpm",
+        "sample_bpm",
+        "bpm",
+        "key",
+        "key_conf",
+        "loudness",
+        "brightness",
+        "analyzer_version",
+        "pcm_frame_count",
+        "playback_rate",
+    }
+)
+
+
+def _session_json(tmp_path: Path) -> Any:
+    session = compose_workbench_session(state_dir=tmp_path / "state")
+    try:
+        session.channel_rack.ensure_state(notify=False)
+        state = session.channel_rack.add_user_channel()
+        user_id = next(
+            channel.channel_id
+            for channel in state.channels
+            if channel.live_kit_group is None and channel.live_kit_slot is None
+        )
+        session.channel_rack.assign_user_channel_sample(
+            user_id, str(tmp_path / "synthetic" / "kick.wav")
+        )
+    finally:
+        session.transport.close()
+
+    return json.loads(
+        (tmp_path / "state" / "workbench_session.json").read_text(encoding="utf-8")
+    )
+
+
+def test_session_json_persists_only_the_frozen_path_only_shape(tmp_path: Path) -> None:
+    """Rule 2a: the exact allowed durable shape, asserted positively."""
+    payload = _session_json(tmp_path)
+
+    assert set(payload) == set(ALLOWED_ROOT_KEYS)
+
+    rack = payload["channel_rack"]
+    assert rack is not None
+    assert set(rack) == set(ALLOWED_CHANNEL_RACK_KEYS)
+
+    for channel in rack["channels"]:
+        assert set(channel) == set(ALLOWED_CHANNEL_KEYS)
+
+    for trigger in rack["triggers"]:
+        assert set(trigger) == set(ALLOWED_TRIGGER_KEYS)
+
+    for group_slots in payload["live_kit"].values():
+        for ref in group_slots.values():
+            assert ref is None or set(ref) == set(ALLOWED_LIVE_KIT_REF_KEYS)
+
+
+def test_session_json_persists_no_analysis_or_binding_vocabulary(tmp_path: Path) -> None:
+    """Rule 2b: no derived metadata key reaches disk under any spelling."""
+    payload = _session_json(tmp_path)
+    found: list[str] = []
+
+    def _walk(node: Any, trail: str) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if str(key) in FORBIDDEN_PERSISTED_KEYS:
+                    found.append(f"{trail}.{key}")
+                _walk(value, f"{trail}.{key}")
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                _walk(value, f"{trail}[{index}]")
+
+    _walk(payload, "$")
+    assert found == [], f"persisted derived metadata found: {found}"
+
+
+def test_pattern_core_channel_and_trigger_shapes_are_frozen() -> None:
+    """Rule 3: Pattern Core keeps no classification/BPM field (#936 §1)."""
+    import dataclasses
+
+    assert tuple(f.name for f in dataclasses.fields(Channel)) == (
+        "channel_id",
+        "live_kit_group",
+        "live_kit_slot",
+        "sample_path",
+    )
+    assert tuple(f.name for f in dataclasses.fields(Trigger)) == (
+        "channel_id",
+        "position",
+    )
+
+
+def test_user_channel_classification_ignores_filename_and_folder_text() -> None:
+    """Rule 4: no filename / folder heuristic may produce a class."""
+    kit = LiveKitState()
+    for channel_id, path in (
+        ("ch_user_1", "C:/Loops/Drum_Loop_120bpm_Oneshot/Kick_Loop.wav"),
+        ("ch_user_2", "/samples/LOOP/oneshot_pad.wav"),
+        ("ch_user_3", "loop.wav"),
+    ):
+        channel = _user_channel(channel_id, path)
+        assert sample_class_for_channel(channel, kit) is None
+        assert classification_kind(sample_class_for_channel(channel, kit)) == "ambiguous"
+
+
+def test_user_channel_without_binding_is_excluded_from_both_playback_paths() -> None:
+    """Rule 5: no injected binding means ambiguous and fail-closed (#926)."""
+    channel = _user_channel("ch_user_1", "synthetic/user.wav")
+    state = _user_state(channel)
+    kit = LiveKitState()
+
+    assert channel.channel_id not in point_trigger_eligible_channel_ids(state, kit)
+
+    specs = build_loop_cycle_specs(
+        state=state,
+        live_kit=kit,
+        pcm_for_path=lambda _path: None,
+        play_anchor_engine_frame=0,
+        sync_enabled=False,
+        master_bpm=120.0,
+    )
+    assert specs == ()
+
+    # Persisted triggers are preserved; only playback is gated.
+    assert state.pattern.triggers == (
+        Trigger(channel_id=channel.channel_id, position=Fraction(0, 1)),
+    )

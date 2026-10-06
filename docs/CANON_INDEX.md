@@ -42,6 +42,7 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 | Pattern core | `docs/PATTERN_CORE_CONTRACT.md` | ACTIVE_SUPPORTING | Pattern/trigger truth. |
 | Sequencer playback | `docs/SEQUENCER_PLAYBACK_CONTRACT.md` | ACTIVE_SUPPORTING | Scheduling/PCM boundary. |
 | Loop-row Rack playback | `docs/LOOP_ROW_PLAYBACK_CONTRACT.md` | ACTIVE_SUPPORTING | #920 freeze: `LOOP_ROW_DISTINCT_PROJECTION_REQUIRED` + `NATURAL_CYCLE_REPEAT` for explicit `loop`; non-destructive classification/restore; native-only fail-closed; runtime follow-up separate. |
+| User-channel classification authority | `docs/USER_CHANNEL_CLASSIFICATION_AUTHORITY.md` | ACTIVE_SUPPORTING | #936 freeze: `USER_CHANNEL_CLASSIFICATION_RESOLVER_INJECTED`; Workbench library stays the single classification authority, session injects a read-only resolver, Rack/audio modules stay I/O-free; derived non-persisted path-keyed binding; ambiguous stays fail-closed; runtime follow-up separate. |
 
 ## Durable orientation — not live trackers
 
@@ -68,6 +69,7 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 - **Session / audio-focus for Rack embed:** [#907](https://github.com/jannekbuengener/sample-brain/issues/907) — audit only until Owner-authorized repair; do not invent second transport/QML musical truth.
 - **Bottom Live Kit / Rack projection:** [#908](https://github.com/jannekbuengener/sample-brain/issues/908) after #906/#907 — **DONE_MERGED_CLOSED** on `main`.
 - **Loop-row / sustained-sample Rack semantics:** [#920](https://github.com/jannekbuengener/sample-brain/issues/920) + `docs/LOOP_ROW_PLAYBACK_CONTRACT.md`. Contract-first; no runtime until Owner/Lead review + separate GO.
+- **User-channel sample classification ownership:** [#936](https://github.com/jannekbuengener/sample-brain/issues/936) + `docs/USER_CHANNEL_CLASSIFICATION_AUTHORITY.md`. Frozen injection boundary; runtime follow-up is [#952](https://github.com/jannekbuengener/sample-brain/issues/952); classification quality itself stays owned by [#946](https://github.com/jannekbuengener/sample-brain/issues/946).
 - **Channel Rack domain foundations:** closed [#675](https://github.com/jannekbuengener/sample-brain/issues/675)/[#678](https://github.com/jannekbuengener/sample-brain/issues/678) are **historical delivery evidence**; reuse contracts, do not reopen without explicit Owner-GO.
 - **Arrangement:** [#679](https://github.com/jannekbuengener/sample-brain/issues/679) — **PARKED / UNDESIGNED — requires later explicit Owner design decision**. Do not auto-route.
 - **VST / Bitwig / #697:** parked or research-only; explicit reactivation required. Do not auto-route.
