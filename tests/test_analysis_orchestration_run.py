@@ -546,6 +546,59 @@ def test_holdout_partition_forbids_tuning_next_action() -> None:
         )
 
 
+def test_host_eval_from_different_benchmark_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.analysis_eval_artifact import aq1_tempo_fixture
+
+    work = tmp_path / "aq1-orch-cross-eval"
+    work.mkdir()
+    fake_repo = tmp_path / "fake-repo"
+    fake_repo.mkdir()
+    monkeypatch.setattr(
+        "src.fsld_aq1_tempo_candidate_compare.REPOSITORY_ROOT", fake_repo
+    )
+    request = _aq1_path_b_request(work)
+    foreign = aq1_tempo_fixture()
+    with pytest.raises(AnalysisOrchestrationRunError, match="identity mismatch"):
+        run_orchestration(
+            request=request,
+            bind_kwargs={"work_dir": work},
+            evidence_fingerprint=OPAQUE_EVIDENCE_FP,
+            gate_verdict="PASS",
+            analysis_eval_artifact=foreign,
+        )
+
+
+def test_non_completed_forces_hold_gate_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    work = tmp_path / "aq1-orch-cf-gate"
+    work.mkdir()
+    fake_repo = tmp_path / "fake-repo"
+    fake_repo.mkdir()
+    monkeypatch.setattr(
+        "src.fsld_aq1_tempo_candidate_compare.REPOSITORY_ROOT", fake_repo
+    )
+    request = _aq1_path_b_request(work)
+    tampered = dict(request)
+    baseline = dict(request["baseline"])
+    baseline["config_fingerprint"] = "0" * 64
+    tampered["baseline"] = baseline
+    tampered.pop("request_fingerprint", None)
+    from src.analysis_headless_run import validate_request
+
+    outcome = run_orchestration(
+        request=validate_request(tampered),
+        bind_kwargs={"work_dir": work},
+        evidence_fingerprint=OPAQUE_EVIDENCE_FP,
+        gate_verdict="PASS",  # must be discarded for non-completed
+    )
+    assert outcome["headless_result"]["run_status"] == "controlled_failure"
+    assert outcome["decision"]["evidence"]["gate_decision"]["verdict"] == "HOLD"
+    assert outcome["decision"]["decision_status"] == "controlled_failure"
+
+
 def test_aq1_hold_path_when_no_predictions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -320,6 +320,152 @@ def map_decision_inputs(
     return "ready", token, action
 
 
+def _assert_eval_matches_headless(
+    eval_artifact: Mapping[str, Any],
+    headless_result: Mapping[str, Any],
+) -> None:
+    """Reject host-supplied eval artifacts that describe a different experiment."""
+    benchmark = headless_result.get("benchmark")
+    partition = headless_result.get("partition")
+    if not isinstance(benchmark, Mapping) or not isinstance(partition, Mapping):
+        raise AnalysisOrchestrationRunError(
+            "headless_result missing benchmark/partition for eval identity check"
+        )
+    eval_benchmark = eval_artifact.get("benchmark")
+    eval_partition = eval_artifact.get("partition")
+    eval_candidate = eval_artifact.get("candidate")
+    if not isinstance(eval_benchmark, Mapping) or not isinstance(eval_partition, Mapping):
+        raise AnalysisOrchestrationRunError(
+            "analysis_eval artifact missing benchmark/partition"
+        )
+    if not isinstance(eval_candidate, Mapping):
+        raise AnalysisOrchestrationRunError(
+            "analysis_eval artifact missing candidate"
+        )
+
+    expected_role = map_eval_partition_role(str(partition.get("role")))
+    checks = (
+        (
+            eval_benchmark.get("benchmark_id") == benchmark.get("benchmark_id"),
+            "benchmark_id",
+        ),
+        (
+            eval_benchmark.get("dataset_id") == benchmark.get("dataset_id"),
+            "dataset_id",
+        ),
+        (
+            eval_partition.get("partition_id") == partition.get("partition_id"),
+            "partition_id",
+        ),
+        (eval_partition.get("role") == expected_role, "partition.role"),
+    )
+    for ok, field in checks:
+        if not ok:
+            raise AnalysisOrchestrationRunError(
+                f"analysis_eval artifact identity mismatch on {field}"
+            )
+
+    # Domain: first eligible record or any record domain must match headless domain.
+    domain = str(headless_result.get("domain"))
+    records = eval_artifact.get("records")
+    if not isinstance(records, list) or not records:
+        raise AnalysisOrchestrationRunError(
+            "analysis_eval artifact must include records"
+        )
+    record_domains = {
+        str(item.get("domain"))
+        for item in records
+        if isinstance(item, Mapping) and item.get("domain") is not None
+    }
+    if domain not in record_domains:
+        raise AnalysisOrchestrationRunError(
+            "analysis_eval artifact domain does not match headless_result.domain"
+        )
+
+    baseline = headless_result.get("baseline")
+    current = headless_result.get("current")
+    allowed_candidates: set[str] = set()
+    if isinstance(baseline, Mapping) and baseline.get("candidate_id"):
+        allowed_candidates.add(str(baseline["candidate_id"]))
+    if isinstance(current, Mapping) and current.get("candidate_id"):
+        allowed_candidates.add(str(current["candidate_id"]))
+    cand_id = str(eval_candidate.get("candidate_id") or "")
+    if allowed_candidates and cand_id not in allowed_candidates:
+        raise AnalysisOrchestrationRunError(
+            "analysis_eval artifact candidate_id does not match headless candidates"
+        )
+
+
+def _assert_decision_matches_headless(
+    decision: Mapping[str, Any],
+    headless_result: Mapping[str, Any],
+) -> None:
+    """Ensure decision identities are bound to the embedded headless result."""
+    benchmark = headless_result.get("benchmark")
+    partition = headless_result.get("partition")
+    if not isinstance(benchmark, Mapping) or not isinstance(partition, Mapping):
+        raise AnalysisOrchestrationRunError(
+            "headless_result missing benchmark/partition for decision identity check"
+        )
+    dec_benchmark = decision.get("benchmark")
+    dec_partition = decision.get("partition")
+    if not isinstance(dec_benchmark, Mapping) or not isinstance(dec_partition, Mapping):
+        raise AnalysisOrchestrationRunError("decision missing benchmark/partition")
+
+    pairs = (
+        (decision.get("domain"), headless_result.get("domain"), "domain"),
+        (
+            dec_benchmark.get("benchmark_id"),
+            benchmark.get("benchmark_id"),
+            "benchmark_id",
+        ),
+        (
+            dec_benchmark.get("dataset_id"),
+            benchmark.get("dataset_id"),
+            "dataset_id",
+        ),
+        (
+            dec_benchmark.get("dataset_content_fingerprint"),
+            benchmark.get("dataset_content_fingerprint"),
+            "dataset_content_fingerprint",
+        ),
+        (
+            dec_partition.get("partition_id"),
+            partition.get("partition_id"),
+            "partition_id",
+        ),
+        (dec_partition.get("role"), partition.get("role"), "partition.role"),
+    )
+    for left, right, field in pairs:
+        if left != right:
+            raise AnalysisOrchestrationRunError(
+                f"decision identity mismatch on {field}"
+            )
+
+    baseline = headless_result.get("baseline")
+    current = headless_result.get("current")
+    dec_baseline = decision.get("baseline_candidate")
+    dec_current = decision.get("current_candidate")
+    if isinstance(baseline, Mapping) and isinstance(dec_baseline, Mapping):
+        if (
+            dec_baseline.get("candidate_id") != baseline.get("candidate_id")
+            or dec_baseline.get("config_fingerprint")
+            != baseline.get("config_fingerprint")
+        ):
+            raise AnalysisOrchestrationRunError(
+                "decision identity mismatch on baseline_candidate"
+            )
+    if isinstance(current, Mapping) and isinstance(dec_current, Mapping):
+        if (
+            dec_current.get("candidate_id") != current.get("candidate_id")
+            or dec_current.get("config_fingerprint")
+            != current.get("config_fingerprint")
+        ):
+            raise AnalysisOrchestrationRunError(
+                "decision identity mismatch on current_candidate"
+            )
+
+
 def outcome_semantic_payload(outcome: Mapping[str, Any]) -> dict[str, Any]:
     """Return the portable payload used for outcome fingerprinting."""
     return {
@@ -392,6 +538,8 @@ def validate_outcome(outcome: Mapping[str, Any]) -> dict[str, Any]:
             "decision.evidence.analysis_eval_fingerprint must match "
             "analysis_eval.artifact_fingerprint"
         )
+
+    _assert_decision_matches_headless(decision, headless_result)
 
     expected_fp = outcome_semantic_fingerprint(
         {
@@ -474,17 +622,12 @@ def run_orchestration(
             eval_artifact = validate_artifact(analysis_eval_artifact)
         except AnalysisEvalArtifactError as exc:
             raise _wrap_eval(exc) from exc
+        _assert_eval_matches_headless(eval_artifact, headless_result)
     else:
-        try:
-            eval_artifact = project_analysis_eval_from_headless(
-                request=validated_request,
-                headless_result=headless_result,
-            )
-        except AnalysisOrchestrationRunError:
-            # Missing/invalid portable evidence must never fabricate ready.
-            if run_status == "completed":
-                raise
-            raise
+        eval_artifact = project_analysis_eval_from_headless(
+            request=validated_request,
+            headless_result=headless_result,
+        )
 
     try:
         analysis_eval_fp = fingerprint(eval_artifact)
@@ -506,11 +649,11 @@ def run_orchestration(
         next_action=next_action,
     )
 
-    # For non-completed paths, gate may be omitted; decision still needs a verdict
-    # field — use HOLD as the opaque non-success stand-in (not a ready path).
-    effective_gate = gate_verdict
+    # Non-completed runs ignore caller gate verdicts; force opaque HOLD stand-in.
     if run_status != "completed":
-        effective_gate = gate_verdict or "HOLD"
+        effective_gate = "HOLD"
+    else:
+        effective_gate = gate_verdict
     if effective_gate not in GATE_VERDICTS:
         raise AnalysisOrchestrationRunError(
             f"gate_verdict must be PASS|FAIL|HOLD, got {effective_gate!r}"
