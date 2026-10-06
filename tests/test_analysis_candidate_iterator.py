@@ -202,6 +202,32 @@ def test_validate_result_reapplies_partition_firewall() -> None:
         validate_result(poisoned)
 
 
+def test_validate_result_rejects_reselected_visited_next_candidate() -> None:
+    result = _run(visited_candidate_ids=["demo.cand.c"])
+    poisoned = dict(result)
+    poisoned["next_candidate"] = {
+        "candidate_id": "demo.cand.c",
+        "config_fingerprint": "c" * 64,
+    }
+    poisoned["visited_candidate_ids"] = ["demo.cand.c", "demo.cand.c"]
+    poisoned["result_fingerprint"] = result_semantic_fingerprint(poisoned)
+    with pytest.raises(
+        AnalysisCandidateIteratorError,
+        match="duplicate candidate_id|already be visited|final visited",
+    ):
+        validate_result(poisoned)
+
+    poisoned2 = dict(result)
+    poisoned2["next_candidate"] = dict(result["current_candidate"])
+    poisoned2["visited_candidate_ids"] = ["demo.cand.c", "demo.cand.a"]
+    poisoned2["result_fingerprint"] = result_semantic_fingerprint(poisoned2)
+    with pytest.raises(
+        AnalysisCandidateIteratorError,
+        match="final visited|differ from current",
+    ):
+        validate_result(poisoned2)
+
+
 def test_validate_result_rejects_malformed_bounded_state() -> None:
     result = _run(visited_candidate_ids=["demo.cand.c"])
     poisoned = dict(result)

@@ -331,8 +331,16 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
         raise AnalysisCandidateIteratorError(
             "visited_candidate_ids must be a list of candidate ids"
         )
+    seen_visited: set[str] = set()
+    normalized_visited: list[str] = []
     for index, raw_id in enumerate(visited):
-        _require_text(raw_id, f"visited_candidate_ids[{index}]")
+        candidate_id = _require_text(raw_id, f"visited_candidate_ids[{index}]")
+        if candidate_id in seen_visited:
+            raise AnalysisCandidateIteratorError(
+                f"duplicate candidate_id in visited set: {candidate_id!r}"
+            )
+        seen_visited.add(candidate_id)
+        normalized_visited.append(candidate_id)
 
     iteration_index = _require_non_negative_int(
         result.get("iteration_index"), "iteration_index"
@@ -353,11 +361,26 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
             raise AnalysisCandidateIteratorError(
                 "advance requires next_candidate mapping"
             )
-        _require_text(next_candidate.get("candidate_id"), "next_candidate.candidate_id")
+        next_id = _require_text(
+            next_candidate.get("candidate_id"), "next_candidate.candidate_id"
+        )
         _require_hex_fingerprint(
             next_candidate.get("config_fingerprint"),
             "next_candidate.config_fingerprint",
         )
+        if not normalized_visited or normalized_visited[-1] != next_id:
+            raise AnalysisCandidateIteratorError(
+                "advance next_candidate must be the final visited_candidate_ids entry"
+            )
+        if next_id in normalized_visited[:-1]:
+            raise AnalysisCandidateIteratorError(
+                "advance next_candidate must not already be visited"
+            )
+        current_id = str(current_candidate.get("candidate_id"))
+        if next_id == current_id:
+            raise AnalysisCandidateIteratorError(
+                "advance next_candidate must differ from current_candidate"
+            )
     elif "next_candidate" in result:
         raise AnalysisCandidateIteratorError(
             f"{effect} must not include next_candidate"
