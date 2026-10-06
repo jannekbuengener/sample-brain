@@ -217,5 +217,5 @@ AQ6_THEORY_TRUTH_TABLE_CONTRACT_FROZEN
 
 ## Follow-on write-heads (out of scope here)
 
-- [#1016](https://github.com/jannekbuengener/sample-brain/issues/1016) — ranking KPI / relevance contract (separate plane)  
-- [#1017](https://github.com/jannekbuengener/sample-brain/issues/1017) — measure current theory correctness baseline
+- [#1016](https://github.com/jannekbuengener/sample-brain/issues/1016) — ranking KPI / relevance contract (separate plane) — **CLOSED / FROZEN**  
+- [#1017](https://github.com/jannekbuengener/sample-brain/issues/1017) — measure current theory correctness baseline — see [`AQ6_HARMONIC_MATCH_THEORY_BASELINE.md`](AQ6_HARMONIC_MATCH_THEORY_BASELINE.md)
