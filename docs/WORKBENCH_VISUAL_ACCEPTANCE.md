@@ -37,10 +37,15 @@ Automated checks cover provenance, both required states, dimensions, PNG
 presence, non-black pixels, panel position, hashes, and public manifest data.
 They do not assess visual product quality.
 
-The Owner historically marked `PASS` or `FAIL` against `docs/assets/portfolio/mockups/ui_mockup.png` and
-`docs/assets/portfolio/mockups/ui_mockup_matching.png` for hierarchy, spacing/density, typography, controls,
+The Owner historically marked `PASS` or `FAIL` against two static design-target mockups
+(`docs/assets/portfolio/mockups/ui_mockup.png` and `ui_mockup_matching.png`) for hierarchy,
+spacing/density, typography, controls,
 color/intent, discoverability, clipping/overflow, populated/empty states, and
-overall producer-tool quality. Agent attestation was not an Owner PASS under that
+overall producer-tool quality. Both mockup files have since been removed from the
+repository (see [#863](https://github.com/jannekbuengener/sample-brain/issues/863) and
+[#864](https://github.com/jannekbuengener/sample-brain/issues/864)); the live design target is
+the Superdesign canvas recorded in [assets/themes/README.md](assets/themes/README.md).
+Agent attestation was not an Owner PASS under that
 historical v1 gate. That Owner operative gate is **superseded** by the operative
 acceptance rule above for new work.
 
