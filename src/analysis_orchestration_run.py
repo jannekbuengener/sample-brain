@@ -320,9 +320,119 @@ def map_decision_inputs(
     return "ready", token, action
 
 
+def _mapping_or_none(value: object) -> Mapping[str, Any] | None:
+    return value if isinstance(value, Mapping) else None
+
+
+def _candidate_pair_mismatch(
+    left: Mapping[str, Any], right: Mapping[str, Any], label: str
+) -> None:
+    if (
+        left.get("candidate_id") != right.get("candidate_id")
+        or left.get("config_fingerprint") != right.get("config_fingerprint")
+    ):
+        raise AnalysisOrchestrationRunError(
+            f"invocation identity mismatch on {label}"
+        )
+
+
+def resolve_candidate_authority(
+    request: Mapping[str, Any],
+    headless_result: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Resolve authoritative baseline/current for this invocation.
+
+    Prefer identities on the headless result when present (and require them to
+    match the validated request). When the result omits optional candidate
+    mappings, fall back to the validated request — never to an empty set.
+    """
+    req_baseline = _mapping_or_none(request.get("baseline"))
+    req_current = _mapping_or_none(request.get("current"))
+    res_baseline = _mapping_or_none(headless_result.get("baseline"))
+    res_current = _mapping_or_none(headless_result.get("current"))
+
+    if res_baseline is not None and req_baseline is not None:
+        _candidate_pair_mismatch(res_baseline, req_baseline, "baseline_candidate")
+    if res_current is not None and req_current is not None:
+        _candidate_pair_mismatch(res_current, req_current, "current_candidate")
+
+    baseline = dict(res_baseline) if res_baseline is not None else (
+        dict(req_baseline) if req_baseline is not None else None
+    )
+    current = dict(res_current) if res_current is not None else (
+        dict(req_current) if req_current is not None else None
+    )
+    if baseline is None:
+        raise AnalysisOrchestrationRunError(
+            "baseline candidate identity required for orchestration binding"
+        )
+    if current is None:
+        current = dict(baseline)
+    return baseline, current
+
+
+def seal_headless_result_candidates(
+    headless_result: Mapping[str, Any],
+    *,
+    baseline: Mapping[str, Any],
+    current: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Ensure the outcome-embedded result carries candidate authority."""
+    sealed = dict(headless_result)
+    sealed["baseline"] = dict(baseline)
+    sealed["current"] = dict(current)
+    sealed.pop("result_fingerprint", None)
+    sealed.pop("artifact_hash", None)
+    try:
+        return validate_result(sealed)
+    except AnalysisHeadlessRunError as exc:
+        raise _wrap_headless(exc) from exc
+
+
+def assert_result_bound_to_invocation(
+    *,
+    headless_result: Mapping[str, Any],
+    validated_request: Mapping[str, Any],
+    adapter: Any,
+) -> None:
+    """Fail closed unless the adapter result belongs to this request/adapter."""
+    expected_fp = validated_request.get("request_fingerprint")
+    actual_fp = headless_result.get("request_fingerprint")
+    if actual_fp != expected_fp:
+        raise AnalysisOrchestrationRunError(
+            "headless result request_fingerprint does not match submitted request"
+        )
+
+    expected_adapter_id = _require_text(
+        validated_request.get("adapter_id"), "adapter_id"
+    )
+    result_adapter_id = _require_text(
+        headless_result.get("adapter_id"), "headless_result.adapter_id"
+    )
+    bound_adapter_id = _require_text(getattr(adapter, "adapter_id", None), "adapter.adapter_id")
+    if result_adapter_id != expected_adapter_id or bound_adapter_id != expected_adapter_id:
+        raise AnalysisOrchestrationRunError(
+            "headless result adapter_id does not match bound adapter/request"
+        )
+
+    bound_version = getattr(adapter, "adapter_version", None)
+    if bound_version is not None:
+        result_version = _require_text(
+            headless_result.get("adapter_version"), "headless_result.adapter_version"
+        )
+        expected_version = _require_text(bound_version, "adapter.adapter_version")
+        if result_version != expected_version:
+            raise AnalysisOrchestrationRunError(
+                "headless result adapter_version does not match bound adapter"
+            )
+
+
 def _assert_eval_matches_headless(
     eval_artifact: Mapping[str, Any],
     headless_result: Mapping[str, Any],
+    *,
+    baseline: Mapping[str, Any],
+    current: Mapping[str, Any],
 ) -> None:
     """Reject host-supplied eval artifacts that describe a different experiment."""
     benchmark = headless_result.get("benchmark")
@@ -382,23 +492,24 @@ def _assert_eval_matches_headless(
             "analysis_eval artifact domain does not match headless_result.domain"
         )
 
-    baseline = headless_result.get("baseline")
-    current = headless_result.get("current")
-    allowed_candidates: set[str] = set()
-    if isinstance(baseline, Mapping) and baseline.get("candidate_id"):
-        allowed_candidates.add(str(baseline["candidate_id"]))
-    if isinstance(current, Mapping) and current.get("candidate_id"):
-        allowed_candidates.add(str(current["candidate_id"]))
+    allowed_candidates = {
+        str(baseline.get("candidate_id") or ""),
+        str(current.get("candidate_id") or ""),
+    }
+    allowed_candidates.discard("")
     cand_id = str(eval_candidate.get("candidate_id") or "")
-    if allowed_candidates and cand_id not in allowed_candidates:
+    if not allowed_candidates or cand_id not in allowed_candidates:
         raise AnalysisOrchestrationRunError(
-            "analysis_eval artifact candidate_id does not match headless candidates"
+            "analysis_eval artifact candidate_id does not match invocation candidates"
         )
 
 
 def _assert_decision_matches_headless(
     decision: Mapping[str, Any],
     headless_result: Mapping[str, Any],
+    *,
+    baseline: Mapping[str, Any] | None = None,
+    current: Mapping[str, Any] | None = None,
 ) -> None:
     """Ensure decision identities are bound to the embedded headless result."""
     benchmark = headless_result.get("benchmark")
@@ -442,28 +553,40 @@ def _assert_decision_matches_headless(
                 f"decision identity mismatch on {field}"
             )
 
-    baseline = headless_result.get("baseline")
-    current = headless_result.get("current")
+    auth_baseline = baseline if baseline is not None else _mapping_or_none(
+        headless_result.get("baseline")
+    )
+    auth_current = current if current is not None else _mapping_or_none(
+        headless_result.get("current")
+    )
+    if auth_baseline is None or auth_current is None:
+        raise AnalysisOrchestrationRunError(
+            "outcome headless_result must include baseline/current candidate "
+            "identities for cross-envelope validation"
+        )
+
     dec_baseline = decision.get("baseline_candidate")
     dec_current = decision.get("current_candidate")
-    if isinstance(baseline, Mapping) and isinstance(dec_baseline, Mapping):
-        if (
-            dec_baseline.get("candidate_id") != baseline.get("candidate_id")
-            or dec_baseline.get("config_fingerprint")
-            != baseline.get("config_fingerprint")
-        ):
-            raise AnalysisOrchestrationRunError(
-                "decision identity mismatch on baseline_candidate"
-            )
-    if isinstance(current, Mapping) and isinstance(dec_current, Mapping):
-        if (
-            dec_current.get("candidate_id") != current.get("candidate_id")
-            or dec_current.get("config_fingerprint")
-            != current.get("config_fingerprint")
-        ):
-            raise AnalysisOrchestrationRunError(
-                "decision identity mismatch on current_candidate"
-            )
+    if not isinstance(dec_baseline, Mapping) or not isinstance(dec_current, Mapping):
+        raise AnalysisOrchestrationRunError(
+            "decision missing baseline_candidate/current_candidate"
+        )
+    if (
+        dec_baseline.get("candidate_id") != auth_baseline.get("candidate_id")
+        or dec_baseline.get("config_fingerprint")
+        != auth_baseline.get("config_fingerprint")
+    ):
+        raise AnalysisOrchestrationRunError(
+            "decision identity mismatch on baseline_candidate"
+        )
+    if (
+        dec_current.get("candidate_id") != auth_current.get("candidate_id")
+        or dec_current.get("config_fingerprint")
+        != auth_current.get("config_fingerprint")
+    ):
+        raise AnalysisOrchestrationRunError(
+            "decision identity mismatch on current_candidate"
+        )
 
 
 def outcome_semantic_payload(outcome: Mapping[str, Any]) -> dict[str, Any]:
@@ -613,6 +736,19 @@ def run_orchestration(
     except AnalysisHeadlessRunError as exc:
         raise _wrap_headless(exc) from exc
 
+    assert_result_bound_to_invocation(
+        headless_result=headless_result,
+        validated_request=validated_request,
+        adapter=adapter,
+    )
+
+    baseline, current = resolve_candidate_authority(
+        validated_request, headless_result
+    )
+    headless_result = seal_headless_result_candidates(
+        headless_result, baseline=baseline, current=current
+    )
+
     run_status = str(headless_result["run_status"])
     partition_role = str(headless_result["partition"]["role"])
 
@@ -622,7 +758,12 @@ def run_orchestration(
             eval_artifact = validate_artifact(analysis_eval_artifact)
         except AnalysisEvalArtifactError as exc:
             raise _wrap_eval(exc) from exc
-        _assert_eval_matches_headless(eval_artifact, headless_result)
+        _assert_eval_matches_headless(
+            eval_artifact,
+            headless_result,
+            baseline=baseline,
+            current=current,
+        )
     else:
         eval_artifact = project_analysis_eval_from_headless(
             request=validated_request,
@@ -658,28 +799,6 @@ def run_orchestration(
         raise AnalysisOrchestrationRunError(
             f"gate_verdict must be PASS|FAIL|HOLD, got {effective_gate!r}"
         )
-
-    baseline = headless_result.get("baseline")
-    current = headless_result.get("current")
-    if not isinstance(baseline, Mapping):
-        baseline = validated_request.get("baseline")
-    if not isinstance(current, Mapping):
-        current = validated_request.get("current")
-    if not isinstance(baseline, Mapping) or not isinstance(current, Mapping):
-        # hold/CF may omit current; fall back to request identities.
-        req_baseline = validated_request.get("baseline")
-        req_current = validated_request.get("current")
-        if not isinstance(baseline, Mapping):
-            if not isinstance(req_baseline, Mapping):
-                raise AnalysisOrchestrationRunError(
-                    "baseline candidate identity required for decision"
-                )
-            baseline = req_baseline
-        if not isinstance(current, Mapping):
-            if isinstance(req_current, Mapping):
-                current = req_current
-            else:
-                current = baseline
 
     try:
         decision = build_decision(
