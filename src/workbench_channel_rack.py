@@ -46,7 +46,7 @@ from .loop_rack_playback import (
     NaturalCycleLoopPlayer,
     build_loop_cycle_specs,
 )
-from .pattern_core import Channel, Pattern, Trigger
+from .pattern_core import Channel, Pattern, Trigger, allocate_user_channel_id
 from .sequencer_pcm import SequencerPcmProvider
 from .session_grid import TempoMap
 from .workbench_live_kit import LIVE_KIT_SLOT_MAPPING, LiveKitState
@@ -916,9 +916,20 @@ class ChannelRackController:
 
         # Allocate the opaque ID now so a Play can queue the intent, but keep the
         # channel itself inert until adoption: the core transition (and its
-        # DEFAULT_ON seeding) runs in _adopt_user_mutation.
-        created = add_user_channel(live)
-        added_channel_id = created.channels[-1].channel_id
+        # DEFAULT_ON seeding) runs in _adopt_user_mutation. IDs already claimed by
+        # earlier queued additions count as taken, or two adds in one Play would
+        # collide at adoption.
+        pending = self._pending_user_mutation
+        queued_ids = pending.added if pending is not None else ()
+        reserved_ids = tuple(
+            dict.fromkeys(
+                [
+                    *(channel.channel_id for channel in live.channels),
+                    *(channel_id for channel_id, _ in queued_ids),
+                ]
+            )
+        )
+        added_channel_id = allocate_user_channel_id(reserved_ids)
 
         pending = _PendingUserChannelMutation(
             added=((added_channel_id, path),),
@@ -1175,9 +1186,14 @@ class ChannelRackController:
             entry = metadata.get(path)
             source_bpm = getattr(entry, "source_bpm", None)
             snapshot[channel.channel_id] = (str(path), resolved, source_bpm)
-            frozen_entries[str(path)] = UserSampleMetadata(
-                sample_class=resolved, source_bpm=source_bpm
-            )
+            if _is_user_channel(channel):
+                # Only user-channel evidence may enter the frozen *user*
+                # binding. A Live Kit channel sharing this path resolved through
+                # the Live Kit, and writing its class here would let the
+                # ambiguous user channel inherit it on the next pass.
+                frozen_entries[str(path)] = UserSampleMetadata(
+                    sample_class=resolved, source_bpm=source_bpm
+                )
         self._playback_classification_snapshot = MappingProxyType(snapshot)
         self._frozen_user_metadata = UserSampleMetadataBinding(frozen_entries)
 

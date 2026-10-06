@@ -86,7 +86,7 @@ from src.native_audio import (
     SB_VOICE_SCHEDULED,
     VoiceConfig,
 )
-from src.pattern_core import Channel, Pattern, Trigger
+from src.pattern_core import CHANNEL_ID_BY_LIVE_KIT_SLOT, Channel, Pattern, Trigger
 from src.sequencer_pcm import SequencerPcmProvider
 from src.session_grid import SessionTransport
 from src.workbench_channel_rack import (
@@ -1615,6 +1615,76 @@ def test_18f_consecutive_queued_replacements_use_the_queued_view() -> None:
     assert set(controller.user_metadata) == {third_path}, (
         "the live path and the interim queued path must both be invalidated"
     )
+
+
+def test_18g_two_queued_additions_get_distinct_channel_ids() -> None:
+    """A queued addition must reserve its ID against earlier queued ones."""
+    resolver = _ScriptedResolver({ONESHOT_PATH: "one_shot", SECOND_ONESHOT_PATH: "one_shot"})
+    controller, _engine, _transport = _controller(resolver=resolver)
+    controller.ensure_state()
+    controller.add_user_channel(sample_path=ONESHOT_PATH)
+    ids_before = {c.channel_id for c in controller.state.channels}
+    controller.play()
+    assert controller.is_playing is True
+
+    controller.add_user_channel(sample_path=ONESHOT_PATH)
+    controller.add_user_channel(sample_path=SECOND_ONESHOT_PATH)
+
+    assert {c.channel_id for c in controller.state.channels} == ids_before, (
+        "queued additions must stay inert until adoption"
+    )
+    controller.stop()
+
+    added_ids = {c.channel_id for c in controller.state.channels} - ids_before
+    assert len(added_ids) == 2, f"both queued channels must land: {added_ids}"
+    assert len(set(controller.user_metadata)) == 2
+    for channel_id in added_ids:
+        assert _triggers_for(controller.state, channel_id) != (), (
+            "a resolved one-shot keeps its DEFAULT_ON seed at adoption"
+        )
+
+
+def test_17e_live_kit_class_never_leaks_into_the_frozen_user_binding() -> None:
+    """A Live Kit channel sharing a path must not un-fail-closed a user channel."""
+    shared_path = "kit_shared.wav"
+    kit = LiveKitState()
+    kit.assign(
+        "Kick + Bass",
+        "Kick",
+        _library_row("kick", shared_path, bpm=None, sample_class="loop"),
+    )
+    controller, _engine, _transport = _controller(
+        resolver=_ScriptedResolver({}), live_kit=kit
+    )
+    kit_id = CHANNEL_ID_BY_LIVE_KIT_SLOT[("Kick + Bass", "Kick")]
+    state = _state(
+        (
+            Channel(
+                channel_id=kit_id,
+                live_kit_group="Kick + Bass",
+                live_kit_slot="Kick",
+                sample_path=shared_path,
+            ),
+            _user_channel("ch_user_1", shared_path),
+        ),
+        (_trigger("ch_user_1", 0),),
+    )
+    controller.restore_state(state)
+
+    controller.play()
+
+    frozen = controller._classification_binding
+    assert shared_path not in frozen, (
+        "an ambiguous user channel must not inherit the Live Kit class"
+    )
+    assert controller._playback_classification_snapshot[kit_id] == (
+        shared_path,
+        "loop",
+        None,
+    ), "the Live Kit channel is still frozen, just not in the user binding"
+    assert "ch_user_1" not in point_trigger_eligible_channel_ids(
+        state, kit, user_metadata=frozen
+    ), "the ambiguous user channel stays inaudible for the whole Play"
 
 
 # ===========================================================================
