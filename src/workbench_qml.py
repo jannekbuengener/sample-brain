@@ -1812,8 +1812,15 @@ def screen1_background_reference_path() -> Path:
 
 
 def screen1_background_url() -> str:
-    """Return a file URL for the canonical Screen-1 background reference."""
-    return screen1_background_reference_path().resolve().as_uri()
+    """Return a file URL for the canonical Screen-1 background reference.
+
+    The historical reference PNG is V7-rejected evidence and is no longer
+    packed into frozen builds; the invisible seam must not bind a dead URL.
+    """
+    path = screen1_background_reference_path().resolve()
+    if not path.is_file():
+        return ""
+    return path.as_uri()
 
 
 QML_SOURCE = r'''

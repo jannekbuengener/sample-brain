@@ -44,9 +44,18 @@ Distributable launcher defaults workbench state to
 `%LOCALAPPDATA%\SampleBrain\state` when `SAMPLE_BRAIN_WORKBENCH_STATE_DIR` is
 unset. Existing env overrides are preserved.
 
-Screen-1 background PNG is packed into the onedir tree
-(`docs/assets/portfolio/references/screen1_background_reference.png`) and
-resolved via `sys._MEIPASS` / exe-adjacent fallback — no repo checkout required.
+The primary brand asset
+(`docs/assets/portfolio/references/brand/sample_brain_logo_primary.png`) is
+packed into the onedir tree and resolved by `resolve_brand_slots()` — the QML
+`analysisBrandBrain` image binds `brandBrainUrl` from the brand runtime
+payload. The build fails closed if the asset is missing. In a frozen onedir
+build the bundled-module `__file__` points under `_internal`, so the runtime
+resolver's repo-root logic lands on the same `_internal` root PyInstaller
+fills with datas — no path duplication.
+
+The historical Screen-1 background reference PNG is **not** packaged. It is
+V7-rejected historical evidence (`visible: false` historical seam; solid-fill
+runtime root), so the spec no longer carries or hard-requires it.
 
 ## Not in this slice
 
