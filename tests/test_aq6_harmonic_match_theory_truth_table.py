@@ -192,8 +192,99 @@ class TestAq6ProductMatchesTruthTable:
         assert scores["incompatible_false_positive_rate"] == 0.0
         assert scores["compatible_false_negative_rate"] == 0.0
         assert scores["pitch_shift_suggestion_correctness"] == 1.0
+        assert scores["counts"]["transpose"] == scores["counts"]["pitch_ok_transpose_only"]
+        assert scores["counts"]["non_transpose_shift_null_failures"] == 0
         assert scores["evidence_fail_closed_rate"] == 1.0
         assert scores["transposition_invariance_violations"] == 0
+
+    def test_pitch_shift_kpi_uses_transpose_denominator_only(self) -> None:
+        cells = [
+            {
+                "cell_id": "t1",
+                "relation": "transpose",
+                "compatibility": "compatible",
+                "evidence_state": "modeful",
+                "pitch_shift_semitones": 2,
+                "source_key": "Cmaj",
+                "target_key": "Dmaj",
+                "source_root": "C",
+                "source_mode": "maj",
+                "target_root": "D",
+                "target_mode": "maj",
+            },
+            {
+                "cell_id": "d1",
+                "relation": "direct",
+                "compatibility": "compatible",
+                "evidence_state": "modeful",
+                "pitch_shift_semitones": None,
+                "source_key": "Cmaj",
+                "target_key": "Cmaj",
+                "source_root": "C",
+                "source_mode": "maj",
+                "target_root": "C",
+                "target_mode": "maj",
+            },
+        ]
+        preds = {
+            "t1": {
+                "relation": "transpose",
+                "compatibility": "compatible",
+                "pitch_shift_semitones": 1,  # wrong
+            },
+            "d1": {
+                "relation": "direct",
+                "compatibility": "compatible",
+                "pitch_shift_semitones": None,
+            },
+        }
+        scores = theory.score_theory_predictions(cells, preds)
+        assert scores["pitch_shift_suggestion_correctness"] == 0.0
+        assert scores["counts"]["transpose"] == 1
+
+    def test_score_invariance_uses_candidate_predictions(self) -> None:
+        cells = [
+            {
+                "cell_id": "a",
+                "relation": "direct",
+                "compatibility": "compatible",
+                "evidence_state": "modeful",
+                "pitch_shift_semitones": None,
+                "source_key": "Cmaj",
+                "target_key": "Cmaj",
+                "source_root": "C",
+                "source_mode": "maj",
+                "target_root": "C",
+                "target_mode": "maj",
+            },
+            {
+                "cell_id": "b",
+                "relation": "direct",
+                "compatibility": "compatible",
+                "evidence_state": "modeful",
+                "pitch_shift_semitones": None,
+                "source_key": "C#maj",
+                "target_key": "C#maj",
+                "source_root": "C#",
+                "source_mode": "maj",
+                "target_root": "C#",
+                "target_mode": "maj",
+            },
+        ]
+        preds = {
+            "a": {
+                "relation": "direct",
+                "compatibility": "compatible",
+                "pitch_shift_semitones": None,
+            },
+            "b": {
+                "relation": "related",  # breaks +1 rotation of a
+                "compatibility": "compatible",
+                "pitch_shift_semitones": None,
+            },
+        }
+        scores = theory.score_theory_predictions(cells, preds)
+        assert scores["transposition_invariance_violations"] >= 1
 
 
 class TestAq6NoForcedMatchWithoutEvidence:

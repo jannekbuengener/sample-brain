@@ -271,15 +271,45 @@ def iter_modeful_cells(document: Mapping[str, Any]) -> Iterable[dict[str, Any]]:
 def transposition_invariance_violations(
     document: Mapping[str, Any] | None = None,
 ) -> list[str]:
-    """Return human-readable violations of +k root rotation invariance."""
+    """Return golden-table violations of +k root rotation invariance."""
     doc = build_truth_table_document() if document is None else document
-    index = {
-        (c["source_key"], c["target_key"]): c
-        for c in doc["cells"]
+    return predicted_transposition_invariance_violations(
+        [c for c in doc["cells"] if c.get("evidence_state") == "modeful"],
+        {
+            c["cell_id"]: {
+                "relation": c["relation"],
+                "compatibility": c["compatibility"],
+                "pitch_shift_semitones": c["pitch_shift_semitones"],
+            }
+            for c in doc["cells"]
+            if c.get("evidence_state") == "modeful"
+        },
+    )
+
+
+def predicted_transposition_invariance_violations(
+    expected_cells: Sequence[Mapping[str, Any]],
+    predicted_by_cell_id: Mapping[str, Mapping[str, Any]],
+) -> list[str]:
+    """Return +k rotation invariance violations on *candidate predictions*.
+
+    Compares predicted relation/compatibility/pitch-shift for each modeful
+    cell against the prediction for the simultaneously rotated pair. Missing
+    predictions are skipped (not counted as violations).
+    """
+    modeful = [
+        c
+        for c in expected_cells
         if c.get("evidence_state") == "modeful"
-    }
+        and c.get("source_root") is not None
+        and c.get("target_root") is not None
+    ]
+    by_keys = {(c["source_key"], c["target_key"]): c for c in modeful}
     violations: list[str] = []
-    for cell in index.values():
+    for cell in modeful:
+        pred = predicted_by_cell_id.get(cell["cell_id"])
+        if pred is None:
+            continue
         src_root = cell["source_root"]
         tgt_root = cell["target_root"]
         src_mode = cell["source_mode"]
@@ -287,18 +317,25 @@ def transposition_invariance_violations(
         for k in range(12):
             rot_src = format_key_signature(rotate_root(src_root, k), src_mode)
             rot_tgt = format_key_signature(rotate_root(tgt_root, k), tgt_mode)
-            rotated = index[(rot_src, rot_tgt)]
+            rotated_cell = by_keys.get((rot_src, rot_tgt))
+            if rotated_cell is None:
+                continue
+            rotated_pred = predicted_by_cell_id.get(rotated_cell["cell_id"])
+            if rotated_pred is None:
+                continue
             if (
-                rotated["relation"] != cell["relation"]
-                or rotated["compatibility"] != cell["compatibility"]
-                or rotated["pitch_shift_semitones"] != cell["pitch_shift_semitones"]
+                rotated_pred.get("relation") != pred.get("relation")
+                or rotated_pred.get("compatibility") != pred.get("compatibility")
+                or rotated_pred.get("pitch_shift_semitones")
+                != pred.get("pitch_shift_semitones")
             ):
                 violations.append(
-                    f"{cell['cell_id']} +{k} -> {rotated['cell_id']}: "
-                    f"{cell['relation']}/{cell['compatibility']}/"
-                    f"{cell['pitch_shift_semitones']} != "
-                    f"{rotated['relation']}/{rotated['compatibility']}/"
-                    f"{rotated['pitch_shift_semitones']}"
+                    f"{cell['cell_id']} +{k} -> {rotated_cell['cell_id']}: "
+                    f"{pred.get('relation')}/{pred.get('compatibility')}/"
+                    f"{pred.get('pitch_shift_semitones')} != "
+                    f"{rotated_pred.get('relation')}/"
+                    f"{rotated_pred.get('compatibility')}/"
+                    f"{rotated_pred.get('pitch_shift_semitones')}"
                 )
                 break
     return violations
@@ -312,6 +349,12 @@ def score_theory_predictions(
 
     Each prediction mapping should provide ``relation``, ``compatibility``,
     and ``pitch_shift_semitones`` keyed by ``cell_id``.
+
+    ``pitch_shift_suggestion_correctness`` uses the **transpose-only**
+    denominator (contract KPI). Non-transpose cells must still predict
+    ``null``; failures are counted in ``non_transpose_shift_null_failures``.
+    ``transposition_invariance_violations`` is evaluated on the candidate
+    predictions, not by regenerating the golden table alone.
     """
     n = 0
     relation_ok = 0
@@ -321,6 +364,8 @@ def score_theory_predictions(
     compatible_fn = 0
     transpose = 0
     pitch_ok = 0
+    non_transpose = 0
+    non_transpose_null_ok = 0
     evidence = 0
     evidence_fail_closed = 0
 
@@ -346,13 +391,10 @@ def score_theory_predictions(
             transpose += 1
             if pred.get("pitch_shift_semitones") == expected["pitch_shift_semitones"]:
                 pitch_ok += 1
-        elif pred.get("pitch_shift_semitones") is None and expected[
-            "pitch_shift_semitones"
-        ] is None:
-            pitch_ok += 1
-            # count non-transpose null correctness into a broader pool via
-            # transpose-only denominator below; tracked separately:
-            pass
+        else:
+            non_transpose += 1
+            if pred.get("pitch_shift_semitones") is None:
+                non_transpose_null_ok += 1
 
         if expected["compatibility"] == "uncertain":
             evidence += 1
@@ -363,21 +405,14 @@ def score_theory_predictions(
             ):
                 evidence_fail_closed += 1
 
-    # Pitch-shift correctness: all cells (transpose must match; others null)
-    pitch_cells = 0
-    pitch_correct = 0
-    for expected in expected_cells:
-        pred = predicted_by_cell_id.get(expected["cell_id"])
-        if pred is None:
-            continue
-        pitch_cells += 1
-        if pred.get("pitch_shift_semitones") == expected["pitch_shift_semitones"]:
-            pitch_correct += 1
-
     def _rate(num: int, den: int) -> float | None:
         if den == 0:
             return None
         return num / den
+
+    invariance_violations = predicted_transposition_invariance_violations(
+        expected_cells, predicted_by_cell_id
+    )
 
     return {
         "domain": DOMAIN_TOKEN,
@@ -385,11 +420,9 @@ def score_theory_predictions(
         "relation_classification_accuracy": _rate(relation_ok, n),
         "incompatible_false_positive_rate": _rate(incompatible_fp, incompatible),
         "compatible_false_negative_rate": _rate(compatible_fn, compatible),
-        "pitch_shift_suggestion_correctness": _rate(pitch_correct, pitch_cells),
+        "pitch_shift_suggestion_correctness": _rate(pitch_ok, transpose),
         "evidence_fail_closed_rate": _rate(evidence_fail_closed, evidence),
-        "transposition_invariance_violations": len(
-            transposition_invariance_violations()
-        ),
+        "transposition_invariance_violations": len(invariance_violations),
         "counts": {
             "relation_ok": relation_ok,
             "incompatible": incompatible,
@@ -398,6 +431,9 @@ def score_theory_predictions(
             "compatible_fn": compatible_fn,
             "transpose": transpose,
             "pitch_ok_transpose_only": pitch_ok,
+            "non_transpose": non_transpose,
+            "non_transpose_null_ok": non_transpose_null_ok,
+            "non_transpose_shift_null_failures": non_transpose - non_transpose_null_ok,
             "evidence": evidence,
             "evidence_fail_closed": evidence_fail_closed,
         },
@@ -419,6 +455,7 @@ __all__ = [
     "classify_theory_pair",
     "iter_modeful_cells",
     "load_truth_table_fixture",
+    "predicted_transposition_invariance_violations",
     "rotate_root",
     "score_theory_predictions",
     "transposition_invariance_violations",

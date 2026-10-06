@@ -187,7 +187,7 @@ Report each metric separately. Do **not** combine into one Harmonic Match score.
 | Relation classification accuracy | Fraction of evaluable cells where predicted `relation` equals frozen expected `relation` | Primary correctness |
 | Incompatible false-positive rate | Fraction of frozen `compatibility=incompatible` cells predicted as `compatible` | Must stay 0 on the frozen product path |
 | Compatible false-negative rate | Fraction of frozen `compatibility=compatible` cells predicted as not `compatible` | Distinct from evidence-`uncertain` |
-| Pitch-shift suggestion correctness | Fraction of `transpose` cells where predicted signed shift equals frozen shift; non-transpose cells must predict `null` | Sign + magnitude |
+| Pitch-shift suggestion correctness | Fraction of **`transpose` cells only** where predicted signed shift equals frozen shift | Sign + magnitude; non-transpose must still predict `null` (tracked separately as null-shift failures, not folded into this denominator) |
 | Transposition invariance violations | Count/rate of modeful cells that change relation/compatibility/shift under simultaneous +k root rotation | Must be 0 |
 | Evidence fail-closed rate | Fraction of missing/insufficient evidence cells that remain `uncertain`/`uncertain` with `null` shift | Forced matches are failures |
 
