@@ -278,6 +278,11 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
     next_action = _require_text(result.get("next_action"), "next_action")
     if next_action not in NEXT_ACTIONS:
         raise AnalysisCandidateIteratorError(f"unsupported next_action: {next_action}")
+    partition_role = _require_text(result.get("partition_role"), "partition_role")
+    _assert_partition_firewall(
+        partition_role=partition_role, next_action=next_action
+    )
+    _require_text(result.get("domain"), "domain")
 
     if "decision_token" in result or "gate_verdict" in result:
         raise AnalysisCandidateIteratorError(
@@ -297,6 +302,50 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
                 f"iterator_effect {effect!r} is incompatible with next_action "
                 f"{next_action!r}"
             )
+
+    search_space = result.get("search_space")
+    if not isinstance(search_space, Mapping):
+        raise AnalysisCandidateIteratorError("search_space must be a mapping")
+    _require_text(search_space.get("search_space_id"), "search_space.search_space_id")
+    _require_text(
+        search_space.get("search_space_version"), "search_space.search_space_version"
+    )
+    _require_hex_fingerprint(
+        search_space.get("search_space_fingerprint"),
+        "search_space.search_space_fingerprint",
+    )
+
+    current_candidate = result.get("current_candidate")
+    if not isinstance(current_candidate, Mapping):
+        raise AnalysisCandidateIteratorError("current_candidate must be a mapping")
+    _require_text(
+        current_candidate.get("candidate_id"), "current_candidate.candidate_id"
+    )
+    _require_hex_fingerprint(
+        current_candidate.get("config_fingerprint"),
+        "current_candidate.config_fingerprint",
+    )
+
+    visited = result.get("visited_candidate_ids")
+    if not isinstance(visited, list) or isinstance(visited, (str, bytes)):
+        raise AnalysisCandidateIteratorError(
+            "visited_candidate_ids must be a list of candidate ids"
+        )
+    for index, raw_id in enumerate(visited):
+        _require_text(raw_id, f"visited_candidate_ids[{index}]")
+
+    iteration_index = _require_non_negative_int(
+        result.get("iteration_index"), "iteration_index"
+    )
+    max_iterations = _require_non_negative_int(
+        result.get("max_iterations"), "max_iterations"
+    )
+    if max_iterations < 1:
+        raise AnalysisCandidateIteratorError("max_iterations must be >= 1")
+    if iteration_index > max_iterations and effect == "advance":
+        raise AnalysisCandidateIteratorError(
+            "advance iteration_index cannot exceed max_iterations"
+        )
 
     if effect == "advance":
         next_candidate = result.get("next_candidate")

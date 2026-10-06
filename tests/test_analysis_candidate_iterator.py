@@ -193,6 +193,42 @@ def test_validate_result_rejects_action_effect_mismatch() -> None:
         validate_result(poisoned)
 
 
+def test_validate_result_reapplies_partition_firewall() -> None:
+    result = _run(visited_candidate_ids=["demo.cand.c"])
+    poisoned = dict(result)
+    poisoned["partition_role"] = "test"
+    poisoned["result_fingerprint"] = result_semantic_fingerprint(poisoned)
+    with pytest.raises(AnalysisCandidateIteratorError, match="partition|tunable|firewall"):
+        validate_result(poisoned)
+
+
+def test_validate_result_rejects_malformed_bounded_state() -> None:
+    result = _run(visited_candidate_ids=["demo.cand.c"])
+    poisoned = dict(result)
+    poisoned["iteration_index"] = -99
+    poisoned["result_fingerprint"] = result_semantic_fingerprint(poisoned)
+    with pytest.raises(AnalysisCandidateIteratorError, match="iteration_index"):
+        validate_result(poisoned)
+
+    poisoned2 = dict(result)
+    poisoned2["max_iterations"] = -1
+    poisoned2["result_fingerprint"] = result_semantic_fingerprint(poisoned2)
+    with pytest.raises(AnalysisCandidateIteratorError, match="max_iterations"):
+        validate_result(poisoned2)
+
+    poisoned3 = dict(result)
+    poisoned3["visited_candidate_ids"] = None
+    poisoned3["result_fingerprint"] = result_semantic_fingerprint(poisoned3)
+    with pytest.raises(AnalysisCandidateIteratorError, match="visited_candidate_ids"):
+        validate_result(poisoned3)
+
+    poisoned4 = dict(result)
+    poisoned4.pop("search_space", None)
+    poisoned4["result_fingerprint"] = result_semantic_fingerprint(poisoned4)
+    with pytest.raises(AnalysisCandidateIteratorError, match="search_space"):
+        validate_result(poisoned4)
+
+
 def test_stale_provider_fingerprint_rejected() -> None:
     class _StaleProvider(StaticSearchSpaceProvider):
         def search_space_fingerprint(self) -> str:  # type: ignore[override]
