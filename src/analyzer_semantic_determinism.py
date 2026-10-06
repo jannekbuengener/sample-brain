@@ -195,9 +195,15 @@ def _project_track_analysis(result: Mapping[str, Any]) -> dict[str, Any]:
     source = _unwrap_track_analysis_source(result)
     fingerprint = _resolve_fingerprint(result, source)
 
-    overall_status = source.get("overall_status", result.get("overall_status"))
+    # Real Track Map (`analyze_context_file`) stores aggregate status at
+    # analysis["status"]. Synthetic / wrapper payloads may use overall_status.
+    overall_status = source.get("status")
     if overall_status is None:
-        raise InvalidSemanticValueError("track_analysis.v1 missing overall_status")
+        overall_status = source.get("overall_status", result.get("overall_status"))
+    if overall_status is None:
+        raise InvalidSemanticValueError(
+            "track_analysis.v1 missing status/overall_status"
+        )
     overall_status = _require_str("overall_status", overall_status)
 
     musical = source.get("musical")
@@ -207,7 +213,16 @@ def _project_track_analysis(result: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(audio_summary, Mapping):
         raise InvalidSemanticValueError("track_analysis.v1 missing audio_summary")
 
-    quality_notes_raw = source.get("quality_notes", result.get("quality_notes", []))
+    # Real Track Map: quality.notes on the wrapper; synthetic: quality_notes.
+    quality_notes_raw: Any = None
+    for candidate in (result, result.get("track_map")):
+        if isinstance(candidate, Mapping):
+            quality = candidate.get("quality")
+            if isinstance(quality, Mapping) and "notes" in quality:
+                quality_notes_raw = quality.get("notes")
+                break
+    if quality_notes_raw is None:
+        quality_notes_raw = source.get("quality_notes", result.get("quality_notes", []))
     if quality_notes_raw is None:
         quality_notes_raw = []
     if not isinstance(quality_notes_raw, list):
@@ -405,16 +420,18 @@ def _require_int(path: str, value: Any) -> int:
 def _require_finite_number(path: str, value: Any) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise InvalidSemanticValueError(f"{path} must be a finite number")
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError as exc:
+        raise InvalidSemanticValueError(f"{path} must be a finite number") from exc
     if not math.isfinite(number):
         raise InvalidSemanticValueError(f"{path} must be finite")
     return number
 
 
 def _diff_values(left: Any, right: Any, *, path: str) -> list[SemanticMismatch]:
-    if type(left) is not type(right) and not (
-        isinstance(left, (int, float)) and isinstance(right, (int, float))
-    ):
+    # Exact representation equality: int vs float and -0.0 vs 0.0 are mismatches.
+    if type(left) is not type(right):
         return [SemanticMismatch(path=path or "$", left=left, right=right)]
 
     if isinstance(left, Mapping) and isinstance(right, Mapping):
@@ -452,6 +469,11 @@ def _diff_values(left: Any, right: Any, *, path: str) -> list[SemanticMismatch]:
                 continue
             mismatches.extend(_diff_values(left[index], right[index], path=child))
         return mismatches
+
+    if isinstance(left, float) and isinstance(right, float):
+        if left != right or math.copysign(1.0, left) != math.copysign(1.0, right):
+            return [SemanticMismatch(path=path or "$", left=left, right=right)]
+        return []
 
     if left != right:
         return [SemanticMismatch(path=path or "$", left=left, right=right)]

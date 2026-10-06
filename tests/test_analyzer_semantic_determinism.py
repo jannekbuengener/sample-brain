@@ -275,3 +275,100 @@ def test_projection_is_portable_without_host_paths() -> None:
     assert "private" not in blob
     assert "local-user" not in blob
     assert "source_path" not in projection
+
+
+def _real_track_map_payload(
+    *,
+    bpm: float = 120.0,
+    fingerprint: str = "fp-real",
+    note_code: str | None = None,
+) -> dict:
+    notes = []
+    if note_code is not None:
+        notes.append(
+            {
+                "code": note_code,
+                "severity": "warning",
+                "path": "/analysis",
+                "message": "short audio",
+            }
+        )
+    return {
+        "document_type": "sample_brain.track_map",
+        "analysis": {
+            "status": "ok",
+            "musical": {
+                "bpm": {
+                    "status": "ok",
+                    "value": bpm,
+                    "unit": "bpm",
+                    "normalization": "none",
+                    "source_ref": "analyze",
+                },
+                "key": {
+                    "status": "ok",
+                    "root": "C",
+                    "mode": "major",
+                    "key_conf": 0.8,
+                    "source_ref": "analyze",
+                },
+            },
+            "audio_summary": {
+                "loudness": {
+                    "status": "ok",
+                    "value": -12.5,
+                    "unit": "dBFS",
+                    "method": "global_rms",
+                    "source_ref": "analyze",
+                },
+                "brightness": {
+                    "status": "ok",
+                    "value": 1800.0,
+                    "unit": "Hz",
+                    "method": "mean_spectral_centroid",
+                    "source_ref": "analyze",
+                },
+            },
+        },
+        "provenance": {
+            "components": {
+                "analyze": {
+                    "configuration": {"parameter_fingerprint": fingerprint},
+                }
+            }
+        },
+        "quality": {"notes": notes},
+    }
+
+
+def test_real_track_map_status_and_quality_notes_project() -> None:
+    left = _real_track_map_payload(note_code="SHORT_AUDIO")
+    right = copy.deepcopy(left)
+    equal = compare_semantic(left, right, shape=SHAPE_TRACK_ANALYSIS)
+    assert equal.outcome == "equal"
+    projection = project_semantic(left, shape=SHAPE_TRACK_ANALYSIS)
+    assert projection["overall_status"] == "ok"
+    assert projection["quality_notes"][0]["code"] == "SHORT_AUDIO"
+
+    drifted = _real_track_map_payload(note_code="OTHER_NOTE")
+    mismatch = compare_semantic(left, drifted, shape=SHAPE_TRACK_ANALYSIS)
+    assert mismatch.outcome == "mismatch"
+    assert any("quality_notes" in item.path for item in mismatch.mismatches)
+
+
+def test_exact_numeric_type_and_signed_zero_mismatch() -> None:
+    left = _ranked_payload()
+    right = copy.deepcopy(left)
+    right["rankings"][0]["ranked"][0]["distance"] = -0.0
+    left["rankings"][0]["ranked"][0]["distance"] = 0.0
+    result = compare_semantic(left, right, shape=SHAPE_RANKED_RETRIEVAL)
+    assert result.outcome == "mismatch"
+
+
+def test_overflow_numeric_is_invalid_not_crash() -> None:
+    payload = _ranked_payload()
+    payload["rankings"][0]["ranked"][0]["distance"] = 10**1000
+    with pytest.raises(InvalidSemanticValueError):
+        project_semantic(payload, shape=SHAPE_RANKED_RETRIEVAL)
+    compare = compare_semantic(payload, _ranked_payload(), shape=SHAPE_RANKED_RETRIEVAL)
+    assert compare.outcome == "invalid"
