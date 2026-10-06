@@ -580,6 +580,10 @@ class ChannelRackController:
         self._user_metadata_resolver = user_metadata_resolver
         self._user_metadata: UserSampleMetadataBinding = EMPTY_USER_SAMPLE_METADATA_BINDING
         self._pending_user_mutation: _PendingUserChannelMutation | None = None
+        # Step edits made while a mutation is queued. A deferred effect - a
+        # queued loop strip - lands at adoption, i.e. after these edits, and
+        # would otherwise silently discard them (rule 17 keeps toggles live).
+        self._queued_step_edits: tuple[tuple[str, int, bool], ...] = ()
         self._playback_classification_snapshot: (
             Mapping[str, tuple[str, str | None, float | None]] | None
         ) = None
@@ -770,6 +774,15 @@ class ChannelRackController:
                 entries.pop(key, None)
         binding = UserSampleMetadataBinding(entries)
         target = self._adopt_user_metadata(target, binding)
+        for channel_id, step_index, desired in self._queued_step_edits:
+            # The deferred effect above is allowed to clear triggers; an edit
+            # the user made after queueing it is not. Restore their last word.
+            present = (
+                Trigger(channel_id=channel_id, position=Fraction(step_index, 4))
+                in target.pattern.triggers
+            )
+            if present != desired:
+                target = toggle_step(target, channel_id, step_index)
 
         self._state = target
         self._user_metadata = binding
@@ -796,11 +809,13 @@ class ChannelRackController:
         self._pending_user_mutation = None
         before = self._state
         self._adopt_user_mutation(pending, notify=notify)
+        self._queued_step_edits = ()
         return self._state is not before
 
     def _discard_pending_user_mutation(self) -> None:
         """Drop a queued mutation without applying or persisting it."""
         self._pending_user_mutation = None
+        self._queued_step_edits = ()
 
     def _refresh_path_set(self, state: ChannelRackState) -> tuple[str, ...]:
         """Paths B4 must resolve: the ones that will exist after adoption.
@@ -1010,6 +1025,19 @@ class ChannelRackController:
     def toggle_step(self, channel_id: str, step_index: int) -> ChannelRackState:
         self._require_state()
         self._state = toggle_step(self._state, channel_id, step_index)
+        if self._pending_user_mutation is not None:
+            # Remember which way the user left this step. The queued intent is
+            # adopted later and can legitimately clear triggers (a resolved
+            # loop strips them), but it must not undo an edit the user made
+            # after queueing it - rule 17 keeps step toggles live.
+            desired = (
+                Trigger(channel_id=channel_id, position=Fraction(step_index, 4))
+                in self._state.pattern.triggers
+            )
+            self._queued_step_edits = (
+                *self._queued_step_edits,
+                (channel_id, step_index, desired),
+            )
         self._notify_musical_state_changed()
         return self._state
 
