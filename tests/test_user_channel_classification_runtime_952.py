@@ -2133,3 +2133,48 @@ def test_18k_queued_addition_replays_its_own_classification_effect() -> None:
     assert _triggers_for(controller.state, channel_id) == (), (
         "the loop strip implied by the queued addition must survive the refresh"
     )
+
+
+def test_18l_queued_refresh_strips_before_a_later_queued_replacement() -> None:
+    """A queued refresh must apply its strip where the user asked for it.
+
+    Refreshing A to ``loop`` and then queuing A -> B leaves only the path
+    change, so adopting the refresh effect last finds A already gone and
+    never strips. Outside a Play the refresh strips A's triggers first and
+    the replacement then keeps them empty.
+    """
+    classes = {
+        ONESHOT_PATH: "one_shot",
+        SECOND_ONESHOT_PATH: "one_shot",
+    }
+    immediate_resolver = _ScriptedResolver(dict(classes))
+    immediate, _e, _t = _controller(resolver=immediate_resolver)
+    immediate.ensure_state()
+    immediate.add_user_channel(sample_path=ONESHOT_PATH)
+    immediate_id = _last_user_channel_id(immediate.state)
+    assert _triggers_for(immediate.state, immediate_id) != ()
+    # The library reclassifies A as a loop, then the user replaces it with B.
+    immediate_resolver.set_class(ONESHOT_PATH, "loop")
+    immediate.refresh_user_channel_metadata()
+    immediate.assign_user_channel_sample(immediate_id, SECOND_ONESHOT_PATH)
+
+    resolver = _ScriptedResolver(dict(classes))
+    controller, _engine, _transport = _controller(resolver=resolver)
+    controller.ensure_state()
+    controller.add_user_channel(sample_path=ONESHOT_PATH)
+    channel_id = _last_user_channel_id(controller.state)
+    controller.play()
+    assert controller.is_playing is True
+
+    resolver.set_class(ONESHOT_PATH, "loop")
+    controller.refresh_user_channel_metadata()
+    controller.assign_user_channel_sample(channel_id, SECOND_ONESHOT_PATH)
+    controller.stop()
+
+    assert _channel(controller.state, channel_id).sample_path == SECOND_ONESHOT_PATH
+    assert _triggers_for(controller.state, channel_id) == _triggers_for(
+        immediate.state, immediate_id
+    ), "the deferred sequence must land exactly where the immediate one does"
+    assert _triggers_for(controller.state, channel_id) == (), (
+        "the queued refresh must strip before the queued replacement"
+    )

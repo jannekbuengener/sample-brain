@@ -467,6 +467,19 @@ class _QueuedUserChannelStep:
 
 
 @dataclass(frozen=True)
+class _QueuedMetadataStep:
+    """A B4 refresh: its classification effect belongs in the ordered stream.
+
+    A refresh changes no path, but the evidence it resolves can still imply a
+    trigger strip. Recorded as a step, that effect lands at the point the user
+    asked for it instead of after every later path change - otherwise a later
+    queued assignment replaces the path and the strip silently never happens.
+    """
+
+    entries: Mapping[str, UserSampleMetadata] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class _PendingUserChannelMutation:
     """Declarative user-channel mutation deferred by ``PLAYBACK_MUTATION_APPLY_POLICY``.
 
@@ -483,7 +496,7 @@ class _PendingUserChannelMutation:
     only the last queued path loses the effect of everything in between.
     """
 
-    steps: tuple[_QueuedUserChannelStep, ...] = ()
+    steps: tuple[_QueuedUserChannelStep | _QueuedMetadataStep, ...] = ()
     entries: Mapping[str, UserSampleMetadata] = field(default_factory=dict)
     attempted: frozenset[str] = frozenset()
     replaced: frozenset[str] = frozenset()
@@ -504,13 +517,17 @@ class _PendingUserChannelMutation:
     def queued_path_for(self, channel_id: str, fallback: str | None) -> str | None:
         """The path a channel holds in the queued view: its last queued step."""
         for step in reversed(self.steps):
-            if step.channel_id == channel_id:
+            if isinstance(step, _QueuedUserChannelStep) and step.channel_id == channel_id:
                 return step.path
         return fallback
 
     def queued_channel_ids(self) -> tuple[str, ...]:
         """IDs already claimed by queued additions; they stay reserved."""
-        return tuple(step.channel_id for step in self.steps if step.create)
+        return tuple(
+            step.channel_id
+            for step in self.steps
+            if isinstance(step, _QueuedUserChannelStep) and step.create
+        )
 
 
 class ChannelRackController:
@@ -705,6 +722,14 @@ class ChannelRackController:
         # Live Kit rejection, and trigger retention stay owned by one place.
         target = base_state
         for step in pending.steps:
+            if isinstance(step, _QueuedMetadataStep):
+                # The refresh's own classification effect, at this point in the
+                # sequence: a path that resolved to ``loop`` strips now, before
+                # a later step can replace the path and erase the strip.
+                target = self._adopt_user_metadata(
+                    target, UserSampleMetadataBinding(dict(step.entries))
+                )
+                continue
             if step.create:
                 target = add_user_channel(
                     target, sample_path=step.path, channel_id=step.channel_id
@@ -793,7 +818,11 @@ class ChannelRackController:
             for channel in state.channels
             if _is_user_channel(channel)
         ]
-        queued.extend(step.path for step in pending.steps if step.create)
+        queued.extend(
+            step.path
+            for step in pending.steps
+            if isinstance(step, _QueuedUserChannelStep) and step.create
+        )
         return tuple(dict.fromkeys(path for path in queued if _sample_bearing(path)))
 
     def refresh_user_channel_metadata(self) -> UserSampleMetadataBinding:
@@ -811,6 +840,7 @@ class ChannelRackController:
         resolved = self._resolve_user_paths(paths)
         self._commit_user_mutation(
             _PendingUserChannelMutation(
+                steps=(_QueuedMetadataStep(entries=resolved),),
                 entries=resolved,
                 attempted=frozenset(paths),
                 replaced=frozenset(paths),
