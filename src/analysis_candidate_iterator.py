@@ -306,14 +306,27 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
     search_space = result.get("search_space")
     if not isinstance(search_space, Mapping):
         raise AnalysisCandidateIteratorError("search_space must be a mapping")
-    _require_text(search_space.get("search_space_id"), "search_space.search_space_id")
-    _require_text(
+    space_id = _require_text(
+        search_space.get("search_space_id"), "search_space.search_space_id"
+    )
+    space_version = _require_text(
         search_space.get("search_space_version"), "search_space.search_space_version"
     )
-    _require_hex_fingerprint(
+    recorded_space_fp = _require_hex_fingerprint(
         search_space.get("search_space_fingerprint"),
         "search_space.search_space_fingerprint",
     )
+    declared_members = _normalize_members(search_space.get("ordered_members"))
+    expected_space_fp = _compute_search_space_fingerprint(
+        search_space_id=space_id,
+        search_space_version=space_version,
+        ordered_members=declared_members,
+    )
+    if recorded_space_fp != expected_space_fp:
+        raise AnalysisCandidateIteratorError(
+            "search_space.search_space_fingerprint does not match ordered_members"
+        )
+    by_id = _member_index(declared_members)
 
     current_candidate = result.get("current_candidate")
     if not isinstance(current_candidate, Mapping):
@@ -321,10 +334,19 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
     current_id = _require_text(
         current_candidate.get("candidate_id"), "current_candidate.candidate_id"
     )
-    _require_hex_fingerprint(
+    current_fp = _require_hex_fingerprint(
         current_candidate.get("config_fingerprint"),
         "current_candidate.config_fingerprint",
     )
+    current_member = by_id.get(current_id)
+    if current_member is None:
+        raise AnalysisCandidateIteratorError(
+            f"current candidate is not a member of search space: {current_id!r}"
+        )
+    if current_member["config_fingerprint"] != current_fp:
+        raise AnalysisCandidateIteratorError(
+            "current config_fingerprint does not match search-space declaration"
+        )
 
     visited = result.get("visited_candidate_ids")
     if not isinstance(visited, list) or isinstance(visited, (str, bytes)):
@@ -335,6 +357,10 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
     normalized_visited: list[str] = []
     for index, raw_id in enumerate(visited):
         candidate_id = _require_text(raw_id, f"visited_candidate_ids[{index}]")
+        if candidate_id not in by_id:
+            raise AnalysisCandidateIteratorError(
+                f"visited candidate is not a member of search space: {candidate_id!r}"
+            )
         if candidate_id in seen_visited:
             raise AnalysisCandidateIteratorError(
                 f"duplicate candidate_id in visited set: {candidate_id!r}"
@@ -350,6 +376,10 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
     )
     if max_iterations < 1:
         raise AnalysisCandidateIteratorError("max_iterations must be >= 1")
+    if max_iterations > len(declared_members):
+        raise AnalysisCandidateIteratorError(
+            "max_iterations cannot exceed search-space size"
+        )
     if iteration_index < len(normalized_visited):
         raise AnalysisCandidateIteratorError(
             "iteration_index must be >= len(visited_candidate_ids)"
@@ -357,6 +387,10 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
     if iteration_index > max_iterations and effect == "advance":
         raise AnalysisCandidateIteratorError(
             "advance iteration_index cannot exceed max_iterations"
+        )
+    if effect == "exhausted" and iteration_index < max_iterations:
+        raise AnalysisCandidateIteratorError(
+            "exhausted requires iteration_index >= max_iterations"
         )
 
     if current_id not in normalized_visited:
@@ -373,10 +407,19 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
         next_id = _require_text(
             next_candidate.get("candidate_id"), "next_candidate.candidate_id"
         )
-        _require_hex_fingerprint(
+        next_fp = _require_hex_fingerprint(
             next_candidate.get("config_fingerprint"),
             "next_candidate.config_fingerprint",
         )
+        next_member = by_id.get(next_id)
+        if next_member is None:
+            raise AnalysisCandidateIteratorError(
+                f"next candidate is not a member of search space: {next_id!r}"
+            )
+        if next_member["config_fingerprint"] != next_fp:
+            raise AnalysisCandidateIteratorError(
+                "next config_fingerprint does not match search-space declaration"
+            )
         if not normalized_visited or normalized_visited[-1] != next_id:
             raise AnalysisCandidateIteratorError(
                 "advance next_candidate must be the final visited_candidate_ids entry"
@@ -569,6 +612,7 @@ def iterate_candidates(
             "search_space_id": space_id,
             "search_space_version": space_version,
             "search_space_fingerprint": expected_space_fp,
+            "ordered_members": [dict(item) for item in members],
         },
         "current_candidate": {
             "candidate_id": current_id,

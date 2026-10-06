@@ -111,7 +111,7 @@ The result echoes the input identity and adds iterator-specific state only:
 - domain and partition role;
 - original `next_action`;
 - `iterator_effect`;
-- search-space identity/version/fingerprint;
+- search-space identity/version/fingerprint plus frozen `ordered_members` declaration;
 - current candidate identity;
 - visited candidate ids;
 - iteration/max-iteration counts;

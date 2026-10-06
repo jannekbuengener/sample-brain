@@ -255,6 +255,40 @@ def test_validate_result_rejects_malformed_bounded_state() -> None:
         validate_result(poisoned4)
 
 
+def test_validate_result_rejects_undeclared_next_candidate() -> None:
+    result = _run(visited_candidate_ids=["demo.cand.c"])
+    poisoned = dict(result)
+    poisoned["search_space"] = dict(result["search_space"])
+    poisoned["next_candidate"] = {
+        "candidate_id": "demo.cand.undeclared",
+        "config_fingerprint": "d" * 64,
+    }
+    poisoned["visited_candidate_ids"] = ["demo.cand.c", "demo.cand.undeclared"]
+    poisoned["iteration_index"] = 2
+    poisoned["result_fingerprint"] = result_semantic_fingerprint(poisoned)
+    with pytest.raises(
+        AnalysisCandidateIteratorError,
+        match="not a member of search space",
+    ):
+        validate_result(poisoned)
+
+
+def test_validate_result_rejects_premature_exhausted() -> None:
+    result = _run(next_action="continue_calibration", visited_candidate_ids=["demo.cand.c"])
+    poisoned = dict(result)
+    poisoned["iterator_effect"] = "exhausted"
+    poisoned.pop("next_candidate", None)
+    poisoned["visited_candidate_ids"] = ["demo.cand.c"]
+    poisoned["iteration_index"] = 1
+    poisoned["max_iterations"] = 3
+    poisoned["result_fingerprint"] = result_semantic_fingerprint(poisoned)
+    with pytest.raises(
+        AnalysisCandidateIteratorError,
+        match="exhausted requires iteration_index >= max_iterations",
+    ):
+        validate_result(poisoned)
+
+
 def test_validate_result_rejects_iteration_index_below_visited_count() -> None:
     result = _run(visited_candidate_ids=["demo.cand.c"])
     poisoned = dict(result)
