@@ -174,12 +174,12 @@ $QWindows = Get-ChildItem -LiteralPath $FinalApp -Recurse -Filter "qwindows.dll"
     Select-Object -First 1
 if (-not $QWindows) { throw "qwindows.dll missing from standalone artifact - Qt platforms plugin FAIL." }
 
-# Screen-1 canonical background presence gate (frozen QML must not depend on repo checkout)
-$BgName = "screen1_background_reference.png"
-$Background = Get-ChildItem -LiteralPath $FinalApp -Recurse -Filter $BgName -ErrorAction SilentlyContinue |
+# Screen-1 brand runtime asset presence gate (frozen QML must not depend on repo checkout)
+$LogoName = "sample_brain_logo_primary.png"
+$Logo = Get-ChildItem -LiteralPath $FinalApp -Recurse -Filter $LogoName -ErrorAction SilentlyContinue |
     Select-Object -First 1
-if (-not $Background) {
-    throw "$BgName missing from standalone artifact - Screen-1 background FAIL."
+if (-not $Logo) {
+    throw "$LogoName missing from standalone artifact - Screen-1 brand asset FAIL."
 }
 
 # Tester note + BUILDINFO (relative evidence IDs only; no machine-local absolute paths)

@@ -11,13 +11,21 @@ from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs
 REPO = Path(SPECPATH).resolve().parents[1]
 ENTRY = REPO / "tools" / "windows" / "sample_brain_gui_entry.py"
 DLL = REPO / "native" / "audio" / "build" / "bin" / "Release" / "samplebrain_audio.dll"
-SCREEN1_BACKGROUND = (
+# Single runtime truth: path and filename are owned by the brand slot
+# (src/workbench_brand_motion.py resolve_brand_slots). The QML binds
+# analysisBrandBrain to brandBrainUrl, so the frozen build must carry this
+# exact file at exactly this repo-relative destination.
+SCREEN1_BRAND_ASSET = (
     REPO
     / "docs"
     / "assets"
     / "portfolio"
     / "references"
-    / "screen1_background_reference.png"
+    / "brand"
+    / "sample_brain_logo_primary.png"
+)
+SCREEN1_BRAND_ASSET_DEST = (
+    Path("docs") / "assets" / "portfolio" / "references" / "brand"
 )
 
 datas = []
@@ -49,15 +57,12 @@ binaries += collect_dynamic_libs("soundfile")
 if DLL.is_file():
     binaries.append((str(DLL), "."))
 
-# Canonical Screen-1 background (required for frozen QML surface; not optional polish).
-if not SCREEN1_BACKGROUND.is_file():
-    raise SystemExit(f"REQUIRED Screen-1 background missing: {SCREEN1_BACKGROUND}")
-datas.append(
-    (
-        str(SCREEN1_BACKGROUND),
-        str(Path("docs") / "assets" / "portfolio" / "references"),
-    )
-)
+# Screen-1 brand runtime asset (required for the frozen analysis/loading brand
+# Image; fail closed so the distributable never ships without it). Datas land
+# under <bundle>/_internal, where the frozen resolvers' repo-root logic points.
+if not SCREEN1_BRAND_ASSET.is_file():
+    raise SystemExit(f"REQUIRED Screen-1 brand asset missing: {SCREEN1_BRAND_ASSET}")
+datas.append((str(SCREEN1_BRAND_ASSET), str(SCREEN1_BRAND_ASSET_DEST)))
 
 a = Analysis(
     [str(ENTRY)],
