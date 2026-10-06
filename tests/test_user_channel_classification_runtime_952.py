@@ -232,7 +232,9 @@ def _pcm_for_path(_path: str):
 def _pcm_provider() -> SequencerPcmProvider:
     def decode_fn(path, *, sample_rate, start_ms=0):
         del path, start_ms
-        return np.linspace(-0.2, 0.2, PCM_FRAMES, dtype=np.float32), int(sample_rate)
+        # Mono: SequencerPcmProvider accepts only 1 or 2 channels, so the
+        # returned channel count must be 1 and not the sample rate.
+        return np.linspace(-0.2, 0.2, PCM_FRAMES, dtype=np.float32), 1
 
     return SequencerPcmProvider(sample_rate=SAMPLE_RATE, decode_fn=decode_fn)
 
@@ -365,10 +367,10 @@ class _FakeEngine:
         self._voices.pop(int(voice_id), None)
 
     def advance_to(self, engine_frame: int) -> None:
+        self.engine_frame = int(engine_frame)
         for voice_id, state in list(self._voices.items()):
             if state == SB_VOICE_SCHEDULED:
                 self._voices[voice_id] = SB_VOICE_PLAYING
-            del engine_frame, voice_id
 
     def get_snapshot(self) -> _Snapshot:
         ids = tuple(sorted(self._voices))
@@ -896,7 +898,10 @@ def test_10a_replacement_drops_old_binding_and_applies_trigger_precedence() -> N
     # (2)/(3) -> ambiguous and -> one-shot preserve triggers bit-identically and
     # never re-seed DEFAULT_ON.
     for target in (AMBIGUOUS_PATH, SECOND_ONESHOT_PATH):
-        resolver_case = _ScriptedResolver({ONESHOT_PATH: "one_shot", target: "text"})
+        target_class = "text" if target == AMBIGUOUS_PATH else "one_shot"
+        resolver_case = _ScriptedResolver(
+            {ONESHOT_PATH: "one_shot", target: target_class}
+        )
         case_controller, case_id = _controller_with_assignment(
             resolver_case, ONESHOT_PATH
         )
@@ -1049,11 +1054,13 @@ def test_11c_shared_path_binding_survives_for_the_survivor() -> None:
     assert second_id in point_trigger_eligible_channel_ids(
         state, kit, user_metadata=controller.user_metadata
     )
+    # Canon §9: a resolved one_shot is excluded from the loop path, so the
+    # surviving binding must not turn the survivor into a loop spec.
     assert [
         spec.channel_id
         for spec in _specs(state, kit, controller.user_metadata)
         if spec.channel_id == second_id
-    ] == [second_id]
+    ] == []
 
 
 # ===========================================================================
@@ -1071,8 +1078,15 @@ def test_12_explicit_loop_reconciles_stale_user_triggers_once() -> None:
 
     resolver.set_class(ONESHOT_PATH, "loop")
 
-    assert controller.reconcile_live_kit_state() is True
+    # §4 B5: reconcile never resolves, so the classification-implied heal is
+    # reachable only through the explicit B4 re-analysis seam. It strips the
+    # stale point triggers with exactly one observer call.
+    controller.refresh_user_channel_metadata()
     assert _triggers_for(controller.state, channel_id) == ()
+    assert observer == [1]
+
+    # Deterministic once: a later reconcile has nothing left to heal.
+    assert controller.reconcile_live_kit_state() is False
     assert observer == [1]
 
     # Deterministic once: a second reconcile has nothing left to heal.

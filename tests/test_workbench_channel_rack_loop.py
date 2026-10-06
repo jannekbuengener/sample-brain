@@ -1270,10 +1270,15 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
 
         if generation == sample_replace_at:
             controller.assign_user_channel_sample(user.channel_id, str(wav_b))
+            # #952 PLAYBACK_MUTATION_APPLY_POLICY: while Rack Play is active the
+            # durable path change is queued instead of applied, so the running
+            # Play keeps its frozen classification. The adoption is asserted at
+            # the clean-stop checkpoint below.
             replaced = next(
                 ch for ch in controller.state.channels if ch.channel_id == user.channel_id
             )
-            assert replaced.sample_path == str(wav_b)
+            assert replaced.sample_path == str(wav_a), "mid-Play replacement is deferred"
+            assert controller.is_playing is True
             # Arm one user step so replace is on the playable path for later gens.
             if Trigger(channel_id=user.channel_id, position=Fraction(0, 1)) not in (
                 controller.state.pattern.triggers
@@ -1367,6 +1372,12 @@ def test_channel_rack_loop_soak_voice_reclaim_gate(tmp_path: Path):
     assert controller.is_playing is False
     assert getattr(controller, "_loop_active", False) is False
     assert controller._play_handle is None
+    # #952: the queued mid-Play replacement is adopted here, atomically, with
+    # exactly one musical-state observer call.
+    replaced = next(
+        ch for ch in controller.state.channels if ch.channel_id == user.channel_id
+    )
+    assert replaced.sample_path == str(wav_b), "queued replacement lands at stop"
     assert _foreign_voice_still_registered(engine, foreign_id)
     owned_after_stop = _owned_registered_voice_count(engine)
     assert owned_after_stop == 0
