@@ -54,8 +54,9 @@ Die Metriken bleiben strikt in `ma` und `sa` getrennt:
 
 - Key Root: nur tonale Records mit `root_evidence=known`.
 - Full Key: zusätzlich `mode_evidence=known`.
-- Tempo: nur `bpm_evidence=known`, inklusive absolutem/relativem BPM-Fehler
-  sowie der bestehenden Relationen `correct`, `half`, `double`, `ambiguous`
+- Tempo: nur `bpm_evidence=known`, inklusive absolutem/relativem BPM-Fehler,
+  AQ1-Genauigkeitsbändern ±0.5 / ±1 / ±2 BPM, Coverage-/Abstention-Raten sowie
+  der bestehenden Relationen `correct`, `half`, `double`, `ambiguous`
   und `outlier`.
 
 Das erzeugte JSON ist ein lokales, ungetracktes Runtime-Artefakt und darf nicht

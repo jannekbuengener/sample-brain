@@ -235,6 +235,9 @@ def _key_metrics(records: list[dict[str, Any]], *, full_key: bool) -> dict[str, 
 def _tempo_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
     eligible = 0
     predicted = 0
+    within_0_5 = 0
+    within_1 = 0
+    within_2 = 0
     absolute_errors: list[float] = []
     relative_errors: list[float] = []
     counts = {relation: 0 for relation in RELATION_CLASSES}
@@ -249,13 +252,25 @@ def _tempo_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
         predicted_bpm = record["predicted_bpm"]
         if isinstance(predicted_bpm, (int, float)) and math.isfinite(predicted_bpm) and predicted_bpm > 0:
             predicted += 1
-            absolute_errors.append(abs(float(predicted_bpm) - float(label_bpm)))
-            relative_errors.append(abs(float(predicted_bpm) - float(label_bpm)) / float(label_bpm))
+            abs_error = abs(float(predicted_bpm) - float(label_bpm))
+            absolute_errors.append(abs_error)
+            relative_errors.append(abs_error / float(label_bpm))
+            if abs_error <= 0.5:
+                within_0_5 += 1
+            if abs_error <= 1.0:
+                within_1 += 1
+            if abs_error <= 2.0:
+                within_2 += 1
         relation = classify_bpm_error(predicted_bpm, float(label_bpm))
         counts[relation] += 1
     return {
         "eligible": eligible,
         "predicted": predicted,
+        "coverage_rate": _rate(predicted, eligible),
+        "abstention_rate": _rate(eligible - predicted, eligible),
+        "accuracy_within_0_5_bpm": _rate(within_0_5, eligible),
+        "accuracy_within_1_bpm": _rate(within_1, eligible),
+        "accuracy_within_2_bpm": _rate(within_2, eligible),
         "absolute_bpm_error": _summary(absolute_errors),
         "relative_bpm_error": _summary(relative_errors),
         "relation_counts": counts,
