@@ -464,6 +464,7 @@ class _PendingUserChannelMutation:
     added: tuple[tuple[str, str | None], ...] = ()
     paths: Mapping[str, str | None] = field(default_factory=dict)
     entries: Mapping[str, UserSampleMetadata] = field(default_factory=dict)
+    attempted: frozenset[str] = frozenset()
     replaced: frozenset[str] = frozenset()
     prune: bool = False
 
@@ -477,6 +478,7 @@ class _PendingUserChannelMutation:
             added=self.added + other.added,
             paths=paths,
             entries=entries,
+            attempted=self.attempted | other.attempted,
             replaced=self.replaced | other.replaced,
             prune=self.prune or other.prune,
         )
@@ -697,6 +699,12 @@ class ChannelRackController:
         for key in pending.replaced:
             if key not in referenced:
                 entries.pop(key, None)
+        for key in pending.attempted:
+            # Evidence was asked for and did not arrive (catalog miss, stale
+            # fingerprint, unreadable library). Authority requires fail-closed
+            # ambiguity, never a stale entry that keeps a channel audible.
+            if key not in pending.entries:
+                entries.pop(key, None)
         binding = UserSampleMetadataBinding(entries)
         target = self._adopt_user_metadata(target, binding)
 
@@ -734,12 +742,13 @@ class ChannelRackController:
         paths = _distinct_user_paths(state)
         resolved = self._resolve_user_paths(paths)
         self._commit_user_mutation(
-            _PendingUserChannelMutation(
-                paths={},
-                entries=resolved,
-                replaced=frozenset(paths),
-                prune=True,
-            )
+_PendingUserChannelMutation(
+            paths={},
+            entries=resolved,
+            attempted=frozenset(paths),
+            replaced=frozenset(paths),
+            prune=True,
+        )
         )
         return self._user_metadata
 
@@ -933,9 +942,8 @@ class ChannelRackController:
 
         pending = _PendingUserChannelMutation(
             added=((added_channel_id, path),),
-            entries=(
-                self._resolved_entry_for(path) if path is not None else {}
-            ),
+            entries=self._resolved_entry_for(path),
+            attempted=frozenset({path}) if path is not None else frozenset(),
             prune=True,
         )
         return self._commit_user_mutation(pending)
@@ -988,6 +996,7 @@ class ChannelRackController:
             _PendingUserChannelMutation(
                 paths={channel_id: path},
                 entries=self._resolved_entry_for(path),
+                attempted=frozenset({path}),
                 replaced=frozenset(
                     {previous_path} if _sample_bearing(previous_path) else set()
                 ),
@@ -1106,7 +1115,12 @@ class ChannelRackController:
         # B3 (#952): resolve only the gesture-introduced or gesture-changed
         # paths. Preserved base-channel bindings carry over untouched, so a
         # gesture apply never turns into an implicit metadata refresh.
-        base_metadata = self._classification_binding
+        #
+        # The delta is derived from the *live* derived binding, never the frozen
+        # playback snapshot: the snapshot deliberately omits ambiguous user
+        # paths, so using it would classify every preserved ambiguous base path
+        # as gesture-introduced and quietly re-resolve it.
+        base_metadata = self._user_metadata
         delta = tuple(
             path
             for path in dict.fromkeys(

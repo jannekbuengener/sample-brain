@@ -285,6 +285,10 @@ class _ScriptedResolver:
     def set_bpm(self, path: str, value: float | None) -> None:
         self._bpms[path] = value
 
+    def drop(self, path: str) -> None:
+        """Model a catalog miss: the row is gone from the library."""
+        self._classes.pop(path, None)
+
     def call_count(self) -> int:
         return len(self.resolve_calls) + len(self.resolve_one_calls)
 
@@ -1685,6 +1689,96 @@ def test_17e_live_kit_class_never_leaks_into_the_frozen_user_binding() -> None:
     assert "ch_user_1" not in point_trigger_eligible_channel_ids(
         state, kit, user_metadata=frozen
     ), "the ambiguous user channel stays inaudible for the whole Play"
+
+
+def test_b4_refresh_that_now_misses_degrades_to_ambiguous() -> None:
+    """An explicit refresh with no evidence must invalidate, not keep, the entry."""
+    resolver = _ScriptedResolver({ONESHOT_PATH: "one_shot"})
+    controller, channel_id = _controller_with_assignment(resolver, ONESHOT_PATH)
+    assert controller.user_metadata[ONESHOT_PATH].sample_class == "one_shot"
+    triggers_before = _triggers_for(controller.state, channel_id)
+
+    # The row disappeared from the catalog (miss / stale fingerprint).
+    resolver.drop(ONESHOT_PATH)
+    binding = controller.refresh_user_channel_metadata()
+
+    assert ONESHOT_PATH not in binding, "stale evidence must never survive a refresh"
+    assert _triggers_for(controller.state, channel_id) == triggers_before, (
+        "ambiguous preserves persisted triggers verbatim"
+    )
+    assert channel_id not in point_trigger_eligible_channel_ids(
+        controller.state, controller.live_kit, user_metadata=binding
+    ), "a refreshed miss must fail closed, not keep the channel audible"
+
+
+def test_b2_resolution_miss_invalidates_a_stale_shared_entry() -> None:
+    """Re-resolving an already-bound path to a miss must drop that entry."""
+    resolver = _ScriptedResolver({ONESHOT_PATH: "one_shot"})
+    controller, first_id = _controller_with_assignment(resolver, ONESHOT_PATH)
+    controller.add_user_channel()
+    second_id = _last_user_channel_id(controller.state)
+    assert set(controller.user_metadata) == {ONESHOT_PATH}
+
+    # ONESHOT_PATH is already bound; this second assignment re-asks for it and
+    # the library can no longer produce evidence.
+    resolver.drop(ONESHOT_PATH)
+    controller.assign_user_channel_sample(second_id, ONESHOT_PATH)
+
+    assert ONESHOT_PATH not in controller.user_metadata, (
+        "a boundary that resolves nothing must not inherit a stale entry"
+    )
+
+
+def test_b3_gesture_delta_ignores_the_frozen_playback_binding() -> None:
+    """During a Play the gesture delta must come from the live binding.
+
+    The frozen binding omits ambiguous user paths on purpose, so deriving the
+    delta from it would treat a preserved ambiguous base path as
+    gesture-introduced and re-resolve it behind the B4-only refresh seam.
+    """
+    resolver = _ScriptedResolver(
+        {ONESHOT_PATH: "one_shot", AMBIGUOUS_PATH: "text", "gesture_new.wav": "one_shot"}
+    )
+    controller, _engine, _transport = _controller(resolver=resolver)
+    controller.ensure_state()
+    # One audible channel so the Play is actually running, plus the ambiguous
+    # preserved base path under test.
+    controller.add_user_channel(sample_path=ONESHOT_PATH)
+    controller.add_user_channel(sample_path=AMBIGUOUS_PATH)
+    base_channel_id = _last_user_channel_id(controller.state)
+    assert AMBIGUOUS_PATH in controller.user_metadata
+
+    controller.play()
+    assert controller.is_playing is True
+    assert AMBIGUOUS_PATH not in controller._classification_binding, (
+        "an ambiguous path is deliberately absent from the frozen binding"
+    )
+    assert ONESHOT_PATH in controller._classification_binding
+
+    # Mid-Play the library grows a decisive class for that very path.
+    resolver.set_class(AMBIGUOUS_PATH, "loop")
+    mark = resolver.mark()
+    composition = GesturePatternCoreComposition(
+        channels=(
+            _user_channel("ch_user_3", "gesture_new.wav"),
+        ),
+        pattern=Pattern(
+            pattern_id="gesture-pat-1",
+            length_quarter_notes=Fraction(4, 1),
+            triggers=(_trigger("ch_user_3", 0),),
+        ),
+    )
+    plan = plan_gesture_rack_integration(
+        controller.state, composition, allow_pattern_replacement=True
+    )
+    assert plan.ready_for_apply is True
+    state = controller.apply_gesture_integration_plan(plan, feature_enabled=True)
+
+    assert resolver.paths_since(mark) == ("gesture_new.wav",), (
+        "a preserved ambiguous base path is not a gesture delta; only B4 refreshes it"
+    )
+    assert controller.user_metadata[AMBIGUOUS_PATH].sample_class == "text"
+    assert _channel(state, base_channel_id).sample_path == AMBIGUOUS_PATH
 
 
 # ===========================================================================
