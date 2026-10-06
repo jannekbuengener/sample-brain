@@ -25,7 +25,7 @@ Follow [`_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md`](_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md
 - PR-State, Draft-Status, Head-SHA und Check-Status prüfen.
 - Diff-Scope gegen Freigabe abgleichen.
 - Required und nicht-blockierende Checks unterscheiden.
-- Review-Feedback-Gate auf dem **finalen** Head prüfen (siehe `docs/MERGE_REVIEW_FEEDBACK_GATE.md`): Conversation/Top-Level, Inline-Comments, Review-Threads, submitted Reviews, Bot-/Automated Reviews; Disposition `FIXED` / `ANSWERED` / `NOT_APPLICABLE` / `DUPLICATE`; keine offenen Inline-Threads; keine neuen ungesehenen Comments seit letztem Fix-Round.
+- Review-Feedback-Gate auf dem **finalen** Head prüfen (siehe `docs/MERGE_REVIEW_FEEDBACK_GATE.md`): Conversation/Top-Level, Inline-Comments, Review-Threads, submitted Reviews, Bot-/Automated Reviews; Disposition `FIXED` / `ANSWERED` / `EXPLAINED` / `NOT_APPLICABLE` / `DUPLICATE` (`ANSWERED` ≡ `EXPLAINED`); keine offenen Inline-Threads; keine neuen ungesehenen Comments seit letztem Fix-Round.
 - Merge-Gate `READY_FOR_MERGE` oder `HOLD` / `HOLD_REVIEW_FEEDBACK_OPEN` formulieren.
 - Lokale Sync-/Session-Close-Schritte empfehlen.
 

@@ -8,7 +8,7 @@
 
 ## Definition of Done (kurz)
 - CI gruen (`CI_GREEN` auf finalem PR-Head)
-- Review-Feedback-Gate erfuellt: alle relevanten Comments/Threads gelesen und dispositioniert (`FIXED` / `ANSWERED` / `NOT_APPLICABLE` / `DUPLICATE`); Inline-Threads resolved — siehe `docs/MERGE_REVIEW_FEEDBACK_GATE.md`
+- Review-Feedback-Gate erfuellt: alle relevanten Comments/Threads gelesen und dispositioniert (`FIXED` / `ANSWERED` / `EXPLAINED` / `NOT_APPLICABLE` / `DUPLICATE`; `ANSWERED` ≡ `EXPLAINED`); Inline-Threads resolved — siehe `docs/MERGE_REVIEW_FEEDBACK_GATE.md`
 - Risk/Impact beschrieben
 - Rollback kurz beschrieben (wenn relevant)
 

@@ -50,7 +50,7 @@ Before merge, every inline review thread must be:
 
 ## Top-level comments
 
-Top-level conversation comments may lack GitHub “resolved” status. Every top-level comment with technical feedback must be **visibly dispositioned** (`FIXED` / `ANSWERED` / `NOT_APPLICABLE` / `DUPLICATE`) with a short rationale when not implemented.
+Top-level conversation comments may lack GitHub “resolved” status. Every top-level comment with technical feedback must be **visibly dispositioned** (`FIXED` / `ANSWERED` / `EXPLAINED` / `NOT_APPLICABLE` / `DUPLICATE`) with a short rationale when not implemented. `ANSWERED` and `EXPLAINED` are equivalent aliases.
 
 ## Fix loop (when feedback causes code changes)
 
