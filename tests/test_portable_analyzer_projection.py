@@ -68,7 +68,17 @@ def test_privacy_leak_guard_rejects_absolute_paths() -> None:
         assert_no_privacy_leaks({"sample_ref": r"D:\Samples\kick.wav"})
     with pytest.raises(PortableProjectionError, match="absolute/private path"):
         assert_no_privacy_leaks({"sample_ref": "/home/user/kit/snare.wav"})
+    # Any POSIX absolute path — not only a curated root allowlist.
+    with pytest.raises(PortableProjectionError, match="absolute/private path"):
+        assert_no_privacy_leaks({"sample_ref": "/workspace/alice/private.wav"})
+    with pytest.raises(PortableProjectionError, match="absolute/private path"):
+        assert_no_privacy_leaks({"sample_ref": "/var/lib/private.wav"})
+    with pytest.raises(PortableProjectionError, match="absolute/private path"):
+        assert_no_privacy_leaks({"sample_ref": r"\\server\share\kick.wav"})
+    with pytest.raises(PortableProjectionError, match="absolute/private path"):
+        assert_no_privacy_leaks({"sample_ref": "file:///home/user/sample.wav"})
     assert_no_privacy_leaks({"public_sample_id": "42", "status": "ok"})
+    assert_no_privacy_leaks({"rel": "fixtures/public/kick.wav", "status": "ok"})
 
 
 def test_finite_vector_contract_for_mfcc_chroma_shapes() -> None:

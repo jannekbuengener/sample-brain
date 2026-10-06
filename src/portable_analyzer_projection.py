@@ -28,8 +28,9 @@ ANALYZER_PORTABLE_SURFACE_IDS: tuple[str, ...] = (
     "loudness_brightness_mfcc_chroma",
 )
 
+# Reject every absolute filesystem path / file URI — not a curated prefix allowlist.
 _PRIVATE_PATH = re.compile(
-    r"(?:^[A-Za-z]:[\\/]|^\\\\|^/(?:home|Users|root|mnt|Volumes|tmp)/)",
+    r"(?:^[A-Za-z]:[\\/]|^\\\\|^/|^file://)",
     re.IGNORECASE,
 )
 
