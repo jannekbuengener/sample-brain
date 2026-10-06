@@ -17,15 +17,15 @@ AQ3_ONSET_GESTURE_KPI_CONTRACT_FROZEN
 
 This document freezes **what AQ3 measures, how the three timing planes separate, and how evidence is partitioned** before any onset/gesture algorithm change, tolerance freeze, or candidate bake-off. It does **not** authorize analyzer changes, #680 product work, or production switches.
 
-Public/synthetic **annotated** onset / attack / gesture timing corpora are **HOLD** for measurable correctness baselines until a separate scoped issue adopts them. Metric **definitions**, eligibility, partitions, difficult buckets, and #957 expectations may still freeze without inventing annotations or fabricating corpus numbers.
+Public/synthetic **annotated** onset / attack / gesture timing corpora were HOLD at the #991 KPI freeze. [#993](https://github.com/jannekbuengener/sample-brain/issues/993) adopts the named synthetic corpus `sample-brain.aq3.timing.synthetic.v1` — see `docs/benchmarks/AQ3_TIMING_CORPUS.md`. Metric **definitions**, eligibility, partitions, difficult buckets, and #957 expectations remain owned here; measurable baselines use the corpus document for GT identity and tolerance candidates.
 
 ## Ownership
 
 | Concern | Owner |
 |---|---|
 | AQ3 onset / attack / gesture metric definitions / eligibility | this contract |
-| Timing tolerance windows (ms) for precision/recall/F1 | **to-be-frozen** under a later benchmark-owned slice — not invented here |
-| Public/synthetic annotated corpus adoption | future scoped issue; until then HOLD for measurable baselines |
+| Timing tolerance windows (ms) for precision/recall/F1 | corpus-owned **candidates** in `AQ3_TIMING_CORPUS.md` (20 ms / 50 ms) — not promotion gates |
+| Public/synthetic annotated corpus adoption | [#993](https://github.com/jannekbuengener/sample-brain/issues/993) / `sample-brain.aq3.timing.synthetic.v1` |
 | Portable domain tokens + eval envelope | [#956](https://github.com/jannekbuengener/sample-brain/issues/956) |
 | Perturbation mechanics / provenance | [#957](https://github.com/jannekbuengener/sample-brain/issues/957) |
 | Runtime cold/steady methodology | [#958](https://github.com/jannekbuengener/sample-brain/issues/958) |
@@ -84,48 +84,41 @@ The common envelope in `docs/benchmarks/SAMPLE_BRAIN_ANALYSIS_EVAL_V1.md` stays 
 6. Missing annotation evidence is `HOLD` / unknown — never a fabricated zero that looks like perfect timing, perfect recall, or perfect abstention.
 7. Do not force an event when evidence is insufficient; abstention / empty / no-result remain first-class outcomes.
 
-## Public / synthetic corpus policy — HOLD for measurable baselines
+## Public / synthetic corpus policy
 
 ### Status
 
 ```text
-AQ3_PUBLIC_ANNOTATED_TIMING_CORPUS = HOLD
+AQ3_PUBLIC_ANNOTATED_TIMING_CORPUS = sample-brain.aq3.timing.synthetic.v1
 ```
 
-There is **no** frozen public Sample Brain annotated onset / attack-marker / multi-event gesture timing corpus in-repo for AQ3 scoring. FSLD and other public analyzer baselines used by AQ1/AQ2 do **not** currently supply timed onset/attack/gesture ground truth for these planes.
+Authority for corpus identity, GT schema, generator seed/version, active-bucket coverage, HOLD stubs (`layered_transient_dense`, `noisy`), and tolerance **candidates** is `docs/benchmarks/AQ3_TIMING_CORPUS.md` ([#993](https://github.com/jannekbuengener/sample-brain/issues/993)).
 
-This contract therefore:
+This KPI contract still:
 
-- **freezes** metric definitions, plane separation, partitions, difficult buckets, and #957 expectations;
-- **does not** claim measurable correctness baselines;
-- **does not** invent annotations, synthetic “fake corpus” scores, or private-library gates.
+- **owns** metric definitions, plane separation, partitions, difficult buckets, and #957 expectations;
+- **does not** invent private-audio human labels or fabricated baseline scores;
+- **does not** treat tolerance candidates as promotion gates.
 
-Activation of measurable baselines requires a separate scoped issue that freezes at least:
+FSLD and other AQ1/AQ2 public baselines still do **not** supply timed onset/attack/gesture GT. Private library or human reality-check cases may later support diagnosis only. They must not set public promotion thresholds and must not enter committed artifacts with private paths or audio.
 
-- public and/or synthetic annotated ground truth (attack-marker set separate from multi-event gesture set);
-- timing tolerance window(s) (benchmark-owned; see below);
-- join keys compatible with #956 portable `record_id`s;
-- DEVELOPMENT/CALIBRATION vs TEST/HOLDOUT partition for that corpus.
-
-Private library or human reality-check cases may later support diagnosis only. They must not set public promotion thresholds and must not enter committed artifacts with private paths or audio.
-
-Runtime existence of `src/workbench_attack_suggest.py` or `src/gesture_analysis.py` does **not** satisfy AQ3 correctness KPI.
+Runtime existence of `src/workbench_attack_suggest.py` or `src/gesture_analysis.py` does **not** satisfy AQ3 correctness KPI by itself.
 
 ### Synthetic corpus note
 
-Synthetic fixtures (deterministic clicks, padded silence, gain-scaled copies) are allowed later as **controlled** materials under #957 and a future corpus issue. They are not a substitute for human/reference annotations on soft-attack / layered / noisy buckets, and must not be presented as a completed public annotated corpus in this freeze.
+Deterministic synthetic clicks / soft-rise / silence-leading / short-clip materials are the controlled GT for `sample-brain.aq3.timing.synthetic.v1`. They unblock measurable baselines; they are not a substitute for human/reference annotations on layered/noisy buckets (HOLD stubs in the corpus doc).
 
-## Timing tolerances — to-be-frozen
+## Timing tolerances — corpus candidates (not gates)
 
-Precision / recall / F1 and within-tolerance accuracy require explicit timing windows (examples discussed in #945 include 20 ms / 50 ms). Exact tolerances are **benchmark-owned later**.
+Precision / recall / F1 and within-tolerance accuracy require explicit timing windows. Corpus-owned **candidates** (not promotion gates) live in `AQ3_TIMING_CORPUS.md`:
 
-| Item | Status in this freeze |
+| Item | Status |
 |---|---|
-| Candidate windows (e.g. 20 ms, 50 ms) | named as **to-be-frozen** candidates only |
-| Authoritative tolerance set | **not** set here — do not treat examples as gates |
-| Reporting rule once frozen | state the window with every P/R/F1 or within-tolerance rate; never omit the window |
+| Candidate windows | `20` ms / `50` ms (`TOLERANCE_CANDIDATES_MS`) |
+| Authoritative promotion tolerance set | **not** set — candidates only |
+| Reporting rule | state the window with every P/R/F1 or within-tolerance rate; never omit the window |
 
-Do not invent fake corpus numbers or pretend a tolerance is frozen by writing it into a baseline table in this slice.
+Do not invent fake corpus numbers or pretend a candidate is a merge/production gate.
 
 ## Event detection KPI (`aq3.onset`)
 
@@ -135,7 +128,7 @@ Report with **explicit denominators** and a stated timing tolerance once that to
 
 | Metric family | Definition notes |
 |---|---|
-| Onset precision / recall / F1 | at a frozen timing tolerance window (tolerance **to-be-frozen**) |
+| Onset precision / recall / F1 | at an explicit timing tolerance window (corpus candidates: 20 ms / 50 ms) |
 | Median + p95 absolute onset timing error (ms) | against annotated onset times (matched pairs under the tolerance policy) |
 | Missed-onset rate | annotated onsets without a matched prediction |
 | Duplicate / extra-onset rate | predictions without a matched annotation |
@@ -153,7 +146,7 @@ Separate **single-marker** attack/cue benchmark from multi-event gesture detecti
 | Metric family | Definition notes |
 |---|---|
 | Absolute attack-marker error (ms) | `|predicted_attack_ms − label_attack_ms|` among comparable claims |
-| Within-tolerance accuracy | fraction inside a frozen ms window (window **to-be-frozen**) |
+| Within-tolerance accuracy | fraction inside an explicit ms window (corpus candidates: 20 ms / 50 ms) |
 | Early-vs-late error distribution | signed error; report early and late rates/magnitudes separately |
 | False attack on silence / noise tails | claims on material labeled silence-leading / non-attack / insufficient evidence |
 | Abstention quality on ambiguous material | rate of explicit no-suggestion / low-evidence outcomes where forcing a cue would be wrong |
@@ -267,4 +260,4 @@ Exactly one:
 - `AQ3_ONSET_GESTURE_KPI_CONTRACT_FROZEN` — onset / attack / gesture metric definitions, plane separation, partitions, difficult buckets, and #957 expectations frozen; annotated corpus may remain HOLD for measurable baselines; timing tolerances remain to-be-frozen
 - `AQ3_KPI_CONTRACT_INSUFFICIENT` — freeze cannot be stated from available program contracts / surface reality
 
-This slice exits `AQ3_ONSET_GESTURE_KPI_CONTRACT_FROZEN` with `AQ3_PUBLIC_ANNOTATED_TIMING_CORPUS = HOLD` (definitions freeze allowed; no measurable baseline claimed).
+This slice exits `AQ3_ONSET_GESTURE_KPI_CONTRACT_FROZEN`. Corpus adoption for measurable baselines is owned by [#993](https://github.com/jannekbuengener/sample-brain/issues/993) / `AQ3_TIMING_CORPUS.md` (`AQ3_PUBLIC_ANNOTATED_TIMING_CORPUS = sample-brain.aq3.timing.synthetic.v1`).
