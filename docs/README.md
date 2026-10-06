@@ -53,6 +53,7 @@ internal agent- and process docs are clearly separated.
 | [AQ1 Tempo Decision Memo](benchmarks/AQ1_TEMPO_DECISION_MEMO.md) | #981/#943 evidence-backed keep-current tempo decision (no production switch; BeatGrid HOLD) |
 | [AQ2 Key, Mode & Tonality KPI Contract](benchmarks/AQ2_KEY_TONALITY_KPI_CONTRACT.md) | #983/#944 frozen key/mode correctness + tonality claimability KPI + FSLD eligibility (AUROC/calibration HOLD) |
 | [AQ2 Key/Mode/Tonality Baseline](benchmarks/AQ2_KEY_TONALITY_BASELINE.md) | #985/#944 measured current-analyzer key/mode/tonality baseline on FSLD (AUROC/calibration HOLD) |
+| [AQ2 Key/Mode Candidate Compare](benchmarks/AQ2_KEY_CANDIDATE_COMPARE.md) | #987/#944 reproducible FSLD key/mode candidate comparison (thin adapters; no promotion; AUROC/calibration HOLD) |
 | [Analyzer Portable Output Baseline](benchmarks/ANALYZER_PORTABLE_OUTPUT_BASELINE.md) | #960 AQ8 audit: safe/unsafe analyzer projection inventory for #956 |
 | [Validation Reports](validation/README.md) | Local validate_report how-to; committed files there are historical issue evidence |
 
