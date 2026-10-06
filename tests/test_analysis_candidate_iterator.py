@@ -139,6 +139,22 @@ def test_minimal_continue_calibration_advances_first_unvisited() -> None:
     assert "decision_token" not in validated
 
 
+def test_continue_calibration_on_development_advances() -> None:
+    result = _run(
+        partition_role="development",
+        visited_candidate_ids=["demo.cand.c"],
+    )
+    assert result["partition_role"] == "development"
+    assert result["iterator_effect"] == "advance"
+    assert result["next_candidate"]["candidate_id"] == "demo.cand.a"
+    assert result["production_authorized"] is False
+
+
+def test_unknown_next_action_fail_closed() -> None:
+    with pytest.raises(AnalysisCandidateIteratorError, match="unsupported next_action"):
+        _run(next_action="invent_new_optimizer_step")
+
+
 def test_domain_order_not_lexical() -> None:
     # With only c visited, next must be a (declaration #2), not lexical 'a' coincidence
     # proven by skipping a and expecting b when a is also visited.

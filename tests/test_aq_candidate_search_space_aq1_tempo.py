@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from src.analysis_candidate_iterator import iterate_candidates
+import pytest
+
+from src.analysis_candidate_iterator import (
+    AnalysisCandidateIteratorError,
+    iterate_candidates,
+)
 from src.analysis_eval_artifact import fingerprint
 from src.aq_candidate_search_spaces.aq1_tempo import (
     SEARCH_SPACE_ID,
@@ -87,3 +92,75 @@ def test_aq1_real_provider_advances_then_exhausts_in_frozen_order() -> None:
     assert exhausted["iterator_effect"] == "exhausted"
     assert "next_candidate" not in exhausted
     assert exhausted["production_authorized"] is False
+
+
+def test_aq1_deterministic_repeat_and_freeze_emits_no_next() -> None:
+    provider = Aq1TempoSearchSpaceProvider()
+    members = provider.ordered_members()
+    kwargs = dict(
+        domain="aq1.tempo",
+        next_action="continue_calibration",
+        partition_role="calibration",
+        provider=provider,
+        current_candidate_id=members[0]["candidate_id"],
+        current_config_fingerprint=members[0]["config_fingerprint"],
+        visited_candidate_ids=[members[0]["candidate_id"]],
+        search_space_fingerprint=provider.search_space_fingerprint(),
+    )
+    assert iterate_candidates(**kwargs) == iterate_candidates(**kwargs)
+
+    freeze = iterate_candidates(
+        domain="aq1.tempo",
+        next_action="freeze_candidate",
+        partition_role="calibration",
+        provider=provider,
+        current_candidate_id=members[0]["candidate_id"],
+        current_config_fingerprint=members[0]["config_fingerprint"],
+        visited_candidate_ids=[members[0]["candidate_id"]],
+        search_space_fingerprint=provider.search_space_fingerprint(),
+    )
+    assert freeze["iterator_effect"] == "freeze"
+    assert "next_candidate" not in freeze
+
+
+def test_aq1_test_holdout_cannot_continue_and_wrong_fp_fail_closed() -> None:
+    provider = Aq1TempoSearchSpaceProvider()
+    members = provider.ordered_members()
+    for role in ("test", "holdout", "validation", "external_check"):
+        with pytest.raises(
+            AnalysisCandidateIteratorError, match="partition|tunable|firewall"
+        ):
+            iterate_candidates(
+                domain="aq1.tempo",
+                next_action="continue_calibration",
+                partition_role=role,
+                provider=provider,
+                current_candidate_id=members[0]["candidate_id"],
+                current_config_fingerprint=members[0]["config_fingerprint"],
+                visited_candidate_ids=[members[0]["candidate_id"]],
+                search_space_fingerprint=provider.search_space_fingerprint(),
+            )
+
+    with pytest.raises(AnalysisCandidateIteratorError, match="search_space_fingerprint"):
+        iterate_candidates(
+            domain="aq1.tempo",
+            next_action="continue_calibration",
+            partition_role="calibration",
+            provider=provider,
+            current_candidate_id=members[0]["candidate_id"],
+            current_config_fingerprint=members[0]["config_fingerprint"],
+            visited_candidate_ids=[members[0]["candidate_id"]],
+            search_space_fingerprint="f" * 64,
+        )
+
+    with pytest.raises(AnalysisCandidateIteratorError, match="config_fingerprint"):
+        iterate_candidates(
+            domain="aq1.tempo",
+            next_action="continue_calibration",
+            partition_role="calibration",
+            provider=provider,
+            current_candidate_id=members[0]["candidate_id"],
+            current_config_fingerprint="0" * 64,
+            visited_candidate_ids=[members[0]["candidate_id"]],
+            search_space_fingerprint=provider.search_space_fingerprint(),
+        )
