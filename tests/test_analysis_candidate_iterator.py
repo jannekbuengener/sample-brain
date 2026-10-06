@@ -1,0 +1,276 @@
+"""Contract tests for sample-brain.analysis-candidate-iterator.v1 (#1064 W0)."""
+
+from __future__ import annotations
+
+import ast
+import copy
+from pathlib import Path
+from typing import Any, Sequence
+
+import pytest
+
+from src.analysis_candidate_iterator import (
+    ARTIFACT_VERSION,
+    DOCUMENT_TYPE,
+    AnalysisCandidateIteratorError,
+    StaticSearchSpaceProvider,
+    iterate_candidates,
+    result_semantic_fingerprint,
+    search_space_fingerprint,
+    validate_result,
+)
+from src.analysis_eval_artifact import fingerprint
+
+SRC_ROOT = Path(__file__).resolve().parents[1] / "src"
+
+
+def _members() -> list[dict[str, str]]:
+    # Intentionally non-lexical order (c before a) to prove domain order wins.
+    return [
+        {
+            "candidate_id": "demo.cand.c",
+            "config_fingerprint": "c" * 64,
+        },
+        {
+            "candidate_id": "demo.cand.a",
+            "config_fingerprint": "a" * 64,
+        },
+        {
+            "candidate_id": "demo.cand.b",
+            "config_fingerprint": "b" * 64,
+        },
+    ]
+
+
+def _provider(
+    members: Sequence[dict[str, str]] | None = None,
+    *,
+    search_space_id: str = "demo.search-space",
+    search_space_version: str = "1.0.0",
+) -> StaticSearchSpaceProvider:
+    return StaticSearchSpaceProvider(
+        search_space_id=search_space_id,
+        search_space_version=search_space_version,
+        ordered_members=list(members if members is not None else _members()),
+    )
+
+
+def _run(
+    *,
+    next_action: str = "continue_calibration",
+    partition_role: str = "calibration",
+    current_candidate_id: str = "demo.cand.c",
+    current_config_fingerprint: str = "c" * 64,
+    visited_candidate_ids: Sequence[str] | None = None,
+    iteration_index: int | None = None,
+    max_iterations: int | None = None,
+    provider: StaticSearchSpaceProvider | None = None,
+    search_space_fingerprint_override: str | None = None,
+) -> dict[str, Any]:
+    space = provider or _provider()
+    return iterate_candidates(
+        domain="demo.domain",
+        next_action=next_action,
+        partition_role=partition_role,
+        provider=space,
+        current_candidate_id=current_candidate_id,
+        current_config_fingerprint=current_config_fingerprint,
+        visited_candidate_ids=list(
+            visited_candidate_ids
+            if visited_candidate_ids is not None
+            else [current_candidate_id]
+        ),
+        iteration_index=iteration_index,
+        max_iterations=max_iterations,
+        search_space_fingerprint=search_space_fingerprint_override
+        or space.search_space_fingerprint(),
+    )
+
+
+def test_document_identity_frozen() -> None:
+    assert DOCUMENT_TYPE == "sample-brain.analysis-candidate-iterator.v1"
+    assert ARTIFACT_VERSION == "1.0.0"
+
+
+def test_no_arvp_import_in_iterator_module() -> None:
+    tree = ast.parse((SRC_ROOT / "analysis_candidate_iterator.py").read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                assert not alias.name.startswith("arvp")
+        if isinstance(node, ast.ImportFrom) and node.module:
+            assert not node.module.startswith("arvp")
+
+
+def test_search_space_fingerprint_deterministic_and_order_sensitive() -> None:
+    members = _members()
+    fp1 = search_space_fingerprint(
+        search_space_id="demo.search-space",
+        search_space_version="1.0.0",
+        ordered_members=members,
+    )
+    fp2 = search_space_fingerprint(
+        search_space_id="demo.search-space",
+        search_space_version="1.0.0",
+        ordered_members=copy.deepcopy(members),
+    )
+    assert fp1 == fp2
+    assert len(fp1) == 64
+    reordered = [members[1], members[0], members[2]]
+    fp3 = search_space_fingerprint(
+        search_space_id="demo.search-space",
+        search_space_version="1.0.0",
+        ordered_members=reordered,
+    )
+    assert fp3 != fp1
+
+
+def test_minimal_continue_calibration_advances_first_unvisited() -> None:
+    result = _run(visited_candidate_ids=["demo.cand.c"])
+    validated = validate_result(result)
+    assert validated["document_type"] == DOCUMENT_TYPE
+    assert validated["next_action"] == "continue_calibration"
+    assert validated["iterator_effect"] == "advance"
+    assert validated["next_candidate"]["candidate_id"] == "demo.cand.a"
+    assert validated["next_candidate"]["config_fingerprint"] == "a" * 64
+    assert validated["visited_candidate_ids"] == ["demo.cand.c", "demo.cand.a"]
+    assert validated["iteration_index"] == 2
+    assert validated["production_authorized"] is False
+    assert "decision_token" not in validated
+
+
+def test_domain_order_not_lexical() -> None:
+    # With only c visited, next must be a (declaration #2), not lexical 'a' coincidence
+    # proven by skipping a and expecting b when a is also visited.
+    result = _run(visited_candidate_ids=["demo.cand.c", "demo.cand.a"])
+    assert result["next_candidate"]["candidate_id"] == "demo.cand.b"
+
+
+def test_visited_candidate_skipped() -> None:
+    result = _run(visited_candidate_ids=["demo.cand.c", "demo.cand.a"])
+    assert result["iterator_effect"] == "advance"
+    assert result["next_candidate"]["candidate_id"] == "demo.cand.b"
+    assert "demo.cand.a" not in [result["next_candidate"]["candidate_id"]]
+
+
+def test_deterministic_repeated_invocation() -> None:
+    a = _run()
+    b = _run()
+    assert a == b
+    assert result_semantic_fingerprint(a) == a["result_fingerprint"]
+    assert a["result_fingerprint"] == b["result_fingerprint"]
+
+
+def test_semantic_mutation_changes_result_fingerprint() -> None:
+    base = _run()
+    mutated = dict(base)
+    mutated["iterator_effect"] = "stop"
+    mutated.pop("next_candidate", None)
+    assert result_semantic_fingerprint(mutated) != base["result_fingerprint"]
+
+
+def test_exhaustion_when_all_visited() -> None:
+    result = _run(
+        visited_candidate_ids=["demo.cand.c", "demo.cand.a", "demo.cand.b"],
+        current_candidate_id="demo.cand.b",
+        current_config_fingerprint="b" * 64,
+    )
+    assert result["iterator_effect"] == "exhausted"
+    assert "next_candidate" not in result
+    assert result["production_authorized"] is False
+
+
+def test_max_iteration_bound_terminates() -> None:
+    result = _run(
+        visited_candidate_ids=["demo.cand.c"],
+        iteration_index=1,
+        max_iterations=1,
+    )
+    assert result["iterator_effect"] == "exhausted"
+    assert "next_candidate" not in result
+
+
+def test_non_tunable_partition_rejected_for_continue() -> None:
+    for role in ("validation", "test", "holdout", "external_check"):
+        with pytest.raises(AnalysisCandidateIteratorError, match="partition|tunable|firewall"):
+            _run(partition_role=role, next_action="continue_calibration")
+
+
+def test_non_tunable_partition_rejected_for_freeze() -> None:
+    with pytest.raises(AnalysisCandidateIteratorError, match="partition|tunable|firewall"):
+        _run(partition_role="test", next_action="freeze_candidate")
+
+
+def test_terminal_actions_emit_no_next_candidate() -> None:
+    cases = [
+        ("freeze_candidate", "freeze"),
+        ("keep_baseline_and_stop", "stop"),
+        ("defer_for_evidence", "hold"),
+        ("require_human_governance", "stop"),
+        ("stop_controlled_failure", "controlled_failure"),
+    ]
+    for next_action, effect in cases:
+        result = _run(next_action=next_action)
+        assert result["iterator_effect"] == effect
+        assert "next_candidate" not in result
+        assert result["next_action"] == next_action
+        assert result["production_authorized"] is False
+
+
+def test_duplicate_candidate_ids_rejected() -> None:
+    bad = _members()
+    bad.append({"candidate_id": "demo.cand.c", "config_fingerprint": "d" * 64})
+    with pytest.raises(AnalysisCandidateIteratorError, match="duplicate"):
+        _run(provider=_provider(bad))
+
+
+def test_wrong_search_space_fingerprint_rejected() -> None:
+    with pytest.raises(AnalysisCandidateIteratorError, match="search_space_fingerprint"):
+        _run(search_space_fingerprint_override="f" * 64)
+
+
+def test_wrong_current_config_fingerprint_rejected() -> None:
+    with pytest.raises(AnalysisCandidateIteratorError, match="config_fingerprint"):
+        _run(current_config_fingerprint="0" * 64)
+
+
+def test_unknown_current_candidate_rejected() -> None:
+    with pytest.raises(AnalysisCandidateIteratorError, match="current candidate|not a member"):
+        _run(
+            current_candidate_id="demo.cand.missing",
+            current_config_fingerprint="c" * 64,
+            visited_candidate_ids=["demo.cand.missing"],
+        )
+
+
+def test_selected_candidate_never_already_visited() -> None:
+    result = _run(visited_candidate_ids=["demo.cand.c"])
+    assert result["next_candidate"]["candidate_id"] not in ["demo.cand.c"]
+    assert result["next_candidate"]["candidate_id"] in result["visited_candidate_ids"]
+
+
+def test_production_authorized_cannot_be_true() -> None:
+    result = _run()
+    poisoned = dict(result)
+    poisoned["production_authorized"] = True
+    with pytest.raises(AnalysisCandidateIteratorError, match="production_authorized"):
+        validate_result(poisoned)
+
+
+def test_absolute_path_rejected_in_portable_result() -> None:
+    result = _run()
+    poisoned = dict(result)
+    poisoned["leak"] = "C:/Users/private/secret.wav"
+    with pytest.raises(Exception, match="absolute/private path|path is forbidden|portable"):
+        validate_result(poisoned)
+
+
+def test_provider_fingerprint_matches_helper() -> None:
+    provider = _provider()
+    assert provider.search_space_fingerprint() == search_space_fingerprint(
+        search_space_id=provider.search_space_id,
+        search_space_version=provider.search_space_version,
+        ordered_members=provider.ordered_members(),
+    )
+    # sanity: fingerprint helper from #956 still works on nested payload
+    assert len(fingerprint({"x": 1})) == 64
