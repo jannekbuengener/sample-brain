@@ -7,7 +7,7 @@
 - Evidence in PR Beschreibung
 
 ## Definition of Done (kurz)
-- CI gruen (`CI_GREEN` auf finalem PR-Head)
+- CI bereit auf finalem PR-Head: default `CI_GREEN`, oder genehmigter Ausnahmeweg laut `docs/CI_DEGRADED_MODE.md`
 - Review-Feedback-Gate erfuellt: alle relevanten Comments/Threads gelesen und dispositioniert (`FIXED` / `ANSWERED` / `EXPLAINED` / `NOT_APPLICABLE` / `DUPLICATE`; `ANSWERED` ≡ `EXPLAINED`); Inline-Threads resolved — siehe `docs/MERGE_REVIEW_FEEDBACK_GATE.md`
 - Risk/Impact beschrieben
 - Rollback kurz beschrieben (wenn relevant)
