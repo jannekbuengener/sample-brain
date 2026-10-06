@@ -66,11 +66,19 @@ class GestureAnalysis:
     status: str  # ok | empty | too_short | unreadable
 
 
-def analyze_gesture_audio(path: Path | str) -> GestureAnalysis:
+def analyze_gesture_audio(
+    path: Path | str,
+    *,
+    onset_delta: float | None = None,
+    onset_wait_frames: int | None = None,
+    min_onset_gap_sec: float | None = None,
+) -> GestureAnalysis:
     """Analyze a local audio file into ordered gesture events with cluster IDs.
 
     Deterministic for a given file contents and this module's constants.
-    Never raises for ordinary I/O/DSP failures; returns fail-soft statuses.
+    Optional onset_* kwargs override detection constants for fair bake-offs;
+    defaults preserve production behavior. Never raises for ordinary I/O/DSP
+    failures; returns fail-soft statuses.
     """
     resolved = Path(path)
     y, sr = safe_load(resolved, target_sr=ANALYZE_SR)
@@ -104,7 +112,18 @@ def analyze_gesture_audio(path: Path | str) -> GestureAnalysis:
             status="empty",
         )
 
-    onset_times = _detect_onset_times(y, int(sr), duration_sec)
+    onset_times = _detect_onset_times(
+        y,
+        int(sr),
+        duration_sec,
+        onset_delta=_ONSET_DELTA if onset_delta is None else float(onset_delta),
+        onset_wait_frames=(
+            _ONSET_WAIT_FRAMES if onset_wait_frames is None else int(onset_wait_frames)
+        ),
+        min_onset_gap_sec=(
+            _MIN_ONSET_GAP_SEC if min_onset_gap_sec is None else float(min_onset_gap_sec)
+        ),
+    )
     if not onset_times:
         return GestureAnalysis(
             events=(),
@@ -138,7 +157,15 @@ def analyze_gesture_audio(path: Path | str) -> GestureAnalysis:
     )
 
 
-def _detect_onset_times(y: np.ndarray, sr: int, duration_sec: float) -> list[float]:
+def _detect_onset_times(
+    y: np.ndarray,
+    sr: int,
+    duration_sec: float,
+    *,
+    onset_delta: float = _ONSET_DELTA,
+    onset_wait_frames: int = _ONSET_WAIT_FRAMES,
+    min_onset_gap_sec: float = _MIN_ONSET_GAP_SEC,
+) -> list[float]:
     """Return strictly increasing onset times in seconds within ``[0, duration]``."""
     try:
         onset_env = librosa.onset.onset_strength(
@@ -150,8 +177,8 @@ def _detect_onset_times(y: np.ndarray, sr: int, duration_sec: float) -> list[flo
             hop_length=ANALYZE_HOP_LENGTH,
             units="frames",
             backtrack=False,
-            delta=_ONSET_DELTA,
-            wait=_ONSET_WAIT_FRAMES,
+            delta=float(onset_delta),
+            wait=int(onset_wait_frames),
         )
     except Exception:
         return []
@@ -179,13 +206,14 @@ def _detect_onset_times(y: np.ndarray, sr: int, duration_sec: float) -> list[flo
     # decay-tail detections).
     unique_samples = sorted(set(sample_indices))
     times: list[float] = []
+    gap = float(min_onset_gap_sec)
     for sample in unique_samples:
         t = float(sample) / float(sr)
         if t < 0.0 or t > duration_sec:
             continue
         if times and t <= times[-1]:
             continue
-        if times and (t - times[-1]) < _MIN_ONSET_GAP_SEC:
+        if times and (t - times[-1]) < gap:
             continue
         times.append(t)
     return times
