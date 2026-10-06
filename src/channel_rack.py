@@ -5,6 +5,13 @@ triggers for sample-bearing channels, toggles 16th-note steps immutably,
 appends user-added channels without Live Kit provenance, and schedules one
 pattern pass through sequencer_playback. Musical truth stays Python-owned;
 this module adds no visual surfaces.
+
+User-channel classification arrives as an already-resolved, path-keyed binding
+(``docs/USER_CHANNEL_CLASSIFICATION_AUTHORITY.md`` §1). Every consumer below
+reads that binding through the single :func:`sample_class_for_channel` access
+point, so there is exactly one classifier and no path heuristic. The ``None``
+default keeps pre-#952 behavior byte-identical: user channels stay ambiguous and
+this module performs no I/O at all.
 """
 
 from __future__ import annotations
@@ -60,34 +67,85 @@ def is_explicit_loop(sample_class: object | None) -> bool:
     return classification_kind(sample_class) == "loop"
 
 
-def sample_class_for_channel(
-    channel: Channel, live_kit: LiveKitState
-) -> str | None:
-    """Live Kit assignment class for seed channels; None for unclassified user channels."""
-    if channel.live_kit_group is None or channel.live_kit_slot is None:
+def _user_metadata_class(
+    channel: Channel,
+    user_metadata: Mapping[str, Any] | None,
+) -> Any | None:
+    """Return the resolved metadata for a user channel, or ``None`` without it.
+
+    The binding key is the exact durable ``Channel.sample_path`` string. A
+    channel holding a different spelling than the bound key is a stale key and
+    therefore fails closed to ``ambiguous``.
+    """
+
+    if user_metadata is None or channel.sample_path is None:
         return None
+    return user_metadata.get(channel.sample_path)
+
+
+def sample_class_for_channel(
+    channel: Channel,
+    live_kit: LiveKitState,
+    *,
+    user_metadata: Mapping[str, Any] | None = None,
+) -> str | None:
+    """Resolved sample class for a channel; ``None`` when unclassified.
+
+    Live Kit seed channels read their assignment. User channels read the
+    injected path-keyed binding and never fall back to filename or folder text.
+    """
+    if channel.live_kit_group is None or channel.live_kit_slot is None:
+        metadata = _user_metadata_class(channel, user_metadata)
+        if metadata is None:
+            return None
+        return getattr(metadata, "sample_class", None)
     assignment = live_kit.assignment_for(channel.live_kit_group, channel.live_kit_slot)
     if assignment is None:
         return None
     return getattr(assignment, "sample_class", None)
 
 
+def user_metadata_source_bpm(
+    channel: Channel,
+    *,
+    user_metadata: Mapping[str, Any] | None = None,
+) -> float | None:
+    """Bound ``source_bpm`` for a user channel, or ``None`` without evidence."""
+
+    if channel.live_kit_group is not None or channel.live_kit_slot is not None:
+        return None
+    metadata = _user_metadata_class(channel, user_metadata)
+    if metadata is None:
+        return None
+    return getattr(metadata, "source_bpm", None)
+
+
 def point_trigger_eligible_channel_ids(
-    state: ChannelRackState, live_kit: LiveKitState
+    state: ChannelRackState,
+    live_kit: LiveKitState,
+    *,
+    user_metadata: Mapping[str, Any] | None = None,
 ) -> frozenset[str]:
     """Return only channels with explicit one-shot classification authority."""
     eligible: set[str] = set()
     for channel in state.channels:
-        if is_point_trigger_safe(sample_class_for_channel(channel, live_kit)):
+        if is_point_trigger_safe(
+            sample_class_for_channel(channel, live_kit, user_metadata=user_metadata)
+        ):
             eligible.add(channel.channel_id)
     return frozenset(eligible)
 
 
 def filter_pattern_for_point_trigger_playback(
-    state: ChannelRackState, live_kit: LiveKitState
+    state: ChannelRackState,
+    live_kit: LiveKitState,
+    *,
+    user_metadata: Mapping[str, Any] | None = None,
 ) -> Pattern:
     """Pure filter: drop triggers for non-oneshot channels; do not mutate state."""
-    eligible = point_trigger_eligible_channel_ids(state, live_kit)
+    eligible = point_trigger_eligible_channel_ids(
+        state, live_kit, user_metadata=user_metadata
+    )
     return Pattern(
         pattern_id=state.pattern.pattern_id,
         length_quarter_notes=state.pattern.length_quarter_notes,
@@ -187,6 +245,8 @@ def build_channel_rack_state(live_kit: LiveKitState) -> ChannelRackState:
 def reconcile_live_kit_sample_assignments(
     state: ChannelRackState,
     live_kit: LiveKitState,
+    *,
+    user_metadata: Mapping[str, Any] | None = None,
 ) -> ChannelRackState:
     """Sync Live Kit seed paths and heal DEFAULT_ON without global pattern reset.
 
@@ -200,19 +260,34 @@ def reconcile_live_kit_sample_assignments(
     - orphan triggers on an empty seed channel: strip them
     - when classification is securely loop: strip that channel's triggers
     - ambiguous with persisted triggers: keep them (playback filter excludes)
-    - user-added channels: untouched
+    - user-added channels: triggers untouched, except the explicit-loop strip
+      below
+
+    Per user channel with an injected binding (#952), the classification
+    trigger precedence applies to the already-persisted pattern only:
+
+    - resolved explicit ``loop``: strip that channel's triggers (deterministic,
+      once — a second call has nothing left to heal)
+    - ``ambiguous`` or explicit one-shot: preserve the triggers verbatim and
+      never re-seed; user DEFAULT_ON seeding is unchanged by this contract
 
     Does not rebuild the full rack; only paths and per-channel trigger sets change.
     """
 
     updated_channels: list[Channel] = []
-    # Per seed channel_id: "seed" | "strip" | "keep"
+    # Per channel_id: "seed" | "strip" | "keep"
     seed_heal: dict[str, str] = {}
     path_changed = False
 
     for channel in state.channels:
-        if channel.live_kit_group is None or channel.live_kit_slot is None:
+        if channel.live_kit_group is None and channel.live_kit_slot is None:
+            # User channel (#952): paths stay untouched; only a resolved explicit
+            # loop strips stale point triggers, mirroring the seed-channel order.
             updated_channels.append(channel)
+            if _sample_bearing(channel.sample_path) and is_explicit_loop(
+                sample_class_for_channel(channel, live_kit, user_metadata=user_metadata)
+            ):
+                seed_heal[channel.channel_id] = "strip"
             continue
 
         assignment = live_kit.assignment_for(
@@ -469,6 +544,7 @@ def play_channel_rack_once(
     pcm_provider: SequencerPcmProvider | None = None,
     allocate_voice_id: Callable[[], int],
     live_kit: LiveKitState | None = None,
+    user_metadata: Mapping[str, Any] | None = None,
 ) -> ChannelRackPlayHandle:
     """Plan and start one pattern pass via ``PatternPassPlayer``.
 
@@ -502,7 +578,9 @@ def play_channel_rack_once(
         channel.channel_id: channel for channel in state.channels
     }
     pattern = (
-        filter_pattern_for_point_trigger_playback(state, live_kit)
+        filter_pattern_for_point_trigger_playback(
+            state, live_kit, user_metadata=user_metadata
+        )
         if live_kit is not None
         else state.pattern
     )
@@ -638,5 +716,6 @@ __all__ = [
     "reconcile_live_kit_sample_assignments",
     "sample_class_for_channel",
     "toggle_step",
+    "user_metadata_source_bpm",
     "warm_channel_rack_pcm",
 ]

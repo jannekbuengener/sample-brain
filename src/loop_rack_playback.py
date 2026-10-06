@@ -16,6 +16,7 @@ from .channel_rack import (
     ChannelRackState,
     is_explicit_loop,
     sample_class_for_channel,
+    user_metadata_source_bpm,
 )
 from .native_audio import (
     SB_MAX_VOICES,
@@ -99,22 +100,36 @@ def build_loop_cycle_specs(
     play_anchor_engine_frame: int,
     sync_enabled: bool,
     master_bpm: float,
+    user_metadata: Mapping[str, Any] | None = None,
 ) -> tuple[LoopCycleSpec, ...]:
-    """Build frozen per-Play specs for explicit loop channels only."""
+    """Build frozen per-Play specs for explicit loop channels only.
+
+    ``user_metadata`` is the resolved path-keyed binding from
+    ``docs/USER_CHANNEL_CLASSIFICATION_AUTHORITY.md`` §1. User loop channels
+    take their ``source_bpm`` from the same already-read library row, which
+    closes the second seam SYNC-on user loops would otherwise need. A missing or
+    unusable bound BPM stays fail-closed under SYNC exactly like a Live Kit
+    assignment without BPM.
+    """
     specs: list[LoopCycleSpec] = []
     for channel in state.channels:
-        sample_class = sample_class_for_channel(channel, live_kit)
+        sample_class = sample_class_for_channel(
+            channel, live_kit, user_metadata=user_metadata
+        )
         if not is_explicit_loop(sample_class):
             continue
         path = channel.sample_path
         if path is None or path == "":
             continue
-        assignment = None
-        if channel.live_kit_group is not None and channel.live_kit_slot is not None:
+        if channel.live_kit_group is None and channel.live_kit_slot is None:
+            source_bpm = user_metadata_source_bpm(channel, user_metadata=user_metadata)
+        else:
             assignment = live_kit.assignment_for(
                 channel.live_kit_group, channel.live_kit_slot
             )
-        source_bpm = getattr(assignment, "bpm", None) if assignment is not None else None
+            source_bpm = (
+                getattr(assignment, "bpm", None) if assignment is not None else None
+            )
         rate, status = compute_sync_playback_rate(master_bpm, source_bpm, sync_enabled)
         if sync_enabled and status != "sync":
             continue
