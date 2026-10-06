@@ -1687,8 +1687,22 @@ def run_qml_visual_acceptance_954(
         _settle_qml_frame(app)
         _wait_for_screen1_background_ready(window, app)
 
+        def _refresh_bridge() -> None:
+            """Trigger QML property refresh via interaction bridge."""
+            try:
+                if hasattr(engine, "_screen1_interaction_bridge"):
+                    engine._screen1_interaction_bridge.refreshState()
+                elif hasattr(engine, "rootContext"):
+                    bridge = engine.rootContext().contextProperty("_screen1InteractionBridge")
+                    if bridge and hasattr(bridge, "refreshState"):
+                        bridge.refreshState()
+            except Exception:
+                pass
+            _settle_qml_frame(app)
+
         # A: 954-default-balanced - Browser materialized, Library + Harmony balanced, Drawer CLOSED
         if "954-default-balanced" in labels:
+            _refresh_bridge()
             _capture(
                 "954-default-balanced",
                 window,
@@ -1701,7 +1715,7 @@ def run_qml_visual_acceptance_954(
             # Simulate first successful Add-to-Live-Kit via adapter
             adapter.request_add_to_kit(0)
             adapter.assign_live_kit_slot("Drums", "Main Drum")
-            _settle_qml_frame(app)
+            _refresh_bridge()
             _capture(
                 "954-first-add-compact",
                 window,
@@ -1712,7 +1726,7 @@ def run_qml_visual_acceptance_954(
         # C: 954-harmony-reopened - Manual Harmony reopen while Drawer open
         if "954-harmony-reopened" in labels:
             adapter.harmonic_match_open = True
-            _settle_qml_frame(app)
+            _refresh_bridge()
             _capture(
                 "954-harmony-reopened",
                 window,
@@ -1726,7 +1740,7 @@ def run_qml_visual_acceptance_954(
             adapter.assign_live_kit_slot("Drums", "Closed Hat")
             adapter.request_add_to_kit(0)
             adapter.assign_live_kit_slot("Drums", "Open Hat")
-            _settle_qml_frame(app)
+            _refresh_bridge()
             _capture(
                 "954-multi-row-growth",
                 window,
@@ -1741,7 +1755,7 @@ def run_qml_visual_acceptance_954(
             for i in range(4):  # We already have 3, add 4 more = 7 total
                 adapter.request_add_to_kit(0)
                 adapter.assign_live_kit_slot("Drums", f"Extra {i}")
-            _settle_qml_frame(app)
+            _refresh_bridge()
             _capture(
                 "954-max-height-scroll",
                 window,
@@ -1752,7 +1766,7 @@ def run_qml_visual_acceptance_954(
         # F: 954-drawer-closed-state-kept - Manual close, state persists, no re-auto-open
         if "954-drawer-closed-state-kept" in labels:
             adapter.toggle_live_kit_drawer()  # Close drawer
-            _settle_qml_frame(app)
+            _refresh_bridge()
             _capture(
                 "954-drawer-closed-state-kept",
                 window,
