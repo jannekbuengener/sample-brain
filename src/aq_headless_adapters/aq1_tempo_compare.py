@@ -85,6 +85,23 @@ def _resolve_under_work_dir(work_dir: Path, relpath: str) -> Path:
     return target
 
 
+def _validate_candidate_identity(
+    identity: Mapping[str, Any] | None, *, label: str, required: bool
+) -> None:
+    if identity is None:
+        if required:
+            raise AnalysisHeadlessRunError(f"{label} candidate identity is required")
+        return
+    candidate_id = identity.get("candidate_id")
+    if not isinstance(candidate_id, str) or not candidate_id.strip():
+        raise AnalysisHeadlessRunError(f"{label}.candidate_id is required")
+    expected_fp = tempo_candidate_config_fingerprint(candidate_id.strip())
+    if identity.get("config_fingerprint") != expected_fp:
+        raise AnalysisHeadlessRunError(
+            f"{label}.config_fingerprint does not match frozen AQ1 candidate identity"
+        )
+
+
 def _domain_artifact_fingerprint(domain_result: Mapping[str, Any]) -> str:
     """Fingerprint the portable domain payload (exclude bulky records)."""
     portable = {
@@ -187,6 +204,19 @@ class Aq1TempoCompareAdapter:
         operation = str(request["operation"])
         if operation not in CAPABILITIES:
             raise AnalysisHeadlessRunError(f"unsupported operation for AQ1: {operation}")
+
+        baseline = request.get("baseline")
+        current = request.get("current")
+        _validate_candidate_identity(
+            baseline if isinstance(baseline, Mapping) else None,
+            label="baseline",
+            required=True,
+        )
+        _validate_candidate_identity(
+            current if isinstance(current, Mapping) else None,
+            label="current",
+            required=operation in {"compare", "locked_evaluation"},
+        )
 
         partition = _require_mapping(request.get("partition"), "partition")
         partition_role = str(partition["role"])

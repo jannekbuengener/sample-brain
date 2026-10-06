@@ -19,6 +19,7 @@ from src.analysis_headless_run import (
     DomainAdapter,
     build_request,
     lookup_adapter,
+    validate_request,
     validate_result,
 )
 from src.aq_headless_adapters.aq1_tempo_compare import (
@@ -210,6 +211,32 @@ def test_adapter_registered_in_static_registry() -> None:
     assert entry.adapter_version == ADAPTER_VERSION
     with pytest.raises(Exception, match="unbound"):
         entry.run({})
+
+
+def test_candidate_config_fingerprint_must_match_frozen_aq1_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    work = _outside_work_dir(tmp_path)
+    fake_repo = tmp_path / "fake-repo"
+    fake_repo.mkdir()
+    monkeypatch.setattr(
+        "src.fsld_aq1_tempo_candidate_compare.REPOSITORY_ROOT", fake_repo
+    )
+    adapter = Aq1TempoCompareAdapter(work_dir=work)
+    request = _path_b_request(work)
+    tampered = dict(request)
+    tampered_baseline = dict(request["baseline"])
+    tampered_baseline["config_fingerprint"] = "0" * 64
+    tampered["baseline"] = tampered_baseline
+    tampered.pop("request_fingerprint", None)
+    tampered = validate_request(tampered)
+
+    result = validate_result(adapter.run(tampered))
+
+    assert result["run_status"] == "controlled_failure"
+    assert result["error"]["code"] == "AQ1_ADAPTER_INPUT_INVALID"
+    assert "config_fingerprint" in result["error"]["detail"]
+    assert not (work / "out" / "aq1-compare.json").exists()
 
 
 def test_path_b_compare_completes_with_domain_artifact_fingerprint(
