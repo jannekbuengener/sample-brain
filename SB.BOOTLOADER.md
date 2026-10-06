@@ -42,7 +42,7 @@ New Single Workspace Rack projection is [#908](https://github.com/jannekbuengene
 | Arrangement | [#679](https://github.com/jannekbuengener/sample-brain/issues/679) — **PARKED / UNDESIGNED — requires later explicit Owner design decision** |
 | EPIC 2 (Semantic Search) | `docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md`, ADR-0001–0005 |
 | DAW / Export | `docs/DAW_INTEGRATION_SPEC.md`, `src/export_fl.py` (legacy/fallback; VST parked #469) |
-| CI / Merge Governance | `docs/CI_DEGRADED_MODE.md`, `knowledge/governance/GOVERNANCE.md` |
+| CI / Merge Governance | `docs/CI_DEGRADED_MODE.md`, `docs/MERGE_REVIEW_FEEDBACK_GATE.md`, `docs/BRANCH_PROTECTION.md`, `knowledge/governance/GOVERNANCE.md` |
 | Repository Hygiene | live worktree/branch state, `docs/DATA_AND_ARTIFACT_POLICY.md`, agent `sample-brain-repository-auditor`; ops front door `docs/operations/README.md` |
 | Operations / capabilities | `docs/operations/README.md`, `docs/operations/CAPABILITY_REGISTRY.json` |
 | Agent / Role | `.cursor/agents/_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md` |
