@@ -142,8 +142,46 @@ def _user_state(channel: Channel) -> ChannelRackState:
     )
 
 
-def test_session_json_never_persists_sample_class(tmp_path: Path) -> None:
-    """Rule 2: durable identity stays path-only; no copied classification."""
+ALLOWED_ROOT_KEYS = frozenset(
+    {"schema_version", "live_kit", "channel_rack", "master_bpm", "sync_enabled"}
+)
+ALLOWED_CHANNEL_RACK_KEYS = frozenset(
+    {"pattern_id", "length_quarter_notes", "step_count", "channels", "triggers"}
+)
+ALLOWED_CHANNEL_KEYS = frozenset(
+    {"channel_id", "live_kit_group", "live_kit_slot", "sample_path"}
+)
+ALLOWED_TRIGGER_KEYS = frozenset({"channel_id", "position"})
+ALLOWED_LIVE_KIT_REF_KEYS = frozenset({"path"})
+
+# Vocabulary that must never appear in durable session state under any spelling.
+# The guard asserts the exact allowed shape *and* rejects this vocabulary, so a
+# derived binding persisted under `user_metadata`, `classification`, `bpm`, or
+# any other name cannot slip through a single-key denylist.
+FORBIDDEN_PERSISTED_KEYS = frozenset(
+    {
+        "sample_class",
+        "classification",
+        "classification_kind",
+        "user_metadata",
+        "user_sample_metadata",
+        "user_metadata_binding",
+        "pred_type",
+        "source_bpm",
+        "sample_bpm",
+        "bpm",
+        "key",
+        "key_conf",
+        "loudness",
+        "brightness",
+        "analyzer_version",
+        "pcm_frame_count",
+        "playback_rate",
+    }
+)
+
+
+def _session_json(tmp_path: Path) -> Any:
     session = compose_workbench_session(state_dir=tmp_path / "state")
     try:
         session.channel_rack.ensure_state(notify=False)
@@ -159,16 +197,41 @@ def test_session_json_never_persists_sample_class(tmp_path: Path) -> None:
     finally:
         session.transport.close()
 
-    payload: Any = json.loads(
+    return json.loads(
         (tmp_path / "state" / "workbench_session.json").read_text(encoding="utf-8")
     )
 
+
+def test_session_json_persists_only_the_frozen_path_only_shape(tmp_path: Path) -> None:
+    """Rule 2a: the exact allowed durable shape, asserted positively."""
+    payload = _session_json(tmp_path)
+
+    assert set(payload) == set(ALLOWED_ROOT_KEYS)
+
+    rack = payload["channel_rack"]
+    assert rack is not None
+    assert set(rack) == set(ALLOWED_CHANNEL_RACK_KEYS)
+
+    for channel in rack["channels"]:
+        assert set(channel) == set(ALLOWED_CHANNEL_KEYS)
+
+    for trigger in rack["triggers"]:
+        assert set(trigger) == set(ALLOWED_TRIGGER_KEYS)
+
+    for group_slots in payload["live_kit"].values():
+        for ref in group_slots.values():
+            assert ref is None or set(ref) == set(ALLOWED_LIVE_KIT_REF_KEYS)
+
+
+def test_session_json_persists_no_analysis_or_binding_vocabulary(tmp_path: Path) -> None:
+    """Rule 2b: no derived metadata key reaches disk under any spelling."""
+    payload = _session_json(tmp_path)
     found: list[str] = []
 
     def _walk(node: Any, trail: str) -> None:
         if isinstance(node, dict):
             for key, value in node.items():
-                if "sample_class" in str(key):
+                if str(key) in FORBIDDEN_PERSISTED_KEYS:
                     found.append(f"{trail}.{key}")
                 _walk(value, f"{trail}.{key}")
         elif isinstance(node, list):
@@ -176,7 +239,7 @@ def test_session_json_never_persists_sample_class(tmp_path: Path) -> None:
                 _walk(value, f"{trail}[{index}]")
 
     _walk(payload, "$")
-    assert found == [], f"persisted classification duplicate found: {found}"
+    assert found == [], f"persisted derived metadata found: {found}"
 
 
 def test_pattern_core_channel_and_trigger_shapes_are_frozen() -> None:

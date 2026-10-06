@@ -126,7 +126,7 @@ When two rules collide for one user channel, this order decides, and it mirrors 
 2. otherwise `ambiguous` ⇒ **preserve** persisted triggers verbatim;
 3. otherwise explicit `one_shot` / `oneshot` ⇒ **preserve**, never re-seed — hydration or replacement alone never re-applies DEFAULT_ON.
 
-So a replacement from a one-shot A to a loop B **strips** A's stale point triggers, and a replacement to `ambiguous` or `oneshot` preserves them bit-identical. Stripping applies to exactly one channel and never rewrites Pattern length, `step_count`, or any other channel's triggers. The `PLAYBACK_CLASSIFICATION_FREEZE` and `CLASSIFICATION_RECONCILE_POLICY` rules below still defer that strip while Rack Play is active.
+So a replacement from a one-shot A to a loop B **strips** A's stale point triggers, and a replacement to `ambiguous` or `oneshot` preserves them bit-identical. Stripping applies to exactly one channel and never rewrites Pattern length, `step_count`, or any other channel's triggers. The `PLAYBACK_CLASSIFICATION_FREEZE` and `PLAYBACK_MUTATION_APPLY_POLICY` rules below still defer that strip, atomically with its path change, while Rack Play is active.
 
 ### 6. Library re-analysis
 
@@ -144,10 +144,14 @@ PLAYBACK_CLASSIFICATION_FREEZE = SNAPSHOT_AT_PLAY_ANCHOR
   Consequence: no mid-Play path replacement, path clear, or classification change can add, remove, or retarget any channel's playback within that Play, and none can stop or restart playback. Live state, the live binding, and durable persistence update immediately and apply audibly on the next explicit Rack Play.
 
 ```text
-CLASSIFICATION_RECONCILE_POLICY = DEFER_UNTIL_NEXT_RACK_PLAY
+PLAYBACK_MUTATION_APPLY_POLICY = ATOMIC_AFTER_STOP
 ```
 
-  A frozen binding alone still does not cover durable Pattern state, because `_start_pattern_pass` also re-reads `self._state`: a classification-implied trigger strip (§5) applied mid-Play would strip live state and silence later passes of the same Play. Therefore any classification-implied reconcile of durable Pattern state is **queued while Rack Play is active** and applied only after `stop()`, or at the start of the next explicit Rack Play before its anchor. Mid-Play reconcile is never applied to the state the current Play is reading.
+  The per-Play snapshot is only half the guarantee, because persistence is observer-driven. A B2 replacement or B4 refresh during Play that also implies a trigger strip would otherwise need **two** notifications — one to persist the path, one to persist the later strip — which contradicts the notify-once ordering in §5 and the single-observer semantics in §7.
+
+  Therefore, while Rack Play is active, **all** durable state changes implied by a user-channel path or classification mutation — the path itself, its binding entry, and any classification-implied trigger strip — are **queued and applied atomically**: either after `stop()`, or at the start of the next explicit Rack Play before its anchor. They land as one coherent state adoption that fires the musical-state observer **exactly once**.
+
+  Nothing is persisted mid-Play, so a queued mutation cannot be observed or autosaved out of order, and the running Play is never reading a partially-applied state. This mirrors the shipped `LOOP_ASSIGNMENT_MUTATION_POLICY` = `DEFER_UNTIL_NEXT_RACK_PLAY`: new assignment and classification semantics take effect on the next explicit Rack Play, not during the current one.
 
 - Projection may continue to read the **live** derived binding, because projection is display and not playback. Mid-Play projection and playback may therefore disagree; the divergence resolves on the next explicit Rack Play and must not be presented as a classification change.
 - Refresh happens only through B4, before any next explicit Rack Play.
@@ -190,7 +194,7 @@ The follow-up slice must freeze these before implementation. Today, the ownershi
 **Already green today (architecture ownership guards):**
 
 1. Low-level Rack/audio modules import no `sqlite3` / `workbench_library` / `db` / config surface, in any import form — relative or absolute `src.`-prefixed, module-level or function-level — plus a non-vacuity self-check proving the guard detects each forbidden form.
-2. `snapshot_from_musical_state(...)` contains no `sample_class` key anywhere, recursively.
+2. Session JSON stays path-only, proven twice over: the exact allowed durable shape is asserted positively (root / `live_kit` ref / `channel_rack` / `channels[]` / `triggers[]` key sets), **and** a derived-metadata vocabulary denylist rejects `sample_class`, `classification`, `user_metadata`, `pred_type`, `source_bpm`, `bpm`, `pcm_frame_count`, and friends at any depth. A positive shape assertion plus a vocabulary denylist means a binding persisted under any name is caught.
 3. `dataclasses.fields(Channel)` is exactly `(channel_id, live_kit_group, live_kit_slot, sample_path)`; `Trigger` unchanged.
 4. `sample_class_for_channel` on a user channel returns `None` for a suggestive filename and with no binding present — no filename/folder heuristic.
 5. With no binding, user channels stay excluded from `point_trigger_eligible_channel_ids` and produce no `LoopCycleSpec`.
@@ -209,7 +213,7 @@ The follow-up slice must freeze these before implementation. Today, the ownershi
 15. `apply_gesture_integration_plan` resolves only the gesture-introduced or gesture-changed paths, leaves preserved base-channel bindings byte-identical, and keeps the single-observer guarantee.
 16. `add_user_channel(sample_path=…)` and `assign_user_channel_sample(...)` are both resolution boundaries; `add_user_channel()` with no path and a same-path re-assign resolve nothing.
 17. `PLAYBACK_CLASSIFICATION_FREEZE`: a path replacement, path clear, or classification change during active Rack Play changes neither point-trigger eligibility nor loop specs for any pass of that Play, does not fall silent through a path-key miss, does not stop or restart playback, and applies on the next explicit Rack Play. Step toggles made during Play remain immediately audible.
-18. `CLASSIFICATION_RECONCILE_POLICY`: a B4 refresh during active Rack Play that would strip triggers does **not** touch the state the current Play is reading; no pass of that Play goes silent, and the queued strip lands after `stop()` or at the next explicit Rack Play before its anchor.
+18. `PLAYBACK_MUTATION_APPLY_POLICY`: a B2 replacement or B4 refresh during active Rack Play applies **nothing** durably mid-Play — path, binding entry, and any classification-implied trigger strip are queued and applied atomically after `stop()` or at the next explicit Rack Play before its anchor, in **exactly one** observer call. The running Play neither goes silent nor reads a partially-applied state.
 19. `project_bottom_rack_for_qml` classifies **user** rows through the same `sample_class_for_channel` consumption point and no hardcoded user-row class set: a resolved one-shot user row projects `row_kind=step` with a real step grid, a resolved loop user row projects `loop_identity`, and an ambiguous user row stays `loop_identity` and gridless. Assert all three.
 20. #926 regression suites stay green: `tests/test_channel_rack_loop_classification.py`, `tests/test_workbench_channel_rack_loop.py`, `tests/test_loop_rack_playback.py`, `tests/test_workbench_session_catalog_rehydrate.py`, `tests/test_workbench_session_persistence.py`, `tests/test_workbench_qml_screen2_channel_rack.py`.
 
@@ -237,7 +241,7 @@ DOCS -> TESTS -> TEST FREEZE -> IMPLEMENTATION -> CHECKS
 1. **DOCS** — this freeze is the DOCS_GATE artifact; confirm it against live `main` before code.
 2. **TESTS** — land tests 6–20 above (initially red where they must be red).
 3. **TEST FREEZE** — freeze tests 6–20. Tests 1–5 may only ever be tightened.
-4. **IMPLEMENTATION** — add `src/workbench_user_sample_metadata.py`; thread the optional `user_metadata` binding through `channel_rack`, `loop_rack_playback`, and `project_bottom_rack_for_qml` as keyword-only, default `None`; inject the resolver in `compose_workbench_session`; implement B1–B4 including the B3 delta rule, the named `clear_user_channel_sample(...)` operation with reference-counted invalidation, the binding trigger precedence, the reconcile/observer rules, the per-Play snapshot behind `PLAYBACK_CLASSIFICATION_FREEZE`, and the queued reconcile behind `CLASSIFICATION_RECONCILE_POLICY`.
+4. **IMPLEMENTATION** — add `src/workbench_user_sample_metadata.py`; thread the optional `user_metadata` binding through `channel_rack`, `loop_rack_playback`, and `project_bottom_rack_for_qml` as keyword-only, default `None`; inject the resolver in `compose_workbench_session`; implement B1–B4 including the B3 delta rule, the named `clear_user_channel_sample(...)` operation with reference-counted invalidation, the binding trigger precedence, the reconcile/observer rules, the per-Play snapshot behind `PLAYBACK_CLASSIFICATION_FREEZE`, and the atomic queued apply behind `PLAYBACK_MUTATION_APPLY_POLICY`.
 5. **CHECKS** — focused tests, the listed regression suites, then `python -m pytest -q`, `python -m ruff check .`, `python -m py_compile`, and `python tools/check_canon_drift.py`.
 
 **Out of scope for that slice:** classification-quality changes (#946), Pattern Core or session-JSON changes, QML redesign, Arrangement, gesture ranking changes, user-channel DEFAULT_ON changes.
