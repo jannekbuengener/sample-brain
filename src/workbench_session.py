@@ -49,6 +49,9 @@ from .workbench_session_store import (
 )
 from .workbench_transport_adapter import WorkbenchTransportAdapter
 from .workbench_transport_preview import TransportAwarePreview
+from .workbench_user_sample_metadata import (
+    WorkbenchLibraryUserSampleMetadataResolver,
+)
 
 if TYPE_CHECKING:
     from .channel_rack import ChannelRackState
@@ -294,7 +297,13 @@ def compose_workbench_session(
         library_db_path=library_db_path,
     )
 
-    channel_rack = ChannelRackController(live_kit=live_kit, transport=transport)
+    channel_rack = ChannelRackController(
+        live_kit=live_kit,
+        transport=transport,
+        user_metadata_resolver=WorkbenchLibraryUserSampleMetadataResolver(
+            library_db_path=library_db_path
+        ),
+    )
     rack_holder[0] = channel_rack
     if snapshot is not None:
         rack_state = channel_rack_state_from_snapshot(snapshot)

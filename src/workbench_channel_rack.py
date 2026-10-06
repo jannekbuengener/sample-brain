@@ -6,13 +6,22 @@ Screen-2 Play loops by orchestrating successive finite one-pass players until
 Stop (#810). Does not own Live Kit, TempoMap, or the native audio engine; those
 stay on the shared session transport. QML never holds pattern or loop shadow
 truth.
+
+User-channel classification is derived, session-bound, and never persisted
+(``docs/USER_CHANNEL_CLASSIFICATION_AUTHORITY.md``). The controller resolves it
+only at the frozen boundaries B1-B4, keeps one path-keyed binding, freezes
+path + class per Rack Play (``PLAYBACK_CLASSIFICATION_FREEZE``), and defers
+durable user-channel mutations until after Stop (``PLAYBACK_MUTATION_APPLY_
+POLICY``). It performs no library I/O itself.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from fractions import Fraction
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from types import MappingProxyType
+from typing import Any
 
 from .channel_rack import (
     ChannelRackPlayHandle,
@@ -20,8 +29,13 @@ from .channel_rack import (
     add_user_channel,
     assign_user_channel_sample,
     build_channel_rack_state,
+    classification_kind,
+    is_explicit_loop,
+    is_point_trigger_safe,
     play_channel_rack_once,
+    point_trigger_eligible_channel_ids,
     reconcile_live_kit_sample_assignments,
+    sample_class_for_channel,
     toggle_step,
     warm_channel_rack_pcm,
 )
@@ -31,10 +45,15 @@ from .loop_rack_playback import (
     NaturalCycleLoopPlayer,
     build_loop_cycle_specs,
 )
-from .pattern_core import Trigger
+from .pattern_core import Channel, Pattern, Trigger
 from .sequencer_pcm import SequencerPcmProvider
 from .session_grid import TempoMap
 from .workbench_live_kit import LIVE_KIT_SLOT_MAPPING, LiveKitState
+from .workbench_user_sample_metadata import (
+    EMPTY_USER_SAMPLE_METADATA_BINDING,
+    UserSampleMetadata,
+    UserSampleMetadataBinding,
+)
 
 DEFAULT_LOOKAHEAD_FRAMES = 4800
 USER_GROUP_NAME = "User"
@@ -46,8 +65,6 @@ BOTTOM_RACK_HEIGHT_RATIO = 0.24
 BOTTOM_RACK_EMPTY_STRIP_PX = 32
 ROW_KIND_STEP = "step"
 ROW_KIND_LOOP_IDENTITY = "loop_identity"
-_POINT_TRIGGER_SAFE_CLASSES = frozenset({"one_shot", "oneshot"})
-_LOOP_CLASSES = frozenset({"loop"})
 
 
 class GestureRackApplyPostMutationError(RuntimeError):
@@ -82,20 +99,22 @@ class StaleGestureRackIntegrationPlanError(ValueError):
     """
 
 
-def _normalize_sample_class(value: object | None) -> str:
-    return str(value or "").strip().lower().replace("-", "_")
+def _row_kind_for_channel(
+    channel: Channel,
+    live_kit: LiveKitState,
+    *,
+    user_metadata: Mapping[str, Any] | None,
+) -> str:
+    """Classify one channel for bottom Rack projection (#908/#920/#952).
 
-
-def _row_kind_for_assignment(assignment: Any) -> str:
-    """Classify occupied Live Kit assignment for bottom Rack projection (#908/#920).
-
-    Point-trigger-safe (one_shot/oneshot) → step grid.
-    Loop-class or missing/ambiguous sample_class → identity only (no step grid).
+    Point-trigger-safe (one_shot/oneshot) → step grid. Loop-class or
+    missing/ambiguous sample_class → identity only (no step grid). User rows
+    read the same resolved binding through :func:`sample_class_for_channel` as
+    every other consumer, so no second normalization or class set exists here.
     """
-    sample_class = _normalize_sample_class(
-        getattr(assignment, "sample_class", None) if assignment is not None else None
-    )
-    if sample_class in _POINT_TRIGGER_SAFE_CLASSES:
+
+    resolved = sample_class_for_channel(channel, live_kit, user_metadata=user_metadata)
+    if is_point_trigger_safe(resolved):
         return ROW_KIND_STEP
     return ROW_KIND_LOOP_IDENTITY
 
@@ -252,12 +271,19 @@ def project_channel_rack_for_qml(state: ChannelRackState) -> dict[str, Any]:
 def project_bottom_rack_for_qml(
     state: ChannelRackState,
     live_kit: LiveKitState,
+    *,
+    user_metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Single Workspace bottom Rack projection (#908).
 
     Occupied Live Kit / user channels only. Empty groups omitted. Point-trigger-
     safe one-shot rows expose the step grid; loop-class / ambiguous rows expose
     identity without a misleading DEFAULT_ON step grid (#920 deferred).
+
+    ``user_metadata`` is the resolved path-keyed binding (#952). User rows are
+    classified through the same ``sample_class_for_channel`` consumption point
+    as playback, so projection can no longer hardcode a user-row class. The
+    ``None`` default reproduces the pre-#952 fail-closed user rows.
     """
 
     steps_by_channel: dict[str, list[bool]] = {
@@ -276,10 +302,7 @@ def project_bottom_rack_for_qml(
                 continue
             if not channel.sample_path:
                 continue
-            assignment = None
-            if channel.live_kit_slot:
-                assignment = live_kit.assignment_for(group_name, channel.live_kit_slot)
-            row_kind = _row_kind_for_assignment(assignment)
+            row_kind = _row_kind_for_channel(channel, live_kit, user_metadata=None)
             step_enabled = row_kind == ROW_KIND_STEP
             rows.append(
                 {
@@ -304,8 +327,11 @@ def project_bottom_rack_for_qml(
             continue
         if not channel.sample_path:
             continue
-        # User channels without Live Kit sample_class fail closed (identity only)
-        # unless callers later attach classification through a dedicated seam.
+        # Binding decides the row kind; no evidence fails closed to identity only.
+        row_kind = _row_kind_for_channel(
+            channel, live_kit, user_metadata=user_metadata
+        )
+        step_enabled = row_kind == ROW_KIND_STEP
         user_rows.append(
             {
                 "channel_id": channel.channel_id,
@@ -315,9 +341,9 @@ def project_bottom_rack_for_qml(
                 "live_kit_group": None,
                 "live_kit_slot": None,
                 "is_user_channel": True,
-                "steps": [],
-                "row_kind": ROW_KIND_LOOP_IDENTITY,
-                "step_grid_enabled": False,
+                "steps": steps_by_channel[channel.channel_id] if step_enabled else [],
+                "row_kind": row_kind,
+                "step_grid_enabled": step_enabled,
             }
         )
     if user_rows:
@@ -363,15 +389,51 @@ def _empty_bottom_projection() -> dict[str, Any]:
 def _sync_live_kit_sample_paths(
     state: ChannelRackState,
     live_kit: LiveKitState,
+    *,
+    user_metadata: Mapping[str, Any] | None = None,
 ) -> ChannelRackState:
     """Refresh Live Kit seed paths and heal DEFAULT_ON for late assignments.
 
     Delegates to :func:`reconcile_live_kit_sample_assignments` so empty→assigned
     seeds DEFAULT_ON, replacements preserve user triggers, and clears strip
-    orphan/trigger state fail-closed (#806).
+    orphan/trigger state fail-closed (#806). With an injected binding the same
+    reconcile also strips stale user-channel triggers for resolved explicit loops
+    (#952). Never resolves anything.
     """
 
-    return reconcile_live_kit_sample_assignments(state, live_kit)
+    return reconcile_live_kit_sample_assignments(
+        state, live_kit, user_metadata=user_metadata
+    )
+
+
+def _sample_bearing(sample_path: str | None) -> bool:
+    """True when the channel holds a non-empty durable sample path."""
+    return sample_path is not None and sample_path != ""
+
+
+def _is_user_channel(channel: Channel) -> bool:
+    """True for user-added channels (no Live Kit provenance)."""
+    return channel.live_kit_group is None and channel.live_kit_slot is None
+
+
+def _distinct_user_paths(state: ChannelRackState) -> tuple[str, ...]:
+    """Ordered distinct non-empty user-channel sample paths."""
+    return tuple(
+        dict.fromkeys(
+            channel.sample_path
+            for channel in state.channels
+            if _is_user_channel(channel) and _sample_bearing(channel.sample_path)
+        )
+    )
+
+
+def _referenced_paths(state: ChannelRackState, *, exclude: str | None = None) -> set[str]:
+    """Sample paths still referenced by any channel other than ``exclude``."""
+    return {
+        channel.sample_path
+        for channel in state.channels
+        if channel.channel_id != exclude and _sample_bearing(channel.sample_path)
+    }
 
 
 class ChannelRackController:
@@ -393,6 +455,7 @@ class ChannelRackController:
         on_claim_audio_focus: Callable[[], None] | None = None,
         on_release_to_screen1: Callable[[], None] | None = None,
         on_musical_state_changed: Callable[[], None] | None = None,
+        user_metadata_resolver: Any | None = None,
     ) -> None:
         self._live_kit = live_kit
         self._transport = transport
@@ -418,6 +481,200 @@ class ChannelRackController:
         self._on_claim_audio_focus = on_claim_audio_focus
         self._on_release_to_screen1 = on_release_to_screen1
         self._on_musical_state_changed = on_musical_state_changed
+        # #952: injected resolver is the only classification I/O owner. With
+        # ``None`` every user channel stays ambiguous and nothing resolves.
+        self._user_metadata_resolver = user_metadata_resolver
+        self._user_metadata: UserSampleMetadataBinding = EMPTY_USER_SAMPLE_METADATA_BINDING
+        self._pending_user_state: ChannelRackState | None = None
+        self._pending_user_metadata: UserSampleMetadataBinding | None = None
+        self._playback_classification_snapshot: (
+            Mapping[str, tuple[str, str | None, float | None]] | None
+        ) = None
+        self._frozen_user_metadata: UserSampleMetadataBinding | None = None
+
+    # ------------------------------------------------------------------
+    # #952 user-channel classification (derived, never persisted)
+    # ------------------------------------------------------------------
+
+    @property
+    def user_metadata(self) -> UserSampleMetadataBinding:
+        """Read-only derived binding keyed by exact durable sample path."""
+        return self._user_metadata
+
+    @property
+    def playback_classification_snapshot(
+        self,
+    ) -> Mapping[str, tuple[str, str | None, float | None]] | None:
+        """Per-Play frozen ``channel_id -> (path, class, source_bpm)``.
+
+        ``None`` whenever no Rack Play is active. Pattern and trigger state is
+        deliberately *not* frozen: only path and classification.
+        """
+        return self._playback_classification_snapshot
+
+    @property
+    def _classification_binding(self) -> UserSampleMetadataBinding:
+        """Binding every classification consumer must read this Play.
+
+        While a Rack Play is active this is the frozen per-Play binding, so no
+        mid-Play mutation can retarget, mute, or re-classify a channel. Outside
+        a Play it is the live derived binding.
+        """
+        if self._playing and self._frozen_user_metadata is not None:
+            return self._frozen_user_metadata
+        return self._user_metadata
+
+    def _resolve_user_paths(
+        self, paths: Mapping[str, Any] | tuple[str, ...] | list[str]
+    ) -> UserSampleMetadataBinding:
+        """One bounded resolve call for a batch of paths (B1/B3/B4).
+
+        Returns an empty binding — never an exception — when no resolver is
+        injected, the batch is empty, or the resolver fails: every one of those
+        cases fails closed to ``ambiguous`` instead of breaking playback.
+        """
+        resolver = self._user_metadata_resolver
+        if resolver is None:
+            return EMPTY_USER_SAMPLE_METADATA_BINDING
+        ordered = tuple(p for p in dict.fromkeys(paths) if p)
+        if not ordered:
+            return EMPTY_USER_SAMPLE_METADATA_BINDING
+        try:
+            binding = resolver.resolve(ordered)
+        except Exception:
+            return EMPTY_USER_SAMPLE_METADATA_BINDING
+        if not isinstance(binding, Mapping):
+            return EMPTY_USER_SAMPLE_METADATA_BINDING
+        return binding if binding else UserSampleMetadataBinding()
+
+    def _adopt_user_metadata(
+        self,
+        state: ChannelRackState,
+        entries: Mapping[str, UserSampleMetadata],
+    ) -> ChannelRackState:
+        """Apply the binding trigger precedence to one already-built state.
+
+        Frozen order (#952 §5): resolved explicit ``loop`` strips that channel's
+        triggers; ``ambiguous`` and explicit one-shot preserve them verbatim and
+        never re-seed. Nothing else in the pattern changes.
+        """
+        binding = (
+            entries
+            if isinstance(entries, UserSampleMetadataBinding)
+            else UserSampleMetadataBinding(entries)
+        )
+        strip_ids = tuple(
+            channel.channel_id
+            for channel in state.channels
+            if _is_user_channel(channel)
+            and _sample_bearing(channel.sample_path)
+            and is_explicit_loop(
+                sample_class_for_channel(
+                    channel, self._live_kit, user_metadata=binding
+                )
+            )
+        )
+        if not strip_ids:
+            return state
+        kept = tuple(
+            trigger
+            for trigger in state.pattern.triggers
+            if trigger.channel_id not in strip_ids
+        )
+        if kept == state.pattern.triggers:
+            return state
+        return ChannelRackState(
+            channels=state.channels,
+            pattern=Pattern(
+                pattern_id=state.pattern.pattern_id,
+                length_quarter_notes=state.pattern.length_quarter_notes,
+                triggers=kept,
+            ),
+            step_count=state.step_count,
+        )
+
+    def _commit_user_mutation(
+        self,
+        mutate: Callable[
+            [ChannelRackState, UserSampleMetadataBinding],
+            tuple[ChannelRackState, UserSampleMetadataBinding],
+        ],
+    ) -> ChannelRackState:
+        """Adopt one user-channel mutation now, or queue it for after Stop.
+
+        Ordering is frozen as resolve → build target state (including the
+        classification-implied reconcile) → adopt state → notify once. While Rack
+        Play is active (``PLAYBACK_MUTATION_APPLY_POLICY``) nothing durable
+        changes and nothing is persisted; the target pair is queued and adopted
+        atomically by the next ``stop()`` or by the next explicit Rack Play
+        before its anchor.
+        """
+        base_state = self._pending_user_state or self._require_state()
+        base_metadata = (
+            self._pending_user_metadata
+            if self._pending_user_metadata is not None
+            else self._user_metadata
+        )
+        new_state, new_metadata = mutate(base_state, base_metadata)
+        if new_state is base_state and new_metadata == base_metadata:
+            # No-op: same-path re-assign and already-empty clear resolve nothing
+            # and never notify.
+            return self._state if self._state is not None else new_state
+        if self._playing:
+            self._pending_user_state = new_state
+            self._pending_user_metadata = new_metadata
+            return self._require_state()
+        self._state = new_state
+        self._user_metadata = new_metadata
+        self._notify_musical_state_changed()
+        return self._state
+
+    def _adopt_pending_user_mutation(self, *, notify: bool = True) -> bool:
+        """Apply a queued mid-Play mutation as one coherent adoption."""
+        pending_state = self._pending_user_state
+        pending_metadata = self._pending_user_metadata
+        if pending_state is None:
+            return False
+        self._pending_user_state = None
+        self._pending_user_metadata = None
+        self._state = pending_state
+        self._user_metadata = (
+            pending_metadata
+            if pending_metadata is not None
+            else EMPTY_USER_SAMPLE_METADATA_BINDING
+        )
+        if notify:
+            self._notify_musical_state_changed()
+        return True
+
+    def _discard_pending_user_mutation(self) -> None:
+        """Drop a queued mutation without applying or persisting it."""
+        self._pending_user_state = None
+        self._pending_user_metadata = None
+
+    def refresh_user_channel_metadata(self) -> UserSampleMetadataBinding:
+        """B4: the explicit seam for library re-analysis / manual rescan.
+
+        Resolves every distinct user-channel path in one read and rebuilds the
+        binding from that evidence, then applies the frozen trigger precedence.
+        Resolve-only changes never notify; a resolution that also implies a
+        trigger strip fires the musical-state observer exactly once. Outside a
+        Play this applies immediately; during a Play the whole rebuild is queued
+        under ``PLAYBACK_MUTATION_APPLY_POLICY``.
+        """
+        state = self._require_state()
+        paths = _distinct_user_paths(state)
+        resolved = self._resolve_user_paths(paths)
+
+        def mutate(
+            base_state: ChannelRackState,
+            _base_metadata: UserSampleMetadataBinding,
+        ) -> tuple[ChannelRackState, UserSampleMetadataBinding]:
+            target = self._adopt_user_metadata(base_state, resolved)
+            return target, resolved
+
+        self._commit_user_mutation(mutate)
+        return self._user_metadata
 
     def set_audio_focus_hooks(
         self,
@@ -472,10 +729,16 @@ class ChannelRackController:
         return self._voice_seq
 
     def projection(self) -> dict[str, Any]:
-        """Product projection for Single Workspace bottom Rack (#908)."""
+        """Product projection for Single Workspace bottom Rack (#908).
+
+        Reads the live derived binding: projection is display, not playback, so
+        it is deliberately *not* the per-Play frozen snapshot (#952 §6).
+        """
         if self._state is None:
             return _empty_bottom_projection()
-        return project_bottom_rack_for_qml(self._state, self._live_kit)
+        return project_bottom_rack_for_qml(
+            self._state, self._live_kit, user_metadata=self._user_metadata
+        )
 
     def legacy_screen2_projection(self) -> dict[str, Any]:
         """Historical full seed-row projection (compatibility / protected tests)."""
@@ -495,17 +758,26 @@ class ChannelRackController:
     def restore_state(self, state: ChannelRackState) -> None:
         """Adopt a validated musical snapshot before first Screen-2 enter (#809).
 
+        B1: resolves every distinct user-channel path of the restored state
+        through one read-only library connection. Resolution happens here,
+        before observers are wired, so resume writes nothing.
+
         Clears playback/loop runtime. Does not claim audio focus. Does not
         rebuild DEFAULT_ON. Does not fire musical-state autosave callbacks —
         callers must wire observers only after restore completes.
         """
+        self._discard_pending_user_mutation()
         self.stop()
         self._state = state
+        self._user_metadata = self._resolve_user_paths(_distinct_user_paths(state))
         self._clear_loop_session()
         self._active_screen = SCREEN1
 
     def reconcile_live_kit_state(self, *, notify: bool = True) -> bool:
         """Heal existing rack against current Live Kit without Screen-2 enter (#817).
+
+        B5: never resolves. Reads the current binding only, so an explicit-loop
+        user channel heals its stale triggers deterministically and exactly once.
 
         No-op when no rack state exists (does not materialize a rack). Does not
         claim audio focus or change playback/loop runtime. When ``notify`` is
@@ -515,7 +787,9 @@ class ChannelRackController:
         if self._state is None:
             return False
         previous = self._state
-        reconciled = _sync_live_kit_sample_paths(self._state, self._live_kit)
+        reconciled = _sync_live_kit_sample_paths(
+            self._state, self._live_kit, user_metadata=self._classification_binding
+        )
         if reconciled is previous:
             return False
         self._state = reconciled
@@ -567,21 +841,134 @@ class ChannelRackController:
         return self._state
 
     def add_user_channel(self, sample_path: str | None = None) -> ChannelRackState:
+        """Append a user channel; a non-empty ``sample_path`` is a B2 boundary."""
         self._require_state()
-        self._state = add_user_channel(self._state, sample_path=sample_path)
-        self._notify_musical_state_changed()
-        return self._state
+        path = str(sample_path).strip() if sample_path is not None else None
+        if not path:
+            path = None
+
+        def mutate(
+            base_state: ChannelRackState,
+            base_metadata: UserSampleMetadataBinding,
+        ) -> tuple[ChannelRackState, UserSampleMetadataBinding]:
+            target = add_user_channel(base_state, sample_path=path)
+            if path is None:
+                # No path means no resolution and no binding bookkeeping.
+                return target, base_metadata
+            resolved = self._resolve_user_paths((path,))
+            entry = resolved.get(path)
+            if entry is None:
+                # No evidence: no entry, so the channel fails closed.
+                return target, base_metadata
+            entries = dict(base_metadata)
+            entries[path] = entry
+            return self._adopt_user_metadata(target, entries), UserSampleMetadataBinding(
+                entries
+            )
+
+        return self._commit_user_mutation(mutate)
 
     def assign_user_channel_sample(
         self, channel_id: str, sample_path: str
     ) -> ChannelRackState:
-        """Assign a sample path to an existing user channel (#808)."""
+        """Assign a sample path to an existing user channel (#808).
+
+        B2 boundary: resolves the new path, drops the previous key when no other
+        channel still references it (reference-counted, because several channels
+        may legally share one path), then applies the frozen trigger precedence.
+        A same-path re-assign is a no-op that resolves nothing.
+        """
         self._require_state()
-        self._state = assign_user_channel_sample(
-            self._state, channel_id, sample_path
-        )
-        self._notify_musical_state_changed()
-        return self._state
+        path = str(sample_path or "").strip()
+        if not path:
+            raise ValueError("sample_path must be a non-empty sample reference")
+        channel = self._require_user_channel(channel_id)
+
+        def mutate(
+            base_state: ChannelRackState,
+            base_metadata: UserSampleMetadataBinding,
+        ) -> tuple[ChannelRackState, UserSampleMetadataBinding]:
+            target = assign_user_channel_sample(base_state, channel_id, path)
+            if target is base_state:
+                return base_state, base_metadata
+            entries = dict(base_metadata)
+            previous_path = channel.sample_path
+            if previous_path and previous_path not in _referenced_paths(
+                target, exclude=channel_id
+            ):
+                entries.pop(previous_path, None)
+            entry = self._resolve_user_paths((path,)).get(path)
+            if entry is not None:
+                entries[path] = entry
+            binding = UserSampleMetadataBinding(entries)
+            return self._adopt_user_metadata(target, binding), binding
+
+        return self._commit_user_mutation(mutate)
+
+    def clear_user_channel_sample(self, channel_id: str) -> ChannelRackState:
+        """Clear a user channel's sample association (#952, named public seam).
+
+        Frozen semantics:
+
+        - unknown ``channel_id`` ⇒ ``ValueError``, no mutation, no resolution;
+        - Live Kit seed channel ⇒ ``ValueError`` — clearing a seed channel stays
+          a Live Kit operation;
+        - already-empty user channel ⇒ no-op: no resolution, no observer call;
+        - otherwise ``sample_path`` becomes ``None``, that channel's triggers and
+          every unrelated channel/pattern invariant are preserved, the binding key
+          is dropped only when no other channel still references it, and the
+          musical-state observer fires exactly once.
+        """
+        state = self._require_state()
+        channel = self._require_user_channel(channel_id)
+        if not _sample_bearing(channel.sample_path):
+            # Already empty: no resolution, no mutation, no observer call.
+            return state
+
+        def mutate(
+            base_state: ChannelRackState,
+            base_metadata: UserSampleMetadataBinding,
+        ) -> tuple[ChannelRackState, UserSampleMetadataBinding]:
+            entries = dict(base_metadata)
+            previous_path = channel.sample_path
+            if previous_path and previous_path not in _referenced_paths(
+                base_state, exclude=channel_id
+            ):
+                entries.pop(previous_path, None)
+            channels = tuple(
+                Channel(
+                    channel_id=existing.channel_id,
+                    live_kit_group=existing.live_kit_group,
+                    live_kit_slot=existing.live_kit_slot,
+                    sample_path=None
+                    if existing.channel_id == channel_id
+                    else existing.sample_path,
+                )
+                for existing in base_state.channels
+            )
+            target = ChannelRackState(
+                channels=channels,
+                pattern=base_state.pattern,
+                step_count=base_state.step_count,
+            )
+            return target, UserSampleMetadataBinding(entries)
+
+        return self._commit_user_mutation(mutate)
+
+    def _require_user_channel(self, channel_id: str) -> Channel:
+        """Resolve a user channel or reject with the frozen ``ValueError``s."""
+        state = self._require_state()
+        for channel in state.channels:
+            if channel.channel_id == channel_id:
+                break
+        else:
+            raise ValueError(f"Unknown channel_id: {channel_id!r}")
+        if not _is_user_channel(channel):
+            raise ValueError(
+                f"Not a user-added channel: {channel_id!r}; Live Kit channels are "
+                "managed through the Live Kit, not the Rack"
+            )
+        return channel
 
     def apply_gesture_integration_plan(
         self,
@@ -615,10 +1002,23 @@ class ChannelRackController:
                 "plan is not ready_for_apply; refuse gesture Rack apply"
             )
         current = self._require_state()
+        stale_reason: str | None = None
         if current != plan.expected_base_state:
+            stale_reason = "controller state does not match expected_base_state"
+        elif self._pending_user_state is not None:
+            # A queued user-channel mutation would be adopted mid-apply, so the
+            # plan no longer describes the state it would land on. Fail closed
+            # as a stale plan instead of silently reverting the queued change.
+            stale_reason = (
+                "a user-channel mutation is queued from the active Rack Play and "
+                "will be adopted on the next Stop or Rack Play; apply the plan "
+                "again afterwards"
+            )
+        if stale_reason is not None:
+            # One raise site only: the #928 guard requires a single owner for the
+            # typed stale error, so every staleness cause is decided above.
             raise StaleGestureRackIntegrationPlanError(
-                "stale GestureRackIntegrationPlan: "
-                "controller state does not match expected_base_state"
+                f"stale GestureRackIntegrationPlan: {stale_reason}"
             )
         grid_span = Fraction(plan.target_step_count, 4)
         pattern_length = plan.target_pattern.length_quarter_notes
@@ -636,9 +1036,29 @@ class ChannelRackController:
             step_count=plan.target_step_count,
         )
 
+        # B3 (#952): resolve only the gesture-introduced or gesture-changed
+        # paths. Preserved base-channel bindings carry over untouched, so a
+        # gesture apply never turns into an implicit metadata refresh.
+        base_metadata = self._classification_binding
+        delta = tuple(
+            path
+            for path in dict.fromkeys(
+                channel.sample_path
+                for channel in plan.target_channels
+                if _is_user_channel(channel) and _sample_bearing(channel.sample_path)
+            )
+            if path not in base_metadata
+        )
+        entries = dict(base_metadata)
+        for path, entry in self._resolve_user_paths(delta).items():
+            entries[path] = entry
+        target_metadata = UserSampleMetadataBinding(entries)
+        target = self._adopt_user_metadata(target, target_metadata)
+
         # STOP → ATOMIC REPLACE → OBSERVER ONCE
         self.stop()
         self._state = target
+        self._user_metadata = target_metadata
         try:
             self._notify_musical_state_changed()
         except Exception as exc:
@@ -661,6 +1081,49 @@ class ChannelRackController:
         self._frozen_loop_specs = ()
         self._frozen_sync_enabled = None
         self._frozen_master_bpm = None
+
+    def _clear_playback_classification(self) -> None:
+        """End the ``PLAYBACK_CLASSIFICATION_FREEZE`` lifetime of one Play.
+
+        Separate from ``_clear_loop_session`` on purpose: the freeze lifetime is
+        anchored to the Play, not to audibility. A Play that fail-closes its
+        honesty check still anchored a classification snapshot, so only an
+        explicit ``stop()`` (or a restore that stops) ends it.
+        """
+        self._frozen_user_metadata = None
+        self._playback_classification_snapshot = None
+
+    def _freeze_playback_classification(self) -> None:
+        """Snapshot path + class + source_bpm per channel at the Play anchor.
+
+        ``PLAYBACK_CLASSIFICATION_FREEZE = SNAPSHOT_AT_PLAY_ANCHOR`` (#952 §6).
+        Path and classification are frozen together: freezing the binding alone
+        would let a later pass replan against a path the snapshot no longer
+        holds, which fails silent. Only channels that can become audible are
+        frozen — everything else is excluded and therefore not audible at all.
+        """
+        state = self._require_state()
+        metadata = self._user_metadata
+        snapshot: dict[str, tuple[str, str | None, float | None]] = {}
+        frozen_entries: dict[str, UserSampleMetadata] = {}
+        for channel in state.channels:
+            path = channel.sample_path
+            if not _sample_bearing(path):
+                continue
+            resolved = sample_class_for_channel(
+                channel, self._live_kit, user_metadata=metadata
+            )
+            kind = classification_kind(resolved)
+            if kind == "ambiguous":
+                continue
+            entry = metadata.get(path)
+            source_bpm = getattr(entry, "source_bpm", None)
+            snapshot[channel.channel_id] = (str(path), resolved, source_bpm)
+            frozen_entries[str(path)] = UserSampleMetadata(
+                sample_class=resolved, source_bpm=source_bpm
+            )
+        self._playback_classification_snapshot = MappingProxyType(snapshot)
+        self._frozen_user_metadata = UserSampleMetadataBinding(frozen_entries)
 
     def _read_sync_enabled(self) -> bool:
         getter = getattr(self._transport, "is_sync_enabled", None)
@@ -688,6 +1151,7 @@ class ChannelRackController:
             play_anchor_engine_frame=self._loop_anchor_engine_frame,
             sync_enabled=sync_enabled,
             master_bpm=master_bpm,
+            user_metadata=self._classification_binding,
         )
         self._frozen_loop_specs = specs
         if not specs:
@@ -740,6 +1204,7 @@ class ChannelRackController:
             pcm_provider=self._pcm_provider,
             allocate_voice_id=self._allocate_voice_id,
             live_kit=self._live_kit,
+            user_metadata=self._classification_binding,
         )
 
     def _has_active_natural_loops(self) -> bool:
@@ -805,6 +1270,10 @@ class ChannelRackController:
         self._loop_anchor_engine_frame = engine_frame
         self._loop_pass_index = 0
         self._loop_active = True
+
+        # PLAYBACK_CLASSIFICATION_FREEZE: freeze path + class at this anchor so
+        # every later pass of this Play reads one stable classification.
+        self._freeze_playback_classification()
 
         # Freeze loop specs for this Play (DEFER_UNTIL_NEXT_RACK_PLAY).
         self._start_natural_loop_player(engine=engine)
@@ -921,6 +1390,11 @@ class ChannelRackController:
                 loop_player.stop(adapter)
             if handle is not None:
                 handle.player.stop(adapter)
+        # PLAYBACK_MUTATION_APPLY_POLICY: a mutation queued during this Play
+        # lands now as one coherent adoption with exactly one observer call.
+        self._adopt_pending_user_mutation()
+        # An explicit stop is the only thing that ends the freeze lifetime.
+        self._clear_playback_classification()
 
 __all__ = [
     "BOTTOM_RACK_EMPTY_STRIP_PX",
