@@ -135,5 +135,5 @@ This slice exits `AQ6_HARMONIC_CANDIDATE_COMPARE_REPRODUCIBLE`.
 
 ## Follow-on write-heads (out of scope here)
 
-- [#1020](https://github.com/jannekbuengener/sample-brain/issues/1020) — optional blinded human preference (`NOT_REQUIRED` is valid)
+- [#1020](https://github.com/jannekbuengener/sample-brain/issues/1020) — optional preference gate → recorded `AQ6_HUMAN_PREFERENCE_NOT_REQUIRED` in [`AQ6_HARMONIC_MATCH_HUMAN_PREFERENCE_GATE.md`](AQ6_HARMONIC_MATCH_HUMAN_PREFERENCE_GATE.md)
 - [#1022](https://github.com/jannekbuengener/sample-brain/issues/1022) — evidence-backed decision memo (KEEP/DEFER only; still no unguarded production switch)
