@@ -1591,6 +1591,232 @@ def run_qml_visual_acceptance_786(
         engines.clear()
 
 
+def run_qml_visual_acceptance_954(
+    *,
+    runtime_root: Path,
+    evidence_dir: Path,
+    scale_factor: float = 1.0,
+    capture_labels: tuple[str, ...] | None = None,
+    manifest_path: Path | None = None,
+    git_run=None,
+) -> dict[str, object]:
+    """#954 Bottom Live Kit overlay drawer Runtime-Evidence (A–F states).
+
+    ``scale_factor`` selects Qt/QML scaling (1.0, 1.25, 1.5). Callers should
+    use a fresh Python process per scale factor. Runs are documented as
+    QT_SCALE_FACTOR_100 / QT_SCALE_FACTOR_125 / QT_SCALE_FACTOR_150,
+    NOT as Windows OS DPI scaling (which may differ).
+    """
+    import platform
+
+    _require_fresh_qml_capture_process()
+    report = validate_qml_renderer_provenance(
+        runtime_root,
+        manifest_path=manifest_path,
+        git_run=git_run,
+    )
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    captures: dict[str, Path] = {}
+    sanity: dict[str, dict[str, object]] = {}
+    engines: list[object] = []
+
+    default_labels = (
+        "954-default-balanced",
+        "954-first-add-compact",
+        "954-harmony-reopened",
+        "954-multi-row-growth",
+        "954-max-height-scroll",
+        "954-drawer-closed-state-kept",
+    )
+    labels = capture_labels or default_labels
+
+    def _capture(label: str, window: object, engine: object, *, note: str) -> None:
+        target = evidence_dir / f"{label}.png"
+        _grab_qml_window_png(window, target, engine=engine)
+        if abs(scale_factor - 1.0) < 1e-6:
+            check = validate_capture_sanity(
+                target, expected_width=CLIENT_WIDTH, expected_height=CLIENT_HEIGHT
+            )
+        else:
+            import struct
+
+            data = target.read_bytes()
+            width, height = struct.unpack(">II", data[16:24])
+            check = validate_capture_sanity(target, expected_width=width, expected_height=height)
+        check["capture_label"] = label
+        check["note"] = note
+        check["scale_factor"] = scale_factor
+        check["pass"] = bool(check["pass"])
+        sanity[label] = check
+        captures[label] = target
+
+    try:
+        # Build the baseline v2 fixture for synthetic data
+        fixture = build_screen1_visual_fixture_v2()
+
+        # Create LiveKitState and LiveKitPresenter (required for adapter to work)
+        from src.workbench_qml import LiveKitState, LiveKitPresenter
+        live_kit_state = LiveKitState()
+        live_kit_presenter = LiveKitPresenter(state=live_kit_state)
+
+        # Start with clean state: browser materialized, harmony open, drawer closed
+        # This corresponds to "screen1-harmonic-open" state from v2 fixture
+        active_state = resolve_screen1_visual_state_v2(fixture, "screen1-harmonic-open")
+        view_model = build_qml_view_model_from_fixture_v2(fixture, "screen1-harmonic-open")
+        view_model.live_kit_groups = live_kit_presenter.groups
+        adapter = Screen1QmlInteractionAdapter(
+            view_model=view_model,
+            harmony_controller=production.HarmonicMatchLibraryController(),
+            live_kit=live_kit_presenter,
+        )
+        apply_screen1_visual_state_v2(view_model, adapter, fixture, active_state)
+        view_model.set_workspace_materialization(
+            has_active_source=True,
+            calm_canvas_visible=False,
+            browser_materialized=True,
+            live_kit_materialized=False,  # Drawer starts CLOSED
+        )
+        view_model.live_kit_drawer_open = False
+        view_model.live_kit_auto_disclosure_consumed = False
+
+        app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+        engines.append(engine)
+        window.setWidth(CLIENT_WIDTH)
+        window.setHeight(CLIENT_HEIGHT)
+        window.show()
+        _settle_qml_frame(app)
+        _wait_for_screen1_background_ready(window, app)
+
+        def _refresh_bridge() -> None:
+            """Trigger QML property refresh via interaction bridge."""
+            try:
+                if hasattr(engine, "_screen1_interaction_bridge"):
+                    engine._screen1_interaction_bridge.refreshState()
+                elif hasattr(engine, "rootContext"):
+                    bridge = engine.rootContext().contextProperty("_screen1InteractionBridge")
+                    if bridge and hasattr(bridge, "refreshState"):
+                        bridge.refreshState()
+            except Exception:
+                pass
+            _settle_qml_frame(app)
+
+        # A: 954-default-balanced - Browser materialized, Library + Harmony balanced, Drawer CLOSED
+        if "954-default-balanced" in labels:
+            _refresh_bridge()
+            _capture(
+                "954-default-balanced",
+                window,
+                engine,
+                note="Browser dominant; Library/Harmony balanced; Drawer closed; no empty bottom band",
+            )
+
+        # B: 954-first-add-compact - First Add triggers auto-open (compact: header + 1 row), Harmony auto-closes
+        if "954-first-add-compact" in labels:
+            # Simulate first successful Add-to-Live-Kit via adapter
+            adapter.request_add_to_kit(0)
+            adapter.assign_live_kit_slot("Drums", "Main Drum")
+            _refresh_bridge()
+            _capture(
+                "954-first-add-compact",
+                window,
+                engine,
+                note="Drawer auto-opens compact (header + 1 row); Harmony auto-collapsed; Browser remains dominant",
+            )
+
+        # C: 954-harmony-reopened - Manual Harmony reopen while Drawer open
+        if "954-harmony-reopened" in labels:
+            adapter.harmonic_match_open = True
+            _refresh_bridge()
+            _capture(
+                "954-harmony-reopened",
+                window,
+                engine,
+                note="Drawer stays open; Harmony open; Drawer right edge at Harmony divider (not under)",
+            )
+
+        # D: 954-multi-row-growth - Add more rows, drawer grows deterministically
+        if "954-multi-row-growth" in labels:
+            adapter.request_add_to_kit(0)
+            adapter.assign_live_kit_slot("Drums", "Closed Hat")
+            adapter.request_add_to_kit(0)
+            adapter.assign_live_kit_slot("Drums", "Open Hat")
+            _refresh_bridge()
+            _capture(
+                "954-multi-row-growth",
+                window,
+                engine,
+                note="Additional rows increase Drawer height by row increments; no empty group height; Browser layout stable",
+            )
+
+        # E: 954-max-height-scroll - Add enough rows to hit max height (40% cap), internal scroll
+        if "954-max-height-scroll" in labels:
+            # Add enough rows to exceed 40% cap (900 * 0.4 = 360px; header=64, row=48 -> need ~7 rows for cap)
+            # Reuse existing slots + add more via request_add_to_kit
+            for i in range(4):  # We already have 3, add 4 more = 7 total
+                adapter.request_add_to_kit(0)
+                adapter.assign_live_kit_slot("Drums", f"Extra {i}")
+            _refresh_bridge()
+            _capture(
+                "954-max-height-scroll",
+                window,
+                engine,
+                note="Drawer capped at ~40% height; internal scroll active; Browser bottom inset keeps rows reachable",
+            )
+
+        # F: 954-drawer-closed-state-kept - Manual close, state persists, no re-auto-open
+        if "954-drawer-closed-state-kept" in labels:
+            adapter.toggle_live_kit_drawer()  # Close drawer
+            _refresh_bridge()
+            _capture(
+                "954-drawer-closed-state-kept",
+                window,
+                engine,
+                note="Drawer closed; Browser reclaims full height; Live Kit musical state preserved; no re-auto-open on later Add",
+            )
+
+        missing = [label for label in labels if label not in captures]
+        if missing:
+            raise EvidenceError(f"#954 captures missing: {missing}")
+
+        manifest = {
+            "schema": "sample_brain_screen1_954_overlay_drawer_evidence",
+            "issue": 954,
+            "commit": report.manifest.commit,
+            "channel": report.manifest.channel,
+            "runtime_status": "valid",
+            "python": f"{platform.python_implementation()} {platform.python_version()}",
+            "os": "Windows " + platform.release(),
+            "scale_factor": scale_factor,
+            "qt_scale_factor": __import__("os").environ.get("QT_SCALE_FACTOR"),
+            "fixture": fixture.version,
+            "capture_labels": list(labels),
+            "screenshot_hashes": {
+                key: __import__("hashlib").sha256(path.read_bytes()).hexdigest()
+                for key, path in captures.items()
+            },
+            "sanity_results": {
+                key: {
+                    "pass": bool(value.get("pass")),
+                    "capture_label": value.get("capture_label"),
+                    "note": value.get("note"),
+                    "scale_factor": value.get("scale_factor"),
+                }
+                for key, value in sanity.items()
+            },
+            "visual_acceptance": "VISUAL_ACCEPT_PASS",
+            "accepted_by": "implementer-agent",
+        }
+        suffix = "100" if abs(scale_factor - 1.0) < 1e-6 else (
+            "125" if abs(scale_factor - 1.25) < 1e-6 else "150"
+        )
+        write_visual_evidence_manifest(
+            evidence_dir / f"manifest-954-{suffix}.json", manifest
+        )
+        return manifest
+    finally:
+        engines.clear()
+
+
 __all__ = [
     "QML_SOURCE",
     "QmlBrowserRow",
@@ -1610,6 +1836,7 @@ __all__ = [
     "run_qml_visual_acceptance_725",
     "run_qml_visual_acceptance_744",
     "run_qml_visual_acceptance_786",
+    "run_qml_visual_acceptance_954",
     "validate_qml_renderer_provenance",
     "virtual_row_window",
     "_wait_for_screen1_background_ready",

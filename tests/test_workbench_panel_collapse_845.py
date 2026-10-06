@@ -245,14 +245,17 @@ def _adapter_with_harmony_and_kit():
     return fixture, view_model, adapter, composition, live_kit
 
 
-def test_adapter_exposes_browser_and_live_kit_collapse_flags_and_toggles():
+def test_adapter_exposes_browser_and_transient_live_kit_drawer_flags_and_toggles():
     _fixture, _view_model, adapter, _composition, _live_kit = _adapter_with_harmony_and_kit()
     assert hasattr(adapter, "browser_collapsed")
-    assert hasattr(adapter, "live_kit_collapsed")
+    assert hasattr(adapter, "live_kit_drawer_open")
+    assert hasattr(adapter, "live_kit_auto_disclosure_consumed")
     assert adapter.browser_collapsed is False
-    assert adapter.live_kit_collapsed is False
+    # #954: Restored musical content must not reopen a presentation overlay.
+    assert adapter.live_kit_drawer_open is False
+    assert adapter.live_kit_auto_disclosure_consumed is False
     assert callable(getattr(adapter, "toggle_browser_collapsed"))
-    assert callable(getattr(adapter, "toggle_live_kit_collapsed"))
+    assert callable(getattr(adapter, "toggle_live_kit_drawer"))
 
 
 def test_collapse_browser_forces_matches_closed_and_preserves_selection_and_results():
@@ -278,7 +281,7 @@ def test_collapse_browser_forces_matches_closed_and_preserves_selection_and_resu
     assert tuple(view_model.harmony_rows) == harmony_rows_before
 
 
-def test_collapse_live_kit_preserves_materialization_and_slot_content():
+def test_transient_live_kit_drawer_toggle_preserves_materialization_and_slot_content():
     _fixture, view_model, adapter, composition, live_kit = _adapter_with_harmony_and_kit()
     assert view_model.live_kit_materialized is True
     groups_before = tuple(
@@ -292,8 +295,8 @@ def test_collapse_live_kit_preserves_materialization_and_slot_content():
         for group in live_kit.groups
     )
 
-    assert adapter.toggle_live_kit_collapsed() is True
-    assert adapter.live_kit_collapsed is True
+    assert adapter.toggle_live_kit_drawer() is True
+    assert adapter.live_kit_drawer_open is True
     assert view_model.live_kit_materialized is True
     assert composition.live_kit_revealed is True
     groups_after = tuple(
@@ -308,8 +311,8 @@ def test_collapse_live_kit_preserves_materialization_and_slot_content():
     )
     assert groups_after == groups_before
 
-    adapter.toggle_live_kit_collapsed()
-    assert adapter.live_kit_collapsed is False
+    assert adapter.toggle_live_kit_drawer() is False
+    assert adapter.live_kit_drawer_open is False
     assert view_model.live_kit_materialized is True
 
 

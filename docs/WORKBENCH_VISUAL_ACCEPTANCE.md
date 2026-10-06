@@ -198,6 +198,25 @@ Evidence stays **outside** the repository. Synthetic fixture paths only.
 Capture helper: `run_qml_visual_acceptance_786` in `src/workbench_qml_spike.py`
 (`tools/screen1_brand_motion_786_evidence.py`).
 
+### #954 Bottom Live Kit overlay drawer evidence
+
+The #954 Drawer is a Browser-scoped visual overlay, not the historical permanent
+bottom band. Capture from the exact final implementation HEAD with synthetic
+fixture paths only; capture output and manifests remain outside the repository.
+
+| Evidence ID | Required visible state |
+|-------------|------------------------|
+| `954-default-balanced` | Materialized Browser; Library and Harmony open at balanced default side proportions; Drawer closed |
+| `954-first-add-compact` | First successful explicit Add; one actual Rack row; compact Drawer; Harmony auto-collapsed |
+| `954-harmony-reopened` | Drawer remains open after manual Harmony reopen; Drawer right edge ends exactly at the Harmony divider |
+| `954-multi-row-growth` | Additional occupied rows increase Drawer height by deterministic row increments without changing Browser layout |
+| `954-max-height-scroll` | Height cap reached; Rack content scrolls internally and Browser rows remain reachable using its bottom inset |
+| `954-drawer-closed-state-kept` | Manually closed Drawer with the Python-owned Live Kit/Rack state still projected after reopening |
+
+Validate at 100%, 125%, and 150% Windows/Qt scaling where the runtime supports
+those modes. Every capture must demonstrate non-negative geometry and no
+Drawer/Harmony overlap. A mockup does not substitute for this runtime evidence.
+
 ## Global program chrome reference (#830)
 
 Design authority for the top program bar and the footer band only:

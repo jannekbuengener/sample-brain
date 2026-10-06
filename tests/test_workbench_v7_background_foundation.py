@@ -98,8 +98,8 @@ def test_v7_touched_qml_style_has_no_foreign_or_unapproved_fallback_colors() -> 
     assert "radialgradient" not in source
 
 
-def test_v7_background_slice_keeps_single_workspace_pane_geometry_contracts() -> None:
-    """Background token changes must not alter the four protected pane geometries."""
+def test_v7_background_slice_keeps_current_single_workspace_pane_geometry_contracts() -> None:
+    """#954 supersedes only the historical permanent bottom-band geometry."""
     library = _qml_block("libraryPane")
     browser = _qml_block("browserPane")
     harmony = _qml_block("harmonyPane")
@@ -111,6 +111,8 @@ def test_v7_background_slice_keeps_single_workspace_pane_geometry_contracts() ->
     assert "height: parent.height" in browser
     assert "width: layoutModel.harmonyWidth" in harmony
     assert "height: parent.height" in harmony
-    assert "width: parent.width" in bottom_rack
-    assert "height: bottomExpanded" in bottom_rack
-    assert "bottomRackHeightRatio" in bottom_rack
+    assert "x: upperWorkspaceRow.x + browserPane.x" in bottom_rack
+    assert "y: parent.height - height" in bottom_rack
+    assert "width: browserPane.width" in bottom_rack
+    assert "height: bottomExpanded ? Math.min(requestedHeight, maximumHeight) : 0" in bottom_rack
+    assert "bottomRackHeightRatio" not in bottom_rack
