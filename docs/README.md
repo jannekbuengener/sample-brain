@@ -67,6 +67,7 @@ internal agent- and process docs are clearly separated.
 | [AQ4 Classification Decision Memo](benchmarks/AQ4_CLASSIFICATION_DECISION_MEMO.md) | #1036/#946 evidence-backed keep-current classification decision (no production switch; taxonomy separation; synthetic-corpus limits; consumer gates future-only) |
 | [AQ5 Retrieval & Ranking KPI Contract](benchmarks/AQ5_RETRIEVAL_KPI_CONTRACT.md) | #1038/#947 frozen retrieval vs ranking vs latency KPI + query-family slices (NDCG HOLD without grades; ANN vs NumPy by reference) |
 | [AQ5 Relevance Benchmark Freeze](benchmarks/AQ5_RELEVANCE_BENCHMARK.md) | #1009/#947 named ADR-0005 query/label identity (`sample-brain.aq5.relevance.adr0005-golden.v1`; CALIBRATION/TEST overlay; graded NDCG HOLD) |
+| [AQ6 Harmonic Match Theory KPI Contract](benchmarks/AQ6_HARMONIC_MATCH_THEORY_KPI_CONTRACT.md) | #1015/#948 frozen exhaustive theory truth table + `aq6.theory` KPIs (ranking/preference deferred; AQ1/AQ2 consume-only) |
 | [Analyzer Portable Output Baseline](benchmarks/ANALYZER_PORTABLE_OUTPUT_BASELINE.md) | #960 AQ8 audit: safe/unsafe analyzer projection inventory for #956 |
 | [Validation Reports](validation/README.md) | Local validate_report how-to; committed files there are historical issue evidence |
 
