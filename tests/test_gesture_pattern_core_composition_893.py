@@ -431,64 +431,96 @@ def _imported_bindings(tree: ast.Module) -> dict[str, str]:
     return bindings
 
 
-def _assignment_aliases(tree: ast.Module) -> dict[str, str]:
-    """Map locally bound name -> symbol path it was assigned from.
+def _authority_reference_nodes(tree: ast.Module) -> list[ast.AST]:
+    """Every AST node that *references* a forbidden symbol's origin.
 
-    ``allocator = allocate_user_channel_id`` hides the forbidden callable
-    behind a local name. Only direct name/attribute targets are followed
-    (``a = b``, ``a = mod.b``, ``a: T = b``); the assigned value itself must be
-    a plain reference, so computed results are not treated as aliases.
+    The composer boundary is about capturing or using an upstream authority, not
+    about proving a call happens. Once a forbidden callable is referenced at
+    all — imported, bound, captured, or invoked — the boundary is broken, so
+    later rebinding or an indirect invocation cannot launder it.
+
+    This deliberately yields every load context in the tree rather than trying
+    to model dataflow: no scope engine, no SSA, no control-flow graph. The
+    reference itself is the evidence.
+
+    ``ast.alias`` is included because a bare ``from x import forbidden`` binds
+    the authority without ever emitting a ``Name`` node — the import alone
+    already crosses the boundary.
     """
-    aliases: dict[str, str] = {}
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Name, ast.Attribute, ast.alias))
+    ]
+
+
+def _import_alias_spellings(tree: ast.Module) -> list[tuple[str, str | None]]:
+    """``(imported_name, module)`` for every import alias in ``tree``.
+
+    The module context lets a guard recognise that ``from m import f`` binds the
+    symbol path ``m.f``, so ``import f`` is judged as the authority it came
+    from rather than as an unrelated local name.
+    """
+    spellings: list[tuple[str, str | None]] = []
     for node in ast.walk(tree):
-        targets: list[ast.AST] = []
-        value: ast.AST | None = None
-        if isinstance(node, ast.Assign):
-            targets = list(node.targets)
-            value = node.value
-        elif isinstance(node, ast.AnnAssign):
-            targets = [node.target]
-            value = node.value
-        if value is None:
-            continue
-        source = _dotted_name(value)
-        if source is None:
-            continue
-        for target in targets:
-            if isinstance(target, ast.Name):
-                aliases[target.id] = source
-    return aliases
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                spellings.append((alias.name, None))
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module
+            for alias in node.names:
+                spellings.append((alias.name, module))
+    return spellings
 
 
-def _local_bindings(tree: ast.Module) -> dict[str, str]:
-    """Import bindings plus assignment aliases, transitively resolved.
+def _forbidden_calls_in_src(src: str, forbidden: list[str]) -> set[str]:
+    """Forbidden authority symbols referenced anywhere in ``src``.
 
-    Chained aliases (``a = b`` where ``b`` is itself an alias or an import)
-    are followed so the guard sees the original forbidden symbol. Resolution
-    is cycle-safe: a self-referential alias keeps its own name.
+    The pure composer may not use, capture, or re-export a forbidden upstream,
+    mutation, rack, ranking, or DB authority. A reference is a violation on its
+    own, so this is a *reference* guard, not a call/dataflow analysis: it holds
+    regardless of how the value is later invoked.
+
+    Detects, all semantically (never by text):
+      - forbidden from-imports, including ``as`` aliases and module aliases,
+      - qualified module members (``pattern_core.allocate_user_channel_id``),
+      - bare and qualified direct calls,
+      - assignment, container, conditional, and loop captures.
+
+    Because it keys on semantic reference rather than call shape, rebinding
+    (``op = helper`` ... ``op = safe``), subscript calls (``ops[0](...)``),
+    list/tuple captures, ``x if c else y`` bindings, and ``for`` targets are
+    all caught at the capture site.
+
+    Comments, docstrings, and string literals are not code and are ignored by
+    ``ast.parse()``, so they can never trip this guard.
     """
-    bindings: dict[str, str] = {}
-    bindings.update(_imported_bindings(tree))
-    # Imports win over plain assignments for the same name.
-    for name, source in _assignment_aliases(tree).items():
-        bindings.setdefault(name, source)
-    resolved: dict[str, str] = {}
-    for name in bindings:
-        seen = {name}
-        current = bindings[name]
-        while True:
-            head, _, tail = current.rpartition(".")
-            nxt = None
-            if "." in current and head in bindings and head not in seen:
-                nxt = f"{bindings[head]}.{tail}"
-            elif current in bindings and current not in seen:
-                nxt = bindings[current]
-            if nxt is None or nxt == current:
-                break
-            seen.add(head if "." in current else current)
-            current = nxt
-        resolved[name] = current
-    return resolved
+    tree = _parse_module_src(src)
+    imported = _imported_bindings(tree)
+    lower = {name.lower() for name in forbidden}
+    found: set[str] = set()
+
+    # An import binds the authority by name: `from m import f as g` still
+    # imports `f`, so both the bare and the module-qualified spelling count.
+    for name, module in _import_alias_spellings(tree):
+        spellings = {name}
+        if module:
+            spellings.add(f"{module}.{name}")
+        for spelling in spellings:
+            for candidate in _resolved_names(spelling, imported):
+                if candidate.lower() in lower:
+                    found.add(candidate)
+
+    for node in _authority_reference_nodes(tree):
+        if isinstance(node, ast.alias):
+            continue
+        qualified = _dotted_name(node)
+        if qualified is None:
+            continue
+        for candidate in _resolved_names(qualified, imported):
+            if candidate.lower() in lower:
+                found.add(candidate)
+    return found
 
 
 def _resolved_names(qualified: str, imported: dict[str, str]) -> set[str]:
@@ -513,30 +545,6 @@ def _resolved_names(qualified: str, imported: dict[str, str]) -> set[str]:
     return candidates
 
 
-def _forbidden_calls_in_src(src: str, forbidden: list[str]) -> set[str]:
-    """Forbidden symbols that are actually invoked as calls in ``src``.
-
-    Detects bare (``foo(...)``), qualified (``mod.foo(...)``),
-    import-aliased and assignment-aliased (``allocator = helper``) calls.
-    Comments, docstrings and string literals are not code and are ignored by
-    ``ast.parse()``, so they cannot trip a guard.
-    """
-    tree = _parse_module_src(src)
-    imported = _local_bindings(tree)
-    lower = {name.lower() for name in forbidden}
-    found: set[str] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        qualified = _dotted_name(node.func)
-        if qualified is None:
-            continue
-        for candidate in _resolved_names(qualified, imported):
-            if candidate.lower() in lower:
-                found.add(candidate)
-    return found
-
-
 def _forbidden_name_refs_in_src(
     src: str,
     forbidden: list[str],
@@ -550,21 +558,19 @@ def _forbidden_name_refs_in_src(
     legitimately uses local variables that share those field names.
     """
     tree = _parse_module_src(src)
-    imported = _local_bindings(tree)
+    imported = _imported_bindings(tree)
     lower = {name.lower() for name in forbidden}
     found: set[str] = set()
-    for node in ast.walk(tree):
+    for node in _authority_reference_nodes(tree):
         if isinstance(node, ast.Name):
             if attributes_only:
                 continue
             candidates = _resolved_names(node.id, imported)
-        elif isinstance(node, ast.Attribute):
+        else:
             qualified = _dotted_name(node)
             if qualified is None:
                 continue
             candidates = _resolved_names(qualified, imported)
-        else:
-            continue
         for candidate in candidates:
             if candidate.lower() in lower:
                 found.add(candidate)
@@ -869,7 +875,7 @@ def test__derived_field_guards_are_live(guard, forbidden, violating_src) -> None
 
 
 def test__semantic_checker_follows_callable_assignment_alias() -> None:
-    """``allocator = helper; allocator(...)`` must not evade the call guard."""
+    """``allocator = helper; allocator(...)`` must not evade the boundary guard."""
     src = """
 from .pattern_core import allocate_user_channel_id
 
@@ -884,7 +890,7 @@ def compose():
 
 
 def test__semantic_checker_follows_chained_assignment_alias() -> None:
-    """Aliases of aliases must resolve transitively to the forbidden symbol."""
+    """Aliases of aliases must still resolve to the forbidden symbol."""
     src = """
 import channel_rack
 
@@ -900,8 +906,8 @@ def compose():
     }
 
 
-def test__semantic_checker_assignment_alias_is_cycle_safe() -> None:
-    """Self-referential aliases must terminate instead of hanging the guard."""
+def test__semantic_checker_reference_guard_terminates_on_self_reference() -> None:
+    """Self-referential local names must terminate instead of hanging the guard."""
     src = """
 loop_a = loop_b
 loop_b = loop_a
@@ -912,20 +918,112 @@ def compose():
     assert _forbidden_calls_in_src(src, ["nonexistent_forbidden"]) == set()
 
 
-def test__semantic_checker_ignores_computed_assignment_targets() -> None:
-    """Only direct name/attribute targets count as aliases."""
+def test__semantic_checker_flags_reference_not_only_invocations() -> None:
+    """The guard is reference-based: capture alone is a violation."""
     src = """
-result = allocate_user_channel_id(1)
-alias: int = 2
-items[0] = allocate_user_channel_id
+from .pattern_core import allocate_user_channel_id
+
+captured = allocate_user_channel_id
 """
-    # The direct call is still flagged; the computed forms add no alias entry.
     assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
         "allocate_user_channel_id"
     }
-    aliases = _assignment_aliases(ast.parse(src))
-    assert "result" not in aliases
-    assert "alias" not in aliases
+
+
+def test__semantic_checker_rejects_rebound_authority_capture() -> None:
+    """A forbidden capture is a violation even when the local name is rebound later."""
+    src = """
+from .pattern_core import allocate_user_channel_id
+
+def compose(existing, safe):
+    op = allocate_user_channel_id
+    op(existing)
+    op = safe
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
+
+
+def test__semantic_checker_rejects_container_capture() -> None:
+    """Storing a forbidden callable in a container and calling it by subscript is a capture."""
+    src = """
+from .pattern_core import allocate_user_channel_id
+
+def compose(existing):
+    ops = [allocate_user_channel_id]
+    ops[0](existing)
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
+
+
+def test__semantic_checker_rejects_qualified_capture() -> None:
+    """Capturing a forbidden qualified module member is a violation."""
+    src = """
+import pattern_core
+
+def compose():
+    op = pattern_core.allocate_user_channel_id
+    return op
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
+
+
+def test__semantic_checker_rejects_module_alias_capture() -> None:
+    """A forbidden member reached through an aliased module is a capture."""
+    src = """
+import pattern_core as pc
+
+def compose():
+    op = pc.allocate_user_channel_id
+    return op
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
+
+
+def test__semantic_checker_rejects_conditional_capture() -> None:
+    """A conditional expression that may yield a forbidden callable is a capture."""
+    src = """
+from .pattern_core import allocate_user_channel_id
+
+def compose(condition, safe):
+    op = allocate_user_channel_id if condition else safe
+    return op
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
+
+
+def test__semantic_checker_rejects_loop_bound_capture() -> None:
+    """A loop binding a forbidden callable as its iteration value is a capture."""
+    src = """
+from .pattern_core import allocate_user_channel_id
+
+def compose(existing):
+    for op in [allocate_user_channel_id]:
+        op(existing)
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
+
+
+def test__semantic_checker_rejects_unused_forbidden_import() -> None:
+    """Importing a forbidden authority is itself a boundary violation."""
+    src = """
+from src.pattern_core import allocate_user_channel_id
+from src.pattern_core import allocate_user_channel_id as allocator
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
 
 
 def test__import_guard_rejects_package_relative_db_import(tmp_path: Path) -> None:
