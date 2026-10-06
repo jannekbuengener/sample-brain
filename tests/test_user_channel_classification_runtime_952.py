@@ -478,7 +478,7 @@ def _controller(
         pcm_provider=_pcm_provider(),
         lookahead_frames=4800,
         user_metadata_resolver=resolver,
-        on_musical_state_changed=lambda: notifications.append(1),
+        on_musical_state_changed=lambda: notifications.append(len(notifications)),
     )
     if state is not None:
         controller.restore_state(state)
