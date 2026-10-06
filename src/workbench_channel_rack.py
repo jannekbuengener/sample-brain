@@ -1050,11 +1050,28 @@ class ChannelRackController:
     def toggle_step(self, channel_id: str, step_index: int) -> ChannelRackState:
         self._require_state()
         self._state = toggle_step(self._state, channel_id, step_index)
-        if self._pending_user_mutation is not None:
+        channel = next(
+            (
+                existing
+                for existing in self._state.channels
+                if existing.channel_id == channel_id
+            ),
+            None,
+        )
+        if (
+            self._pending_user_mutation is not None
+            and channel is not None
+            and _is_user_channel(channel)
+        ):
             # Keep the edit in the ordered stream too: a deferred effect can
             # clear it, and its position decides whether that is correct.
             # A strip queued before this toggle wins; one queued afterwards
             # must not undo the edit the user just made (rule 17).
+            #
+            # Live Kit channels are excluded on purpose: their assignment is
+            # reconciled immediately by the session, so replaying a saved
+            # toggle later would restore a trigger that reconcile just
+            # removed.
             self._pending_user_mutation = self._pending_user_mutation.with_step(
                 _QueuedToggleStep(
                     channel_id=channel_id,

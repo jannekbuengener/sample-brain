@@ -2263,3 +2263,55 @@ def test_18n_a_strip_queued_after_a_toggle_still_wins() -> None:
     assert _triggers_for(controller.state, channel_id) == (), (
         "a strip queued after the toggle wins"
     )
+
+
+def test_18o_live_kit_toggles_are_not_replayed() -> None:
+    """Ordered toggle replay is a user-channel concern only.
+
+    A Live Kit assignment is reconciled immediately by the session, so a
+    saved Live Kit toggle replayed at Stop would restore a point trigger
+    that reconcile had just stripped.
+    """
+    shared_path = "kit_shared.wav"
+    kit = LiveKitState()
+    kit.assign(
+        "Kick + Bass",
+        "Kick",
+        _library_row("kick", shared_path, bpm=None, sample_class="loop"),
+    )
+    controller, _engine, _transport = _controller(
+        resolver=_ScriptedResolver({ONESHOT_PATH: "one_shot"}), live_kit=kit
+    )
+    kit_id = CHANNEL_ID_BY_LIVE_KIT_SLOT[("Kick + Bass", "Kick")]
+    controller.restore_state(
+        _state(
+            (
+                Channel(
+                    channel_id=kit_id,
+                    live_kit_group="Kick + Bass",
+                    live_kit_slot="Kick",
+                    sample_path=shared_path,
+                ),
+                _user_channel("ch_user_1", ONESHOT_PATH),
+            ),
+            (_trigger("ch_user_1", 0),),
+        )
+    )
+
+    controller.play()
+    # Queue a user mutation so the stream is live, then edit the kit grid.
+    controller.refresh_user_channel_metadata()
+    controller.toggle_step(kit_id, 4)
+    assert _triggers_for(controller.state, kit_id) == (_trigger(kit_id, 4),)
+
+    toggle_step_cls = _require(
+        importlib.import_module("src.workbench_channel_rack"), "_QueuedToggleStep"
+    )
+    steps = controller._pending_user_mutation.steps
+    assert not any(
+        isinstance(step, toggle_step_cls) and step.channel_id == kit_id
+        for step in steps
+    ), "a Live Kit toggle must not enter the deferred user-mutation stream"
+
+    controller.stop()
+    assert _triggers_for(controller.state, kit_id) == (_trigger(kit_id, 4),)
