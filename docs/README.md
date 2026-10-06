@@ -59,6 +59,7 @@ internal agent- and process docs are clearly separated.
 | [AQ3 Timing GT Corpus](benchmarks/AQ3_TIMING_CORPUS.md) | #993/#945 synthetic onset/attack timing GT (`sample-brain.aq3.timing.synthetic.v1`; runtime generator) |
 | [AQ3 Onset/Attack Baseline](benchmarks/AQ3_ONSET_ATTACK_BASELINE.md) | #995/#945 measured current onset/attack baseline on synthetic corpus (gesture PARTIAL/HOLD where thin) |
 | [AQ3 Onset/Attack Candidate Compare](benchmarks/AQ3_ONSET_ATTACK_CANDIDATE_COMPARE.md) | #997/#945 reproducible synthetic onset/attack candidate comparison (thin config adapters; no promotion) |
+| [AQ3 Onset/Attack Decision Memo](benchmarks/AQ3_ONSET_ATTACK_DECISION_MEMO.md) | #999/#945 evidence-backed keep-current onset/attack decision (no production switch; synthetic-corpus limits; #680 boundary) |
 | [Analyzer Portable Output Baseline](benchmarks/ANALYZER_PORTABLE_OUTPUT_BASELINE.md) | #960 AQ8 audit: safe/unsafe analyzer projection inventory for #956 |
 | [Validation Reports](validation/README.md) | Local validate_report how-to; committed files there are historical issue evidence |
 
