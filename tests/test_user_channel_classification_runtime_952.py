@@ -1411,8 +1411,18 @@ def test_17a_path_replacement_mid_play_is_frozen_until_next_rack_play() -> None:
 
 
 def test_17b_path_clear_mid_play_is_frozen_until_next_rack_play() -> None:
-    resolver = _ScriptedResolver({ONESHOT_PATH: "one_shot", LOOP_PATH: "loop"})
+    resolver = _ScriptedResolver(
+        {
+            ONESHOT_PATH: "one_shot",
+            LOOP_PATH: "loop",
+            SECOND_ONESHOT_PATH: "one_shot",
+        }
+    )
     controller, channel_id = _controller_with_assignment(resolver, ONESHOT_PATH)
+    # A second audible channel, so the follow-up Play really is active and has
+    # something to snapshot after the cleared channel is gone.
+    controller.add_user_channel(sample_path=SECOND_ONESHOT_PATH)
+    other_id = _last_user_channel_id(controller.state)
     controller.play()
     play_handle = controller._play_handle
     snapshot = controller.playback_classification_snapshot
@@ -1430,8 +1440,9 @@ def test_17b_path_clear_mid_play_is_frozen_until_next_rack_play() -> None:
 
     assert _channel(controller.state, channel_id).sample_path is None
     final = controller.playback_classification_snapshot
-    assert final is not None
+    assert final is not None, "the follow-up Play is active"
     assert channel_id not in final, "non-bearing channel is not audible"
+    assert other_id in final
 
 
 def test_17c_step_toggle_mid_play_stays_immediately_audible() -> None:
@@ -1794,6 +1805,149 @@ def test_b3_gesture_delta_ignores_the_frozen_playback_binding() -> None:
     assert _channel(state, base_channel_id).sample_path == AMBIGUOUS_PATH
 
 
+def test_18p_same_path_assign_behind_a_queued_mutation_resolves_nothing() -> None:
+    """A same-path re-assign stays a no-op even with a mutation queued.
+
+    Rule 16: a same-path re-assign resolves nothing. Gating that on "no
+    pending mutation" turned it into an implicit metadata refresh whenever an
+    unrelated change was already queued.
+    """
+    resolver = _ScriptedResolver(
+        {ONESHOT_PATH: "one_shot", SECOND_ONESHOT_PATH: "one_shot"}
+    )
+    controller, _engine, _transport = _controller(resolver=resolver)
+    controller.ensure_state()
+    controller.add_user_channel(sample_path=ONESHOT_PATH)
+    channel_id = _last_user_channel_id(controller.state)
+
+    controller.play()
+    controller.add_user_channel(sample_path=SECOND_ONESHOT_PATH)
+
+    before = resolver.call_count()
+    controller.assign_user_channel_sample(channel_id, ONESHOT_PATH)
+    assert resolver.call_count() == before, (
+        "a same-path re-assign is not a resolution boundary"
+    )
+    controller.stop()
+
+    assert _channel(controller.state, channel_id).sample_path == ONESHOT_PATH
+
+
+def test_18q_later_resolution_miss_supersedes_an_earlier_success() -> None:
+    """The latest per-path outcome wins, including an explicit miss.
+
+    Merging only successful entries kept a path that went stale mid-Play:
+    A -> B succeeded, and the later B attempt that missed had no entry to
+    overwrite it with.
+    """
+    stale_path = "user_stale.wav"
+    resolver = _ScriptedResolver(
+        {
+            ONESHOT_PATH: "one_shot",
+            stale_path: "loop",
+            SECOND_ONESHOT_PATH: "one_shot",
+        }
+    )
+    controller, _engine, _transport = _controller(resolver=resolver)
+    controller.ensure_state()
+    controller.add_user_channel(sample_path=ONESHOT_PATH)
+    channel_id = _last_user_channel_id(controller.state)
+
+    controller.play()
+    controller.assign_user_channel_sample(channel_id, stale_path)
+    controller.assign_user_channel_sample(channel_id, SECOND_ONESHOT_PATH)
+    # The row goes stale mid-Play, so returning to it resolves nothing.
+    resolver.drop(stale_path)
+    controller.assign_user_channel_sample(channel_id, stale_path)
+    controller.stop()
+
+    assert _channel(controller.state, channel_id).sample_path == stale_path
+    assert stale_path not in controller.user_metadata, (
+        "a path that went stale mid-Play must fail closed, not keep its class"
+    )
+
+
+def test_18r_gesture_delta_ignores_preserved_paths_without_evidence() -> None:
+    """A preserved path with no binding entry is not gesture-introduced.
+
+    A catalog miss or stale fingerprint leaves no entry at all, so a
+    membership test against the binding re-resolved preserved base paths
+    behind the B4-only refresh seam.
+    """
+    preserved_path = "user_missing.wav"
+    resolver = _ScriptedResolver(
+        {ONESHOT_PATH: "one_shot", "gesture_new.wav": "one_shot"}
+    )
+    controller, _engine, _transport = _controller(resolver=resolver)
+    controller.ensure_state()
+    controller.add_user_channel(sample_path=ONESHOT_PATH)
+    controller.add_user_channel(sample_path=preserved_path)
+    assert preserved_path not in controller.user_metadata, "no evidence at all"
+
+    composition = GesturePatternCoreComposition(
+        channels=(_user_channel("ch_user_3", "gesture_new.wav"),),
+        pattern=Pattern(
+            pattern_id="gesture-pat-1",
+            length_quarter_notes=Fraction(4, 1),
+            triggers=(_trigger("ch_user_3", 0),),
+        ),
+    )
+    plan = plan_gesture_rack_integration(
+        controller.state, composition, allow_pattern_replacement=True
+    )
+    assert plan.ready_for_apply is True
+    mark = resolver.mark()
+    controller.apply_gesture_integration_plan(plan, feature_enabled=True)
+
+    assert resolver.paths_since(mark) == ("gesture_new.wav",), (
+        "a preserved unresolvable base path is not a gesture delta"
+    )
+    assert preserved_path not in controller.user_metadata
+
+
+def test_18s_snapshot_records_live_kit_assignment_bpm() -> None:
+    """The per-Play snapshot must describe what the loop spec actually reads.
+
+    A Live Kit channel's loop spec takes its BPM from the assignment, so the
+    snapshot has to select by provenance instead of reading the user-channel
+    binding (which has no entry for a kit path).
+    """
+    kit_path = "kit_loop.wav"
+    kit = LiveKitState()
+    kit.assign(
+        "Kick + Bass",
+        "Kick",
+        _library_row("kick", kit_path, bpm=128.0, sample_class="loop"),
+    )
+    controller, _engine, _transport = _controller(
+        resolver=_ScriptedResolver({ONESHOT_PATH: "one_shot"}), live_kit=kit
+    )
+    kit_id = CHANNEL_ID_BY_LIVE_KIT_SLOT[("Kick + Bass", "Kick")]
+    controller.restore_state(
+        _state(
+            (
+                Channel(
+                    channel_id=kit_id,
+                    live_kit_group="Kick + Bass",
+                    live_kit_slot="Kick",
+                    sample_path=kit_path,
+                ),
+                _user_channel("ch_user_1", ONESHOT_PATH),
+            ),
+            (_trigger("ch_user_1", 0),),
+        )
+    )
+
+    controller.play()
+
+    snapshot = controller.playback_classification_snapshot
+    assert snapshot is not None
+    assert snapshot[kit_id][0] == kit_path
+    assert snapshot[kit_id][2] == 128.0, (
+        "the snapshot must carry the Live Kit assignment BPM"
+    )
+
+
 def test_18h_natural_playback_end_drains_the_queued_mutation() -> None:
     """A Play that runs out of steps ends its deferral; nothing may linger."""
     resolver = _ScriptedResolver({ONESHOT_PATH: "one_shot", LOOP_PATH: "one_shot"})
@@ -1819,6 +1973,9 @@ def test_18h_natural_playback_end_drains_the_queued_mutation() -> None:
         controller.tick_playback()
 
     assert controller.is_playing is False, "playback ended on its own"
+    assert controller.playback_classification_snapshot is None, (
+        "the freeze lifetime is anchored to the Play, so it ends with it"
+    )
     assert _channel(controller.state, channel_id).sample_path == LOOP_PATH, (
         "the queued intent must land when the Play ends naturally"
     )

@@ -38,6 +38,7 @@ from .channel_rack import (
     reconcile_live_kit_sample_assignments,
     sample_class_for_channel,
     toggle_step,
+    user_metadata_source_bpm,
     warm_channel_rack_pcm,
 )
 from .gesture_rack_integration import GestureRackIntegrationPlan
@@ -521,7 +522,15 @@ class _PendingUserChannelMutation:
 
     def merged_with(self, other: "_PendingUserChannelMutation") -> "_PendingUserChannelMutation":
         """Fold a later queued mutation into this one, keeping the order."""
-        entries = dict(self.entries)
+        # Latest outcome per path wins, including a miss. A later attempt that
+        # resolved nothing has no entry to overwrite an earlier success with,
+        # so the earlier entry has to be dropped explicitly - otherwise a path
+        # that went stale mid-Play keeps its stale class at adoption.
+        entries = {
+            key: value
+            for key, value in self.entries.items()
+            if key not in other.attempted
+        }
         entries.update(other.entries)
         return _PendingUserChannelMutation(
             steps=self.steps + other.steps,
@@ -826,6 +835,10 @@ class ChannelRackController:
         intent at the next ``stop()``.
         """
         self._playing = False
+        # The freeze lifetime is anchored to the Play, so it ends here too:
+        # otherwise ``playback_classification_snapshot`` keeps describing a Play
+        # that is no longer active.
+        self._clear_playback_classification()
         self._adopt_pending_user_mutation()
 
     def _adopt_pending_user_mutation(self, *, notify: bool = True) -> bool:
@@ -1166,8 +1179,12 @@ class ChannelRackController:
             raise ValueError("sample_path must be a non-empty sample reference")
         channel = self._require_user_channel(channel_id)
         previous_path = self._queued_view_path(channel)
-        if previous_path == path and self._pending_user_mutation is None:
-            # Same-path re-assign: no resolve, no mutation, no observer call.
+        if previous_path == path:
+            # Same-path re-assign: no resolve, no mutation, no observer call
+            # (rule 16). This holds even with an unrelated mutation queued -
+            # the queued view already carries this path, so there is nothing to
+            # change and re-resolving would turn a no-op assignment into an
+            # implicit metadata refresh.
             return state
 
         # B2: resolve the new path exactly once, here, at the boundary.
@@ -1302,11 +1319,18 @@ class ChannelRackController:
         # paths. Preserved base-channel bindings carry over untouched, so a
         # gesture apply never turns into an implicit metadata refresh.
         #
-        # The delta is derived from the *live* derived binding, never the frozen
-        # playback snapshot: the snapshot deliberately omits ambiguous user
-        # paths, so using it would classify every preserved ambiguous base path
-        # as gesture-introduced and quietly re-resolve it.
+        # The delta is derived from the *preserved base state*, never from the
+        # derived binding: a catalog miss or a stale fingerprint leaves no
+        # binding entry at all, so a membership test against the binding would
+        # classify every preserved-but-unresolvable base path as
+        # gesture-introduced and quietly re-resolve it. What the gesture
+        # actually introduces is a path the base state did not already hold.
         base_metadata = self._user_metadata
+        base_paths = {
+            channel.sample_path
+            for channel in plan.expected_base_state.channels
+            if _is_user_channel(channel) and _sample_bearing(channel.sample_path)
+        }
         delta = tuple(
             path
             for path in dict.fromkeys(
@@ -1314,7 +1338,7 @@ class ChannelRackController:
                 for channel in plan.target_channels
                 if _is_user_channel(channel) and _sample_bearing(channel.sample_path)
             )
-            if path not in base_metadata
+            if path not in base_paths
         )
         entries = dict(base_metadata)
         for path, entry in self._resolve_user_paths(delta).items():
@@ -1383,8 +1407,23 @@ class ChannelRackController:
             kind = classification_kind(resolved)
             if kind == "ambiguous":
                 continue
-            entry = metadata.get(path)
-            source_bpm = getattr(entry, "source_bpm", None)
+            # Select the BPM by channel provenance, exactly as
+            # ``build_loop_cycle_specs`` does: a Live Kit channel's loop spec
+            # reads its assignment BPM, so the snapshot has to record that
+            # rather than a user-channel binding BPM (or nothing at all).
+            if _is_user_channel(channel):
+                source_bpm = user_metadata_source_bpm(
+                    channel, user_metadata=metadata
+                )
+            else:
+                assignment = self._live_kit.assignment_for(
+                    channel.live_kit_group, channel.live_kit_slot
+                )
+                source_bpm = (
+                    getattr(assignment, "bpm", None)
+                    if assignment is not None
+                    else None
+                )
             snapshot[channel.channel_id] = (str(path), resolved, source_bpm)
             if _is_user_channel(channel):
                 # Only user-channel evidence may enter the frozen *user*
