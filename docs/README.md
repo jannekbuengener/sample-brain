@@ -47,6 +47,7 @@ internal agent- and process docs are clearly separated.
 | [sqlite-vec Gate Evidence](benchmarks/SQLITE_VEC_GATE_EVIDENCE.md) | Latency/quality gates |
 | [Key Confidence Evidence](benchmarks/KEY_CONF_EVIDENCE.md) | Key analysis confidence |
 | [BPM Half/Double Evidence](benchmarks/BPM_HALF_DOUBLE_EVIDENCE.md) | BPM ambiguity evaluation |
+| [Analyzer Portable Output Baseline](benchmarks/ANALYZER_PORTABLE_OUTPUT_BASELINE.md) | #960 AQ8 audit: safe/unsafe analyzer projection inventory for #956 |
 | [Validation Reports](validation/README.md) | Local validate_report how-to; committed files there are historical issue evidence |
 
 ## Operations, Process & Infrastructure (internal)
