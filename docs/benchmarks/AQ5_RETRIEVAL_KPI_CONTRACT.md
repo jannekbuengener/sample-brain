@@ -16,7 +16,7 @@ AQ5_RETRIEVAL_KPI_CONTRACT_FROZEN
 
 This document freezes **what AQ5 measures, how retrieval quality stays separate from ranking stability and from operational latency/size, and how evidence is partitioned** before candidate bake-offs, ANN/index promotion, or embedding algorithm work. It does **not** authorize embedding/ANN algorithm changes, production backend switches, or promotion thresholds.
 
-Metric **definitions**, plane separation, query-family slice policy, label / hard-negative / leakage policy, ANN-vs-reference methodology, partitions, and #958/#959 consumption are frozen here. Existing Tier-A / Tier-B suites and sqlite-vec gate evidence remain **evidence by reference**. A future scoped **vNext relevance contract / corpus adoption** issue may name a frozen query+label identity for measurable baselines; until then, reuse ADR-0005 fixtures and published evidence without inventing private query text or private labels.
+Metric **definitions**, plane separation, query-family slice policy, label / hard-negative / leakage policy, ANN-vs-reference methodology, partitions, and #958/#959 consumption are frozen here. Existing Tier-A / Tier-B suites and sqlite-vec gate evidence remain **evidence by reference**. Named query+label identity for measurable baselines: [#1009](https://github.com/jannekbuengener/sample-brain/issues/1009) / `docs/benchmarks/AQ5_RELEVANCE_BENCHMARK.md` (`sample-brain.aq5.relevance.adr0005-golden.v1`) — adopts ADR-0005 fixtures without inventing private query text, private labels, or graded NDCG denominators.
 
 ## Ownership
 
@@ -32,7 +32,8 @@ Metric **definitions**, plane separation, query-family slice policy, label / har
 | Semantic determinism / cache equivalence | [#959](https://github.com/jannekbuengener/sample-brain/issues/959) |
 | Embedding / ANN / hybrid ranking algorithms | out of scope here (current surfaces remain as-is) |
 | Promotion thresholds / production backend switch | future evidence-backed decision issues only |
-| Graded relevance / NDCG denominators | **HOLD** until graded labels exist under a scoped corpus issue |
+| Graded relevance / NDCG denominators | **HOLD** until graded labels exist under a future scoped issue (v1 binary freeze: #1009) |
+| Named relevance query/label identity / partitions | [#1009](https://github.com/jannekbuengener/sample-brain/issues/1009) / `AQ5_RELEVANCE_BENCHMARK.md` |
 
 ## Non-goals
 
@@ -191,7 +192,7 @@ Private library / producer reality-check queries may inform future suite design.
 | DEVELOPMENT / CALIBRATION | suite exploration, label curation, threshold discovery — never the sole promotion proof |
 | TEST / HOLDOUT | frozen evaluation; **no tuning on TEST/HOLDOUT** |
 
-Existing ADR-0005 Tier-A/Tier-B fixtures are the current public/synthetic evaluation surfaces. When a future scoped issue adopts a named AQ5 vNext relevance corpus, its split labels must map explicitly onto these roles.
+Existing ADR-0005 Tier-A/Tier-B fixtures remain the public/synthetic evaluation surfaces. Named adoption [#1009](https://github.com/jannekbuengener/sample-brain/issues/1009) maps query `CALIBRATION`/`TEST` roles explicitly onto DEVELOPMENT/CALIBRATION and TEST/HOLDOUT; suite catalogs stay shared candidate inventories per `candidate_set_id`.
 
 ## Operational latency / size (separate plane)
 
@@ -250,7 +251,7 @@ Unsupported or unsafe transforms remain fail-closed under #957. Do not approxima
 |---|---|
 | NDCG@K / graded relevance | **HOLD** until graded labels exist under a scoped corpus/suite issue |
 | Confidence / score calibration for search ranks | **HOLD** — cosine / hybrid scores are not calibrated probabilities |
-| Named AQ5 vNext relevance corpus id beyond ADR-0005 fixtures | **future scoped adoption** — not invented here; current fixtures remain evidence surfaces |
+| Named AQ5 relevance benchmark beyond metric-definition freeze | **adopted** via [#1009](https://github.com/jannekbuengener/sample-brain/issues/1009) / `AQ5_RELEVANCE_BENCHMARK.md` as `sample-brain.aq5.relevance.adr0005-golden.v1` (binary labels; graded NDCG still HOLD) |
 | Production promotion thresholds / backend switch | **out of scope** — separate decision issues only |
 | Vocal production-claim from Tier-B proxies | evidence `HOLD` in SEARCH_QUALITY_EVIDENCE — slice still measured; no production claim authorized by this contract |
 
@@ -261,4 +262,4 @@ Exactly one:
 - `AQ5_RETRIEVAL_KPI_CONTRACT_FROZEN` — retrieval vs ranking vs operational plane separation, selected metrics (P@K, R@K, MRR, HitRate, hard-negative FP; NDCG HOLD without grades), query-family slices, ANN-vs-NumPy methodology, label/leakage policy, domain tokens, partitions, and #958/#959 consumption frozen; no algorithm or production switch
 - `AQ5_KPI_CONTRACT_INSUFFICIENT` — freeze cannot be stated from available program contracts / surface reality
 
-This slice exits `AQ5_RETRIEVAL_KPI_CONTRACT_FROZEN`. NDCG remains HOLD without graded labels. Existing ADR-0005 / SEARCH_QUALITY_EVIDENCE / SQLITE_VEC_GATE_EVIDENCE surfaces are reused by reference; a future scoped issue may adopt a named vNext relevance corpus without reopening this metric-definition freeze.
+This slice exits `AQ5_RETRIEVAL_KPI_CONTRACT_FROZEN`. NDCG remains HOLD without graded labels. Existing ADR-0005 / SEARCH_QUALITY_EVIDENCE / SQLITE_VEC_GATE_EVIDENCE surfaces are reused by reference. Named relevance benchmark adoption is owned by [#1009](https://github.com/jannekbuengener/sample-brain/issues/1009) / `AQ5_RELEVANCE_BENCHMARK.md` and does not reopen this metric-definition freeze.
