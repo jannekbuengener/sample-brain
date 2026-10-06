@@ -85,11 +85,13 @@ Unchanged and non-duplicated: `workbench_library.query_sample_by_path_on_readonl
 |---|---|---|---|
 | B1 | `restore_state(...)` | all distinct user-channel paths of the restored state, **one** connection | 1 read-only connection |
 | B2 | Any public seam that sets a user channel's path to a **non-empty** value it did not already hold: `add_user_channel(sample_path=...)` and `assign_user_channel_sample(cid, path)` | that one new path | 1 read-only connection |
-| B3 | `apply_gesture_integration_plan(...)` after CONSTRUCT TARGET, before STOP | all distinct user-channel paths of `plan.target_channels` | 1 read-only connection |
+| B3 | `apply_gesture_integration_plan(...)` after CONSTRUCT TARGET, before STOP | **only the delta**: user-channel paths that the gesture introduces or changes relative to the pre-apply binding | 1 read-only connection |
 | B4 | `refresh_user_channel_metadata()` — explicit session seam for library re-analysis / manual rescan | all distinct user-channel paths | 1 read-only connection |
 | B5 | `ensure_state()`, `reconcile_live_kit_state()`, `projection()`, `play()`, `tick_playback()` | **never resolves** | 0 |
 
 B2 is defined by the *effect* (a user channel's path becomes a new non-empty value), not by one method name, so no current or future path-bearing user-channel creation seam can bypass resolution. `add_user_channel()` with no path, and `assign_user_channel_sample(...)` with the path the channel already holds, are no-ops and resolve nothing.
+
+B3 resolves the **delta only**. `plan.target_channels` is `base_state.channels + composition.channels`, so resolving every target path would silently re-resolve every preserved base channel and turn a gesture apply into an implicit metadata refresh — contradicting the B4-only refresh policy in §6. Bindings for preserved base channels are carried over untouched; only paths the gesture introduces or changes are resolved.
 
 Restore is one bounded connection for the whole set, never N opens. `rehydrate_live_kit_from_library` remains the Live Kit counterpart and keeps its own single connection.
 
@@ -101,7 +103,14 @@ Restore is one bounded connection for the whole set, never N opens. `rehydrate_l
 | empty → path via `assign_user_channel_sample` | replace the channel's key | path set; DEFAULT_ON seeding unchanged from #808 | gated by the new classification; `ambiguous` ⇒ silent |
 | path A → path B | drop A if no other channel references it; add B | path = B; that channel's triggers preserved bit-identical | B must resolve explicitly, else silent |
 | same path re-assign | no-op | unchanged | unchanged |
-| path → empty | drop the key | path = `None` | excluded from both playback paths (non-bearing) |
+| `clear_user_channel_sample(channel_id)` | drop the key | path = `None`; that channel's triggers preserved; unrelated channels and triggers untouched | excluded from both playback paths (non-bearing) |
+
+`clear_user_channel_sample(channel_id)` is a **named public operation that does not exist yet** and is added by the implementation slice. Today `assign_user_channel_sample` rejects `None`, empty, and whitespace paths, so no user channel can be cleared through any callable; the contract must not invent that interface during implementation. Frozen semantics:
+
+- unknown `channel_id` ⇒ `ValueError`, no mutation, no resolution;
+- Live Kit seed channel ⇒ `ValueError`, no mutation, no resolution — clearing a seed channel stays a Live Kit operation;
+- already-empty user channel ⇒ no-op, no resolution, no observer call;
+- otherwise drop the binding, set `sample_path=None`, preserve that channel's existing triggers and every unrelated channel/pattern invariant, and fire the musical-state observer **once**.
 
 Ordering for B2/B3 is frozen as **resolve → build target state (including any classification-implied reconcile) → adopt state → notify once**, so a newly assigned path is never momentarily unclassified-but-playable, and the existing single observer call still holds.
 
@@ -117,6 +126,13 @@ CLASSIFICATION_MUTATION_POLICY = DEFER_UNTIL_NEXT_RACK_PLAY
 ```
 
   At the Rack Play anchor the controller snapshots the classification binding used for playback, and every pass of that Play — `filter_pattern_for_point_trigger_playback` and `build_loop_cycle_specs` alike — reads that snapshot, exactly as `sync_enabled`, MASTER BPM, and per-loop `source_bpm` / `playback_rate` are already snapshotted. A binding change during Play therefore cannot add or remove point-trigger eligibility mid-Play either, and cannot stop or restart playback.
+
+```text
+CLASSIFICATION_RECONCILE_POLICY = DEFER_UNTIL_NEXT_RACK_PLAY
+```
+
+  Snapshotting the binding alone is not sufficient, because `_start_pattern_pass` also re-reads `self._state`: a classification-implied trigger strip (§5) applied mid-Play would strip live state and silence later passes of the same Play. Therefore any classification-implied reconcile of durable Pattern state is **queued while Rack Play is active** and applied only after `stop()`, or at the start of the next explicit Rack Play before its anchor. Mid-Play reconcile is never applied to the state the current Play is reading.
+
 - Projection may continue to read the **live** derived binding, because projection is display and not playback. Mid-Play projection and playback may therefore disagree; the divergence resolves on the next explicit Rack Play and must not be presented as a classification change.
 - Refresh happens only through B4, before any next explicit Rack Play.
 - Safety is monotonic: a refresh can only move a channel toward what the library currently states. A fingerprint change makes the library return `None`, degrading the channel to `ambiguous` — it can never silently upgrade `ambiguous` to `oneshot`/`loop` without explicit library evidence.
@@ -131,7 +147,7 @@ CLASSIFICATION_MUTATION_POLICY = DEFER_UNTIL_NEXT_RACK_PLAY
 
 ### 8. #680 gesture channels consume the same mechanism
 
-Gesture-appended channels are user channels (`live_kit_group is None and live_kit_slot is None`) with a `sample_path`, applied atomically through `apply_gesture_integration_plan`. Because the binding is **path-keyed**, appended channels are covered by the same binding with no per-channel bookkeeping; B3 resolves from `plan.target_channels` before the atomic replace. No gesture-specific classification code, no gesture ranking change, no auto-sample selection, no second mechanism.
+Gesture-appended channels are user channels (`live_kit_group is None and live_kit_slot is None`) with a `sample_path`, applied atomically through `apply_gesture_integration_plan`. Because the binding is **path-keyed**, appended channels are covered by the same binding with no per-channel bookkeeping; B3 resolves the gesture-introduced or gesture-changed paths before the atomic replace and carries existing base-channel bindings over untouched. No gesture-specific classification code, no gesture ranking change, no auto-sample selection, no second mechanism.
 
 ### 9. `oneshot` / `loop` / `ambiguous`
 
@@ -164,14 +180,15 @@ The follow-up slice must freeze these before implementation. Today, the ownershi
 8. Restore resolves all user-channel paths through one read-only connection (assert connection-open count ≤ 1) and never writes.
 9. Assign (empty → path) to an explicit oneshot makes the channel point-trigger eligible; to an explicit loop makes it loop-eligible; to a miss stays silent.
 10. Replacement A → B invalidates A immediately and never leaves the channel audible under A's class.
-11. Clear removes the association and preserves every unrelated channel and trigger.
+11. `clear_user_channel_sample(channel_id)` drops the association, preserves that channel's and every unrelated channel's triggers, and fires the observer once; unknown `channel_id`, Live Kit seed channel, and already-empty user channel all reject or no-op without mutation, resolution, or an observer call.
 12. Explicit `loop` reconciles stale user-channel triggers once; `ambiguous` preserves them.
 13. Resolve-only emits no musical-state observer call and no autosave; resolve + loop strip emits exactly one.
 14. User loop + SYNC-on with a valid bound `source_bpm` builds a loop spec; missing/invalid BPM stays fail-closed.
-15. `apply_gesture_integration_plan` resolves the appended channels' paths and keeps the single-observer guarantee.
+15. `apply_gesture_integration_plan` resolves only the gesture-introduced or gesture-changed paths, leaves preserved base-channel bindings byte-identical, and keeps the single-observer guarantee.
 16. `add_user_channel(sample_path=…)` and `assign_user_channel_sample(...)` are both resolution boundaries; `add_user_channel()` with no path and a same-path re-assign resolve nothing.
 17. `CLASSIFICATION_MUTATION_POLICY`: a binding change during active Rack Play changes neither point-trigger eligibility nor loop specs for any pass of that Play, does not stop or restart playback, and applies on the next explicit Rack Play.
-18. #926 regression suites stay green: `tests/test_channel_rack_loop_classification.py`, `tests/test_workbench_channel_rack_loop.py`, `tests/test_loop_rack_playback.py`, `tests/test_workbench_session_catalog_rehydrate.py`, `tests/test_workbench_session_persistence.py`.
+18. `CLASSIFICATION_RECONCILE_POLICY`: a B4 refresh during active Rack Play that would strip triggers does **not** touch the state the current Play is reading; no pass of that Play goes silent, and the queued strip lands after `stop()` or at the next explicit Rack Play before its anchor.
+19. #926 regression suites stay green: `tests/test_channel_rack_loop_classification.py`, `tests/test_workbench_channel_rack_loop.py`, `tests/test_loop_rack_playback.py`, `tests/test_workbench_session_catalog_rehydrate.py`, `tests/test_workbench_session_persistence.py`.
 
 ## Explicit non-goals
 
@@ -195,9 +212,9 @@ DOCS -> TESTS -> TEST FREEZE -> IMPLEMENTATION -> CHECKS
 ```
 
 1. **DOCS** — this freeze is the DOCS_GATE artifact; confirm it against live `main` before code.
-2. **TESTS** — land tests 6–18 above (initially red where they must be red).
-3. **TEST FREEZE** — freeze tests 6–18. Tests 1–5 may only ever be tightened.
-4. **IMPLEMENTATION** — add `src/workbench_user_sample_metadata.py`; thread the optional `user_metadata` binding through `channel_rack` and `loop_rack_playback` as keyword-only, default `None`; inject the resolver in `compose_workbench_session`; implement B1–B4, the reconcile/observer rules, and the per-Play playback snapshot behind `CLASSIFICATION_MUTATION_POLICY`.
+2. **TESTS** — land tests 6–19 above (initially red where they must be red).
+3. **TEST FREEZE** — freeze tests 6–19. Tests 1–5 may only ever be tightened.
+4. **IMPLEMENTATION** — add `src/workbench_user_sample_metadata.py`; thread the optional `user_metadata` binding through `channel_rack` and `loop_rack_playback` as keyword-only, default `None`; inject the resolver in `compose_workbench_session`; implement B1–B4 including the B3 delta rule, the named `clear_user_channel_sample(...)` operation, the reconcile/observer rules, and the per-Play playback snapshot behind `CLASSIFICATION_MUTATION_POLICY` plus the queued reconcile behind `CLASSIFICATION_RECONCILE_POLICY`.
 5. **CHECKS** — focused tests, the listed regression suites, then `python -m pytest -q`, `python -m ruff check .`, `python -m py_compile`, and `python tools/check_canon_drift.py`.
 
 **Out of scope for that slice:** classification-quality changes (#946), Pattern Core or session-JSON changes, QML redesign, Arrangement, gesture ranking changes, user-channel DEFAULT_ON changes.
