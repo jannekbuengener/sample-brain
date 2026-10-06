@@ -139,5 +139,5 @@ This slice exits `AQ6_RANKING_BASELINE_AND_UPSTREAM_DELTA_MEASURED`.
 
 ## Follow-on write-heads (out of scope here)
 
-- Later AQ6 weight / relation **candidate compare** slices against this baseline + frozen #1016 TEST/HOLDOUT (no unguarded production promotion)
+- [#1019](https://github.com/jannekbuengener/sample-brain/issues/1019) — weight / relation **candidate compare** against this baseline + frozen #1016 TEST/HOLDOUT (no unguarded production promotion); see [`AQ6_HARMONIC_MATCH_RANKING_CANDIDATE_COMPARE.md`](AQ6_HARMONIC_MATCH_RANKING_CANDIDATE_COMPARE.md)
 - Preference remains later; no opaque global Harmonic Match score collapsing `aq6.theory` + `aq6.ranking`
