@@ -76,6 +76,7 @@ Benchmark harness (local only, work-dir outside repo): `python -m src.cli benchm
 
 ## CI Gate Policy
 - **`CI_GREEN` is the default merge contract.** Merge only when required checks are green. Optional checks should be green, skipped, or explicitly explained.
+- **Review feedback is a mandatory pre-merge gate on the final PR head.** All relevant comments/threads/reviews (including bots) must be seen and dispositioned; inline threads resolved. Follow `docs/MERGE_REVIEW_FEEDBACK_GATE.md`. An untreated comment is a merge blocker. This gate does not weaken `CI_GREEN`.
 - **Degraded CI mode is exceptional.** Use it only when GitHub-hosted runners, self-hosted runners, or repository/account infrastructure block checks before PR logic runs.
 - **Docs-only billing waivers are narrow.** They require explicit merge-GO, a PR-specific waiver comment, exact docs-only scope, and no code, dependency, workflow, artifact, or secret risk.
 - **Code/test/runtime scope under CI outage is not auto-waivable.** Follow `docs/CI_DEGRADED_MODE.md` and treat local validation as required evidence, not as a fake green substitute.

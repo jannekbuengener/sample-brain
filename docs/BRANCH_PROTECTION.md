@@ -27,3 +27,5 @@ Required status checks (preserve names and integration identities):
 - `analyze (python)` (GitHub Actions / `15368`)
 
 `mcp-quality-gate` / exact-head remains advisory until Phase B (#388). Merge only when required checks are green and the repository merge predicate is satisfied.
+
+Required review-thread resolution at the ruleset layer is **necessary but not sufficient**. Process authority for dispositioning all review feedback (inline threads, top-level comments, bot/automated reviews, final-head recheck) is [`docs/MERGE_REVIEW_FEEDBACK_GATE.md`](MERGE_REVIEW_FEEDBACK_GATE.md).

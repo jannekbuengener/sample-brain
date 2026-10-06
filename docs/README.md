@@ -91,7 +91,8 @@ These support the development process, not the product itself:
 | [Operations / Capabilities](operations/README.md) | Capability registry front door (process/routing; not product canon) |
 | [Pipeline runbook](PIPELINE.md) | Legacy title-suggestion pipeline |
 | [CI Degraded Mode](CI_DEGRADED_MODE.md) | CI fallback policy |
-| [Branch Protection](BRANCH_PROTECTION.md) | Merge governance |
+| [Merge Review Feedback Gate](MERGE_REVIEW_FEEDBACK_GATE.md) | Mandatory pre-merge review-feedback disposition |
+| [Branch Protection](BRANCH_PROTECTION.md) | Merge governance (live ruleset facts) |
 | [MCP Setup](MCP_SETUP.md) | Local MCP / agent tooling |
 | [Bootloader & Context Strategy](BOOTLOADER_AND_CONTEXT_STRATEGY.md) | Agent session context |
 | [Issue Backlog](ISSUE_BACKLOG.md) | HISTORICAL_LEDGER only; use GitHub live for open/closed work |

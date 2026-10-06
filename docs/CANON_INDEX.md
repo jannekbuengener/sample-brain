@@ -24,6 +24,7 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 | Architecture | `docs/TARGET_ARCHITECTURE.md` | ACTIVE_CANON | Current vs target architecture and ownership boundaries. |
 | Realtime Workbench boundary | `docs/REALTIME_WORKBENCH_SCOPE.md` | ACTIVE_CANON | Local realtime scope; not a general DAW authorization. |
 | Data / artifacts | `docs/DATA_AND_ARTIFACT_POLICY.md` | ACTIVE_CANON | Private/local/generated data boundary. |
+| Merge review-feedback gate | `docs/MERGE_REVIEW_FEEDBACK_GATE.md` | ACTIVE_CANON | Mandatory pre-merge gate: all review feedback seen, dispositioned, inline threads resolved on final head; complements `CI_GREEN`. |
 | Local Measurement Layer | `docs/adr/ADR-0006-measurement-contract-v1.md` | ACTIVE_SUPPORTING | Provider-neutral local measurement vs forbidden external telemetry in core; Mixpanel only as optional future sink. |
 | Analyzer runtime bench methodology | `docs/benchmarks/ANALYZER_RUNTIME_METHODOLOGY_V1.md` | ACTIVE_SUPPORTING | #958 frozen cold/steady runtime measurement contract for analyzers; distinct from ADR-0006 local measurement and from #956 ARVP artifact mapping. |
 | Workbench QML renderer | `docs/WORKBENCH_QML_PROOF_SPIKE.md` | ACTIVE_SUPPORTING | `LOCK_PYSIDE6_QML`; #503/#579/#691 are delivered historical evidence. New Workbench visual work needs a new scoped issue under #905. |
@@ -147,7 +148,7 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 - **Arrangement:** [#679](https://github.com/jannekbuengener/sample-brain/issues/679) — **PARKED / UNDESIGNED — requires later explicit Owner design decision**. Do not auto-route.
 - **VST / Bitwig / #697:** parked or research-only; explicit reactivation required. Do not auto-route.
 - **Search:** EPIC-2 spec + active ADRs + current code/tests. #74 is upstream ANN watch only.
-- **CI/governance:** GitHub live rules/checks first; docs describe policy, not current API state. Closed #494/#703 are historical.
+- **CI/governance:** GitHub live rules/checks first; docs describe policy, not current API state. Closed #494/#703 are historical. Merge readiness requires `CI_GREEN` (or an allowed degraded path) **and** `docs/MERGE_REVIEW_FEEDBACK_GATE.md` on the final head.
 - **Repository hygiene:** `DATA_AND_ARTIFACT_POLICY.md` + live working-tree/worktree state.
 - **Visual acceptance:** agents own fixture/runtime/screenshot/reviewer acceptance; do not wait on Owner operative visual acceptance as the normal end-state.
 - **Historical research:** use historical records as evidence only; do not promote them over active canon.

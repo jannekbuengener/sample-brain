@@ -31,6 +31,7 @@ Follow [`_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md`](_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md
 - Saubere Commit-Message vorschlagen oder nutzen.
 - PR-Body mit Scope, Validation, Risk, Rollback erstellen.
 - Check-Status und Merge-Gate berichten.
+- Vor `READY_FOR_MERGE`: Review-Feedback-Gate auf finalem Head mitprüfen (`docs/MERGE_REVIEW_FEEDBACK_GATE.md`); bei Code-Fixes nach Feedback den Fix-Loop (VERIFY → FIX → TEST → PUSH → final-head recheck → CI recheck) einhalten.
 
 ## Inputs
 
@@ -39,6 +40,8 @@ Follow [`_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md`](_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md
 - Commit-Message
 - PR-Zielbranch
 - Check-Status
+- live PR comments / review threads (wenn PR bereits existiert)
+- `docs/MERGE_REVIEW_FEEDBACK_GATE.md`
 
 ## Outputs
 
@@ -47,7 +50,8 @@ Follow [`_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md`](_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md
 - PR-Nummer und URL
 - Diff-Scope
 - Check-Status
-- READY_FOR_MERGE/HOLD
+- Review-Feedback-Kurzstatus (wenn PR existiert)
+- READY_FOR_MERGE/HOLD / HOLD_REVIEW_FEEDBACK_OPEN
 
 ## Limits
 
@@ -55,3 +59,4 @@ Follow [`_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md`](_SAMPLE_BRAIN_SUBAGENT_CONTRACT.md
 - Kein Merge ohne separaten GO.
 - Keine zusätzlichen Dateien "mal eben" aufnehmen.
 - Keine Branch-Löschung ohne GO.
+- Kein `READY_FOR_MERGE` bei offenem oder undispositioniertem Review-Feedback auf dem finalen Head.

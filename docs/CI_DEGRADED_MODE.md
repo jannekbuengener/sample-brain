@@ -10,7 +10,7 @@ The default contract remains **CI_GREEN**. Degraded handling is an exception pat
 
 - Normal merge readiness requires **green required checks**.
 - Optional checks should be **green**, **skipped**, or explicitly explained as non-merge-relevant.
-- Review findings, thread resolution, and scope checks still apply even when CI is green.
+- Review findings, thread resolution, and scope checks still apply even when CI is green. The mandatory review-feedback process gate is [`docs/MERGE_REVIEW_FEEDBACK_GATE.md`](MERGE_REVIEW_FEEDBACK_GATE.md); degraded CI does **not** waive it.
 - No fake-green trigger commits, direct pushes to `main`, or silent bypasses.
 
 ## 2. When `DEGRADED_CI_ACTIVE` Applies
@@ -129,7 +129,7 @@ No degraded-mode docs waiver is allowed for:
 - private samples
 - large binaries
 - unclear or expanding scope
-- unresolved review threads or missing review clarity
+- unresolved review threads, undispositioned review feedback, or missing review clarity (see [`docs/MERGE_REVIEW_FEEDBACK_GATE.md`](MERGE_REVIEW_FEEDBACK_GATE.md))
 
 These should be held with the most specific status available, including:
 
@@ -166,5 +166,6 @@ The comment should state:
 
 - `AGENTS.md` remains the top-level active agent rule surface.
 - `SB.AGENT.RULESET.md` defines how agents classify and report degraded CI outcomes.
-- `SB.BOOTLOADER.md` points CI and merge-governance tasks to this runbook.
+- `SB.BOOTLOADER.md` points CI and merge-governance tasks to this runbook and the review-feedback gate.
+- [`docs/MERGE_REVIEW_FEEDBACK_GATE.md`](MERGE_REVIEW_FEEDBACK_GATE.md) is the mandatory pre-merge review-feedback process gate on the final PR head.
 - Branch protection and GitHub rules remain authoritative at merge time.

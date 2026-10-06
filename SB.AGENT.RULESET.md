@@ -79,6 +79,7 @@ python -m pytest -q            # Core tests
 ## CI / Degraded Mode
 
 - **`CI_GREEN` remains the default.** Required checks must be green for normal merge readiness.
+- **Review feedback gate is mandatory on the final PR head.** Follow `docs/MERGE_REVIEW_FEEDBACK_GATE.md`. Use `HOLD_REVIEW_FEEDBACK_OPEN` when feedback is unread, undispositioned, or inline threads remain open. Degraded CI does not waive this gate.
 - **Use `DEGRADED_CI_ACTIVE` only after live verification** that the failure is external infrastructure (billing lock, hosted-runner outage, unavailable self-hosted runner), not PR content.
 - **`BILLING_LOCK_DOCS_ONLY_WAIVER` is narrow.** Recommend it only for small docs-only PRs with explicit GO, a PR-specific waiver comment, and no code, dependency, workflow, artifact, or secret risk.
 - **Code, test, runtime, dependency, workflow, or security scope under CI outage is not docs-waivable.** Escalate to `LOCAL_VALIDATION_REQUIRED`, `HOLD_SECURITY_CHECK_UNAVAILABLE`, `HOLD_WORKFLOW_SCOPE`, or `HOLD_ARTIFACT_OR_SECRET_RISK` as appropriate.
@@ -97,7 +98,7 @@ python -m pytest -q            # Core tests
 4. Risiko: LOW / MEDIUM / HIGH
 5. Nächster sicherer Schritt (next safe step)
 6. Evidence: commands/files/PRs/checks reviewed
-7. Finalstatus: PASS / HOLD / BLOCKED_MISSING_GO / READY_FOR_IMPLEMENTATION / READY_FOR_PR / READY_FOR_MERGE / DONE_MERGED_SYNCED / CI_GREEN / DEGRADED_CI_ACTIVE / BILLING_LOCK_DOCS_ONLY_WAIVER / LOCAL_VALIDATION_REQUIRED / RUNNER_FALLBACK_REQUIRED / HOLD_BRANCH_PROTECTION / HOLD_SECURITY_CHECK_UNAVAILABLE / HOLD_WORKFLOW_SCOPE / HOLD_ARTIFACT_OR_SECRET_RISK
+7. Finalstatus: PASS / HOLD / BLOCKED_MISSING_GO / READY_FOR_IMPLEMENTATION / READY_FOR_PR / READY_FOR_MERGE / DONE_MERGED_SYNCED / CI_GREEN / DEGRADED_CI_ACTIVE / BILLING_LOCK_DOCS_ONLY_WAIVER / LOCAL_VALIDATION_REQUIRED / RUNNER_FALLBACK_REQUIRED / HOLD_BRANCH_PROTECTION / HOLD_REVIEW_FEEDBACK_OPEN / QUALITY_PROCESS_FAILURE / HOLD_SECURITY_CHECK_UNAVAILABLE / HOLD_WORKFLOW_SCOPE / HOLD_ARTIFACT_OR_SECRET_RISK
 
 ## Private MCP / connector boundary
 
