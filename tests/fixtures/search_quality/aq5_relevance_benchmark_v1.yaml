@@ -1,0 +1,76 @@
+# AQ5 relevance benchmark partition overlay (#1009)
+# Adopts ADR-0005 golden_v1 + golden_v2_clap query IDs into CALIBRATION / TEST.
+# Do not tune thresholds or labels using TEST/HOLDOUT query keys.
+benchmark_id: sample-brain.aq5.relevance.adr0005-golden.v1
+benchmark_version: "1.0.0"
+document_type: sample-brain.aq5.relevance-benchmark.v1
+notes: >
+  CALIBRATION maps to KPI DEVELOPMENT/CALIBRATION; TEST maps to TEST/HOLDOUT.
+  Composite query identity is suite:query_id (tier_a:… / tier_b:…).
+  Vocal proxy spike suite is excluded (HOLD) and must not appear here.
+
+partitions:
+  tier_a:
+    CALIBRATION:
+      - kick_cluster
+      - kick_pred_type_filter
+      - hybrid_bpm_promote_snare
+    TEST:
+      - snare_cluster
+      - pad_cluster
+      - kick_tag_filter
+      - snare_bpm_range_filter
+      - hybrid_key_match_pad
+      - scale_minor_filter
+  tier_b:
+    CALIBRATION:
+      # kick_snare_perc
+      - kick_text_basic
+      - kick_audio_ref
+      # pad_texture
+      - pad_text_warm
+      - pad_audio_ref
+      # riser_impact
+      - riser_text_build_up
+      - riser_audio_ref
+      # dry_wet
+      - dry_kick_text
+      - dry_kick_audio_ref
+      # vocal_no_vocal (measured; production claim HOLD)
+      - singing_voice_text
+      - vocal_formant_audio_ref
+      # genre_mood (measured; production claim HOLD)
+      - dark_electronic_text
+      - dark_electronic_audio_ref
+    TEST:
+      # kick_snare_perc
+      - kick_text_low
+      - snare_text_basic
+      - perc_text_basic
+      - snare_audio_ref
+      # pad_texture
+      - pad_text_ambient
+      - texture_audio_ref
+      # riser_impact
+      - riser_text_sweep
+      - riser_text_whoosh
+      - impact_text_cinematic
+      - impact_text_boom
+      # dry_wet
+      - dry_kick_exclusion
+      - dry_perc_text
+      - reverb_tail_text
+      - wet_pad_text
+      - wet_kick_audio_ref
+      # vocal_no_vocal (measured; production claim HOLD)
+      - vocal_sound_text
+      - human_voice_tone_text
+      - instrumental_no_vocal_text
+      - instrumental_chord_audio_ref
+      # genre_mood (measured; production claim HOLD)
+      - bright_uplifting_text
+      - ambient_calm_text
+      - cinematic_tension_text
+      - warm_relaxed_text
+      - aggressive_energy_text
+      - ambient_calm_audio_ref
