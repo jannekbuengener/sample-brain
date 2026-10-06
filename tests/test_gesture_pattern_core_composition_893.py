@@ -163,6 +163,7 @@ _RANKING_CALLABLES = sorted(
     _module_public_api("src.gesture_library_ranking") - _RANKING_TYPE_NAMES
 )
 _CATALOG_CALLABLES = sorted(_module_public_api("src.gesture_catalog_adapter"))
+_DB_CALLABLES = sorted(_module_public_api("src.db"))
 _TIMING_CALLABLES = sorted(
     _module_public_api("src.gesture_timing_projection") - _TIMING_TYPE_NAMES
 )
@@ -329,7 +330,25 @@ def _source_text() -> str:
     return _MODULE_PATH.read_text(encoding="utf-8")
 
 
+def _is_submodule(name: str) -> bool:
+    """True when ``name`` is a real module/package inside ``src/``.
+
+    Lets ``from src import db`` be recognised as importing the ``src.db``
+    module without guessing from a hand-listed set of names.
+    """
+    src_dir = _MODULE_PATH.resolve().parents[1]
+    candidate = src_dir / name
+    return candidate.with_suffix(".py").is_file() or (candidate / "__init__.py").is_file()
+
+
 def _imported_module_names(mod) -> set[str]:
+    """Module paths imported by a module, including package-relative forms.
+
+    ``from . import db`` has ``ImportFrom.module is None``: the imported module
+    is named only by the alias, and the relative ``level`` is what makes it a
+    package-local import. Both plain and relative from-imports are recorded so
+    a banned root cannot hide behind ``from . import db``.
+    """
     path = Path(mod.__file__)
     tree = ast.parse(path.read_text(encoding="utf-8"))
     names: set[str] = set()
@@ -339,9 +358,22 @@ def _imported_module_names(mod) -> set[str]:
                 names.add(alias.name.split(".")[0])
                 names.add(alias.name)
         elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                names.add(node.module.split(".")[0])
-                names.add(node.module)
+            module = node.module
+            if module:
+                names.add(module.split(".")[0])
+                names.add(module)
+                # An alias may itself name a submodule (`from src import db`).
+                # Detect that from the real package layout so plain symbols
+                # imported from a module are not mistaken for module paths.
+                for alias in node.names:
+                    if _is_submodule(alias.name):
+                        names.add(f"{module}.{alias.name}")
+            else:
+                # `from . import db` / `from .. import x`: module is None and
+                # the alias itself is the imported module name.
+                for alias in node.names:
+                    names.add(alias.name.split(".")[0])
+                    names.add(alias.name)
     return names
 
 
@@ -376,7 +408,8 @@ def _imported_bindings(tree: ast.Module) -> dict[str, str]:
 
     ``import a.b``, ``import a.b as ab``, ``from m import x`` and
     ``from m import x as y`` all resolve, so aliasing a forbidden import cannot
-    hide it from the call/reference guards.
+    hide it from the call/reference guards. Package-relative ``from . import db``
+    binds ``db`` to ``db`` because the alias is the module name itself.
     """
     bindings: dict[str, str] = {}
     for node in ast.walk(tree):
@@ -388,8 +421,74 @@ def _imported_bindings(tree: ast.Module) -> dict[str, str]:
             module = node.module or ""
             for alias in node.names:
                 local = alias.asname or alias.name
-                bindings[local] = f"{module}.{alias.name}" if module else alias.name
+                if module:
+                    bindings[local] = f"{module}.{alias.name}"
+                elif node.level:
+                    # `from . import db` — module is None, alias is the module.
+                    bindings[local] = alias.name
+                else:
+                    bindings[local] = alias.name
     return bindings
+
+
+def _assignment_aliases(tree: ast.Module) -> dict[str, str]:
+    """Map locally bound name -> symbol path it was assigned from.
+
+    ``allocator = allocate_user_channel_id`` hides the forbidden callable
+    behind a local name. Only direct name/attribute targets are followed
+    (``a = b``, ``a = mod.b``, ``a: T = b``); the assigned value itself must be
+    a plain reference, so computed results are not treated as aliases.
+    """
+    aliases: dict[str, str] = {}
+    for node in ast.walk(tree):
+        targets: list[ast.AST] = []
+        value: ast.AST | None = None
+        if isinstance(node, ast.Assign):
+            targets = list(node.targets)
+            value = node.value
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+            value = node.value
+        if value is None:
+            continue
+        source = _dotted_name(value)
+        if source is None:
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name):
+                aliases[target.id] = source
+    return aliases
+
+
+def _local_bindings(tree: ast.Module) -> dict[str, str]:
+    """Import bindings plus assignment aliases, transitively resolved.
+
+    Chained aliases (``a = b`` where ``b`` is itself an alias or an import)
+    are followed so the guard sees the original forbidden symbol. Resolution
+    is cycle-safe: a self-referential alias keeps its own name.
+    """
+    bindings: dict[str, str] = {}
+    bindings.update(_imported_bindings(tree))
+    # Imports win over plain assignments for the same name.
+    for name, source in _assignment_aliases(tree).items():
+        bindings.setdefault(name, source)
+    resolved: dict[str, str] = {}
+    for name in bindings:
+        seen = {name}
+        current = bindings[name]
+        while True:
+            head, _, tail = current.rpartition(".")
+            nxt = None
+            if "." in current and head in bindings and head not in seen:
+                nxt = f"{bindings[head]}.{tail}"
+            elif current in bindings and current not in seen:
+                nxt = bindings[current]
+            if nxt is None or nxt == current:
+                break
+            seen.add(head if "." in current else current)
+            current = nxt
+        resolved[name] = current
+    return resolved
 
 
 def _resolved_names(qualified: str, imported: dict[str, str]) -> set[str]:
@@ -417,12 +516,13 @@ def _resolved_names(qualified: str, imported: dict[str, str]) -> set[str]:
 def _forbidden_calls_in_src(src: str, forbidden: list[str]) -> set[str]:
     """Forbidden symbols that are actually invoked as calls in ``src``.
 
-    Detects bare (``foo(...)``), qualified (``mod.foo(...)``) and
-    import-aliased calls. Comments, docstrings and string literals are not
-    code and are ignored by ``ast.parse()``, so they cannot trip a guard.
+    Detects bare (``foo(...)``), qualified (``mod.foo(...)``),
+    import-aliased and assignment-aliased (``allocator = helper``) calls.
+    Comments, docstrings and string literals are not code and are ignored by
+    ``ast.parse()``, so they cannot trip a guard.
     """
     tree = _parse_module_src(src)
-    imported = _imported_bindings(tree)
+    imported = _local_bindings(tree)
     lower = {name.lower() for name in forbidden}
     found: set[str] = set()
     for node in ast.walk(tree):
@@ -443,14 +543,14 @@ def _forbidden_name_refs_in_src(
     *,
     attributes_only: bool = False,
 ) -> set[str]:
-    """Forbidden symbols referenced by name in ``src`` (import-aliased aware).
+    """Forbidden symbols referenced by name in ``src`` (alias-aware).
 
     ``attributes_only`` restricts the match to attribute reads (``x.field``),
     which is the correct shape when banning upstream *fields*: the composer
     legitimately uses local variables that share those field names.
     """
     tree = _parse_module_src(src)
-    imported = _imported_bindings(tree)
+    imported = _local_bindings(tree)
     lower = {name.lower() for name in forbidden}
     found: set[str] = set()
     for node in ast.walk(tree):
@@ -673,6 +773,12 @@ class _FakeModule:
         self.__file__ = str(path)
 
 
+def _write_source(tmp_path: Path, src: str, name: str = "candidate.py") -> Path:
+    path = tmp_path / name
+    path.write_text(src, encoding="utf-8")
+    return path
+
+
 @pytest.mark.parametrize(
     ("guard", "forbidden", "violating_src"),
     [
@@ -760,6 +866,97 @@ def test__derived_field_guards_are_live(guard, forbidden, violating_src) -> None
     assert _forbidden_name_refs_in_src(
         violating_src, forbidden, attributes_only=True
     ), f"{guard}: guard failed to flag a real forbidden field read"
+
+
+def test__semantic_checker_follows_callable_assignment_alias() -> None:
+    """``allocator = helper; allocator(...)`` must not evade the call guard."""
+    src = """
+from .pattern_core import allocate_user_channel_id
+
+allocator = allocate_user_channel_id
+
+def compose():
+    return allocator("ch_user_1")
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
+
+
+def test__semantic_checker_follows_chained_assignment_alias() -> None:
+    """Aliases of aliases must resolve transitively to the forbidden symbol."""
+    src = """
+import channel_rack
+
+first = channel_rack.add_user_channel
+second = first
+third = second
+
+def compose():
+    return third(channel)
+"""
+    assert _forbidden_calls_in_src(src, _CHANNEL_RACK_CALLABLES) == {
+        "add_user_channel"
+    }
+
+
+def test__semantic_checker_assignment_alias_is_cycle_safe() -> None:
+    """Self-referential aliases must terminate instead of hanging the guard."""
+    src = """
+loop_a = loop_b
+loop_b = loop_a
+
+def compose():
+    return loop_a()
+"""
+    assert _forbidden_calls_in_src(src, ["nonexistent_forbidden"]) == set()
+
+
+def test__semantic_checker_ignores_computed_assignment_targets() -> None:
+    """Only direct name/attribute targets count as aliases."""
+    src = """
+result = allocate_user_channel_id(1)
+alias: int = 2
+items[0] = allocate_user_channel_id
+"""
+    # The direct call is still flagged; the computed forms add no alias entry.
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
+    aliases = _assignment_aliases(ast.parse(src))
+    assert "result" not in aliases
+    assert "alias" not in aliases
+
+
+def test__import_guard_rejects_package_relative_db_import(tmp_path: Path) -> None:
+    """``from . import db`` must be recorded, not skipped as module=None."""
+    src = """
+from . import db
+"""
+    names = _imported_module_names(_FakeModule(_write_source(tmp_path, src)))
+    assert "db" in names
+    assert "db" in _BANNED_IMPORT_ROOTS
+
+
+def test__import_guard_rejects_relative_db_call() -> None:
+    """DB operations via ``from . import db`` stay flagged by the call guard."""
+    src = """
+from . import db
+
+def compose():
+    return db.init_db()
+"""
+    assert _forbidden_calls_in_src(src, _DB_CALLABLES) == {"init_db"}
+    # The frozen module itself must stay clean.
+    assert _forbidden_calls_in_src(_source_text(), _DB_CALLABLES) == set()
+
+
+def test__db_callable_set_is_live() -> None:
+    """The derived DB set must actually flag DB operations."""
+    assert _DB_CALLABLES
+    assert _forbidden_calls_in_src(
+        "def compose():\n    return db.init_db()\n", _DB_CALLABLES
+    ) == {"init_db"}
 
 
 def test__rank_based_auto_select_branch_is_rejected() -> None:
@@ -1256,7 +1453,10 @@ def test_38_no_catalog_db_access() -> None:
     ):
         assert banned not in imported
     src = _source_text()
-    assert _forbidden_calls_in_src(src, _CATALOG_CALLABLES) == set()
+    # DB operations stay covered by a derived set, not a guessed name list, so
+    # `db.init_db()` (also via `from . import db`) is rejected.
+    forbidden = sorted(set(_CATALOG_CALLABLES) | set(_DB_CALLABLES))
+    assert _forbidden_calls_in_src(src, forbidden) == set()
 
 
 def test_39_no_selection_recomputation() -> None:
