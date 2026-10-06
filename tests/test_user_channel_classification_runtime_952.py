@@ -2088,3 +2088,48 @@ def test_b5_no_resolver_means_no_clearing_or_refresh_capability_leak() -> None:
     assert _channel(controller.state, channel_id).sample_path is None
     assert dict(controller.refresh_user_channel_metadata()) == {}
     assert controller.playback_classification_snapshot is None
+
+
+def test_18k_queued_addition_replays_its_own_classification_effect() -> None:
+    """A queued add must apply the evidence captured when it was added.
+
+    Adding a loop path during a Play and refreshing that path to one-shot
+    before Stop must still strip the triggers the loop implied: the addition
+    seeded DEFAULT_ON and the loop then stripped it. Replaying only the
+    refreshed final evidence would keep those triggers, while the same
+    operations outside a Play strip them and never re-seed.
+    """
+    classes = {ONESHOT_PATH: "one_shot", LOOP_PATH: "loop"}
+    immediate_resolver = _ScriptedResolver(dict(classes))
+    immediate, _e, _t = _controller(resolver=immediate_resolver)
+    immediate.ensure_state()
+    immediate.add_user_channel(sample_path=ONESHOT_PATH)
+    immediate.add_user_channel(sample_path=LOOP_PATH)
+    immediate_id = _last_user_channel_id(immediate.state)
+    assert _triggers_for(immediate.state, immediate_id) == (), (
+        "an added loop path strips the DEFAULT_ON it just seeded"
+    )
+    immediate_resolver.set_class(LOOP_PATH, "one_shot")
+    immediate.refresh_user_channel_metadata()
+
+    resolver = _ScriptedResolver(dict(classes))
+    controller, _engine, _transport = _controller(resolver=resolver)
+    controller.ensure_state()
+    controller.add_user_channel(sample_path=ONESHOT_PATH)
+    controller.play()
+    assert controller.is_playing is True
+    controller.add_user_channel(sample_path=LOOP_PATH)
+    # The library reclassifies the added path before the queue is adopted.
+    resolver.set_class(LOOP_PATH, "one_shot")
+    controller.refresh_user_channel_metadata()
+    controller.stop()
+
+    channel_id = _last_user_channel_id(controller.state)
+    assert _channel(controller.state, channel_id).sample_path == LOOP_PATH
+    assert controller.user_metadata[LOOP_PATH].sample_class == "one_shot"
+    assert _triggers_for(controller.state, channel_id) == _triggers_for(
+        immediate.state, immediate_id
+    ), "the queued add must strip exactly as the immediate one does"
+    assert _triggers_for(controller.state, channel_id) == (), (
+        "the loop strip implied by the queued addition must survive the refresh"
+    )

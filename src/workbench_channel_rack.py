@@ -463,6 +463,7 @@ class _QueuedUserChannelStep:
     channel_id: str
     path: str | None
     entry: UserSampleMetadata | None = None
+    create: bool = False
 
 
 @dataclass(frozen=True)
@@ -482,7 +483,6 @@ class _PendingUserChannelMutation:
     only the last queued path loses the effect of everything in between.
     """
 
-    added: tuple[tuple[str, str | None], ...] = ()
     steps: tuple[_QueuedUserChannelStep, ...] = ()
     entries: Mapping[str, UserSampleMetadata] = field(default_factory=dict)
     attempted: frozenset[str] = frozenset()
@@ -494,7 +494,6 @@ class _PendingUserChannelMutation:
         entries = dict(self.entries)
         entries.update(other.entries)
         return _PendingUserChannelMutation(
-            added=self.added + other.added,
             steps=self.steps + other.steps,
             entries=entries,
             attempted=self.attempted | other.attempted,
@@ -508,6 +507,10 @@ class _PendingUserChannelMutation:
             if step.channel_id == channel_id:
                 return step.path
         return fallback
+
+    def queued_channel_ids(self) -> tuple[str, ...]:
+        """IDs already claimed by queued additions; they stay reserved."""
+        return tuple(step.channel_id for step in self.steps if step.create)
 
 
 class ChannelRackController:
@@ -701,16 +704,17 @@ class ChannelRackController:
         # Replay the intent through the core transitions so DEFAULT_ON seeding,
         # Live Kit rejection, and trigger retention stay owned by one place.
         target = base_state
-        for channel_id, path in pending.added:
-            target = add_user_channel(
-                target, sample_path=path, channel_id=channel_id
-            )
         for step in pending.steps:
-            if step.path is None:
+            if step.create:
+                target = add_user_channel(
+                    target, sample_path=step.path, channel_id=step.channel_id
+                )
+            elif step.path is None:
                 target = _clear_channel_sample_path(target, step.channel_id)
                 continue
-            target = assign_user_channel_sample(target, step.channel_id, step.path)
-            if step.entry is not None:
+            else:
+                target = assign_user_channel_sample(target, step.channel_id, step.path)
+            if step.entry is not None and step.path is not None:
                 # Reproduce this step's own classification effect now. A later
                 # step may supersede the path, but the strip an intermediate
                 # ``loop`` implies has already happened and must not be undone
@@ -789,7 +793,7 @@ class ChannelRackController:
             for channel in state.channels
             if _is_user_channel(channel)
         ]
-        queued.extend(path for _, path in pending.added)
+        queued.extend(step.path for step in pending.steps if step.create)
         return tuple(dict.fromkeys(path for path in queued if _sample_bearing(path)))
 
     def refresh_user_channel_metadata(self) -> UserSampleMetadataBinding:
@@ -992,20 +996,28 @@ class ChannelRackController:
         # earlier queued additions count as taken, or two adds in one Play would
         # collide at adoption.
         pending = self._pending_user_mutation
-        queued_ids = pending.added if pending is not None else ()
+        queued_ids = pending.queued_channel_ids() if pending is not None else ()
         reserved_ids = tuple(
             dict.fromkeys(
                 [
                     *(channel.channel_id for channel in live.channels),
-                    *(channel_id for channel_id, _ in queued_ids),
+                    *queued_ids,
                 ]
             )
         )
         added_channel_id = allocate_user_channel_id(reserved_ids)
 
+        resolved = self._resolved_entry_for(path)
         pending = _PendingUserChannelMutation(
-            added=((added_channel_id, path),),
-            entries=self._resolved_entry_for(path),
+            steps=(
+                _QueuedUserChannelStep(
+                    channel_id=added_channel_id,
+                    path=path,
+                    entry=resolved.get(path),
+                    create=True,
+                ),
+            ),
+            entries=resolved,
             attempted=frozenset({path}) if path is not None else frozenset(),
             prune=True,
         )
