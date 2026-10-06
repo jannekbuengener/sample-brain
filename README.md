@@ -60,11 +60,13 @@ flowchart LR
 
 ![Sample Brain Workbench — Harmonic Match Library (CURRENT PRODUCT / RUNTIME)](docs/assets/portfolio/runtime/screen1-harmonic-4panel.png)
 
-**DESIGN TARGET / MOCKUP** — freigegebene UI-Mockups / Designziele, keine Runtime-Behauptung:
+**DESIGN TARGET** — die freigegebenen Designziele liegen nicht mehr als lokale Mockup-Bilder im Repo, sondern als Superdesign-Canvas. Keine Runtime-Behauptung:
 
-![Sample Brain Screen-1 Designziel (DESIGN TARGET / MOCKUP)](docs/assets/portfolio/mockups/ui_mockup.png)
+Kanonisches Projekt: `Sample Brain — Workbench Screen 1`
+(Superdesign-Projekt `47e8bb1a-efce-43bd-a97f-c05c9750d726`, Token-Freeze-Draft `2fa91842-f07f-4d70-9d12-de9622744191` Version 7).
+Siehe [docs/assets/themes/README.md](docs/assets/themes/README.md) für den verbindlichen Token-Freeze und die Draft-Governance.
 
-![Sample Brain Harmonic Match Library Designziel (DESIGN TARGET / MOCKUP)](docs/assets/portfolio/mockups/ui_mockup_matching.png)
+![Sample Brain Program-Chrome-Referenz (DESIGN TARGET / REFERENZ)](docs/assets/portfolio/references/program_chrome/owner_program_chrome_ba928fbe.jpg)
 
 ### Was dieses Projekt belegt
 
