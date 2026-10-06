@@ -25,6 +25,7 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 | Realtime Workbench boundary | `docs/REALTIME_WORKBENCH_SCOPE.md` | ACTIVE_CANON | Local realtime scope; not a general DAW authorization. |
 | Data / artifacts | `docs/DATA_AND_ARTIFACT_POLICY.md` | ACTIVE_CANON | Private/local/generated data boundary. |
 | Local Measurement Layer | `docs/adr/ADR-0006-measurement-contract-v1.md` | ACTIVE_SUPPORTING | Provider-neutral local measurement vs forbidden external telemetry in core; Mixpanel only as optional future sink. |
+| Analyzer runtime bench methodology | `docs/benchmarks/ANALYZER_RUNTIME_METHODOLOGY_V1.md` | ACTIVE_SUPPORTING | #958 frozen cold/steady runtime measurement contract for analyzers; distinct from ADR-0006 local measurement and from #956 ARVP artifact mapping. |
 | Workbench QML renderer | `docs/WORKBENCH_QML_PROOF_SPIKE.md` | ACTIVE_SUPPORTING | `LOCK_PYSIDE6_QML`; #503/#579/#691 are delivered historical evidence. New Workbench visual work needs a new scoped issue under #905. |
 | Workbench preview playhead | `docs/WORKBENCH_PREVIEW_PLAYHEAD_CONTRACT.md` | ACTIVE_SUPPORTING | #738; Canvas body + thin overlay; engine-backed progress only. Historical “Screen-1” wording in the contract is delivery evidence. |
 | Workbench display preferences | `docs/WORKBENCH_DISPLAY_PREFERENCES.md` | ACTIVE_SUPPORTING | #696; density/motion/layout reset/startup presets; header overflow only. |
