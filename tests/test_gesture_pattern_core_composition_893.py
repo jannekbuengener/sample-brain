@@ -194,6 +194,14 @@ _TIMING_FIELDS = sorted(
 _TIMING_PROJECTION_FIELDS = sorted(
     _dataclass_fields(GestureTimingProjection) - _COMPOSER_ALLOWED_FIELDS
 )
+# Length inference is a *recomputation* contract, not a field contract: the
+# composer must not re-derive pattern length from timing data. These names are
+# the inference operations the original raw-source guard rejected, and they are
+# not dataclass fields, so deriving them from the dataclasses alone would drop
+# the coverage entirely.
+_LENGTH_INFERENCE_NAMES = frozenset(
+    {"source_duration", "last_onset", "next_beat", "next_bar"}
+)
 
 
 def _candidate(sample_id: str, path: str | None = None) -> LibraryCandidate:
@@ -520,6 +528,12 @@ def _forbidden_calls_in_src(src: str, forbidden: list[str]) -> set[str]:
         for candidate in _resolved_names(qualified, imported):
             if candidate.lower() in lower:
                 found.add(candidate)
+
+    # `getattr(mod, "f")` / `mod.__dict__["f"]` capture the authority by name
+    # at import time, before any later patch could intercept it.
+    for name in _dynamic_member_lookups(tree):
+        if name.lower() in lower:
+            found.add(name)
     return found
 
 
@@ -543,6 +557,61 @@ def _resolved_names(qualified: str, imported: dict[str, str]) -> set[str]:
         candidates.add(resolved)
         candidates.add(resolved.rpartition(".")[2])
     return candidates
+
+
+def _dynamic_member_lookups(tree: ast.Module) -> list[str]:
+    """Member names resolved at runtime through a string literal.
+
+    ``getattr(mod, "f")``, ``mod.__dict__["f"]``, ``vars(mod)["f"]`` and
+    ``operator.attrgetter("f")`` all fetch a member *by name*, so the AST holds
+    the forbidden symbol as a ``Constant`` rather than as a ``Name``. The
+    guard cannot see it by walking names alone, but it is still a real
+    reference to the authority — the capture happens at import time, before any
+    later module patch can intercept it.
+
+    Only string literals in a member-lookup *position* are returned, so an
+    ordinary string that merely spells a forbidden word is not affected.
+    """
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = _dotted_name(node.func) or ""
+            leaf = func.rpartition(".")[2]
+            if leaf == "getattr" and len(node.args) >= 2:
+                name = node.args[1]
+            elif leaf == "attrgetter" and node.args:
+                name = node.args[0]
+            else:
+                continue
+            if isinstance(name, ast.Constant) and isinstance(name.value, str):
+                found.append(name.value)
+        elif isinstance(node, ast.Subscript):
+            base = _dotted_name(node.value) or ""
+            leaf = base.rpartition(".")[2]
+            is_dict_access = leaf == "__dict__"
+            # `vars(mod)["f"]`: the subscript sits on a vars(...) result, whose
+            # func is a Name rather than an Attribute, so _dotted_name(value)
+            # is None and the base is empty.
+            is_vars_access = (
+                leaf == "vars"
+                or (
+                    not base
+                    and isinstance(node.value, ast.Call)
+                    and (_dotted_name(node.value.func) or "").rpartition(".")[2] == "vars"
+                )
+            )
+            if is_dict_access or is_vars_access:
+                key = node.slice
+                if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                    found.append(key.value)
+    return found
+
+
+def _forbidden_dynamic_lookups_in_src(src: str, forbidden: list[str]) -> set[str]:
+    """Forbidden authority members fetched by name through a string literal."""
+    tree = _parse_module_src(src)
+    lower = {name.lower() for name in forbidden}
+    return {name for name in _dynamic_member_lookups(tree) if name.lower() in lower}
 
 
 def _forbidden_name_refs_in_src(
@@ -1577,6 +1646,10 @@ def test_40_no_pattern_length_recomputation() -> None:
         )
         == set()
     )
+    # Dataclass fields alone cannot express length inference, so the inference
+    # operations are banned by name as well. Without this a local
+    # `next_bar(last_onset)` helper would pass while recomputing length.
+    assert _forbidden_name_refs_in_src(src, _LENGTH_INFERENCE_NAMES) == set()
     length = Fraction(11, 3)
     plan = _ready_plan(
         channels=(_channel_binding(0, "ch_user_1"),),
@@ -1584,6 +1657,74 @@ def test_40_no_pattern_length_recomputation() -> None:
         length=length,
     )
     assert _compose(plan).pattern.length_quarter_notes == length
+
+
+def test__semantic_checker_rejects_dynamic_member_lookup() -> None:
+    """``getattr(mod, "forbidden")`` captures the authority by string name."""
+    variants = [
+        'import pattern_core\nallocator = getattr(pattern_core, "allocate_user_channel_id")\n',
+        'import builtins, pattern_core\nallocator = builtins.getattr(pattern_core, "allocate_user_channel_id")\n',
+        'import operator, pattern_core\nallocator = operator.attrgetter("allocate_user_channel_id")(pattern_core)\n',
+        'import pattern_core\nallocator = pattern_core.__dict__["allocate_user_channel_id"]\n',
+        'import pattern_core\nallocator = vars(pattern_core)["allocate_user_channel_id"]\n',
+    ]
+    for src in variants:
+        assert _forbidden_calls_in_src(
+            src, _PATTERN_CORE_MUTATION_CALLABLES
+        ) == {"allocate_user_channel_id"}, src
+
+
+def test__semantic_checker_ignores_ordinary_string_literal() -> None:
+    """A string that merely spells a forbidden name is still not a reference."""
+    src = """
+import pattern_core
+
+message = "allocate_user_channel_id"
+lookup = getattr(pattern_core, "some_safe_name")
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == set()
+
+
+def test__length_inference_guard_rejects_local_inference_helpers() -> None:
+    """A local length-inference helper must not pass test 40's guard.
+
+    Regression proof for replacing the inference ban with dataclass-derived
+    fields only: those fields do not include the inference operations, so
+    `next_bar(last_onset)` slipped through.
+    """
+    violating = """
+def compose(timing):
+    return next_bar(timing.last_onset)
+"""
+    assert _forbidden_name_refs_in_src(
+        violating, _LENGTH_INFERENCE_NAMES
+    ) == {"next_bar", "last_onset"}
+    # The frozen composer itself must stay clean.
+    assert _forbidden_name_refs_in_src(_source_text(), _LENGTH_INFERENCE_NAMES) == set()
+
+
+def test__length_inference_guard_is_live() -> None:
+    """The inference ban must actually flag each guarded operation."""
+    for name in _LENGTH_INFERENCE_NAMES:
+        assert _forbidden_name_refs_in_src(
+            f"def compose():\n    return {name}(value)\n", _LENGTH_INFERENCE_NAMES
+        ) == {name}, name
+
+
+def test_40_length_preservation_rejects_integral_only_branch() -> None:
+    """Length preservation must not be satisfiable by an integral-only branch.
+
+    A four-quarter fixture coincidentally matches a truncated computation, so
+    the preservation proof alone cannot show that non-integral lengths survive.
+    The guard is bound to the real composer call here.
+    """
+    for length in (Fraction(11, 3), Fraction(7, 2), Fraction(5, 4)):
+        plan = _ready_plan(
+            channels=(_channel_binding(0, "ch_user_1"),),
+            events=(_event_binding(0, "ch_user_1", Fraction(0, 1)),),
+            length=length,
+        )
+        assert _compose(plan).pattern.length_quarter_notes == length
 
 
 def test_41_no_channel_rack_state() -> None:
