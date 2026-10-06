@@ -60,8 +60,9 @@ ARVP_OBSERVATION_VERSION = "arvp.observation.v1"
 
 _METRIC_ID_RE = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
 _OBSERVATION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+# Reject every absolute filesystem path / file URI — not a curated prefix allowlist.
 _PRIVATE_PATH = re.compile(
-    r"(?:^[A-Za-z]:[\\/]|^\\\\|^/(?:home|Users|root|mnt|Volumes|tmp)/)",
+    r"(?:^[A-Za-z]:[\\/]|^\\\\|^/|^file://)",
     re.IGNORECASE,
 )
 _SECRET_VALUE = re.compile(r"(?i)(?:api[_-]?key|token|secret)\s*[:=]\s*\S+")
@@ -390,6 +391,12 @@ def validate_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(elig, Mapping):
             raise AnalysisEvalArtifactError("record.eligibility must be a mapping")
         elig_status = elig.get("status")
+        if elig_status not in {"eligible", "excluded"}:
+            raise AnalysisEvalArtifactError(
+                "eligibility.status must be eligible or excluded"
+            )
+        if elig_status == "excluded" and not str(elig.get("reason") or "").strip():
+            raise AnalysisEvalArtifactError("excluded eligibility requires reason")
         observations = record.get("observations")
         if not isinstance(observations, list):
             raise AnalysisEvalArtifactError("record.observations must be a list")

@@ -116,6 +116,26 @@ def test_privacy_rejection_absolute_path_and_username() -> None:
             revision="x",
             configuration={"work_dir": "/home/janne/samples"},
         )
+    # Any POSIX absolute path / file URI — not only a curated root allowlist.
+    for bad in (
+        "/workspace/user/private.wav",
+        "/var/data.wav",
+        "file:///home/user/sample.wav",
+        r"\\server\share\kick.wav",
+    ):
+        with pytest.raises(AnalysisEvalArtifactError, match="absolute/private path"):
+            assert_portable_value({"id": bad}, field="x")
+    assert_portable_value({"id": "fixtures/public/kick.wav"}, field="x")
+
+
+def test_validate_artifact_rejects_unknown_eligibility() -> None:
+    artifact = aq1_tempo_fixture()
+    artifact["records"][0]["eligibility"] = {"status": "exclude"}
+    with pytest.raises(AnalysisEvalArtifactError, match="eligible or excluded"):
+        validate_artifact(artifact)
+    artifact["records"][0]["eligibility"] = {"status": "excluded"}
+    with pytest.raises(AnalysisEvalArtifactError, match="requires reason"):
+        validate_artifact(artifact)
 
 
 def test_two_domain_proof_not_tempo_only() -> None:
