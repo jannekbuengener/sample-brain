@@ -231,6 +231,13 @@ def _authority_owners() -> dict[str, set[str]]:
 _AUTHORITY_OWNERS = _authority_owners()
 
 
+# Quantization is banned by *name*, not by owning authority: no module owns
+# `quantize`/`snap`/`swing`/`groove`/`round`, so this guard must keep matching
+# them whatever the receiver is. Kept as a named constant so the distinction from
+# the derived authority sets stays explicit.
+_QUANTIZATION_NAMES = ["quantize", "snap", "swing", "groove", "round"]
+
+
 def _candidate(sample_id: str, path: str | None = None) -> LibraryCandidate:
     # Align fixture fields with live #882 LibraryCandidate (freeze typo repair).
     return LibraryCandidate(
@@ -634,9 +641,12 @@ def _forbidden_calls_in_src(src: str, forbidden: list[str]) -> set[str]:
                 found.add(candidate)
 
     # `getattr(mod, "f")` / `mod.__dict__["f"]` capture the authority by name
-    # at import time, before any later patch could intercept it.
-    for name in _dynamic_member_lookups(tree):
-        if name.lower() in lower:
+    # at import time, before any later patch could intercept it. The receiver
+    # decides whether the captured member is really that authority.
+    for receiver, name in _dynamic_member_lookups(tree):
+        if name.lower() in lower and _dynamic_receiver_resolves(
+            receiver, name, imported, _AUTHORITY_OWNERS
+        ):
             found.add(name)
     return found
 
@@ -657,30 +667,36 @@ def _resolved_names(
     actually resolves to the owning authority: either it is an imported module
     alias, or it *is* the authority module. Without that check any unrelated
     receiver method sharing a generic API name (``validator.get_engine()``)
-    would be reported as a database authority reference.
+    would be reported as a database authority reference. A bare name the module
+    itself binds is dropped for the same reason: the composer shadowed the
+    authority rather than referencing it.
 
-    A bare name that the module itself binds is likewise dropped, because the
-    composer shadowed the authority rather than referencing it. That suppression
-    applies to the authority call guard only; the name-ban guards deliberately
-    keep matching bare names.
+    Scoping applies only to symbols that actually belong to an authority module.
+    A forbidden name with no owner is a plain name ban — the quantization names
+    are the case in point — and keeps the original conservative matching, since
+    there is no authority origin it could resolve against. The name-ban guards
+    pass no ``owners`` and likewise keep matching bare names.
     """
     owners = owners or {}
     local_bindings = local_bindings or set()
+    head, dot, tail = qualified.rpartition(".")
+    symbol = tail if dot else qualified
+    scoped = bool(owners) and bool(owners.get(symbol))
+
     candidates = {qualified}
-    if "." in qualified:
-        head, _, tail = qualified.rpartition(".")
-        if owners:
+    if dot:
+        if scoped:
             # Scoped mode: a leaf only counts when the receiver resolves to the
             # owning authority, so `validator.get_engine()` is not a DB call.
             if head in imported:
                 resolved = f"{imported[head]}.{tail}"
                 candidates.add(resolved)
                 candidates.add(resolved.rpartition(".")[2])
-            elif head in owners.get(tail, ()):
+            elif head in owners.get(symbol, ()):
                 candidates.add(tail)
         else:
-            # Unscoped mode (field/state guards): the receiver is an arbitrary
-            # instance, so the attribute leaf itself is the reference.
+            # Name-ban mode: the receiver is an arbitrary instance or an
+            # unrelated object, so the attribute leaf itself is the reference.
             candidates.add(tail)
             if head in imported:
                 resolved = f"{imported[head]}.{tail}"
@@ -690,7 +706,7 @@ def _resolved_names(
         resolved = imported[qualified]
         candidates.add(resolved)
         candidates.add(resolved.rpartition(".")[2])
-    elif qualified in local_bindings:
+    elif scoped and qualified in local_bindings:
         return set()
     return candidates
 
@@ -698,24 +714,23 @@ def _resolved_names(
 _MAPPING_LOOKUP_METHODS = frozenset({"get", "getdefault", "pop", "setdefault", "popitem"})
 
 
-def _is_mapping_access(target: ast.AST) -> bool:
-    """True when ``target`` reads an object's ``__dict__`` by name.
+def _mapping_object(target: ast.AST) -> ast.AST | None:
+    """The object whose ``__dict__`` ``target`` reads, or ``None``.
 
     Covers the direct attribute form (``obj.__dict__``) and the builtin
-    ``vars(obj)`` form, whose ``func`` is a ``Name`` rather than an
-    ``Attribute``.
+    ``vars(obj)`` form. For a mapping method such as ``obj.__dict__.get(...)``
+    the caller passes the method's receiver, which is the ``__dict__`` or
+    ``vars(...)`` expression itself.
     """
-    leaf = (_dotted_name(target) or "").rpartition(".")[2]
-    if leaf == "__dict__":
-        return True
-    if leaf == "vars":
-        return True
-    return isinstance(target, ast.Call) and (
-        (_dotted_name(target.func) or "").rpartition(".")[2] == "vars"
-    )
+    if isinstance(target, ast.Attribute) and target.attr == "__dict__":
+        return target.value
+    if isinstance(target, ast.Call) and target.args:
+        if (_dotted_name(target.func) or "").rpartition(".")[2] == "vars":
+            return target.args[0]
+    return None
 
 
-def _dynamic_member_lookups(tree: ast.Module) -> list[str]:
+def _dynamic_member_lookups(tree: ast.Module) -> list[tuple[ast.AST | None, str]]:
     """Member names resolved at runtime through a string literal.
 
     ``getattr(mod, "f")``, ``mod.__dict__["f"]``, ``mod.__dict__.get("f")``,
@@ -725,48 +740,99 @@ def _dynamic_member_lookups(tree: ast.Module) -> list[str]:
     names alone, but it is still a real reference to the authority — the capture
     happens at import time, before any later module patch can intercept it.
 
+    Each result is a ``(receiver, name)`` pair. The receiver is the expression
+    the member is read from, so the caller can tell ``getattr(pattern_core,
+    "f")`` from ``getattr(validator, "f")``: the member name alone cannot.
+
     Only string literals in a member-lookup *position* are returned, so an
     ordinary string that merely spells a forbidden word is not affected.
     """
-    found: list[str] = []
+    found: list[tuple[ast.AST | None, str]] = []
+    applied: dict[int, ast.AST | None] = {}
     for node in ast.walk(tree):
+        # `attrgetter("f")` is walked both on its own and as the callee of the
+        # call that applies it, so the receiver is taken from that outer call.
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Call)
+            and node.func.args
+            and (_dotted_name(node.func.func) or "").rpartition(".")[2] == "attrgetter"
+        ):
+            applied[id(node.func)] = node.args[0] if node.args else None
+
+    for node in ast.walk(tree):
+        receiver: ast.AST | None = None
         if isinstance(node, ast.Call):
             func = _dotted_name(node.func) or ""
             leaf = func.rpartition(".")[2]
             if leaf == "getattr" and len(node.args) >= 2:
                 name = node.args[1]
+                receiver = node.args[0]
             elif leaf == "attrgetter" and node.args:
                 name = node.args[0]
+                receiver = applied.get(id(node))
             elif (
                 isinstance(node.func, ast.Attribute)
                 and node.func.attr in _MAPPING_LOOKUP_METHODS
                 and node.args
-                # A mapping method is only a named member read when the mapping
-                # itself is an object's `__dict__`; any other receiver is
-                # ordinary application data.
-                and _is_mapping_access(node.func.value)
             ):
-                # The method name comes from `func.attr`, not from
-                # `_dotted_name`: `vars(obj).get(...)` has a Call receiver, so
-                # the dotted spelling is empty.
+                # A mapping method only names a member when it reads a real
+                # `__dict__`; any other mapping is ordinary application data.
+                owner = _mapping_object(node.func.value)
+                if owner is None:
+                    continue
                 name = node.args[0]
+                receiver = owner
             else:
                 continue
-            if isinstance(name, ast.Constant) and isinstance(name.value, str):
-                found.append(name.value)
         elif isinstance(node, ast.Subscript):
-            if _is_mapping_access(node.value):
-                key = node.slice
-                if isinstance(key, ast.Constant) and isinstance(key.value, str):
-                    found.append(key.value)
+            owner = _mapping_object(node.value)
+            if owner is None:
+                continue
+            name = node.slice
+            receiver = owner
+        else:
+            continue
+        if isinstance(name, ast.Constant) and isinstance(name.value, str):
+            found.append((receiver, name.value))
     return found
+
+
+def _dynamic_receiver_resolves(
+    receiver: ast.AST | None,
+    symbol: str,
+    imported: dict[str, str],
+    owners: dict[str, set[str]],
+) -> bool:
+    """Whether a dynamic lookup's receiver can be that symbol's authority.
+
+    An owned symbol only counts when the receiver resolves to a module that
+    owns it, so ``getattr(validator, "get_engine")()`` is not database access
+    while ``getattr(pattern_core, "allocate_user_channel_id")(x)`` is. A symbol
+    with no owning module is a plain name ban and no receiver can disown it.
+
+    A receiver that is absent or computed rather than named cannot be proven
+    unrelated, so the guard stays closed for it.
+    """
+    owning_modules = owners.get(symbol)
+    if not owning_modules or receiver is None:
+        return True
+    dotted = _dotted_name(receiver)
+    if dotted is None:
+        return True
+    # rpartition on a dot-free spelling yields an empty head, so the receiver
+    # itself has to be used when there is nothing to strip.
+    head = dotted.rsplit(".", 1)[0] if "." in dotted else dotted
+    if head in imported:
+        return imported[head].rsplit(".", 1)[-1] in owning_modules
+    return dotted in owning_modules or dotted.rpartition(".")[2] in owning_modules
 
 
 def _forbidden_dynamic_lookups_in_src(src: str, forbidden: list[str]) -> set[str]:
     """Forbidden authority members fetched by name through a string literal."""
     tree = _parse_module_src(src)
     lower = {name.lower() for name in forbidden}
-    return {name for name in _dynamic_member_lookups(tree) if name.lower() in lower}
+    return {name for _, name in _dynamic_member_lookups(tree) if name.lower() in lower}
 
 
 def _forbidden_name_refs_in_src(
@@ -803,8 +869,9 @@ def _forbidden_name_refs_in_src(
                 found.add(candidate)
     # A protected field read dynamically (`getattr(binding, "selected_rank")`,
     # `binding.__dict__["selected_rank"]`) is still an attribute read by name,
-    # so the field guard must see it too.
-    for name in _dynamic_member_lookups(tree):
+    # so the field guard must see it too. Fields belong to no owning module, so
+    # no receiver scoping applies here.
+    for _receiver, name in _dynamic_member_lookups(tree):
         if name.lower() in lower:
             found.add(name)
     return found
@@ -938,6 +1005,74 @@ def test__semantic_checker_ignores_locally_bound_bare_helper() -> None:
 
     # The frozen composer itself must stay clean.
     assert _forbidden_calls_in_src(_source_text(), _DB_CALLABLES) == set()
+
+
+def test__semantic_checker_scopes_dynamic_lookup_to_authority_receiver() -> None:
+    """A dynamic lookup only counts when its receiver is the authority.
+
+    Regression proof for matching the string literal alone: because
+    `_dynamic_member_lookups` reported just the member name and bypassed
+    `_resolved_names` entirely, `getattr(validator, "get_engine")()` was
+    reported as database authority access even though the receiver had no
+    connection to `src.db`.
+    """
+    unrelated = {
+        "getattr": 'def compose(v):\n    return getattr(v, "get_engine")()\n',
+        "attrgetter": 'import operator\ndef compose(v):\n'
+        '    return operator.attrgetter("get_engine")(v)\n',
+        "__dict__.get": 'def compose(v):\n    return v.__dict__.get("get_engine")\n',
+        "vars().get": 'def compose(v):\n    return vars(v).get("get_engine")\n',
+    }
+    for label, src in unrelated.items():
+        assert _forbidden_calls_in_src(src, _DB_CALLABLES) == set(), label
+
+    # The same names still fail when the receiver really is the authority.
+    assert _forbidden_calls_in_src(
+        'def compose():\n    return getattr(pattern_core, "allocate_user_channel_id")(x)\n',
+        _PATTERN_CORE_MUTATION_CALLABLES,
+    ) == {"allocate_user_channel_id"}
+    assert _forbidden_calls_in_src(
+        "import pattern_core as pc\nimport operator\ndef compose():\n"
+        '    return operator.attrgetter("allocate_user_channel_id")(pc)\n',
+        _PATTERN_CORE_MUTATION_CALLABLES,
+    ) == {"allocate_user_channel_id"}
+
+    # A receiver that is computed rather than named cannot be proven unrelated,
+    # so the guard stays closed instead of silently passing it.
+    assert _forbidden_calls_in_src(
+        'def compose():\n    return getattr(__import__("src.db"), "get_engine")()\n',
+        _DB_CALLABLES,
+    ) == {"get_engine"}
+
+    # Name-ban lookups have no owner module, so no receiver can disown them.
+    assert _forbidden_calls_in_src(
+        'def compose(v):\n    return getattr(v, "quantize")()\n', _QUANTIZATION_NAMES
+    ) == {"quantize"}
+
+    assert _forbidden_calls_in_src(_source_text(), _DB_CALLABLES) == set()
+
+
+def test__quantization_guard_is_not_authority_scoped() -> None:
+    """The quantization ban is a name ban, so it must keep matching locally.
+
+    Regression proof for applying owner scoping to every forbidden name: the
+    quantization names have no owning authority module, so scoping made test
+    12 blind to `grid.quantize(...)` and to a local helper that quantizes.
+    """
+    for src in (
+        "def compose(grid, x):\n    return grid.quantize(x)\n",
+        "def compose(x):\n    return quantize(x)\n",
+        "def snap(x):\n    return x\n\ndef compose(x):\n    return snap(quantize(x))\n",
+    ):
+        assert _forbidden_calls_in_src(src, _QUANTIZATION_NAMES), src
+
+    # An owned authority name in the same position is scoped, so the two guard
+    # kinds stay distinguishable.
+    assert _forbidden_calls_in_src(
+        "def compose(obj):\n    return obj.init_db()\n", _DB_CALLABLES
+    ) == set()
+
+    assert _forbidden_calls_in_src(_source_text(), _QUANTIZATION_NAMES) == set()
 
 
 def test__field_guard_rejects_dynamic_protected_field_read() -> None:
@@ -1552,9 +1687,7 @@ def test_12_no_quantization() -> None:
     assert result.pattern.triggers[0].position == Fraction(1, 7)
     src = _source_text()
     # Semantic check: no actual CALLS to quantization functions
-    forbidden_calls = _forbidden_calls_in_src(src, [
-        "quantize", "snap", "swing", "groove", "round"
-    ])
+    forbidden_calls = _forbidden_calls_in_src(src, _QUANTIZATION_NAMES)
     assert forbidden_calls == set(), f"Found forbidden quantization calls: {forbidden_calls}"
 
 
