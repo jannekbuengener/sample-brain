@@ -255,6 +255,24 @@ def test_validate_result_rejects_malformed_bounded_state() -> None:
         validate_result(poisoned4)
 
 
+def test_validate_result_rejects_out_of_order_advance_candidate() -> None:
+    result = _run(visited_candidate_ids=["demo.cand.c"])
+    # Declaration order is c, a, b. Skipping a for b must fail closed.
+    poisoned = dict(result)
+    poisoned["next_candidate"] = {
+        "candidate_id": "demo.cand.b",
+        "config_fingerprint": "b" * 64,
+    }
+    poisoned["visited_candidate_ids"] = ["demo.cand.c", "demo.cand.b"]
+    poisoned["iteration_index"] = 2
+    poisoned["result_fingerprint"] = result_semantic_fingerprint(poisoned)
+    with pytest.raises(
+        AnalysisCandidateIteratorError,
+        match="first unvisited declaration-order member",
+    ):
+        validate_result(poisoned)
+
+
 def test_validate_result_rejects_undeclared_next_candidate() -> None:
     result = _run(visited_candidate_ids=["demo.cand.c"])
     poisoned = dict(result)

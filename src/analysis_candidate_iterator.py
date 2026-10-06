@@ -436,6 +436,18 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
             raise AnalysisCandidateIteratorError(
                 "advance current_candidate must remain in visited history"
             )
+        prior_visited = set(normalized_visited[:-1])
+        expected_next_id: str | None = None
+        for member in declared_members:
+            member_id = str(member["candidate_id"])
+            if member_id not in prior_visited:
+                expected_next_id = member_id
+                break
+        if expected_next_id != next_id:
+            raise AnalysisCandidateIteratorError(
+                "advance next_candidate must be the first unvisited "
+                "declaration-order member"
+            )
     elif "next_candidate" in result:
         raise AnalysisCandidateIteratorError(
             f"{effect} must not include next_candidate"
