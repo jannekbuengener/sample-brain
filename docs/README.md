@@ -79,6 +79,7 @@ internal agent- and process docs are clearly separated.
 | [AQ6 Harmonic Match Decision Memo](benchmarks/AQ6_HARMONIC_MATCH_DECISION_MEMO.md) | #1022/#948 evidence-backed keep-current Harmonic Match decision (no production switch; preference `NOT_REQUIRED`) |
 | [Analyzer Portable Output Baseline](benchmarks/ANALYZER_PORTABLE_OUTPUT_BASELINE.md) | #960 AQ8 audit: safe/unsafe analyzer projection inventory for #956 |
 | [Analysis Headless Run Contract](benchmarks/SAMPLE_BRAIN_ANALYSIS_HEADLESS_RUN_V1.md) | #1054/#1040 frozen headless request/result + static AQ1/AQ6 adapter registry (no ARVP; no decision tokens) |
+| [Analysis Orchestration Run Contract](benchmarks/SAMPLE_BRAIN_ANALYSIS_ORCHESTRATION_RUN_V1.md) | #1060/#1040 frozen single-shot headless→eval→decision binder (AQ1 proof; opaque ARVP; no optimizer) |
 | [Validation Reports](validation/README.md) | Local validate_report how-to; committed files there are historical issue evidence |
 
 ## Operations, Process & Infrastructure (internal)
