@@ -141,7 +141,7 @@ PLAYBACK_CLASSIFICATION_FREEZE = SNAPSHOT_AT_PLAY_ANCHOR
 
   Scope is deliberately narrow: **Pattern / trigger state is not frozen.** Step toggles made during Play stay immediately audible, matching today's behavior. Only path and classification are per-Play-stable.
 
-  Consequence: no mid-Play path replacement, path clear, or classification change can add, remove, or retarget any channel's playback within that Play, and none can stop or restart playback. Live state, the live binding, and durable persistence update immediately and apply audibly on the next explicit Rack Play.
+  Consequence: no mid-Play path replacement, path clear, or classification change can add, remove, or retarget any channel's playback within that Play, and none can stop or restart playback. How those mutations reach durable state is fixed by `PLAYBACK_MUTATION_APPLY_POLICY` below — they do **not** land immediately.
 
 ```text
 PLAYBACK_MUTATION_APPLY_POLICY = ATOMIC_AFTER_STOP
@@ -152,6 +152,8 @@ PLAYBACK_MUTATION_APPLY_POLICY = ATOMIC_AFTER_STOP
   Therefore, while Rack Play is active, **all** durable state changes implied by a user-channel path or classification mutation — the path itself, its binding entry, and any classification-implied trigger strip — are **queued and applied atomically**: either after `stop()`, or at the start of the next explicit Rack Play before its anchor. They land as one coherent state adoption that fires the musical-state observer **exactly once**.
 
   Nothing is persisted mid-Play, so a queued mutation cannot be observed or autosaved out of order, and the running Play is never reading a partially-applied state. This mirrors the shipped `LOOP_ASSIGNMENT_MUTATION_POLICY` = `DEFER_UNTIL_NEXT_RACK_PLAY`: new assignment and classification semantics take effect on the next explicit Rack Play, not during the current one.
+
+  When Rack Play is **not** active there is nothing to defer: B2, B3, and B4 apply immediately in one atomic state adoption with exactly one observer call, exactly as §5 states.
 
 - Projection may continue to read the **live** derived binding, because projection is display and not playback. Mid-Play projection and playback may therefore disagree; the divergence resolves on the next explicit Rack Play and must not be presented as a classification change.
 - Refresh happens only through B4, before any next explicit Rack Play.
@@ -205,14 +207,14 @@ The follow-up slice must freeze these before implementation. Today, the ownershi
 7. Binding keyed by the exact durable path string; a stale-key lookup is `ambiguous`, not silent playback.
 8. Restore resolves all user-channel paths through one read-only connection (assert connection-open count ≤ 1) and never writes.
 9. Assign (empty → path) to an explicit oneshot makes the channel point-trigger eligible; to an explicit loop makes it loop-eligible; to a miss stays silent.
-10. Replacement A → B invalidates A immediately and never leaves the channel audible under A's class. Trigger outcome follows the binding precedence: A(one-shot) → B(loop) strips the stale triggers; A → B(`ambiguous`) and A → B(one-shot) preserve them bit-identical and never re-seed.
+10. Replacement A → B invalidates A immediately — the binding never serves A after the swap, so the channel cannot stay audible under A's class — and the new path is then subject to trigger precedence: A(one-shot) → B(loop) strips the stale triggers; A → B(`ambiguous`) and A → B(one-shot) preserve them bit-identical and never re-seed. While Rack Play is active the durable part of this replacement is queued per `PLAYBACK_MUTATION_APPLY_POLICY`.
 11. `clear_user_channel_sample(channel_id)` drops the association, preserves that channel's and every unrelated channel's triggers, and fires the observer once; unknown `channel_id`, Live Kit seed channel, and already-empty user channel all reject or no-op without mutation, resolution, or an observer call. Clearing one of two channels that **share** a sample path keeps the binding entry for the survivor, which stays non-ambiguous.
 12. Explicit `loop` reconciles stale user-channel triggers once; `ambiguous` preserves them; a one-shot never re-seeds.
 13. Resolve-only emits no musical-state observer call and no autosave; resolve + loop strip emits exactly one.
 14. User loop + SYNC-on with a valid bound `source_bpm` builds a loop spec; missing/invalid BPM stays fail-closed.
 15. `apply_gesture_integration_plan` resolves only the gesture-introduced or gesture-changed paths, leaves preserved base-channel bindings byte-identical, and keeps the single-observer guarantee.
 16. `add_user_channel(sample_path=…)` and `assign_user_channel_sample(...)` are both resolution boundaries; `add_user_channel()` with no path and a same-path re-assign resolve nothing.
-17. `PLAYBACK_CLASSIFICATION_FREEZE`: a path replacement, path clear, or classification change during active Rack Play changes neither point-trigger eligibility nor loop specs for any pass of that Play, does not fall silent through a path-key miss, does not stop or restart playback, and applies on the next explicit Rack Play. Step toggles made during Play remain immediately audible.
+17. `PLAYBACK_CLASSIFICATION_FREEZE`: a path replacement, path clear, or classification change during active Rack Play changes neither point-trigger eligibility nor loop specs for any pass of that Play, does not fall silent through a path-key miss, does not stop or restart playback, and becomes audible only on the next explicit Rack Play. Step toggles made during Play remain immediately audible.
 18. `PLAYBACK_MUTATION_APPLY_POLICY`: a B2 replacement or B4 refresh during active Rack Play applies **nothing** durably mid-Play — path, binding entry, and any classification-implied trigger strip are queued and applied atomically after `stop()` or at the next explicit Rack Play before its anchor, in **exactly one** observer call. The running Play neither goes silent nor reads a partially-applied state.
 19. `project_bottom_rack_for_qml` classifies **user** rows through the same `sample_class_for_channel` consumption point and no hardcoded user-row class set: a resolved one-shot user row projects `row_kind=step` with a real step grid, a resolved loop user row projects `loop_identity`, and an ambiguous user row stays `loop_identity` and gridless. Assert all three.
 20. #926 regression suites stay green: `tests/test_channel_rack_loop_classification.py`, `tests/test_workbench_channel_rack_loop.py`, `tests/test_loop_rack_playback.py`, `tests/test_workbench_session_catalog_rehydrate.py`, `tests/test_workbench_session_persistence.py`, `tests/test_workbench_qml_screen2_channel_rack.py`.
