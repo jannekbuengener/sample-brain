@@ -6,7 +6,7 @@
 **Depends on (CLOSED — consume, do not reopen):** [#943](https://github.com/jannekbuengener/sample-brain/issues/943) / AQ1 tempo claimability; [#944](https://github.com/jannekbuengener/sample-brain/issues/944) / AQ2 key/mode claimability  
 **Product theory authority:** `docs/product/02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md` §9 + live `src/workbench_harmony.py`  
 **Executable regression surface:** `src/aq6_harmonic_theory_truth_table.py` + `tests/fixtures/aq6_harmonic_theory/truth_table_v1.json`  
-**Related (by reference only):** [#956](https://github.com/jannekbuengener/sample-brain/issues/956) portable tokens; [#959](https://github.com/jannekbuengener/sample-brain/issues/959) semantic determinism. Ranking weight / preference planes are **later AQ6 slices** (#1016 / #1017), not this freeze.
+**Related (by reference only):** [#956](https://github.com/jannekbuengener/sample-brain/issues/956) portable tokens; [#959](https://github.com/jannekbuengener/sample-brain/issues/959) semantic determinism. Ranking relevance freeze: [#1016](https://github.com/jannekbuengener/sample-brain/issues/1016) / `docs/benchmarks/AQ6_HARMONIC_MATCH_RANKING_RELEVANCE_CONTRACT.md` (separate plane). Preference remains later.
 
 ## Architecture outcome
 
@@ -33,7 +33,8 @@ No global “Harmonic Match quality” score may replace the theory metrics belo
 | Key string parse / root / mode normalization | `src/key_signature.py` (cite; do not redefine) |
 | Upstream key/mode claimability evidence | AQ2 (#944) — consume eligibility/uncertainty; do not re-analyze |
 | Upstream BPM / secondary score evidence | AQ1 (#943) — ranking-adjacent only; out of theory plane |
-| Ranking weights (0.75 / 0.25) / Precision@K / preference | later AQ6 slices — not this freeze |
+| Ranking relevance grades / Precision@K / NDCG | [#1016](https://github.com/jannekbuengener/sample-brain/issues/1016) — separate plane; do not override theory |
+| Ranking weights (0.75 / 0.25) / preference | later AQ6 slices — not this freeze |
 | Portable domain tokens + eval envelope | [#956](https://github.com/jannekbuengener/sample-brain/issues/956) |
 | Semantic determinism | [#959](https://github.com/jannekbuengener/sample-brain/issues/959) |
 | Promotion thresholds / production semantic switch | future evidence-backed decision issues only |
@@ -66,7 +67,7 @@ No global “Harmonic Match quality” score may replace the theory metrics belo
 | Token | Scope |
 |---|---|
 | `aq6.theory` | Deterministic music-theory relation / compatibility / pitch-shift correctness against the frozen truth table |
-| `aq6.ranking` | Reserved for later ranking-quality slices — **not activated** by this freeze |
+| `aq6.ranking` | Ranking-quality grades/KPIs — activated by [#1016](https://github.com/jannekbuengener/sample-brain/issues/1016); **not** this theory freeze |
 | `aq6.preference` | Reserved for later human preference slices — **not activated** by this freeze |
 
 Do not invent an `aq6.quality` aggregate that collapses these planes.
@@ -216,5 +217,5 @@ AQ6_THEORY_TRUTH_TABLE_CONTRACT_FROZEN
 
 ## Follow-on write-heads (out of scope here)
 
-- [#1016](https://github.com/jannekbuengener/sample-brain/issues/1016) — ranking KPI / relevance contract  
-- [#1017](https://github.com/jannekbuengener/sample-brain/issues/1017) — later AQ6 ranking/baseline work as scoped
+- [#1016](https://github.com/jannekbuengener/sample-brain/issues/1016) — ranking KPI / relevance contract (separate plane)  
+- [#1017](https://github.com/jannekbuengener/sample-brain/issues/1017) — measure current theory correctness baseline

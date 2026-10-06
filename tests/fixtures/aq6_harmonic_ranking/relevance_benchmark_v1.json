@@ -1,0 +1,396 @@
+{
+  "document_type": "sample-brain.aq6.harmonic-ranking-relevance.v1",
+  "benchmark_id": "sample-brain.aq6.harmonic-ranking.relevance.v1",
+  "benchmark_version": "1.0.0",
+  "domain": "aq6.ranking",
+  "label_source": "synthetic_theory_aligned_graded_v1",
+  "theory_truth_table_id": "sample-brain.aq6.harmonic-theory.truth-table.v1",
+  "relevance_grades": {
+    "3": "direct_compatible",
+    "2": "related_compatible",
+    "1": "transpose_compatible",
+    "0": "incompatible_known"
+  },
+  "binary_relevant_min_grade": 1,
+  "default_ks": [
+    1,
+    3,
+    5
+  ],
+  "partitions": [
+    "CALIBRATION",
+    "TEST",
+    "HOLDOUT"
+  ],
+  "support": {
+    "queries_total": 5,
+    "by_partition": {
+      "CALIBRATION": 2,
+      "TEST": 2,
+      "HOLDOUT": 1
+    },
+    "candidates_total": 23,
+    "eligible_by_grade": {
+      "0": 5,
+      "1": 3,
+      "2": 6,
+      "3": 5
+    },
+    "ranking_ineligible": 4,
+    "has_direct": true,
+    "has_related": true,
+    "has_transpose": true,
+    "has_incompatible": true,
+    "has_uncertain_evidence": true,
+    "has_bpm_known": true,
+    "has_bpm_missing": true
+  },
+  "queries": [
+    {
+      "query_id": "q_cal_cmaj_full_spectrum",
+      "partition": "CALIBRATION",
+      "reference": {
+        "synthetic_id": "ref_cmaj_128",
+        "key": "Cmaj",
+        "bpm": 128.0,
+        "key_evidence": "modeful",
+        "bpm_evidence": "known",
+        "path": "synthetic/aq6_ranking/ref_cmaj_128.wav"
+      },
+      "candidates": [
+        {
+          "synthetic_id": "cal_direct_cmaj",
+          "key": "Cmaj",
+          "bpm": 128.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "known",
+          "theory_relation": "direct",
+          "theory_compatibility": "compatible",
+          "relevance_grade": 3,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/cal_direct_cmaj.wav"
+        },
+        {
+          "synthetic_id": "cal_related_amin",
+          "key": "Amin",
+          "bpm": 128.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "known",
+          "theory_relation": "related",
+          "theory_compatibility": "compatible",
+          "relevance_grade": 2,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/cal_related_amin.wav"
+        },
+        {
+          "synthetic_id": "cal_related_gmaj",
+          "key": "Gmaj",
+          "bpm": 126.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "known",
+          "theory_relation": "related",
+          "theory_compatibility": "compatible",
+          "relevance_grade": 2,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/cal_related_gmaj.wav"
+        },
+        {
+          "synthetic_id": "cal_transpose_dmaj",
+          "key": "Dmaj",
+          "bpm": 128.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "known",
+          "theory_relation": "transpose",
+          "theory_compatibility": "compatible",
+          "relevance_grade": 1,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/cal_transpose_dmaj.wav"
+        },
+        {
+          "synthetic_id": "cal_incompatible_fsharpmaj",
+          "key": "F#maj",
+          "bpm": 128.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "known",
+          "theory_relation": "uncertain",
+          "theory_compatibility": "incompatible",
+          "relevance_grade": 0,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/cal_incompatible_fsharpmaj.wav"
+        },
+        {
+          "synthetic_id": "cal_uncertain_root_only",
+          "key": "G",
+          "bpm": 128.0,
+          "key_evidence": "missing_mode",
+          "bpm_evidence": "known",
+          "theory_relation": "uncertain",
+          "theory_compatibility": "uncertain",
+          "relevance_grade": null,
+          "ranking_eligible": false,
+          "path": "synthetic/aq6_ranking/cal_uncertain_root_only.wav"
+        },
+        {
+          "synthetic_id": "cal_uncertain_missing_key",
+          "key": null,
+          "bpm": 128.0,
+          "key_evidence": "missing_key",
+          "bpm_evidence": "known",
+          "theory_relation": "uncertain",
+          "theory_compatibility": "uncertain",
+          "relevance_grade": null,
+          "ranking_eligible": false,
+          "path": "synthetic/aq6_ranking/cal_uncertain_missing_key.wav"
+        }
+      ]
+    },
+    {
+      "query_id": "q_cal_gmaj_bpm_missing_candidate",
+      "partition": "CALIBRATION",
+      "reference": {
+        "synthetic_id": "ref_gmaj_120",
+        "key": "Gmaj",
+        "bpm": 120.0,
+        "key_evidence": "modeful",
+        "bpm_evidence": "known",
+        "path": "synthetic/aq6_ranking/ref_gmaj_120.wav"
+      },
+      "candidates": [
+        {
+          "synthetic_id": "cal_g_direct_bpm_missing",
+          "key": "Gmaj",
+          "bpm": null,
+          "key_evidence": "modeful",
+          "bpm_evidence": "missing_candidate",
+          "theory_relation": "direct",
+          "theory_compatibility": "compatible",
+          "relevance_grade": 3,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/cal_g_direct_bpm_missing.wav"
+        },
+        {
+          "synthetic_id": "cal_g_related_emin",
+          "key": "Emin",
+          "bpm": 120.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "known",
+          "theory_relation": "related",
+          "theory_compatibility": "compatible",
+          "relevance_grade": 2,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/cal_g_related_emin.wav"
+        },
+        {
+          "synthetic_id": "cal_g_incompatible_csharpmaj",
+          "key": "C#maj",
+          "bpm": 120.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "known",
+          "theory_relation": "uncertain",
+          "theory_compatibility": "incompatible",
+          "relevance_grade": 0,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/cal_g_incompatible_csharpmaj.wav"
+        }
+      ]
+    },
+    {
+      "query_id": "q_test_dmin_spectrum",
+      "partition": "TEST",
+      "reference": {
+        "synthetic_id": "ref_dmin_140",
+        "key": "Dmin",
+        "bpm": 140.0,
+        "key_evidence": "modeful",
+        "bpm_evidence": "known",
+        "path": "synthetic/aq6_ranking/ref_dmin_140.wav"
+      },
+      "candidates": [
+        {
+          "synthetic_id": "test_direct_dmin",
+          "key": "Dmin",
+          "bpm": 140.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "known",
+          "theory_relation": "direct",
+          "theory_compatibility": "compatible",
+          "relevance_grade": 3,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/test_direct_dmin.wav"
+        },
+        {
+          "synthetic_id": "test_related_fmaj",
+          "key": "Fmaj",
+          "bpm": 140.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "known",
+          "theory_relation": "related",
+          "theory_compatibility": "compatible",
+          "relevance_grade": 2,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/test_related_fmaj.wav"
+        },
+        {
+          "synthetic_id": "test_transpose_emin",
+          "key": "Emin",
+          "bpm": 138.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "known",
+          "theory_relation": "transpose",
+          "theory_compatibility": "compatible",
+          "relevance_grade": 1,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/test_transpose_emin.wav"
+        },
+        {
+          "synthetic_id": "test_incompatible_abmaj",
+          "key": "G#maj",
+          "bpm": 140.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "known",
+          "theory_relation": "uncertain",
+          "theory_compatibility": "incompatible",
+          "relevance_grade": 0,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/test_incompatible_abmaj.wav"
+        },
+        {
+          "synthetic_id": "test_uncertain_unparseable",
+          "key": "not-a-key",
+          "bpm": 140.0,
+          "key_evidence": "unparseable",
+          "bpm_evidence": "known",
+          "theory_relation": "uncertain",
+          "theory_compatibility": "uncertain",
+          "relevance_grade": null,
+          "ranking_eligible": false,
+          "path": "synthetic/aq6_ranking/test_uncertain_unparseable.wav"
+        }
+      ]
+    },
+    {
+      "query_id": "q_test_amaj_bpm_missing_reference",
+      "partition": "TEST",
+      "reference": {
+        "synthetic_id": "ref_amaj_bpm_missing",
+        "key": "Amaj",
+        "bpm": null,
+        "key_evidence": "modeful",
+        "bpm_evidence": "missing_reference",
+        "path": "synthetic/aq6_ranking/ref_amaj_bpm_missing.wav"
+      },
+      "candidates": [
+        {
+          "synthetic_id": "test_a_direct",
+          "key": "Amaj",
+          "bpm": 100.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "missing_reference",
+          "theory_relation": "direct",
+          "theory_compatibility": "compatible",
+          "relevance_grade": 3,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/test_a_direct.wav"
+        },
+        {
+          "synthetic_id": "test_a_related_fsharpmin",
+          "key": "F#min",
+          "bpm": 100.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "missing_reference",
+          "theory_relation": "related",
+          "theory_compatibility": "compatible",
+          "relevance_grade": 2,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/test_a_related_fsharpmin.wav"
+        },
+        {
+          "synthetic_id": "test_a_incompatible_dsharpmaj",
+          "key": "D#maj",
+          "bpm": 100.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "missing_reference",
+          "theory_relation": "uncertain",
+          "theory_compatibility": "incompatible",
+          "relevance_grade": 0,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/test_a_incompatible_dsharpmaj.wav"
+        }
+      ]
+    },
+    {
+      "query_id": "q_hold_fmaj_spectrum",
+      "partition": "HOLDOUT",
+      "reference": {
+        "synthetic_id": "ref_fmaj_110",
+        "key": "Fmaj",
+        "bpm": 110.0,
+        "key_evidence": "modeful",
+        "bpm_evidence": "known",
+        "path": "synthetic/aq6_ranking/ref_fmaj_110.wav"
+      },
+      "candidates": [
+        {
+          "synthetic_id": "hold_direct_fmaj",
+          "key": "Fmaj",
+          "bpm": 110.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "known",
+          "theory_relation": "direct",
+          "theory_compatibility": "compatible",
+          "relevance_grade": 3,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/hold_direct_fmaj.wav"
+        },
+        {
+          "synthetic_id": "hold_related_dmin",
+          "key": "Dmin",
+          "bpm": 110.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "known",
+          "theory_relation": "related",
+          "theory_compatibility": "compatible",
+          "relevance_grade": 2,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/hold_related_dmin.wav"
+        },
+        {
+          "synthetic_id": "hold_transpose_gmaj",
+          "key": "Gmaj",
+          "bpm": 112.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "known",
+          "theory_relation": "transpose",
+          "theory_compatibility": "compatible",
+          "relevance_grade": 1,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/hold_transpose_gmaj.wav"
+        },
+        {
+          "synthetic_id": "hold_incompatible_bmaj",
+          "key": "Bmaj",
+          "bpm": 110.0,
+          "key_evidence": "modeful",
+          "bpm_evidence": "known",
+          "theory_relation": "uncertain",
+          "theory_compatibility": "incompatible",
+          "relevance_grade": 0,
+          "ranking_eligible": true,
+          "path": "synthetic/aq6_ranking/hold_incompatible_bmaj.wav"
+        },
+        {
+          "synthetic_id": "hold_uncertain_missing_mode",
+          "key": "C",
+          "bpm": 110.0,
+          "key_evidence": "missing_mode",
+          "bpm_evidence": "known",
+          "theory_relation": "uncertain",
+          "theory_compatibility": "uncertain",
+          "relevance_grade": null,
+          "ranking_eligible": false,
+          "path": "synthetic/aq6_ranking/hold_uncertain_missing_mode.wav"
+        }
+      ]
+    }
+  ]
+}
