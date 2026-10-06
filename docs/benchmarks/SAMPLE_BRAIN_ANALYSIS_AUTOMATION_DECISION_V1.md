@@ -1,12 +1,12 @@
 # Sample Brain Analysis Automation Decision v1
 
-**Status:** ACTIVE_SUPPORTING (frozen machine-readable decision / orchestration handoff)  
-**Issue:** [#1043](https://github.com/jannekbuengener/sample-brain/issues/1043)  
-**Parents:** [#1040](https://github.com/jannekbuengener/sample-brain/issues/1040), [#942](https://github.com/jannekbuengener/sample-brain/issues/942)  
-**Planning sibling:** [#1047](https://github.com/jannekbuengener/sample-brain/issues/1047)  
-**Consumes:** [#956](https://github.com/jannekbuengener/sample-brain/issues/956) (`sample-brain.analysis-eval.v1`); ARVP Evidence Bundle / Gate by opaque reference (`arvp.evidence.v1`, `GateVerdict`)  
-**Tooling:** `src/analysis_automation_decision.py`  
-**Conceptual identity:** `sample-brain.analysis-automation-decision.v1`  
+**Status:** ACTIVE_SUPPORTING (frozen machine-readable decision / orchestration handoff)
+**Issue:** [#1043](https://github.com/jannekbuengener/sample-brain/issues/1043)
+**Parents:** [#1040](https://github.com/jannekbuengener/sample-brain/issues/1040), [#942](https://github.com/jannekbuengener/sample-brain/issues/942)
+**Planning sibling:** [#1047](https://github.com/jannekbuengener/sample-brain/issues/1047)
+**Consumes:** [#956](https://github.com/jannekbuengener/sample-brain/issues/956) (`sample-brain.analysis-eval.v1`); ARVP Evidence Bundle / Gate by opaque reference (`arvp.evidence.v1`, `GateVerdict`)
+**Tooling:** `src/analysis_automation_decision.py`
+**Conceptual identity:** `sample-brain.analysis-automation-decision.v1`
 **Schema version:** `1.0.0`
 
 ## Purpose
