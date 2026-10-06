@@ -480,6 +480,21 @@ class _QueuedMetadataStep:
 
 
 @dataclass(frozen=True)
+class _QueuedToggleStep:
+    """A step edit made while a mutation was queued.
+
+    Rule 17 keeps the toggle live, so it is already in the live state. It is
+    also kept in the ordered stream because a deferred effect can clear it:
+    a strip queued *before* the toggle must win, while a strip queued *after*
+    it must not silently undo the edit the user made afterwards.
+    """
+
+    channel_id: str
+    step_index: int
+    active: bool
+
+
+@dataclass(frozen=True)
 class _PendingUserChannelMutation:
     """Declarative user-channel mutation deferred by ``PLAYBACK_MUTATION_APPLY_POLICY``.
 
@@ -496,7 +511,9 @@ class _PendingUserChannelMutation:
     only the last queued path loses the effect of everything in between.
     """
 
-    steps: tuple[_QueuedUserChannelStep | _QueuedMetadataStep, ...] = ()
+    steps: tuple[
+        _QueuedUserChannelStep | _QueuedMetadataStep | _QueuedToggleStep, ...
+    ] = ()
     entries: Mapping[str, UserSampleMetadata] = field(default_factory=dict)
     attempted: frozenset[str] = frozenset()
     replaced: frozenset[str] = frozenset()
@@ -520,6 +537,18 @@ class _PendingUserChannelMutation:
             if isinstance(step, _QueuedUserChannelStep) and step.channel_id == channel_id:
                 return step.path
         return fallback
+
+    def with_step(
+        self, step: _QueuedUserChannelStep | _QueuedMetadataStep | _QueuedToggleStep
+    ) -> "_PendingUserChannelMutation":
+        """Append one step, keeping the ordered stream intact."""
+        return _PendingUserChannelMutation(
+            steps=self.steps + (step,),
+            entries=self.entries,
+            attempted=self.attempted,
+            replaced=self.replaced,
+            prune=self.prune,
+        )
 
     def queued_channel_ids(self) -> tuple[str, ...]:
         """IDs already claimed by queued additions; they stay reserved."""
@@ -580,10 +609,6 @@ class ChannelRackController:
         self._user_metadata_resolver = user_metadata_resolver
         self._user_metadata: UserSampleMetadataBinding = EMPTY_USER_SAMPLE_METADATA_BINDING
         self._pending_user_mutation: _PendingUserChannelMutation | None = None
-        # Step edits made while a mutation is queued. A deferred effect - a
-        # queued loop strip - lands at adoption, i.e. after these edits, and
-        # would otherwise silently discard them (rule 17 keeps toggles live).
-        self._queued_step_edits: tuple[tuple[str, int, bool], ...] = ()
         self._playback_classification_snapshot: (
             Mapping[str, tuple[str, str | None, float | None]] | None
         ) = None
@@ -726,6 +751,15 @@ class ChannelRackController:
         # Live Kit rejection, and trigger retention stay owned by one place.
         target = base_state
         for step in pending.steps:
+            if isinstance(step, _QueuedToggleStep):
+                # Live already carries this edit; replaying it here only
+                # matters if an earlier queued effect cleared it.
+                wanted = Trigger(
+                    channel_id=step.channel_id, position=Fraction(step.step_index, 4)
+                )
+                if (wanted in target.pattern.triggers) != step.active:
+                    target = toggle_step(target, step.channel_id, step.step_index)
+                continue
             if isinstance(step, _QueuedMetadataStep):
                 # The refresh's own classification effect, at this point in the
                 # sequence: a path that resolved to ``loop`` strips now, before
@@ -773,16 +807,9 @@ class ChannelRackController:
             if key not in pending.entries:
                 entries.pop(key, None)
         binding = UserSampleMetadataBinding(entries)
-        target = self._adopt_user_metadata(target, binding)
-        for channel_id, step_index, desired in self._queued_step_edits:
-            # The deferred effect above is allowed to clear triggers; an edit
-            # the user made after queueing it is not. Restore their last word.
-            present = (
-                Trigger(channel_id=channel_id, position=Fraction(step_index, 4))
-                in target.pattern.triggers
-            )
-            if present != desired:
-                target = toggle_step(target, channel_id, step_index)
+        # No final reconcile: every classification effect is an ordered step by
+        # now, so re-applying the surviving binding here would run *after* the
+        # user's later step edits and override them.
 
         self._state = target
         self._user_metadata = binding
@@ -809,13 +836,11 @@ class ChannelRackController:
         self._pending_user_mutation = None
         before = self._state
         self._adopt_user_mutation(pending, notify=notify)
-        self._queued_step_edits = ()
         return self._state is not before
 
     def _discard_pending_user_mutation(self) -> None:
         """Drop a queued mutation without applying or persisting it."""
         self._pending_user_mutation = None
-        self._queued_step_edits = ()
 
     def _refresh_path_set(self, state: ChannelRackState) -> tuple[str, ...]:
         """Paths B4 must resolve: the ones that will exist after adoption.
@@ -1026,17 +1051,21 @@ class ChannelRackController:
         self._require_state()
         self._state = toggle_step(self._state, channel_id, step_index)
         if self._pending_user_mutation is not None:
-            # Remember which way the user left this step. The queued intent is
-            # adopted later and can legitimately clear triggers (a resolved
-            # loop strips them), but it must not undo an edit the user made
-            # after queueing it - rule 17 keeps step toggles live.
-            desired = (
-                Trigger(channel_id=channel_id, position=Fraction(step_index, 4))
-                in self._state.pattern.triggers
-            )
-            self._queued_step_edits = (
-                *self._queued_step_edits,
-                (channel_id, step_index, desired),
+            # Keep the edit in the ordered stream too: a deferred effect can
+            # clear it, and its position decides whether that is correct.
+            # A strip queued before this toggle wins; one queued afterwards
+            # must not undo the edit the user just made (rule 17).
+            self._pending_user_mutation = self._pending_user_mutation.with_step(
+                _QueuedToggleStep(
+                    channel_id=channel_id,
+                    step_index=step_index,
+                    active=(
+                        Trigger(
+                            channel_id=channel_id, position=Fraction(step_index, 4)
+                        )
+                        in self._state.pattern.triggers
+                    ),
+                )
             )
         self._notify_musical_state_changed()
         return self._state
