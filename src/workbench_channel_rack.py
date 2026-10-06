@@ -773,6 +773,25 @@ class ChannelRackController:
         """Drop a queued mutation without applying or persisting it."""
         self._pending_user_mutation = None
 
+    def _refresh_path_set(self, state: ChannelRackState) -> tuple[str, ...]:
+        """Paths B4 must resolve: the ones that will exist after adoption.
+
+        Outside a Play that is simply the live state. During a Play the live
+        state is frozen, so a refresh has to cover the queued view instead -
+        otherwise a queued A -> B is refreshed as A, and B keeps the evidence
+        captured when it was assigned.
+        """
+        pending = self._pending_user_mutation
+        if pending is None:
+            return _distinct_user_paths(state)
+        queued = [
+            pending.queued_path_for(channel.channel_id, channel.sample_path)
+            for channel in state.channels
+            if _is_user_channel(channel)
+        ]
+        queued.extend(path for _, path in pending.added)
+        return tuple(dict.fromkeys(path for path in queued if _sample_bearing(path)))
+
     def refresh_user_channel_metadata(self) -> UserSampleMetadataBinding:
         """B4: the explicit seam for library re-analysis / manual rescan.
 
@@ -784,7 +803,7 @@ class ChannelRackController:
         under ``PLAYBACK_MUTATION_APPLY_POLICY``.
         """
         state = self._require_state()
-        paths = _distinct_user_paths(state)
+        paths = self._refresh_path_set(state)
         resolved = self._resolve_user_paths(paths)
         self._commit_user_mutation(
             _PendingUserChannelMutation(

@@ -1911,6 +1911,39 @@ def test_18j_queued_loop_then_oneshot_keeps_the_intermediate_strip() -> None:
     )
 
 
+def test_b4_refresh_mid_play_covers_the_queued_paths() -> None:
+    """A refresh during a Play must resolve what adoption will produce.
+
+    Queueing A -> B and then refreshing resolved only A, because the refresh
+    set came from the frozen live state. B then kept the evidence captured
+    when it was assigned, so a later library change to B was missed.
+    """
+    resolver = _ScriptedResolver(
+        {ONESHOT_PATH: "one_shot", AMBIGUOUS_PATH: "one_shot"}
+    )
+    controller, _engine, _transport = _controller(resolver=resolver)
+    controller.ensure_state()
+    controller.add_user_channel(sample_path=ONESHOT_PATH)
+    channel_id = _last_user_channel_id(controller.state)
+
+    controller.play()
+    controller.assign_user_channel_sample(channel_id, AMBIGUOUS_PATH)
+    # The library learns a decisive class for B only after it was queued.
+    resolver.set_class(AMBIGUOUS_PATH, "loop")
+    mark = resolver.mark()
+
+    controller.refresh_user_channel_metadata()
+    controller.stop()
+
+    assert AMBIGUOUS_PATH in resolver.paths_since(mark), (
+        "B4 must refresh the queued path, not the superseded live one"
+    )
+    assert controller.user_metadata[AMBIGUOUS_PATH].sample_class == "loop", (
+        "the queued path must not keep the evidence captured at assign time"
+    )
+    assert _channel(controller.state, channel_id).sample_path == AMBIGUOUS_PATH
+
+
 # ===========================================================================
 # Contract test 19 — bottom-Rack projection classifies user rows
 # ===========================================================================
