@@ -117,6 +117,6 @@ This slice exits `AQ6_THEORY_BASELINE_MEASURED`.
 
 ## Follow-on write-heads (out of scope here)
 
-- AQ6 ranking relevance **baseline measurement** against the frozen #1016 contract (separate plane)
+- [#1018](https://github.com/jannekbuengener/sample-brain/issues/1018) — AQ6 ranking + upstream-error **baseline measurement** against the frozen #1016 contract (separate plane) — see [`AQ6_HARMONIC_MATCH_RANKING_BASELINE.md`](AQ6_HARMONIC_MATCH_RANKING_BASELINE.md)
 - Later relation-rule / weight candidates only after evidence-backed compare slices
 - Preference remains later; no opaque global Harmonic Match score

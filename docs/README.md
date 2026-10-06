@@ -70,6 +70,7 @@ internal agent- and process docs are clearly separated.
 | [AQ6 Harmonic Match Theory KPI Contract](benchmarks/AQ6_HARMONIC_MATCH_THEORY_KPI_CONTRACT.md) | #1015/#948 frozen exhaustive theory truth table + `aq6.theory` KPIs (ranking/preference deferred; AQ1/AQ2 consume-only) |
 | [AQ6 Harmonic Match Ranking Relevance Contract](benchmarks/AQ6_HARMONIC_MATCH_RANKING_RELEVANCE_CONTRACT.md) | #1016/#948 frozen graded ranking relevance + sanitized synthetic candidate set (`aq6.ranking`; distinct from #1015 theory) |
 | [AQ6 Harmonic Match Theory Baseline](benchmarks/AQ6_HARMONIC_MATCH_THEORY_BASELINE.md) | #1017/#948 measured current theory correctness against frozen #1015 truth table (`aq6.theory`; ranking plane separate) |
+| [AQ6 Harmonic Match Ranking Baseline](benchmarks/AQ6_HARMONIC_MATCH_RANKING_BASELINE.md) | #1018/#948 measured current ranking + upstream-error propagation against frozen #1016 labels (`aq6.ranking`; theory plane separate) |
 | [Analyzer Portable Output Baseline](benchmarks/ANALYZER_PORTABLE_OUTPUT_BASELINE.md) | #960 AQ8 audit: safe/unsafe analyzer projection inventory for #956 |
 | [Validation Reports](validation/README.md) | Local validate_report how-to; committed files there are historical issue evidence |
 
