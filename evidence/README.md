@@ -6,7 +6,8 @@
 
 Sample Brain uses policy variant **A**: small, curated validation evidence may be committed when it is useful for reproducing or reviewing a product/quality claim. Arbitrary generated state remains local and untracked.
 
-At adoption of this contract (2026-08-18), the tracked inventory contains 29 JSON records:
+At adoption of this contract (2026-08-18), the tracked inventory contained 29 JSON records.
+Current curated inventory also includes the #960 analyzer portable-output baseline:
 
 - `buffer_128_*`: 4 buffer-performance records
 - `buffer_256_*`: 4 buffer-performance records
@@ -16,6 +17,7 @@ At adoption of this contract (2026-08-18), the tracked inventory contains 29 JSO
 - `haeffig_*`: 4 editing-contract records
 - `recording_*`: 1 recording-contract record
 - `sync_grid_*`: 5 sync/grid performance records
+- `analyzer_portable_output_baseline_*`: 1 AQ8/#960 portable projection baseline record
 
 ## Commit contract
 
