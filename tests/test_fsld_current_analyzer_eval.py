@@ -216,16 +216,164 @@ def test_metrics_remain_separate_by_annotation_tier_and_follow_evidence(
 
     ma = result["metrics"]["ma"]
     assert result["run_status"] == "EVALUATED"
-    assert ma["key_root"] == {"eligible": 2, "predicted": 2, "exact": 2, "exact_rate": 1.0}
-    assert ma["full_key"] == {"eligible": 2, "predicted": 1, "exact": 1, "exact_rate": 0.5}
+    assert ma["key_root"] == {
+        "eligible": 2,
+        "predicted": 2,
+        "exact": 2,
+        "exact_rate": 1.0,
+        "coverage_rate": 1.0,
+        "abstention_rate": 0.0,
+    }
+    assert ma["full_key"] == {
+        "eligible": 2,
+        "predicted": 1,
+        "exact": 1,
+        "exact_rate": 0.5,
+        "coverage_rate": 0.5,
+        "abstention_rate": 0.5,
+    }
     assert ma["tempo"]["relation_counts"]["correct"] == 1
     assert ma["tempo"]["relation_counts"]["half"] == 1
 
     sa = result["metrics"]["sa"]
-    assert sa["key_root"] == {"eligible": 1, "predicted": 1, "exact": 0, "exact_rate": 0.0}
-    assert sa["full_key"] == {"eligible": 1, "predicted": 1, "exact": 0, "exact_rate": 0.0}
+    assert sa["key_root"] == {
+        "eligible": 1,
+        "predicted": 1,
+        "exact": 0,
+        "exact_rate": 0.0,
+        "coverage_rate": 1.0,
+        "abstention_rate": 0.0,
+    }
+    assert sa["full_key"] == {
+        "eligible": 1,
+        "predicted": 1,
+        "exact": 0,
+        "exact_rate": 0.0,
+        "coverage_rate": 1.0,
+        "abstention_rate": 0.0,
+    }
     assert sa["tempo"]["relation_counts"]["double"] == 1
     assert sa["tempo"]["eligible"] == 3
+
+
+def test_aq2_key_mode_and_tonality_metrics_use_explicit_denominators(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AQ2 contract: mode-on-mode-known + tonality claimability with explicit denominators."""
+    records = [
+        # tonal root+mode known: exact full key
+        _record("300", tier="ma", root="C", mode="maj"),
+        # tonal root+mode known: mode mismatch (parallel)
+        _record("301", tier="ma", root="C", mode="maj"),
+        # tonal root known, mode unknown: root-eligible only
+        _record("302", tier="ma", root="D", mode=None, mode_evidence="unknown"),
+        # tonal mode known, root unknown: mode-eligible only
+        _record("303", tier="ma", root=None, root_evidence="unknown", mode="min"),
+        # no_key: false-key-claim when root predicted
+        _record(
+            "304",
+            tier="ma",
+            tonality="no_key",
+            root=None,
+            root_evidence="not_applicable",
+            mode=None,
+            mode_evidence="not_applicable",
+        ),
+        # no_key: correct abstention
+        _record(
+            "305",
+            tier="ma",
+            tonality="no_key",
+            root=None,
+            root_evidence="not_applicable",
+            mode=None,
+            mode_evidence="not_applicable",
+        ),
+        # tonal + mode known but missing mode prediction -> mode abstention
+        _record("306", tier="ma", root="E", mode="min"),
+    ]
+    manifest_path, sidecar_path = _write_manifest(tmp_path, records)
+    audio_root = tmp_path / "audio"
+    audio_root.mkdir()
+    for record in records:
+        (audio_root / f"{record['public_sample_id']}.wav").touch()
+    predictions = {
+        "300": _features("Cmaj", "maj", 120.0),
+        "301": _features("Cmin", "min", 120.0),
+        "302": _features("D", None, 120.0),
+        "303": _features(None, "min", 120.0),
+        "304": _features("G", None, 120.0),
+        "305": _features(None, None, 120.0),
+        "306": _features("E", None, 120.0),
+    }
+
+    def fake_extract(path: Path, _duration: float | None, **_kwargs: object):
+        return predictions[path.stem]
+
+    monkeypatch.setattr("src.fsld_current_analyzer_eval.extract_features", fake_extract)
+    result = evaluate_current_analyzer(
+        audio_root=audio_root,
+        split="TEST",
+        manifest_path=manifest_path,
+        sha256_path=sidecar_path,
+    )
+
+    ma = result["metrics"]["ma"]
+    assert ma["key_mode"] == {
+        "eligible": 4,  # 300,301,303,306
+        "predicted": 3,  # 300,301,303 (306 abstains mode)
+        "exact": 2,  # 300 maj, 303 min (301 wrong)
+        "exact_rate": 0.5,
+        "coverage_rate": 0.75,
+        "abstention_rate": 0.25,
+    }
+    tonality = ma["tonality"]
+    assert tonality["tonal_eligible"] == 5  # 300-303,306
+    assert tonality["tonal_claimed"] == 4  # root claimed on 300,301,302,306 (303 has no root)
+    assert tonality["coverage_rate"] == 0.8
+    assert tonality["abstention_rate"] == 0.2
+    assert tonality["no_key_eligible"] == 2
+    assert tonality["false_key_claims"] == 1
+    assert tonality["false_key_claim_rate"] == 0.5
+    # Selective full-key: among full-key-eligible claimed subset.
+    assert tonality["selective_full_key"]["eligible_claimed"] == 2  # 300,301 claimed root+mode
+    assert tonality["selective_full_key"]["exact"] == 1
+    assert tonality["selective_full_key"]["exact_rate"] == 0.5
+    assert tonality["auroc_auprc"] == "HOLD"
+    assert tonality["calibration"] == "HOLD"
+
+    confusion = ma["key_confusion"]
+    assert confusion["eligible"] == 3  # full-key eligible: 300,301,306
+    assert confusion["bucket_counts"]["exact"] == 1
+    assert confusion["bucket_counts"]["parallel"] == 1
+    assert confusion["bucket_counts"]["missing_prediction"] == 1
+    assert set(confusion["bucket_counts"]) == {
+        "exact",
+        "relative",
+        "parallel",
+        "fifth",
+        "fourth",
+        "semitone_neighbor",
+        "other",
+        "missing_prediction",
+    }
+
+
+def test_aq2_key_confusion_classifies_relative_and_interval_buckets() -> None:
+    from src.fsld_current_analyzer_eval import classify_key_confusion_bucket
+
+    assert classify_key_confusion_bucket("C", "maj", "C", "maj") == "exact"
+    assert classify_key_confusion_bucket("A", "min", "C", "maj") == "relative"
+    assert classify_key_confusion_bucket("C", "min", "C", "maj") == "parallel"
+    assert classify_key_confusion_bucket("G", "maj", "C", "maj") == "fifth"
+    assert classify_key_confusion_bucket("F", "maj", "C", "maj") == "fourth"
+    assert classify_key_confusion_bucket("C#", "maj", "C", "maj") == "semitone_neighbor"
+    assert classify_key_confusion_bucket("D", "maj", "C", "maj") == "other"
+    assert classify_key_confusion_bucket(None, None, "C", "maj") == "missing_prediction"
+    # Mode unknown on either side: root-distance buckets without relative/parallel claims.
+    assert classify_key_confusion_bucket("C", None, "C", "maj") == "exact"
+    assert classify_key_confusion_bucket("A", None, "C", "maj") == "other"
+    assert classify_key_confusion_bucket("G", None, "C", None) == "fifth"
 
 
 def test_tempo_metrics_include_aq1_accuracy_bands_and_coverage(

@@ -52,8 +52,16 @@ abgeleitet; `predicted_key_mode` kommt direkt aus `Features.key_mode`.
 
 Die Metriken bleiben strikt in `ma` und `sa` getrennt:
 
-- Key Root: nur tonale Records mit `root_evidence=known`.
-- Full Key: zusätzlich `mode_evidence=known`.
+- Key Root: nur tonale Records mit `root_evidence=known`, inkl. Coverage/Abstention.
+- Key Mode (mode-on-mode-known): tonale Records mit `mode_evidence=known`
+  (ohne stillschweigendes Root-Match-Erfordernis).
+- Full Key: Root+Mode known; joint Exactness inkl. Coverage/Abstention.
+- Key Confusion: diagnostische Buckets auf Full-Key-eligible Material
+  (`exact` / `relative` / `parallel` / `fifth` / `fourth` /
+  `semitone_neighbor` / `other` / `missing_prediction`).
+- Tonality / Claimability: Coverage/Abstention auf tonalem Material,
+  False-Key-Claim-Rate auf `no_key`, selective Full-Key unter Claims;
+  AUROC/AUPRC und Calibration bleiben `HOLD` ohne continuous claim score.
 - Tempo: nur `bpm_evidence=known`, inklusive absolutem/relativem BPM-Fehler,
   AQ1-Genauigkeitsbändern ±0.5 / ±1 / ±2 BPM, Coverage-/Abstention-Raten sowie
   der bestehenden Relationen `correct`, `half`, `double`, `ambiguous`

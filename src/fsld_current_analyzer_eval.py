@@ -28,7 +28,7 @@ from .analyze import (
 from .bpm_evidence import classify_bpm_error
 from .fsld_human_manifest import DOCUMENT_TYPE as FSLD_MANIFEST_DOCUMENT_TYPE
 from .fsld_human_manifest import canonical_manifest_bytes
-from .key_signature import parse_key_signature
+from .key_signature import ParsedKey, key_distance_semitones, parse_key_signature
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +41,16 @@ EVALUATED_RUN_STATUS = "EVALUATED"
 PUBLIC_AUDIO_NOT_AVAILABLE_LOCALLY = "PUBLIC_AUDIO_NOT_AVAILABLE_LOCALLY"
 RUNTIME_DISTRIBUTIONS = ("librosa", "numpy", "soundfile")
 RELATION_CLASSES = ("correct", "half", "double", "ambiguous", "outlier")
+KEY_CONFUSION_BUCKETS = (
+    "exact",
+    "relative",
+    "parallel",
+    "fifth",
+    "fourth",
+    "semitone_neighbor",
+    "other",
+    "missing_prediction",
+)
 
 
 class FsldCurrentAnalyzerEvalError(ValueError):
@@ -229,7 +239,161 @@ def _key_metrics(records: list[dict[str, Any]], *, full_key: bool) -> dict[str, 
             continue
         if not full_key or mode == ground_truth.get("key_mode"):
             exact += 1
-    return {"eligible": eligible, "predicted": predicted, "exact": exact, "exact_rate": _rate(exact, eligible)}
+    return {
+        "eligible": eligible,
+        "predicted": predicted,
+        "exact": exact,
+        "exact_rate": _rate(exact, eligible),
+        "coverage_rate": _rate(predicted, eligible),
+        "abstention_rate": _rate(eligible - predicted, eligible),
+    }
+
+
+def _mode_metrics(records: list[dict[str, Any]]) -> dict[str, int | float | None]:
+    """Mode-on-mode-known accuracy (AQ2); does not require root match."""
+    eligible = 0
+    predicted = 0
+    exact = 0
+    for record in records:
+        ground_truth = record["ground_truth"]
+        if ground_truth.get("tonality") != "tonal" or ground_truth.get("mode_evidence") != "known":
+            continue
+        eligible += 1
+        mode = record["predicted_key_mode"]
+        if mode is None:
+            continue
+        predicted += 1
+        if mode == ground_truth.get("key_mode"):
+            exact += 1
+    return {
+        "eligible": eligible,
+        "predicted": predicted,
+        "exact": exact,
+        "exact_rate": _rate(exact, eligible),
+        "coverage_rate": _rate(predicted, eligible),
+        "abstention_rate": _rate(eligible - predicted, eligible),
+    }
+
+
+def classify_key_confusion_bucket(
+    predicted_root: str | None,
+    predicted_mode: str | None,
+    label_root: str | None,
+    label_mode: str | None,
+) -> str:
+    """AQ2 diagnostic confusion bucket (definitions only; not a promotion gate)."""
+    if predicted_root is None:
+        return "missing_prediction"
+    if label_root is None:
+        return "other"
+
+    pred = ParsedKey(root=predicted_root, mode=predicted_mode)
+    label = ParsedKey(root=label_root, mode=label_mode)
+    distance = key_distance_semitones(label, pred)
+    modes_known = predicted_mode in {"maj", "min"} and label_mode in {"maj", "min"}
+
+    if predicted_root == label_root:
+        if not modes_known or predicted_mode == label_mode:
+            return "exact"
+        return "parallel"
+
+    if modes_known and predicted_mode != label_mode:
+        # Relative major/minor: maj_root - min_root ≡ 3 (mod 12).
+        maj_root = predicted_root if predicted_mode == "maj" else label_root
+        min_root = predicted_root if predicted_mode == "min" else label_root
+        maj = ParsedKey(root=maj_root, mode="maj")
+        minor = ParsedKey(root=min_root, mode="min")
+        if key_distance_semitones(minor, maj) == 3:
+            return "relative"
+
+    if distance == 7:
+        return "fifth"
+    if distance == 5:
+        return "fourth"
+    if distance in {1, 11}:
+        return "semitone_neighbor"
+    return "other"
+
+
+def _key_confusion_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Diagnostic buckets on full-key-eligible material (tonal + root+mode known)."""
+    eligible = 0
+    counts = {bucket: 0 for bucket in KEY_CONFUSION_BUCKETS}
+    for record in records:
+        ground_truth = record["ground_truth"]
+        if (
+            ground_truth.get("tonality") != "tonal"
+            or ground_truth.get("root_evidence") != "known"
+            or ground_truth.get("mode_evidence") != "known"
+        ):
+            continue
+        eligible += 1
+        root = record["predicted_key_root"]
+        mode = record["predicted_key_mode"]
+        if root is None or mode is None:
+            counts["missing_prediction"] += 1
+            continue
+        bucket = classify_key_confusion_bucket(
+            root,
+            mode,
+            ground_truth.get("key_root"),
+            ground_truth.get("key_mode"),
+        )
+        counts[bucket] += 1
+    return {
+        "eligible": eligible,
+        "bucket_counts": counts,
+        "bucket_rates": {bucket: _rate(counts[bucket], eligible) for bucket in KEY_CONFUSION_BUCKETS},
+    }
+
+
+def _tonality_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """AQ2 tonality claimability: coverage/abstention/false-key-claim (no continuous score)."""
+    tonal_eligible = 0
+    tonal_claimed = 0
+    no_key_eligible = 0
+    false_key_claims = 0
+    selective_eligible_claimed = 0
+    selective_exact = 0
+    for record in records:
+        ground_truth = record["ground_truth"]
+        tonality = ground_truth.get("tonality")
+        root = record["predicted_key_root"]
+        mode = record["predicted_key_mode"]
+        claimed = root is not None
+        if tonality == "tonal":
+            tonal_eligible += 1
+            if claimed:
+                tonal_claimed += 1
+            if (
+                ground_truth.get("root_evidence") == "known"
+                and ground_truth.get("mode_evidence") == "known"
+                and claimed
+                and mode is not None
+            ):
+                selective_eligible_claimed += 1
+                if root == ground_truth.get("key_root") and mode == ground_truth.get("key_mode"):
+                    selective_exact += 1
+        elif tonality == "no_key":
+            no_key_eligible += 1
+            if claimed:
+                false_key_claims += 1
+    return {
+        "tonal_eligible": tonal_eligible,
+        "tonal_claimed": tonal_claimed,
+        "coverage_rate": _rate(tonal_claimed, tonal_eligible),
+        "abstention_rate": _rate(tonal_eligible - tonal_claimed, tonal_eligible),
+        "no_key_eligible": no_key_eligible,
+        "false_key_claims": false_key_claims,
+        "false_key_claim_rate": _rate(false_key_claims, no_key_eligible),
+        "selective_full_key": {
+            "eligible_claimed": selective_eligible_claimed,
+            "exact": selective_exact,
+            "exact_rate": _rate(selective_exact, selective_eligible_claimed),
+        },
+        "auroc_auprc": "HOLD",
+        "calibration": "HOLD",
+    }
 
 
 def _tempo_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -284,7 +448,10 @@ def _metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
         tier_records = [record for record in records if record["annotation_tier"] == tier]
         metrics[tier] = {
             "key_root": _key_metrics(tier_records, full_key=False),
+            "key_mode": _mode_metrics(tier_records),
             "full_key": _key_metrics(tier_records, full_key=True),
+            "key_confusion": _key_confusion_metrics(tier_records),
+            "tonality": _tonality_metrics(tier_records),
             "tempo": _tempo_metrics(tier_records),
         }
     return metrics
