@@ -2315,3 +2315,69 @@ def test_18o_live_kit_toggles_are_not_replayed() -> None:
 
     controller.stop()
     assert _triggers_for(controller.state, kit_id) == (_trigger(kit_id, 4),)
+
+
+def test_queued_strip_then_user_step_off_stays_off_after_drain() -> None:
+    """A step the user switched off stays off after the deferred strip lands.
+
+    Contract freeze: a step edit made during Rack Play is the visible target
+    state the user chose, not an abstract ``toggle()`` to replay later. The
+    queued strip may clear the step, but replaying the edit may not invert it
+    again - the step was switched OFF and must still be OFF after the drain.
+    """
+    resolver = _ScriptedResolver({ONESHOT_PATH: "one_shot"})
+    controller, _engine, _transport = _controller(resolver=resolver)
+    controller.ensure_state()
+    controller.add_user_channel(sample_path=ONESHOT_PATH)
+    channel_id = _last_user_channel_id(controller.state)
+    assert _trigger(channel_id, 0) in _triggers_for(controller.state, channel_id)
+
+    controller.play()
+    assert controller.is_playing is True
+    # Queue a classification whose deferred effect strips this channel.
+    resolver.set_class(ONESHOT_PATH, "loop")
+    controller.refresh_user_channel_metadata()
+    # The user switches the still-visible step off.
+    controller.toggle_step(channel_id, 0)
+
+    assert controller.is_playing is True, "no durable partial adoption mid-Play"
+    assert _trigger(channel_id, 0) not in _triggers_for(controller.state, channel_id)
+
+    controller.stop()
+
+    assert _trigger(channel_id, 0) not in _triggers_for(controller.state, channel_id), (
+        "the deferred strip must not leave an OFF step switched back on"
+    )
+    assert _triggers_for(controller.state, channel_id) == ()
+
+
+def test_queued_strip_then_user_step_on_stays_on_after_drain() -> None:
+    """A step the user switched on stays on after the deferred strip lands.
+
+    Mirror of the OFF case: the queued strip clears the whole channel, and the
+    user's explicit ON is then re-applied instead of being dropped.
+    """
+    resolver = _ScriptedResolver({ONESHOT_PATH: "one_shot"})
+    controller, _engine, _transport = _controller(resolver=resolver)
+    controller.ensure_state()
+    controller.add_user_channel(sample_path=ONESHOT_PATH)
+    channel_id = _last_user_channel_id(controller.state)
+    # Start from a step the user has explicitly switched off.
+    controller.toggle_step(channel_id, 0)
+    assert _trigger(channel_id, 0) not in _triggers_for(controller.state, channel_id)
+
+    controller.play()
+    assert controller.is_playing is True
+    resolver.set_class(ONESHOT_PATH, "loop")
+    controller.refresh_user_channel_metadata()
+    # The user switches the still-visible step back on.
+    controller.toggle_step(channel_id, 0)
+
+    assert controller.is_playing is True, "no durable partial adoption mid-Play"
+    assert _trigger(channel_id, 0) in _triggers_for(controller.state, channel_id)
+
+    controller.stop()
+
+    assert _triggers_for(controller.state, channel_id) == (_trigger(channel_id, 0),), (
+        "the user's explicit ON survives the deferred strip"
+    )
