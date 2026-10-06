@@ -204,4 +204,5 @@ Alternate exits (not selected): `AQ6_RANKING_BENCHMARK_PARTIAL_HOLD`, `AQ6_RANKI
 ## Follow-on write-heads (out of scope here)
 
 - [#1017](https://github.com/jannekbuengener/sample-brain/issues/1017) — measure current theory correctness baseline (theory plane) — see [`AQ6_HARMONIC_MATCH_THEORY_BASELINE.md`](AQ6_HARMONIC_MATCH_THEORY_BASELINE.md)
-- Later AQ6 ranking baseline / weight-candidate slices — measure against this freeze; no production switch without separate evidence-backed decision
+- [#1018](https://github.com/jannekbuengener/sample-brain/issues/1018) — measure current ranking + upstream-error propagation baseline — see [`AQ6_HARMONIC_MATCH_RANKING_BASELINE.md`](AQ6_HARMONIC_MATCH_RANKING_BASELINE.md)
+- Later AQ6 weight / relation candidate compare slices — measure against this freeze + #1018 baseline; no production switch without separate evidence-backed decision
