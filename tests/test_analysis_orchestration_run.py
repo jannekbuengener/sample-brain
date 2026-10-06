@@ -6,7 +6,7 @@ import ast
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import pytest
 
@@ -665,3 +665,538 @@ def test_aq1_hold_path_when_no_predictions(
     assert outcome["decision"]["decision_status"] in {"hold", "controlled_failure"}
     assert "decision_token" not in outcome["decision"]
     assert outcome["production_authorized"] is False
+    assert outcome["decision"]["evidence"]["gate_decision"]["verdict"] == "HOLD"
+
+
+# ---------------------------------------------------------------------------
+# #1063 — cross-envelope invocation identity binding (Codex repair)
+# ---------------------------------------------------------------------------
+
+
+class _StubDomainAdapter:
+    """Host-bound adapter stub that returns a prebuilt headless result."""
+
+    def __init__(
+        self,
+        *,
+        result: Mapping[str, Any],
+        adapter_id: str = AQ1_ADAPTER_ID,
+        adapter_version: str = "1.0.0",
+    ) -> None:
+        self._result = dict(result)
+        self._adapter_id = adapter_id
+        self._adapter_version = adapter_version
+
+    @property
+    def adapter_id(self) -> str:
+        return self._adapter_id
+
+    @property
+    def adapter_version(self) -> str:
+        return self._adapter_version
+
+    @property
+    def capabilities(self) -> frozenset[str]:
+        return frozenset({"baseline", "compare", "locked_evaluation"})
+
+    def run(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
+        return dict(self._result)
+
+
+def _stub_bind(monkeypatch: pytest.MonkeyPatch, adapter: _StubDomainAdapter) -> None:
+    monkeypatch.setattr(
+        "src.analysis_orchestration_run.bind_adapter",
+        lambda adapter_id, **host_kwargs: adapter,
+    )
+
+
+def _completed_result_for_request(
+    request: Mapping[str, Any],
+    *,
+    include_candidates: bool = True,
+    request_fingerprint: str | None = None,
+    adapter_id: str | None = None,
+    adapter_version: str = "1.0.0",
+    domain: str | None = None,
+) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        "run_status": "completed",
+        "adapter_id": adapter_id or str(request["adapter_id"]),
+        "adapter_version": adapter_version,
+        "request_fingerprint": request_fingerprint or str(request["request_fingerprint"]),
+        "domain": domain or str(request["domain"]),
+        "operation": str(request["operation"]),
+        "partition_id": str(request["partition"]["partition_id"]),
+        "partition_role": str(request["partition"]["role"]),
+        "benchmark_id": str(request["benchmark"]["benchmark_id"]),
+        "dataset_id": str(request["benchmark"]["dataset_id"]),
+        "dataset_content_fingerprint": str(
+            request["benchmark"]["dataset_content_fingerprint"]
+        ),
+        "domain_artifact_id": "sample-brain.aq1.tempo.candidate_compare",
+        "domain_artifact_fingerprint": "c" * 64,
+    }
+    if include_candidates:
+        kwargs["baseline_candidate_id"] = str(request["baseline"]["candidate_id"])
+        kwargs["baseline_config_fingerprint"] = str(
+            request["baseline"]["config_fingerprint"]
+        )
+        kwargs["current_candidate_id"] = str(request["current"]["candidate_id"])
+        kwargs["current_config_fingerprint"] = str(
+            request["current"]["config_fingerprint"]
+        )
+    return validate_result(build_result(**kwargs))
+
+
+def _matching_eval_for_request(
+    request: Mapping[str, Any],
+    *,
+    candidate_id: str | None = None,
+    benchmark_id: str | None = None,
+    dataset_id: str | None = None,
+    partition_id: str | None = None,
+    partition_role: str | None = None,
+    domain: str | None = None,
+) -> dict[str, Any]:
+    from src.analysis_eval_artifact import (
+        build_artifact,
+        build_candidate,
+        build_observation,
+        build_record,
+    )
+
+    cand_id = candidate_id or str(request["current"]["candidate_id"])
+    cfg_fp = str(request["current"]["config_fingerprint"])
+    if candidate_id is not None:
+        cfg_fp = "e" * 64
+    candidate = build_candidate(
+        candidate_id=cand_id,
+        implementation_id=str(request["adapter_id"]),
+        revision="1.0.0",
+        configuration={
+            "domain": domain or str(request["domain"]),
+            "candidate_id": cand_id,
+            "config_fingerprint": cfg_fp,
+            "headless_run_status": "completed",
+        },
+    )
+    record = build_record(
+        record_id="orch.headless.primary",
+        domain=domain or str(request["domain"]),
+        eligibility={"status": "eligible"},
+        ground_truth={},
+        observations=[
+            build_observation(
+                observation_id="orch.headless.primary.domain_artifact.link",
+                metric_id="orchestration.domain_artifact.link",
+                status="measured",
+                value=1.0,
+                unit="count",
+                direction="maximize",
+                payload={
+                    "domain_artifact_id": "sample-brain.aq1.tempo.candidate_compare",
+                    "domain_artifact_fingerprint": "c" * 64,
+                    "adapter_id": str(request["adapter_id"]),
+                    "adapter_version": "1.0.0",
+                    "headless_run_status": "completed",
+                },
+            )
+        ],
+    )
+    return validate_artifact(
+        build_artifact(
+            benchmark_id=benchmark_id or str(request["benchmark"]["benchmark_id"]),
+            dataset_id=dataset_id or str(request["benchmark"]["dataset_id"]),
+            dataset_member_ids=["orch.headless.primary"],
+            partition_id=partition_id or str(request["partition"]["partition_id"]),
+            partition_role=partition_role
+            or map_eval_partition_role(str(request["partition"]["role"])),
+            candidate=candidate,
+            source_benchmark_version=ARTIFACT_VERSION,
+            run_id="orch-identity-probe",
+            records=[record],
+            source_origin="orchestration-binder",
+        )
+    )
+
+
+def test_stale_request_fingerprint_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    request, _ = _synthetic_completed_headless()
+    stale = _completed_result_for_request(
+        request, request_fingerprint="d" * 64
+    )
+    _stub_bind(monkeypatch, _StubDomainAdapter(result=stale))
+    with pytest.raises(AnalysisOrchestrationRunError, match="request_fingerprint"):
+        run_orchestration(
+            request=request,
+            bind_kwargs={},
+            evidence_fingerprint=OPAQUE_EVIDENCE_FP,
+            gate_verdict="PASS",
+        )
+
+
+def test_wrong_adapter_id_on_result_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    request, _ = _synthetic_completed_headless()
+    wrong = _completed_result_for_request(
+        request,
+        adapter_id="aq6.ranking.candidate_compare",
+        domain="aq6.ranking",
+    )
+    _stub_bind(
+        monkeypatch,
+        _StubDomainAdapter(
+            result=wrong,
+            adapter_id=AQ1_ADAPTER_ID,
+            adapter_version="1.0.0",
+        ),
+    )
+    with pytest.raises(AnalysisOrchestrationRunError, match="adapter_id"):
+        run_orchestration(
+            request=request,
+            bind_kwargs={},
+            evidence_fingerprint=OPAQUE_EVIDENCE_FP,
+            gate_verdict="PASS",
+        )
+
+
+def test_wrong_adapter_version_on_result_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request, _ = _synthetic_completed_headless()
+    wrong = _completed_result_for_request(request, adapter_version="9.9.9")
+    _stub_bind(
+        monkeypatch,
+        _StubDomainAdapter(
+            result=wrong, adapter_id=AQ1_ADAPTER_ID, adapter_version="1.0.0"
+        ),
+    )
+    with pytest.raises(AnalysisOrchestrationRunError, match="adapter_version"):
+        run_orchestration(
+            request=request,
+            bind_kwargs={},
+            evidence_fingerprint=OPAQUE_EVIDENCE_FP,
+            gate_verdict="PASS",
+        )
+
+
+@pytest.mark.parametrize(
+    "field,mutate",
+    [
+        ("benchmark", lambda r, e: _matching_eval_for_request(r, benchmark_id="OTHER_BENCH")),
+        ("dataset", lambda r, e: _matching_eval_for_request(r, dataset_id="OTHER_DATASET")),
+        ("partition", lambda r, e: _matching_eval_for_request(r, partition_id="OTHER_PART")),
+        (
+            "partition_role",
+            lambda r, e: _matching_eval_for_request(r, partition_role="validation"),
+        ),
+        (
+            "baseline_candidate",
+            lambda r, e: _matching_eval_for_request(r, candidate_id="FOREIGN_BASELINE"),
+        ),
+        (
+            "current_candidate",
+            lambda r, e: _matching_eval_for_request(r, candidate_id="FOREIGN_CURRENT"),
+        ),
+    ],
+)
+@pytest.mark.parametrize("include_candidates", [True, False])
+def test_supplied_eval_identity_mismatch_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    mutate,
+    include_candidates: bool,
+) -> None:
+    request, _ = _synthetic_completed_headless()
+    result = _completed_result_for_request(
+        request, include_candidates=include_candidates
+    )
+    foreign_eval = mutate(request, None)
+    _stub_bind(monkeypatch, _StubDomainAdapter(result=result))
+    with pytest.raises(AnalysisOrchestrationRunError, match="identity mismatch|candidate"):
+        run_orchestration(
+            request=request,
+            bind_kwargs={},
+            evidence_fingerprint=OPAQUE_EVIDENCE_FP,
+            gate_verdict="PASS",
+            analysis_eval_artifact=foreign_eval,
+        )
+
+
+@pytest.mark.parametrize("gate", ["PASS", "FAIL"])
+@pytest.mark.parametrize("run_status", ["hold", "controlled_failure"])
+def test_non_completed_supplied_pass_fail_cannot_survive(
+    monkeypatch: pytest.MonkeyPatch, gate: str, run_status: str
+) -> None:
+    request, _ = _synthetic_completed_headless()
+    result = validate_result(
+        build_result(
+            run_status=run_status,
+            adapter_id=AQ1_ADAPTER_ID,
+            adapter_version="1.0.0",
+            request_fingerprint=request["request_fingerprint"],
+            domain=AQ1_DOMAIN,
+            operation="compare",
+            partition_id=str(request["partition"]["partition_id"]),
+            partition_role=str(request["partition"]["role"]),
+            benchmark_id=str(request["benchmark"]["benchmark_id"]),
+            dataset_id=str(request["benchmark"]["dataset_id"]),
+            dataset_content_fingerprint=str(
+                request["benchmark"]["dataset_content_fingerprint"]
+            ),
+            baseline_candidate_id=str(request["baseline"]["candidate_id"]),
+            baseline_config_fingerprint=str(request["baseline"]["config_fingerprint"]),
+            current_candidate_id=str(request["current"]["candidate_id"]),
+            current_config_fingerprint=str(request["current"]["config_fingerprint"]),
+            error_code="probe.non_completed",
+            error_detail=f"synthetic {run_status}",
+        )
+    )
+    _stub_bind(monkeypatch, _StubDomainAdapter(result=result))
+    outcome = run_orchestration(
+        request=request,
+        bind_kwargs={},
+        evidence_fingerprint=OPAQUE_EVIDENCE_FP,
+        gate_verdict=gate,
+    )
+    assert outcome["headless_result"]["run_status"] == run_status
+    assert outcome["decision"]["decision_status"] == run_status
+    assert outcome["decision"]["evidence"]["gate_decision"]["verdict"] == "HOLD"
+    assert "decision_token" not in outcome["decision"]
+    assert outcome["decision"]["decision_status"] != "ready"
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "domain",
+        "benchmark",
+        "dataset",
+        "partition",
+        "baseline_candidate",
+        "current_candidate",
+    ],
+)
+@pytest.mark.parametrize("include_candidates", [True, False])
+def test_validate_outcome_rejects_tampered_decision_identity(
+    field: str, include_candidates: bool
+) -> None:
+    from src.analysis_automation_decision import build_decision
+
+    request, _ = _synthetic_completed_headless()
+    result = _completed_result_for_request(
+        request, include_candidates=include_candidates
+    )
+    # Seal path: outcome may carry request-fallback candidates even when the
+    # raw adapter result omitted them; craft a portable outcome then tamper.
+    if not include_candidates:
+        sealed = dict(result)
+        sealed["baseline"] = dict(request["baseline"])
+        sealed["current"] = dict(request["current"])
+        sealed.pop("result_fingerprint", None)
+        result = validate_result(sealed)
+
+    eval_fp = "f" * 64
+    decision = build_decision(
+        domain=AQ1_DOMAIN,
+        benchmark_id=str(request["benchmark"]["benchmark_id"]),
+        dataset_id=str(request["benchmark"]["dataset_id"]),
+        dataset_content_fingerprint=str(
+            request["benchmark"]["dataset_content_fingerprint"]
+        ),
+        partition_id=str(request["partition"]["partition_id"]),
+        partition_role=str(request["partition"]["role"]),
+        baseline_candidate_id=str(request["baseline"]["candidate_id"]),
+        baseline_config_fingerprint=str(request["baseline"]["config_fingerprint"]),
+        current_candidate_id=str(request["current"]["candidate_id"]),
+        current_config_fingerprint=str(request["current"]["config_fingerprint"]),
+        analysis_eval_fingerprint=eval_fp,
+        evidence_fingerprint=OPAQUE_EVIDENCE_FP,
+        gate_verdict="PASS",
+        decision_status="ready",
+        next_action="keep_baseline_and_stop",
+        decision_token="KEEP_CURRENT_BASELINE_PATH",
+        production_authorized=False,
+    )
+
+    if field == "domain":
+        decision = build_decision(
+            domain="aq99.other",
+            benchmark_id=str(request["benchmark"]["benchmark_id"]),
+            dataset_id=str(request["benchmark"]["dataset_id"]),
+            dataset_content_fingerprint=str(
+                request["benchmark"]["dataset_content_fingerprint"]
+            ),
+            partition_id=str(request["partition"]["partition_id"]),
+            partition_role=str(request["partition"]["role"]),
+            baseline_candidate_id=str(request["baseline"]["candidate_id"]),
+            baseline_config_fingerprint=str(request["baseline"]["config_fingerprint"]),
+            current_candidate_id=str(request["current"]["candidate_id"]),
+            current_config_fingerprint=str(request["current"]["config_fingerprint"]),
+            analysis_eval_fingerprint=eval_fp,
+            evidence_fingerprint=OPAQUE_EVIDENCE_FP,
+            gate_verdict="PASS",
+            decision_status="ready",
+            next_action="keep_baseline_and_stop",
+            decision_token="KEEP_CURRENT_BASELINE_PATH",
+            production_authorized=False,
+        )
+    elif field == "benchmark":
+        decision = build_decision(
+            domain=AQ1_DOMAIN,
+            benchmark_id="TAMPERED_BENCH",
+            dataset_id=str(request["benchmark"]["dataset_id"]),
+            dataset_content_fingerprint=str(
+                request["benchmark"]["dataset_content_fingerprint"]
+            ),
+            partition_id=str(request["partition"]["partition_id"]),
+            partition_role=str(request["partition"]["role"]),
+            baseline_candidate_id=str(request["baseline"]["candidate_id"]),
+            baseline_config_fingerprint=str(request["baseline"]["config_fingerprint"]),
+            current_candidate_id=str(request["current"]["candidate_id"]),
+            current_config_fingerprint=str(request["current"]["config_fingerprint"]),
+            analysis_eval_fingerprint=eval_fp,
+            evidence_fingerprint=OPAQUE_EVIDENCE_FP,
+            gate_verdict="PASS",
+            decision_status="ready",
+            next_action="keep_baseline_and_stop",
+            decision_token="KEEP_CURRENT_BASELINE_PATH",
+            production_authorized=False,
+        )
+    elif field == "dataset":
+        decision = build_decision(
+            domain=AQ1_DOMAIN,
+            benchmark_id=str(request["benchmark"]["benchmark_id"]),
+            dataset_id="TAMPERED_DATASET",
+            dataset_content_fingerprint=str(
+                request["benchmark"]["dataset_content_fingerprint"]
+            ),
+            partition_id=str(request["partition"]["partition_id"]),
+            partition_role=str(request["partition"]["role"]),
+            baseline_candidate_id=str(request["baseline"]["candidate_id"]),
+            baseline_config_fingerprint=str(request["baseline"]["config_fingerprint"]),
+            current_candidate_id=str(request["current"]["candidate_id"]),
+            current_config_fingerprint=str(request["current"]["config_fingerprint"]),
+            analysis_eval_fingerprint=eval_fp,
+            evidence_fingerprint=OPAQUE_EVIDENCE_FP,
+            gate_verdict="PASS",
+            decision_status="ready",
+            next_action="keep_baseline_and_stop",
+            decision_token="KEEP_CURRENT_BASELINE_PATH",
+            production_authorized=False,
+        )
+    elif field == "partition":
+        decision = build_decision(
+            domain=AQ1_DOMAIN,
+            benchmark_id=str(request["benchmark"]["benchmark_id"]),
+            dataset_id=str(request["benchmark"]["dataset_id"]),
+            dataset_content_fingerprint=str(
+                request["benchmark"]["dataset_content_fingerprint"]
+            ),
+            partition_id="TAMPERED_PART",
+            partition_role=str(request["partition"]["role"]),
+            baseline_candidate_id=str(request["baseline"]["candidate_id"]),
+            baseline_config_fingerprint=str(request["baseline"]["config_fingerprint"]),
+            current_candidate_id=str(request["current"]["candidate_id"]),
+            current_config_fingerprint=str(request["current"]["config_fingerprint"]),
+            analysis_eval_fingerprint=eval_fp,
+            evidence_fingerprint=OPAQUE_EVIDENCE_FP,
+            gate_verdict="PASS",
+            decision_status="ready",
+            next_action="keep_baseline_and_stop",
+            decision_token="KEEP_CURRENT_BASELINE_PATH",
+            production_authorized=False,
+        )
+    elif field == "baseline_candidate":
+        decision = build_decision(
+            domain=AQ1_DOMAIN,
+            benchmark_id=str(request["benchmark"]["benchmark_id"]),
+            dataset_id=str(request["benchmark"]["dataset_id"]),
+            dataset_content_fingerprint=str(
+                request["benchmark"]["dataset_content_fingerprint"]
+            ),
+            partition_id=str(request["partition"]["partition_id"]),
+            partition_role=str(request["partition"]["role"]),
+            baseline_candidate_id="TAMPERED_BASE",
+            baseline_config_fingerprint="1" * 64,
+            current_candidate_id=str(request["current"]["candidate_id"]),
+            current_config_fingerprint=str(request["current"]["config_fingerprint"]),
+            analysis_eval_fingerprint=eval_fp,
+            evidence_fingerprint=OPAQUE_EVIDENCE_FP,
+            gate_verdict="PASS",
+            decision_status="ready",
+            next_action="keep_baseline_and_stop",
+            decision_token="KEEP_CURRENT_BASELINE_PATH",
+            production_authorized=False,
+        )
+    elif field == "current_candidate":
+        decision = build_decision(
+            domain=AQ1_DOMAIN,
+            benchmark_id=str(request["benchmark"]["benchmark_id"]),
+            dataset_id=str(request["benchmark"]["dataset_id"]),
+            dataset_content_fingerprint=str(
+                request["benchmark"]["dataset_content_fingerprint"]
+            ),
+            partition_id=str(request["partition"]["partition_id"]),
+            partition_role=str(request["partition"]["role"]),
+            baseline_candidate_id=str(request["baseline"]["candidate_id"]),
+            baseline_config_fingerprint=str(request["baseline"]["config_fingerprint"]),
+            current_candidate_id="TAMPERED_CUR",
+            current_config_fingerprint="2" * 64,
+            analysis_eval_fingerprint=eval_fp,
+            evidence_fingerprint=OPAQUE_EVIDENCE_FP,
+            gate_verdict="PASS",
+            decision_status="ready",
+            next_action="keep_baseline_and_stop",
+            decision_token="KEEP_CURRENT_BASELINE_PATH",
+            production_authorized=False,
+        )
+
+    # Raw omitted-candidate shape: attacker strips candidates then swaps decision.
+    if not include_candidates:
+        stripped = dict(result)
+        stripped.pop("baseline", None)
+        stripped.pop("current", None)
+        stripped.pop("result_fingerprint", None)
+        result = validate_result(stripped)
+
+    outcome = {
+        "document_type": DOCUMENT_TYPE,
+        "artifact_version": ARTIFACT_VERSION,
+        "producer_id": "sample-brain.analysis-orchestration-run",
+        "adapter_id": AQ1_ADAPTER_ID,
+        "headless_result": result,
+        "analysis_eval": {
+            "document_type": "sample-brain.analysis-eval.v1",
+            "artifact_fingerprint": eval_fp,
+        },
+        "decision": decision,
+        "production_authorized": False,
+    }
+    outcome["outcome_fingerprint"] = outcome_semantic_fingerprint(outcome)
+    with pytest.raises(
+        AnalysisOrchestrationRunError,
+        match="identity mismatch|candidate",
+    ):
+        validate_outcome(outcome)
+
+
+def test_eval_with_matching_identities_accepted_when_result_omits_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request, _ = _synthetic_completed_headless()
+    result = _completed_result_for_request(request, include_candidates=False)
+    matching = _matching_eval_for_request(request)
+    _stub_bind(monkeypatch, _StubDomainAdapter(result=result))
+    outcome = run_orchestration(
+        request=request,
+        bind_kwargs={},
+        evidence_fingerprint=OPAQUE_EVIDENCE_FP,
+        gate_verdict="PASS",
+        analysis_eval_artifact=matching,
+    )
+    assert outcome["decision"]["decision_status"] == "ready"
+    assert "baseline" in outcome["headless_result"]
+    assert "current" in outcome["headless_result"]
+    assert outcome["headless_result"]["baseline"]["candidate_id"] == request[
+        "baseline"
+    ]["candidate_id"]
