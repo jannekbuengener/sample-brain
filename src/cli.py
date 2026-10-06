@@ -989,6 +989,7 @@ def main():
     qml_renderer = p_workbench.add_mutually_exclusive_group()
     qml_renderer.add_argument("--qml-screen1", action="store_true")
     qml_renderer.add_argument("--qml-proof-spike", action="store_true")
+    qml_renderer.add_argument("--qml-visual-acceptance-954", action="store_true")
     p_workbench.add_argument("--qml-virtualization-probe", action="store_true")
     p_workbench.add_argument(
         "--qml-state",
@@ -1680,6 +1681,24 @@ def main():
                         "--qml-virtualization-probe kann nicht mit --visual-acceptance kombiniert werden"
                     )
                 print(json.dumps(run_qml_virtualization_probe(), indent=2, sort_keys=True))
+            elif args.qml_visual_acceptance_954:
+                if args.runtime_root is None or args.evidence_dir is None:
+                    parser.error(
+                        "workbench --qml-visual-acceptance-954 benötigt "
+                        "--runtime-root und --evidence-dir"
+                    )
+                from .workbench_qml_spike import run_qml_visual_acceptance_954
+
+                print(
+                    json.dumps(
+                        run_qml_visual_acceptance_954(
+                            runtime_root=args.runtime_root,
+                            evidence_dir=args.evidence_dir,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
             elif args.visual_acceptance:
                 if args.runtime_root is None or args.evidence_dir is None:
                     parser.error(
