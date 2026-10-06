@@ -100,7 +100,11 @@ class UserSampleMetadataResolver(Protocol):
     """Injected seam the Rack controller may call only at B1-B4 boundaries."""
 
     def resolve(self, paths: Iterable[str]) -> UserSampleMetadataBinding:
-        """Resolve a batch of raw durable paths in one bounded read."""
+        """Resolve a batch of raw durable paths in one bounded read.
+
+        Keys are the raw durable strings, byte for byte: no normalizer runs
+        here, so lookup by ``Channel.sample_path`` cannot miss.
+        """
 
     def resolve_one(self, path: str) -> UserSampleMetadata | None:
         """Resolve one raw durable path, or ``None`` when there is no evidence."""
@@ -148,11 +152,18 @@ class WorkbenchLibraryUserSampleMetadataResolver:
         return self._library_db_path
 
     def resolve(self, paths: Iterable[str]) -> UserSampleMetadataBinding:
+        """Resolve a batch of raw durable paths in one bounded read.
+
+        The binding is keyed by the *raw durable* strings handed in, byte for
+        byte. No normalizer runs here: canonicalization stays private to
+        ``workbench_library.query_sample_by_path_on_readonly_connection``, so a
+        lookup by ``Channel.sample_path`` can never miss a present entry.
+        """
         ordered = tuple(
             dict.fromkeys(
-                str(path).strip()
-                for path in paths
-                if path is not None and str(path).strip()
+                raw
+                for raw in (str(path) for path in paths if path is not None)
+                if raw
             )
         )
         if not ordered:
@@ -182,7 +193,7 @@ class WorkbenchLibraryUserSampleMetadataResolver:
         return UserSampleMetadataBinding(entries)
 
     def resolve_one(self, path: str) -> UserSampleMetadata | None:
-        return self.resolve((path,)).get(str(path).strip())
+        return self.resolve((path,)).get(str(path))
 
 
 __all__ = [

@@ -766,6 +766,26 @@ def test_7c_binding_is_an_immutable_mapping(tmp_path: Path) -> None:
         binding["new"] = binding[library.oneshot]  # type: ignore[index]
 
 
+def test_7d_binding_never_invents_a_whitespace_stripped_key(tmp_path: Path) -> None:
+    library = _seeded_library(tmp_path)
+    resolver = _workbench_library_resolver(library.db)
+
+    canonical = library.oneshot
+    padded = f"  {canonical}  "
+    assert padded != canonical, "test requires a padded raw spelling"
+
+    binding = resolver.resolve((padded,))
+
+    # A normalizer here would strip the padding, find the row, and return it
+    # under a key that Channel.sample_path can never match. The raw durable
+    # string is the only admissible key, so a padded spelling resolves to
+    # nothing at all and fails closed.
+    assert list(binding) == []
+    assert canonical not in binding
+    assert binding.get(canonical) is None
+    assert resolver.resolve_one(padded) is None
+
+
 # ===========================================================================
 # Contract test 8 — B1 restore: one read-only connection, never writes
 # ===========================================================================
@@ -1143,6 +1163,37 @@ def test_13_resolve_only_is_silent_and_loop_strip_notifies_exactly_once() -> Non
     assert observer == [1]
 
 
+def test_13b_metadata_only_refresh_never_notifies_immediate_or_queued() -> None:
+    """Derived metadata is not durable state, so it must not drive autosave."""
+    resolver = _ScriptedResolver({ONESHOT_PATH: "one_shot"})
+    controller, channel_id = _controller_with_assignment(resolver, ONESHOT_PATH)
+    observer: list[int] = []
+    controller.set_on_musical_state_changed(lambda: observer.append(1))
+    triggers_before = _triggers_for(controller.state, channel_id)
+
+    resolver.set_bpm(ONESHOT_PATH, 100.0)
+    binding = controller.refresh_user_channel_metadata()
+
+    assert binding[ONESHOT_PATH].source_bpm == pytest.approx(100.0)
+    assert binding[ONESHOT_PATH].sample_class == "one_shot"
+    assert _triggers_for(controller.state, channel_id) == triggers_before
+    assert observer == [], "a source-BPM-only change is not a musical-state change"
+
+    # Same promise for the queued mid-Play path: adoption is silent unless the
+    # durable state actually changed.
+    controller.play()
+    observer.clear()
+    resolver.set_bpm(ONESHOT_PATH, 75.0)
+    queued = controller.refresh_user_channel_metadata()
+
+    assert queued[ONESHOT_PATH].sample_class == "one_shot", "no mid-Play leak"
+    controller.stop()
+
+    assert controller.user_metadata[ONESHOT_PATH].source_bpm == pytest.approx(75.0)
+    assert _triggers_for(controller.state, channel_id) == triggers_before
+    assert observer == [], "queued metadata-only refresh must stay silent"
+
+
 # ===========================================================================
 # Contract test 14 — SYNC-on user loop uses the bound source BPM
 # ===========================================================================
@@ -1504,6 +1555,66 @@ def test_18d_immediate_apply_when_rack_play_is_not_active() -> None:
     assert _triggers_for(state, channel_id) == ()
     assert observer == [1]
     assert controller.user_metadata[LOOP_PATH].sample_class == "loop"
+
+
+def test_18e_queued_mutation_preserves_mid_play_step_edits() -> None:
+    """Pattern/trigger state is not per-Play frozen (§6): the adoption must
+    replay only its own intent and never resurrect pre-queue Pattern state."""
+    resolver = _ScriptedResolver({ONESHOT_PATH: "one_shot", LOOP_PATH: "one_shot"})
+    observer: list[int] = []
+    controller, channel_id = _controller_with_assignment(resolver, ONESHOT_PATH)
+    controller.add_user_channel(sample_path=SECOND_ONESHOT_PATH)
+    untouched_id = _last_user_channel_id(controller.state)
+    controller.set_on_musical_state_changed(lambda: observer.append(1))
+    controller.play()
+    triggers_before = _triggers_for(controller.state, channel_id)
+    other_triggers_before = _triggers_for(controller.state, untouched_id)
+    observer.clear()
+
+    # Mid-Play live Pattern edit on a channel whose path is *not* mutated.
+    controller.toggle_step(channel_id, 0)
+    edited = _triggers_for(controller.state, channel_id)
+    assert edited != triggers_before
+    controller.assign_user_channel_sample(channel_id, LOOP_PATH)
+    controller.stop()
+
+    assert _triggers_for(controller.state, channel_id) == edited, (
+        "adoption must preserve the mid-Play step edit"
+    )
+    assert _triggers_for(controller.state, untouched_id) == other_triggers_before
+    assert _channel(controller.state, channel_id).sample_path == LOOP_PATH
+    assert controller.user_metadata[LOOP_PATH].sample_class == "one_shot"
+
+
+def test_18f_consecutive_queued_replacements_use_the_queued_view() -> None:
+    """Two queued replacements must not reuse the live path as the base.
+
+    The second assignment sees LOOP_PATH as the previous path, so the interim
+    binding key is invalidated too - no stale entry may survive adoption.
+    """
+    third_path = "user_oneshot_3.wav"
+    resolver = _ScriptedResolver(
+        {
+            ONESHOT_PATH: "one_shot",
+            LOOP_PATH: "one_shot",
+            third_path: "one_shot",
+        }
+    )
+    controller, channel_id = _controller_with_assignment(resolver, ONESHOT_PATH)
+    controller.play()
+
+    controller.assign_user_channel_sample(channel_id, LOOP_PATH)
+    controller.assign_user_channel_sample(channel_id, third_path)
+
+    assert _channel(controller.state, channel_id).sample_path == ONESHOT_PATH, (
+        "neither queued replacement may apply mid-Play"
+    )
+    controller.stop()
+
+    assert _channel(controller.state, channel_id).sample_path == third_path
+    assert set(controller.user_metadata) == {third_path}, (
+        "the live path and the interim queued path must both be invalidated"
+    )
 
 
 # ===========================================================================

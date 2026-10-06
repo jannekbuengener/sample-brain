@@ -18,6 +18,7 @@ POLICY``). It performs no library I/O itself.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, replace
 from fractions import Fraction
 from pathlib import Path
 from types import MappingProxyType
@@ -427,13 +428,58 @@ def _distinct_user_paths(state: ChannelRackState) -> tuple[str, ...]:
     )
 
 
-def _referenced_paths(state: ChannelRackState, *, exclude: str | None = None) -> set[str]:
-    """Sample paths still referenced by any channel other than ``exclude``."""
-    return {
-        channel.sample_path
+def _clear_channel_sample_path(
+    state: ChannelRackState, channel_id: str
+) -> ChannelRackState:
+    """Clear one channel's ``sample_path``, keeping its triggers exactly.
+
+    The counterpart to :func:`channel_rack.assign_user_channel_sample`: a clear
+    drops the association without touching that channel's triggers, and leaves
+    every unrelated channel, pattern, and step-grid value byte-identical.
+    """
+    channels = tuple(
+        replace(channel, sample_path=None) if channel.channel_id == channel_id else channel
         for channel in state.channels
-        if channel.channel_id != exclude and _sample_bearing(channel.sample_path)
-    }
+    )
+    if channels == state.channels:
+        return state
+    return ChannelRackState(
+        channels=channels,
+        pattern=state.pattern,
+        step_count=state.step_count,
+    )
+
+
+@dataclass(frozen=True)
+class _PendingUserChannelMutation:
+    """Declarative user-channel mutation deferred by ``PLAYBACK_MUTATION_APPLY_POLICY``.
+
+    Only the *intent* is queued, never a state snapshot: Pattern and trigger
+    state is deliberately not per-Play frozen (§6), so a mid-Play step toggle
+    must survive the adoption. Replaying the intent against the live state at
+    adoption time keeps that edit, keeps the ``DEFAULT_ON`` seeding rules owned
+    by the core transitions, and still resolves nothing a second time.
+    """
+
+    added: tuple[tuple[str, str | None], ...] = ()
+    paths: Mapping[str, str | None] = field(default_factory=dict)
+    entries: Mapping[str, UserSampleMetadata] = field(default_factory=dict)
+    replaced: frozenset[str] = frozenset()
+    prune: bool = False
+
+    def merged_with(self, other: "_PendingUserChannelMutation") -> "_PendingUserChannelMutation":
+        """Fold a later queued mutation into this one, latest intent wins."""
+        paths = dict(self.paths)
+        paths.update(other.paths)
+        entries = dict(self.entries)
+        entries.update(other.entries)
+        return _PendingUserChannelMutation(
+            added=self.added + other.added,
+            paths=paths,
+            entries=entries,
+            replaced=self.replaced | other.replaced,
+            prune=self.prune or other.prune,
+        )
 
 
 class ChannelRackController:
@@ -485,8 +531,7 @@ class ChannelRackController:
         # ``None`` every user channel stays ambiguous and nothing resolves.
         self._user_metadata_resolver = user_metadata_resolver
         self._user_metadata: UserSampleMetadataBinding = EMPTY_USER_SAMPLE_METADATA_BINDING
-        self._pending_user_state: ChannelRackState | None = None
-        self._pending_user_metadata: UserSampleMetadataBinding | None = None
+        self._pending_user_mutation: _PendingUserChannelMutation | None = None
         self._playback_classification_snapshot: (
             Mapping[str, tuple[str, str | None, float | None]] | None
         ) = None
@@ -593,64 +638,87 @@ class ChannelRackController:
             step_count=state.step_count,
         )
 
-    def _commit_user_mutation(
-        self,
-        mutate: Callable[
-            [ChannelRackState, UserSampleMetadataBinding],
-            tuple[ChannelRackState, UserSampleMetadataBinding],
-        ],
-    ) -> ChannelRackState:
+    def _commit_user_mutation(self, pending: _PendingUserChannelMutation) -> ChannelRackState:
         """Adopt one user-channel mutation now, or queue it for after Stop.
 
         Ordering is frozen as resolve → build target state (including the
-        classification-implied reconcile) → adopt state → notify once. While Rack
-        Play is active (``PLAYBACK_MUTATION_APPLY_POLICY``) nothing durable
-        changes and nothing is persisted; the target pair is queued and adopted
-        atomically by the next ``stop()`` or by the next explicit Rack Play
-        before its anchor.
+        classification-implied reconcile) → adopt state → notify once
+        (§5). While Rack Play is active (``PLAYBACK_MUTATION_APPLY_POLICY``)
+        nothing durable changes and nothing is persisted; the intent is queued
+        and adopted atomically by the next ``stop()`` or by the next explicit
+        Rack Play before its anchor.
+
+        Notification follows the durable state, not the derived binding (§7):
+        evidence that changes only the classification - and therefore no
+        trigger strip - is adopted silently, because the binding is never
+        serialized and must not cause a musical-state autosave.
         """
-        base_state = self._pending_user_state or self._require_state()
-        base_metadata = (
-            self._pending_user_metadata
-            if self._pending_user_metadata is not None
-            else self._user_metadata
-        )
-        new_state, new_metadata = mutate(base_state, base_metadata)
-        if new_state is base_state and new_metadata == base_metadata:
-            # No-op: same-path re-assign and already-empty clear resolve nothing
-            # and never notify.
-            return self._state if self._state is not None else new_state
         if self._playing:
-            self._pending_user_state = new_state
-            self._pending_user_metadata = new_metadata
+            queued = (
+                pending
+                if self._pending_user_mutation is None
+                else self._pending_user_mutation.merged_with(pending)
+            )
+            self._pending_user_mutation = queued
             return self._require_state()
-        self._state = new_state
-        self._user_metadata = new_metadata
-        self._notify_musical_state_changed()
-        return self._state
+        return self._adopt_user_mutation(pending, notify=True)
+
+    def _adopt_user_mutation(
+        self, pending: _PendingUserChannelMutation, *, notify: bool
+    ) -> ChannelRackState:
+        """Apply one pending intent against the *live* state and binding."""
+        base_state = self._require_state()
+        base_metadata = self._user_metadata
+
+        # Replay the intent through the core transitions so DEFAULT_ON seeding,
+        # Live Kit rejection, and trigger retention stay owned by one place.
+        target = base_state
+        for channel_id, path in pending.added:
+            target = add_user_channel(
+                target, sample_path=path, channel_id=channel_id
+            )
+        for channel_id, path in pending.paths.items():
+            if path is None:
+                target = _clear_channel_sample_path(target, channel_id)
+            else:
+                target = assign_user_channel_sample(target, channel_id, path)
+
+        referenced = {
+            channel.sample_path
+            for channel in target.channels
+            if _is_user_channel(channel) and _sample_bearing(channel.sample_path)
+        }
+        entries = dict(base_metadata)
+        entries.update(pending.entries)
+        if pending.prune:
+            for key in tuple(entries):
+                if key not in referenced:
+                    entries.pop(key, None)
+        for key in pending.replaced:
+            if key not in referenced:
+                entries.pop(key, None)
+        binding = UserSampleMetadataBinding(entries)
+        target = self._adopt_user_metadata(target, binding)
+
+        self._state = target
+        self._user_metadata = binding
+        if notify and target is not base_state:
+            self._notify_musical_state_changed()
+        return target
 
     def _adopt_pending_user_mutation(self, *, notify: bool = True) -> bool:
         """Apply a queued mid-Play mutation as one coherent adoption."""
-        pending_state = self._pending_user_state
-        pending_metadata = self._pending_user_metadata
-        if pending_state is None:
+        pending = self._pending_user_mutation
+        if pending is None:
             return False
-        self._pending_user_state = None
-        self._pending_user_metadata = None
-        self._state = pending_state
-        self._user_metadata = (
-            pending_metadata
-            if pending_metadata is not None
-            else EMPTY_USER_SAMPLE_METADATA_BINDING
-        )
-        if notify:
-            self._notify_musical_state_changed()
-        return True
+        self._pending_user_mutation = None
+        before = self._state
+        self._adopt_user_mutation(pending, notify=notify)
+        return self._state is not before
 
     def _discard_pending_user_mutation(self) -> None:
         """Drop a queued mutation without applying or persisting it."""
-        self._pending_user_state = None
-        self._pending_user_metadata = None
+        self._pending_user_mutation = None
 
     def refresh_user_channel_metadata(self) -> UserSampleMetadataBinding:
         """B4: the explicit seam for library re-analysis / manual rescan.
@@ -665,15 +733,14 @@ class ChannelRackController:
         state = self._require_state()
         paths = _distinct_user_paths(state)
         resolved = self._resolve_user_paths(paths)
-
-        def mutate(
-            base_state: ChannelRackState,
-            _base_metadata: UserSampleMetadataBinding,
-        ) -> tuple[ChannelRackState, UserSampleMetadataBinding]:
-            target = self._adopt_user_metadata(base_state, resolved)
-            return target, resolved
-
-        self._commit_user_mutation(mutate)
+        self._commit_user_mutation(
+            _PendingUserChannelMutation(
+                paths={},
+                entries=resolved,
+                replaced=frozenset(paths),
+                prune=True,
+            )
+        )
         return self._user_metadata
 
     def set_audio_focus_hooks(
@@ -842,31 +909,48 @@ class ChannelRackController:
 
     def add_user_channel(self, sample_path: str | None = None) -> ChannelRackState:
         """Append a user channel; a non-empty ``sample_path`` is a B2 boundary."""
-        self._require_state()
+        live = self._require_state()
         path = str(sample_path).strip() if sample_path is not None else None
         if not path:
             path = None
 
-        def mutate(
-            base_state: ChannelRackState,
-            base_metadata: UserSampleMetadataBinding,
-        ) -> tuple[ChannelRackState, UserSampleMetadataBinding]:
-            target = add_user_channel(base_state, sample_path=path)
-            if path is None:
-                # No path means no resolution and no binding bookkeeping.
-                return target, base_metadata
-            resolved = self._resolve_user_paths((path,))
-            entry = resolved.get(path)
-            if entry is None:
-                # No evidence: no entry, so the channel fails closed.
-                return target, base_metadata
-            entries = dict(base_metadata)
-            entries[path] = entry
-            return self._adopt_user_metadata(target, entries), UserSampleMetadataBinding(
-                entries
-            )
+        # Allocate the opaque ID now so a Play can queue the intent, but keep the
+        # channel itself inert until adoption: the core transition (and its
+        # DEFAULT_ON seeding) runs in _adopt_user_mutation.
+        created = add_user_channel(live)
+        added_channel_id = created.channels[-1].channel_id
 
-        return self._commit_user_mutation(mutate)
+        pending = _PendingUserChannelMutation(
+            added=((added_channel_id, path),),
+            entries=(
+                self._resolved_entry_for(path) if path is not None else {}
+            ),
+            prune=True,
+        )
+        return self._commit_user_mutation(pending)
+
+    def _resolved_entry_for(self, path: str) -> dict[str, UserSampleMetadata]:
+        """B2 boundary: resolve one path exactly once, or no entry at all.
+
+        Missing, stale, unreadable, or non-explicit evidence yields no entry, so
+        the channel fails closed as ``ambiguous`` rather than guessing.
+        """
+        entry = self._resolve_user_paths((path,)).get(path)
+        if entry is None:
+            return {}
+        return {path: entry}
+
+    def _queued_view_path(self, channel: Channel) -> str | None:
+        """The path a channel holds in the *queued* view, or the live one.
+
+        A second mutation queued behind a pending replacement must treat the
+        pending value as the previous path. Reading the live channel instead
+        would leave the interim key in the binding forever.
+        """
+        pending = self._pending_user_mutation
+        if pending is not None:
+            return pending.paths.get(channel.channel_id, channel.sample_path)
+        return channel.sample_path
 
     def assign_user_channel_sample(
         self, channel_id: str, sample_path: str
@@ -878,32 +962,26 @@ class ChannelRackController:
         may legally share one path), then applies the frozen trigger precedence.
         A same-path re-assign is a no-op that resolves nothing.
         """
-        self._require_state()
+        state = self._require_state()
         path = str(sample_path or "").strip()
         if not path:
             raise ValueError("sample_path must be a non-empty sample reference")
         channel = self._require_user_channel(channel_id)
+        previous_path = self._queued_view_path(channel)
+        if previous_path == path and self._pending_user_mutation is None:
+            # Same-path re-assign: no resolve, no mutation, no observer call.
+            return state
 
-        def mutate(
-            base_state: ChannelRackState,
-            base_metadata: UserSampleMetadataBinding,
-        ) -> tuple[ChannelRackState, UserSampleMetadataBinding]:
-            target = assign_user_channel_sample(base_state, channel_id, path)
-            if target is base_state:
-                return base_state, base_metadata
-            entries = dict(base_metadata)
-            previous_path = channel.sample_path
-            if previous_path and previous_path not in _referenced_paths(
-                target, exclude=channel_id
-            ):
-                entries.pop(previous_path, None)
-            entry = self._resolve_user_paths((path,)).get(path)
-            if entry is not None:
-                entries[path] = entry
-            binding = UserSampleMetadataBinding(entries)
-            return self._adopt_user_metadata(target, binding), binding
-
-        return self._commit_user_mutation(mutate)
+        # B2: resolve the new path exactly once, here, at the boundary.
+        return self._commit_user_mutation(
+            _PendingUserChannelMutation(
+                paths={channel_id: path},
+                entries=self._resolved_entry_for(path),
+                replaced=frozenset(
+                    {previous_path} if _sample_bearing(previous_path) else set()
+                ),
+            )
+        )
 
     def clear_user_channel_sample(self, channel_id: str) -> ChannelRackState:
         """Clear a user channel's sample association (#952, named public seam).
@@ -921,39 +999,17 @@ class ChannelRackController:
         """
         state = self._require_state()
         channel = self._require_user_channel(channel_id)
-        if not _sample_bearing(channel.sample_path):
-            # Already empty: no resolution, no mutation, no observer call.
+        previous_path = self._queued_view_path(channel)
+        if not _sample_bearing(previous_path):
+            # Already empty in the queued view: no resolution, no mutation, no
+            # observer call.
             return state
-
-        def mutate(
-            base_state: ChannelRackState,
-            base_metadata: UserSampleMetadataBinding,
-        ) -> tuple[ChannelRackState, UserSampleMetadataBinding]:
-            entries = dict(base_metadata)
-            previous_path = channel.sample_path
-            if previous_path and previous_path not in _referenced_paths(
-                base_state, exclude=channel_id
-            ):
-                entries.pop(previous_path, None)
-            channels = tuple(
-                Channel(
-                    channel_id=existing.channel_id,
-                    live_kit_group=existing.live_kit_group,
-                    live_kit_slot=existing.live_kit_slot,
-                    sample_path=None
-                    if existing.channel_id == channel_id
-                    else existing.sample_path,
-                )
-                for existing in base_state.channels
+        return self._commit_user_mutation(
+            _PendingUserChannelMutation(
+                paths={channel_id: None},
+                replaced=frozenset({str(previous_path)}),
             )
-            target = ChannelRackState(
-                channels=channels,
-                pattern=base_state.pattern,
-                step_count=base_state.step_count,
-            )
-            return target, UserSampleMetadataBinding(entries)
-
-        return self._commit_user_mutation(mutate)
+        )
 
     def _require_user_channel(self, channel_id: str) -> Channel:
         """Resolve a user channel or reject with the frozen ``ValueError``s."""
@@ -1005,7 +1061,7 @@ class ChannelRackController:
         stale_reason: str | None = None
         if current != plan.expected_base_state:
             stale_reason = "controller state does not match expected_base_state"
-        elif self._pending_user_state is not None:
+        elif self._pending_user_mutation is not None:
             # A queued user-channel mutation would be adopted mid-apply, so the
             # plan no longer describes the state it would land on. Fail closed
             # as a stale plan instead of silently reverting the queued change.
