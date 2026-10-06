@@ -508,3 +508,107 @@ def test_non_finite_rejected_in_projected_eval() -> None:
     poisoned["records"] = records
     with pytest.raises(Exception, match="non-finite|finite"):
         validate_artifact(poisoned)
+
+
+def test_completed_without_valid_portable_eval_never_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Missing/invalid host-supplied eval must fail closed (no fabricated ready)."""
+    work = tmp_path / "aq1-orch-missing-eval"
+    work.mkdir()
+    fake_repo = tmp_path / "fake-repo"
+    fake_repo.mkdir()
+    monkeypatch.setattr(
+        "src.fsld_aq1_tempo_candidate_compare.REPOSITORY_ROOT", fake_repo
+    )
+    request = _aq1_path_b_request(work)
+    with pytest.raises(AnalysisOrchestrationRunError):
+        run_orchestration(
+            request=request,
+            bind_kwargs={"work_dir": work},
+            evidence_fingerprint=OPAQUE_EVIDENCE_FP,
+            gate_verdict="PASS",
+            analysis_eval_artifact={
+                "document_type": "sample-brain.analysis-eval.v1",
+                "not": "a valid artifact",
+            },
+        )
+
+
+def test_holdout_partition_forbids_tuning_next_action() -> None:
+    with pytest.raises(AnalysisOrchestrationRunError, match="partition firewall"):
+        map_decision_inputs(
+            run_status="completed",
+            gate_verdict="PASS",
+            partition_role="holdout",
+            decision_token="PROMOTION_CANDIDATE_IDENTIFIED",
+            next_action="freeze_candidate",
+        )
+
+
+def test_aq1_hold_path_when_no_predictions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Adapter hold (empty predictions) maps to decision hold, never ready."""
+    work = tmp_path / "aq1-orch-empty"
+    work.mkdir()
+    fake_repo = tmp_path / "fake-repo"
+    fake_repo.mkdir()
+    monkeypatch.setattr(
+        "src.fsld_aq1_tempo_candidate_compare.REPOSITORY_ROOT", fake_repo
+    )
+    records = [
+        _record("10", split="CALIBRATION", bpm=120.0),
+        _record("11", split="CALIBRATION", bpm=120.0),
+    ]
+    manifest_rel, sha_rel = _write_manifest(work, records)
+    # Predictions with missing BPM → adapter may hold or CF depending on runner.
+    baseline_rel = _write_baseline_predictions(
+        work,
+        records=records,
+        predicted=[("10", None, "missing"), ("11", None, "missing")],
+        split="CALIBRATION",
+    )
+    dataset_fp = fingerprint(
+        {
+            "dataset_id": "aq1-orch-empty",
+            "members": ["10", "11"],
+            "manifest_relpath": manifest_rel,
+            "baseline_predictions_relpath": baseline_rel,
+        }
+    )
+    request = build_request(
+        domain=AQ1_DOMAIN,
+        adapter_id=AQ1_ADAPTER_ID,
+        operation="compare",
+        benchmark_id="aq1-tempo-orch-empty",
+        dataset_id="aq1-orch-empty",
+        dataset_content_fingerprint=dataset_fp,
+        partition_id="aq1-orch-empty",
+        partition_role="calibration",
+        baseline_candidate_id=_baseline_id(),
+        baseline_config_fingerprint=tempo_candidate_config_fingerprint(_baseline_id()),
+        current_candidate_id=_current_id(),
+        current_config_fingerprint=tempo_candidate_config_fingerprint(_current_id()),
+        evidence_intent="domain_artifact",
+        extra_fields={
+            "aq1_inputs": {
+                "raw_source": "baseline_predictions",
+                "baseline_predictions_relpath": baseline_rel,
+                "output_relpath": "out/aq1-orch-empty.json",
+                "manifest_relpath": manifest_rel,
+                "sha256_relpath": sha_rel,
+                "split": "CALIBRATION",
+            }
+        },
+    )
+    outcome = run_orchestration(
+        request=request,
+        bind_kwargs={"work_dir": work},
+        evidence_fingerprint=OPAQUE_EVIDENCE_FP,
+        gate_verdict="PASS",
+    )
+    assert outcome["headless_result"]["run_status"] in {"hold", "controlled_failure"}
+    assert outcome["decision"]["decision_status"] in {"hold", "controlled_failure"}
+    assert "decision_token" not in outcome["decision"]
+    assert outcome["production_authorized"] is False
