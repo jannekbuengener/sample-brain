@@ -60,7 +60,8 @@ internal agent- and process docs are clearly separated.
 | [AQ3 Onset/Attack Baseline](benchmarks/AQ3_ONSET_ATTACK_BASELINE.md) | #995/#945 measured current onset/attack baseline on synthetic corpus (gesture PARTIAL/HOLD where thin) |
 | [AQ3 Onset/Attack Candidate Compare](benchmarks/AQ3_ONSET_ATTACK_CANDIDATE_COMPARE.md) | #997/#945 reproducible synthetic onset/attack candidate comparison (thin config adapters; no promotion) |
 | [AQ3 Onset/Attack Decision Memo](benchmarks/AQ3_ONSET_ATTACK_DECISION_MEMO.md) | #999/#945 evidence-backed keep-current onset/attack decision (no production switch; synthetic-corpus limits; #680 boundary) |
-| [AQ4 Classification KPI Contract](benchmarks/AQ4_CLASSIFICATION_KPI_CONTRACT.md) | #1001/#946 frozen sample_class vs pred_type/tag KPI + partition policy (labeled public corpus HOLD; confidence HOLD) |
+| [AQ4 Classification KPI Contract](benchmarks/AQ4_CLASSIFICATION_KPI_CONTRACT.md) | #1001/#946 frozen sample_class vs pred_type/tag KPI + partition policy (synthetic corpus via #1021; human-labeled public may remain HOLD; confidence HOLD) |
+| [AQ4 Classification GT Corpus](benchmarks/AQ4_CLASSIFICATION_CORPUS.md) | #1021/#946 synthetic sample_class + pred_type GT (`sample-brain.aq4.classification.synthetic.v1`; runtime generator) |
 | [Analyzer Portable Output Baseline](benchmarks/ANALYZER_PORTABLE_OUTPUT_BASELINE.md) | #960 AQ8 audit: safe/unsafe analyzer projection inventory for #956 |
 | [Validation Reports](validation/README.md) | Local validate_report how-to; committed files there are historical issue evidence |
 
