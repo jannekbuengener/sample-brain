@@ -101,7 +101,7 @@ Restore is one bounded connection for the whole set, never N opens. `rehydrate_l
 |---|---|---|---|
 | `add_user_channel(sample_path=…)` | resolve that path at creation | path set; DEFAULT_ON seeding unchanged from #808 | gated by the new classification; `ambiguous` ⇒ silent |
 | empty → path via `assign_user_channel_sample` | replace the channel's key | path set; DEFAULT_ON seeding unchanged from #808 | gated by the new classification; `ambiguous` ⇒ silent |
-| path A → path B | drop A if no other channel references it; add B | path = B; that channel's triggers preserved bit-identical | B must resolve explicitly, else silent |
+| path A → path B | drop A if no other channel references it; add B | path = B; that channel's triggers preserved **bit-identical unless B resolves to explicit `loop`** — then the explicit-loop reconcile wins and strips them (see precedence below); unrelated channels untouched | B must resolve explicitly, else silent |
 | same path re-assign | no-op | unchanged | unchanged |
 | `clear_user_channel_sample(channel_id)` | drop the key **only if no other channel references it**; a path shared with another channel keeps its entry | path = `None`; that channel's triggers preserved; unrelated channels and triggers untouched | excluded from both playback paths (non-bearing) |
 
@@ -117,6 +117,16 @@ Multiple user channels may legally reference the same sample path (frozen eviden
 Ordering for B2/B3 is frozen as **resolve → build target state (including any classification-implied reconcile) → adopt state → notify once**, so a newly assigned path is never momentarily unclassified-but-playable, and the existing single observer call still holds.
 
 `reconcile_live_kit_sample_assignments` gains the same user-channel reconcile it already performs for seed channels: resolved explicit `loop` ⇒ strip that channel's triggers (deterministic, once); `ambiguous` ⇒ preserve persisted triggers; unrelated channels untouched. **User-channel DEFAULT_ON seeding is not changed by this contract.**
+
+#### Trigger precedence (binding, resolves the replacement conflict)
+
+When two rules collide for one user channel, this order decides, and it mirrors the shipped seed-channel order in `reconcile_live_kit_sample_assignments`:
+
+1. resolved explicit `loop` ⇒ **strip** that channel's triggers;
+2. otherwise `ambiguous` ⇒ **preserve** persisted triggers verbatim;
+3. otherwise explicit `one_shot` / `oneshot` ⇒ **preserve**, never re-seed — hydration or replacement alone never re-applies DEFAULT_ON.
+
+So a replacement from a one-shot A to a loop B **strips** A's stale point triggers, and a replacement to `ambiguous` or `oneshot` preserves them bit-identical. Stripping applies to exactly one channel and never rewrites Pattern length, `step_count`, or any other channel's triggers. The `PLAYBACK_CLASSIFICATION_FREEZE` and `CLASSIFICATION_RECONCILE_POLICY` rules below still defer that strip while Rack Play is active.
 
 ### 6. Library re-analysis
 
@@ -165,6 +175,12 @@ Gesture-appended channels are user channels (`live_kit_group is None and live_ki
 | `loop` | `row_kind=loop_identity`, no step grid | excluded | `NATURAL_CYCLE_REPEAT` via `build_loop_cycle_specs` |
 | missing DB / catalog miss / stale fingerprint / non-explicit value | `row_kind=loop_identity`, no step grid | **excluded — fail-closed** | **excluded — fail-closed** |
 
+The projection column is binding on the **real** bottom-Rack seam, not only on the classification helper. `project_bottom_rack_for_qml(state, live_kit)` currently hardcodes every user row to `row_kind=loop_identity`, `step_grid_enabled=false`, `steps=[]` (`src/workbench_channel_rack.py`, user-row block), so it is a second, separate bypass of the classification contract. Therefore:
+
+- `project_bottom_rack_for_qml` takes the same optional keyword-only `user_metadata` binding and classifies user rows through the **same** `sample_class_for_channel` consumption point as every other consumer — no second normalization, no duplicated class sets;
+- a resolved one-shot user row projects `row_kind=step` with a real step grid, a resolved loop user row projects `loop_identity`, and an ambiguous user row stays `loop_identity` and gridless;
+- QML still owns no classification and no policy; this changes only what Python projects.
+
 Fail-closed cases preserve persisted Pattern triggers. Pattern Core shapes, `Trigger`, and the default playback rate path are unchanged.
 
 ### 10. Frozen contract / regression tests for the implementation slice
@@ -185,16 +201,17 @@ The follow-up slice must freeze these before implementation. Today, the ownershi
 7. Binding keyed by the exact durable path string; a stale-key lookup is `ambiguous`, not silent playback.
 8. Restore resolves all user-channel paths through one read-only connection (assert connection-open count ≤ 1) and never writes.
 9. Assign (empty → path) to an explicit oneshot makes the channel point-trigger eligible; to an explicit loop makes it loop-eligible; to a miss stays silent.
-10. Replacement A → B invalidates A immediately and never leaves the channel audible under A's class.
+10. Replacement A → B invalidates A immediately and never leaves the channel audible under A's class. Trigger outcome follows the binding precedence: A(one-shot) → B(loop) strips the stale triggers; A → B(`ambiguous`) and A → B(one-shot) preserve them bit-identical and never re-seed.
 11. `clear_user_channel_sample(channel_id)` drops the association, preserves that channel's and every unrelated channel's triggers, and fires the observer once; unknown `channel_id`, Live Kit seed channel, and already-empty user channel all reject or no-op without mutation, resolution, or an observer call. Clearing one of two channels that **share** a sample path keeps the binding entry for the survivor, which stays non-ambiguous.
-12. Explicit `loop` reconciles stale user-channel triggers once; `ambiguous` preserves them.
+12. Explicit `loop` reconciles stale user-channel triggers once; `ambiguous` preserves them; a one-shot never re-seeds.
 13. Resolve-only emits no musical-state observer call and no autosave; resolve + loop strip emits exactly one.
 14. User loop + SYNC-on with a valid bound `source_bpm` builds a loop spec; missing/invalid BPM stays fail-closed.
 15. `apply_gesture_integration_plan` resolves only the gesture-introduced or gesture-changed paths, leaves preserved base-channel bindings byte-identical, and keeps the single-observer guarantee.
 16. `add_user_channel(sample_path=…)` and `assign_user_channel_sample(...)` are both resolution boundaries; `add_user_channel()` with no path and a same-path re-assign resolve nothing.
 17. `PLAYBACK_CLASSIFICATION_FREEZE`: a path replacement, path clear, or classification change during active Rack Play changes neither point-trigger eligibility nor loop specs for any pass of that Play, does not fall silent through a path-key miss, does not stop or restart playback, and applies on the next explicit Rack Play. Step toggles made during Play remain immediately audible.
 18. `CLASSIFICATION_RECONCILE_POLICY`: a B4 refresh during active Rack Play that would strip triggers does **not** touch the state the current Play is reading; no pass of that Play goes silent, and the queued strip lands after `stop()` or at the next explicit Rack Play before its anchor.
-19. #926 regression suites stay green: `tests/test_channel_rack_loop_classification.py`, `tests/test_workbench_channel_rack_loop.py`, `tests/test_loop_rack_playback.py`, `tests/test_workbench_session_catalog_rehydrate.py`, `tests/test_workbench_session_persistence.py`.
+19. `project_bottom_rack_for_qml` classifies **user** rows through the same `sample_class_for_channel` consumption point and no hardcoded user-row class set: a resolved one-shot user row projects `row_kind=step` with a real step grid, a resolved loop user row projects `loop_identity`, and an ambiguous user row stays `loop_identity` and gridless. Assert all three.
+20. #926 regression suites stay green: `tests/test_channel_rack_loop_classification.py`, `tests/test_workbench_channel_rack_loop.py`, `tests/test_loop_rack_playback.py`, `tests/test_workbench_session_catalog_rehydrate.py`, `tests/test_workbench_session_persistence.py`, `tests/test_workbench_qml_screen2_channel_rack.py`.
 
 ## Explicit non-goals
 
@@ -218,9 +235,9 @@ DOCS -> TESTS -> TEST FREEZE -> IMPLEMENTATION -> CHECKS
 ```
 
 1. **DOCS** — this freeze is the DOCS_GATE artifact; confirm it against live `main` before code.
-2. **TESTS** — land tests 6–19 above (initially red where they must be red).
-3. **TEST FREEZE** — freeze tests 6–19. Tests 1–5 may only ever be tightened.
-4. **IMPLEMENTATION** — add `src/workbench_user_sample_metadata.py`; thread the optional `user_metadata` binding through `channel_rack` and `loop_rack_playback` as keyword-only, default `None`; inject the resolver in `compose_workbench_session`; implement B1–B4 including the B3 delta rule, the named `clear_user_channel_sample(...)` operation with reference-counted invalidation, the reconcile/observer rules, the per-Play snapshot behind `PLAYBACK_CLASSIFICATION_FREEZE`, and the queued reconcile behind `CLASSIFICATION_RECONCILE_POLICY`.
+2. **TESTS** — land tests 6–20 above (initially red where they must be red).
+3. **TEST FREEZE** — freeze tests 6–20. Tests 1–5 may only ever be tightened.
+4. **IMPLEMENTATION** — add `src/workbench_user_sample_metadata.py`; thread the optional `user_metadata` binding through `channel_rack`, `loop_rack_playback`, and `project_bottom_rack_for_qml` as keyword-only, default `None`; inject the resolver in `compose_workbench_session`; implement B1–B4 including the B3 delta rule, the named `clear_user_channel_sample(...)` operation with reference-counted invalidation, the binding trigger precedence, the reconcile/observer rules, the per-Play snapshot behind `PLAYBACK_CLASSIFICATION_FREEZE`, and the queued reconcile behind `CLASSIFICATION_RECONCILE_POLICY`.
 5. **CHECKS** — focused tests, the listed regression suites, then `python -m pytest -q`, `python -m ruff check .`, `python -m py_compile`, and `python tools/check_canon_drift.py`.
 
 **Out of scope for that slice:** classification-quality changes (#946), Pattern Core or session-JSON changes, QML redesign, Arrangement, gesture ranking changes, user-channel DEFAULT_ON changes.
