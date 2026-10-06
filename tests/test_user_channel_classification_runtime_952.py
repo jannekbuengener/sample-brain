@@ -1869,6 +1869,48 @@ def test_18i_queued_clear_then_assign_keeps_default_on_semantics() -> None:
     assert _channel(controller.state, channel_id).sample_path == LOOP_PATH
 
 
+def test_18j_queued_loop_then_oneshot_keeps_the_intermediate_strip() -> None:
+    """A superseded queued assignment must keep its classification effect.
+
+    Queuing A -> loop -> one_shot inside one Play leaves only the final path,
+    but the intermediate loop already stripped the triggers and the final
+    one-shot assignment preserves an empty pattern instead of reseeding.
+    Reconciling only the surviving final path would resurrect A's triggers.
+    """
+    classes = {
+        ONESHOT_PATH: "one_shot",
+        LOOP_PATH: "loop",
+        SECOND_ONESHOT_PATH: "one_shot",
+    }
+    immediate, _e, _t = _controller(resolver=_ScriptedResolver(dict(classes)))
+    immediate.ensure_state()
+    immediate.add_user_channel(sample_path=ONESHOT_PATH)
+    immediate_id = _last_user_channel_id(immediate.state)
+    assert _triggers_for(immediate.state, immediate_id) != ()
+    immediate.assign_user_channel_sample(immediate_id, LOOP_PATH)
+    immediate.assign_user_channel_sample(immediate_id, SECOND_ONESHOT_PATH)
+
+    controller, _engine, _transport = _controller(resolver=_ScriptedResolver(dict(classes)))
+    controller.ensure_state()
+    controller.add_user_channel(sample_path=ONESHOT_PATH)
+    channel_id = _last_user_channel_id(controller.state)
+    assert _triggers_for(controller.state, channel_id) != ()
+
+    controller.play()
+    controller.assign_user_channel_sample(channel_id, LOOP_PATH)
+    controller.assign_user_channel_sample(channel_id, SECOND_ONESHOT_PATH)
+    controller.stop()
+
+    assert _channel(controller.state, channel_id).sample_path == SECOND_ONESHOT_PATH
+    assert _triggers_for(controller.state, channel_id) == _triggers_for(
+        immediate.state, immediate_id
+    ), "the deferred sequence must land exactly where the immediate one does"
+    assert _triggers_for(controller.state, channel_id) == (), (
+        "the intermediate loop strip must survive; only the final path replay "
+        "would keep A's triggers audible for C"
+    )
+
+
 # ===========================================================================
 # Contract test 19 — bottom-Rack projection classifies user rows
 # ===========================================================================

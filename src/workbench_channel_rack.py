@@ -451,6 +451,21 @@ def _clear_channel_sample_path(
 
 
 @dataclass(frozen=True)
+class _QueuedUserChannelStep:
+    """One queued channel mutation, kept in the order the user performed it.
+
+    Each step carries the evidence resolved for it at queue time. The path
+    alone is not enough: a superseded intermediate class still has to produce
+    its own effect, so every step is replayed through the same public
+    transitions the live call used.
+    """
+
+    channel_id: str
+    path: str | None
+    entry: UserSampleMetadata | None = None
+
+
+@dataclass(frozen=True)
 class _PendingUserChannelMutation:
     """Declarative user-channel mutation deferred by ``PLAYBACK_MUTATION_APPLY_POLICY``.
 
@@ -459,31 +474,40 @@ class _PendingUserChannelMutation:
     must survive the adoption. Replaying the intent against the live state at
     adoption time keeps that edit, keeps the ``DEFAULT_ON`` seeding rules owned
     by the core transitions, and still resolves nothing a second time.
+
+    Steps are kept in order rather than folded into one final path per channel.
+    Trigger effects are sequence-dependent (a clear reseeds ``DEFAULT_ON`` that
+    a later assignment would otherwise treat as a replacement; an intermediate
+    ``loop`` strips triggers the final one-shot would preserve), so reconciling
+    only the last queued path loses the effect of everything in between.
     """
 
     added: tuple[tuple[str, str | None], ...] = ()
-    paths: Mapping[str, str | None] = field(default_factory=dict)
+    steps: tuple[_QueuedUserChannelStep, ...] = ()
     entries: Mapping[str, UserSampleMetadata] = field(default_factory=dict)
     attempted: frozenset[str] = frozenset()
     replaced: frozenset[str] = frozenset()
-    cleared: frozenset[str] = frozenset()
     prune: bool = False
 
     def merged_with(self, other: "_PendingUserChannelMutation") -> "_PendingUserChannelMutation":
-        """Fold a later queued mutation into this one, latest intent wins."""
-        paths = dict(self.paths)
-        paths.update(other.paths)
+        """Fold a later queued mutation into this one, keeping the order."""
         entries = dict(self.entries)
         entries.update(other.entries)
         return _PendingUserChannelMutation(
             added=self.added + other.added,
-            paths=paths,
+            steps=self.steps + other.steps,
             entries=entries,
             attempted=self.attempted | other.attempted,
             replaced=self.replaced | other.replaced,
-            cleared=self.cleared | other.cleared,
             prune=self.prune or other.prune,
         )
+
+    def queued_path_for(self, channel_id: str, fallback: str | None) -> str | None:
+        """The path a channel holds in the queued view: its last queued step."""
+        for step in reversed(self.steps):
+            if step.channel_id == channel_id:
+                return step.path
+        return fallback
 
 
 class ChannelRackController:
@@ -681,17 +705,19 @@ class ChannelRackController:
             target = add_user_channel(
                 target, sample_path=path, channel_id=channel_id
             )
-        for channel_id, path in pending.paths.items():
-            if path is None:
-                target = _clear_channel_sample_path(target, channel_id)
-            else:
-                if channel_id in pending.cleared:
-                    # A queued clear followed by this assignment. Replaying only
-                    # the final path would look like a replacement and keep the
-                    # old triggers; the public clear-then-assign sequence reseeds
-                    # DEFAULT_ON, so the intermediate clear must survive too.
-                    target = _clear_channel_sample_path(target, channel_id)
-                target = assign_user_channel_sample(target, channel_id, path)
+        for step in pending.steps:
+            if step.path is None:
+                target = _clear_channel_sample_path(target, step.channel_id)
+                continue
+            target = assign_user_channel_sample(target, step.channel_id, step.path)
+            if step.entry is not None:
+                # Reproduce this step's own classification effect now. A later
+                # step may supersede the path, but the strip an intermediate
+                # ``loop`` implies has already happened and must not be undone
+                # by replaying only the surviving final path.
+                target = self._adopt_user_metadata(
+                    target, UserSampleMetadataBinding({step.path: step.entry})
+                )
 
         referenced = {
             channel.sample_path
@@ -761,13 +787,12 @@ class ChannelRackController:
         paths = _distinct_user_paths(state)
         resolved = self._resolve_user_paths(paths)
         self._commit_user_mutation(
-_PendingUserChannelMutation(
-            paths={},
-            entries=resolved,
-            attempted=frozenset(paths),
-            replaced=frozenset(paths),
-            prune=True,
-        )
+            _PendingUserChannelMutation(
+                entries=resolved,
+                attempted=frozenset(paths),
+                replaced=frozenset(paths),
+                prune=True,
+            )
         )
         return self._user_metadata
 
@@ -987,7 +1012,7 @@ _PendingUserChannelMutation(
         """
         pending = self._pending_user_mutation
         if pending is not None:
-            return pending.paths.get(channel.channel_id, channel.sample_path)
+            return pending.queued_path_for(channel.channel_id, channel.sample_path)
         return channel.sample_path
 
     def assign_user_channel_sample(
@@ -1011,10 +1036,17 @@ _PendingUserChannelMutation(
             return state
 
         # B2: resolve the new path exactly once, here, at the boundary.
+        resolved = self._resolved_entry_for(path)
         return self._commit_user_mutation(
             _PendingUserChannelMutation(
-                paths={channel_id: path},
-                entries=self._resolved_entry_for(path),
+                steps=(
+                    _QueuedUserChannelStep(
+                        channel_id=channel_id,
+                        path=path,
+                        entry=resolved.get(path),
+                    ),
+                ),
+                entries=resolved,
                 attempted=frozenset({path}),
                 replaced=frozenset(
                     {previous_path} if _sample_bearing(previous_path) else set()
@@ -1045,9 +1077,8 @@ _PendingUserChannelMutation(
             return state
         return self._commit_user_mutation(
             _PendingUserChannelMutation(
-                paths={channel_id: None},
+                steps=(_QueuedUserChannelStep(channel_id=channel_id, path=None),),
                 replaced=frozenset({str(previous_path)}),
-                cleared=frozenset({channel_id}),
             )
         )
 
