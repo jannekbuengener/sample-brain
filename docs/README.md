@@ -63,6 +63,7 @@ internal agent- and process docs are clearly separated.
 | [AQ4 Classification KPI Contract](benchmarks/AQ4_CLASSIFICATION_KPI_CONTRACT.md) | #1001/#946 frozen sample_class vs pred_type/tag KPI + partition policy (synthetic corpus via #1021; human-labeled public may remain HOLD; confidence HOLD) |
 | [AQ4 Classification GT Corpus](benchmarks/AQ4_CLASSIFICATION_CORPUS.md) | #1021/#946 synthetic sample_class + pred_type GT (`sample-brain.aq4.classification.synthetic.v1`; runtime generator) |
 | [AQ4 Classification Baseline](benchmarks/AQ4_CLASSIFICATION_BASELINE.md) | #1032/#946 measured current sample_class / pred_type baseline on synthetic corpus (kNN HOLD; taxonomies separate) |
+| [AQ4 Classification Candidate Compare](benchmarks/AQ4_CLASSIFICATION_CANDIDATE_COMPARE.md) | #1034/#946 reproducible synthetic sample_class / pred_type candidate comparison (thin config adapters; no promotion) |
 | [Analyzer Portable Output Baseline](benchmarks/ANALYZER_PORTABLE_OUTPUT_BASELINE.md) | #960 AQ8 audit: safe/unsafe analyzer projection inventory for #956 |
 | [Validation Reports](validation/README.md) | Local validate_report how-to; committed files there are historical issue evidence |
 
