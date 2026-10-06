@@ -466,6 +466,82 @@ def _imported_bindings(tree: ast.Module) -> dict[str, str]:
     return bindings
 
 
+def _bound_name_targets(args: ast.arguments) -> list[str]:
+    """Parameter names of a ``def`` or ``lambda`` signature."""
+    names = [arg.arg for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs)]
+    if args.vararg is not None:
+        names.append(args.vararg.arg)
+    if args.kwarg is not None:
+        names.append(args.kwarg.arg)
+    return names
+
+
+def _local_name_bindings(tree: ast.Module) -> set[str]:
+    """Names the module binds itself, so a bare spelling is not an import.
+
+    A bare ``get_engine()`` with no visible origin has no other explanation than
+    an injected or runtime-supplied authority symbol, so the call guard treats
+    it as a reference. But when the module itself binds that name — a ``def``, a
+    class, an assignment, a parameter, or a loop target — the composer has
+    shadowed the authority, and the bare call is its own helper rather than
+    upstream authority. The derived API sets contain several generic names
+    (``get_engine``, ``init_db``, ``add_user_channel``), which is exactly why the
+    two cases have to be told apart.
+
+    ``global``/``nonlocal`` declarations are excluded, because those names are
+    looked up in an enclosing scope rather than bound locally.
+    """
+    declared_outer: set[str] = set()
+    bound: set[str] = set()
+
+    def add(target: ast.AST | None) -> None:
+        if isinstance(target, ast.Name):
+            bound.add(target.id)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for element in target.elts:
+                add(element)
+        elif isinstance(target, ast.Starred):
+            add(target.value)
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Global, ast.Nonlocal)):
+            declared_outer.update(node.names)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            bound.add(node.name)
+            bound.update(_bound_name_targets(node.args))
+        elif isinstance(node, ast.Lambda):
+            bound.update(_bound_name_targets(node.args))
+        elif isinstance(node, ast.ClassDef):
+            bound.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                add(target)
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+            add(node.target)
+        elif isinstance(node, ast.NamedExpr):
+            add(node.target)
+        elif isinstance(node, ast.For):
+            add(node.target)
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                add(item.optional_vars)
+        elif isinstance(node, ast.ExceptHandler):
+            if node.name:
+                bound.add(node.name)
+        elif isinstance(node, ast.comprehension):
+            add(node.target)
+        elif isinstance(node, ast.MatchAs):
+            if node.name:
+                bound.add(node.name)
+        elif isinstance(node, ast.MatchStar):
+            if node.name:
+                bound.add(node.name)
+        elif isinstance(node, ast.MatchMapping):
+            if node.rest:
+                bound.add(node.rest)
+    return bound - declared_outer
+
+
 def _authority_reference_nodes(tree: ast.Module) -> list[ast.AST]:
     """Every AST node that *references* a forbidden symbol's origin.
 
@@ -532,6 +608,7 @@ def _forbidden_calls_in_src(src: str, forbidden: list[str]) -> set[str]:
     """
     tree = _parse_module_src(src)
     imported = _imported_bindings(tree)
+    local = _local_name_bindings(tree)
     lower = {name.lower() for name in forbidden}
     found: set[str] = set()
 
@@ -542,7 +619,7 @@ def _forbidden_calls_in_src(src: str, forbidden: list[str]) -> set[str]:
         if module:
             spellings.add(f"{module}.{name}")
         for spelling in spellings:
-            for candidate in _resolved_names(spelling, imported, _AUTHORITY_OWNERS):
+            for candidate in _resolved_names(spelling, imported, _AUTHORITY_OWNERS, local):
                 if candidate.lower() in lower:
                     found.add(candidate)
 
@@ -552,7 +629,7 @@ def _forbidden_calls_in_src(src: str, forbidden: list[str]) -> set[str]:
         qualified = _dotted_name(node)
         if qualified is None:
             continue
-        for candidate in _resolved_names(qualified, imported, _AUTHORITY_OWNERS):
+        for candidate in _resolved_names(qualified, imported, _AUTHORITY_OWNERS, local):
             if candidate.lower() in lower:
                 found.add(candidate)
 
@@ -568,6 +645,7 @@ def _resolved_names(
     qualified: str,
     imported: dict[str, str],
     owners: dict[str, set[str]] | None = None,
+    local_bindings: set[str] | None = None,
 ) -> set[str]:
     """Candidate spellings of a reference, including its import resolution.
 
@@ -580,8 +658,14 @@ def _resolved_names(
     alias, or it *is* the authority module. Without that check any unrelated
     receiver method sharing a generic API name (``validator.get_engine()``)
     would be reported as a database authority reference.
+
+    A bare name that the module itself binds is likewise dropped, because the
+    composer shadowed the authority rather than referencing it. That suppression
+    applies to the authority call guard only; the name-ban guards deliberately
+    keep matching bare names.
     """
     owners = owners or {}
+    local_bindings = local_bindings or set()
     candidates = {qualified}
     if "." in qualified:
         head, _, tail = qualified.rpartition(".")
@@ -606,18 +690,40 @@ def _resolved_names(
         resolved = imported[qualified]
         candidates.add(resolved)
         candidates.add(resolved.rpartition(".")[2])
+    elif qualified in local_bindings:
+        return set()
     return candidates
+
+
+_MAPPING_LOOKUP_METHODS = frozenset({"get", "getdefault", "pop", "setdefault", "popitem"})
+
+
+def _is_mapping_access(target: ast.AST) -> bool:
+    """True when ``target`` reads an object's ``__dict__`` by name.
+
+    Covers the direct attribute form (``obj.__dict__``) and the builtin
+    ``vars(obj)`` form, whose ``func`` is a ``Name`` rather than an
+    ``Attribute``.
+    """
+    leaf = (_dotted_name(target) or "").rpartition(".")[2]
+    if leaf == "__dict__":
+        return True
+    if leaf == "vars":
+        return True
+    return isinstance(target, ast.Call) and (
+        (_dotted_name(target.func) or "").rpartition(".")[2] == "vars"
+    )
 
 
 def _dynamic_member_lookups(tree: ast.Module) -> list[str]:
     """Member names resolved at runtime through a string literal.
 
-    ``getattr(mod, "f")``, ``mod.__dict__["f"]``, ``vars(mod)["f"]`` and
-    ``operator.attrgetter("f")`` all fetch a member *by name*, so the AST holds
-    the forbidden symbol as a ``Constant`` rather than as a ``Name``. The
-    guard cannot see it by walking names alone, but it is still a real
-    reference to the authority — the capture happens at import time, before any
-    later module patch can intercept it.
+    ``getattr(mod, "f")``, ``mod.__dict__["f"]``, ``mod.__dict__.get("f")``,
+    ``vars(mod)["f"]``, ``vars(mod).get("f")`` and ``operator.attrgetter("f")``
+    all fetch a member *by name*, so the AST holds the forbidden symbol as a
+    ``Constant`` rather than as a ``Name``. The guard cannot see it by walking
+    names alone, but it is still a real reference to the authority — the capture
+    happens at import time, before any later module patch can intercept it.
 
     Only string literals in a member-lookup *position* are returned, so an
     ordinary string that merely spells a forbidden word is not affected.
@@ -631,26 +737,25 @@ def _dynamic_member_lookups(tree: ast.Module) -> list[str]:
                 name = node.args[1]
             elif leaf == "attrgetter" and node.args:
                 name = node.args[0]
+            elif (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr in _MAPPING_LOOKUP_METHODS
+                and node.args
+                # A mapping method is only a named member read when the mapping
+                # itself is an object's `__dict__`; any other receiver is
+                # ordinary application data.
+                and _is_mapping_access(node.func.value)
+            ):
+                # The method name comes from `func.attr`, not from
+                # `_dotted_name`: `vars(obj).get(...)` has a Call receiver, so
+                # the dotted spelling is empty.
+                name = node.args[0]
             else:
                 continue
             if isinstance(name, ast.Constant) and isinstance(name.value, str):
                 found.append(name.value)
         elif isinstance(node, ast.Subscript):
-            base = _dotted_name(node.value) or ""
-            leaf = base.rpartition(".")[2]
-            is_dict_access = leaf == "__dict__"
-            # `vars(mod)["f"]`: the subscript sits on a vars(...) result, whose
-            # func is a Name rather than an Attribute, so _dotted_name(value)
-            # is None and the base is empty.
-            is_vars_access = (
-                leaf == "vars"
-                or (
-                    not base
-                    and isinstance(node.value, ast.Call)
-                    and (_dotted_name(node.value.func) or "").rpartition(".")[2] == "vars"
-                )
-            )
-            if is_dict_access or is_vars_access:
+            if _is_mapping_access(node.value):
                 key = node.slice
                 if isinstance(key, ast.Constant) and isinstance(key.value, str):
                     found.append(key.value)
@@ -791,6 +896,50 @@ def compose():
     ) == {"add_user_channel"}
 
 
+def test__semantic_checker_ignores_locally_bound_bare_helper() -> None:
+    """A local helper sharing an authority API name is not that authority.
+
+    Regression proof for keeping a bare spelling unconditionally: because the
+    derived DB and rack sets contain generic names such as `get_engine`, an
+    unrelated local `def get_engine()` was reported as database authority
+    access even though no DB module is referenced at all.
+    """
+    locals_ = {
+        "local def": "def get_engine():\n    return object()\n\ndef compose():\n"
+        "    return get_engine()\n",
+        "local assignment": "def compose(obj):\n    get_engine = obj.engine\n"
+        "    return get_engine()\n",
+        "local parameter": "def compose(get_engine):\n    return get_engine()\n",
+        "local loop target": "def compose(rows):\n    for get_engine in rows:\n"
+        "        return get_engine()\n",
+    }
+    for label, src in locals_.items():
+        assert _forbidden_calls_in_src(src, _DB_CALLABLES) == set(), label
+
+    # A bare spelling with no local binding has no other possible origin, so it
+    # stays a reference; so does an import of the authority.
+    assert _forbidden_calls_in_src(
+        "def compose():\n    return get_engine()\n", _DB_CALLABLES
+    ) == {"get_engine"}
+    assert _forbidden_calls_in_src(
+        "from db import get_engine\ndef compose():\n    return get_engine()\n", _DB_CALLABLES
+    ) == {"get_engine"}
+
+    # Shadowing the name does not launder a captured authority: the reference
+    # is still caught at the point where the authority is actually touched.
+    assert _forbidden_calls_in_src(
+        "import db\ndef get_engine():\n    return db.get_engine()\n", _DB_CALLABLES
+    ) == {"get_engine"}
+    assert _forbidden_calls_in_src(
+        "import db\ndef compose():\n    get_engine = db.get_engine\n"
+        "    return get_engine()\n",
+        _DB_CALLABLES,
+    ) == {"get_engine"}
+
+    # The frozen composer itself must stay clean.
+    assert _forbidden_calls_in_src(_source_text(), _DB_CALLABLES) == set()
+
+
 def test__field_guard_rejects_dynamic_protected_field_read() -> None:
     """A protected field read by name must fail the field guard.
 
@@ -801,6 +950,9 @@ def test__field_guard_rejects_dynamic_protected_field_read() -> None:
     for src in (
         'def compose(binding):\n    return getattr(binding, "selected_rank")\n',
         'def compose(binding):\n    return binding.__dict__["selected_rank"]\n',
+        'def compose(binding):\n    return binding.__dict__.get("selected_rank")\n',
+        'def compose(binding):\n    return vars(binding).get("selected_rank")\n',
+        'def compose(binding):\n    return binding.__dict__.getdefault("selected_rank", 0)\n',
     ):
         assert _forbidden_name_refs_in_src(
             src, _SELECTION_FIELDS, attributes_only=True
