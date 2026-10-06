@@ -16,14 +16,15 @@ AQ4_CLASSIFICATION_KPI_CONTRACT_FROZEN
 
 This document freezes **what AQ4 measures, how binary structural class stays separate from semantic type/tags, and how evidence is partitioned** before any taxonomy change, threshold work, or candidate bake-off. It does **not** authorize classify/analyze algorithm changes, Rack ownership changes, or production switches.
 
-There is **no** frozen labeled public/sanitized Sample Brain classification benchmark corpus in-repo for AQ4 scoring. Metric **definitions**, taxonomy separation, eligibility, partitions, dataset-health checks, and #957 expectations are frozen here; measurable correctness baselines remain **HOLD** until a public/sanitized/synthetic labeled corpus is adopted under a separate scoped issue.
+Metric **definitions**, taxonomy separation, eligibility, partitions, dataset-health checks, and #957 expectations are frozen here. A named **synthetic** labeled corpus for measurable baselines is adopted by [#1021](https://github.com/jannekbuengener/sample-brain/issues/1021) / `docs/benchmarks/AQ4_CLASSIFICATION_CORPUS.md` (`sample-brain.aq4.classification.synthetic.v1`). A separate **human-labeled** public/sanitized corpus may remain HOLD until a future scoped adoption issue.
 
 ## Ownership
 
 | Concern | Owner |
 |---|---|
 | AQ4 `sample_class` / `pred_type` / tag metric definitions / eligibility | this contract |
-| Labeled public/sanitized/synthetic classification corpus adoption | future scoped issue under [#946](https://github.com/jannekbuengener/sample-brain/issues/946) (not this freeze) |
+| Synthetic labeled classification corpus adoption | [#1021](https://github.com/jannekbuengener/sample-brain/issues/1021) / `sample-brain.aq4.classification.synthetic.v1` |
+| Human-labeled public/sanitized classification corpus | **HOLD** — separate from the synthetic corpus id |
 | Portable domain tokens + eval envelope | [#956](https://github.com/jannekbuengener/sample-brain/issues/956) |
 | Perturbation mechanics / provenance | [#957](https://github.com/jannekbuengener/sample-brain/issues/957) |
 | Runtime cold/steady methodology | [#958](https://github.com/jannekbuengener/sample-brain/issues/958) |
@@ -112,30 +113,33 @@ Taxonomy **eligibility** for a future corpus must freeze which labels are in-sco
 ### Status
 
 ```text
-AQ4_LABELED_PUBLIC_CLASSIFICATION_CORPUS = HOLD
+AQ4_LABELED_PUBLIC_CLASSIFICATION_CORPUS = sample-brain.aq4.classification.synthetic.v1
 ```
 
-There is **no** frozen labeled public or sanitized Sample Brain classification benchmark corpus in-repo for AQ4 scoring. FSLD human-manifest fields used by AQ1/AQ2 do **not** supply `sample_class` / `pred_type` ground truth. Runtime existence of `src/analyze.py` / `src/classify.py` does **not** satisfy AQ4 correctness KPI.
+Authority for corpus identity, GT schema, generator seed/version, dual-taxonomy coverage, partition/leakage rules, and support-count hooks is `docs/benchmarks/AQ4_CLASSIFICATION_CORPUS.md` ([#1021](https://github.com/jannekbuengener/sample-brain/issues/1021)).
+
+This is a **synthetic labeled** corpus that unblocks measurable AQ4 baselines. A separate **human-labeled** public/sanitized corpus may remain HOLD. FSLD human-manifest fields used by AQ1/AQ2 still do **not** supply `sample_class` / `pred_type` ground truth. Runtime existence of `src/analyze.py` / `src/classify.py` does **not** satisfy AQ4 correctness KPI by itself.
 
 This contract therefore:
 
 - **owns** metric definitions, plane separation, partitions, dataset-health checks, confidence HOLD, and #957 expectations;
 - **does not** invent private-audio human labels or fabricated baseline scores;
-- **does not** treat optional local kNN seed CSVs (may contain machine-local paths) as a public gate corpus.
+- **does not** treat optional local kNN seed CSVs (may contain machine-local paths) as a public gate corpus;
+- **does not** treat the synthetic corpus as a silent substitute for human semantic labels on hard classes or as a promotion threshold authority.
 
-### Eligibility for a future corpus (definitions only)
+### Eligibility (corpus-owned; definitions remain here)
 
-A future scoped adoption issue must freeze at least:
+Corpus adoption (#1021) freezes at least:
 
 | Requirement | Notes |
 |---|---|
 | Label planes | separate `sample_class` and `pred_type` (and optional multi-tag descriptors) columns / fields |
-| Label provenance | public reference, sanitized redistributable, and/or deterministic synthetic — never private paths in committed artifacts |
+| Label provenance | deterministic synthetic for this corpus id — never private paths in committed artifacts |
 | Unknown / ambiguous policy | explicit uncertain-label accounting; do not force a class |
 | Join keys | compatible with #956 portable `record_id`s |
 | Partition | DEVELOPMENT/CALIBRATION vs TEST/HOLDOUT |
-| Leakage policy | duplicate / near-duplicate checks across partitions |
-| Synthetic role | may unblock controlled structural tests; not a silent substitute for human semantic labels on hard classes |
+| Leakage policy | duplicate / near-duplicate forbidden across partitions by construction |
+| Synthetic role | unblocks controlled baselines; not a silent substitute for human semantic labels on hard classes |
 
 Private library material and local seed lists may be a **reality check only**. They must not set public promotion thresholds and must not enter committed artifacts with private paths or audio.
 
@@ -286,13 +290,13 @@ List = dependency notice only. No numeric FP gates, no wiring changes, and no pr
 
 Exactly one:
 
-- `AQ4_CLASSIFICATION_KPI_CONTRACT_FROZEN` — `sample_class` vs `pred_type` separation, metric definitions, partitions, dataset-health checks, confidence HOLD, #957 expectations, and consumer-gate dependency list frozen; labeled public/sanitized corpus may remain HOLD for measurable baselines
+- `AQ4_CLASSIFICATION_KPI_CONTRACT_FROZEN` — `sample_class` vs `pred_type` separation, metric definitions, partitions, dataset-health checks, confidence HOLD, #957 expectations, and consumer-gate dependency list frozen; labeled corpus adoption owned by [#1021](https://github.com/jannekbuengener/sample-brain/issues/1021)
 - `AQ4_KPI_CONTRACT_INSUFFICIENT` — freeze cannot be stated from available program contracts / surface reality
 
-This slice exits `AQ4_CLASSIFICATION_KPI_CONTRACT_FROZEN` with:
+This slice exits `AQ4_CLASSIFICATION_KPI_CONTRACT_FROZEN`. Corpus adoption for measurable baselines is owned by [#1021](https://github.com/jannekbuengener/sample-brain/issues/1021) / `AQ4_CLASSIFICATION_CORPUS.md`:
 
 ```text
-AQ4_LABELED_PUBLIC_CLASSIFICATION_CORPUS = HOLD
+AQ4_LABELED_PUBLIC_CLASSIFICATION_CORPUS = sample-brain.aq4.classification.synthetic.v1
 ```
 
-Corpus adoption for measurable baselines is a future scoped issue under [#946](https://github.com/jannekbuengener/sample-brain/issues/946).
+A separate human-labeled public/sanitized corpus may remain HOLD.
