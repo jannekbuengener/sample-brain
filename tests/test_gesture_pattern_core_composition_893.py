@@ -203,6 +203,33 @@ _LENGTH_INFERENCE_NAMES = frozenset(
     {"source_duration", "last_onset", "next_beat", "next_bar"}
 )
 
+# Modules that own a forbidden authority API. Used to decide whether a
+# qualified reference's leaf name is really that authority or just an unrelated
+# receiver method that happens to share the name.
+_AUTHORITY_MODULES = (
+    "src.gesture_pattern_binding",
+    "src.gesture_library_ranking",
+    "src.gesture_catalog_adapter",
+    "src.db",
+    "src.gesture_timing_projection",
+    "src.gesture_analysis",
+    "src.pattern_core",
+    "src.channel_rack",
+)
+
+
+def _authority_owners() -> dict[str, set[str]]:
+    """Map each authority symbol name to the module stems that own it."""
+    owners: dict[str, set[str]] = {}
+    for module in _AUTHORITY_MODULES:
+        stem = module.rsplit(".", 1)[-1]
+        for name in _module_public_api(module):
+            owners.setdefault(name, set()).add(stem)
+    return owners
+
+
+_AUTHORITY_OWNERS = _authority_owners()
+
 
 def _candidate(sample_id: str, path: str | None = None) -> LibraryCandidate:
     # Align fixture fields with live #882 LibraryCandidate (freeze typo repair).
@@ -515,7 +542,7 @@ def _forbidden_calls_in_src(src: str, forbidden: list[str]) -> set[str]:
         if module:
             spellings.add(f"{module}.{name}")
         for spelling in spellings:
-            for candidate in _resolved_names(spelling, imported):
+            for candidate in _resolved_names(spelling, imported, _AUTHORITY_OWNERS):
                 if candidate.lower() in lower:
                     found.add(candidate)
 
@@ -525,7 +552,7 @@ def _forbidden_calls_in_src(src: str, forbidden: list[str]) -> set[str]:
         qualified = _dotted_name(node)
         if qualified is None:
             continue
-        for candidate in _resolved_names(qualified, imported):
+        for candidate in _resolved_names(qualified, imported, _AUTHORITY_OWNERS):
             if candidate.lower() in lower:
                 found.add(candidate)
 
@@ -537,21 +564,44 @@ def _forbidden_calls_in_src(src: str, forbidden: list[str]) -> set[str]:
     return found
 
 
-def _resolved_names(qualified: str, imported: dict[str, str]) -> set[str]:
+def _resolved_names(
+    qualified: str,
+    imported: dict[str, str],
+    owners: dict[str, set[str]] | None = None,
+) -> set[str]:
     """Candidate spellings of a reference, including its import resolution.
 
     Covers the written form, the bare attribute/name form, and — when the
     reference is an imported alias — both the resolved dotted symbol and its
     final component, so a ban on either the bare or the qualified symbol hits.
+
+    A qualified leaf is only offered as a bare-name candidate when the receiver
+    actually resolves to the owning authority: either it is an imported module
+    alias, or it *is* the authority module. Without that check any unrelated
+    receiver method sharing a generic API name (``validator.get_engine()``)
+    would be reported as a database authority reference.
     """
+    owners = owners or {}
     candidates = {qualified}
     if "." in qualified:
         head, _, tail = qualified.rpartition(".")
-        candidates.add(tail)
-        if head in imported:
-            resolved = f"{imported[head]}.{tail}"
-            candidates.add(resolved)
-            candidates.add(resolved.rpartition(".")[2])
+        if owners:
+            # Scoped mode: a leaf only counts when the receiver resolves to the
+            # owning authority, so `validator.get_engine()` is not a DB call.
+            if head in imported:
+                resolved = f"{imported[head]}.{tail}"
+                candidates.add(resolved)
+                candidates.add(resolved.rpartition(".")[2])
+            elif head in owners.get(tail, ()):
+                candidates.add(tail)
+        else:
+            # Unscoped mode (field/state guards): the receiver is an arbitrary
+            # instance, so the attribute leaf itself is the reference.
+            candidates.add(tail)
+            if head in imported:
+                resolved = f"{imported[head]}.{tail}"
+                candidates.add(resolved)
+                candidates.add(resolved.rpartition(".")[2])
     elif qualified in imported:
         resolved = imported[qualified]
         candidates.add(resolved)
@@ -639,10 +689,19 @@ def _forbidden_name_refs_in_src(
             qualified = _dotted_name(node)
             if qualified is None:
                 continue
+            # Field and state guards read through arbitrary instances
+            # (`binding.selected_rank`, `rack_state.DEFAULT_ON`), so the leaf
+            # must match here; owner scoping applies to module APIs only.
             candidates = _resolved_names(qualified, imported)
         for candidate in candidates:
             if candidate.lower() in lower:
                 found.add(candidate)
+    # A protected field read dynamically (`getattr(binding, "selected_rank")`,
+    # `binding.__dict__["selected_rank"]`) is still an attribute read by name,
+    # so the field guard must see it too.
+    for name in _dynamic_member_lookups(tree):
+        if name.lower() in lower:
+            found.add(name)
     return found
 
 
@@ -692,7 +751,7 @@ def test__semantic_checker_true_positive_calls() -> None:
     src = '''
 def func():
     quantize(1, 2)
-    mod.allocate_user_channel_id()
+    pattern_core.allocate_user_channel_id()
     add_user_channel("x")
 '''
     calls = _forbidden_calls_in_src(src, [
@@ -703,6 +762,59 @@ def func():
     assert "quantize" in calls
     assert "allocate_user_channel_id" in calls
     assert "add_user_channel" in calls
+
+
+def test__semantic_checker_ignores_unrelated_receiver_leaf() -> None:
+    """An unrelated receiver method sharing an API name is not a violation.
+
+    Regression proof for matching an attribute's leaf unconditionally: the DB
+    and rack APIs contain generic names such as `get_engine`, so a harmless
+    `validator.get_engine()` was reported as database authority access.
+    """
+    src = """
+class Validator:
+    def get_engine(self):
+        return object()
+
+def compose():
+    return Validator().get_engine()
+"""
+    assert _forbidden_calls_in_src(src, _DB_CALLABLES) == set()
+    assert _forbidden_calls_in_src(src, _CHANNEL_RACK_CALLABLES) == set()
+    # The same names still fail when they really come from the authority.
+    assert _forbidden_calls_in_src(
+        "import db\ndef compose():\n    return db.get_engine()\n", _DB_CALLABLES
+    ) == {"get_engine"}
+    assert _forbidden_calls_in_src(
+        "import channel_rack\ndef compose():\n    return channel_rack.add_user_channel(c)\n",
+        _CHANNEL_RACK_CALLABLES,
+    ) == {"add_user_channel"}
+
+
+def test__field_guard_rejects_dynamic_protected_field_read() -> None:
+    """A protected field read by name must fail the field guard.
+
+    Regression proof for `attributes_only` guards seeing only real `Attribute`
+    nodes: `getattr(binding, "selected_rank")` and the `__dict__` subscript form
+    both bypassed test 39.
+    """
+    for src in (
+        'def compose(binding):\n    return getattr(binding, "selected_rank")\n',
+        'def compose(binding):\n    return binding.__dict__["selected_rank"]\n',
+    ):
+        assert _forbidden_name_refs_in_src(
+            src, _SELECTION_FIELDS, attributes_only=True
+        ) == {"selected_rank"}, src
+    # A plain string that merely spells the field name is not a field read.
+    assert _forbidden_name_refs_in_src(
+        'def compose():\n    label = "selected_rank"\n',
+        _SELECTION_FIELDS,
+        attributes_only=True,
+    ) == set()
+    # The frozen composer itself must stay clean.
+    assert _forbidden_name_refs_in_src(
+        _source_text(), _SELECTION_FIELDS, attributes_only=True
+    ) == set()
 
 
 def test__semantic_checker_true_positive_name_refs() -> None:
