@@ -154,6 +154,43 @@ def test_no_hidden_normalization_on_gain_only(tmp_path: Path) -> None:
     np.testing.assert_allclose(y1, y0 * factor, rtol=0.0, atol=1e-4)
 
 
+def test_pcm16_gain_that_would_clip_fails_closed(tmp_path: Path) -> None:
+    src = write_sine_wav(
+        tmp_path / "src.wav",
+        duration_sec=0.2,
+        frequency_hz=440.0,
+        amplitude=0.8,
+    )
+    out = tmp_path / "clip.wav"
+    with pytest.raises(ValidationError, match="would clip"):
+        materialize_derived_fixture(
+            src,
+            _spec({"id": "gain", "version": "1", "params": {"factor": 2.0}}),
+            out,
+        )
+    assert not out.exists()
+    # Source must remain untouched when materialization fails closed.
+    y0, _ = sf.read(str(src), dtype="float32", always_2d=True)
+    assert float(np.max(np.abs(y0))) == pytest.approx(0.8, abs=1e-3)
+
+
+def test_hard_link_destination_rejected(tmp_path: Path) -> None:
+    src = write_sine_wav(tmp_path / "src.wav", duration_sec=0.2, frequency_hz=100.0)
+    linked = tmp_path / "hardlink.wav"
+    try:
+        linked.hardlink_to(src)
+    except OSError:
+        pytest.skip("hard links unavailable on this filesystem")
+    before = src.read_bytes()
+    with pytest.raises(ValidationError, match="hard link|same inode"):
+        materialize_derived_fixture(
+            src,
+            _spec({"id": "gain", "version": "1", "params": {"factor": 0.5}}),
+            linked,
+        )
+    assert src.read_bytes() == before
+
+
 def test_invalid_and_non_finite_params_fail_closed() -> None:
     with pytest.raises(ValidationError):
         validate_transform_spec(

@@ -462,11 +462,25 @@ def materialize_derived_fixture(
     """Apply validated transforms and write a derived WAV without mutating source.
 
     ``output_path`` is process-local convenience and is not part of semantic identity.
+
+    Derived audio is written as PCM_16. Linear ``gain`` / peak growth that would
+    exceed the representable ``[-1, 1]`` range fails closed with
+    :class:`ValidationError` instead of silently clipping.
     """
     source_path = Path(source_path)
     output_path = Path(output_path)
     if source_path.resolve() == output_path.resolve():
         raise ValidationError("source and destination must be different paths")
+    if output_path.exists():
+        try:
+            if source_path.samefile(output_path):
+                raise ValidationError(
+                    "source and destination must not share the same inode (hard link)"
+                )
+        except OSError:
+            # Destination exists but identity cannot be compared; continue and let
+            # the write path surface a concrete I/O error if needed.
+            pass
 
     canonical = validate_transform_spec(spec)
     derived_identity = compute_derived_identity(source_path, canonical)
@@ -474,6 +488,12 @@ def materialize_derived_fixture(
 
     buffer = _load_source(source_path)
     rendered = apply_transforms(buffer, canonical["transforms"])
+    peak = float(np.max(np.abs(rendered.samples))) if rendered.samples.size else 0.0
+    if math.isfinite(peak) and peak > 1.0:
+        raise ValidationError(
+            "PCM_16 materialization would clip: peak exceeds 1.0 after transforms; "
+            "reduce gain/peak or peak_normalize before write"
+        )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     sf.write(

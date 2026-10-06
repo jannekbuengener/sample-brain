@@ -141,10 +141,11 @@ Returned by materialize / describe helpers; path fields are process-local conven
 
 1. Read source with `soundfile` preserving channels and sample rate (no hidden mono/resample).
 2. Apply transforms strictly in list order.
-3. Write derived WAV to an explicit destination path ≠ source path.
+3. Write derived WAV to an explicit destination path ≠ source path (also reject hard-linked destinations that share the source inode).
 4. Never mutate or overwrite the source artifact.
 5. Do not peak-normalize, dither-policy-change, or resample unless the corresponding transform is present.
-6. Synthetic/public fixtures only in tests; never commit derived audio.
+6. Derived write uses `PCM_16`. If post-transform peak would exceed `1.0`, materialization **fails closed** with `ValidationError` — linear gain must not silently clip.
+7. Synthetic/public fixtures only in tests; never commit derived audio.
 
 ## Consumer reuse proof (required)
 
