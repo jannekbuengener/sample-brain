@@ -307,7 +307,14 @@ class Features:
 def _serialize_key_mode_evidence(evidence: dict | None) -> str | None:
     if evidence is None:
         return None
-    return json.dumps(evidence, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    # Fail closed for portable/DB evidence: never emit NaN/Inf JSON tokens (#960).
+    return json.dumps(
+        evidence,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
 
 
 def extract_features(

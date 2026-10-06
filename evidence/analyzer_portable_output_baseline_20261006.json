@@ -1,0 +1,110 @@
+{
+  "suite": "analyzer_portable_output_baseline",
+  "document_type": "sample_brain.analyzer_portable_output_baseline",
+  "schema_version": "1.0.0",
+  "issue": 960,
+  "parents": [950, 942],
+  "feeds": [956],
+  "origin_main_sha": "f926a1f2f13cedf3afbafa61f44721c924506657",
+  "method": "synthetic_public_fixtures_and_contract_inspection",
+  "helper_module": "src.portable_analyzer_projection",
+  "baseline_doc": "docs/benchmarks/ANALYZER_PORTABLE_OUTPUT_BASELINE.md",
+  "surfaces": [
+    "bpm_beatgrid",
+    "key_mode_tonality",
+    "onset_gesture",
+    "classification_type_tags",
+    "search_ranking",
+    "harmonic_match",
+    "structure_arrangement",
+    "loudness_brightness_mfcc_chroma"
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "class": "PASS_EXISTING_CONTRACT",
+      "summary": "BeatGridSeries rejects non-finite times_sec"
+    },
+    {
+      "id": "F2",
+      "class": "PASS_EXISTING_CONTRACT",
+      "summary": "structure_v1 fails closed on non-finite audio with status/reason_code"
+    },
+    {
+      "id": "F3",
+      "class": "PASS_EXISTING_CONTRACT",
+      "summary": "FSLD eval, joint-key benchmark, track-analysis cache use allow_nan=False"
+    },
+    {
+      "id": "F4",
+      "class": "PASS_EXISTING_CONTRACT",
+      "summary": "Key V2 evidence serialization uses allow_nan=False"
+    },
+    {
+      "id": "F5",
+      "class": "DEFECT_IN_SCOPE_TO_PROTECT",
+      "summary": "V1 key_mode_evidence serialization now rejects NaN/Inf via allow_nan=False"
+    },
+    {
+      "id": "F6",
+      "class": "KNOWN_DOMAIN_SEMANTIC",
+      "summary": "Gesture fail-soft zeros require explicit status in portable evidence"
+    },
+    {
+      "id": "F7",
+      "class": "INDEPENDENT_REPAIR_REQUIRED",
+      "summary": "Silent synthetic audio may still emit a tonal root; not repaired in #960"
+    },
+    {
+      "id": "F8",
+      "class": "KNOWN_DOMAIN_SEMANTIC",
+      "summary": "SearchHit.path is runtime-local and must not enter portable evidence"
+    },
+    {
+      "id": "F9",
+      "class": "KNOWN_DOMAIN_SEMANTIC",
+      "summary": "MFCC/chroma blobs need finite decode or omit under #956 mapping"
+    },
+    {
+      "id": "F10",
+      "class": "KNOWN_DOMAIN_SEMANTIC",
+      "summary": "Harmonic-match suggestions are not yet a versioned portable artifact"
+    },
+    {
+      "id": "F11",
+      "class": "DEFECT_IN_SCOPE_TO_PROTECT",
+      "summary": "Shared portable_analyzer_projection helper added for fail-closed dumps"
+    }
+  ],
+  "synthetic_probe_highlights": {
+    "sine_440hz_2s": {
+      "features_ok": true,
+      "bpm": null,
+      "loudness_finite": true,
+      "brightness_finite": true,
+      "mfcc_shape": [13],
+      "mfcc_finite": true,
+      "chroma_shape": [12],
+      "chroma_finite": true
+    },
+    "silent_1s": {
+      "features_ok": true,
+      "bpm": null,
+      "loudness": null,
+      "key_observed": "C",
+      "note": "spurious root on silence routed as INDEPENDENT_REPAIR_REQUIRED"
+    },
+    "v1_key_mode_evidence_nan": {
+      "json_allow_nan_false": "rejected",
+      "serialize_after_fix": "rejected"
+    },
+    "beat_grid_nan_times": "ValueError"
+  },
+  "arvp_boundary": {
+    "typed_metrics_issue": 7,
+    "typed_metrics_state": "CLOSED",
+    "open_arvp_issues": [11, 12],
+    "note": "ARVP must receive safe portable values; #960 does not implement ARVP core"
+  },
+  "exit": "ANALYZER_PORTABLE_OUTPUT_BASELINE_AUDITED"
+}
