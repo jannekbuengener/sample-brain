@@ -318,7 +318,7 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
     current_candidate = result.get("current_candidate")
     if not isinstance(current_candidate, Mapping):
         raise AnalysisCandidateIteratorError("current_candidate must be a mapping")
-    _require_text(
+    current_id = _require_text(
         current_candidate.get("candidate_id"), "current_candidate.candidate_id"
     )
     _require_hex_fingerprint(
@@ -350,9 +350,18 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
     )
     if max_iterations < 1:
         raise AnalysisCandidateIteratorError("max_iterations must be >= 1")
+    if iteration_index < len(normalized_visited):
+        raise AnalysisCandidateIteratorError(
+            "iteration_index must be >= len(visited_candidate_ids)"
+        )
     if iteration_index > max_iterations and effect == "advance":
         raise AnalysisCandidateIteratorError(
             "advance iteration_index cannot exceed max_iterations"
+        )
+
+    if current_id not in normalized_visited:
+        raise AnalysisCandidateIteratorError(
+            "current_candidate must remain in visited_candidate_ids"
         )
 
     if effect == "advance":
@@ -376,10 +385,13 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
             raise AnalysisCandidateIteratorError(
                 "advance next_candidate must not already be visited"
             )
-        current_id = str(current_candidate.get("candidate_id"))
         if next_id == current_id:
             raise AnalysisCandidateIteratorError(
                 "advance next_candidate must differ from current_candidate"
+            )
+        if current_id not in normalized_visited[:-1]:
+            raise AnalysisCandidateIteratorError(
+                "advance current_candidate must remain in visited history"
             )
     elif "next_candidate" in result:
         raise AnalysisCandidateIteratorError(
@@ -429,11 +441,17 @@ def iterate_candidates(
 
     members = _normalize_members(provider.ordered_members())
     by_id = _member_index(members)
+    # Snapshot provider identity once so fingerprint and result describe the
+    # same search space even if a mutable provider changes later.
+    space_id = _require_text(provider.search_space_id, "provider.search_space_id")
+    space_version = _require_text(
+        provider.search_space_version, "provider.search_space_version"
+    )
     # Bind fingerprint to the normalized members used for selection, not only
     # to whatever digest a custom provider method claims.
     expected_space_fp = _compute_search_space_fingerprint(
-        search_space_id=provider.search_space_id,
-        search_space_version=provider.search_space_version,
+        search_space_id=space_id,
+        search_space_version=space_version,
         ordered_members=members,
     )
     provider_claimed_fp = _require_hex_fingerprint(
@@ -548,8 +566,8 @@ def iterate_candidates(
         "next_action": action,
         "iterator_effect": effect,
         "search_space": {
-            "search_space_id": provider.search_space_id,
-            "search_space_version": provider.search_space_version,
+            "search_space_id": space_id,
+            "search_space_version": space_version,
             "search_space_fingerprint": expected_space_fp,
         },
         "current_candidate": {

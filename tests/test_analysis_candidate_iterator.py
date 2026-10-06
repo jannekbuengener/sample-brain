@@ -255,6 +255,64 @@ def test_validate_result_rejects_malformed_bounded_state() -> None:
         validate_result(poisoned4)
 
 
+def test_validate_result_rejects_iteration_index_below_visited_count() -> None:
+    result = _run(visited_candidate_ids=["demo.cand.c"])
+    poisoned = dict(result)
+    # Legitimate advance has visited=[current, next] and iteration_index == 2.
+    poisoned["iteration_index"] = 1
+    poisoned["result_fingerprint"] = result_semantic_fingerprint(poisoned)
+    with pytest.raises(
+        AnalysisCandidateIteratorError,
+        match="iteration_index must be >= len\\(visited_candidate_ids\\)",
+    ):
+        validate_result(poisoned)
+
+
+def test_validate_result_requires_current_candidate_in_visited_history() -> None:
+    result = _run(visited_candidate_ids=["demo.cand.c"])
+    poisoned = dict(result)
+    # Drop current from visited; keep only the next candidate.
+    poisoned["visited_candidate_ids"] = [result["next_candidate"]["candidate_id"]]
+    poisoned["iteration_index"] = 1
+    poisoned["result_fingerprint"] = result_semantic_fingerprint(poisoned)
+    with pytest.raises(
+        AnalysisCandidateIteratorError,
+        match="current_candidate must remain in visited",
+    ):
+        validate_result(poisoned)
+
+
+def test_mutable_provider_identity_snapshotted_into_result() -> None:
+    class _FlipIdentityProvider(StaticSearchSpaceProvider):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            self._reads = 0
+
+        @property
+        def search_space_id(self) -> str:  # type: ignore[override]
+            self._reads += 1
+            # Second+ reads would poison result identity if re-read after snapshot.
+            if self._reads == 1:
+                return self._search_space_id
+            return "demo.search-space.mutated"
+
+    provider = _FlipIdentityProvider(
+        search_space_id="demo.search-space",
+        search_space_version="1.0.0",
+        ordered_members=_members(),
+    )
+    result = _run(
+        visited_candidate_ids=["demo.cand.c"],
+        provider=provider,
+    )
+    assert result["search_space"]["search_space_id"] == "demo.search-space"
+    assert result["search_space"]["search_space_fingerprint"] == search_space_fingerprint(
+        search_space_id="demo.search-space",
+        search_space_version="1.0.0",
+        ordered_members=_members(),
+    )
+
+
 def test_stale_provider_fingerprint_rejected() -> None:
     class _StaleProvider(StaticSearchSpaceProvider):
         def search_space_fingerprint(self) -> str:  # type: ignore[override]
