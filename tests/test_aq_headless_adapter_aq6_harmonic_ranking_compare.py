@@ -3,8 +3,8 @@
 TEST FREEZE: these assertions define the thin AQ6 DomainAdapter contract.
 Fix the adapter — not these expectations — when they turn red. Wrap only
 ``run_aq6_harmonic_ranking_candidate_compare``; do not rewrite ranking/
-theory algorithms, blend planes into one fake score, mutate the shared
-STATIC_ADAPTER_REGISTRY, or invent a preference signal.
+theory algorithms, blend planes into one fake score, or invent a preference
+signal. Registry wiring is owned by M6.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from src.analysis_headless_run import (
     DomainAdapter,
     STATIC_ADAPTER_REGISTRY,
     build_request,
+    lookup_adapter,
     result_semantic_fingerprint,
     serialize_result,
     validate_result,
@@ -131,9 +132,14 @@ def test_candidate_config_fingerprints_match_public_identity() -> None:
         )
 
 
-def test_static_registry_remains_empty_after_import() -> None:
-    assert dict(STATIC_ADAPTER_REGISTRY) == {}
-    assert ADAPTER_ID not in STATIC_ADAPTER_REGISTRY
+def test_adapter_registered_in_static_registry() -> None:
+    """M6 wires STATIC_ADAPTER_REGISTRY; entry requires host bind before run."""
+    assert ADAPTER_ID in STATIC_ADAPTER_REGISTRY
+    entry = lookup_adapter(ADAPTER_ID)
+    assert entry.adapter_id == ADAPTER_ID
+    assert entry.adapter_version == ADAPTER_VERSION
+    with pytest.raises(Exception, match="unbound"):
+        entry.run({})
 
 
 def test_headless_compare_completes_with_multi_plane_provenance(

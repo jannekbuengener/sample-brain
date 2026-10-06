@@ -24,6 +24,7 @@ from src.analysis_headless_run import (
     AnalysisHeadlessRunError,
     DomainAdapter,
     STATIC_ADAPTER_REGISTRY,
+    bind_adapter,
     build_request,
     build_result,
     lookup_adapter,
@@ -298,10 +299,34 @@ def test_domain_adapter_protocol_structural() -> None:
     assert isinstance(stub, DomainAdapter)
 
 
-def test_static_registry_empty_and_fail_closed() -> None:
-    assert dict(STATIC_ADAPTER_REGISTRY) == {}
+def test_static_registry_has_aq1_aq6_and_fail_closed_unknown() -> None:
+    assert "aq1.tempo.candidate_compare" in STATIC_ADAPTER_REGISTRY
+    assert "aq6.ranking.candidate_compare" in STATIC_ADAPTER_REGISTRY
+    aq1 = lookup_adapter("aq1.tempo.candidate_compare")
+    aq6 = lookup_adapter("aq6.ranking.candidate_compare")
+    assert aq1.adapter_id == "aq1.tempo.candidate_compare"
+    assert aq6.adapter_id == "aq6.ranking.candidate_compare"
+    assert aq1.adapter_version == "1.0.0"
+    assert aq6.adapter_version == "1.0.0"
     with pytest.raises(AnalysisHeadlessRunError, match="unknown adapter"):
-        lookup_adapter("aq1.tempo.candidate_compare")
+        lookup_adapter("totally.unknown.adapter")
+    with pytest.raises(AnalysisHeadlessRunError, match="unbound"):
+        aq1.run({})
+
+
+def test_bind_adapter_constructs_host_bound_instances(tmp_path: Path) -> None:
+    work = tmp_path / "aq1-work"
+    work.mkdir()
+    out = tmp_path / "aq6-out" / "compare.json"
+    out.parent.mkdir()
+    aq1 = bind_adapter("aq1.tempo.candidate_compare", work_dir=work)
+    aq6 = bind_adapter("aq6.ranking.candidate_compare", output_path=out)
+    assert aq1.adapter_id == "aq1.tempo.candidate_compare"
+    assert aq6.adapter_id == "aq6.ranking.candidate_compare"
+    assert isinstance(aq1, DomainAdapter)
+    assert isinstance(aq6, DomainAdapter)
+    with pytest.raises(AnalysisHeadlessRunError, match="unknown adapter"):
+        bind_adapter("totally.unknown.adapter", work_dir=work)
 
 
 def test_lookup_adapter_accepts_explicit_registry() -> None:

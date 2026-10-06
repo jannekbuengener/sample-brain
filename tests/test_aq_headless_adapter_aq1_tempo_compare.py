@@ -1,7 +1,7 @@
 """AQ1 thin headless DomainAdapter proof (#1054 M3).
 
 Path B (baseline-predictions) only — deterministic, no live audio.
-Does not register into STATIC_ADAPTER_REGISTRY (M6 owns wiring).
+Registry wiring is owned by M6 (`STATIC_ADAPTER_REGISTRY`).
 """
 
 from __future__ import annotations
@@ -202,11 +202,14 @@ def test_adapter_implements_domain_adapter_protocol(tmp_path: Path) -> None:
     assert "locked_evaluation" in adapter.capabilities
 
 
-def test_adapter_not_registered_in_static_registry() -> None:
-    """M3 must not wire STATIC_ADAPTER_REGISTRY — M6 owns registration."""
-    assert ADAPTER_ID not in STATIC_ADAPTER_REGISTRY
-    with pytest.raises(Exception, match="unknown adapter"):
-        lookup_adapter(ADAPTER_ID)
+def test_adapter_registered_in_static_registry() -> None:
+    """M6 wires STATIC_ADAPTER_REGISTRY; entry requires host bind before run."""
+    assert ADAPTER_ID in STATIC_ADAPTER_REGISTRY
+    entry = lookup_adapter(ADAPTER_ID)
+    assert entry.adapter_id == ADAPTER_ID
+    assert entry.adapter_version == ADAPTER_VERSION
+    with pytest.raises(Exception, match="unbound"):
+        entry.run({})
 
 
 def test_path_b_compare_completes_with_domain_artifact_fingerprint(

@@ -78,6 +78,7 @@ internal agent- and process docs are clearly separated.
 | [AQ6 Harmonic Match Human Preference Gate](benchmarks/AQ6_HARMONIC_MATCH_HUMAN_PREFERENCE_GATE.md) | #1020/#948 preference plane first-gate `NOT_REQUIRED` (no listening study; planes kept separate) |
 | [AQ6 Harmonic Match Decision Memo](benchmarks/AQ6_HARMONIC_MATCH_DECISION_MEMO.md) | #1022/#948 evidence-backed keep-current Harmonic Match decision (no production switch; preference `NOT_REQUIRED`) |
 | [Analyzer Portable Output Baseline](benchmarks/ANALYZER_PORTABLE_OUTPUT_BASELINE.md) | #960 AQ8 audit: safe/unsafe analyzer projection inventory for #956 |
+| [Analysis Headless Run Contract](benchmarks/SAMPLE_BRAIN_ANALYSIS_HEADLESS_RUN_V1.md) | #1054/#1040 frozen headless request/result + static AQ1/AQ6 adapter registry (no ARVP; no decision tokens) |
 | [Validation Reports](validation/README.md) | Local validate_report how-to; committed files there are historical issue evidence |
 
 ## Operations, Process & Infrastructure (internal)

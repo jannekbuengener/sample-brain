@@ -1,6 +1,6 @@
-"""Sample Brain analysis headless-run contract v1 (#1054 W0 freeze).
+"""Sample Brain analysis headless-run contract v1 (#1054).
 
-Frozen public API for M3/M4/M5 (do not rename without integrator GO):
+Frozen public API:
 
 Constants
     DOCUMENT_TYPE, ARTIFACT_VERSION, PRODUCER_ID
@@ -19,6 +19,7 @@ Builders / validators
 
 Registry / preflight
     lookup_adapter
+    bind_adapter
     preflight_operation_partition
 
 Status vocabulary is ``completed`` | ``hold`` | ``controlled_failure``
@@ -27,12 +28,17 @@ Status vocabulary is ``completed`` | ``hold`` | ``controlled_failure``
 
 Reuses #956 helpers (import-only): ``canonical_json_dumps``, ``fingerprint``,
 ``assert_portable_value``. No ARVP import. No CLI/subprocess primary.
-Concrete AQ adapters are registered by M6; W0 keeps an empty static registry.
+
+M6 registers ``aq1.tempo.candidate_compare`` and
+``aq6.ranking.candidate_compare`` as host-bind registry entries. Call
+``bind_adapter(adapter_id, ...)`` (or ``lookup_adapter(...).bind(...)``)
+before ``run`` — host paths stay outside the portable request envelope.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from types import MappingProxyType
 from typing import Any, Literal, Mapping, Protocol, runtime_checkable
 
@@ -81,10 +87,6 @@ _RESULT_FP_EXCLUDED: frozenset[str] = frozenset(
     {"generated_at", "result_fingerprint", "artifact_hash"}
 )
 
-# W0 freeze: empty static registry; M6 registers concrete AQ adapters.
-STATIC_ADAPTER_REGISTRY: Mapping[str, "DomainAdapter"] = MappingProxyType({})
-
-
 class AnalysisHeadlessRunError(ValueError):
     """Raised when a headless-run request/result violates the v1 contract."""
 
@@ -103,6 +105,50 @@ class DomainAdapter(Protocol):
     def capabilities(self) -> frozenset[str]: ...
 
     def run(self, request: Mapping[str, Any]) -> Mapping[str, Any]: ...
+
+
+class StaticAdapterEntry:
+    """Identity-bearing static registry entry that requires host ``bind`` before run.
+
+    Concrete AQ adapters need host-local paths (work dir / output path) that must
+    not appear in the portable request envelope. The registry therefore exposes
+    discoverable identities/capabilities and a ``bind(**host_kwargs)`` factory.
+    """
+
+    def __init__(
+        self,
+        *,
+        adapter_id: str,
+        adapter_version: str,
+        capabilities: frozenset[str],
+        factory: Callable[..., DomainAdapter],
+    ) -> None:
+        self._adapter_id = adapter_id
+        self._adapter_version = adapter_version
+        self._capabilities = frozenset(capabilities)
+        self._factory = factory
+
+    @property
+    def adapter_id(self) -> str:
+        return self._adapter_id
+
+    @property
+    def adapter_version(self) -> str:
+        return self._adapter_version
+
+    @property
+    def capabilities(self) -> frozenset[str]:
+        return self._capabilities
+
+    def bind(self, **host_kwargs: Any) -> DomainAdapter:
+        """Construct a host-bound DomainAdapter for ``run``."""
+        return self._factory(**host_kwargs)
+
+    def run(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
+        raise AnalysisHeadlessRunError(
+            f"adapter {self._adapter_id!r} is registered unbound; "
+            "call bind_adapter(...) or lookup_adapter(...).bind(...) before run"
+        )
 
 
 def _wrap_portable(exc: AnalysisEvalArtifactError) -> AnalysisHeadlessRunError:
@@ -181,6 +227,24 @@ def lookup_adapter(
         raise AnalysisHeadlessRunError(
             f"unknown adapter: {adapter_key}"
         ) from exc
+
+
+def bind_adapter(adapter_id: str, **host_kwargs: Any) -> DomainAdapter:
+    """Lookup a registered adapter and bind host-local paths for ``run``.
+
+    Registered AQ proof adapters are ``StaticAdapterEntry`` instances. Unknown
+    adapter ids fail closed via ``lookup_adapter``. Entries without ``bind``
+    (explicit test stubs) are returned unchanged when no host kwargs are given.
+    """
+    entry = lookup_adapter(adapter_id)
+    bind = getattr(entry, "bind", None)
+    if callable(bind):
+        return bind(**host_kwargs)
+    if host_kwargs:
+        raise AnalysisHeadlessRunError(
+            f"adapter {adapter_id!r} does not support host bind kwargs"
+        )
+    return entry
 
 
 def request_semantic_payload(request: Mapping[str, Any]) -> dict[str, Any]:
@@ -661,3 +725,41 @@ def serialize_result(result: Mapping[str, Any]) -> str:
         return canonical_json_dumps(validated)
     except AnalysisEvalArtifactError as exc:
         raise _wrap_portable(exc) from exc
+
+
+def _build_static_adapter_registry() -> Mapping[str, DomainAdapter]:
+    """Import concrete adapters after this module is fully initialized."""
+    from src.aq_headless_adapters.aq1_tempo_compare import (
+        ADAPTER_ID as AQ1_ID,
+        ADAPTER_VERSION as AQ1_VERSION,
+        CAPABILITIES as AQ1_CAPABILITIES,
+        Aq1TempoCompareAdapter,
+    )
+    from src.aq_headless_adapters.aq6_harmonic_ranking_compare import (
+        ADAPTER_CAPABILITIES as AQ6_CAPABILITIES,
+        ADAPTER_ID as AQ6_ID,
+        ADAPTER_VERSION as AQ6_VERSION,
+        Aq6HarmonicRankingCompareAdapter,
+    )
+
+    return MappingProxyType(
+        {
+            AQ1_ID: StaticAdapterEntry(
+                adapter_id=AQ1_ID,
+                adapter_version=AQ1_VERSION,
+                capabilities=AQ1_CAPABILITIES,
+                factory=Aq1TempoCompareAdapter,
+            ),
+            AQ6_ID: StaticAdapterEntry(
+                adapter_id=AQ6_ID,
+                adapter_version=AQ6_VERSION,
+                capabilities=AQ6_CAPABILITIES,
+                factory=Aq6HarmonicRankingCompareAdapter,
+            ),
+        }
+    )
+
+
+# M6: AQ1 + AQ6 proof adapters (host-bind entries; unknown ids still fail closed).
+# Built after helpers/builders so adapter imports can safely reuse this module.
+STATIC_ADAPTER_REGISTRY: Mapping[str, DomainAdapter] = _build_static_adapter_registry()

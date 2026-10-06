@@ -1,8 +1,8 @@
 """M5 firewall / privacy / fail-closed regression pack (#1054).
 
-Additive pack against frozen ``src/analysis_headless_run.py`` (W0 SHA).
-Uses local stub DomainAdapters only — no real AQ1/AQ6 adapters.
-Does not modify shared contracts, registry, CANON, or runner modules.
+Additive pack against ``src/analysis_headless_run.py``.
+Uses local stub DomainAdapters for negative paths; static registry may
+contain M6-registered AQ1/AQ6 identities (unknown ids still fail closed).
 """
 
 from __future__ import annotations
@@ -132,10 +132,15 @@ class _ControlledFailureStubAdapter:
 # ---------------------------------------------------------------------------
 
 
-def test_unknown_adapter_fail_closed_on_empty_static_registry() -> None:
-    assert dict(STATIC_ADAPTER_REGISTRY) == {}
-    with pytest.raises(AnalysisHeadlessRunError, match="unknown adapter"):
-        lookup_adapter("aq1.tempo.candidate_compare")
+def test_unknown_adapter_fail_closed_on_static_registry() -> None:
+    assert "aq1.tempo.candidate_compare" in STATIC_ADAPTER_REGISTRY
+    assert "aq6.ranking.candidate_compare" in STATIC_ADAPTER_REGISTRY
+    assert lookup_adapter("aq1.tempo.candidate_compare").adapter_id == (
+        "aq1.tempo.candidate_compare"
+    )
+    assert lookup_adapter("aq6.ranking.candidate_compare").adapter_id == (
+        "aq6.ranking.candidate_compare"
+    )
     with pytest.raises(AnalysisHeadlessRunError, match="unknown adapter"):
         lookup_adapter("aq6.harmonic.ranking")
     with pytest.raises(AnalysisHeadlessRunError, match="unknown adapter"):
