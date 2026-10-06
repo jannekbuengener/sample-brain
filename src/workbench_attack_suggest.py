@@ -72,8 +72,18 @@ def _confidence_for_attack(
     return "low", "Schwacher oder unklarer Anstieg — nur als Hinweis."
 
 
-def suggest_attack_ms(path: Path | str, *, frame_ms: int = _FRAME_MS) -> AttackSuggestion | None:
-    """Suggest an attack/onset time in milliseconds without modifying *path*."""
+def suggest_attack_ms(
+    path: Path | str,
+    *,
+    frame_ms: int = _FRAME_MS,
+    energy_ratio_threshold: float | None = None,
+    peak_fraction_threshold: float | None = None,
+) -> AttackSuggestion | None:
+    """Suggest an attack/onset time in milliseconds without modifying *path*.
+
+    Optional ``energy_ratio_threshold`` / ``peak_fraction_threshold`` override
+    module constants for fair bake-offs; defaults preserve production behavior.
+    """
     if frame_ms <= 0:
         raise ValueError("frame_ms must be positive")
 
@@ -107,8 +117,18 @@ def suggest_attack_ms(path: Path | str, *, frame_ms: int = _FRAME_MS) -> AttackS
     if rms_values.size == 0:
         return None
 
+    energy_ratio = (
+        _ENERGY_RATIO_THRESHOLD
+        if energy_ratio_threshold is None
+        else float(energy_ratio_threshold)
+    )
+    peak_fraction = (
+        _PEAK_FRACTION_THRESHOLD
+        if peak_fraction_threshold is None
+        else float(peak_fraction_threshold)
+    )
     max_rms = float(np.max(rms_values))
-    threshold = max(max_rms * _ENERGY_RATIO_THRESHOLD, peak * _PEAK_FRACTION_THRESHOLD)
+    threshold = max(max_rms * energy_ratio, peak * peak_fraction)
 
     attack_frame = 0
     for index, value in enumerate(rms_values):
