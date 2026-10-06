@@ -228,6 +228,62 @@ def test_metrics_remain_separate_by_annotation_tier_and_follow_evidence(
     assert sa["tempo"]["eligible"] == 3
 
 
+def test_tempo_metrics_include_aq1_accuracy_bands_and_coverage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AQ1 contract: ±0.5/±1/±2 accuracy + coverage/abstention on bpm_evidence=known."""
+    records = [
+        _record("200", tier="ma", bpm=120.0),  # exact -> within all bands
+        _record("201", tier="ma", bpm=100.0),  # |err|=0.8 -> within ±1/±2 only
+        _record("202", tier="ma", bpm=100.0),  # |err|=1.5 -> within ±2 only
+        _record("203", tier="ma", bpm=100.0),  # |err|=3.0 -> outside all bands
+        _record("204", tier="ma", bpm=110.0),  # missing prediction -> abstention
+        _record("205", tier="ma", bpm=90.0, bpm_evidence="unknown"),  # not eligible
+    ]
+    manifest_path, sidecar_path = _write_manifest(tmp_path, records)
+    audio_root = tmp_path / "audio"
+    audio_root.mkdir()
+    for record in records:
+        (audio_root / f"{record['public_sample_id']}.wav").touch()
+    predictions = {
+        "200": _features("Cmaj", "maj", 120.0),
+        "201": _features("Cmaj", "maj", 100.8),
+        "202": _features("Cmaj", "maj", 101.5),
+        "203": _features("Cmaj", "maj", 103.0),
+        "204": _features("Cmaj", "maj", None),
+        "205": _features("Cmaj", "maj", 90.0),
+    }
+
+    def fake_extract(path: Path, _duration: float | None, **_kwargs: object):
+        return predictions[path.stem]
+
+    monkeypatch.setattr("src.fsld_current_analyzer_eval.extract_features", fake_extract)
+    result = evaluate_current_analyzer(
+        audio_root=audio_root,
+        split="TEST",
+        manifest_path=manifest_path,
+        sha256_path=sidecar_path,
+    )
+
+    tempo = result["metrics"]["ma"]["tempo"]
+    assert tempo["eligible"] == 5
+    assert tempo["predicted"] == 4
+    assert tempo["accuracy_within_0_5_bpm"] == 0.2  # 1/5
+    assert tempo["accuracy_within_1_bpm"] == 0.4  # 2/5
+    assert tempo["accuracy_within_2_bpm"] == 0.6  # 3/5
+    assert tempo["coverage_rate"] == 0.8  # 4/5
+    assert tempo["abstention_rate"] == 0.2  # 1/5
+    # Existing contract fields remain present and coherent.
+    assert tempo["absolute_bpm_error"]["count"] == 4
+    assert set(tempo["relation_counts"]) == {
+        "correct",
+        "half",
+        "double",
+        "ambiguous",
+        "outlier",
+    }
+
+
 def test_analysis_failures_remain_records_and_non_runtime_fields_are_stable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
