@@ -70,7 +70,7 @@ Merge only when **all** of the following are true on the final head:
 2. **ALL FEEDBACK DISPOSITIONED**
 3. **ALL INLINE THREADS RESOLVED**
 4. **NO NEW UNREVIEWED COMMENTS ON FINAL HEAD**
-5. **REQUIRED CI GREEN ON FINAL HEAD** (default `CI_GREEN`; see `docs/CI_DEGRADED_MODE.md` for the exceptional infra path — degraded mode does **not** waive this review-feedback gate)
+5. **REQUIRED CI READY ON FINAL HEAD** — either default `CI_GREEN`, **or** an approved exceptional path under `docs/CI_DEGRADED_MODE.md` (for example `DEGRADED_CI_ACTIVE` / narrow docs-only waiver when that runbook’s predicates are met). Degraded CI does **not** waive this review-feedback gate.
 6. **NO UNRESOLVED BLOCKING REVIEW**
 
 Then, and only then: **MERGE** (still requires explicit merge-GO where agent policy demands it).
