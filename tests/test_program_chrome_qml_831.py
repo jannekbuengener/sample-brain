@@ -116,16 +116,16 @@ def test_program_nav_browser_handler_reveals_collapsed_browser() -> None:
     assert "toggleBrowserCollapsed" in block
 
 
-def test_program_nav_live_kit_handler_reveals_after_screen2_return() -> None:
-    """#831 P2: Live Kit nav must reveal after returnToScreen1 in one activation."""
+def test_program_nav_live_kit_handler_opens_drawer_after_screen2_return() -> None:
+    """#954: Live Kit nav opens the transient Drawer after Screen-2 return."""
     block = QML_SOURCE.split('objectName: "programNavLiveKit"', 1)[1].split(
         "ToolButton", 1
     )[0]
     assert "returnToScreen1" in block
-    assert "liveKitCollapsed" in block
-    assert "toggleLiveKitCollapsed" in block
+    assert "liveKitDrawerOpen" in block
+    assert "toggleLiveKitDrawer" in block
     # Must not be an exclusive if/else that skips reveal after Screen-2 return.
-    assert "else if (window.interaction.liveKitCollapsed)" not in block
+    assert "else if (!window.interaction.liveKitDrawerOpen)" not in block
 
 
 def test_program_chrome_header_reserves_three_zones_without_free_center_overlap() -> None:

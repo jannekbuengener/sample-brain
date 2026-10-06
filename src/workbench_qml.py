@@ -833,7 +833,14 @@ class Screen1QmlInteractionAdapter:
         self.harmonic_match_open = view_model.panel_count == 4
         # #845 session-transient presentation only — not domain / disclosure state.
         self.browser_collapsed = False
-        self.live_kit_collapsed = False
+        # #954 keeps the Live Kit/Rack as a browser-scoped overlay.  This state
+        # is intentionally session-transient: restored musical assignments do
+        # not re-open a presentation drawer on startup.
+        self._live_kit_drawer_open = False
+        self._live_kit_auto_disclosure_consumed = False
+        # Compatibility projection for older bridge consumers.  It mirrors the
+        # overlay state and must not become a second presentation authority.
+        self.live_kit_collapsed = True
         self._on_preview_requested = on_preview_requested
         self._preview_request_accepts_start_ms = _callback_accepts_start_ms(
             on_preview_requested
@@ -910,7 +917,6 @@ class Screen1QmlInteractionAdapter:
     def _request_add_to_kit_row(self, row: WorkbenchRow) -> WorkbenchRow:
         """Shared Add-to-Kit intent seam for index and context routes (#839)."""
         self._pending_live_kit_row = row
-        self._reveal_live_kit_pane()
         if self._on_add_to_kit_requested is not None:
             self._on_add_to_kit_requested(row)
         return row
@@ -1334,6 +1340,15 @@ class Screen1QmlInteractionAdapter:
         self._sync_live_kit_projection()
         if self._auditioning_live_kit_slot == (group, slot):
             self._clear_live_kit_audition_projection()
+        if not self._live_kit_auto_disclosure_consumed:
+            # Only a successful domain assignment gets the one-time disclosure.
+            # The non-destructive close path preserves existing match rows and
+            # their anchor, so reopening Harmony reuses the same controller.
+            self._live_kit_auto_disclosure_consumed = True
+            self._live_kit_drawer_open = True
+            self.live_kit_collapsed = False
+            self._reveal_live_kit_pane()
+            self._close_harmonic_match_presentation()
         return True
 
     def cancel_live_kit_add(self) -> bool:
@@ -1635,12 +1650,32 @@ class Screen1QmlInteractionAdapter:
         self.browser_collapsed = True
         return True
 
-    def toggle_live_kit_collapsed(self) -> bool:
-        """Toggle Live Kit presentation after materialization; never unmaterialize."""
-        if not bool(self.view_model.live_kit_materialized):
+    @property
+    def live_kit_drawer_open(self) -> bool:
+        """Whether the transient #954 Browser overlay is visibly open."""
+        return self._live_kit_drawer_open
+
+    @property
+    def live_kit_auto_disclosure_consumed(self) -> bool:
+        """Whether this session has consumed its one automatic reveal."""
+        return self._live_kit_auto_disclosure_consumed
+
+    def toggle_live_kit_drawer(self) -> bool:
+        """Toggle the drawer without changing musical assignments or Harmony."""
+        has_assignments = self._live_kit is not None and any(
+            self._live_kit.state.assignment_for(group, slot) is not None
+            for group in self._live_kit.state.groups()
+            for slot in self._live_kit.state.slots_for(group)
+        )
+        if not bool(self.view_model.live_kit_materialized) and not has_assignments:
             return False
-        self.live_kit_collapsed = not self.live_kit_collapsed
-        return bool(self.live_kit_collapsed)
+        self._live_kit_drawer_open = not self._live_kit_drawer_open
+        self.live_kit_collapsed = not self._live_kit_drawer_open
+        return self._live_kit_drawer_open
+
+    def toggle_live_kit_collapsed(self) -> bool:
+        """Compatibility shim for the retired permanent bottom-band control."""
+        return self.toggle_live_kit_drawer()
 
     def open_harmonic_matches_for_row(self, row: WorkbenchRow) -> bool:
         """Open or retarget Harmonic Matches for an explicit row (#843).
@@ -2557,6 +2592,7 @@ ApplicationWindow {
                     implicitHeight: screen1Header.height
                     Layout.preferredHeight: screen1Header.height
                     enabled: window.interaction.liveKitRevealed
+                             || window.screenData.liveKitAssignedCount > 0
                     readonly property bool navActive: false
                     background: Item {
                         implicitHeight: screen1Header.height
@@ -2585,8 +2621,8 @@ ApplicationWindow {
                     onClicked: {
                         if (window.activeScreen === "screen2")
                             window.interaction.returnToScreen1()
-                        if (window.interaction.liveKitCollapsed)
-                            window.interaction.toggleLiveKitCollapsed()
+                        if (!window.interaction.liveKitDrawerOpen)
+                            window.interaction.toggleLiveKitDrawer()
                     }
                 }
                 ToolButton {
@@ -3605,22 +3641,17 @@ ApplicationWindow {
                 }
             }
         }
-        Column {
+        Item {
             id: rightWorkspaceColumn
             objectName: "rightWorkspaceColumn"
             width: Math.max(0, parent.width - libraryPane.width - handleAfterLibrary.width)
             height: parent.height
-            spacing: 0
 
             Row {
                 id: upperWorkspaceRow
                 objectName: "upperWorkspaceRow"
                 width: parent.width
-                readonly property bool bottomExpanded: window.channelRack.bottomRackMaterialized
-                        || (window.interaction.liveKitRevealed && !window.interaction.liveKitCollapsed)
-                height: bottomExpanded
-                        ? parent.height * (1.0 - Math.max(window.channelRack.bottomRackHeightRatio, 0.24))
-                        : Math.max(0, parent.height - window.channelRack.bottomRackHeightPx)
+                height: parent.height
                 spacing: 0
             Rectangle { id: browserPane; objectName: "browserPane"; visible: window.interaction.hasActiveSource && !window.interaction.browserCollapsed; width: visible ? layoutModel.browserWidth : 0; height: parent.height; color: theme.surfaceBrowser; border.color: theme.borderSubtle
                 function openSampleContextMenu(index, localX, localY) {
@@ -3994,7 +4025,7 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         color: theme.surfaceRoot
-                        ListView { id: browser; objectName: "browserList"; anchors.fill: parent; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: window.densityRowHeight; implicitHeight: window.densityRowHeight * 2
+                        ListView { id: browser; objectName: "browserList"; anchors.fill: parent; bottomMargin: liveKitOverlayDrawer.visible ? liveKitOverlayDrawer.height : 0; model: window.screenData.browserRows; clip: true; reuseItems: true; focus: true; property int rowHeight: window.densityRowHeight; implicitHeight: window.densityRowHeight * 2
                         function requestVisibleWaveforms() {
                             if (rowHeight <= 0 || height <= 0)
                                 return
@@ -4421,18 +4452,37 @@ ApplicationWindow {
             Rectangle {
                 id: bottomRackPane
                 objectName: "bottomRackPane"
-                width: parent.width
-                readonly property bool bottomExpanded: window.channelRack.bottomRackMaterialized
-                        || (window.interaction.liveKitRevealed && !window.interaction.liveKitCollapsed)
-                height: bottomExpanded
-                        ? parent.height * Math.max(window.channelRack.bottomRackHeightRatio, 0.24)
-                        : window.channelRack.bottomRackHeightPx
+                x: upperWorkspaceRow.x + browserPane.x
+                y: parent.height - height
+                z: 20
+                width: browserPane.width
+                property bool liveKitDrawerOpen: window.interaction.liveKitDrawerOpen
+                readonly property bool bottomExpanded: liveKitDrawerOpen
+                        || window.interaction.liveKitPendingAdd !== ""
+                readonly property int realRowCount: Math.max(
+                    1,
+                    Math.max(
+                        window.screenData.liveKitAssignedCount,
+                        window.channelRack.groups.reduce(
+                            function(total, group) { return total + group.rows.length }, 0
+                        )
+                    )
+                )
+                readonly property int requestedHeight: 64 + realRowCount * 48
+                readonly property int maximumHeight: Math.round(parent.height * 0.40)
+                height: bottomExpanded ? Math.min(requestedHeight, maximumHeight) : 0
                 color: theme.surfacePanel
                 border.color: theme.borderSubtle
-                visible: window.interaction.hasActiveSource
-                         || window.channelRack.bottomRackMaterialized
+                visible: window.activeScreen === "screen1"
+                         && window.interaction.hasActiveSource
+                         && bottomExpanded
                 // Compat objectName: historical Live Kit findChild probes (#845/#895 harnesses).
                 // Content lives under liveKitPane so findChild tree walks still resolve slots/headers.
+                Item {
+                    id: liveKitOverlayDrawer
+                    objectName: "liveKitOverlayDrawer"
+                    anchors.fill: parent
+                    clip: true
                 Item {
                     id: liveKitPane
                     objectName: "liveKitPane"
@@ -4447,11 +4497,11 @@ ApplicationWindow {
                     height: 56
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
-                    visible: false
+                    visible: bottomRackPane.bottomExpanded
                     activeFocusOnTab: visible
                     Accessible.role: Accessible.Button
                     Accessible.name: "Collapse Live Kit"
-                    Accessible.onPressAction: window.interaction.toggleLiveKitCollapsed()
+                    Accessible.onPressAction: window.interaction.toggleLiveKitDrawer()
                     property bool hovered: false
                     Rectangle {
                         anchors.fill: parent
@@ -4476,21 +4526,32 @@ ApplicationWindow {
                         onExited: liveKitCollapseHandle.hovered = false
                         onClicked: {
                             liveKitCollapseHandle.forceActiveFocus()
-                            window.interaction.toggleLiveKitCollapsed()
+                            window.interaction.toggleLiveKitDrawer()
                         }
                     }
-                    Keys.onReturnPressed: window.interaction.toggleLiveKitCollapsed()
-                    Keys.onEnterPressed: window.interaction.toggleLiveKitCollapsed()
+                    Keys.onReturnPressed: window.interaction.toggleLiveKitDrawer()
+                    Keys.onEnterPressed: window.interaction.toggleLiveKitDrawer()
                     Keys.onPressed: function(event) {
                         if (event.key === Qt.Key_Space) {
-                            window.interaction.toggleLiveKitCollapsed()
+                            window.interaction.toggleLiveKitDrawer()
                             event.accepted = true
                         }
                     }
                 }
-                ColumnLayout {
+                Flickable {
+                    id: liveKitDrawerScroll
+                    objectName: "liveKitDrawerScroll"
                     anchors.fill: parent
-                    anchors.margins: bottomRackPane.bottomExpanded ? 14 : 8
+                    clip: true
+                    contentWidth: width
+                    contentHeight: drawerContent.implicitHeight + 28
+                    flickableDirection: Flickable.VerticalFlick
+                    boundsBehavior: Flickable.StopAtBounds
+                ColumnLayout {
+                    id: drawerContent
+                    x: 14
+                    y: 14
+                    width: Math.max(0, parent.width - 28)
                     spacing: 8
                     RowLayout {
                         visible: bottomRackPane.bottomExpanded
@@ -4568,7 +4629,11 @@ ApplicationWindow {
                         }
                     }
                     Column {
+                        // Empty chooser groups exist only while a pending Add
+                        // needs an explicit target.  The materialized drawer
+                        // itself shows real Live-Kit/Rack rows only.
                         visible: bottomRackPane.bottomExpanded
+                                 && window.interaction.liveKitPendingAdd !== ""
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignTop
                         spacing: 0
@@ -4774,7 +4839,8 @@ ApplicationWindow {
                         opacity: 0.7
                         Layout.fillWidth: true
                     }
-                    Item { Layout.fillHeight: true }
+                }
+                }
                 }
                 }
             }
@@ -5026,7 +5092,6 @@ ApplicationWindow {
         // x would leave the reopen control off-screen.
         x: workspaceRow.x + Math.max(0, layoutModel.libraryWidth - width - 2)
         y: workspaceRow.y + Math.max(0, (workspaceRow.height - height) / 2)
-           - (window.interaction.liveKitCollapsed ? 44 : 0)
         activeFocusOnTab: visible
         Accessible.role: Accessible.Button
         Accessible.name: "Expand Browser"
@@ -5133,10 +5198,9 @@ ApplicationWindow {
         z: 21
         width: 18
         height: 72
-        visible: window.activeScreen === "screen1"
-                 && window.interaction.hasActiveSource
-                 && window.interaction.liveKitRevealed
-                 && window.interaction.liveKitCollapsed
+        // #954: Drawer reopening lives in the Screen-1 program navigation;
+        // it no longer reserves a competing right-edge affordance.
+        visible: false
         x: workspaceRow.x + workspaceRow.width - width
         y: workspaceRow.y + Math.max(0, (workspaceRow.height - height) / 2)
            + (window.interaction.browserCollapsed ? 44 : 0)
@@ -5246,6 +5310,14 @@ def _qml_interaction_bridge(
         @Property(bool, notify=state_changed)
         def liveKitCollapsed(self) -> bool:
             return bool(adapter.live_kit_collapsed)
+
+        @Property(bool, notify=state_changed)
+        def liveKitDrawerOpen(self) -> bool:
+            return adapter.live_kit_drawer_open
+
+        @Property(bool, notify=state_changed)
+        def liveKitAutoDisclosureConsumed(self) -> bool:
+            return adapter.live_kit_auto_disclosure_consumed
 
         @Property(bool, notify=state_changed)
         def hasActiveSource(self) -> bool:
@@ -5550,6 +5622,11 @@ def _qml_interaction_bridge(
         @Slot()
         def toggleLiveKitCollapsed(self) -> None:
             adapter.toggle_live_kit_collapsed()
+            self._refresh()
+
+        @Slot()
+        def toggleLiveKitDrawer(self) -> None:
+            adapter.toggle_live_kit_drawer()
             self._refresh()
 
         @Slot()

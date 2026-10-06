@@ -2,7 +2,7 @@
 
 **Status:** ACTIVE_SUPPORTING — Owner-reviewed / approved (2026-10-05). Binding product-navigation authority for Single Workspace.
 
-**Issues:** [#905](https://github.com/jannekbuengener/sample-brain/issues/905) (epic), [#906](https://github.com/jannekbuengener/sample-brain/issues/906) (canon migration)
+**Issues:** [#905](https://github.com/jannekbuengener/sample-brain/issues/905) (historical epic), [#906](https://github.com/jannekbuengener/sample-brain/issues/906) (completed canon migration), [#954](https://github.com/jannekbuengener/sample-brain/issues/954) (active Drawer geometry/disclosure contract)
 
 **Renderer:** `LOCK_PYSIDE6_QML` remains binding for current Workbench UI. This file does not change runtime.
 
@@ -16,7 +16,8 @@ This document freezes Owner Decision **A — Stable Workspace + Progressive Disc
 | [`docs/PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md) | ACTIVE_CANON producing-flow companion; must align with Single Workspace (migrated under #906) |
 | [#906](https://github.com/jannekbuengener/sample-brain/issues/906) | Canon/docs migration that removes superseded multi-screen product-navigation wording from current authority surfaces |
 | [#907](https://github.com/jannekbuengener/sample-brain/issues/907) | Owns session/audio-focus audit before Rack embed |
-| [#908](https://github.com/jannekbuengener/sample-brain/issues/908) | Owns bottom Live Kit / Rack projection implementation after #906/#907 |
+| [#908](https://github.com/jannekbuengener/sample-brain/issues/908) | Closed delivery evidence for the original bottom Rack projection; its permanent-band geometry is superseded by #954 |
+| [#954](https://github.com/jannekbuengener/sample-brain/issues/954) | Current Owner authority for balanced Browser/Harmony defaults and the Live Kit bottom overlay drawer |
 | [#679](https://github.com/jannekbuengener/sample-brain/issues/679) | Arrangement interaction model — parked |
 
 ## 1. Problem / superseded multi-screen model
@@ -73,30 +74,25 @@ Binding focus principle:
 
 ## 5. Stable vs contextual surfaces
 
-Conceptual geometry:
+Default materialized Browser geometry:
 
 ```text
-┌─────────────┬──────────────────────────────────────────────┐
-│             │                                              │
-│  LIBRARY    │  ALL SAMPLES        HARMONIC MATCHES        │
-│  / SOURCES  │                                              │
-│             │                                              │
-│             ├──────────────────────────────────────────────┤
-│             │  LIVE KIT / RACK / STEP-SEQUENCER           │
-│             │                                              │
-└─────────────┴──────────────────────────────────────────────┘
+┌─────────────┬───────────────────────────────┬──────────────┐
+│   LIBRARY   │        SAMPLE BROWSER         │   HARMONIC   │
+│             │                               │    MATCHES   │
+└─────────────┴───────────────────────────────┴──────────────┘
 ```
 
 | Surface | Role |
 |---|---|
 | Library / Sources | Stable left rail; remains as orientation |
 | Main sample browser / playlist | Dominant upper workspace; central browse and selection context |
-| Harmonic Matches | Optional / contextual; visible only when musically relevant |
-| Live Kit / Rack / Step-Sequencer | Bottom workspace; starts at the left edge of the main playlist and extends to the right workspace edge; not a separate Rack page |
+| Harmonic Matches | Contextual right Browser extension; it and Library use equal default relative side proportions, but remain independently resizable |
+| Live Kit / Rack / Step-Sequencer | Contextual bottom **overlay drawer** scoped exactly to the current Browser workspace; not a separate Rack page and never a permanent height reservation |
 
 ## 6. Live Kit ↔ Rack projection
 
-#908 owns the Single Workspace bottom Live Kit / Rack projection.
+#954 owns the current Single Workspace Live Kit / Rack drawer presentation.
 
 When a sample is added to the Live Kit:
 
@@ -112,7 +108,19 @@ When a sample is added to the Live Kit:
 
 Occupied sample/channel assignments may materialize a visible Rack row. Reuse existing deterministic kit/group provenance (canonical Live Kit groups/slots and seed vs user-channel rules under [`PATTERN_CORE_CONTRACT.md`](PATTERN_CORE_CONTRACT.md) and Live Kit code). Empty or unneeded groups must not permanently claim attention.
 
-Cleared / empty slots follow existing domain reconciliation and disappear from the occupied bottom projection. Empty / no safe rows collapse to a calm minimal bottom strip (~32px). Occupied or Live-Kit-revealed state expands the bottom band (~24% of the right workspace).
+Cleared / empty slots follow existing domain reconciliation and disappear from the occupied Rack projection. Empty groups and rows reserve no Drawer height.
+
+### 6.1 Bottom overlay drawer contract (#954)
+
+- The Browser remains the dominant workspace. Opening the Drawer overlays the Browser; it must not reflow the Browser into a smaller upper row.
+- The Drawer is anchored to the Browser workspace, not to the whole application. Its left and right edges always equal the current Browser edges. It ends at the Harmony divider and never draws under Harmonic Matches.
+- Closing Harmony expands Browser and Drawer together; reopening Harmony contracts both together. The Drawer retains no stale right-edge pixel coordinate.
+- On every Workbench/app start the Drawer is **CLOSED**, including when the Python-owned Live Kit/Rack state restores from an existing session. Drawer visibility and first-auto-disclosure consumption are transient presentation state and are never persisted as musical state.
+- The first successful explicit Add-to-Live-Kit action in each Workbench session auto-opens the Drawer compactly, consumes the one automatic disclosure, and closes an open Harmony pane once through the existing non-destructive Harmony presentation close path. The preserved Harmony anchor/results remain intact.
+- A user may reopen Harmony while the Drawer remains open. Later Adds respect that user choice and may neither close manually reopened Harmony nor reopen a manually closed Drawer.
+- Initial Drawer height shows its header plus one actual projected Rack/Sequencer row. Each additional occupied row adds one row increment. Growth caps near 35--40% of available workspace height; further rows scroll inside the Drawer.
+- Browser scrolling receives a bottom content inset equal to the visible Drawer height, so every Browser row remains reachable beneath the visual overlay.
+- Use the existing elastic layout solver, Theme Core tokens, and Python-owned Live Kit/Rack projection. No QML musical state, Pattern/Trigger shadow copy, new persistence store, playback route, docking framework, or theme palette is authorized.
 
 Do not implement the end state as a copied former Screen-2 page embedded into a former Screen-1 page. The end state is one Workbench projection over shared Python contracts. Product UX must not require `enter_screen2()` / `activeScreen == screen2` for the bottom Rack.
 
@@ -226,7 +234,7 @@ Fail closed against:
 | Copied Screen-2 embed | One Workbench projection, not a mirrored page |
 | Duplicated audio assets | Channels reference library samples |
 | Premature Arrangement design | Arrangement stays PARKED / UNDESIGNED |
-| #908 before #906/#907 | Canon migration + audio-focus audit first |
+| Stale permanent bottom-band geometry | #954 overlay drawer supersedes the historical ~24% band and empty-strip presentation |
 | Navigation seams as silent audio authority | #907 separates navigation vs audio ownership |
 | Empty-group attention tax | Unneeded empty groups stay de-emphasized |
 | Docking / window-manager scope creep | Simple progressive disclosure only |
@@ -248,14 +256,14 @@ Fail closed against:
 | Owner review of this written record | **PASS** (2026-10-05) |
 | Physical canon/docs migration | #906 |
 | Session/audio-focus audit outcome | #907 |
-| Bottom Live Kit / Rack projection + runtime/visual acceptance | #908 after #906/#907 |
+| Bottom Live Kit overlay drawer + runtime/visual acceptance | #954 |
 | Arrangement interaction design | later explicit Owner decision via #679 |
 
 ## 14. Explicit non-goals
 
 This contract does **not** authorize:
 
-- product / QML / runtime implementation
+- product / QML / runtime implementation outside #954's bounded Drawer slice
 - session or audio behavior changes
 - Arrangement / timeline / mixer / piano-roll design
 - generalized docking or window management
@@ -272,7 +280,8 @@ Canon/docs alignment of remaining multi-screen product-navigation wording is own
 | [#905](https://github.com/jannekbuengener/sample-brain/issues/905) | Epic: Single Workspace — focus-driven progressive disclosure |
 | [#906](https://github.com/jannekbuengener/sample-brain/issues/906) | Canon/docs migration so multi-screen navigation is no longer written as current product authority |
 | [#907](https://github.com/jannekbuengener/sample-brain/issues/907) | Audit session/audio-focus assumptions; separate navigation-coupled seams from domain audio ownership before Rack embed |
-| [#908](https://github.com/jannekbuengener/sample-brain/issues/908) | Bottom Live Kit / Rack / Step-Sequencer projection in the one Workbench; depends on #906 and #907 |
+| [#908](https://github.com/jannekbuengener/sample-brain/issues/908) | Closed historical bottom Rack projection; retain its shared-domain reuse evidence, not its superseded permanent-band geometry |
+| [#954](https://github.com/jannekbuengener/sample-brain/issues/954) | Active QML/UX slice: Browser-scoped overlay drawer, first-add disclosure, dynamic height, Browser inset, and visual acceptance |
 | [#679](https://github.com/jannekbuengener/sample-brain/issues/679) | Future Arrangement inside Single Workspace — **PARKED / UNDESIGNED — requires later explicit Owner design decision** |
 
 Recommended sequence after Owner acceptance of this freeze:
@@ -281,7 +290,8 @@ Recommended sequence after Owner acceptance of this freeze:
 Owner SPEC review (PASS)
   → #906 canon migration
   → #907 audio/session-focus audit (and any minimal seam repair slice it names)
-  → #908 bottom Rack projection (test-first / runtime / visual acceptance)
+  → #908 historical delivery evidence
+  → #954 overlay drawer (test-first / runtime / visual acceptance)
   → #679 remains parked until explicit Owner design decision
 ```
 
