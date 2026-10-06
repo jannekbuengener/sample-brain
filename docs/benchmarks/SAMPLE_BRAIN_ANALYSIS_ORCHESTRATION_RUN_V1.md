@@ -50,6 +50,13 @@ orchestration request (headless request + host bind + opaque ARVP refs)
 - TEST/HOLDOUT must not emit tuning `next_action` values
 - host-local paths stay in bind kwargs, never in portable outcome envelopes
 - prefer binder-side analysis-eval projection (adapters stay thin)
+- after `adapter.run`, binder fail-closes unless `request_fingerprint` and adapter
+  identity/version match the submitted request and bound adapter (#1063)
+- candidate identity authority never disappears: result candidates when present,
+  else validated request; sealed into the outcome `headless_result` for portable
+  cross-envelope validation (#1063)
+- supplied analysis-eval / decision / outcome duplicated identities must match
+  that invocation authority (#1063)
 
 ## Artifact identity
 
