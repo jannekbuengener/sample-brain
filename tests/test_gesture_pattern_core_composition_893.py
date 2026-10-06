@@ -91,6 +91,153 @@ _BANNED_IMPORT_ROOTS = frozenset(
 )
 
 
+# ---------------------------------------------------------------------------
+# Derived boundary sets (issue #898)
+#
+# Forbidden call/field sets are derived from the real upstream authority
+# modules and dataclass fields instead of hand-listed name guesses, so a
+# renamed or added upstream symbol keeps its guard alive instead of silently
+# degrading into a no-op that can never fail.
+# ---------------------------------------------------------------------------
+
+
+def _module_public_api(module_name: str) -> frozenset[str]:
+    """Public top-level classes/callables declared by a first-party module."""
+    mod = importlib.import_module(module_name)
+    tree = ast.parse(Path(mod.__file__).read_text(encoding="utf-8"))
+    return frozenset(
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        and not node.name.startswith("_")
+    )
+
+
+_PLAN_TYPE_NAMES = frozenset(
+    {
+        "PlannedGestureChannelBinding",
+        "PlannedGestureEventBinding",
+        "GesturePatternBindingPlan",
+    }
+)
+_RANKING_TYPE_NAMES = frozenset({"LibraryCandidate", "RankedCandidate", "ClusterRanking"})
+_TIMING_TYPE_NAMES = frozenset({"ProjectedGestureEvent", "GestureTimingProjection"})
+_ANALYSIS_TYPE_NAMES = frozenset({"GestureEvent", "GestureAnalysis"})
+_PATTERN_CORE_TYPE_NAMES = frozenset({"Channel", "Trigger", "Pattern"})
+
+# Pattern-Core helpers the composer is allowed to use: membership validation
+# only. Allocation and live-kit slot mapping stay forbidden.
+_PATTERN_CORE_ALLOWED_HELPERS = frozenset(
+    {"require_triggers_reference_known_channels"}
+)
+
+
+def _dataclass_fields(*classes: type) -> set[str]:
+    names: set[str] = set()
+    for cls in classes:
+        names |= set(getattr(cls, "__dataclass_fields__", {}))
+    return names
+
+
+# Plan fields the composer may read. Anything else on the #891 plan/ranking
+# authority is selection- or ranking-owned and must stay unread, which is what
+# keeps rank-dependent auto-selection out of the pure composer.
+_COMPOSER_ALLOWED_FIELDS = frozenset(
+    {
+        "channel_bindings",
+        "channel_id",
+        "cluster_id",
+        "event_bindings",
+        "pattern_length_quarters",
+        "quarter_position",
+        "ready_for_pattern",
+        "sample_path",
+        "unresolved_cluster_ids",
+    }
+)
+
+_PLANNER_CALLABLES = sorted(
+    _module_public_api("src.gesture_pattern_binding") - _PLAN_TYPE_NAMES
+)
+_RANKING_CALLABLES = sorted(
+    _module_public_api("src.gesture_library_ranking") - _RANKING_TYPE_NAMES
+)
+_CATALOG_CALLABLES = sorted(_module_public_api("src.gesture_catalog_adapter"))
+_DB_CALLABLES = sorted(_module_public_api("src.db"))
+_TIMING_CALLABLES = sorted(
+    _module_public_api("src.gesture_timing_projection") - _TIMING_TYPE_NAMES
+)
+_ANALYSIS_CALLABLES = sorted(
+    _module_public_api("src.gesture_analysis") - _ANALYSIS_TYPE_NAMES
+)
+_PATTERN_CORE_MUTATION_CALLABLES = sorted(
+    _module_public_api("src.pattern_core")
+    - _PATTERN_CORE_TYPE_NAMES
+    - _PATTERN_CORE_ALLOWED_HELPERS
+)
+_CHANNEL_RACK_CALLABLES = sorted(_module_public_api("src.channel_rack"))
+_RACK_STATE_NAMES = sorted(
+    set(_CHANNEL_RACK_CALLABLES) | {"ChannelRackState", "DEFAULT_ON", "_full_step_triggers"}
+)
+
+_RANKING_FIELDS = sorted(
+    _dataclass_fields(LibraryCandidate, RankedCandidate, ClusterRanking)
+    - _COMPOSER_ALLOWED_FIELDS
+)
+_SELECTION_FIELDS = sorted(
+    _dataclass_fields(PlannedGestureChannelBinding) - _COMPOSER_ALLOWED_FIELDS
+)
+_TIMING_FIELDS = sorted(
+    _dataclass_fields(GestureTimingProjection, ProjectedGestureEvent)
+    - _COMPOSER_ALLOWED_FIELDS
+)
+_TIMING_PROJECTION_FIELDS = sorted(
+    _dataclass_fields(GestureTimingProjection) - _COMPOSER_ALLOWED_FIELDS
+)
+# Length inference is a *recomputation* contract, not a field contract: the
+# composer must not re-derive pattern length from timing data. These names are
+# the inference operations the original raw-source guard rejected, and they are
+# not dataclass fields, so deriving them from the dataclasses alone would drop
+# the coverage entirely.
+_LENGTH_INFERENCE_NAMES = frozenset(
+    {"source_duration", "last_onset", "next_beat", "next_bar"}
+)
+
+# Modules that own a forbidden authority API. Used to decide whether a
+# qualified reference's leaf name is really that authority or just an unrelated
+# receiver method that happens to share the name.
+_AUTHORITY_MODULES = (
+    "src.gesture_pattern_binding",
+    "src.gesture_library_ranking",
+    "src.gesture_catalog_adapter",
+    "src.db",
+    "src.gesture_timing_projection",
+    "src.gesture_analysis",
+    "src.pattern_core",
+    "src.channel_rack",
+)
+
+
+def _authority_owners() -> dict[str, set[str]]:
+    """Map each authority symbol name to the module stems that own it."""
+    owners: dict[str, set[str]] = {}
+    for module in _AUTHORITY_MODULES:
+        stem = module.rsplit(".", 1)[-1]
+        for name in _module_public_api(module):
+            owners.setdefault(name, set()).add(stem)
+    return owners
+
+
+_AUTHORITY_OWNERS = _authority_owners()
+
+
+# Quantization is banned by *name*, not by owning authority: no module owns
+# `quantize`/`snap`/`swing`/`groove`/`round`, so this guard must keep matching
+# them whatever the receiver is. Kept as a named constant so the distinction from
+# the derived authority sets stays explicit.
+_QUANTIZATION_NAMES = ["quantize", "snap", "swing", "groove", "round"]
+
+
 def _candidate(sample_id: str, path: str | None = None) -> LibraryCandidate:
     # Align fixture fields with live #882 LibraryCandidate (freeze typo repair).
     return LibraryCandidate(
@@ -225,7 +372,25 @@ def _source_text() -> str:
     return _MODULE_PATH.read_text(encoding="utf-8")
 
 
+def _is_submodule(name: str) -> bool:
+    """True when ``name`` is a real module/package inside ``src/``.
+
+    Lets ``from src import db`` be recognised as importing the ``src.db``
+    module without guessing from a hand-listed set of names.
+    """
+    src_dir = _MODULE_PATH.resolve().parents[1]
+    candidate = src_dir / name
+    return candidate.with_suffix(".py").is_file() or (candidate / "__init__.py").is_file()
+
+
 def _imported_module_names(mod) -> set[str]:
+    """Module paths imported by a module, including package-relative forms.
+
+    ``from . import db`` has ``ImportFrom.module is None``: the imported module
+    is named only by the alias, and the relative ``level`` is what makes it a
+    package-local import. Both plain and relative from-imports are recorded so
+    a banned root cannot hide behind ``from . import db``.
+    """
     path = Path(mod.__file__)
     tree = ast.parse(path.read_text(encoding="utf-8"))
     names: set[str] = set()
@@ -235,14 +400,1150 @@ def _imported_module_names(mod) -> set[str]:
                 names.add(alias.name.split(".")[0])
                 names.add(alias.name)
         elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                names.add(node.module.split(".")[0])
-                names.add(node.module)
+            module = node.module
+            if module:
+                names.add(module.split(".")[0])
+                names.add(module)
+                # An alias may itself name a submodule (`from src import db`).
+                # Detect that from the real package layout so plain symbols
+                # imported from a module are not mistaken for module paths.
+                for alias in node.names:
+                    if _is_submodule(alias.name):
+                        names.add(f"{module}.{alias.name}")
+            else:
+                # `from . import db` / `from .. import x`: module is None and
+                # the alias itself is the imported module name.
+                for alias in node.names:
+                    names.add(alias.name.split(".")[0])
+                    names.add(alias.name)
     return names
+
+
+def _parse_module_src(src: str) -> ast.Module:
+    """Parse module source for a guard, failing closed on unparsable input.
+
+    A ``SyntaxError`` must never be swallowed into an empty result: that would
+    turn a boundary guard into a silent pass.
+    """
+    try:
+        return ast.parse(src)
+    except SyntaxError as exc:  # fail closed — never silently skip a guard
+        raise AssertionError(f"cannot audit module source: {exc}") from exc
+
+
+def _dotted_name(node: ast.AST) -> str | None:
+    """Render a ``a.b.c`` reference; return None when the root is not a name."""
+    parts: list[str] = []
+    current: ast.AST | None = node
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if not isinstance(current, ast.Name):
+        return None
+    parts.append(current.id)
+    parts.reverse()
+    return ".".join(parts)
+
+
+def _imported_bindings(tree: ast.Module) -> dict[str, str]:
+    """Map each locally bound name to the symbol path it was imported from.
+
+    ``import a.b``, ``import a.b as ab``, ``from m import x`` and
+    ``from m import x as y`` all resolve, so aliasing a forbidden import cannot
+    hide it from the call/reference guards. Package-relative ``from . import db``
+    binds ``db`` to ``db`` because the alias is the module name itself.
+    """
+    bindings: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                local = alias.asname or alias.name.split(".")[0]
+                bindings[local] = alias.name
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            for alias in node.names:
+                local = alias.asname or alias.name
+                if module:
+                    bindings[local] = f"{module}.{alias.name}"
+                elif node.level:
+                    # `from . import db` — module is None, alias is the module.
+                    bindings[local] = alias.name
+                else:
+                    bindings[local] = alias.name
+    return bindings
+
+
+def _bound_name_targets(args: ast.arguments) -> list[str]:
+    """Parameter names of a ``def`` or ``lambda`` signature."""
+    names = [arg.arg for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs)]
+    if args.vararg is not None:
+        names.append(args.vararg.arg)
+    if args.kwarg is not None:
+        names.append(args.kwarg.arg)
+    return names
+
+
+def _local_name_bindings(tree: ast.Module) -> set[str]:
+    """Names the module binds itself, so a bare spelling is not an import.
+
+    A bare ``get_engine()`` with no visible origin has no other explanation than
+    an injected or runtime-supplied authority symbol, so the call guard treats
+    it as a reference. But when the module itself binds that name — a ``def``, a
+    class, an assignment, a parameter, or a loop target — the composer has
+    shadowed the authority, and the bare call is its own helper rather than
+    upstream authority. The derived API sets contain several generic names
+    (``get_engine``, ``init_db``, ``add_user_channel``), which is exactly why the
+    two cases have to be told apart.
+
+    ``global``/``nonlocal`` declarations are excluded, because those names are
+    looked up in an enclosing scope rather than bound locally.
+    """
+    declared_outer: set[str] = set()
+    bound: set[str] = set()
+
+    def add(target: ast.AST | None) -> None:
+        if isinstance(target, ast.Name):
+            bound.add(target.id)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for element in target.elts:
+                add(element)
+        elif isinstance(target, ast.Starred):
+            add(target.value)
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Global, ast.Nonlocal)):
+            declared_outer.update(node.names)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            bound.add(node.name)
+            bound.update(_bound_name_targets(node.args))
+        elif isinstance(node, ast.Lambda):
+            bound.update(_bound_name_targets(node.args))
+        elif isinstance(node, ast.ClassDef):
+            bound.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                add(target)
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+            add(node.target)
+        elif isinstance(node, ast.NamedExpr):
+            add(node.target)
+        elif isinstance(node, ast.For):
+            add(node.target)
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                add(item.optional_vars)
+        elif isinstance(node, ast.ExceptHandler):
+            if node.name:
+                bound.add(node.name)
+        elif isinstance(node, ast.comprehension):
+            add(node.target)
+        elif isinstance(node, ast.MatchAs):
+            if node.name:
+                bound.add(node.name)
+        elif isinstance(node, ast.MatchStar):
+            if node.name:
+                bound.add(node.name)
+        elif isinstance(node, ast.MatchMapping):
+            if node.rest:
+                bound.add(node.rest)
+    return bound - declared_outer
+
+
+def _authority_reference_nodes(tree: ast.Module) -> list[ast.AST]:
+    """Every AST node that *references* a forbidden symbol's origin.
+
+    The composer boundary is about capturing or using an upstream authority, not
+    about proving a call happens. Once a forbidden callable is referenced at
+    all — imported, bound, captured, or invoked — the boundary is broken, so
+    later rebinding or an indirect invocation cannot launder it.
+
+    This deliberately yields every load context in the tree rather than trying
+    to model dataflow: no scope engine, no SSA, no control-flow graph. The
+    reference itself is the evidence.
+
+    ``ast.alias`` is included because a bare ``from x import forbidden`` binds
+    the authority without ever emitting a ``Name`` node — the import alone
+    already crosses the boundary.
+    """
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Name, ast.Attribute, ast.alias))
+    ]
+
+
+def _import_alias_spellings(tree: ast.Module) -> list[tuple[str, str | None]]:
+    """``(imported_name, module)`` for every import alias in ``tree``.
+
+    The module context lets a guard recognise that ``from m import f`` binds the
+    symbol path ``m.f``, so ``import f`` is judged as the authority it came
+    from rather than as an unrelated local name.
+    """
+    spellings: list[tuple[str, str | None]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                spellings.append((alias.name, None))
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module
+            for alias in node.names:
+                spellings.append((alias.name, module))
+    return spellings
+
+
+def _forbidden_calls_in_src(src: str, forbidden: list[str]) -> set[str]:
+    """Forbidden authority symbols referenced anywhere in ``src``.
+
+    The pure composer may not use, capture, or re-export a forbidden upstream,
+    mutation, rack, ranking, or DB authority. A reference is a violation on its
+    own, so this is a *reference* guard, not a call/dataflow analysis: it holds
+    regardless of how the value is later invoked.
+
+    Detects, all semantically (never by text):
+      - forbidden from-imports, including ``as`` aliases and module aliases,
+      - qualified module members (``pattern_core.allocate_user_channel_id``),
+      - bare and qualified direct calls,
+      - assignment, container, conditional, and loop captures.
+
+    Because it keys on semantic reference rather than call shape, rebinding
+    (``op = helper`` ... ``op = safe``), subscript calls (``ops[0](...)``),
+    list/tuple captures, ``x if c else y`` bindings, and ``for`` targets are
+    all caught at the capture site.
+
+    Comments, docstrings, and string literals are not code and are ignored by
+    ``ast.parse()``, so they can never trip this guard.
+    """
+    tree = _parse_module_src(src)
+    imported = _imported_bindings(tree)
+    local = _local_name_bindings(tree)
+    lower = {name.lower() for name in forbidden}
+    found: set[str] = set()
+
+    # An import binds the authority by name: `from m import f as g` still
+    # imports `f`, so both the bare and the module-qualified spelling count.
+    for name, module in _import_alias_spellings(tree):
+        spellings = {name}
+        if module:
+            spellings.add(f"{module}.{name}")
+        for spelling in spellings:
+            for candidate in _resolved_names(spelling, imported, _AUTHORITY_OWNERS, local):
+                if candidate.lower() in lower:
+                    found.add(candidate)
+
+    for node in _authority_reference_nodes(tree):
+        if isinstance(node, ast.alias):
+            continue
+        qualified = _dotted_name(node)
+        if qualified is None:
+            continue
+        for candidate in _resolved_names(qualified, imported, _AUTHORITY_OWNERS, local):
+            if candidate.lower() in lower:
+                found.add(candidate)
+
+    # `getattr(mod, "f")` / `mod.__dict__["f"]` capture the authority by name
+    # at import time, before any later patch could intercept it. The receiver
+    # decides whether the captured member is really that authority.
+    for receiver, name in _dynamic_member_lookups(tree):
+        if name.lower() in lower and _dynamic_receiver_resolves(
+            receiver, name, imported, _AUTHORITY_OWNERS
+        ):
+            found.add(name)
+    return found
+
+
+def _resolved_names(
+    qualified: str,
+    imported: dict[str, str],
+    owners: dict[str, set[str]] | None = None,
+    local_bindings: set[str] | None = None,
+) -> set[str]:
+    """Candidate spellings of a reference, including its import resolution.
+
+    Covers the written form, the bare attribute/name form, and — when the
+    reference is an imported alias — both the resolved dotted symbol and its
+    final component, so a ban on either the bare or the qualified symbol hits.
+
+    A qualified leaf is only offered as a bare-name candidate when the receiver
+    actually resolves to the owning authority: either it is an imported module
+    alias, or it *is* the authority module. Without that check any unrelated
+    receiver method sharing a generic API name (``validator.get_engine()``)
+    would be reported as a database authority reference. A bare name the module
+    itself binds is dropped for the same reason: the composer shadowed the
+    authority rather than referencing it.
+
+    Scoping applies only to symbols that actually belong to an authority module.
+    A forbidden name with no owner is a plain name ban — the quantization names
+    are the case in point — and keeps the original conservative matching, since
+    there is no authority origin it could resolve against. The name-ban guards
+    pass no ``owners`` and likewise keep matching bare names.
+    """
+    owners = owners or {}
+    local_bindings = local_bindings or set()
+    head, dot, tail = qualified.rpartition(".")
+    symbol = tail if dot else qualified
+    scoped = bool(owners) and bool(owners.get(symbol))
+
+    candidates = {qualified}
+    if dot:
+        if scoped:
+            # Scoped mode: a leaf only counts when the receiver resolves to the
+            # owning authority, so `validator.get_engine()` is not a DB call.
+            if head in imported:
+                resolved = f"{imported[head]}.{tail}"
+                candidates.add(resolved)
+                candidates.add(resolved.rpartition(".")[2])
+            elif head in owners.get(symbol, ()):
+                candidates.add(tail)
+        else:
+            # Name-ban mode: the receiver is an arbitrary instance or an
+            # unrelated object, so the attribute leaf itself is the reference.
+            candidates.add(tail)
+            if head in imported:
+                resolved = f"{imported[head]}.{tail}"
+                candidates.add(resolved)
+                candidates.add(resolved.rpartition(".")[2])
+    elif qualified in imported:
+        resolved = imported[qualified]
+        candidates.add(resolved)
+        candidates.add(resolved.rpartition(".")[2])
+    elif scoped and qualified in local_bindings:
+        return set()
+    return candidates
+
+
+_MAPPING_LOOKUP_METHODS = frozenset({"get", "getdefault", "pop", "setdefault", "popitem"})
+
+
+def _mapping_object(target: ast.AST) -> ast.AST | None:
+    """The object whose ``__dict__`` ``target`` reads, or ``None``.
+
+    Covers the direct attribute form (``obj.__dict__``) and the builtin
+    ``vars(obj)`` form. For a mapping method such as ``obj.__dict__.get(...)``
+    the caller passes the method's receiver, which is the ``__dict__`` or
+    ``vars(...)`` expression itself.
+    """
+    if isinstance(target, ast.Attribute) and target.attr == "__dict__":
+        return target.value
+    if isinstance(target, ast.Call) and target.args:
+        if (_dotted_name(target.func) or "").rpartition(".")[2] == "vars":
+            return target.args[0]
+    return None
+
+
+def _dynamic_member_lookups(tree: ast.Module) -> list[tuple[ast.AST | None, str]]:
+    """Member names resolved at runtime through a string literal.
+
+    ``getattr(mod, "f")``, ``mod.__dict__["f"]``, ``mod.__dict__.get("f")``,
+    ``vars(mod)["f"]``, ``vars(mod).get("f")`` and ``operator.attrgetter("f")``
+    all fetch a member *by name*, so the AST holds the forbidden symbol as a
+    ``Constant`` rather than as a ``Name``. The guard cannot see it by walking
+    names alone, but it is still a real reference to the authority — the capture
+    happens at import time, before any later module patch can intercept it.
+
+    Each result is a ``(receiver, name)`` pair. The receiver is the expression
+    the member is read from, so the caller can tell ``getattr(pattern_core,
+    "f")`` from ``getattr(validator, "f")``: the member name alone cannot.
+
+    Only string literals in a member-lookup *position* are returned, so an
+    ordinary string that merely spells a forbidden word is not affected.
+    """
+    found: list[tuple[ast.AST | None, str]] = []
+    applied: dict[int, ast.AST | None] = {}
+    for node in ast.walk(tree):
+        # `attrgetter("f")` is walked both on its own and as the callee of the
+        # call that applies it, so the receiver is taken from that outer call.
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Call)
+            and node.func.args
+            and (_dotted_name(node.func.func) or "").rpartition(".")[2] == "attrgetter"
+        ):
+            applied[id(node.func)] = node.args[0] if node.args else None
+
+    for node in ast.walk(tree):
+        receiver: ast.AST | None = None
+        if isinstance(node, ast.Call):
+            func = _dotted_name(node.func) or ""
+            leaf = func.rpartition(".")[2]
+            if leaf == "getattr" and len(node.args) >= 2:
+                name = node.args[1]
+                receiver = node.args[0]
+            elif leaf == "attrgetter" and node.args:
+                name = node.args[0]
+                receiver = applied.get(id(node))
+            elif (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr in _MAPPING_LOOKUP_METHODS
+                and node.args
+            ):
+                # A mapping method only names a member when it reads a real
+                # `__dict__`; any other mapping is ordinary application data.
+                owner = _mapping_object(node.func.value)
+                if owner is None:
+                    continue
+                name = node.args[0]
+                receiver = owner
+            else:
+                continue
+        elif isinstance(node, ast.Subscript):
+            owner = _mapping_object(node.value)
+            if owner is None:
+                continue
+            name = node.slice
+            receiver = owner
+        else:
+            continue
+        if isinstance(name, ast.Constant) and isinstance(name.value, str):
+            found.append((receiver, name.value))
+    return found
+
+
+def _dynamic_receiver_resolves(
+    receiver: ast.AST | None,
+    symbol: str,
+    imported: dict[str, str],
+    owners: dict[str, set[str]],
+) -> bool:
+    """Whether a dynamic lookup's receiver can be that symbol's authority.
+
+    An owned symbol only counts when the receiver resolves to a module that
+    owns it, so ``getattr(validator, "get_engine")()`` is not database access
+    while ``getattr(pattern_core, "allocate_user_channel_id")(x)`` is. A symbol
+    with no owning module is a plain name ban and no receiver can disown it.
+
+    A receiver that is absent or computed rather than named cannot be proven
+    unrelated, so the guard stays closed for it.
+    """
+    owning_modules = owners.get(symbol)
+    if not owning_modules or receiver is None:
+        return True
+    dotted = _dotted_name(receiver)
+    if dotted is None:
+        return True
+    # rpartition on a dot-free spelling yields an empty head, so the receiver
+    # itself has to be used when there is nothing to strip.
+    head = dotted.rsplit(".", 1)[0] if "." in dotted else dotted
+    if head in imported:
+        return imported[head].rsplit(".", 1)[-1] in owning_modules
+    return dotted in owning_modules or dotted.rpartition(".")[2] in owning_modules
+
+
+def _forbidden_dynamic_lookups_in_src(src: str, forbidden: list[str]) -> set[str]:
+    """Forbidden authority members fetched by name through a string literal."""
+    tree = _parse_module_src(src)
+    lower = {name.lower() for name in forbidden}
+    return {name for _, name in _dynamic_member_lookups(tree) if name.lower() in lower}
+
+
+def _forbidden_name_refs_in_src(
+    src: str,
+    forbidden: list[str],
+    *,
+    attributes_only: bool = False,
+) -> set[str]:
+    """Forbidden symbols referenced by name in ``src`` (alias-aware).
+
+    ``attributes_only`` restricts the match to attribute reads (``x.field``),
+    which is the correct shape when banning upstream *fields*: the composer
+    legitimately uses local variables that share those field names.
+    """
+    tree = _parse_module_src(src)
+    imported = _imported_bindings(tree)
+    lower = {name.lower() for name in forbidden}
+    found: set[str] = set()
+    for node in _authority_reference_nodes(tree):
+        if isinstance(node, ast.Name):
+            if attributes_only:
+                continue
+            candidates = _resolved_names(node.id, imported)
+        else:
+            qualified = _dotted_name(node)
+            if qualified is None:
+                continue
+            # Field and state guards read through arbitrary instances
+            # (`binding.selected_rank`, `rack_state.DEFAULT_ON`), so the leaf
+            # must match here; owner scoping applies to module APIs only.
+            candidates = _resolved_names(qualified, imported)
+        for candidate in candidates:
+            if candidate.lower() in lower:
+                found.add(candidate)
+    # A protected field read dynamically (`getattr(binding, "selected_rank")`,
+    # `binding.__dict__["selected_rank"]`) is still an attribute read by name,
+    # so the field guard must see it too. Fields belong to no owning module, so
+    # no receiver scoping applies here.
+    for _receiver, name in _dynamic_member_lookups(tree):
+        if name.lower() in lower:
+            found.add(name)
+    return found
 
 
 def _compose(plan: GesturePatternBindingPlan, pattern_id: str = "gesture-pat-1"):
     return compose_gesture_pattern_core(plan, pattern_id=pattern_id)
+
+
+# ---------------------------------------------------------------------------
+# Semantic checker proof tests (false-positive / true-positive)
+# ---------------------------------------------------------------------------
+
+
+def test__semantic_checker_false_positive_comments_docstrings_strings() -> None:
+    """Checker must NOT flag forbidden words in comments, docstrings, or string literals."""
+    src = '''
+"""Module docstring with quantize and allocate_user_channel_id."""
+
+# Comment with add_user_channel and DEFAULT_ON
+def foo():
+    """Docstring with project_gesture_timing and rank_1."""
+    msg = "String literal with auto-select and INSERT"
+    return msg
+'''
+    # No actual calls or refs to forbidden names
+    calls = _forbidden_calls_in_src(src, [
+        "quantize",
+        "allocate_user_channel_id",
+        "add_user_channel",
+        "project_gesture_timing",
+    ])
+    refs = _forbidden_name_refs_in_src(src, [
+        "quantize",
+        "allocate_user_channel_id",
+        "add_user_channel",
+        "DEFAULT_ON",
+        "project_gesture_timing",
+        "auto_select",
+        "rank_1",
+        "INSERT",
+    ])
+    assert calls == set()
+    assert refs == set()
+
+
+def test__semantic_checker_true_positive_calls() -> None:
+    """Checker MUST detect actual forbidden CALLS."""
+    src = '''
+def func():
+    quantize(1, 2)
+    pattern_core.allocate_user_channel_id()
+    add_user_channel("x")
+'''
+    calls = _forbidden_calls_in_src(src, [
+        "quantize",
+        "allocate_user_channel_id",
+        "add_user_channel",
+    ])
+    assert "quantize" in calls
+    assert "allocate_user_channel_id" in calls
+    assert "add_user_channel" in calls
+
+
+def test__semantic_checker_ignores_unrelated_receiver_leaf() -> None:
+    """An unrelated receiver method sharing an API name is not a violation.
+
+    Regression proof for matching an attribute's leaf unconditionally: the DB
+    and rack APIs contain generic names such as `get_engine`, so a harmless
+    `validator.get_engine()` was reported as database authority access.
+    """
+    src = """
+class Validator:
+    def get_engine(self):
+        return object()
+
+def compose():
+    return Validator().get_engine()
+"""
+    assert _forbidden_calls_in_src(src, _DB_CALLABLES) == set()
+    assert _forbidden_calls_in_src(src, _CHANNEL_RACK_CALLABLES) == set()
+    # The same names still fail when they really come from the authority.
+    assert _forbidden_calls_in_src(
+        "import db\ndef compose():\n    return db.get_engine()\n", _DB_CALLABLES
+    ) == {"get_engine"}
+    assert _forbidden_calls_in_src(
+        "import channel_rack\ndef compose():\n    return channel_rack.add_user_channel(c)\n",
+        _CHANNEL_RACK_CALLABLES,
+    ) == {"add_user_channel"}
+
+
+def test__semantic_checker_ignores_locally_bound_bare_helper() -> None:
+    """A local helper sharing an authority API name is not that authority.
+
+    Regression proof for keeping a bare spelling unconditionally: because the
+    derived DB and rack sets contain generic names such as `get_engine`, an
+    unrelated local `def get_engine()` was reported as database authority
+    access even though no DB module is referenced at all.
+    """
+    locals_ = {
+        "local def": "def get_engine():\n    return object()\n\ndef compose():\n"
+        "    return get_engine()\n",
+        "local assignment": "def compose(obj):\n    get_engine = obj.engine\n"
+        "    return get_engine()\n",
+        "local parameter": "def compose(get_engine):\n    return get_engine()\n",
+        "local loop target": "def compose(rows):\n    for get_engine in rows:\n"
+        "        return get_engine()\n",
+    }
+    for label, src in locals_.items():
+        assert _forbidden_calls_in_src(src, _DB_CALLABLES) == set(), label
+
+    # A bare spelling with no local binding has no other possible origin, so it
+    # stays a reference; so does an import of the authority.
+    assert _forbidden_calls_in_src(
+        "def compose():\n    return get_engine()\n", _DB_CALLABLES
+    ) == {"get_engine"}
+    assert _forbidden_calls_in_src(
+        "from db import get_engine\ndef compose():\n    return get_engine()\n", _DB_CALLABLES
+    ) == {"get_engine"}
+
+    # Shadowing the name does not launder a captured authority: the reference
+    # is still caught at the point where the authority is actually touched.
+    assert _forbidden_calls_in_src(
+        "import db\ndef get_engine():\n    return db.get_engine()\n", _DB_CALLABLES
+    ) == {"get_engine"}
+    assert _forbidden_calls_in_src(
+        "import db\ndef compose():\n    get_engine = db.get_engine\n"
+        "    return get_engine()\n",
+        _DB_CALLABLES,
+    ) == {"get_engine"}
+
+    # The frozen composer itself must stay clean.
+    assert _forbidden_calls_in_src(_source_text(), _DB_CALLABLES) == set()
+
+
+def test__semantic_checker_scopes_dynamic_lookup_to_authority_receiver() -> None:
+    """A dynamic lookup only counts when its receiver is the authority.
+
+    Regression proof for matching the string literal alone: because
+    `_dynamic_member_lookups` reported just the member name and bypassed
+    `_resolved_names` entirely, `getattr(validator, "get_engine")()` was
+    reported as database authority access even though the receiver had no
+    connection to `src.db`.
+    """
+    unrelated = {
+        "getattr": 'def compose(v):\n    return getattr(v, "get_engine")()\n',
+        "attrgetter": 'import operator\ndef compose(v):\n'
+        '    return operator.attrgetter("get_engine")(v)\n',
+        "__dict__.get": 'def compose(v):\n    return v.__dict__.get("get_engine")\n',
+        "vars().get": 'def compose(v):\n    return vars(v).get("get_engine")\n',
+    }
+    for label, src in unrelated.items():
+        assert _forbidden_calls_in_src(src, _DB_CALLABLES) == set(), label
+
+    # The same names still fail when the receiver really is the authority.
+    assert _forbidden_calls_in_src(
+        'def compose():\n    return getattr(pattern_core, "allocate_user_channel_id")(x)\n',
+        _PATTERN_CORE_MUTATION_CALLABLES,
+    ) == {"allocate_user_channel_id"}
+    assert _forbidden_calls_in_src(
+        "import pattern_core as pc\nimport operator\ndef compose():\n"
+        '    return operator.attrgetter("allocate_user_channel_id")(pc)\n',
+        _PATTERN_CORE_MUTATION_CALLABLES,
+    ) == {"allocate_user_channel_id"}
+
+    # A receiver that is computed rather than named cannot be proven unrelated,
+    # so the guard stays closed instead of silently passing it.
+    assert _forbidden_calls_in_src(
+        'def compose():\n    return getattr(__import__("src.db"), "get_engine")()\n',
+        _DB_CALLABLES,
+    ) == {"get_engine"}
+
+    # Name-ban lookups have no owner module, so no receiver can disown them.
+    assert _forbidden_calls_in_src(
+        'def compose(v):\n    return getattr(v, "quantize")()\n', _QUANTIZATION_NAMES
+    ) == {"quantize"}
+
+    assert _forbidden_calls_in_src(_source_text(), _DB_CALLABLES) == set()
+
+
+def test__quantization_guard_is_not_authority_scoped() -> None:
+    """The quantization ban is a name ban, so it must keep matching locally.
+
+    Regression proof for applying owner scoping to every forbidden name: the
+    quantization names have no owning authority module, so scoping made test
+    12 blind to `grid.quantize(...)` and to a local helper that quantizes.
+    """
+    for src in (
+        "def compose(grid, x):\n    return grid.quantize(x)\n",
+        "def compose(x):\n    return quantize(x)\n",
+        "def snap(x):\n    return x\n\ndef compose(x):\n    return snap(quantize(x))\n",
+    ):
+        assert _forbidden_calls_in_src(src, _QUANTIZATION_NAMES), src
+
+    # An owned authority name in the same position is scoped, so the two guard
+    # kinds stay distinguishable.
+    assert _forbidden_calls_in_src(
+        "def compose(obj):\n    return obj.init_db()\n", _DB_CALLABLES
+    ) == set()
+
+    assert _forbidden_calls_in_src(_source_text(), _QUANTIZATION_NAMES) == set()
+
+
+def test__field_guard_rejects_dynamic_protected_field_read() -> None:
+    """A protected field read by name must fail the field guard.
+
+    Regression proof for `attributes_only` guards seeing only real `Attribute`
+    nodes: `getattr(binding, "selected_rank")` and the `__dict__` subscript form
+    both bypassed test 39.
+    """
+    for src in (
+        'def compose(binding):\n    return getattr(binding, "selected_rank")\n',
+        'def compose(binding):\n    return binding.__dict__["selected_rank"]\n',
+        'def compose(binding):\n    return binding.__dict__.get("selected_rank")\n',
+        'def compose(binding):\n    return vars(binding).get("selected_rank")\n',
+        'def compose(binding):\n    return binding.__dict__.getdefault("selected_rank", 0)\n',
+    ):
+        assert _forbidden_name_refs_in_src(
+            src, _SELECTION_FIELDS, attributes_only=True
+        ) == {"selected_rank"}, src
+    # A plain string that merely spells the field name is not a field read.
+    assert _forbidden_name_refs_in_src(
+        'def compose():\n    label = "selected_rank"\n',
+        _SELECTION_FIELDS,
+        attributes_only=True,
+    ) == set()
+    # The frozen composer itself must stay clean.
+    assert _forbidden_name_refs_in_src(
+        _source_text(), _SELECTION_FIELDS, attributes_only=True
+    ) == set()
+
+
+def test__semantic_checker_true_positive_name_refs() -> None:
+    """Checker MUST detect actual forbidden NAME/ATTRIBUTE references."""
+    src = '''
+DEFAULT_ON = True
+x = _full_step_triggers
+y = ChannelRackState()
+'''
+    refs = _forbidden_name_refs_in_src(src, [
+        "DEFAULT_ON",
+        "_full_step_triggers",
+        "ChannelRackState",
+    ])
+    assert "DEFAULT_ON" in refs
+    assert "_full_step_triggers" in refs
+    assert "ChannelRackState" in refs
+
+
+def test__semantic_checker_true_positive_qualified_attribute() -> None:
+    """Checker MUST detect qualified references such as ``module.DEFAULT_ON``."""
+    src = "flag = rack_state.DEFAULT_ON\n"
+    # A qualified ban matches the full dotted reference.
+    assert _forbidden_name_refs_in_src(
+        src, ["rack_state.DEFAULT_ON"]
+    ) == {"rack_state.DEFAULT_ON"}
+    # The bare attribute form matches too, so a field-only ban also hits.
+    assert _forbidden_name_refs_in_src(src, ["DEFAULT_ON"]) == {"DEFAULT_ON"}
+    # An attribute-only ban hits the read as well.
+    assert _forbidden_name_refs_in_src(
+        src, ["DEFAULT_ON"], attributes_only=True
+    ) == {"DEFAULT_ON"}
+
+
+def test__semantic_checker_resolves_import_aliases() -> None:
+    """Aliased from-imports must not hide a forbidden call from the checker."""
+    src = '''
+from .pattern_core import allocate_user_channel_id as allocate
+
+def compose():
+    allocate("ch_user_1")
+'''
+    # A bare-symbol ban still catches the aliased call.
+    assert _forbidden_calls_in_src(src, ["allocate_user_channel_id"]) == {
+        "allocate_user_channel_id"
+    }
+    # A qualified ban is matched against the resolved import path.
+    assert _forbidden_calls_in_src(
+        src, ["pattern_core.allocate_user_channel_id"]
+    ) == {"pattern_core.allocate_user_channel_id"}
+
+
+def test__semantic_checker_resolves_module_aliases() -> None:
+    """``import x as y`` module aliases must resolve to the banned symbol."""
+    src = '''
+import pattern_core as pc
+
+def compose():
+    pc.allocate_user_channel_id()
+'''
+    assert _forbidden_calls_in_src(src, ["allocate_user_channel_id"]) == {
+        "allocate_user_channel_id"
+    }
+    assert _forbidden_calls_in_src(
+        src, ["pattern_core.allocate_user_channel_id"]
+    ) == {"pattern_core.allocate_user_channel_id"}
+
+
+def test__semantic_checker_fails_closed_on_unparsable_source() -> None:
+    """Unparsable source must raise, never silently pass the boundary guard."""
+    broken = "def compose(:\n    pass\n"
+    with pytest.raises(AssertionError):
+        _forbidden_calls_in_src(broken, ["allocate_user_channel_id"])
+    with pytest.raises(AssertionError):
+        _forbidden_name_refs_in_src(broken, ["DEFAULT_ON"])
+
+
+def test__semantic_checker_attributes_only_ignores_bare_locals() -> None:
+    """Field bans must ignore bare locals that share the field name."""
+    src = '''
+def compose(events, plan):
+    events = tuple(events)
+    return plan.pattern_length_quarters, len(events)
+'''
+    # A field ban matches the attribute read...
+    assert "projected_duration_quarters" in _forbidden_name_refs_in_src(
+        "value = timing.projected_duration_quarters\n",
+        ["projected_duration_quarters"],
+        attributes_only=True,
+    )
+    # ...but not the identically named local variable.
+    assert _forbidden_name_refs_in_src(
+        src, ["events"], attributes_only=True
+    ) == set()
+    assert _forbidden_name_refs_in_src(src, ["pattern_length_quarters"]) == {
+        "pattern_length_quarters"
+    }
+
+
+def test__semantic_checker_import_binding_resolution() -> None:
+    """Import/ImportFrom forms (incl. aliases) resolve to their symbol paths."""
+    src = '''
+import sqlite3
+import gesture_catalog_adapter as catalog
+from db import connect
+from .pattern_core import allocate_user_channel_id as allocate
+'''
+    bindings = _imported_bindings(ast.parse(src))
+    assert bindings["sqlite3"] == "sqlite3"
+    assert bindings["catalog"] == "gesture_catalog_adapter"
+    assert bindings["connect"] == "db.connect"
+    assert bindings["allocate"] == "pattern_core.allocate_user_channel_id"
+
+
+def test__semantic_checker_import_boundary_detects_banned_roots(tmp_path: Path) -> None:
+    """Import boundary rejects banned roots and accepts the frozen allow-list."""
+    banned_src = '''
+import sqlite3
+from db import connect
+import gesture_catalog_adapter
+'''
+    banned_path = tmp_path / "banned_module.py"
+    banned_path.write_text(banned_src, encoding="utf-8")
+    banned = _imported_module_names(_FakeModule(banned_path))
+    assert {"sqlite3", "db", "gesture_catalog_adapter"} <= banned
+    assert not banned <= _ALLOWED_IMPORT_ROOTS
+    allowed_src = '''
+from __future__ import annotations
+from dataclasses import dataclass
+from fractions import Fraction
+from .pattern_core import Channel, Pattern, Trigger
+'''
+    allowed_path = tmp_path / "allowed_module.py"
+    allowed_path.write_text(allowed_src, encoding="utf-8")
+    allowed = _imported_module_names(_FakeModule(allowed_path))
+    assert allowed <= _ALLOWED_IMPORT_ROOTS
+
+
+class _FakeModule:
+    """Minimal module stand-in exposing ``__file__`` for source-based helpers."""
+
+    def __init__(self, path: Path) -> None:
+        self.__file__ = str(path)
+
+
+def _write_source(tmp_path: Path, src: str, name: str = "candidate.py") -> Path:
+    path = tmp_path / name
+    path.write_text(src, encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize(
+    ("guard", "forbidden", "violating_src"),
+    [
+        (
+            "planner_call",
+            _PLANNER_CALLABLES,
+            "def compose(plan):\n    return plan_gesture_pattern_binding(plan)\n",
+        ),
+        (
+            "ranking_call",
+            _RANKING_CALLABLES,
+            "def compose():\n    return rank_gesture_library_candidates([], [])\n",
+        ),
+        (
+            "catalog_call",
+            _CATALOG_CALLABLES,
+            "def compose():\n    return load_gesture_library_candidates(path)\n",
+        ),
+        (
+            "timing_call",
+            _TIMING_CALLABLES,
+            "def compose():\n    return project_gesture_timing(events)\n",
+        ),
+        (
+            "analysis_call",
+            _ANALYSIS_CALLABLES,
+            "def compose():\n    return analyze_gesture_audio(path)\n",
+        ),
+        (
+            "pattern_core_mutation",
+            _PATTERN_CORE_MUTATION_CALLABLES,
+            "def compose():\n    return allocate_user_channel_id(existing)\n",
+        ),
+        (
+            "channel_rack_call",
+            _CHANNEL_RACK_CALLABLES,
+            "def compose():\n    return add_user_channel(channel)\n",
+        ),
+        (
+            "aliased_import_call",
+            _PATTERN_CORE_MUTATION_CALLABLES,
+            "from .pattern_core import allocate_user_channel_id as allocate\n"
+            "\n"
+            "def compose():\n"
+            "    return allocate(existing)\n",
+        ),
+    ],
+)
+def test__derived_call_guards_are_live(guard, forbidden, violating_src) -> None:
+    """Every derived call guard must flag a violating module (no dead guards)."""
+    assert forbidden, f"{guard}: derived forbidden set must not be empty"
+    assert _forbidden_calls_in_src(violating_src, forbidden), (
+        f"{guard}: guard failed to flag a real violating call"
+    )
+
+
+@pytest.mark.parametrize(
+    ("guard", "forbidden", "violating_src"),
+    [
+        (
+            "ranking_field",
+            _RANKING_FIELDS,
+            "def compose(cluster):\n    return cluster.ranked\n",
+        ),
+        (
+            "selection_field",
+            _SELECTION_FIELDS,
+            "def compose(binding):\n    return binding.selected_rank\n",
+        ),
+        (
+            "timing_field",
+            _TIMING_FIELDS,
+            "def compose(timing):\n    return timing.projected_duration_quarters\n",
+        ),
+        (
+            "timing_projection_field",
+            _TIMING_PROJECTION_FIELDS,
+            "def compose(timing):\n    return timing.reference_bpm\n",
+        ),
+    ],
+)
+def test__derived_field_guards_are_live(guard, forbidden, violating_src) -> None:
+    """Every derived field guard must flag a violating read (no dead guards)."""
+    assert forbidden, f"{guard}: derived forbidden set must not be empty"
+    assert _forbidden_name_refs_in_src(
+        violating_src, forbidden, attributes_only=True
+    ), f"{guard}: guard failed to flag a real forbidden field read"
+
+
+def test__semantic_checker_follows_callable_assignment_alias() -> None:
+    """``allocator = helper; allocator(...)`` must not evade the boundary guard."""
+    src = """
+from .pattern_core import allocate_user_channel_id
+
+allocator = allocate_user_channel_id
+
+def compose():
+    return allocator("ch_user_1")
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
+
+
+def test__semantic_checker_follows_chained_assignment_alias() -> None:
+    """Aliases of aliases must still resolve to the forbidden symbol."""
+    src = """
+import channel_rack
+
+first = channel_rack.add_user_channel
+second = first
+third = second
+
+def compose():
+    return third(channel)
+"""
+    assert _forbidden_calls_in_src(src, _CHANNEL_RACK_CALLABLES) == {
+        "add_user_channel"
+    }
+
+
+def test__semantic_checker_reference_guard_terminates_on_self_reference() -> None:
+    """Self-referential local names must terminate instead of hanging the guard."""
+    src = """
+loop_a = loop_b
+loop_b = loop_a
+
+def compose():
+    return loop_a()
+"""
+    assert _forbidden_calls_in_src(src, ["nonexistent_forbidden"]) == set()
+
+
+def test__semantic_checker_flags_reference_not_only_invocations() -> None:
+    """The guard is reference-based: capture alone is a violation."""
+    src = """
+from .pattern_core import allocate_user_channel_id
+
+captured = allocate_user_channel_id
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
+
+
+def test__semantic_checker_rejects_rebound_authority_capture() -> None:
+    """A forbidden capture is a violation even when the local name is rebound later."""
+    src = """
+from .pattern_core import allocate_user_channel_id
+
+def compose(existing, safe):
+    op = allocate_user_channel_id
+    op(existing)
+    op = safe
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
+
+
+def test__semantic_checker_rejects_container_capture() -> None:
+    """Storing a forbidden callable in a container and calling it by subscript is a capture."""
+    src = """
+from .pattern_core import allocate_user_channel_id
+
+def compose(existing):
+    ops = [allocate_user_channel_id]
+    ops[0](existing)
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
+
+
+def test__semantic_checker_rejects_qualified_capture() -> None:
+    """Capturing a forbidden qualified module member is a violation."""
+    src = """
+import pattern_core
+
+def compose():
+    op = pattern_core.allocate_user_channel_id
+    return op
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
+
+
+def test__semantic_checker_rejects_module_alias_capture() -> None:
+    """A forbidden member reached through an aliased module is a capture."""
+    src = """
+import pattern_core as pc
+
+def compose():
+    op = pc.allocate_user_channel_id
+    return op
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
+
+
+def test__semantic_checker_rejects_conditional_capture() -> None:
+    """A conditional expression that may yield a forbidden callable is a capture."""
+    src = """
+from .pattern_core import allocate_user_channel_id
+
+def compose(condition, safe):
+    op = allocate_user_channel_id if condition else safe
+    return op
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
+
+
+def test__semantic_checker_rejects_loop_bound_capture() -> None:
+    """A loop binding a forbidden callable as its iteration value is a capture."""
+    src = """
+from .pattern_core import allocate_user_channel_id
+
+def compose(existing):
+    for op in [allocate_user_channel_id]:
+        op(existing)
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
+
+
+def test__semantic_checker_rejects_unused_forbidden_import() -> None:
+    """Importing a forbidden authority is itself a boundary violation."""
+    src = """
+from src.pattern_core import allocate_user_channel_id
+from src.pattern_core import allocate_user_channel_id as allocator
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == {
+        "allocate_user_channel_id"
+    }
+
+
+def test__import_guard_rejects_package_relative_db_import(tmp_path: Path) -> None:
+    """``from . import db`` must be recorded, not skipped as module=None."""
+    src = """
+from . import db
+"""
+    names = _imported_module_names(_FakeModule(_write_source(tmp_path, src)))
+    assert "db" in names
+    assert "db" in _BANNED_IMPORT_ROOTS
+
+
+def test__import_guard_rejects_relative_db_call() -> None:
+    """DB operations via ``from . import db`` stay flagged by the call guard."""
+    src = """
+from . import db
+
+def compose():
+    return db.init_db()
+"""
+    assert _forbidden_calls_in_src(src, _DB_CALLABLES) == {"init_db"}
+    # The frozen module itself must stay clean.
+    assert _forbidden_calls_in_src(_source_text(), _DB_CALLABLES) == set()
+
+
+def test__db_callable_set_is_live() -> None:
+    """The derived DB set must actually flag DB operations."""
+    assert _DB_CALLABLES
+    assert _forbidden_calls_in_src(
+        "def compose():\n    return db.init_db()\n", _DB_CALLABLES
+    ) == {"init_db"}
+
+
+def test__rank_based_auto_select_branch_is_rejected() -> None:
+    """Rank-1 auto-select branching in the composer must fail test 39's guard.
+
+    Regression proof for the case where a raw text guard was replaced by
+    identifier bans that never matched the actual selection field.
+    """
+    violating = """
+def compose(binding):
+    if binding.selected_rank == 1:
+        return auto_select(binding)
+    return binding
+"""
+    assert _forbidden_name_refs_in_src(
+        violating, _SELECTION_FIELDS, attributes_only=True
+    ) == {"selected_rank"}
+    # The frozen module itself must stay clean.
+    assert _forbidden_name_refs_in_src(
+        _source_text(), _SELECTION_FIELDS, attributes_only=True
+    ) == set()
 
 
 # ---------------------------------------------------------------------------
@@ -384,9 +1685,10 @@ def test_12_no_quantization() -> None:
     )
     result = _compose(plan)
     assert result.pattern.triggers[0].position == Fraction(1, 7)
-    src = _source_text().lower()
-    for token in ("quantize", "snap", "swing", "groove", "round("):
-        assert token not in src
+    src = _source_text()
+    # Semantic check: no actual CALLS to quantization functions
+    forbidden_calls = _forbidden_calls_in_src(src, _QUANTIZATION_NAMES)
+    assert forbidden_calls == set(), f"Found forbidden quantization calls: {forbidden_calls}"
 
 
 def test_13_plan_pattern_length_preserved_exactly() -> None:
@@ -638,8 +1940,7 @@ def test_31_no_channel_reallocation() -> None:
 
 def test_32_no_allocate_user_channel_id_call() -> None:
     """32. no allocate_user_channel_id call."""
-    src = _source_text()
-    assert "allocate_user_channel_id" not in src
+    # Behavioral authority: the exploding mock forbids the call at runtime.
     with mock.patch(
         "src.pattern_core.allocate_user_channel_id",
         side_effect=AssertionError("allocate_user_channel_id must not be called"),
@@ -651,24 +1952,16 @@ def test_32_no_allocate_user_channel_id_call() -> None:
 def test_33_no_add_user_channel_call() -> None:
     """33. no add_user_channel call."""
     src = _source_text()
-    assert "add_user_channel" not in src
-    tree = ast.parse(src)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            func = node.func
-            name = None
-            if isinstance(func, ast.Name):
-                name = func.id
-            elif isinstance(func, ast.Attribute):
-                name = func.attr
-            assert name != "add_user_channel"
+    forbidden_calls = _forbidden_calls_in_src(src, ["add_user_channel"])
+    assert forbidden_calls == set()
 
 
 def test_34_no_default_on() -> None:
     """34. no DEFAULT_ON."""
     src = _source_text()
-    assert "DEFAULT_ON" not in src
-    assert "_full_step_triggers" not in src
+    # Semantic check: no references to DEFAULT_ON or _full_step_triggers in code
+    forbidden_refs = _forbidden_name_refs_in_src(src, ["DEFAULT_ON", "_full_step_triggers"])
+    assert forbidden_refs == set()
     plan = _ready_plan(
         channels=(_channel_binding(0, "ch_user_1"),),
         events=(_event_binding(0, "ch_user_1", Fraction(1, 3)),),
@@ -696,20 +1989,18 @@ def test_35_trigger_count_equals_event_binding_count() -> None:
 def test_36_no_ranking_recomputation() -> None:
     """36. no ranking recomputation."""
     src = _source_text()
-    for token in (
-        "rank_gesture_library_candidates",
-        "rank_gesture_against_catalog",
-        "normalize_feature",
-        "median_prototype",
-    ):
-        assert token not in src
+    # Derived from the real ranking authority (#882): its callables plus every
+    # ranking-owned field of ClusterRanking/RankedCandidate/LibraryCandidate.
+    assert _forbidden_calls_in_src(src, _RANKING_CALLABLES) == set()
+    assert _forbidden_name_refs_in_src(src, _RANKING_FIELDS, attributes_only=True) == set()
 
 
 def test_37_no_timing_recomputation() -> None:
     """37. no timing recomputation."""
     src = _source_text()
-    assert "project_gesture_timing" not in src
-    assert "onset_time_sec" not in src
+    assert _forbidden_calls_in_src(src, _TIMING_CALLABLES) == set()
+    # Attribute reads only: the composer legitimately owns a local `events`.
+    assert _forbidden_name_refs_in_src(src, _TIMING_FIELDS, attributes_only=True) == set()
 
 
 def test_38_no_catalog_db_access() -> None:
@@ -726,32 +2017,36 @@ def test_38_no_catalog_db_access() -> None:
     ):
         assert banned not in imported
     src = _source_text()
-    for token in ("init_db", "INSERT", "UPDATE", "DELETE", "sqlite3", "load_gesture_library"):
-        assert token not in src
+    # DB operations stay covered by a derived set, not a guessed name list, so
+    # `db.init_db()` (also via `from . import db`) is rejected.
+    forbidden = sorted(set(_CATALOG_CALLABLES) | set(_DB_CALLABLES))
+    assert _forbidden_calls_in_src(src, forbidden) == set()
 
 
 def test_39_no_selection_recomputation() -> None:
     """39. no selection recomputation."""
     src = _source_text()
-    assert "plan_gesture_pattern_binding" not in src
-    # Composer must not invent rank-1 acceptance / auto-resolve.
-    assert "selected_rank == 1" not in src
-    assert "auto-select" not in src.lower()
-    assert "auto_select" not in src.lower()
-    assert "rank_1" not in src.lower()
+    # The planner is the only selection authority; it must never be re-run.
+    assert _forbidden_calls_in_src(src, _PLANNER_CALLABLES) == set()
+    # Reading any selection-owned plan field (notably `selected_rank`) would
+    # make the composer re-select instead of consuming the ready plan.
+    assert _forbidden_name_refs_in_src(src, _SELECTION_FIELDS, attributes_only=True) == set()
 
 
 def test_40_no_pattern_length_recomputation() -> None:
     """40. no Pattern-length recomputation."""
     src = _source_text()
-    for token in (
-        "projected_duration_quarters",
-        "source_duration",
-        "last_onset",
-        "next_beat",
-        "next_bar",
-    ):
-        assert token not in src
+    # Pattern length is plan authority; timing projection must not feed it.
+    assert (
+        _forbidden_name_refs_in_src(
+            src, _TIMING_PROJECTION_FIELDS, attributes_only=True
+        )
+        == set()
+    )
+    # Dataclass fields alone cannot express length inference, so the inference
+    # operations are banned by name as well. Without this a local
+    # `next_bar(last_onset)` helper would pass while recomputing length.
+    assert _forbidden_name_refs_in_src(src, _LENGTH_INFERENCE_NAMES) == set()
     length = Fraction(11, 3)
     plan = _ready_plan(
         channels=(_channel_binding(0, "ch_user_1"),),
@@ -761,12 +2056,81 @@ def test_40_no_pattern_length_recomputation() -> None:
     assert _compose(plan).pattern.length_quarter_notes == length
 
 
+def test__semantic_checker_rejects_dynamic_member_lookup() -> None:
+    """``getattr(mod, "forbidden")`` captures the authority by string name."""
+    variants = [
+        'import pattern_core\nallocator = getattr(pattern_core, "allocate_user_channel_id")\n',
+        'import builtins, pattern_core\nallocator = builtins.getattr(pattern_core, "allocate_user_channel_id")\n',
+        'import operator, pattern_core\nallocator = operator.attrgetter("allocate_user_channel_id")(pattern_core)\n',
+        'import pattern_core\nallocator = pattern_core.__dict__["allocate_user_channel_id"]\n',
+        'import pattern_core\nallocator = vars(pattern_core)["allocate_user_channel_id"]\n',
+    ]
+    for src in variants:
+        assert _forbidden_calls_in_src(
+            src, _PATTERN_CORE_MUTATION_CALLABLES
+        ) == {"allocate_user_channel_id"}, src
+
+
+def test__semantic_checker_ignores_ordinary_string_literal() -> None:
+    """A string that merely spells a forbidden name is still not a reference."""
+    src = """
+import pattern_core
+
+message = "allocate_user_channel_id"
+lookup = getattr(pattern_core, "some_safe_name")
+"""
+    assert _forbidden_calls_in_src(src, _PATTERN_CORE_MUTATION_CALLABLES) == set()
+
+
+def test__length_inference_guard_rejects_local_inference_helpers() -> None:
+    """A local length-inference helper must not pass test 40's guard.
+
+    Regression proof for replacing the inference ban with dataclass-derived
+    fields only: those fields do not include the inference operations, so
+    `next_bar(last_onset)` slipped through.
+    """
+    violating = """
+def compose(timing):
+    return next_bar(timing.last_onset)
+"""
+    assert _forbidden_name_refs_in_src(
+        violating, _LENGTH_INFERENCE_NAMES
+    ) == {"next_bar", "last_onset"}
+    # The frozen composer itself must stay clean.
+    assert _forbidden_name_refs_in_src(_source_text(), _LENGTH_INFERENCE_NAMES) == set()
+
+
+def test__length_inference_guard_is_live() -> None:
+    """The inference ban must actually flag each guarded operation."""
+    for name in _LENGTH_INFERENCE_NAMES:
+        assert _forbidden_name_refs_in_src(
+            f"def compose():\n    return {name}(value)\n", _LENGTH_INFERENCE_NAMES
+        ) == {name}, name
+
+
+def test_40_length_preservation_rejects_integral_only_branch() -> None:
+    """Length preservation must not be satisfiable by an integral-only branch.
+
+    A four-quarter fixture coincidentally matches a truncated computation, so
+    the preservation proof alone cannot show that non-integral lengths survive.
+    The guard is bound to the real composer call here.
+    """
+    for length in (Fraction(11, 3), Fraction(7, 2), Fraction(5, 4)):
+        plan = _ready_plan(
+            channels=(_channel_binding(0, "ch_user_1"),),
+            events=(_event_binding(0, "ch_user_1", Fraction(0, 1)),),
+            length=length,
+        )
+        assert _compose(plan).pattern.length_quarter_notes == length
+
+
 def test_41_no_channel_rack_state() -> None:
     """41. no ChannelRackState."""
     src = _source_text()
-    assert "ChannelRackState" not in src
-    assert "build_channel_rack_state" not in src
-    assert "reconcile_live_kit" not in src
+    # Derived from the real Channel Rack authority: no rack helper is called
+    # and no rack state symbol is referenced.
+    assert _forbidden_calls_in_src(src, _CHANNEL_RACK_CALLABLES) == set()
+    assert _forbidden_name_refs_in_src(src, _RACK_STATE_NAMES) == set()
     result = _compose(_simple_ready_plan())
     assert not hasattr(result, "rack")
     assert not hasattr(result, "channel_rack")
@@ -900,41 +2264,32 @@ def test_48_module_import_boundary_allows_only_declared_roots() -> None:
 
 
 def test_49_module_does_not_call_upstream_planner_or_timing() -> None:
-    """49. no upstream planner/timing calls (supports #888 suite independence)."""
+    """49. no upstream planner/timing/analysis calls (supports #888 suite independence)."""
     src = _source_text()
-    for token in (
-        "plan_gesture_pattern_binding",
-        "project_gesture_timing",
-        "analyze_gesture_audio",
-    ):
-        assert token not in src
+    forbidden = sorted(set(_PLANNER_CALLABLES) | set(_TIMING_CALLABLES) | set(_ANALYSIS_CALLABLES))
+    assert _forbidden_calls_in_src(src, forbidden) == set()
 
 
 def test_50_module_does_not_call_ranking_or_catalog() -> None:
     """50. no ranking/catalog calls (supports #882/#886 suite independence)."""
     src = _source_text()
-    for token in (
-        "rank_gesture_library_candidates",
-        "rank_gesture_against_catalog",
-        "load_gesture_library_candidates",
-    ):
-        assert token not in src
+    forbidden = sorted(set(_RANKING_CALLABLES) | set(_CATALOG_CALLABLES))
+    assert _forbidden_calls_in_src(src, forbidden) == set()
 
 
 def test_51_module_does_not_mutate_pattern_core_or_rack_helpers() -> None:
     """51. no Pattern Core mutation / Channel Rack DEFAULT_ON helpers."""
     src = _source_text()
-    for token in (
-        "add_user_channel",
-        "assign_user_channel_sample",
-        "reconcile_live_kit_sample_assignments",
-        "build_channel_rack_state",
-        "DEFAULT_ON",
-        "allocate_user_channel_id",
-    ):
-        assert token not in src
-    # Membership helper is allowed / expected.
-    assert "require_triggers_reference_known_channels" in src
+    forbidden = sorted(
+        set(_PATTERN_CORE_MUTATION_CALLABLES) | set(_CHANNEL_RACK_CALLABLES)
+    )
+    assert _forbidden_calls_in_src(src, forbidden) == set()
+    assert _forbidden_name_refs_in_src(src, ["DEFAULT_ON"]) == set()
+    # Membership helper is allowed / expected — proven as a real call, not as
+    # a text match that a comment or docstring could satisfy.
+    assert _forbidden_calls_in_src(
+        src, ["require_triggers_reference_known_channels"]
+    ) == {"require_triggers_reference_known_channels"}
 
 
 def test_52_public_seam_signature_frozen() -> None:
