@@ -57,6 +57,7 @@ internal agent- and process docs are clearly separated.
 | [AQ2 Key/Tonality Decision Memo](benchmarks/AQ2_KEY_TONALITY_DECISION_MEMO.md) | #989/#944 evidence-backed keep-current key/tonality decision (no production switch; AUROC/calibration HOLD) |
 | [AQ3 Onset/Gesture KPI Contract](benchmarks/AQ3_ONSET_GESTURE_KPI_CONTRACT.md) | #991/#945 frozen onset/attack/gesture timing KPI + partition policy |
 | [AQ3 Timing GT Corpus](benchmarks/AQ3_TIMING_CORPUS.md) | #993/#945 synthetic onset/attack timing GT (`sample-brain.aq3.timing.synthetic.v1`; runtime generator) |
+| [AQ3 Onset/Attack Baseline](benchmarks/AQ3_ONSET_ATTACK_BASELINE.md) | #995/#945 measured current onset/attack baseline on synthetic corpus (gesture PARTIAL/HOLD where thin) |
 | [Analyzer Portable Output Baseline](benchmarks/ANALYZER_PORTABLE_OUTPUT_BASELINE.md) | #960 AQ8 audit: safe/unsafe analyzer projection inventory for #956 |
 | [Validation Reports](validation/README.md) | Local validate_report how-to; committed files there are historical issue evidence |
 
