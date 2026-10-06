@@ -20,10 +20,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _clap_usable() -> bool:
+    """Require a real CLAP load, not just backend construction."""
     try:
-        ClapEmbeddingBackend()
-        return True
-    except (EmbeddingBackendUnavailableError, Exception):
+        backend = ClapEmbeddingBackend()
+        vector = backend.embed_text("kick")
+        return getattr(vector, "size", 0) > 0 or len(vector) > 0
+    except Exception:
         return False
 
 
