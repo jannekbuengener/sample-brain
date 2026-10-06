@@ -43,7 +43,7 @@ Do not invent a second percentile implementation for this contract.
 
 | Mode | Meaning |
 |---|---|
-| `cold` | First measured invocation(s) with **zero discarded warm-ups**. Captures startup/import/backend init when the callable includes them. |
+| `cold` | First measured invocation(s) with **zero discarded warm-ups**. Captures startup/import/backend init when the callable includes them. For multi-sample cold runs, callers must supply `cold_factory` so each measured sample reinitializes the analyzer; reusing one stateful callable makes only the first sample cold. |
 | `steady` | Measured invocations **after** a fixed warm-up count. Warm-up timings are diagnostic only and never enter percentile aggregates. |
 
 Comparisons are valid only within the same mode unless a report explicitly presents both.
@@ -92,12 +92,12 @@ Domain epics may define additional buckets but must not omit these two fields wh
 | Status | Meaning | `runtime_ms` |
 |---|---|---|
 | `ok` | Callable completed normally | Elapsed ms (>= 0 only if truly elapsed) |
-| `timeout` | Callable exceeded `timeout_ms` budget | Elapsed until timeout decision; **never fabricated `0`** |
+| `timeout` | Callable exceeded `timeout_ms` budget (enforced via bounded Future wait; observation returns without waiting forever for a hung callable) | Elapsed until timeout decision; **never fabricated `0`** |
 | `failed` | Controlled exception / analyzer failure | Elapsed until failure; **never fabricated `0`** |
 | `fallback` | Explicit fallback path taken (optional backend unavailable, etc.) | Elapsed for the fallback attempt; **never fabricated `0`** |
 | `missing` | Could not start (absent input/fixture) | **`null`** — never `0` |
 
-Missing, failed, or timeout runs must keep an explicit `status` and must **never** be rewritten as `0` ms success. If a non-ok path somehow records a literal `0.0` elapsed, tooling must coerce `runtime_ms` to `null` rather than publish a fake zero success.
+Missing, failed, or timeout runs must keep an explicit `status` and must **never** be rewritten as `0` ms success. If a non-ok path somehow records a literal `0.0` elapsed, tooling must coerce `runtime_ms` to `null` rather than publish a fake zero success. Status `missing` always forces `runtime_ms: null` regardless of measured elapsed time.
 
 ## Throughput semantics
 

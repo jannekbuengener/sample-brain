@@ -11,6 +11,8 @@ import platform
 import sys
 import time
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from typing import Any
 
 from .measurement.stats import percentile
@@ -35,11 +37,17 @@ STATUS_MISSING = "missing"
 _NON_OK = frozenset({STATUS_TIMEOUT, STATUS_FAILED, STATUS_FALLBACK, STATUS_MISSING})
 
 AnalyzerCallable = Callable[[], Mapping[str, Any]]
+AnalyzerFactory = Callable[[], AnalyzerCallable]
 
 
 def sanitize_runtime_ms(*, status: str, runtime_ms: float | None) -> float | None:
-    """Hard rule: missing/failed/timeout/fallback never publish fabricated 0 ms."""
+    """Hard rule: missing/failed/timeout/fallback never publish fabricated 0 ms.
+
+    ``missing`` always forces ``runtime_ms`` to ``null`` (run could not start).
+    """
     if runtime_ms is None:
+        return None
+    if status == STATUS_MISSING:
         return None
     if status in _NON_OK and runtime_ms == 0.0:
         return None
@@ -78,16 +86,49 @@ def _time_one(
     timeout_ms: float | None,
 ) -> dict[str, Any]:
     started = time.perf_counter_ns()
-    try:
-        payload = dict(fn())
-    except Exception as exc:
-        elapsed = (time.perf_counter_ns() - started) / 1_000_000
-        return {
-            "status": STATUS_FAILED,
-            "runtime_ms": sanitize_runtime_ms(status=STATUS_FAILED, runtime_ms=elapsed),
-            "reason_code": "callable_exception",
-            "reason_detail": type(exc).__name__,
-        }
+    if timeout_ms is None:
+        try:
+            payload = dict(fn())
+        except Exception as exc:
+            elapsed = (time.perf_counter_ns() - started) / 1_000_000
+            return {
+                "status": STATUS_FAILED,
+                "runtime_ms": sanitize_runtime_ms(
+                    status=STATUS_FAILED, runtime_ms=elapsed
+                ),
+                "reason_code": "callable_exception",
+                "reason_detail": type(exc).__name__,
+            }
+    else:
+        timeout_s = max(float(timeout_ms) / 1000.0, 0.0)
+        # Bounded wait: mark timeout without blocking forever on hung callables.
+        # Do not wait=True on shutdown — a timed-out worker may still be running.
+        pool = ThreadPoolExecutor(max_workers=1)
+        try:
+            future = pool.submit(fn)
+            try:
+                payload = dict(future.result(timeout=timeout_s))
+            except FuturesTimeout:
+                elapsed = (time.perf_counter_ns() - started) / 1_000_000
+                return {
+                    "status": STATUS_TIMEOUT,
+                    "runtime_ms": sanitize_runtime_ms(
+                        status=STATUS_TIMEOUT, runtime_ms=elapsed
+                    ),
+                    "reason_code": "timeout",
+                }
+            except Exception as exc:
+                elapsed = (time.perf_counter_ns() - started) / 1_000_000
+                return {
+                    "status": STATUS_FAILED,
+                    "runtime_ms": sanitize_runtime_ms(
+                        status=STATUS_FAILED, runtime_ms=elapsed
+                    ),
+                    "reason_code": "callable_exception",
+                    "reason_detail": type(exc).__name__,
+                }
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
 
     elapsed = (time.perf_counter_ns() - started) / 1_000_000
     status = str(payload.get("status") or STATUS_OK)
@@ -105,7 +146,7 @@ def _time_one(
 
 
 def measure_callable(
-    fn: AnalyzerCallable,
+    fn: AnalyzerCallable | None = None,
     *,
     mode: str,
     analyzer_id: str,
@@ -119,12 +160,21 @@ def measure_callable(
     analyzer_config: Mapping[str, Any] | None = None,
     dependency_versions: Mapping[str, str] | None = None,
     include_host_hints: bool = False,
+    cold_factory: AnalyzerFactory | None = None,
 ) -> dict[str, Any]:
-    """Run warm-up + measured repetitions under the frozen methodology."""
+    """Run warm-up + measured repetitions under the frozen methodology.
+
+    For ``mode="cold"``, pass ``cold_factory`` (a zero-arg factory returning a fresh
+    ``AnalyzerCallable``) so each measured sample reinitializes the analyzer.
+    When only ``fn`` is supplied in cold mode, the same callable is reused
+    (steady-state after the first call) — prefer ``cold_factory`` for true cold.
+    """
     if mode not in {"cold", "steady"}:
         raise ValueError("mode must be 'cold' or 'steady'")
     if measured_repetitions < 1:
         raise ValueError("measured_repetitions must be >= 1")
+    if fn is None and cold_factory is None:
+        raise ValueError("measure_callable requires fn and/or cold_factory")
 
     if warmup_count is None:
         resolved_warmup = 0 if mode == "cold" else DEFAULT_STEADY_WARMUP_COUNT
@@ -135,8 +185,22 @@ def measure_callable(
     if resolved_warmup < 0:
         raise ValueError("warmup_count must be >= 0")
 
-    warmup_runs = [_time_one(fn, timeout_ms=timeout_ms) for _ in range(resolved_warmup)]
-    measured_runs = [_time_one(fn, timeout_ms=timeout_ms) for _ in range(measured_repetitions)]
+    def _resolve_callable() -> AnalyzerCallable:
+        if mode == "cold" and cold_factory is not None:
+            return cold_factory()
+        if fn is not None:
+            return fn
+        assert cold_factory is not None
+        return cold_factory()
+
+    warmup_runs = [
+        _time_one(_resolve_callable(), timeout_ms=timeout_ms)
+        for _ in range(resolved_warmup)
+    ]
+    measured_runs = [
+        _time_one(_resolve_callable(), timeout_ms=timeout_ms)
+        for _ in range(measured_repetitions)
+    ]
 
     ok_runtimes = [
         float(run["runtime_ms"])
@@ -239,11 +303,12 @@ def measure_proof_fallback_startup(
     measured_repetitions: int = 3,
     enable_backend: bool = True,
 ) -> dict[str, Any]:
-    """Proof shape 2: materially different startup / fallback behavior."""
-    probe = _OptionalBackendProbe(enable_backend=enable_backend)
-    return measure_callable(
-        probe,
-        mode=mode,
+    """Proof shape 2: materially different startup / fallback behavior.
+
+    Cold mode uses ``cold_factory`` so every measured sample is a fresh probe
+    (true cold), not a warmed instance after the first repetition.
+    """
+    common = dict(
         measured_repetitions=measured_repetitions,
         analyzer_id="proof.optional_backend_startup",
         analyzer_revision="proof-fallback-startup-v1",
@@ -253,6 +318,14 @@ def measure_proof_fallback_startup(
         input_bucket="synthetic_unit",
         record_set_id="proof-optional-backend-v1",
     )
+    if mode == "cold":
+        return measure_callable(
+            mode=mode,
+            cold_factory=lambda: _OptionalBackendProbe(enable_backend=enable_backend),
+            **common,
+        )
+    probe = _OptionalBackendProbe(enable_backend=enable_backend)
+    return measure_callable(probe, mode=mode, **common)
 
 
 __all__ = [

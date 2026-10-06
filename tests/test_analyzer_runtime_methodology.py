@@ -57,11 +57,65 @@ def test_percentile_gates_and_reuse_measurement_stats() -> None:
 def test_non_ok_runtime_never_fabricated_zero() -> None:
     assert arm.sanitize_runtime_ms(status="missing", runtime_ms=None) is None
     assert arm.sanitize_runtime_ms(status="missing", runtime_ms=0.0) is None
+    assert arm.sanitize_runtime_ms(status="missing", runtime_ms=12.5) is None
     assert arm.sanitize_runtime_ms(status="failed", runtime_ms=0.0) is None
     assert arm.sanitize_runtime_ms(status="timeout", runtime_ms=0.0) is None
     assert arm.sanitize_runtime_ms(status="fallback", runtime_ms=0.0) is None
     assert arm.sanitize_runtime_ms(status="failed", runtime_ms=12.5) == pytest.approx(12.5)
     assert arm.sanitize_runtime_ms(status="ok", runtime_ms=0.0) == pytest.approx(0.0)
+
+
+def test_missing_status_forces_null_runtime_ms() -> None:
+    result = arm.measure_callable(
+        lambda: {"status": "missing", "reason_code": "fixture_absent"},
+        mode="cold",
+        measured_repetitions=1,
+        analyzer_id="t.missing",
+        analyzer_revision="r1",
+        backend_id="synthetic",
+        input_bucket="synthetic_unit",
+        record_set_id="missing-proof",
+    )
+    run = result["measured_runs"][0]
+    assert run["status"] == "missing"
+    assert run["runtime_ms"] is None
+    assert result["aggregates"]["ok_count"] == 0
+
+
+def test_cold_factory_reinitializes_each_sample() -> None:
+    births: list[int] = []
+
+    class _Probe:
+        _seq = 0
+
+        def __init__(self) -> None:
+            type(self)._seq += 1
+            self.generation = type(self)._seq
+            births.append(self.generation)
+            self._started = False
+
+        def __call__(self) -> dict[str, Any]:
+            if not self._started:
+                self._started = True
+                return {"status": "ok", "reason_code": f"cold-{self.generation}"}
+            return {"status": "ok", "reason_code": f"warm-{self.generation}"}
+
+    result = arm.measure_callable(
+        mode="cold",
+        cold_factory=_Probe,
+        measured_repetitions=3,
+        analyzer_id="t.cold-factory",
+        analyzer_revision="r1",
+        backend_id="synthetic",
+        input_bucket="synthetic_unit",
+        record_set_id="cold-factory-proof",
+    )
+    assert births == [1, 2, 3]
+    assert [r["reason_code"] for r in result["measured_runs"]] == [
+        "cold-1",
+        "cold-2",
+        "cold-3",
+    ]
 
 
 def test_cold_vs_steady_warmup_policy() -> None:
@@ -147,6 +201,27 @@ def test_timeout_and_failure_keep_explicit_status() -> None:
     assert t_run["status"] == "timeout"
     assert t_run["runtime_ms"] is None or t_run["runtime_ms"] > 0
     assert t_run["runtime_ms"] != 0
+
+    # Bounded wait: a forever-sleep must not hang the methodology harness.
+    def hang() -> dict[str, Any]:
+        time.sleep(30.0)
+        return {"status": "ok"}
+
+    hung = arm.measure_callable(
+        hang,
+        mode="cold",
+        measured_repetitions=1,
+        timeout_ms=50.0,
+        analyzer_id="t.hang",
+        analyzer_revision="r1",
+        backend_id="synthetic",
+        input_bucket="synthetic_unit",
+        record_set_id="hang-proof",
+    )
+    h_run = hung["measured_runs"][0]
+    assert h_run["status"] == "timeout"
+    assert h_run["runtime_ms"] is not None
+    assert h_run["runtime_ms"] < 5000.0
 
 
 def test_provenance_fields_are_portable() -> None:
