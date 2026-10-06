@@ -1654,13 +1654,20 @@ def run_qml_visual_acceptance_954(
         # Build the baseline v2 fixture for synthetic data
         fixture = build_screen1_visual_fixture_v2()
 
+        # Create LiveKitState and LiveKitPresenter (required for adapter to work)
+        from src.workbench_qml import LiveKitState, LiveKitPresenter
+        live_kit_state = LiveKitState()
+        live_kit_presenter = LiveKitPresenter(state=live_kit_state)
+
         # Start with clean state: browser materialized, harmony open, drawer closed
         # This corresponds to "screen1-harmonic-open" state from v2 fixture
         active_state = resolve_screen1_visual_state_v2(fixture, "screen1-harmonic-open")
         view_model = build_qml_view_model_from_fixture_v2(fixture, "screen1-harmonic-open")
+        view_model.live_kit_groups = live_kit_presenter.groups
         adapter = Screen1QmlInteractionAdapter(
             view_model=view_model,
             harmony_controller=production.HarmonicMatchLibraryController(),
+            live_kit=live_kit_presenter,
         )
         apply_screen1_visual_state_v2(view_model, adapter, fixture, active_state)
         view_model.set_workspace_materialization(
