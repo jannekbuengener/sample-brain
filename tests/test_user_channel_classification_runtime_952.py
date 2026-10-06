@@ -339,7 +339,14 @@ class _Snapshot:
 
 
 class _FakeEngine:
-    """Minimal native engine double: scheduling bookkeeping only."""
+    """Minimal native engine double: scheduling bookkeeping only.
+
+    A voice becomes PLAYING once the clock reaches its scheduled start and
+    retires again after one deterministic second, so a pass can actually finish
+    and end playback on its own.
+    """
+
+    VOICE_DURATION_FRAMES = SAMPLE_RATE
 
     def __init__(self) -> None:
         self.create_calls: list[VoiceConfig] = []
@@ -371,10 +378,16 @@ class _FakeEngine:
         self._voices.pop(int(voice_id), None)
 
     def advance_to(self, engine_frame: int) -> None:
-        self.engine_frame = int(engine_frame)
+        frame = int(engine_frame)
+        self.engine_frame = frame
+        starts = dict(self.schedule_calls)
         for voice_id, state in list(self._voices.items()):
             if state == SB_VOICE_SCHEDULED:
                 self._voices[voice_id] = SB_VOICE_PLAYING
+            elif state == SB_VOICE_PLAYING:
+                start = starts.get(voice_id)
+                if start is not None and frame >= start + self.VOICE_DURATION_FRAMES:
+                    self._voices[voice_id] = SB_VOICE_IDLE
 
     def get_snapshot(self) -> _Snapshot:
         ids = tuple(sorted(self._voices))
@@ -1779,6 +1792,81 @@ def test_b3_gesture_delta_ignores_the_frozen_playback_binding() -> None:
     )
     assert controller.user_metadata[AMBIGUOUS_PATH].sample_class == "text"
     assert _channel(state, base_channel_id).sample_path == AMBIGUOUS_PATH
+
+
+def test_18h_natural_playback_end_drains_the_queued_mutation() -> None:
+    """A Play that runs out of steps ends its deferral; nothing may linger."""
+    resolver = _ScriptedResolver({ONESHOT_PATH: "one_shot", LOOP_PATH: "one_shot"})
+    observer: list[int] = []
+    controller, engine, transport = _controller(resolver=resolver, observer=observer)
+    controller.ensure_state()
+    controller.add_user_channel(sample_path=ONESHOT_PATH)
+    channel_id = _last_user_channel_id(controller.state)
+    controller.play()
+    assert controller.is_playing is True
+
+    controller.assign_user_channel_sample(channel_id, LOOP_PATH)
+    assert controller.is_playing is True
+
+    # Turn every step off: the follow-up pass is empty and playback ends.
+    for step_index in range(16):
+        controller.toggle_step(channel_id, step_index)
+    for _ in range(64):
+        if not controller.is_playing:
+            break
+        transport.advance(20_000)
+        engine.advance_to(transport.engine_frame)
+        controller.tick_playback()
+
+    assert controller.is_playing is False, "playback ended on its own"
+    assert _channel(controller.state, channel_id).sample_path == LOOP_PATH, (
+        "the queued intent must land when the Play ends naturally"
+    )
+
+    # A later immediate mutation must not be overtaken by the drained intent.
+    controller.assign_user_channel_sample(channel_id, ONESHOT_PATH)
+    controller.play()
+    controller.stop()
+
+    assert _channel(controller.state, channel_id).sample_path == ONESHOT_PATH
+    assert set(controller.user_metadata) == {ONESHOT_PATH}
+
+
+def test_18i_queued_clear_then_assign_keeps_default_on_semantics() -> None:
+    """A deferred clear-then-assign must reseed exactly like the immediate one."""
+    resolver = _ScriptedResolver({ONESHOT_PATH: "one_shot", LOOP_PATH: "one_shot"})
+    immediate, _e, _t = _controller(resolver=_ScriptedResolver(
+        {ONESHOT_PATH: "one_shot", LOOP_PATH: "one_shot"}
+    ))
+    immediate.ensure_state()
+    immediate.add_user_channel(sample_path=ONESHOT_PATH)
+    immediate_id = _last_user_channel_id(immediate.state)
+    # Narrow the custom trigger set first, so a reseed is observable.
+    for step_index in range(1, 16):
+        immediate.toggle_step(immediate_id, step_index)
+    immediate.clear_user_channel_sample(immediate_id)
+    immediate.assign_user_channel_sample(immediate_id, LOOP_PATH)
+
+    controller, _engine, _transport = _controller(resolver=resolver)
+    controller.ensure_state()
+    controller.add_user_channel(sample_path=ONESHOT_PATH)
+    channel_id = _last_user_channel_id(controller.state)
+    for step_index in range(1, 16):
+        controller.toggle_step(channel_id, step_index)
+    narrowed = _triggers_for(controller.state, channel_id)
+    assert narrowed != ()
+
+    controller.play()
+    controller.clear_user_channel_sample(channel_id)
+    controller.assign_user_channel_sample(channel_id, LOOP_PATH)
+    controller.stop()
+
+    deferred = _triggers_for(controller.state, channel_id)
+    assert deferred == _triggers_for(immediate.state, immediate_id), (
+        "deferred clear-then-assign must match the immediate transition"
+    )
+    assert len(deferred) == 16, "the assignment reseeds DEFAULT_ON"
+    assert _channel(controller.state, channel_id).sample_path == LOOP_PATH
 
 
 # ===========================================================================

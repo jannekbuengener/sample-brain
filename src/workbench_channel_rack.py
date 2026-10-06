@@ -466,6 +466,7 @@ class _PendingUserChannelMutation:
     entries: Mapping[str, UserSampleMetadata] = field(default_factory=dict)
     attempted: frozenset[str] = frozenset()
     replaced: frozenset[str] = frozenset()
+    cleared: frozenset[str] = frozenset()
     prune: bool = False
 
     def merged_with(self, other: "_PendingUserChannelMutation") -> "_PendingUserChannelMutation":
@@ -480,6 +481,7 @@ class _PendingUserChannelMutation:
             entries=entries,
             attempted=self.attempted | other.attempted,
             replaced=self.replaced | other.replaced,
+            cleared=self.cleared | other.cleared,
             prune=self.prune or other.prune,
         )
 
@@ -683,6 +685,12 @@ class ChannelRackController:
             if path is None:
                 target = _clear_channel_sample_path(target, channel_id)
             else:
+                if channel_id in pending.cleared:
+                    # A queued clear followed by this assignment. Replaying only
+                    # the final path would look like a replacement and keep the
+                    # old triggers; the public clear-then-assign sequence reseeds
+                    # DEFAULT_ON, so the intermediate clear must survive too.
+                    target = _clear_channel_sample_path(target, channel_id)
                 target = assign_user_channel_sample(target, channel_id, path)
 
         referenced = {
@@ -713,6 +721,17 @@ class ChannelRackController:
         if notify and target is not base_state:
             self._notify_musical_state_changed()
         return target
+
+    def _finish_playback_naturally(self) -> None:
+        """A Play that ran out of steps is over, so its deferral expires.
+
+        ``PLAYBACK_MUTATION_APPLY_POLICY`` queues durable changes exactly as long
+        as the Play lasts. If playback ends on its own the queued intent must
+        land now, or a later immediate mutation gets overtaken by this older
+        intent at the next ``stop()``.
+        """
+        self._playing = False
+        self._adopt_pending_user_mutation()
 
     def _adopt_pending_user_mutation(self, *, notify: bool = True) -> bool:
         """Apply a queued mid-Play mutation as one coherent adoption."""
@@ -1028,6 +1047,7 @@ _PendingUserChannelMutation(
             _PendingUserChannelMutation(
                 paths={channel_id: None},
                 replaced=frozenset({str(previous_path)}),
+                cleared=frozenset({channel_id}),
             )
         )
 
@@ -1308,8 +1328,8 @@ _PendingUserChannelMutation(
                 self._loop_pass_index = pass_index
                 self._playing = True
                 return True
-            self._playing = False
             self._clear_loop_session()
+            self._finish_playback_naturally()
             return False
         self._play_handle = handle
         self._loop_pass_index = pass_index
@@ -1451,9 +1471,9 @@ _PendingUserChannelMutation(
                     "live_voice_count": tick.live_voice_count,
                     "playing": True,
                 }
-            self._playing = False
             self._play_handle = None
             self._loop_active = False
+            self._finish_playback_naturally()
         return {
             "scheduled_count": tick.scheduled_count,
             "pending_count": tick.pending_count,
