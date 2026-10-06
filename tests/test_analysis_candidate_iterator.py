@@ -155,6 +155,70 @@ def test_unknown_next_action_fail_closed() -> None:
         _run(next_action="invent_new_optimizer_step")
 
 
+def test_supplied_iteration_index_advances_monotonically() -> None:
+    members = [
+        {"candidate_id": f"demo.cand.{i}", "config_fingerprint": f"{i}" * 64}
+        for i in "01234"
+    ]
+    provider = _provider(members, search_space_id="demo.wide", search_space_version="1.0.0")
+    result = iterate_candidates(
+        domain="demo.domain",
+        next_action="continue_calibration",
+        partition_role="calibration",
+        provider=provider,
+        current_candidate_id="demo.cand.0",
+        current_config_fingerprint="0" * 64,
+        visited_candidate_ids=["demo.cand.0"],
+        search_space_fingerprint=provider.search_space_fingerprint(),
+        iteration_index=3,
+        max_iterations=4,
+    )
+    assert result["iterator_effect"] == "advance"
+    assert result["iteration_index"] == 4
+    assert result["next_candidate"]["candidate_id"] == "demo.cand.1"
+
+
+def test_validate_result_rejects_action_effect_mismatch() -> None:
+    result = _run(next_action="freeze_candidate")
+    poisoned = dict(result)
+    poisoned["iterator_effect"] = "advance"
+    poisoned["next_candidate"] = {
+        "candidate_id": "demo.cand.a",
+        "config_fingerprint": "a" * 64,
+    }
+    poisoned["result_fingerprint"] = result_semantic_fingerprint(poisoned)
+    with pytest.raises(
+        AnalysisCandidateIteratorError, match="incompatible with next_action"
+    ):
+        validate_result(poisoned)
+
+
+def test_stale_provider_fingerprint_rejected() -> None:
+    class _StaleProvider(StaticSearchSpaceProvider):
+        def search_space_fingerprint(self) -> str:  # type: ignore[override]
+            return "f" * 64
+
+    provider = _StaleProvider(
+        search_space_id="demo.search-space",
+        search_space_version="1.0.0",
+        ordered_members=_members(),
+    )
+    with pytest.raises(
+        AnalysisCandidateIteratorError,
+        match="provider.search_space_fingerprint|search_space_fingerprint",
+    ):
+        iterate_candidates(
+            domain="demo.domain",
+            next_action="continue_calibration",
+            partition_role="calibration",
+            provider=provider,
+            current_candidate_id="demo.cand.c",
+            current_config_fingerprint="c" * 64,
+            visited_candidate_ids=["demo.cand.c"],
+            search_space_fingerprint="f" * 64,
+        )
+
+
 def test_domain_order_not_lexical() -> None:
     # With only c visited, next must be a (declaration #2), not lexical 'a' coincidence
     # proven by skipping a and expecting b when a is also visited.

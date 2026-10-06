@@ -161,6 +161,10 @@ def search_space_fingerprint(
         raise _wrap_portable(exc) from exc
 
 
+# Alias so iterate_candidates' search_space_fingerprint parameter cannot shadow it.
+_compute_search_space_fingerprint = search_space_fingerprint
+
+
 def _normalize_members(
     ordered_members: Sequence[Mapping[str, str]],
 ) -> list[dict[str, str]]:
@@ -281,6 +285,19 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
         )
 
     effect = str(result["iterator_effect"])
+    if next_action == "continue_calibration":
+        if effect not in {"advance", "exhausted"}:
+            raise AnalysisCandidateIteratorError(
+                "continue_calibration requires iterator_effect advance|exhausted"
+            )
+    else:
+        expected_effect = _TERMINAL_ACTION_EFFECT.get(next_action)
+        if expected_effect is None or effect != expected_effect:
+            raise AnalysisCandidateIteratorError(
+                f"iterator_effect {effect!r} is incompatible with next_action "
+                f"{next_action!r}"
+            )
+
     if effect == "advance":
         next_candidate = result.get("next_candidate")
         if not isinstance(next_candidate, Mapping):
@@ -340,7 +357,20 @@ def iterate_candidates(
 
     members = _normalize_members(provider.ordered_members())
     by_id = _member_index(members)
-    expected_space_fp = provider.search_space_fingerprint()
+    # Bind fingerprint to the normalized members used for selection, not only
+    # to whatever digest a custom provider method claims.
+    expected_space_fp = _compute_search_space_fingerprint(
+        search_space_id=provider.search_space_id,
+        search_space_version=provider.search_space_version,
+        ordered_members=members,
+    )
+    provider_claimed_fp = _require_hex_fingerprint(
+        provider.search_space_fingerprint(), "provider.search_space_fingerprint"
+    )
+    if provider_claimed_fp != expected_space_fp:
+        raise AnalysisCandidateIteratorError(
+            "provider.search_space_fingerprint does not match ordered members"
+        )
     provided_space_fp = _require_hex_fingerprint(
         search_space_fingerprint, "search_space_fingerprint"
     )
@@ -434,7 +464,8 @@ def iterate_candidates(
                     "config_fingerprint": str(selected["config_fingerprint"]),
                 }
                 result_visited = [*visited, next_candidate["candidate_id"]]
-                result_index = len(result_visited)
+                # Advance the caller's monotonic counter; do not reset to len(visited).
+                result_index = resolved_index + 1
 
     result: dict[str, Any] = {
         "document_type": DOCUMENT_TYPE,
