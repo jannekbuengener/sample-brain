@@ -1,0 +1,445 @@
+{
+  "document_type": "sample_brain.arrangement_32_field_time_contract",
+  "contract_schema_version": "1.0.0",
+  "plane": "normative_contract_schema",
+  "not_runtime_serialization": true,
+  "runtime_implementation_owner_issue": 1086,
+  "issue": 1083,
+  "parent_issues": [679],
+  "depends_on_issues": [1076],
+  "consumes_persistence_owner_issue": 1082,
+  "arrangement_model_consumer_issue": 1084,
+  "exit_marker": "ARRANGEMENT_32_FIELD_TIME_CONTRACT_FROZEN",
+  "canonical_markdown": "docs/ARRANGEMENT_32_FIELD_TIME_CONTRACT.md",
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4,
+    "quarter_notes_per_bar": 4
+  },
+  "fields_per_bar": 4,
+  "bars_per_cycle": 8,
+  "total_fields": 32,
+  "quarter_notes_per_field": 1,
+  "cycle_length_quarter_notes": 32,
+  "sixty_four_fields_in_v1": false,
+  "field_mapping": {
+    "rule": "field_i_equals_quarter_note_position_i",
+    "index_range_inclusive": [0, 31],
+    "positions_quarter_notes": {
+      "0": "0",
+      "1": "1",
+      "2": "2",
+      "3": "3",
+      "4": "4",
+      "5": "5",
+      "6": "6",
+      "7": "7",
+      "8": "8",
+      "9": "9",
+      "10": "10",
+      "11": "11",
+      "12": "12",
+      "13": "13",
+      "14": "14",
+      "15": "15",
+      "16": "16",
+      "17": "17",
+      "18": "18",
+      "19": "19",
+      "20": "20",
+      "21": "21",
+      "22": "22",
+      "23": "23",
+      "24": "24",
+      "25": "25",
+      "26": "26",
+      "27": "27",
+      "28": "28",
+      "29": "29",
+      "30": "30",
+      "31": "31"
+    },
+    "fraction_encoding": "Fraction(i, 1) for field index i"
+  },
+  "representative_boundaries": {
+    "field_0": {"quarter_note": "0", "bar_index_zero_based": 0, "field_in_bar": 0},
+    "field_3": {"quarter_note": "3", "bar_index_zero_based": 0, "field_in_bar": 3},
+    "field_4": {"quarter_note": "4", "bar_index_zero_based": 1, "field_in_bar": 0},
+    "field_7": {"quarter_note": "7", "bar_index_zero_based": 1, "field_in_bar": 3},
+    "field_8": {"quarter_note": "8", "bar_index_zero_based": 2, "field_in_bar": 0},
+    "field_15": {"quarter_note": "15", "bar_index_zero_based": 3, "field_in_bar": 3},
+    "field_16": {"quarter_note": "16", "bar_index_zero_based": 4, "field_in_bar": 0},
+    "field_31": {"quarter_note": "31", "bar_index_zero_based": 7, "field_in_bar": 3, "inside_cycle": true},
+    "cycle_boundary_bar9_start": {"quarter_note": "32", "belongs_to_next_cycle": true, "not_a_field_in_cycle": true}
+  },
+  "bar_boundaries": {
+    "fields_per_bar": 4,
+    "bar_starts_field_indexes": [0, 4, 8, 12, 16, 20, 24, 28],
+    "bar_starts_quarter_notes": ["0", "4", "8", "12", "16", "20", "24", "28"]
+  },
+  "loop_interval_semantics": {
+    "cycle_half_open_interval_quarter_notes": "[0, 32)",
+    "boundary_quarter_note": "32",
+    "boundary_belongs_to_next_cycle": true,
+    "field_31_is_last_in_cycle": true,
+    "no_field_index_32_inside_cycle": true,
+    "no_double_fire_at_cycle_boundary": true,
+    "scheduling_invariant": "Events for cycle N occupy musical positions in [N*32, (N+1)*32). A trigger at pattern-local position p in [0, 32) schedules once per cycle at absolute quarter N*32 + p. The point qn=(N+1)*32 is the start of cycle N+1 only and must not receive a second schedule of cycle-N's last event or cycle-(N+1)'s first event as part of the same planning pass.",
+    "runtime_verification_owner_issue": 1086
+  },
+  "arrangement_repetition_projection": {
+    "block_bars": 16,
+    "block_length_quarter_notes": 64,
+    "pattern_identity_count": 1,
+    "no_second_copied_pattern_state": true,
+    "no_sixty_four_field_persistence": true,
+    "no_qml_mirror_state": true,
+    "cycles": [
+      {
+        "cycle_index": 0,
+        "bars_one_based": [1, 8],
+        "absolute_quarter_offset": "0",
+        "field_n_maps_to_quarter": "n"
+      },
+      {
+        "cycle_index": 1,
+        "bars_one_based": [9, 16],
+        "absolute_quarter_offset": "32",
+        "field_n_maps_to_quarter": "32 + n"
+      }
+    ],
+    "step_mutation_affects_all_projections": true,
+    "consumer_issue": 1084,
+    "notes": "#1084 may consume this projection; #1083 owns time semantics only."
+  },
+  "tempo_map_authority": {
+    "sole_tempo_to_frame_authority": "TempoMap",
+    "module": "src/session_grid.py",
+    "musical_position_type": "exact Fraction quarter notes",
+    "scheduling_chain": [
+      "field_index",
+      "exact_quarter_note_position",
+      "TempoMap.quarter_note_to_frame",
+      "engine_frame"
+    ],
+    "forbidden_authorities": [
+      "field_to_hardcoded_milliseconds",
+      "BeatGrid_as_pattern_clock",
+      "QML_wall_clock_as_musical_authority"
+    ],
+    "beat_grid_role": "analysis_edit_evidence_only_not_pattern_clock",
+    "tempo_change_policy": {
+      "stored_musical_positions_unchanged": true,
+      "future_frame_mapping_via_TempoMap": true,
+      "no_rewrite_mutation_of_pattern_positions": true
+    },
+    "rounding_semantics": "Reuse existing TempoMap.quarter_note_to_frame: one direct Fraction.__round__ from the segment anchor (nearest integer, ties-to-even). Do not redefine rounding.",
+    "canonical_workbench_sample_rate_hz": 48000,
+    "representative_frame_mappings": [
+      {
+        "sample_rate_hz": 48000,
+        "bpm": 120,
+        "quarter_note_to_frame": {
+          "0": 0,
+          "3": 72000,
+          "4": 96000,
+          "7": 168000,
+          "8": 192000,
+          "15": 360000,
+          "16": 384000,
+          "31": 744000,
+          "32": 768000
+        }
+      },
+      {
+        "sample_rate_hz": 48000,
+        "bpm": 140,
+        "quarter_note_to_frame": {
+          "0": 0,
+          "3": 61714,
+          "4": 82286,
+          "7": 144000,
+          "8": 164571,
+          "15": 308571,
+          "16": 329143,
+          "31": 637714,
+          "32": 658286
+        }
+      }
+    ]
+  },
+  "live_legacy_seams": {
+    "inventory_basis": "Verified against current main Pattern/Channel Rack/session store seams; not guessed from issue prose alone.",
+    "tempo_map": {
+      "module": "src/session_grid.py",
+      "class": "TempoMap",
+      "exact_fraction_positions": true
+    },
+    "pattern_core": {
+      "module": "src/pattern_core.py",
+      "pattern_length_field": "length_quarter_notes",
+      "trigger_position_field": "Trigger.position",
+      "trigger_half_open_bound": "0 <= position < length_quarter_notes",
+      "python_owned": true
+    },
+    "channel_rack_v1": {
+      "module": "src/channel_rack.py",
+      "DEFAULT_STEP_COUNT": 16,
+      "DEFAULT_PATTERN_LENGTH_QUARTER_NOTES": "4",
+      "step_spacing_quarter_notes": "1/4",
+      "default_on_positions": "Fraction(i, 4) for i in 0..15",
+      "musical_meaning": "16 sixteenth-note steps inside one 4/4 bar",
+      "must_not_silently_reinterpret_as_32_field": true
+    },
+    "persistence": {
+      "module": "src/workbench_session_store.py",
+      "schema_version": 2,
+      "channel_rack_keys": [
+        "pattern_id",
+        "length_quarter_notes",
+        "step_count",
+        "channels",
+        "triggers"
+      ],
+      "triggers_store_exact_fraction_positions": true
+    },
+    "sequencer_playback": {
+      "module": "src/sequencer_playback.py",
+      "planner": "plan_pattern_once",
+      "uses_TempoMap": true
+    }
+  },
+  "persistence_boundary": {
+    "time_truth_owner_issue": 1083,
+    "track_package_persistence_owner_issue": 1082,
+    "runtime_schema_implementation_owner_issue": 1086,
+    "no_second_persistence_store": true,
+    "must_persist_concepts": [
+      "pattern_identity",
+      "exact_musical_trigger_positions",
+      "thirty_two_field_eight_bar_semantic_version",
+      "migration_state_when_necessary"
+    ],
+    "must_not_persist": [
+      "sixty_four_field_view_as_truth",
+      "duplicated_second_half_pattern_state",
+      "qml_bar_cache_as_musical_truth"
+    ],
+    "notes": "#1083 freezes what must be stored; #1082 owns track-package persistence plane; #1086 implements schema/migration with #1082/#1085."
+  },
+  "legacy_migration": {
+    "forbidden_without_proof": [
+      "index_times_two",
+      "index_times_any_factor",
+      "blind_trigger_copy_as_32_fields",
+      "spread_16_steps_across_32_fields",
+      "replicate_pattern_eight_times",
+      "silent_fractional_trigger_rounding",
+      "silent_reinterpret_canonical_default_on_as_32_field_grid"
+    ],
+    "field_aligned_predicate": "A trigger position p is field-aligned iff p is an exact non-negative integer Fraction and 0 <= p < 32.",
+    "legacy_v1_shape": {
+      "step_count": 16,
+      "length_quarter_notes": "4",
+      "step_index_to_position": "Fraction(step_index, 4)"
+    },
+    "outcomes": {
+      "migrated_empty": {
+        "when": "Recognized legacy v1 shape (step_count=16, length_quarter_notes=4) with zero triggers.",
+        "action": "Set length_quarter_notes=32 and field/step count=32; keep empty trigger list; preserve pattern_id and channels.",
+        "musical_loss": false
+      },
+      "migrated_field_aligned": {
+        "when": "Recognized legacy v1 shape; every trigger position is an exact integer Fraction satisfying 0 <= p < 4 (hence field-aligned under both old bar and new 32-field grid as fields 0..3).",
+        "action": "Keep exact trigger positions unchanged; set length_quarter_notes=32 and field/step count=32; preserve pattern_id/channels.",
+        "musical_loss": false,
+        "notes": "Only positions 0,1,2,3 from the old one-bar window qualify. Positions such as Fraction(1,4) are not field-aligned."
+      },
+      "migration_required": {
+        "when": [
+          "Recognized legacy v1 shape with any non-field-aligned trigger position (including canonical DEFAULT_ON at Fraction(i,4) for i=0..15)",
+          "Recognized legacy v1 shape with mixed field-aligned and off-grid triggers",
+          "Persisted legacy payload that is parseable but not auto-migratable without musical reinterpretation"
+        ],
+        "action": "Do not activate 32-field musical truth automatically. Preserve legacy bytes/in-memory state recoverable. Surface controlled migration_required for #1086. Do not round, stretch, replicate, or invent 32 DEFAULT_ON triggers.",
+        "musical_loss": false,
+        "silent_coercion": false
+      },
+      "migration_hold": {
+        "when": [
+          "Ambiguous legacy mapping where musical intent cannot be proven lossless under field semantics",
+          "User-added channels with unknown/unclassified legacy step semantics beyond recognized v1 shape",
+          "Legacy triggers with positions outside the declared old Pattern bounds"
+        ],
+        "action": "Fail closed / HOLD. No silent coercion. Leave recoverable. #1086 must not invent a mapping.",
+        "silent_coercion": false
+      },
+      "reject_fail_closed": {
+        "when": [
+          "unknown_or_malformed_legacy_step_count",
+          "corrupt_persistence_payload",
+          "malformed_trigger_or_field_type",
+          "invalid_pattern_length"
+        ],
+        "action": "Reject; no activation; no silent repair that changes music."
+      }
+    },
+    "canonical_default_on_v1_classification": "migration_required",
+    "canonical_default_on_v1_evidence": {
+      "positions": ["0", "1/4", "1/2", "3/4", "1", "5/4", "3/2", "7/4", "2", "9/4", "5/2", "11/4", "3", "13/4", "7/2", "15/4"],
+      "field_aligned_count": 4,
+      "off_grid_count": 12,
+      "lossy_if_forced_to_integer_fields": true,
+      "auto_expand_to_32_default_on_forbidden": true
+    }
+  },
+  "default_on_migration": {
+    "historical_persisted_or_in_memory_default_on_v1": {
+      "classification": "migration_required",
+      "must_not_become_32_triggers_automatically": true,
+      "reason": "Legacy DEFAULT_ON is sixteen 16th-note hits in one bar, not thirty-two quarter-note hits across eight bars."
+    },
+    "new_initialization_under_32_field_semantics": {
+      "inherits_legacy_16_step_default_on_policy": false,
+      "oneshot_seed_policy": "empty_triggers",
+      "loops": "empty_triggers",
+      "ambiguous_classification": "empty_triggers",
+      "empty_channels": "empty_triggers",
+      "user_added_channels": "empty_triggers_until_user_sets_fields",
+      "manually_edited_all_off_patterns": "remain_empty_no_phantom_reseed",
+      "no_phantom_triggers": true,
+      "notes": "Fresh 32-field initialization must not invent DEFAULT_ON density from the old 16-step policy. A denser future seed requires a separate explicit owner decision outside this freeze."
+    }
+  },
+  "fail_closed_cases": [
+    {
+      "id": "field_index_negative",
+      "input": "field < 0",
+      "outcome": "reject"
+    },
+    {
+      "id": "field_index_ge_32",
+      "input": "field >= 32",
+      "outcome": "reject"
+    },
+    {
+      "id": "malformed_field_type",
+      "input": "non-int field index (bool, float, str, Fraction-as-index, etc.)",
+      "outcome": "reject"
+    },
+    {
+      "id": "trigger_at_or_outside_cycle_end_in_one_cycle_truth",
+      "input": "trigger position >= 32 or < 0 in one-cycle Pattern truth of length 32",
+      "outcome": "reject"
+    },
+    {
+      "id": "invalid_pattern_length",
+      "input": "length_quarter_notes != 32 under activated 32-field semantic version",
+      "outcome": "reject"
+    },
+    {
+      "id": "unknown_or_malformed_legacy_step_count",
+      "input": "step_count missing, non-int, <=0, or not the recognized legacy 16 when claiming legacy v1 migration",
+      "outcome": "reject_fail_closed"
+    },
+    {
+      "id": "legacy_trigger_outside_old_pattern_bounds",
+      "input": "trigger position not in [0, old length)",
+      "outcome": "migration_hold"
+    },
+    {
+      "id": "ambiguous_legacy_mapping",
+      "input": "cannot prove lossless field mapping",
+      "outcome": "migration_required_or_migration_hold"
+    },
+    {
+      "id": "corrupt_persistence_payload",
+      "input": "unparseable/corrupt channel_rack or package musical payload",
+      "outcome": "reject_fail_closed"
+    },
+    {
+      "id": "user_added_unknown_legacy_state",
+      "input": "user-added channels with unrecognized legacy step semantics",
+      "outcome": "migration_hold"
+    },
+    {
+      "id": "sixty_four_field_state",
+      "input": "any attempt to persist or activate 64-field sequencer state as v1 truth",
+      "outcome": "reject"
+    }
+  ],
+  "cross_contract_boundaries": {
+    "1082": "Owns track package / persistence plane; #1083 does not invent a second store",
+    "1084": "Consumes 16-bar projection / Pattern identity semantics; does not redefine field→quarter mapping",
+    "1085": "Implements track package runtime including musical payload persistence integration",
+    "1086": "Sole runtime owner of 32-field Pattern timing, scheduling verification, and migration execution"
+  },
+  "required_later_runtime_vectors": [
+    {
+      "id": 1,
+      "name": "exact_quarter_positions_all_32_fields",
+      "owner_issue": 1086
+    },
+    {
+      "id": 2,
+      "name": "representative_engine_frames_two_bpm_via_TempoMap",
+      "owner_issue": 1086,
+      "pinned_contract_sample_rate_hz": 48000,
+      "pinned_contract_bpms": [120, 140]
+    },
+    {
+      "id": 3,
+      "name": "no_double_fire_at_8_bar_loop_wrap",
+      "owner_issue": 1086
+    },
+    {
+      "id": 4,
+      "name": "16_bar_block_two_identical_cycles_one_pattern_id",
+      "owner_issue": 1086
+    },
+    {
+      "id": 5,
+      "name": "toggle_one_field_changes_both_repetitions_without_copy",
+      "owner_issue": 1086
+    },
+    {
+      "id": 6,
+      "name": "tempo_change_preserves_musical_identity_remaps_frames",
+      "owner_issue": 1086
+    },
+    {
+      "id": 7,
+      "name": "serialize_restore_round_trip_32_field_pattern",
+      "owner_issue": 1086
+    },
+    {
+      "id": 8,
+      "name": "legacy_16_step_fixture_follows_frozen_migration_outcome",
+      "owner_issue": 1086
+    },
+    {
+      "id": 9,
+      "name": "empty_and_user_added_channels_no_phantom_triggers",
+      "owner_issue": 1086
+    },
+    {
+      "id": 10,
+      "name": "malformed_out_of_range_field_or_trigger_fails_closed",
+      "owner_issue": 1086
+    }
+  ],
+  "hard_out_of_scope": [
+    "runtime_pattern_core_changes",
+    "runtime_channel_rack_changes",
+    "runtime_session_grid_changes",
+    "runtime_sequencer_playback_changes",
+    "runtime_workbench_session_store_changes",
+    "qml",
+    "arrangement_masks_groups_markers",
+    "sixty_four_field_sequencer",
+    "alternate_second_half_pattern_variants",
+    "finer_sequencer_input_grids",
+    "live_midi_multi_track",
+    "private_samples_dbs_caches_credentials_machine_paths"
+  ]
+}
