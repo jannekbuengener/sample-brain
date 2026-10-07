@@ -119,7 +119,7 @@ The following apply unless re-evaluated via [`PRODUCT_WORKFLOW_CANON.md`](PRODUC
 - **No marketplace** — no sample store, ratings, purchases, or community features
 - **No generative songwriting** — no AI melody/chord invention, no automatic full-track arrangement authorship, no mastering
 - **No heavy analysis in the audio thread** — scanning, DB access, ML, and variant rendering run asynchronously; realtime playback uses prepared/cached audio only
-- **No full DAW replacement** — Channel Rack + later Arrangement are Workbench tools, not a generic DAW
+- **No full DAW replacement** — Arrangement is an ACTIVE product mode (#679) with Channel Rack / Step Sequencer as Arrangement capabilities; neither is a generic DAW
 - **No FL-Browser or VST dependency as the main product path** — FL export is CLI fallback; VST is parked (#469); Workbench is primary
 
 ## 6. Target Product Capabilities
