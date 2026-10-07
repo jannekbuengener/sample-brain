@@ -207,6 +207,21 @@ def test_create_transaction_stages(contract: dict) -> None:
     assert failure["large_copy_not_on_realtime_audio_path"] is True
 
 
+def test_destination_eligibility_excludes_repo_checkout(contract: dict, markdown: str) -> None:
+    dest = contract["destination_eligibility"]
+    assert dest["must_not_be_inside_repository_checkout"] is True
+    assert dest["ineligible_outcome"] == "destination_unavailable"
+    assert "repository checkout" in markdown.lower() or "repo checkout" in markdown.lower()
+
+
+def test_successful_fresh_create_requires_open_bind(contract: dict, markdown: str) -> None:
+    success = contract["successful_fresh_create"]
+    assert success["expected_outcome_codes"] == ["open"]
+    assert success["requires_bind_stage_9"] is True
+    assert success["ready_without_bind_is_not_success"] is True
+    assert "Successful fresh create" in markdown
+
+
 def test_lifecycle_outcomes_complete_and_separated_from_persistence_status(
     contract: dict, markdown: str
 ) -> None:

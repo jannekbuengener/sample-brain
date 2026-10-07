@@ -137,7 +137,7 @@ Unsupported future `schema_version` → fail-closed (`corrupt_or_unsupported`).
 
 Package creation is **staged and transactional**. Stages:
 
-1. Validate destination / package-root eligibility
+1. Validate destination / package-root eligibility (must not be inside the repository checkout; package destinations belong outside the worktree per [`DATA_AND_ARTIFACT_POLICY.md`](DATA_AND_ARTIFACT_POLICY.md); ineligible → `destination_unavailable`)
 2. Validate draft eligibility
 3. Create sibling staging directory on the **same relevant filesystem** as the final destination when atomic rename/replace is the commit seam
 4. Copy only required media
@@ -146,6 +146,10 @@ Package creation is **staged and transactional**. Stages:
 7. Validate complete package integrity
 8. Commit the complete package into the final visible location (atomic/fail-safe rename or replace from staging)
 9. **Only then** bind it as the active durable track
+
+### Successful fresh create (non-legacy)
+
+A successful Arrangement Entry / Create Track Package on a fresh draft (not a legacy claim) that completes stages 1–9 MUST end in lifecycle outcome exactly **`open`**. Publishing as `ready` without bind does **not** satisfy create success.
 
 ### Failure before commit (before stage 8 success / before stage 9)
 

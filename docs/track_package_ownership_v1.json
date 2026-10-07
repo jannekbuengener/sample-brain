@@ -153,6 +153,17 @@
     "commit_complete_package_to_final_location",
     "bind_active_durable_track"
   ],
+  "destination_eligibility": {
+    "must_not_be_inside_repository_checkout": true,
+    "ineligible_outcome": "destination_unavailable",
+    "notes": "Aligns with DATA_AND_ARTIFACT_POLICY track-package row: packages hold copied private audio and must stay outside the checkout"
+  },
+  "successful_fresh_create": {
+    "expected_outcome_codes": ["open"],
+    "requires_bind_stage_9": true,
+    "ready_without_bind_is_not_success": true,
+    "notes": "Non-legacy Arrangement Entry / Create Track Package happy path; complements vectors 1-15 which emphasize portability/failure/migration cases"
+  },
   "create_failure_before_commit": {
     "no_half_valid_visible_package": true,
     "draft_remains_usable": true,
