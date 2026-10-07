@@ -307,14 +307,26 @@
     {
       "id": 11,
       "name": "valid_legacy_session_claim_all_media",
-      "expected_outcome_codes": ["ready", "open"],
-      "notes": "Relative refs after success; legacy not silently deleted by this contract"
+      "expected_outcome_codes": ["open"],
+      "notes": "Explicit claim/create with all media: commit + bind active durable track (stage 9) => open; relative refs; legacy not silently deleted by this contract"
     },
     {
       "id": 12,
       "name": "legacy_session_missing_media",
-      "expected_outcome_codes": ["missing_media", "migration_required", "migration_failed"],
-      "notes": "Truthful; legacy recoverable"
+      "expected_outcome_codes": ["migration_required", "missing_media"],
+      "operations": [
+        {
+          "op": "detect_supported_legacy_with_missing_media",
+          "expected_outcome_codes": ["migration_required"],
+          "notes": "Pre-claim detection only; no package published; legacy untouched"
+        },
+        {
+          "op": "attempt_claim_legacy_with_missing_media",
+          "expected_outcome_codes": ["missing_media"],
+          "notes": "Explicit claim fails truthfully on missing required media; no visible package; legacy recoverable; do not use migration_failed as a substitute for missing_media"
+        }
+      ],
+      "notes": "Detection and attempted claim are separate phases with exact outcomes"
     },
     {
       "id": 13,

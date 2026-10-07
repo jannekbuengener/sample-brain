@@ -294,8 +294,8 @@ These are **contract vectors** for later #1085 runtime acceptance. This freeze o
 | 8 | Path traversal (`..`) in media ref | `path_escape_rejected` |
 | 9 | Absolute media escape | `path_escape_rejected` |
 | 10 | Symlink / reparse escape outside package root | `path_escape_rejected` |
-| 11 | Valid legacy session claim with all media | successful package; relative refs; legacy recoverable until explicit post-success policy (no silent delete required by this contract) |
-| 12 | Legacy session with missing media | truthful missing-media / controlled migration outcome; legacy recoverable |
+| 11 | Valid legacy session claim with all media | explicit claim/create succeeds through bind → **`open`**; relative refs; legacy not silently deleted by this contract |
+| 12 | Legacy session with missing media | **Detection** → `migration_required` (no package). **Attempted claim** → `missing_media`; no visible package; legacy recoverable. Do not collapse detection into claim failure. |
 | 13 | Failed migration | legacy recoverable; `migration_failed` (or equivalent controlled HOLD) |
 | 14 | Post-create musical mutation + restart | same track state restored from package |
 | 15 | Save failure after create | `write_failed`; no false success |

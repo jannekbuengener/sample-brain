@@ -250,6 +250,27 @@ def test_validation_vectors_1_to_15_complete_and_unique(contract: dict) -> None:
         )
 
 
+def test_vector_11_successful_legacy_claim_binds_open(contract: dict) -> None:
+    vector = next(v for v in contract["validation_vectors"] if v["id"] == 11)
+    assert vector["expected_outcome_codes"] == ["open"]
+
+
+def test_vector_12_splits_detection_from_missing_media_claim(contract: dict) -> None:
+    vector = next(v for v in contract["validation_vectors"] if v["id"] == 12)
+    ops = {item["op"]: item for item in vector["operations"]}
+    assert ops["detect_supported_legacy_with_missing_media"]["expected_outcome_codes"] == [
+        "migration_required"
+    ]
+    assert ops["attempt_claim_legacy_with_missing_media"]["expected_outcome_codes"] == [
+        "missing_media"
+    ]
+    per_op_union: set[str] = set()
+    for item in vector["operations"]:
+        per_op_union.update(item["expected_outcome_codes"])
+    assert set(vector["expected_outcome_codes"]) == per_op_union
+    assert "migration_failed" not in per_op_union
+
+
 def test_vector_7_repeated_ops_have_deterministic_per_operation_outcomes(
     contract: dict,
 ) -> None:
