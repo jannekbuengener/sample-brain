@@ -250,16 +250,51 @@ def test_validation_vectors_1_to_15_complete_and_unique(contract: dict) -> None:
         )
 
 
+def test_vector_7_repeated_ops_have_deterministic_per_operation_outcomes(
+    contract: dict,
+) -> None:
+    vector = next(v for v in contract["validation_vectors"] if v["id"] == 7)
+    ops = {item["op"]: item for item in vector["operations"]}
+    assert ops["repeated_create_at_existing_package_root"]["expected_outcome_codes"] == [
+        "destination_unavailable"
+    ]
+    assert ops["repeated_open_same_package"]["expected_outcome_codes"] == ["open"]
+    assert set(ops["repeated_register_same_package_root"]["expected_outcome_codes"]) == {
+        "ready",
+        "open",
+    }
+    conflict = ops["register_conflict_different_package_same_key"]
+    assert set(conflict["expected_outcome_codes"]) <= {"ready", "open"}
+    assert "reject" in conflict["notes"].lower() or "fail closed" in conflict["notes"].lower()
+    # Top-level union must equal the per-op union (no leftover ambiguous codes).
+    per_op_union: set[str] = set()
+    for item in vector["operations"]:
+        per_op_union.update(item["expected_outcome_codes"])
+    assert set(vector["expected_outcome_codes"]) == per_op_union
+    assert "draft" not in per_op_union
+
+
 def test_cross_contract_boundaries(contract: dict, markdown: str) -> None:
     boundaries = contract["cross_contract_boundaries"]
+    expected_snippets = {
+        "1083": "32-field",
+        "1084": "Arrangement",
+        "1078": "transition",
+        "1085": "runtime",
+    }
     for key, issue in CROSS_CONTRACT_OWNERS.items():
-        assert key in boundaries
-        assert str(issue) in boundaries[key] or issue == int(key)
-        assert f"#{issue}" in markdown or str(issue) in markdown
+        text = boundaries[key]
+        assert isinstance(text, str) and text.strip(), f"missing boundary text for {key}"
+        assert str(issue) in text or f"#{issue}" in markdown
+        needle = expected_snippets[key].lower()
+        assert needle in text.lower(), f"boundary {key} missing owner cue {needle!r}: {text!r}"
+        assert f"#{issue}" in markdown
     reserved = contract["reserved_extension_ownership"]
     assert reserved["arrangement"]["owner_issue"] == 1084
     assert reserved["arrangement"]["semantics_defined_here"] is False
     assert reserved["midi"]["semantics_defined_here"] is False
+    assert "1085" in boundaries
+    assert boundaries["1085"].lower().find("runtime") >= 0
 
 
 def test_demo_export_remains_distinct(contract: dict, markdown: str) -> None:

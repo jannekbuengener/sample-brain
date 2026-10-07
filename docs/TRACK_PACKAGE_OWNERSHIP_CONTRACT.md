@@ -290,7 +290,7 @@ These are **contract vectors** for later #1085 runtime acceptance. This freeze o
 | 4 | Destination full / unwritable | `destination_unavailable`; no visible half-package |
 | 5 | Interrupted copy before commit | `copy_interrupted`; no visible half-package; draft usable |
 | 6 | Corrupt or unsupported manifest on open/validate | `corrupt_or_unsupported`; no activation |
-| 7 | Repeated create / open / register | deterministic idempotent or conflict outcome; no duplicate corrupt state |
+| 7 | Repeated create / open / register | **Per operation:** repeated create at existing package root → `destination_unavailable`; repeated open same package → `open`; repeated register same root → idempotent (`ready` or `open`, no activation); register conflict (different package, same key) → reject, preserve prior registration, active track unchanged |
 | 8 | Path traversal (`..`) in media ref | `path_escape_rejected` |
 | 9 | Absolute media escape | `path_escape_rejected` |
 | 10 | Symlink / reparse escape outside package root | `path_escape_rejected` |

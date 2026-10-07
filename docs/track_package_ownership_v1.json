@@ -264,8 +264,30 @@
     {
       "id": 7,
       "name": "repeated_create_open_register",
-      "expected_outcome_codes": ["ready", "open", "draft", "destination_unavailable"],
-      "notes": "Deterministic idempotent or conflict; no duplicate corrupt state"
+      "expected_outcome_codes": ["destination_unavailable", "open", "ready"],
+      "operations": [
+        {
+          "op": "repeated_create_at_existing_package_root",
+          "expected_outcome_codes": ["destination_unavailable"],
+          "notes": "Existing non-empty package root must not be overwritten; no second package published"
+        },
+        {
+          "op": "repeated_open_same_package",
+          "expected_outcome_codes": ["open"],
+          "notes": "Idempotent: same package remains/becomes the active durable track"
+        },
+        {
+          "op": "repeated_register_same_package_root",
+          "expected_outcome_codes": ["ready", "open"],
+          "notes": "Idempotent no-op on listing; does not activate; lifecycle stays ready if listed-not-open or open if already open"
+        },
+        {
+          "op": "register_conflict_different_package_same_key",
+          "expected_outcome_codes": ["ready", "open"],
+          "notes": "Fail closed: reject new registration; preserve prior registration; do not change active track; do not overwrite package files"
+        }
+      ],
+      "notes": "Per-operation outcomes are normative for #1085; do not treat this vector as an unordered union of unrelated codes"
     },
     {
       "id": 8,
