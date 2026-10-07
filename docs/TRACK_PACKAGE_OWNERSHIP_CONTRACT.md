@@ -284,8 +284,8 @@ These are **contract vectors** for later #1085 runtime acceptance. This freeze o
 
 | # | Vector | Expected outcome class |
 |---|---|---|
-| 1 | Package round-trip from a different Windows path; original library unavailable | `open` / `ready` with media resolved from package |
-| 2 | Original library unavailable on open of complete package | still `open` / `ready` (no library dependency) |
+| 1 | Package round-trip from a different Windows path; original library unavailable | explicit open → **`open`**; media resolved from package |
+| 2 | Original library unavailable on open of complete package | explicit open → **`open`** (no library dependency; not mere register/`ready`) |
 | 3 | Missing source media during create | create fails; draft usable; no visible package; `missing_media` (or create failure mapped thereto) |
 | 4 | Destination full / unwritable | `destination_unavailable`; no visible half-package |
 | 5 | Interrupted copy before commit | `copy_interrupted`; no visible half-package; draft usable |

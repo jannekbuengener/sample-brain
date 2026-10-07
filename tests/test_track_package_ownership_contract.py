@@ -61,6 +61,7 @@ REQUIRED_GLOBAL = (
 REQUIRED_TRACK = (
     "live_kit_assignment_identity_state",
     "pattern_channel_rack_musical_state",
+    "track_musical_clock_resume_fields",
     "package_manifest_schema_version",
     "relative_media_references",
 )
@@ -248,6 +249,12 @@ def test_validation_vectors_1_to_15_complete_and_unique(contract: dict) -> None:
         assert set(outcomes) <= allowed, (
             f"vector {vector['id']} has unknown codes: {set(outcomes) - allowed}"
         )
+
+
+def test_vectors_1_and_2_explicit_open_require_open(contract: dict) -> None:
+    for vector_id in (1, 2):
+        vector = next(v for v in contract["validation_vectors"] if v["id"] == vector_id)
+        assert vector["expected_outcome_codes"] == ["open"], vector
 
 
 def test_vector_11_successful_legacy_claim_binds_open(contract: dict) -> None:

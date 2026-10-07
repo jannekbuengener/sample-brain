@@ -228,14 +228,14 @@
     {
       "id": 1,
       "name": "package_round_trip_other_windows_path",
-      "expected_outcome_codes": ["open", "ready"],
-      "notes": "Original library unavailable; media resolve from package"
+      "expected_outcome_codes": ["open"],
+      "notes": "Explicit open after relocate; original library unavailable; media resolve from package; binds active track"
     },
     {
       "id": 2,
       "name": "original_library_unavailable_on_open",
-      "expected_outcome_codes": ["open", "ready"],
-      "notes": "Complete package has no library-root dependency"
+      "expected_outcome_codes": ["open"],
+      "notes": "Explicit open of complete package with no library-root dependency binds active track (not mere ready/register)"
     },
     {
       "id": 3,
