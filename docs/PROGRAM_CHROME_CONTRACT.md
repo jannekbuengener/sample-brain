@@ -80,6 +80,14 @@ Classification of common chrome / historical terms:
 
 **Live Kit** reveal/collapse remains owned by existing progressive-disclosure / adapter seams (#845 and current commands). Program chrome must not invent a second Live Kit state owner. When a center control still names Live Kit historically, treat it as Edit-tool summon/reveal — not mode navigation.
 
+| Session state | Center **Live Kit** chrome |
+|---|---|
+| Active source, `live_kit_materialized == false` | Visible label may name Live Kit; the action is **disabled / inert**. It must **not** materialize the Live Kit merely by activating this program-chrome control. Progressive disclosure stays owned by the existing Add-to-Kit / materialization path. |
+| After materialization (`live_kit_materialized == true`) | Uses **only** the existing Live Kit presentation / reveal / collapse seams (#845 and current adapter commands). No second loader, no new panel owner. |
+
+#831 must implement that table; it must not invent a parallel Live Kit domain or
+materialization path from program chrome.
+
 **Arrangement** mode navigation is gated by docs-frozen `arrangement_mode_enabled` (default False; see `WORKBENCH_FEATURE_SETTINGS.md`) and later #1078/#1082 eligibility. **Live** remains unavailable / parked under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) until explicit re-entry.
 
 ## Footer reuse

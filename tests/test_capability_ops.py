@@ -125,8 +125,9 @@ def test_parked_and_visual_accept_present() -> None:
     assert "VISUAL_ACCEPT_PENDING" in block
     assert "VISUAL_ACCEPT_PASS" in block
     assert "VISUAL_ACCEPT_FAIL" in block
-    # Screen 2 (#675/#678) reactivated by Owner-GO; Screen 3 remains parked.
-    assert "Screen 3 #679" in block
+    # Arrangement #679 reactivated; later Live remains the parked product surface.
+    assert "later Live #1088" in block
+    assert "Screen 3 #679" not in block
     assert "#675/#678" not in block
     assert "explicit_owner_go" in block
 

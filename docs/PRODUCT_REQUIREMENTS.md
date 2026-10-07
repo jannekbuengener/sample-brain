@@ -147,12 +147,17 @@ Scan  →  Analyze  →  Embed  →  Index  →  Search  →  Export
 Canonical workflow: [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md), [`WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md).
 
 ```text
-┌─────────────┬──────────────────────────────────────────────┐
-│             │  ALL SAMPLES        HARMONIC MATCHES        │
-│  LIBRARY    │                                              │
-│  / SOURCES  ├──────────────────────────────────────────────┤
-│             │  LIVE KIT / RACK / STEP-SEQUENCER           │
-└─────────────┴──────────────────────────────────────────────┘
+Product modes:  Edit  →  Arrangement  →  later Live (#1088)
+
+Edit contains:
+  LIBRARY / SOURCES | ALL SAMPLES | HARMONIC MATCHES | classic LIVE KIT (tool)
+
+Arrangement contains:
+  STEP SEQUENCER / Pattern programming | song structure (#679 ACTIVE)
+
+Live:
+  later performance perspective — parked under #1088
+
   fed by: Library / Matching / Context / Transform cores
   optional parked path: VST/host plugin (#469)
 ```
@@ -160,18 +165,18 @@ Canonical workflow: [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md), [`
 - **Library Intelligence** — scan, audio analysis, autotype, keywords, title normalisation, canonical metadata
 - **Harmonic & Rhythmic Matching** — key/BPM compatibility, semi-tone suggestions, groove-fit
 - **Track Context Analysis** — derive track profile and missing-layer hypotheses from marked files or stems
-- **Realtime Fit & Transform Engine** — variant-based recommendations (optional; not required for Channel Rack v1)
-- **Local Producing Workspace** — one persistent Workbench above; VST-first and multi-screen page language are superseded
+- **Realtime Fit & Transform Engine** — variant-based recommendations (optional; not required for Pattern/Rack foundation)
+- **Local Producing Workspace** — Edit → Arrangement → later Live; VST-first, multi-screen pages, and exclusive Single-Workspace-only navigation are superseded
 
 ### Long-term (EPIC 3-6 + beyond)
 
 ```text
-CLI Library  →  One persistent local Workbench
+CLI Library  →  Edit → Arrangement → later Live Workbench
                   │
                   ├── Hybrid ranking (semantic + structured metadata)
                   ├── Optional local FastAPI service
                   ├── Optional parked VST/host plugin over same core
-                  └── DSP-based variant generation (pitch, time, stretch, reverse, slice) — not Channel Rack v1 prerequisite
+                  └── DSP-based variant generation (pitch, time, stretch, reverse, slice) — not Arrangement v1 prerequisite
 ```
 
 - FL Studio Browser export remains **legacy/fallback**
