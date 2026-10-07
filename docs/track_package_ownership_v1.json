@@ -20,6 +20,23 @@
     ],
     "notes": "Caller supplies package root. media/ holds only required portable media. track_package.json is the sole entrypoint."
   },
+  "required_package_payload_concepts": {
+    "schema_version": true,
+    "package_kind": true,
+    "track_id": true,
+    "media_index_entry_fields": ["media_id", "relpath"],
+    "musical_fields": ["live_kit", "channel_rack", "master_bpm", "sync_enabled"],
+    "channel_rack_optional": true,
+    "notes": "Normative field classes for future runtime serialization (#1085). Not the runtime writer itself."
+  },
+  "active_package_precedence": {
+    "after_successful_bind_active_package_outranks_legacy_resume": true,
+    "legacy_workbench_session_remains_recoverable": true,
+    "compose_must_not_silently_restore_legacy_over_bound_package": true,
+    "durable_active_package_pointer_owner_issue": 1085,
+    "pointer_encoding_prescribed_here": false,
+    "notes": "Required so vectors 11/14 can honestly expect open after claim/restart without stale legacy override"
+  },
   "track_id": {
     "stable": true,
     "opaque": true,

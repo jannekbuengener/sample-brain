@@ -120,6 +120,33 @@ def test_package_layout_v1(contract: dict, markdown: str) -> None:
     assert "media/" in markdown
 
 
+def test_required_package_payload_concepts(contract: dict, markdown: str) -> None:
+    concepts = contract["required_package_payload_concepts"]
+    assert concepts["schema_version"] is True
+    assert concepts["package_kind"] is True
+    assert concepts["track_id"] is True
+    assert concepts["media_index_entry_fields"] == ["media_id", "relpath"]
+    assert concepts["musical_fields"] == [
+        "live_kit",
+        "channel_rack",
+        "master_bpm",
+        "sync_enabled",
+    ]
+    for token in ("media_id", "relpath", "live_kit", "master_bpm", "sync_enabled"):
+        assert token in markdown
+
+
+def test_active_package_precedence_over_legacy_resume(contract: dict, markdown: str) -> None:
+    precedence = contract["active_package_precedence"]
+    assert precedence["after_successful_bind_active_package_outranks_legacy_resume"] is True
+    assert precedence["legacy_workbench_session_remains_recoverable"] is True
+    assert precedence["compose_must_not_silently_restore_legacy_over_bound_package"] is True
+    assert precedence["durable_active_package_pointer_owner_issue"] == 1085
+    assert precedence["pointer_encoding_prescribed_here"] is False
+    assert "Active package precedence" in markdown
+    assert "outrank" in markdown.lower() or "precedence" in markdown.lower()
+
+
 def test_track_id_guardrail_does_not_prescribe_uuid_hex(contract: dict, markdown: str) -> None:
     track_id = contract["track_id"]
     assert track_id["stable"] is True
@@ -343,11 +370,13 @@ def test_no_private_absolute_fixture_paths_in_contract_artifacts(
     contract: dict, markdown: str
 ) -> None:
     blob = json.dumps(contract) + "\n" + markdown
-    # Reject private machine-local path fixtures (mentions of forbidden shapes as
-    # rules are allowed; concrete user home / env assignments are not).
-    assert not re.search(r"(?i)[A-Z]:\\Users\\", blob)
+    # Reject concrete machine-local path fixtures across Windows/Linux/macOS shapes.
+    # Placeholder tokens like <track-package-root> remain allowed.
+    assert not re.search(r"(?i)[A-Z]:\\(?:Users|Samples|Temp)\\", blob)
+    assert not re.search(r"(?i)[A-Z]:\\[^\n<>\"]+\.(?:wav|aiff|flac|mp3)\b", blob)
+    assert not re.search(r"(?i)/(?:home|Users)/[A-Za-z0-9._-]+/", blob)
+    assert not re.search(r"(?i)/tmp/[A-Za-z0-9._-]+\.(?:wav|aiff|flac|mp3)\b", blob)
     assert "C:\\Users" not in blob
-    assert "/Users/" not in blob
     assert "SAMPLE_BRAIN_DB_PATH=" not in blob
     assert not re.search(r"(?i)file:///[A-Za-z]:", blob)
 

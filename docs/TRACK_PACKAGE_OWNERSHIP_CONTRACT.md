@@ -116,13 +116,13 @@ Concrete generation / encoding strategy is an **#1085 implementation decision**,
 
 ### Normative package field classes (contract plane)
 
-Required concepts the future runtime serialization must realize:
+Required concepts the future runtime serialization must realize (also pinned in [`track_package_ownership_v1.json`](track_package_ownership_v1.json) under `required_package_payload_concepts`):
 
 - `schema_version` (package schema int; v1 starts at `1`)
 - `package_kind` = `sample_brain_track_package` (distinct from #728 `sample_brain_live_kit`)
 - `track_id` (as above)
-- media index: stable `media_id` + package-relative `relpath` under `media/`
-- `musical` payload: portable remapping of current session-v2 musical truth (`live_kit`, optional `channel_rack`, `master_bpm`, `sync_enabled`) with absolute sample refs rewritten to package-relative media refs on successful create
+- media index entries: stable `media_id` + package-relative `relpath` under `media/`
+- `musical` payload fields: portable remapping of current session-v2 musical truth — `live_kit`, optional `channel_rack`, `master_bpm`, `sync_enabled` — with absolute sample refs rewritten to package-relative media refs on successful create
 
 Reserved optional extension ownership (opaque; no semantics here):
 
@@ -201,6 +201,17 @@ This is **draft / local resume**, not a portable track package.
 | Failure | Leave legacy file byte-identical and recoverable; no silent deletion; no silent overwrite |
 | Unsupported / ambiguous | Controlled HOLD via `migration_failed` or `corrupt_or_unsupported` — not fabricated success |
 | Destruction | **Forbidden** |
+
+### Active package precedence after bind (restart)
+
+After a successful create/claim **and bind** (create transaction stage 9):
+
+- The bound track package is the active durable musical authority
+- A durable active-package pointer / selection record (encoding owned by #1085) must outrank the preserved legacy `workbench_session.json` on subsequent compose/restart
+- Legacy resume remains recoverable and must not be silently deleted
+- Compose must **not** silently restore stale legacy musical state over an already-bound active package
+
+This precedence rule is why vectors 11 and 14 require lifecycle outcome `open` after successful claim/restart. Pointer encoding is not prescribed here.
 
 ## 8. Draft-loss boundary
 
