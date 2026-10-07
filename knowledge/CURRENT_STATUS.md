@@ -17,7 +17,7 @@ Do **not** infer current issue counts, PR counts, or the current `main` SHA from
 
 ## Current Operational Picture
 
-At the 2026-10-01 reconciliation, durable system state is as follows. This is orientation, not a frozen issue count; query GitHub before execution. Open issues are not automatically active work.
+At the 2026-10-07 reconciliation, durable system state is as follows. This is orientation, not a frozen issue count; query GitHub before execution. Open issues are not automatically active work.
 
 ### Current product navigation (Edit → Arrangement → later Live)
 

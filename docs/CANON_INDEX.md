@@ -20,7 +20,7 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 | Product producing flow | `docs/PRODUCT_WORKFLOW_CANON.md` | ACTIVE_CANON | Edit → Arrangement → later Live (#1075/#1076). Progressive disclosure + Python-owned musical truth retained. VST3 remains parked. |
 | Edit workspace geometry / progressive disclosure | `docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md` | ACTIVE_SUPPORTING | #905-era Owner Decision A retained as supporting Edit geometry + progressive disclosure. Exclusive Single-Workspace-only navigation thesis superseded on conflict by #1075/#1076. #908 historical Rack projection evidence; #954 Edit drawer geometry. |
 | Product requirements | `docs/PRODUCT_REQUIREMENTS.md` | ACTIVE_CANON | Product intent and non-goals; newer explicit canon overrides superseded historical framing. |
-| System requirements | `docs/SYSTEM_REQUIREMENTS.md` | ACTIVE_CANON | Functional/non-functional system contract. |
+| System requirements | `docs/SYSTEM_REQUIREMENTS.md` | ACTIVE_CANON | Functional/non-functional system contract. Product-navigation wording (e.g. CST-PLUGIN-02 Screen 1 → Live Kit → Channel Rack → Arrangement) is **superseded for navigation** by [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md) / #1075/#1076 (`Edit → Arrangement → later Live`); do not treat that legacy CST row as current mode authority. |
 | Architecture | `docs/TARGET_ARCHITECTURE.md` | ACTIVE_CANON | Current vs target architecture and ownership boundaries. |
 | Realtime Workbench boundary | `docs/REALTIME_WORKBENCH_SCOPE.md` | ACTIVE_CANON | Local realtime scope; not a general DAW authorization. |
 | Data / artifacts | `docs/DATA_AND_ARTIFACT_POLICY.md` | ACTIVE_CANON | Private/local/generated data boundary. |
