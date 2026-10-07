@@ -88,7 +88,7 @@ Default materialized Browser geometry:
 | Library / Sources | Stable left rail; remains as orientation |
 | Main sample browser / playlist | Dominant upper workspace; central browse and selection context |
 | Harmonic Matches | Contextual right Browser extension; it and Library use equal default relative side proportions, but remain independently resizable |
-| Live Kit / Rack / Step-Sequencer | Contextual bottom **overlay drawer** scoped exactly to the current Browser workspace; not a separate Rack page and never a permanent height reservation |
+| Classic Live Kit (Edit tool) | Contextual bottom **overlay drawer** scoped exactly to the current Browser/Edit workspace; not a top-level mode, not Arrangement Entry, and never a permanent height reservation. Historical #905/#908 Rack/Step-Sequencer projection into this drawer is delivery evidence — product placement of Step Sequencer is Arrangement (#679), not mandatory Edit Live Kit content. |
 
 ## 6. Live Kit ↔ Rack projection
 

@@ -160,14 +160,15 @@ Python Core/Controller/Audio/Catalog -> autoritativ und wiederzuverwenden
 ```
 
 `src/workbench_qml.py` ist die kanonische QML-Shell. Geschlossene historische
-UI-Epics (#503 Migration, #691 Calm Adaptive Workspace; frühere „Screen-1“-
-Benennung) sind **historische Evidence**, kein aktiver Arbeitsstatus und kein
-Parent für neue Slices. Neue Workbench-Arbeit braucht ein **neues scoped Issue
-unter #905**, den Renderer-Canon und den GitHub-Live-State. Tkinter bleibt als
-Legacy/Fallback/Verhaltensreferenz erhalten; neue Workbench-Visuals werden nicht
-in Tk autorisiert. Python Core/Controller/Audio/Catalog bleiben autoritativ und
-werden in QML nur dünn adaptiert. Aktuelle Produktnavigation ist Single Workspace,
-nicht Screen-1/2/3-Seiten.
+UI-Epics (#503 Migration, #691 Calm Adaptive Workspace, #905 Single Workspace;
+frühere „Screen-1“-Benennung) sind **historische Evidence**, kein aktiver
+Arbeitsstatus und kein Parent für neue Slices. Neue Workbench-Arbeit braucht ein
+**neues scoped Issue unter #1075 / #679 / #1069**, den Renderer-Canon und den
+GitHub-Live-State. Tkinter bleibt als Legacy/Fallback/Verhaltensreferenz
+erhalten; neue Workbench-Visuals werden nicht in Tk autorisiert. Python
+Core/Controller/Audio/Catalog bleiben autoritativ und werden in QML nur dünn
+adaptiert. Aktuelle Produktnavigation ist **Edit → Arrangement → later Live**,
+nicht Screen-1/2/3-Seiten und nicht exclusive Single-Workspace-only Modes.
 
 ---
 
