@@ -75,6 +75,29 @@ Merge only when **all** of the following are true on the final head:
 
 Then, and only then: **MERGE** (still requires explicit merge-GO where agent policy demands it).
 
+## Final delivery / merge report (measurable)
+
+Before claiming merge readiness or merging, the final delivery / merge report **must** state measurable review counts for the final head:
+
+```text
+REVIEW COMMENTS:
+  total=<n>
+  fixed=<n>
+  answered_or_na=<n>
+  unreviewed=0
+  unresolved_threads=0
+```
+
+Counting rules:
+
+- `total` — relevant review points on the final head (conversation, inline, threads, submitted reviews, bot/automated)
+- `fixed` — dispositioned `FIXED`
+- `answered_or_na` — dispositioned `ANSWERED` / `EXPLAINED` / `NOT_APPLICABLE` / `DUPLICATE`
+- `unreviewed` — unread or undispositioned points; must be `0` for merge readiness
+- `unresolved_threads` — open inline review threads; must be `0` for merge readiness
+
+`unreviewed=0` and `unresolved_threads=0` are required merge-readiness predicates. Disposition vocabulary remains `FIXED` / `ANSWERED` / `EXPLAINED` / `NOT_APPLICABLE` / `DUPLICATE` as defined above. Do not invent a parallel status layer for this report.
+
 ## Failure rule (post-merge discovery)
 
 If after merge it is found that relevant review feedback existed pre-merge but was unchecked:
@@ -95,12 +118,12 @@ Ignoring review feedback is a **delivery-process failure**, not a normal technic
 | Surface | Role |
 |---------|------|
 | `docs/CI_DEGRADED_MODE.md` | CI readiness / degraded infra exceptions; `CI_GREEN` default |
-| `docs/BRANCH_PROTECTION.md` | Live GitHub ruleset facts (including required thread resolution) |
+| `docs/BRANCH_PROTECTION.md` | Live GitHub ruleset facts (approvals, stale-review dismissal, thread resolution, checks) |
 | This document | Process gate: feedback must be seen, assessed, dispositioned, and closed on the final head |
 | `.cursor/agents/sample-brain-quality-gatekeeper.md` | Read-only merge-gate caller; must HOLD when this gate fails |
 | `.cursor/agents/sample-brain-pr-packager.md` | Packaging readiness; must not report READY_FOR_MERGE while this gate fails |
 
-Branch protection’s required thread resolution is **necessary but not sufficient**: disposition and top-level comment handling still apply.
+Live ruleset enforcement (when present) is **necessary but not sufficient**. This process gate still requires disposition and resolved inline threads before merge, even when the live ruleset does not require thread resolution or approvals. See `docs/BRANCH_PROTECTION.md` for current GitHub facts.
 
 ## Agent status tokens (optional reporting)
 
