@@ -18,7 +18,7 @@ Define the smallest Python-owned musical model so a later sequencer can fire sam
 | **Channel** | Stable instrument lane with opaque `channel_id`. May reference a sample path and optionally Live Kit provenance. Does not own audio bytes. Does not imply "exactly one canonical Live Kit slot". |
 | **Pattern** | Finite loop of musical length that holds triggers for one or more channels. |
 | **Trigger / Event** | Point trigger: at musical position P, fire channel C (optional velocity later). No pitch/stretch required for v1. |
-| **Musical position** | Session grid position derived from existing `TempoMap` (quarter notes → bar/beat). Not source `BeatGrid`. Not wall-clock ms as authority. |
+| **Musical position** | Session grid position derived from existing `TempoMap` (quarter notes → bar/beat). Not source `BeatGrid`. Not wall-clock ms as authority. Arrangement v1 field indexing (32 fields / 8 bars, field `i` → quarter-note `i`) is frozen in [`ARRANGEMENT_32_FIELD_TIME_CONTRACT.md`](ARRANGEMENT_32_FIELD_TIME_CONTRACT.md) (#1083); this Pattern Core doc does not redefine that mapping. |
 | **Slot / channel ID** | Stable identifier independent of display labels. |
 
 ## Stable IDs
