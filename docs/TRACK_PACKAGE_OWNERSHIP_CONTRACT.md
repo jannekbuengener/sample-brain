@@ -297,7 +297,7 @@ These are **contract vectors** for later #1085 runtime acceptance. This freeze o
 | 11 | Valid legacy session claim with all media | explicit claim/create succeeds through bind → **`open`**; relative refs; legacy not silently deleted by this contract |
 | 12 | Legacy session with missing media | **Detection** → `migration_required` (no package). **Attempted claim** → `missing_media`; no visible package; legacy recoverable. Do not collapse detection into claim failure. |
 | 13 | Failed migration | legacy recoverable; `migration_failed` (or equivalent controlled HOLD) |
-| 14 | Post-create musical mutation + restart | same track state restored from package |
+| 14 | Post-create musical mutation + restart | same track state restored and rebound → **`open`** |
 | 15 | Save failure after create | `write_failed`; no false success |
 
 Windows evidence for #1085 must use synthetic / repo-safe media only.

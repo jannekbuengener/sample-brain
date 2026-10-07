@@ -336,8 +336,8 @@
     {
       "id": 14,
       "name": "post_create_mutation_plus_restart",
-      "expected_outcome_codes": ["open", "ready"],
-      "notes": "Same track state restored from package"
+      "expected_outcome_codes": ["open"],
+      "notes": "After post-create mutation and restart, same track state is restored and rebound as the active durable track (open)"
     },
     {
       "id": 15,

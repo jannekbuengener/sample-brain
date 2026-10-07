@@ -262,6 +262,11 @@ def test_vector_11_successful_legacy_claim_binds_open(contract: dict) -> None:
     assert vector["expected_outcome_codes"] == ["open"]
 
 
+def test_vector_14_restart_restores_open_active_track(contract: dict) -> None:
+    vector = next(v for v in contract["validation_vectors"] if v["id"] == 14)
+    assert vector["expected_outcome_codes"] == ["open"]
+
+
 def test_vector_12_splits_detection_from_missing_media_claim(contract: dict) -> None:
     vector = next(v for v in contract["validation_vectors"] if v["id"] == 12)
     ops = {item["op"]: item for item in vector["operations"]}
