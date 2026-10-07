@@ -39,8 +39,9 @@ qtquick = [
     "PySide6>=6.8,<6.12",
 ]
 
-[tool.setuptools]
-packages = ["src"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src", "src.*"]
 
 [tool.ruff]
 target-version = "py312"

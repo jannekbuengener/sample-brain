@@ -80,6 +80,7 @@ internal agent- and process docs are clearly separated.
 | [Analyzer Portable Output Baseline](benchmarks/ANALYZER_PORTABLE_OUTPUT_BASELINE.md) | #960 AQ8 audit: safe/unsafe analyzer projection inventory for #956 |
 | [Analysis Headless Run Contract](benchmarks/SAMPLE_BRAIN_ANALYSIS_HEADLESS_RUN_V1.md) | #1054/#1040 frozen headless request/result + static AQ1/AQ6 adapter registry (no ARVP; no decision tokens) |
 | [Analysis Orchestration Run Contract](benchmarks/SAMPLE_BRAIN_ANALYSIS_ORCHESTRATION_RUN_V1.md) | #1060/#1040 frozen single-shot headless→eval→decision binder (AQ1 proof; opaque ARVP; no optimizer) |
+| [Analysis Candidate Iterator Contract](benchmarks/SAMPLE_BRAIN_ANALYSIS_CANDIDATE_ITERATOR_V1.md) | #1064/#1040 frozen single-shot bounded CALIBRATION next-candidate iterator (AQ1 proof; no scheduler/promotion) |
 | [Validation Reports](validation/README.md) | Local validate_report how-to; committed files there are historical issue evidence |
 
 ## Operations, Process & Infrastructure (internal)

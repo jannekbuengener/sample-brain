@@ -39,6 +39,18 @@ def test_project_metadata_declares_all_direct_core_runtime_dependencies() -> Non
     assert names.isdisjoint(OPTIONAL_ONLY_DEPENDENCIES)
 
 
+def test_setuptools_includes_src_subpackages() -> None:
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    find = data["tool"]["setuptools"]["packages"]["find"]
+    assert find["where"] == ["."]
+    assert "src" in find["include"]
+    assert "src.*" in find["include"]
+    # Documented AQ1 proof provider must ship with the installed distribution.
+    assert (ROOT / "src" / "aq_candidate_search_spaces" / "aq1_tempo.py").is_file()
+    assert (ROOT / "src" / "aq_headless_adapters" / "__init__.py").is_file()
+    assert (ROOT / "src" / "measurement" / "__init__.py").is_file()
+
+
 def test_requirements_file_remains_repeatable_environment_input() -> None:
     lines = [
         line.strip()
