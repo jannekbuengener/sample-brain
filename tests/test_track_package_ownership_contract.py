@@ -412,11 +412,13 @@ def test_no_private_absolute_fixture_paths_in_contract_artifacts(
 ) -> None:
     blob = json.dumps(contract) + "\n" + markdown
     # Reject concrete machine-local sample-path fixtures. Placeholders such as
-    # <track-package-root> remain allowed; prose about forbidden shapes is ok.
+    # <track-package-root> remain allowed; package-relative refs without a
+    # leading drive/UNC/root (e.g. media/kick.wav) remain allowed.
     audio_ext = r"(?:wav|wave|aiff|aif|flac|mp3|ogg|m4a)"
-    assert not re.search(rf"(?i)[A-Z]:\\[^\n<>\"]+\.{audio_ext}\b", blob)
+    assert not re.search(rf"(?i)[A-Z]:[/\\][^\n<>\"]+\.{audio_ext}\b", blob)
+    assert not re.search(rf"(?i)\\\\[^\n<>\"\\]+\\[^\n<>\"]+\.{audio_ext}\b", blob)
     assert not re.search(
-        rf"(?i)/(?:mnt|media|var|opt|data|home|Users|tmp|private)/[^\n<>\"]+\.{audio_ext}\b",
+        rf"(?i)(?<![A-Za-z0-9_])/(?:[^\n<>\"\s/]+/)+\S+\.{audio_ext}\b",
         blob,
     )
     assert not re.search(r"(?i)[A-Z]:\\(?:Users|Samples|Temp)\\", blob)
