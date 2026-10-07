@@ -193,13 +193,13 @@ This is **draft / local resume**, not a portable track package.
 
 | Requirement | Rule |
 |---|---|
-| Detection | Supported legacy file presence + parseable schema → `migration_required` (or equivalent controlled migration outcome). Do **not** auto-create a track package on boot. |
+| Detection | Supported legacy file presence + parseable schema → exactly `migration_required`. Do **not** auto-create a track package on boot. |
 | Claim / migrate | Explicit and deterministic (Arrangement Entry / explicit claim command owned by later implementation under #1085 / #1078 consumers) |
 | Lossless claim | Assert loss-free migration **only** when every required media file copies successfully and musical payload remaps cleanly |
-| Missing media | Truthful `missing_media` / controlled migration outcome — never fabricate success |
+| Missing media on attempted claim | Exactly `missing_media` — never fabricate success; never substitute `migration_failed` |
 | Absolute refs | On successful package creation, rewrite to package-relative refs; never keep absolute legacy sample refs inside a supposedly portable package |
 | Failure | Leave legacy file byte-identical and recoverable; no silent deletion; no silent overwrite |
-| Unsupported / ambiguous | Controlled HOLD via `migration_failed` or `corrupt_or_unsupported` — not fabricated success |
+| Unsupported / ambiguous | Exactly `migration_failed` or `corrupt_or_unsupported` as appropriate — not fabricated success |
 | Destruction | **Forbidden** |
 
 ### Active package precedence after bind (restart)
@@ -310,7 +310,7 @@ These are **contract vectors** for later #1085 runtime acceptance. This freeze o
 | 10 | Symlink / reparse escape outside package root | `path_escape_rejected` |
 | 11 | Valid legacy session claim with all media | explicit claim/create succeeds through bind → **`open`**; relative refs; legacy not silently deleted by this contract |
 | 12 | Legacy session with missing media | **Detection** → `migration_required` (no package). **Attempted claim** → `missing_media`; no visible package; legacy recoverable. Do not collapse detection into claim failure. |
-| 13 | Failed migration | legacy recoverable; `migration_failed` (or equivalent controlled HOLD) |
+| 13 | Failed migration | legacy recoverable; exactly `migration_failed` |
 | 14 | Post-create musical mutation + restart | same track state restored and rebound → **`open`** |
 | 15 | Save failure after create | `write_failed`; no false success; dirty open-package mutations must not silently discard on close/switch until successful retry or explicit discard (`OPEN_PRODUCT_GATE` for UX) |
 

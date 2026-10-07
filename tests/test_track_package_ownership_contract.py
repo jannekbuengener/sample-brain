@@ -396,12 +396,15 @@ def test_no_private_absolute_fixture_paths_in_contract_artifacts(
     contract: dict, markdown: str
 ) -> None:
     blob = json.dumps(contract) + "\n" + markdown
-    # Reject concrete machine-local path fixtures across Windows/Linux/macOS shapes.
-    # Placeholder tokens like <track-package-root> remain allowed.
+    # Reject concrete machine-local sample-path fixtures. Placeholders such as
+    # <track-package-root> remain allowed; prose about forbidden shapes is ok.
+    audio_ext = r"(?:wav|wave|aiff|aif|flac|mp3|ogg|m4a)"
+    assert not re.search(rf"(?i)[A-Z]:\\[^\n<>\"]+\.{audio_ext}\b", blob)
+    assert not re.search(
+        rf"(?i)/(?:mnt|media|var|opt|data|home|Users|tmp|private)/[^\n<>\"]+\.{audio_ext}\b",
+        blob,
+    )
     assert not re.search(r"(?i)[A-Z]:\\(?:Users|Samples|Temp)\\", blob)
-    assert not re.search(r"(?i)[A-Z]:\\[^\n<>\"]+\.(?:wav|aiff|flac|mp3)\b", blob)
-    assert not re.search(r"(?i)/(?:home|Users)/[A-Za-z0-9._-]+/", blob)
-    assert not re.search(r"(?i)/tmp/[A-Za-z0-9._-]+\.(?:wav|aiff|flac|mp3)\b", blob)
     assert "C:\\Users" not in blob
     assert "SAMPLE_BRAIN_DB_PATH=" not in blob
     assert not re.search(r"(?i)file:///[A-Za-z]:", blob)
