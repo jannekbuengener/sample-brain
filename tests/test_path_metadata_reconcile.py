@@ -141,6 +141,10 @@ def test_semantic_sample_type_extraction():
     assert extract_pred_type_claim("open_hat_sizzle.wav") == "HiHat-Open"
     assert extract_pred_type_claim("bass_stab.wav") == "Bass"
     assert extract_pred_type_claim("pad_warm.wav") == "Pad"
+    # Configured aliases from data/filename_tag_regex.json instrument map.
+    assert extract_pred_type_claim("sub_hit.wav") == "Bass"
+    assert extract_pred_type_claim("lead_arp_riff.wav") == "Lead"
+    assert extract_pred_type_claim("shaker_loop.wav") == "Perc"
 
 
 def test_configured_genre_tag_extraction():

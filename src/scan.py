@@ -170,7 +170,17 @@ def run_scan(
     it = iter_audio_files_stream(roots)
     processed = 0
     batch: list[dict] = []
-    scanned_sample_ids: list[int] = []
+
+    def _prepass_batch(sample_ids: list[int]) -> None:
+        # Per-batch pre-pass keeps memory bounded with the scan stream.
+        if not sample_ids:
+            return
+        try:
+            from .path_metadata import run_path_metadata_prepass
+
+            run_path_metadata_prepass(sample_ids)
+        except Exception:
+            pass
 
     # tqdm ohne total (unbekannt) – zeigt laufenden Zähler
     with tqdm(desc="Scanning", unit="file") as bar:
@@ -200,7 +210,7 @@ def run_scan(
             bar.update(1)
 
             if len(batch) >= batch_size:
-                scanned_sample_ids.extend(_flush_scan_batch(engine, batch))
+                _prepass_batch(_flush_scan_batch(engine, batch))
                 batch.clear()
 
             if show_every and processed % show_every == 0:
@@ -209,13 +219,4 @@ def run_scan(
             if limit and processed >= limit:
                 break
 
-        scanned_sample_ids.extend(_flush_scan_batch(engine, batch))
-
-    # Deterministic path-metadata pre-pass (no audio decode). Fail-soft.
-    # Only the samples touched by this scan — never a full-catalog reparse.
-    try:
-        from .path_metadata import run_path_metadata_prepass
-
-        run_path_metadata_prepass(scanned_sample_ids)
-    except Exception:
-        pass
+        _prepass_batch(_flush_scan_batch(engine, batch))

@@ -92,6 +92,15 @@ _PRED_TYPE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 _genre_patterns_cache: list[tuple[str, re.Pattern[str]]] | None = None
+_instrument_patterns_cache: list[tuple[str, re.Pattern[str]]] | None = None
+
+# Map configured filename_tag_regex instrument labels onto classify taxonomy.
+_INSTRUMENT_LABEL_NORMALIZE = {
+    "HiHat": "HiHat-Closed",
+    "Drum": "Drum Loop",
+}
+
+_SAMPLE_ID_QUERY_CHUNK = 400
 
 
 @dataclass(frozen=True)
@@ -155,10 +164,51 @@ def extract_instrument_hint(text: str | None) -> str | None:
     return None
 
 
+def _normalize_instrument_label(label: str) -> str:
+    return _INSTRUMENT_LABEL_NORMALIZE.get(label, label)
+
+
+def _load_regex_map() -> dict[str, Any]:
+    try:
+        if REGEX_MAP_PATH.exists():
+            data = json.loads(REGEX_MAP_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+    except (OSError, json.JSONDecodeError, TypeError):
+        return {}
+    return {}
+
+
+def _load_instrument_patterns() -> list[tuple[str, re.Pattern[str]]]:
+    """Configured instrument patterns from filename_tag_regex.json + builtins."""
+    global _instrument_patterns_cache
+    if _instrument_patterns_cache is not None:
+        return _instrument_patterns_cache
+    patterns: list[tuple[str, re.Pattern[str]]] = list(_PRED_TYPE_PATTERNS)
+    data = _load_regex_map()
+    instrument_map = data.get("instrument") or {}
+    if isinstance(instrument_map, dict):
+        for label, pats in instrument_map.items():
+            if not isinstance(pats, list):
+                continue
+            normalized_label = _normalize_instrument_label(str(label))
+            for pat in pats:
+                if not isinstance(pat, str):
+                    continue
+                try:
+                    patterns.append(
+                        (normalized_label, re.compile(pat, re.IGNORECASE))
+                    )
+                except re.error:
+                    continue
+    _instrument_patterns_cache = patterns
+    return patterns
+
+
 def extract_pred_type_claim(text: str | None) -> str | None:
     """Semantic sample-type claim using classify-aligned taxonomy labels."""
     normalized = _normalized_ref(text)
-    for label, pattern in _PRED_TYPE_PATTERNS:
+    for label, pattern in _load_instrument_patterns():
         match = pattern.search(normalized)
         if match is not None:
             return label
@@ -170,23 +220,19 @@ def _load_genre_patterns() -> list[tuple[str, re.Pattern[str]]]:
     if _genre_patterns_cache is not None:
         return _genre_patterns_cache
     patterns: list[tuple[str, re.Pattern[str]]] = []
-    try:
-        if REGEX_MAP_PATH.exists():
-            data = json.loads(REGEX_MAP_PATH.read_text(encoding="utf-8"))
-            genre_map = data.get("genre") or {}
-            if isinstance(genre_map, dict):
-                for label, pats in genre_map.items():
-                    if not isinstance(pats, list):
-                        continue
-                    for pat in pats:
-                        if not isinstance(pat, str):
-                            continue
-                        try:
-                            patterns.append((str(label), re.compile(pat, re.IGNORECASE)))
-                        except re.error:
-                            continue
-    except (OSError, json.JSONDecodeError, TypeError):
-        patterns = []
+    data = _load_regex_map()
+    genre_map = data.get("genre") or {}
+    if isinstance(genre_map, dict):
+        for label, pats in genre_map.items():
+            if not isinstance(pats, list):
+                continue
+            for pat in pats:
+                if not isinstance(pat, str):
+                    continue
+                try:
+                    patterns.append((str(label), re.compile(pat, re.IGNORECASE)))
+                except re.error:
+                    continue
     _genre_patterns_cache = patterns
     return patterns
 
@@ -644,26 +690,33 @@ def run_path_metadata_prepass(
     try:
         if sample_ids is not None and not sample_ids:
             return {"samples_considered": 0, "samples_refreshed": 0}
+        rows: list[Any] = []
         with engine.begin() as conn:
             if sample_ids is not None:
-                placeholders = ", ".join(
-                    f":id_{i}" for i in range(len(sample_ids))
-                )
-                params = {f"id_{i}": sid for i, sid in enumerate(sample_ids)}
-                rows = conn.execute(
-                    text(
-                        f"""
-                        SELECT id, path, relpath FROM samples
-                        WHERE id IN ({placeholders})
-                        ORDER BY id
-                        """
-                    ),
-                    params,
-                ).fetchall()
+                for offset in range(0, len(sample_ids), _SAMPLE_ID_QUERY_CHUNK):
+                    chunk = sample_ids[offset : offset + _SAMPLE_ID_QUERY_CHUNK]
+                    placeholders = ", ".join(
+                        f":id_{i}" for i in range(len(chunk))
+                    )
+                    params = {f"id_{i}": sid for i, sid in enumerate(chunk)}
+                    rows.extend(
+                        conn.execute(
+                            text(
+                                f"""
+                                SELECT id, path, relpath FROM samples
+                                WHERE id IN ({placeholders})
+                                ORDER BY id
+                                """
+                            ),
+                            params,
+                        ).fetchall()
+                    )
             else:
-                rows = conn.execute(
-                    text("SELECT id, path, relpath FROM samples ORDER BY id")
-                ).fetchall()
+                rows = list(
+                    conn.execute(
+                        text("SELECT id, path, relpath FROM samples ORDER BY id")
+                    ).fetchall()
+                )
 
         for sid, path, relpath in rows:
             try:

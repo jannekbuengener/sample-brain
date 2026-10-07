@@ -102,7 +102,9 @@ Unique on `(sample_id, tag, source)`. Populated via search-filter sync (`source=
 | `parser_version` | TEXT | `PATH_METADATA_PARSER_VERSION` |
 | `path_fingerprint` | TEXT | Path-identity hash; rename invalidates claims |
 
-Unique on `(sample_id, field, source)`. See [`docs/PATH_METADATA_RECONCILIATION.md`](../PATH_METADATA_RECONCILIATION.md).
+Unique on `(sample_id, field, source, normalized_value)` so a single source may
+retain multiple genre values. Scalar fields still effectively keep one claim per
+source via parser preference. See [`docs/PATH_METADATA_RECONCILIATION.md`](../PATH_METADATA_RECONCILIATION.md).
 
 #### `metadata_resolutions` — reconciled product fields
 

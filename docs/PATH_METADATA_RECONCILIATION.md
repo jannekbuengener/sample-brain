@@ -67,7 +67,9 @@ Every claim retains:
 
 ### `path_metadata_claims`
 
-One row per `(sample_id, field, source)`. Stores declarative path evidence only.
+Stores declarative path evidence only. Unique on
+`(sample_id, field, source, normalized_value)` so genre (and similar multi-value
+fields) may keep multiple values from the same source.
 
 ### `metadata_resolutions`
 
