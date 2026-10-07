@@ -267,6 +267,29 @@ def test_validate_result_rejects_malformed_bounded_state() -> None:
         validate_result(poisoned4)
 
 
+def test_validate_result_rejects_padded_next_action() -> None:
+    result = _run(visited_candidate_ids=["demo.cand.c"])
+    poisoned = dict(result)
+    poisoned["next_action"] = " continue_calibration "
+    poisoned["result_fingerprint"] = result_semantic_fingerprint(poisoned)
+    with pytest.raises(AnalysisCandidateIteratorError, match="canonical|next_action"):
+        validate_result(poisoned)
+
+
+def test_validate_result_rejects_extra_search_space_keys() -> None:
+    result = _run(visited_candidate_ids=["demo.cand.c"])
+    poisoned = dict(result)
+    space = dict(result["search_space"])
+    space["extra"] = "nope"
+    poisoned["search_space"] = space
+    poisoned["result_fingerprint"] = result_semantic_fingerprint(poisoned)
+    with pytest.raises(
+        AnalysisCandidateIteratorError,
+        match="search_space must contain exactly",
+    ):
+        validate_result(poisoned)
+
+
 def test_validate_result_rejects_noncanonical_ordered_members() -> None:
     result = _run(visited_candidate_ids=["demo.cand.c"])
     poisoned = dict(result)

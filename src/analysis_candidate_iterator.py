@@ -72,8 +72,16 @@ def _require_text(value: object, field: str) -> str:
     return value.strip()
 
 
-def _require_hex_fingerprint(value: object, field: str) -> str:
+def _require_canonical_text(value: object, field: str) -> str:
+    """Require a non-empty string that is already strip-canonical."""
     text = _require_text(value, field)
+    if value != text:
+        raise AnalysisCandidateIteratorError(f"{field} must be canonical")
+    return text
+
+
+def _require_hex_fingerprint(value: object, field: str) -> str:
+    text = _require_canonical_text(value, field)
     if len(text) != 64 or any(ch not in "0123456789abcdef" for ch in text):
         raise AnalysisCandidateIteratorError(
             f"{field} must be a lowercase sha256 hex digest"
@@ -314,21 +322,26 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
         raise AnalysisCandidateIteratorError(
             f"unsupported iterator_effect: {result.get('iterator_effect')!r}"
         )
-    next_action = _require_text(result.get("next_action"), "next_action")
+    next_action = _require_canonical_text(result.get("next_action"), "next_action")
     if next_action not in NEXT_ACTIONS:
         raise AnalysisCandidateIteratorError(f"unsupported next_action: {next_action}")
-    partition_role = _require_text(result.get("partition_role"), "partition_role")
+    partition_role = _require_canonical_text(
+        result.get("partition_role"), "partition_role"
+    )
     _assert_partition_firewall(
         partition_role=partition_role, next_action=next_action
     )
-    _require_text(result.get("domain"), "domain")
+    _require_canonical_text(result.get("domain"), "domain")
+    _require_canonical_text(result.get("producer_id"), "producer_id")
 
     if "decision_token" in result or "gate_verdict" in result:
         raise AnalysisCandidateIteratorError(
             "iterator result must not hoist decision_token/gate_verdict"
         )
 
-    effect = str(result["iterator_effect"])
+    effect = _require_canonical_text(
+        result.get("iterator_effect"), "iterator_effect"
+    )
     if next_action == "continue_calibration":
         if effect not in {"advance", "exhausted"}:
             raise AnalysisCandidateIteratorError(
@@ -345,10 +358,19 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
     search_space = result.get("search_space")
     if not isinstance(search_space, Mapping):
         raise AnalysisCandidateIteratorError("search_space must be a mapping")
-    space_id = _require_text(
+    if set(search_space.keys()) != {
+        "search_space_id",
+        "search_space_version",
+        "search_space_fingerprint",
+        "ordered_members",
+    }:
+        raise AnalysisCandidateIteratorError(
+            "search_space must contain exactly id/version/fingerprint/ordered_members"
+        )
+    space_id = _require_canonical_text(
         search_space.get("search_space_id"), "search_space.search_space_id"
     )
-    space_version = _require_text(
+    space_version = _require_canonical_text(
         search_space.get("search_space_version"), "search_space.search_space_version"
     )
     recorded_space_fp = _require_hex_fingerprint(
@@ -372,7 +394,11 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
     current_candidate = result.get("current_candidate")
     if not isinstance(current_candidate, Mapping):
         raise AnalysisCandidateIteratorError("current_candidate must be a mapping")
-    current_id = _require_text(
+    if set(current_candidate.keys()) != {"candidate_id", "config_fingerprint"}:
+        raise AnalysisCandidateIteratorError(
+            "current_candidate must contain only candidate_id and config_fingerprint"
+        )
+    current_id = _require_canonical_text(
         current_candidate.get("candidate_id"), "current_candidate.candidate_id"
     )
     current_fp = _require_hex_fingerprint(
@@ -397,7 +423,9 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
     seen_visited: set[str] = set()
     normalized_visited: list[str] = []
     for index, raw_id in enumerate(visited):
-        candidate_id = _require_text(raw_id, f"visited_candidate_ids[{index}]")
+        candidate_id = _require_canonical_text(
+            raw_id, f"visited_candidate_ids[{index}]"
+        )
         if candidate_id not in by_id:
             raise AnalysisCandidateIteratorError(
                 f"visited candidate is not a member of search space: {candidate_id!r}"
@@ -445,7 +473,11 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
             raise AnalysisCandidateIteratorError(
                 "advance requires next_candidate mapping"
             )
-        next_id = _require_text(
+        if set(next_candidate.keys()) != {"candidate_id", "config_fingerprint"}:
+            raise AnalysisCandidateIteratorError(
+                "next_candidate must contain only candidate_id and config_fingerprint"
+            )
+        next_id = _require_canonical_text(
             next_candidate.get("candidate_id"), "next_candidate.candidate_id"
         )
         next_fp = _require_hex_fingerprint(
@@ -505,14 +537,7 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
             "result_fingerprint does not match semantic payload"
         )
 
-    out = dict(result)
-    out["search_space"] = {
-        "search_space_id": space_id,
-        "search_space_version": space_version,
-        "search_space_fingerprint": recorded_space_fp,
-        "ordered_members": [dict(item) for item in declared_members],
-    }
-    return out
+    return dict(result)
 
 
 def iterate_candidates(
