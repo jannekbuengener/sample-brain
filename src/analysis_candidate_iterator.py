@@ -269,6 +269,10 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
         raise AnalysisCandidateIteratorError(
             f"artifact_version must be {ARTIFACT_VERSION!r}"
         )
+    if result.get("producer_id") != PRODUCER_ID:
+        raise AnalysisCandidateIteratorError(
+            f"producer_id must be {PRODUCER_ID!r}"
+        )
     if result.get("production_authorized") is not False:
         raise AnalysisCandidateIteratorError("production_authorized must be false")
     if result.get("iterator_effect") not in ITERATOR_EFFECTS:

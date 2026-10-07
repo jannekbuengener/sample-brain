@@ -92,6 +92,18 @@ def test_document_identity_frozen() -> None:
     assert ARTIFACT_VERSION == "1.0.0"
 
 
+def test_validate_result_requires_frozen_producer_id() -> None:
+    from src.analysis_candidate_iterator import PRODUCER_ID
+
+    result = _run(visited_candidate_ids=["demo.cand.c"])
+    assert result["producer_id"] == PRODUCER_ID
+    poisoned = dict(result)
+    poisoned["producer_id"] = "other.producer"
+    poisoned["result_fingerprint"] = result_semantic_fingerprint(poisoned)
+    with pytest.raises(AnalysisCandidateIteratorError, match="producer_id"):
+        validate_result(poisoned)
+
+
 def test_no_arvp_import_in_iterator_module() -> None:
     tree = ast.parse((SRC_ROOT / "analysis_candidate_iterator.py").read_text(encoding="utf-8"))
     for node in ast.walk(tree):
