@@ -1,24 +1,24 @@
 # Workbench Single Workspace Contract (#905)
 
-**Status:** ACTIVE_SUPPORTING — Owner-reviewed / approved (2026-10-05). Binding product-navigation authority for Single Workspace.
+**Status:** ACTIVE_SUPPORTING — Owner-reviewed / approved (2026-10-05). **Reclassified 2026-10-07 (#1076):** exclusive product-navigation authority for Single Workspace is **superseded** where it conflicts with Edit → Arrangement → later Live ([#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076)). This file remains supporting evidence for progressive disclosure, shared Python musical/session truth, QML projection/intent, and Edit-workspace geometry (#954).
 
-**Issues:** [#905](https://github.com/jannekbuengener/sample-brain/issues/905) (historical epic), [#906](https://github.com/jannekbuengener/sample-brain/issues/906) (completed canon migration), [#954](https://github.com/jannekbuengener/sample-brain/issues/954) (active Drawer geometry/disclosure contract)
+**Issues:** [#905](https://github.com/jannekbuengener/sample-brain/issues/905) (historical epic / delivery evidence), [#906](https://github.com/jannekbuengener/sample-brain/issues/906) (completed #905-era canon migration), [#954](https://github.com/jannekbuengener/sample-brain/issues/954) (Edit Live Kit overlay drawer geometry), [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076) (current product-navigation authority)
 
 **Renderer:** `LOCK_PYSIDE6_QML` remains binding for current Workbench UI. This file does not change runtime.
 
-This document freezes Owner Decision **A — Stable Workspace + Progressive Disclosure** as durable product-navigation authority for the Single Workspace model. It is docs/design only: no product code, QML, session, or audio behavior changes here.
+This document freezes Owner Decision **A — Stable Workspace + Progressive Disclosure** as durable **Edit-workspace** geometry and UX evidence from the #905 era. It is docs/design only: no product code, QML, session, or audio behavior changes here.
 
 ## Authority for product navigation
 
 | Surface | Role |
 |---|---|
-| [#905](https://github.com/jannekbuengener/sample-brain/issues/905) + this contract | Binding authority for **product navigation / workspace geometry** |
-| [`docs/PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md) | ACTIVE_CANON producing-flow companion; must align with Single Workspace (migrated under #906) |
-| [#906](https://github.com/jannekbuengener/sample-brain/issues/906) | Canon/docs migration that removes superseded multi-screen product-navigation wording from current authority surfaces |
+| [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076) + [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md) | **Current** product-navigation authority: Edit → Arrangement → later Live |
+| [#905](https://github.com/jannekbuengener/sample-brain/issues/905) + this contract | Historical Single Workspace delivery + **supporting** progressive-disclosure / Edit geometry evidence; exclusive nav thesis superseded on conflict |
+| [#906](https://github.com/jannekbuengener/sample-brain/issues/906) | Historical canon migration that removed multi-screen product-navigation wording |
 | [#907](https://github.com/jannekbuengener/sample-brain/issues/907) | Owns session/audio-focus audit before Rack embed |
 | [#908](https://github.com/jannekbuengener/sample-brain/issues/908) | Closed delivery evidence for the original bottom Rack projection; its permanent-band geometry is superseded by #954 |
-| [#954](https://github.com/jannekbuengener/sample-brain/issues/954) | Current Owner authority for balanced Browser/Harmony defaults and the Live Kit bottom overlay drawer |
-| [#679](https://github.com/jannekbuengener/sample-brain/issues/679) | Arrangement interaction model — parked |
+| [#954](https://github.com/jannekbuengener/sample-brain/issues/954) | Supporting Owner evidence for balanced Browser/Harmony defaults and the Live Kit bottom overlay drawer in Edit |
+| [#679](https://github.com/jannekbuengener/sample-brain/issues/679) | **ACTIVE** Arrangement product/domain owner |
 
 ## 1. Problem / superseded multi-screen model
 
@@ -183,27 +183,13 @@ Loop-class / sustained-sample semantics are frozen in [`LOOP_ROW_PLAYBACK_CONTRA
 - no clip launcher, Arrangement, PCM wrap-loop engine, or new transport owner in this freeze;
 - runtime implementation is a separate follow-up slice after Owner/Lead contract review — not part of #908.
 
-## 10. Arrangement — PARKED / UNDESIGNED
+## 10. Arrangement — ACTIVE (#679); exclusive Single-Workspace embedding superseded
 
-Arrangement remains part of the long-term product idea and is **not** a separate Screen-3 page. When designed later, it must live inside the same Workbench under progressive disclosure.
+Arrangement is an **ACTIVE** product mode after Edit / Kit, owned by [#679](https://github.com/jannekbuengener/sample-brain/issues/679) (Owner-reactivated 2026-10-07). It is **not** a historical Screen-3 page and is **not** required to live inside an exclusive Single-Workspace-only navigation model.
 
-**PARKED / UNDESIGNED — requires later explicit Owner design decision**
+The older claim that Arrangement must remain undesigned inside one persistent Workbench is **superseded** by [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076). Concrete Arrangement contracts and domain work proceed through [#1082](https://github.com/jannekbuengener/sample-brain/issues/1082)–[#1084](https://github.com/jannekbuengener/sample-brain/issues/1084) (next contract wave) and follow-on #679 children. Later Live remains parked under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088).
 
-Not decided by this contract (and must not be guessed into Pattern/Channel contracts now):
-
-- timeline model
-- tracks / lanes
-- clips
-- Pattern-vs-Channel clip model
-- copy vs reference
-- loop / resize
-- automation
-- mixer / routing
-- piano roll
-- Arrangement-specific persistence extensions
-- exact focus / visibility semantics while arranging
-
-Authority for the parked Arrangement track: [#679](https://github.com/jannekbuengener/sample-brain/issues/679).
+This #905-era contract does **not** freeze Arrangement timeline/block/mask details; those belong to the Arrangement children under #679. Do not invent them here.
 
 ## 11. Historical terminology policy
 
@@ -233,7 +219,7 @@ Fail closed against:
 | QML-owned Pattern / play-stop truth | QML = projection + intent only |
 | Copied Screen-2 embed | One Workbench projection, not a mirrored page |
 | Duplicated audio assets | Channels reference library samples |
-| Premature Arrangement design | Arrangement stays PARKED / UNDESIGNED |
+| Inventing Arrangement model in this file | Arrangement contracts owned by #679 children; this file does not freeze them |
 | Stale permanent bottom-band geometry | #954 overlay drawer supersedes the historical ~24% band and empty-strip presentation |
 | Navigation seams as silent audio authority | #907 separates navigation vs audio ownership |
 | Empty-group attention tax | Unneeded empty groups stay de-emphasized |
@@ -257,7 +243,7 @@ Fail closed against:
 | Physical canon/docs migration | #906 |
 | Session/audio-focus audit outcome | #907 |
 | Bottom Live Kit overlay drawer + runtime/visual acceptance | #954 |
-| Arrangement interaction design | later explicit Owner decision via #679 |
+| Arrangement contracts / domain / UI | #679 ACTIVE + children #1082–#1084 (+ follow-ons); later Live #1088 |
 
 ## 14. Explicit non-goals
 
@@ -282,24 +268,26 @@ Canon/docs alignment of remaining multi-screen product-navigation wording is own
 | [#907](https://github.com/jannekbuengener/sample-brain/issues/907) | Audit session/audio-focus assumptions; separate navigation-coupled seams from domain audio ownership before Rack embed |
 | [#908](https://github.com/jannekbuengener/sample-brain/issues/908) | Closed historical bottom Rack projection; retain its shared-domain reuse evidence, not its superseded permanent-band geometry |
 | [#954](https://github.com/jannekbuengener/sample-brain/issues/954) | Active QML/UX slice: Browser-scoped overlay drawer, first-add disclosure, dynamic height, Browser inset, and visual acceptance |
-| [#679](https://github.com/jannekbuengener/sample-brain/issues/679) | Future Arrangement inside Single Workspace — **PARKED / UNDESIGNED — requires later explicit Owner design decision** |
+| [#679](https://github.com/jannekbuengener/sample-brain/issues/679) | **ACTIVE** Arrangement product/domain owner (Edit → Arrangement → later Live) |
+| [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076) | Current product-navigation authority |
 
-Recommended sequence after Owner acceptance of this freeze:
+Recommended historical sequence for the #905-era freeze (completed / evidence):
 
 ```text
 Owner SPEC review (PASS)
   → #906 canon migration
-  → #907 audio/session-focus audit (and any minimal seam repair slice it names)
-  → #908 historical delivery evidence
-  → #954 overlay drawer (test-first / runtime / visual acceptance)
-  → #679 remains parked until explicit Owner design decision
+  → #907 audio/session-focus audit
+  → #908 / #954 Edit Live Kit projection evidence
 ```
+
+Current product sequence after #1076: Edit → Arrangement → later Live (#1075/#1076/#679/#1088).
 
 ## Related supporting contracts (reuse, do not redefine)
 
 - [`SESSION_OWNERSHIP_CONTRACT.md`](SESSION_OWNERSHIP_CONTRACT.md)
 - [`PATTERN_CORE_CONTRACT.md`](PATTERN_CORE_CONTRACT.md)
 - [`SEQUENCER_PLAYBACK_CONTRACT.md`](SEQUENCER_PLAYBACK_CONTRACT.md)
-- [`PROGRAM_CHROME_CONTRACT.md`](PROGRAM_CHROME_CONTRACT.md) — chrome copy/history may still name former routes; product navigation authority for Single Workspace is this file + #905
+- [`PROGRAM_CHROME_CONTRACT.md`](PROGRAM_CHROME_CONTRACT.md) — chrome frame contract; product modes Edit / Arrangement / Live per #1076
+- [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md) — current producing-path authority
 - [`REALTIME_WORKBENCH_SCOPE.md`](REALTIME_WORKBENCH_SCOPE.md)
 - [`TARGET_ARCHITECTURE.md`](TARGET_ARCHITECTURE.md)

@@ -1,6 +1,6 @@
 # Sample Brain
 
-Sample Brain ist ein lokales, Workbench-first Producing-System für Sample-Analyse, musikalisches Matching, Track-Zerlegung und Performance Packs — in **einem persistenten Workbench** von Library über Live Kit bis zum Channel-Rack-/Pattern-Domain.
+Sample Brain ist ein lokales, Workbench-first Producing-System für Sample-Analyse, musikalisches Matching, Track-Zerlegung und Performance Packs — mit Product Modes **Edit → Arrangement → later Live**.
 
 ---
 
@@ -8,7 +8,7 @@ Sample Brain ist ein lokales, Workbench-first Producing-System für Sample-Analy
 
 **Sample Brain** löst ein Problem aus meiner eigenen Musikproduktion: Große lokale Sample-Libraries enthalten viel musikalisches Potenzial, aber Dateinamen und Ordnerstrukturen helfen nur begrenzt dabei, im richtigen Moment den passenden Sound zu finden.
 
-Das Projekt übersetzt dieses Problem in ein **local-first Producing-System**: Samples werden lokal analysiert, katalogisiert, musikalisch verglichen und im **einen persistenten Workbench** nutzbar gemacht (Library / Sources + Playlist + kontextuelle Harmonic Matches + Live Kit / Rack / Step-Sequencer; Progressive Disclosure). Private Audiodateien bleiben auf dem Rechner; die Kernfunktionen benötigen keine Cloud. VST3 / Host-Plugin bleibt geparkt und ist nicht der Primärpfad. Das frühere Produkt-Navigationsmodell `Screen 1 → Screen 2 → Screen 3` ist superseded ([#905](https://github.com/jannekbuengener/sample-brain/issues/905)).
+Das Projekt übersetzt dieses Problem in ein **local-first Producing-System**: Samples werden lokal analysiert, katalogisiert, musikalisch verglichen und in **Edit → Arrangement → later Live** nutzbar gemacht (Edit: Library / Sources + Playlist + Harmonic Matches + klassisches Live Kit als Tool; Arrangement: Sequencer / Song-Struktur unter ACTIVE Owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679); Live später unter [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088)). Progressive Disclosure und eine Python-owned Musical/Session-Authority bleiben verbindlich. Private Audiodateien bleiben auf dem Rechner; die Kernfunktionen benötigen keine Cloud. VST3 / Host-Plugin bleibt geparkt und ist nicht der Primärpfad. Frühere Navigationen (`Screen 1 → Screen 2 → Screen 3`, exclusive Single-Workspace-only) sind als Product Authority superseded ([#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076); historische Evidence [#905](https://github.com/jannekbuengener/sample-brain/issues/905)).
 
 ### Was heute tatsächlich funktioniert
 
@@ -22,7 +22,7 @@ Auf `main` sind unter anderem verfügbar:
 - Workbench (Library, Preview, Matching, Live Kit) mit QML-Produktionsrichtung (`LOCK_PYSIDE6_QML`; Start via `workbench --qml-screen1`),
 - Channel Rack / Pattern-Domain (Pattern/Trigger über Live-Kit-Kanäle) auf `main` (historische Delivery #675/#678).
 
-**Nicht als fertig dargestellt werden:** geparktes VST3, Realtime Fit & Transform, Arrangement (**PARKED / UNDESIGNED — requires later explicit Owner design decision**, [#679](https://github.com/jannekbuengener/sample-brain/issues/679)), Bottom-Rack-Projektion in den Single Workspace ([#908](https://github.com/jannekbuengener/sample-brain/issues/908) nach [#907](https://github.com/jannekbuengener/sample-brain/issues/907)), und alle Funktionen, deren Evidence noch nicht für einen Produktionsclaim reicht. Die detaillierte Statusmatrix steht direkt im nächsten Abschnitt.
+**Nicht als fertig dargestellt werden:** geparktes VST3, Realtime Fit & Transform, Arrangement-Runtime/UI (Owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679) ist ACTIVE, Delivery läuft über Contract-/Domain-Children), later Live ([#1088](https://github.com/jannekbuengener/sample-brain/issues/1088)), und alle Funktionen, deren Evidence noch nicht für einen Produktionsclaim reicht. Geschlossenes [#908](https://github.com/jannekbuengener/sample-brain/issues/908) ist historische Rack-Projektions-Evidence. Die detaillierte Statusmatrix steht direkt im nächsten Abschnitt.
 
 ### Meine Rolle / AI-assisted Development Model
 
@@ -126,8 +126,10 @@ Für die Produktstory und Entscheidungen siehe [Case Study](docs/CASE_STUDY.md).
 | **Track Deconstruction** | ✅ verfügbar | `deconstruct <track> --pack-root <dir>` analysiert Track, erzeugt Track Map, Arrangement (optional), Loop-/Section-Kandidaten, Bewertung, Rendering, Asset-Reanalyse. Schreibt `deconstruct_run.json` als Zwischen-Evidence. Resume/Cache-Reuse (pack-lokal; historische Delivery #262). Track Analysis Cache Integration (historisch #237). |
 | **Performance Packs** | ✅ verfügbar | Portable Pack-Struktur (`manifest.json`, `analysis/`, `loops/`, `sections/`, optional `stems/`). Pack-Import in Katalog (`pack-import`). Wiederaufnahme (pack-lokal; historisch #262) + wiederverwendbarer Track-Analyse-Cache (historisch #237). |
 | **Stem Separation** | 🧪 optional / experimentell | Technisch validiert: `htdemucs` & `htdemucs_ft` getestet (8/8 Runs), blinder Hörvergleich: `htdemucs` 4/4 bevorzugt, ~2× schneller (`docs/STEM_MODEL_BENCHMARK_V1.md`). Weight-Status für beide Modelle: **RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED** — deshalb **kein** Produktions-Default. Optionaler Stem-Pfad in Deconstruction/Packs existiert; Core-Flow bleibt ohne Stem-Pflicht. |
-| **Workbench** | ✅ verfügbar | Ein persistenter lokaler Workbench: Library, Preview, Matching, Live Kit, Harmonie-Finder. **Produktionsrichtung Visuals:** PySide6 / Qt Quick / QML (`LOCK_PYSIDE6_QML`, `src/workbench_qml.py`, Start: `workbench --qml-screen1`). **Tkinter** (`workbench` ohne Flag) bleibt funktionaler Default sowie Legacy-/Fallback- und Verhaltensreferenz — nicht die Autorisierung für neue Workbench-Visuals. |
-| **Channel Rack / Pattern domain** | ✅ verfügbar | Pattern/Trigger-Channel-Rack-Domain auf `main` (Python-Core + QML; historische Delivery #675/#678). Bottom-Workspace-Projektion in den Single Workspace ist #908 (nach #907). Arrangement ist nicht Teil dieses Claims. |
+| **Workbench (Edit)** | ✅ verfügbar | Edit-Mode: Library, Preview, Matching, klassisches Live Kit als Tool, Harmonie-Finder. **Produktionsrichtung Visuals:** PySide6 / Qt Quick / QML (`LOCK_PYSIDE6_QML`, `src/workbench_qml.py`, Start: `workbench --qml-screen1`). **Tkinter** (`workbench` ohne Flag) bleibt funktionaler Default sowie Legacy-/Fallback- und Verhaltensreferenz — nicht die Autorisierung für neue Workbench-Visuals. |
+| **Channel Rack / Pattern domain** | ✅ verfügbar | Pattern/Trigger-Domain auf `main` (Python-Core + QML; historische Delivery #675/#678/#908). Produktseitig gehört der Step Sequencer zu **Arrangement** (#679); dieser Status-Claim ist Runtime-Foundation, nicht Arrangement-UI-Fertigstellung. |
+| **Arrangement** | 🚧 ACTIVE Owner / Delivery offen | Owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679) **ACTIVE**; Contracts/Domain/UI über Children (#1082–#1084). Feature-Key `arrangement_mode_enabled` ist Docs-Freeze (default False) — noch kein Runtime-Consumer in diesem Slice. |
+| **Live** | 🚧 later / geparkt | Later performance perspective unter [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088); nicht Top-Level-Peer zu Live Kit oder Sequencer. |
 | **VST3 / Realtime Transform** | 🚧 geparkt / nicht shipped | VST3 / Host-Plugin ist **geparkt** und kein Primärpfad. Realtime Fit & Transform ist Zielvision, nicht als fertiges Produkt shipped. |
 
 ---
@@ -136,7 +138,8 @@ Für die Produktstory und Entscheidungen siehe [Case Study](docs/CASE_STUDY.md).
 
 - VST3 / Host-Plugin (geparkt, nicht aktiver Primärpfad)
 - Realtime Fit & Transform Engine
-- Arrangement (**PARKED / UNDESIGNED — requires later explicit Owner design decision**, #679)
+- Arrangement Runtime/UI (Owner #679 **ACTIVE**; Delivery über Contract-/Domain-Children — nicht als fertiges Produkt claimen)
+- later Live (#1088, geparkt bis Arrangement-Delivery + Owner-Gates)
 - Stem-Produktions-Default (Weight-Lizenz blockiert kommerziellen Default; optionaler technischer Pfad existiert)
 - CLAP-Qualität auf echten Producer-Libraries ist noch nicht validiert; aktuelle Tier-B-Evidence (historisch #216/#217 gemessen, #219 konsolidiert) ist synthetisch (6/6 Klassen, Text + Audio getrennt).
 - Relative Key / Camelot / Circle-of-Fifths Kompatibilität im Matching

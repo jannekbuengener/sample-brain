@@ -492,16 +492,16 @@ A local HTTP API that wraps pipeline operations and search:
 
 **Status:** Not implemented. Not planned before EPIC 2 completion.
 
-### 10.2 Local Producing Workspace (Single Workspace; VST parked)
+### 10.2 Local Producing Workspace (Edit → Arrangement → later Live; VST parked)
 
-Canonical path: [`docs/PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md), [`docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md).
+Canonical path: [`docs/PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md) ([#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076)). Edit geometry evidence: [`docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md) (exclusive #905 nav thesis superseded on conflict).
 
-**Primary — one persistent local Workbench:**
-- Library / Sources (stable left rail) + main playlist (dominant upper) + Harmonic Matches (contextual)
-- Live Kit / Channel Rack / Step-Sequencer as bottom-workspace domain capabilities (not separate product pages)
+**Primary — Edit → Arrangement → later Live:**
+- **Edit:** Library / Sources + Browser playlist + Harmonic Matches; classic Live Kit as Edit tool (#1077)
+- **Arrangement:** Step Sequencer / Pattern programming + song structure; owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679) (**ACTIVE**)
+- **Live:** later performance perspective; parked under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088)
 - Channel Rack / Pattern foundations **DONE** on `main` (historical delivery #647/#656/#663/#667/#676/#677/#681/#698/#675/#678 / PR #755)
-- Bottom Live Kit / Rack projection into Single Workspace: [#908](https://github.com/jannekbuengener/sample-brain/issues/908) after [#907](https://github.com/jannekbuengener/sample-brain/issues/907)
-- Arrangement: **PARKED / UNDESIGNED — requires later explicit Owner design decision** ([#679](https://github.com/jannekbuengener/sample-brain/issues/679))
+- Closed [#908](https://github.com/jannekbuengener/sample-brain/issues/908) is historical bottom Rack projection evidence (not an open product epic)
 - Shared cores: Library Intelligence, Matching, Context, optional Transform
 - External DAW is **not** part of the core workflow
 
@@ -509,7 +509,7 @@ Canonical path: [`docs/PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md), [
 - Optional later DAW-inline surface over the same core
 - Historical specs under `docs/product/05_VST_PRODUCING_WORKSPACE_SPEC.md` are archived design notes, not the current primary path
 
-**Status:** Single Workspace is current product-navigation authority (#905/#906). Library/Live Kit Workbench shell continues on `main`. Channel Rack domain foundations (#675/#678) are DONE historical evidence. VST remains parked.
+**Status:** Current product-navigation authority is Edit → Arrangement → later Live (#1075/#1076). Library/Live Kit Workbench shell continues on `main`. Channel Rack domain foundations (#675/#678) are DONE historical evidence. Arrangement owner #679 is ACTIVE. VST remains parked.
 
 ### 10.3 Desktop UI (EPIC 4 — superseded)
 
