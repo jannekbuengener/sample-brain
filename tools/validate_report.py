@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import math
-import re
 import sqlite3
 import sys
 from collections import Counter
@@ -28,41 +27,12 @@ from src import config as config_module
 from src.bpm_display import format_bpm_display
 from src.db import init_db, read_key_analysis_feature_rows
 from src.key_signature import parse_key_signature
-
-BPM_HINT_RE = re.compile(r"(?<!\d)(\d{2,3})\s*[-_ ]?\s*bpm(?![A-Za-z0-9])", re.IGNORECASE)
-KEY_HINT_RE = re.compile(
-    r"\b([A-Ga-g])([#b]?)(?:\s*)(maj(?:or)?|min(?:or)?|m)\b",
-    re.IGNORECASE,
+from src.path_metadata import (
+    extract_bpm_hint,
+    extract_instrument_hint,
+    extract_key_hint,
+    extract_type_hint,
 )
-
-_TYPE_PATTERNS = {
-    "oneshot": re.compile(r"\b(?:one\s*shots?|oneshots?)\b", re.IGNORECASE),
-    "loop": re.compile(r"\bloops?\b", re.IGNORECASE),
-}
-
-_INSTRUMENT_PATTERNS = (
-    ("kick", re.compile(r"\bkicks?\b", re.IGNORECASE)),
-    ("snare", re.compile(r"\bsnares?\b", re.IGNORECASE)),
-    ("clap", re.compile(r"\bclaps?\b", re.IGNORECASE)),
-    ("hihat", re.compile(r"\b(?:hi\s*hat|hihat|hats?)\b", re.IGNORECASE)),
-    ("impact", re.compile(r"\bimpacts?\b", re.IGNORECASE)),
-    ("drone", re.compile(r"\bdrones?\b", re.IGNORECASE)),
-    ("pad", re.compile(r"\bpads?\b", re.IGNORECASE)),
-    ("fx", re.compile(r"\b(?:fx|sfx)\b", re.IGNORECASE)),
-)
-
-
-def _normalized_ref(text: str | None) -> str:
-    return re.sub(r"[_./\\()\[\]-]+", " ", text or "").strip()
-
-
-def extract_bpm_hint(text: str | None) -> float | None:
-    if not text:
-        return None
-    match = BPM_HINT_RE.search(text)
-    if match is None:
-        return None
-    return float(match.group(1))
 
 
 def classify_bpm_match(
@@ -79,34 +49,6 @@ def classify_bpm_match(
     if abs(predicted / 2.0 - hint) <= tolerance:
         return "double_time"
     return "mismatch"
-
-
-def extract_key_hint(text: str | None) -> str | None:
-    normalized = _normalized_ref(text)
-    match = KEY_HINT_RE.search(normalized)
-    if match is None:
-        return None
-    raw = f"{match.group(1)}{match.group(2)}{match.group(3)}"
-    parsed = parse_key_signature(raw)
-    if parsed is None or parsed.mode is None:
-        return None
-    return f"{parsed.root}{parsed.mode}"
-
-
-def extract_type_hint(text: str | None) -> str | None:
-    normalized = _normalized_ref(text)
-    for label in ("oneshot", "loop"):
-        if _TYPE_PATTERNS[label].search(normalized):
-            return label
-    return None
-
-
-def extract_instrument_hint(text: str | None) -> str | None:
-    normalized = _normalized_ref(text)
-    for label, pattern in _INSTRUMENT_PATTERNS:
-        if pattern.search(normalized):
-            return label
-    return None
 
 
 def _normalize_class(value: str | None) -> str | None:

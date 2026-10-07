@@ -31,8 +31,7 @@ import yaml
 TITLE_EXAMPLE = "HH, closed, [LOOP] - 132BPM, F#m, dark/vintage"
 
 # --- Regex helpers ---
-RE_BPM = re.compile(r"(\d{2,3})\s*BPM", re.IGNORECASE)
-RE_KEY = re.compile(r"\b([A-G])([b#])?(m)?\b")  # accepts C, F#m, Bb, etc.
+# BPM/key parsing consolidates on src.path_metadata; bracket TYPE stays title-local.
 RE_TYPE = re.compile(r"\[(LOOP|ONE-SHOT|FX|VOCAL)\]", re.IGNORECASE)
 
 # --- Windows-safe filename helper ---
@@ -68,16 +67,18 @@ def safe_stem(path_str: str) -> str:
 def extract_bpm(text: str) -> Optional[int]:
     if not isinstance(text, str):
         return None
-    m = RE_BPM.search(text.replace(" ", ""))
-    if not m:
-        # support 128bpm style
-        m = re.search(r"(\d{2,3})\s*bpm", text, re.IGNORECASE)
-    if m:
-        try:
-            return int(m.group(1))
-        except Exception:
-            return None
-    return None
+    try:
+        from src.path_metadata import extract_bpm_hint
+
+        hint = extract_bpm_hint(text)
+    except Exception:
+        hint = None
+    if hint is None:
+        return None
+    try:
+        return int(hint)
+    except Exception:
+        return None
 
 
 def extract_type(text: str) -> Optional[str]:
@@ -90,6 +91,12 @@ def extract_type(text: str) -> Optional[str]:
 
 
 def extract_key(text: str) -> Optional[str]:
+    """Display-oriented key for offline title proposals (legacy forms).
+
+    Keeps root-only keys (``C``, ``Eb``) and original flat/sharp spelling for
+    rename suggestions. Catalog claims still use the modeful shared parser in
+    ``src.path_metadata``.
+    """
     if not isinstance(text, str):
         return None
     # Prefer explicit patterns like F#m, C#m, Bb

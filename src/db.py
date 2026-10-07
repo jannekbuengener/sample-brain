@@ -224,6 +224,45 @@ def init_db():
         """))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_sample_tags_sample_id ON sample_tags(sample_id);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_sample_tags_tag ON sample_tags(tag);"))
+
+        # Path-metadata declarative claims (filename/folder). Separate from
+        # features.* analyzer measurements — see PATH_METADATA_RECONCILIATION.md.
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS path_metadata_claims (
+            id INTEGER PRIMARY KEY,
+            sample_id INTEGER NOT NULL,
+            field TEXT NOT NULL,
+            normalized_value TEXT NOT NULL,
+            source TEXT NOT NULL,
+            raw_evidence TEXT NOT NULL,
+            parser_version TEXT NOT NULL,
+            path_fingerprint TEXT NOT NULL,
+            FOREIGN KEY(sample_id) REFERENCES samples(id),
+            UNIQUE(sample_id, field, source, normalized_value)
+        );
+        """))
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_path_metadata_claims_sample_id "
+                "ON path_metadata_claims(sample_id);"
+            )
+        )
+
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS metadata_resolutions (
+            sample_id INTEGER NOT NULL,
+            field TEXT NOT NULL,
+            resolution_status TEXT NOT NULL,
+            resolved_value TEXT,
+            filename_value TEXT,
+            analysis_value TEXT,
+            provenance_note TEXT,
+            parser_version TEXT NOT NULL,
+            reconciled_at TEXT NOT NULL,
+            PRIMARY KEY (sample_id, field),
+            FOREIGN KEY(sample_id) REFERENCES samples(id)
+        );
+        """))
     return engine
 
 

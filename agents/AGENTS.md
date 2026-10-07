@@ -26,9 +26,9 @@
 
 ## Laufreihenfolge (fachlich)
 - 1) `init` -> initialisiert DB/Tables.
-- 2) `scan` -> befuellt/aktualisiert `samples`.
-- 3) `analyze` -> befuellt/aktualisiert `features`.
-- 4) `autotype` -> setzt `features.pred_type`.
+- 2) `scan` -> befuellt/aktualisiert `samples` (+ path-metadata pre-pass claims).
+- 3) `analyze` -> befuellt/aktualisiert `features` (raw analyzer measurements).
+- 4) `autotype` -> setzt `features.pred_type` (+ metadata reconcile into `metadata_resolutions`).
 - 5) `export_fl` -> schreibt FL-Tags.
 - Optional:
 - 6) `embed` -> schreibt `sample_embeddings`.

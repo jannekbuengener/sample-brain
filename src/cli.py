@@ -54,6 +54,12 @@ _COMMAND_EXAMPLES: dict[tuple[str, ...], list[str]] = {
         "sample-brain autotype",
         "sample-brain autotype --no-knn",
     ],
+    ("metadata_parse",): [
+        "sample-brain metadata_parse",
+    ],
+    ("metadata_reconcile",): [
+        "sample-brain metadata_reconcile",
+    ],
     ("export_fl",): [
         "sample-brain export_fl --fl-user-data ./fl-user-data",
         "sample-brain export_fl --fl-user-data ./fl-user-data --dry-run",
@@ -590,6 +596,17 @@ def main():
         ),
     )
     p_aut.add_argument("--no-knn", action="store_true", help="kNN/Seeds deaktivieren")
+
+    sub.add_parser(
+        "metadata_parse",
+        help="Parse filename/folder metadata claims into path_metadata_claims",
+        **_agent_parser_kwargs("sample-brain metadata_parse"),
+    )
+    sub.add_parser(
+        "metadata_reconcile",
+        help="Reconcile path claims with analyzer/classifier evidence",
+        **_agent_parser_kwargs("sample-brain metadata_reconcile"),
+    )
 
     # export_fl
     p_exp = sub.add_parser(
@@ -1347,7 +1364,42 @@ def main():
             print(f"[ERROR] Autotype-Modul fehlt/fehlerhaft: {e}", file=sys.stderr)
             sys.exit(1)
         write_autotype_to_db(use_knn=use_knn, knn_min_conf=knn_min_conf)
+        try:
+            from .path_metadata import run_metadata_reconcile
+
+            summary = run_metadata_reconcile()
+            print(
+                f"Metadata reconcile completed "
+                f"({summary.get('samples_reconciled', 0)} samples)."
+            )
+        except Exception as exc:
+            print(f"[WARN] Metadata reconcile skipped: {exc}", file=sys.stderr)
         print("Autotypisierung abgeschlossen.")
+        return
+
+    if args.cmd == "metadata_parse":
+        cfg = _resolve_profile_or_exit(args)
+        _apply_runtime_db_path(cfg)
+        from .path_metadata import run_path_metadata_prepass
+
+        summary = run_path_metadata_prepass()
+        print(
+            "Path metadata parse completed "
+            f"(considered={summary.get('samples_considered', 0)}, "
+            f"refreshed={summary.get('samples_refreshed', 0)})."
+        )
+        return
+
+    if args.cmd == "metadata_reconcile":
+        cfg = _resolve_profile_or_exit(args)
+        _apply_runtime_db_path(cfg)
+        from .path_metadata import run_metadata_reconcile
+
+        summary = run_metadata_reconcile()
+        print(
+            "Metadata reconcile completed "
+            f"({summary.get('samples_reconciled', 0)} samples)."
+        )
         return
 
     if args.cmd == "export_fl":
