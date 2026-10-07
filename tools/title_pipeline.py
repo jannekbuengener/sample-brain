@@ -31,8 +31,7 @@ import yaml
 TITLE_EXAMPLE = "HH, closed, [LOOP] - 132BPM, F#m, dark/vintage"
 
 # --- Regex helpers ---
-RE_BPM = re.compile(r"(\d{2,3})\s*BPM", re.IGNORECASE)
-RE_KEY = re.compile(r"\b([A-G])([b#])?(m)?\b")  # accepts C, F#m, Bb, etc.
+# BPM/key parsing consolidates on src.path_metadata; bracket TYPE stays title-local.
 RE_TYPE = re.compile(r"\[(LOOP|ONE-SHOT|FX|VOCAL)\]", re.IGNORECASE)
 
 # --- Windows-safe filename helper ---
@@ -68,16 +67,18 @@ def safe_stem(path_str: str) -> str:
 def extract_bpm(text: str) -> Optional[int]:
     if not isinstance(text, str):
         return None
-    m = RE_BPM.search(text.replace(" ", ""))
-    if not m:
-        # support 128bpm style
-        m = re.search(r"(\d{2,3})\s*bpm", text, re.IGNORECASE)
-    if m:
-        try:
-            return int(m.group(1))
-        except Exception:
-            return None
-    return None
+    try:
+        from src.path_metadata import extract_bpm_hint
+
+        hint = extract_bpm_hint(text)
+    except Exception:
+        hint = None
+    if hint is None:
+        return None
+    try:
+        return int(hint)
+    except Exception:
+        return None
 
 
 def extract_type(text: str) -> Optional[str]:
@@ -90,20 +91,27 @@ def extract_type(text: str) -> Optional[str]:
 
 
 def extract_key(text: str) -> Optional[str]:
+    """Display-oriented key from path (legacy title forms like F#m)."""
     if not isinstance(text, str):
         return None
-    # Prefer explicit patterns like F#m, C#m, Bb
-    m = re.search(r"\b([A-G])([b#])?(m)\b", text)
-    if m:
-        note = m.group(1).upper()
-        acc = m.group(2) or ""
-        return f"{note}{acc}m"
-    m = re.search(r"\b([A-G])([b#])?\b", text)
-    if m:
-        note = m.group(1).upper()
-        acc = m.group(2) or ""
-        return f"{note}{acc}"
-    return None
+    try:
+        from src.key_signature import parse_key_signature
+        from src.path_metadata import extract_key_hint
+
+        canonical = extract_key_hint(text)
+        if canonical is None:
+            return None
+        parsed = parse_key_signature(canonical)
+        if parsed is None:
+            return None
+        # Title display: F#m / C / Bb style (not F#min catalog form).
+        if parsed.mode == "min":
+            return f"{parsed.root}m"
+        if parsed.mode == "maj":
+            return parsed.root
+        return parsed.root
+    except Exception:
+        return None
 
 
 def normalize_key(key: str) -> str:

@@ -199,3 +199,11 @@ def run_scan(
                 break
 
         _flush_scan_batch(engine, batch)
+
+    # Deterministic path-metadata pre-pass (no audio decode). Fail-soft.
+    try:
+        from .path_metadata import run_path_metadata_prepass
+
+        run_path_metadata_prepass()
+    except Exception:
+        pass

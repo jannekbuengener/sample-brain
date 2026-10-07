@@ -65,15 +65,13 @@ def load_regex_map():
 
 
 def infer_type_from_filename(name: str):
-    patterns = load_regex_map()
-    name_l = name.lower()
-    for tag, pat in patterns.items():
-        try:
-            if re.search(pat, name_l):
-                return tag
-        except re.error:
-            continue
-    return None
+    """Infer semantic type from filename via shared path-metadata parser."""
+    try:
+        from .path_metadata import extract_pred_type_claim
+
+        return extract_pred_type_claim(name)
+    except Exception:
+        return None
 
 
 def build_tags_for_sample(row, roots, max_tags=MAX_TAGS):

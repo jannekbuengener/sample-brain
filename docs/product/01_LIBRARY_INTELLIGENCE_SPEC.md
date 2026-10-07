@@ -26,8 +26,9 @@ Sample Brain must turn chaotic local sample libraries into a **searchable, consi
 | Optional kNN autotype | ✅ (seed CSV) | ✅ | `src/classify.py` |
 | Configurable library roots (profiles) | ✅ | ✅ | `src/config_loader.py`, `config/profiles.example.yaml` |
 | Tag table schema (`sample_tags`) | ✅ schema + partial writers | ✅ full pipeline | `src/db.py`, `src/search_filters.py` |
-| Filename regex tags (export path) | ✅ export only | ✅ catalog tags | `src/export_fl.py`, `data/regex_map.json` |
-| Keyword enrichment (audio + path + folder) | ❌ | ✅ | *planned* |
+| Filename regex tags (export path) | ✅ export + shared path parser | ✅ catalog tags | `src/export_fl.py`, `src/path_metadata.py`, `data/filename_tag_regex.json` |
+| Path metadata pre-pass + evidence reconciliation | ✅ | ✅ | `src/path_metadata.py`, `docs/PATH_METADATA_RECONCILIATION.md` |
+| Keyword enrichment (audio + path + folder) | ✅ partial (path claims + genre tags) | ✅ full keyword worker | `path_metadata_claims`, `sample_tags` |
 | Title normalisation | ❌ | ✅ | *planned* |
 | Canonical display title per sample | ❌ | ✅ | *planned* |
 | Optional reversible file rename/write | ❌ | opt-in only | *planned* |
@@ -67,9 +68,9 @@ Implemented in `src/db.py`:
 | Field | Type | Source | Notes |
 |-------|------|--------|-------|
 | `sample_id` | INTEGER PK/FK | `samples.id` | 1:1 with sample |
-| `bpm` | REAL | librosa tempo | Optional BPM normalisation via profile (`analyze.bpm_normalization`); stored as analysis raw float. Producer-facing display uses `src/bpm_display.py` (whole integers, round half up). |
-| `key` | TEXT | chroma peak | Root note only today (no maj/min in stored key) |
-| `key_conf` | REAL | chroma prominence | Normalised peak/sum ratio; see §5.1 |
+| `bpm` | REAL | librosa tempo | Optional BPM normalisation via profile (`analyze.bpm_normalization`); stored as analysis raw float. Producer-facing display uses `src/bpm_display.py` (whole integers, round half up). Filename BPM must not overwrite this column. |
+| `key` | TEXT | chroma + mode | Canonical key via `src/key_signature.py` (`Cmaj` / `Amin` / root-only when mode abstains). See `docs/KEY_MODE_ANALYSIS_V1.md`. |
+| `key_conf` | REAL | chroma prominence | Normalised peak/sum ratio; see §6.1 |
 | `loudness` | REAL | RMS dBFS | |
 | `brightness` | REAL | spectral centroid mean | Used by autotype + export tags |
 | `mfcc_mean`, `mfcc_std` | BLOB | librosa MFCC | float32 serialised |
@@ -87,7 +88,34 @@ Implemented in `src/db.py`:
 | `tag` | TEXT | varies | Normalised tag string |
 | `source` | TEXT | provenance | e.g. `pred_type`, `filename`, `folder`, `audio`, `manual` |
 
-Unique on `(sample_id, tag, source)`. Today populated partially via search-filter sync (`source=pred_type`); full enrichment pipeline is **target**.
+Unique on `(sample_id, tag, source)`. Populated via search-filter sync (`source=pred_type`) and path-metadata genre/keyword writers (`source=filename` / `source=folder`).
+
+#### `path_metadata_claims` — declarative path evidence
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `sample_id` | INTEGER FK | |
+| `field` | TEXT | `bpm`, `key`, `sample_class`, `pred_type`, `genre` |
+| `normalized_value` | TEXT | Canonical claim value |
+| `source` | TEXT | `filename` or `folder` |
+| `raw_evidence` | TEXT | Matched token/substring |
+| `parser_version` | TEXT | `PATH_METADATA_PARSER_VERSION` |
+| `path_fingerprint` | TEXT | Path-identity hash; rename invalidates claims |
+
+Unique on `(sample_id, field, source)`. See [`docs/PATH_METADATA_RECONCILIATION.md`](../PATH_METADATA_RECONCILIATION.md).
+
+#### `metadata_resolutions` — reconciled product fields
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `sample_id`, `field` | PK | One resolution per field |
+| `resolution_status` | TEXT | `CONFIRMED`, `COMPATIBLE`, `PARTIAL`, `CONFLICT`, `DECLARED_ONLY`, `ANALYSIS_ONLY`, `UNKNOWN` |
+| `resolved_value` | TEXT | Nullable; NULL on `CONFLICT` / `UNKNOWN` |
+| `filename_value`, `analysis_value` | TEXT | Retained for inspectability |
+| `provenance_note` | TEXT | Human-readable disposition |
+| `parser_version`, `reconciled_at` | TEXT | |
+
+**Invariant:** resolved values live here (and optionally as tags). They must not overwrite `features.*` measurement columns.
 
 #### Embedding tables (semantic search — adjacent, not Library MVP)
 
@@ -101,7 +129,7 @@ Documented here as **follow-up schema/API work** — no migration in this spec s
 |---------|------------------|---------|
 | `display_title` | `samples` column or `sample_metadata` table | Canonical UI/export title after normalisation |
 | `original_filename` | derived from `path` | Audit trail for rename operations |
-| `keywords` | `sample_tags` with `source=keyword` | Search/filter enrichment |
+| `keywords` | `sample_tags` with `source=keyword` | Additional search/filter enrichment beyond path genre |
 | `pipeline_version` | `features` or sidecar | Re-analyze when analyzer changes |
 | `analysis_status` | `features` or sidecar | `ok`, `failed`, `skipped` per sample |
 
@@ -116,8 +144,8 @@ Keywords supplement `pred_type` and filename regex with structured, searchable t
 | Priority | Source | Examples | Shipped |
 |----------|--------|----------|---------|
 | 1 | Audio features + autotype | `Kick`, `Dark`, `Punchy` | partial (`pred_type` + export heuristics) |
-| 2 | Filename tokens | `808`, `riser`, `vocal` | partial (regex map at export) |
-| 3 | Folder path segments | `Drums/Kicks`, `Cinematic/Impacts` | ❌ |
+| 2 | Filename tokens | BPM/key/type/genre claims | ✅ path metadata pre-pass (`source=filename`) |
+| 3 | Folder path segments | genre / type folder tokens | ✅ path metadata pre-pass (`source=folder`) |
 | 4 | Profile/genre seeds | Techno/Cinematic seed lists | partial (genre profiles in config) |
 | 5 | Manual/user tags | user override | ❌ |
 
@@ -184,13 +212,18 @@ Keywords supplement `pred_type` and filename regex with structured, searchable t
 ## 7. Pipeline contract
 
 ```text
-scan  →  analyze  →  autotype  →  [keyword enrich]  →  [title normalise]
-  │          │            │              │                    │
-  └──────────┴────────────┴──────────────┴────────────────────┘
+scan  →  path metadata pre-pass  →  analyze  →  autotype  →  reconcile  →  [title normalise]
+  │              │                      │            │            │                │
+  └──────────────┴──────────────────────┴────────────┴────────────┴────────────────┘
                               SQLite catalog (canonical)
 ```
 
-CLI today: `init` → `scan` → `analyze` → `autotype` → `export_fl` (optional, legacy).
+CLI today: `init` → `scan` (+ path pre-pass) → `analyze` → `autotype` (+ reconcile) →
+`export_fl` (optional, legacy). Explicit: `metadata_parse`, `metadata_reconcile`.
+
+Filename/title tokens are declarative evidence reconciled against analysis; they are
+not absolute truth. Contract: [`docs/PATH_METADATA_RECONCILIATION.md`](../PATH_METADATA_RECONCILIATION.md),
+[`docs/TITLE_RULES.md`](../TITLE_RULES.md).
 
 Config precedence: profile YAML < environment variables < CLI flags (`src/config_loader.py`).
 
@@ -224,7 +257,8 @@ Config precedence: profile YAML < environment variables < CLI flags (`src/config
 
 | Slice | Scope | Depends on |
 |-------|-------|------------|
-| Keyword enrichment worker | Populate `sample_tags` from path/folder/audio rules | This spec §4 |
+| Path metadata pre-pass + reconcile | Claims + resolutions (shipped) | §3.2, `PATH_METADATA_RECONCILIATION.md` |
+| Broader keyword enrichment worker | Additional audio/profile keyword rules | This spec §4 |
 | Title normalisation | `display_title` + CLI `library normalize-titles` (name TBD) | This spec §5 |
 | `key_conf` calibration evidence | #72 — thresholds only, no blind code change | §6 |
 | Export tests | FL tag structure validation | `docs/DAW_INTEGRATION_SPEC.md` §7 |
@@ -247,7 +281,8 @@ Config precedence: profile YAML < environment variables < CLI flags (`src/config
 
 ## 12. References
 
-- `src/scan.py`, `src/analyze.py`, `src/classify.py`, `src/db.py`, `src/export_fl.py`
+- `src/scan.py`, `src/analyze.py`, `src/classify.py`, `src/db.py`, `src/export_fl.py`, `src/path_metadata.py`
+- `docs/PATH_METADATA_RECONCILIATION.md`, `docs/TITLE_RULES.md`, `docs/KEY_MODE_ANALYSIS_V1.md`
 - `docs/PRODUCT_REQUIREMENTS.md` §5.1
 - `docs/EPIC_1_CONFIG_PROFILES.md`
 - `config/profiles.example.yaml`

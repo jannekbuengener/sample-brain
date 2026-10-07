@@ -34,7 +34,7 @@ internal agent- and process docs are clearly separated.
 | [Data & Artifact Policy](DATA_AND_ARTIFACT_POLICY.md) | Committed vs. runtime artifacts |
 | [ADR: sqlite-vec Search Backend](adr/ADR-0004-sqlite-vec-search-backend.md) | Default-search decision |
 | [ADR: Search Quality Evaluation](adr/ADR-0005-search-quality-evaluation.md) | Golden dataset contract |
-| Key contracts | [Track Map v1](TRACK_MAP_V1.md), [Key Mode Analysis v1](KEY_MODE_ANALYSIS_V1.md), [Track Analysis Cache v1](TRACK_ANALYSIS_CACHE_V1.md) |
+| Key contracts | [Track Map v1](TRACK_MAP_V1.md), [Key Mode Analysis v1](KEY_MODE_ANALYSIS_V1.md), [Track Analysis Cache v1](TRACK_ANALYSIS_CACHE_V1.md), [Path Metadata Reconciliation](PATH_METADATA_RECONCILIATION.md), [Title Rules](TITLE_RULES.md) |
 | Packs | [Manifest](PERFORMANCE_PACK_MANIFEST_V1.md), [Layout](PERFORMANCE_PACK_LAYOUT_V1.md), [Resume](PERFORMANCE_PACK_RESUME_V1.md) |
 | Deconstruction | [Track Deconstruction Orchestrator v1](TRACK_DECONSTRUCTION_ORCHESTRATOR_V1.md) |
 
