@@ -213,14 +213,15 @@ After a successful create/claim **and bind** (create transaction stage 9):
 
 This precedence rule is why vectors 11 and 14 require lifecycle outcome `open` after successful claim/restart. Pointer encoding is not prescribed here.
 
-## 8. Draft-loss boundary
+## 8. Unsaved musical-loss boundary (draft + dirty open package)
 
 Technical contract only:
 
 - Unsaved draft must not silently disappear
-- Product close must detect draft-loss
-- Any “don’t show this again” suppression may affect **only** the draft-loss warning — never general app-exit confirmation
-- Switching to another package / track must not silently discard a non-exported draft
+- After package create/bind, dirty in-memory mutations that have not been successfully persisted (including after `write_failed`) must not silently disappear
+- Product close must detect unsaved musical loss (draft **or** dirty open package)
+- Package/track switch must not silently discard unsaved musical loss
+- Any “don’t show this again” suppression may affect **only** this unsaved-musical-loss warning — never general app-exit confirmation
 
 Exact UX copy / placement / interaction:
 
@@ -256,7 +257,9 @@ Minimal library seam (no Browser runtime in this issue):
 - Package rows are **not** normal sample rows
 - Registration / docking does **not** activate the track
 - Explicit **Open** binds / changes the active track
-- Repeated registration / open has a deterministic outcome (idempotent same package root identity, or defined conflict)
+- **Registration identity** for idempotency / collision is the package `track_id` (stable opaque). Package root path is the locate/open handle and may change on relocate.
+- Same `track_id` registered again (including after relocate to a new root) → idempotent identity update / no-op (listing points at current root; no activation)
+- Different `track_id` attempting to occupy an already-claimed registry slot → conflict: reject; preserve prior registration; do not change active track; do not overwrite package files
 - No multi-track Live semantics
 
 [#1078](https://github.com/jannekbuengener/sample-brain/issues/1078) consumes package creation at the Edit → Arrangement transition; it does not redefine package ownership.
@@ -309,7 +312,7 @@ These are **contract vectors** for later #1085 runtime acceptance. This freeze o
 | 12 | Legacy session with missing media | **Detection** → `migration_required` (no package). **Attempted claim** → `missing_media`; no visible package; legacy recoverable. Do not collapse detection into claim failure. |
 | 13 | Failed migration | legacy recoverable; `migration_failed` (or equivalent controlled HOLD) |
 | 14 | Post-create musical mutation + restart | same track state restored and rebound → **`open`** |
-| 15 | Save failure after create | `write_failed`; no false success |
+| 15 | Save failure after create | `write_failed`; no false success; dirty open-package mutations must not silently discard on close/switch until successful retry or explicit discard (`OPEN_PRODUCT_GATE` for UX) |
 
 Windows evidence for #1085 must use synthetic / repo-safe media only.
 

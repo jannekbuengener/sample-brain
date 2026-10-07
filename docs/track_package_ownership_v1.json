@@ -202,7 +202,10 @@
     "product_close_must_detect_draft_loss": true,
     "dont_show_again_suppresses_only_draft_loss_warning": true,
     "package_switch_must_not_silently_discard_non_exported_draft": true,
-    "exact_ux_copy_placement": "OPEN_PRODUCT_GATE"
+    "applies_to_dirty_open_package_after_write_failed": true,
+    "close_or_switch_must_not_silently_discard_dirty_open_package": true,
+    "exact_ux_copy_placement": "OPEN_PRODUCT_GATE",
+    "notes": "Unsaved musical-loss gate covers pre-create draft and post-create dirty open-package state (including after write_failed)"
   },
   "write_honesty_post_create": {
     "single_python_persistence_authority": true,
@@ -218,6 +221,10 @@
     "package_row_is_not_sample_row": true,
     "explicit_open_binds_active_track": true,
     "repeated_registration_or_open_deterministic": true,
+    "registration_identity_key": "track_id",
+    "package_root_is_locate_open_handle_only": true,
+    "same_track_id_reregister_or_relocate": "idempotent_identity_update_no_activation",
+    "different_track_id_same_registry_slot": "conflict_reject_preserve_prior",
     "no_multi_track_live_semantics": true,
     "runtime_owner_issue": 1085
   },
@@ -299,9 +306,9 @@
           "notes": "Idempotent no-op on listing; does not activate; lifecycle stays ready if listed-not-open or open if already open"
         },
         {
-          "op": "register_conflict_different_package_same_key",
+          "op": "register_conflict_different_track_id_same_registry_slot",
           "expected_outcome_codes": ["ready", "open"],
-          "notes": "Fail closed: reject new registration; preserve prior registration; do not change active track; do not overwrite package files"
+          "notes": "Collision key is track_id identity vs occupied registry slot; different track_id => reject; preserve prior; no activation; no file overwrite. Same track_id after relocate is not this op (idempotent identity update)."
         }
       ],
       "notes": "Per-operation outcomes are normative for #1085; do not treat this vector as an unordered union of unrelated codes"
@@ -359,7 +366,19 @@
     {
       "id": 15,
       "name": "save_failure_no_false_success",
-      "expected_outcome_codes": ["write_failed"]
+      "expected_outcome_codes": ["write_failed"],
+      "notes": "write_failed observable and never false success; dirty open-package mutations must not silently discard on close/switch until successful retry or explicit discard (OPEN_PRODUCT_GATE for UX)",
+      "operations": [
+        {
+          "op": "autosave_fails_after_create",
+          "expected_outcome_codes": ["write_failed"]
+        },
+        {
+          "op": "close_or_switch_while_dirty_after_write_failed",
+          "expected_outcome_codes": ["write_failed"],
+          "notes": "Must surface unsaved musical-loss gate; must not silently discard dirty open-package mutations"
+        }
+      ]
     }
   ],
   "hard_out_of_scope": [

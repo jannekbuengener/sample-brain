@@ -239,20 +239,32 @@ def test_legacy_migration_non_destructive(contract: dict, markdown: str) -> None
     assert "non-destructive" in markdown.lower() or "Non-destructive" in markdown
 
 
-def test_draft_loss_and_browser_and_write_honesty(contract: dict) -> None:
+def test_draft_loss_and_browser_and_write_honesty(contract: dict, markdown: str) -> None:
     draft = contract["draft_loss"]
     assert draft["unsaved_draft_must_not_silently_disappear"] is True
     assert draft["product_close_must_detect_draft_loss"] is True
     assert draft["dont_show_again_suppresses_only_draft_loss_warning"] is True
     assert draft["package_switch_must_not_silently_discard_non_exported_draft"] is True
+    assert draft["applies_to_dirty_open_package_after_write_failed"] is True
+    assert draft["close_or_switch_must_not_silently_discard_dirty_open_package"] is True
     assert draft["exact_ux_copy_placement"] == "OPEN_PRODUCT_GATE"
+    assert "dirty open package" in markdown.lower() or "dirty open-package" in markdown.lower()
 
     browser = contract["browser_registration"]
     assert browser["registration_is_not_activation"] is True
     assert browser["package_row_is_not_sample_row"] is True
     assert browser["explicit_open_binds_active_track"] is True
     assert browser["repeated_registration_or_open_deterministic"] is True
+    assert browser["registration_identity_key"] == "track_id"
+    assert browser["package_root_is_locate_open_handle_only"] is True
+    assert browser["same_track_id_reregister_or_relocate"] == (
+        "idempotent_identity_update_no_activation"
+    )
+    assert browser["different_track_id_same_registry_slot"] == (
+        "conflict_reject_preserve_prior"
+    )
     assert browser["no_multi_track_live_semantics"] is True
+    assert "track_id" in markdown
 
     write = contract["write_honesty_post_create"]
     assert write["single_python_persistence_authority"] is True
@@ -294,6 +306,19 @@ def test_vector_14_restart_restores_open_active_track(contract: dict) -> None:
     assert vector["expected_outcome_codes"] == ["open"]
 
 
+def test_vector_15_write_failed_protects_dirty_open_package(contract: dict) -> None:
+    vector = next(v for v in contract["validation_vectors"] if v["id"] == 15)
+    assert vector["expected_outcome_codes"] == ["write_failed"]
+    ops = {item["op"]: item for item in vector["operations"]}
+    assert ops["autosave_fails_after_create"]["expected_outcome_codes"] == ["write_failed"]
+    assert ops["close_or_switch_while_dirty_after_write_failed"][
+        "expected_outcome_codes"
+    ] == ["write_failed"]
+    assert "silently discard" in ops["close_or_switch_while_dirty_after_write_failed"][
+        "notes"
+    ].lower()
+
+
 def test_vector_12_splits_detection_from_missing_media_claim(contract: dict) -> None:
     vector = next(v for v in contract["validation_vectors"] if v["id"] == 12)
     ops = {item["op"]: item for item in vector["operations"]}
@@ -323,8 +348,9 @@ def test_vector_7_repeated_ops_have_deterministic_per_operation_outcomes(
         "ready",
         "open",
     }
-    conflict = ops["register_conflict_different_package_same_key"]
+    conflict = ops["register_conflict_different_track_id_same_registry_slot"]
     assert set(conflict["expected_outcome_codes"]) <= {"ready", "open"}
+    assert "track_id" in conflict["notes"].lower()
     assert "reject" in conflict["notes"].lower() or "fail closed" in conflict["notes"].lower()
     # Top-level union must equal the per-op union (no leftover ambiguous codes).
     per_op_union: set[str] = set()
