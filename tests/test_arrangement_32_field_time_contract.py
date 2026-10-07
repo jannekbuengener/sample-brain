@@ -224,7 +224,13 @@ def test_legacy_migration_policy_explicit(contract: dict, markdown: str) -> None
         assert token in forbidden
     outcomes = legacy["outcomes"]
     assert "migrated_empty" in outcomes
-    assert "migrated_field_aligned" in outcomes
+    assert "migrated_field_aligned_bar_replicated" in outcomes
+    assert "migrated_field_aligned" not in outcomes
+    aligned = outcomes["migrated_field_aligned_bar_replicated"]
+    assert aligned["musical_loss"] is False
+    assert aligned["preserves_one_bar_loop_cadence"] is True
+    assert "p + 4*k" in aligned["action"] or "p + 4*k" in json.dumps(aligned)
+    assert "NOT lossless" in aligned["forbidden_incomplete_action"]
     assert "migration_required" in outcomes
     assert "migration_hold" in outcomes
     assert "reject_fail_closed" in outcomes

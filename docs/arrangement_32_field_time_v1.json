@@ -249,11 +249,13 @@
         "action": "Set length_quarter_notes=32 and field/step count=32; keep empty trigger list; preserve pattern_id and channels.",
         "musical_loss": false
       },
-      "migrated_field_aligned": {
-        "when": "Recognized legacy v1 shape; every trigger position is an exact integer Fraction satisfying 0 <= p < 4 (hence field-aligned under both old bar and new 32-field grid as fields 0..3).",
-        "action": "Keep exact trigger positions unchanged; set length_quarter_notes=32 and field/step count=32; preserve pattern_id/channels.",
+      "migrated_field_aligned_bar_replicated": {
+        "when": "Recognized legacy v1 shape; every trigger position is an exact integer Fraction satisfying 0 <= p < 4 (field-aligned inside the old one-bar loop).",
+        "action": "Set length_quarter_notes=32 and field/step count=32. For each legacy trigger at position p and for each bar_offset k in 0..7, emit the same channel trigger at exact position p + 4*k. Preserve pattern_id/channels. Deduplicate identical (channel_id, position) pairs.",
         "musical_loss": false,
-        "notes": "Only positions 0,1,2,3 from the old one-bar window qualify. Positions such as Fraction(1,4) are not field-aligned."
+        "preserves_one_bar_loop_cadence": true,
+        "forbidden_incomplete_action": "Extending length 4→32 while leaving triggers only in the first bar is NOT lossless: legacy length=4 loops every bar; unreplicated migration would fire only once per 8-bar cycle.",
+        "notes": "Only integer positions 0,1,2,3 from the old one-bar window qualify as field-aligned seeds. Positions such as Fraction(1,4) are not field-aligned and must not use this outcome. Bar tiling here is cadence preservation for recognized length=4 legacy loops — not a license for blind whole-pattern replication of off-grid or non-v1 shapes (still forbidden_without_proof)."
       },
       "migration_required": {
         "when": [

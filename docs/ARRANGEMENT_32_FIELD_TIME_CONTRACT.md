@@ -272,10 +272,12 @@ A trigger position `p` is **field-aligned** iff `p` is an exact non-negative int
 | Outcome | When | Action |
 |---|---|---|
 | `migrated_empty` | Recognized legacy v1 shape (`step_count=16`, `length_quarter_notes=4`) with **zero** triggers | Set length=`32`, field/step count=`32`; keep empty triggers; preserve `pattern_id` / channels |
-| `migrated_field_aligned` | Recognized legacy v1 shape; **every** trigger position is an exact integer `Fraction` in `[0, 4)` | Keep exact positions; set length=`32`, field/step count=`32` |
+| `migrated_field_aligned_bar_replicated` | Recognized legacy v1 shape; **every** trigger position is an exact integer `Fraction` in `[0, 4)` | Set length=`32`, field/step count=`32`. For each legacy trigger at `p` and each bar offset `k` in `0..7`, emit the same channel at exact `p + 4*k` (dedupe identical pairs). This **preserves one-bar loop cadence**: legacy `length=4` fired every bar; unreplicated length extension would fire only once per 8-bar cycle and is **forbidden** |
 | `migration_required` | Recognized legacy v1 with any off-grid trigger (including canonical DEFAULT_ON), or parseable legacy that cannot auto-migrate without reinterpretation | Do **not** activate 32-field truth automatically; leave legacy recoverable; no rounding / stretch / 32 DEFAULT_ON invention |
 | `migration_hold` | Ambiguous mapping; legacy trigger outside old Pattern bounds; user-added unknown legacy step semantics | Fail closed / HOLD; #1086 must not invent a mapping |
 | `reject_fail_closed` | Unknown/malformed `step_count`, corrupt payload, malformed types, invalid Pattern length under activated 32-field semantics | Reject; no silent musical repair |
+
+Cadence note: recognized legacy v1 Patterns are one-bar loops (`length_quarter_notes=4`). Extending length alone without bar tiling is a silent rhythm change and must not be labeled lossless. Bar tiling applies only to proven field-aligned integer positions inside that one-bar window; it does not authorize blind 8× replication of off-grid / DEFAULT_ON / non-v1 shapes.
 
 ### Canonical DEFAULT_ON v1
 
