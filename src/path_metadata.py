@@ -599,17 +599,53 @@ def _reconcile_class_or_type(
     )
 
 
+def _replace_path_derived_genre_tags(
+    sample_id: int, claims: Iterable[PathClaim]
+) -> None:
+    """Replace filename/folder genre tags; leave unrelated tag sources intact."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                DELETE FROM sample_tags
+                WHERE sample_id = :sample_id
+                  AND source IN (:src_filename, :src_folder)
+                """
+            ),
+            {
+                "sample_id": sample_id,
+                "src_filename": SOURCE_FILENAME,
+                "src_folder": SOURCE_FOLDER,
+            },
+        )
+    for claim in claims:
+        if claim.field == FIELD_GENRE:
+            upsert_sample_tag(
+                sample_id,
+                claim.normalized_value.casefold(),
+                claim.source,
+            )
+
+
 def run_path_metadata_prepass(
     sample_ids: list[int] | None = None,
 ) -> dict[str, int]:
-    """Parse path claims for catalog samples. Fail-soft; never raises to callers."""
+    """Parse path claims for catalog samples. Fail-soft; never raises to callers.
+
+    When ``sample_ids`` is provided (including an empty list), only those rows
+    are considered. When ``sample_ids`` is ``None``, the full catalog is scanned
+    (explicit CLI re-run).
+    """
     init_db()
     engine = get_engine()
     parsed = 0
     refreshed = 0
     try:
+        if sample_ids is not None and not sample_ids:
+            return {"samples_considered": 0, "samples_refreshed": 0}
         with engine.begin() as conn:
-            if sample_ids:
+            if sample_ids is not None:
                 placeholders = ", ".join(
                     f":id_{i}" for i in range(len(sample_ids))
                 )
@@ -646,14 +682,7 @@ def run_path_metadata_prepass(
                 replace_path_metadata_claims(
                     int(sid), claims, path_fingerprint_value=fp
                 )
-                # Searchable genre tags (do not wipe other sources).
-                for claim in claims:
-                    if claim.field == FIELD_GENRE:
-                        upsert_sample_tag(
-                            int(sid),
-                            claim.normalized_value.casefold(),
-                            claim.source,
-                        )
+                _replace_path_derived_genre_tags(int(sid), claims)
                 parsed += 1
                 refreshed += 1
             except Exception:

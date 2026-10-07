@@ -91,27 +91,26 @@ def extract_type(text: str) -> Optional[str]:
 
 
 def extract_key(text: str) -> Optional[str]:
-    """Display-oriented key from path (legacy title forms like F#m)."""
+    """Display-oriented key for offline title proposals (legacy forms).
+
+    Keeps root-only keys (``C``, ``Eb``) and original flat/sharp spelling for
+    rename suggestions. Catalog claims still use the modeful shared parser in
+    ``src.path_metadata``.
+    """
     if not isinstance(text, str):
         return None
-    try:
-        from src.key_signature import parse_key_signature
-        from src.path_metadata import extract_key_hint
-
-        canonical = extract_key_hint(text)
-        if canonical is None:
-            return None
-        parsed = parse_key_signature(canonical)
-        if parsed is None:
-            return None
-        # Title display: F#m / C / Bb style (not F#min catalog form).
-        if parsed.mode == "min":
-            return f"{parsed.root}m"
-        if parsed.mode == "maj":
-            return parsed.root
-        return parsed.root
-    except Exception:
-        return None
+    # Prefer explicit patterns like F#m, C#m, Bb
+    m = re.search(r"\b([A-G])([b#])?(m)\b", text)
+    if m:
+        note = m.group(1).upper()
+        acc = m.group(2) or ""
+        return f"{note}{acc}m"
+    m = re.search(r"\b([A-G])([b#])?\b", text)
+    if m:
+        note = m.group(1).upper()
+        acc = m.group(2) or ""
+        return f"{note}{acc}"
+    return None
 
 
 def normalize_key(key: str) -> str:

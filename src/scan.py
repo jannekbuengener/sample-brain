@@ -37,6 +37,7 @@ _SAMPLE_UPSERT = text("""
         size_bytes=excluded.size_bytes,
         hash=excluded.hash,
         hash_algorithm=excluded.hash_algorithm
+    RETURNING id
 """)
 
 
@@ -83,12 +84,21 @@ def _relpath_against_any(p: Path, roots: list[Path]) -> Optional[str]:
     return None
 
 
-def _flush_scan_batch(engine, rows: list[dict]) -> None:
-    """Write one prepared batch in a short transaction."""
+def _flush_scan_batch(engine, rows: list[dict]) -> list[int]:
+    """Write one prepared batch in a short transaction; return sample ids."""
     if not rows:
-        return
+        return []
+    sample_ids: list[int] = []
     with engine.begin() as conn:
-        conn.execute(_SAMPLE_UPSERT, rows)
+        for row in rows:
+            result = conn.execute(_SAMPLE_UPSERT, row)
+            fetchone = getattr(result, "fetchone", None)
+            if not callable(fetchone):
+                continue
+            fetched = fetchone()
+            if fetched is not None:
+                sample_ids.append(int(fetched[0]))
+    return sample_ids
 
 
 def plan_scan(
@@ -160,6 +170,7 @@ def run_scan(
     it = iter_audio_files_stream(roots)
     processed = 0
     batch: list[dict] = []
+    scanned_sample_ids: list[int] = []
 
     # tqdm ohne total (unbekannt) – zeigt laufenden Zähler
     with tqdm(desc="Scanning", unit="file") as bar:
@@ -189,7 +200,7 @@ def run_scan(
             bar.update(1)
 
             if len(batch) >= batch_size:
-                _flush_scan_batch(engine, batch)
+                scanned_sample_ids.extend(_flush_scan_batch(engine, batch))
                 batch.clear()
 
             if show_every and processed % show_every == 0:
@@ -198,12 +209,13 @@ def run_scan(
             if limit and processed >= limit:
                 break
 
-        _flush_scan_batch(engine, batch)
+        scanned_sample_ids.extend(_flush_scan_batch(engine, batch))
 
     # Deterministic path-metadata pre-pass (no audio decode). Fail-soft.
+    # Only the samples touched by this scan — never a full-catalog reparse.
     try:
         from .path_metadata import run_path_metadata_prepass
 
-        run_path_metadata_prepass()
+        run_path_metadata_prepass(scanned_sample_ids)
     except Exception:
         pass

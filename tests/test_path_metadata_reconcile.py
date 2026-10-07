@@ -405,3 +405,42 @@ def test_genre_tags_written_with_provenance(catalog):
     assert any(
         t["tag"] == "techno" and t["source"] in {"filename", "folder"} for t in tags
     )
+
+
+def test_path_derived_genre_tags_replaced_on_refresh(catalog):
+    sid = _insert(
+        "/lib/Techno/Kick_128BPM.wav",
+        relpath="Techno/Kick_128BPM.wav",
+        content_hash=_hash("stable-audio"),
+    )
+    run_path_metadata_prepass([sid])
+    assert any(t["tag"] == "techno" for t in list_sample_tags(sid))
+
+    engine = init_db()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE samples
+                SET path = :path, relpath = :relpath
+                WHERE id = :sid
+                """
+            ),
+            {
+                "path": "/lib/House/Kick_128BPM.wav",
+                "relpath": "House/Kick_128BPM.wav",
+                "sid": sid,
+            },
+        )
+    run_path_metadata_prepass([sid])
+    tags = {(t["tag"], t["source"]) for t in list_sample_tags(sid)}
+    assert ("house", "folder") in tags or any(t == "house" for t, _ in tags)
+    assert ("techno", "folder") not in tags
+    assert ("techno", "filename") not in tags
+
+
+def test_prepass_empty_sample_ids_is_noop(catalog):
+    sid = _insert("/lib/Kick_128BPM.wav", relpath="Kick_128BPM.wav")
+    summary = run_path_metadata_prepass([])
+    assert summary == {"samples_considered": 0, "samples_refreshed": 0}
+    assert list_path_metadata_claims(sid) == []
