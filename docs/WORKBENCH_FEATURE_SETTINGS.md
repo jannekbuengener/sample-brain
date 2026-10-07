@@ -84,6 +84,42 @@ code.
 This slice only establishes/configures the flag. It does **not** wire apply
 mutation.
 
+### Product-path key — `arrangement_mode_enabled` (#1076 docs freeze)
+
+| Property | Value |
+|----------|-------|
+| Serialized key | `arrangement_mode_enabled` |
+| Default | `False` (disabled) |
+| Persist | yes, across restart (when runtime field is implemented) |
+| User control | yes, through the canonical Functional Settings surface (when wired) |
+| Slice status | **Contract/docs-frozen only** in #1076 — not yet a runtime field on `WorkbenchFeatureSettings` |
+
+This key is the sole Arrangement product rollout gate for the Edit → Arrangement path.
+Do **not** introduce `performance_mode_enabled`. Do **not** invent a Live feature key here;
+[#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) owns later Live settings when reactivated.
+
+**OFF (`False`) means:**
+
+- no active Arrangement navigation / Arrangement Entry action;
+- no UI-triggered hidden Arrangement scene or domain initialization from product navigation;
+- no track folder merely because the app starts;
+- no track folder merely because a sample is selected or the Live Kit is edited;
+- Edit / Kit remains usable;
+- Demo `Export Kit` remains separately usable under its existing contract.
+
+**ON (`True`) means:**
+
+- full-version Arrangement Entry **may** be offered later, subject to package/state/eligibility
+  contracts ([#1082](https://github.com/jannekbuengener/sample-brain/issues/1082),
+  [#1078](https://github.com/jannekbuengener/sample-brain/issues/1078)).
+
+Runtime implementation of the field on `src/workbench_feature_settings.py` is deferred to the
+first real consumer slice. Group A / #1076 must not claim the Python dataclass already contains
+this key.
+
+Internal Arrangement helpers (#1082–#1087) do not each need duplicate product toggles while this
+gate remains OFF and product UI cannot reach them.
+
 ## User-accessible surface
 
 Host a compact **Functional** section inside the existing Screen-1 header
@@ -152,4 +188,4 @@ See `tests/test_workbench_feature_settings_910.py`.
 
 Gesture→Rack apply seam, Rack musical mutation, playback stop, session autosave
 mutation, pattern creation, microphone UI, gesture recording flow, off-grid
-editor, Screen 3 / Arrangement, general Preferences redesign.
+editor, Arrangement runtime/UI implementation, Live feature keys, general Preferences redesign.

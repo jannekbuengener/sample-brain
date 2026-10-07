@@ -41,7 +41,7 @@ All four steps are implemented and stable.
 | Workbench QML renderer | `src/workbench_qml.py` | Optional production baseline | PySide6/Qt Quick renderer with a thin ViewModel/command adapter over the Python-authoritative Workbench core. Starts only through `workbench --qml-screen1` (historical CLI flag); Tk remains the default and fallback. |
 | Pattern Core | `src/pattern_core.py` | Current | Python-owned `Channel`, `Trigger`, and `Pattern` model with stable Live Kit channel IDs and exact quarter-note `Fraction` positions (#656). |
 | Sequencer Playback | `src/sequencer_playback.py`, `src/sequencer_pcm.py`, `src/native_pcm_decode.py` | Current | One-pass Pattern → `TempoMap` → absolute native engine-frame planning and fail-soft voice scheduling (#663) plus production `pcm_for_path` cache/decode provider (#676). |
-| Channel Rack Python core | `src/channel_rack.py` | Current | Projects the 11 canonical Live Kit slots into pattern `screen2-main` (historical pattern id), owns immutable 16-step toggles, and reuses the sequencer playback seam; QML UI delivery is historical #678 (`src/workbench_channel_rack.py` + Rack surface in `src/workbench_qml.py`). Current product navigation projects this domain into the one Workbench (#905/#908). |
+| Channel Rack Python core | `src/channel_rack.py` | Current | Projects the 11 canonical Live Kit slots into pattern `screen2-main` (historical pattern id), owns immutable 16-step toggles, and reuses the sequencer playback seam; QML UI delivery is historical #678 (`src/workbench_channel_rack.py` + Rack surface in `src/workbench_qml.py`). Runtime/domain foundations remain on `main`; current **product** placement of Step Sequencer / Pattern programming is Arrangement (#679 ACTIVE). Historical #905/#908 Single-Workspace projection evidence is superseded for product navigation by Edit → Arrangement → later Live (#1075/#1076). |
 
 ### 2.3 EPIC 2 capabilities on `main`
 
@@ -67,7 +67,7 @@ contracts instead of reimplementing them. The retained `workbench_qml_spike`
 module is only a compatibility, fixture, virtualization, and visual-acceptance
 harness over that same shell. Historical “Screen-1” naming in issues, CLI flags
 (`--qml-screen1`), and evidence paths remains delivery evidence; current product
-navigation is Single Workspace ([`WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md)).
+navigation is Edit → Arrangement → later Live (#1075/#1076); [`WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md) remains supporting progressive-disclosure / Edit geometry evidence.
 
 Tkinter remains the functional default and legacy/fallback path while Workbench
 surfaces migrate slice by slice. This does not decide packaging, distribution, or a
@@ -492,16 +492,16 @@ A local HTTP API that wraps pipeline operations and search:
 
 **Status:** Not implemented. Not planned before EPIC 2 completion.
 
-### 10.2 Local Producing Workspace (Single Workspace; VST parked)
+### 10.2 Local Producing Workspace (Edit → Arrangement → later Live; VST parked)
 
-Canonical path: [`docs/PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md), [`docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md).
+Canonical path: [`docs/PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md) ([#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076)). Edit geometry evidence: [`docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md) (exclusive #905 nav thesis superseded on conflict).
 
-**Primary — one persistent local Workbench:**
-- Library / Sources (stable left rail) + main playlist (dominant upper) + Harmonic Matches (contextual)
-- Live Kit / Channel Rack / Step-Sequencer as bottom-workspace domain capabilities (not separate product pages)
+**Primary — Edit → Arrangement → later Live:**
+- **Edit:** Library / Sources + Browser playlist + Harmonic Matches; classic Live Kit as Edit tool (#1077)
+- **Arrangement:** Step Sequencer / Pattern programming + song structure; owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679) (**ACTIVE**)
+- **Live:** later performance perspective; parked under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088)
 - Channel Rack / Pattern foundations **DONE** on `main` (historical delivery #647/#656/#663/#667/#676/#677/#681/#698/#675/#678 / PR #755)
-- Bottom Live Kit / Rack projection into Single Workspace: [#908](https://github.com/jannekbuengener/sample-brain/issues/908) after [#907](https://github.com/jannekbuengener/sample-brain/issues/907)
-- Arrangement: **PARKED / UNDESIGNED — requires later explicit Owner design decision** ([#679](https://github.com/jannekbuengener/sample-brain/issues/679))
+- Closed [#908](https://github.com/jannekbuengener/sample-brain/issues/908) is historical bottom Rack projection evidence (not an open product epic)
 - Shared cores: Library Intelligence, Matching, Context, optional Transform
 - External DAW is **not** part of the core workflow
 
@@ -509,7 +509,7 @@ Canonical path: [`docs/PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md), [
 - Optional later DAW-inline surface over the same core
 - Historical specs under `docs/product/05_VST_PRODUCING_WORKSPACE_SPEC.md` are archived design notes, not the current primary path
 
-**Status:** Single Workspace is current product-navigation authority (#905/#906). Library/Live Kit Workbench shell continues on `main`. Channel Rack domain foundations (#675/#678) are DONE historical evidence. VST remains parked.
+**Status:** Current product-navigation authority is Edit → Arrangement → later Live (#1075/#1076). Library/Live Kit Workbench shell continues on `main`. Channel Rack domain foundations (#675/#678) are DONE historical evidence. Arrangement owner #679 is ACTIVE. VST remains parked.
 
 ### 10.3 Desktop UI (EPIC 4 — superseded)
 

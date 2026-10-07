@@ -13,7 +13,7 @@ Capability specs for library, matching, context, and transform cores that feed t
 | **[MATCHING]** Harmonic & Rhythmic Matching | [#91](https://github.com/jannekbuengener/sample-brain/issues/91) | [`02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md`](02_HARMONIC_RHYTHMIC_MATCHING_SPEC.md) | **Done** (PR #105) |
 | **[CONTEXT]** Track Context Analysis | [#95](https://github.com/jannekbuengener/sample-brain/issues/95) | [`03_TRACK_CONTEXT_ANALYSIS_SPEC.md`](03_TRACK_CONTEXT_ANALYSIS_SPEC.md) | **Done** (PR #106) |
 | **[TRANSFORM]** Realtime Fit & Transform Engine | [#92](https://github.com/jannekbuengener/sample-brain/issues/92) | [`04_REALTIME_FIT_TRANSFORM_SPEC.md`](04_REALTIME_FIT_TRANSFORM_SPEC.md) | **Done** (PR #106) |
-| **[WORKSPACE]** Producing Workspace | [#93](https://github.com/jannekbuengener/sample-brain/issues/93) | [`05_VST_PRODUCING_WORKSPACE_SPEC.md`](05_VST_PRODUCING_WORKSPACE_SPEC.md) | Spec exists; **VST UI parked** (historical #469) — Workbench Screens 1–2 are the active workspace path; Screen 3 Arrangement remains future/parked |
+| **[WORKSPACE]** Producing Workspace | [#93](https://github.com/jannekbuengener/sample-brain/issues/93) | [`05_VST_PRODUCING_WORKSPACE_SPEC.md`](05_VST_PRODUCING_WORKSPACE_SPEC.md) | Spec exists; **VST UI parked** (historical #469) — active product path is Edit → Arrangement → later Live (#1075/#1076); Arrangement owner #679 ACTIVE; later Live parked under #1088 |
 
 ## Dependency order
 
@@ -21,12 +21,12 @@ Capability specs for library, matching, context, and transform cores that feed t
 1. Library (#94)     →  catalog + features
 2. Matching (#91)    →  fit scoring
 3. Context (#95)     →  track profile
-4. Transform (#92)   →  playable variants (optional for Channel Rack v1)
-5. Workbench UI      →  Screen 1 → Live Kit → Channel Rack → Arrangement
+4. Transform (#92)   →  playable variants (optional for Pattern/Rack foundation)
+5. Workbench UI      →  Edit (incl. Live Kit tool) → Arrangement → later Live
    (VST shell #93 UI remains parked; historical #469)
 ```
 
-Runtime on `main` today: CLI scan → analyze → autotype → export_fl (legacy FL); optional embed/index/search; matching / context / deconstruct / pack-import as documented; Workbench Screen 1 + Live Kit (QML production path; Tk legacy/fallback); Pattern Core, the sequencer scheduling seam, Channel Rack Python core, the production sequencer PCM cache/decode provider (#676), and Screen-2 QML Channel Rack (#678 / PR #755). Arrangement mode (Screen 3) and VST3 plugin remain **not** implemented / parked.
+Runtime on `main` today: CLI scan → analyze → autotype → export_fl (legacy FL); optional embed/index/search; matching / context / deconstruct / pack-import as documented; Workbench Edit surface + Live Kit tool (QML production path; Tk legacy/fallback); Pattern Core, the sequencer scheduling seam, Channel Rack Python core, the production sequencer PCM cache/decode provider (#676), and Channel Rack QML (#678 / PR #755). Arrangement owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679) is **ACTIVE** (contracts/domain/UI via children); later Live remains parked under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088). Historical “Screen 3” wording is evidence only. VST3 plugin remains parked.
 
 ## Related documents
 

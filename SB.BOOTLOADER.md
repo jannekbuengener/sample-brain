@@ -12,8 +12,8 @@ Minimal session startup sequence for agents working on `jannekbuengener/sample-b
 4. `.cursor/rules/skill-routing.mdc` — task-to-skill mapping (generated from `docs/operations/CAPABILITY_REGISTRY.json`)
 4b. `docs/operations/README.md` — operations/capability front door (not product canon)
 5. `docs/TARGET_ARCHITECTURE.md` — current and target architecture, including the locked Workbench QML renderer
-6. `docs/PRODUCT_WORKFLOW_CANON.md` — Workbench-first Single Workspace producing path; overrides stale VST-first and multi-screen page wording elsewhere
-6b. `docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md` — Owner-approved Single Workspace geometry / progressive-disclosure product-navigation authority (#905)
+6. `docs/PRODUCT_WORKFLOW_CANON.md` — Workbench-first producing path Edit → Arrangement → later Live (#1075/#1076); overrides stale VST-first, multi-screen, and exclusive Single-Workspace-only navigation wording elsewhere
+6b. `docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md` — supporting progressive-disclosure / Edit geometry evidence (#905 historical; exclusive nav thesis superseded by #1075/#1076)
 7. `docs/WORKBENCH_QML_PROOF_SPIKE.md` — Workbench QML shell and proof/evidence boundary (`LOCK_PYSIDE6_QML`)
 8. `README.md` — product one-liner, quickstart
 9. `knowledge/CURRENT_STATUS.md` — current state, what works
@@ -26,20 +26,21 @@ For any Workbench UI / visual task, the renderer gate above is mandatory before 
 implementation: `SCREEN1_RENDERER = LOCK_PYSIDE6_QML` (historical lock name). New visual/product work
 uses PySide6 / Qt Quick / QML; Tkinter remains legacy/fallback and behavioral
 reference only. Reuse the Python Core/Controller/Audio/Catalog contracts and do
-not reopen the renderer decision. Current product navigation is Single Workspace (#905), not Screen 1/2/3 pages.
+not reopen the renderer decision. Current product navigation is Edit → Arrangement → later Live
+([#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076)), not Screen 1/2/3 pages and not exclusive Single-Workspace-only modes.
 
 For Channel Rack / Pattern domain work, follow the build-order evidence in
 `docs/PRODUCT_WORKFLOW_CANON.md` (ownership → pattern core → sequencer → UI).
-New Single Workspace Rack projection is [#908](https://github.com/jannekbuengener/sample-brain/issues/908) after [#907](https://github.com/jannekbuengener/sample-brain/issues/907); do not invent a second musical state owner.
+Closed [#908](https://github.com/jannekbuengener/sample-brain/issues/908) is historical Rack projection evidence; do not invent a second musical state owner.
 
 ## Task-Specific Context
 
 | Domain | Documents |
 |--------|-----------|
-| Single Workspace / Workbench UI | `docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`, `docs/TARGET_ARCHITECTURE.md`, `docs/WORKBENCH_QML_PROOF_SPIKE.md`, `docs/PRODUCT_WORKFLOW_CANON.md`, live `main` + [#905](https://github.com/jannekbuengener/sample-brain/issues/905) / a **new scoped child issue**; closed/historical #691/#503/#579 are delivery evidence only |
-| Channel Rack / Pattern domain | `docs/PRODUCT_WORKFLOW_CANON.md`, closed #675/#678 (historical evidence), `docs/SESSION_OWNERSHIP_CONTRACT.md`, `docs/PATTERN_CORE_CONTRACT.md`, `docs/SEQUENCER_PLAYBACK_CONTRACT.md`; bottom projection #908 after #907 |
+| Product nav / Workbench UI | `docs/PRODUCT_WORKFLOW_CANON.md`, `docs/PROGRAM_CHROME_CONTRACT.md`, `docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md` (Edit geometry), `docs/TARGET_ARCHITECTURE.md`, `docs/WORKBENCH_QML_PROOF_SPIKE.md`, live `main` + [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076); closed/historical #691/#503/#579/#905 are delivery evidence only |
+| Channel Rack / Pattern domain | `docs/PRODUCT_WORKFLOW_CANON.md`, closed #675/#678 (historical evidence), `docs/SESSION_OWNERSHIP_CONTRACT.md`, `docs/PATTERN_CORE_CONTRACT.md`, `docs/SEQUENCER_PLAYBACK_CONTRACT.md`; product placement in Arrangement workflow |
 | Session / audio-focus audit | [#907](https://github.com/jannekbuengener/sample-brain/issues/907), `docs/SESSION_OWNERSHIP_CONTRACT.md` (runtime seams are not product-page authority) |
-| Arrangement | [#679](https://github.com/jannekbuengener/sample-brain/issues/679) — **PARKED / UNDESIGNED — requires later explicit Owner design decision** |
+| Arrangement | [#679](https://github.com/jannekbuengener/sample-brain/issues/679) — **ACTIVE** Arrangement owner; later Live [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) |
 | EPIC 2 (Semantic Search) | `docs/EPIC_2_SEMANTIC_SEARCH_SPEC.md`, ADR-0001–0005 |
 | DAW / Export | `docs/DAW_INTEGRATION_SPEC.md`, `src/export_fl.py` (legacy/fallback; VST parked #469) |
 | CI / Merge Governance | `docs/CI_DEGRADED_MODE.md`, `docs/MERGE_REVIEW_FEEDBACK_GATE.md`, `docs/BRANCH_PROTECTION.md`, `knowledge/governance/GOVERNANCE.md` |
@@ -56,7 +57,7 @@ Never read these automatically: `knowledge/SHARED.WORKING.MEMORY.md`, `knowledge
 1. `git fetch origin --prune && git status -sb`
 2. Confirm branch matches intended work target
 3. Read mandatory documents (above)
-4. For Workbench UI work, fetch live `main` and the relevant **scoped #905 child issue** before planning or implementation; treat closed/historical #691/#503/#579 as delivered authority only
+4. For Workbench UI / Screen-1 visual work, fetch live `main` and open a new scoped issue under [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#679](https://github.com/jannekbuengener/sample-brain/issues/679) / [#1069](https://github.com/jannekbuengener/sample-brain/issues/1069) before planning or implementation; treat closed/historical #691/#503/#579/#905 as delivered authority only
 5. Classify task → load task-specific documents
 6. Confirm no forbidden sources touched
 7. Begin work

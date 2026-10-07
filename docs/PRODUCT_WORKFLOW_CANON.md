@@ -1,42 +1,75 @@
 # Product Workflow Canon — Sample Brain
 
-Status: **canonical product-path decision** (updated 2026-10-05 for Single Workspace / [#905](https://github.com/jannekbuengener/sample-brain/issues/905) / [#906](https://github.com/jannekbuengener/sample-brain/issues/906)).
-Supersedes older “VST3-first as primary producing path”, blanket “no patterns / no arrangement” wording, and the former multi-screen product-navigation model `Screen 1 → Screen 2 → Screen 3` where those conflict with this file.
+Status: **canonical product-path decision** (updated 2026-10-07 for Edit → Arrangement → later Live / [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076)).
 
-Product-navigation geometry is refined by [`WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md) (Owner Decision A — Stable Workspace + Progressive Disclosure). On product-navigation conflict, prefer that contract together with this file over older multi-screen wording elsewhere.
+Supersedes, where they conflict with this file:
+
+- older “VST3-first as primary producing path”;
+- blanket “no patterns / no arrangement” wording;
+- the former multi-screen product-navigation model `Screen 1 → Screen 2 → Screen 3`;
+- the exclusive Single-Workspace-only navigation thesis from [#905](https://github.com/jannekbuengener/sample-brain/issues/905) that forbids separate product modes;
+- earlier Build → Performance wording.
+
+Closed [#905](https://github.com/jannekbuengener/sample-brain/issues/905) / [#908](https://github.com/jannekbuengener/sample-brain/issues/908) / [#675](https://github.com/jannekbuengener/sample-brain/issues/675) / [#678](https://github.com/jannekbuengener/sample-brain/issues/678) remain historical delivery evidence and are not cosmetically rewritten.
+
+Product-navigation authority for the current sequence is this file together with [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076). [`WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md) remains supporting evidence for progressive disclosure and Edit-workspace geometry; its exclusive navigation thesis is superseded where it conflicts (see that file’s status banner).
 
 ## 1. Internal producing workflow
 
-The core producer path is **one persistent local Workbench**, not an external DAW and not a VST host:
+The core producer path is **local Workbench-first**, not an external DAW and not a VST host. Current product modes:
 
 ```text
-ONE PERSISTENT WORKBENCH
-  ├── Library / Sources          (stable left rail)
-  ├── Main sample playlist       (dominant upper workspace)
-  ├── Harmonic Matches           (contextual / optional)
-  └── Live Kit / Rack / Step-Sequencer  (bottom workspace capability)
+Edit
+  ↓
+Arrangement
+  ↓
+Live                  (later; parked under #1088)
 ```
 
-- Progressive disclosure: the current musical work step determines which tools are visible; irrelevant surfaces stay hidden, collapsed, or de-emphasized.
-- `Channel Rack`, `Pattern`, `Live Kit`, and `Arrangement` are **domain capabilities**, not separate product pages.
-- No external DAW is part of this core workflow.
+### Edit (mode)
+
+- Library / Sources (stable left rail)
+- Main sample playlist / Browser
+- Harmonic Matches (contextual / optional)
+- Classic Live Kit as an **Edit tool** (not a top-level mode) — [#1077](https://github.com/jannekbuengener/sample-brain/issues/1077)
+- Optional Edit docking / sample-drag tools — [#1069](https://github.com/jannekbuengener/sample-brain/issues/1069)–[#1073](https://github.com/jannekbuengener/sample-brain/issues/1073)
+
+### Arrangement (mode)
+
+Owned by [#679](https://github.com/jannekbuengener/sample-brain/issues/679) (**ACTIVE** Arrangement owner):
+
+- Step Sequencer / Pattern programming as Arrangement capabilities (not top-level modes)
+- Song structure (blocks / groups / masks / end marker) via [#1082](https://github.com/jannekbuengener/sample-brain/issues/1082)–[#1087](https://github.com/jannekbuengener/sample-brain/issues/1087)
+- Explicit Edit → Arrangement transition — [#1078](https://github.com/jannekbuengener/sample-brain/issues/1078)
+
+### Live (future mode)
+
+Later performance perspective after Arrangement. Design/layout/MIDI/multi-track remain parked under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088).
+
+### Binding principles (retained)
+
+- Progressive disclosure inside Edit and within modes as appropriate.
+- One Python-owned musical / session / audio / persistence authority; QML = projection + intent.
+- Offline / local-first; no external DAW in the core workflow.
 - FL Browser export remains a **legacy/fallback CLI** integration.
 - VST3 / host-plugin work remains **parked** (see [#469](https://github.com/jannekbuengener/sample-brain/issues/469)) and is **not** the primary product path.
+- Demo `Export Kit` is a distinct action from full-version Arrangement Entry.
 
 ## 2. Workbench surfaces and domain capabilities
 
 | Surface / capability | Intent | Status on `main` |
 |--------|--------|------------------|
-| Library / Sources + main playlist + Harmonic Matches | Browse, select, and match samples inside the one Workbench | Partial/shipped QML Workbench shell; Tk remains default/fallback; `LOCK_PYSIDE6_QML` for new visuals |
-| Live Kit | Assign samples into canonical kit slots; seeds Rack channels | Shipped domain capability inside the Workbench |
-| Channel Rack / Pattern / Step-Sequencer | Program patterns/triggers over kit-referenced and user channels | Domain foundations **DONE** — historical delivery [#675](https://github.com/jannekbuengener/sample-brain/issues/675)/[#678](https://github.com/jannekbuengener/sample-brain/issues/678) (session ownership, Pattern Core, sequencer, Channel Rack Python core, PCM provider #676, DEFAULT_ON #677, extensible channels #681, voice lifecycle #698, QML Channel Rack #678 / PR #755). Bottom-workspace projection into Single Workspace is [#908](https://github.com/jannekbuengener/sample-brain/issues/908) after [#906](https://github.com/jannekbuengener/sample-brain/issues/906)/[#907](https://github.com/jannekbuengener/sample-brain/issues/907) |
-| Arrangement | Future song-structure capability inside the same Workbench | **PARKED / UNDESIGNED — requires later explicit Owner design decision** ([#679](https://github.com/jannekbuengener/sample-brain/issues/679)) |
+| Library / Sources + Browser + Harmonic Matches | Browse, select, and match samples in Edit | Partial/shipped QML Workbench shell; Tk remains default/fallback; `LOCK_PYSIDE6_QML` for new visuals |
+| Live Kit | Assign samples into canonical kit slots (Edit tool) | Shipped domain capability; classic Edit-module path [#1077](https://github.com/jannekbuengener/sample-brain/issues/1077); historical bottom-projection delivery [#908](https://github.com/jannekbuengener/sample-brain/issues/908) |
+| Channel Rack / Pattern / Step-Sequencer | Program patterns/triggers over kit-referenced and user channels | Domain foundations **DONE** — historical delivery [#675](https://github.com/jannekbuengener/sample-brain/issues/675)/[#678](https://github.com/jannekbuengener/sample-brain/issues/678). Product placement: Arrangement workflow (not a top-level mode; not mandatory Edit Live Kit content) |
+| Arrangement | Song-structure mode after Edit / Kit | **ACTIVE** owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679); next contracts [#1082](https://github.com/jannekbuengener/sample-brain/issues/1082)–[#1084](https://github.com/jannekbuengener/sample-brain/issues/1084); broader children [#1082](https://github.com/jannekbuengener/sample-brain/issues/1082)–[#1087](https://github.com/jannekbuengener/sample-brain/issues/1087) |
+| Live | Later performance perspective | **PARKED** under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) until Arrangement delivery + Owner gates |
 
 Historical issues/PRs may still say “Screen 1 / Screen 2 / Screen 3” as delivery evidence. That wording is not current product-navigation authority.
 
 ## 3. Channel Rack product rules (domain capability)
 
-These are product constraints for the Channel Rack / Pattern domain. They are **not** a claim that a separate Channel Rack product page remains current authority.
+These are product constraints for the Channel Rack / Pattern domain. They are **not** a claim that a separate Channel Rack product page or top-level mode remains current authority.
 
 - Live Kit assignments can be taken into the Channel Rack (kit → channels) as the **initial seed**.
 - The Channel Rack is **not** limited to the fixed Live Kit slot universe; user-added channels with opaque IDs (no fake Live Kit slot) are in scope for the Python core (#681).
@@ -44,7 +77,7 @@ These are product constraints for the Channel Rack / Pattern domain. They are **
 - Channel Rack is **pattern/trigger first** (grid programming).
 - **Initial step semantics (v1, #677):** New sample-bearing Channel Rack channels initialize with every v1 step active. Empty channels initialize without triggers. The Rack domain uses DEFAULT_ON / subtractive programming: click removes an active step trigger; click again restores it. Pattern storage remains an explicit trigger list (no inverted / off-mask). There is no additive/subtractive mode selector or preference in v1.
 - A later piano / event editor may share the same pattern substrate; it is **not** required for Channel Rack v1.
-- Arrangement, mixer, sends, inserts, buses, and complex routing are **out of Channel Rack v1 scope**.
+- Mixer, sends, inserts, buses, and complex routing are **out of Channel Rack v1 scope**.
 - Architecture must not unnecessarily block those later extensions.
 - A future vocal / beatbox → pattern feature should reuse the same pattern/channel substrate.
 - Pitching, time-stretching, and resynthesis are **not** prerequisites for Channel Rack v1.
@@ -61,8 +94,8 @@ Still **out of scope**:
 
 **In scope** as user-authored local Workbench tools (when built):
 
-- Pattern / trigger programming in the Channel Rack domain
-- Later Arrangement capability inside the same Workbench (still **PARKED / UNDESIGNED — requires later explicit Owner design decision**)
+- Pattern / trigger programming in the Channel Rack / Sequencer domain (Arrangement workflow)
+- Arrangement mode under [#679](https://github.com/jannekbuengener/sample-brain/issues/679)
 - Analysis “arrangement roles” on source tracks (Track Map) — **analysis vocabulary**, not Arrangement product mode
 
 Do not conflate Track Map / `arrangement_*` analysis contracts with Arrangement product mode.
@@ -79,20 +112,25 @@ Foundation gates that unlocked Channel Rack domain UI (technical readiness; deli
 
 `TECHNICALLY_UNBLOCKED` is not `CURRENT_PRODUCT_PRIORITY`.
 
-Current Single Workspace follow-ups:
+### Current product follow-ups (Edit → Arrangement → later Live)
 
-1. Canon/docs migration to Single Workspace — [#906](https://github.com/jannekbuengener/sample-brain/issues/906)
-2. Session/audio-focus audit for Single Workspace Rack integration — [#907](https://github.com/jannekbuengener/sample-brain/issues/907) (do not silently change runtime seams in docs-only work)
-3. Bottom Live Kit / Rack projection — [#908](https://github.com/jannekbuengener/sample-brain/issues/908) after #906/#907
-4. Arrangement — [#679](https://github.com/jannekbuengener/sample-brain/issues/679) remains **PARKED / UNDESIGNED — requires later explicit Owner design decision**
+1. Canon / open-issue boundary freeze — [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076) under [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075)
+2. Edit Live Kit module — [#1077](https://github.com/jannekbuengener/sample-brain/issues/1077); Edit docking/DnD — [#1069](https://github.com/jannekbuengener/sample-brain/issues/1069)–[#1073](https://github.com/jannekbuengener/sample-brain/issues/1073)
+3. Arrangement contract wave — [#1082](https://github.com/jannekbuengener/sample-brain/issues/1082) / [#1083](https://github.com/jannekbuengener/sample-brain/issues/1083) / [#1084](https://github.com/jannekbuengener/sample-brain/issues/1084) (after #1076)
+4. Arrangement domain + transition + visual/QML — [#1085](https://github.com/jannekbuengener/sample-brain/issues/1085)–[#1087](https://github.com/jannekbuengener/sample-brain/issues/1087), [#1078](https://github.com/jannekbuengener/sample-brain/issues/1078), [#1079](https://github.com/jannekbuengener/sample-brain/issues/1079), [#1080](https://github.com/jannekbuengener/sample-brain/issues/1080)
+5. Later Live — [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) after Arrangement delivery
+
+Closed [#908](https://github.com/jannekbuengener/sample-brain/issues/908) is historical bottom Rack projection evidence (geometry superseded by [#954](https://github.com/jannekbuengener/sample-brain/issues/954) where relevant), not an open product epic.
 
 ## 6. Documents this canon overrides (on conflict)
 
-When wording conflicts, prefer this file and [`WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md) over:
+When wording conflicts, prefer this file and [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075)/[#1076](https://github.com/jannekbuengener/sample-brain/issues/1076) over:
 
+- Exclusive Single-Workspace-only navigation as current product authority (#905 thesis where it forbids Edit / Arrangement / Live modes)
 - Former multi-screen product navigation `Screen 1 → Screen 2 → Screen 3` as current user workflow
 - “VST3-first / VST3 is the primary product interface” in `docs/PRODUCT_REQUIREMENTS.md`, `docs/TARGET_ARCHITECTURE.md` §10.2, `docs/DAW_INTEGRATION_SPEC.md`, `docs/SYSTEM_REQUIREMENTS.md`, `docs/product/README.md`, `docs/product/05_VST_PRODUCING_WORKSPACE_SPEC.md`
-- Blanket “no drum patterns / no arrangement” non-goals that forbid user-authored Channel Rack patterns or a later Arrangement capability inside the Workbench
+- Blanket “no drum patterns / no arrangement” non-goals that forbid user-authored Channel Rack patterns or Arrangement mode
+- Build → Performance as current product sequence
 
 Historical VST pillar specs (#90–#95) remain **archived design notes** for a parked plugin path; they do not authorize VST as the current main producing path.
 
@@ -102,7 +140,10 @@ Existing runtime seams that still use screen-transition names (for example `ente
 
 | Topic | Canonical live reference |
 |-------|--------------------------|
-| Single Workspace navigation / geometry | [`WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md) |
+| Product sequence / navigation | This file + [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076) |
+| Edit progressive disclosure / geometry evidence | [`WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md) (exclusive nav thesis superseded where conflicting) |
+| Program chrome modes vs tools | [`PROGRAM_CHROME_CONTRACT.md`](PROGRAM_CHROME_CONTRACT.md) |
+| Functional settings (`arrangement_mode_enabled` docs freeze) | [`WORKBENCH_FEATURE_SETTINGS.md`](WORKBENCH_FEATURE_SETTINGS.md) |
 | Realtime Workbench boundary | `docs/REALTIME_WORKBENCH_SCOPE.md` |
 | Workbench QML renderer lock | `LOCK_PYSIDE6_QML` in `docs/TARGET_ARCHITECTURE.md` |
 | Session ownership (step 2 — done) | [`SESSION_OWNERSHIP_CONTRACT.md`](SESSION_OWNERSHIP_CONTRACT.md), `src/workbench_session.py` |
@@ -114,4 +155,4 @@ Existing runtime seams that still use screen-transition names (for example `ente
 | Native voices | `src/native_audio.py` |
 | QML Workbench shell | `src/workbench_qml.py` |
 
-Steps 2→3→4→5 are green (scheduling + production PCM provider + #698 voice lifecycle + Channel Rack QML historical delivery). The Channel Rack Python core, DEFAULT_ON initial step semantics (#677), extensible channels (#681), and Channel Rack QML (#678 / PR #755) are merged; parent epic #675 is CLOSED. Single Workspace product navigation is current; bottom-workspace Rack projection remains [#908](https://github.com/jannekbuengener/sample-brain/issues/908).
+Steps 2→3→4→5 are green (scheduling + production PCM provider + #698 voice lifecycle + Channel Rack QML historical delivery). The Channel Rack Python core, DEFAULT_ON initial step semantics (#677), extensible channels (#681), and Channel Rack QML (#678 / PR #755) are merged; parent epic #675 is CLOSED. Current product navigation is Edit → Arrangement → later Live (#1075/#1076); Arrangement owner is [#679](https://github.com/jannekbuengener/sample-brain/issues/679); later Live is parked under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088).
