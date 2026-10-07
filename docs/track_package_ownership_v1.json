@@ -1,0 +1,410 @@
+{
+  "document_type": "sample_brain.track_package_ownership_contract",
+  "contract_schema_version": "1.0.0",
+  "plane": "normative_contract_schema",
+  "not_runtime_serialization": true,
+  "runtime_serialization_owner_issue": 1085,
+  "issue": 1082,
+  "parent_issues": [1075, 679],
+  "depends_on_issues": [1076],
+  "exit_marker": "TRACK_PACKAGE_OWNERSHIP_CONTRACT_FROZEN",
+  "canonical_markdown": "docs/TRACK_PACKAGE_OWNERSHIP_CONTRACT.md",
+  "package_kind": "sample_brain_track_package",
+  "distinct_from_package_kinds": ["sample_brain_live_kit"],
+  "future_runtime_entrypoint_filename": "track_package.json",
+  "package_layout_v1": {
+    "root": "<track-package-root>",
+    "required_components": [
+      "track_package.json",
+      "media/"
+    ],
+    "notes": "Caller supplies package root. media/ holds only required portable media. track_package.json is the sole entrypoint."
+  },
+  "required_package_payload_concepts": {
+    "schema_version": true,
+    "package_kind": true,
+    "track_id": true,
+    "media_index_entry_fields": ["media_id", "relpath"],
+    "musical_fields": ["live_kit", "channel_rack", "master_bpm", "sync_enabled"],
+    "channel_rack_optional": true,
+    "notes": "Normative field classes for future runtime serialization (#1085). Not the runtime writer itself."
+  },
+  "active_package_precedence": {
+    "after_successful_bind_active_package_outranks_legacy_resume": true,
+    "legacy_workbench_session_remains_recoverable": true,
+    "compose_must_not_silently_restore_legacy_over_bound_package": true,
+    "durable_active_package_pointer_owner_issue": 1085,
+    "pointer_encoding_prescribed_here": false,
+    "notes": "Required so vectors 11/14 can honestly expect open after claim/restart without stale legacy override"
+  },
+  "track_id": {
+    "stable": true,
+    "opaque": true,
+    "not_derived_from_display_name": true,
+    "not_derived_from_filesystem_path": true,
+    "package_local_durable": true,
+    "must_survive_serialize_restore_relocate": true,
+    "must_not_contain_private_machine_information": true,
+    "generation_encoding_owner": 1085,
+    "generation_encoding_prescribed_here": false,
+    "uuid_hex_not_frozen": true,
+    "rationale": "No canonical Workbench track UUID-hex owner exists on main; Pattern Core only freezes opaque stable string channel_id properties."
+  },
+  "ownership": {
+    "global_system_owned": [
+      "registered_sample_sources",
+      "catalog_analysis_state",
+      "browser_organization",
+      "collections",
+      "general_app_workspace_preferences",
+      "regenerable_caches",
+      "demo_export_kit_kit_only_output"
+    ],
+    "track_owned_after_package_commit": [
+      "live_kit_assignment_identity_state",
+      "pattern_channel_rack_musical_state",
+      "track_musical_clock_resume_fields",
+      "package_manifest_schema_version",
+      "relative_media_references",
+      "arrangement_state_when_1084_exists",
+      "midi_state_when_midi_contract_exists"
+    ],
+    "partitions_must_be_disjoint": true,
+    "no_second_musical_state_authority": true
+  },
+  "draft_before_arrangement": {
+    "no_track_folder_before_explicit_create": true,
+    "kit_work_is_draft": true,
+    "sample_assignment_does_not_create_track": true,
+    "app_start_does_not_create_track": true,
+    "demo_export_kit_is_separate_command": true,
+    "create_command": "arrangement_entry_or_create_track_package"
+  },
+  "demo_export_vs_track_package": {
+    "demo_export_kit": {
+      "evidence_issue": 728,
+      "evidence_module": "src/workbench_live_kit_export.py",
+      "activates_durable_track": false,
+      "may_share_copy_staging_primitives": true
+    },
+    "create_track_package": {
+      "contract_issue": 1082,
+      "runtime_issue": 1085,
+      "activates_durable_track": true,
+      "only_after_create_commit_and_bind": true
+    },
+    "commands_remain_distinct": true
+  },
+  "existing_seams_referenced": [
+    {
+      "id": "session_ownership",
+      "refs": [
+        "docs/SESSION_OWNERSHIP_CONTRACT.md",
+        "src/workbench_session.py"
+      ]
+    },
+    {
+      "id": "legacy_session_store",
+      "refs": ["src/workbench_session_store.py"],
+      "schema_versions": [1, 2],
+      "filename": "workbench_session.json",
+      "fail_closed_restore": true,
+      "atomic_persistence_pattern": true,
+      "persistence_honesty_owner": "PERSISTENCE_STATUS_*"
+    },
+    {
+      "id": "live_kit_export_728",
+      "refs": ["src/workbench_live_kit_export.py"],
+      "reusable_patterns": [
+        "source_validation",
+        "sibling_staging",
+        "portable_relative_media",
+        "complete_success_publication"
+      ]
+    },
+    {
+      "id": "pattern_channel_stable_identities",
+      "refs": ["src/pattern_core.py"]
+    },
+    {
+      "id": "library_catalog_global_ownership",
+      "refs": ["src/workbench_library.py"]
+    }
+  ],
+  "reference_confinement": {
+    "media_refs_package_relative": true,
+    "media_under_media_dir_only": true,
+    "forbid_absolute_windows_paths": true,
+    "forbid_unc_paths": true,
+    "forbid_file_uri": true,
+    "forbid_dot_dot_segments": true,
+    "forbid_root_escape": true,
+    "forbid_symlink_reparse_escape_outside_package_root": true,
+    "reject_outcome": "path_escape_rejected"
+  },
+  "create_transaction_stages": [
+    "validate_destination_package_root_eligibility",
+    "validate_draft_eligibility",
+    "create_sibling_staging_directory_same_filesystem",
+    "copy_required_media_only",
+    "validate_copied_media",
+    "write_versioned_package_data",
+    "validate_complete_package_integrity",
+    "commit_complete_package_to_final_location",
+    "bind_active_durable_track"
+  ],
+  "destination_eligibility": {
+    "must_not_be_inside_repository_checkout": true,
+    "ineligible_outcome": "destination_unavailable",
+    "notes": "Aligns with DATA_AND_ARTIFACT_POLICY track-package row: packages hold copied private audio and must stay outside the checkout"
+  },
+  "successful_fresh_create": {
+    "expected_outcome_codes": ["open"],
+    "requires_bind_stage_9": true,
+    "ready_without_bind_is_not_success": true,
+    "notes": "Non-legacy Arrangement Entry / Create Track Package happy path; complements vectors 1-15 which emphasize portability/failure/migration cases"
+  },
+  "create_failure_before_commit": {
+    "no_half_valid_visible_package": true,
+    "draft_remains_usable": true,
+    "no_false_saved_status": true,
+    "retry_allowed": true,
+    "sources_unchanged": true,
+    "never_delete_foreign_files_as_cleanup": true,
+    "large_copy_not_on_realtime_audio_path": true
+  },
+  "lifecycle_outcome_codes": [
+    "draft",
+    "package_creating",
+    "ready",
+    "open",
+    "missing_media",
+    "corrupt_or_unsupported",
+    "migration_required",
+    "migration_failed",
+    "destination_unavailable",
+    "copy_interrupted",
+    "write_failed",
+    "path_escape_rejected"
+  ],
+  "persistence_status_relationship": {
+    "PERSISTENCE_STATUS_star_owner": "src/workbench_session_store.py",
+    "PERSISTENCE_STATUS_star_scope": "legacy_global_workbench_session_json_load_autosave_honesty",
+    "package_lifecycle_codes_scope": "track_package_create_open_migrate_write_escape",
+    "vocabularies_must_not_be_merged": true
+  },
+  "legacy_migration": {
+    "legacy_filename": "workbench_session.json",
+    "supported_schema_versions": [1, 2],
+    "detection_outcome": "migration_required",
+    "auto_create_on_boot": false,
+    "claim_must_be_explicit_and_deterministic": true,
+    "no_silent_deletion": true,
+    "no_silent_overwrite": true,
+    "failure_leaves_legacy_recoverable": true,
+    "missing_media_truthful": true,
+    "successful_create_rewrites_absolute_refs_to_package_relative": true,
+    "unsupported_or_ambiguous_controlled_hold": true,
+    "lossless_only_when_provable": true,
+    "destructive_migration_forbidden": true
+  },
+  "draft_loss": {
+    "unsaved_draft_must_not_silently_disappear": true,
+    "product_close_must_detect_draft_loss": true,
+    "dont_show_again_suppresses_only_draft_loss_warning": true,
+    "package_switch_must_not_silently_discard_non_exported_draft": true,
+    "applies_to_dirty_open_package_after_write_failed": true,
+    "close_or_switch_must_not_silently_discard_dirty_open_package": true,
+    "exact_ux_copy_placement": "OPEN_PRODUCT_GATE",
+    "notes": "Unsaved musical-loss gate covers pre-create draft and post-create dirty open-package state (including after write_failed)"
+  },
+  "write_honesty_post_create": {
+    "single_python_persistence_authority": true,
+    "writes_atomic_or_recoverable": true,
+    "write_failure_observable_code": "write_failed",
+    "never_false_success": true,
+    "no_qml_owned_persistence": true,
+    "no_second_project_session_store_truth": true,
+    "runtime_owner_issue": 1085
+  },
+  "browser_registration": {
+    "registration_is_not_activation": true,
+    "package_row_is_not_sample_row": true,
+    "explicit_open_binds_active_track": true,
+    "repeated_registration_or_open_deterministic": true,
+    "registration_identity_key": "track_id",
+    "package_root_is_locate_open_handle_only": true,
+    "same_track_id_reregister_or_relocate": "idempotent_identity_update_no_activation",
+    "different_track_id_same_registry_slot": "conflict_reject_preserve_prior",
+    "no_multi_track_live_semantics": true,
+    "runtime_owner_issue": 1085
+  },
+  "reserved_extension_ownership": {
+    "arrangement": {
+      "key": "arrangement",
+      "owner_issue": 1084,
+      "semantics_defined_here": false,
+      "opaque_optional_reservation_only": true
+    },
+    "midi": {
+      "key": "midi",
+      "owner": "future_midi_contract",
+      "semantics_defined_here": false,
+      "opaque_optional_reservation_only": true
+    }
+  },
+  "cross_contract_boundaries": {
+    "1083": "Owns 32-field timing and musical-position mapping; not owned by 1082",
+    "1084": "Owns Arrangement blocks/group masks/track masks/end marker; 1082 reserves opaque extension only",
+    "1078": "Owns Edit to Arrangement transition wiring; consumes package create contract",
+    "1085": "Sole runtime implementation owner of this contract"
+  },
+  "validation_vectors": [
+    {
+      "id": 1,
+      "name": "package_round_trip_other_windows_path",
+      "expected_outcome_codes": ["open"],
+      "notes": "Explicit open after relocate; original library unavailable; media resolve from package; binds active track"
+    },
+    {
+      "id": 2,
+      "name": "original_library_unavailable_on_open",
+      "expected_outcome_codes": ["open"],
+      "notes": "Explicit open of complete package with no library-root dependency binds active track (not mere ready/register)"
+    },
+    {
+      "id": 3,
+      "name": "missing_source_media_during_create",
+      "expected_outcome_codes": ["missing_media"],
+      "notes": "Create fails; draft usable; no visible package"
+    },
+    {
+      "id": 4,
+      "name": "destination_full_or_unwritable",
+      "expected_outcome_codes": ["destination_unavailable"],
+      "notes": "No visible half-package"
+    },
+    {
+      "id": 5,
+      "name": "interrupted_copy_before_commit",
+      "expected_outcome_codes": ["copy_interrupted"],
+      "notes": "No visible half-package; draft usable"
+    },
+    {
+      "id": 6,
+      "name": "corrupt_or_unsupported_manifest",
+      "expected_outcome_codes": ["corrupt_or_unsupported"],
+      "notes": "No activation"
+    },
+    {
+      "id": 7,
+      "name": "repeated_create_open_register",
+      "expected_outcome_codes": ["destination_unavailable", "open", "ready"],
+      "operations": [
+        {
+          "op": "repeated_create_at_existing_package_root",
+          "expected_outcome_codes": ["destination_unavailable"],
+          "notes": "Existing non-empty package root must not be overwritten; no second package published"
+        },
+        {
+          "op": "repeated_open_same_package",
+          "expected_outcome_codes": ["open"],
+          "notes": "Idempotent: same package remains/becomes the active durable track"
+        },
+        {
+          "op": "repeated_register_same_package_root",
+          "expected_outcome_codes": ["ready", "open"],
+          "notes": "Idempotent no-op on listing; does not activate; lifecycle stays ready if listed-not-open or open if already open"
+        },
+        {
+          "op": "register_conflict_different_track_id_same_registry_slot",
+          "expected_outcome_codes": ["ready", "open"],
+          "notes": "Collision key is track_id identity vs occupied registry slot; different track_id => reject; preserve prior; no activation; no file overwrite. Same track_id after relocate is not this op (idempotent identity update)."
+        }
+      ],
+      "notes": "Per-operation outcomes are normative for #1085; do not treat this vector as an unordered union of unrelated codes"
+    },
+    {
+      "id": 8,
+      "name": "path_traversal_dot_dot",
+      "expected_outcome_codes": ["path_escape_rejected"]
+    },
+    {
+      "id": 9,
+      "name": "absolute_media_escape",
+      "expected_outcome_codes": ["path_escape_rejected"]
+    },
+    {
+      "id": 10,
+      "name": "symlink_or_reparse_escape",
+      "expected_outcome_codes": ["path_escape_rejected"]
+    },
+    {
+      "id": 11,
+      "name": "valid_legacy_session_claim_all_media",
+      "expected_outcome_codes": ["open"],
+      "notes": "Explicit claim/create with all media: commit + bind active durable track (stage 9) => open; relative refs; legacy not silently deleted by this contract"
+    },
+    {
+      "id": 12,
+      "name": "legacy_session_missing_media",
+      "expected_outcome_codes": ["migration_required", "missing_media"],
+      "operations": [
+        {
+          "op": "detect_supported_legacy_with_missing_media",
+          "expected_outcome_codes": ["migration_required"],
+          "notes": "Pre-claim detection only; no package published; legacy untouched"
+        },
+        {
+          "op": "attempt_claim_legacy_with_missing_media",
+          "expected_outcome_codes": ["missing_media"],
+          "notes": "Explicit claim fails truthfully on missing required media; no visible package; legacy recoverable; do not use migration_failed as a substitute for missing_media"
+        }
+      ],
+      "notes": "Detection and attempted claim are separate phases with exact outcomes"
+    },
+    {
+      "id": 13,
+      "name": "failed_migration_leaves_legacy_recoverable",
+      "expected_outcome_codes": ["migration_failed"]
+    },
+    {
+      "id": 14,
+      "name": "post_create_mutation_plus_restart",
+      "expected_outcome_codes": ["open"],
+      "notes": "After post-create mutation and restart, same track state is restored and rebound as the active durable track (open)"
+    },
+    {
+      "id": 15,
+      "name": "save_failure_no_false_success",
+      "expected_outcome_codes": ["write_failed"],
+      "notes": "write_failed observable and never false success; dirty open-package mutations must not silently discard on close/switch until successful retry or explicit discard (OPEN_PRODUCT_GATE for UX)",
+      "operations": [
+        {
+          "op": "autosave_fails_after_create",
+          "expected_outcome_codes": ["write_failed"]
+        },
+        {
+          "op": "close_or_switch_while_dirty_after_write_failed",
+          "expected_outcome_codes": ["write_failed"],
+          "notes": "Must surface unsaved musical-loss gate; must not silently discard dirty open-package mutations"
+        }
+      ]
+    }
+  ],
+  "hard_out_of_scope": [
+    "qml",
+    "arrangement_ui",
+    "pattern_timing_1083",
+    "arrangement_block_mask_implementation_1084",
+    "midi_mapping",
+    "live_layout",
+    "multi_track_live",
+    "cloud_storage",
+    "collaboration",
+    "sync_engine",
+    "runtime_persistence_1085",
+    "browser_runtime",
+    "private_samples_dbs_caches_credentials_machine_paths"
+  ]
+}

@@ -40,3 +40,4 @@ Runtime on `main` today: CLI scan → analyze → autotype → export_fl (legacy
 | [`docs/PATTERN_CORE_CONTRACT.md`](../PATTERN_CORE_CONTRACT.md) | Minimal Channel / Pattern / Trigger contract — implemented in `src/pattern_core.py` (#656) |
 | [`docs/SEQUENCER_PLAYBACK_CONTRACT.md`](../SEQUENCER_PLAYBACK_CONTRACT.md) | Pattern → TempoMap → native scheduling (#663) + production PCM cache/decode provider (#676) |
 | [`docs/SESSION_OWNERSHIP_CONTRACT.md`](../SESSION_OWNERSHIP_CONTRACT.md) | Single Live Kit + QML→native audio ownership (completed on `main`) |
+| [`docs/TRACK_PACKAGE_OWNERSHIP_CONTRACT.md`](../TRACK_PACKAGE_OWNERSHIP_CONTRACT.md) | #1082 track package / portability / legacy-session migration freeze (`TRACK_PACKAGE_OWNERSHIP_CONTRACT_FROZEN`); runtime #1085 |
