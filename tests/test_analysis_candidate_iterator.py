@@ -267,6 +267,31 @@ def test_validate_result_rejects_malformed_bounded_state() -> None:
         validate_result(poisoned4)
 
 
+def test_validate_result_rejects_noncanonical_ordered_members() -> None:
+    result = _run(visited_candidate_ids=["demo.cand.c"])
+    poisoned = dict(result)
+    space = dict(result["search_space"])
+    members = [dict(item) for item in space["ordered_members"]]
+    members[0] = {
+        "candidate_id": " demo.cand.c ",
+        "config_fingerprint": members[0]["config_fingerprint"],
+        "extra": "drop-me",
+    }
+    space["ordered_members"] = members
+    space["search_space_fingerprint"] = search_space_fingerprint(
+        search_space_id=space["search_space_id"],
+        search_space_version=space["search_space_version"],
+        ordered_members=_members(),
+    )
+    poisoned["search_space"] = space
+    poisoned["result_fingerprint"] = result_semantic_fingerprint(poisoned)
+    with pytest.raises(
+        AnalysisCandidateIteratorError,
+        match="canonical|only candidate_id",
+    ):
+        validate_result(poisoned)
+
+
 def test_validate_result_rejects_out_of_order_advance_candidate() -> None:
     result = _run(visited_candidate_ids=["demo.cand.c"])
     # Declaration order is c, a, b. Skipping a for b must fail closed.

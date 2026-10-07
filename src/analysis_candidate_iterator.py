@@ -206,6 +206,41 @@ def _member_index(
     return {str(item["candidate_id"]): item for item in members}
 
 
+def _assert_canonical_ordered_members(
+    ordered_members: object,
+    normalized: Sequence[Mapping[str, str]],
+) -> None:
+    """Reject declarations that normalize to a different two-field projection."""
+    if not isinstance(ordered_members, list) or isinstance(
+        ordered_members, (str, bytes)
+    ):
+        raise AnalysisCandidateIteratorError(
+            "search_space.ordered_members must be a list"
+        )
+    if len(ordered_members) != len(normalized):
+        raise AnalysisCandidateIteratorError(
+            "search_space.ordered_members length mismatch after normalization"
+        )
+    for index, (raw, norm) in enumerate(zip(ordered_members, normalized, strict=True)):
+        if not isinstance(raw, Mapping):
+            raise AnalysisCandidateIteratorError(
+                f"ordered_members[{index}] must be a mapping"
+            )
+        if set(raw.keys()) != {"candidate_id", "config_fingerprint"}:
+            raise AnalysisCandidateIteratorError(
+                f"ordered_members[{index}] must contain only "
+                "candidate_id and config_fingerprint"
+            )
+        if raw.get("candidate_id") != norm["candidate_id"]:
+            raise AnalysisCandidateIteratorError(
+                f"ordered_members[{index}].candidate_id must be canonical"
+            )
+        if raw.get("config_fingerprint") != norm["config_fingerprint"]:
+            raise AnalysisCandidateIteratorError(
+                f"ordered_members[{index}].config_fingerprint must be canonical"
+            )
+
+
 def _assert_partition_firewall(*, partition_role: str, next_action: str) -> None:
     if partition_role not in (
         "development",
@@ -320,7 +355,9 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
         search_space.get("search_space_fingerprint"),
         "search_space.search_space_fingerprint",
     )
-    declared_members = _normalize_members(search_space.get("ordered_members"))
+    raw_ordered_members = search_space.get("ordered_members")
+    declared_members = _normalize_members(raw_ordered_members)
+    _assert_canonical_ordered_members(raw_ordered_members, declared_members)
     expected_space_fp = _compute_search_space_fingerprint(
         search_space_id=space_id,
         search_space_version=space_version,
@@ -468,7 +505,14 @@ def validate_result(result: Mapping[str, Any]) -> dict[str, Any]:
             "result_fingerprint does not match semantic payload"
         )
 
-    return dict(result)
+    out = dict(result)
+    out["search_space"] = {
+        "search_space_id": space_id,
+        "search_space_version": space_version,
+        "search_space_fingerprint": recorded_space_fp,
+        "ordered_members": [dict(item) for item in declared_members],
+    }
+    return out
 
 
 def iterate_candidates(
