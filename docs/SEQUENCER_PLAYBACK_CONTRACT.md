@@ -113,6 +113,10 @@ with more events than concurrent capacity must be driven through
 - Source `BeatGrid` stays analysis/edit time; pattern scheduling uses session
   `TempoMap` unless a later product decision adds BeatGrid sync.
 - Channel Rack DEFAULT_ON (#677) seeds 16 triggers per sample-bearing channel.
+- Arrangement 32-field / 8-bar time + legacy migration *policy* are frozen in
+  [`ARRANGEMENT_32_FIELD_TIME_CONTRACT.md`](ARRANGEMENT_32_FIELD_TIME_CONTRACT.md)
+  (#1083). Runtime timing/migration execution is #1086; this playback contract
+  does not silently reinterpret the live 16-step rack as 32 fields.
 
 ## Non-goals
 

@@ -41,3 +41,4 @@ Runtime on `main` today: CLI scan → analyze → autotype → export_fl (legacy
 | [`docs/SEQUENCER_PLAYBACK_CONTRACT.md`](../SEQUENCER_PLAYBACK_CONTRACT.md) | Pattern → TempoMap → native scheduling (#663) + production PCM cache/decode provider (#676) |
 | [`docs/SESSION_OWNERSHIP_CONTRACT.md`](../SESSION_OWNERSHIP_CONTRACT.md) | Single Live Kit + QML→native audio ownership (completed on `main`) |
 | [`docs/TRACK_PACKAGE_OWNERSHIP_CONTRACT.md`](../TRACK_PACKAGE_OWNERSHIP_CONTRACT.md) | #1082 track package / portability / legacy-session migration freeze (`TRACK_PACKAGE_OWNERSHIP_CONTRACT_FROZEN`); runtime #1085 |
+| [`docs/ARRANGEMENT_32_FIELD_TIME_CONTRACT.md`](../ARRANGEMENT_32_FIELD_TIME_CONTRACT.md) | #1083 32-field / 8-bar sequencer time freeze (`ARRANGEMENT_32_FIELD_TIME_CONTRACT_FROZEN`); runtime #1086 |
