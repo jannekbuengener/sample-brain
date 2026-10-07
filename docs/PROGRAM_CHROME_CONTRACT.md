@@ -25,7 +25,10 @@ Only the global frame:
 
 1. **Top program bar**
    - Product identity on the left: existing text `Sample Brain`. Not the brain signet, not the `SAMPLE BRAIN` lockup, not the claim.
-   - Screen navigation in the center, in this order: Browser, Live Kit, Step Sequencer, Arrangement.
+   - Product-mode navigation in the center for the three upper modes: **Edit**, **Arrangement**, **Live**
+     (working labels; final visible copy may remain `TBD_OWNER_COPY` where not frozen by #1076).
+     Historical reference chrome may still show Browser / Live Kit / Step Sequencer labels — those are
+     **not** current top-level product modes (see mode/tool classification below).
    - Global transport / tempo on the right: existing transport, BPM / Tempo,
      time signature, SYNC, and other current global controls that already live
      in that zone (including the display-preferences overflow).
@@ -52,13 +55,30 @@ The rest of the screenshot is context only. Do not adopt or redesign:
 - step-sequencer rows, lanes, groups, mute/solo, or arrangement mini-maps
 - any other screen-specific body
 
-Pattern Core, sequencer playback, and Screen 2 stay on their own contracts. This file does not rename modules, issues, or Python types from Channel Rack to Step Sequencer. The center label **Step Sequencer** is chrome copy for the existing Screen-2 route.
+Pattern Core, sequencer playback, and historical Screen-2 seams stay on their own contracts. This file does not rename modules, issues, or Python types from Channel Rack to Step Sequencer.
 
-**Arrangement** is a reserved center label. Screen 3 is not built (`PRODUCT_WORKFLOW_CANON.md`). Do not add an Arrangement workspace, route, or command to imitate the label.
+## Product modes vs tools / capabilities (#1076)
 
-**Live Kit** stays the existing Screen-1 panel. The center **Live Kit** item is
-chrome navigation only — it does not add a new screen, a new Live Kit state, or a
-second disclosure/materialization authority.
+Current product modes (upper positions):
+
+| Mode | Type | Contents (semantic) | Not |
+|---|---|---|---|
+| **Edit** | MODE | Browser, Library, Harmonic Matches, classic Live Kit tool, optional Edit docking tools (#1069) | Step Sequencer as mandatory Edit content; Arrangement; Live |
+| **Arrangement** | MODE | Step Sequencer / Pattern programming, Arrangement structure (blocks/groups/masks/end marker) | Demo Export Kit; Live; Edit docking targets |
+| **Live** | FUTURE_MODE | Later performance perspective | Current chrome action; layout/MIDI/multi-track (owned later by #1088) |
+
+Classification of common chrome / historical terms:
+
+| Item | Class | Owner / note |
+|---|---|---|
+| Browser / Library / Harmonic Matches | TOOL / CAPABILITY inside **Edit** | Not top-level modes |
+| Live Kit | TOOL inside **Edit** (#1077) | Not a top-level mode; not Arrangement; not Export |
+| Step Sequencer / Channel Rack (product sense) | CAPABILITY inside **Arrangement** | Not a top-level mode; historical Screen-2 / `channel_rack` symbols remain technical evidence |
+| Export Kit | ACTION (Demo) | Distinct from Arrangement Entry |
+| Arrangement Entry | ACTION (full version) | Deliberate Edit→Arrangement transition (#1078); CTA copy open; ≠ Export Kit |
+| Screen 1 / Screen 2 / Screen 3 | HISTORICAL_TERM | Delivery evidence only; not current product pages |
+
+**Live Kit** reveal/collapse remains owned by existing progressive-disclosure / adapter seams (#845 and current commands). Program chrome must not invent a second Live Kit state owner. When a center control still names Live Kit historically, treat it as Edit-tool summon/reveal — not mode navigation.
 
 | Session state | Center **Live Kit** chrome |
 |---|---|
@@ -68,10 +88,7 @@ second disclosure/materialization authority.
 #831 must implement that table; it must not invent a parallel Live Kit domain or
 materialization path from program chrome.
 
-**Browser** selects Screen 1 workspace focus through existing navigation. **Step
-Sequencer** routes through the existing Screen-2 open command (`openChannelRack` /
-return path). **Arrangement** is visible but inert: reserved label only, no Screen 3
-route, disabled or non-navigating until a future scoped issue authorizes it.
+**Arrangement** mode navigation is gated by docs-frozen `arrangement_mode_enabled` (default False; see `WORKBENCH_FEATURE_SETTINGS.md`) and later #1078/#1082 eligibility. **Live** remains unavailable / parked under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) until explicit re-entry.
 
 ## Footer reuse
 

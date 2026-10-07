@@ -1,6 +1,6 @@
 # ACTIVE_ROADMAP
 
-**Last reconciled:** 2026-10-01
+**Last reconciled:** 2026-10-07
 
 ## How to Use This Roadmap
 
@@ -12,15 +12,15 @@ For execution state, fetch GitHub and repo live first. If this roadmap conflicts
 
 This roadmap intentionally groups durable work rather than mirroring every open issue.
 
-### Active — Single Workspace docs/architecture track; no unauthorized product UI slice
+### Active — Edit → Arrangement → later Live product track
 
-Product-navigation authority is Single Workspace ([#905](https://github.com/jannekbuengener/sample-brain/issues/905), [`WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](../docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md)). Canon migration is [#906](https://github.com/jannekbuengener/sample-brain/issues/906). Do **not** start bottom Rack UI (#908) or invent audio ownership before [#907](https://github.com/jannekbuengener/sample-brain/issues/907).
+Product-navigation authority is Edit → Arrangement → later Live ([#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076), [`PRODUCT_WORKFLOW_CANON.md`](../docs/PRODUCT_WORKFLOW_CANON.md)). Arrangement owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679) is **ACTIVE**. Next Arrangement contract wave: [#1082](https://github.com/jannekbuengener/sample-brain/issues/1082)–[#1084](https://github.com/jannekbuengener/sample-brain/issues/1084). Later Live stays parked under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088).
 
-Authorized historical Workbench UI delivery under [#691](https://github.com/jannekbuengener/sample-brain/issues/691) is complete on `main` (Calm/Clean Start, compact Browser, elastic layout, Display Preferences, Browser Column Resize, Sample DnD, Theme Authority, Brand/Motion analysis surface, selection-steal hardening). Closed #691 is **delivered authority / historical parent**, not an active epic for new work. New Workbench product work requires a **new scoped issue under #905** plus live GitHub confirmation.
+Authorized historical Workbench UI delivery under [#691](https://github.com/jannekbuengener/sample-brain/issues/691) is complete on `main`. Closed #691 / #905-era exclusive Single Workspace nav are **historical evidence**, not the current exclusive product route. New Workbench product work requires a scoped child under [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#679](https://github.com/jannekbuengener/sample-brain/issues/679) / [#1069](https://github.com/jannekbuengener/sample-brain/issues/1069) plus live GitHub confirmation.
 
 Closed governance/audit campaigns [#494](https://github.com/jannekbuengener/sample-brain/issues/494) and [#703](https://github.com/jannekbuengener/sample-brain/issues/703) are historical evidence, not active campaigns.
 
-Next product implementation work must be selected from live product gaps and opened as a new scoped #905 child. Do not invent an Active track from parked/open research issues, and do not restore Screen 1/2/3 page navigation as current authority.
+Do not restore Screen 1/2/3 page navigation or exclusive Single-Workspace-only modes as current authority.
 
 ### Shipped — Workbench Library / Live Kit cluster (historical “Screen 1”)
 
@@ -33,7 +33,7 @@ Shipped Library/Live Kit runtime capabilities on `main` include Clean Start, com
 **[#675 — Live Kit → Channel Rack](https://github.com/jannekbuengener/sample-brain/issues/675)**  
 **[#678 — Screen-2 QML Channel Rack](https://github.com/jannekbuengener/sample-brain/issues/678)** (historical issue title)
 
-Python/session/sequencer foundations and Channel Rack QML are **DONE** on `main` (PR #755; epic #675 CLOSED). Current product model treats Channel Rack as a domain capability inside Single Workspace; bottom projection is #908 after #907. Arrangement remains **PARKED / UNDESIGNED — requires later explicit Owner design decision** (#679); do not reopen Channel Rack product work without explicit Owner-GO.
+Python/session/sequencer foundations and Channel Rack QML are **DONE** on `main` (PR #755; epic #675 CLOSED). Current product model places Channel Rack / Step Sequencer as Arrangement workflow capabilities (not top-level modes). Closed #908 is historical projection evidence. Arrangement owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679) is **ACTIVE**; do not reopen Channel Rack product work without explicit Owner-GO.
 
 ### Watch / parked — do not promote implicitly
 
@@ -42,7 +42,8 @@ Python/session/sequencer foundations and Channel Rack QML are **DONE** on `main`
 - [#74](https://github.com/jannekbuengener/sample-brain/issues/74) — external upstream sqlite-vec ANN tracker only; NumPy remains the default search backend; no private ANN substitute.
 - [#469](https://github.com/jannekbuengener/sample-brain/issues/469) — VST3 product integration is parked.
 - [#615](https://github.com/jannekbuengener/sample-brain/issues/615) / [#620](https://github.com/jannekbuengener/sample-brain/issues/620) — Bitwig work is R&D/playground only; no product integration.
-- [#679](https://github.com/jannekbuengener/sample-brain/issues/679) / [#680](https://github.com/jannekbuengener/sample-brain/issues/680) — Arrangement is **PARKED / UNDESIGNED — requires later explicit Owner design decision**; vocal/beatbox input-mode remains future R&D — not current delivery blockers.
+- [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) — later Live is **PARKED** until Arrangement delivery + Owner gates.
+- [#680](https://github.com/jannekbuengener/sample-brain/issues/680) — vocal/beatbox input-mode remains future R&D — not a current delivery blocker.
 
 Closed #392/#405/#503/#579/#196/#198/#73/#494/#703/#468 are historical evidence, not current roadmap items.
 
@@ -83,8 +84,8 @@ The following are no longer roadmap work and should not be represented as open e
 ### Channel Rack / Pattern foundation
 
 - Session ownership, Pattern Core, sequencer scheduling/PCM, Channel Rack Python core, and Channel Rack QML are established on `main`.
-- Product/UI tracks #675/#678 are **DONE** (PR #755; epic CLOSED). Do not reopen without explicit Owner-GO. Historical “Screen 2” wording is delivery evidence; current navigation is Single Workspace.
-- Arrangement remains **PARKED / UNDESIGNED — requires later explicit Owner design decision** under #679; do not pull arrangement/timeline scope into Rack slices.
+- Product/UI tracks #675/#678 are **DONE** (PR #755; epic CLOSED). Do not reopen without explicit Owner-GO. Historical “Screen 2” wording is delivery evidence; current navigation is Edit → Arrangement → later Live.
+- Arrangement owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679) is **ACTIVE**; do not pull Arrangement timeline/domain into Rack foundation slices without the #679 child contracts.
 
 ### Track deconstruction / performance packs
 
