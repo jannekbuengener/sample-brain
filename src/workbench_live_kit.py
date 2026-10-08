@@ -69,6 +69,17 @@ class LiveKitState:
         if self._on_assignment_changed is not None:
             self._on_assignment_changed()
 
+    def clear_assignments(self, *, notify: bool = True) -> None:
+        """Clear all musical assignments, optionally without persistence callback."""
+        changed = False
+        for group, slots in LIVE_KIT_SLOT_MAPPING:
+            for slot in slots:
+                if self._assignments[group][slot] is not None:
+                    self._assignments[group][slot] = None
+                    changed = True
+        if changed and notify and self._on_assignment_changed is not None:
+            self._on_assignment_changed()
+
     @staticmethod
     def _validate_group(group: str) -> None:
         if group not in LIVE_KIT_GROUPS:
