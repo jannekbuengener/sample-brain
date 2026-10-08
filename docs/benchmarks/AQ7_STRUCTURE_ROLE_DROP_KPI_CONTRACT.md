@@ -156,14 +156,47 @@ Seconds reporting for matched pairs:
 | `aq7.boundary.abs_error_bars_p95` | minimize | p95 absolute bar error over matched pairs |
 | `aq7.boundary.miss_rate` | minimize | unmatched eligible reference boundaries / eligible reference boundaries |
 | `aq7.boundary.extra_rate` | minimize | unmatched predictions / predicted internal boundaries |
-| `aq7.boundary.section_count_abs_error` | minimize | absolute predicted-vs-reference section-count error per record, then aggregate |
-| `aq7.boundary.segment_iou_weighted` | maximize | reference-bar-duration-weighted IoU of deterministically order-matched boundary-derived sections |
+| `aq7.boundary.section_count_abs_error` | minimize | absolute predicted-vs-reference section-count error per record after ignore-mask filtering, then aggregate |
+| `aq7.boundary.segment_iou_weighted` | maximize | reference-bar-duration-weighted IoU of deterministically one-to-one order-matched boundary-derived sections |
+| `aq7.boundary.coverage` | maximize | boundary-eligible records with a usable boundary prediction surface / boundary-eligible records |
 
 Undefined denominators are `not_applicable` / `unknown` as appropriate, never coerced to zero.
 
+### Boundary eligibility / prediction surface — frozen
+
+Annotation-side **boundary-eligible** requires complete internal-boundary annotation for the plane with status `adjudicated` or `single_source` for the scored locus set (ambiguous loci are handled by the ignore mask; they do not by themselves make an otherwise complete record boundary-ineligible).
+
+Prediction-side **usable boundary prediction surface** requires that StructureV1 completed a boundary pass whose public status is one of:
+
+- `ok` / `partial` — usable; predicted internal boundaries (possibly empty after filtering) enter correctness denominators;
+- `no_result` with reason `NO_BOUNDARY_CANDIDATE` — usable **empty** prediction surface; predicted count is 0 and enters precision/extra as an empty set (`not_applicable` when the denominator is 0), while recall/miss still score against eligible references;
+- `no_result` with reason `DOWNBEATS_UNAVAILABLE` or `FEATURES_UNAVAILABLE` — **not** usable; boundary correctness is HOLD / `unknown` for the record;
+- `failed` or any `no_result` without one of the reason codes above — **not** usable; HOLD / `unknown`.
+
+When reason codes are absent from the consumed prediction artifact, treat undifferentiated `no_result` as **not usable** (HOLD). Do not invent a `NO_BOUNDARY_CANDIDATE` distinction the artifact does not expose.
+
+Frozen coverage formula:
+
+```text
+aq7.boundary.coverage =
+  |{boundary-eligible records with usable boundary prediction surface}|
+  / |{boundary-eligible records}|
+```
+
+Empty boundary-eligible set → `not_applicable`. Low coverage must not be hidden by dropping unusable records from P/R only without reporting this metric.
+
 ### Segment-IoU policy
 
-Reference and predicted sections are formed by adding the implicit track start/end around their internal boundaries. Section pairs are matched monotonically by maximum bar-range overlap. For each eligible reference section, compute interval IoU in bar coordinates; weight by reference section length in bars. Unmatched reference sections contribute `0` IoU. This remains secondary to boundary P/R/F1 and must not hide over/under-segmentation.
+Reference and predicted sections are formed by adding the implicit track start/end around their **eligible** reference internal boundaries and **unmasked** predicted internal boundaries (same filtered sets used for boundary P/R). Section pairing is deterministic one-to-one and order-preserving:
+
+1. sort reference and predicted sections by start bar, then end bar, then stable id/order;
+2. maximize the number of pairs whose bar-range overlap is strictly positive;
+3. among equally maximal pairings, maximize total overlap length in bars;
+4. among remaining ties, minimize `|pred_start - ref_start| + |pred_end - ref_end|`;
+5. final ties prefer the earlier prediction, then earlier reference id/order;
+6. one predicted section matches at most one reference section and vice versa.
+
+For each eligible reference section, compute interval IoU in bar coordinates; weight by reference section length in bars. Unmatched reference sections contribute `0` IoU. This remains secondary to boundary P/R/F1 and must not hide over/under-segmentation.
 
 ## Role KPI (`aq7.role`)
 
@@ -214,10 +247,12 @@ For records with a complete explicit empty reference event set, any predicted `d
 
 Annotation-side **event-eligible** requires all of:
 
-1. drop-event annotation status is `adjudicated` or `single_source` (not `ambiguous` / `unavailable`);
+1. drop-event annotation status is `adjudicated` or `single_source` at record/plane level (not whole-plane `ambiguous` / `unavailable`);
 2. the full expected `drop_onset` set is stated, including an explicit empty set when the track has none;
-3. every annotated event references a non-excluded reference neutral boundary;
+3. annotated events may reference excluded / ambiguous boundaries; those individual events are removed from drop-event correctness denominators by the ignore-mask / carry-over rules below, but they do **not** make the whole record event-ineligible when at least the annotation set is complete;
 4. a usable bar mapping exists for ±1-bar matching; otherwise the record is HOLD for scored event timing/presence and is **not** event-eligible for P/R/F1.
+
+Partial-ambiguity rule: a record with mixed clean and ambiguous-anchored drop events remains event-eligible. Only the ambiguous-anchored reference events and mask-overlapping predictions are excluded; remaining clean events still enter P/R/F1.
 
 Prediction-side **usable event prediction surface** requires all of:
 
@@ -274,11 +309,12 @@ Shared rules for all three planes:
 
 | Metric id | Corpus rule |
 |---|---|
-| `precision_1bar`, `recall_1bar`, `miss_rate`, `extra_rate`, `exact_hit_rate` | **micro** — sum numerators / sum denominators over eligible records after ignore-mask filtering |
+| `precision_1bar`, `recall_1bar`, `miss_rate`, `extra_rate`, `exact_hit_rate` | **micro** — sum numerators / sum denominators over eligible records with usable boundary surface after ignore-mask filtering |
 | `f1_1bar` | harmonic mean of corpus micro precision and corpus micro recall |
 | `abs_error_bars_median`, `abs_error_bars_p95` | **pooled sample** — concatenate all matched-pair absolute bar errors across eligible records, then median / p95 on that multiset. Empty matched-pair set → `not_applicable`. Do **not** use median-of-per-record-medians as primary. Percentile math: linear interpolation on a sorted copy, same family as `src.measurement.stats.percentile` (#958). |
-| `section_count_abs_error` | **macro mean** — unweighted mean of per-record absolute section-count errors over records eligible for boundary correctness |
+| `section_count_abs_error` | **macro mean** — unweighted mean of per-record `abs(pred_section_count - ref_section_count)` over records with usable boundary surface. Counts use **filtered** inputs only: `ref_section_count = 1 + eligible_reference_internal_boundaries`, `pred_section_count = 1 + unmasked_predicted_internal_boundaries`. Ambiguous/excluded references and masked predictions do not enter either count. |
 | `segment_iou_weighted` | **pooled weighted** — across all eligible reference sections in the partition, `sum(IoU_i * weight_i) / sum(weight_i)` with `weight_i` = reference section length in bars |
+| `coverage` | **record-level rate** — usable-surface boundary-eligible records / boundary-eligible records |
 
 ### `aq7.role` aggregation
 
