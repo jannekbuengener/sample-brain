@@ -488,6 +488,24 @@ def test_register_resolve_failure_returns_outcome(
     assert registry.list_packages() == ()
 
 
+def test_second_registry_instance_reloads_before_register(tmp_path: Path) -> None:
+    """Two instances must not clobber each other's durable registrations."""
+    root_a, _ = _create_package(tmp_path, track_id="trk_1099_multi_a", name="a")
+    root_b, _ = _create_package(
+        tmp_path, track_id="trk_1099_multi_b", name="b", source_name="snare.wav"
+    )
+    state_dir = tmp_path / "state"
+    first = lkr.LiveKitsRegistry(state_dir=state_dir)
+    second = lkr.LiveKitsRegistry(state_dir=state_dir)
+    assert first.register(root_a).outcome == lkr.OUTCOME_READY
+    assert second.register(root_b).outcome == lkr.OUTCOME_READY
+    listed = lkr.LiveKitsRegistry(state_dir=state_dir).list_packages()
+    assert [row.track_id for row in listed] == [
+        "trk_1099_multi_a",
+        "trk_1099_multi_b",
+    ]
+
+
 def test_stale_unresolvable_registry_entry_does_not_crash_register(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

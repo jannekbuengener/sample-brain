@@ -270,6 +270,9 @@ class LiveKitsRegistry:
 
     def register(self, package_root: Path | str) -> LiveKitsRegisterResult:
         """Dock a valid package under Live Kits without activating Active Track."""
+        # Refresh before mutate so a second in-process instance cannot clobber
+        # packages registered by another LiveKitsRegistry against the same file.
+        self._load()
         root = _safe_resolve(package_root)
         if root is None:
             return LiveKitsRegisterResult(
@@ -355,6 +358,7 @@ class LiveKitsRegistry:
         session: WorkbenchSession,
     ) -> LiveKitsOpenResult:
         """Explicit Open: validate, then bind exactly one Active Track via #1098."""
+        self._load()
         root = _safe_resolve(package_root)
         if root is None:
             return LiveKitsOpenResult(
