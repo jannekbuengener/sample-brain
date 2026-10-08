@@ -5,7 +5,7 @@
 **Parents:** [#949](https://github.com/jannekbuengener/sample-brain/issues/949) (AQ7), [#942](https://github.com/jannekbuengener/sample-brain/issues/942) (program)
 **Depends on:** [#1023](https://github.com/jannekbuengener/sample-brain/issues/1023) / `docs/benchmarks/AQ7_STRUCTURE_ROLE_DROP_KPI_CONTRACT.md` (CLOSED / binding)
 **Related:** [#956](https://github.com/jannekbuengener/sample-brain/issues/956) portable `record_id` join; [#957](https://github.com/jannekbuengener/sample-brain/issues/957) perturbation mechanics
-**Tooling:** follow-up of #1024 — not implemented in this docs-only freeze (`src/aq7_structure_role_drop_schema.py`, `src/aq7_structure_role_drop_corpus.py`)
+**Tooling:** delivered under #1024 — `src/aq7_structure_role_drop_schema.py`, `src/aq7_structure_role_drop_corpus.py`, `tests/test_aq7_structure_role_drop_corpus.py`
 
 ## Architecture outcome
 
@@ -13,7 +13,7 @@
 AQ7_STRUCTURE_ROLE_DROP_CORPUS_FROZEN
 ```
 
-This slice freezes the **named synthetic corpus identity, three-plane GT schema, fixture matrix, leakage policy, BeatGrid provenance, and artifact layout** so later #1024 generator/schema/tests can implement against a fixed contract. It does **not** change StructureV1 / ArrangementClassifier, invent human labels for private audio, implement the generator, or set promotion gates.
+This slice freezes the **named synthetic corpus identity, three-plane GT schema, fixture matrix, leakage policy, BeatGrid provenance, artifact layout, schema validators, and runtime generator**. It does **not** change StructureV1 / ArrangementClassifier, invent human labels for private audio, run an AQ7 baseline, or set promotion gates.
 
 Binding KPI/annotation semantics remain owned by `AQ7_STRUCTURE_ROLE_DROP_KPI_CONTRACT.md` (#1023). This corpus document **does not redefine**: plane identities, role vocabulary, boundary ownership, drop semantics, boundary tolerance, annotation status, CALIBRATION/TEST firewall, or BeatGrid/HOLD semantics. Those rules are consumed by reference.
 
@@ -72,12 +72,12 @@ Wired in `AQ7_STRUCTURE_ROLE_DROP_KPI_CONTRACT.md` and indexed in `docs/CANON_IN
 ## Non-goals
 
 - no StructureV1 / ArrangementClassifier / SectionSignals / baseline / metric code changes
-- no generator, schema module, or test implementation in this docs-only freeze
 - no production switch or promotion thresholds
 - no private audio / private paths / private pilot annotations in committed artifacts
 - no pseudo-ground-truth from analyzer output (see Ground-truth independence)
 - no role logic creating or moving boundaries
 - no `drop_onset`-as-section-role semantics
+- no committed WAV binaries (runtime generation under external workdirs only)
 - no committed WAV binaries in the repository
 - no #1086 32-field semantics
 
@@ -197,7 +197,7 @@ Frozen for this corpus id:
 
 ## Artifact layout
 
-Runtime work directory (external / temp; writing inside the git repo root is rejected by the future generator):
+Runtime work directory (external / temp; writing inside the git repo root is rejected by the generator):
 
 ```text
 <work_dir>/
@@ -206,11 +206,11 @@ Runtime work directory (external / temp; writing inside the git repo root is rej
   gt/<fixture_id>.json
 ```
 
-Repository commits for the #1024 track:
+Repository commits for the #1024 delivery:
 
-| Now (this docs-only freeze) | Later (follow-up tasks under #1024) |
+| Delivered | Deferred (later AQ7 slices) |
 |---|---|
-| this contract doc | schema module, generator, tests, KPI/CANON wiring when authorized |
+| contract doc, schema, generator, frozen tests, KPI/CANON corpus lift | baseline measurement (#1025+), promotion gates |
 
 Generated WAVs and runtime GT trees are **never** committed (`docs/DATA_AND_ARTIFACT_POLICY.md`).
 
@@ -312,9 +312,7 @@ Do not tune on `TEST`.
 - Never put absolute audio paths into portable envelopes; keep paths runtime-local only
 - Do not collapse the three planes into one portable label
 
-## Planned generator / schema surface (document only)
-
-Not implemented in this docs-only freeze. Follow-up tasks under #1024 own:
+## Generator / schema surface (delivered)
 
 ```text
 src/aq7_structure_role_drop_schema.py
@@ -323,22 +321,23 @@ src/aq7_structure_role_drop_corpus.py
   GENERATOR_ID / GENERATOR_SEED
   FIXTURE_MATRIX (6 CAL + 4 TEST)
   generate_aq7_structure_role_drop_corpus(work_dir, *, repo_root=None) -> CorpusManifest
+  validate_aq7_fixture_gt / validate_aq7_manifest / load helpers
 ```
 
-Determinism target (when implemented): identical seed/version/fixture definitions → identical WAV bytes and canonical GT JSON.
+Determinism: identical seed/version/fixture definitions → identical WAV bytes and canonical GT JSON across external workdirs.
 
 ## Exit vocabulary
 
 Exactly one:
 
-- `AQ7_STRUCTURE_ROLE_DROP_CORPUS_FROZEN` — named synthetic corpus id, three-plane schema contract, fixture matrix (6 CAL / 4 TEST), leakage policy, BeatGrid provenance, artifact layout, and GT-independence rules frozen; generator/schema/tests remain follow-up of #1024
+- `AQ7_STRUCTURE_ROLE_DROP_CORPUS_FROZEN` — named synthetic corpus id, three-plane schema, fixture matrix (6 CAL / 4 TEST), leakage policy, BeatGrid provenance, artifact layout, GT-independence, schema validators, and runtime generator frozen
 - `AQ7_STRUCTURE_CORPUS_PARTIAL_HOLD` — partial freeze only; named blockers remain
 - `AQ7_STRUCTURE_CORPUS_INSUFFICIENT` — corpus cannot be frozen without private audio or invented analyzer-derived labels
 
-This docs-only task exits:
+This delivery exits:
 
 ```text
 AQ7_STRUCTURE_ROLE_DROP_CORPUS_FROZEN
 ```
 
-Corpus **code** (schema module, generator, tests) and KPI/CANON lift of `AQ7_ANNOTATED_CORPUS` remain follow-up work under #1024. Issue #1024 stays OPEN until those slices complete under the authorized sequence.
+Baseline measurement and later AQ7 slices (#1025+) remain out of scope for this freeze.

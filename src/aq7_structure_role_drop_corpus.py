@@ -332,13 +332,19 @@ _FIXTURE_SPECS: tuple[_FixtureSpec, ...] = (
         split="TEST",
         track_end_bar=64,
         bpm=116.0,
-        # Coarse reference cuts vs denser musical change — under-segmentation.
+        # Dense reference cuts: a coarse one-/two-cut prediction under-segments.
         boundaries=(
-            _BoundarySpec("b1", 32),
+            _BoundarySpec("b1", 8),
+            _BoundarySpec("b2", 16),
+            _BoundarySpec("b3", 32),
+            _BoundarySpec("b4", 48),
         ),
         sections=(
-            _SectionSpec("s0", 0, 32, "groove"),
-            _SectionSpec("s1", 32, 64, "outro"),
+            _SectionSpec("s0", 0, 8, "intro"),
+            _SectionSpec("s1", 8, 16, "groove"),
+            _SectionSpec("s2", 16, 32, "build"),
+            _SectionSpec("s3", 32, 48, "drop"),
+            _SectionSpec("s4", 48, 64, "outro"),
         ),
         drop_events=(),
         plane_status=_plane(),

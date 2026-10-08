@@ -397,13 +397,14 @@ def validate_aq7_fixture_gt(payload: Mapping[str, Any]) -> dict[str, Any]:
     if family not in FAMILY_VOCABULARY:
         _fail(f"unsupported family: {family}")
     expected = _EXPECTED_BY_FIXTURE_ID.get(fixture_id)
-    if expected is not None:
-        expected_family, expected_split = expected
-        if family != expected_family or split != expected_split:
-            _fail(
-                f"fixture/split/family mismatch for {fixture_id}: "
-                f"got family={family} split={split}"
-            )
+    if expected is None:
+        _fail(f"fixture_id outside frozen corpus membership: {fixture_id}")
+    expected_family, expected_split = expected
+    if family != expected_family or split != expected_split:
+        _fail(
+            f"fixture/split/family mismatch for {fixture_id}: "
+            f"got family={family} split={split}"
+        )
 
     if data.get("analyzer_source") not in (None,):
         _fail("analyzer_source is forbidden; GT is generator-authored")

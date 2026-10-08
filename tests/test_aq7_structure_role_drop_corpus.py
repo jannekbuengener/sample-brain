@@ -113,6 +113,14 @@ def _fixture_ids_from_matrix() -> list[str]:
     return [str(row["fixture_id"]) for row in _matrix_rows()]
 
 
+@pytest.fixture(scope="module")
+def aq7_generated_corpus(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, dict[str, Any]]:
+    """Generate the frozen corpus once per module for read-only assertions."""
+    work = tmp_path_factory.mktemp("aq7-corpus-shared")
+    manifest = corpus.generate_aq7_structure_role_drop_corpus(work, repo_root=REPO_ROOT)
+    return work, manifest
+
+
 def _minimal_valid_gt(*, fixture_id: str = "aq7-synth-simple-clean-cal-001") -> dict[str, Any]:
     """Minimal schema-valid GT payload for negative mutation cases."""
     return {
@@ -412,7 +420,7 @@ def test_drop_event_cannot_add_boundary() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_unknown_role_valid(tmp_path: Path) -> None:
+def test_unknown_role_valid(aq7_generated_corpus: tuple[Path, dict[str, Any]]) -> None:
     """Proof 10: unknown role valid."""
     assert set(schema.ROLE_VOCABULARY) == set(ROLE_VOCABULARY)
     assert "unknown" in schema.ROLE_VOCABULARY
@@ -423,8 +431,7 @@ def test_unknown_role_valid(tmp_path: Path) -> None:
     payload["sections"][1]["role"] = "unknown"
     schema.validate_aq7_fixture_gt(payload)
 
-    work = tmp_path / "corpus"
-    manifest = corpus.generate_aq7_structure_role_drop_corpus(work, repo_root=REPO_ROOT)
+    work, manifest = aq7_generated_corpus
     unknown_id = "aq7-synth-role-ambiguity-unknown-cal-001"
     assert unknown_id in {f["fixture_id"] for f in manifest["fixtures"]}
     gt = _load_generated_gt(work, unknown_id)
@@ -432,13 +439,14 @@ def test_unknown_role_valid(tmp_path: Path) -> None:
     assert "unknown" in roles
 
 
-def test_near_boundary_tolerance_fixture_exists(tmp_path: Path) -> None:
+def test_near_boundary_tolerance_fixture_exists(
+    aq7_generated_corpus: tuple[Path, dict[str, Any]],
+) -> None:
     """Proof 11: near-boundary tolerance fixture exists."""
     assert ("near_boundary_tolerance", "aq7-synth-near-boundary-tolerance-cal-001") in (
         CALIBRATION_FIXTURES
     )
-    work = tmp_path / "corpus"
-    manifest = corpus.generate_aq7_structure_role_drop_corpus(work, repo_root=REPO_ROOT)
+    work, manifest = aq7_generated_corpus
     fid = "aq7-synth-near-boundary-tolerance-cal-001"
     row = next(f for f in manifest["fixtures"] if f["fixture_id"] == fid)
     assert row["family"] == "near_boundary_tolerance"
@@ -448,10 +456,11 @@ def test_near_boundary_tolerance_fixture_exists(tmp_path: Path) -> None:
     assert gt["boundaries"]
 
 
-def test_annotation_disagreement_fixture_exists(tmp_path: Path) -> None:
+def test_annotation_disagreement_fixture_exists(
+    aq7_generated_corpus: tuple[Path, dict[str, Any]],
+) -> None:
     """Proof 12: annotation-disagreement fixture exists."""
-    work = tmp_path / "corpus"
-    manifest = corpus.generate_aq7_structure_role_drop_corpus(work, repo_root=REPO_ROOT)
+    work, manifest = aq7_generated_corpus
     fid = "aq7-synth-annotation-disagreement-cal-001"
     row = next(f for f in manifest["fixtures"] if f["fixture_id"] == fid)
     assert row["family"] == "annotation_disagreement"
@@ -465,10 +474,11 @@ def test_annotation_disagreement_fixture_exists(tmp_path: Path) -> None:
     assert "ambiguous" in statuses | locus_statuses
 
 
-def test_over_segmentation_challenge_exists(tmp_path: Path) -> None:
+def test_over_segmentation_challenge_exists(
+    aq7_generated_corpus: tuple[Path, dict[str, Any]],
+) -> None:
     """Proof 13: over-segmentation challenge exists."""
-    work = tmp_path / "corpus"
-    manifest = corpus.generate_aq7_structure_role_drop_corpus(work, repo_root=REPO_ROOT)
+    work, manifest = aq7_generated_corpus
     fid = "aq7-synth-over-segmentation-challenge-cal-001"
     row = next(f for f in manifest["fixtures"] if f["fixture_id"] == fid)
     assert row["family"] == "over_segmentation_challenge"
@@ -478,10 +488,11 @@ def test_over_segmentation_challenge_exists(tmp_path: Path) -> None:
     assert len(gt["boundaries"]) >= 1
 
 
-def test_under_segmentation_challenge_exists(tmp_path: Path) -> None:
+def test_under_segmentation_challenge_exists(
+    aq7_generated_corpus: tuple[Path, dict[str, Any]],
+) -> None:
     """Proof 14: under-segmentation challenge exists."""
-    work = tmp_path / "corpus"
-    manifest = corpus.generate_aq7_structure_role_drop_corpus(work, repo_root=REPO_ROOT)
+    work, manifest = aq7_generated_corpus
     fid = "aq7-synth-under-segmentation-challenge-test-001"
     row = next(f for f in manifest["fixtures"] if f["fixture_id"] == fid)
     assert row["family"] == "under_segmentation_challenge"
@@ -489,6 +500,8 @@ def test_under_segmentation_challenge_exists(tmp_path: Path) -> None:
     gt = _load_generated_gt(work, fid)
     assert gt["family"] == "under_segmentation_challenge"
     assert isinstance(gt["boundaries"], list)
+    # Dense reference so a coarse one-/two-cut prediction under-segments.
+    assert len(gt["boundaries"]) >= 3
 
 
 # ---------------------------------------------------------------------------
@@ -496,10 +509,11 @@ def test_under_segmentation_challenge_exists(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_beatgrid_provenance_present(tmp_path: Path) -> None:
+def test_beatgrid_provenance_present(
+    aq7_generated_corpus: tuple[Path, dict[str, Any]],
+) -> None:
     """Proof 15: BeatGrid provenance present."""
-    work = tmp_path / "corpus"
-    manifest = corpus.generate_aq7_structure_role_drop_corpus(work, repo_root=REPO_ROOT)
+    work, manifest = aq7_generated_corpus
     for fixture in manifest["fixtures"]:
         gt = _load_generated_gt(work, fixture["fixture_id"])
         prov = gt["beatgrid_provenance"]
@@ -508,10 +522,11 @@ def test_beatgrid_provenance_present(tmp_path: Path) -> None:
         schema.validate_aq7_fixture_gt(gt)
 
 
-def test_missing_beatgrid_hold_case_representable(tmp_path: Path) -> None:
+def test_missing_beatgrid_hold_case_representable(
+    aq7_generated_corpus: tuple[Path, dict[str, Any]],
+) -> None:
     """Proof 16: missing BeatGrid/HOLD case representable."""
-    work = tmp_path / "corpus"
-    manifest = corpus.generate_aq7_structure_role_drop_corpus(work, repo_root=REPO_ROOT)
+    work, manifest = aq7_generated_corpus
     fid = "aq7-synth-beatgrid-hold-test-001"
     row = next(f for f in manifest["fixtures"] if f["fixture_id"] == fid)
     assert row["family"] == "beatgrid_hold"
@@ -528,7 +543,9 @@ def test_missing_beatgrid_hold_case_representable(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_gt_does_not_require_current_analyzer(tmp_path: Path) -> None:
+def test_gt_does_not_require_current_analyzer(
+    aq7_generated_corpus: tuple[Path, dict[str, Any]],
+) -> None:
     """Proof 17: GT does not require current analyzer."""
     for mod in (schema, corpus):
         imported = _imported_module_names(mod)
@@ -537,8 +554,7 @@ def test_gt_does_not_require_current_analyzer(tmp_path: Path) -> None:
             f"{sorted(imported & _FORBIDDEN_ANALYZER_MODULES)}"
         )
 
-    work = tmp_path / "corpus"
-    manifest = corpus.generate_aq7_structure_role_drop_corpus(work, repo_root=REPO_ROOT)
+    work, manifest = aq7_generated_corpus
     for fixture in manifest["fixtures"]:
         gt = _load_generated_gt(work, fixture["fixture_id"])
         assert gt["label_source"] == LABEL_SOURCE
@@ -565,10 +581,11 @@ def test_corpus_modules_do_not_import_structure_analyzers() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_no_private_or_absolute_paths_in_artifacts(tmp_path: Path) -> None:
+def test_no_private_or_absolute_paths_in_artifacts(
+    aq7_generated_corpus: tuple[Path, dict[str, Any]],
+) -> None:
     """Proof 18: no private/absolute paths."""
-    work = tmp_path / "corpus"
-    manifest = corpus.generate_aq7_structure_role_drop_corpus(work, repo_root=REPO_ROOT)
+    work, manifest = aq7_generated_corpus
     _assert_no_private_or_absolute_paths(manifest)
     for fixture in manifest["fixtures"]:
         _assert_no_private_or_absolute_paths(fixture)
@@ -599,14 +616,15 @@ def test_no_committed_wav_dependency() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_schema_sufficient_for_later_aq7_baseline_consumer(tmp_path: Path) -> None:
+def test_schema_sufficient_for_later_aq7_baseline_consumer(
+    aq7_generated_corpus: tuple[Path, dict[str, Any]],
+) -> None:
     """Proof 20: schema sufficient for later AQ7 baseline consumer."""
     assert schema.BOUNDARY_MATCH_TOLERANCE_BARS == 1
     assert schema.SAMPLE_RATE == SAMPLE_RATE
     assert set(schema.ROLE_VOCABULARY) == set(ROLE_VOCABULARY)
 
-    work = tmp_path / "corpus"
-    manifest = corpus.generate_aq7_structure_role_drop_corpus(work, repo_root=REPO_ROOT)
+    work, manifest = aq7_generated_corpus
     schema.validate_aq7_manifest(manifest)
 
     required_manifest = {
@@ -688,13 +706,21 @@ def test_generate_is_deterministic_across_work_dirs(tmp_path: Path) -> None:
         assert gt_a.read_text(encoding="utf-8") == gt_b.read_text(encoding="utf-8")
 
 
-def test_load_manifest_helper_roundtrip(tmp_path: Path) -> None:
-    work = tmp_path / "corpus"
-    generated = corpus.generate_aq7_structure_role_drop_corpus(work, repo_root=REPO_ROOT)
+def test_load_manifest_helper_roundtrip(
+    aq7_generated_corpus: tuple[Path, dict[str, Any]],
+) -> None:
+    work, generated = aq7_generated_corpus
     loaded = schema.load_aq7_corpus_manifest(work / "manifest.json")
     assert loaded["corpus_id"] == generated["corpus_id"]
     assert {f["fixture_id"] for f in loaded["fixtures"]} == set(ALL_FIXTURE_IDS)
     schema.validate_aq7_manifest(loaded)
+
+
+def test_reject_fixture_id_outside_frozen_membership() -> None:
+    payload = _minimal_valid_gt(fixture_id="aq7-synth-made-up-cal-001")
+    payload["family"] = "simple_clean"
+    with pytest.raises(ValueError, match="outside frozen corpus membership"):
+        schema.validate_aq7_fixture_gt(payload)
 
 
 # ---------------------------------------------------------------------------
