@@ -735,6 +735,7 @@ def generate_aq7_structure_role_drop_corpus(
         (gt_dir / f"{spec.fixture_id}.json").write_text(
             _canonical_json(gt_payload),
             encoding="utf-8",
+            newline="\n",
         )
         fixture_rows.append(_manifest_fixture_row(spec))
 
@@ -748,7 +749,11 @@ def generate_aq7_structure_role_drop_corpus(
         "support_counts": _support_counts(fixture_rows),
     }
     validate_manifest(manifest)
-    (target / "manifest.json").write_text(_canonical_json(manifest), encoding="utf-8")
+    (target / "manifest.json").write_text(
+        _canonical_json(manifest),
+        encoding="utf-8",
+        newline="\n",
+    )
     return manifest
 
 

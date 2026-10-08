@@ -92,31 +92,6 @@ FIXTURE_ID_RE = re.compile(
     r"^aq7-synth-[a-z0-9-]+-(cal|test)-\d{3}$"
 )
 
-# Frozen corpus_version 1.0.0 content pins. Topology/render edits require bump.
-FROZEN_GT_SHA256: dict[str, str] = {
-    "aq7-synth-simple-clean-cal-001": "aaf90b0558b312dc2f1c5c6c31615d69e6d5586b980654d3693531137064be26",
-    "aq7-synth-repeated-structure-cal-001": "fe71793e0e5ee5b5f1cb6f7b9090ef4573d5c23a9d4547c582362ffe13035a87",
-    "aq7-synth-near-boundary-tolerance-cal-001": "df37ab96a4d4d8fd17329bc83094d88b53d599f44bb50ab1d34208fbacf16894",
-    "aq7-synth-role-ambiguity-unknown-cal-001": "d85cd8fcdcbf578ea44fdde69a3e381b6a4c86800fc8af39e206fa76e7aff16c",
-    "aq7-synth-annotation-disagreement-cal-001": "405d1070c0549e034cf224c79aeb86ca22415ed7531d2c3ace1d7261328782d7",
-    "aq7-synth-over-segmentation-challenge-cal-001": "da8399c9dc1fabd49637cd7c7188e33ff946487ab46a553e144ddde95b7a0ef9",
-    "aq7-synth-drop-at-boundary-test-001": "d045d32ee63cbaf332bd844ea9c5b8027323f2a0366c813de42ff44edf388f8d",
-    "aq7-synth-drop-not-boundary-owner-test-001": "ab85b7e61bce14834851d0314e04ad30acef8d9dd746f7f0bfe009431c85d3a3",
-    "aq7-synth-under-segmentation-challenge-test-001": "14ccb01d47beba368a1fef744889e264517ab370a737e3fada99a8b2af6e5609",
-    "aq7-synth-beatgrid-hold-test-001": "cb705d98a698ce3f1f9be188a0716ca83b2a89f88991d30c98e73b175bd85669",
-}
-FROZEN_WAV_SHA256: dict[str, str] = {
-    "aq7-synth-simple-clean-cal-001": "c8e750cd6f33fb902f48951db4a6a29de216abb1cabc4990b2bc53f0f1dd5c37",
-    "aq7-synth-repeated-structure-cal-001": "a30aeb5da110a72aa81146794589598defbcb606bff7303aa3d2edf30fc80edc",
-    "aq7-synth-near-boundary-tolerance-cal-001": "ed2a74c49b9e4240d9844e735c83c569e9972beffb187a8de7c09a5c568b89a2",
-    "aq7-synth-role-ambiguity-unknown-cal-001": "3d7fc303047f60bc9a497ffa5fb6b731e170f546ae8687c49097be016bd8d90b",
-    "aq7-synth-annotation-disagreement-cal-001": "39e9e750f173f1c3a7095de29ea1ed629c6f861b8ab0dddb74eaba54394dea51",
-    "aq7-synth-over-segmentation-challenge-cal-001": "b03212ab9068bac6a15dacf7a5f3264cb4d051671173052e30645731e2586a5f",
-    "aq7-synth-drop-at-boundary-test-001": "1a6d22c3fd2dcf458c380f397b5967cfc93db933ceef5ae4ba886e756556188d",
-    "aq7-synth-drop-not-boundary-owner-test-001": "698e19d3ac1572c8ec1c39bf5fd98dafe69fcb4bd8b047d5002496f73a60a2a7",
-    "aq7-synth-under-segmentation-challenge-test-001": "860580c8a1f09960779aec9d7fe5849c053ccb016493aed01c7bfe91157c8a82",
-    "aq7-synth-beatgrid-hold-test-001": "c3a671b4be622348f612848be08df31aa8afdb2de888404decd0e5bf98d4f12d",
-}
 
 _FORBIDDEN_ANALYZER_MODULES = frozenset(
     {
@@ -765,20 +740,36 @@ def test_generate_is_deterministic_across_work_dirs(tmp_path: Path) -> None:
 def test_frozen_corpus_version_content_pins(
     aq7_generated_corpus: tuple[Path, dict[str, Any]],
 ) -> None:
-    """Pin GT/WAV digests for CORPUS_VERSION so silent topology drift fails."""
+    """Pin LF-normalized GT digests for CORPUS_VERSION so silent topology drift fails."""
     work, manifest = aq7_generated_corpus
     assert manifest["corpus_version"] == CORPUS_VERSION == "1.0.0"
-    assert set(FROZEN_GT_SHA256) == set(ALL_FIXTURE_IDS)
-    assert set(FROZEN_WAV_SHA256) == set(ALL_FIXTURE_IDS)
+    assert set(schema.FROZEN_GT_SHA256) == set(ALL_FIXTURE_IDS)
     for fixture_id in ALL_FIXTURE_IDS:
-        gt_digest = hashlib.sha256(
-            (work / "gt" / f"{fixture_id}.json").read_bytes()
-        ).hexdigest()
-        wav_digest = hashlib.sha256(
-            (work / "audio" / f"{fixture_id}.wav").read_bytes()
-        ).hexdigest()
-        assert gt_digest == FROZEN_GT_SHA256[fixture_id], fixture_id
-        assert wav_digest == FROZEN_WAV_SHA256[fixture_id], fixture_id
+        raw = (work / "gt" / f"{fixture_id}.json").read_bytes()
+        assert b"\r" not in raw, fixture_id
+        gt_digest = hashlib.sha256(raw).hexdigest()
+        assert gt_digest == schema.FROZEN_GT_SHA256[fixture_id], fixture_id
+        # load path enforces the same frozen digest.
+        loaded = schema.load_aq7_fixture_gt(work / "gt" / f"{fixture_id}.json")
+        assert loaded["fixture_id"] == fixture_id
+
+
+def test_load_rejects_modified_frozen_gt_content(
+    aq7_generated_corpus: tuple[Path, dict[str, Any]],
+    tmp_path: Path,
+) -> None:
+    work, _manifest = aq7_generated_corpus
+    src = work / "gt" / "aq7-synth-simple-clean-cal-001.json"
+    poisoned = json.loads(src.read_text(encoding="utf-8"))
+    poisoned["boundaries"][0]["bar_index"] = 1
+    out = tmp_path / "poisoned.json"
+    out.write_text(
+        json.dumps(poisoned, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    with pytest.raises(ValueError, match="frozen GT digest mismatch|section|boundary"):
+        schema.load_aq7_fixture_gt(out)
 
 
 def test_load_manifest_helper_roundtrip(

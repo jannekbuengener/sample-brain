@@ -7,6 +7,7 @@ ArrangementClassifier / SectionSignals.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -71,6 +72,20 @@ FROZEN_FIXTURE_MATRIX: tuple[tuple[str, str, str], ...] = (
 FAMILY_VOCABULARY: frozenset[str] = frozenset(row[0] for row in FROZEN_FIXTURE_MATRIX)
 _EXPECTED_BY_FIXTURE_ID: dict[str, tuple[str, str]] = {
     fixture_id: (family, split) for family, fixture_id, split in FROZEN_FIXTURE_MATRIX
+}
+
+# LF-normalized canonical GT sidecar digests for CORPUS_VERSION 1.0.0.
+FROZEN_GT_SHA256: dict[str, str] = {
+    "aq7-synth-simple-clean-cal-001": "04969cb5a3035a6d271a2c1e5b4d758075b8e6559700db1e30a8891b24568699",
+    "aq7-synth-repeated-structure-cal-001": "d138738e7ffb2dbc8487c86de8da2c0fd273d1b3653da99c263319848229ade1",
+    "aq7-synth-near-boundary-tolerance-cal-001": "ef8dc9b4df11426dcf657da91db3eb8b68e0a238e13dbebeee7ef175d2a79c94",
+    "aq7-synth-role-ambiguity-unknown-cal-001": "b940baa344839a6900c79434675a7c2f348509ba3503a4aafc26c2ac67f6fb4e",
+    "aq7-synth-annotation-disagreement-cal-001": "fb5f34df2dd90796a360da907a257fc18cbb2bda1842511cd6c05078f9c73bb2",
+    "aq7-synth-over-segmentation-challenge-cal-001": "618249f91ea870970b15598a12bf047486fc2dc8b54f549414bf7c5b578ed25c",
+    "aq7-synth-drop-at-boundary-test-001": "16e99d40b861cb58c5a2c5ccbc18577c662299da360fcaa205edf139fdc0c3db",
+    "aq7-synth-drop-not-boundary-owner-test-001": "ab27daa782cc1b835845d36cd069654ca503795279729b5fc290a1a76ba7ab1b",
+    "aq7-synth-under-segmentation-challenge-test-001": "08fc6e6a5eb387f88dd42731a41cb5b5a634a350eb943cbc85fb678d16a40cf3",
+    "aq7-synth-beatgrid-hold-test-001": "87f96624608837923efe0f5278cf41fc5b6b9fc16d38b4eda2b95bb6d2dfa701",
 }
 
 _SECTION_BOUNDARY_OWNERSHIP_KEYS = frozenset(
@@ -512,12 +527,27 @@ def load_aq7_fixture_gt(path: str | Path) -> dict[str, Any]:
     """Load and validate a per-fixture GT sidecar JSON document."""
     gt_path = Path(path)
     try:
-        raw = json.loads(gt_path.read_text(encoding="utf-8"))
+        text = gt_path.read_text(encoding="utf-8")
     except OSError as exc:
         raise ValueError(f"unable to read AQ7 fixture GT: {gt_path}") from exc
+    try:
+        raw = json.loads(text)
     except json.JSONDecodeError as exc:
         raise ValueError(f"malformed AQ7 fixture GT JSON: {gt_path}") from exc
-    return validate_aq7_fixture_gt(raw)
+    validated = validate_aq7_fixture_gt(raw)
+    fixture_id = str(validated["fixture_id"])
+    expected = FROZEN_GT_SHA256.get(fixture_id)
+    if expected is not None:
+        normalized = text.replace("\r\n", "\n")
+        if not normalized.endswith("\n"):
+            normalized += "\n"
+        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        if digest != expected:
+            _fail(
+                f"frozen GT digest mismatch for {fixture_id}: "
+                f"got {digest}, expected {expected}"
+            )
+    return validated
 
 
 __all__ = [
@@ -531,6 +561,7 @@ __all__ = [
     "FAMILY_VOCABULARY",
     "FIXTURE_ID_RE",
     "FROZEN_FIXTURE_MATRIX",
+    "FROZEN_GT_SHA256",
     "GENERATOR_ID",
     "GENERATOR_SEED",
     "LABEL_SOURCE",
