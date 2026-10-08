@@ -488,6 +488,41 @@ def test_register_resolve_failure_returns_outcome(
     assert registry.list_packages() == ()
 
 
+def test_malformed_registry_refuses_mutation_without_wipe(tmp_path: Path) -> None:
+    """Invalid durable JSON must not be replaced by a fresh single-entry write."""
+    root_a, _ = _create_package(tmp_path, track_id="trk_1099_badjson_a", name="a")
+    root_b, _ = _create_package(
+        tmp_path, track_id="trk_1099_badjson_b", name="b", source_name="snare.wav"
+    )
+    state_dir = tmp_path / "state"
+    registry = lkr.LiveKitsRegistry(state_dir=state_dir)
+    assert registry.register(root_a).outcome == lkr.OUTCOME_READY
+    before = [row.track_id for row in registry.list_packages()]
+    path = lkr.registry_path(state_dir=state_dir)
+    path.write_text("{not-json", encoding="utf-8")
+    failed = registry.register(root_b)
+    assert failed.outcome == tp.OUTCOME_WRITE_FAILED
+    assert [row.track_id for row in registry.list_packages()] == before
+
+
+def test_repeated_identical_register_skips_persist(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Idempotent same track_id+root must not require another durable write."""
+    package_root, _ = _create_package(tmp_path, track_id="trk_1099_noop")
+    registry = lkr.LiveKitsRegistry(state_dir=tmp_path / "state")
+    assert registry.register(package_root).outcome == lkr.OUTCOME_READY
+
+    def boom(_path: Path, _payload: object) -> None:
+        raise OSError("synthetic registry write failure")
+
+    monkeypatch.setattr(lkr, "_atomic_write_json", boom)
+    again = registry.register(package_root)
+    assert again.outcome == lkr.OUTCOME_READY
+    assert again.entry is not None
+    assert again.entry.track_id == "trk_1099_noop"
+
+
 def test_unreadable_registry_refuses_mutation_without_wipe(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

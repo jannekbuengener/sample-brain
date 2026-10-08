@@ -202,18 +202,15 @@ class LiveKitsRegistry:
         try:
             data = json.loads(raw)
         except (json.JSONDecodeError, ValueError, TypeError):
-            self._entries = {}
-            return True
+            # Malformed durable registry: refuse mutation; keep last-known entries.
+            return False
         if not isinstance(data, dict) or data.get("schema_version") != REGISTRY_SCHEMA_VERSION:
-            self._entries = {}
-            return True
+            return False
         if data.get("scope") != SCOPE_LIVE_KITS:
-            self._entries = {}
-            return True
+            return False
         packages = data.get("packages")
         if not isinstance(packages, list):
-            self._entries = {}
-            return True
+            return False
         loaded: dict[str, LiveKitPackageRow] = {}
         for item in packages:
             if not isinstance(item, dict):
@@ -316,13 +313,23 @@ class LiveKitsRegistry:
                     message=_safe_message(OUTCOME_REGISTER_CONFLICT),
                 )
 
+        previous = self._entries.get(track_id)
+        if previous is not None:
+            previous_root = _safe_resolve(previous.package_root)
+            if previous_root == root:
+                # Idempotent no-op: already durably registered at this root.
+                return LiveKitsRegisterResult(
+                    outcome=OUTCOME_READY,
+                    entry=previous,
+                    message=_safe_message(OUTCOME_READY),
+                )
+
         entry = LiveKitPackageRow(
             track_id=track_id,
             package_root=root,
             display_name=_display_name_for(root, track_id),
             status=OUTCOME_READY,
         )
-        previous = self._entries.get(track_id)
         self._entries[track_id] = entry
         try:
             self._persist()
