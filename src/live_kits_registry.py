@@ -213,25 +213,27 @@ class LiveKitsRegistry:
             return False
         loaded: dict[str, LiveKitPackageRow] = {}
         for item in packages:
+            # Any malformed package element makes mutation unsafe so a later
+            # persist cannot drop the durable row via silent skip+rewrite.
             if not isinstance(item, dict):
-                continue
+                return False
             track_id = item.get("track_id")
             root_text = item.get("package_root")
             status = item.get("status", OUTCOME_READY)
             display_name = item.get("display_name")
             entity_kind = item.get("entity_kind", ENTITY_KIND_TRACK_PACKAGE)
             if entity_kind != ENTITY_KIND_TRACK_PACKAGE:
-                continue
+                return False
             if not isinstance(track_id, str) or not track_id.strip():
-                continue
+                return False
             if not isinstance(root_text, str) or not root_text.strip():
-                continue
+                return False
             if not isinstance(status, str) or not status.strip():
-                continue
+                return False
             try:
                 root = Path(root_text)
             except (OSError, ValueError, TypeError):
-                continue
+                return False
             name = (
                 display_name.strip()
                 if isinstance(display_name, str) and display_name.strip()
@@ -419,29 +421,34 @@ class LiveKitsRegistry:
 
         # Persist registry listing before Active Track bind so a registry write
         # failure cannot report Open failure after activation already succeeded.
+        # Unchanged track_id+root skips persist (repeated Open must still bind).
         track_id = precheck.track_id
         resolved = root
         previous = self._entries.get(track_id)
-        self._entries[track_id] = LiveKitPackageRow(
-            track_id=track_id,
-            package_root=resolved,
-            display_name=_display_name_for(resolved, track_id),
-            status=OUTCOME_READY,
+        previous_root = (
+            _safe_resolve(previous.package_root) if previous is not None else None
         )
-        try:
-            self._persist()
-        except OSError:
-            if previous is None:
-                self._entries.pop(track_id, None)
-            else:
-                self._entries[track_id] = previous
-            return LiveKitsOpenResult(
-                outcome=OUTCOME_WRITE_FAILED,
+        if previous is None or previous_root != resolved:
+            self._entries[track_id] = LiveKitPackageRow(
                 track_id=track_id,
-                package_root=root,
-                message=_safe_message(OUTCOME_WRITE_FAILED),
-                manifest_track_id=track_id,
+                package_root=resolved,
+                display_name=_display_name_for(resolved, track_id),
+                status=OUTCOME_READY,
             )
+            try:
+                self._persist()
+            except OSError:
+                if previous is None:
+                    self._entries.pop(track_id, None)
+                else:
+                    self._entries[track_id] = previous
+                return LiveKitsOpenResult(
+                    outcome=OUTCOME_WRITE_FAILED,
+                    track_id=track_id,
+                    package_root=root,
+                    message=_safe_message(OUTCOME_WRITE_FAILED),
+                    manifest_track_id=track_id,
+                )
 
         bound: TrackPackageResult = session.bind_active_track_package(root)
         if bound.outcome != OUTCOME_OPEN:

@@ -488,6 +488,47 @@ def test_register_resolve_failure_returns_outcome(
     assert registry.list_packages() == ()
 
 
+def test_open_skips_unchanged_registry_persist_before_bind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Repeated Open of an already-registered root must still bind without rewrite."""
+    package_root, _ = _create_package(tmp_path, track_id="trk_1099_open_noop")
+    state_dir = tmp_path / "state"
+    registry = lkr.LiveKitsRegistry(state_dir=state_dir)
+    session = compose_workbench_session(state_dir=state_dir)
+    try:
+        assert registry.register(package_root).outcome == lkr.OUTCOME_READY
+
+        def boom(_path: Path, _payload: object) -> None:
+            raise OSError("synthetic registry write failure")
+
+        monkeypatch.setattr(lkr, "_atomic_write_json", boom)
+        opened = registry.open_package(package_root, session=session)
+        assert opened.outcome == tp.OUTCOME_OPEN
+        assert session.active_track_id == "trk_1099_open_noop"
+    finally:
+        session.transport.close()
+
+
+def test_malformed_package_element_refuses_mutation(tmp_path: Path) -> None:
+    """Valid envelope with a bad packages[] row must not be rewritten."""
+    root_a, _ = _create_package(tmp_path, track_id="trk_1099_elem_a", name="a")
+    root_b, _ = _create_package(
+        tmp_path, track_id="trk_1099_elem_b", name="b", source_name="snare.wav"
+    )
+    state_dir = tmp_path / "state"
+    registry = lkr.LiveKitsRegistry(state_dir=state_dir)
+    assert registry.register(root_a).outcome == lkr.OUTCOME_READY
+    before = [row.track_id for row in registry.list_packages()]
+    path = lkr.registry_path(state_dir=state_dir)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["packages"].append({"entity_kind": "track_package", "track_id": ""})
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    failed = registry.register(root_b)
+    assert failed.outcome == tp.OUTCOME_WRITE_FAILED
+    assert [row.track_id for row in registry.list_packages()] == before
+
+
 def test_malformed_registry_refuses_mutation_without_wipe(tmp_path: Path) -> None:
     """Invalid durable JSON must not be replaced by a fresh single-entry write."""
     root_a, _ = _create_package(tmp_path, track_id="trk_1099_badjson_a", name="a")
