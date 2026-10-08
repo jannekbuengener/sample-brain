@@ -187,6 +187,8 @@ Empty boundary-eligible set → `not_applicable`. Low coverage must not be hidde
 
 ### Segment-IoU policy
 
+Bar-range intervals are **half-open** `[start_bar, end_bar)`, matching StructureV1 adjacent boundary indices (`end_bar` of one section equals `start_bar` of the next; length = `end_bar - start_bar`). Inclusive endpoint interpretations are forbidden for overlap, IoU, and reference weights.
+
 Reference and predicted sections are formed by adding the implicit track start/end around their **eligible** reference internal boundaries and **unmasked** predicted internal boundaries (same filtered sets used for boundary P/R). Section pairing is deterministic one-to-one and order-preserving:
 
 1. sort reference and predicted sections by start bar, then end bar, then stable id/order;
@@ -225,6 +227,20 @@ Also report:
 - optional seconds-weighted accuracy only when section-time provenance is trustworthy.
 
 Overall accuracy alone is insufficient because long groove/drop sections can hide poor minority-role performance.
+
+### Role eligibility / prediction surface — frozen
+
+Annotation-side **role-eligible** requires complete role labels on the frozen reference sections used for scoring, with plane status `adjudicated` or `single_source` for those eligible sections (sections excluded by ambiguous-boundary carry-over are omitted from role denominators, not converted to semantic `unknown`).
+
+Prediction-side **usable role prediction surface** requires that ArrangementClassifier completed a section-role classification pass over those frozen reference sections and the arrangement/track status is not `failed` or `unavailable`.
+
+| Prediction state | Definition | Enters role correctness / coverage denominators? |
+|---|---|---|
+| Concrete or semantic-`unknown` prediction | Emitted section role under a usable surface | Yes |
+| Track/pass HOLD | Status `failed` / `unavailable`, or no completed role pass | No — record/sections are `unknown` / `excluded` for role correctness; do **not** invent per-section semantic `unknown` predictions |
+| Missing section under usable surface | Completed pass but no role emitted for an eligible reference section | Count as predicted semantic `unknown` only when the public surface explicitly emits `unknown`; otherwise `controlled_failure` / HOLD for that section, never a fabricated concrete role |
+
+`aq7.role.coverage` therefore measures classifier abstention (`unknown` predictions) on eligible concrete-role reference sections under a usable surface. Execution failures that make the surface unusable lower role coverage only when reported as an explicit role-plane coverage / eligibility diagnostic; they must not inflate confusion-matrix `unknown` counts.
 
 ## Drop-event KPI (`aq7.drop_event`)
 
