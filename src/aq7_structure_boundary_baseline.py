@@ -250,17 +250,21 @@ def _interval_iou(a: tuple[int, int], b: tuple[int, int]) -> float:
 def _match_sections(
     refs: list[tuple[int, int]], preds: list[tuple[int, int]]
 ) -> list[tuple[int, int]]:
-    """Order-preserving section matching maximizing overlap count then length."""
+    """Order-preserving section matching maximizing overlap count then length.
+
+    Tie-break (#1023): earlier prediction, then earlier reference order.
+    Encoded by maximizing ``(-sum_pred_indices, -sum_ref_indices)``.
+    """
     n, m = len(refs), len(preds)
     neg_inf = -10**9
-    # key: (overlap_count, total_overlap, -endpoint_l1)
-    dp: list[list[tuple[int, int, int]]] = [
-        [(neg_inf, 0, 0) for _ in range(m + 1)] for _ in range(n + 1)
+    # key: (overlap_count, total_overlap, -endpoint_l1, -sum_pred_idx, -sum_ref_idx)
+    dp: list[list[tuple[int, int, int, int, int]]] = [
+        [(neg_inf, 0, 0, 0, 0) for _ in range(m + 1)] for _ in range(n + 1)
     ]
     prev: list[list[tuple[str, int, int] | None]] = [
         [None for _ in range(m + 1)] for _ in range(n + 1)
     ]
-    dp[0][0] = (0, 0, 0)
+    dp[0][0] = (0, 0, 0, 0, 0)
     for i in range(n + 1):
         for j in range(m + 1):
             cur = dp[i][j]
@@ -279,7 +283,13 @@ def _match_sections(
                 overlap = max(0, hi - lo)
                 if overlap > 0:
                     l1 = abs(a[0] - b[0]) + abs(a[1] - b[1])
-                    cand = (cur[0] + 1, cur[1] + overlap, cur[2] - l1)
+                    cand = (
+                        cur[0] + 1,
+                        cur[1] + overlap,
+                        cur[2] - l1,
+                        cur[3] - j,
+                        cur[4] - i,
+                    )
                     if cand > dp[i + 1][j + 1]:
                         dp[i + 1][j + 1] = cand
                         prev[i + 1][j + 1] = ("match", i, j)
@@ -304,26 +314,62 @@ def _match_sections(
     return pairs
 
 
+def _surviving_reference_sections(
+    *,
+    gt_sections: list[dict[str, Any]],
+    refs: list[dict[str, Any]],
+    track_end_bar: int,
+) -> list[tuple[int, int]] | None:
+    """Original half-open sections after ambiguous-dependent exclusion.
+
+    Returns ``None`` when all original sections were excluded due to ambiguity
+    (do not invent a merged/whole-track repair). Returns a single whole-track
+    section only when there were never any reference internal boundaries.
+    """
+    ambiguous_bars = {
+        int(r["bar_index"])
+        for r in refs
+        if str(r.get("annotation_status")) == "ambiguous"
+    }
+    any_internal = bool(refs)
+    surviving: list[tuple[int, int]] = []
+    for raw in gt_sections:
+        if not isinstance(raw, dict):
+            continue
+        start = int(raw["start_bar"])
+        end = int(raw["end_bar"])
+        if end <= start:
+            continue
+        if start in ambiguous_bars or end in ambiguous_bars:
+            continue
+        surviving.append((start, end))
+    if surviving:
+        return surviving
+    if any_internal:
+        return None
+    return [(0, int(track_end_bar))] if track_end_bar > 0 else None
+
+
 def _segment_iou_weighted(
-    ref_bars: list[int], pred_bars: list[int], track_end_bar: int
+    *,
+    ref_sections: list[tuple[int, int]] | None,
+    pred_bars: list[int],
+    track_end_bar: int,
 ) -> tuple[float | None, float, float]:
-    ref_secs = _sections_from_internal_bars(ref_bars, track_end_bar)
-    pred_secs = _sections_from_internal_bars(pred_bars, track_end_bar)
-    if not ref_secs:
+    if ref_sections is None:
         return None, 0.0, 0.0
-    pairs = _match_sections(ref_secs, pred_secs)
-    matched_pred = {pj for _, pj in pairs}
+    pred_secs = _sections_from_internal_bars(pred_bars, track_end_bar)
+    if not ref_sections:
+        return None, 0.0, 0.0
+    pairs = _match_sections(ref_sections, pred_secs)
     numer = 0.0
     denom = 0.0
     pair_map = {ri: pj for ri, pj in pairs}
-    for ri, ref in enumerate(ref_secs):
+    for ri, ref in enumerate(ref_sections):
         weight = float(ref[1] - ref[0])
         denom += weight
-        if ri in pair_map:
+        if ri in pair_map and pred_secs:
             numer += _interval_iou(ref, pred_secs[pair_map[ri]]) * weight
-        else:
-            numer += 0.0 * weight
-    del matched_pred  # explicit: unmatched refs already contribute 0
     if denom <= 0:
         return None, 0.0, 0.0
     return numer / denom, numer, denom
@@ -338,6 +384,7 @@ def score_fixture_boundaries(
     prediction_usable: bool = True,
     prediction_status: str = "ok",
     reason_code: str | None = None,
+    gt_sections: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     masks = _ignore_masks_from_refs(refs)
     eligible_refs = [
@@ -401,10 +448,21 @@ def score_fixture_boundaries(
     section_err = abs(pred_section_count - ref_section_count)
     over = pred_section_count > ref_section_count
     under = pred_section_count < ref_section_count
+    if gt_sections is None:
+        # Unit-test helper path: synthesize sections from eligible bars only.
+        ref_sections = _sections_from_internal_bars(
+            [int(r["bar_index"]) for r in eligible_refs], track_end_bar
+        )
+    else:
+        ref_sections = _surviving_reference_sections(
+            gt_sections=gt_sections,
+            refs=refs,
+            track_end_bar=track_end_bar,
+        )
     iou, iou_numer, iou_denom = _segment_iou_weighted(
-        [int(r["bar_index"]) for r in eligible_refs],
-        [int(p["bar_index"]) for p in unmasked_preds],
-        track_end_bar,
+        ref_sections=ref_sections,
+        pred_bars=[int(p["bar_index"]) for p in unmasked_preds],
+        track_end_bar=track_end_bar,
     )
 
     return {
@@ -769,6 +827,7 @@ def _predict_fixture(
         prediction_usable=bool(surface["prediction_usable"]),
         prediction_status=str(surface.get("prediction_status") or "hold"),
         reason_code=surface.get("reason_code"),
+        gt_sections=list(gt.get("sections") or []),
     )
 
     seg = scored.get("segmentation") or {}
@@ -906,15 +965,23 @@ def run_aq7_structure_boundary_baseline(
     runtime_block = {
         "methodology": "docs/benchmarks/ANALYZER_RUNTIME_METHODOLOGY_V1.md",
         "by_reference": True,
+        "methodology_v1_compliant": False,
+        "diagnostic_only": True,
+        "diagnostic_note": (
+            "Single-pass per-fixture wall times only; not #958 cold/steady "
+            "11-repetition methodology evidence. Track-length buckets HOLD."
+        ),
         "track_length_buckets": "HOLD",
         "track_length_buckets_reason": (
             "synthetic 10-fixture pack is too small for meaningful #958 "
             "track-length bucket p95 claims"
         ),
-        "per_fixture_runtime_sec_median": (
+        "per_fixture_runtime_sec_median_diagnostic": (
             float(statistics.median(runtimes)) if runtimes else None
         ),
-        "per_fixture_runtime_sec_p95": percentile(runtimes, 95) if runtimes else None,
+        "per_fixture_runtime_sec_p95_diagnostic": (
+            percentile(runtimes, 95) if runtimes else None
+        ),
         "n_timed_fixtures": len(runtimes),
     }
 
@@ -956,10 +1023,16 @@ def run_aq7_structure_boundary_baseline(
     }
 
     semantic = semantic_projection(result)
-    semantic_equal = True if prior_semantic is None else semantic == prior_semantic
+    if prior_semantic is None:
+        semantic_equal = None
+        determinism_status = "not_measured"
+    else:
+        semantic_equal = semantic == prior_semantic
+        determinism_status = "measured"
     result["determinism"] = {
         "methodology": "docs/ANALYZER_SEMANTIC_DETERMINISM_V1.md",
         "by_reference": True,
+        "status": determinism_status,
         "semantic_equal": semantic_equal,
         "semantic_projection_keys": sorted(semantic.keys()),
     }

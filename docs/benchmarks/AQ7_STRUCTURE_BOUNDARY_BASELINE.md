@@ -90,7 +90,8 @@ Notes:
 
 - High recall with lower precision / over-segmentation rate = 1.0 is a truthful current-StructureV1 characteristic on this synthetic pack (distractor accents + dense candidates), not a tuning target for this slice.
 - Seconds error diagnostics are omitted at aggregate level when not uniformly trustworthy; bar coordinates remain primary.
-- Runtime track-length buckets are HOLD (pack too small for #958 bucket p95 claims); per-fixture runtimes are recorded in external JSON only.
+- Runtime track-length buckets are HOLD (pack too small for #958 bucket p95 claims). External JSON may include single-pass per-fixture wall-time diagnostics; these are explicitly **not** #958 methodology-v1 cold/steady evidence.
+- Determinism: a single CLI run records `determinism.status=not_measured`; equality is certified only when a second independent run supplies `prior_semantic` (as in the dual-workdir proof).
 
 ## Metrics reported (`aq7.boundary`)
 

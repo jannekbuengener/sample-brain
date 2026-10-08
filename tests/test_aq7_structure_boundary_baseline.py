@@ -220,6 +220,30 @@ def test_over_under_segmentation_and_section_count_error_visible() -> None:
     assert over["segmentation"]["section_count_abs_error"] == 3
 
 
+def test_ambiguous_dependent_sections_excluded_from_iou_without_repair() -> None:
+    refs = [
+        {
+            "boundary_id": "amb",
+            "bar_index": 16,
+            "order": 0,
+            "annotation_status": "ambiguous",
+        }
+    ]
+    gt_sections = [
+        {"section_id": "s0", "start_bar": 0, "end_bar": 16, "role": "groove"},
+        {"section_id": "s1", "start_bar": 16, "end_bar": 36, "role": "breakdown"},
+    ]
+    scored = baseline.score_fixture_boundaries(
+        refs,
+        [{"pred_id": "p1", "bar_index": 16, "order": 0}],
+        track_end_bar=36,
+        plane_status="ambiguous",
+        gt_sections=gt_sections,
+    )
+    assert scored["segmentation"]["segment_iou_weighted"] is None
+    assert scored["segmentation"]["segment_iou_weight_sum"] == 0.0
+
+
 def test_segment_iou_uses_half_open_bar_ranges() -> None:
     refs = [
         {
@@ -459,7 +483,10 @@ def test_end_to_end_baseline_consumes_frozen_corpus_identity(
         regenerate_corpus=False,
         prior_semantic=baseline.semantic_projection(result),
     )
+    assert again["determinism"]["status"] == "measured"
     assert again["determinism"]["semantic_equal"] is True
+    assert result["determinism"]["status"] == "not_measured"
+    assert result["determinism"]["semantic_equal"] is None
     assert (
         again["splits"]["CALIBRATION"]["aq7.boundary"]["metrics"]
         == result["splits"]["CALIBRATION"]["aq7.boundary"]["metrics"]
