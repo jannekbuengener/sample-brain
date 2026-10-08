@@ -1,0 +1,473 @@
+{
+  "document_type": "sample_brain.arrangement_block_group_mask_contract",
+  "contract_schema_version": "1.0.0",
+  "plane": "normative_contract_schema",
+  "not_runtime_serialization": true,
+  "runtime_implementation_owner_issue": 1087,
+  "qml_projection_owner_issue": 1080,
+  "issue": 1084,
+  "parent_issues": [679],
+  "depends_on_issues": [1076, 1083],
+  "consumes_time_contract_issue": 1083,
+  "consumes_persistence_owner_issue": 1082,
+  "persistence_lifecycle_owner_issue": 1085,
+  "exit_marker": "ARRANGEMENT_BLOCK_GROUP_MASK_CONTRACT_FROZEN",
+  "canonical_markdown": "docs/ARRANGEMENT_BLOCK_GROUP_MASK_CONTRACT.md",
+  "consumed_time_contract": {
+    "issue": 1083,
+    "canonical_markdown": "docs/ARRANGEMENT_32_FIELD_TIME_CONTRACT.md",
+    "machine_companion": "docs/arrangement_32_field_time_v1.json",
+    "time_signature": "4/4",
+    "quarter_notes_per_bar": 4,
+    "pattern_bars": 8,
+    "pattern_quarter_notes": 32,
+    "pattern_fields": 32,
+    "no_second_time_authority": true,
+    "tempo_map_module": "src/session_grid.py",
+    "tempo_map_class": "TempoMap"
+  },
+  "block_model": {
+    "block_bars": 16,
+    "block_length_quarter_notes": 64,
+    "block_interval_half_open": "[64*N, 64*(N+1))",
+    "block_start_qn_formula": "block_index * 64",
+    "pattern_identity_count_per_initial_block": 1,
+    "pattern_projections_per_block": [
+      {
+        "half": "first",
+        "absolute_quarter_offset": "0",
+        "notes": "references the same Pattern identity; not a copied second Pattern"
+      },
+      {
+        "half": "second",
+        "absolute_quarter_offset": "32",
+        "notes": "references the same Pattern identity; not a copied second Pattern"
+      }
+    ],
+    "no_copied_second_pattern_state": true,
+    "no_sixty_four_field_pattern_state": true,
+    "step_mutation_affects_all_referencing_projections": true
+  },
+  "block_identity": {
+    "kind": "zero_based_deterministic_block_index",
+    "field_name": "block_index",
+    "type": "exact_non_bool_integer",
+    "minimum": 0,
+    "derived_from_timeline_position": true,
+    "not_display_name_based": true,
+    "no_random_block_uuids_in_v1": true,
+    "viewport_zoom_does_not_create_or_delete_blocks": true,
+    "no_infinite_materialization": true,
+    "invalid_negative_or_non_integer_fail_closed": true
+  },
+  "block_structural_validity": {
+    "independent_of_end_marker_presence": true,
+    "valid_when": [
+      "exact_integer",
+      "not_bool",
+      "greater_than_or_equal_to_0"
+    ],
+    "missing_end_marker_does_not_invalidate_block_index": true
+  },
+  "block_horizon_eligibility": {
+    "hard_cap_seconds": 600,
+    "authority": "TempoMap",
+    "not_ui_viewport": true,
+    "not_pixel_width": true,
+    "not_fixed_bpm_multiplier": true,
+    "rule": "TempoMap(block_start_qn) < 600 seconds",
+    "block_start_qn": "block_index * 64",
+    "final_block_may_overlap_cap": true,
+    "full_block_end_need_not_be_within_600s": true,
+    "notes": "Song boundary is the end marker; requiring full 16-bar span inside 600s would forbid a legal marker inside the last block."
+  },
+  "persisted_state_after_tempo_change": {
+    "masks_and_overrides_not_deleted": true,
+    "not_auto_moved": true,
+    "not_clamped": true,
+    "block_indices_not_rewritten": true,
+    "eligibility_status_when_start_maps_ge_600s": "out_of_current_horizon",
+    "musical_intent_stable": true
+  },
+  "default_on_sparse_model": {
+    "default_block_enabled": true,
+    "default_group_enabled": true,
+    "default_track_enabled": true,
+    "persist_only_explicit_exceptions": true,
+    "persisted_exception_collections": [
+      "disabled_blocks",
+      "disabled_group_blocks",
+      "disabled_track_blocks"
+    ],
+    "disabled_blocks_item": "block_index",
+    "disabled_group_blocks_item": {
+      "group_id": "stable presentation group id",
+      "block_index": "zero-based integer"
+    },
+    "disabled_track_blocks_item": {
+      "channel_id": "stable channel id",
+      "block_index": "zero-based integer"
+    },
+    "deterministic_serialization": true,
+    "stable_sort_order_required": true,
+    "no_infinite_enabled_true_list": true,
+    "viewport_open_close_zoom_does_not_mutate_musical_state": true,
+    "unmapped_membership_is_not_a_mask_entry": true
+  },
+  "presentation_groups": {
+    "count": 4,
+    "ids_are_stable_contract_constants": true,
+    "ids_not_slugified_from_display_labels": true,
+    "display_labels_are_projection_metadata_only": true,
+    "groups": [
+      {
+        "group_id": "pg_baseline",
+        "display_label": "Baseline"
+      },
+      {
+        "group_id": "pg_drums",
+        "display_label": "Drums"
+      },
+      {
+        "group_id": "pg_melodic_atmos_fx",
+        "display_label": "Melodic / Atmos / FX"
+      },
+      {
+        "group_id": "pg_vocals",
+        "display_label": "Vocals"
+      }
+    ],
+    "no_fifth_visible_product_group_in_v1": true
+  },
+  "canonical_channel_to_group_mapping": {
+    "authority": "stable Pattern Core channel IDs from src/pattern_core.py",
+    "not_display_label_based": true,
+    "mapping": {
+      "pg_baseline": ["ch_kick", "ch_bass"],
+      "pg_drums": [
+        "ch_main_drum",
+        "ch_closed_hat",
+        "ch_open_hat",
+        "ch_percussion",
+        "ch_additional"
+      ],
+      "pg_melodic_atmos_fx": ["ch_lead", "ch_pad", "ch_atmos", "ch_fx"],
+      "pg_vocals": []
+    },
+    "empty_vocals_valid": true,
+    "no_invented_vocal_channels": true,
+    "user_channel_id_prefix": "ch_user_",
+    "user_channels_default_membership": "unmapped"
+  },
+  "unknown_user_channel_policy": {
+    "preserve_channel_id": true,
+    "preserve_assignment": true,
+    "preserve_trigger_pattern_state": true,
+    "preserve_track_owned_musical_state": true,
+    "no_heuristic_grouping_from": [
+      "filename",
+      "display_label",
+      "folder_name",
+      "sample_class"
+    ],
+    "presentation_membership": "unmapped",
+    "membership_resolution": "migration_required",
+    "arrangement_membership_resolved": false,
+    "unmapped_is_not_silent_playback_fallback": true,
+    "must_not_silently_assign_to": [
+      "pg_baseline",
+      "pg_drums",
+      "pg_melodic_atmos_fx",
+      "pg_vocals"
+    ],
+    "must_not_invent_group_enabled_true_as_surrogate": true,
+    "must_not_silent_mute_as_successful_migration": true,
+    "must_not_silent_playback_under_invented_group": true,
+    "membership_dependent_operations_fail_closed_until_resolved": true,
+    "separate_from_mask_state": true
+  },
+  "effective_playback": {
+    "resolved_channels_only": true,
+    "resolved_formula": "block_enabled(block) AND group_enabled(group_id, block) AND track_enabled(channel_id, block)",
+    "unmapped_effective": "unresolved",
+    "unmapped_must_not_pretend_true_or_false": true,
+    "group_toggle_does_not_mutate_track_mask": true,
+    "track_toggle_does_not_mutate_group_mask": true,
+    "group_off_then_on_preserves_disabled_tracks": true
+  },
+  "expand_collapse": {
+    "presentation_only": true,
+    "zero_musical_mutation": true,
+    "does_not_change": [
+      "group_mask",
+      "track_mask",
+      "block_enabled",
+      "pattern",
+      "arrangement",
+      "playback_truth",
+      "end_marker",
+      "membership"
+    ],
+    "not_musical_domain_truth": true
+  },
+  "end_marker": {
+    "field_name": "end_marker_qn",
+    "representation": "musical_quarter_note_position",
+    "fraction_compatible_string": true,
+    "not_milliseconds": true,
+    "not_pixel_position": true,
+    "snap_rule": "end_marker_qn % 4 == 0",
+    "snap_meaning": "whole_bar_boundary_under_1083_4_4",
+    "python_owned_arrangement_truth": true,
+    "persistence_key_under_1082": "arrangement",
+    "no_second_persistence_store": true,
+    "tempo_change": {
+      "end_marker_qn_unchanged": true,
+      "wall_clock_via_tempo_map": true,
+      "no_auto_musical_move": true,
+      "no_silent_clamp": true,
+      "when_mapped_duration_gt_600s": {
+        "persist_qn_unchanged": true,
+        "marker_status": "invalid/out_of_range",
+        "render_eligible": false,
+        "user_must_correct_explicitly": true
+      }
+    },
+    "zero_duration_not_successful_complete_render": true,
+    "no_silent_coercion_to_bar_1_or_2": true
+  },
+  "ten_minute_cap": {
+    "hard_cap_seconds": 600,
+    "evaluation_authority": "TempoMap",
+    "not_ui_based": true,
+    "visual_three_minute_window_is_not_domain_truth": true
+  },
+  "render_eligibility": {
+    "predicate_only_no_render_format": true,
+    "render_eligible_true_requires_all_of": [
+      "end_marker_present",
+      "marker_structurally_valid",
+      "marker_bar_snapped",
+      "song_duration_gt_0",
+      "tempo_map_duration_lte_600s",
+      "arrangement_contract_state_valid",
+      "no_unresolved_musically_relevant_presentation_membership",
+      "no_other_fail_closed_mask_or_identity_inconsistency"
+    ],
+    "missing_marker_render_eligible": false,
+    "unmapped_populated_channel_blocks_complete_render": true
+  },
+  "migration_reconciliation": {
+    "by_stable_channel_id": true,
+    "not_by_visible_group_name": true,
+    "no_destructive_rename_migration": true,
+    "legacy_kick_bass_to_pg_baseline": true,
+    "legacy_drums_ids_to_pg_drums": true,
+    "legacy_lead_pad_atmos_fx_to_pg_melodic_atmos_fx": true,
+    "legacy_without_vocals_remains_valid": true,
+    "empty_vocals_valid": true,
+    "unknown_legacy_labels_do_not_lose_assignment": true,
+    "unknown_channels_not_guessed": true
+  },
+  "persistence_ownership": {
+    "semantics_owner_issue": 1084,
+    "store_owner_issues": [1082, 1085],
+    "track_package_opaque_key": "arrangement",
+    "no_second_store": true
+  },
+  "cross_contract_boundaries": {
+    "1083": "Owns Pattern timing / TempoMap / 16-bar projection math; 1084 consumes and must not redefine",
+    "1082": "Owns track package persistence authority and reserves opaque arrangement key; 1084 owns arrangement semantics content only",
+    "1085": "Owns package persistence lifecycle/runtime serialization of the arrangement key",
+    "1086": "Owns 32-field Pattern timing runtime",
+    "1087": "Sole runtime implementation owner of this arrangement block/group/mask/marker contract",
+    "1080": "Owns QML Arrangement projection; must not own musical truth",
+    "1079": "Owns visual design direction; not domain truth"
+  },
+  "fail_closed_outcomes": [
+    {
+      "id": "invalid_block_index",
+      "outcome": "fail_closed_no_musical_mutation"
+    },
+    {
+      "id": "unknown_group_id",
+      "outcome": "fail_closed_no_musical_mutation"
+    },
+    {
+      "id": "unknown_channel_id_for_mask_ops",
+      "outcome": "fail_closed_no_musical_mutation"
+    },
+    {
+      "id": "unknown_pattern_id",
+      "outcome": "fail_closed"
+    },
+    {
+      "id": "corrupt_mask_payload",
+      "outcome": "fail_closed"
+    },
+    {
+      "id": "unmapped_membership_dependent_op",
+      "outcome": "migration_required_fail_closed"
+    },
+    {
+      "id": "marker_not_bar_snapped",
+      "outcome": "structurally_invalid_render_ineligible"
+    },
+    {
+      "id": "marker_mapped_gt_600s",
+      "outcome": "invalid_out_of_range_persist_qn_render_ineligible"
+    },
+    {
+      "id": "missing_end_marker",
+      "outcome": "render_ineligible"
+    },
+    {
+      "id": "zero_duration_marker",
+      "outcome": "render_ineligible"
+    },
+    {
+      "id": "unresolved_musical_membership",
+      "outcome": "render_ineligible"
+    },
+    {
+      "id": "block_out_of_current_horizon",
+      "outcome": "keep_persisted_overrides_no_auto_mutation"
+    }
+  ],
+  "required_runtime_validation_vectors_1087": [
+    {
+      "id": 1,
+      "name": "first_block_defaults_on_without_persisted_entry",
+      "expected": "block_enabled true derived"
+    },
+    {
+      "id": 2,
+      "name": "later_block_defaults_on",
+      "expected": "block_enabled true derived"
+    },
+    {
+      "id": 3,
+      "name": "group_off_persists_restore",
+      "expected": "disabled_group_blocks round-trip"
+    },
+    {
+      "id": 4,
+      "name": "track_off_persists_restore",
+      "expected": "disabled_track_blocks round-trip"
+    },
+    {
+      "id": 5,
+      "name": "group_off_then_on_preserves_track_off",
+      "expected": "track remains disabled"
+    },
+    {
+      "id": 6,
+      "name": "expand_collapse_changes_no_musical_state",
+      "expected": "masks pattern marker unchanged"
+    },
+    {
+      "id": 7,
+      "name": "invalid_block_index_mutates_nothing",
+      "expected": "fail_closed"
+    },
+    {
+      "id": 8,
+      "name": "invalid_group_id_mutates_nothing",
+      "expected": "fail_closed"
+    },
+    {
+      "id": 9,
+      "name": "invalid_channel_id_mutates_nothing",
+      "expected": "fail_closed"
+    },
+    {
+      "id": 10,
+      "name": "canonical_legacy_grouping_migrates_by_channel_id",
+      "expected": "membership by ch_* ids"
+    },
+    {
+      "id": 11,
+      "name": "no_vocals_old_state_restores_valid",
+      "expected": "empty pg_vocals valid"
+    },
+    {
+      "id": 12,
+      "name": "unknown_user_channel_not_lost_or_remapped",
+      "expected": "unmapped migration_required preserved"
+    },
+    {
+      "id": 13,
+      "name": "legal_marker_round_trip",
+      "expected": "end_marker_qn identical"
+    },
+    {
+      "id": 14,
+      "name": "marker_after_tempo_change_keeps_qn",
+      "expected": "end_marker_qn unchanged"
+    },
+    {
+      "id": 15,
+      "name": "marker_mapped_gt_600s_becomes_ineligible",
+      "expected": "render_eligible false qn preserved"
+    },
+    {
+      "id": 16,
+      "name": "absent_marker_prevents_complete_render",
+      "expected": "render_eligible false"
+    },
+    {
+      "id": 17,
+      "name": "corrupt_masks_fail_closed",
+      "expected": "fail_closed"
+    },
+    {
+      "id": 18,
+      "name": "identical_state_serializes_deterministically",
+      "expected": "byte_stable_or_canonical_equal"
+    },
+    {
+      "id": 19,
+      "name": "unmapped_populated_channel_effective_unresolved",
+      "expected": "effective unresolved not bool"
+    },
+    {
+      "id": 20,
+      "name": "unmapped_populated_blocks_complete_render",
+      "expected": "render_eligible false"
+    },
+    {
+      "id": 21,
+      "name": "missing_marker_block_index_still_structurally_valid",
+      "expected": "block_index validity independent"
+    },
+    {
+      "id": 22,
+      "name": "horizon_from_block_start_via_tempo_map",
+      "expected": "start_lt_600s eligible overlap allowed"
+    },
+    {
+      "id": 23,
+      "name": "tempo_change_out_of_horizon_keeps_masks",
+      "expected": "out_of_current_horizon overrides retained"
+    }
+  ],
+  "hard_out_of_scope": [
+    "src_runtime_implementation",
+    "qml_projection_1080",
+    "visual_design_1079",
+    "pattern_timing_redefinition_1083",
+    "track_package_persistence_authority_1082",
+    "final_render_file_format",
+    "midi",
+    "live",
+    "automation",
+    "mixer",
+    "sends_buses",
+    "piano_roll",
+    "final_vocals_slot_distribution",
+    "alternate_pattern_variants_per_block",
+    "sample_dnd_arrangement_semantics",
+    "analysis_structure_v1_conflation",
+    "arrangement_classifier_conflation"
+  ]
+}
