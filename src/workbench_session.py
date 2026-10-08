@@ -26,6 +26,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .track_package import (
+    OUTCOME_CORRUPT_OR_UNSUPPORTED,
+    OUTCOME_OPEN,
+    OUTCOME_WRITE_FAILED,
+    TrackPackageResult,
+    open_track_package,
+    save_track_package_musical_state,
+)
 from .workbench_channel_rack import ChannelRackController
 from .workbench_controller import WorkbenchRow, get_preview_start_ms
 from .workbench_harmony import HarmonicMatchLibraryController
@@ -37,15 +45,20 @@ from .workbench_qml import (
     Screen1QmlViewModel,
 )
 from .workbench_session_store import (
+    ActiveTrackPointer,
     DEFAULT_TEMPO_BPM,
     PERSISTENCE_STATUS_AUTOSAVE_FAILED,
     PERSISTENCE_STATUS_FRESH_MISSING,
     apply_snapshot_to_live_kit,
+    load_active_track_pointer,
     channel_rack_state_from_snapshot,
     load_workbench_session_outcome,
     rehydrate_live_kit_from_library,
+    save_active_track_pointer,
     save_workbench_session_snapshot,
     snapshot_from_musical_state,
+    snapshot_from_track_package_musical,
+    track_package_musical_from_snapshot,
 )
 from .workbench_transport_adapter import WorkbenchTransportAdapter
 from .workbench_transport_preview import TransportAwarePreview
@@ -81,6 +94,64 @@ class WorkbenchSession:
         repr=False,
         compare=False,
     )
+
+    active_track_id: str | None = None
+    active_track_package_root: Path | None = None
+    track_package_status: str | None = None
+    track_package_dirty: bool = False
+    _state_dir: Path | None = field(default=None, repr=False, compare=False)
+    _env: Mapping[str, str] | None = field(default=None, repr=False, compare=False)
+
+    def bind_active_track_package(self, package_root: Path | str) -> TrackPackageResult:
+        """Bind one validated package as this session's durable musical authority."""
+        root = Path(package_root)
+        opened = open_track_package(root)
+        if opened.outcome != OUTCOME_OPEN or opened.manifest is None or opened.track_id is None:
+            return opened
+        try:
+            snapshot = snapshot_from_track_package_musical(opened.manifest.musical, root)
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return TrackPackageResult(
+                outcome=OUTCOME_CORRUPT_OR_UNSUPPORTED,
+                package_root=root,
+                track_id=opened.track_id,
+                message="Track package musical state is invalid.",
+            )
+        try:
+            save_active_track_pointer(
+                ActiveTrackPointer(track_id=opened.track_id, package_root=root),
+                state_dir=self._state_dir,
+                env=self._env,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return TrackPackageResult(
+                outcome=OUTCOME_WRITE_FAILED,
+                package_root=root,
+                track_id=opened.track_id,
+                manifest=opened.manifest,
+                message="Active track selection could not be persisted.",
+            )
+
+        _detach_session_persistence(self)
+        try:
+            apply_snapshot_to_live_kit(snapshot, self.live_kit)
+            self.transport.set_tempo(float(snapshot.master_bpm))
+            self.transport.set_sync_enabled(bool(snapshot.sync_enabled))
+            rack_state = channel_rack_state_from_snapshot(snapshot)
+            if rack_state is not None:
+                self.channel_rack.restore_state(rack_state)
+            self.active_track_id = opened.track_id
+            self.active_track_package_root = root.resolve(strict=False)
+            self.track_package_status = OUTCOME_OPEN
+            self.track_package_dirty = False
+        finally:
+            _wire_session_persistence(self)
+        return TrackPackageResult(
+            outcome=OUTCOME_OPEN,
+            package_root=self.active_track_package_root,
+            track_id=self.active_track_id,
+            manifest=opened.manifest,
+        )
 
     def add_persistence_status_listener(self, callback: Any) -> None:
         """Register a no-arg callback for persistence_status changes (#819)."""
@@ -191,12 +262,93 @@ def _autosave_musical_session(
         snapshot = snapshot_from_musical_state(
             live_kit, channel_rack.state, transport
         )
+    except (TypeError, ValueError):
+        if session.active_track_package_root is not None:
+            session.track_package_status = OUTCOME_WRITE_FAILED
+            session.track_package_dirty = True
+        else:
+            session.note_autosave_failed()
+        return
+
+    if session.active_track_package_root is not None:
+        result = save_track_package_musical_state(
+            session.active_track_package_root,
+            track_package_musical_from_snapshot(snapshot),
+        )
+        session.track_package_status = result.outcome
+        session.track_package_dirty = result.outcome != OUTCOME_OPEN
+        if (
+            result.outcome == OUTCOME_OPEN
+            and result.manifest is not None
+            and session.active_track_package_root is not None
+        ):
+            try:
+                refreshed = snapshot_from_track_package_musical(
+                    result.manifest.musical, session.active_track_package_root
+                )
+            except (OSError, RuntimeError, TypeError, ValueError):
+                return
+            _detach_session_persistence(session)
+            try:
+                apply_snapshot_to_live_kit(refreshed, live_kit)
+                rack_state = channel_rack_state_from_snapshot(refreshed)
+                if rack_state is not None:
+                    channel_rack.restore_state(rack_state)
+                    channel_rack.reconcile_live_kit_state(notify=False)
+            finally:
+                _wire_session_persistence(session)
+        return
+
+    try:
         save_workbench_session_snapshot(snapshot, state_dir=state_dir, env=env)
     except OSError:
         # Last good on-disk snapshot remains; in-memory state stays authoritative.
         session.note_autosave_failed()
         return
     session.note_autosave_succeeded()
+
+
+def _detach_session_persistence(session: WorkbenchSession) -> None:
+    session.live_kit.set_on_assignment_changed(None)
+    session.channel_rack.set_on_musical_state_changed(None)
+    session.transport.set_on_session_clock_changed(None)
+
+
+def _wire_session_persistence(session: WorkbenchSession) -> None:
+    def _on_channel_rack_mutation() -> None:
+        _autosave_musical_session(
+            session=session,
+            live_kit=session.live_kit,
+            channel_rack=session.channel_rack,
+            transport=session.transport,
+            state_dir=session._state_dir,
+            env=session._env,
+        )
+
+    def _on_live_kit_mutation() -> None:
+        session.channel_rack.ensure_state(notify=False)
+        _autosave_musical_session(
+            session=session,
+            live_kit=session.live_kit,
+            channel_rack=session.channel_rack,
+            transport=session.transport,
+            state_dir=session._state_dir,
+            env=session._env,
+        )
+
+    def _on_session_clock_mutation() -> None:
+        _autosave_musical_session(
+            session=session,
+            live_kit=session.live_kit,
+            channel_rack=session.channel_rack,
+            transport=session.transport,
+            state_dir=session._state_dir,
+            env=session._env,
+        )
+
+    session.live_kit.set_on_assignment_changed(_on_live_kit_mutation)
+    session.channel_rack.set_on_musical_state_changed(_on_channel_rack_mutation)
+    session.transport.set_on_session_clock_changed(_on_session_clock_mutation)
 
 
 def compose_workbench_session(
@@ -214,9 +366,42 @@ def compose_workbench_session(
     first projection → restore Channel Rack → wire autosave.
     """
 
-    load_outcome = load_workbench_session_outcome(state_dir=state_dir, env=env)
-    snapshot = load_outcome.snapshot
-    resume_status = load_outcome.status
+    pointer_present, pointer = load_active_track_pointer(state_dir=state_dir, env=env)
+    active_track_id: str | None = None
+    active_track_root: Path | None = None
+    track_package_status: str | None = None
+
+    if pointer_present:
+        # Presence of an active selection record outranks stale legacy resume.
+        # Invalid/missing active package fails closed; legacy remains untouched.
+        resume_status = PERSISTENCE_STATUS_FRESH_MISSING
+        snapshot = None
+        if pointer is None:
+            track_package_status = OUTCOME_CORRUPT_OR_UNSUPPORTED
+        else:
+            active_track_id = pointer.track_id
+            active_track_root = pointer.package_root
+            opened = open_track_package(pointer.package_root)
+            track_package_status = opened.outcome
+            if (
+                opened.outcome == OUTCOME_OPEN
+                and opened.manifest is not None
+                and opened.track_id == pointer.track_id
+            ):
+                try:
+                    snapshot = snapshot_from_track_package_musical(
+                        opened.manifest.musical, pointer.package_root
+                    )
+                except (OSError, RuntimeError, TypeError, ValueError):
+                    snapshot = None
+                    track_package_status = OUTCOME_CORRUPT_OR_UNSUPPORTED
+            elif opened.outcome == OUTCOME_OPEN:
+                track_package_status = OUTCOME_CORRUPT_OR_UNSUPPORTED
+    else:
+        load_outcome = load_workbench_session_outcome(state_dir=state_dir, env=env)
+        snapshot = load_outcome.snapshot
+        resume_status = load_outcome.status
+
     if snapshot is not None:
         master_bpm = float(snapshot.master_bpm)
         sync_enabled = bool(snapshot.sync_enabled)
@@ -324,6 +509,12 @@ def compose_workbench_session(
         measurement_session_id=measurement_session_id,
         persistence_status=resume_status,
         _resume_persistence_status=resume_status,
+        active_track_id=active_track_id,
+        active_track_package_root=active_track_root,
+        track_package_status=track_package_status,
+        track_package_dirty=False,
+        _state_dir=state_dir,
+        _env=env,
     )
     # Single ownership: Channel Rack enter/play/leave claim/release audition
     # through the session policy, including bridge-direct paths. Focus release
@@ -342,43 +533,7 @@ def compose_workbench_session(
         _reconcile_rack_before_shared_transport_stop
     )
 
-    def _on_channel_rack_mutation() -> None:
-        _autosave_musical_session(
-            session=session,
-            live_kit=live_kit,
-            channel_rack=channel_rack,
-            transport=transport,
-            state_dir=state_dir,
-            env=env,
-        )
-
-    def _on_live_kit_mutation() -> None:
-        # #908 / #916: materialize or heal Rack without Screen navigation.
-        # notify=False — this Live Kit callback owns one coherent autosave.
-        channel_rack.ensure_state(notify=False)
-        _autosave_musical_session(
-            session=session,
-            live_kit=live_kit,
-            channel_rack=channel_rack,
-            transport=transport,
-            state_dir=state_dir,
-            env=env,
-        )
-
-    def _on_session_clock_mutation() -> None:
-        # Clock-only intent → one full coherent session save (includes kit/rack).
-        _autosave_musical_session(
-            session=session,
-            live_kit=live_kit,
-            channel_rack=channel_rack,
-            transport=transport,
-            state_dir=state_dir,
-            env=env,
-        )
-
-    live_kit.set_on_assignment_changed(_on_live_kit_mutation)
-    channel_rack.set_on_musical_state_changed(_on_channel_rack_mutation)
-    transport.set_on_session_clock_changed(_on_session_clock_mutation)
+    _wire_session_persistence(session)
     return session
 
 
