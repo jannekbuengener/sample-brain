@@ -616,6 +616,24 @@ def _validate_musical_semantics(musical: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _reject_non_finite_numbers(value: Any) -> str | None:
+    if isinstance(value, float) and not math.isfinite(value):
+        return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    if isinstance(value, list):
+        for item in value:
+            outcome = _reject_non_finite_numbers(item)
+            if outcome is not None:
+                return outcome
+        return None
+    if isinstance(value, Mapping):
+        for item in value.values():
+            outcome = _reject_non_finite_numbers(item)
+            if outcome is not None:
+                return outcome
+        return None
+    return None
+
+
 def _reject_escaped_path_strings(value: Any) -> str | None:
     """Fail closed when any nested string looks like an absolute/escape path."""
     if isinstance(value, str):
@@ -638,7 +656,11 @@ def _reject_escaped_path_strings(value: Any) -> str | None:
                 return outcome
         return None
     if isinstance(value, Mapping):
-        for item in value.values():
+        for key, item in value.items():
+            if isinstance(key, str):
+                key_outcome = _reject_escaped_path_strings(key)
+                if key_outcome is not None:
+                    return key_outcome
             outcome = _reject_escaped_path_strings(item)
             if outcome is not None:
                 return outcome
@@ -1019,15 +1041,14 @@ def _parse_manifest_payload(data: object) -> tuple[TrackPackageManifest | None, 
 
 
 def _entrypoint_confined(manifest_path: Path, package_root: Path) -> bool:
-    """True when track_package.json resolves inside the package root."""
+    """True when track_package.json is a real in-package file (no symlink)."""
     try:
-        root = package_root.resolve(strict=False)
         if manifest_path.is_symlink():
-            target = manifest_path.resolve(strict=True)
-            target.relative_to(root)
-        else:
-            resolved = manifest_path.resolve(strict=False)
-            resolved.relative_to(root)
+            # Absolute or relative symlinks are not portable package entrypoints.
+            return False
+        root = package_root.resolve(strict=False)
+        resolved = manifest_path.resolve(strict=False)
+        resolved.relative_to(root)
     except (OSError, RuntimeError, ValueError):
         return False
     return True
@@ -1079,6 +1100,14 @@ def _validate_package_at(
             package_root=root,
             track_id=manifest.track_id,
             message="Package payload is not portable.",
+        )
+    finite_scan = _reject_non_finite_numbers(data)
+    if finite_scan is not None:
+        return _failure(
+            finite_scan,
+            package_root=root,
+            track_id=manifest.track_id,
+            message="Package payload contains non-finite numbers.",
         )
 
     if not (root / MEDIA_DIR_NAME).is_dir():
