@@ -191,7 +191,11 @@ Bar-range intervals are **half-open** `[start_bar, end_bar)`, matching Structure
 
 Do **not** synthesize merged reference sections by dropping ambiguous boundaries and reconnecting the remaining eligible ones. If eligible boundaries exist at bars 10 and 30 and an ambiguous boundary exists at 20, the original sections that depend on bar 20 are excluded; evaluators must **not** invent a synthetic `[10,30)` reference section for IoU. Predicted sections likewise use only unmasked predicted internal boundaries; no repair across ignore masks.
 
-Reference and predicted sections for IoU therefore come from the **surviving original** half-open intervals after removing ambiguous-dependent reference sections and masked predictions (same filtered membership as boundary P/R survivors, without merging across removed loci). Section pairing is deterministic one-to-one and order-preserving:
+Reference and predicted sections for IoU therefore come from the **surviving original** half-open intervals after removing ambiguous-dependent reference sections and masked predictions (same filtered membership as boundary P/R survivors, without merging across removed loci).
+
+Empty internal-boundary special case (including usable `NO_BOUNDARY_CANDIDATE`): AQ7 derives exactly one predicted whole-track section `[0, track_end_bar)` from an empty unmasked predicted internal-boundary set. Do **not** retain StructureV1's empty `sections` tuple for IoU/section-count scoring — that runtime empty list is not the AQ7 segmentation representation. The same derivation applies on the reference side when a record has zero eligible reference internal boundaries: one reference section `[0, track_end_bar)`.
+
+Section pairing is deterministic one-to-one and order-preserving:
 
 1. sort reference and predicted sections by start bar, then end bar, then stable id/order;
 2. maximize the number of pairs whose bar-range overlap is strictly positive;
@@ -238,7 +242,7 @@ Prediction-side **usable role prediction surface** requires that ArrangementClas
 
 | Prediction state | Definition | Confusion / P/R / macro-F1 | `aq7.role.coverage` |
 |---|---|---|---|
-| Concrete or semantic-`unknown` prediction | Emitted section role under a usable surface | Yes | numerator only if prediction is not semantic `unknown` |
+| Concrete or semantic-`unknown` prediction | Emitted section role under a usable surface. When `SectionClassification` carries both automatic and effective/manual-override roles, AQ7 scores **`automatic_result.role` only** — never the human-effective override | Yes | numerator only if prediction is not semantic `unknown` |
 | Track/pass HOLD | Status `failed` / `unavailable`, or no completed role pass | No — do **not** invent semantic `unknown` confusion rows | denominator yes, numerator no (uncovered) |
 | Missing section under usable surface | Completed pass but no role emitted for an eligible reference section | Count as predicted semantic `unknown` only when the public surface explicitly emits `unknown`; otherwise omit from confusion and treat as uncovered | denominator yes; numerator only for explicit non-`unknown` emission |
 
