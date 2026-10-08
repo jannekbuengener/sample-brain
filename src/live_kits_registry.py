@@ -183,31 +183,37 @@ class LiveKitsRegistry:
     def _path(self) -> Path:
         return registry_path(state_dir=self._state_dir, env=self._env)
 
-    def _load(self) -> None:
+    def _load(self) -> bool:
+        """Load durable registry.
+
+        Returns ``True`` when mutation is safe. ``False`` when the registry file
+        exists but cannot be read — preserve the last known ``_entries`` and
+        refuse register/Open so a later persist cannot wipe prior listings.
+        """
         path = self._path()
         try:
             raw = path.read_text(encoding="utf-8")
         except FileNotFoundError:
             self._entries = {}
-            return
+            return True
         except (OSError, UnicodeError):
-            self._entries = {}
-            return
+            # Keep last known in-memory entries; do not pretend the registry is empty.
+            return False
         try:
             data = json.loads(raw)
         except (json.JSONDecodeError, ValueError, TypeError):
             self._entries = {}
-            return
+            return True
         if not isinstance(data, dict) or data.get("schema_version") != REGISTRY_SCHEMA_VERSION:
             self._entries = {}
-            return
+            return True
         if data.get("scope") != SCOPE_LIVE_KITS:
             self._entries = {}
-            return
+            return True
         packages = data.get("packages")
         if not isinstance(packages, list):
             self._entries = {}
-            return
+            return True
         loaded: dict[str, LiveKitPackageRow] = {}
         for item in packages:
             if not isinstance(item, dict):
@@ -241,6 +247,7 @@ class LiveKitsRegistry:
                 status=status.strip(),
             )
         self._entries = loaded
+        return True
 
     def _persist(self) -> None:
         packages = [
@@ -272,7 +279,11 @@ class LiveKitsRegistry:
         """Dock a valid package under Live Kits without activating Active Track."""
         # Refresh before mutate so a second in-process instance cannot clobber
         # packages registered by another LiveKitsRegistry against the same file.
-        self._load()
+        if not self._load():
+            return LiveKitsRegisterResult(
+                outcome=OUTCOME_WRITE_FAILED,
+                message=_safe_message(OUTCOME_WRITE_FAILED),
+            )
         root = _safe_resolve(package_root)
         if root is None:
             return LiveKitsRegisterResult(
@@ -358,7 +369,12 @@ class LiveKitsRegistry:
         session: WorkbenchSession,
     ) -> LiveKitsOpenResult:
         """Explicit Open: validate, then bind exactly one Active Track via #1098."""
-        self._load()
+        if not self._load():
+            return LiveKitsOpenResult(
+                outcome=OUTCOME_WRITE_FAILED,
+                package_root=Path(package_root),
+                message=_safe_message(OUTCOME_WRITE_FAILED),
+            )
         root = _safe_resolve(package_root)
         if root is None:
             return LiveKitsOpenResult(

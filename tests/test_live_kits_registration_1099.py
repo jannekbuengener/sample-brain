@@ -488,6 +488,31 @@ def test_register_resolve_failure_returns_outcome(
     assert registry.list_packages() == ()
 
 
+def test_unreadable_registry_refuses_mutation_without_wipe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """OSError reading an existing registry must not clear prior listings."""
+    root_a, _ = _create_package(tmp_path, track_id="trk_1099_unread_a", name="a")
+    root_b, _ = _create_package(
+        tmp_path, track_id="trk_1099_unread_b", name="b", source_name="snare.wav"
+    )
+    state_dir = tmp_path / "state"
+    registry = lkr.LiveKitsRegistry(state_dir=state_dir)
+    assert registry.register(root_a).outcome == lkr.OUTCOME_READY
+    before = [row.track_id for row in registry.list_packages()]
+    original_read = Path.read_text
+
+    def guarded(self: Path, *args: object, **kwargs: object) -> str:
+        if self.name == lkr.REGISTRY_FILENAME:
+            raise OSError("synthetic unreadable registry")
+        return original_read(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", guarded)
+    failed = registry.register(root_b)
+    assert failed.outcome == tp.OUTCOME_WRITE_FAILED
+    assert [row.track_id for row in registry.list_packages()] == before
+
+
 def test_second_registry_instance_reloads_before_register(tmp_path: Path) -> None:
     """Two instances must not clobber each other's durable registrations."""
     root_a, _ = _create_package(tmp_path, track_id="trk_1099_multi_a", name="a")
