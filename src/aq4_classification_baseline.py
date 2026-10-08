@@ -341,6 +341,13 @@ def resolve_exit_status(
     return EXIT_INCOMPLETE
 
 
+def _is_measured(splits: dict[str, Any], clip_rows: list[dict[str, Any]]) -> bool:
+    """Compatibility shim for candidate-compare (#1034): both mandatory planes ok."""
+    return (
+        resolve_exit_status(splits=splits, clip_rows=clip_rows) == EXIT_MEASURED
+    )
+
+
 def run_aq4_classification_baseline(
     *,
     work_dir: Path | str,
