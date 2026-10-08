@@ -1,10 +1,10 @@
 # AQ7 Synthetic Structure / Role / Drop Ground-Truth Corpus
 
-**Status:** ACTIVE_SUPPORTING — synthetic structure/role/drop GT contract freeze for [#1024](https://github.com/jannekbuengener/sample-brain/issues/1024)  
-**Class:** ACTIVE_SUPPORTING  
-**Parents:** [#949](https://github.com/jannekbuengener/sample-brain/issues/949) (AQ7), [#942](https://github.com/jannekbuengener/sample-brain/issues/942) (program)  
-**Depends on:** [#1023](https://github.com/jannekbuengener/sample-brain/issues/1023) / `docs/benchmarks/AQ7_STRUCTURE_ROLE_DROP_KPI_CONTRACT.md` (CLOSED / binding)  
-**Related:** [#956](https://github.com/jannekbuengener/sample-brain/issues/956) portable `record_id` join; [#957](https://github.com/jannekbuengener/sample-brain/issues/957) perturbation mechanics  
+**Status:** ACTIVE_SUPPORTING — synthetic structure/role/drop GT contract freeze for [#1024](https://github.com/jannekbuengener/sample-brain/issues/1024)
+**Class:** ACTIVE_SUPPORTING
+**Parents:** [#949](https://github.com/jannekbuengener/sample-brain/issues/949) (AQ7), [#942](https://github.com/jannekbuengener/sample-brain/issues/942) (program)
+**Depends on:** [#1023](https://github.com/jannekbuengener/sample-brain/issues/1023) / `docs/benchmarks/AQ7_STRUCTURE_ROLE_DROP_KPI_CONTRACT.md` (CLOSED / binding)
+**Related:** [#956](https://github.com/jannekbuengener/sample-brain/issues/956) portable `record_id` join; [#957](https://github.com/jannekbuengener/sample-brain/issues/957) perturbation mechanics
 **Tooling:** follow-up of #1024 — not implemented in this docs-only freeze (`src/aq7_structure_role_drop_schema.py`, `src/aq7_structure_role_drop_corpus.py`)
 
 ## Architecture outcome
