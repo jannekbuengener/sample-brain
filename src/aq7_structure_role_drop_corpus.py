@@ -735,7 +735,7 @@ def generate_aq7_structure_role_drop_corpus(
     for spec in _FIXTURE_SPECS:
         wave = _render_fixture(spec)
         wav_path = audio_dir / f"{spec.fixture_id}.wav"
-        _assert_path_outside_repo(wav_path.parent, root, label="audio_dir")
+        _assert_path_outside_repo(wav_path, root, label=f"audio/{spec.fixture_id}.wav")
         sf.write(
             wav_path,
             wave,
@@ -745,7 +745,7 @@ def generate_aq7_structure_role_drop_corpus(
         gt_payload = _fixture_gt_payload(spec)
         validate_gt(gt_payload)
         gt_path = gt_dir / f"{spec.fixture_id}.json"
-        _assert_path_outside_repo(gt_path.parent, root, label="gt_dir")
+        _assert_path_outside_repo(gt_path, root, label=f"gt/{spec.fixture_id}.json")
         gt_path.write_text(
             _canonical_json(gt_payload),
             encoding="utf-8",
@@ -764,7 +764,7 @@ def generate_aq7_structure_role_drop_corpus(
     }
     validate_manifest(manifest)
     manifest_path = target / "manifest.json"
-    _assert_path_outside_repo(manifest_path.parent, root, label="work_dir")
+    _assert_path_outside_repo(manifest_path, root, label="manifest.json")
     manifest_path.write_text(
         _canonical_json(manifest),
         encoding="utf-8",
