@@ -507,13 +507,13 @@ To support later #1040 orchestration without re-deriving AQ7 semantics, machine-
 - per-record error buckets needed by #1027;
 - no free-form agent judgment as the only decision input.
 
-`#1024` owns the concrete corpus id/version and record schema. Until it is delivered:
+`#1024` owns the concrete corpus id/version and record schema. With the synthetic corpus frozen:
 
 ```text
-AQ7_ANNOTATED_CORPUS = HOLD_PENDING_1024
+AQ7_ANNOTATED_CORPUS = sample-brain.aq7.structure-role-drop.synthetic.v1
 ```
 
-This HOLD does not weaken the KPI freeze; it means measurable baseline execution waits for real ground truth rather than inventing it.
+Authority: `docs/benchmarks/AQ7_STRUCTURE_ROLE_DROP_CORPUS.md` (#1024). This lift does not change KPI law, tolerances, or promotion gates; baseline measurement remains a later slice (#1025+).
 
 ## Runtime / determinism dimensions (by reference)
 
@@ -557,4 +557,4 @@ This slice exits:
 AQ7_STRUCTURE_ROLE_DROP_KPI_CONTRACT_FROZEN
 ```
 
-The measurable corpus remains `HOLD_PENDING_1024`; missing ground truth is not fabricated.
+The measurable corpus is `sample-brain.aq7.structure-role-drop.synthetic.v1` (#1024); KPI thresholds and baseline execution remain later slices.
