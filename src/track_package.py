@@ -201,22 +201,23 @@ def validate_confined_media_relpath(
     if text.rstrip("/") == MEDIA_DIR_NAME:
         return OUTCOME_PATH_ESCAPE_REJECTED
 
-    root = package_root.resolve(strict=False)
-    candidate = (package_root / Path(*text.split("/"))).resolve(strict=False)
     try:
+        root = package_root.resolve(strict=False)
+        candidate = (package_root / Path(*text.split("/"))).resolve(strict=False)
         candidate.relative_to(root)
-    except ValueError:
+    except (OSError, RuntimeError, ValueError):
         return OUTCOME_PATH_ESCAPE_REJECTED
 
     # If the path exists, resolve again after following links / reparse points.
-    if candidate.exists() or (package_root / Path(*text.split("/"))).exists():
+    try:
+        exists = candidate.exists() or (package_root / Path(*text.split("/"))).exists()
+    except (OSError, RuntimeError):
+        return OUTCOME_PATH_ESCAPE_REJECTED
+    if exists:
         try:
             resolved = (package_root / Path(*text.split("/"))).resolve(strict=True)
-        except (OSError, RuntimeError, ValueError):
-            return OUTCOME_PATH_ESCAPE_REJECTED
-        try:
             resolved.relative_to(root)
-        except ValueError:
+        except (OSError, RuntimeError, ValueError):
             return OUTCOME_PATH_ESCAPE_REJECTED
         # Reject when any path component is a symlink/junction that escapes.
         probe = package_root
@@ -227,11 +228,8 @@ def validate_confined_media_relpath(
             try:
                 if probe.is_symlink():
                     link_target = probe.resolve(strict=True)
-                    try:
-                        link_target.relative_to(root)
-                    except ValueError:
-                        return OUTCOME_PATH_ESCAPE_REJECTED
-            except OSError:
+                    link_target.relative_to(root)
+            except (OSError, RuntimeError, ValueError):
                 return OUTCOME_PATH_ESCAPE_REJECTED
     return None
 
@@ -946,8 +944,6 @@ def create_track_package(
 def _contains_forbidden_serialized_path(document: str) -> bool:
     if "file://" in document.casefold():
         return True
-    if "\\\\" in document:
-        return True
     # Absolute Windows drive path fragments inside JSON string values.
     if re.search(r"[A-Za-z]:\\\\", document) or re.search(r"[A-Za-z]:/", document):
         return True
@@ -1022,6 +1018,21 @@ def _parse_manifest_payload(data: object) -> tuple[TrackPackageManifest | None, 
     return manifest, OUTCOME_OPEN
 
 
+def _entrypoint_confined(manifest_path: Path, package_root: Path) -> bool:
+    """True when track_package.json resolves inside the package root."""
+    try:
+        root = package_root.resolve(strict=False)
+        if manifest_path.is_symlink():
+            target = manifest_path.resolve(strict=True)
+            target.relative_to(root)
+        else:
+            resolved = manifest_path.resolve(strict=False)
+            resolved.relative_to(root)
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return True
+
+
 def _validate_package_at(
     package_root: Path,
     *,
@@ -1029,6 +1040,18 @@ def _validate_package_at(
 ) -> TrackPackageResult:
     root = Path(package_root)
     manifest_path = root / TRACK_PACKAGE_FILENAME
+    if not manifest_path.exists():
+        return _failure(
+            OUTCOME_CORRUPT_OR_UNSUPPORTED,
+            package_root=root,
+            message="Package manifest missing.",
+        )
+    if not _entrypoint_confined(manifest_path, root):
+        return _failure(
+            OUTCOME_PATH_ESCAPE_REJECTED,
+            package_root=root,
+            message="Package manifest path escape rejected.",
+        )
     if not manifest_path.is_file():
         return _failure(
             OUTCOME_CORRUPT_OR_UNSUPPORTED,
