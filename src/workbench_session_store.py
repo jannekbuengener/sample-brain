@@ -35,6 +35,8 @@ from .workbench_transport_adapter import DEFAULT_TEMPO_BPM
 SCHEMA_VERSION = 2
 SCHEMA_VERSION_V1 = 1
 WORKBENCH_SESSION_FILENAME = "workbench_session.json"
+ACTIVE_TRACK_POINTER_FILENAME = "active_track.json"
+ACTIVE_TRACK_POINTER_SCHEMA_VERSION = 1
 
 PERSISTENCE_STATUS_FRESH_MISSING = "fresh_missing"
 PERSISTENCE_STATUS_RESTORED_OK = "restored_ok"
@@ -59,6 +61,9 @@ _ROOT_KEYS_V2 = frozenset(
 )
 
 __all__ = [
+    "ACTIVE_TRACK_POINTER_FILENAME",
+    "ACTIVE_TRACK_POINTER_SCHEMA_VERSION",
+    "ActiveTrackPointer",
     "DEFAULT_TEMPO_BPM",
     "PERSISTENCE_STATUS_AUTOSAVE_FAILED",
     "PERSISTENCE_STATUS_CODES",
@@ -72,16 +77,21 @@ __all__ = [
     "WORKBENCH_SESSION_FILENAME",
     "WorkbenchSessionLoadOutcome",
     "WorkbenchSessionSnapshot",
+    "active_track_pointer_path",
     "apply_snapshot_to_live_kit",
     "channel_rack_state_from_snapshot",
+    "load_active_track_pointer",
     "load_workbench_session_outcome",
     "load_workbench_session_snapshot",
     "persistence_status_label",
     "rehydrate_live_kit_from_library",
     "rehydrate_workbench_row_from_library",
     "resume_master_bpm_from_transport",
+    "save_active_track_pointer",
     "save_workbench_session_snapshot",
     "snapshot_from_musical_state",
+    "snapshot_from_track_package_musical",
+    "track_package_musical_from_snapshot",
     "workbench_row_from_sample_ref",
     "workbench_session_path",
 ]
@@ -113,6 +123,14 @@ class WorkbenchSessionLoadOutcome:
     snapshot: WorkbenchSessionSnapshot | None
 
 
+@dataclass(frozen=True)
+class ActiveTrackPointer:
+    """Local resume selection only; musical truth remains in the track package."""
+
+    track_id: str
+    package_root: Path
+
+
 def persistence_status_label(status: str) -> str:
     """Calm producer-facing label for a stable status code (no paths)."""
     labels = {
@@ -133,6 +151,72 @@ def workbench_session_path(
 ) -> Path:
     base = state_dir if state_dir is not None else workbench_state_dir(env=env)
     return Path(base) / WORKBENCH_SESSION_FILENAME
+
+
+def active_track_pointer_path(
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> Path:
+    base = state_dir if state_dir is not None else workbench_state_dir(env=env)
+    return Path(base) / ACTIVE_TRACK_POINTER_FILENAME
+
+
+def load_active_track_pointer(
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> tuple[bool, ActiveTrackPointer | None]:
+    """Return ``(present, pointer)``; present+None means corrupt/fail-closed."""
+    path = active_track_pointer_path(state_dir=state_dir, env=env)
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return False, None
+    except (OSError, UnicodeError):
+        return True, None
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return True, None
+    if not isinstance(data, dict) or set(data) != {"schema_version", "track_id", "package_root"}:
+        return True, None
+    if data.get("schema_version") != ACTIVE_TRACK_POINTER_SCHEMA_VERSION:
+        return True, None
+    track_id = data.get("track_id")
+    root_text = data.get("package_root")
+    if not isinstance(track_id, str) or not track_id.strip():
+        return True, None
+    if not isinstance(root_text, str) or not root_text.strip():
+        return True, None
+    try:
+        root = Path(root_text)
+        if not root.is_absolute():
+            return True, None
+    except (OSError, ValueError):
+        return True, None
+    return True, ActiveTrackPointer(track_id=track_id.strip(), package_root=root)
+
+def save_active_track_pointer(
+    pointer: ActiveTrackPointer,
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> Path:
+    """Atomically persist active package selection; raises on write failure."""
+    root = Path(pointer.package_root).resolve(strict=False)
+    if not root.is_absolute() or not pointer.track_id.strip():
+        raise ValueError("Active track pointer is invalid")
+    path = active_track_pointer_path(state_dir=state_dir, env=env)
+    _atomic_write_json(
+        path,
+        {
+            "schema_version": ACTIVE_TRACK_POINTER_SCHEMA_VERSION,
+            "track_id": pointer.track_id.strip(),
+            "package_root": str(root),
+        },
+    )
+    return path
 
 
 def workbench_row_from_sample_ref(path: str) -> WorkbenchRow:
@@ -672,6 +756,87 @@ def _snapshot_to_json_dict(snapshot: WorkbenchSessionSnapshot) -> dict[str, Any]
     }
 
 
+def _resolve_package_media_ref(package_root: Path, ref: object) -> str | None:
+    if ref is None:
+        return None
+    if not isinstance(ref, str) or not ref.strip():
+        raise _SessionSemanticError("Track package media ref must be a non-empty string")
+    text = ref.strip().replace("\\", "/")
+    if text.startswith("/") or ".." in text.split("/"):
+        raise _SessionSemanticError("Track package media ref escapes package")
+    root = package_root.resolve(strict=False)
+    try:
+        resolved = (root / Path(*text.split("/"))).resolve(strict=True)
+        resolved.relative_to(root)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise _SessionSemanticError("Track package media ref is not confined") from exc
+    if not resolved.is_file():
+        raise _SessionSemanticError("Track package media ref is missing")
+    return str(resolved)
+
+def snapshot_from_track_package_musical(
+    musical: Mapping[str, Any], package_root: Path
+) -> WorkbenchSessionSnapshot:
+    """Convert validated portable package musical state into runtime absolute refs."""
+    if not isinstance(musical, Mapping):
+        raise _SessionSemanticError("Track package musical payload must be an object")
+    live_raw = musical.get("live_kit")
+    if not isinstance(live_raw, Mapping):
+        raise _SessionSemanticError("Track package live_kit must be an object")
+    live_payload: dict[str, dict[str, dict[str, str] | None]] = {}
+    for group, slots in LIVE_KIT_SLOT_MAPPING:
+        group_raw = live_raw.get(group)
+        if not isinstance(group_raw, Mapping):
+            raise _SessionSemanticError("Track package live_kit group missing")
+        live_payload[group] = {}
+        for slot in slots:
+            item = group_raw.get(slot)
+            if item is None:
+                live_payload[group][slot] = None
+            elif isinstance(item, Mapping) and set(item) == {"path"}:
+                resolved = _resolve_package_media_ref(package_root, item.get("path"))
+                if resolved is None:
+                    raise _SessionSemanticError("Assigned track package slot has no path")
+                live_payload[group][slot] = {"path": resolved}
+            else:
+                raise _SessionSemanticError("Track package live_kit slot is invalid")
+
+    rack_raw = musical.get("channel_rack")
+    rack_payload: dict[str, Any] | None
+    if rack_raw is None:
+        rack_payload = None
+    elif isinstance(rack_raw, Mapping):
+        rack_payload = dict(rack_raw)
+        channels = rack_raw.get("channels")
+        if not isinstance(channels, list):
+            raise _SessionSemanticError("Track package channel_rack channels are invalid")
+        converted_channels: list[dict[str, Any]] = []
+        for channel in channels:
+            if not isinstance(channel, Mapping):
+                raise _SessionSemanticError("Track package channel is invalid")
+            converted = dict(channel)
+            converted["sample_path"] = _resolve_package_media_ref(
+                package_root, channel.get("sample_path")
+            )
+            converted_channels.append(converted)
+        rack_payload["channels"] = converted_channels
+
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "live_kit": live_payload,
+        "channel_rack": rack_payload,
+        "master_bpm": musical.get("master_bpm"),
+        "sync_enabled": musical.get("sync_enabled"),
+    }
+    return _parse_snapshot(payload)
+
+def track_package_musical_from_snapshot(snapshot: WorkbenchSessionSnapshot) -> dict[str, Any]:
+    """Project one Workbench snapshot into package musical payload shape."""
+    payload = _snapshot_to_json_dict(snapshot)
+    payload.pop("schema_version", None)
+    return payload
+
+
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(f".{path.name}.tmp")
@@ -704,7 +869,8 @@ def save_workbench_session_snapshot(
 def apply_snapshot_to_live_kit(
     snapshot: WorkbenchSessionSnapshot, live_kit: LiveKitState
 ) -> None:
-    """Assign restored path refs onto an empty LiveKitState (no save side effects)."""
+    """Replace Live Kit assignments from a validated snapshot without autosave."""
+    live_kit.clear_assignments(notify=False)
     for group, slots in LIVE_KIT_SLOT_MAPPING:
         for slot in slots:
             path = snapshot.live_kit[group][slot]

@@ -1185,6 +1185,202 @@ def _validate_package_at(
     return _success_open(root, manifest)
 
 
+def save_track_package_musical_state(
+    package_root: Path | str,
+    musical: Mapping[str, Any],
+    *,
+    copy_file: CopyFileFn | None = None,
+) -> TrackPackageResult:
+    """Atomically replace package musical state, preserving last valid manifest.
+
+    Existing package media is reused. Newly referenced runtime media is copied
+    into ``media/`` first; if the manifest commit fails, media created by this
+    write is removed so the previous package remains authoritative.
+    """
+    root = Path(package_root)
+    opened = open_track_package(root)
+    if opened.outcome != OUTCOME_OPEN or opened.manifest is None:
+        return opened
+    manifest = opened.manifest
+    copy_fn = copy_file or _default_copy
+
+    path_map: dict[str, str] = {}
+    media_entries = list(manifest.media)
+    for entry in media_entries:
+        media_path = root / Path(*entry.relpath.split("/"))
+        path_map[entry.relpath] = entry.relpath
+        path_map[str(media_path)] = entry.relpath
+        try:
+            resolved = media_path.resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            return _failure(
+                OUTCOME_MISSING_MEDIA,
+                package_root=root,
+                track_id=manifest.track_id,
+                message="Required package media is missing.",
+            )
+        path_map[str(resolved)] = entry.relpath
+        path_map[_normalize_source_key(resolved)] = entry.relpath
+
+    created_media: list[Path] = []
+    temp_files: list[Path] = []
+    committed = False
+    try:
+        for ref in dict.fromkeys(_iter_musical_sample_refs(musical)):
+            if ref in path_map:
+                continue
+            try:
+                source = Path(ref).expanduser()
+                source_resolved = source.resolve(strict=True)
+            except (OSError, RuntimeError, ValueError):
+                return _failure(
+                    OUTCOME_MISSING_MEDIA,
+                    package_root=root,
+                    track_id=manifest.track_id,
+                    message="Required musical media is missing.",
+                )
+            source_key = _normalize_source_key(source_resolved)
+            if source_key in path_map:
+                path_map[ref] = path_map[source_key]
+                continue
+            if not source_resolved.is_file():
+                return _failure(
+                    OUTCOME_MISSING_MEDIA,
+                    package_root=root,
+                    track_id=manifest.track_id,
+                    message="Required musical media is missing.",
+                )
+
+            # The live runtime may still hold the pre-import library path after a
+            # successful package copy. Reuse byte-identical package media before
+            # allocating another entry so unrelated later autosaves stay stable.
+            reused_relpath: str | None = None
+            for existing in media_entries:
+                existing_path = root / Path(*existing.relpath.split("/"))
+                try:
+                    if _files_byte_identical(source_resolved, existing_path):
+                        reused_relpath = existing.relpath
+                        break
+                except OSError:
+                    continue
+            if reused_relpath is not None:
+                path_map[ref] = reused_relpath
+                path_map[str(source)] = reused_relpath
+                path_map[str(source_resolved)] = reused_relpath
+                path_map[source_key] = reused_relpath
+                continue
+
+            media_id = new_media_id()
+            relpath = _media_relpath_for(media_id, source_resolved)
+            target = root / Path(*relpath.split("/"))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            temp_target = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+            temp_files.append(temp_target)
+            try:
+                copy_fn(source_resolved, temp_target)
+                if not temp_target.is_file() or not _files_byte_identical(source_resolved, temp_target):
+                    raise OSError("copied media validation failed")
+                os.replace(temp_target, target)
+                temp_files.remove(temp_target)
+            except OSError:
+                try:
+                    temp_target.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                return _failure(
+                    OUTCOME_WRITE_FAILED,
+                    package_root=root,
+                    track_id=manifest.track_id,
+                    message="Track package media write failed.",
+                )
+            created_media.append(target)
+            media_entries.append(MediaEntry(media_id=media_id, relpath=relpath))
+            path_map[ref] = relpath
+            path_map[str(source)] = relpath
+            path_map[str(source_resolved)] = relpath
+            path_map[source_key] = relpath
+
+        portable = _rewrite_paths(dict(musical), path_map)
+        semantic_error = _validate_musical_semantics(portable)
+        if semantic_error is not None:
+            return _failure(semantic_error, package_root=root, track_id=manifest.track_id)
+        media_relpaths = {entry.relpath for entry in media_entries}
+        musical_canon, ref_error = _validate_musical_media_refs(portable, media_relpaths, root)
+        if ref_error is not None or musical_canon is None:
+            return _failure(
+                ref_error or OUTCOME_CORRUPT_OR_UNSUPPORTED,
+                package_root=root,
+                track_id=manifest.track_id,
+                message="Musical media refs are not portable.",
+            )
+        updated = TrackPackageManifest(
+            schema_version=manifest.schema_version,
+            package_kind=manifest.package_kind,
+            track_id=manifest.track_id,
+            media=tuple(sorted(media_entries, key=lambda entry: entry.media_id)),
+            musical=dict(musical_canon),
+            arrangement=manifest.arrangement,
+            midi=manifest.midi,
+        )
+        payload_probe = {
+            "schema_version": updated.schema_version,
+            "package_kind": updated.package_kind,
+            "track_id": updated.track_id,
+            "media": [
+                {"media_id": entry.media_id, "relpath": entry.relpath}
+                for entry in updated.media
+            ],
+            "musical": updated.musical,
+            "arrangement": updated.arrangement,
+            "midi": updated.midi,
+        }
+        if _reject_escaped_path_strings(payload_probe) is not None:
+            return _failure(
+                OUTCOME_PATH_ESCAPE_REJECTED,
+                package_root=root,
+                track_id=manifest.track_id,
+                message="Package payload is not portable.",
+            )
+        try:
+            document = serialize_track_package_json(updated)
+        except (TypeError, ValueError):
+            return _failure(
+                OUTCOME_CORRUPT_OR_UNSUPPORTED,
+                package_root=root,
+                track_id=manifest.track_id,
+                message="Package payload is not serializable.",
+            )
+        temp_manifest = root / f".{TRACK_PACKAGE_FILENAME}.{uuid.uuid4().hex}.tmp"
+        temp_files.append(temp_manifest)
+        try:
+            temp_manifest.write_text(document, encoding="utf-8")
+            os.replace(temp_manifest, root / TRACK_PACKAGE_FILENAME)
+            committed = True
+            temp_files.remove(temp_manifest)
+        except OSError:
+            return _failure(
+                OUTCOME_WRITE_FAILED,
+                package_root=root,
+                track_id=manifest.track_id,
+                message="Track package write failed.",
+            )
+        return _success_open(root, updated)
+    finally:
+        for temp_path in temp_files:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        # A failed transaction keeps the prior valid manifest authoritative;
+        # any newly copied media is unreferenced and owned by this failed write.
+        if not committed:
+            for created in created_media:
+                try:
+                    created.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+
 def validate_track_package(package_root: Path | str) -> TrackPackageResult:
     """Fail-closed package integrity check (no global bind side effects)."""
     return _validate_package_at(Path(package_root), require_bindable=False)
@@ -1220,6 +1416,7 @@ __all__ = [
     "new_media_id",
     "new_track_id",
     "open_track_package",
+    "save_track_package_musical_state",
     "serialize_track_package_json",
     "validate_confined_media_relpath",
     "validate_track_package",
