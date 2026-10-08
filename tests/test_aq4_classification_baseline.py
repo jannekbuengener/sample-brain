@@ -1,4 +1,4 @@
-"""Frozen tests for AQ4 classification baseline harness (#1032).
+"""Frozen tests for AQ4 classification baseline harness (#1032 / #1003 residual).
 
 TEST FREEZE: these assertions define the baseline eval contract. Fix the
 harness, not these expectations, when they turn red.
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -22,11 +23,102 @@ def test_baseline_identity_constants_are_frozen() -> None:
     assert baseline.DOCUMENT_TYPE == "sample-brain.aq4.classification-baseline.v1"
     assert baseline.SCHEMA_VERSION == "1.0.0"
     assert baseline.CORPUS_ID == corpus.CORPUS_ID
+    assert baseline.CANDIDATE_ID == "classification.baseline.v1"
     assert baseline.EXIT_MEASURED == "AQ4_CLASSIFICATION_BASELINE_MEASURED"
+    assert baseline.EXIT_PARTIAL_HOLD == "AQ4_CLASSIFICATION_BASELINE_PARTIAL_HOLD"
     assert baseline.EXIT_INCOMPLETE == "AQ4_CLASSIFICATION_BASELINE_INCOMPLETE"
     assert baseline.SAMPLE_CLASS_SURFACE == "src.analyze.extract_features.clazz"
     assert baseline.PRED_TYPE_RULE_SURFACE == "src.classify.rule_type"
     assert baseline.PRED_TYPE_KNN_SURFACE == "src.classify.write_autotype_to_db(use_knn=True)"
+
+
+def _measurable_plane(*, n_clear_eligible: int = 2) -> dict[str, Any]:
+    return {
+        "n_clear_eligible": n_clear_eligible,
+        "n_uncertain": 1,
+        "metrics": {"macro_f1": 0.5, "n_eligible": n_clear_eligible},
+    }
+
+
+def _empty_plane() -> dict[str, Any]:
+    return {"n_clear_eligible": 0, "n_uncertain": 0}
+
+
+def _splits_with(
+    *,
+    sample_class: dict[str, Any] | None,
+    pred_type_rule: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Build CALIBRATION+TEST splits sharing the same plane blocks."""
+    sc = sample_class if sample_class is not None else _empty_plane()
+    pt = pred_type_rule if pred_type_rule is not None else _empty_plane()
+    return {
+        "CALIBRATION": {
+            "aq4.sample_class": sc,
+            "aq4.pred_type_rule": pt,
+        },
+        "TEST": {
+            "aq4.sample_class": dict(sc),
+            "aq4.pred_type_rule": dict(pt),
+        },
+    }
+
+
+def test_resolve_exit_both_mandatory_planes_yields_measured() -> None:
+    splits = _splits_with(
+        sample_class=_measurable_plane(),
+        pred_type_rule=_measurable_plane(),
+    )
+    clip_rows = [{"clip_id": f"c{i}"} for i in range(8)]
+    assert (
+        baseline.resolve_exit_status(splits=splits, clip_rows=clip_rows)
+        == baseline.EXIT_MEASURED
+    )
+
+
+def test_resolve_exit_exactly_one_mandatory_plane_yields_partial_hold() -> None:
+    only_sample_class = _splits_with(
+        sample_class=_measurable_plane(),
+        pred_type_rule=_empty_plane(),
+    )
+    only_pred_type = _splits_with(
+        sample_class=_empty_plane(),
+        pred_type_rule=_measurable_plane(),
+    )
+    clip_rows = [{"clip_id": f"c{i}"} for i in range(8)]
+    assert (
+        baseline.resolve_exit_status(splits=only_sample_class, clip_rows=clip_rows)
+        == baseline.EXIT_PARTIAL_HOLD
+    )
+    assert (
+        baseline.resolve_exit_status(splits=only_pred_type, clip_rows=clip_rows)
+        == baseline.EXIT_PARTIAL_HOLD
+    )
+
+
+def test_resolve_exit_both_mandatory_planes_unmeasurable_is_incomplete() -> None:
+    splits = _splits_with(
+        sample_class=_empty_plane(),
+        pred_type_rule=_empty_plane(),
+    )
+    clip_rows = [{"clip_id": f"c{i}"} for i in range(8)]
+    assert (
+        baseline.resolve_exit_status(splits=splits, clip_rows=clip_rows)
+        == baseline.EXIT_INCOMPLETE
+    )
+
+
+def test_knn_hold_alone_does_not_degrade_measured() -> None:
+    """Optional kNN HOLD must not force PARTIAL_HOLD when both planes score."""
+    splits = _splits_with(
+        sample_class=_measurable_plane(),
+        pred_type_rule=_measurable_plane(),
+    )
+    clip_rows = [{"clip_id": f"c{i}"} for i in range(8)]
+    assert (
+        baseline.resolve_exit_status(splits=splits, clip_rows=clip_rows)
+        == baseline.EXIT_MEASURED
+    )
 
 
 def test_multiclass_metrics_report_explicit_denominators() -> None:
@@ -126,16 +218,27 @@ def test_run_writes_external_json_with_separate_planes(tmp_path: Path) -> None:
     assert result["corpus_id"] == corpus.CORPUS_ID
     assert result["exit_status"] in {
         baseline.EXIT_MEASURED,
+        baseline.EXIT_PARTIAL_HOLD,
         baseline.EXIT_INCOMPLETE,
     }
+    assert result["candidate_id"] == baseline.CANDIDATE_ID
     assert set(result["splits"]) == {"CALIBRATION", "TEST"}
     assert result["surfaces"]["aq4.sample_class"] == baseline.SAMPLE_CLASS_SURFACE
     assert result["surfaces"]["aq4.pred_type_rule"] == baseline.PRED_TYPE_RULE_SURFACE
     assert result["surfaces"]["aq4.pred_type_knn"] == baseline.PRED_TYPE_KNN_SURFACE
+    assert result["plane_identities"]["aq4.sample_class"] == baseline.CANDIDATE_ID
+    assert result["plane_identities"]["aq4.pred_type_rule"] == baseline.CANDIDATE_ID
+    assert "aq4.pred_type_knn" not in result["plane_identities"] or (
+        result["plane_identities"].get("aq4.pred_type_knn") is None
+    )
 
     knn = result["aq4.pred_type_knn"]
     assert knn["status"] == "HOLD"
     assert "reason" in knn
+    assert knn["surface"] == baseline.PRED_TYPE_KNN_SURFACE
+    # Truthful HOLD stub — no fabricated measured metrics.
+    for fake_metric in ("macro_f1", "balanced_accuracy", "metrics", "per_class", "confusion"):
+        assert fake_metric not in knn
 
     for split_name in ("CALIBRATION", "TEST"):
         split = result["splits"][split_name]
@@ -147,6 +250,11 @@ def test_run_writes_external_json_with_separate_planes(tmp_path: Path) -> None:
         assert "metrics" in pt
         assert "n_clear_eligible" in sc
         assert "n_uncertain" in sc
+        assert "n_clear_eligible" in pt
+        assert "n_uncertain" in pt
+        # Separate denominators — never a shared joint clear count.
+        assert "n_joint_clear_eligible" not in split
+        assert "joint_macro_f1" not in split
         assert "macro_f1" in sc["metrics"]
         assert "balanced_accuracy" in sc["metrics"]
         assert "confusion" in sc["metrics"]
@@ -163,10 +271,23 @@ def test_run_writes_external_json_with_separate_planes(tmp_path: Path) -> None:
     assert "sample_class" in health["support_counts"]
     assert "pred_type" in health["support_counts"]
 
+    provenance = result["provenance"]
+    assert isinstance(provenance, dict)
+    dumped_prov = json.dumps(provenance)
+    assert "#958" in dumped_prov or "958" in dumped_prov
+    assert "#959" in dumped_prov or "959" in dumped_prov
+    assert "#1001" in dumped_prov or "1001" in dumped_prov
+    assert "#1021" in dumped_prov or "1021" in dumped_prov
+    assert "D:/" not in dumped_prov
+    assert "D:\\" not in dumped_prov
+    assert "/Users/" not in dumped_prov
+    assert "PRODUCING" not in dumped_prov
+
     dumped = json.dumps(result)
     assert "D:/" not in dumped
     assert "D:\\" not in dumped
     assert "/Users/" not in dumped
+    assert "PRODUCING" not in dumped
     for key in ("audio_path", "file_path", "sample_path", "work_dir"):
         assert key not in result
 
@@ -183,6 +304,44 @@ def test_run_writes_external_json_with_separate_planes(tmp_path: Path) -> None:
         # Separate taxonomy fields — never a collapsed joint label.
         assert "joint_label" not in row
         assert "combined_class" not in row
+
+
+def test_full_corpus_run_exits_measured_with_knn_hold(tmp_path: Path) -> None:
+    """Both mandatory planes measurable + kNN HOLD still yields MEASURED (#1003)."""
+    work = tmp_path / "corpus"
+    out = tmp_path / "out.json"
+    corpus.generate_aq4_classification_corpus(work, repo_root=REPO_ROOT)
+    result = baseline.run_aq4_classification_baseline(
+        work_dir=work,
+        output_path=out,
+        repo_root=REPO_ROOT,
+    )
+    assert result["exit_status"] == baseline.EXIT_MEASURED
+    assert result["candidate_id"] == "classification.baseline.v1"
+    assert result["aq4.pred_type_knn"]["status"] == "HOLD"
+    assert result["exit_status"] != baseline.EXIT_PARTIAL_HOLD
+
+
+def test_no_joint_sample_class_pred_type_metric(tmp_path: Path) -> None:
+    work = tmp_path / "corpus"
+    out = tmp_path / "out.json"
+    corpus.generate_aq4_classification_corpus(work, repo_root=REPO_ROOT)
+    result = baseline.run_aq4_classification_baseline(
+        work_dir=work,
+        output_path=out,
+        repo_root=REPO_ROOT,
+    )
+    forbidden = {
+        "joint_macro_f1",
+        "combined_macro_f1",
+        "autotype_quality",
+        "n_joint_clear_eligible",
+        "sample_class_pred_type_f1",
+    }
+    top_keys = set(result.keys())
+    assert top_keys.isdisjoint(forbidden)
+    for split in result["splits"].values():
+        assert set(split.keys()).isdisjoint(forbidden)
 
 
 def test_no_tuning_on_test_is_documented_in_result(tmp_path: Path) -> None:
