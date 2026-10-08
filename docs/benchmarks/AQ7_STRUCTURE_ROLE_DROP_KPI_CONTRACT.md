@@ -189,7 +189,9 @@ Empty boundary-eligible set → `not_applicable`. Low coverage must not be hidde
 
 Bar-range intervals are **half-open** `[start_bar, end_bar)`, matching StructureV1 adjacent boundary indices (`end_bar` of one section equals `start_bar` of the next; length = `end_bar - start_bar`). Inclusive endpoint interpretations are forbidden for overlap, IoU, and reference weights.
 
-Reference and predicted sections are formed by adding the implicit track start/end around their **eligible** reference internal boundaries and **unmasked** predicted internal boundaries (same filtered sets used for boundary P/R). Section pairing is deterministic one-to-one and order-preserving:
+Do **not** synthesize merged reference sections by dropping ambiguous boundaries and reconnecting the remaining eligible ones. If eligible boundaries exist at bars 10 and 30 and an ambiguous boundary exists at 20, the original sections that depend on bar 20 are excluded; evaluators must **not** invent a synthetic `[10,30)` reference section for IoU. Predicted sections likewise use only unmasked predicted internal boundaries; no repair across ignore masks.
+
+Reference and predicted sections for IoU therefore come from the **surviving original** half-open intervals after removing ambiguous-dependent reference sections and masked predictions (same filtered membership as boundary P/R survivors, without merging across removed loci). Section pairing is deterministic one-to-one and order-preserving:
 
 1. sort reference and predicted sections by start bar, then end bar, then stable id/order;
 2. maximize the number of pairs whose bar-range overlap is strictly positive;
@@ -213,7 +215,7 @@ Primary concrete-role set:
 | Metric id | Direction | Definition |
 |---|---|---|
 | `aq7.role.macro_f1` | maximize | unweighted mean F1 over the six concrete roles |
-| `aq7.role.coverage` | maximize | non-`unknown` predictions / eligible concrete-role reference sections |
+| `aq7.role.coverage` | maximize | non-`unknown` usable-surface predictions / all eligible concrete-role reference sections (failed/unusable passes stay in the denominator as uncovered) |
 | `aq7.role.bar_weighted_accuracy` | maximize | correctly predicted role bars / eligible reference-role bars; diagnostic, not a replacement for macro-F1 |
 | `aq7.role.unknown_rate` | neutral | predicted `unknown` / all role-eligible sections |
 | `aq7.role.unknown_reference_recall` | maximize | reference-`unknown` sections predicted `unknown` / eligible reference-`unknown` sections |
@@ -234,13 +236,21 @@ Annotation-side **role-eligible** requires complete role labels on the frozen re
 
 Prediction-side **usable role prediction surface** requires that ArrangementClassifier completed a section-role classification pass over those frozen reference sections and the arrangement/track status is not `failed` or `unavailable`.
 
-| Prediction state | Definition | Enters role correctness / coverage denominators? |
-|---|---|---|
-| Concrete or semantic-`unknown` prediction | Emitted section role under a usable surface | Yes |
-| Track/pass HOLD | Status `failed` / `unavailable`, or no completed role pass | No — record/sections are `unknown` / `excluded` for role correctness; do **not** invent per-section semantic `unknown` predictions |
-| Missing section under usable surface | Completed pass but no role emitted for an eligible reference section | Count as predicted semantic `unknown` only when the public surface explicitly emits `unknown`; otherwise `controlled_failure` / HOLD for that section, never a fabricated concrete role |
+| Prediction state | Definition | Confusion / P/R / macro-F1 | `aq7.role.coverage` |
+|---|---|---|---|
+| Concrete or semantic-`unknown` prediction | Emitted section role under a usable surface | Yes | numerator only if prediction is not semantic `unknown` |
+| Track/pass HOLD | Status `failed` / `unavailable`, or no completed role pass | No — do **not** invent semantic `unknown` confusion rows | denominator yes, numerator no (uncovered) |
+| Missing section under usable surface | Completed pass but no role emitted for an eligible reference section | Count as predicted semantic `unknown` only when the public surface explicitly emits `unknown`; otherwise omit from confusion and treat as uncovered | denominator yes; numerator only for explicit non-`unknown` emission |
 
-`aq7.role.coverage` therefore measures classifier abstention (`unknown` predictions) on eligible concrete-role reference sections under a usable surface. Execution failures that make the surface unusable lower role coverage only when reported as an explicit role-plane coverage / eligibility diagnostic; they must not inflate confusion-matrix `unknown` counts.
+Frozen coverage formula:
+
+```text
+aq7.role.coverage =
+  |{eligible concrete-role reference sections with usable-surface prediction ≠ unknown}|
+  / |{eligible concrete-role reference sections}|
+```
+
+Failed/unusable role passes therefore reduce coverage without fabricating confusion-matrix `unknown` entries.
 
 ## Drop-event KPI (`aq7.drop_event`)
 
@@ -266,7 +276,7 @@ Annotation-side **event-eligible** requires all of:
 1. drop-event annotation status is `adjudicated` or `single_source` at record/plane level (not whole-plane `ambiguous` / `unavailable`);
 2. the full expected `drop_onset` set is stated, including an explicit empty set when the track has none;
 3. annotated events may reference excluded / ambiguous boundaries; those individual events are removed from drop-event correctness denominators by the ignore-mask / carry-over rules below, but they do **not** make the whole record event-ineligible when at least the annotation set is complete;
-4. a usable bar mapping exists for ±1-bar matching; otherwise the record is HOLD for scored event timing/presence and is **not** event-eligible for P/R/F1.
+4. **reference/corpus** bar identity for annotated events is present (annotation-side BeatGrid/timebase provenance). Missing reference mapping makes the record not event-eligible. Missing **predicted/analyzer** bar mapping does **not** remove event-eligibility; it makes the prediction surface unusable (below).
 
 Partial-ambiguity rule: a record with mixed clean and ambiguous-anchored drop events remains event-eligible. Only the ambiguous-anchored reference events and mask-overlapping predictions are excluded; remaining clean events still enter P/R/F1.
 
@@ -274,7 +284,8 @@ Prediction-side **usable event prediction surface** requires all of:
 
 1. the record is event-eligible;
 2. ArrangementClassifier completed an event-classification pass over the **frozen reference neutral boundaries** used for AQ7 event scoring;
-3. arrangement/structure status for that pass is not `failed` or `unavailable`.
+3. arrangement/structure status for that pass is not `failed` or `unavailable`;
+4. a deterministic **predicted** bar mapping exists for ±1-bar matching of emitted events (and for scoring negatives against reference bars). If the analyzer cannot establish that mapping, the surface is **not** usable: the record stays event-eligible, contributes 0 to the coverage numerator, and does not enter P/R/F1 denominators.
 
 Status `uncertain` (for example inferred bar grid) remains a usable surface for presence scoring when the pass completed; provenance must still be reported. It does not convert scored negatives into HOLD by itself.
 
@@ -319,7 +330,8 @@ Shared rules for all three planes:
 4. No track-duration, confidence, or ad-hoc sample-weight reweighting of primary P/R/F1 beyond the pooling rules below.
 5. Empty contributing set for a metric → corpus value `not_applicable`, never `0.0`.
 6. CALIBRATION and TEST/HOLDOUT aggregates are computed separately and never mixed.
-7. When either precision or recall is `not_applicable` at corpus level, the corresponding F1 is `not_applicable`.
+7. Corpus-level boundary/event F1: when either corpus micro precision or recall is `not_applicable`, that F1 is `not_applicable`.
+8. Per-concrete-role F1 (role plane): if reference support `> 0` and prediction count `= 0`, recall `= 0`, precision is `not_applicable`, and **role F1 `= 0`** (missed class). If support `= 0` and prediction count `> 0`, precision `= 0`, recall is `not_applicable`, and **role F1 `= 0`**. Only the joint support `= 0` and prediction count `= 0` case is omitted from macro-F1.
 
 ### `aq7.boundary` aggregation
 
@@ -337,8 +349,9 @@ Shared rules for all three planes:
 | Metric id | Corpus rule |
 |---|---|
 | per-role precision / recall / F1 and confusion matrix | **micro** — pool section-level confusion counts across eligible sections/records; derive each role's P/R/F1 from the pooled matrix |
-| `macro_f1` | unweighted mean of the six concrete-role F1 values from that pooled matrix. A concrete role with zero reference support **and** zero predictions is `not_applicable` for that role's F1 and is **omitted** from the macro-mean denominator (not coerced to 0). If all six are omitted, `macro_f1` is `not_applicable`. |
-| `coverage`, `unknown_rate`, `unknown_reference_recall` | **micro** section-count ratios over eligible sections |
+| `macro_f1` | unweighted mean of the six concrete-role F1 values from that pooled matrix, using the per-role F1 rule above. Omit a role from the macro mean **only** when both reference support and predictions are zero. Positive-support misses and unsupported false alarms contribute F1 `= 0`. If all six are omitted, `macro_f1` is `not_applicable`. |
+| `coverage` | **micro** — formula above; eligible concrete-role sections stay in the denominator even when the role surface is unusable |
+| `unknown_rate`, `unknown_reference_recall` | **micro** section-count ratios over eligible sections scored under a usable role surface only |
 | `bar_weighted_accuracy` | **pooled bars** — correct eligible bars / eligible reference-role bars across records |
 
 ### `aq7.drop_event` aggregation
