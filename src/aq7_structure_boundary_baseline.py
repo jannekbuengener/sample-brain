@@ -27,7 +27,11 @@ from .aq7_structure_role_drop_corpus import (
     assert_work_dir_outside_repo,
     generate_aq7_structure_role_drop_corpus,
 )
-from .aq7_structure_role_drop_schema import BOUNDARY_MATCH_TOLERANCE_BARS
+from .aq7_structure_role_drop_schema import (
+    BOUNDARY_MATCH_TOLERANCE_BARS,
+    load_aq7_corpus_manifest,
+    load_aq7_fixture_gt,
+)
 from .beat_grid import BeatGridResult, BeatGridSeries, BeatGridSource
 from .canon_audio import AudioTimebase
 from .measurement.stats import percentile
@@ -149,15 +153,16 @@ def match_boundaries_1bar(
         preds, key=lambda p: (int(p["bar_index"]), int(p.get("order", 0)), p.get("pred_id", ""))
     )
     n, m = len(refs_s), len(preds_s)
-    # dp[i][j] = (match_count, -total_abs_error) using first i refs and j preds
+    # dp key: (match_count, -total_abs_error, -sum_pred_idx, -sum_ref_idx)
+    # Tie-break (#1023): earlier prediction, then earlier reference order.
     neg_inf = -10**9
-    dp: list[list[tuple[int, int]]] = [
-        [(neg_inf, 0) for _ in range(m + 1)] for _ in range(n + 1)
+    dp: list[list[tuple[int, int, int, int]]] = [
+        [(neg_inf, 0, 0, 0) for _ in range(m + 1)] for _ in range(n + 1)
     ]
     prev: list[list[tuple[str, int, int] | None]] = [
         [None for _ in range(m + 1)] for _ in range(n + 1)
     ]
-    dp[0][0] = (0, 0)
+    dp[0][0] = (0, 0, 0, 0)
     for i in range(n + 1):
         for j in range(m + 1):
             cur = dp[i][j]
@@ -176,7 +181,7 @@ def match_boundaries_1bar(
             if i < n and j < m:
                 err = abs(int(preds_s[j]["bar_index"]) - int(refs_s[i]["bar_index"]))
                 if err <= tolerance_bars:
-                    cand = (cur[0] + 1, cur[1] - err)
+                    cand = (cur[0] + 1, cur[1] - err, cur[2] - j, cur[3] - i)
                     if cand > dp[i + 1][j + 1]:
                         dp[i + 1][j + 1] = cand
                         prev[i + 1][j + 1] = ("match", i, j)
@@ -911,9 +916,22 @@ def semantic_projection(result: dict[str, Any]) -> dict[str, Any]:
                 "reference_bars": f.get("reference_bars"),
                 "hold_kind": f.get("hold_kind"),
                 "evidence_status": f.get("evidence_status"),
+                "structure_status": f.get("structure_status"),
+                "prediction_status": f.get("prediction_status"),
+                "reason_code": f.get("reason_code"),
             }
             for f in (result.get("fixtures") or [])
         ],
+        "split_health": {
+            split: {
+                "n_partial": (block.get("aq7.boundary") or {}).get("n_partial"),
+                "n_usable": (block.get("aq7.boundary") or {}).get("n_usable"),
+                "n_beatgrid_hold": (block.get("aq7.boundary") or {}).get(
+                    "n_beatgrid_hold"
+                ),
+            }
+            for split, block in (result.get("splits") or {}).items()
+        },
     }
 
 
@@ -935,7 +953,7 @@ def run_aq7_structure_boundary_baseline(
     if regenerate_corpus or not (work / "manifest.json").is_file():
         generate_aq7_structure_role_drop_corpus(work, repo_root=root)
 
-    manifest = json.loads((work / "manifest.json").read_text(encoding="utf-8"))
+    manifest = load_aq7_corpus_manifest(work / "manifest.json")
     if manifest.get("corpus_id") != CORPUS_ID:
         raise ValueError("corpus_id mismatch against frozen #1024 identity")
     if manifest.get("corpus_version") != CORPUS_VERSION:
@@ -945,7 +963,7 @@ def run_aq7_structure_boundary_baseline(
     fixture_rows: list[dict[str, Any]] = []
     for row in manifest["fixtures"]:
         fixture_id = str(row["fixture_id"])
-        gt = json.loads((work / "gt" / f"{fixture_id}.json").read_text(encoding="utf-8"))
+        gt = load_aq7_fixture_gt(work / "gt" / f"{fixture_id}.json")
         audio_path = work / "audio" / f"{fixture_id}.wav"
         fixture_rows.append(
             _predict_fixture(audio_path=audio_path, gt=gt, analyzer=analyzer)

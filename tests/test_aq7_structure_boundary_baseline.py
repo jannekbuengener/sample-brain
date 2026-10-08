@@ -71,6 +71,20 @@ def test_boundary_matching_maximizes_pairs_then_minimizes_total_error() -> None:
     assert sum(m["abs_error_bars"] for m in matched) == 0
 
 
+def test_boundary_matching_prefers_earlier_prediction_on_equal_abs_error() -> None:
+    refs = [{"boundary_id": "r1", "bar_index": 2, "order": 0}]
+    preds = [
+        {"pred_id": "early", "bar_index": 1, "order": 0},
+        {"pred_id": "late", "bar_index": 3, "order": 1},
+    ]
+    matched, missed, extras = baseline.match_boundaries_1bar(refs, preds)
+    assert len(matched) == 1
+    assert matched[0]["pred_id"] == "early"
+    assert matched[0]["signed_error_bars"] == -1
+    assert [e["pred_id"] for e in extras] == ["late"]
+    assert missed == []
+
+
 def test_exact_early_late_offsets_visible_on_matched_pairs() -> None:
     refs = [{"boundary_id": "r1", "bar_index": 16, "order": 0}]
     early = [{"pred_id": "p1", "bar_index": 15, "order": 0}]
