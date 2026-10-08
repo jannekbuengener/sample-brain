@@ -939,3 +939,24 @@ def test_assert_work_dir_outside_repo_helper() -> None:
     inside = REPO_ROOT / "data"
     with pytest.raises(ValueError, match="outside"):
         corpus.assert_work_dir_outside_repo(inside, REPO_ROOT)
+
+
+def test_generate_rejects_symlinked_child_dir_into_repo(tmp_path: Path) -> None:
+    """Symlinked audio/gt children that resolve into the repo must be rejected."""
+    work = tmp_path / "external-corpus"
+    work.mkdir()
+    repo_sink = REPO_ROOT / ".pytest_aq7_symlink_sink_should_not_exist"
+    repo_sink.mkdir(exist_ok=True)
+    link = work / "audio"
+    try:
+        try:
+            link.symlink_to(repo_sink, target_is_directory=True)
+        except OSError as exc:  # pragma: no cover - platform/privilege dependent
+            pytest.skip(f"symlink unavailable: {exc}")
+        with pytest.raises(ValueError, match="outside"):
+            corpus.generate_aq7_structure_role_drop_corpus(work, repo_root=REPO_ROOT)
+    finally:
+        if link.exists() or link.is_symlink():
+            link.unlink()
+        if repo_sink.exists():
+            repo_sink.rmdir()

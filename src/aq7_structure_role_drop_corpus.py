@@ -394,13 +394,20 @@ FIXTURE_MATRIX: tuple[dict[str, str], ...] = tuple(
 
 def assert_work_dir_outside_repo(work_dir: Path, repo_root: Path) -> None:
     """Reject corpus material writes inside the repository tree."""
-    target = work_dir.resolve()
+    _assert_path_outside_repo(work_dir, repo_root, label="work_dir")
+
+
+def _assert_path_outside_repo(
+    path: Path, repo_root: Path, *, label: str
+) -> None:
+    """Resolve *path* and reject if it lands inside *repo_root* (incl. symlinks)."""
+    target = path.resolve()
     root = repo_root.resolve()
     try:
         target.relative_to(root)
     except ValueError:
         return
-    raise ValueError(f"work_dir must be outside repo: {target}")
+    raise ValueError(f"{label} must be outside repo: {target}")
 
 
 def _seconds_per_bar(bpm: float) -> float:
@@ -719,20 +726,27 @@ def generate_aq7_structure_role_drop_corpus(
     gt_dir = target / "gt"
     audio_dir.mkdir(parents=True, exist_ok=True)
     gt_dir.mkdir(parents=True, exist_ok=True)
+    # Re-check after mkdir so symlinked child dirs into the repo are rejected.
+    _assert_path_outside_repo(audio_dir, root, label="audio_dir")
+    _assert_path_outside_repo(gt_dir, root, label="gt_dir")
 
     validate_gt, validate_manifest = _schema_validators()
     fixture_rows: list[dict[str, Any]] = []
     for spec in _FIXTURE_SPECS:
         wave = _render_fixture(spec)
+        wav_path = audio_dir / f"{spec.fixture_id}.wav"
+        _assert_path_outside_repo(wav_path.parent, root, label="audio_dir")
         sf.write(
-            audio_dir / f"{spec.fixture_id}.wav",
+            wav_path,
             wave,
             SAMPLE_RATE,
             subtype="PCM_16",
         )
         gt_payload = _fixture_gt_payload(spec)
         validate_gt(gt_payload)
-        (gt_dir / f"{spec.fixture_id}.json").write_text(
+        gt_path = gt_dir / f"{spec.fixture_id}.json"
+        _assert_path_outside_repo(gt_path.parent, root, label="gt_dir")
+        gt_path.write_text(
             _canonical_json(gt_payload),
             encoding="utf-8",
             newline="\n",
@@ -749,7 +763,9 @@ def generate_aq7_structure_role_drop_corpus(
         "support_counts": _support_counts(fixture_rows),
     }
     validate_manifest(manifest)
-    (target / "manifest.json").write_text(
+    manifest_path = target / "manifest.json"
+    _assert_path_outside_repo(manifest_path.parent, root, label="work_dir")
+    manifest_path.write_text(
         _canonical_json(manifest),
         encoding="utf-8",
         newline="\n",
