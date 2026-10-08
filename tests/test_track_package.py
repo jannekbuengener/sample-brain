@@ -715,6 +715,72 @@ def test_writability_probe_does_not_clobber_existing_name(tmp_path: Path) -> Non
     assert sentinel.read_text(encoding="utf-8") == "do-not-delete"
 
 
+def test_nested_live_kit_and_empty_channel_rack_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "pkg"
+    root.mkdir()
+    (root / tp.MEDIA_DIR_NAME).mkdir()
+    write_sine_wav(
+        root / tp.MEDIA_DIR_NAME / "a.wav", duration_sec=0.02, frequency_hz=40.0
+    )
+    payload = {
+        "schema_version": 1,
+        "package_kind": tp.PACKAGE_KIND,
+        "track_id": "trk_nested",
+        "media": [{"media_id": "m1", "relpath": "media/a.wav"}],
+        "musical": {
+            "live_kit": {"Kick + Bass": "bad"},
+            "channel_rack": {},
+            "master_bpm": 120.0,
+            "sync_enabled": True,
+        },
+    }
+    (root / tp.TRACK_PACKAGE_FILENAME).write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    assert (
+        tp.validate_track_package(root).outcome == tp.OUTCOME_CORRUPT_OR_UNSUPPORTED
+    )
+
+
+def test_infinite_master_bpm_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "pkg"
+    root.mkdir()
+    (root / tp.MEDIA_DIR_NAME).mkdir()
+    write_sine_wav(
+        root / tp.MEDIA_DIR_NAME / "a.wav", duration_sec=0.02, frequency_hz=40.0
+    )
+    # 1e309 becomes +inf under json.loads.
+    raw = (
+        '{"schema_version":1,"package_kind":"sample_brain_track_package",'
+        '"track_id":"trk_inf","media":[{"media_id":"m1","relpath":"media/a.wav"}],'
+        '"musical":{"live_kit":{},"channel_rack":null,"master_bpm":1e309,'
+        '"sync_enabled":false}}\n'
+    )
+    (root / tp.TRACK_PACKAGE_FILENAME).write_text(raw, encoding="utf-8")
+    assert (
+        tp.validate_track_package(root).outcome == tp.OUTCOME_CORRUPT_OR_UNSUPPORTED
+    )
+
+
+def test_arrangement_posix_absolute_rejected_on_create(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    src = _write_source(library)
+    package_root = tmp_path / "packages" / "pkg"
+    package_root.parent.mkdir()
+    base = _draft_with_sources(src)
+    draft = tp.TrackPackageDraft(
+        media_sources=base.media_sources,
+        musical=base.musical,
+        track_id="trk_arr",
+        arrangement={"source": "/home/alice/secret.wav"},
+    )
+    result = tp.create_track_package(draft, package_root, repo_root=_repo_root())
+    assert result.outcome == tp.OUTCOME_PATH_ESCAPE_REJECTED
+    assert not package_root.exists()
+
+
 def test_failed_commit_does_not_delete_foreign_package(tmp_path: Path, monkeypatch) -> None:
     library = tmp_path / "library"
     library.mkdir()

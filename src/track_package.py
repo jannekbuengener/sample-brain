@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -409,21 +410,121 @@ def _iter_musical_sample_refs(musical: Mapping[str, Any]) -> list[str]:
     return refs
 
 
+def _validate_live_kit_shape(live_kit: Mapping[str, Any]) -> str | None:
+    for group, slots_payload in live_kit.items():
+        if not isinstance(group, str) or not isinstance(slots_payload, Mapping):
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
+        for slot, slot_payload in slots_payload.items():
+            if not isinstance(slot, str):
+                return OUTCOME_CORRUPT_OR_UNSUPPORTED
+            if slot_payload is None:
+                continue
+            if not isinstance(slot_payload, Mapping):
+                return OUTCOME_CORRUPT_OR_UNSUPPORTED
+            if "path" not in slot_payload:
+                return OUTCOME_CORRUPT_OR_UNSUPPORTED
+            path = slot_payload.get("path")
+            if path is not None and (
+                not isinstance(path, str) or path.strip() == ""
+            ):
+                return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    return None
+
+
+def _validate_channel_rack_shape(channel_rack: Mapping[str, Any]) -> str | None:
+    required = {
+        "pattern_id",
+        "length_quarter_notes",
+        "step_count",
+        "channels",
+        "triggers",
+    }
+    if not required.issubset(channel_rack.keys()):
+        return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    if not isinstance(channel_rack.get("pattern_id"), str):
+        return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    if not isinstance(channel_rack.get("step_count"), int) or isinstance(
+        channel_rack.get("step_count"), bool
+    ):
+        return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    channels = channel_rack.get("channels")
+    triggers = channel_rack.get("triggers")
+    if not isinstance(channels, list) or not isinstance(triggers, list):
+        return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    for channel in channels:
+        if not isinstance(channel, Mapping):
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
+        channel_id = channel.get("channel_id")
+        if not isinstance(channel_id, str) or not channel_id.strip():
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
+        sample_path = channel.get("sample_path")
+        if sample_path is not None and (
+            not isinstance(sample_path, str) or sample_path.strip() == ""
+        ):
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    for trigger in triggers:
+        if not isinstance(trigger, Mapping):
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
+        if not isinstance(trigger.get("channel_id"), str):
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
+        position = trigger.get("position")
+        if not isinstance(position, Mapping):
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    return None
+
+
 def _validate_musical_semantics(musical: Mapping[str, Any]) -> str | None:
     live_kit = musical.get("live_kit")
     if not isinstance(live_kit, Mapping):
         return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    live_kit_error = _validate_live_kit_shape(live_kit)
+    if live_kit_error is not None:
+        return live_kit_error
     channel_rack = musical.get("channel_rack")
-    if channel_rack is not None and not isinstance(channel_rack, Mapping):
-        return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    if channel_rack is not None:
+        if not isinstance(channel_rack, Mapping):
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
+        rack_error = _validate_channel_rack_shape(channel_rack)
+        if rack_error is not None:
+            return rack_error
     master_bpm = musical.get("master_bpm")
     if isinstance(master_bpm, bool) or not isinstance(master_bpm, (int, float)):
         return OUTCOME_CORRUPT_OR_UNSUPPORTED
-    if not (master_bpm > 0) or master_bpm != master_bpm:  # NaN check
+    if not math.isfinite(float(master_bpm)) or float(master_bpm) <= 0:
         return OUTCOME_CORRUPT_OR_UNSUPPORTED
     sync_enabled = musical.get("sync_enabled")
     if not isinstance(sync_enabled, bool):
         return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    return None
+
+
+def _reject_escaped_path_strings(value: Any) -> str | None:
+    """Fail closed when any nested string looks like an absolute/escape path."""
+    if isinstance(value, str):
+        text = _posix_relpath(value.strip())
+        if not text:
+            return None
+        # Package-relative media refs are allowed; everything else absolute-like
+        # or traversal-bearing is rejected across the full payload.
+        if text.startswith(f"{MEDIA_DIR_NAME}/"):
+            if _looks_like_forbidden_ref(text):
+                return OUTCOME_PATH_ESCAPE_REJECTED
+            return None
+        if _looks_like_forbidden_ref(text):
+            return OUTCOME_PATH_ESCAPE_REJECTED
+        return None
+    if isinstance(value, list):
+        for item in value:
+            outcome = _reject_escaped_path_strings(item)
+            if outcome is not None:
+                return outcome
+        return None
+    if isinstance(value, Mapping):
+        for item in value.values():
+            outcome = _reject_escaped_path_strings(item)
+            if outcome is not None:
+                return outcome
+        return None
     return None
 
 
@@ -551,6 +652,22 @@ def create_track_package(
             arrangement=draft.arrangement,
             midi=draft.midi,
         )
+        payload_probe = {
+            "schema_version": manifest.schema_version,
+            "package_kind": manifest.package_kind,
+            "track_id": manifest.track_id,
+            "media": [
+                {"media_id": e.media_id, "relpath": e.relpath} for e in media_entries
+            ],
+            "musical": musical,
+            "arrangement": draft.arrangement,
+            "midi": draft.midi,
+        }
+        path_scan = _reject_escaped_path_strings(payload_probe)
+        if path_scan is not None:
+            _remove_own_staging(staging)
+            staging = None
+            return _failure(path_scan, message="Package payload is not portable.")
         try:
             document = serialize_track_package_json(manifest)
         except (TypeError, ValueError):
@@ -625,6 +742,9 @@ def _contains_forbidden_serialized_path(document: str) -> bool:
         return True
     # Absolute Windows drive path fragments inside JSON string values.
     if re.search(r"[A-Za-z]:\\\\", document) or re.search(r"[A-Za-z]:/", document):
+        return True
+    # POSIX absolute path string values (e.g. "/home/...").
+    if re.search(r'"/', document):
         return True
     return False
 
@@ -720,6 +840,15 @@ def _validate_package_at(
     manifest, status = _parse_manifest_payload(data)
     if manifest is None or status != OUTCOME_OPEN:
         return _failure(status, package_root=root, message="Unsupported package.")
+
+    path_scan = _reject_escaped_path_strings(data)
+    if path_scan is not None:
+        return _failure(
+            path_scan,
+            package_root=root,
+            track_id=manifest.track_id,
+            message="Package payload is not portable.",
+        )
 
     if not (root / MEDIA_DIR_NAME).is_dir():
         return _failure(
