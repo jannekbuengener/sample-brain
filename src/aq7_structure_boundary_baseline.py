@@ -950,8 +950,11 @@ def run_aq7_structure_boundary_baseline(
     assert_work_dir_outside_repo(work, root)
     _assert_output_outside_repo(out, root)
 
-    if regenerate_corpus or not (work / "manifest.json").is_file():
-        generate_aq7_structure_role_drop_corpus(work, repo_root=root)
+    # Always rewrite from the frozen #1024 generator so WAV+GT identity cannot
+    # drift under --no-regenerate (audio digests are not a separate committed
+    # corpus artifact; generator rewrite is the fail-closed identity proof).
+    _ = regenerate_corpus  # retained for API compatibility; ignored
+    generate_aq7_structure_role_drop_corpus(work, repo_root=root)
 
     manifest = load_aq7_corpus_manifest(work / "manifest.json")
     if manifest.get("corpus_id") != CORPUS_ID:

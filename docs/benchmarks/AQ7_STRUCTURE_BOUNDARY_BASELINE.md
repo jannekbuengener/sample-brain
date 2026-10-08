@@ -83,12 +83,13 @@ Dual independent external workdirs produced identical semantic projections (`str
 
 | Partition | P@1bar | R@1bar | F1 | support | FP | FN | med\|err\| bars | p95\|err\| bars | over-seg rate | under-seg rate | section-count abs err | segment IoU | coverage | BeatGrid HOLD |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| CALIBRATION | 0.343 | 0.923 | 0.500 | 13 | 23 | 1 | 0.0 | 0.45 | 1.0 | 0.0 | 3.67 | 0.705 | 1.0 | 0 |
+| CALIBRATION | 0.343 | 0.923 | 0.500 | 13 | 23 | 1 | 0.0 | 0.45 | 1.0 | 0.0 | 3.67 | 0.727 | 1.0 | 0 |
 | TEST/HOLDOUT | 0.360 | 1.000 | 0.529 | 9 | 16 | 0 | 0.0 | 0.0 | 1.0 | 0.0 | 5.33 | 0.780 | 1.0 | 1 |
 
 Notes:
 
 - High recall with lower precision / over-segmentation rate = 1.0 is a truthful current-StructureV1 characteristic on this synthetic pack (distractor accents + dense candidates), not a tuning target for this slice.
+- CALIBRATION segment IoU excludes ambiguous-dependent sections on `annotation_disagreement` without reconnect/whole-track repair (zero IoU weight for that fixture).
 - Seconds error diagnostics are omitted at aggregate level when not uniformly trustworthy; bar coordinates remain primary.
 - Runtime track-length buckets are HOLD (pack too small for #958 bucket p95 claims). External JSON may include single-pass per-fixture wall-time diagnostics; these are explicitly **not** #958 methodology-v1 cold/steady evidence.
 - Determinism: a single CLI run records `determinism.status=not_measured`; equality is certified only when a second independent run supplies `prior_semantic` (as in the dual-workdir proof).
