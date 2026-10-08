@@ -42,3 +42,4 @@ Runtime on `main` today: CLI scan → analyze → autotype → export_fl (legacy
 | [`docs/SESSION_OWNERSHIP_CONTRACT.md`](../SESSION_OWNERSHIP_CONTRACT.md) | Single Live Kit + QML→native audio ownership (completed on `main`) |
 | [`docs/TRACK_PACKAGE_OWNERSHIP_CONTRACT.md`](../TRACK_PACKAGE_OWNERSHIP_CONTRACT.md) | #1082 track package / portability / legacy-session migration freeze (`TRACK_PACKAGE_OWNERSHIP_CONTRACT_FROZEN`); runtime #1085 |
 | [`docs/ARRANGEMENT_32_FIELD_TIME_CONTRACT.md`](../ARRANGEMENT_32_FIELD_TIME_CONTRACT.md) | #1083 32-field / 8-bar sequencer time freeze (`ARRANGEMENT_32_FIELD_TIME_CONTRACT_FROZEN`); runtime #1086 |
+| [`docs/ARRANGEMENT_BLOCK_GROUP_MASK_CONTRACT.md`](../ARRANGEMENT_BLOCK_GROUP_MASK_CONTRACT.md) | #1084 Arrangement blocks / groups / masks / end-marker freeze (`ARRANGEMENT_BLOCK_GROUP_MASK_CONTRACT_FROZEN`); runtime #1087 |
