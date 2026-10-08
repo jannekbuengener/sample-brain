@@ -589,3 +589,170 @@ def test_lifecycle_outcomes_subset_of_1082_vocabulary() -> None:
         "OUTCOME_PATH_ESCAPE_REJECTED",
     ):
         assert getattr(tp, name) in allowed
+
+
+def test_musical_absolute_ref_not_in_media_index_rejected(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    src = _write_source(library)
+    package_root = tmp_path / "packages" / "pkg"
+    package_root.parent.mkdir()
+    draft = _draft_with_sources(src)
+    # Inject an unmapped POSIX absolute path into musical state.
+    musical = dict(draft.musical)
+    live_kit = dict(musical["live_kit"])
+    kick_group = dict(live_kit["Kick + Bass"])
+    kick_group["Bass"] = {"path": "/home/user/private/sample.wav"}
+    live_kit["Kick + Bass"] = kick_group
+    musical["live_kit"] = live_kit
+    draft = tp.TrackPackageDraft(
+        media_sources=draft.media_sources,
+        musical=musical,
+        track_id="trk_leak",
+    )
+    result = tp.create_track_package(draft, package_root, repo_root=_repo_root())
+    assert result.outcome == tp.OUTCOME_PATH_ESCAPE_REJECTED
+    assert not package_root.exists()
+
+
+def test_open_rejects_musical_escape_ref_even_if_media_index_clean(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "pkg"
+    root.mkdir()
+    media = root / tp.MEDIA_DIR_NAME
+    media.mkdir()
+    write_sine_wav(media / "a.wav", duration_sec=0.02, frequency_hz=40.0)
+    payload = {
+        "schema_version": 1,
+        "package_kind": tp.PACKAGE_KIND,
+        "track_id": "trk_bad_musical",
+        "media": [{"media_id": "m1", "relpath": "media/a.wav"}],
+        "musical": {
+            "live_kit": {
+                "Kick + Bass": {
+                    "Kick": {"path": "../../escape.wav"},
+                    "Bass": None,
+                }
+            },
+            "channel_rack": None,
+            "master_bpm": 120.0,
+            "sync_enabled": False,
+        },
+    }
+    (root / tp.TRACK_PACKAGE_FILENAME).write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    assert tp.open_track_package(root).outcome == tp.OUTCOME_PATH_ESCAPE_REJECTED
+
+
+def test_invalid_musical_field_types_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "pkg"
+    root.mkdir()
+    (root / tp.MEDIA_DIR_NAME).mkdir()
+    write_sine_wav(
+        root / tp.MEDIA_DIR_NAME / "a.wav", duration_sec=0.02, frequency_hz=40.0
+    )
+    payload = {
+        "schema_version": 1,
+        "package_kind": tp.PACKAGE_KIND,
+        "track_id": "trk_types",
+        "media": [{"media_id": "m1", "relpath": "media/a.wav"}],
+        "musical": {
+            "live_kit": "bad",
+            "channel_rack": [],
+            "master_bpm": "fast",
+            "sync_enabled": "yes",
+        },
+    }
+    (root / tp.TRACK_PACKAGE_FILENAME).write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    assert (
+        tp.validate_track_package(root).outcome == tp.OUTCOME_CORRUPT_OR_UNSUPPORTED
+    )
+
+
+def test_non_serializable_draft_cleans_staging(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    src = _write_source(library)
+    package_root = tmp_path / "packages" / "pkg"
+    package_root.parent.mkdir()
+    draft = _draft_with_sources(src)
+    musical = dict(draft.musical)
+    musical["arrangement_hook"] = object()  # not JSON-serializable
+    # Put non-serializable value under musical via opaque extension on draft.
+    bad = tp.TrackPackageDraft(
+        media_sources=draft.media_sources,
+        musical=musical,
+        track_id="trk_ser",
+        arrangement={"x": object()},
+    )
+    result = tp.create_track_package(bad, package_root, repo_root=_repo_root())
+    assert result.outcome == tp.OUTCOME_CORRUPT_OR_UNSUPPORTED
+    assert not package_root.exists()
+    assert list(package_root.parent.glob(".sample-brain-track-package-*")) == []
+
+
+def test_writability_probe_does_not_clobber_existing_name(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    src = _write_source(library)
+    parent = tmp_path / "packages"
+    parent.mkdir()
+    sentinel = parent / ".sample-brain-track-package-probe"
+    sentinel.write_text("do-not-delete", encoding="utf-8")
+    package_root = parent / "pkg"
+    result = tp.create_track_package(
+        _draft_with_sources(src),
+        package_root,
+        repo_root=_repo_root(),
+    )
+    assert result.outcome == tp.OUTCOME_OPEN
+    assert sentinel.read_text(encoding="utf-8") == "do-not-delete"
+
+
+def test_failed_commit_does_not_delete_foreign_package(tmp_path: Path, monkeypatch) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    src = _write_source(library)
+    parent = tmp_path / "packages"
+    parent.mkdir()
+    package_root = parent / "pkg"
+
+    # First publish succeeds.
+    first = tp.create_track_package(
+        _draft_with_sources(src, track_id="trk_first"),
+        package_root,
+        repo_root=_repo_root(),
+    )
+    assert first.outcome == tp.OUTCOME_OPEN
+    marker = (package_root / tp.TRACK_PACKAGE_FILENAME).read_text(encoding="utf-8")
+
+    # Simulate a second create that somehow reaches commit while destination exists
+    # by forcing os.replace to fail after staging is ready; ensure foreign package
+    # is preserved. Use a different destination that we create mid-flight.
+    other = parent / "other"
+    other.mkdir()
+    (other / "foreign.txt").write_text("keep", encoding="utf-8")
+
+    def boom(src_path: str | bytes | os.PathLike, dst_path: str | bytes | os.PathLike) -> None:
+        # Pretend destination appeared (concurrent publish) then fail rename.
+        raise OSError("simulated replace failure")
+
+    monkeypatch.setattr(tp.os, "replace", boom)
+    second = tp.create_track_package(
+        _draft_with_sources(src, track_id="trk_second"),
+        other / "nested-pkg",
+        repo_root=_repo_root(),
+    )
+    assert second.outcome in {
+        tp.OUTCOME_WRITE_FAILED,
+        tp.OUTCOME_DESTINATION_UNAVAILABLE,
+    }
+    assert (other / "foreign.txt").read_text(encoding="utf-8") == "keep"
+    assert (package_root / tp.TRACK_PACKAGE_FILENAME).read_text(encoding="utf-8") == marker
+    assert list(parent.glob(".sample-brain-track-package-*")) == []

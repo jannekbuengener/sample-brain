@@ -333,13 +333,20 @@ def _validate_destination_eligibility(
         return OUTCOME_DESTINATION_UNAVAILABLE
     if root.exists():
         return OUTCOME_DESTINATION_UNAVAILABLE
-    probe = parent / ".sample-brain-track-package-probe"
+    probe: Path | None = None
     try:
-        with probe.open("wb") as handle:
+        fd, probe_name = tempfile.mkstemp(
+            prefix=".sample-brain-track-package-probe-",
+            dir=str(parent),
+        )
+        probe = Path(probe_name)
+        with os.fdopen(fd, "wb") as handle:
             handle.write(b"ok")
         probe.unlink(missing_ok=True)
+        probe = None
     except OSError:
-        probe.unlink(missing_ok=True)
+        if probe is not None:
+            probe.unlink(missing_ok=True)
         return OUTCOME_DESTINATION_UNAVAILABLE
     return None
 
@@ -355,6 +362,87 @@ def _remove_own_staging(path: Path) -> None:
 def _default_copy(src: Path, dst: Path) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
+
+
+def _files_byte_identical(left: Path, right: Path, *, chunk_size: int = 1024 * 1024) -> bool:
+    """Compare two files incrementally without buffering both entirely."""
+    left_stat = left.stat()
+    right_stat = right.stat()
+    if left_stat.st_size != right_stat.st_size:
+        return False
+    with left.open("rb") as left_handle, right.open("rb") as right_handle:
+        while True:
+            left_chunk = left_handle.read(chunk_size)
+            right_chunk = right_handle.read(chunk_size)
+            if left_chunk != right_chunk:
+                return False
+            if not left_chunk:
+                return True
+
+
+def _iter_musical_sample_refs(musical: Mapping[str, Any]) -> list[str]:
+    refs: list[str] = []
+    live_kit = musical.get("live_kit")
+    if isinstance(live_kit, Mapping):
+        for group_payload in live_kit.values():
+            if not isinstance(group_payload, Mapping):
+                continue
+            for slot_payload in group_payload.values():
+                if slot_payload is None:
+                    continue
+                if isinstance(slot_payload, Mapping):
+                    path = slot_payload.get("path")
+                    if isinstance(path, str) and path.strip():
+                        refs.append(path.strip())
+                elif isinstance(slot_payload, str) and slot_payload.strip():
+                    refs.append(slot_payload.strip())
+    channel_rack = musical.get("channel_rack")
+    if isinstance(channel_rack, Mapping):
+        channels = channel_rack.get("channels")
+        if isinstance(channels, list):
+            for channel in channels:
+                if not isinstance(channel, Mapping):
+                    continue
+                path = channel.get("sample_path")
+                if isinstance(path, str) and path.strip():
+                    refs.append(path.strip())
+    return refs
+
+
+def _validate_musical_semantics(musical: Mapping[str, Any]) -> str | None:
+    live_kit = musical.get("live_kit")
+    if not isinstance(live_kit, Mapping):
+        return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    channel_rack = musical.get("channel_rack")
+    if channel_rack is not None and not isinstance(channel_rack, Mapping):
+        return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    master_bpm = musical.get("master_bpm")
+    if isinstance(master_bpm, bool) or not isinstance(master_bpm, (int, float)):
+        return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    if not (master_bpm > 0) or master_bpm != master_bpm:  # NaN check
+        return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    sync_enabled = musical.get("sync_enabled")
+    if not isinstance(sync_enabled, bool):
+        return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    return None
+
+
+def _validate_musical_media_refs(
+    musical: Mapping[str, Any],
+    media_relpaths: set[str],
+    package_root: Path,
+) -> str | None:
+    """Every musical sample ref must be a confined package media relpath."""
+    for ref in _iter_musical_sample_refs(musical):
+        text = _posix_relpath(ref)
+        if _looks_like_forbidden_ref(text):
+            return OUTCOME_PATH_ESCAPE_REJECTED
+        escape = validate_confined_media_relpath(text, package_root)
+        if escape is not None:
+            return escape
+        if text not in media_relpaths:
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    return None
 
 
 def create_track_package(
@@ -418,7 +506,7 @@ def create_track_package(
                     message="Copied media validation failed.",
                 )
             try:
-                if target.read_bytes() != source.read_bytes():
+                if not _files_byte_identical(source, target):
                     _remove_own_staging(staging)
                     staging = None
                     return _failure(
@@ -443,6 +531,17 @@ def create_track_package(
             path_map[str(source.resolve())] = relpath
 
         musical = _rewrite_paths(dict(draft.musical), path_map)
+        semantic_error = _validate_musical_semantics(musical)
+        if semantic_error is not None:
+            _remove_own_staging(staging)
+            staging = None
+            return _failure(semantic_error, message="Musical payload is invalid.")
+        media_relpaths = {entry.relpath for entry in media_entries}
+        ref_error = _validate_musical_media_refs(musical, media_relpaths, staging)
+        if ref_error is not None:
+            _remove_own_staging(staging)
+            staging = None
+            return _failure(ref_error, message="Musical media refs are not portable.")
         manifest = TrackPackageManifest(
             schema_version=SCHEMA_VERSION,
             package_kind=PACKAGE_KIND,
@@ -452,7 +551,15 @@ def create_track_package(
             arrangement=draft.arrangement,
             midi=draft.midi,
         )
-        document = serialize_track_package_json(manifest)
+        try:
+            document = serialize_track_package_json(manifest)
+        except (TypeError, ValueError):
+            _remove_own_staging(staging)
+            staging = None
+            return _failure(
+                OUTCOME_CORRUPT_OR_UNSUPPORTED,
+                message="Package payload is not serializable.",
+            )
         if _contains_forbidden_serialized_path(document):
             _remove_own_staging(staging)
             staging = None
@@ -489,14 +596,17 @@ def create_track_package(
             os.replace(staging, final_root)
             staging = None
         except OSError:
+            # Never delete final_root on rename failure: a concurrent create may
+            # already have published a valid package at this destination.
             if staging is not None:
                 _remove_own_staging(staging)
                 staging = None
-            if final_root.exists():
-                # Never leave a half-valid visible package from our commit.
-                # Only remove if it still looks like our incomplete publish.
-                _cleanup_failed_final(final_root)
-            return _failure(OUTCOME_WRITE_FAILED, message="Package commit failed.")
+            return _failure(
+                OUTCOME_DESTINATION_UNAVAILABLE
+                if final_root.exists()
+                else OUTCOME_WRITE_FAILED,
+                message="Package commit failed.",
+            )
     except OSError:
         if staging is not None:
             _remove_own_staging(staging)
@@ -506,17 +616,6 @@ def create_track_package(
     if opened.outcome != OUTCOME_OPEN:
         return opened
     return _success_open(final_root, opened.manifest)  # type: ignore[arg-type]
-
-
-def _cleanup_failed_final(final_root: Path) -> None:
-    """Remove a final root only when it is our incomplete publish attempt."""
-    try:
-        names = {p.name for p in final_root.iterdir()}
-    except OSError:
-        return
-    allowed = {TRACK_PACKAGE_FILENAME, MEDIA_DIR_NAME}
-    if names and names.issubset(allowed):
-        shutil.rmtree(final_root, ignore_errors=True)
 
 
 def _contains_forbidden_serialized_path(document: str) -> bool:
@@ -555,6 +654,9 @@ def _parse_manifest_payload(data: object) -> tuple[TrackPackageManifest | None, 
             return None, OUTCOME_CORRUPT_OR_UNSUPPORTED
         if not _REQUIRED_MUSICAL_FIELDS.issubset(musical.keys()):
             return None, OUTCOME_CORRUPT_OR_UNSUPPORTED
+        semantic_error = _validate_musical_semantics(musical)
+        if semantic_error is not None:
+            return None, semantic_error
     except (KeyError, TypeError, ValueError):
         return None, OUTCOME_CORRUPT_OR_UNSUPPORTED
 
@@ -661,6 +763,16 @@ def _validate_package_at(
                 track_id=manifest.track_id,
                 message="Media path escape rejected.",
             )
+
+    media_relpaths = {entry.relpath for entry in manifest.media}
+    ref_error = _validate_musical_media_refs(manifest.musical, media_relpaths, root)
+    if ref_error is not None:
+        return _failure(
+            ref_error,
+            package_root=root,
+            track_id=manifest.track_id,
+            message="Musical media refs are not portable.",
+        )
 
     if require_bindable and not manifest.media:
         return _failure(
