@@ -470,3 +470,27 @@ def test_register_persist_failure_rolls_back_in_memory(
     failed = registry.register(package_root)
     assert failed.outcome == tp.OUTCOME_WRITE_FAILED
     assert registry.list_packages() == ()
+
+
+def test_open_registry_persist_failure_does_not_activate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Registry must persist before bind; write failure leaves Active Track untouched."""
+    package_root, _ = _create_package(tmp_path, track_id="trk_1099_open_write")
+    state_dir = tmp_path / "state"
+    registry = lkr.LiveKitsRegistry(state_dir=state_dir)
+    session = compose_workbench_session(state_dir=state_dir)
+
+    def boom(_path: Path, _payload: object) -> None:
+        raise OSError("synthetic registry write failure")
+
+    monkeypatch.setattr(lkr, "_atomic_write_json", boom)
+    try:
+        failed = registry.open_package(package_root, session=session)
+        assert failed.outcome == tp.OUTCOME_WRITE_FAILED
+        assert session.active_track_id is None
+        assert session.active_track_package_root is None
+        assert not active_track_pointer_path(state_dir=state_dir).exists()
+        assert registry.list_packages() == ()
+    finally:
+        session.transport.close()

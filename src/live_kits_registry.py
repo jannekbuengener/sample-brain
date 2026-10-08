@@ -362,9 +362,36 @@ class LiveKitsRegistry:
                 manifest_track_id=precheck.track_id,
             )
 
+        # Persist registry listing before Active Track bind so a registry write
+        # failure cannot report Open failure after activation already succeeded.
+        track_id = precheck.track_id
+        resolved = root.resolve(strict=False)
+        previous = self._entries.get(track_id)
+        self._entries[track_id] = LiveKitPackageRow(
+            track_id=track_id,
+            package_root=resolved,
+            display_name=_display_name_for(resolved, track_id),
+            status=OUTCOME_READY,
+        )
+        try:
+            self._persist()
+        except OSError:
+            if previous is None:
+                self._entries.pop(track_id, None)
+            else:
+                self._entries[track_id] = previous
+            return LiveKitsOpenResult(
+                outcome=OUTCOME_WRITE_FAILED,
+                track_id=track_id,
+                package_root=root,
+                message=_safe_message(OUTCOME_WRITE_FAILED),
+                manifest_track_id=track_id,
+            )
+
         bound: TrackPackageResult = session.bind_active_track_package(root)
         if bound.outcome != OUTCOME_OPEN:
-            # #1098 owner preserves Active Track on failure; do not mutate here.
+            # #1098 owner preserves Active Track on failure; registry may already
+            # list the package as ready (register ≠ activate — honest).
             return LiveKitsOpenResult(
                 outcome=bound.outcome,
                 track_id=bound.track_id,
@@ -372,38 +399,6 @@ class LiveKitsRegistry:
                 message=_safe_message(bound.outcome, bound.message),
                 manifest_track_id=bound.track_id,
             )
-
-        # Keep registry listing in sync (still registered; status stays ready in
-        # the listing — activation is session/active_track, not the registry row).
-        track_id = bound.track_id or precheck.track_id
-        if track_id:
-            resolved = (
-                bound.package_root.resolve(strict=False)
-                if bound.package_root is not None
-                else root.resolve(strict=False)
-            )
-            previous = self._entries.get(track_id)
-            self._entries[track_id] = LiveKitPackageRow(
-                track_id=track_id,
-                package_root=resolved,
-                display_name=_display_name_for(resolved, track_id),
-                status=OUTCOME_READY,
-            )
-            try:
-                self._persist()
-            except OSError:
-                if previous is None:
-                    self._entries.pop(track_id, None)
-                else:
-                    self._entries[track_id] = previous
-                # Active Track already bound by #1098; report honest registry write fail.
-                return LiveKitsOpenResult(
-                    outcome=OUTCOME_WRITE_FAILED,
-                    track_id=bound.track_id,
-                    package_root=bound.package_root,
-                    message=_safe_message(OUTCOME_WRITE_FAILED),
-                    manifest_track_id=bound.track_id,
-                )
 
         return LiveKitsOpenResult(
             outcome=OUTCOME_OPEN,
