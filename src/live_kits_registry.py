@@ -262,7 +262,13 @@ class LiveKitsRegistry:
 
     def register(self, package_root: Path | str) -> LiveKitsRegisterResult:
         """Dock a valid package under Live Kits without activating Active Track."""
-        root = Path(package_root).resolve(strict=False)
+        try:
+            root = Path(package_root).resolve(strict=False)
+        except (OSError, RuntimeError, ValueError):
+            return LiveKitsRegisterResult(
+                outcome=OUTCOME_CORRUPT_OR_UNSUPPORTED,
+                message=_safe_message(OUTCOME_CORRUPT_OR_UNSUPPORTED),
+            )
         validated = validate_track_package(root)
         if validated.outcome != OUTCOME_OPEN or validated.track_id is None:
             outcome = validated.outcome
@@ -333,7 +339,14 @@ class LiveKitsRegistry:
         session: WorkbenchSession,
     ) -> LiveKitsOpenResult:
         """Explicit Open: validate, then bind exactly one Active Track via #1098."""
-        root = Path(package_root)
+        try:
+            root = Path(package_root).resolve(strict=False)
+        except (OSError, RuntimeError, ValueError):
+            return LiveKitsOpenResult(
+                outcome=OUTCOME_CORRUPT_OR_UNSUPPORTED,
+                package_root=Path(package_root),
+                message=_safe_message(OUTCOME_CORRUPT_OR_UNSUPPORTED),
+            )
         # Fail-closed pre-check (also surfaces missing_media / path_escape / corrupt).
         precheck = open_track_package(root)
         if precheck.outcome != OUTCOME_OPEN or precheck.track_id is None:

@@ -472,6 +472,22 @@ def test_register_persist_failure_rolls_back_in_memory(
     assert registry.list_packages() == ()
 
 
+def test_register_resolve_failure_returns_outcome(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Path resolution failures must not escape as exceptions."""
+    package_root, _ = _create_package(tmp_path, track_id="trk_1099_resolve")
+    registry = lkr.LiveKitsRegistry(state_dir=tmp_path / "state")
+
+    def boom(self: Path, *, strict: bool = False) -> Path:
+        raise RuntimeError("synthetic resolve failure")
+
+    monkeypatch.setattr(Path, "resolve", boom)
+    failed = registry.register(package_root)
+    assert failed.outcome == tp.OUTCOME_CORRUPT_OR_UNSUPPORTED
+    assert registry.list_packages() == ()
+
+
 def test_open_registry_persist_failure_does_not_activate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
