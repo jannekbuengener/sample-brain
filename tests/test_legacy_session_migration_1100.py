@@ -579,13 +579,65 @@ def test_post_success_idempotent_no_op_or_conflict(tmp_path: Path) -> None:
             repo_root=_repo_root(),
             track_id="trk_1100_idem",
         )
-        # Idempotent: already migrated / destination claimed → open no-op or
-        # destination_unavailable; never mutates legacy or half-rewrites package.
-        assert second.outcome in {tp.OUTCOME_OPEN, tp.OUTCOME_DESTINATION_UNAVAILABLE}
+        # Idempotent resume/finalize of the published package → open; never
+        # mutates legacy or rewrites package media/manifest.
+        assert second.outcome == tp.OUTCOME_OPEN
+        assert second.track_id == "trk_1100_idem"
         assert legacy_path.read_bytes() == legacy_bytes
         assert kick.read_bytes() == kick_bytes
-        if second.outcome == tp.OUTCOME_OPEN:
-            assert (package_root / tp.TRACK_PACKAGE_FILENAME).read_bytes() == manifest_before
+        assert (package_root / tp.TRACK_PACKAGE_FILENAME).read_bytes() == manifest_before
+    finally:
+        session.transport.close()
+
+
+def test_bind_failure_then_retry_resumes_published_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state_dir, kick, kick_bytes, legacy_path, legacy_bytes, package_root = _seed_legacy_v2(
+        tmp_path
+    )
+    session = compose_workbench_session(state_dir=state_dir)
+    try:
+        real_bind = session.bind_active_track_package
+        calls = {"n": 0}
+
+        def _fail_once(root):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return tp.TrackPackageResult(
+                    outcome=tp.OUTCOME_WRITE_FAILED,
+                    package_root=Path(root),
+                    track_id="trk_1100_resume",
+                    message="Active track selection could not be persisted.",
+                )
+            return real_bind(root)
+
+        monkeypatch.setattr(session, "bind_active_track_package", _fail_once)
+        first = lsm.migrate_legacy_session_to_track_package(
+            package_root,
+            state_dir=state_dir,
+            session=session,
+            repo_root=_repo_root(),
+            track_id="trk_1100_resume",
+        )
+        assert first.outcome == tp.OUTCOME_WRITE_FAILED
+        assert package_root.is_dir()
+        assert (package_root / tp.TRACK_PACKAGE_FILENAME).is_file()
+        assert legacy_path.read_bytes() == legacy_bytes
+        assert kick.read_bytes() == kick_bytes
+
+        monkeypatch.setattr(session, "bind_active_track_package", real_bind)
+        retry = lsm.migrate_legacy_session_to_track_package(
+            package_root,
+            state_dir=state_dir,
+            session=session,
+            repo_root=_repo_root(),
+            track_id="trk_1100_resume",
+        )
+        assert retry.outcome == tp.OUTCOME_OPEN
+        assert session.active_track_id == "trk_1100_resume"
+        assert legacy_path.read_bytes() == legacy_bytes
+        assert kick.read_bytes() == kick_bytes
     finally:
         session.transport.close()
 

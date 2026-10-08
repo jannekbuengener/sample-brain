@@ -39,7 +39,6 @@ from .workbench_session_store import (
     PERSISTENCE_STATUS_REJECTED_SEMANTIC,
     PERSISTENCE_STATUS_RESTORED_OK,
     WorkbenchSessionSnapshot,
-    load_active_track_pointer,
     load_workbench_session_outcome,
     track_package_musical_from_snapshot,
     workbench_session_path,
@@ -201,14 +200,61 @@ def _media_missing(paths: list[Path]) -> bool:
     return False
 
 
-def _already_migrated_open(
+def _finalize_published_package(
+    package_root: Path,
     *,
     state_dir: Path | None,
     env: Mapping[str, str] | None,
-    package_root: Path,
     session: WorkbenchSession | None,
+    track_id: str,
+) -> LegacyMigrationResult:
+    """Register + bind an already-published valid package (idempotent/resume)."""
+    registry = LiveKitsRegistry(state_dir=state_dir, env=env)
+    registered = registry.register(package_root)
+    if registered.outcome != OUTCOME_READY:
+        return _result(
+            OUTCOME_WRITE_FAILED
+            if registered.outcome == OUTCOME_WRITE_FAILED
+            else registered.outcome,
+            package_root=package_root,
+            track_id=track_id,
+            message=registered.message,
+        )
+
+    if session is not None:
+        bound = session.bind_active_track_package(package_root)
+        if bound.outcome != OUTCOME_OPEN:
+            return _result(
+                bound.outcome,
+                package_root=package_root,
+                track_id=track_id,
+                message=bound.message,
+            )
+
+    return _result(
+        OUTCOME_OPEN,
+        package_root=package_root,
+        track_id=track_id,
+        message="Legacy session migrated into track package.",
+    )
+
+
+def _resume_or_conflict_existing_destination(
+    package_root: Path,
+    *,
+    state_dir: Path | None,
+    env: Mapping[str, str] | None,
+    session: WorkbenchSession | None,
+    requested_track_id: str | None,
 ) -> LegacyMigrationResult | None:
-    """Idempotent path when destination already holds a valid bound package."""
+    """Handle an existing destination package without recreating it.
+
+    - Valid package + matching/absent requested track_id → resume register/bind
+      (covers post-create register/bind failures and idempotent re-claim).
+    - Valid package with a conflicting track_id → ``destination_unavailable``.
+    - Invalid/non-package destination → ``destination_unavailable``.
+    - Missing destination → ``None`` (caller creates).
+    """
     if not package_root.exists():
         return None
     opened = open_track_package(package_root)
@@ -218,51 +264,23 @@ def _already_migrated_open(
             package_root=package_root,
             message="Package destination already exists.",
         )
-
-    present, pointer = load_active_track_pointer(state_dir=state_dir, env=env)
-    pointer_matches = False
-    if present and pointer is not None:
-        try:
-            pointer_matches = (
-                pointer.track_id == opened.track_id
-                and pointer.package_root.resolve(strict=False)
-                == package_root.resolve(strict=False)
-            )
-        except (OSError, RuntimeError, ValueError):
-            pointer_matches = False
-
-    session_matches = False
-    if session is not None and session.active_track_id == opened.track_id:
-        try:
-            if session.active_track_package_root is not None:
-                session_matches = (
-                    session.active_track_package_root.resolve(strict=False)
-                    == package_root.resolve(strict=False)
-                )
-        except (OSError, RuntimeError, ValueError):
-            session_matches = False
-
-    if pointer_matches or session_matches:
-        if session is not None and not session_matches:
-            bound = session.bind_active_track_package(package_root)
-            if bound.outcome != OUTCOME_OPEN:
-                return _result(
-                    bound.outcome,
-                    package_root=package_root,
-                    track_id=opened.track_id,
-                    message=bound.message,
-                )
+    if (
+        requested_track_id is not None
+        and requested_track_id.strip()
+        and requested_track_id.strip() != opened.track_id
+    ):
         return _result(
-            OUTCOME_OPEN,
+            OUTCOME_DESTINATION_UNAVAILABLE,
             package_root=package_root,
             track_id=opened.track_id,
-            message="Legacy session already migrated.",
+            message="Package destination already exists.",
         )
-    return _result(
-        OUTCOME_DESTINATION_UNAVAILABLE,
-        package_root=package_root,
+    return _finalize_published_package(
+        package_root,
+        state_dir=state_dir,
+        env=env,
+        session=session,
         track_id=opened.track_id,
-        message="Package destination already exists.",
     )
 
 
@@ -278,8 +296,9 @@ def migrate_legacy_session_to_track_package(
 ) -> LegacyMigrationResult:
     """Explicit claim: legacy resume → staged package → optional bind/register.
 
-    On every failure path the legacy ``workbench_session.json`` bytes remain
-    identical and no half-valid final package is published.
+    Legacy ``workbench_session.json`` bytes remain identical on every path.
+    Create failures before commit leave no final package. If create committed
+    but register/bind failed, retry resumes finalize on the published package.
     """
     try:
         final_root = Path(package_root).expanduser()
@@ -288,15 +307,16 @@ def migrate_legacy_session_to_track_package(
 
     legacy_before = _legacy_bytes(state_dir, env)
 
-    idempotent = _already_migrated_open(
+    existing = _resume_or_conflict_existing_destination(
+        final_root,
         state_dir=state_dir,
         env=env,
-        package_root=final_root,
         session=session,
+        requested_track_id=track_id,
     )
-    if idempotent is not None:
+    if existing is not None:
         _assert_legacy_unchanged(state_dir, env, legacy_before)
-        return idempotent
+        return existing
 
     load = load_workbench_session_outcome(state_dir=state_dir, env=env)
     if load.status == PERSISTENCE_STATUS_FRESH_MISSING:
@@ -357,39 +377,16 @@ def migrate_legacy_session_to_track_package(
             message=created.message,
         )
 
-    # Register (list only) then bind active track via existing owners.
-    registry = LiveKitsRegistry(state_dir=state_dir, env=env)
-    registered = registry.register(created.package_root)
-    if registered.outcome != OUTCOME_READY:
-        # Package may already be published; never touch legacy bytes.
-        _assert_legacy_unchanged(state_dir, env, legacy_before)
-        return _result(
-            OUTCOME_WRITE_FAILED
-            if registered.outcome == OUTCOME_WRITE_FAILED
-            else registered.outcome,
-            package_root=created.package_root,
-            track_id=created.track_id,
-            message=registered.message,
-        )
-
-    if session is not None:
-        bound = session.bind_active_track_package(created.package_root)
-        if bound.outcome != OUTCOME_OPEN:
-            _assert_legacy_unchanged(state_dir, env, legacy_before)
-            return _result(
-                bound.outcome,
-                package_root=created.package_root,
-                track_id=created.track_id,
-                message=bound.message,
-            )
-
-    _assert_legacy_unchanged(state_dir, env, legacy_before)
-    return _result(
-        OUTCOME_OPEN,
-        package_root=created.package_root,
+    assert created.track_id is not None
+    finalized = _finalize_published_package(
+        created.package_root,
+        state_dir=state_dir,
+        env=env,
+        session=session,
         track_id=created.track_id,
-        message=created.message,
     )
+    _assert_legacy_unchanged(state_dir, env, legacy_before)
+    return finalized
 
 
 __all__ = [
