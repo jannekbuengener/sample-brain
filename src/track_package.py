@@ -543,6 +543,46 @@ def _validate_channel_rack_shape(channel_rack: Mapping[str, Any]) -> str | None:
         position = _fraction_from_payload_value(trigger.get("position"))
         if position is None or position < 0 or position >= length:
             return OUTCOME_CORRUPT_OR_UNSUPPORTED
+
+    return None
+
+
+def _live_kit_slot_path(live_kit: Mapping[str, Any], group: str, slot: str) -> str | None:
+    group_payload = live_kit.get(group)
+    if not isinstance(group_payload, Mapping):
+        return None
+    slot_payload = group_payload.get(slot)
+    if slot_payload is None:
+        return None
+    if not isinstance(slot_payload, Mapping):
+        return None
+    path = slot_payload.get("path")
+    if path is None:
+        return None
+    if not isinstance(path, str):
+        return None
+    return path
+
+
+def _validate_rack_aligned_to_live_kit(
+    channel_rack: Mapping[str, Any],
+    live_kit: Mapping[str, Any],
+) -> str | None:
+    """Seed channel sample_path must match the corresponding Live Kit slot path."""
+    channels = channel_rack.get("channels")
+    if not isinstance(channels, list):
+        return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    for channel in channels:
+        if not isinstance(channel, Mapping):
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
+        group = channel.get("live_kit_group")
+        slot = channel.get("live_kit_slot")
+        if group is None or slot is None:
+            continue
+        kit_path = _live_kit_slot_path(live_kit, str(group), str(slot))
+        sample_path = channel.get("sample_path")
+        if kit_path != sample_path:
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
     return None
 
 
@@ -560,6 +600,9 @@ def _validate_musical_semantics(musical: Mapping[str, Any]) -> str | None:
         rack_error = _validate_channel_rack_shape(channel_rack)
         if rack_error is not None:
             return rack_error
+        align_error = _validate_rack_aligned_to_live_kit(channel_rack, live_kit)
+        if align_error is not None:
+            return align_error
     master_bpm = musical.get("master_bpm")
     if isinstance(master_bpm, bool) or not isinstance(master_bpm, (int, float)):
         return OUTCOME_CORRUPT_OR_UNSUPPORTED
@@ -701,7 +744,13 @@ def create_track_package(
     Stage 9 (active-track bind) is represented only as a pure result object for
     this slice; no global Workbench active-track owner is mutated here.
     """
-    final_root = Path(package_root)
+    try:
+        final_root = Path(package_root).expanduser()
+    except (OSError, RuntimeError, ValueError):
+        return _failure(
+            OUTCOME_DESTINATION_UNAVAILABLE,
+            message="Package destination is unavailable.",
+        )
     dest_error = _validate_destination_eligibility(final_root, repo_root=repo_root)
     if dest_error is not None:
         return _failure(dest_error, message="Package destination is unavailable.")
@@ -989,7 +1038,7 @@ def _validate_package_at(
     try:
         raw = manifest_path.read_text(encoding="utf-8")
         data = json.loads(raw)
-    except (OSError, UnicodeError, json.JSONDecodeError):
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
         return _failure(
             OUTCOME_CORRUPT_OR_UNSUPPORTED,
             package_root=root,
