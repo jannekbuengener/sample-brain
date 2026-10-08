@@ -50,21 +50,13 @@ Examples: `aq7-synth-simple-clean-cal-001`, `aq7-synth-drop-at-boundary-test-001
 - Portable join key: `fixture_id` ↔ #956 `record_id`.
 - Absolute host paths are forbidden in committed or portable GT/manifest artifacts.
 
-### KPI contract lift (planned; not applied in this docs-only task)
-
-When corpus generator + schema land under #1024 and evidence is accepted, the KPI contract placeholder:
-
-```text
-AQ7_ANNOTATED_CORPUS = HOLD_PENDING_1024
-```
-
-is intended to lift to:
+### KPI contract lift (applied with #1024 delivery)
 
 ```text
 AQ7_ANNOTATED_CORPUS = sample-brain.aq7.structure-role-drop.synthetic.v1
 ```
 
-This docs-only freeze **does not** edit `AQ7_STRUCTURE_ROLE_DROP_KPI_CONTRACT.md` or `docs/CANON_INDEX.md`. The HOLD remains authoritative until a later scoped wiring task.
+Wired in `AQ7_STRUCTURE_ROLE_DROP_KPI_CONTRACT.md` and indexed in `docs/CANON_INDEX.md` as ACTIVE_SUPPORTING. KPI law (#1023) is unchanged; this resolves the corpus HOLD only.
 
 ## Ownership
 
