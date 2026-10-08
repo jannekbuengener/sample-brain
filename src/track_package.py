@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import errno
+from fractions import Fraction
 import json
 import math
 import os
@@ -40,7 +41,7 @@ OUTCOME_PATH_ESCAPE_REJECTED = "path_escape_rejected"
 
 _STAGING_PREFIX = ".sample-brain-track-package-"
 _UNSAFE_FILENAME = re.compile(r"[^a-z0-9._-]+")
-_DRIVE_ABS = re.compile(r"^[a-zA-Z]:[/\\]")
+_DRIVE_ABS = re.compile(r"^[a-zA-Z]:")
 _UNC = re.compile(r"^(\\\\|//)")
 _FILE_URI = re.compile(r"^file:", re.IGNORECASE)
 
@@ -444,16 +445,23 @@ def _exact_nonbool_int(value: object) -> int | None:
     return value
 
 
-def _validate_fraction_payload(payload: object) -> bool:
+def _fraction_from_payload_value(payload: object) -> Fraction | None:
     if not isinstance(payload, Mapping):
-        return False
+        return None
     if set(payload.keys()) - {"numerator", "denominator"}:
-        return False
+        return None
     numerator = _exact_nonbool_int(payload.get("numerator"))
     denominator = _exact_nonbool_int(payload.get("denominator"))
     if numerator is None or denominator is None or denominator == 0:
-        return False
-    return True
+        return None
+    try:
+        return Fraction(numerator, denominator)
+    except (TypeError, ValueError, ZeroDivisionError, OverflowError):
+        return None
+
+
+def _validate_fraction_payload(payload: object) -> bool:
+    return _fraction_from_payload_value(payload) is not None
 
 
 def _validate_channel_rack_shape(channel_rack: Mapping[str, Any]) -> str | None:
@@ -469,7 +477,8 @@ def _validate_channel_rack_shape(channel_rack: Mapping[str, Any]) -> str | None:
     pattern_id = channel_rack.get("pattern_id")
     if not isinstance(pattern_id, str) or not pattern_id.strip():
         return OUTCOME_CORRUPT_OR_UNSUPPORTED
-    if not _validate_fraction_payload(channel_rack.get("length_quarter_notes")):
+    length = _fraction_from_payload_value(channel_rack.get("length_quarter_notes"))
+    if length is None or length <= 0:
         return OUTCOME_CORRUPT_OR_UNSUPPORTED
     step_count = _exact_nonbool_int(channel_rack.get("step_count"))
     if step_count is None or step_count <= 0:
@@ -531,7 +540,8 @@ def _validate_channel_rack_shape(channel_rack: Mapping[str, Any]) -> str | None:
         channel_id = trigger.get("channel_id")
         if not isinstance(channel_id, str) or channel_id not in known_ids:
             return OUTCOME_CORRUPT_OR_UNSUPPORTED
-        if not _validate_fraction_payload(trigger.get("position")):
+        position = _fraction_from_payload_value(trigger.get("position"))
+        if position is None or position < 0 or position >= length:
             return OUTCOME_CORRUPT_OR_UNSUPPORTED
     return None
 
@@ -553,7 +563,11 @@ def _validate_musical_semantics(musical: Mapping[str, Any]) -> str | None:
     master_bpm = musical.get("master_bpm")
     if isinstance(master_bpm, bool) or not isinstance(master_bpm, (int, float)):
         return OUTCOME_CORRUPT_OR_UNSUPPORTED
-    if not math.isfinite(float(master_bpm)) or float(master_bpm) <= 0:
+    try:
+        bpm_value = float(master_bpm)
+    except (OverflowError, ValueError):
+        return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    if not math.isfinite(bpm_value) or bpm_value <= 0:
         return OUTCOME_CORRUPT_OR_UNSUPPORTED
     sync_enabled = musical.get("sync_enabled")
     if not isinstance(sync_enabled, bool):
@@ -591,22 +605,88 @@ def _reject_escaped_path_strings(value: Any) -> str | None:
     return None
 
 
+def _is_destination_capacity_error(exc: OSError) -> bool:
+    return getattr(exc, "errno", None) in {
+        errno.ENOSPC,
+        errno.EDQUOT,
+        errno.EACCES,
+        errno.EPERM,
+        errno.EROFS,
+    }
+
+
+def _rewrite_musical_media_refs(
+    musical: Mapping[str, Any],
+    media_relpaths: set[str],
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Return musical payload with canonical media refs, or a failure outcome."""
+    try:
+        rewritten = json.loads(json.dumps(musical, allow_nan=False))
+    except (TypeError, ValueError):
+        return None, OUTCOME_CORRUPT_OR_UNSUPPORTED
+
+    def _canon(ref: object) -> tuple[str | None, str | None]:
+        if not isinstance(ref, str):
+            return None, OUTCOME_CORRUPT_OR_UNSUPPORTED
+        # Reject noncanonical spellings (backslash separators / surrounding space).
+        if ref != ref.strip() or "\\" in ref:
+            return None, OUTCOME_CORRUPT_OR_UNSUPPORTED
+        text = _posix_relpath(ref)
+        if text != ref:
+            return None, OUTCOME_CORRUPT_OR_UNSUPPORTED
+        if _looks_like_forbidden_ref(text):
+            return None, OUTCOME_PATH_ESCAPE_REJECTED
+        if text not in media_relpaths:
+            return None, OUTCOME_CORRUPT_OR_UNSUPPORTED
+        return text, None
+
+    live_kit = rewritten.get("live_kit")
+    if isinstance(live_kit, dict):
+        for _group, slots_payload in live_kit.items():
+            if not isinstance(slots_payload, dict):
+                continue
+            for _slot, slot_payload in list(slots_payload.items()):
+                if not isinstance(slot_payload, dict):
+                    continue
+                path = slot_payload.get("path")
+                if path is None:
+                    continue
+                canon, err = _canon(path)
+                if err is not None:
+                    return None, err
+                slot_payload["path"] = canon
+
+    channel_rack = rewritten.get("channel_rack")
+    if isinstance(channel_rack, dict):
+        channels = channel_rack.get("channels")
+        if isinstance(channels, list):
+            for channel in channels:
+                if not isinstance(channel, dict):
+                    continue
+                path = channel.get("sample_path")
+                if path is None:
+                    continue
+                canon, err = _canon(path)
+                if err is not None:
+                    return None, err
+                channel["sample_path"] = canon
+    return rewritten, None
+
+
 def _validate_musical_media_refs(
     musical: Mapping[str, Any],
     media_relpaths: set[str],
     package_root: Path,
-) -> str | None:
-    """Every musical sample ref must be a confined package media relpath."""
-    for ref in _iter_musical_sample_refs(musical):
-        text = _posix_relpath(ref)
-        if _looks_like_forbidden_ref(text):
-            return OUTCOME_PATH_ESCAPE_REJECTED
-        escape = validate_confined_media_relpath(text, package_root)
+) -> tuple[Mapping[str, Any] | None, str | None]:
+    """Every musical sample ref must be a confined canonical media relpath."""
+    rewritten, err = _rewrite_musical_media_refs(musical, media_relpaths)
+    if err is not None or rewritten is None:
+        return None, err or OUTCOME_CORRUPT_OR_UNSUPPORTED
+    for ref in _iter_musical_sample_refs(rewritten):
+        escape = validate_confined_media_relpath(ref, package_root)
         if escape is not None:
-            return escape
-        if text not in media_relpaths:
-            return OUTCOME_CORRUPT_OR_UNSUPPORTED
-    return None
+            return None, escape
+    return rewritten, None
 
 
 def create_track_package(
@@ -658,13 +738,7 @@ def create_track_package(
             except OSError as exc:
                 _remove_own_staging(staging)
                 staging = None
-                if getattr(exc, "errno", None) in {
-                    errno.ENOSPC,
-                    errno.EDQUOT,
-                    errno.EACCES,
-                    errno.EPERM,
-                    errno.EROFS,
-                }:
+                if _is_destination_capacity_error(exc):
                     return _failure(
                         OUTCOME_DESTINATION_UNAVAILABLE,
                         message="Package destination is unavailable.",
@@ -712,11 +786,17 @@ def create_track_package(
             staging = None
             return _failure(semantic_error, message="Musical payload is invalid.")
         media_relpaths = {entry.relpath for entry in media_entries}
-        ref_error = _validate_musical_media_refs(musical, media_relpaths, staging)
-        if ref_error is not None:
+        musical_canon, ref_error = _validate_musical_media_refs(
+            musical, media_relpaths, staging
+        )
+        if ref_error is not None or musical_canon is None:
             _remove_own_staging(staging)
             staging = None
-            return _failure(ref_error, message="Musical media refs are not portable.")
+            return _failure(
+                ref_error or OUTCOME_CORRUPT_OR_UNSUPPORTED,
+                message="Musical media refs are not portable.",
+            )
+        musical = dict(musical_canon)
         manifest = TrackPackageManifest(
             schema_version=SCHEMA_VERSION,
             package_kind=PACKAGE_KIND,
@@ -760,9 +840,14 @@ def create_track_package(
             )
         try:
             (staging / TRACK_PACKAGE_FILENAME).write_text(document, encoding="utf-8")
-        except OSError:
+        except OSError as exc:
             _remove_own_staging(staging)
             staging = None
+            if _is_destination_capacity_error(exc):
+                return _failure(
+                    OUTCOME_DESTINATION_UNAVAILABLE,
+                    message="Package destination is unavailable.",
+                )
             return _failure(OUTCOME_WRITE_FAILED, message="Package write failed.")
 
         staged_check = _validate_package_at(staging, require_bindable=True)
@@ -968,13 +1053,25 @@ def _validate_package_at(
             )
 
     media_relpaths = {entry.relpath for entry in manifest.media}
-    ref_error = _validate_musical_media_refs(manifest.musical, media_relpaths, root)
-    if ref_error is not None:
+    musical_canon, ref_error = _validate_musical_media_refs(
+        manifest.musical, media_relpaths, root
+    )
+    if ref_error is not None or musical_canon is None:
         return _failure(
-            ref_error,
+            ref_error or OUTCOME_CORRUPT_OR_UNSUPPORTED,
             package_root=root,
             track_id=manifest.track_id,
             message="Musical media refs are not portable.",
+        )
+    if musical_canon != manifest.musical:
+        manifest = TrackPackageManifest(
+            schema_version=manifest.schema_version,
+            package_kind=manifest.package_kind,
+            track_id=manifest.track_id,
+            media=manifest.media,
+            musical=musical_canon,
+            arrangement=manifest.arrangement,
+            midi=manifest.midi,
         )
 
     if require_bindable and not manifest.media:

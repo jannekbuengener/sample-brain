@@ -799,6 +799,73 @@ def test_enospc_during_copy_maps_to_destination_unavailable(tmp_path: Path) -> N
     assert not package_root.exists()
 
 
+def test_noncanonical_backslash_media_ref_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "pkg"
+    root.mkdir()
+    (root / tp.MEDIA_DIR_NAME).mkdir()
+    write_sine_wav(
+        root / tp.MEDIA_DIR_NAME / "a.wav", duration_sec=0.02, frequency_hz=40.0
+    )
+    payload = {
+        "schema_version": 1,
+        "package_kind": tp.PACKAGE_KIND,
+        "track_id": "trk_slash",
+        "media": [{"media_id": "m1", "relpath": "media/a.wav"}],
+        "musical": {
+            "live_kit": {
+                "Kick + Bass": {"Kick": {"path": "media\\a.wav"}, "Bass": None}
+            },
+            "channel_rack": None,
+            "master_bpm": 120.0,
+            "sync_enabled": False,
+        },
+    }
+    (root / tp.TRACK_PACKAGE_FILENAME).write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    assert (
+        tp.open_track_package(root).outcome == tp.OUTCOME_CORRUPT_OR_UNSUPPORTED
+    )
+
+
+def test_drive_relative_windows_path_rejected(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    src = _write_source(library)
+    package_root = tmp_path / "packages" / "pkg"
+    package_root.parent.mkdir()
+    base = _draft_with_sources(src)
+    draft = tp.TrackPackageDraft(
+        media_sources=base.media_sources,
+        musical=base.musical,
+        track_id="trk_drive",
+        arrangement={"source": "C:private.wav"},
+    )
+    result = tp.create_track_package(draft, package_root, repo_root=_repo_root())
+    assert result.outcome == tp.OUTCOME_PATH_ESCAPE_REJECTED
+
+
+def test_overflowing_master_bpm_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "pkg"
+    root.mkdir()
+    (root / tp.MEDIA_DIR_NAME).mkdir()
+    write_sine_wav(
+        root / tp.MEDIA_DIR_NAME / "a.wav", duration_sec=0.02, frequency_hz=40.0
+    )
+    huge = "9" * 400
+    raw = (
+        '{"schema_version":1,"package_kind":"sample_brain_track_package",'
+        f'"track_id":"trk_big","media":[{{"media_id":"m1","relpath":"media/a.wav"}}],'
+        f'"musical":{{"live_kit":{{}},"channel_rack":null,"master_bpm":{huge},'
+        '"sync_enabled":false}}\n'
+    )
+    (root / tp.TRACK_PACKAGE_FILENAME).write_text(raw, encoding="utf-8")
+    assert (
+        tp.validate_track_package(root).outcome == tp.OUTCOME_CORRUPT_OR_UNSUPPORTED
+    )
+
+
 def test_channel_rack_invalid_values_rejected(tmp_path: Path) -> None:
     root = tmp_path / "pkg"
     root.mkdir()
