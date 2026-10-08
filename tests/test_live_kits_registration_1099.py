@@ -479,13 +479,41 @@ def test_register_resolve_failure_returns_outcome(
     package_root, _ = _create_package(tmp_path, track_id="trk_1099_resolve")
     registry = lkr.LiveKitsRegistry(state_dir=tmp_path / "state")
 
-    def boom(self: Path, *, strict: bool = False) -> Path:
-        raise RuntimeError("synthetic resolve failure")
+    def boom(_path: Path | str) -> Path | None:
+        return None
 
-    monkeypatch.setattr(Path, "resolve", boom)
+    monkeypatch.setattr(lkr, "_safe_resolve", boom)
     failed = registry.register(package_root)
     assert failed.outcome == tp.OUTCOME_CORRUPT_OR_UNSUPPORTED
     assert registry.list_packages() == ()
+
+
+def test_stale_unresolvable_registry_entry_does_not_crash_register(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stored roots that fail resolve are skipped during conflict checks."""
+    root_a, _ = _create_package(tmp_path, track_id="trk_1099_stale_a", name="a")
+    root_b, _ = _create_package(
+        tmp_path, track_id="trk_1099_stale_b", name="b", source_name="snare.wav"
+    )
+    registry = lkr.LiveKitsRegistry(state_dir=tmp_path / "state")
+    assert registry.register(root_a).outcome == lkr.OUTCOME_READY
+
+    real_safe = lkr._safe_resolve
+
+    def selective(path: Path | str) -> Path | None:
+        resolved = real_safe(path)
+        if resolved is None:
+            return None
+        if resolved == root_a.resolve(strict=False):
+            return None
+        return resolved
+
+    monkeypatch.setattr(lkr, "_safe_resolve", selective)
+    result = registry.register(root_b)
+    assert result.outcome == lkr.OUTCOME_READY
+    assert result.entry is not None
+    assert result.entry.track_id == "trk_1099_stale_b"
 
 
 def test_open_registry_persist_failure_does_not_activate(

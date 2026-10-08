@@ -156,6 +156,14 @@ def _display_name_for(package_root: Path, track_id: str) -> str:
     return name or track_id
 
 
+def _safe_resolve(path: Path | str) -> Path | None:
+    """Resolve a path fail-closed; return None on filesystem resolution errors."""
+    try:
+        return Path(path).resolve(strict=False)
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
 class LiveKitsRegistry:
     """Deterministic Live Kits package listing (register ≠ open)."""
 
@@ -262,9 +270,8 @@ class LiveKitsRegistry:
 
     def register(self, package_root: Path | str) -> LiveKitsRegisterResult:
         """Dock a valid package under Live Kits without activating Active Track."""
-        try:
-            root = Path(package_root).resolve(strict=False)
-        except (OSError, RuntimeError, ValueError):
+        root = _safe_resolve(package_root)
+        if root is None:
             return LiveKitsRegisterResult(
                 outcome=OUTCOME_CORRUPT_OR_UNSUPPORTED,
                 message=_safe_message(OUTCOME_CORRUPT_OR_UNSUPPORTED),
@@ -281,10 +288,14 @@ class LiveKitsRegistry:
 
         track_id = validated.track_id
         # Conflict: package root already claimed by a different track_id.
+        # Unresolvable stored roots are treated as stale and skipped.
         for existing in self._entries.values():
             if existing.track_id == track_id:
                 continue
-            if existing.package_root.resolve(strict=False) == root:
+            existing_root = _safe_resolve(existing.package_root)
+            if existing_root is None:
+                continue
+            if existing_root == root:
                 return LiveKitsRegisterResult(
                     outcome=OUTCOME_REGISTER_CONFLICT,
                     entry=existing,
@@ -324,11 +335,16 @@ class LiveKitsRegistry:
         track_id: str,
     ) -> LiveKitPackageRow | None:
         """Return prior registration when root is claimed by a different track_id."""
-        resolved = package_root.resolve(strict=False)
+        resolved = _safe_resolve(package_root)
+        if resolved is None:
+            return None
         for existing in self._entries.values():
             if existing.track_id == track_id:
                 continue
-            if existing.package_root.resolve(strict=False) == resolved:
+            existing_root = _safe_resolve(existing.package_root)
+            if existing_root is None:
+                continue
+            if existing_root == resolved:
                 return existing
         return None
 
@@ -339,9 +355,8 @@ class LiveKitsRegistry:
         session: WorkbenchSession,
     ) -> LiveKitsOpenResult:
         """Explicit Open: validate, then bind exactly one Active Track via #1098."""
-        try:
-            root = Path(package_root).resolve(strict=False)
-        except (OSError, RuntimeError, ValueError):
+        root = _safe_resolve(package_root)
+        if root is None:
             return LiveKitsOpenResult(
                 outcome=OUTCOME_CORRUPT_OR_UNSUPPORTED,
                 package_root=Path(package_root),
@@ -378,7 +393,7 @@ class LiveKitsRegistry:
         # Persist registry listing before Active Track bind so a registry write
         # failure cannot report Open failure after activation already succeeded.
         track_id = precheck.track_id
-        resolved = root.resolve(strict=False)
+        resolved = root
         previous = self._entries.get(track_id)
         self._entries[track_id] = LiveKitPackageRow(
             track_id=track_id,
