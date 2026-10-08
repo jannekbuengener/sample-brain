@@ -151,13 +151,13 @@ Ambiguous boundary clip (`duration_ms=1200`) predicts `oneshot` via current ≤1
 | Metric | Value |
 |---|---:|
 | clear eligible / uncertain | 4 / 1 |
-| macro-F1 | 0.250 |
-| Kick P/R/F1 (support 1) | 0.000 / 0.000 / 0.000 → predicted `OneShot` |
+| macro-F1 | 0.500 |
+| Kick P/R/F1 (support 1) | 1.000 / 1.000 / 1.000 |
 | Snare P/R/F1 (support 1) | 1.000 / 1.000 / 1.000 |
 | Drum Loop P/R/F1 (support 1) | 0.000 / 0.000 / 0.000 → predicted `Loop` |
-| Pad P/R/F1 (support 1) | 0.000 / 0.000 / 0.000 → predicted `Loop` |
+| Pad P/R/F1 (support 1) | 0.000 / 0.000 / 0.000 → predicted `Drone` |
 
-High-impact note: on this thin synthetic corpus, rule features recover Snare only among clear CALIBRATION labels; Kick falls back to `OneShot`, and Drum Loop / Pad fall back to `Loop`.
+High-impact note: on this thin synthetic corpus, clear CALIBRATION recovers Kick + Snare; Drum Loop collapses to `Loop`, and Pad collapses to `Drone`.
 
 ### TEST → TEST/HOLDOUT
 
@@ -178,13 +178,13 @@ High-impact note: on this thin synthetic corpus, rule features recover Snare onl
 | Metric | Value |
 |---|---:|
 | clear eligible / uncertain | 4 / 1 |
-| macro-F1 | 0.167 |
-| HiHat-Closed P/R/F1 (support 1) | 0.000 / 0.000 / 0.000 → predicted `OneShot` |
-| Drone P/R/F1 (support 1) | 0.000 / 0.000 / 0.000 → predicted `Loop` |
-| Loop P/R/F1 (support 1) | 0.500 / 1.000 / 0.667 |
+| macro-F1 | 0.750 |
+| HiHat-Closed P/R/F1 (support 1) | 1.000 / 1.000 / 1.000 |
+| Drone P/R/F1 (support 1) | 1.000 / 1.000 / 1.000 |
+| Loop P/R/F1 (support 1) | 1.000 / 1.000 / 1.000 |
 | Impact P/R/F1 (support 1) | 0.000 / 0.000 / 0.000 → predicted `Snare` |
 
-Unknown clip predicts `oneshot` / `Snare`; retained as uncertain, not scored as clear-label success or failure. Re-measured under #1003 residual acceptance with `candidate_id=classification.baseline.v1` and identical aggregates on rerun (`generator_seed=1021001`).
+Unknown clip predicts `oneshot` / `Snare`; retained as uncertain, not scored as clear-label success or failure. Re-measured under #1003 residual acceptance with `candidate_id=classification.baseline.v1` and identical aggregates on rerun (`generator_seed=1021001`). Portable narrative tables above were reconciled under [#1005](https://github.com/jannekbuengener/sample-brain/issues/1005) to match the frozen harness + [#1034](https://github.com/jannekbuengener/sample-brain/issues/1034) miss inventory (no harness / algorithm / candidate-id change).
 
 ### HOLD stubs
 

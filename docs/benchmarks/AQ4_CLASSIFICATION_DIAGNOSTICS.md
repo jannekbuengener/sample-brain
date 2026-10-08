@@ -33,7 +33,15 @@ This document turns the measured AQ4 baseline into **explainable failure buckets
 | Repro exit | `AQ4_CLASSIFICATION_BASELINE_MEASURED` |
 | External JSON | not committed (repo policy); tables below are portable summaries |
 
-Authoritative plane metrics for diagnostics are taken from a **fresh external rerun** of the frozen baseline harness on current `main` (identical seed / corpus id). Narrative miss pairs in older baseline prose that disagree with this rerun (and with [#1034](https://github.com/jannekbuengener/sample-brain/issues/1034) notes) are **not** used as bucket evidence. This slice does not edit the baseline document or reopen [#1003](https://github.com/jannekbuengener/sample-brain/issues/1003).
+Authoritative plane metrics for diagnostics are taken from **fresh external reruns** of the frozen baseline harness on this PR head (identical seed / corpus id / `classification.baseline.v1`). Two consecutive reruns produced **identical** clear-eligible aggregates and miss inventories (reproducibility confirmed; not environment noise).
+
+| Evidence surface | CAL `pred_type` macro-F1 | TEST `pred_type` macro-F1 | Clear `pred_type` misses |
+|---|---:|---:|---|
+| Frozen harness rerun (this slice, 2× identical) | 0.500 | 0.750 | Drum Loop→Loop; Pad→Drone; Impact→Snare |
+| [#1034](https://github.com/jannekbuengener/sample-brain/issues/1034) compare notes for `classification.baseline.v1` | 0.500 | 0.750 | same three pairs |
+| [`AQ4_CLASSIFICATION_BASELINE.md`](AQ4_CLASSIFICATION_BASELINE.md) portable tables | reconciled in this PR to the harness values above | same | same |
+
+Cause of the prior conflict: stale portable narrative in the baseline doc (older miss pairs / macro-F1 0.250/0.167) had drifted from the frozen harness and from #1034. That was **documentation drift**, not a second measurement system. This PR reconciles the baseline portable summary to the harness; it does **not** change analyze/classify, candidate ids, corpus seed, or reopen [#1003](https://github.com/jannekbuengener/sample-brain/issues/1003). External JSON remains uncommitted by policy; use the harness command above for exact floats.
 
 ## Taxonomy separation (normative)
 
@@ -240,7 +248,7 @@ These are evidence for humans and for #1006/#1007 reconciliation text — **not*
 - no kNN reconstruction
 - no ML / embedding mandate
 - no private audio, absolute host paths, or committed WAV/JSON corpus dumps
-- no edits to closed #1003 baseline scope
+- no reopen of closed #1003; portable baseline narrative sync only (no harness/algorithm/scope change)
 - no #1006 candidate implementation
 
 ## Exit vocabulary
