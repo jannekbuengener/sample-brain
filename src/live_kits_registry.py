@@ -239,8 +239,11 @@ class LiveKitsRegistry:
                 if isinstance(display_name, str) and display_name.strip()
                 else _display_name_for(root, track_id.strip())
             )
-            loaded[track_id.strip()] = LiveKitPackageRow(
-                track_id=track_id.strip(),
+            normalized_id = track_id.strip()
+            if normalized_id in loaded:
+                return False
+            loaded[normalized_id] = LiveKitPackageRow(
+                track_id=normalized_id,
                 package_root=root,
                 display_name=name,
                 status=status.strip(),
