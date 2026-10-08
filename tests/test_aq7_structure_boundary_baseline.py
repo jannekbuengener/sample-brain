@@ -431,8 +431,8 @@ def test_portable_output_rejects_absolute_host_paths(tmp_path: Path) -> None:
 def test_end_to_end_baseline_consumes_frozen_corpus_identity(
     tmp_path: Path,
 ) -> None:
-    work = Path("D:/Temp") / f"aq7-1025-baseline-test-{tmp_path.name}"
-    work.mkdir(parents=True, exist_ok=True)
+    # tmp_path is outside the git checkout on CI and local pytest runs.
+    work = tmp_path / "aq7-1025-baseline"
     out = work / "baseline.json"
     result = baseline.run_aq7_structure_boundary_baseline(
         work_dir=work / "corpus",
