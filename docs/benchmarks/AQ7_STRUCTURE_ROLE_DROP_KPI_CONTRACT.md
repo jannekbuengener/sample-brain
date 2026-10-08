@@ -206,9 +206,97 @@ Overall accuracy alone is insufficient because long groove/drop sections can hid
 | `aq7.drop_event.abs_error_bars_p95` | minimize | p95 absolute bar error over matched drop events |
 | `aq7.drop_event.false_rate` | minimize | unmatched predicted drop events / predicted drop events |
 | `aq7.drop_event.miss_rate` | minimize | unmatched reference drop events / eligible reference drop events |
-| `aq7.drop_event.coverage` | maximize | records with complete event annotation and a usable event prediction surface / event-eligible records |
+| `aq7.drop_event.coverage` | maximize | event-eligible records with a usable event prediction surface / event-eligible records (see Drop-event eligibility) |
 
 For records with a complete explicit empty reference event set, any predicted `drop_onset` is a false positive. Records with incomplete event annotation are `unknown` / HOLD for event correctness and must not be treated as no-drop truth.
+
+### Drop-event eligibility / prediction surface — frozen
+
+Annotation-side **event-eligible** requires all of:
+
+1. drop-event annotation status is `adjudicated` or `single_source` (not `ambiguous` / `unavailable`);
+2. the full expected `drop_onset` set is stated, including an explicit empty set when the track has none;
+3. every annotated event references a non-excluded reference neutral boundary;
+4. a usable bar mapping exists for ±1-bar matching; otherwise the record is HOLD for scored event timing/presence and is **not** event-eligible for P/R/F1.
+
+Prediction-side **usable event prediction surface** requires all of:
+
+1. the record is event-eligible;
+2. ArrangementClassifier completed an event-classification pass over the **frozen reference neutral boundaries** used for AQ7 event scoring;
+3. arrangement/structure status for that pass is not `failed` or `unavailable`.
+
+Status `uncertain` (for example inferred bar grid) remains a usable surface for presence scoring when the pass completed; provenance must still be reported. It does not convert scored negatives into HOLD by itself.
+
+When the surface is not usable, drop-event correctness metrics for the record are `unknown` / HOLD / `excluded` as appropriate. Those records do **not** enter P/R/F1/false/miss denominators and do **not** count in the coverage numerator.
+
+#### Positive vs negative vs abstention (runtime-honest)
+
+Current runtime (`classify_events` / `_boundary_drop_onset_candidate` in `src/arrangement_classifier.py`) emits only positive `drop_onset` events. A single non-emission / `None` covers ordinary below-threshold negatives, unknown following role, and missing required features. This contract **does not invent** distinctions the public prediction surface does not expose, and #1023 does not change that runtime API.
+
+| Prediction state | Definition | Enters event P/R/false/miss denominators? |
+|---|---|---|
+| Positive prediction | Explicit emitted `drop_onset` on a non-masked boundary | Yes — member of the predicted event set |
+| Negative prediction | Usable surface and no emitted `drop_onset` for the evaluated boundary set / record | Yes — absence is scored as no-event (miss if refs remain unmatched; empty predicted set is valid) |
+| Abstention / HOLD | Surface not usable, or annotation incomplete / plane excluded | No — `unknown` / `excluded`; neither miss nor true-negative credit |
+
+Normative consequences:
+
+- under a usable surface, non-emission is a **negative prediction**, never a coverage abstention that removes misses from recall;
+- coverage abstention/HOLD is reserved for unusable surface or ineligible annotation;
+- evaluators must not invent separate abstention classes for unknown-role vs missing-features vs below-threshold without a future explicit runtime status channel (out of scope here);
+- that coalesced non-emission is a documented **coverage / attribution limitation** for later #1027 diagnostics, not a license to fabricate correctness.
+
+Frozen coverage formula:
+
+```text
+aq7.drop_event.coverage =
+  |{event-eligible records with usable event prediction surface}|
+  / |{event-eligible records}|
+```
+
+Empty event-eligible set → `not_applicable`, never numeric zero.
+
+## Corpus-level aggregation — frozen
+
+Primary multi-record aggregation for AQ7 count-ratio KPIs is **micro**: pool eligible counts across records in the evaluated partition, then compute the ratio once. Unweighted means of per-record ratios (**macro-of-ratios**) are diagnostic only and must not replace micro for candidate ranking on those metrics.
+
+Shared rules for all three planes:
+
+1. Only records/items eligible for the plane and metric enter that metric's corpus aggregate.
+2. A record with an undefined denominator for a metric is excluded from that metric's corpus ratio and counted under `not_applicable` / `unknown` — never coerced to numeric zero success or failure.
+3. Incomplete, plane-ineligible, masked-only, or HOLD records are excluded from correctness aggregates for that plane; they may still appear in coverage / annotation-health evidence.
+4. No track-duration, confidence, or ad-hoc sample-weight reweighting of primary P/R/F1 beyond the pooling rules below.
+5. Empty contributing set for a metric → corpus value `not_applicable`, never `0.0`.
+6. CALIBRATION and TEST/HOLDOUT aggregates are computed separately and never mixed.
+7. When either precision or recall is `not_applicable` at corpus level, the corresponding F1 is `not_applicable`.
+
+### `aq7.boundary` aggregation
+
+| Metric id | Corpus rule |
+|---|---|
+| `precision_1bar`, `recall_1bar`, `miss_rate`, `extra_rate`, `exact_hit_rate` | **micro** — sum numerators / sum denominators over eligible records after ignore-mask filtering |
+| `f1_1bar` | harmonic mean of corpus micro precision and corpus micro recall |
+| `abs_error_bars_median`, `abs_error_bars_p95` | **pooled sample** — concatenate all matched-pair absolute bar errors across eligible records, then median / p95 on that multiset. Empty matched-pair set → `not_applicable`. Do **not** use median-of-per-record-medians as primary. Percentile math: linear interpolation on a sorted copy, same family as `src.measurement.stats.percentile` (#958). |
+| `section_count_abs_error` | **macro mean** — unweighted mean of per-record absolute section-count errors over records eligible for boundary correctness |
+| `segment_iou_weighted` | **pooled weighted** — across all eligible reference sections in the partition, `sum(IoU_i * weight_i) / sum(weight_i)` with `weight_i` = reference section length in bars |
+
+### `aq7.role` aggregation
+
+| Metric id | Corpus rule |
+|---|---|
+| per-role precision / recall / F1 and confusion matrix | **micro** — pool section-level confusion counts across eligible sections/records; derive each role's P/R/F1 from the pooled matrix |
+| `macro_f1` | unweighted mean of the six concrete-role F1 values from that pooled matrix. A concrete role with zero reference support **and** zero predictions is `not_applicable` for that role's F1 and is **omitted** from the macro-mean denominator (not coerced to 0). If all six are omitted, `macro_f1` is `not_applicable`. |
+| `coverage`, `unknown_rate`, `unknown_reference_recall` | **micro** section-count ratios over eligible sections |
+| `bar_weighted_accuracy` | **pooled bars** — correct eligible bars / eligible reference-role bars across records |
+
+### `aq7.drop_event` aggregation
+
+| Metric id | Corpus rule |
+|---|---|
+| `precision_1bar`, `recall_1bar`, `false_rate`, `miss_rate` | **micro** — pool event counts over event-eligible records with usable prediction surface, after event ignore-mask filtering |
+| `f1_1bar` | harmonic mean of corpus micro precision and corpus micro recall |
+| `abs_error_bars_median`, `abs_error_bars_p95` | pooled matched-event absolute bar errors; same median/p95 rule as boundary |
+| `coverage` | **record-level rate** — usable-surface event-eligible records / event-eligible records (formula above) |
 
 ## Annotation status / disagreement policy
 
@@ -222,11 +310,37 @@ Use annotation evidence states distinct from semantic labels:
 Normative rules:
 
 1. Boundary annotator spread up to one bar may be adjudicated to one canonical bar **only when the corpus records the source spread/provenance**. Without adjudication it remains `ambiguous`.
-2. Boundary disagreement greater than one bar without adjudication is `ambiguous`; the boundary and dependent reference sections are excluded from strict correctness denominators.
+2. Boundary disagreement greater than one bar without adjudication is `ambiguous`; the boundary and dependent reference sections are excluded from strict correctness denominators. Predictions inside the disputed region are handled by the **ignore mask** below so ambiguity is not double-counted as a false positive.
 3. Role disagreement between concrete labels is `ambiguous`, not silently converted to semantic `unknown`.
 4. Semantic `unknown` is a valid reference label only when annotation itself asserts that no concrete v1 role is defensible.
 5. Drop-event disagreement is handled independently from role disagreement.
 6. Ambiguous/unavailable annotations contribute annotation-health/coverage evidence but never fabricated correctness values.
+
+### Ambiguous boundary ignore mask — frozen
+
+Annotation ambiguity must not be punished as an ordinary false positive.
+
+When an ambiguous reference boundary is excluded from strict boundary denominators, construct a deterministic **ignore mask** in bar coordinates:
+
+1. If the corpus records an inclusive annotator bar spread `[spread_lo, spread_hi]` for the disputed boundary:
+   `mask_lo = spread_lo - BOUNDARY_MATCH_TOLERANCE_BARS`, `mask_hi = spread_hi + BOUNDARY_MATCH_TOLERANCE_BARS`.
+2. Else if only a single disputed candidate bar `b` is recorded:
+   `mask_lo = b - BOUNDARY_MATCH_TOLERANCE_BARS`, `mask_hi = b + BOUNDARY_MATCH_TOLERANCE_BARS`.
+3. Else (ambiguous with no recorded bar locus): the record's entire `aq7.boundary` correctness plane is `ambiguous` / `unavailable` — exclude the record from boundary P/R/extra/miss/IoU correctness aggregates rather than inventing a mask.
+
+Masked prediction rules:
+
+- A predicted internal boundary whose `bar_index` lies in any ignore mask for that record is **masked**.
+- Masked predictions are excluded from one-to-one matching against eligible references.
+- Masked predictions are excluded from `precision_1bar` and `extra_rate` predicted-count denominators.
+- Masked predictions never count as true positives or false positives for `aq7.boundary`.
+- Eligible (non-ambiguous) reference boundaries remain in recall denominators; matching uses only unmasked predictions.
+
+Dependent-plane carry-over:
+
+- Reference sections that depend on an ambiguous boundary remain excluded from role correctness denominators.
+- Annotated `drop_onset` events anchored to an ambiguous / excluded boundary are excluded from drop-event correctness denominators.
+- Predicted `drop_onset` events whose bar falls inside a boundary ignore mask for that record are likewise masked: excluded from event matching and from event precision / false_rate denominators.
 
 ## BeatGrid / timebase dependency
 
