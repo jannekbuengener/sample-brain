@@ -336,6 +336,25 @@ def test_no_fixture_leakage_across_splits(tmp_path: Path) -> None:
     }
     assert len(set(wav_hashes.values())) == len(wav_hashes)
 
+    # Structural topology uniqueness (independent of fixture_id dither).
+    structural = []
+    for row in rows:
+        gt = _load_generated_gt(work_a, str(row["fixture_id"]))
+        structural.append(
+            (
+                gt["family"],
+                gt["split"],
+                tuple((b["bar_index"], b["boundary_id"]) for b in gt["boundaries"]),
+                tuple(
+                    (s["start_bar"], s["end_bar"], s["role"]) for s in gt["sections"]
+                ),
+                tuple(
+                    (e["boundary_id"], e["bar_index"]) for e in gt["drop_events"]
+                ),
+            )
+        )
+    assert len(set(structural)) == len(structural)
+
 
 # ---------------------------------------------------------------------------
 # Proof matrix 6–9 — three-plane structural separation
@@ -759,6 +778,30 @@ def test_reject_drop_refs_nonexistent_boundary() -> None:
     ]
     poisoned["drop_events_complete"] = True
     with pytest.raises(ValueError, match="boundary"):
+        schema.validate_aq7_fixture_gt(poisoned)
+
+
+def test_reject_duplicate_drop_boundary_anchor() -> None:
+    payload = _minimal_valid_gt()
+    poisoned = copy.deepcopy(payload)
+    poisoned["drop_events"] = [
+        {
+            "event_id": "e1",
+            "event_type": "drop_onset",
+            "boundary_id": "b1",
+            "bar_index": 16,
+            "annotation_status": "single_source",
+        },
+        {
+            "event_id": "e2",
+            "event_type": "drop_onset",
+            "boundary_id": "b1",
+            "bar_index": 16,
+            "annotation_status": "single_source",
+        },
+    ]
+    poisoned["drop_events_complete"] = True
+    with pytest.raises(ValueError, match="duplicate drop event boundary anchor"):
         schema.validate_aq7_fixture_gt(poisoned)
 
 

@@ -88,6 +88,8 @@ class _FixtureSpec:
     pulse_hz: float
     tone_hz: float
     energy_scale: float
+    # Non-reference audio distractor accents (not GT boundaries).
+    distractor_bars: tuple[int, ...] = ()
 
 
 def _fixture_id(family: str, split_token: str, nnn: int = 1) -> str:
@@ -244,26 +246,20 @@ _FIXTURE_SPECS: tuple[_FixtureSpec, ...] = (
         split="CALIBRATION",
         track_end_bar=48,
         bpm=128.0,
-        # Dense relative to a coarser musical reading — challenge fixture.
+        # Coarse reference + denser non-reference distractor cues in audio.
         boundaries=(
-            _BoundarySpec("b1", 4),
-            _BoundarySpec("b2", 8),
-            _BoundarySpec("b3", 12),
-            _BoundarySpec("b4", 20),
-            _BoundarySpec("b5", 28),
-            _BoundarySpec("b6", 36),
+            _BoundarySpec("b1", 12),
+            _BoundarySpec("b2", 28),
+            _BoundarySpec("b3", 36),
         ),
         sections=(
-            _SectionSpec("s0", 0, 4, "intro"),
-            _SectionSpec("s1", 4, 8, "groove"),
-            _SectionSpec("s2", 8, 12, "groove"),
-            _SectionSpec("s3", 12, 20, "build"),
-            _SectionSpec("s4", 20, 28, "drop"),
-            _SectionSpec("s5", 28, 36, "breakdown"),
-            _SectionSpec("s6", 36, 48, "outro"),
+            _SectionSpec("s0", 0, 12, "intro"),
+            _SectionSpec("s1", 12, 28, "build"),
+            _SectionSpec("s2", 28, 36, "drop"),
+            _SectionSpec("s3", 36, 48, "outro"),
         ),
         drop_events=(
-            _DropEventSpec("e1", "b4", 20),
+            _DropEventSpec("e1", "b2", 28),
         ),
         plane_status=_plane(),
         beatgrid_status="authored_synthetic",
@@ -271,6 +267,7 @@ _FIXTURE_SPECS: tuple[_FixtureSpec, ...] = (
         pulse_hz=1000.0,
         tone_hz=55.0,
         energy_scale=0.78,
+        distractor_bars=(4, 8, 20),
     ),
     _FixtureSpec(
         fixture_id=_fixture_id("drop_at_boundary", "test"),
@@ -519,6 +516,25 @@ def _render_fixture(spec: _FixtureSpec, *, sample_rate: int = SAMPLE_RATE) -> np
             * 0.65
             * np.sin(2.0 * np.pi * (spec.pulse_hz * 1.5) * accent_t)
             * np.exp(-accent_t * 500.0)
+        ).astype(np.float32)
+        y[start:end] += accent
+
+    # Non-reference distractor accents (over-segmentation challenge cues).
+    ref_bars = {int(b.bar_index) for b in spec.boundaries}
+    for bar in spec.distractor_bars:
+        if int(bar) in ref_bars:
+            continue
+        start = int(round(int(bar) * spb * sample_rate))
+        if start < 0 or start >= n_total:
+            continue
+        end = min(n_total, start + _ms_to_samples(12.0, sample_rate))
+        accent_n = end - start
+        accent_t = np.arange(accent_n, dtype=np.float32) / float(sample_rate)
+        accent = (
+            spec.energy_scale
+            * 0.55
+            * np.sin(2.0 * np.pi * (spec.pulse_hz * 1.35) * accent_t)
+            * np.exp(-accent_t * 520.0)
         ).astype(np.float32)
         y[start:end] += accent
 

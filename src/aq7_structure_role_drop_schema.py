@@ -315,6 +315,7 @@ def _validate_drop_events(
 ) -> list[dict[str, Any]]:
     items = _require_list(raw, "drop_events")
     seen_ids: set[str] = set()
+    seen_boundary_anchors: set[str] = set()
     events: list[dict[str, Any]] = []
     for index, item in enumerate(items):
         event = _require_mapping(item, f"drop_events[{index}]")
@@ -336,6 +337,9 @@ def _validate_drop_events(
         )
         if boundary_id not in boundaries_by_id:
             _fail(f"drop event references nonexistent boundary: {boundary_id}")
+        if boundary_id in seen_boundary_anchors:
+            _fail(f"duplicate drop event boundary anchor: {boundary_id}")
+        seen_boundary_anchors.add(boundary_id)
         bar_index = _require_nonneg_int(
             event.get("bar_index"), f"drop_events[{index}].bar_index"
         )
