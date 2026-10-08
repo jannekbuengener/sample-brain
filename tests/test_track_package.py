@@ -10,6 +10,7 @@ Arrangement/QML, and active-package restart precedence.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shutil
@@ -758,6 +759,75 @@ def test_infinite_master_bpm_rejected(tmp_path: Path) -> None:
         '"sync_enabled":false}}\n'
     )
     (root / tp.TRACK_PACKAGE_FILENAME).write_text(raw, encoding="utf-8")
+    assert (
+        tp.validate_track_package(root).outcome == tp.OUTCOME_CORRUPT_OR_UNSUPPORTED
+    )
+
+
+def test_track_id_with_double_dot_substring_allowed(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    src = _write_source(library)
+    package_root = tmp_path / "packages" / "pkg"
+    package_root.parent.mkdir()
+    result = tp.create_track_package(
+        _draft_with_sources(src, track_id="trk_release..1"),
+        package_root,
+        repo_root=_repo_root(),
+    )
+    assert result.outcome == tp.OUTCOME_OPEN
+    assert result.track_id == "trk_release..1"
+
+
+def test_enospc_during_copy_maps_to_destination_unavailable(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.mkdir()
+    src = _write_source(library)
+    package_root = tmp_path / "packages" / "pkg"
+    package_root.parent.mkdir()
+
+    def full_disk(_src: Path, _dst: Path) -> None:
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    result = tp.create_track_package(
+        _draft_with_sources(src),
+        package_root,
+        repo_root=_repo_root(),
+        copy_file=full_disk,
+    )
+    assert result.outcome == tp.OUTCOME_DESTINATION_UNAVAILABLE
+    assert not package_root.exists()
+
+
+def test_channel_rack_invalid_values_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "pkg"
+    root.mkdir()
+    (root / tp.MEDIA_DIR_NAME).mkdir()
+    write_sine_wav(
+        root / tp.MEDIA_DIR_NAME / "a.wav", duration_sec=0.02, frequency_hz=40.0
+    )
+    payload = {
+        "schema_version": 1,
+        "package_kind": tp.PACKAGE_KIND,
+        "track_id": "trk_rack",
+        "media": [{"media_id": "m1", "relpath": "media/a.wav"}],
+        "musical": {
+            "live_kit": {},
+            "channel_rack": {
+                "pattern_id": "p1",
+                "length_quarter_notes": None,
+                "step_count": -1,
+                "channels": [],
+                "triggers": [],
+            },
+            "master_bpm": 120.0,
+            "sync_enabled": True,
+        },
+    }
+    (root / tp.TRACK_PACKAGE_FILENAME).write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     assert (
         tp.validate_track_package(root).outcome == tp.OUTCOME_CORRUPT_OR_UNSUPPORTED
     )

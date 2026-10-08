@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+import errno
 import json
 import math
 import os
@@ -18,6 +19,9 @@ import shutil
 import tempfile
 from typing import Any
 import uuid
+
+from .pattern_core import CHANNEL_ID_BY_LIVE_KIT_SLOT
+from .workbench_live_kit import LIVE_KIT_SLOT_MAPPING
 
 SCHEMA_VERSION = 1
 PACKAGE_KIND = "sample_brain_track_package"
@@ -175,8 +179,6 @@ def _looks_like_forbidden_ref(relpath: str) -> bool:
         return True
     parts = [p for p in text.split("/") if p not in ("", ".")]
     if any(part == ".." for part in parts):
-        return True
-    if ".." in text:
         return True
     return False
 
@@ -411,15 +413,20 @@ def _iter_musical_sample_refs(musical: Mapping[str, Any]) -> list[str]:
 
 
 def _validate_live_kit_shape(live_kit: Mapping[str, Any]) -> str | None:
+    known = {(group, slot) for group, slots in LIVE_KIT_SLOT_MAPPING for slot in slots}
     for group, slots_payload in live_kit.items():
         if not isinstance(group, str) or not isinstance(slots_payload, Mapping):
             return OUTCOME_CORRUPT_OR_UNSUPPORTED
         for slot, slot_payload in slots_payload.items():
             if not isinstance(slot, str):
                 return OUTCOME_CORRUPT_OR_UNSUPPORTED
+            if (group, slot) not in known:
+                return OUTCOME_CORRUPT_OR_UNSUPPORTED
             if slot_payload is None:
                 continue
             if not isinstance(slot_payload, Mapping):
+                return OUTCOME_CORRUPT_OR_UNSUPPORTED
+            if set(slot_payload.keys()) - {"path"}:
                 return OUTCOME_CORRUPT_OR_UNSUPPORTED
             if "path" not in slot_payload:
                 return OUTCOME_CORRUPT_OR_UNSUPPORTED
@@ -431,6 +438,24 @@ def _validate_live_kit_shape(live_kit: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _exact_nonbool_int(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _validate_fraction_payload(payload: object) -> bool:
+    if not isinstance(payload, Mapping):
+        return False
+    if set(payload.keys()) - {"numerator", "denominator"}:
+        return False
+    numerator = _exact_nonbool_int(payload.get("numerator"))
+    denominator = _exact_nonbool_int(payload.get("denominator"))
+    if numerator is None or denominator is None or denominator == 0:
+        return False
+    return True
+
+
 def _validate_channel_rack_shape(channel_rack: Mapping[str, Any]) -> str | None:
     required = {
         "pattern_id",
@@ -439,36 +464,74 @@ def _validate_channel_rack_shape(channel_rack: Mapping[str, Any]) -> str | None:
         "channels",
         "triggers",
     }
-    if not required.issubset(channel_rack.keys()):
+    if set(channel_rack.keys()) != required:
         return OUTCOME_CORRUPT_OR_UNSUPPORTED
-    if not isinstance(channel_rack.get("pattern_id"), str):
+    pattern_id = channel_rack.get("pattern_id")
+    if not isinstance(pattern_id, str) or not pattern_id.strip():
         return OUTCOME_CORRUPT_OR_UNSUPPORTED
-    if not isinstance(channel_rack.get("step_count"), int) or isinstance(
-        channel_rack.get("step_count"), bool
-    ):
+    if not _validate_fraction_payload(channel_rack.get("length_quarter_notes")):
+        return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    step_count = _exact_nonbool_int(channel_rack.get("step_count"))
+    if step_count is None or step_count <= 0:
         return OUTCOME_CORRUPT_OR_UNSUPPORTED
     channels = channel_rack.get("channels")
     triggers = channel_rack.get("triggers")
     if not isinstance(channels, list) or not isinstance(triggers, list):
         return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    if not channels:
+        return OUTCOME_CORRUPT_OR_UNSUPPORTED
+
+    seed_by_id: dict[str, Mapping[str, Any]] = {}
+    known_ids: set[str] = set()
     for channel in channels:
         if not isinstance(channel, Mapping):
             return OUTCOME_CORRUPT_OR_UNSUPPORTED
+        if set(channel.keys()) - {
+            "channel_id",
+            "live_kit_group",
+            "live_kit_slot",
+            "sample_path",
+        }:
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
         channel_id = channel.get("channel_id")
         if not isinstance(channel_id, str) or not channel_id.strip():
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
+        if channel_id in known_ids:
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
+        known_ids.add(channel_id)
+        group = channel.get("live_kit_group")
+        slot = channel.get("live_kit_slot")
+        if group is not None and not isinstance(group, str):
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
+        if slot is not None and not isinstance(slot, str):
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
+        if (group is None) != (slot is None):
             return OUTCOME_CORRUPT_OR_UNSUPPORTED
         sample_path = channel.get("sample_path")
         if sample_path is not None and (
             not isinstance(sample_path, str) or sample_path.strip() == ""
         ):
             return OUTCOME_CORRUPT_OR_UNSUPPORTED
+        if group is not None and slot is not None:
+            seed_by_id[channel_id] = channel
+
+    expected_ids = set(CHANNEL_ID_BY_LIVE_KIT_SLOT.values())
+    if set(seed_by_id) != expected_ids:
+        return OUTCOME_CORRUPT_OR_UNSUPPORTED
+    for (group, slot), channel_id in CHANNEL_ID_BY_LIVE_KIT_SLOT.items():
+        channel = seed_by_id[channel_id]
+        if channel.get("live_kit_group") != group or channel.get("live_kit_slot") != slot:
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
+
     for trigger in triggers:
         if not isinstance(trigger, Mapping):
             return OUTCOME_CORRUPT_OR_UNSUPPORTED
-        if not isinstance(trigger.get("channel_id"), str):
+        if set(trigger.keys()) - {"channel_id", "position"}:
             return OUTCOME_CORRUPT_OR_UNSUPPORTED
-        position = trigger.get("position")
-        if not isinstance(position, Mapping):
+        channel_id = trigger.get("channel_id")
+        if not isinstance(channel_id, str) or channel_id not in known_ids:
+            return OUTCOME_CORRUPT_OR_UNSUPPORTED
+        if not _validate_fraction_payload(trigger.get("position")):
             return OUTCOME_CORRUPT_OR_UNSUPPORTED
     return None
 
@@ -592,9 +655,20 @@ def create_track_package(
             target = staging / Path(*relpath.split("/"))
             try:
                 copy_fn(source, target)
-            except OSError:
+            except OSError as exc:
                 _remove_own_staging(staging)
                 staging = None
+                if getattr(exc, "errno", None) in {
+                    errno.ENOSPC,
+                    errno.EDQUOT,
+                    errno.EACCES,
+                    errno.EPERM,
+                    errno.EROFS,
+                }:
+                    return _failure(
+                        OUTCOME_DESTINATION_UNAVAILABLE,
+                        message="Package destination is unavailable.",
+                    )
                 return _failure(
                     OUTCOME_COPY_INTERRUPTED,
                     message="Media copy was interrupted.",
