@@ -422,3 +422,51 @@ def test_register_then_list_inactive_then_open_active_smoke(tmp_path: Path) -> N
         assert workbench_session_path(state_dir=state_dir).exists() or True
     finally:
         session.transport.close()
+
+
+def test_open_conflict_preserves_prior_registration_and_active_track(
+    tmp_path: Path,
+) -> None:
+    """P1: Open must not bind when root is claimed by a different track_id."""
+    root_ok, _ = _create_package(tmp_path, track_id="trk_1099_claim", name="claimed")
+    state_dir = tmp_path / "state"
+    registry = lkr.LiveKitsRegistry(state_dir=state_dir)
+    session = compose_workbench_session(state_dir=state_dir)
+    try:
+        assert registry.register(root_ok).outcome == lkr.OUTCOME_READY
+        assert registry.open_package(root_ok, session=session).outcome == tp.OUTCOME_OPEN
+        before_id = session.active_track_id
+        before_root = session.active_track_package_root
+
+        payload = json.loads((root_ok / tp.TRACK_PACKAGE_FILENAME).read_text(encoding="utf-8"))
+        payload["track_id"] = "trk_1099_intruder_open"
+        (root_ok / tp.TRACK_PACKAGE_FILENAME).write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        conflicted = registry.open_package(root_ok, session=session)
+        assert conflicted.outcome == lkr.OUTCOME_REGISTER_CONFLICT
+        assert session.active_track_id == before_id
+        assert session.active_track_package_root == before_root
+        listed = registry.list_packages()
+        assert len(listed) == 1
+        assert listed[0].track_id == "trk_1099_claim"
+    finally:
+        session.transport.close()
+
+
+def test_register_persist_failure_rolls_back_in_memory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P2: unwritable registry persist must not leave ambiguous in-memory state."""
+    package_root, _ = _create_package(tmp_path, track_id="trk_1099_write")
+    registry = lkr.LiveKitsRegistry(state_dir=tmp_path / "state")
+
+    def boom(_path: Path, _payload: object) -> None:
+        raise OSError("synthetic registry write failure")
+
+    monkeypatch.setattr(lkr, "_atomic_write_json", boom)
+    failed = registry.register(package_root)
+    assert failed.outcome == tp.OUTCOME_WRITE_FAILED
+    assert registry.list_packages() == ()

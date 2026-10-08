@@ -21,6 +21,7 @@ from .track_package import (
     OUTCOME_MISSING_MEDIA,
     OUTCOME_OPEN,
     OUTCOME_PATH_ESCAPE_REJECTED,
+    OUTCOME_WRITE_FAILED,
     TrackPackageResult,
     open_track_package,
     validate_track_package,
@@ -43,6 +44,7 @@ _SAFE_FAIL_MESSAGES = {
     OUTCOME_MISSING_MEDIA: "Track package media is missing.",
     OUTCOME_PATH_ESCAPE_REJECTED: "Track package media path escape rejected.",
     OUTCOME_REGISTER_CONFLICT: "Registry slot already claimed by another track.",
+    OUTCOME_WRITE_FAILED: "Live Kits registry could not be persisted.",
     OUTCOME_READY: "Track package registered.",
     OUTCOME_OPEN: "Track package opened.",
 }
@@ -289,13 +291,40 @@ class LiveKitsRegistry:
             display_name=_display_name_for(root, track_id),
             status=OUTCOME_READY,
         )
+        previous = self._entries.get(track_id)
         self._entries[track_id] = entry
-        self._persist()
+        try:
+            self._persist()
+        except OSError:
+            if previous is None:
+                self._entries.pop(track_id, None)
+            else:
+                self._entries[track_id] = previous
+            return LiveKitsRegisterResult(
+                outcome=OUTCOME_WRITE_FAILED,
+                entry=previous,
+                message=_safe_message(OUTCOME_WRITE_FAILED),
+            )
         return LiveKitsRegisterResult(
             outcome=OUTCOME_READY,
             entry=entry,
             message=_safe_message(OUTCOME_READY),
         )
+
+    def _root_claim_conflict(
+        self,
+        *,
+        package_root: Path,
+        track_id: str,
+    ) -> LiveKitPackageRow | None:
+        """Return prior registration when root is claimed by a different track_id."""
+        resolved = package_root.resolve(strict=False)
+        for existing in self._entries.values():
+            if existing.track_id == track_id:
+                continue
+            if existing.package_root.resolve(strict=False) == resolved:
+                return existing
+        return None
 
     def open_package(
         self,
@@ -307,12 +336,29 @@ class LiveKitsRegistry:
         root = Path(package_root)
         # Fail-closed pre-check (also surfaces missing_media / path_escape / corrupt).
         precheck = open_track_package(root)
-        if precheck.outcome != OUTCOME_OPEN:
+        if precheck.outcome != OUTCOME_OPEN or precheck.track_id is None:
+            outcome = precheck.outcome
+            if outcome == OUTCOME_OPEN:
+                outcome = OUTCOME_CORRUPT_OR_UNSUPPORTED
             return LiveKitsOpenResult(
-                outcome=precheck.outcome,
+                outcome=outcome,
                 track_id=precheck.track_id,
                 package_root=root,
-                message=_safe_message(precheck.outcome, precheck.message),
+                message=_safe_message(outcome, precheck.message),
+                manifest_track_id=precheck.track_id,
+            )
+
+        # Preserve prior registration + Active Track when root is already claimed.
+        conflict = self._root_claim_conflict(
+            package_root=root,
+            track_id=precheck.track_id,
+        )
+        if conflict is not None:
+            return LiveKitsOpenResult(
+                outcome=OUTCOME_REGISTER_CONFLICT,
+                track_id=conflict.track_id,
+                package_root=conflict.package_root,
+                message=_safe_message(OUTCOME_REGISTER_CONFLICT),
                 manifest_track_id=precheck.track_id,
             )
 
@@ -329,20 +375,35 @@ class LiveKitsRegistry:
 
         # Keep registry listing in sync (still registered; status stays ready in
         # the listing — activation is session/active_track, not the registry row).
-        track_id = bound.track_id or (precheck.track_id or "")
+        track_id = bound.track_id or precheck.track_id
         if track_id:
             resolved = (
                 bound.package_root.resolve(strict=False)
                 if bound.package_root is not None
                 else root.resolve(strict=False)
             )
+            previous = self._entries.get(track_id)
             self._entries[track_id] = LiveKitPackageRow(
                 track_id=track_id,
                 package_root=resolved,
                 display_name=_display_name_for(resolved, track_id),
                 status=OUTCOME_READY,
             )
-            self._persist()
+            try:
+                self._persist()
+            except OSError:
+                if previous is None:
+                    self._entries.pop(track_id, None)
+                else:
+                    self._entries[track_id] = previous
+                # Active Track already bound by #1098; report honest registry write fail.
+                return LiveKitsOpenResult(
+                    outcome=OUTCOME_WRITE_FAILED,
+                    track_id=bound.track_id,
+                    package_root=bound.package_root,
+                    message=_safe_message(OUTCOME_WRITE_FAILED),
+                    manifest_track_id=bound.track_id,
+                )
 
         return LiveKitsOpenResult(
             outcome=OUTCOME_OPEN,
@@ -357,6 +418,7 @@ __all__ = [
     "ENTITY_KIND_TRACK_PACKAGE",
     "OUTCOME_READY",
     "OUTCOME_REGISTER_CONFLICT",
+    "OUTCOME_WRITE_FAILED",
     "PackageEntityError",
     "REGISTRY_FILENAME",
     "REGISTRY_SCHEMA_VERSION",
