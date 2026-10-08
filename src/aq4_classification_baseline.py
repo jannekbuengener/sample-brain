@@ -1,8 +1,10 @@
-"""AQ4 sample_class / pred_type baseline on synthetic corpus (#1032).
+"""AQ4 sample_class / pred_type baseline on synthetic corpus (#1032 / #1003).
 
 Measures current duration-derived ``sample_class`` and rule ``pred_type``
 against frozen AQ4 KPI on ``sample-brain.aq4.classification.synthetic.v1``.
 Taxonomies stay separate. No algorithm changes. External JSON only.
+Residual #1003 acceptance aligns candidate_id, PARTIAL_HOLD exit mapping,
+and portable provenance without rebuilding the harness.
 """
 
 from __future__ import annotations
@@ -27,11 +29,37 @@ from .classify import rule_type
 
 DOCUMENT_TYPE = "sample-brain.aq4.classification-baseline.v1"
 SCHEMA_VERSION = "1.0.0"
+CANDIDATE_ID = "classification.baseline.v1"
 EXIT_MEASURED = "AQ4_CLASSIFICATION_BASELINE_MEASURED"
+EXIT_PARTIAL_HOLD = "AQ4_CLASSIFICATION_BASELINE_PARTIAL_HOLD"
 EXIT_INCOMPLETE = "AQ4_CLASSIFICATION_BASELINE_INCOMPLETE"
 SAMPLE_CLASS_SURFACE = "src.analyze.extract_features.clazz"
 PRED_TYPE_RULE_SURFACE = "src.classify.rule_type"
 PRED_TYPE_KNN_SURFACE = "src.classify.write_autotype_to_db(use_knn=True)"
+
+# Portable by-reference provenance — no absolute host paths.
+PROVENANCE: dict[str, Any] = {
+    "runtime_methodology": {
+        "issue": "#958",
+        "doc": "docs/benchmarks/ANALYZER_RUNTIME_METHODOLOGY_V1.md",
+        "by_reference": True,
+    },
+    "semantic_determinism": {
+        "issue": "#959",
+        "doc": "docs/ANALYZER_SEMANTIC_DETERMINISM_V1.md",
+        "by_reference": True,
+    },
+    "kpi_contract": {
+        "issue": "#1001",
+        "doc": "docs/benchmarks/AQ4_CLASSIFICATION_KPI_CONTRACT.md",
+        "by_reference": True,
+    },
+    "corpus": {
+        "issue": "#1021",
+        "doc": "docs/benchmarks/AQ4_CLASSIFICATION_CORPUS.md",
+        "by_reference": True,
+    },
+}
 
 _REPO_ROOT_DEFAULT = Path(__file__).resolve().parents[1]
 
@@ -275,24 +303,49 @@ def _assert_output_outside_repo(output_path: Path, root: Path) -> None:
     raise ValueError(f"output path must be outside repo: {output_path.resolve()}")
 
 
-def _is_measured(splits: dict[str, Any], clip_rows: list[dict[str, Any]]) -> bool:
-    if len(clip_rows) < 8:
-        return False
+def _plane_measurable_across_splits(
+    splits: dict[str, Any],
+    plane_key: str,
+) -> bool:
+    """True when a mandatory plane scores on both CALIBRATION and TEST."""
     for split_name in ("CALIBRATION", "TEST"):
         split = splits.get(split_name) or {}
-        sc = split.get("aq4.sample_class") or {}
-        pt = split.get("aq4.pred_type_rule") or {}
-        if "metrics" not in sc or "metrics" not in pt:
+        plane = split.get(plane_key) or {}
+        if "metrics" not in plane:
             return False
-        if sc.get("n_clear_eligible", 0) < 1:
+        if plane.get("n_clear_eligible", 0) < 1:
             return False
-        if pt.get("n_clear_eligible", 0) < 1:
-            return False
-        if "macro_f1" not in (sc.get("metrics") or {}):
-            return False
-        if "macro_f1" not in (pt.get("metrics") or {}):
+        if "macro_f1" not in (plane.get("metrics") or {}):
             return False
     return True
+
+
+def resolve_exit_status(
+    *,
+    splits: dict[str, Any],
+    clip_rows: list[dict[str, Any]],
+) -> str:
+    """Map mandatory-plane measurability to MEASURED / PARTIAL_HOLD / INCOMPLETE.
+
+    Optional kNN HOLD is intentionally ignored: it must not degrade MEASURED
+    when both ``aq4.sample_class`` and ``aq4.pred_type_rule`` are measurable.
+    """
+    if len(clip_rows) < 8:
+        return EXIT_INCOMPLETE
+    sample_class_ok = _plane_measurable_across_splits(splits, "aq4.sample_class")
+    pred_type_ok = _plane_measurable_across_splits(splits, "aq4.pred_type_rule")
+    if sample_class_ok and pred_type_ok:
+        return EXIT_MEASURED
+    if sample_class_ok != pred_type_ok:
+        return EXIT_PARTIAL_HOLD
+    return EXIT_INCOMPLETE
+
+
+def _is_measured(splits: dict[str, Any], clip_rows: list[dict[str, Any]]) -> bool:
+    """Compatibility shim for candidate-compare (#1034): both mandatory planes ok."""
+    return (
+        resolve_exit_status(splits=splits, clip_rows=clip_rows) == EXIT_MEASURED
+    )
 
 
 def run_aq4_classification_baseline(
@@ -339,10 +392,11 @@ def run_aq4_classification_baseline(
         "surface": PRED_TYPE_KNN_SURFACE,
     }
 
-    measured = _is_measured(splits, clip_rows)
+    exit_status = resolve_exit_status(splits=splits, clip_rows=clip_rows)
     result: dict[str, Any] = {
         "document_type": DOCUMENT_TYPE,
         "schema_version": SCHEMA_VERSION,
+        "candidate_id": CANDIDATE_ID,
         "corpus_id": CORPUS_ID,
         "corpus_version": manifest.get("corpus_version"),
         "generator_seed": manifest.get("generator_seed"),
@@ -353,9 +407,13 @@ def run_aq4_classification_baseline(
             "aq4.pred_type_rule": PRED_TYPE_RULE_SURFACE,
             "aq4.pred_type_knn": PRED_TYPE_KNN_SURFACE,
         },
+        "plane_identities": {
+            "aq4.sample_class": CANDIDATE_ID,
+            "aq4.pred_type_rule": CANDIDATE_ID,
+        },
         "partition_policy": dict(PARTITION_POLICY),
         "no_tuning_on_test": True,
-        "exit_status": EXIT_MEASURED if measured else EXIT_INCOMPLETE,
+        "exit_status": exit_status,
         "clip_count": len(clip_rows),
         "dataset_health": {
             "support_counts": manifest.get("support_counts") or {},
@@ -365,6 +423,7 @@ def run_aq4_classification_baseline(
                 "clear-label correctness denominators"
             ),
         },
+        "provenance": dict(PROVENANCE),
         "aq4.pred_type_knn": knn_hold,
         "splits": splits,
         "clips": clip_rows,
@@ -428,16 +487,20 @@ if __name__ == "__main__":
 
 
 __all__ = [
+    "CANDIDATE_ID",
     "CORPUS_ID",
     "DOCUMENT_TYPE",
     "EXIT_INCOMPLETE",
     "EXIT_MEASURED",
+    "EXIT_PARTIAL_HOLD",
     "PRED_TYPE_KNN_SURFACE",
     "PRED_TYPE_RULE_SURFACE",
+    "PROVENANCE",
     "SAMPLE_CLASS_SURFACE",
     "SCHEMA_VERSION",
     "aggregate_pred_type_rule",
     "aggregate_sample_class",
+    "resolve_exit_status",
     "run_aq4_classification_baseline",
     "score_multiclass",
 ]

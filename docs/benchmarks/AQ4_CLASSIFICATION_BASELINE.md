@@ -1,6 +1,6 @@
 # AQ4 Sample Classification Baseline (synthetic corpus)
 
-**Status:** ACTIVE_SUPPORTING — measured current sample_class / pred_type baseline for [#1032](https://github.com/jannekbuengener/sample-brain/issues/1032)  
+**Status:** ACTIVE_SUPPORTING — measured current sample_class / pred_type baseline for [#1032](https://github.com/jannekbuengener/sample-brain/issues/1032); residual acceptance alignment for [#1003](https://github.com/jannekbuengener/sample-brain/issues/1003)
 **Class:** ACTIVE_SUPPORTING  
 **Parents:** [#946](https://github.com/jannekbuengener/sample-brain/issues/946) (AQ4), [#942](https://github.com/jannekbuengener/sample-brain/issues/942) (program)  
 **Depends on:** [#1001](https://github.com/jannekbuengener/sample-brain/issues/1001) KPI contract, [#1021](https://github.com/jannekbuengener/sample-brain/issues/1021) corpus  
@@ -15,6 +15,54 @@ AQ4_CLASSIFICATION_BASELINE_MEASURED
 ```
 
 This document records the **current** duration-derived `sample_class` and rule `pred_type` paths against the frozen AQ4 KPI contract on the synthetic classification corpus. Taxonomies stay separate. It does **not** change classify/analyze algorithms, set promotion thresholds, or switch production behavior. Optional kNN override remains HOLD without seed embeddings / private paths.
+
+## #1003 residual contract (DOCS_GATE)
+
+[#1003](https://github.com/jannekbuengener/sample-brain/issues/1003) reuses the merged [#1032](https://github.com/jannekbuengener/sample-brain/issues/1032) / PR [#1033](https://github.com/jannekbuengener/sample-brain/pull/1033) harness. This slice does **not** rebuild a second evaluation framework, ARVP clone, or generic AQ platform. Greenfield corpus/metric runners are rejected.
+
+### Candidate identities
+
+| Path | Identity | Notes |
+|---|---|---|
+| Active baseline (`sample_class` + rule `pred_type`) | `classification.baseline.v1` | Production mirrors: `oneshot_max=1.2` + default `rule_type` thresholds; same id as the compare baseline candidate |
+| `aq4.sample_class` | `classification.baseline.v1` | Duration-only plane under the joint baseline id |
+| `aq4.pred_type_rule` | `classification.baseline.v1` | Rule-only plane under the joint baseline id |
+| `aq4.pred_type_knn` | HOLD — no measured candidate_id | Optional product path not reproducible on the frozen synthetic corpus |
+
+Do not invent bake-off candidates in #1003. Do not assign a measured candidate_id to a HOLD kNN stub.
+
+### Exit mapping
+
+Exactly one exit token:
+
+| Exit | When |
+|---|---|
+| `AQ4_CLASSIFICATION_BASELINE_MEASURED` | Both mandatory planes (`aq4.sample_class`, `aq4.pred_type_rule`) score on CALIBRATION and TEST; optional kNN may be HOLD |
+| `AQ4_CLASSIFICATION_BASELINE_PARTIAL_HOLD` | Exactly one mandatory plane can be scored and the other cannot (reserved; unused on current production surfaces) |
+| `AQ4_CLASSIFICATION_BASELINE_INCOMPLETE` | Otherwise |
+
+Optional kNN HOLD alone does **not** force `PARTIAL_HOLD`. That preserves the #1032 freeze while satisfying #1003’s third exit token.
+
+### kNN HOLD rationale (live)
+
+The product optional kNN path (`write_autotype_to_db(use_knn=True)`) is **not** repo-safe / not reproducible on `sample-brain.aq4.classification.synthetic.v1` today:
+
+- `src.index.load_embeddings` is missing (only `load_embeddings_for_model` exists); import soft-disables kNN.
+- Tracked `data/label_seeds.csv` points at private absolute host paths, not the synthetic corpus.
+
+Evidence must remain a truthful HOLD stub (status + reason + surface). No fabricated metrics, mocks, or null scores that look measured. No kNN reimplementation in #1003.
+
+### Provenance (#958 / #959 by reference)
+
+Runtime median/p95 and semantic determinism are consumed **by reference** per the KPI contract — cite [#958](https://github.com/jannekbuengener/sample-brain/issues/958) / [`ANALYZER_RUNTIME_METHODOLOGY_V1.md`](ANALYZER_RUNTIME_METHODOLOGY_V1.md) and [#959](https://github.com/jannekbuengener/sample-brain/issues/959) / [`../ANALYZER_SEMANTIC_DETERMINISM_V1.md`](../ANALYZER_SEMANTIC_DETERMINISM_V1.md) in portable JSON `provenance`. Do not re-run a full AQ5-style measurement loop inside this slice. Reproducibility proof for #1003 is identical corpus seed + frozen surfaces + matching aggregates on rerun.
+
+### Production behavior
+
+Settings toggle: `N/A` — evaluation harness only. No changes to `src/analyze.py` / `src/classify.py` thresholds, rules, or defaults. No production switch.
+
+### Conflict avoidance
+
+Do not edit `docs/CANON_INDEX.md` for this residual (open PR [#1101](https://github.com/jannekbuengener/sample-brain/pull/1101) owns that surface for AQ7). Downstream #1005 / #1006 / #1007 remain out of scope.
 
 ## Surfaces measured
 
@@ -103,13 +151,13 @@ Ambiguous boundary clip (`duration_ms=1200`) predicts `oneshot` via current ≤1
 | Metric | Value |
 |---|---:|
 | clear eligible / uncertain | 4 / 1 |
-| macro-F1 | 0.500 |
-| Kick P/R/F1 (support 1) | 1.000 / 1.000 / 1.000 |
+| macro-F1 | 0.250 |
+| Kick P/R/F1 (support 1) | 0.000 / 0.000 / 0.000 → predicted `OneShot` |
 | Snare P/R/F1 (support 1) | 1.000 / 1.000 / 1.000 |
 | Drum Loop P/R/F1 (support 1) | 0.000 / 0.000 / 0.000 → predicted `Loop` |
-| Pad P/R/F1 (support 1) | 0.000 / 0.000 / 0.000 → predicted `Drone` |
+| Pad P/R/F1 (support 1) | 0.000 / 0.000 / 0.000 → predicted `Loop` |
 
-High-impact note: synthetic Drum Loop / Pad material is not recovered by current rule features on this thin corpus (rule falls back to `Loop` / dark-long `Drone`).
+High-impact note: on this thin synthetic corpus, rule features recover Snare only among clear CALIBRATION labels; Kick falls back to `OneShot`, and Drum Loop / Pad fall back to `Loop`.
 
 ### TEST → TEST/HOLDOUT
 
@@ -130,13 +178,13 @@ High-impact note: synthetic Drum Loop / Pad material is not recovered by current
 | Metric | Value |
 |---|---:|
 | clear eligible / uncertain | 4 / 1 |
-| macro-F1 | 0.750 |
-| HiHat-Closed P/R/F1 (support 1) | 1.000 / 1.000 / 1.000 |
-| Drone P/R/F1 (support 1) | 1.000 / 1.000 / 1.000 |
-| Loop P/R/F1 (support 1) | 1.000 / 1.000 / 1.000 |
+| macro-F1 | 0.167 |
+| HiHat-Closed P/R/F1 (support 1) | 0.000 / 0.000 / 0.000 → predicted `OneShot` |
+| Drone P/R/F1 (support 1) | 0.000 / 0.000 / 0.000 → predicted `Loop` |
+| Loop P/R/F1 (support 1) | 0.500 / 1.000 / 0.667 |
 | Impact P/R/F1 (support 1) | 0.000 / 0.000 / 0.000 → predicted `Snare` |
 
-Unknown clip predicts `oneshot` / `Snare`; retained as uncertain, not scored as clear-label success or failure.
+Unknown clip predicts `oneshot` / `Snare`; retained as uncertain, not scored as clear-label success or failure. Re-measured under #1003 residual acceptance with `candidate_id=classification.baseline.v1` and identical aggregates on rerun (`generator_seed=1021001`).
 
 ### HOLD stubs
 
@@ -161,6 +209,7 @@ Unknown clip predicts `oneshot` / `Snare`; retained as uncertain, not scored as 
 Exactly one:
 
 - `AQ4_CLASSIFICATION_BASELINE_MEASURED`
+- `AQ4_CLASSIFICATION_BASELINE_PARTIAL_HOLD`
 - `AQ4_CLASSIFICATION_BASELINE_INCOMPLETE`
 
-This slice exits `AQ4_CLASSIFICATION_BASELINE_MEASURED` for CALIBRATION and TEST on `sample-brain.aq4.classification.synthetic.v1`, with separate taxonomy planes, uncertain labels excluded from clear denominators, and kNN HOLD unchanged.
+This slice exits `AQ4_CLASSIFICATION_BASELINE_MEASURED` for CALIBRATION and TEST on `sample-brain.aq4.classification.synthetic.v1`, with separate taxonomy planes, uncertain labels excluded from clear denominators, candidate identity `classification.baseline.v1`, and kNN HOLD unchanged. See [#1003 residual contract](#1003-residual-contract-docs_gate) for the PARTIAL_HOLD mapping.
