@@ -1,12 +1,12 @@
 # AQ7 Arrangement Role + Drop Event Baseline (synthetic corpus)
 
 **Status:** ACTIVE_SUPPORTING - measured current ArrangementClassifier role/drop baseline for [#1026](https://github.com/jannekbuengener/sample-brain/issues/1026)
-**Class:** ACTIVE_SUPPORTING  
-**Parents:** [#949](https://github.com/jannekbuengener/sample-brain/issues/949) (AQ7), [#942](https://github.com/jannekbuengener/sample-brain/issues/942) (program)  
-**Depends on:** [#1023](https://github.com/jannekbuengener/sample-brain/issues/1023) KPI contract, [#1024](https://github.com/jannekbuengener/sample-brain/issues/1024) frozen corpus, [#1025](https://github.com/jannekbuengener/sample-brain/issues/1025) frozen boundary context  
-**Normative KPI:** [`AQ7_STRUCTURE_ROLE_DROP_KPI_CONTRACT.md`](AQ7_STRUCTURE_ROLE_DROP_KPI_CONTRACT.md)  
-**Corpus:** [`AQ7_STRUCTURE_ROLE_DROP_CORPUS.md`](AQ7_STRUCTURE_ROLE_DROP_CORPUS.md) / `sample-brain.aq7.structure-role-drop.synthetic.v1`  
-**Boundary context:** [`AQ7_STRUCTURE_BOUNDARY_BASELINE.md`](AQ7_STRUCTURE_BOUNDARY_BASELINE.md) / `structure_v1.baseline.v1`  
+**Class:** ACTIVE_SUPPORTING
+**Parents:** [#949](https://github.com/jannekbuengener/sample-brain/issues/949) (AQ7), [#942](https://github.com/jannekbuengener/sample-brain/issues/942) (program)
+**Depends on:** [#1023](https://github.com/jannekbuengener/sample-brain/issues/1023) KPI contract, [#1024](https://github.com/jannekbuengener/sample-brain/issues/1024) frozen corpus, [#1025](https://github.com/jannekbuengener/sample-brain/issues/1025) frozen boundary context
+**Normative KPI:** [`AQ7_STRUCTURE_ROLE_DROP_KPI_CONTRACT.md`](AQ7_STRUCTURE_ROLE_DROP_KPI_CONTRACT.md)
+**Corpus:** [`AQ7_STRUCTURE_ROLE_DROP_CORPUS.md`](AQ7_STRUCTURE_ROLE_DROP_CORPUS.md) / `sample-brain.aq7.structure-role-drop.synthetic.v1`
+**Boundary context:** [`AQ7_STRUCTURE_BOUNDARY_BASELINE.md`](AQ7_STRUCTURE_BOUNDARY_BASELINE.md) / `structure_v1.baseline.v1`
 **Runner:** `python -m src.aq7_structure_role_drop_baseline`
 
 ## Architecture outcome
