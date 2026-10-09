@@ -77,7 +77,7 @@ This bake-off selects **baseline + 3 adapters** (4 total). `H-AQ7-1027-03` / `H-
 | `aq7.role` | macro-F1 or intro recall/F1 improves **and** unknown-reference honesty does not collapse | Unknown honesty collapse |
 | `aq7.drop_event` | F1 improves **or** TP (`matched_count`) increases | FP-only reduction while F1 stays 0.0 (#1027 falsifier) |
 
-**Completeness gate (fail-closed):** before any freeze, every candidate's CALIBRATION block must have all six corpus fixtures, boundary `n_usable=6`, measured role `macro_f1` with `support≥1` (not fully held), and drop `coverage>0`. Otherwise → `AQ7_CANDIDATE_COMPARE_INCOMPLETE` (do not emit KEEP_BASELINE from missing role/drop measurements).
+**Completeness gate (fail-closed):** before any freeze, every candidate's CALIBRATION block must have all six corpus fixtures, boundary `n_usable=6`, measured role `macro_f1` with `support≥1` and `abstention_count=0`, and drop `coverage=1.0`. Otherwise → `AQ7_CANDIDATE_COMPARE_INCOMPLETE` (do not emit KEEP_BASELINE from partial/missing role/drop measurements).
 
 If complete and no non-baseline candidate is justified → `AQ7_NO_JUSTIFIED_CANDIDATE_KEEP_BASELINE` with frozen `aq7.baseline.v1`.
 If complete and one or more are justified → pick best by primary-plane score then lexicographic id → `AQ7_CANDIDATE_COMPARE_CALIBRATION_FROZEN`.

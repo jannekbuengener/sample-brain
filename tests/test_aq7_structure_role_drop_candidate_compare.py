@@ -215,6 +215,27 @@ def test_incomplete_role_drop_measurements_refuse_freeze() -> None:
     assert decision["frozen_candidate_id"] is None
 
 
+def test_partial_role_hold_or_drop_coverage_is_incomplete() -> None:
+    """Codex follow-up: one successful fixture must not authorize freeze."""
+    partial_role = _complete_cal()
+    partial_role["aq7.role"] = {
+        "macro_f1": 0.2,
+        "support": 3,
+        "abstention_count": 1,
+        "per_role": {},
+    }
+    assert compare.calibration_measurement_complete(partial_role)["complete"] is False
+
+    partial_drop = _complete_cal()
+    partial_drop["aq7.drop_event"] = {
+        "f1_1bar": 0.0,
+        "matched_count": 0,
+        "false_positive_count": 1,
+        "coverage": 1.0 / compare.CALIBRATION_FIXTURE_COUNT,
+    }
+    assert compare.calibration_measurement_complete(partial_drop)["complete"] is False
+
+
 def test_single_usable_boundary_fixture_is_incomplete() -> None:
     thin = _complete_cal()
     thin["aq7.boundary"] = {

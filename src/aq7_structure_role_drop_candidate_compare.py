@@ -465,10 +465,15 @@ def calibration_measurement_complete(cal: Mapping[str, Any]) -> dict[str, Any]:
         )
     if role_support < 1 or role_macro is None:
         reasons.append("role plane missing measured macro_f1/support")
-    if role_held >= max(n_fixtures, 1):
-        reasons.append("role plane fully held/unusable on CALIBRATION")
-    if drop_coverage is None or float(drop_coverage) <= 0:
-        reasons.append("drop plane coverage missing or zero on CALIBRATION")
+    if role_held > 0:
+        reasons.append(
+            f"role plane has held fixtures on CALIBRATION (abstention_count={role_held})"
+        )
+    if drop_coverage is None or float(drop_coverage) < 1.0 - 1e-12:
+        reasons.append(
+            "drop plane coverage incomplete on CALIBRATION "
+            f"(coverage={drop_coverage}; require 1.0)"
+        )
     return {
         "complete": not reasons,
         "reasons": reasons,
