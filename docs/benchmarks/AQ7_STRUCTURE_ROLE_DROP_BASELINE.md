@@ -171,7 +171,7 @@ Runtime methodology is consumed by reference from [#958](https://github.com/jann
 - Track-length buckets are HOLD for this tiny synthetic pack unless a later methodology-compliant run proves otherwise.
 - A single harness run may record diagnostic single-pass wall time only.
 - Diagnostic single-pass runtime is not #958 cold/steady median/p95 evidence.
-- Task 4 diagnostic-only Run B single-pass median was 5.153s and p95 was 19.831s over timed fixtures; this remains non-#958 diagnostic evidence.
+- Task 4 diagnostic-only Run B single-pass median was 2.523s and p95 was 3.119s over timed fixtures; this remains non-#958 diagnostic evidence.
 
 Semantic determinism is consumed by reference from [#959](https://github.com/jannekbuengener/sample-brain/issues/959) / [`../ANALYZER_SEMANTIC_DETERMINISM_V1.md`](../ANALYZER_SEMANTIC_DETERMINISM_V1.md).
 

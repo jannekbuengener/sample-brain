@@ -890,6 +890,9 @@ def _aggregate_role(rows: list[dict[str, Any]]) -> dict[str, Any]:
         role = row.get("role") or {}
         if not role.get("prediction_usable"):
             held += 1
+            # Held rows keep concrete support in the coverage denominator only.
+            eligible_concrete += int(role.get("support") or 0)
+            continue
         for item in role.get("role_items") or []:
             role_items.append(dict(item))
             ref = item.get("ref_role")
@@ -961,8 +964,9 @@ def _aggregate_drop(rows: list[dict[str, Any]]) -> dict[str, Any]:
         drop = row.get("drop_event") or {}
         if drop.get("event_eligible", True):
             eligible_records += 1
-        if drop.get("prediction_usable"):
-            usable += 1
+        if not drop.get("prediction_usable"):
+            continue
+        usable += 1
         support += int(drop.get("support") or 0)
         matched += int(drop.get("matched_count") or 0)
         false_positive += int(drop.get("false_positive_count") or 0)
