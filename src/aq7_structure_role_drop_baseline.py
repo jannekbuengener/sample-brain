@@ -568,16 +568,16 @@ def _authored_eval_beatgrid(
     track_end_bar: int,
     bpm: float,
 ) -> BeatGridResult:
-    bar_samples = max(1, int(round(n_samples / max(1, track_end_bar))))
-    beat_samples = max(1, bar_samples // 4)
-    downbeats = tuple(range(0, n_samples, bar_samples))
-    if downbeats and downbeats[-1] >= n_samples:
-        downbeats = downbeats[:-1]
-    if not downbeats or downbeats[0] != 0:
-        downbeats = (0, *downbeats)
-    beats = tuple(range(0, n_samples, beat_samples))
-    if not beats or beats[0] != 0:
-        beats = (0, *beats)
+    bars = max(1, int(track_end_bar))
+    beat_count = bars * 4
+    downbeats = tuple(
+        min(n_samples - 1, int(round((index / bars) * n_samples)))
+        for index in range(bars)
+    )
+    beats = tuple(
+        min(n_samples - 1, int(round((index / beat_count) * n_samples)))
+        for index in range(beat_count)
+    )
     source = BeatGridSource(
         component="beat_grid",
         backend="aq7_authored_synthetic_eval",
