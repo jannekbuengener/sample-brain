@@ -51,6 +51,35 @@ _DROP_ONSET_SIGNALS = (
 
 
 @dataclass(frozen=True)
+class ArrangementClassifierConfig:
+    """Optional eval/adapter knobs for ArrangementClassifier.
+
+    Defaults match the historical hardcoded v1 heuristic. Production call sites
+    that construct ``ArrangementClassifier()`` without an explicit config keep
+    identical behavior; alternate values are for evaluation-only adapters.
+    """
+
+    unknown_min_best_score: float = 0.45
+    unknown_min_margin: float = 0.05
+    unknown_min_completeness: float = 0.5
+    available_min_completeness: float = 0.75
+    drop_onset_threshold: float = 0.65
+
+    def __post_init__(self) -> None:
+        if self.unknown_min_best_score < 0 or self.unknown_min_margin < 0:
+            raise ValueError("unknown score-separation knobs must be non-negative")
+        if not 0 <= self.unknown_min_completeness <= 1:
+            raise ValueError("unknown_min_completeness must be in [0, 1]")
+        if not 0 <= self.available_min_completeness <= 1:
+            raise ValueError("available_min_completeness must be in [0, 1]")
+        if not 0 <= self.drop_onset_threshold <= 1:
+            raise ValueError("drop_onset_threshold must be in [0, 1]")
+
+
+DEFAULT_ARRANGEMENT_CLASSIFIER_CONFIG = ArrangementClassifierConfig()
+
+
+@dataclass(frozen=True)
 class SectionSignals:
     """Track-relative section signals from StructureV1/#239 (values normally 0..1).
 
@@ -251,7 +280,9 @@ def _score_roles(signals: SectionSignals) -> dict[SectionRole, float]:
 
 def _classify(
     signals: SectionSignals,
+    config: ArrangementClassifierConfig | None = None,
 ) -> tuple[SectionRole, ArrangementStatus, dict[SectionRole, float]]:
+    cfg = config or DEFAULT_ARRANGEMENT_CLASSIFIER_CONFIG
     available = set(signals.available_signals)
     completeness = signals.evidence_completeness
     if (
@@ -268,13 +299,18 @@ def _classify(
     # These are score-separation rules, not audio/genre thresholds.  They avoid
     # turning near-ties into an asserted arrangement role.
     if (
-        best < 0.45
-        or best - runner_up < 0.05
-        or (completeness is not None and completeness < 0.5)
+        best < cfg.unknown_min_best_score
+        or best - runner_up < cfg.unknown_min_margin
+        or (
+            completeness is not None
+            and completeness < cfg.unknown_min_completeness
+        )
     ):
         return "unknown", "unknown", {}
     status: ArrangementStatus = (
-        "available" if completeness is None or completeness >= 0.75 else "uncertain"
+        "available"
+        if completeness is None or completeness >= cfg.available_min_completeness
+        else "uncertain"
     )
     return role, status, {name: round(value, 6) for name, value in scores.items()}
 
@@ -348,6 +384,11 @@ def _evidence(signals: SectionSignals, role: SectionRole) -> ArrangementEvidence
 class ArrangementClassifier:
     """Rule-based v1 classifier with a StructureV1 -> Arrangement Map adapter."""
 
+    def __init__(
+        self, config: ArrangementClassifierConfig | None = None
+    ) -> None:
+        self.config = config or DEFAULT_ARRANGEMENT_CLASSIFIER_CONFIG
+
     def classify_sections(
         self,
         sections: list[StructureSection] | tuple[StructureSection, ...],
@@ -359,8 +400,8 @@ class ArrangementClassifier:
         overrides = manual_overrides or {}
         result: list[SectionClassification] = []
         for section, signals in zip(sections, section_signals):
-            role, status, scores = _classify(signals)
-            event = self._drop_onset_candidate(role, signals)
+            role, status, scores = _classify(signals, self.config)
+            event = self._drop_onset_candidate(role, signals, self.config)
             automatic = AutomaticResult(
                 role=role,
                 event=event,
@@ -404,8 +445,11 @@ class ArrangementClassifier:
 
     @staticmethod
     def _drop_onset_candidate(
-        role: SectionRole, signals: SectionSignals
+        role: SectionRole,
+        signals: SectionSignals,
+        config: ArrangementClassifierConfig | None = None,
     ) -> BoundaryEvent | None:
+        cfg = config or DEFAULT_ARRANGEMENT_CLASSIFIER_CONFIG
         required = {
             "bar_loudness_delta",
             "novelty",
@@ -422,7 +466,7 @@ class ArrangementClassifier:
             + signals.spectral_delta
             + signals.neighbor_delta
         ) / 5
-        return "drop_onset" if onset_evidence >= 0.65 else None
+        return "drop_onset" if onset_evidence >= cfg.drop_onset_threshold else None
 
     def classify_events(
         self,
@@ -438,7 +482,7 @@ class ArrangementClassifier:
                 event = after.automatic_result.event if after else None
             else:
                 event = self._boundary_drop_onset_candidate(
-                    after, structure_result, boundary
+                    after, structure_result, boundary, self.config
                 )
             if after and event == "drop_onset":
                 inferred = structure_result and structure_result.source.config.get(
@@ -470,7 +514,9 @@ class ArrangementClassifier:
         after: SectionClassification | None,
         structure_result: StructureV1Result,
         boundary: StructureBoundary,
+        config: ArrangementClassifierConfig | None = None,
     ) -> BoundaryEvent | None:
+        cfg = config or DEFAULT_ARRANGEMENT_CLASSIFIER_CONFIG
         if after is None or after.automatic_result.role == "unknown":
             return None
         features = structure_result.bar_features
@@ -482,7 +528,7 @@ class ArrangementClassifier:
         onset_evidence = sum(
             float(features[name][boundary.bar_index]) for name in _DROP_ONSET_SIGNALS
         ) / len(_DROP_ONSET_SIGNALS)
-        return "drop_onset" if onset_evidence >= 0.65 else None
+        return "drop_onset" if onset_evidence >= cfg.drop_onset_threshold else None
 
     def classify_track(
         self,

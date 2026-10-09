@@ -793,6 +793,7 @@ def _predict_fixture(
     audio_path: Path,
     gt: Mapping[str, Any],
     analyzer: StructureV1Analyzer,
+    classifier: ArrangementClassifier | None = None,
 ) -> dict[str, Any]:
     beatgrid_status = str((gt.get("beatgrid_provenance") or {}).get("status") or "missing")
     if beatgrid_status in {"missing", "insufficient"}:
@@ -825,7 +826,7 @@ def _predict_fixture(
             n_samples=n_samples,
         )
         signals = SectionSignalsAssembler().assemble(patched)
-        arrangement = ArrangementClassifier().classify_track(
+        arrangement = (classifier or ArrangementClassifier()).classify_track(
             patched, signals, manual_overrides=None
         )
         role_preds = _predicted_role_rows(arrangement)
