@@ -13,21 +13,17 @@
 **Downstream (not started here):** [#1028](https://github.com/jannekbuengener/sample-brain/issues/1028) candidate compare
 **Style reference:** [`AQ4_CLASSIFICATION_DIAGNOSTICS.md`](AQ4_CLASSIFICATION_DIAGNOSTICS.md) (taxonomy separation; not a plane merge)
 
-## Architecture outcome (Task 1)
+## Architecture outcome
 
 ```text
-AQ7_1027_BUCKET_ANALYSIS_READY
+AQ7_DIAGNOSTICS_PARTIAL_HOLD
 ```
 
-This document turns the measured #1025 / #1026 baselines into **explainable failure buckets** with plane firewalls, HOLD honesty, and dominant ranking. Task 1 does **not** change StructureV1 / ArrangementClassifier / SectionSignals, retune thresholds, or switch production defaults.
+This document turns the measured [#1025](https://github.com/jannekbuengener/sample-brain/issues/1025) / [#1026](https://github.com/jannekbuengener/sample-brain/issues/1026) baselines into **explainable failure buckets**, **signal attribution**, and **bounded CALIBRATION hypotheses**. Planes stay separate. It does **not** change StructureV1, ArrangementClassifier, SectionSignals, BeatGrid, thresholds/defaults, set promotion gates, or start [#1028](https://github.com/jannekbuengener/sample-brain/issues/1028).
 
-## Architecture outcome (Task 2)
+`PARTIAL_HOLD` is intentional: dominant buckets are quantified with support, but the frozen synthetic pack is thin (many pairs `n=1`) and BeatGrid provenance HOLD remains material on TEST. No durable global AQ7 quality score or promotion threshold is inventable here.
 
-```text
-AQ7_1027_ATTRIBUTION_READY
-```
-
-Task 2 adds **signal availability / correlation**, **bounded CALIBRATION hypotheses**, **explicit non-conclusions**, and a **machine-facing bucket/hypothesis appendix**. It does **not** implement candidates (#1028), invent thresholds, mutate analyzer/harness code, or treat TEST as a tuning set.
+Task-1 evidence token: `AQ7_1027_BUCKET_ANALYSIS_READY`. Task-2 attribution token: `AQ7_1027_ATTRIBUTION_READY`. Issue exit is exactly one of the tokens in section 11.
 
 ---
 
@@ -233,13 +229,15 @@ Source: #1026 only. Matching uses ±1-bar policy on reference drop events. **No 
 
 | bucket_id | support | share | affected `fixture_id`s |
 |---|---:|---|---|
-| `drop.false` | 6 | 6/6 predicted positives = 1.000 | `aq7-synth-simple-clean-cal-001`, `aq7-synth-repeated-structure-cal-001`, `aq7-synth-near-boundary-tolerance-cal-001`, `aq7-synth-role-ambiguity-unknown-cal-001`, `aq7-synth-over-segmentation-challenge-cal-001` |
+| `drop.false` | 6 | 6/6 predicted positives = 1.000 | **empty-ref false preds (5):** `aq7-synth-simple-clean-cal-001` (1), `aq7-synth-repeated-structure-cal-001` (2), `aq7-synth-near-boundary-tolerance-cal-001` (1), `aq7-synth-role-ambiguity-unknown-cal-001` (1); **nonempty-ref unmatched false (1):** `aq7-synth-over-segmentation-challenge-cal-001` (pred bar 36 vs ref bar 28) |
 | `drop.missed` | 1 | 1/1 ref support = 1.000 | `aq7-synth-over-segmentation-challenge-cal-001` (ref bar 28; pred bar 36 unmatched) |
 | `drop.timing_offset` | n/a | **not_applicable** | no matched pairs |
 | `drop.correct_event` | 0 | 0/1 | — |
 | `drop.correct_negative` | 1 | n/a (empty expected set, no false preds) | `aq7-synth-annotation-disagreement-cal-001` |
 | `drop.unavailable_hold` | 0 | n/a | — |
 | `drop.beatgrid_hold` | 0 | n/a | — |
+
+Note: `drop.false` support 6 is not "all empty-reference tracks." Five false predictions sit on empty expected sets; one is an unmatched prediction on a positive-reference fixture (same fixture as `drop.missed`). Correlation/hypothesis text must keep that split visible.
 
 ### TEST (`aq7.drop_event`)
 
@@ -255,7 +253,65 @@ Source: #1026 only. Matching uses ±1-bar policy on reference drop events. **No 
 
 ---
 
-## 5. BeatGrid / Provenance Attribution
+## 5. Signal Availability / Correlation
+
+Signal families are **explanatory only** — not ground truth, not promotion evidence, not pseudo-labels.
+Evidence states: `measured` | `missing` | `unknown` | `unavailable` | `held` | `not_applicable`.
+Missing is never numeric `0`. Optional unused CLAP/stems stay `not_applicable` (not measured).
+
+Live path only: `StructureV1.bar_features` → `SectionSignalsAssembler` (`src/section_signals.py`) → `ArrangementClassifier`. Provenance joined from Task-1 regenerated #1026 external JSON (uncommitted; workdir outside checkout).
+
+### 5.1 Availability matrix (live SectionSignals path)
+
+| Signal family | Live field(s) | Usable CAL | Usable TEST (non-HOLD) | BeatGrid HOLD fixture | Evidence state |
+|---|---|---|---|---|---|
+| energy / loudness | `bar_energy_rms`, `bar_loudness_delta` | present | present | not claimed measured | `measured` on usable; `held` under BeatGrid HOLD |
+| low-end share | `low_end_share` | present | present | not claimed measured | `measured` / `held` |
+| onset density | `onset_density` | present | present | not claimed measured | `measured` / `held` |
+| rhythm stability | `rhythm_stability` | present | present | not claimed measured | `measured` / `held` |
+| timbre change | `timbre_delta` | present | present | not claimed measured | `measured` / `held` |
+| spectral change | `spectral_delta` | present | present | not claimed measured | `measured` / `held` |
+| recurrence | `recurrence` | present | present | not claimed measured | `measured` / `held` |
+| novelty / self-similarity | `novelty`, `self_similarity` | present | present | not claimed measured | `measured` / `held` |
+| neighbor delta | `neighbor_delta` | present | present | not claimed measured | `measured` / `held` |
+| multi-bar trend | `multi_bar_trend` | present | present | not claimed measured | `measured` / `held` |
+| relative track position | `relative_track_position` | present | present | not claimed measured | `measured` / `held` |
+| CLAP | (optional) | unused | unused | unused | `not_applicable` |
+| stems | (optional) | unused | unused | unused | `not_applicable` |
+
+`aq7-synth-beatgrid-hold-test-001` (TEST): external `signal_provenance` records only `clap`/`stems` = `not_applicable`. Core families are **not** asserted `measured` under provenance HOLD (attribution stops at layer 2 → evidence state `held`).
+
+No core MVP family is `missing` or `unavailable` on usable `authored_synthetic` fixtures in this regeneration.
+
+### 5.2 Correlation join (failure bucket → fixture/section → signal provenance)
+
+Descriptive co-occurrence only. Allowed language: co-occurs, consistent with, present when, absent when. Forbidden: causes, proves, fixes.
+
+Association claims require support ≥ 2 within the same split. Support 1 → `MEASURED_SINGLETON` (no generalization).
+
+| Failure bucket | Split | Support | Fixture / section loci | Signal provenance co-occurrence | Association class |
+|---|---|---:|---|---|---|
+| `boundary.over_segmentation` + `boundary.extra_or_duplicate` | CAL | 6 fixtures / FP=23 | all CAL usable | novelty / onset / neighbor / multi-bar families `measured` present when extras present | association (support≥2) |
+| `boundary.over_segmentation` + `boundary.extra_or_duplicate` | TEST | 3 fixtures / FP=16 | all TEST usable non-HOLD | same core families `measured` present when extras present | association (support≥2); evidence only |
+| `role.confusion:intro->unknown` | CAL | 4 | early sections: simple-clean, repeated, near-boundary, role-ambiguity | `relative_track_position` `measured` present when intro→unknown; energy/onset/low-end also `measured` | association (support≥2) |
+| `role.confusion:intro->unknown` | TEST | 1 | under-seg early section | same families `measured` | `MEASURED_SINGLETON` |
+| `role.concrete_confusion:build->groove` | CAL | 2 | near-boundary; over-seg challenge | loudness/onset/timbre/spectral deltas `measured` present when build→groove | association (support≥2) |
+| `role.concrete_confusion:build->groove` | TEST | 1 | under-seg | same | `MEASURED_SINGLETON` |
+| `role.confusion:groove->unknown` | CAL | 2 | simple-clean; repeated | energy/onset/rhythm/recurrence `measured` present when groove→unknown | association (support≥2) |
+| `role.confusion:groove->unknown` | TEST | 1 | under-seg | same | `MEASURED_SINGLETON` |
+| `role.concrete_confusion:drop->groove` | TEST | 2 | drop-at-boundary; under-seg | energy/low-end/onset `measured` present when drop→groove | association on TEST only — **not** CAL hypothesis fuel |
+| `drop.false` (empty-ref subset) | CAL | 5 | simple-clean; repeated; near-boundary; role-ambiguity | loudness/timbre/novelty/neighbor families `measured` present when false `drop_onset` emitted on empty expected sets | association (support>=2) |
+| `drop.false` (nonempty-ref unmatched) | CAL | 1 | over-seg challenge (ref bar 28; pred bar 36) | same families `measured`; co-located with `drop.missed` | `MEASURED_SINGLETON` — do not fold into empty-ref support |
+| `drop.false` | TEST | 3 | drop-at-boundary; drop-not-boundary-owner; under-seg | same families `measured` | association (support≥2); evidence only |
+| `drop.missed` | CAL | 1 | over-seg challenge (ref bar 28) | core families `measured`; `drop.timing_offset` = `not_applicable` | `MEASURED_SINGLETON` |
+| `drop.missed` | TEST | 2 | drop-at-boundary; drop-not-boundary-owner | core families `measured`; timing_offset `not_applicable` | TEST may confirm/refute later — **not** new CAL hypothesis |
+| `boundary.missed` / `boundary.early` | CAL | 1 each | over-seg miss; repeated early −1 bar | core boundary-input families `measured` | `MEASURED_SINGLETON` each |
+
+CLAP/stems remain `not_applicable` in every fixture row — never treated as correctness or as numeric absence.
+
+---
+
+## 6. BeatGrid / Provenance Attribution
 
 | Fixture | Split | Provenance | Attribution layer | Effect |
 |---|---|---|---|---|
@@ -270,7 +326,7 @@ Fail-closed: the BeatGrid HOLD fixture is **not** counted as role confusion, dro
 
 ---
 
-## 6. CALIBRATION vs TEST comparison
+## 7. CALIBRATION vs TEST comparison
 
 | Plane | CALIBRATION headline | TEST headline | Firewall note |
 |---|---|---|---|
@@ -282,7 +338,7 @@ Do **not** tune on TEST. Thin per-bucket support (often 1) blocks durable rate c
 
 ---
 
-## 7. Dominant Failure Summary
+## 8. Dominant Failure Summary
 
 Ranking rule: support ↓, eligible share ↓, `bucket_id` ↑. Tag `dominant` iff support ≥ 2; else `DOMINANT_ON_THIN_CORPUS`. Success-only buckets (`boundary.exact`, correct role pairs, `drop.correct_*`) are measured context, not failure winners.
 
@@ -352,63 +408,6 @@ Ranking rule: support ↓, eligible share ↓, `bucket_id` ↑. Tag `dominant` i
 | 3 | `drop.beatgrid_hold` | 1 | n/a | DOMINANT_ON_THIN_CORPUS |
 
 `drop.timing_offset`: **not_applicable**.
-
----
-
-## 8. Signal Availability / Correlation
-
-Signal families are **explanatory only** — not ground truth, not promotion evidence, not pseudo-labels.
-Evidence states: `measured` | `missing` | `unknown` | `unavailable` | `held` | `not_applicable`.
-Missing is never numeric `0`. Optional unused CLAP/stems stay `not_applicable` (not measured).
-
-Live path only: `StructureV1.bar_features` → `SectionSignalsAssembler` (`src/section_signals.py`) → `ArrangementClassifier`. Provenance joined from Task-1 regenerated #1026 external JSON (uncommitted; workdir outside checkout).
-
-### 8.1 Availability matrix (live SectionSignals path)
-
-| Signal family | Live field(s) | Usable CAL | Usable TEST (non-HOLD) | BeatGrid HOLD fixture | Evidence state |
-|---|---|---|---|---|---|
-| energy / loudness | `bar_energy_rms`, `bar_loudness_delta` | present | present | not claimed measured | `measured` on usable; `held` under BeatGrid HOLD |
-| low-end share | `low_end_share` | present | present | not claimed measured | `measured` / `held` |
-| onset density | `onset_density` | present | present | not claimed measured | `measured` / `held` |
-| rhythm stability | `rhythm_stability` | present | present | not claimed measured | `measured` / `held` |
-| timbre change | `timbre_delta` | present | present | not claimed measured | `measured` / `held` |
-| spectral change | `spectral_delta` | present | present | not claimed measured | `measured` / `held` |
-| recurrence | `recurrence` | present | present | not claimed measured | `measured` / `held` |
-| novelty / self-similarity | `novelty`, `self_similarity` | present | present | not claimed measured | `measured` / `held` |
-| neighbor delta | `neighbor_delta` | present | present | not claimed measured | `measured` / `held` |
-| multi-bar trend | `multi_bar_trend` | present | present | not claimed measured | `measured` / `held` |
-| relative track position | `relative_track_position` | present | present | not claimed measured | `measured` / `held` |
-| CLAP | (optional) | unused | unused | unused | `not_applicable` |
-| stems | (optional) | unused | unused | unused | `not_applicable` |
-
-`aq7-synth-beatgrid-hold-test-001` (TEST): external `signal_provenance` records only `clap`/`stems` = `not_applicable`. Core families are **not** asserted `measured` under provenance HOLD (attribution stops at layer 2 → evidence state `held`).
-
-No core MVP family is `missing` or `unavailable` on usable `authored_synthetic` fixtures in this regeneration.
-
-### 8.2 Correlation join (failure bucket → fixture/section → signal provenance)
-
-Descriptive co-occurrence only. Allowed language: co-occurs, consistent with, present when, absent when. Forbidden: causes, proves, fixes.
-
-Association claims require support ≥ 2 within the same split. Support 1 → `MEASURED_SINGLETON` (no generalization).
-
-| Failure bucket | Split | Support | Fixture / section loci | Signal provenance co-occurrence | Association class |
-|---|---|---:|---|---|---|
-| `boundary.over_segmentation` + `boundary.extra_or_duplicate` | CAL | 6 fixtures / FP=23 | all CAL usable | novelty / onset / neighbor / multi-bar families `measured` present when extras present | association (support≥2) |
-| `boundary.over_segmentation` + `boundary.extra_or_duplicate` | TEST | 3 fixtures / FP=16 | all TEST usable non-HOLD | same core families `measured` present when extras present | association (support≥2); evidence only |
-| `role.confusion:intro->unknown` | CAL | 4 | early sections: simple-clean, repeated, near-boundary, role-ambiguity | `relative_track_position` `measured` present when intro→unknown; energy/onset/low-end also `measured` | association (support≥2) |
-| `role.confusion:intro->unknown` | TEST | 1 | under-seg early section | same families `measured` | `MEASURED_SINGLETON` |
-| `role.concrete_confusion:build->groove` | CAL | 2 | near-boundary; over-seg challenge | loudness/onset/timbre/spectral deltas `measured` present when build→groove | association (support≥2) |
-| `role.concrete_confusion:build->groove` | TEST | 1 | under-seg | same | `MEASURED_SINGLETON` |
-| `role.confusion:groove->unknown` | CAL | 2 | simple-clean; repeated | energy/onset/rhythm/recurrence `measured` present when groove→unknown | association (support≥2) |
-| `role.confusion:groove->unknown` | TEST | 1 | under-seg | same | `MEASURED_SINGLETON` |
-| `role.concrete_confusion:drop->groove` | TEST | 2 | drop-at-boundary; under-seg | energy/low-end/onset `measured` present when drop→groove | association on TEST only — **not** CAL hypothesis fuel |
-| `drop.false` | CAL | 6 | simple-clean; repeated; near-boundary; role-ambiguity; over-seg | loudness/timbre/novelty/neighbor families `measured` present when false `drop_onset` emitted | association (support≥2) |
-| `drop.false` | TEST | 3 | drop-at-boundary; drop-not-boundary-owner; under-seg | same families `measured` | association (support≥2); evidence only |
-| `drop.missed` | CAL | 1 | over-seg challenge (ref bar 28) | core families `measured`; `drop.timing_offset` = `not_applicable` | `MEASURED_SINGLETON` |
-| `drop.missed` | TEST | 2 | drop-at-boundary; drop-not-boundary-owner | core families `measured`; timing_offset `not_applicable` | TEST may confirm/refute later — **not** new CAL hypothesis |
-| `boundary.missed` / `boundary.early` | CAL | 1 each | over-seg miss; repeated early −1 bar | core boundary-input families `measured` | `MEASURED_SINGLETON` each |
-
-CLAP/stems remain `not_applicable` in every fixture row — never treated as correctness or as numeric absence.
 
 ---
 
@@ -489,12 +488,12 @@ No invented threshold numbers. Candidate change class is advisory only.
 | Field | Value |
 |---|---|
 | HYPOTHESIS ID | `H-AQ7-1027-05` |
-| Observed failure bucket | `drop.false` |
-| Support CAL | FP = 6 |
+| Observed failure bucket | `drop.false` (primary fuel: empty-ref false preds) |
+| Support CAL | FP = 6 total; **empty-ref false = 5**; nonempty-ref unmatched = 1 (same fixture as `drop.missed`) |
 | Support TEST | FP = 3 (confirms co-occurrence; not fuel) |
-| Evidence | All CAL predicted drop events unmatched; loudness/timbre/novelty/neighbor families `measured` present when false `drop_onset` emitted; `drop.timing_offset` = `not_applicable` |
+| Evidence | Five CAL false preds on empty expected sets; one unmatched pred on positive-ref over-seg fixture; loudness/timbre/novelty/neighbor families `measured` present when false `drop_onset` emitted; `drop.timing_offset` = `not_applicable` |
 | Likely contributing signal/path | Drop-event emission path on ArrangementClassifier using loudness/timbre/novelty/neighbor surfaces |
-| Confidence / evidence state | measured association (CAL FP=6) |
+| Confidence / evidence state | measured association (CAL empty-ref FP=5; do not claim all 6 are empty-ref) |
 | Candidate change class | `scoped_code` (advisory) — emission eligibility / scoring surface |
 | Expected metric affected | drop precision@1bar; false count (keep miss visibility separate) |
 | Risks | Suppressing true drops; converting false-drop reduction into higher misses |
@@ -542,11 +541,23 @@ Hypothesis count: **10** (5 shortlist-eligible + 5 singletons). Shortlist-eligib
 
 ---
 
-## 11. Machine-facing Bucket / Hypothesis Appendix
+## 11. Exit Token
+
+Exactly one:
+
+```text
+AQ7_DIAGNOSTICS_PARTIAL_HOLD
+```
+
+Rationale: buckets and signal attribution are quantified with support and plane separation; identities match #1025/#1026; thin corpus + material BeatGrid HOLD prevent an honest `AQ7_ERROR_BUCKETS_EXPLAINED` upgrade. Evidence is not `AQ7_DIAGNOSTICS_INSUFFICIENT` — regeneration matched frozen baselines.
+
+---
+
+## 12. Machine-facing Bucket / Hypothesis Appendix
 
 Stable IDs for later #1040 bootstrap. Markdown tables only (no committed JSON artifact). Values are portable summaries; exact floats remain in external JSON.
 
-### 11.1 Bucket appendix
+### 12.1 Bucket appendix
 
 | bucket_id | plane | split | support | share | evidence_state | hypothesis_id |
 |---|---|---|---:|---|---|---|
@@ -572,7 +583,7 @@ Stable IDs for later #1040 bootstrap. Markdown tables only (no committed JSON ar
 | `role.predicted_unknown` | `aq7.role` | TEST | 3 | 0.250 | measured | — |
 | `role.concrete_confusion:drop->groove` | `aq7.role` | TEST | 2 | 0.167 | measured | — |
 | `role.held` | `aq7.role` | TEST | 1 | n/a | held | — |
-| `drop.false` | `aq7.drop_event` | CALIBRATION | 6 | 1.000 | measured | `H-AQ7-1027-05` |
+| `drop.false` | `aq7.drop_event` | CALIBRATION | 6 (5 empty-ref + 1 nonempty unmatched) | 1.000 | measured | `H-AQ7-1027-05` |
 | `drop.missed` | `aq7.drop_event` | CALIBRATION | 1 | 1.000 | measured | `H-AQ7-1027-S05` |
 | `drop.timing_offset` | `aq7.drop_event` | CALIBRATION | n/a | n/a | not_applicable | — |
 | `drop.false` | `aq7.drop_event` | TEST | 3 | 1.000 | measured | — |
@@ -580,7 +591,7 @@ Stable IDs for later #1040 bootstrap. Markdown tables only (no committed JSON ar
 | `drop.timing_offset` | `aq7.drop_event` | TEST | n/a | n/a | not_applicable | — |
 | `drop.beatgrid_hold` | `aq7.drop_event` | TEST | 1 | n/a | held | — |
 
-### 11.2 Hypothesis appendix
+### 12.2 Hypothesis appendix
 
 | hypothesis_id | observed_bucket | plane | support_cal | support_test | shortlist_eligible | evidence_state | change_class |
 |---|---|---|---:|---:|---|---|---|
@@ -588,14 +599,14 @@ Stable IDs for later #1040 bootstrap. Markdown tables only (no committed JSON ar
 | `H-AQ7-1027-02` | `role.confusion:intro->unknown` | `aq7.role` | 4 | 1 | yes | measured | existing_candidate |
 | `H-AQ7-1027-03` | `role.concrete_confusion:build->groove` | `aq7.role` | 2 | 1 | yes | measured | existing_candidate |
 | `H-AQ7-1027-04` | `role.confusion:groove->unknown` | `aq7.role` | 2 | 1 | yes | measured | existing_candidate |
-| `H-AQ7-1027-05` | `drop.false` | `aq7.drop_event` | 6 | 3 | yes | measured | scoped_code |
+| `H-AQ7-1027-05` | `drop.false` (empty-ref primary) | `aq7.drop_event` | 5 (+1 nonempty unmatched) | 3 | yes | measured | scoped_code |
 | `H-AQ7-1027-S01` | `boundary.missed` | `aq7.boundary` | 1 | 0 | no (`OBSERVED_SINGLETON`) | measured | scoped_code |
 | `H-AQ7-1027-S02` | `boundary.early` | `aq7.boundary` | 1 | 0 | no (`OBSERVED_SINGLETON`) | measured | scoped_code |
 | `H-AQ7-1027-S03` | `role.confusion:build->unknown` | `aq7.role` | 1 | 0 | no (`OBSERVED_SINGLETON`) | measured | existing_candidate |
 | `H-AQ7-1027-S04` | `role.concrete_confusion:intro->groove` | `aq7.role` | 1 | 1 | no (`OBSERVED_SINGLETON`) | measured | existing_candidate |
 | `H-AQ7-1027-S05` | `drop.missed` | `aq7.drop_event` | 1 | 2 | no (`OBSERVED_SINGLETON`) | measured | scoped_code |
 
-### 11.3 Signal availability appendix
+### 12.3 Signal availability appendix
 
 | signal_family | evidence_state_usable | evidence_state_beatgrid_hold | consumed_by_live_path |
 |---|---|---|---|
@@ -623,4 +634,4 @@ Stable IDs for later #1040 bootstrap. Markdown tables only (no committed JSON ar
 - no #1028 candidate implementation
 - no committed WAV / raw JSON / private or absolute paths
 - no optional-signal pseudo-labeling
-- no `CANON_INDEX` edits in Task 2
+- CANON_INDEX ACTIVE_SUPPORTING registration is part of finalize (this delivery)
