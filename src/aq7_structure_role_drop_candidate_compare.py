@@ -66,6 +66,8 @@ PRODUCTION_DEFAULTS_CHANGED = False
 SELECTION_PARTITION = "CALIBRATION"
 BOUNDARY_SURFACE_POLICY = "frozen_gt_reference_sections"
 RECALL_REGRESSION_TOLERANCE = 0.05
+# Frozen #1024 CALIBRATION pack size; freeze requires full-plane coverage.
+CALIBRATION_FIXTURE_COUNT = 6
 
 _REPO_ROOT_DEFAULT = Path(__file__).resolve().parents[1]
 
@@ -441,12 +443,75 @@ def _primary_score(
     return 0.0
 
 
+def calibration_measurement_complete(cal: Mapping[str, Any]) -> dict[str, Any]:
+    """Fail closed unless all three planes have usable CALIBRATION measurements."""
+    n_fixtures = int(cal.get("n_fixtures") or 0)
+    bound = cal.get(BOUNDARY_PLANE) or {}
+    n_usable = int(bound.get("n_usable") or 0)
+    role = cal.get(ROLE_PLANE_TOKEN) or {}
+    drop = cal.get(DROP_PLANE_TOKEN) or {}
+    role_support = int(role.get("support") or 0)
+    role_macro = role.get("macro_f1")
+    role_held = int(role.get("abstention_count") or 0)
+    drop_coverage = drop.get("coverage")
+    reasons: list[str] = []
+    if n_fixtures < CALIBRATION_FIXTURE_COUNT:
+        reasons.append(
+            f"n_fixtures={n_fixtures} < required {CALIBRATION_FIXTURE_COUNT}"
+        )
+    if n_usable < CALIBRATION_FIXTURE_COUNT:
+        reasons.append(
+            f"boundary n_usable={n_usable} < required {CALIBRATION_FIXTURE_COUNT}"
+        )
+    if role_support < 1 or role_macro is None:
+        reasons.append("role plane missing measured macro_f1/support")
+    if role_held >= max(n_fixtures, 1):
+        reasons.append("role plane fully held/unusable on CALIBRATION")
+    if drop_coverage is None or float(drop_coverage) <= 0:
+        reasons.append("drop plane coverage missing or zero on CALIBRATION")
+    return {
+        "complete": not reasons,
+        "reasons": reasons,
+        "n_fixtures": n_fixtures,
+        "boundary_n_usable": n_usable,
+        "role_support": role_support,
+        "role_macro_f1": role_macro,
+        "role_abstention_count": role_held,
+        "drop_coverage": drop_coverage,
+    }
+
+
 def decide_calibration_freeze(
     *,
     candidates: list[Aq7Candidate],
     calibration_by_id: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, Any]:
     """Freeze winner or baseline retention using CALIBRATION evidence only."""
+    completeness_rows: list[dict[str, Any]] = []
+    for candidate in candidates:
+        check = calibration_measurement_complete(
+            calibration_by_id[candidate.candidate_id]
+        )
+        completeness_rows.append(
+            {"candidate_id": candidate.candidate_id, **check}
+        )
+    incomplete = [row for row in completeness_rows if not row["complete"]]
+    if incomplete:
+        return {
+            "exit_token": EXIT_INCOMPLETE,
+            "selection_partition": SELECTION_PARTITION,
+            "test_used_for_selection": False,
+            "frozen_outcome": "incomplete",
+            "frozen_candidate_id": None,
+            "frozen_config": None,
+            "justification_rows": [],
+            "completeness_rows": completeness_rows,
+            "decision_note": (
+                "CALIBRATION measurement incomplete on one or more candidates/"
+                "planes; refuse freeze."
+            ),
+        }
+
     baseline = next(c for c in candidates if c.is_baseline)
     baseline_cal = calibration_by_id[baseline.candidate_id]
     justified_rows: list[dict[str, Any]] = []
@@ -481,6 +546,7 @@ def decide_calibration_freeze(
             "frozen_candidate_id": baseline.candidate_id,
             "frozen_config": candidate_public(baseline),
             "justification_rows": justified_rows,
+            "completeness_rows": completeness_rows,
             "decision_note": (
                 "No non-baseline candidate met CALIBRATION justification rules; "
                 "retain aq7.baseline.v1 before TEST/HOLDOUT (#1030)."
@@ -503,6 +569,7 @@ def decide_calibration_freeze(
         "frozen_candidate_id": winner.candidate_id,
         "frozen_config": candidate_public(winner),
         "justification_rows": justified_rows,
+        "completeness_rows": completeness_rows,
         "decision_note": (
             f"Frozen {winner.candidate_id} from CALIBRATION-only justification "
             f"for plane {winner.primary_plane}; TEST/HOLDOUT unused for selection."
@@ -675,11 +742,7 @@ def run_aq7_structure_role_drop_candidate_compare(
                 ),
             }
         calibration_by_id[candidate.candidate_id] = splits["CALIBRATION"]
-        if int(splits["CALIBRATION"].get("n_fixtures") or 0) < 1:
-            measured_ok = False
-        if int(
-            ((splits["CALIBRATION"].get(BOUNDARY_PLANE) or {}).get("n_usable") or 0)
-        ) < 1:
+        if not calibration_measurement_complete(splits["CALIBRATION"])["complete"]:
             measured_ok = False
 
         baseline_cal = calibration_by_id.get(BASELINE_CANDIDATE_ID)
@@ -819,6 +882,7 @@ __all__ = [
     "AQ7_CANDIDATES",
     "BASELINE_CANDIDATE_ID",
     "BOUNDARY_SURFACE_POLICY",
+    "CALIBRATION_FIXTURE_COUNT",
     "CORPUS_ID",
     "CORPUS_VERSION",
     "DOCUMENT_TYPE",
@@ -833,6 +897,7 @@ __all__ = [
     "SHORTLIST_NOT_SELECTED",
     "Aq7Candidate",
     "Aq7CandidateCompareError",
+    "calibration_measurement_complete",
     "candidate_by_id",
     "candidate_justified_on_calibration",
     "candidate_public",

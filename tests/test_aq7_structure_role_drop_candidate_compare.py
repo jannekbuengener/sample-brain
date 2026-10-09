@@ -114,28 +114,42 @@ def test_planes_remain_separate_in_public_candidate_schema() -> None:
         assert "global_score" not in public
 
 
-def test_partition_firewall_decision_ignores_test_metrics() -> None:
-    baseline = compare.candidate_by_id(compare.BASELINE_CANDIDATE_ID)
-    boundary = compare.candidate_by_id("boundary.min_distance.4")
-
-    # Fabricate CAL where boundary candidate is NOT justified...
-    weak_cal = {
+def _complete_cal(**overrides: object) -> dict:
+    """Minimal CALIBRATION block that passes the completeness gate."""
+    cal = {
+        "n_fixtures": compare.CALIBRATION_FIXTURE_COUNT,
         "aq7.boundary": {
+            "n_usable": compare.CALIBRATION_FIXTURE_COUNT,
             "metrics": {
                 "precision_1bar": 0.30,
                 "recall_1bar": 0.90,
                 "extra_rate": 0.70,
                 "over_segmentation_rate": 1.0,
                 "false_positive_count": 20,
-            }
+            },
         },
-        "aq7.role": {"macro_f1": 0.2, "unknown_rate": 0.4, "per_role": {}},
+        "aq7.role": {
+            "macro_f1": 0.2,
+            "unknown_rate": 0.4,
+            "support": 17,
+            "abstention_count": 0,
+            "per_role": {},
+        },
         "aq7.drop_event": {
             "f1_1bar": 0.0,
             "matched_count": 0,
             "false_positive_count": 6,
+            "coverage": 1.0,
         },
     }
+    for key, value in overrides.items():
+        cal[key] = value
+    return cal
+
+
+def test_partition_firewall_decision_ignores_test_metrics() -> None:
+    # Fabricate CAL where boundary candidate is NOT justified...
+    weak_cal = _complete_cal()
     # ...but invent a glowing TEST block that must never drive selection.
     glowing_test = {
         "aq7.boundary": {
@@ -157,10 +171,8 @@ def test_partition_firewall_decision_ignores_test_metrics() -> None:
     del glowing_test  # explicit: TEST metrics are not passed into decide_*
 
     calibration_by_id = {
-        baseline.candidate_id: weak_cal,
-        boundary.candidate_id: deepcopy(weak_cal),
-        "role.unknown_margin.0.03": deepcopy(weak_cal),
-        "drop.onset_thresh.0.80": deepcopy(weak_cal),
+        candidate.candidate_id: deepcopy(weak_cal)
+        for candidate in compare.list_aq7_candidates()
     }
     decision = compare.decide_calibration_freeze(
         candidates=compare.list_aq7_candidates(),
@@ -170,6 +182,46 @@ def test_partition_firewall_decision_ignores_test_metrics() -> None:
     assert decision["test_used_for_selection"] is False
     assert decision["exit_token"] == compare.EXIT_KEEP_BASELINE
     assert decision["frozen_candidate_id"] == compare.BASELINE_CANDIDATE_ID
+
+
+def test_incomplete_role_drop_measurements_refuse_freeze() -> None:
+    """Codex P1: boundary-only usable CAL must not emit KEEP_BASELINE."""
+    incomplete = _complete_cal(
+        **{
+            "aq7.role": {
+                "macro_f1": None,
+                "support": 0,
+                "abstention_count": compare.CALIBRATION_FIXTURE_COUNT,
+                "per_role": {},
+            },
+            "aq7.drop_event": {
+                "f1_1bar": None,
+                "matched_count": None,
+                "false_positive_count": None,
+                "coverage": 0.0,
+            },
+        }
+    )
+    assert compare.calibration_measurement_complete(incomplete)["complete"] is False
+    calibration_by_id = {
+        candidate.candidate_id: deepcopy(incomplete)
+        for candidate in compare.list_aq7_candidates()
+    }
+    decision = compare.decide_calibration_freeze(
+        candidates=compare.list_aq7_candidates(),
+        calibration_by_id=calibration_by_id,
+    )
+    assert decision["exit_token"] == compare.EXIT_INCOMPLETE
+    assert decision["frozen_candidate_id"] is None
+
+
+def test_single_usable_boundary_fixture_is_incomplete() -> None:
+    thin = _complete_cal()
+    thin["aq7.boundary"] = {
+        "n_usable": 1,
+        "metrics": thin["aq7.boundary"]["metrics"],
+    }
+    assert compare.calibration_measurement_complete(thin)["complete"] is False
 
 
 def test_drop_fp_only_reduction_is_not_justified() -> None:
