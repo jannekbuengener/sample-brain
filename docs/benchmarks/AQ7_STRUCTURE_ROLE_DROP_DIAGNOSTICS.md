@@ -300,11 +300,11 @@ Association claims require support ≥ 2 within the same split. Support 1 → `M
 | `role.confusion:groove->unknown` | CAL | 2 | simple-clean; repeated | energy/onset/rhythm/recurrence `measured` present when groove→unknown | association (support≥2) |
 | `role.confusion:groove->unknown` | TEST | 1 | under-seg | same | `MEASURED_SINGLETON` |
 | `role.concrete_confusion:drop->groove` | TEST | 2 | drop-at-boundary; under-seg | energy/low-end/onset `measured` present when drop→groove | association on TEST only — **not** CAL hypothesis fuel |
-| `drop.false` (empty-ref subset) | CAL | 5 | simple-clean; repeated; near-boundary; role-ambiguity | loudness/timbre/novelty/neighbor families `measured` present when false `drop_onset` emitted on empty expected sets | association (support>=2) |
+| `drop.false` (empty-ref subset) | CAL | 5 | simple-clean; repeated; near-boundary; role-ambiguity | loudness/timbre/spectral/novelty/neighbor families `measured` present when false `drop_onset` emitted on empty expected sets | association (support>=2) |
 | `drop.false` (nonempty-ref unmatched) | CAL | 1 | over-seg challenge (ref bar 28; pred bar 36) | same families `measured`; co-located with `drop.missed` | `MEASURED_SINGLETON` — do not fold into empty-ref support |
-| `drop.false` | TEST | 3 | drop-at-boundary; drop-not-boundary-owner; under-seg | same families `measured` | association (support≥2); evidence only |
+| `drop.false` | TEST | 3 | drop-at-boundary; drop-not-boundary-owner; under-seg | loudness/timbre/spectral/novelty/neighbor families `measured` | association (support≥2); frozen evidence only — not triage |
 | `drop.missed` | CAL | 1 | over-seg challenge (ref bar 28) | core families `measured`; `drop.timing_offset` = `not_applicable` | `MEASURED_SINGLETON` |
-| `drop.missed` | TEST | 2 | drop-at-boundary; drop-not-boundary-owner | core families `measured`; timing_offset `not_applicable` | TEST may confirm/refute later — **not** new CAL hypothesis |
+| `drop.missed` | TEST | 2 | drop-at-boundary; drop-not-boundary-owner | core families `measured`; timing_offset `not_applicable` | TEST evidence only — **not** hypothesis triage / selection feedback |
 | `boundary.missed` / `boundary.early` | CAL | 1 each | over-seg miss; repeated early −1 bar | core boundary-input families `measured` | `MEASURED_SINGLETON` each |
 
 CLAP/stems remain `not_applicable` in every fixture row — never treated as correctness or as numeric absence.
@@ -413,7 +413,7 @@ Ranking rule: support ↓, eligible share ↓, `bucket_id` ↑. Tag `dominant` i
 
 ## 9. Bounded Candidate Hypotheses
 
-Hypotheses are **CALIBRATION-derived only**. TEST may confirm, refute, or HOLD — never create new CAL hypotheses.
+Hypotheses are **CALIBRATION-derived only**. TEST observations are **frozen evidence only** for later locked evaluation (#1030) — they must **not** confirm, refute, triage, or select which CAL-derived candidates proceed in #1028. “Not fuel” means TEST is never selection feedback, not merely “not used to invent new IDs.”
 Shortlist language for #1028: only CAL support ≥ 2. Support 1 → `OBSERVED_SINGLETON` (not a bake-off candidate).
 No invented threshold numbers. Candidate change class is advisory only.
 
@@ -426,7 +426,7 @@ No invented threshold numbers. Candidate change class is advisory only.
 | HYPOTHESIS ID | `H-AQ7-1027-01` |
 | Observed failure bucket | `boundary.extra_or_duplicate` / `boundary.over_segmentation` |
 | Support CAL | 6/6 over-seg fixtures; FP extras = 23 |
-| Support TEST | 3/3 eligible over-seg; FP extras = 16 (confirms co-occurrence; not fuel) |
+| Support TEST | 3/3 eligible over-seg; FP extras = 16 (frozen evidence only; not selection feedback) |
 | Evidence | Universal over-segmentation on usable fixtures; extras dominate unmatched unmasked preds; core novelty/onset/neighbor/multi-bar families `measured` present when extras present |
 | Likely contributing signal/path | StructureV1 boundary density path consuming novelty / onset / neighbor / multi-bar trend surfaces |
 | Confidence / evidence state | measured association (CAL support≥2); thin synthetic corpus |
@@ -442,7 +442,7 @@ No invented threshold numbers. Candidate change class is advisory only.
 | HYPOTHESIS ID | `H-AQ7-1027-02` |
 | Observed failure bucket | `role.confusion:intro->unknown` |
 | Support CAL | 4 |
-| Support TEST | 1 (`MEASURED_SINGLETON` confirm/refute only) |
+| Support TEST | 1 (`MEASURED_SINGLETON`; frozen evidence only — not triage) |
 | Evidence | Four early CAL sections score intro→unknown while `relative_track_position` and energy/onset/low-end families are `measured` |
 | Likely contributing signal/path | ArrangementClassifier early-section / relative-position path under SectionSignals |
 | Confidence / evidence state | measured association (CAL n=4) |
@@ -458,7 +458,7 @@ No invented threshold numbers. Candidate change class is advisory only.
 | HYPOTHESIS ID | `H-AQ7-1027-03` |
 | Observed failure bucket | `role.concrete_confusion:build->groove` |
 | Support CAL | 2 |
-| Support TEST | 1 (`MEASURED_SINGLETON` only) |
+| Support TEST | 1 (`MEASURED_SINGLETON`; frozen evidence only — not triage) |
 | Evidence | Two CAL mid-track builds predicted as groove while loudness/onset/timbre/spectral deltas are `measured` |
 | Likely contributing signal/path | Role scoring path weighting groove-stable cues over build-delta cues on synthetic material |
 | Confidence / evidence state | measured association (CAL n=2; thin) |
@@ -474,7 +474,7 @@ No invented threshold numbers. Candidate change class is advisory only.
 | HYPOTHESIS ID | `H-AQ7-1027-04` |
 | Observed failure bucket | `role.confusion:groove->unknown` |
 | Support CAL | 2 |
-| Support TEST | 1 (`MEASURED_SINGLETON` only) |
+| Support TEST | 1 (`MEASURED_SINGLETON`; frozen evidence only — not triage) |
 | Evidence | Two CAL groove sections predicted unknown while energy/onset/rhythm/recurrence families are `measured` |
 | Likely contributing signal/path | ArrangementClassifier abstention / unknown path on mid-track groove sections |
 | Confidence / evidence state | measured association (CAL n=2; thin) |
@@ -490,14 +490,14 @@ No invented threshold numbers. Candidate change class is advisory only.
 | HYPOTHESIS ID | `H-AQ7-1027-05` |
 | Observed failure bucket | `drop.false` (primary fuel: empty-ref false preds) |
 | Support CAL | FP = 6 total; **empty-ref false = 5**; nonempty-ref unmatched = 1 (same fixture as `drop.missed`) |
-| Support TEST | FP = 3 (confirms co-occurrence; not fuel) |
-| Evidence | Five CAL false preds on empty expected sets; one unmatched pred on positive-ref over-seg fixture; loudness/timbre/novelty/neighbor families `measured` present when false `drop_onset` emitted; `drop.timing_offset` = `not_applicable` |
-| Likely contributing signal/path | Drop-event emission path on ArrangementClassifier using loudness/timbre/novelty/neighbor surfaces |
+| Support TEST | FP = 3 (frozen evidence only; not selection feedback) |
+| Evidence | Five CAL false preds on empty expected sets; one unmatched pred on positive-ref over-seg fixture; loudness/timbre/spectral/novelty/neighbor families (`_DROP_ONSET_SIGNALS`) `measured` present when false `drop_onset` emitted; `drop.timing_offset` = `not_applicable` |
+| Likely contributing signal/path | Drop-event emission path on ArrangementClassifier averaging `_DROP_ONSET_SIGNALS`: `bar_loudness_delta`, `novelty`, `timbre_delta`, `spectral_delta`, `neighbor_delta` |
 | Confidence / evidence state | measured association (CAL empty-ref FP=5; do not claim all 6 are empty-ref) |
 | Candidate change class | `scoped_code` (advisory) — emission eligibility / scoring surface |
 | Expected metric affected | drop precision@1bar; false count (keep miss visibility separate) |
 | Risks | Suppressing true drops; converting false-drop reduction into higher misses |
-| What would falsify it | CAL false count falls while miss count rises enough that net F1 does not improve on the same pack |
+| What would falsify it | On the same CAL pack: no TP gain and no F1 gain (F1 stays 0.0), even if false count falls. False/miss tradeoffs are reported separately and do not alone reject or accept the candidate. |
 
 ### 9.2 OBSERVED_SINGLETON (CAL support = 1; not shortlist)
 
@@ -507,7 +507,7 @@ No invented threshold numbers. Candidate change class is advisory only.
 | `H-AQ7-1027-S02` | `boundary.early` | 1 | 0 | no — `OBSERVED_SINGLETON` |
 | `H-AQ7-1027-S03` | `role.confusion:build->unknown` | 1 | 0 | no — `OBSERVED_SINGLETON` |
 | `H-AQ7-1027-S04` | `role.concrete_confusion:intro->groove` | 1 | 1 (TEST singleton) | no — `OBSERVED_SINGLETON` |
-| `H-AQ7-1027-S05` | `drop.missed` | 1 | 2 (TEST may confirm later; not CAL fuel) | no — `OBSERVED_SINGLETON` on CAL |
+| `H-AQ7-1027-S05` | `drop.missed` | 1 | 2 (TEST frozen evidence only; not CAL fuel / not triage) | no — `OBSERVED_SINGLETON` on CAL |
 
 Singleton fields (shared): evidence = Task-1 bucket row; likely path = same live SectionSignals→classifier surface; confidence = measured singleton; change class advisory `existing_candidate` or `scoped_code`; expected metric = the bucket's plane metric; risks = overfit to n=1; falsifier = support remains 1 or disappears on remeasure.
 
@@ -582,6 +582,12 @@ Stable IDs for later #1040 bootstrap. Markdown tables only (no committed JSON ar
 | `role.held_unavailable` | `aq7.role` | CALIBRATION | 1 | n/a | held | — |
 | `role.predicted_unknown` | `aq7.role` | TEST | 3 | 0.250 | measured | — |
 | `role.concrete_confusion:drop->groove` | `aq7.role` | TEST | 2 | 0.167 | measured | — |
+| `role.concrete_confusion:build->groove` | `aq7.role` | TEST | 1 | 0.083 | measured | — |
+| `role.concrete_confusion:build->intro` | `aq7.role` | TEST | 1 | 0.083 | measured | — |
+| `role.concrete_confusion:intro->groove` | `aq7.role` | TEST | 1 | 0.083 | measured | — |
+| `role.confusion:groove->unknown` | `aq7.role` | TEST | 1 | 0.083 | measured | — |
+| `role.confusion:intro->unknown` | `aq7.role` | TEST | 1 | 0.083 | measured | — |
+| `role.confusion:outro->unknown` | `aq7.role` | TEST | 1 | 0.083 | measured | — |
 | `role.held` | `aq7.role` | TEST | 1 | n/a | held | — |
 | `drop.false` | `aq7.drop_event` | CALIBRATION | 6 (5 empty-ref + 1 nonempty unmatched) | 1.000 | measured | `H-AQ7-1027-05` |
 | `drop.missed` | `aq7.drop_event` | CALIBRATION | 1 | 1.000 | measured | `H-AQ7-1027-S05` |
