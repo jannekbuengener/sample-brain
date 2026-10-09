@@ -1,6 +1,6 @@
 # AQ7 Arrangement Role + Drop Event Baseline (synthetic corpus)
 
-**Status:** ACTIVE_SUPPORTING - docs gate for [#1026](https://github.com/jannekbuengener/sample-brain/issues/1026)  
+**Status:** ACTIVE_SUPPORTING - measured current ArrangementClassifier role/drop baseline for [#1026](https://github.com/jannekbuengener/sample-brain/issues/1026)
 **Class:** ACTIVE_SUPPORTING  
 **Parents:** [#949](https://github.com/jannekbuengener/sample-brain/issues/949) (AQ7), [#942](https://github.com/jannekbuengener/sample-brain/issues/942) (program)  
 **Depends on:** [#1023](https://github.com/jannekbuengener/sample-brain/issues/1023) KPI contract, [#1024](https://github.com/jannekbuengener/sample-brain/issues/1024) frozen corpus, [#1025](https://github.com/jannekbuengener/sample-brain/issues/1025) frozen boundary context  
@@ -12,18 +12,18 @@
 ## Architecture outcome
 
 ```text
-TASK_1_DOCS_GATE_ONLY
+AQ7_ROLE_DROP_BASELINE_PARTIAL_HOLD
 ```
 
-This document freezes the role/drop baseline contract before tests and product code. Task 1 records identities, input ownership, metric-plane separation, firewall rules, provenance, CLI shape, and expected HOLD semantics. Measured values are intentionally **EMPTY / N/A until Task 4**.
+This document records the current `ArrangementClassifier` role/drop baseline against frozen #1024 reference sections/boundaries, using #1025 as the frozen boundary context. It measures only `aq7.role` and `aq7.drop_event`. It does **not** tune ArrangementClassifier, change StructureV1, change SectionSignals, alter BeatGrid, set promotion gates, or switch production behavior.
 
-The expected final measurement outcome for this slice is:
+The measured outcome for this slice is:
 
 ```text
 AQ7_ROLE_DROP_BASELINE_PARTIAL_HOLD
 ```
 
-That expected `PARTIAL_HOLD` is honest: the frozen `beatgrid_hold` TEST fixture has missing/insufficient BeatGrid provenance, so role and drop-event correctness for that fixture must remain HOLD/unknown rather than receiving invented bars, fake negatives, or fake zeroes.
+`PARTIAL_HOLD` is honest: the frozen `beatgrid_hold` TEST fixture has missing BeatGrid provenance, so role and drop-event correctness for that fixture remains HOLD/unknown rather than receiving invented bars, fake negatives, or fake zeroes.
 
 ## Scope
 
@@ -135,23 +135,34 @@ python -m src.aq7_structure_role_drop_baseline `
 
 The CLI must reject work/output paths inside the checkout and write a portable artifact only. Exact floats live in the external JSON; rounded display values are documented after Task 4.
 
-## Measured baseline summary (Task 4 placeholder)
+## Measured baseline summary (rounded display)
 
-Task 1 intentionally leaves measured values empty. Task 4 will replace `N/A` with rounded measured values only after two independent external runs produce equal semantic projections.
+Two independent external workdirs produced identical semantic projections (`arrangement_classifier.baseline.v1` on corpus `1.0.0`). Exact values live in the external JSON artifacts; rounded values are shown here.
 
 ### Role plane (`aq7.role`)
 
-| Partition | macro-F1 | coverage | bar-weighted accuracy | unknown rate | unknown-reference recall | concrete support | BeatGrid HOLD |
+| Partition | macro-F1 | coverage | bar-weighted accuracy | unknown rate | abstention count | concrete support | BeatGrid HOLD |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| CALIBRATION | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
-| TEST/HOLDOUT | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
+| CALIBRATION | 0.366 | 0.611 | 0.361 | 0.421 | 0 | 18 | 0 |
+| TEST/HOLDOUT | 0.297 | 0.750 | 0.341 | 0.250 | 1 | 12 | 1 |
+
+Per-role F1 summary:
+
+| Partition | intro | groove | build | drop | breakdown | outro |
+|---|---:|---:|---:|---:|---:|---:|
+| CALIBRATION | 0.000 | 0.286 | 0.000 | 1.000 | 0.000 | 0.909 |
+| TEST/HOLDOUT | 0.400 | 0.286 | 0.000 | 0.000 | N/A | 0.800 |
+
+Role confusion remains visible in the external artifact. High `unknown` predictions are measured classifier output, not converted from ambiguous annotations.
 
 ### Drop-event plane (`aq7.drop_event`)
 
 | Partition | P@1bar | R@1bar | F1 | support | false | missed | med\|err\| bars | p95\|err\| bars | coverage | BeatGrid HOLD |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| CALIBRATION | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
-| TEST/HOLDOUT | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
+| CALIBRATION | 0.000 | 0.000 | 0.000 | 1 | 7 | 1 | N/A | N/A | 1.000 | 0 |
+| TEST/HOLDOUT | 0.000 | 0.000 | 0.000 | 2 | 3 | 2 | N/A | N/A | 0.750 | 1 |
+
+No drop events matched within the frozen +/-1-bar policy. Timing-error aggregates are therefore not applicable, not zero.
 
 ## Runtime and determinism
 
@@ -160,11 +171,13 @@ Runtime methodology is consumed by reference from [#958](https://github.com/jann
 - Track-length buckets are HOLD for this tiny synthetic pack unless a later methodology-compliant run proves otherwise.
 - A single harness run may record diagnostic single-pass wall time only.
 - Diagnostic single-pass runtime is not #958 cold/steady median/p95 evidence.
+- Task 4 diagnostic-only Run B single-pass median was 3.776s and p95 was 4.900s over timed fixtures; this remains non-#958 diagnostic evidence.
 
 Semantic determinism is consumed by reference from [#959](https://github.com/jannekbuengener/sample-brain/issues/959) / [`../ANALYZER_SEMANTIC_DETERMINISM_V1.md`](../ANALYZER_SEMANTIC_DETERMINISM_V1.md).
 
 - A single run must report determinism as `not_measured`.
 - `semantic_equal=True` may be claimed only after comparing against a second independent semantic projection.
+- Task 4 Run A reported `semantic_equal=null`; independent Run B compared against Run A and reported `semantic_equal=true`.
 
 ## Portable artifact contract
 
