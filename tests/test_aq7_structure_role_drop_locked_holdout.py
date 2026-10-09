@@ -49,6 +49,25 @@ def test_frozen_candidate_matches_1028_baseline_retention() -> None:
     assert frozen.structure_config == StructureV1Config()
     assert frozen.arrangement_config == DEFAULT_ARRANGEMENT_CLASSIFIER_CONFIG
     assert frozen.candidate_id == compare.BASELINE_CANDIDATE_ID
+    holdout.assert_frozen_config_fingerprint(frozen)
+
+
+def test_frozen_config_fingerprint_rejects_live_default_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Codex P1 residual: candidate id alone must not survive knob drift."""
+    drifted = compare.Aq7Candidate(
+        candidate_id=holdout.FROZEN_CANDIDATE_ID,
+        hypothesis_ids=(),
+        primary_plane="multi",
+        structure_config=StructureV1Config(min_boundary_distance_bars=99),
+        arrangement_config=DEFAULT_ARRANGEMENT_CLASSIFIER_CONFIG,
+        description="drifted",
+        is_baseline=True,
+    )
+    monkeypatch.setattr(holdout, "candidate_by_id", lambda _cid: drifted)
+    with pytest.raises(holdout.Aq7LockedHoldoutError, match="fingerprint|drifted"):
+        holdout.frozen_candidate()
 
 
 def test_assert_freeze_identity_accepts_authorized_freeze() -> None:

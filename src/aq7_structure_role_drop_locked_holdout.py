@@ -10,6 +10,7 @@ import argparse
 import json
 import subprocess
 import statistics
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -76,6 +77,26 @@ REJECTED_CANDIDATE_IDS = frozenset(
         "drop.onset_thresh.0.80",
     }
 )
+# Literal #1028/#1030 freeze fingerprints. Live StructureV1 /
+# ArrangementClassifier defaults must match these or evaluation fails closed.
+FROZEN_STRUCTURE_CONFIG = {
+    "bar_grid_policy": "require_downbeats",
+    "candidate_percentile": 0.8,
+    "disabled_features": [],
+    "fft_size": 512,
+    "low_end_hz": 150.0,
+    "min_boundary_distance_bars": 2,
+    "min_contributing_groups": 2,
+    "n_mfcc": 8,
+    "trend_windows_bars": [4, 8, 16],
+}
+FROZEN_ARRANGEMENT_CONFIG = {
+    "available_min_completeness": 0.75,
+    "drop_onset_threshold": 0.65,
+    "unknown_min_best_score": 0.45,
+    "unknown_min_completeness": 0.5,
+    "unknown_min_margin": 0.05,
+}
 
 _REPO_ROOT_DEFAULT = Path(__file__).resolve().parents[1]
 
@@ -91,8 +112,30 @@ class Aq7LockedHoldoutError(ValueError):
     """Controlled, fail-closed identity / firewall / contract error."""
 
 
+def _canonical_config(payload: Mapping[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def assert_frozen_config_fingerprint(candidate: Aq7Candidate) -> None:
+    """Fail closed if live baseline knobs drifted after the #1028/#1030 freeze."""
+    structure = asdict(candidate.structure_config)
+    arrangement = asdict(candidate.arrangement_config)
+    if _canonical_config(structure) != _canonical_config(FROZEN_STRUCTURE_CONFIG):
+        raise Aq7LockedHoldoutError(
+            "frozen StructureV1 config fingerprint mismatch against "
+            f"{FROZEN_CANDIDATE_ID}: live defaults drifted after holdout freeze"
+        )
+    if _canonical_config(arrangement) != _canonical_config(FROZEN_ARRANGEMENT_CONFIG):
+        raise Aq7LockedHoldoutError(
+            "frozen ArrangementClassifier config fingerprint mismatch against "
+            f"{FROZEN_CANDIDATE_ID}: live defaults drifted after holdout freeze"
+        )
+
+
 def frozen_candidate() -> Aq7Candidate:
-    return candidate_by_id(FROZEN_CANDIDATE_ID)
+    candidate = candidate_by_id(FROZEN_CANDIDATE_ID)
+    assert_frozen_config_fingerprint(candidate)
+    return candidate
 
 
 def assert_freeze_identity(*, freeze_token: str, candidate_id: str) -> None:
@@ -787,7 +830,9 @@ __all__ = [
     "EXIT_PARTIAL_HOLD",
     "FEATURE_TOGGLE",
     "FREEZE_TOKEN",
+    "FROZEN_ARRANGEMENT_CONFIG",
     "FROZEN_CANDIDATE_ID",
+    "FROZEN_STRUCTURE_CONFIG",
     "GENERATOR_SEED",
     "ISSUE_ID",
     "PLANE_TOKENS",
@@ -797,6 +842,7 @@ __all__ = [
     "TEST_FIXTURE_COUNT",
     "Aq7LockedHoldoutError",
     "assert_freeze_identity",
+    "assert_frozen_config_fingerprint",
     "assert_no_composite_quality_score",
     "assert_work_dir_outside_repo",
     "frozen_candidate",
