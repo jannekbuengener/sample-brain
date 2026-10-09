@@ -433,7 +433,7 @@ No invented threshold numbers. Candidate change class is advisory only.
 | Candidate change class | `scoped_code` (advisory) — possibly with `config` exploration later |
 | Expected metric affected | boundary P@1bar; over-seg rate; section-count abs error (keep R@1bar visible) |
 | Risks | Collapsing recall / under-segmentation; harming exact-hit pairs that are already strong |
-| What would falsify it | CAL over-seg rate drops while extras remain dominant, or extras shrink while over-seg rate stays 1.0 on the same pack |
+| What would falsify it | On the same CAL pack: no improvement in boundary P@1bar / over-seg rate / extra count (or an unacceptable recall regression). Partial metric moves that leave the named targets flat are rejections. |
 
 #### H-AQ7-1027-02
 
@@ -449,7 +449,7 @@ No invented threshold numbers. Candidate change class is advisory only.
 | Candidate change class | `existing_candidate` (advisory) — classifier scoring surface |
 | Expected metric affected | intro recall / concrete macro-F1; unknown rate (preserve honesty) |
 | Risks | Over-forcing intro labels; GT leakage if signals treated as labels |
-| What would falsify it | CAL intro→unknown support falls below 2 on the same fixtures without changing GT |
+| What would falsify it | On the same CAL pack: no reduction in intro→unknown support and no intro-recall / concrete macro-F1 gain (or unknown honesty regresses unacceptably). Reducing intro→unknown below 2 is success evidence, not rejection. |
 
 #### H-AQ7-1027-03
 
@@ -465,7 +465,7 @@ No invented threshold numbers. Candidate change class is advisory only.
 | Candidate change class | `existing_candidate` (advisory) |
 | Expected metric affected | build precision/recall within concrete macro-F1 |
 | Risks | Swapping build↔groove errors; harming correct groove pairs |
-| What would falsify it | CAL build→groove support falls below 2, or becomes singleton after any declared filter |
+| What would falsify it | On the same CAL pack: no reduction in build→groove support and no build precision/recall gain (or groove correctness regresses unacceptably). Reducing build→groove below 2 is success evidence, not rejection. |
 
 #### H-AQ7-1027-04
 
@@ -481,7 +481,7 @@ No invented threshold numbers. Candidate change class is advisory only.
 | Candidate change class | `existing_candidate` (advisory) |
 | Expected metric affected | groove recall; unknown rate; concrete coverage |
 | Risks | Reducing legitimate unknown honesty; inflating false concrete labels |
-| What would falsify it | CAL groove→unknown support falls below 2 on the same fixtures |
+| What would falsify it | On the same CAL pack: no reduction in groove→unknown support and no groove-recall / coverage gain (or legitimate unknown honesty regresses unacceptably). Reducing groove→unknown below 2 is success evidence, not rejection. |
 
 #### H-AQ7-1027-05
 
