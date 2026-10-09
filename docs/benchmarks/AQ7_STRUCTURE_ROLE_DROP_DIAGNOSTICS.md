@@ -10,7 +10,7 @@
 **Role/drop baseline:** [`AQ7_STRUCTURE_ROLE_DROP_BASELINE.md`](AQ7_STRUCTURE_ROLE_DROP_BASELINE.md) / `arrangement_classifier.baseline.v1`
 **Signal ownership context (diagnostic only):** [`../ARRANGEMENT_SIGNAL_MATRIX_V1.md`](../ARRANGEMENT_SIGNAL_MATRIX_V1.md)
 **Related bootstrap:** [#1040](https://github.com/jannekbuengener/sample-brain/issues/1040) quality-loop consumer of stable bucket IDs (orchestrator out of scope here)
-**Downstream (not started here):** [#1028](https://github.com/jannekbuengener/sample-brain/issues/1028) candidate compare
+**Downstream:** [#1028](https://github.com/jannekbuengener/sample-brain/issues/1028) candidate compare (`docs/benchmarks/AQ7_STRUCTURE_ROLE_DROP_CANDIDATE_COMPARE.md`)
 **Style reference:** [`AQ4_CLASSIFICATION_DIAGNOSTICS.md`](AQ4_CLASSIFICATION_DIAGNOSTICS.md) (taxonomy separation; not a plane merge)
 
 ## Architecture outcome
