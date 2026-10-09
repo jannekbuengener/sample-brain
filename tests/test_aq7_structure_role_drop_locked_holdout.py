@@ -113,14 +113,17 @@ def _test_plane_block(
     *,
     n_usable: int = 3,
     n_hold: int = 1,
+    n_unauthorized: int = 0,
     coverage: float = 0.75,
     metrics: dict | None = None,
     hold_reasons: list[str] | None = None,
+    unauthorized_reasons: list[str] | None = None,
 ) -> dict:
     return {
         "n_fixtures": holdout.TEST_FIXTURE_COUNT,
         "n_usable": n_usable,
         "n_hold": n_hold,
+        "n_unauthorized": n_unauthorized,
         "coverage": coverage,
         "metrics": metrics
         or {
@@ -131,6 +134,7 @@ def _test_plane_block(
             "false_positive_count": 2,
         },
         "hold_reasons": hold_reasons or ["BEATGRID_PROVENANCE_LIMITATION"],
+        "unauthorized_reasons": unauthorized_reasons or [],
         "provenance_ok": True,
     }
 
@@ -159,6 +163,34 @@ def test_plane_gate_incomplete_without_usable_or_authorized_hold() -> None:
     )
     gate = holdout.resolve_plane_gate(plane="aq7.drop_event", test_block=block)
     assert gate["outcome"] == "INCOMPLETE"
+
+
+def test_plane_gate_incomplete_when_unauthorized_failure_beside_beatgrid_hold() -> None:
+    """Codex P1: BeatGrid HOLD must not mask analyzer/harness failures."""
+    block = _test_plane_block(
+        n_usable=2,
+        n_hold=1,
+        n_unauthorized=1,
+        coverage=0.5,
+        hold_reasons=["BEATGRID_PROVENANCE_LIMITATION"],
+        unauthorized_reasons=["ANALYZER_FEATURE_LIMITATION"],
+    )
+    gate = holdout.resolve_plane_gate(plane="aq7.boundary", test_block=block)
+    assert gate["outcome"] == "INCOMPLETE"
+    assert gate["n_unauthorized"] == 1
+    assert "ANALYZER_FEATURE_LIMITATION" in gate["unauthorized_reasons"]
+    assert (
+        holdout.resolve_holdout_exit(
+            gates={
+                "aq7.boundary": gate,
+                "aq7.role": {"outcome": "HOLD"},
+                "aq7.drop_event": {"outcome": "HOLD"},
+            },
+            freeze_ok=True,
+            partition_complete=True,
+        )
+        == holdout.EXIT_INCOMPLETE
+    )
 
 
 def test_plane_gate_incomplete_without_provenance() -> None:

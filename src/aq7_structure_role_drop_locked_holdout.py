@@ -196,9 +196,11 @@ def resolve_plane_gate(*, plane: str, test_block: Mapping[str, Any]) -> dict[str
     n_fixtures = int(test_block.get("n_fixtures") or 0)
     n_usable = int(test_block.get("n_usable") or 0)
     n_hold = int(test_block.get("n_hold") or 0)
+    n_unauthorized = int(test_block.get("n_unauthorized") or 0)
     coverage = test_block.get("coverage")
     metrics = dict(test_block.get("metrics") or {})
     hold_reasons = list(test_block.get("hold_reasons") or [])
+    unauthorized_reasons = list(test_block.get("unauthorized_reasons") or [])
     provenance_ok = bool(test_block.get("provenance_ok", True))
     hold_records = list(test_block.get("hold_records") or [])
     difficult = list(test_block.get("difficult_slice_evidence") or [])
@@ -207,14 +209,24 @@ def resolve_plane_gate(*, plane: str, test_block: Mapping[str, Any]) -> dict[str
         reason for reason in hold_reasons if reason in AUTHORIZED_HOLD_REASONS
     ]
     unauthorized_holds = [
-        reason for reason in hold_reasons if reason not in AUTHORIZED_HOLD_REASONS
+        reason
+        for reason in (hold_reasons + unauthorized_reasons)
+        if reason not in AUTHORIZED_HOLD_REASONS
     ]
+    # Every TEST fixture must be accounted for as usable or authorized HOLD.
+    accounted = n_usable + n_hold
+    fixtures_fully_accounted = (
+        n_fixtures == TEST_FIXTURE_COUNT
+        and accounted == n_fixtures
+        and n_unauthorized == 0
+        and not unauthorized_holds
+    )
 
     if not provenance_ok:
         outcome = "INCOMPLETE"
-    elif unauthorized_holds:
+    elif unauthorized_holds or n_unauthorized > 0:
         outcome = "INCOMPLETE"
-    elif n_fixtures < TEST_FIXTURE_COUNT:
+    elif n_fixtures < TEST_FIXTURE_COUNT or not fixtures_fully_accounted:
         outcome = "INCOMPLETE"
     elif n_hold > 0 and authorized_holds and n_usable >= 1:
         outcome = "HOLD"
@@ -225,7 +237,8 @@ def resolve_plane_gate(*, plane: str, test_block: Mapping[str, Any]) -> dict[str
     elif n_usable >= 1 and n_hold == 0:
         # Partial usable coverage without authorized HOLD reason.
         outcome = "INCOMPLETE"
-    elif n_hold > 0 and authorized_holds:
+    elif n_hold > 0 and authorized_holds and n_usable == 0:
+        # Authorized HOLD only — still HOLD, not a fake MEASURED/PASS.
         outcome = "HOLD"
     else:
         outcome = "INCOMPLETE"
@@ -243,13 +256,16 @@ def resolve_plane_gate(*, plane: str, test_block: Mapping[str, Any]) -> dict[str
         "n_fixtures": n_fixtures,
         "n_usable": n_usable,
         "n_hold": n_hold,
+        "n_unauthorized": n_unauthorized,
         "coverage": coverage,
         "hold_reasons": hold_reasons,
+        "unauthorized_reasons": unauthorized_reasons,
         "hold_records": hold_records,
         "baseline_metrics": metrics,
         "holdout_metrics": metrics,
         "regressions": same_identity_plane_deltas(metrics),
         "difficult_slice_evidence": difficult,
+        "fixtures_fully_accounted": fixtures_fully_accounted,
         "outcome": outcome,
     }
 
@@ -323,6 +339,37 @@ def _runtime_block(boundary_rows: list[dict[str, Any]], role_rows: list[dict[str
     }
 
 
+def _classify_fixture_rows(test_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Partition TEST rows into usable / authorized HOLD / unauthorized failure."""
+    hold_rows: list[dict[str, Any]] = []
+    usable_rows: list[dict[str, Any]] = []
+    unauthorized_rows: list[dict[str, Any]] = []
+    for row in test_rows:
+        hold_kind = row.get("hold_kind")
+        if hold_kind is None and row.get("prediction_usable", True):
+            usable_rows.append(row)
+        elif hold_kind in AUTHORIZED_HOLD_REASONS:
+            hold_rows.append(row)
+        else:
+            unauthorized_rows.append(row)
+    hold_reasons = sorted(
+        {str(r.get("hold_kind")) for r in hold_rows if r.get("hold_kind")}
+    )
+    unauthorized_reasons = sorted(
+        {
+            str(r.get("hold_kind") or "UNACCOUNTED_FIXTURE_FAILURE")
+            for r in unauthorized_rows
+        }
+    )
+    return {
+        "usable_rows": usable_rows,
+        "hold_rows": hold_rows,
+        "unauthorized_rows": unauthorized_rows,
+        "hold_reasons": hold_reasons,
+        "unauthorized_reasons": unauthorized_reasons,
+    }
+
+
 def _boundary_test_block(
     *,
     boundary_splits: Mapping[str, Any],
@@ -331,25 +378,10 @@ def _boundary_test_block(
     test = (boundary_splits.get("TEST") or {}).get(BOUNDARY_PLANE) or {}
     metrics = dict(test.get("metrics") or {})
     test_rows = [r for r in boundary_rows if r.get("split") == "TEST"]
-    hold_rows = [
-        r
-        for r in test_rows
-        if r.get("hold_kind") == "BEATGRID_PROVENANCE_LIMITATION"
-        or (
-            r.get("prediction_usable") is False
-            and r.get("hold_kind") == "BEATGRID_PROVENANCE_LIMITATION"
-        )
-    ]
-    # Prefer explicit hold_kind; also count non-usable beatgrid holds.
-    hold_rows = [r for r in test_rows if r.get("hold_kind") in AUTHORIZED_HOLD_REASONS]
-    usable_rows = [
-        r
-        for r in test_rows
-        if r.get("hold_kind") is None and r.get("prediction_usable", True)
-    ]
-    hold_reasons = sorted(
-        {str(r.get("hold_kind")) for r in hold_rows if r.get("hold_kind")}
-    )
+    classified = _classify_fixture_rows(test_rows)
+    hold_rows = classified["hold_rows"]
+    usable_rows = classified["usable_rows"]
+    unauthorized_rows = classified["unauthorized_rows"]
     difficult = [
         {
             "fixture_id": r.get("fixture_id"),
@@ -363,11 +395,13 @@ def _boundary_test_block(
     ]
     return {
         "n_fixtures": len(test_rows),
-        "n_usable": int(test.get("n_usable") or len(usable_rows)),
+        "n_usable": len(usable_rows),
         "n_hold": len(hold_rows),
+        "n_unauthorized": len(unauthorized_rows),
         "coverage": test.get("coverage"),
         "metrics": metrics,
-        "hold_reasons": hold_reasons,
+        "hold_reasons": classified["hold_reasons"],
+        "unauthorized_reasons": classified["unauthorized_reasons"],
         "hold_records": [
             {
                 "fixture_id": r.get("fixture_id"),
@@ -375,6 +409,15 @@ def _boundary_test_block(
                 "reason": r.get("hold_kind"),
             }
             for r in hold_rows
+        ]
+        + [
+            {
+                "fixture_id": r.get("fixture_id"),
+                "family": r.get("family"),
+                "reason": r.get("hold_kind") or "UNACCOUNTED_FIXTURE_FAILURE",
+                "authorized": False,
+            }
+            for r in unauthorized_rows
         ],
         "difficult_slice_evidence": difficult,
         "provenance_ok": True,
@@ -390,13 +433,10 @@ def _role_drop_test_block(
     test_pack = role_drop_splits.get("TEST") or {}
     plane_block = dict(test_pack.get(plane) or {})
     test_rows = [r for r in role_drop_rows if r.get("split") == "TEST"]
-    hold_rows = [
-        r for r in test_rows if r.get("hold_kind") in AUTHORIZED_HOLD_REASONS
-    ]
-    usable_rows = [r for r in test_rows if r.get("hold_kind") is None]
-    hold_reasons = sorted(
-        {str(r.get("hold_kind")) for r in hold_rows if r.get("hold_kind")}
-    )
+    classified = _classify_fixture_rows(test_rows)
+    hold_rows = classified["hold_rows"]
+    usable_rows = classified["usable_rows"]
+    unauthorized_rows = classified["unauthorized_rows"]
     if plane == ROLE_PLANE_TOKEN:
         metrics = {
             "macro_f1": plane_block.get("macro_f1"),
@@ -446,9 +486,11 @@ def _role_drop_test_block(
         "n_fixtures": len(test_rows),
         "n_usable": len(usable_rows),
         "n_hold": len(hold_rows),
+        "n_unauthorized": len(unauthorized_rows),
         "coverage": coverage,
         "metrics": metrics,
-        "hold_reasons": hold_reasons,
+        "hold_reasons": classified["hold_reasons"],
+        "unauthorized_reasons": classified["unauthorized_reasons"],
         "hold_records": [
             {
                 "fixture_id": r.get("fixture_id"),
@@ -456,6 +498,15 @@ def _role_drop_test_block(
                 "reason": r.get("hold_kind"),
             }
             for r in hold_rows
+        ]
+        + [
+            {
+                "fixture_id": r.get("fixture_id"),
+                "family": r.get("family"),
+                "reason": r.get("hold_kind") or "UNACCOUNTED_FIXTURE_FAILURE",
+                "authorized": False,
+            }
+            for r in unauthorized_rows
         ],
         "difficult_slice_evidence": difficult,
         "provenance_ok": True,
