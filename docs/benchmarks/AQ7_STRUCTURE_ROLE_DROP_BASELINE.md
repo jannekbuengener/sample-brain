@@ -36,8 +36,6 @@ AQ7_ROLE_DROP_BASELINE_PARTIAL_HOLD
 | Boundary context by reference to #1025 | Candidate comparison (#1028) or promotion |
 | Portable external JSON artifact | Committed audio, raw generated corpus, private paths, reports |
 
-Diagnostics (buckets / signal attribution) for this baseline live in [`AQ7_STRUCTURE_ROLE_DROP_DIAGNOSTICS.md`](AQ7_STRUCTURE_ROLE_DROP_DIAGNOSTICS.md) (#1027) — not in this measurement slice.
-
 Settings toggle: `N/A` - evaluation harness only. No production switch.
 
 ## Identities

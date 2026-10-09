@@ -1,374 +1,354 @@
-# AQ7 Structure / Role / Drop Diagnostics — Error Buckets + Signal Attribution
+# AQ7 Structure / Role / Drop Diagnostics — Error Buckets (Task 1 WIP)
 
-**Status:** ACTIVE_SUPPORTING — diagnostics / evidence for [#1027](https://github.com/jannekbuengener/sample-brain/issues/1027)
-**Class:** ACTIVE_SUPPORTING
+**Status:** WIP / ACTIVE_SUPPORTING — Task-1 evidence extraction for [#1027](https://github.com/jannekbuengener/sample-brain/issues/1027)
+**Class:** ACTIVE_SUPPORTING (Task-1 partial; candidate hypotheses deferred)
 **Parents:** [#949](https://github.com/jannekbuengener/sample-brain/issues/949) (AQ7), [#942](https://github.com/jannekbuengener/sample-brain/issues/942) (program)
-**Depends on (CLOSED):** [#1025](https://github.com/jannekbuengener/sample-brain/issues/1025) boundary baseline, [#1026](https://github.com/jannekbuengener/sample-brain/issues/1026) role/drop baseline, [#1024](https://github.com/jannekbuengener/sample-brain/issues/1024) corpus, [#1023](https://github.com/jannekbuengener/sample-brain/issues/1023) KPI
+**Depends on (CLOSED):** [#1023](https://github.com/jannekbuengener/sample-brain/issues/1023) KPI, [#1024](https://github.com/jannekbuengener/sample-brain/issues/1024) corpus, [#1025](https://github.com/jannekbuengener/sample-brain/issues/1025) boundary baseline, [#1026](https://github.com/jannekbuengener/sample-brain/issues/1026) role/drop baseline
 **Normative KPI:** [`AQ7_STRUCTURE_ROLE_DROP_KPI_CONTRACT.md`](AQ7_STRUCTURE_ROLE_DROP_KPI_CONTRACT.md)
 **Corpus:** [`AQ7_STRUCTURE_ROLE_DROP_CORPUS.md`](AQ7_STRUCTURE_ROLE_DROP_CORPUS.md) / `sample-brain.aq7.structure-role-drop.synthetic.v1`
 **Boundary baseline:** [`AQ7_STRUCTURE_BOUNDARY_BASELINE.md`](AQ7_STRUCTURE_BOUNDARY_BASELINE.md) / `structure_v1.baseline.v1`
 **Role/drop baseline:** [`AQ7_STRUCTURE_ROLE_DROP_BASELINE.md`](AQ7_STRUCTURE_ROLE_DROP_BASELINE.md) / `arrangement_classifier.baseline.v1`
-**Signal ownership context (diagnostic only):** [`../ARRANGEMENT_SIGNAL_MATRIX_V1.md`](../ARRANGEMENT_SIGNAL_MATRIX_V1.md)
-**Related bootstrap:** [#1040](https://github.com/jannekbuengener/sample-brain/issues/1040) quality-loop consumer of stable bucket IDs (orchestrator out of scope here)
-**Downstream (not started here):** [#1028](https://github.com/jannekbuengener/sample-brain/issues/1028) candidate compare
+**Style reference:** [`AQ4_CLASSIFICATION_DIAGNOSTICS.md`](AQ4_CLASSIFICATION_DIAGNOSTICS.md) (taxonomy separation; not a plane merge)
 
-## Architecture outcome
+## Architecture outcome (Task 1)
 
 ```text
-AQ7_DIAGNOSTICS_PARTIAL_HOLD
+AQ7_1027_BUCKET_ANALYSIS_READY
 ```
 
-This document turns the measured [#1025](https://github.com/jannekbuengener/sample-brain/issues/1025) / [#1026](https://github.com/jannekbuengener/sample-brain/issues/1026) baselines into **explainable failure buckets**, **BeatGrid/provenance separation**, and **bounded CALIBRATION hypotheses** for later candidate comparison. Planes stay separate. It does **not** change StructureV1, ArrangementClassifier, SectionSignals, BeatGrid, thresholds/defaults, set promotion gates, or start [#1028](https://github.com/jannekbuengener/sample-brain/issues/1028).
+This document turns the measured #1025 / #1026 baselines into **explainable failure buckets** with plane firewalls, HOLD honesty, and dominant ranking. It does **not** change StructureV1 / ArrangementClassifier / SectionSignals, retune thresholds, invent candidate hypotheses for #1028, update `CANON_INDEX`, or switch production defaults.
 
-`PARTIAL_HOLD` is intentional: dominant measured buckets are enumerated with support, but the frozen synthetic pack is thin (10 fixtures; many confusion pairs `n=1`), BeatGrid provenance HOLD remains material on TEST, and no durable global AQ7 quality score or promotion threshold is inventable from this corpus.
+Task-1 scope is evidence extraction only. Final candidate hypotheses remain deferred.
+
+---
 
 ## 1. Scope / Evidence Chain
 
-| In | Out |
+| Item | Value |
 |---|---|
-| Bucket boundary / role / drop failures from frozen #1025+#1026 evidence | Analyzer / harness / threshold changes |
-| Diagnostic signal availability + correlation notes | Causal claims / GT leakage into prediction |
-| BeatGrid/provenance vs analyzer attribution hierarchy | Candidate implementation (#1028) |
-| Bounded CALIBRATION hypotheses with support | TEST/HOLDOUT tuning feedback |
-| Machine-facing bucket appendix for #1040 | Orchestrator / autonomous promotion |
+| Corpus id | `sample-brain.aq7.structure-role-drop.synthetic.v1` |
+| `corpus_version` | `1.0.0` |
+| Boundary candidate | `structure_v1.baseline.v1` |
+| Role/drop candidate | `arrangement_classifier.baseline.v1` |
+| Boundary exit (frozen harness) | `AQ7_STRUCTURE_BOUNDARY_BASELINE_PARTIAL_HOLD` |
+| Role/drop exit (frozen harness) | `AQ7_ROLE_DROP_BASELINE_PARTIAL_HOLD` |
+| Evidence regen | external workdir only; WAV/JSON **not** committed |
+| Boundary runner | `python -m src.aq7_structure_boundary_baseline --work-dir <ext>/aq7-structure-role-drop-corpus --output <ext>/aq7-structure-boundary-baseline.json` |
+| Role/drop runner | `python -m src.aq7_structure_role_drop_baseline --work-dir <ext>/aq7-structure-role-drop-corpus --output <ext>/aq7-structure-role-drop-baseline.json` |
 
-### Evidence identities (exact)
+### Evidence identity check (Task 1)
 
-| Field | Boundary (#1025) | Role/drop (#1026) |
-|---|---|---|
-| `document_type` | `sample-brain.aq7.structure-boundary-baseline.v1` | `sample-brain.aq7.structure-role-drop-baseline.v1` |
-| `schema_version` | `1.0.0` | `1.0.0` |
-| `candidate_id` | `structure_v1.baseline.v1` | `arrangement_classifier.baseline.v1` |
-| `corpus_id` | `sample-brain.aq7.structure-role-drop.synthetic.v1` | same |
-| `corpus_version` | `1.0.0` | `1.0.0` |
-| `generator_seed` | `1024001` | `1024001` |
-| Exit token | `AQ7_STRUCTURE_BOUNDARY_BASELINE_PARTIAL_HOLD` | `AQ7_ROLE_DROP_BASELINE_PARTIAL_HOLD` |
-| Boundary context | n/a (owner) | `boundary_reference = structure_v1.baseline.v1` |
+Fresh external regeneration on `origin/main` including #1026 matched the portable rounded aggregates and exit tokens in the baseline docs (candidate/corpus ids, CAL/TEST P/R/F1, support, FP/FN, role macro-F1/coverage, drop support/false/missed, BeatGrid HOLD counts). Exact floats live only in the external JSON.
 
-External JSON evidence was regenerated with the frozen harnesses only (outside the checkout). Exact floats live in those uncommitted artifacts; portable rounded aggregates below match the published #1025/#1026 baseline tables. No WAV/JSON committed.
+| Check | Result |
+|---|---|
+| Corpus / candidate / exit tokens | PASS |
+| Rounded #1025 aggregates | PASS |
+| Rounded #1026 role + drop aggregates | PASS |
+| Raw WAV/JSON committed | NO |
 
-Repro (external workdir only):
+On drift this slice must stop with `BLOCKED_EVIDENCE_IDENTITY_DRIFT` (not observed).
 
-```powershell
-python -m src.aq7_structure_boundary_baseline `
-  --work-dir <external>/aq7-structure-role-drop-corpus `
-  --output <external>/aq7-structure-boundary-baseline.json
+### Plane firewall
 
-python -m src.aq7_structure_role_drop_baseline `
-  --work-dir <external>/aq7-structure-role-drop-corpus `
-  --output <external>/aq7-structure-role-drop-baseline.json
-```
+| Plane | Token | Baseline source | Bucket source |
+|---|---|---|---|
+| Boundary | `aq7.boundary` | #1025 | #1025 fixture bars + #1023 matcher (offline signed-error recount) |
+| Role | `aq7.role` | #1026 | #1026 `role_items` / confusion only |
+| Drop | `aq7.drop_event` | #1026 | #1026 drop events only |
+
+Do **not** blend planes into one quality score. GT roles/drops never enter the prediction path (evaluator-only).
 
 ### Attribution hierarchy (fail-closed)
 
-A fixture/case is attributed to the **first** applicable layer; deeper layers must not double-count the same HOLD/ineligible surface:
+A case attributed at an earlier layer must **not** also count as a deeper plane failure:
 
-1. Eligibility / annotation (ignore-mask, incomplete annotation)
-2. BeatGrid / provenance HOLD
+1. Eligibility / annotation
+2. BeatGrid / provenance
 3. Analyzer / feature surface failure
-4. Boundary geometry failure (`aq7.boundary`)
-5. Signal availability (diagnostic only)
-6. Role classifier outcome (`aq7.role`)
-7. Drop classifier outcome (`aq7.drop_event`)
+4. Boundary geometry failure
+5. Signal availability
+6. Role classifier outcome
+7. Drop classifier outcome
 
-### Thin-corpus warning
+### Split firewall + HOLD rules
 
-| Slice | Count |
-|---|---:|
-| Fixtures total | 10 (CAL 6 / TEST 4) |
-| Boundary-eligible | CAL 6 / TEST 3 |
-| BeatGrid HOLD | TEST 1 (`aq7-synth-beatgrid-hold-test-001`) |
-| Role concrete support | CAL 17 / TEST 12 (HOLD fixture excluded) |
-| Drop reference support | CAL 1 / TEST 2 |
+| Rule | Application |
+|---|---|
+| CALIBRATION vs TEST | Strictly separate tables; no pooled correctness rates |
+| HOLD | Excluded from correctness denominators |
+| Ambiguous / ignore-mask | Visible as `boundary.ambiguity_ignore_mask`; **not** FP/FN |
+| Shares | Only over eligible denominators for that bucket |
+| Thin support | `dominant` requires support ≥ 2; support 1 → `DOMINANT_ON_THIN_CORPUS` |
 
-`dominant` requires support ≥ 2 within plane×split. Support 1 is labeled `DOMINANT_ON_THIN_CORPUS` / singleton — measured, not a durable rate.
+Dominant ranking within each plane × split: (1) support desc, (2) share of eligible denom desc, (3) lexicographic `bucket_id`.
+
+---
 
 ## 2. Boundary Failure Buckets
 
-Plane: `aq7.boundary` only. Denominators exclude BeatGrid HOLD and ignore-masked loci.
+Matching: #1023 ±1-bar one-to-one (`match_boundaries_1bar`). Early/late derived from recomputed `signed_error_bars` (`pred_bar - ref_bar`); ignore-masked predictions excluded from FP extras (same as #1025 scoring). `predicted_bars` in the artifact may include masked loci; unmasked preds are the correctness surface.
 
-### Aggregate (rounded; matches #1025)
+### Denominators (eligible / usable only; HOLD excluded)
 
-| Partition | P@1bar | R@1bar | F1 | support | FP | FN | over-seg rate | under-seg rate | section-count abs err | BeatGrid HOLD |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| CALIBRATION | 0.343 | 0.923 | 0.500 | 13 | 23 | 1 | 1.0 | 0.0 | 3.67 | 0 |
-| TEST/HOLDOUT | 0.360 | 1.000 | 0.529 | 9 | 16 | 0 | 1.0 | 0.0 | 5.33 | 1 |
+| Split | Usable fixtures | Eligible refs | Unmasked preds | Matched pairs |
+|---|---:|---:|---:|---:|
+| CALIBRATION | 6 | 13 | 35 | 12 |
+| TEST | 3 | 9 | 25 | 9 |
 
-### Bucket inventory
+TEST BeatGrid HOLD fixture is **not** in these denominators.
 
-| bucket_id | split | support | share / note | fixture_ids | ranking |
-|---|---|---:|---|---|---|
-| `boundary.over_segmentation` | CAL | 6/6 eligible | rate 1.0 | all CAL eligible | **dominant** |
-| `boundary.over_segmentation` | TEST | 3/3 eligible | rate 1.0 | all TEST eligible | **dominant** |
-| `boundary.extra_or_duplicate` | CAL | FP=23 | 23/35 unmasked preds | all CAL eligible | **dominant** (with over-seg) |
-| `boundary.extra_or_duplicate` | TEST | FP=16 | 16/25 unmasked preds | all TEST eligible | **dominant** (with over-seg) |
-| `boundary.section_count_error` | CAL | mean abs err 3.67 | all over-count | all CAL eligible | **dominant** companion |
-| `boundary.section_count_error` | TEST | mean abs err 5.33 | all over-count | all TEST eligible | **dominant** companion |
-| `boundary.exact` | CAL | 11/12 matched | exact_hit_rate ≈ 0.917 | matched pairs | measured companion |
-| `boundary.exact` | TEST | 9/9 matched | exact_hit_rate 1.0 | matched pairs | measured companion |
-| `boundary.early` | CAL | 1 | signed err −1 bar | `aq7-synth-repeated-structure-cal-001` | `DOMINANT_ON_THIN_CORPUS` |
-| `boundary.early` | TEST | 0 | — | — | none |
-| `boundary.late` | CAL | 0 | — | — | none |
-| `boundary.late` | TEST | 0 | — | — | none |
-| `boundary.missed` | CAL | FN=1 | 1/13 refs | `aq7-synth-over-segmentation-challenge-cal-001` (bar 12) | `DOMINANT_ON_THIN_CORPUS` |
-| `boundary.missed` | TEST | FN=0 | — | — | none |
-| `boundary.under_segmentation` | CAL/TEST | 0 | rate 0.0 | — | none on this pack |
-| `boundary.near_tolerance` | CAL | 1 early pair inside ±1 | not a separate FP | `aq7-synth-repeated-structure-cal-001` | thin |
-| `boundary.ambiguity_ignore_mask` | CAL | 1 fixture | masked locus; 0 eligible refs | `aq7-synth-annotation-disagreement-cal-001` | eligibility layer (not FP/FN) |
-| `boundary.beatgrid_hold` | TEST | 1 | excluded from denom | `aq7-synth-beatgrid-hold-test-001` | HOLD (not correctness) |
-| `boundary.analyzer_failure` | CAL/TEST | 0 | — | — | none |
+### CALIBRATION (`aq7.boundary`)
 
-Offline signed-error recount used predicted/reference bars with the same ±1-bar one-to-one policy as #1023 (analysis-only; harness unchanged). Almost all matched pairs are exact; early/late is not the dominant failure mode.
+| bucket_id | support | share (eligible denom) | affected `fixture_id`s | notes |
+|---|---:|---|---|---|
+| `boundary.extra_or_duplicate` | 23 | 23/35 = 0.657 | `aq7-synth-simple-clean-cal-001`, `aq7-synth-repeated-structure-cal-001`, `aq7-synth-near-boundary-tolerance-cal-001`, `aq7-synth-role-ambiguity-unknown-cal-001`, `aq7-synth-annotation-disagreement-cal-001`, `aq7-synth-over-segmentation-challenge-cal-001` | unmatched unmasked preds |
+| `boundary.exact` | 11 | 11/12 = 0.917 | all usable except empty-ref disagreement | success context; signed_error = 0 |
+| `boundary.over_segmentation` | 6 | 6/6 = 1.000 | all 6 usable CAL fixtures | record-level |
+| `boundary.section_count_error` | 6 | 6/6 = 1.000 | same 6 | abs section-count error > 0 |
+| `boundary.early` | 1 | 1/12 = 0.083 | `aq7-synth-repeated-structure-cal-001` | signed_error = −1 (ref 32 → pred 31) |
+| `boundary.late` | 0 | 0/12 = 0.000 | — | — |
+| `boundary.near_tolerance` | 1 | 1/12 = 0.083 | `aq7-synth-repeated-structure-cal-001` | matched with 0 < \|err\| ≤ 1 |
+| `boundary.missed` | 1 | 1/13 = 0.077 | `aq7-synth-over-segmentation-challenge-cal-001` | eligible ref unmatched |
+| `boundary.under_segmentation` | 0 | 0/6 = 0.000 | — | even `under_segmentation_challenge` still over-segs |
+| `boundary.ambiguity_ignore_mask` | 1 | n/a (not FP/FN) | `aq7-synth-annotation-disagreement-cal-001` | mask around bar 16; masked pred not counted as FP |
+| `boundary.beatgrid_hold` | 0 | n/a | — | — |
+| `boundary.analyzer_failure` | 0 | n/a | — | — |
+
+### TEST (`aq7.boundary`)
+
+| bucket_id | support | share (eligible denom) | affected `fixture_id`s | notes |
+|---|---:|---|---|---|
+| `boundary.extra_or_duplicate` | 16 | 16/25 = 0.640 | `aq7-synth-drop-at-boundary-test-001`, `aq7-synth-drop-not-boundary-owner-test-001`, `aq7-synth-under-segmentation-challenge-test-001` | unmatched unmasked preds |
+| `boundary.exact` | 9 | 9/9 = 1.000 | same 3 usable TEST fixtures | all matched pairs exact |
+| `boundary.over_segmentation` | 3 | 3/3 = 1.000 | same 3 | record-level |
+| `boundary.section_count_error` | 3 | 3/3 = 1.000 | same 3 | — |
+| `boundary.early` | 0 | 0/9 = 0.000 | — | — |
+| `boundary.late` | 0 | 0/9 = 0.000 | — | — |
+| `boundary.near_tolerance` | 0 | 0/9 = 0.000 | — | — |
+| `boundary.missed` | 0 | 0/9 = 0.000 | — | — |
+| `boundary.under_segmentation` | 0 | 0/3 = 0.000 | — | challenge fixture still over-segs |
+| `boundary.ambiguity_ignore_mask` | 0 | n/a | — | — |
+| `boundary.beatgrid_hold` | 1 | n/a (HOLD) | `aq7-synth-beatgrid-hold-test-001` | provenance `missing`; not in correctness denoms |
+| `boundary.analyzer_failure` | 0 | n/a | — | — |
+
+---
 
 ## 3. Role Confusion Buckets
 
-Plane: `aq7.role` only. Scored automatic roles on frozen reference sections. `unknown` visible; concrete macro-F1 excludes unknown per #1023. HOLD fixture excluded from denominators.
+Source: #1026 only. Confusion is `reference_role -> predicted_role` on scored eligible sections. GT roles are never back-projected into the prediction path.
 
-### Aggregate (rounded; matches #1026)
+### Denominators
 
-| Partition | macro-F1 | coverage | bar-weighted acc | unknown rate | abstention | concrete support | BeatGrid HOLD |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| CALIBRATION | 0.457 | 0.588 | 0.393 | 0.444 | 0 | 17 | 0 |
-| TEST/HOLDOUT | 0.297 | 0.750 | 0.341 | 0.250 | 1 | 12 | 1 |
+| Split | Scored role items | Concrete-role support | Held (BeatGrid) | Annotation-unavailable |
+|---|---:|---:|---:|---:|
+| CALIBRATION | 18 | 17 | 0 | 1 (`aq7-synth-annotation-disagreement-cal-001`) |
+| TEST | 12 | 12 | 1 (`aq7-synth-beatgrid-hold-test-001`) | 0 |
 
-### Confusion pairs (scored items only)
+Note: baseline aggregate field `abstention_count` counts **held unusable fixtures** (TEST = 1 BeatGrid HOLD), not section-level uncovered predictions. True `pred_role is None` uncovered count is **0** on both splits. BeatGrid HOLD stays at attribution layer 2 — not a role-classifier miss.
 
-#### CALIBRATION
+### CALIBRATION (`aq7.role`)
 
-| bucket_id | ref → pred | support | fixture context (ids) | ranking |
-|---|---|---:|---|---|
-| `role.outro_outro_correct` | outro → outro | 5 | late-track sections across CAL | measured correct (not failure) |
-| `role.intro_unknown` | intro → unknown | 4 | early sections: simple-clean, repeated, near-boundary, role-ambiguity | **dominant** failure |
-| `role.build_groove` | build → groove | 2 | near-boundary; over-seg challenge | **dominant** (support=2) |
-| `role.groove_unknown` | groove → unknown | 2 | repeated-structure; simple-clean | **dominant** (support=2) |
-| `role.build_unknown` | build → unknown | 1 | repeated-structure | singleton |
-| `role.intro_groove` | intro → groove | 1 | over-seg challenge | singleton |
-| `role.drop_drop_correct` | drop → drop | 1 | over-seg challenge | singleton correct |
-| `role.groove_groove_correct` | groove → groove | 1 | repeated-structure | singleton correct |
-| `role.unknown_unknown` | unknown → unknown | 1 | role-ambiguity | reference-unknown (not concrete error) |
-| `role.abstention_uncovered` | — | abstention 0; coverage 0.588 | unknown predictions reduce concrete coverage | measured |
-| `role.held_unavailable` | — | 0 | — | none on CAL |
+#### Confusion pairs (all scored)
 
-#### TEST/HOLDOUT (evidence only; not tuning)
+| ref → pred | support | share of scored (18) | fixture_ids |
+|---|---:|---:|---|
+| intro → unknown | 4 | 0.222 | `aq7-synth-simple-clean-cal-001`, `aq7-synth-repeated-structure-cal-001`, `aq7-synth-near-boundary-tolerance-cal-001`, `aq7-synth-role-ambiguity-unknown-cal-001` |
+| outro → outro | 5 | 0.278 | (correct; multiple CAL fixtures) |
+| groove → unknown | 2 | 0.111 | `aq7-synth-simple-clean-cal-001`, `aq7-synth-repeated-structure-cal-001` |
+| build → groove | 2 | 0.111 | `aq7-synth-near-boundary-tolerance-cal-001`, `aq7-synth-over-segmentation-challenge-cal-001` |
+| build → unknown | 1 | 0.056 | `aq7-synth-repeated-structure-cal-001` |
+| intro → groove | 1 | 0.056 | `aq7-synth-over-segmentation-challenge-cal-001` |
+| groove → groove | 1 | 0.056 | (correct) |
+| drop → drop | 1 | 0.056 | (correct) |
+| unknown → unknown | 1 | 0.056 | `aq7-synth-role-ambiguity-unknown-cal-001` |
 
-| bucket_id | ref → pred | support | fixture context (ids) | ranking |
-|---|---|---:|---|---|
-| `role.drop_groove` | drop → groove | 2 | drop-at-boundary; under-seg challenge | **dominant** on TEST (not CAL hypothesis fuel) |
-| `role.outro_outro_correct` | outro → outro | 2 | drop-at-boundary; under-seg | measured correct |
-| `role.build_groove` | build → groove | 1 | under-seg | singleton |
-| `role.build_intro` | build → intro | 1 | drop-at-boundary | singleton |
-| `role.intro_groove` | intro → groove | 1 | drop-not-boundary-owner | singleton |
-| `role.intro_unknown` | intro → unknown | 1 | under-seg | singleton |
-| `role.groove_unknown` | groove → unknown | 1 | under-seg | singleton |
-| `role.outro_unknown` | outro → unknown | 1 | drop-not-boundary-owner | singleton |
-| `role.held_unavailable` | — | 1 fixture | `aq7-synth-beatgrid-hold-test-001` | BeatGrid HOLD |
+#### Concrete-role confusions (ref≠pred, both concrete)
 
-`breakdown` has corpus support 0 on both splits (N/A F1) — no invented breakdown confusion.
+| pair | support | share of concrete (17) | diagnostic context |
+|---|---:|---:|---|
+| build → groove | 2 | 0.118 | mid-track; length 16 bars; prev=intro; next=outro or drop |
+| intro → groove | 1 | 0.059 | early; length 12; prev=none; next=build |
+
+#### Predicted unknown / reference unknown / held
+
+| bucket | support | share | fixture_ids |
+|---|---:|---|---|
+| predicted unknown | 8 | 8/18 = 0.444 | `aq7-synth-simple-clean-cal-001`, `aq7-synth-repeated-structure-cal-001`, `aq7-synth-near-boundary-tolerance-cal-001`, `aq7-synth-role-ambiguity-unknown-cal-001` |
+| reference unknown | 1 | 1/18 = 0.056 | `aq7-synth-role-ambiguity-unknown-cal-001` (pred also unknown) |
+| abstention / uncovered (`pred_role is None`) | 0 | — | — |
+| held / unavailable | 1 | n/a | `aq7-synth-annotation-disagreement-cal-001` (ambiguous-boundary exclusion; eligibility layer) |
+
+### TEST (`aq7.role`)
+
+#### Confusion pairs (all scored; BeatGrid HOLD excluded)
+
+| ref → pred | support | share of scored (12) | fixture_ids |
+|---|---:|---:|---|
+| drop → groove | 2 | 0.167 | `aq7-synth-drop-at-boundary-test-001`, `aq7-synth-under-segmentation-challenge-test-001` |
+| outro → outro | 2 | 0.167 | (correct) |
+| build → groove | 1 | 0.083 | `aq7-synth-under-segmentation-challenge-test-001` |
+| build → intro | 1 | 0.083 | `aq7-synth-drop-at-boundary-test-001` |
+| intro → groove | 1 | 0.083 | `aq7-synth-drop-not-boundary-owner-test-001` |
+| intro → intro | 1 | 0.083 | (correct) |
+| intro → unknown | 1 | 0.083 | `aq7-synth-under-segmentation-challenge-test-001` |
+| groove → groove | 1 | 0.083 | (correct) |
+| groove → unknown | 1 | 0.083 | `aq7-synth-under-segmentation-challenge-test-001` |
+| outro → unknown | 1 | 0.083 | `aq7-synth-drop-not-boundary-owner-test-001` |
+
+#### Concrete-role confusions
+
+| pair | support | share of concrete (12) | diagnostic context |
+|---|---:|---:|---|
+| drop → groove | 2 | 0.167 | mid/late; length 16; prev=build; next=outro |
+| build → groove | 1 | 0.083 | mid; length 16; prev=groove; next=drop |
+| build → intro | 1 | 0.083 | mid; length 16; prev=intro; next=drop |
+| intro → groove | 1 | 0.083 | early; length 12; prev=none; next=groove |
+
+#### Predicted unknown / held
+
+| bucket | support | share | fixture_ids |
+|---|---:|---|---|
+| predicted unknown | 3 | 3/12 = 0.250 | `aq7-synth-drop-not-boundary-owner-test-001`, `aq7-synth-under-segmentation-challenge-test-001` |
+| reference unknown | 0 | — | — |
+| abstention / uncovered | 0 | — | — |
+| held (BeatGrid) | 1 | n/a | `aq7-synth-beatgrid-hold-test-001` |
+
+---
 
 ## 4. Drop Event Failure Buckets
 
-Plane: `aq7.drop_event` only. Matching ±1 bar on frozen reference boundaries. HOLD excluded from correctness denominators.
+Source: #1026 only. Matching uses ±1-bar policy on reference drop events. **No matched events** on either split → `drop.timing_offset = not_applicable` (not 0).
 
-### Aggregate (rounded; matches #1026)
+### CALIBRATION (`aq7.drop_event`)
 
-| Partition | P@1bar | R@1bar | F1 | support | false | missed | med\|err\| | p95\|err\| | coverage | BeatGrid HOLD |
-|---|---:|---:|---:|---:|---:|---:|---|---|---:|---:|
-| CALIBRATION | 0.000 | 0.000 | 0.000 | 1 | 6 | 1 | N/A | N/A | 1.000 | 0 |
-| TEST/HOLDOUT | 0.000 | 0.000 | 0.000 | 2 | 3 | 2 | N/A | N/A | 1.000 | 1 |
+| bucket_id | support | share | affected `fixture_id`s |
+|---|---:|---|---|
+| `drop.false` | 6 | 6/6 predicted positives = 1.000 | `aq7-synth-simple-clean-cal-001`, `aq7-synth-repeated-structure-cal-001`, `aq7-synth-near-boundary-tolerance-cal-001`, `aq7-synth-role-ambiguity-unknown-cal-001`, `aq7-synth-over-segmentation-challenge-cal-001` |
+| `drop.missed` | 1 | 1/1 ref support = 1.000 | `aq7-synth-over-segmentation-challenge-cal-001` (ref bar 28; pred bar 36 unmatched) |
+| `drop.timing_offset` | n/a | **not_applicable** | no matched pairs |
+| `drop.correct_event` | 0 | 0/1 | — |
+| `drop.correct_negative` | 1 | n/a (empty expected set, no false preds) | `aq7-synth-annotation-disagreement-cal-001` |
+| `drop.unavailable_hold` | 0 | n/a | — |
+| `drop.beatgrid_hold` | 0 | n/a | — |
 
-No drop events matched within ±1 bar → `drop.timing_offset = not_applicable` (not 0).
+### TEST (`aq7.drop_event`)
 
-### Bucket inventory
+| bucket_id | support | share | affected `fixture_id`s |
+|---|---:|---|---|
+| `drop.false` | 3 | 3/3 predicted positives = 1.000 | `aq7-synth-drop-at-boundary-test-001`, `aq7-synth-drop-not-boundary-owner-test-001`, `aq7-synth-under-segmentation-challenge-test-001` |
+| `drop.missed` | 2 | 2/2 ref support = 1.000 | `aq7-synth-drop-at-boundary-test-001` (ref 32), `aq7-synth-drop-not-boundary-owner-test-001` (ref 28) |
+| `drop.timing_offset` | n/a | **not_applicable** | no matched pairs |
+| `drop.correct_event` | 0 | 0/2 | — |
+| `drop.correct_negative` | 0 | — | — |
+| `drop.unavailable_hold` | 0 | n/a | — |
+| `drop.beatgrid_hold` | 1 | n/a (HOLD) | `aq7-synth-beatgrid-hold-test-001` |
 
-| bucket_id | split | support | note | fixture_ids | ranking |
-|---|---|---:|---|---|---|
-| `drop.false` | CAL | 6 | preds on empty-ref or unmatched bars | simple-clean, repeated (2), near-boundary, role-ambiguity, over-seg | **dominant** |
-| `drop.false` | TEST | 3 | unmatched preds | drop-at-boundary, drop-not-boundary-owner, under-seg | **dominant** |
-| `drop.missed` | CAL | 1 | ref bar 28 unmatched | `aq7-synth-over-segmentation-challenge-cal-001` | `DOMINANT_ON_THIN_CORPUS` |
-| `drop.missed` | TEST | 2 | refs unmatched | drop-at-boundary; drop-not-boundary-owner | **dominant** on TEST |
-| `drop.timing_offset` | CAL/TEST | n/a | no matched pairs | — | `not_applicable` |
-| `drop.correct_event` | CAL/TEST | 0 | — | — | none |
-| `drop.correct_negative` | CAL | 1 | empty ref + empty pred | `aq7-synth-annotation-disagreement-cal-001` | thin correct |
-| `drop.correct_negative` | TEST | 0 among usable non-HOLD with empty ref | under-seg has empty ref but FP pred | — | — |
-| `drop.unavailable_hold` | — | 0 | — | — | none beyond BeatGrid |
-| `drop.beatgrid_hold` | TEST | 1 | excluded | `aq7-synth-beatgrid-hold-test-001` | HOLD |
+---
 
-## 5. Signal Availability / Correlation
+## 5. BeatGrid / Provenance Attribution
 
-Signal families are **explanatory only** — not ground truth, not promotion evidence, not pseudo-labels.
+| Fixture | Split | Provenance | Attribution layer | Effect |
+|---|---|---|---|---|
+| `aq7-synth-beatgrid-hold-test-001` | TEST | `missing` | 2 — BeatGrid / provenance | Boundary, role, and drop correctness = HOLD/unknown; excluded from all plane correctness denominators |
+| All other fixtures | CAL + TEST | `authored_synthetic` | evaluation-only synthetic grid | Measurable surfaces; not analyzer BeatGrid truth |
 
-### Availability (usable non-HOLD fixtures)
+No analyzer/feature-surface HOLD (`ANALYZER_FAILURE` / `ANALYZER_FEATURE_LIMITATION`) observed on this pack.
 
-| Family | Status on usable fixtures | Notes |
-|---|---|---|
-| energy / loudness (`bar_energy_rms`, `bar_loudness_delta`) | measured | present on all eligible CAL+TEST |
-| low-end share | measured | present |
-| onset density | measured | present |
-| rhythm stability | measured | present |
-| timbre change (`timbre_delta`) | measured | present |
-| spectral change (`spectral_delta`) | measured | present |
-| recurrence / self-similarity / novelty | measured | present |
-| neighbor / multi-bar trends | measured | present |
-| relative track position | measured | present |
-| CLAP | `not_applicable` | not consumed |
-| stems | `not_applicable` | not consumed |
+Annotation eligibility HOLD (layer 1): `aq7-synth-annotation-disagreement-cal-001` — ambiguous boundary ignore-mask; role sections excluded; boundary ignore-mask locus not scored as FP/FN; drop empty-set correct negative remains drop-plane evidence only.
 
-BeatGrid HOLD fixture (`aq7-synth-beatgrid-hold-test-001`): only `clap`/`stems` recorded as `not_applicable`; core families are **not** claimed measured under provenance HOLD (attribution stops at layer 2).
+Fail-closed: the BeatGrid HOLD fixture is **not** counted as role confusion, drop false/missed, or boundary FP/FN.
 
-### Correlation notes (non-causal)
+---
 
-| Observation | Plane | Support | Guard |
-|---|---|---:|---|
-| Extra boundaries co-occur with dense novelty/onset-capable surfaces on synthetic accents | `aq7.boundary` | all eligible over-seg | correlation with over-seg bucket; **not** proof that a novelty threshold is wrong |
-| `intro → unknown` often on early sections where relative position is measured | `aq7.role` | CAL n=4 | classifier under-claim; do not invent GT from signals |
-| `build → groove` where build cues (loudness/onset/timbre deltas) may be weak on synth material | `aq7.role` | CAL n=2 | thin; exploratory only |
-| False `drop_onset` on empty-ref tracks despite measured loudness/timbre/novelty families | `aq7.drop_event` | CAL FP=6 | emission without reference support; no causal weight claim |
-| Missed `drop_onset` when a ref exists | `aq7.drop_event` | CAL n=1 / TEST n=2 | timing/eligibility mismatch visible; no invented offset metric |
+## 6. CALIBRATION vs TEST comparison
 
-Optional signals (CLAP/stems) are absent — report as absent, never as correctness.
-
-## 6. BeatGrid / Provenance Attribution
-
-| Fixture | Split | Layer | Effect |
+| Plane | CALIBRATION headline | TEST headline | Firewall note |
 |---|---|---|---|
-| `aq7-synth-beatgrid-hold-test-001` | TEST | 2 BeatGrid/provenance | HOLD for boundary, role, and drop; **out of all correctness denominators** |
-| `aq7-synth-annotation-disagreement-cal-001` | CAL | 1 Eligibility/annotation | ignore-mask on disputed boundary; 0 eligible boundary refs; role/drop not treated as BeatGrid failure |
-| All other fixtures | CAL/TEST | 4–7 after eligible | authored_synthetic eval BeatGrid; failures attributed to boundary/role/drop logic — not invented as BeatGrid errors |
+| Boundary | Extra/duplicate preds dominate (23/35); universal over-segmentation (6/6); 1 early/near-tol pair; 1 miss | Extra/duplicate (16/25); universal over-seg (3/3); all matched pairs exact; +1 BeatGrid HOLD | HOLD fixture only on TEST; rates not pooled |
+| Role | Predicted `unknown` dominates (8/18); concrete build→groove (2); outro mostly correct | Predicted `unknown` (3/12); concrete drop→groove (2); build confusions thin | BeatGrid HOLD ≠ role abstention |
+| Drop | All 6 predicted events false; 1 miss; timing N/A; 1 correct negative | All 3 predicted events false; 2 misses; timing N/A; +1 BeatGrid HOLD | No matched events either split |
 
-No analyzer_failure cases observed on this regeneration.
+Do **not** tune on TEST. Thin per-bucket support (often 1) blocks durable rate claims beyond this synthetic pack.
 
-## 7. CALIBRATION vs TEST comparison
+---
 
-| Plane | CALIBRATION (exploration) | TEST/HOLDOUT (frozen evidence) | Firewall |
-|---|---|---|---|
-| Boundary | over-seg + extras dominate; 1 miss; 1 early | same over-seg pattern; 0 miss; 1 BeatGrid HOLD | do not tune on TEST |
-| Role | intro→unknown, build→groove, groove→unknown lead | drop→groove leads; BeatGrid HOLD | TEST confusions are evidence only |
-| Drop | FP-dominant; 1 miss; timing N/A | FP + 2 misses; timing N/A; HOLD | no TEST feedback into candidates |
-| Signals | core families measured | same on usable; HOLD sparse | no optional-signal labeling |
+## 7. Dominant Failure Summary
 
-CAL and TEST tables are never mixed into one quality score.
+Ranking rule: support ↓, eligible share ↓, `bucket_id` ↑. Tag `dominant` iff support ≥ 2; else `DOMINANT_ON_THIN_CORPUS`. Success-only buckets (`boundary.exact`, correct role pairs, `drop.correct_*`) are measured context, not failure winners.
 
-## 8. Dominant Failure Summary
+### Boundary × CALIBRATION
 
-| Plane × split | Dominant bucket(s) | Support basis |
-|---|---|---|
-| boundary × CAL | `boundary.over_segmentation` + `boundary.extra_or_duplicate` | 6/6 fixtures; FP=23 |
-| boundary × TEST | `boundary.over_segmentation` + `boundary.extra_or_duplicate` | 3/3 eligible; FP=16; HOLD separate |
-| role × CAL | `role.intro_unknown` (then `role.build_groove`, `role.groove_unknown`) | 4; 2; 2 |
-| role × TEST | `role.drop_groove` | 2 (evidence only) |
-| drop × CAL | `drop.false` | 6 |
-| drop × TEST | `drop.false` + `drop.missed` | 3 + 2 |
+| rank | bucket_id | support | share | tag |
+|---:|---|---:|---:|---|
+| 1 | `boundary.extra_or_duplicate` | 23 | 0.657 | dominant |
+| 2 | `boundary.over_segmentation` | 6 | 1.000 | dominant |
+| 3 | `boundary.section_count_error` | 6 | 1.000 | dominant |
+| 4 | `boundary.early` | 1 | 0.083 | DOMINANT_ON_THIN_CORPUS |
+| 5 | `boundary.near_tolerance` | 1 | 0.083 | DOMINANT_ON_THIN_CORPUS |
+| 6 | `boundary.missed` | 1 | 0.077 | DOMINANT_ON_THIN_CORPUS |
+| 7 | `boundary.ambiguity_ignore_mask` | 1 | n/a | DOMINANT_ON_THIN_CORPUS |
 
-Early/late boundary timing is **not** dominant. Under-segmentation is **not** observed on eligible fixtures (including the family named `under-segmentation-challenge`, which still over-segments under current StructureV1).
+### Boundary × TEST
 
-## 9. Bounded Candidate Hypotheses
+| rank | bucket_id | support | share | tag |
+|---:|---|---:|---:|---|
+| 1 | `boundary.extra_or_duplicate` | 16 | 0.640 | dominant |
+| 2 | `boundary.over_segmentation` | 3 | 1.000 | dominant |
+| 3 | `boundary.section_count_error` | 3 | 1.000 | dominant |
+| 4 | `boundary.beatgrid_hold` | 1 | n/a | DOMINANT_ON_THIN_CORPUS |
 
-Hypotheses are **CALIBRATION-derived**, bounded, and explicitly non-causal. They do **not** authorize thresholds, production switches, or #1028 implementation in this slice. TEST may only later **evaluate** candidates — never generate them.
+### Role × CALIBRATION
 
-| hyp_id | Target plane | CAL evidence | Support | Singletons? | Allowed #1028 use |
-|---|---|---|---:|---|---|
-| `H-AQ7-1027-01` | `aq7.boundary` | Reduce extra/over-segmentation density without collapsing recall | over-seg 6/6; FP=23 | no (fixture-level) | thin adapter exploration only; no invented gate |
-| `H-AQ7-1027-02` | `aq7.role` | Reduce early-section `intro → unknown` under-claim | 4 | no | CAL exploration; preserve unknown honesty |
-| `H-AQ7-1027-03` | `aq7.role` | Reduce `build → groove` concrete confusion | 2 | borderline | CAL only; abort if only singleton remains after any filter |
-| `H-AQ7-1027-04` | `aq7.drop_event` | Reduce false `drop_onset` on empty-ref surfaces | FP=6 | no | CAL only; keep miss visibility separate |
+| rank | bucket_id | support | share | tag |
+|---:|---|---:|---:|---|
+| 1 | `role.predicted_unknown` | 8 | 0.444 | dominant |
+| 2 | `role.confusion:intro->unknown` | 4 | 0.222 | dominant |
+| 3 | `role.concrete_confusion:build->groove` | 2 | 0.118 | dominant |
+| 4 | `role.confusion:groove->unknown` | 2 | 0.111 | dominant |
+| 5 | `role.confusion:build->unknown` | 1 | 0.056 | DOMINANT_ON_THIN_CORPUS |
+| 6 | `role.concrete_confusion:intro->groove` | 1 | 0.059 | DOMINANT_ON_THIN_CORPUS |
+| 7 | `role.reference_unknown` | 1 | 0.056 | DOMINANT_ON_THIN_CORPUS |
+| 8 | `role.held_unavailable` (annotation) | 1 | n/a | DOMINANT_ON_THIN_CORPUS |
 
-Hypothesis count: **4**.
+### Role × TEST
 
-Not promoted to hypotheses (retained as diagnostics only):
+| rank | bucket_id | support | share | tag |
+|---:|---|---:|---:|---|
+| 1 | `role.predicted_unknown` | 3 | 0.250 | dominant |
+| 2 | `role.concrete_confusion:drop->groove` | 2 | 0.167 | dominant |
+| 3 | `role.concrete_confusion:build->groove` | 1 | 0.083 | DOMINANT_ON_THIN_CORPUS |
+| 4 | `role.concrete_confusion:build->intro` | 1 | 0.083 | DOMINANT_ON_THIN_CORPUS |
+| 5 | `role.concrete_confusion:intro->groove` | 1 | 0.083 | DOMINANT_ON_THIN_CORPUS |
+| 6 | `role.confusion:groove->unknown` | 1 | 0.083 | DOMINANT_ON_THIN_CORPUS |
+| 7 | `role.confusion:intro->unknown` | 1 | 0.083 | DOMINANT_ON_THIN_CORPUS |
+| 8 | `role.confusion:outro->unknown` | 1 | 0.083 | DOMINANT_ON_THIN_CORPUS |
+| 9 | `role.held` (BeatGrid) | 1 | n/a | DOMINANT_ON_THIN_CORPUS |
 
-- CAL `boundary.missed` / `boundary.early` (n=1)
-- TEST-leading `role.drop_groove` (TEST must not drive candidates)
-- Any breakdown-family claim (support 0)
-- Any CLAP/stem-driven claim (`not_applicable`)
-- Any global AQ7 composite score
+### Drop × CALIBRATION
 
-## 10. Explicit Non-Conclusions
+| rank | bucket_id | support | share | tag |
+|---:|---|---:|---:|---|
+| 1 | `drop.false` | 6 | 1.000 | dominant |
+| 2 | `drop.missed` | 1 | 1.000 | DOMINANT_ON_THIN_CORPUS |
 
-- No causality from signal family → failure bucket.
-- No GT leakage: GT roles/drops/boundaries never enter prediction; diagnostics only read baseline outputs.
-- No invented thresholds, tolerances, or promotion gates.
-- No global AQ7 quality score blending boundary+role+drop.
-- HOLD / ignore-mask / BeatGrid are not “failures against the analyzer.”
-- `drop.timing_offset` is not 0 when unmatched — it is `not_applicable`.
-- Thin synthetic support does not authorize consumer-safety or production claims.
-- #1028 is not started; hypotheses are tokens only.
-- Optional signals were not present and are not pseudo-labeled.
+`drop.timing_offset`: **not_applicable**.
 
-## 11. Exit Token
+### Drop × TEST
 
-Exactly one:
+| rank | bucket_id | support | share | tag |
+|---:|---|---:|---:|---|
+| 1 | `drop.false` | 3 | 1.000 | dominant |
+| 2 | `drop.missed` | 2 | 1.000 | dominant |
+| 3 | `drop.beatgrid_hold` | 1 | n/a | DOMINANT_ON_THIN_CORPUS |
 
-```text
-AQ7_DIAGNOSTICS_PARTIAL_HOLD
-```
+`drop.timing_offset`: **not_applicable**.
 
-Rationale: buckets are quantified with support and plane separation, identities match #1025/#1026, but thin corpus + material BeatGrid HOLD prevent an honest `AQ7_ERROR_BUCKETS_EXPLAINED` upgrade. Evidence is not `INSUFFICIENT` — regeneration matched frozen baselines.
+---
 
-## 12. Machine-facing bucket appendix
+## Deferred (not Task 1)
 
-Stable IDs for later #1040 consumption. Values are portable summaries; exact floats remain in external JSON.
-
-```json
-{
-  "document_type": "sample-brain.aq7.structure-role-drop-diagnostics.v1",
-  "schema_version": "1.0.0",
-  "issue": 1027,
-  "exit_status": "AQ7_DIAGNOSTICS_PARTIAL_HOLD",
-  "corpus_id": "sample-brain.aq7.structure-role-drop.synthetic.v1",
-  "corpus_version": "1.0.0",
-  "generator_seed": 1024001,
-  "boundary_candidate_id": "structure_v1.baseline.v1",
-  "role_drop_candidate_id": "arrangement_classifier.baseline.v1",
-  "boundary_exit": "AQ7_STRUCTURE_BOUNDARY_BASELINE_PARTIAL_HOLD",
-  "role_drop_exit": "AQ7_ROLE_DROP_BASELINE_PARTIAL_HOLD",
-  "planes": ["aq7.boundary", "aq7.role", "aq7.drop_event"],
-  "hold": {
-    "beatgrid_fixture_ids": ["aq7-synth-beatgrid-hold-test-001"],
-    "beatgrid_split": "TEST",
-    "correctness_denominator": "excluded"
-  },
-  "dominant_buckets": [
-    {"plane": "aq7.boundary", "split": "CALIBRATION", "bucket_id": "boundary.over_segmentation", "support": 6},
-    {"plane": "aq7.boundary", "split": "CALIBRATION", "bucket_id": "boundary.extra_or_duplicate", "support": 23},
-    {"plane": "aq7.boundary", "split": "TEST", "bucket_id": "boundary.over_segmentation", "support": 3},
-    {"plane": "aq7.boundary", "split": "TEST", "bucket_id": "boundary.extra_or_duplicate", "support": 16},
-    {"plane": "aq7.role", "split": "CALIBRATION", "bucket_id": "role.intro_unknown", "support": 4},
-    {"plane": "aq7.role", "split": "CALIBRATION", "bucket_id": "role.build_groove", "support": 2},
-    {"plane": "aq7.role", "split": "CALIBRATION", "bucket_id": "role.groove_unknown", "support": 2},
-    {"plane": "aq7.role", "split": "TEST", "bucket_id": "role.drop_groove", "support": 2, "tuning_fuel": false},
-    {"plane": "aq7.drop_event", "split": "CALIBRATION", "bucket_id": "drop.false", "support": 6},
-    {"plane": "aq7.drop_event", "split": "TEST", "bucket_id": "drop.false", "support": 3, "tuning_fuel": false},
-    {"plane": "aq7.drop_event", "split": "TEST", "bucket_id": "drop.missed", "support": 2, "tuning_fuel": false}
-  ],
-  "drop_timing_offset": "not_applicable",
-  "hypotheses": [
-    {"hyp_id": "H-AQ7-1027-01", "plane": "aq7.boundary", "split_fuel": "CALIBRATION"},
-    {"hyp_id": "H-AQ7-1027-02", "plane": "aq7.role", "split_fuel": "CALIBRATION"},
-    {"hyp_id": "H-AQ7-1027-03", "plane": "aq7.role", "split_fuel": "CALIBRATION"},
-    {"hyp_id": "H-AQ7-1027-04", "plane": "aq7.drop_event", "split_fuel": "CALIBRATION"}
-  ],
-  "hypothesis_count": 4,
-  "signal_availability_summary": {
-    "core_structure_families": "measured_on_usable_fixtures",
-    "clap": "not_applicable",
-    "stems": "not_applicable"
-  },
-  "non_conclusions": [
-    "no_causality",
-    "no_gt_leakage",
-    "no_invented_thresholds",
-    "no_global_aq7_score",
-    "hold_excluded_from_correctness",
-    "test_not_tuning_fuel"
-  ]
-}
-```
-
-## Non-goals (this slice)
-
-- no `src/structure_v1.py` / `arrangement_classifier.py` / `section_signals.py` changes
-- no #1025/#1026 harness edits
-- no threshold/default/production switch
-- no #1028 candidate implementation
-- no committed WAV / raw JSON / private or absolute paths
-- no optional-signal pseudo-labeling
+- Final candidate hypotheses for #1028
+- `CANON_INDEX` update
+- Analyzer / harness / threshold changes
+- Issue-level exit beyond Task-1 `AQ7_1027_BUCKET_ANALYSIS_READY`

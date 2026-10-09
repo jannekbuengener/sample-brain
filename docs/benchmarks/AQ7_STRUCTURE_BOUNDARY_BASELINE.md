@@ -126,5 +126,5 @@ Reproducibility proof: identical corpus seed + frozen StructureV1 surface + matc
 - no ArrangementClassifier / role / drop evaluation
 - no StructureV1 tuning
 - no candidate compare (#1028)
-- no diagnostics epic (#1027) beyond honest baseline failure visibility — delivered separately in [`AQ7_STRUCTURE_ROLE_DROP_DIAGNOSTICS.md`](AQ7_STRUCTURE_ROLE_DROP_DIAGNOSTICS.md)
+- no diagnostics epic (#1027) beyond honest baseline failure visibility
 - no committed WAVs
