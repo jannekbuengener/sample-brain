@@ -143,14 +143,14 @@ Two independent external workdirs produced identical semantic projections (`arra
 
 | Partition | macro-F1 | coverage | bar-weighted accuracy | unknown rate | abstention count | concrete support | BeatGrid HOLD |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| CALIBRATION | 0.366 | 0.611 | 0.361 | 0.421 | 0 | 18 | 0 |
+| CALIBRATION | 0.457 | 0.588 | 0.393 | 0.444 | 0 | 17 | 0 |
 | TEST/HOLDOUT | 0.297 | 0.750 | 0.341 | 0.250 | 1 | 12 | 1 |
 
 Per-role F1 summary:
 
 | Partition | intro | groove | build | drop | breakdown | outro |
 |---|---:|---:|---:|---:|---:|---:|
-| CALIBRATION | 0.000 | 0.286 | 0.000 | 1.000 | 0.000 | 0.909 |
+| CALIBRATION | 0.000 | 0.286 | 0.000 | 1.000 | N/A | 1.000 |
 | TEST/HOLDOUT | 0.400 | 0.286 | 0.000 | 0.000 | N/A | 0.800 |
 
 Role confusion remains visible in the external artifact. High `unknown` predictions are measured classifier output, not converted from ambiguous annotations.
@@ -159,8 +159,8 @@ Role confusion remains visible in the external artifact. High `unknown` predicti
 
 | Partition | P@1bar | R@1bar | F1 | support | false | missed | med\|err\| bars | p95\|err\| bars | coverage | BeatGrid HOLD |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| CALIBRATION | 0.000 | 0.000 | 0.000 | 1 | 7 | 1 | N/A | N/A | 1.000 | 0 |
-| TEST/HOLDOUT | 0.000 | 0.000 | 0.000 | 2 | 3 | 2 | N/A | N/A | 0.750 | 1 |
+| CALIBRATION | 0.000 | 0.000 | 0.000 | 1 | 6 | 1 | N/A | N/A | 1.000 | 0 |
+| TEST/HOLDOUT | 0.000 | 0.000 | 0.000 | 2 | 3 | 2 | N/A | N/A | 1.000 | 1 |
 
 No drop events matched within the frozen +/-1-bar policy. Timing-error aggregates are therefore not applicable, not zero.
 
@@ -171,7 +171,7 @@ Runtime methodology is consumed by reference from [#958](https://github.com/jann
 - Track-length buckets are HOLD for this tiny synthetic pack unless a later methodology-compliant run proves otherwise.
 - A single harness run may record diagnostic single-pass wall time only.
 - Diagnostic single-pass runtime is not #958 cold/steady median/p95 evidence.
-- Task 4 diagnostic-only Run B single-pass median was 3.776s and p95 was 4.900s over timed fixtures; this remains non-#958 diagnostic evidence.
+- Task 4 diagnostic-only Run B single-pass median was 5.153s and p95 was 19.831s over timed fixtures; this remains non-#958 diagnostic evidence.
 
 Semantic determinism is consumed by reference from [#959](https://github.com/jannekbuengener/sample-brain/issues/959) / [`../ANALYZER_SEMANTIC_DETERMINISM_V1.md`](../ANALYZER_SEMANTIC_DETERMINISM_V1.md).
 

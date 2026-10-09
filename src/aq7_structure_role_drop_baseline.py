@@ -147,18 +147,29 @@ def reference_boundaries_from_gt(gt: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 def frozen_reference_sections_from_gt(gt: Mapping[str, Any]) -> list[dict[str, Any]]:
+    ambiguous_bars = {
+        int(item["bar_index"])
+        for item in gt.get("boundaries", [])
+        if isinstance(item, Mapping)
+        and str(item.get("annotation_status")) == "ambiguous"
+    }
     refs: list[dict[str, Any]] = []
     for order, raw in enumerate(gt.get("sections") or []):
         if not isinstance(raw, Mapping):
             continue
+        start_bar = int(raw["start_bar"])
+        end_bar = int(raw["end_bar"])
         refs.append(
             {
                 "section_id": str(raw["section_id"]),
-                "start_bar": int(raw["start_bar"]),
-                "end_bar": int(raw["end_bar"]),
+                "start_bar": start_bar,
+                "end_bar": end_bar,
                 "role": str(raw["role"]),
                 "annotation_status": str(
                     raw.get("annotation_status") or "single_source"
+                ),
+                "excluded_by_ambiguous_boundary": (
+                    start_bar in ambiguous_bars or end_bar in ambiguous_bars
                 ),
                 "order": order,
             }
@@ -253,6 +264,7 @@ def score_roles(
         s
         for s in reference_sections
         if str(s.get("annotation_status")) in _ELIGIBLE_ANNOTATION
+        and not bool(s.get("excluded_by_ambiguous_boundary"))
     ]
     excluded_count = len(reference_sections) - len(eligible)
     eligible_concrete_count = sum(
@@ -411,6 +423,21 @@ def _normalize_predicted_events(
     return preds
 
 
+def _drop_ignore_masks(reference_boundaries: list[dict[str, Any]]) -> list[dict[str, int]]:
+    masks: list[dict[str, int]] = []
+    tol = int(BOUNDARY_MATCH_TOLERANCE_BARS)
+    for boundary in reference_boundaries:
+        if str(boundary.get("annotation_status")) != "ambiguous":
+            continue
+        bar = int(boundary["bar_index"])
+        masks.append({"lo": bar - tol, "hi": bar + tol, "source_bar": bar})
+    return masks
+
+
+def _bar_in_masks(bar_index: int, masks: list[dict[str, int]]) -> bool:
+    return any(int(mask["lo"]) <= bar_index <= int(mask["hi"]) for mask in masks)
+
+
 def score_drops(
     reference_boundaries: list[dict[str, Any]],
     reference_events: list[dict[str, Any]],
@@ -423,6 +450,7 @@ def score_drops(
     if not prediction_usable or beatgrid_status in {"missing", "insufficient"}:
         return {
             "plane": DROP_PLANE_TOKEN,
+            "event_eligible": beatgrid_status not in {"missing", "insufficient"},
             "prediction_usable": False,
             "prediction_status": prediction_status,
             "evidence_status": "unknown",
@@ -440,14 +468,29 @@ def score_drops(
             "abs_error_bars_p95": None,
             "matched_pairs": [],
         }
-    refs = _normalize_reference_events(reference_boundaries, reference_events)
-    preds = _normalize_predicted_events(reference_boundaries, predicted_events)
+    boundary_status = {
+        str(item["boundary_id"]): str(item.get("annotation_status") or "single_source")
+        for item in reference_boundaries
+    }
+    masks = _drop_ignore_masks(reference_boundaries)
+    refs = [
+        item
+        for item in _normalize_reference_events(reference_boundaries, reference_events)
+        if boundary_status.get(str(item["anchor_boundary_id"])) in _ELIGIBLE_ANNOTATION
+        and not _bar_in_masks(int(item["bar_index"]), masks)
+    ]
+    preds = [
+        item
+        for item in _normalize_predicted_events(reference_boundaries, predicted_events)
+        if not _bar_in_masks(int(item["bar_index"]), masks)
+    ]
     matched, missed, extras = match_boundaries_1bar(refs, preds)
     errors = [float(item["abs_error_bars"]) for item in matched]
     precision = _safe_div(len(matched), len(preds))
     recall = _safe_div(len(matched), len(refs))
     return {
         "plane": DROP_PLANE_TOKEN,
+        "event_eligible": True,
         "prediction_usable": True,
         "prediction_status": prediction_status,
         "evidence_status": "measured",
@@ -466,6 +509,7 @@ def score_drops(
         "matched_pairs": matched,
         "predicted_events": preds,
         "reference_events": refs,
+        "ignore_masks": masks,
     }
 
 
@@ -911,9 +955,12 @@ def _aggregate_role(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _aggregate_drop(rows: list[dict[str, Any]]) -> dict[str, Any]:
     support = matched = false_positive = missed = usable = 0
+    eligible_records = 0
     errors: list[float] = []
     for row in rows:
         drop = row.get("drop_event") or {}
+        if drop.get("event_eligible", True):
+            eligible_records += 1
         if drop.get("prediction_usable"):
             usable += 1
         support += int(drop.get("support") or 0)
@@ -935,7 +982,7 @@ def _aggregate_drop(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "f1_1bar": _f1(precision, recall),
         "false_rate": _safe_div(false_positive, pred_count),
         "miss_rate": _safe_div(missed, support),
-        "coverage": _safe_div(usable, len(rows)),
+        "coverage": _safe_div(usable, eligible_records),
         "abs_error_bars_median": statistics.median(errors) if errors else None,
         "abs_error_bars_p95": percentile(errors, 95) if errors else None,
     }
@@ -960,6 +1007,11 @@ def aggregate_role_drop_splits(fixture_rows: list[dict[str, Any]]) -> dict[str, 
 
 def resolve_exit_status(fixture_rows: list[dict[str, Any]], splits: Mapping[str, Any]) -> str:
     if len(fixture_rows) < 10:
+        return EXIT_INCOMPLETE
+    if any(
+        row.get("hold_kind") not in {None, "BEATGRID_PROVENANCE_LIMITATION"}
+        for row in fixture_rows
+    ):
         return EXIT_INCOMPLETE
     if any(row.get("hold_kind") == "BEATGRID_PROVENANCE_LIMITATION" for row in fixture_rows):
         return EXIT_PARTIAL_HOLD
