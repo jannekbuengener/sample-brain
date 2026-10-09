@@ -11,7 +11,7 @@
 **Diagnostics (candidate fuel):** [`AQ7_STRUCTURE_ROLE_DROP_DIAGNOSTICS.md`](AQ7_STRUCTURE_ROLE_DROP_DIAGNOSTICS.md)
 **Compare runner:** `python -m src.aq7_structure_role_drop_candidate_compare`
 **Related bootstrap:** [#1040](https://github.com/jannekbuengener/sample-brain/issues/1040) quality-loop consumer of machine-readable freeze (orchestrator out of scope here)
-**Downstream:** [#1030](https://github.com/jannekbuengener/sample-brain/issues/1030) locked TEST/HOLDOUT evaluation (not started here)
+**Downstream:** [#1030](https://github.com/jannekbuengener/sample-brain/issues/1030) locked TEST/HOLDOUT evaluation — [`AQ7_STRUCTURE_ROLE_DROP_LOCKED_HOLDOUT.md`](AQ7_STRUCTURE_ROLE_DROP_LOCKED_HOLDOUT.md)
 
 ## Architecture outcome
 
