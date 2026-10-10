@@ -15,7 +15,11 @@ from .workbench_controller import workbench_state_dir
 
 FEATURE_SETTINGS_SCHEMA_VERSION = 1
 _FEATURE_SETTINGS_FILENAME = "workbench_feature_settings.json"
-_FEATURE_SETTINGS_BOOL_FIELDS = ("gesture_rack_apply_enabled",)
+# Required for a valid payload. Newer optional bools may be absent and default False.
+_FEATURE_SETTINGS_REQUIRED_BOOL_FIELDS = ("gesture_rack_apply_enabled",)
+_FEATURE_SETTINGS_OPTIONAL_BOOL_DEFAULTS: dict[str, bool] = {
+    "workspace_panel_docking_enabled": False,
+}
 
 
 @dataclass(frozen=True)
@@ -23,6 +27,7 @@ class WorkbenchFeatureSettings:
     """Immutable functional feature-toggle snapshot."""
 
     gesture_rack_apply_enabled: bool = False
+    workspace_panel_docking_enabled: bool = False
     schema_version: int = FEATURE_SETTINGS_SCHEMA_VERSION
 
 
@@ -49,10 +54,14 @@ def replace_workbench_feature_settings(
     unknown = set(changes) - {f.name for f in fields(WorkbenchFeatureSettings)}
     if unknown:
         raise TypeError(f"unknown feature settings fields: {sorted(unknown)}")
-    if "gesture_rack_apply_enabled" in changes:
-        value = changes["gesture_rack_apply_enabled"]
-        if type(value) is not bool:
-            raise TypeError("gesture_rack_apply_enabled must be bool")
+    for bool_field in (
+        *_FEATURE_SETTINGS_REQUIRED_BOOL_FIELDS,
+        *_FEATURE_SETTINGS_OPTIONAL_BOOL_DEFAULTS,
+    ):
+        if bool_field in changes:
+            value = changes[bool_field]
+            if type(value) is not bool:
+                raise TypeError(f"{bool_field} must be bool")
     if "schema_version" in changes:
         version = changes["schema_version"]
         if type(version) is not int:
@@ -73,6 +82,9 @@ def save_workbench_feature_settings(
     body = {
         "schema_version": FEATURE_SETTINGS_SCHEMA_VERSION,
         "gesture_rack_apply_enabled": bool(settings.gesture_rack_apply_enabled),
+        "workspace_panel_docking_enabled": bool(
+            settings.workspace_panel_docking_enabled
+        ),
     }
     try:
         path_file.parent.mkdir(parents=True, exist_ok=True)
@@ -106,15 +118,27 @@ def load_workbench_feature_settings(
         return defaults
     if not _feature_payload_is_valid(raw):
         return defaults
+    optional_bools: dict[str, bool] = {}
+    for key, default in _FEATURE_SETTINGS_OPTIONAL_BOOL_DEFAULTS.items():
+        if key not in raw:
+            optional_bools[key] = default
+        else:
+            optional_bools[key] = bool(raw[key])
     return WorkbenchFeatureSettings(
         gesture_rack_apply_enabled=raw["gesture_rack_apply_enabled"],
+        workspace_panel_docking_enabled=optional_bools[
+            "workspace_panel_docking_enabled"
+        ],
         schema_version=FEATURE_SETTINGS_SCHEMA_VERSION,
     )
 
 
 def _feature_payload_is_valid(raw: Mapping[str, Any]) -> bool:
-    for key in _FEATURE_SETTINGS_BOOL_FIELDS:
+    for key in _FEATURE_SETTINGS_REQUIRED_BOOL_FIELDS:
         if key not in raw or type(raw[key]) is not bool:
+            return False
+    for key in _FEATURE_SETTINGS_OPTIONAL_BOOL_DEFAULTS:
+        if key in raw and type(raw[key]) is not bool:
             return False
     return True
 

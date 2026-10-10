@@ -54,8 +54,10 @@ def test_default_settings_object_has_gesture_rack_apply_disabled():
     assert settings.schema_version == FEATURE_SETTINGS_SCHEMA_VERSION
     assert {f.name for f in fields(WorkbenchFeatureSettings)} == {
         "gesture_rack_apply_enabled",
+        "workspace_panel_docking_enabled",
         "schema_version",
     }
+    assert settings.workspace_panel_docking_enabled is False
 
 
 def test_serialized_default_is_deterministic_and_versioned(tmp_path: Path):
@@ -66,6 +68,7 @@ def test_serialized_default_is_deterministic_and_versioned(tmp_path: Path):
     assert raw == {
         "schema_version": FEATURE_SETTINGS_SCHEMA_VERSION,
         "gesture_rack_apply_enabled": False,
+        "workspace_panel_docking_enabled": False,
     }
     assert path.name == "workbench_feature_settings.json"
 
