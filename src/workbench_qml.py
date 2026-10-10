@@ -852,6 +852,9 @@ class Screen1QmlInteractionAdapter:
         self._live_kit_auto_disclosure_consumed = False
         # Session UI height authority: 0 = auto (row-derived); otherwise clamped px.
         self._live_kit_user_height_px = 0
+        # Session desired visibility (None until first load/toggle). Persistence
+        # is best-effort; restore must not reopen against an in-session close.
+        self._live_kit_visibility_desired: bool | None = None
         # Compatibility projection for older bridge consumers.  It mirrors the
         # overlay state and must not become a second presentation authority.
         self.live_kit_collapsed = True
@@ -973,11 +976,16 @@ class Screen1QmlInteractionAdapter:
         if composition is None:
             return
         composition.reveal_live_kit()
+        live_kit_mat = bool(composition.live_kit_materialized)
+        if not live_kit_mat and self.view_model.live_kit_materialized:
+            # Preserve already-materialized session/harness when composition
+            # has no active Source yet (injected adapters / scope recovery).
+            live_kit_mat = True
         self.view_model.set_workspace_materialization(
             has_active_source=self.view_model.has_active_source,
             calm_canvas_visible=self.view_model.calm_canvas_visible,
             browser_materialized=self.view_model.browser_materialized,
-            live_kit_materialized=composition.live_kit_materialized,
+            live_kit_materialized=live_kit_mat,
         )
 
     @property
@@ -1701,6 +1709,7 @@ class Screen1QmlInteractionAdapter:
         if self._live_kit_drawer_open:
             # Opening after scope loss must rematerialize via the reveal seam.
             self._reveal_live_kit_pane()
+        self._live_kit_visibility_desired = bool(self._live_kit_drawer_open)
         # Best-effort UI persistence — must not abort drawer/bridge refresh.
         try_save_live_kit_visibility_preference(self._live_kit_drawer_open)
         return self._live_kit_drawer_open
@@ -1712,6 +1721,7 @@ class Screen1QmlInteractionAdapter:
     def apply_live_kit_visibility_preference(self) -> bool:
         """Restore persisted Edit visibility preference (workspace UI only)."""
         preferred = load_live_kit_visibility_preference()
+        self._live_kit_visibility_desired = bool(preferred)
         if not preferred:
             self._live_kit_drawer_open = False
             self.live_kit_collapsed = True
@@ -1727,12 +1737,18 @@ class Screen1QmlInteractionAdapter:
     def restore_live_kit_after_active_source(self) -> bool:
         """Rematerialize Live Kit after a valid active Source is restored.
 
-        Preference-true uses the full restore path. An already-open drawer
-        (manual open before scope loss) rematerializes without forcing a
-        preference-false close.
+        Uses the in-session desired visibility when known so a fail-soft
+        preference write cannot reopen against an explicit session close.
         """
-        if load_live_kit_visibility_preference():
-            return self.apply_live_kit_visibility_preference()
+        desired = self._live_kit_visibility_desired
+        if desired is None:
+            desired = load_live_kit_visibility_preference()
+            self._live_kit_visibility_desired = bool(desired)
+        if desired:
+            self._live_kit_drawer_open = True
+            self.live_kit_collapsed = False
+            self._reveal_live_kit_pane()
+            return self.live_kit_is_visible()
         if self._live_kit_drawer_open:
             self._reveal_live_kit_pane()
             return self.live_kit_is_visible()

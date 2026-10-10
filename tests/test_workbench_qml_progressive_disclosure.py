@@ -221,7 +221,8 @@ def test_qml_declares_analysis_surface_and_live_kit_reveal_binding():
     assert "analysisCancelButton" in QML_SOURCE
     assert 'objectName: "bottomRackPane"' in QML_SOURCE
     assert "visible: window.interaction.hasActiveSource" in QML_SOURCE
-    assert "bottomRackMaterialized" in QML_SOURCE
+    # #1077: Live Kit pane gates on materialization, not Channel Rack projection.
+    assert "liveKitRevealed" in QML_SOURCE
 
 
 def test_disclosure_state_is_not_in_layout_preference_payload(tmp_path: Path):

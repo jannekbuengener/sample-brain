@@ -718,3 +718,36 @@ def test_step_sequencer_nav_disabled_until_arrangement_destination():
     block = QML_SOURCE.split('objectName: "programNavStepSequencer"', 1)[1][:900]
     assert "enabled: false" in block
     assert "openChannelRack()" not in block
+
+
+def test_session_close_survives_stale_preference_on_source_restore(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
+    save_live_kit_visibility_preference(True, state_dir=tmp_path)
+    adapter, composition, kit = _production_composed_adapter(
+        monkeypatch, active_source=True
+    )
+    kit.assign("Kick + Bass", "Kick", _row("keep.wav"))
+    assert adapter.apply_live_kit_visibility_preference() is True
+
+    def _boom(*_a, **_k):
+        raise OSError("unwritable")
+
+    monkeypatch.setattr(
+        "src.workbench_live_kit_edit.save_live_kit_visibility_preference",
+        _boom,
+    )
+    assert adapter.toggle_live_kit_drawer() is False
+    assert adapter.live_kit_is_visible() is False
+    # Disk still says true; session desired must win on restore.
+    assert load_live_kit_visibility_preference(state_dir=tmp_path) is True
+    composition.clear_live_kit_disclosure()
+    adapter.view_model.set_workspace_materialization(
+        has_active_source=True,
+        calm_canvas_visible=False,
+        browser_materialized=True,
+        live_kit_materialized=False,
+    )
+    assert adapter.restore_live_kit_after_active_source() is False
+    assert adapter.live_kit_is_visible() is False

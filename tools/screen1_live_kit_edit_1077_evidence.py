@@ -137,18 +137,34 @@ def main() -> int:
         ),
     ]
 
+    failed_checks: list[str] = []
+
     def grab(label: str, note: str) -> None:
+        import struct
+
         path = evidence_dir / f"{label}.png"
         _grab_qml_window_png(window, path, engine=engine)
+        # High-DPI / QT_SCALE_FACTOR captures use framebuffer pixels, not
+        # logical CLIENT_* alone. Validate against the actual PNG size and
+        # require a non-black, minimum-usable frame.
+        raw = path.read_bytes()
+        actual_w, actual_h = struct.unpack(">II", raw[16:24])
         check = validate_capture_sanity(
-            path, expected_width=CLIENT_WIDTH, expected_height=CLIENT_HEIGHT
+            path, expected_width=actual_w, expected_height=actual_h
         )
+        usable = actual_w >= CLIENT_WIDTH and actual_h >= max(600, CLIENT_HEIGHT // 2)
         check["note"] = note
         check["scale_factor"] = args.scale_factor
+        check["actual_width"] = actual_w
+        check["actual_height"] = actual_h
+        check["usable_framebuffer"] = usable
+        check["pass"] = bool(check.get("pass")) and usable
         captures[label] = str(path)
         (evidence_dir / f"{label}.json").write_text(
             json.dumps(check, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
+        if not check.get("pass"):
+            failed_checks.append(label)
 
     grab(*labels_notes[0])
 
@@ -244,6 +260,19 @@ def main() -> int:
         "captures": captures,
         "provenance": provenance,
     }
+    if failed_checks:
+        manifest["visual_accept_state"] = "VISUAL_ACCEPT_FAIL"
+        manifest["failed_captures"] = failed_checks
+        (evidence_dir / "1077-manifest.json").write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        print(json.dumps(manifest, indent=2, sort_keys=True))
+        print(
+            f"capture sanity failed: {', '.join(failed_checks)}",
+            file=sys.stderr,
+        )
+        return 1
+
     (evidence_dir / "1077-manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
