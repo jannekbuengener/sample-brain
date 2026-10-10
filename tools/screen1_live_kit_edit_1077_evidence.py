@@ -7,10 +7,55 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
+
+
+def _git_head(runtime_root: Path) -> str:
+    return subprocess.check_output(
+        ["git", "-C", str(runtime_root), "rev-parse", "HEAD"],
+        text=True,
+    ).strip()
+
+
+def _ensure_runtime_manifest(runtime_root: Path, python_exe: Path) -> None:
+    from src.runtime_provenance import (
+        MANIFEST_SCHEMA,
+        RuntimeManifest,
+        evaluate_runtime,
+        write_runtime_manifest,
+    )
+
+    report = evaluate_runtime(runtime_root, executable=python_exe)
+    if report.status.value == "valid":
+        return
+    dirty = subprocess.check_output(
+        ["git", "-C", str(runtime_root), "status", "--porcelain"],
+        text=True,
+    ).strip()
+    if dirty:
+        raise SystemExit(
+            "worktree is dirty; commit before writing runtime manifest / capturing evidence"
+        )
+    branch = subprocess.check_output(
+        ["git", "-C", str(runtime_root), "branch", "--show-current"],
+        text=True,
+    ).strip() or "detached"
+    write_runtime_manifest(
+        runtime_root,
+        RuntimeManifest(
+            schema=MANIFEST_SCHEMA,
+            channel=branch,
+            commit=_git_head(runtime_root),
+            runtime_root=str(runtime_root.resolve()),
+            python_executable=str(python_exe.resolve()),
+            installed_at=datetime.now(UTC).isoformat(),
+        ),
+    )
 
 
 def main() -> int:
@@ -22,7 +67,8 @@ def main() -> int:
 
     evidence_dir = args.evidence_dir.resolve()
     evidence_dir.mkdir(parents=True, exist_ok=True)
-    if evidence_dir.is_relative_to(args.runtime_root.resolve()):
+    runtime_root = args.runtime_root.resolve()
+    if evidence_dir.is_relative_to(runtime_root):
         print("evidence-dir must be outside the repository", file=sys.stderr)
         return 2
 
@@ -47,7 +93,8 @@ def main() -> int:
     )
 
     _require_fresh_qml_capture_process()
-    report = validate_qml_renderer_provenance(args.runtime_root)
+    _ensure_runtime_manifest(runtime_root, Path(sys.executable))
+    report = validate_qml_renderer_provenance(runtime_root)
     fixture = build_screen1_visual_fixture_v2()
     state = resolve_screen1_visual_state_v2(fixture, "screen1-active-source")
     view_model = build_qml_view_model_from_fixture_v2(fixture, "screen1-active-source")
@@ -173,8 +220,6 @@ def main() -> int:
     adapter._runtime_composition = composition
     save_live_kit_visibility_preference(True, state_dir=pref_dir)
     # Point load path at evidence_dir for the restore call.
-    import os
-
     os.environ["SAMPLE_BRAIN_WORKBENCH_STATE_DIR"] = str(pref_dir)
     assert adapter.apply_live_kit_visibility_preference() is True
     assert adapter.live_kit_is_visible() is True
