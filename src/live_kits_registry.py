@@ -134,6 +134,19 @@ def replace_sample_assignment(
     assign_sample_to_kit(kit, group, slot, entity)
 
 
+def clear_sample_assignment(
+    kit: LiveKitState,
+    group: str,
+    slot: str,
+    *,
+    notify: bool = True,
+) -> bool:
+    """Remove-slot gate — same kit truth as assign; no package-row path."""
+    if not isinstance(kit, LiveKitState):
+        raise TypeError("kit must be LiveKitState")
+    return kit.clear_slot(group, slot, notify=notify)
+
+
 def registry_path(
     *,
     state_dir: Path | None = None,
@@ -489,6 +502,7 @@ __all__ = [
     "LiveKitsRegistry",
     "assign_sample_to_kit",
     "audition_sample_row",
+    "clear_sample_assignment",
     "registry_path",
     "replace_sample_assignment",
     "require_sample_row",

@@ -86,7 +86,8 @@ def test_v7_root_uses_chrome_while_workspace_uses_workspace_depth() -> None:
     assert "color: theme.surfacePanel" in _qml_block("libraryPane")
     assert "color: theme.surfaceBrowser" in _qml_block("browserPane")
     assert "color: theme.surfacePanel" in _qml_block("harmonyPane")
-    assert "color: theme.surfacePanel" in _qml_block("bottomRackPane")
+    # #1077: Live Kit height/user-resize properties lengthen the bottom pane header.
+    assert "color: theme.surfacePanel" in _qml_block("bottomRackPane", size=2200)
 
 
 def test_v7_touched_qml_style_has_no_foreign_or_unapproved_fallback_colors() -> None:
@@ -103,7 +104,7 @@ def test_v7_background_slice_keeps_current_single_workspace_pane_geometry_contra
     library = _qml_block("libraryPane")
     browser = _qml_block("browserPane")
     harmony = _qml_block("harmonyPane")
-    bottom_rack = _qml_block("bottomRackPane")
+    bottom_rack = _qml_block("bottomRackPane", size=2200)
 
     assert "width: layoutModel.libraryWidth" in library
     assert "height: parent.height" in library
@@ -114,5 +115,9 @@ def test_v7_background_slice_keeps_current_single_workspace_pane_geometry_contra
     assert "x: upperWorkspaceRow.x + browserPane.x" in bottom_rack
     assert "y: parent.height - height" in bottom_rack
     assert "width: browserPane.width" in bottom_rack
-    assert "height: bottomExpanded ? Math.min(requestedHeight, maximumHeight) : 0" in bottom_rack
+    # #1077: auto row height or clamped user height; still capped at 40%.
+    assert "maximumHeight: Math.round(parent.height * 0.40)" in bottom_rack
+    assert "autoHeight: Math.min(requestedHeight, maximumHeight)" in bottom_rack
+    assert "userHeightPx: window.interaction.liveKitUserHeightPx" in bottom_rack
+    assert "height: bottomExpanded" in bottom_rack
     assert "bottomRackHeightRatio" not in bottom_rack

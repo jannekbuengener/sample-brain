@@ -221,7 +221,8 @@ def test_qml_declares_analysis_surface_and_live_kit_reveal_binding():
     assert "analysisCancelButton" in QML_SOURCE
     assert 'objectName: "bottomRackPane"' in QML_SOURCE
     assert "visible: window.interaction.hasActiveSource" in QML_SOURCE
-    assert "bottomRackMaterialized" in QML_SOURCE
+    # #1077: Live Kit pane gates on materialization, not Channel Rack projection.
+    assert "liveKitRevealed" in QML_SOURCE
 
 
 def test_disclosure_state_is_not_in_layout_preference_payload(tmp_path: Path):
@@ -357,10 +358,9 @@ def test_add_source_analysis_hides_working_panes_until_success(tmp_path: Path):
         assert composition.live_kit_revealed is False
         assert view_model.live_kit_materialized is False
         assert browser.isVisible()
-        # #908: calm bottom strip is present once a source is active (empty Rack).
-        assert live_kit.isVisible()
-        assert bottom.isVisible()
-        assert bottom.height() <= 40
+        # #1077: no empty Rack/Live-Kit cavity while Live Kit stays hidden.
+        assert live_kit is not None and not live_kit.isVisible()
+        assert bottom is not None and (not bottom.isVisible() or bottom.height() == 0)
         analysis_surface = window.findChild(QQuickItem, "analysisWorkingSurface")
         assert analysis_surface is None or not analysis_surface.isVisible()
     finally:
@@ -409,10 +409,9 @@ def test_browser_and_harmony_add_to_kit_reveal_live_kit(tmp_path: Path):
         bottom = window.findChild(QQuickItem, "bottomRackPane")
         assert composition.has_active_source is True
         assert browser is not None and browser.isVisible()
-        assert live_kit is not None and live_kit.isVisible()
-        assert bottom is not None and bottom.isVisible()
-        empty_height = bottom.height()
-        assert empty_height <= 40
+        # #1077: hidden Live Kit reserves no bottom geometry before Add-to-Kit.
+        assert live_kit is not None and not live_kit.isVisible()
+        assert bottom is not None and (not bottom.isVisible() or bottom.height() == 0)
         assert composition.live_kit_revealed is False
         assert len(view_model.browser_rows) >= 1
 
@@ -422,12 +421,14 @@ def test_browser_and_harmony_add_to_kit_reveal_live_kit(tmp_path: Path):
         assert composition.live_kit_revealed is True
         assert view_model.live_kit_materialized is True
         assert live_kit.isVisible()
-        # Occupied one-shot assignment expands the bottom Rack band.
+        assert bottom.isVisible() and bottom.height() > 0
+        revealed_height = bottom.height()
+        # Historical Rack refresh must not invent Edit step-grid geometry.
         rack = engine.rootContext().contextProperty("channelRackModel")
         if rack is not None:
             rack.refresh()
             app.processEvents()
-        assert bottom.height() >= empty_height
+        assert bottom.height() >= revealed_height
 
         composition.clear_live_kit_disclosure()
         view_model.set_workspace_materialization(
@@ -436,11 +437,13 @@ def test_browser_and_harmony_add_to_kit_reveal_live_kit(tmp_path: Path):
             browser_materialized=True,
             live_kit_materialized=False,
         )
+        adapter._live_kit_drawer_open = False
+        adapter.live_kit_collapsed = True
+        adapter.cancel_live_kit_add()
         engine._screen1_interaction_bridge.refreshState()
         app.processEvents()
-        # #908: strip remains while source is active; disclosure flag alone does not hide it.
-        assert live_kit.isVisible()
-        assert bottom.isVisible()
+        # #1077: clearing disclosure + closing drawer removes Live Kit geometry.
+        assert not live_kit.isVisible() or bottom.height() == 0
 
         adapter.select_row(0)
         assert adapter.toggle_harmonic_match() is True

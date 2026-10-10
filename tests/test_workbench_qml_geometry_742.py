@@ -115,14 +115,15 @@ def test_qml_runtime_pane_x_ordering_four_disclosure_states():
             app.processEvents()
             _settle_qml_frame(app)
 
-        # 1) Browser only (Library collapsed, Harmony closed, bottom calm strip)
+        # 1) Browser only (Library collapsed, Harmony closed, Live Kit hidden)
         settle()
         assert browser.isVisible() and browser.width() > 0
         assert browser.x() >= 0
-        assert bottom.isVisible()
+        # #1077: no calm empty Rack/Live-Kit cavity while hidden.
+        assert (not bottom.isVisible()) or bottom.height() == 0
         assert harmony.width() == 0 or harmony.opacity() == 0
 
-        # 2) Browser + Harmony (upper row); Live Kit remains bottom band
+        # 2) Browser + Harmony (upper row); Live Kit stays hidden (no phantom band)
         adapter.harmonic_match_open = True
         settle()
         assert browser.isVisible() and harmony.isVisible()
@@ -132,7 +133,7 @@ def test_qml_runtime_pane_x_ordering_four_disclosure_states():
         _assert_no_horizontal_overlap(browser, harmony, label="browser/harmony overlap")
         if handle_browser.isVisible() and handle_browser.width() > 0:
             assert browser.x() < handle_browser.x() < harmony.x()
-        assert bottom.y() >= browser.y() + browser.height() - 1.0
+        assert (not bottom.isVisible()) or bottom.height() == 0
 
         # 3) Browser + Live Kit revealed (Harmony closed) — Live Kit is bottom, not right
         adapter.harmonic_match_open = False
@@ -142,11 +143,15 @@ def test_qml_runtime_pane_x_ordering_four_disclosure_states():
             browser_materialized=True,
             live_kit_materialized=True,
         )
+        adapter._live_kit_drawer_open = True
+        adapter.live_kit_collapsed = False
         settle()
         assert browser.isVisible() and live_kit.isVisible() and bottom.isVisible()
         assert browser.width() > 0 and live_kit.width() > 0
         assert abs(live_kit.x() - browser.x()) < 2.0 or live_kit.y() >= browser.height() - 1.0
-        assert bottom.y() >= browser.y() + browser.height() - 1.0
+        # #954/#1077: Live Kit is a browser-scoped bottom overlay, not a stack below.
+        assert bottom.height() > 0
+        assert abs((bottom.y() + bottom.height()) - (browser.y() + browser.height())) < 2.0
 
         # 4) Browser + Harmony + bottom Live Kit
         adapter.harmonic_match_open = True
@@ -157,7 +162,8 @@ def test_qml_runtime_pane_x_ordering_four_disclosure_states():
         if handle_browser.isVisible() and handle_browser.width() > 0:
             assert browser.x() < handle_browser.x() < harmony.x()
         _assert_no_horizontal_overlap(browser, harmony, label="3p browser/harmony")
-        assert bottom.y() >= max(browser.y() + browser.height(), harmony.y() + harmony.height()) - 1.0
+        assert bottom.height() > 0
+        assert abs((bottom.y() + bottom.height()) - (browser.y() + browser.height())) < 2.0
         assert right.width() <= workspace.width() + 2.0
         assert affordance.isVisible()
         assert affordance.parentItem() is not workspace

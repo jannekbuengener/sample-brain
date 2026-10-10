@@ -27,6 +27,12 @@ from .workbench_harmony import (
     harmonic_match_key_for_row,
 )
 from .workbench_live_kit import LiveKitPresentationState, LiveKitState
+from .workbench_live_kit_edit import (
+    edit_docking_materialization_for_live_kit,
+    load_live_kit_visibility_preference,
+    try_save_live_kit_visibility_preference,
+    visible_live_kit_slot_keys,
+)
 from .workbench_live_kit_export import LiveKitExportResult, export_live_kit
 from .workbench_library import (
     list_favorite_sample_paths,
@@ -137,6 +143,12 @@ class LiveKitPresenter:
     def assign(self, group: str, slot: str, row: WorkbenchRow) -> None:
         self._state.assign(group, slot, row)
         self._groups = self._project()
+
+    def clear_slot(self, group: str, slot: str, *, notify: bool = True) -> bool:
+        cleared = self._state.clear_slot(group, slot, notify=notify)
+        if cleared:
+            self._groups = self._project()
+        return cleared
 
 
 def _row_details(row: WorkbenchRow) -> dict[str, object]:
@@ -833,11 +845,16 @@ class Screen1QmlInteractionAdapter:
         self.harmonic_match_open = view_model.panel_count == 4
         # #845 session-transient presentation only — not domain / disclosure state.
         self.browser_collapsed = False
-        # #954 keeps the Live Kit/Rack as a browser-scoped overlay.  This state
-        # is intentionally session-transient: restored musical assignments do
-        # not re-open a presentation drawer on startup.
+        # #1077 / #954: Live Kit Edit overlay. Default hidden; production wiring
+        # may apply a persisted visibility preference after construction.
+        # Musical assignments never force a drawer open on their own.
         self._live_kit_drawer_open = False
         self._live_kit_auto_disclosure_consumed = False
+        # Session UI height authority: 0 = auto (row-derived); otherwise clamped px.
+        self._live_kit_user_height_px = 0
+        # Session desired visibility (None until first load/toggle). Persistence
+        # is best-effort; restore must not reopen against an in-session close.
+        self._live_kit_visibility_desired: bool | None = None
         # Compatibility projection for older bridge consumers.  It mirrors the
         # overlay state and must not become a second presentation authority.
         self.live_kit_collapsed = True
@@ -915,8 +932,15 @@ class Screen1QmlInteractionAdapter:
             self._on_sample_context_closed()
 
     def _request_add_to_kit_row(self, row: WorkbenchRow) -> WorkbenchRow:
-        """Shared Add-to-Kit intent seam for index and context routes (#839)."""
+        """Shared Add-to-Kit intent seam for index and context routes (#839).
+
+        #742/#1077: Add-to-Kit materializes Live Kit disclosure. Pending-add
+        expands chooser geometry without forcing drawer_open, so a manual
+        close (#954) remains respected on later assignments. Visibility
+        predicates still treat pending-add as presentation-open for #1070/#1072.
+        """
         self._pending_live_kit_row = row
+        self._reveal_live_kit_pane()
         if self._on_add_to_kit_requested is not None:
             self._on_add_to_kit_requested(row)
         return row
@@ -953,11 +977,16 @@ class Screen1QmlInteractionAdapter:
         if composition is None:
             return
         composition.reveal_live_kit()
+        live_kit_mat = bool(composition.live_kit_materialized)
+        if not live_kit_mat and self.view_model.live_kit_materialized:
+            # Preserve already-materialized session/harness when composition
+            # has no active Source yet (injected adapters / scope recovery).
+            live_kit_mat = True
         self.view_model.set_workspace_materialization(
             has_active_source=self.view_model.has_active_source,
             calm_canvas_visible=self.view_model.calm_canvas_visible,
             browser_materialized=self.view_model.browser_materialized,
-            live_kit_materialized=composition.live_kit_materialized,
+            live_kit_materialized=live_kit_mat,
         )
 
     @property
@@ -1353,6 +1382,8 @@ class Screen1QmlInteractionAdapter:
             self._live_kit_auto_disclosure_consumed = True
             self._live_kit_drawer_open = True
             self.live_kit_collapsed = False
+            self._live_kit_visibility_desired = True
+            try_save_live_kit_visibility_preference(True)
             self._reveal_live_kit_pane()
             self._close_harmonic_match_presentation()
         return True
@@ -1677,11 +1708,163 @@ class Screen1QmlInteractionAdapter:
             return False
         self._live_kit_drawer_open = not self._live_kit_drawer_open
         self.live_kit_collapsed = not self._live_kit_drawer_open
+        if self._live_kit_drawer_open:
+            # Opening after scope loss must rematerialize via the reveal seam.
+            self._reveal_live_kit_pane()
+        self._live_kit_visibility_desired = bool(self._live_kit_drawer_open)
+        # Best-effort UI persistence — must not abort drawer/bridge refresh.
+        try_save_live_kit_visibility_preference(self._live_kit_drawer_open)
         return self._live_kit_drawer_open
 
     def toggle_live_kit_collapsed(self) -> bool:
         """Compatibility shim for the retired permanent bottom-band control."""
         return self.toggle_live_kit_drawer()
+
+    def apply_live_kit_visibility_preference(self) -> bool:
+        """Restore persisted Edit visibility preference (workspace UI only)."""
+        preferred = load_live_kit_visibility_preference()
+        self._live_kit_visibility_desired = bool(preferred)
+        if not preferred:
+            self._live_kit_drawer_open = False
+            self.live_kit_collapsed = True
+            return False
+        # Preference may say open, but progressive disclosure still requires
+        # materialization before geometry/targets appear. Reuse the canonical
+        # reveal seam — do not invent a second materialization truth.
+        self._live_kit_drawer_open = True
+        self.live_kit_collapsed = False
+        self._reveal_live_kit_pane()
+        return self.live_kit_is_visible()
+
+    def restore_live_kit_after_active_source(self) -> bool:
+        """Rematerialize Live Kit after a valid active Source is restored.
+
+        Uses the in-session desired visibility when known so a fail-soft
+        preference write cannot reopen against an explicit session close.
+        """
+        desired = self._live_kit_visibility_desired
+        if desired is None:
+            desired = load_live_kit_visibility_preference()
+            self._live_kit_visibility_desired = bool(desired)
+        if desired:
+            self._live_kit_drawer_open = True
+            self.live_kit_collapsed = False
+            self._reveal_live_kit_pane()
+            return self.live_kit_is_visible()
+        if self._live_kit_drawer_open:
+            self._reveal_live_kit_pane()
+            return self.live_kit_is_visible()
+        return False
+
+    def suspend_live_kit_for_analysis(self) -> None:
+        """Close presentation while analysis owns the surface (#742 / #1077)."""
+        composition = self._runtime_composition
+        if composition is not None:
+            composition.clear_live_kit_disclosure()
+        self._live_kit_drawer_open = False
+        self.live_kit_collapsed = True
+        self.view_model.set_workspace_materialization(
+            has_active_source=self.view_model.has_active_source,
+            calm_canvas_visible=self.view_model.calm_canvas_visible,
+            browser_materialized=self.view_model.browser_materialized,
+            live_kit_materialized=False,
+        )
+
+    @property
+    def live_kit_user_height_px(self) -> int:
+        """User-controlled Live Kit height; 0 means auto row-derived height."""
+        return int(self._live_kit_user_height_px)
+
+    def set_live_kit_user_height_px(self, height_px: int, *, max_px: int = 0) -> int:
+        """Clamp session Live Kit height. Kit state untouched.
+
+        ``0`` restores auto height only when ``max_px`` is unset (explicit reset).
+        Drag paths pass ``max_px > 0`` and therefore clamp underflow to the
+        compact minimum instead of jumping back to auto/40% height.
+        """
+        try:
+            raw = int(height_px)
+        except (TypeError, ValueError):
+            raw = 0
+        minimum = 120
+        if raw <= 0:
+            if int(max_px) > 0:
+                raw = minimum
+            else:
+                self._live_kit_user_height_px = 0
+                return 0
+        ceiling = int(max_px) if int(max_px) > 0 else 10_000
+        self._live_kit_user_height_px = max(minimum, min(raw, ceiling))
+        return int(self._live_kit_user_height_px)
+
+    def live_kit_is_visible(self) -> bool:
+        """True when Live Kit is materialized and presentation-open.
+
+        Presentation-open includes the pending Add-to-Kit chooser even when the
+        drawer preference stays closed (#954), matching QML ``bottomExpanded``.
+        Effective visibility also requires the Browser host not to be collapsed
+        (#1077): a zero-width Browser must not advertise #1072 Live Kit drops.
+        """
+        if self.browser_collapsed:
+            return False
+        presentation_open = bool(self._live_kit_drawer_open) or (
+            self._pending_live_kit_row is not None
+        )
+        return bool(self.view_model.live_kit_materialized) and presentation_open
+
+    def visible_live_kit_slot_keys(self) -> tuple[tuple[str, str], ...]:
+        """#1072 target keys — empty while hidden or when no group is expanded."""
+        if not self.live_kit_is_visible():
+            return ()
+        expanded: tuple[str, ...] = ()
+        if self._live_kit is not None:
+            expanded = tuple(
+                group
+                for group in self._live_kit.state.groups()
+                if not self._live_kit.presentation.is_collapsed(group)
+            )
+        return visible_live_kit_slot_keys(
+            live_kit_visible=True,
+            expanded_groups=expanded,
+        )
+
+    def edit_docking_materialization(
+        self,
+        *,
+        library: bool = True,
+        browser: bool | None = None,
+        harmony: bool | None = None,
+    ) -> object:
+        """#1070 materialization driven by visible Live Kit state."""
+        browser_flag = (
+            (bool(self.view_model.has_active_source) and not self.browser_collapsed)
+            if browser is None
+            else bool(browser)
+        )
+        harmony_flag = (
+            bool(self.harmonic_match_open) if harmony is None else bool(harmony)
+        )
+        return edit_docking_materialization_for_live_kit(
+            self.live_kit_is_visible(),
+            library=library,
+            browser=browser_flag,
+            harmony=harmony_flag,
+        )
+
+    def remove_live_kit_slot(self, group: str, slot: str) -> bool:
+        """Remove one assignment through clear_slot; no second mutation truth."""
+        if self._live_kit is None:
+            return False
+        try:
+            cleared = self._live_kit.clear_slot(group, slot)
+        except ValueError:
+            return False
+        if not cleared:
+            return False
+        self._sync_live_kit_projection()
+        if self._auditioning_live_kit_slot == (group, slot):
+            self._clear_live_kit_audition_projection()
+        return True
 
     def open_harmonic_matches_for_row(self, row: WorkbenchRow) -> bool:
         """Open or retarget Harmonic Matches for an explicit row (#843).
@@ -2651,30 +2834,18 @@ ApplicationWindow {
                     bottomPadding: 0
                     implicitHeight: screen1Header.height
                     Layout.preferredHeight: screen1Header.height
-                    readonly property bool navActive: window.channelRack.bottomRackMaterialized
-                    background: Item {
-                        implicitHeight: screen1Header.height
-                        Rectangle {
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.bottom: parent.bottom
-                            height: 1
-                            color: theme.actionActive
-                            visible: programNavStepSequencer.navActive
-                            opacity: 0.85
-                        }
-                    }
+                    // #1077/#1076: product Step Sequencer lives in Arrangement.
+                    // Keep the chrome label, but disable until that destination exists.
+                    enabled: false
+                    readonly property bool navActive: false
+                    background: Item { implicitHeight: screen1Header.height }
                     contentItem: Text {
                         text: programNavStepSequencer.text
                         font: programNavStepSequencer.font
-                        color: programNavStepSequencer.navActive ? theme.textPrimary : theme.textSecondary
-                        opacity: programNavStepSequencer.navActive ? 1.0 : 0.72
+                        color: theme.textDisabled
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
-                    }
-                    onClicked: {
-                        // #908: materialize bottom Rack; no Screen-2 page navigation
-                        window.interaction.openChannelRack()
+                        opacity: 0.4
                     }
                 }
                 ToolButton {
@@ -4464,6 +4635,8 @@ ApplicationWindow {
 
             Rectangle {
                 id: bottomRackPane
+                // Compat objectName: historical harnesses (#845/#908/#954).
+                // #1077: this pane is classic Live Kit tool only — no Rack/step co-host.
                 objectName: "bottomRackPane"
                 x: upperWorkspaceRow.x + browserPane.x
                 y: parent.height - height
@@ -4472,22 +4645,33 @@ ApplicationWindow {
                 property bool liveKitDrawerOpen: window.interaction.liveKitDrawerOpen
                 readonly property bool bottomExpanded: liveKitDrawerOpen
                         || window.interaction.liveKitPendingAdd !== ""
-                readonly property int realRowCount: Math.max(
-                    1,
-                    Math.max(
-                        window.screenData.liveKitAssignedCount,
-                        window.channelRack.groups.reduce(
-                            function(total, group) { return total + group.rows.length }, 0
-                        )
-                    )
-                )
+                // Height from Live Kit rows only (canonical groups when open).
+                readonly property int realRowCount: {
+                    var count = 0
+                    var groups = window.screenData.liveKitGroups
+                    for (var gi = 0; gi < groups.length; gi++) {
+                        count += 1
+                        if (groups[gi].active)
+                            count += groups[gi].slots.length
+                    }
+                    return Math.max(1, count)
+                }
                 readonly property int requestedHeight: 64 + realRowCount * 48
                 readonly property int maximumHeight: Math.round(parent.height * 0.40)
-                height: bottomExpanded ? Math.min(requestedHeight, maximumHeight) : 0
+                readonly property int autoHeight: Math.min(requestedHeight, maximumHeight)
+                readonly property int userHeightPx: window.interaction.liveKitUserHeightPx
+                height: bottomExpanded
+                        ? (userHeightPx > 0
+                           ? Math.min(Math.max(120, userHeightPx), maximumHeight)
+                           : autoHeight)
+                        : 0
                 color: theme.surfacePanel
                 border.color: theme.borderSubtle
+                // Require materialization so drawer flags alone cannot desync QML
+                // from #1070/#1072 after analysis disclosure clears.
                 visible: window.activeScreen === "screen1"
                          && window.interaction.hasActiveSource
+                         && window.interaction.liveKitRevealed
                          && bottomExpanded
                 // Compat objectName: historical Live Kit findChild probes (#845/#895 harnesses).
                 // Content lives under liveKitPane so findChild tree walks still resolve slots/headers.
@@ -4501,6 +4685,37 @@ ApplicationWindow {
                     objectName: "liveKitPane"
                     anchors.fill: parent
                     visible: parent.visible
+                // #1077 top-edge resize — separate from collapse / docking / sample drag.
+                MouseArea {
+                    id: liveKitResizeHandle
+                    objectName: "liveKitResizeHandle"
+                    z: 40
+                    height: 6
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    visible: bottomRackPane.bottomExpanded
+                    cursorShape: Qt.SizeVerCursor
+                    preventStealing: true
+                    property real dragStartY: 0
+                    property int dragStartHeight: 0
+                    onPressed: function(mouse) {
+                        dragStartY = mapToItem(null, 0, mouse.y).y
+                        dragStartHeight = bottomRackPane.height
+                        mouse.accepted = true
+                    }
+                    onPositionChanged: function(mouse) {
+                        if (!pressed)
+                            return
+                        var globalY = mapToItem(null, 0, mouse.y).y
+                        var delta = dragStartY - globalY
+                        window.interaction.setLiveKitUserHeightPx(
+                            dragStartHeight + delta,
+                            bottomRackPane.maximumHeight
+                        )
+                    }
+                    Accessible.name: "Resize Live Kit"
+                }
                 // #845 OPEN collapse handle — pane-local mid-edge; click/activate only.
                 Item {
                     id: liveKitCollapseHandle
@@ -4642,14 +4857,13 @@ ApplicationWindow {
                         }
                     }
                     Column {
-                        // Empty chooser groups exist only while a pending Add
-                        // needs an explicit target.  The materialized drawer
-                        // itself shows real Live-Kit/Rack rows only.
+                        // #1077: classic kit groups/slots while Live Kit is visible.
+                        // Hidden/collapsed pane height is 0 — no phantom projection.
                         visible: bottomRackPane.bottomExpanded
-                                 && window.interaction.liveKitPendingAdd !== ""
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignTop
                         spacing: 0
+                        objectName: "liveKitGroupsColumn"
                         Repeater { model: window.screenData.liveKitGroups
                             // #895: quieter group chrome — no idle box; fine border only when active/hover.
                             delegate: Rectangle {
@@ -4693,6 +4907,7 @@ ApplicationWindow {
                                             property bool isAssigned: modelData.assigned
                                             property bool isEmpty: !modelData.assigned
                                             property bool showReplaceAffordance: modelData.assigned && !hasPendingAdd
+                                            property bool showRemoveAffordance: modelData.assigned && !hasPendingAdd
                                             property bool showAddAffordance: !modelData.assigned || hasPendingAdd
                                             Rectangle {
                                                 id: slotAuditionBackdrop
@@ -4741,6 +4956,30 @@ ApplicationWindow {
                                                         font.pixelSize: showReplaceAffordance ? 14 : 13
                                                     }
                                                 }
+                                                Rectangle {
+                                                    id: slotRemoveAction
+                                                    objectName: "slotRemoveAction" + kitGroupIndex + "_" + index
+                                                    Layout.preferredHeight: 22
+                                                    Layout.preferredWidth: 22
+                                                    radius: 3
+                                                    visible: showRemoveAffordance
+                                                    color: slotRemoveMouse.containsMouse ? theme.hoverSurface : "transparent"
+                                                    border.width: slotRemoveMouse.containsMouse ? 1 : 0
+                                                    border.color: theme.borderSubtle
+                                                    Label {
+                                                        anchors.centerIn: parent
+                                                        text: "×"
+                                                        color: slotRemoveMouse.containsMouse ? theme.textPrimary : theme.textSecondary
+                                                        font.pixelSize: 13
+                                                    }
+                                                    MouseArea {
+                                                        id: slotRemoveMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        z: 1
+                                                        onClicked: window.interaction.removeLiveKitSlot(kitGroupIndex, index)
+                                                    }
+                                                }
                                             }
                                             MouseArea {
                                                 id: slotActionMouse
@@ -4759,104 +4998,12 @@ ApplicationWindow {
                             }
                         }
                     }
-                    }
-
-                    Label {
-                        visible: window.channelRack.bottomRackMaterialized
-                        text: "RACK"
-                        color: theme.textSecondary
-                        font.pixelSize: 12
-                        Layout.fillWidth: true
-                    }
-                    RowLayout {
-                        visible: window.channelRack.bottomRackMaterialized
-                        Layout.fillWidth: true
-                        spacing: 8
-                        Button {
-                            id: bottomRackPlayButton
-                            objectName: "bottomRackPlayButton"
-                            text: window.channelRack.playing ? "Playing…" : "Play"
-                            enabled: !window.channelRack.playing
-                            onClicked: window.channelRack.play()
-                        }
-                        Button {
-                            id: bottomRackStopButton
-                            objectName: "bottomRackStopButton"
-                            text: "Stop"
-                            enabled: window.channelRack.playing
-                            onClicked: window.channelRack.stop()
-                        }
-                        Item { Layout.fillWidth: true }
-                    }
-                    ListView {
-                        id: bottomRackStepList
-                        objectName: "bottomRackStepList"
-                        visible: window.channelRack.bottomRackMaterialized
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: Math.min(180, contentHeight)
-                        clip: true
-                        model: window.channelRack.groups
-                        spacing: 6
-                        delegate: Column {
-                            width: bottomRackStepList.width
-                            spacing: 4
-                            Label {
-                                text: modelData.name
-                                color: theme.textSecondary
-                                font.pixelSize: 11
-                            }
-                            Repeater {
-                                model: modelData.rows
-                                delegate: RowLayout {
-                                    id: bottomRackRow
-                                    width: bottomRackStepList.width
-                                    spacing: 4
-                                    readonly property var rowData: modelData
-                                    Label {
-                                        Layout.preferredWidth: 140
-                                        text: rowData.display_name + (rowData.sample_label ? (" · " + rowData.sample_label) : "")
-                                        color: theme.textPrimary
-                                        font.pixelSize: 11
-                                        elide: Text.ElideRight
-                                    }
-                                    Label {
-                                        visible: rowData.row_kind === "loop_identity"
-                                        text: "Loop identity"
-                                        color: theme.textSecondary
-                                        font.pixelSize: 10
-                                    }
-                                    Repeater {
-                                        model: rowData.step_grid_enabled ? rowData.steps : []
-                                        delegate: Rectangle {
-                                            width: 16
-                                            height: 16
-                                            radius: 2
-                                            color: modelData ? theme.actionActive : theme.surfaceElevated
-                                            border.color: theme.borderSubtle
-                                            opacity: modelData ? 0.95 : 0.55
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                onClicked: window.channelRack.toggleStep(bottomRackRow.rowData.channel_id, index)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Label {
-                        visible: !bottomRackPane.bottomExpanded
-                        text: "Live Kit / Rack"
-                        color: theme.textSecondary
-                        font.pixelSize: 11
-                        opacity: 0.7
-                        Layout.fillWidth: true
-                    }
                 }
                 }
                 }
                 }
             }
+        }
         }
 
     }
@@ -5328,6 +5475,15 @@ def _qml_interaction_bridge(
         def liveKitDrawerOpen(self) -> bool:
             return adapter.live_kit_drawer_open
 
+        @Property(int, notify=state_changed)
+        def liveKitUserHeightPx(self) -> int:
+            return int(adapter.live_kit_user_height_px)
+
+        @Slot(int, int)
+        def setLiveKitUserHeightPx(self, height_px: int, max_px: int = 0) -> None:
+            adapter.set_live_kit_user_height_px(int(height_px), max_px=int(max_px))
+            self._refresh()
+
         @Property(bool, notify=state_changed)
         def liveKitAutoDisclosureConsumed(self) -> bool:
             return adapter.live_kit_auto_disclosure_consumed
@@ -5559,6 +5715,14 @@ def _qml_interaction_bridge(
             if target is None:
                 return
             if adapter.assign_live_kit_slot(*target):
+                self._refresh()
+
+        @Slot(int, int)
+        def removeLiveKitSlot(self, group_index: int, slot_index: int) -> None:
+            target = self._live_kit_slot_target(group_index, slot_index)
+            if target is None:
+                return
+            if adapter.remove_live_kit_slot(*target):
                 self._refresh()
 
         @Slot(int, int)
@@ -6641,14 +6805,14 @@ def _qml_engine(
         view_model.set_analysis_state(state)
         if state.phase in {"scanning", "analyzing"}:
             # #742: hide working panes while analysis runs; keep technical identity.
+            # #1077: also close Live Kit presentation so drawer flags cannot desync.
             view_model.set_workspace_materialization(
                 has_active_source=False,
                 calm_canvas_visible=False,
                 browser_materialized=False,
                 live_kit_materialized=False,
             )
-            if runtime_composition is not None:
-                runtime_composition.clear_live_kit_disclosure()
+            adapter.suspend_live_kit_for_analysis()
         elif state.phase in {"cancelled", "error"}:
             _analysis_fail_closed(state)
         refresh_screen_model()
@@ -6712,7 +6876,7 @@ def _qml_engine(
         if refresh_target is not None and analysis_coordinator is not None:
             # #742 Option B: keep technical Source identity, defer visible panes.
             runtime_composition.dispatch_selection(intent)
-            runtime_composition.clear_live_kit_disclosure()
+            adapter.suspend_live_kit_for_analysis()
             view_model.set_browser_state(
                 rows=(),
                 selected_index=-1,
@@ -6737,6 +6901,8 @@ def _qml_engine(
 
         runtime_composition.dispatch_selection(intent)
         _sync_runtime_browser_state(view_model, adapter, runtime_composition)
+        # #1077: rematerialize after scope recovery (not only post-analysis).
+        adapter.restore_live_kit_after_active_source()
         request_visible_browser_waveforms_from_window()
         refresh_browser_scope()
         bridge.refreshState()
@@ -6763,7 +6929,8 @@ def _qml_engine(
         ):
             # Keep Qt item index in sync with navigation state (#836).
             library_model.ensureChildren(f"root:{folder_id}")
-        # #742: Live Kit stays hidden after success; Browser materializes via sync.
+        # #742 default: Live Kit stays hidden after success unless #1077 preference
+        # asks to rematerialize through the canonical reveal seam.
         if runtime_composition is not None:
             runtime_composition.clear_live_kit_disclosure()
         if library_model.selectNode(target_node_id):
@@ -6774,11 +6941,16 @@ def _qml_engine(
                 _sync_runtime_browser_state(view_model, adapter, runtime_composition)
                 request_visible_browser_waveforms_from_window()
                 refresh_browser_scope()
+                adapter.restore_live_kit_after_active_source()
                 bridge.refreshState()
                 layout_model.syncFromInteraction()
             else:
                 dispatch_library_selection()
+                adapter.restore_live_kit_after_active_source()
+                bridge.refreshState()
+                layout_model.syncFromInteraction()
         else:
+            adapter.restore_live_kit_after_active_source()
             refresh_screen_model()
 
     def finish_remove(folder_id: int) -> None:
@@ -7107,6 +7279,10 @@ def _qml_engine(
         on_return_to_screen1=return_to_screen1,
     )
     adapter._runtime_composition = runtime_composition
+    # #1077: restore workspace visibility preference only for production-composed
+    # adapters. Injected harness adapters own their presentation state.
+    if interaction_adapter is None:
+        adapter.apply_live_kit_visibility_preference()
     engine._screen1_analysis_fail_closed = lambda: _analysis_fail_closed(
         AnalysisUiState(phase="error", error=view_model.analysis_error)
     )

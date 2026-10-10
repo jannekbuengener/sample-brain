@@ -345,6 +345,7 @@ def test_qml_live_kit_runtime_roundtrip_pending_assign_and_group_toggle():
         live_kit=live_kit,
     )
     view_model.live_kit_groups = live_kit.groups
+    view_model.live_kit_materialized = True
     app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
     window.show()
     _settle_qml_frame(app)
@@ -354,8 +355,13 @@ def test_qml_live_kit_runtime_roundtrip_pending_assign_and_group_toggle():
         assert pane is not None
         banner = window.findChild(QQuickItem, "liveKitPendingBanner")
         assert banner is not None
-        assert pane.property("visible") is True
+        # #1077: pane stays hidden until Add-to-Kit / drawer reveal.
+        assert pane.property("visible") is False
 
+        bridge.addToKit(4)
+        app.processEvents()
+        _settle_qml_frame(app)
+        assert pane.property("visible") is True
         projected = window.property("screenData").property("liveKitGroups")
         assert tuple(group["name"] for group in projected) == CANONICAL_GROUPS
         screen_data = window.property("screenData")
@@ -363,9 +369,6 @@ def test_qml_live_kit_runtime_roundtrip_pending_assign_and_group_toggle():
             len(_slots) for _group, _slots in LIVE_KIT_SLOT_MAPPING
         )
         assert screen_data.property("liveKitAssignedCount") == 0
-
-        bridge.addToKit(4)
-        app.processEvents()
         assert (
             window.property("interaction").property("liveKitPendingAdd")
             == fixture.browser_rows[4].display_name
@@ -477,6 +480,10 @@ def test_qml_pending_add_pointer_targets_slot_action_pill_and_commits():
     assert live_kit.toggle_group("Drums") is False
     adapter._sync_live_kit_projection()
     view_model.live_kit_groups = live_kit.groups
+    # #1077: visible Live Kit surface required before slot hit-targets exist.
+    view_model.live_kit_materialized = True
+    adapter._live_kit_drawer_open = True
+    adapter.live_kit_collapsed = False
 
     app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
     window.show()
@@ -486,6 +493,7 @@ def test_qml_pending_add_pointer_targets_slot_action_pill_and_commits():
         interaction = window.property("interaction")
         pane = window.findChild(QQuickItem, "liveKitPane")
         assert pane is not None
+        assert pane.property("visible") is True
 
         def item(name: str) -> QQuickItem:
             to_visit = [pane]
