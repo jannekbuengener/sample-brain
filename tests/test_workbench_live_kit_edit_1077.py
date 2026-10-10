@@ -720,6 +720,32 @@ def test_step_sequencer_nav_disabled_until_arrangement_destination():
     assert "openChannelRack()" not in block
 
 
+def test_auto_disclosure_updates_session_visibility_desired(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
+    save_live_kit_visibility_preference(False, state_dir=tmp_path)
+    adapter, composition, _kit = _production_composed_adapter(
+        monkeypatch, active_source=True
+    )
+    assert adapter.apply_live_kit_visibility_preference() is False
+    assert adapter._live_kit_visibility_desired is False
+    adapter._pending_live_kit_row = _row("first.wav")
+    adapter._live_kit_auto_disclosure_consumed = False
+    assert adapter.assign_live_kit_slot("Kick + Bass", "Kick") is True
+    assert adapter._live_kit_visibility_desired is True
+    composition.clear_live_kit_disclosure()
+    adapter.suspend_live_kit_for_analysis()
+    adapter.view_model.set_workspace_materialization(
+        has_active_source=True,
+        calm_canvas_visible=False,
+        browser_materialized=True,
+        live_kit_materialized=False,
+    )
+    assert adapter.restore_live_kit_after_active_source() is True
+    assert adapter.live_kit_is_visible() is True
+
+
 def test_session_close_survives_stale_preference_on_source_restore(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

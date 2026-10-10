@@ -1381,6 +1381,7 @@ class Screen1QmlInteractionAdapter:
             self._live_kit_auto_disclosure_consumed = True
             self._live_kit_drawer_open = True
             self.live_kit_collapsed = False
+            self._live_kit_visibility_desired = True
             try_save_live_kit_visibility_preference(True)
             self._reveal_live_kit_pane()
             self._close_harmonic_match_presentation()
