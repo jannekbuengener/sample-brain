@@ -202,6 +202,28 @@ def test_changing_view_display_settings_does_not_mutate_functional(tmp_path: Pat
     assert load_workbench_feature_settings(state_dir=tmp_path).gesture_rack_apply_enabled is True
 
 
+def test_adapter_gesture_toggle_preserves_docking_flag(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
+    save_workbench_feature_settings(
+        WorkbenchFeatureSettings(
+            gesture_rack_apply_enabled=False,
+            workspace_panel_docking_enabled=True,
+        ),
+        state_dir=tmp_path,
+    )
+    view_model = Screen1QmlViewModel.baseline("screen1-default-3panel")
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        on_preview_requested=lambda *_a, **_k: None,
+        on_preview_stopped=lambda: None,
+    )
+    adapter.load_feature_settings(state_dir=tmp_path)
+    assert adapter.set_gesture_rack_apply_enabled(True, state_dir=tmp_path) is True
+    loaded = load_workbench_feature_settings(state_dir=tmp_path)
+    assert loaded.gesture_rack_apply_enabled is True
+    assert loaded.workspace_panel_docking_enabled is True
+
+
 def test_adapter_exposes_persisted_gesture_rack_apply_flag(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
     save_workbench_feature_settings(
