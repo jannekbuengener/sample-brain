@@ -54,17 +54,25 @@ Must **not** use as primary identity:
 - private absolute machine paths
 - raw PCM payload
 
-Stale / deleted / unresolvable samples → controlled reject, no musical mutation,
-no exception leak into UI. User-visible failure evidence never includes a
-private absolute path.
+Resolution rules:
+
+- zero catalog matches → `unresolvable_sample`
+- two or more catalog matches for the same normalized `relative_path` →
+  `ambiguous_sample` (fail closed; never pick the first match)
+- matched row whose media file is missing → `unresolvable_sample`
+
+Stale / deleted / unresolvable / ambiguous samples → controlled reject, no
+musical mutation, no exception leak into UI. User-visible failure evidence
+never includes a private absolute path.
 
 ## Target contract
 
 Required target class: `live_kit_assignment`
 
 Python validates group/slot against `LIVE_KIT_SLOT_MAPPING`, requires Live Kit
-materialization, and requires the target to be marked visible. A QML string
-alone cannot authorize a drop.
+materialization, and authorizes visibility only against the current
+`visible_slot_keys` set passed into apply (transport `visible=True` alone is
+insufficient). A QML string alone cannot authorize a drop.
 
 Rejected target identities include (non-exhaustive): `arrangement`, `live`,
 `channel_rack`, `rack`, `step_sequencer`, unknown classes, hidden / non-
@@ -112,16 +120,23 @@ No heuristic string sniffing when a typed kind field is available.
 
 Each drop intent carries a `delivery_id`. Replaying the same delivery id must
 not assign twice. The second delivery is accepted as an idempotent no-op
-(`reason=duplicate_delivery`) with Kit state unchanged.
+(`reason=duplicate_delivery`) with Kit state unchanged. Replay state is always
+active: callers may inject an `InternalSampleDropSession`, otherwise a
+process-owned default session is used so protection cannot be silently skipped.
 
 ## Public seams
 
 ```text
-descriptor_from_row(row, *, source_surface) -> InternalSampleDescriptor | None
+descriptor_from_row(row, *, source_surface, features) -> InternalSampleDescriptor | None
 parse_internal_sample_descriptor(payload) -> InternalSampleDescriptor | None
 parse_internal_sample_drop_intent(payload) -> InternalSampleDropIntent | None
-list_visible_live_kit_targets(...) -> tuple[LiveKitAssignmentTarget, ...]
-apply_internal_sample_drop(...) -> InternalSampleDropResult
+list_visible_live_kit_targets(*, features, live_kit_materialized, visible_slot_keys)
+  -> tuple[LiveKitAssignmentTarget, ...]
+resolve_sample_from_catalog(descriptor, catalog) -> SampleResolution
+apply_internal_sample_drop(
+    intent, *, kit, catalog, features, live_kit_materialized,
+    visible_slot_keys, session=None
+) -> InternalSampleDropResult
 ```
 
 ## Non-goals

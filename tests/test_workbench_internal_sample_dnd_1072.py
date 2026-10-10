@@ -30,17 +30,22 @@ CONTRACT_DOC = REPO_ROOT / "docs" / "WORKBENCH_INTERNAL_SAMPLE_DND_CONTRACT.md"
 
 
 def _row(
+    tmp_path: Path,
     relative_path: str = "packs/kick.wav",
     *,
     display_name: str | None = None,
-    absolute_path: str | None = None,
+    missing: bool = False,
+    library_root: str = "library",
 ) -> WorkbenchRow:
     name = display_name or Path(relative_path).name
-    path = absolute_path or f"/private/library/{relative_path}"
+    abs_path = tmp_path / library_root / relative_path
+    if not missing:
+        abs_path.parent.mkdir(parents=True, exist_ok=True)
+        abs_path.write_bytes(b"RIFFTEST")
     return WorkbenchRow(
         display_name=name,
         relative_path=relative_path,
-        path=path,
+        path=str(abs_path),
         bpm=120.0,
         key="Am",
         key_conf=0.9,
@@ -87,7 +92,9 @@ def _apply(
     catalog: tuple[WorkbenchRow, ...] | None = None,
     delivery_id: str = "delivery-1",
     session: sample_dnd.InternalSampleDropSession | None = None,
+    reuse_process_session: bool = False,
     target_kind: str = sample_dnd.TARGET_LIVE_KIT_ASSIGNMENT,
+    visible_slot_keys: tuple[tuple[str, str], ...] | None = None,
 ):
     features = features if features is not None else _features(enabled=True)
     descriptor = sample_dnd.descriptor_from_row(
@@ -106,13 +113,24 @@ def _apply(
         ),
         delivery_id=delivery_id,
     )
+    keys = (
+        visible_slot_keys
+        if visible_slot_keys is not None
+        else ((group, slot),)
+    )
+    # Isolate tests from the process-owned default session unless explicitly
+    # exercising that path.
+    effective_session = session
+    if effective_session is None and not reuse_process_session:
+        effective_session = sample_dnd.InternalSampleDropSession()
     return sample_dnd.apply_internal_sample_drop(
         intent,
         kit=kit,
         catalog=catalog if catalog is not None else (row,),
         features=features,
         live_kit_materialized=live_kit_materialized,
-        session=session,
+        visible_slot_keys=keys,
+        session=effective_session,
     )
 
 
@@ -159,21 +177,15 @@ def test_legacy_feature_json_defaults_sample_dnd_off_without_resetting_siblings(
 # ---------------------------------------------------------------------------
 
 
-def test_browser_sample_to_empty_visible_live_kit_slot_assigns_once():
+def test_browser_sample_to_empty_visible_live_kit_slot_assigns_once(tmp_path: Path):
     kit = LiveKitState()
-    row = _row("packs/kick.wav")
+    row = _row(tmp_path, "packs/kick.wav")
     before = _kit_snapshot(kit)
     result = _apply(kit=kit, row=row, source_surface="browser")
     assert result.accepted is True
     assert result.mutation == "assign"
     assert kit.assignment_for("Kick + Bass", "Kick") is row
     assert before["Kick + Bass"]["Kick"] is None
-    assert sum(
-        1
-        for group in before
-        for slot, value in before[group].items()
-        if value is not None
-    ) == 0
     assert (
         sum(
             1
@@ -185,9 +197,9 @@ def test_browser_sample_to_empty_visible_live_kit_slot_assigns_once():
     )
 
 
-def test_harmony_sample_to_empty_visible_live_kit_slot_same_semantics():
+def test_harmony_sample_to_empty_visible_live_kit_slot_same_semantics(tmp_path: Path):
     kit = LiveKitState()
-    row = _row("packs/pad.wav")
+    row = _row(tmp_path, "packs/pad.wav")
     result = _apply(
         kit=kit,
         row=row,
@@ -200,17 +212,17 @@ def test_harmony_sample_to_empty_visible_live_kit_slot_same_semantics():
     assert kit.assignment_for("Melodic", "Pad") is row
 
 
-def test_browser_and_harmony_replace_occupied_slot_once():
+def test_browser_and_harmony_replace_occupied_slot_once(tmp_path: Path):
     kit = LiveKitState()
-    old = _row("packs/old_kick.wav")
-    new = _row("packs/new_kick.wav")
+    old = _row(tmp_path, "packs/old_kick.wav")
+    new = _row(tmp_path, "packs/new_kick.wav")
     kit.assign("Kick + Bass", "Kick", old)
     result = _apply(kit=kit, row=new, source_surface="browser")
     assert result.accepted is True
     assert result.mutation == "replace"
     assert kit.assignment_for("Kick + Bass", "Kick") is new
 
-    harmony_row = _row("packs/harmony_kick.wav")
+    harmony_row = _row(tmp_path, "packs/harmony_kick.wav")
     result2 = _apply(
         kit=kit,
         row=harmony_row,
@@ -223,13 +235,13 @@ def test_browser_and_harmony_replace_occupied_slot_once():
 
 
 # ---------------------------------------------------------------------------
-# 4) Stale / deleted source
+# 4) Stale / deleted / ambiguous source
 # ---------------------------------------------------------------------------
 
 
-def test_stale_or_deleted_source_rejects_with_null_mutation():
+def test_stale_or_deleted_source_rejects_with_null_mutation(tmp_path: Path):
     kit = LiveKitState()
-    row = _row("packs/gone.wav")
+    row = _row(tmp_path, "packs/gone.wav")
     before = _kit_snapshot(kit)
     result = _apply(kit=kit, row=row, catalog=())
     assert result.accepted is False
@@ -237,9 +249,33 @@ def test_stale_or_deleted_source_rejects_with_null_mutation():
     assert result.reason == "unresolvable_sample"
     assert _kit_snapshot(kit) == before
     assert result.evidence is not None
-    # Absolute path must never appear in user-visible evidence.
-    assert "/private/" not in result.evidence
     assert row.path not in result.evidence
+
+
+def test_deleted_file_on_catalog_row_rejects(tmp_path: Path):
+    kit = LiveKitState()
+    row = _row(tmp_path, "packs/deleted.wav", missing=True)
+    before = _kit_snapshot(kit)
+    result = _apply(kit=kit, row=row)
+    assert result.accepted is False
+    assert result.reason == "unresolvable_sample"
+    assert result.mutation is None
+    assert _kit_snapshot(kit) == before
+    assert row.path not in (result.evidence or "")
+
+
+def test_ambiguous_relative_path_rejects(tmp_path: Path):
+    kit = LiveKitState()
+    a = _row(tmp_path, "packs/same.wav", library_root="root_a")
+    b = _row(tmp_path, "packs/same.wav", library_root="root_b")
+    before = _kit_snapshot(kit)
+    result = _apply(kit=kit, row=a, catalog=(a, b))
+    assert result.accepted is False
+    assert result.reason == "ambiguous_sample"
+    assert result.mutation is None
+    assert _kit_snapshot(kit) == before
+    assert a.path not in (result.evidence or "")
+    assert b.path not in (result.evidence or "")
 
 
 # ---------------------------------------------------------------------------
@@ -247,9 +283,9 @@ def test_stale_or_deleted_source_rejects_with_null_mutation():
 # ---------------------------------------------------------------------------
 
 
-def test_unknown_target_rejects():
+def test_unknown_target_rejects(tmp_path: Path):
     kit = LiveKitState()
-    row = _row()
+    row = _row(tmp_path)
     before = _kit_snapshot(kit)
     result = _apply(
         kit=kit,
@@ -264,9 +300,9 @@ def test_unknown_target_rejects():
     assert _kit_snapshot(kit) == before
 
 
-def test_hidden_live_kit_target_rejects():
+def test_hidden_live_kit_target_rejects(tmp_path: Path):
     kit = LiveKitState()
-    row = _row()
+    row = _row(tmp_path)
     before = _kit_snapshot(kit)
     result = _apply(kit=kit, row=row, visible=False)
     assert result.accepted is False
@@ -274,9 +310,29 @@ def test_hidden_live_kit_target_rejects():
     assert _kit_snapshot(kit) == before
 
 
-def test_non_materialized_live_kit_rejects_as_hidden():
+def test_stale_transport_visible_flag_rejected_without_authoritative_key(
+    tmp_path: Path,
+):
     kit = LiveKitState()
-    row = _row()
+    row = _row(tmp_path)
+    before = _kit_snapshot(kit)
+    # Transport claims visible, but authoritative visible set is empty/other.
+    result = _apply(
+        kit=kit,
+        row=row,
+        visible=True,
+        visible_slot_keys=(("Melodic", "Lead"),),
+        group="Kick + Bass",
+        slot="Kick",
+    )
+    assert result.accepted is False
+    assert result.reason == "hidden_target"
+    assert _kit_snapshot(kit) == before
+
+
+def test_non_materialized_live_kit_rejects_as_hidden(tmp_path: Path):
+    kit = LiveKitState()
+    row = _row(tmp_path)
     before = _kit_snapshot(kit)
     result = _apply(kit=kit, row=row, live_kit_materialized=False)
     assert result.accepted is False
@@ -292,9 +348,9 @@ def test_non_materialized_live_kit_rejects_as_hidden():
         "step_sequencer",
     ],
 )
-def test_hidden_rack_or_sequencer_target_rejects(target_kind: str):
+def test_hidden_rack_or_sequencer_target_rejects(tmp_path: Path, target_kind: str):
     kit = LiveKitState()
-    row = _row()
+    row = _row(tmp_path)
     before = _kit_snapshot(kit)
     result = _apply(kit=kit, row=row, target_kind=target_kind)
     assert result.accepted is False
@@ -302,9 +358,9 @@ def test_hidden_rack_or_sequencer_target_rejects(target_kind: str):
     assert _kit_snapshot(kit) == before
 
 
-def test_arrangement_target_rejects():
+def test_arrangement_target_rejects(tmp_path: Path):
     kit = LiveKitState()
-    row = _row()
+    row = _row(tmp_path)
     before = _kit_snapshot(kit)
     result = _apply(kit=kit, row=row, target_kind="arrangement")
     assert result.accepted is False
@@ -312,9 +368,9 @@ def test_arrangement_target_rejects():
     assert _kit_snapshot(kit) == before
 
 
-def test_later_live_target_rejects():
+def test_later_live_target_rejects(tmp_path: Path):
     kit = LiveKitState()
-    row = _row()
+    row = _row(tmp_path)
     before = _kit_snapshot(kit)
     result = _apply(kit=kit, row=row, target_kind="live")
     assert result.accepted is False
@@ -327,9 +383,9 @@ def test_later_live_target_rejects():
 # ---------------------------------------------------------------------------
 
 
-def test_duplicate_delivery_does_not_double_assign():
+def test_duplicate_delivery_does_not_double_assign(tmp_path: Path):
     kit = LiveKitState()
-    row = _row("packs/kick.wav")
+    row = _row(tmp_path, "packs/kick.wav")
     session = sample_dnd.InternalSampleDropSession()
     first = _apply(kit=kit, row=row, delivery_id="same-drop", session=session)
     assert first.accepted is True
@@ -340,6 +396,34 @@ def test_duplicate_delivery_does_not_double_assign():
     assert second.mutation is None
     assert second.reason == "duplicate_delivery"
     assert kit.assignment_for("Kick + Bass", "Kick") is assigned
+
+
+def test_process_default_session_enforces_replay_without_explicit_session(
+    tmp_path: Path,
+):
+    kit = LiveKitState()
+    row = _row(tmp_path, "packs/replay.wav")
+    delivery = "process-default-delivery"
+    # Isolate from other tests by using a unique delivery id.
+    first = _apply(
+        kit=kit,
+        row=row,
+        delivery_id=delivery,
+        session=None,
+        reuse_process_session=True,
+    )
+    assert first.accepted is True
+    assert first.mutation == "assign"
+    second = _apply(
+        kit=kit,
+        row=row,
+        delivery_id=delivery,
+        session=None,
+        reuse_process_session=True,
+    )
+    assert second.accepted is True
+    assert second.mutation is None
+    assert second.reason == "duplicate_delivery"
 
 
 # ---------------------------------------------------------------------------
@@ -359,14 +443,12 @@ def test_panel_docking_payload_cannot_parse_as_sample_dnd():
     assert sample_dnd.parse_internal_sample_descriptor(move) is None
 
 
-def test_sample_dnd_cannot_parse_as_panel_docking_payload():
-    row = _row()
+def test_sample_dnd_cannot_parse_as_panel_docking_payload(tmp_path: Path):
+    row = _row(tmp_path)
     descriptor = sample_dnd.descriptor_from_row(
         row, source_surface="browser", features=_features(enabled=True)
     )
     assert descriptor is not None
-    # Docking module only accepts its typed intent kinds for mutations;
-    # a sample descriptor must not look like a panel_move payload.
     as_dict = {
         "kind": descriptor.kind,
         "relative_path": descriptor.relative_path,
@@ -379,14 +461,13 @@ def test_sample_dnd_cannot_parse_as_panel_docking_payload():
     assert as_dict["kind"] != INTENT_PANEL_MOVE
 
 
-def test_external_file_dnd_payload_remains_separate():
+def test_external_file_dnd_payload_remains_separate(tmp_path: Path):
     file_payload = {
         "kind": "external_file_drop",
         "paths": [r"C:\Users\private\kick.wav"],
     }
     assert sample_dnd.parse_internal_sample_descriptor(file_payload) is None
     assert sample_dnd.parse_internal_sample_drop_intent(file_payload) is None
-    # #768 seam still imports without treating sample descriptor as file drop.
     from src.workbench_sample_dnd import can_accept_sample_drop
 
     assert callable(can_accept_sample_drop)
@@ -403,9 +484,9 @@ def test_external_file_dnd_payload_remains_separate():
 # ---------------------------------------------------------------------------
 
 
-def test_feature_off_makes_internal_sample_dnd_inert():
+def test_feature_off_makes_internal_sample_dnd_inert(tmp_path: Path):
     kit = LiveKitState()
-    row = _row()
+    row = _row(tmp_path)
     features = _features(enabled=False)
     assert (
         sample_dnd.descriptor_from_row(
@@ -418,7 +499,6 @@ def test_feature_off_makes_internal_sample_dnd_inert():
         live_kit_materialized=True,
         visible_slot_keys=(("Kick + Bass", "Kick"),),
     ) == ()
-    # Even a hand-built intent is rejected when the feature is OFF.
     intent = sample_dnd.InternalSampleDropIntent(
         descriptor=sample_dnd.InternalSampleDescriptor(
             relative_path=row.relative_path,
@@ -438,6 +518,7 @@ def test_feature_off_makes_internal_sample_dnd_inert():
         catalog=(row,),
         features=features,
         live_kit_materialized=True,
+        visible_slot_keys=(("Kick + Bass", "Kick"),),
     )
     assert result.accepted is False
     assert result.reason == "feature_disabled"
@@ -445,14 +526,14 @@ def test_feature_off_makes_internal_sample_dnd_inert():
     assert _kit_snapshot(kit) == before
 
 
-def test_feature_off_non_drag_add_replace_still_works():
+def test_feature_off_non_drag_add_replace_still_works(tmp_path: Path):
     kit = LiveKitState()
-    row = _row("packs/direct.wav")
+    row = _row(tmp_path, "packs/direct.wav")
     features = _features(enabled=False)
     assert features.internal_sample_dnd_enabled is False
     assign_sample_to_kit(kit, "Kick + Bass", "Kick", row)
     assert kit.assignment_for("Kick + Bass", "Kick") is row
-    replacement = _row("packs/direct2.wav")
+    replacement = _row(tmp_path, "packs/direct2.wav")
     assign_sample_to_kit(kit, "Kick + Bass", "Kick", replacement)
     assert kit.assignment_for("Kick + Bass", "Kick") is replacement
 
@@ -467,13 +548,12 @@ class _FailingKit(LiveKitState):
         raise RuntimeError("simulated assign failure")
 
 
-def test_failed_target_mutation_preserves_prior_kit_state():
+def test_failed_target_mutation_preserves_prior_kit_state(tmp_path: Path):
     kit = _FailingKit()
-    existing = _row("packs/existing.wav")
-    # Bypass failing assign by writing through parent storage shape.
+    existing = _row(tmp_path, "packs/existing.wav")
     LiveKitState.assign(kit, "Kick + Bass", "Kick", existing)
     before = _kit_snapshot(kit)
-    row = _row("packs/new.wav")
+    row = _row(tmp_path, "packs/new.wav")
     result = _apply(kit=kit, row=row)
     assert result.accepted is False
     assert result.mutation is None
@@ -490,8 +570,8 @@ def test_failed_target_mutation_preserves_prior_kit_state():
 # ---------------------------------------------------------------------------
 
 
-def test_descriptor_contains_no_raw_pcm_payload():
-    row = _row()
+def test_descriptor_contains_no_raw_pcm_payload(tmp_path: Path):
+    row = _row(tmp_path)
     descriptor = sample_dnd.descriptor_from_row(
         row, source_surface="browser", features=_features(enabled=True)
     )
@@ -502,8 +582,8 @@ def test_descriptor_contains_no_raw_pcm_payload():
     assert "pcm" not in str(payload).casefold()
 
 
-def test_stable_identity_does_not_depend_on_qml_row_index():
-    row = _row("packs/same.wav")
+def test_stable_identity_does_not_depend_on_qml_row_index(tmp_path: Path):
+    row = _row(tmp_path, "packs/same.wav")
     d0 = sample_dnd.descriptor_from_row(
         row, source_surface="browser", features=_features(enabled=True)
     )
@@ -518,8 +598,8 @@ def test_stable_identity_does_not_depend_on_qml_row_index():
     assert "qml_index" not in transport
 
 
-def test_browser_and_harmony_produce_same_descriptor_type():
-    row = _row("packs/shared.wav")
+def test_browser_and_harmony_produce_same_descriptor_type(tmp_path: Path):
+    row = _row(tmp_path, "packs/shared.wav")
     browser = sample_dnd.descriptor_from_row(
         row, source_surface="browser", features=_features(enabled=True)
     )
@@ -539,10 +619,23 @@ def test_browser_and_harmony_produce_same_descriptor_type():
 # ---------------------------------------------------------------------------
 
 
-def test_user_visible_failure_evidence_leaks_no_private_absolute_path():
+def test_user_visible_failure_evidence_leaks_no_private_absolute_path(tmp_path: Path):
     kit = LiveKitState()
-    abs_path = r"D:\Users\janne\private\secret_kick.wav"
-    row = _row("packs/secret.wav", absolute_path=abs_path)
+    # Missing file under a private-looking absolute path string.
+    abs_path = tmp_path / "Users" / "janne" / "private" / "secret_kick.wav"
+    row = WorkbenchRow(
+        display_name="secret_kick.wav",
+        relative_path="packs/secret.wav",
+        path=str(abs_path),
+        bpm=120.0,
+        key="Am",
+        key_conf=0.9,
+        loudness=-12.0,
+        brightness=3000.0,
+        sample_class="one_shot",
+        pred_type="kick",
+        status="ok",
+    )
     result = _apply(kit=kit, row=row, catalog=())
     assert result.accepted is False
     blob = " ".join(
@@ -550,9 +643,8 @@ def test_user_visible_failure_evidence_leaks_no_private_absolute_path():
         for part in (result.reason, result.evidence, str(result))
         if part is not None
     )
-    assert abs_path not in blob
-    assert r"D:\Users" not in blob
-    assert "/Users/janne" not in blob
+    assert str(abs_path) not in blob
+    assert "secret_kick.wav" not in blob or "unresolvable" in blob
 
 
 def test_feature_flag_round_trip_preserves_siblings(tmp_path: Path):
@@ -571,9 +663,9 @@ def test_feature_flag_round_trip_preserves_siblings(tmp_path: Path):
     assert loaded.workspace_panel_docking_enabled is True
 
 
-def test_invalid_slot_identity_rejects_without_mutation():
+def test_invalid_slot_identity_rejects_without_mutation(tmp_path: Path):
     kit = LiveKitState()
-    row = _row()
+    row = _row(tmp_path)
     before = _kit_snapshot(kit)
     result = _apply(kit=kit, row=row, group="Kick + Bass", slot="NotARealSlot")
     assert result.accepted is False

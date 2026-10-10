@@ -9,7 +9,7 @@ or external file DnD (#768).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Sequence
 
 from .live_kits_registry import assign_sample_to_kit, replace_sample_assignment
@@ -103,6 +103,18 @@ class InternalSampleDropSession:
     """In-process replay guard for identical delivery ids."""
 
     applied_delivery_ids: set[str] = field(default_factory=set)
+
+
+# Process-owned default so replay protection cannot be silently disabled.
+_PROCESS_DROP_SESSION = InternalSampleDropSession()
+
+
+@dataclass(frozen=True)
+class SampleResolution:
+    """Catalog resolution outcome without leaking private absolute paths."""
+
+    row: WorkbenchRow | None = None
+    reason: str | None = None
 
 
 def _normalize_relative_path(value: str) -> str | None:
@@ -267,18 +279,33 @@ def list_visible_live_kit_targets(
 def resolve_sample_from_catalog(
     descriptor: InternalSampleDescriptor,
     catalog: Sequence[WorkbenchRow],
-) -> WorkbenchRow | None:
-    """Resolve descriptor identity against a provided row catalog."""
+) -> SampleResolution:
+    """Resolve descriptor identity against a provided row catalog.
+
+    Ambiguous relative_path matches fail closed. Missing files fail closed.
+    Absolute paths are never returned in ``reason``.
+    """
     needle = _normalize_relative_path(descriptor.relative_path)
     if needle is None:
-        return None
+        return SampleResolution(reason="unresolvable_sample")
+    matches: list[WorkbenchRow] = []
     for row in catalog:
         if not isinstance(row, WorkbenchRow):
             continue
         candidate = _normalize_relative_path(row.relative_path)
         if candidate == needle:
-            return row
-    return None
+            matches.append(row)
+    if not matches:
+        return SampleResolution(reason="unresolvable_sample")
+    if len(matches) > 1:
+        return SampleResolution(reason="ambiguous_sample")
+    row = matches[0]
+    try:
+        if not Path(row.path).expanduser().is_file():
+            return SampleResolution(reason="unresolvable_sample")
+    except (OSError, ValueError, TypeError):
+        return SampleResolution(reason="unresolvable_sample")
+    return SampleResolution(row=row)
 
 
 def apply_internal_sample_drop(
@@ -288,9 +315,11 @@ def apply_internal_sample_drop(
     catalog: Sequence[WorkbenchRow],
     features: Any,
     live_kit_materialized: bool,
+    visible_slot_keys: Sequence[tuple[str, str]],
     session: InternalSampleDropSession | None = None,
 ) -> InternalSampleDropResult:
     """Validate and route one internal Sample drop onto Live Kit Add/Replace."""
+    drop_session = session if session is not None else _PROCESS_DROP_SESSION
     if not isinstance(intent, InternalSampleDropIntent):
         return InternalSampleDropResult(
             accepted=False,
@@ -312,7 +341,7 @@ def apply_internal_sample_drop(
             evidence="Drop delivery id is required.",
         )
 
-    if session is not None and delivery_id in session.applied_delivery_ids:
+    if delivery_id in drop_session.applied_delivery_ids:
         return InternalSampleDropResult(
             accepted=True,
             mutation=None,
@@ -344,12 +373,6 @@ def apply_internal_sample_drop(
             reason="invalid_target",
             evidence="Only visible Live Kit assignment targets are accepted.",
         )
-    if not live_kit_materialized or not target.visible:
-        return InternalSampleDropResult(
-            accepted=False,
-            reason="hidden_target",
-            evidence="Live Kit assignment target is not visible.",
-        )
     if target.group not in _SLOTS_BY_GROUP or target.slot not in _SLOTS_BY_GROUP[target.group]:
         return InternalSampleDropResult(
             accepted=False,
@@ -357,13 +380,38 @@ def apply_internal_sample_drop(
             evidence="Live Kit slot identity is invalid.",
         )
 
-    resolved = resolve_sample_from_catalog(descriptor, catalog)
-    if resolved is None:
+    # Authoritative visibility: transport visible flag alone cannot authorize.
+    authoritative = list_visible_live_kit_targets(
+        features=features,
+        live_kit_materialized=live_kit_materialized,
+        visible_slot_keys=visible_slot_keys,
+    )
+    authorized_keys = {(item.group, item.slot) for item in authoritative}
+    if (
+        not live_kit_materialized
+        or not target.visible
+        or (target.group, target.slot) not in authorized_keys
+    ):
         return InternalSampleDropResult(
             accepted=False,
-            reason="unresolvable_sample",
-            evidence="Sample is no longer available for assignment.",
+            reason="hidden_target",
+            evidence="Live Kit assignment target is not visible.",
         )
+
+    resolution = resolve_sample_from_catalog(descriptor, catalog)
+    if resolution.row is None:
+        reason = resolution.reason or "unresolvable_sample"
+        evidence = (
+            "Sample identity is ambiguous."
+            if reason == "ambiguous_sample"
+            else "Sample is no longer available for assignment."
+        )
+        return InternalSampleDropResult(
+            accepted=False,
+            reason=reason,
+            evidence=evidence,
+        )
+    resolved = resolution.row
 
     occupied = kit.assignment_for(target.group, target.slot) is not None
     mutation = "replace" if occupied else "assign"
@@ -379,8 +427,7 @@ def apply_internal_sample_drop(
             evidence="Live Kit assignment could not be completed.",
         )
 
-    if session is not None:
-        session.applied_delivery_ids.add(delivery_id)
+    drop_session.applied_delivery_ids.add(delivery_id)
 
     return InternalSampleDropResult(
         accepted=True,
@@ -401,6 +448,7 @@ __all__ = [
     "InternalSampleDropResult",
     "InternalSampleDropSession",
     "LiveKitAssignmentTarget",
+    "SampleResolution",
     "apply_internal_sample_drop",
     "descriptor_from_row",
     "list_visible_live_kit_targets",
