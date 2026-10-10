@@ -1,0 +1,126 @@
+name: Validate #1077 main visual
+
+on:
+  push:
+    branches:
+      - validation/1077-main-visual
+    paths:
+      - .github/workflows/validate-1077-main-visual.yml
+
+permissions:
+  contents: write
+
+jobs:
+  evidence:
+    name: Exact-main Windows QML evidence
+    runs-on: [self-hosted, sample-brain]
+
+    steps:
+      - name: Checkout validation carrier branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: validation/1077-main-visual
+          path: carrier
+
+      - name: Checkout exact merged main head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 8c86348fb22ef7bf5a1d8d844528c0037c45625a
+          path: runtime
+
+      - name: Require Windows self-hosted runner
+        shell: pwsh
+        run: |
+          Write-Host "RUNNER_OS=$env:RUNNER_OS RUNNER_ARCH=$env:RUNNER_ARCH RUNNER_NAME=$env:RUNNER_NAME"
+          if ($env:RUNNER_OS -ne "Windows") {
+            throw "#1077 exact-head visual evidence requires Windows; runner is $env:RUNNER_OS"
+          }
+
+      - name: Verify exact product head and pinned Python
+        shell: pwsh
+        run: |
+          $expectedHead = "8c86348fb22ef7bf5a1d8d844528c0037c45625a"
+          $actualHead = (git -C runtime rev-parse HEAD).Trim()
+          Write-Host "expected_head=$expectedHead actual_head=$actualHead"
+          if ($actualHead -ne $expectedHead) { throw "wrong runtime HEAD" }
+
+          $expectedPython = (Get-Content runtime/.python-version -Raw).Trim()
+          $actualPython = (python -c "import platform; print(platform.python_version())").Trim()
+          Write-Host "expected_python=$expectedPython actual_python=$actualPython"
+          if ($actualPython -ne $expectedPython) { throw "wrong Python version" }
+
+      - name: Install runtime and test dependencies
+        shell: pwsh
+        run: python -m pip install -r runtime/requirements.txt
+
+      - name: Capture exact-head QML evidence at 100 125 150 percent
+        shell: pwsh
+        run: |
+          $runtimeRoot = (Resolve-Path runtime).Path
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP "sample-brain-evidence-1077-8c86348"
+          New-Item -ItemType Directory -Force -Path $evidenceRoot | Out-Null
+
+          $runs = @(
+            @{ Scale = "1.0"; Tag = "s1" },
+            @{ Scale = "1.25"; Tag = "s1.25" },
+            @{ Scale = "1.5"; Tag = "s1.5" }
+          )
+
+          foreach ($run in $runs) {
+            $outDir = Join-Path $evidenceRoot $run.Tag
+            Push-Location runtime
+            try {
+              python tools/screen1_live_kit_edit_1077_evidence.py `
+                --runtime-root $runtimeRoot `
+                --evidence-dir $outDir `
+                --scale-factor $run.Scale
+              if ($LASTEXITCODE -ne 0) { throw "evidence capture failed at scale $($run.Scale)" }
+            }
+            finally {
+              Pop-Location
+            }
+          }
+
+      - name: Persist synthetic evidence on validation branch
+        shell: pwsh
+        run: |
+          $head = "8c86348fb22ef7bf5a1d8d844528c0037c45625a"
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP "sample-brain-evidence-1077-8c86348"
+          $targetRoot = Join-Path (Resolve-Path carrier).Path "validation-artifacts/1077/$head"
+          New-Item -ItemType Directory -Force -Path $targetRoot | Out-Null
+
+          $osInfo = Get-CimInstance Win32_OperatingSystem
+          $runnerInfo = [ordered]@{
+            issue = 1077
+            exact_main_head = $head
+            runner_os = $env:RUNNER_OS
+            runner_arch = $env:RUNNER_ARCH
+            runner_name = $env:RUNNER_NAME
+            windows_caption = $osInfo.Caption
+            windows_version = $osInfo.Version
+            captured_at_utc = [DateTime]::UtcNow.ToString("o")
+          } | ConvertTo-Json -Depth 4
+          Set-Content -Path (Join-Path $targetRoot "runner.json") -Value $runnerInfo -Encoding utf8
+
+          Get-ChildItem -Path $evidenceRoot -Recurse -File | ForEach-Object {
+            $relative = [IO.Path]::GetRelativePath($evidenceRoot, $_.FullName)
+            if ($_.Extension -ieq ".png") {
+              $dest = Join-Path $targetRoot ($relative + ".b64")
+              New-Item -ItemType Directory -Force -Path (Split-Path $dest -Parent) | Out-Null
+              $encoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes($_.FullName))
+              [IO.File]::WriteAllText($dest, $encoded)
+            }
+            else {
+              $dest = Join-Path $targetRoot $relative
+              New-Item -ItemType Directory -Force -Path (Split-Path $dest -Parent) | Out-Null
+              Copy-Item $_.FullName $dest -Force
+            }
+          }
+
+          git -C carrier config user.name "github-actions[bot]"
+          git -C carrier config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C carrier add "validation-artifacts/1077/$head"
+          git -C carrier diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) { throw "No evidence files were produced" }
+          git -C carrier commit -m "chore(validation): capture #1077 main visual evidence [skip ci]"
+          git -C carrier push origin HEAD:validation/1077-main-visual
