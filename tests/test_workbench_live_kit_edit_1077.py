@@ -653,3 +653,68 @@ def test_live_kit_resize_handle_exists_in_qml():
     assert 'objectName: "liveKitResizeHandle"' in QML_SOURCE
     assert "setLiveKitUserHeightPx" in QML_SOURCE
     assert "SizeVerCursor" in QML_SOURCE
+
+
+def test_resize_drag_underflow_clamps_to_minimum_not_auto():
+    adapter = _adapter()
+    adapter.view_model.live_kit_materialized = True
+    adapter._live_kit_drawer_open = True
+    # Drag path always supplies max_px > 0; underflow must not reset to auto.
+    assert adapter.set_live_kit_user_height_px(-40, max_px=320) == 120
+    assert adapter.live_kit_user_height_px == 120
+    # Explicit auto reset remains available without max ceiling.
+    assert adapter.set_live_kit_user_height_px(0) == 0
+
+
+def test_toggle_open_rematerializes_after_disclosure_clear(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    adapter, composition, kit = _production_composed_adapter(
+        monkeypatch, active_source=True
+    )
+    kit.assign("Kick + Bass", "Kick", _row("keep.wav"))
+    composition.reveal_live_kit()
+    adapter.view_model.live_kit_materialized = True
+    adapter._live_kit_drawer_open = True
+    adapter.live_kit_collapsed = False
+    composition.clear_live_kit_disclosure()
+    adapter.view_model.set_workspace_materialization(
+        has_active_source=True,
+        calm_canvas_visible=False,
+        browser_materialized=True,
+        live_kit_materialized=False,
+    )
+    adapter._live_kit_drawer_open = False
+    adapter.live_kit_collapsed = True
+
+    assert adapter.toggle_live_kit_drawer() is True
+    assert composition.live_kit_revealed is True
+    assert adapter.view_model.live_kit_materialized is True
+    assert adapter.live_kit_is_visible() is True
+
+
+def test_active_source_restore_reapplies_visible_preference(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
+    save_live_kit_visibility_preference(True, state_dir=tmp_path)
+    adapter, composition, _kit = _production_composed_adapter(
+        monkeypatch, active_source=True
+    )
+    composition.clear_live_kit_disclosure()
+    adapter._live_kit_drawer_open = False
+    adapter.live_kit_collapsed = True
+    adapter.view_model.set_workspace_materialization(
+        has_active_source=True,
+        calm_canvas_visible=False,
+        browser_materialized=True,
+        live_kit_materialized=False,
+    )
+    adapter.restore_live_kit_after_active_source()
+    assert adapter.live_kit_is_visible() is True
+
+
+def test_step_sequencer_nav_disabled_until_arrangement_destination():
+    block = QML_SOURCE.split('objectName: "programNavStepSequencer"', 1)[1][:900]
+    assert "enabled: false" in block
+    assert "openChannelRack()" not in block

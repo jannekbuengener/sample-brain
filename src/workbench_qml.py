@@ -1698,6 +1698,9 @@ class Screen1QmlInteractionAdapter:
             return False
         self._live_kit_drawer_open = not self._live_kit_drawer_open
         self.live_kit_collapsed = not self._live_kit_drawer_open
+        if self._live_kit_drawer_open:
+            # Opening after scope loss must rematerialize via the reveal seam.
+            self._reveal_live_kit_pane()
         # Best-effort UI persistence — must not abort drawer/bridge refresh.
         try_save_live_kit_visibility_preference(self._live_kit_drawer_open)
         return self._live_kit_drawer_open
@@ -1721,6 +1724,20 @@ class Screen1QmlInteractionAdapter:
         self._reveal_live_kit_pane()
         return self.live_kit_is_visible()
 
+    def restore_live_kit_after_active_source(self) -> bool:
+        """Rematerialize Live Kit after a valid active Source is restored.
+
+        Preference-true uses the full restore path. An already-open drawer
+        (manual open before scope loss) rematerializes without forcing a
+        preference-false close.
+        """
+        if load_live_kit_visibility_preference():
+            return self.apply_live_kit_visibility_preference()
+        if self._live_kit_drawer_open:
+            self._reveal_live_kit_pane()
+            return self.live_kit_is_visible()
+        return False
+
     def suspend_live_kit_for_analysis(self) -> None:
         """Close presentation while analysis owns the surface (#742 / #1077)."""
         composition = self._runtime_composition
@@ -1741,15 +1758,23 @@ class Screen1QmlInteractionAdapter:
         return int(self._live_kit_user_height_px)
 
     def set_live_kit_user_height_px(self, height_px: int, *, max_px: int = 0) -> int:
-        """Clamp session Live Kit height. 0 restores auto height. Kit state untouched."""
+        """Clamp session Live Kit height. Kit state untouched.
+
+        ``0`` restores auto height only when ``max_px`` is unset (explicit reset).
+        Drag paths pass ``max_px > 0`` and therefore clamp underflow to the
+        compact minimum instead of jumping back to auto/40% height.
+        """
         try:
             raw = int(height_px)
         except (TypeError, ValueError):
             raw = 0
-        if raw <= 0:
-            self._live_kit_user_height_px = 0
-            return 0
         minimum = 120
+        if raw <= 0:
+            if int(max_px) > 0:
+                raw = minimum
+            else:
+                self._live_kit_user_height_px = 0
+                return 0
         ceiling = int(max_px) if int(max_px) > 0 else 10_000
         self._live_kit_user_height_px = max(minimum, min(raw, ceiling))
         return int(self._live_kit_user_height_px)
@@ -2770,30 +2795,18 @@ ApplicationWindow {
                     bottomPadding: 0
                     implicitHeight: screen1Header.height
                     Layout.preferredHeight: screen1Header.height
-                    readonly property bool navActive: window.channelRack.bottomRackMaterialized
-                    background: Item {
-                        implicitHeight: screen1Header.height
-                        Rectangle {
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.bottom: parent.bottom
-                            height: 1
-                            color: theme.actionActive
-                            visible: programNavStepSequencer.navActive
-                            opacity: 0.85
-                        }
-                    }
+                    // #1077/#1076: product Step Sequencer lives in Arrangement.
+                    // Keep the chrome label, but disable until that destination exists.
+                    enabled: false
+                    readonly property bool navActive: false
+                    background: Item { implicitHeight: screen1Header.height }
                     contentItem: Text {
                         text: programNavStepSequencer.text
                         font: programNavStepSequencer.font
-                        color: programNavStepSequencer.navActive ? theme.textPrimary : theme.textSecondary
-                        opacity: programNavStepSequencer.navActive ? 1.0 : 0.72
+                        color: theme.textDisabled
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
-                    }
-                    onClicked: {
-                        // #908: materialize bottom Rack; no Screen-2 page navigation
-                        window.interaction.openChannelRack()
+                        opacity: 0.4
                     }
                 }
                 ToolButton {
@@ -6849,6 +6862,8 @@ def _qml_engine(
 
         runtime_composition.dispatch_selection(intent)
         _sync_runtime_browser_state(view_model, adapter, runtime_composition)
+        # #1077: rematerialize after scope recovery (not only post-analysis).
+        adapter.restore_live_kit_after_active_source()
         request_visible_browser_waveforms_from_window()
         refresh_browser_scope()
         bridge.refreshState()
@@ -6887,16 +6902,16 @@ def _qml_engine(
                 _sync_runtime_browser_state(view_model, adapter, runtime_composition)
                 request_visible_browser_waveforms_from_window()
                 refresh_browser_scope()
-                adapter.apply_live_kit_visibility_preference()
+                adapter.restore_live_kit_after_active_source()
                 bridge.refreshState()
                 layout_model.syncFromInteraction()
             else:
                 dispatch_library_selection()
-                adapter.apply_live_kit_visibility_preference()
+                adapter.restore_live_kit_after_active_source()
                 bridge.refreshState()
                 layout_model.syncFromInteraction()
         else:
-            adapter.apply_live_kit_visibility_preference()
+            adapter.restore_live_kit_after_active_source()
             refresh_screen_model()
 
     def finish_remove(folder_id: int) -> None:
