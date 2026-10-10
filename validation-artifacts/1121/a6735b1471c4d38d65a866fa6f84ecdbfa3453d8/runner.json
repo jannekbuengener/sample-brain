@@ -1,0 +1,10 @@
+{
+  "issue": 1121,
+  "exact_pr_head": "a6735b1471c4d38d65a866fa6f84ecdbfa3453d8",
+  "runner_os": "Windows",
+  "runner_arch": "X64",
+  "runner_name": "GitHub Actions 1000127901",
+  "windows_caption": "Microsoft Windows Server 2025 Datacenter",
+  "windows_version": "10.0.26100",
+  "captured_at_utc": "2026-10-10T19:18:35.5825991Z"
+}

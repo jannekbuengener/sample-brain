@@ -1,0 +1,92 @@
+{
+  "issue": 1121,
+  "scale_factor": 1.25,
+  "states": {
+    "1121-feature-off": {
+      "device_pixel_ratio": 1.25,
+      "enabled": false,
+      "framebuffer_size": [
+        2000,
+        1125
+      ],
+      "logical_size": [
+        1600,
+        900
+      ],
+      "pass": true,
+      "sanity": {
+        "dimensions": true,
+        "exists": true,
+        "non_black": true,
+        "pass": true
+      },
+      "scale_ok": true,
+      "text": "Layout \u00b7 Locked"
+    },
+    "1121-locked": {
+      "device_pixel_ratio": 1.25,
+      "enabled": true,
+      "framebuffer_size": [
+        2000,
+        1125
+      ],
+      "logical_size": [
+        1600,
+        900
+      ],
+      "pass": true,
+      "sanity": {
+        "dimensions": true,
+        "exists": true,
+        "non_black": true,
+        "pass": true
+      },
+      "scale_ok": true,
+      "text": "Layout \u00b7 Locked"
+    },
+    "1121-relocked": {
+      "device_pixel_ratio": 1.25,
+      "enabled": true,
+      "framebuffer_size": [
+        2000,
+        1125
+      ],
+      "logical_size": [
+        1600,
+        900
+      ],
+      "pass": true,
+      "sanity": {
+        "dimensions": true,
+        "exists": true,
+        "non_black": true,
+        "pass": true
+      },
+      "scale_ok": true,
+      "text": "Layout \u00b7 Locked"
+    },
+    "1121-unlocked": {
+      "device_pixel_ratio": 1.25,
+      "enabled": true,
+      "framebuffer_size": [
+        2000,
+        1125
+      ],
+      "logical_size": [
+        1600,
+        900
+      ],
+      "pass": true,
+      "sanity": {
+        "dimensions": true,
+        "exists": true,
+        "non_black": true,
+        "pass": true
+      },
+      "scale_ok": true,
+      "text": "Layout \u00b7 Unlocked"
+    }
+  },
+  "target_head": "a6735b1471c4d38d65a866fa6f84ecdbfa3453d8",
+  "visual_accept_state": "VISUAL_ACCEPT_PENDING"
+}

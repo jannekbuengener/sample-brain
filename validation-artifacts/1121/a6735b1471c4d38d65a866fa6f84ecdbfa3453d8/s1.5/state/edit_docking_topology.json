@@ -1,0 +1,10 @@
+{
+  "lock_state": "LOCKED",
+  "panel_order": [
+    "library",
+    "browser",
+    "harmony",
+    "live_kit"
+  ],
+  "schema_version": 1
+}
