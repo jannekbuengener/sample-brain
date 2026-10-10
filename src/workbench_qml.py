@@ -3246,8 +3246,8 @@ ApplicationWindow {
                                 !window.interaction.workspaceLayoutLocked
                             )
                             Accessible.name: window.interaction.workspaceLayoutLocked
-                                ? "Unlock Edit layout"
-                                : "Lock Edit layout"
+                                ? "Unlock workspace layout"
+                                : "Lock workspace layout"
                         }
                         Button {
                             id: gestureRackApplyToggle
