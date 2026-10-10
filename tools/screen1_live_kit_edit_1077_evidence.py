@@ -147,6 +147,11 @@ def main() -> int:
     head = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=args.runtime_root, text=True
     ).strip()
+    provenance = {
+        "status": getattr(getattr(report, "status", None), "value", str(report.status)),
+        "diagnosis": getattr(report, "diagnosis", None),
+        "commit": getattr(getattr(report, "manifest", None), "commit", None),
+    }
     manifest = {
         "issue": 1077,
         "head": head,
@@ -154,7 +159,7 @@ def main() -> int:
         "scale_factor": args.scale_factor,
         "visual_accept_state": "VISUAL_ACCEPT_PENDING",
         "captures": captures,
-        "provenance": report,
+        "provenance": provenance,
     }
     (evidence_dir / "1077-manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
