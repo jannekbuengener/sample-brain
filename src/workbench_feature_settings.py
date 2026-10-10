@@ -19,6 +19,7 @@ _FEATURE_SETTINGS_FILENAME = "workbench_feature_settings.json"
 _FEATURE_SETTINGS_REQUIRED_BOOL_FIELDS = ("gesture_rack_apply_enabled",)
 _FEATURE_SETTINGS_OPTIONAL_BOOL_DEFAULTS: dict[str, bool] = {
     "workspace_panel_docking_enabled": False,
+    "internal_sample_dnd_enabled": False,
 }
 
 
@@ -28,6 +29,7 @@ class WorkbenchFeatureSettings:
 
     gesture_rack_apply_enabled: bool = False
     workspace_panel_docking_enabled: bool = False
+    internal_sample_dnd_enabled: bool = False
     schema_version: int = FEATURE_SETTINGS_SCHEMA_VERSION
 
 
@@ -85,6 +87,7 @@ def save_workbench_feature_settings(
         "workspace_panel_docking_enabled": bool(
             settings.workspace_panel_docking_enabled
         ),
+        "internal_sample_dnd_enabled": bool(settings.internal_sample_dnd_enabled),
     }
     try:
         path_file.parent.mkdir(parents=True, exist_ok=True)
@@ -129,6 +132,7 @@ def load_workbench_feature_settings(
         workspace_panel_docking_enabled=optional_bools[
             "workspace_panel_docking_enabled"
         ],
+        internal_sample_dnd_enabled=optional_bools["internal_sample_dnd_enabled"],
         schema_version=FEATURE_SETTINGS_SCHEMA_VERSION,
     )
 

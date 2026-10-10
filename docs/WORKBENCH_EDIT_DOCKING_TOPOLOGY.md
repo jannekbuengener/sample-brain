@@ -88,7 +88,7 @@ Python exposes distinct intent kinds so QML can separate:
 | `panel_reflow` | Compact reflow after materialization change |
 | `resize` | Elastic divider / size (not docking) |
 | `collapse` / `reveal` | Visibility presentation (not docking) |
-| `sample_drag` | Internal sample DnD (#1072/#1073) |
+| `sample_drag` | Internal sample DnD (#1072/#1073); Python contract in `WORKBENCH_INTERNAL_SAMPLE_DND_CONTRACT.md` |
 | `waveform_click` | Audition / selection |
 | `focus` | Keyboard / focus navigation |
 
