@@ -163,7 +163,8 @@ def main() -> int:
     refresh()
     grab(*labels_notes[1])
 
-    # Compact: leave drawer open with collapsed groups (default disclosure).
+    # Compact/resized: exercise user height authority (not just row-derived height).
+    adapter.set_live_kit_user_height_px(180, max_px=320)
     refresh()
     grab(*labels_notes[2])
 

@@ -73,9 +73,17 @@ and must not auto-open when the preference says hidden. When the preference is
 existing runtime disclosure seam (`reveal_live_kit` / `_reveal_live_kit_pane`);
 drawer flags alone are not sufficient. Without an active Source, materialization
 fails closed (preference may stage open flags, but `live_kit_is_visible()` stays
-false until progressive disclosure can succeed). Visibility preference writes are
-best-effort UI persistence and must fail-soft (`OSError` must not abort
-reveal/hide or bridge refresh).
+false until progressive disclosure can succeed). After Source analysis completes
+and an active Source is restored, re-apply the visibility preference through the
+same reveal seam so staged preference is not lost to `#742` analysis disclosure
+clears. During analysis, presentation stays closed/unmaterialized (no QML/Python
+desync). Visibility preference writes are best-effort UI persistence and must
+fail-soft (`OSError` must not abort reveal/hide or bridge refresh).
+
+User-controlled Live Kit height is session UI authority on the interaction
+adapter (`live_kit_user_height_px`, `0` = auto row-derived height), clamped to
+compact minimum and the existing 40% workspace cap. Resize intents are separate
+from collapse/hide, panel-move, and sample-drag.
 
 ## Mutation seams
 

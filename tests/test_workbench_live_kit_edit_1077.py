@@ -577,3 +577,79 @@ def test_live_kit_edit_qml_has_no_bottom_rack_step_controls():
     assert "bottomRackStopButton" not in QML_SOURCE
     assert "Live Kit / Rack" not in QML_SOURCE
     assert 'text: "RACK"' not in QML_SOURCE
+
+
+def test_preference_reapplied_after_analysis_disclosure_clear(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Staged visible preference must rematerialize after #742 analysis clears."""
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
+    save_live_kit_visibility_preference(True, state_dir=tmp_path)
+
+    adapter, composition, kit_state = _production_composed_adapter(
+        monkeypatch, active_source=False
+    )
+    kit_state.assign("Kick + Bass", "Kick", _row("keep.wav"))
+    assert adapter.apply_live_kit_visibility_preference() is False
+    assert composition.live_kit_revealed is True
+    assert adapter.live_kit_is_visible() is False
+
+    # Analysis working surface: disclosure cleared + presentation closed.
+    composition.clear_live_kit_disclosure()
+    adapter._live_kit_drawer_open = False
+    adapter.live_kit_collapsed = True
+    assert adapter.view_model.live_kit_materialized is False
+
+    # Active Source returns (post-analysis sync).
+    nav = composition.library_tree.navigation
+    scope = nav.resolve_scope("root:1")
+    composition.dispatch_selection(
+        LibrarySelectionIntent(node=nav.root, scope=scope)
+    )
+    adapter.view_model.set_workspace_materialization(
+        has_active_source=True,
+        calm_canvas_visible=False,
+        browser_materialized=True,
+        live_kit_materialized=composition.live_kit_materialized,
+    )
+    assert composition.has_active_source is True
+    assert adapter.live_kit_is_visible() is False
+
+    restored = adapter.apply_live_kit_visibility_preference()
+    assert restored is True
+    assert composition.live_kit_materialized is True
+    assert adapter.live_kit_is_visible() is True
+    assert adapter.edit_docking_materialization().live_kit is True
+    assert adapter.visible_live_kit_slot_keys()
+    assert kit_state.assignment_for("Kick + Bass", "Kick") is not None
+
+
+def test_qml_live_kit_pane_requires_materialization_gate():
+    """QML must not show Live Kit from drawer flags alone after analysis clears."""
+    pane = QML_SOURCE.split('objectName: "bottomRackPane"', 1)[1][:2500]
+    assert "liveKitRevealed" in pane
+    assert "hasActiveSource" in pane
+    assert "bottomExpanded" in pane
+
+
+def test_live_kit_user_height_clamped_and_does_not_mutate_kit():
+    adapter = _adapter()
+    kit = adapter._live_kit.state
+    kit.assign("Drums", "Main Drum", _row("md.wav"))
+    adapter.view_model.live_kit_materialized = True
+    adapter._live_kit_drawer_open = True
+    adapter.live_kit_collapsed = False
+
+    assert adapter.live_kit_user_height_px == 0
+    assert adapter.set_live_kit_user_height_px(220) == 220
+    assert adapter.live_kit_user_height_px == 220
+    assert adapter.set_live_kit_user_height_px(10_000) <= 10_000
+    assert adapter.set_live_kit_user_height_px(0) == 0
+    assert kit.assignment_for("Drums", "Main Drum") is not None
+    assert adapter.live_kit_is_visible() is True
+
+
+def test_live_kit_resize_handle_exists_in_qml():
+    assert 'objectName: "liveKitResizeHandle"' in QML_SOURCE
+    assert "setLiveKitUserHeightPx" in QML_SOURCE
+    assert "SizeVerCursor" in QML_SOURCE

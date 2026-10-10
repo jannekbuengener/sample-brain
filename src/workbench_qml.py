@@ -850,6 +850,8 @@ class Screen1QmlInteractionAdapter:
         # Musical assignments never force a drawer open on their own.
         self._live_kit_drawer_open = False
         self._live_kit_auto_disclosure_consumed = False
+        # Session UI height authority: 0 = auto (row-derived); otherwise clamped px.
+        self._live_kit_user_height_px = 0
         # Compatibility projection for older bridge consumers.  It mirrors the
         # overlay state and must not become a second presentation authority.
         self.live_kit_collapsed = True
@@ -1718,6 +1720,39 @@ class Screen1QmlInteractionAdapter:
         self.live_kit_collapsed = False
         self._reveal_live_kit_pane()
         return self.live_kit_is_visible()
+
+    def suspend_live_kit_for_analysis(self) -> None:
+        """Close presentation while analysis owns the surface (#742 / #1077)."""
+        composition = self._runtime_composition
+        if composition is not None:
+            composition.clear_live_kit_disclosure()
+        self._live_kit_drawer_open = False
+        self.live_kit_collapsed = True
+        self.view_model.set_workspace_materialization(
+            has_active_source=self.view_model.has_active_source,
+            calm_canvas_visible=self.view_model.calm_canvas_visible,
+            browser_materialized=self.view_model.browser_materialized,
+            live_kit_materialized=False,
+        )
+
+    @property
+    def live_kit_user_height_px(self) -> int:
+        """User-controlled Live Kit height; 0 means auto row-derived height."""
+        return int(self._live_kit_user_height_px)
+
+    def set_live_kit_user_height_px(self, height_px: int, *, max_px: int = 0) -> int:
+        """Clamp session Live Kit height. 0 restores auto height. Kit state untouched."""
+        try:
+            raw = int(height_px)
+        except (TypeError, ValueError):
+            raw = 0
+        if raw <= 0:
+            self._live_kit_user_height_px = 0
+            return 0
+        minimum = 120
+        ceiling = int(max_px) if int(max_px) > 0 else 10_000
+        self._live_kit_user_height_px = max(minimum, min(raw, ceiling))
+        return int(self._live_kit_user_height_px)
 
     def live_kit_is_visible(self) -> bool:
         """True only when Live Kit is materialized and presentation-open."""
@@ -4571,11 +4606,20 @@ ApplicationWindow {
                 }
                 readonly property int requestedHeight: 64 + realRowCount * 48
                 readonly property int maximumHeight: Math.round(parent.height * 0.40)
-                height: bottomExpanded ? Math.min(requestedHeight, maximumHeight) : 0
+                readonly property int autoHeight: Math.min(requestedHeight, maximumHeight)
+                readonly property int userHeightPx: window.interaction.liveKitUserHeightPx
+                height: bottomExpanded
+                        ? (userHeightPx > 0
+                           ? Math.min(Math.max(120, userHeightPx), maximumHeight)
+                           : autoHeight)
+                        : 0
                 color: theme.surfacePanel
                 border.color: theme.borderSubtle
+                // Require materialization so drawer flags alone cannot desync QML
+                // from #1070/#1072 after analysis disclosure clears.
                 visible: window.activeScreen === "screen1"
                          && window.interaction.hasActiveSource
+                         && window.interaction.liveKitRevealed
                          && bottomExpanded
                 // Compat objectName: historical Live Kit findChild probes (#845/#895 harnesses).
                 // Content lives under liveKitPane so findChild tree walks still resolve slots/headers.
@@ -4589,6 +4633,37 @@ ApplicationWindow {
                     objectName: "liveKitPane"
                     anchors.fill: parent
                     visible: parent.visible
+                // #1077 top-edge resize — separate from collapse / docking / sample drag.
+                MouseArea {
+                    id: liveKitResizeHandle
+                    objectName: "liveKitResizeHandle"
+                    z: 40
+                    height: 6
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    visible: bottomRackPane.bottomExpanded
+                    cursorShape: Qt.SizeVerCursor
+                    preventStealing: true
+                    property real dragStartY: 0
+                    property int dragStartHeight: 0
+                    onPressed: function(mouse) {
+                        dragStartY = mapToItem(null, 0, mouse.y).y
+                        dragStartHeight = bottomRackPane.height
+                        mouse.accepted = true
+                    }
+                    onPositionChanged: function(mouse) {
+                        if (!pressed)
+                            return
+                        var globalY = mapToItem(null, 0, mouse.y).y
+                        var delta = dragStartY - globalY
+                        window.interaction.setLiveKitUserHeightPx(
+                            dragStartHeight + delta,
+                            bottomRackPane.maximumHeight
+                        )
+                    }
+                    Accessible.name: "Resize Live Kit"
+                }
                 // #845 OPEN collapse handle — pane-local mid-edge; click/activate only.
                 Item {
                     id: liveKitCollapseHandle
@@ -5347,6 +5422,15 @@ def _qml_interaction_bridge(
         @Property(bool, notify=state_changed)
         def liveKitDrawerOpen(self) -> bool:
             return adapter.live_kit_drawer_open
+
+        @Property(int, notify=state_changed)
+        def liveKitUserHeightPx(self) -> int:
+            return int(adapter.live_kit_user_height_px)
+
+        @Slot(int, int)
+        def setLiveKitUserHeightPx(self, height_px: int, max_px: int = 0) -> None:
+            adapter.set_live_kit_user_height_px(int(height_px), max_px=int(max_px))
+            self._refresh()
 
         @Property(bool, notify=state_changed)
         def liveKitAutoDisclosureConsumed(self) -> bool:
@@ -6669,14 +6753,14 @@ def _qml_engine(
         view_model.set_analysis_state(state)
         if state.phase in {"scanning", "analyzing"}:
             # #742: hide working panes while analysis runs; keep technical identity.
+            # #1077: also close Live Kit presentation so drawer flags cannot desync.
             view_model.set_workspace_materialization(
                 has_active_source=False,
                 calm_canvas_visible=False,
                 browser_materialized=False,
                 live_kit_materialized=False,
             )
-            if runtime_composition is not None:
-                runtime_composition.clear_live_kit_disclosure()
+            adapter.suspend_live_kit_for_analysis()
         elif state.phase in {"cancelled", "error"}:
             _analysis_fail_closed(state)
         refresh_screen_model()
@@ -6740,7 +6824,7 @@ def _qml_engine(
         if refresh_target is not None and analysis_coordinator is not None:
             # #742 Option B: keep technical Source identity, defer visible panes.
             runtime_composition.dispatch_selection(intent)
-            runtime_composition.clear_live_kit_disclosure()
+            adapter.suspend_live_kit_for_analysis()
             view_model.set_browser_state(
                 rows=(),
                 selected_index=-1,
@@ -6791,7 +6875,8 @@ def _qml_engine(
         ):
             # Keep Qt item index in sync with navigation state (#836).
             library_model.ensureChildren(f"root:{folder_id}")
-        # #742: Live Kit stays hidden after success; Browser materializes via sync.
+        # #742 default: Live Kit stays hidden after success unless #1077 preference
+        # asks to rematerialize through the canonical reveal seam.
         if runtime_composition is not None:
             runtime_composition.clear_live_kit_disclosure()
         if library_model.selectNode(target_node_id):
@@ -6802,11 +6887,16 @@ def _qml_engine(
                 _sync_runtime_browser_state(view_model, adapter, runtime_composition)
                 request_visible_browser_waveforms_from_window()
                 refresh_browser_scope()
+                adapter.apply_live_kit_visibility_preference()
                 bridge.refreshState()
                 layout_model.syncFromInteraction()
             else:
                 dispatch_library_selection()
+                adapter.apply_live_kit_visibility_preference()
+                bridge.refreshState()
+                layout_model.syncFromInteraction()
         else:
+            adapter.apply_live_kit_visibility_preference()
             refresh_screen_model()
 
     def finish_remove(folder_id: int) -> None:
