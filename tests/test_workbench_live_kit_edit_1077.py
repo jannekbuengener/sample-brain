@@ -382,6 +382,7 @@ def test_hide_preserves_musical_assignments():
 def test_browser_collapse_hides_live_kit_targets_and_docking():
     """Live Kit hosts under Browser — collapsed host must not advertise #1072 drops."""
     adapter = _adapter()
+    adapter.view_model.has_active_source = True
     adapter._live_kit_drawer_open = True
     adapter.live_kit_collapsed = False
     adapter.view_model.live_kit_materialized = True
@@ -390,21 +391,28 @@ def test_browser_collapse_hides_live_kit_targets_and_docking():
     assert adapter.live_kit_is_visible() is True
     assert adapter.visible_live_kit_slot_keys()
     assert adapter.edit_docking_materialization().live_kit is True
+    assert adapter.edit_docking_materialization().browser is True
 
     assert adapter.toggle_browser_collapsed() is True
     assert adapter.browser_collapsed is True
     assert adapter.live_kit_is_visible() is False
     assert adapter.visible_live_kit_slot_keys() == ()
-    assert adapter.edit_docking_materialization().live_kit is False
+    mat_collapsed = adapter.edit_docking_materialization()
+    assert mat_collapsed.live_kit is False
+    # Collapsed Browser must also drop out of #1070 docking projection.
+    assert mat_collapsed.browser is False
     # Drawer preference / materialization stay; only effective visibility closes.
     assert adapter._live_kit_drawer_open is True
     assert adapter.view_model.live_kit_materialized is True
+    assert adapter.view_model.has_active_source is True
 
     assert adapter.toggle_browser_collapsed() is False
     assert adapter.browser_collapsed is False
     assert adapter.live_kit_is_visible() is True
     assert adapter.visible_live_kit_slot_keys()
-    assert adapter.edit_docking_materialization().live_kit is True
+    mat_restored = adapter.edit_docking_materialization()
+    assert mat_restored.live_kit is True
+    assert mat_restored.browser is True
 
 
 def test_repeated_reveal_hide_no_assignment_drift():

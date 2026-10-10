@@ -1837,7 +1837,7 @@ class Screen1QmlInteractionAdapter:
     ) -> object:
         """#1070 materialization driven by visible Live Kit state."""
         browser_flag = (
-            bool(self.view_model.has_active_source)
+            (bool(self.view_model.has_active_source) and not self.browser_collapsed)
             if browser is None
             else bool(browser)
         )
