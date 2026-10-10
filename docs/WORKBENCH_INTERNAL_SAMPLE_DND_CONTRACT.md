@@ -85,7 +85,9 @@ No second assignment engine. Reuse:
 - empty valid slot → Add/Assign (`assign_sample_to_kit`)
 - occupied valid slot → Replace (`replace_sample_assignment` → same assign seam)
 - invalid target / stale source → Reject
-- failed mutation → prior Kit state preserved
+- failed mutation (including post-write notifier failure) → prior Kit state
+  restored / preserved; delivery id is not consumed
+- outer intent `kind` must be `internal_sample_drop` (foreign kinds rejected)
 
 Exactly one musical mutation per accepted non-duplicate delivery.
 

@@ -565,6 +565,59 @@ def test_failed_target_mutation_preserves_prior_kit_state(tmp_path: Path):
     assert row.path not in result.evidence
 
 
+def test_assignment_notifier_failure_rolls_back_kit_slot(tmp_path: Path):
+    existing = _row(tmp_path, "packs/existing.wav")
+    incoming = _row(tmp_path, "packs/incoming.wav")
+
+    def _boom() -> None:
+        raise RuntimeError("persistence notify failed")
+
+    kit = LiveKitState(on_assignment_changed=_boom)
+    # Seed prior assignment without invoking the failing notifier.
+    kit.set_on_assignment_changed(None)
+    kit.assign("Kick + Bass", "Kick", existing)
+    kit.set_on_assignment_changed(_boom)
+    before = _kit_snapshot(kit)
+    result = _apply(kit=kit, row=incoming)
+    assert result.accepted is False
+    assert result.reason == "mutation_failed"
+    assert result.mutation is None
+    assert _kit_snapshot(kit) == before
+    assert kit.assignment_for("Kick + Bass", "Kick") is existing
+
+
+def test_apply_rejects_foreign_outer_intent_kind(tmp_path: Path):
+    kit = LiveKitState()
+    row = _row(tmp_path)
+    before = _kit_snapshot(kit)
+    intent = sample_dnd.InternalSampleDropIntent(
+        descriptor=sample_dnd.InternalSampleDescriptor(
+            relative_path=row.relative_path,
+            source_surface="browser",
+        ),
+        target=sample_dnd.LiveKitAssignmentTarget(
+            group="Kick + Bass",
+            slot="Kick",
+            visible=True,
+        ),
+        delivery_id="foreign-kind-1",
+        kind="panel_move",
+    )
+    result = sample_dnd.apply_internal_sample_drop(
+        intent,
+        kit=kit,
+        catalog=(row,),
+        features=_features(enabled=True),
+        live_kit_materialized=True,
+        visible_slot_keys=(("Kick + Bass", "Kick"),),
+        session=sample_dnd.InternalSampleDropSession(),
+    )
+    assert result.accepted is False
+    assert result.reason == "invalid_intent"
+    assert result.mutation is None
+    assert _kit_snapshot(kit) == before
+
+
 # ---------------------------------------------------------------------------
 # 17–19) Descriptor identity / source parity
 # ---------------------------------------------------------------------------

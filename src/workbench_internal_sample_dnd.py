@@ -308,6 +308,18 @@ def resolve_sample_from_catalog(
     return SampleResolution(row=row)
 
 
+def _rollback_kit_slot(
+    kit: LiveKitState,
+    group: str,
+    slot: str,
+    prior: WorkbenchRow | None,
+) -> None:
+    """Restore a slot without re-entering assign/notify failure paths."""
+    # Direct storage write: assign() may itself be the failing seam (or its
+    # on_assignment_changed notifier). Rollback must not re-enter either.
+    kit._assignments[group][slot] = prior
+
+
 def apply_internal_sample_drop(
     intent: InternalSampleDropIntent,
     *,
@@ -325,6 +337,12 @@ def apply_internal_sample_drop(
             accepted=False,
             reason="invalid_intent",
             evidence="Drop intent was not typed.",
+        )
+    if getattr(intent, "kind", None) != KIND_INTERNAL_SAMPLE_DROP:
+        return InternalSampleDropResult(
+            accepted=False,
+            reason="invalid_intent",
+            evidence="Drop intent kind was rejected.",
         )
     if not _feature_enabled(features):
         return InternalSampleDropResult(
@@ -413,7 +431,8 @@ def apply_internal_sample_drop(
         )
     resolved = resolution.row
 
-    occupied = kit.assignment_for(target.group, target.slot) is not None
+    prior = kit.assignment_for(target.group, target.slot)
+    occupied = prior is not None
     mutation = "replace" if occupied else "assign"
     try:
         if occupied:
@@ -421,6 +440,7 @@ def apply_internal_sample_drop(
         else:
             assign_sample_to_kit(kit, target.group, target.slot, resolved)
     except Exception:
+        _rollback_kit_slot(kit, target.group, target.slot, prior)
         return InternalSampleDropResult(
             accepted=False,
             reason="mutation_failed",
