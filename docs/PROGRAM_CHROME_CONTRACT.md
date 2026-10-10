@@ -78,7 +78,7 @@ Classification of common chrome / historical terms:
 | Arrangement Entry | ACTION (full version) | Deliberate Edit→Arrangement transition (#1078); CTA copy open; ≠ Export Kit |
 | Screen 1 / Screen 2 / Screen 3 | HISTORICAL_TERM | Delivery evidence only; not current product pages |
 
-**Live Kit** reveal/collapse remains owned by existing progressive-disclosure / adapter seams (#845 and current commands). Program chrome must not invent a second Live Kit state owner. When a center control still names Live Kit historically, treat it as Edit-tool summon/reveal — not mode navigation.
+**Live Kit** reveal/collapse remains owned by the #1077 Edit Live Kit visibility owner (progressive-disclosure / adapter seams; see `WORKBENCH_LIVE_KIT_EDIT_CONTRACT.md`). Program chrome must not invent a second Live Kit state owner. When a center control still names Live Kit historically, treat it as Edit-tool summon/reveal — not mode navigation.
 
 | Session state | Center **Live Kit** chrome |
 |---|---|

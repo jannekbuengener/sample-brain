@@ -21,7 +21,7 @@ QML. This issue does **not** implement QML docking visuals.
 | Topology / validation / lock / persistence | Python (`src/workbench_edit_docking.py`) |
 | Feature availability | `WorkbenchFeatureSettings.workspace_panel_docking_enabled` (#910) |
 | Horizontal ratios / resize | Existing elastic layout solver (#694) |
-| Collapse / visibility materialization | Existing elastic / #845 / #1077 seams |
+| Collapse / visibility materialization | #1077 Live Kit Edit visibility owner → `EditDockingMaterialization.live_kit` (see `WORKBENCH_LIVE_KIT_EDIT_CONTRACT.md`); elastic / #845 remain presentation helpers |
 | Musical Kit / Pattern / session | Unchanged; docking never mutates them |
 | Drag ghosts / drop highlights | Out of scope (#1071) |
 

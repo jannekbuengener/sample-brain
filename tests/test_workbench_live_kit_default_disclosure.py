@@ -167,6 +167,10 @@ def test_qml_first_reveal_shows_four_headers_and_no_slot_rows():
     assert live_kit.presentation.active_group() is None
     assert all(group.active is False for group in live_kit.groups)
 
+    # #1077: Live Kit projects only while visible — open the Edit surface first.
+    view_model.live_kit_materialized = True
+    adapter._live_kit_drawer_open = True
+    adapter.live_kit_collapsed = False
     app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
     window.show()
     _settle_qml_frame(app)

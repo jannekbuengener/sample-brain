@@ -192,9 +192,15 @@ def test_qml_runtime_elastic_handles_and_esc_search_intact():
         assert handle_harmony is None
         assert library.width() > 0
         assert browser.width() > 0
-        # Compat liveKitPane fills bottom band; horizontal width comes from column.
-        assert live_kit.width() > 0
+        # #1077: hidden Live Kit reserves no bottom height; reveal before measuring.
+        assert live_kit.width() >= 0
+        view_model.live_kit_materialized = True
+        interaction_adapter._live_kit_drawer_open = True
+        interaction_adapter.live_kit_collapsed = False
+        engine._screen1_interaction_bridge.refreshState()
+        app.processEvents()
         assert bottom.height() > 0
+        assert live_kit.width() > 0
 
         search.forceActiveFocus()
         selected_before = view_model.selected_browser_index

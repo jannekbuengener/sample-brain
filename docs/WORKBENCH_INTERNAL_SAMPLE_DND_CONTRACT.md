@@ -73,6 +73,10 @@ Python validates group/slot against `LIVE_KIT_SLOT_MAPPING`, requires Live Kit
 materialization, and authorizes visibility only against the current
 `visible_slot_keys` set passed into apply (transport `visible=True` alone is
 insufficient). A QML string alone cannot authorize a drop.
+Visible `visible_slot_keys` are provisioned by the #1077 Live Kit Edit surface
+only while the kit is visible; hidden/collapsed Live Kit yields an empty set
+(see `WORKBENCH_LIVE_KIT_EDIT_CONTRACT.md`). This contract still does not own
+QML drag visuals (#1073).
 
 Rejected target identities include (non-exhaustive): `arrangement`, `live`,
 `channel_rack`, `rack`, `step_sequencer`, unknown classes, hidden / non-

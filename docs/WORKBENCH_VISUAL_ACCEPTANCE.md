@@ -222,6 +222,21 @@ Validate at 100%, 125%, and 150% Windows/Qt scaling where the runtime supports
 those modes. Every capture must demonstrate non-negative geometry and no
 Drawer/Harmony overlap. A mockup does not substitute for this runtime evidence.
 
+### #1077 Live Kit Edit workspace evidence
+
+Classic Live Kit as an Edit tool (not Rack/Sequencer). Capture from the exact
+implementation HEAD with synthetic fixture paths only; evidence stays outside
+the repository. Owner Visual Acceptance for this slice remains
+`VISUAL_ACCEPT_PENDING` until explicit Owner PASS.
+
+| Evidence ID | Required visible state |
+|-------------|------------------------|
+| `1077-clean-edit-hidden` | Clean Edit default; Live Kit hidden; no empty bottom Rack/Sequencer cavity |
+| `1077-live-kit-revealed` | Live Kit revealed as compact kit-builder; canonical groups/slots; no step grid |
+| `1077-live-kit-compact-resized` | Live Kit resized/compact within elastic/drawer bounds; no geometry drift |
+| `1077-live-kit-populated` | Populated slots with Add/Replace/Remove affordances; Export Kit distinct |
+| `1077-live-kit-hidden-restored` | Live Kit hidden again; full Edit area restored; no phantom height; kit state preserved |
+
 ## Global program chrome reference (#830)
 
 Design authority for the top program bar and the footer band only:

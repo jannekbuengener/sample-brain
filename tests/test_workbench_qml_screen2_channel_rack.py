@@ -477,22 +477,26 @@ def test_qml_runtime_screen2_navigation_projection_and_step_toggle():
         app.processEvents()
         _settle_qml_frame(app)
 
-        # #908: product surface is bottom Rack; legacy Screen-2 page stays hidden.
+        # #1077: Live Kit Edit pane no longer co-hosts Rack/step UI.
+        # Domain ensure_state still materializes Channel Rack; Arrangement owns
+        # product step surfaces. Legacy Screen-2 page stays hidden.
         rack_screen = window.findChild(QQuickItem, "channelRackScreen")
         bottom = window.findChild(QQuickItem, "bottomRackPane")
         step_list = window.findChild(QQuickItem, "bottomRackStepList")
         play_btn = window.findChild(QQuickItem, "bottomRackPlayButton")
-        stop_btn = window.findChild(QQuickItem, "bottomRackStopButton")
         browser_nav = window.findChild(QQuickItem, "programNavBrowser")
         assert rack_screen is not None and rack_screen.property("visible") is False
-        assert bottom is not None and bottom.isVisible()
-        assert step_list is not None and step_list.isVisible()
-        assert play_btn is not None and stop_btn is not None
+        assert step_list is None
+        assert play_btn is None
         assert browser_nav is not None
         assert window.property("activeScreen") == "screen1"
         assert channel_rack.bottomRackMaterialized is True
         assert channel_rack.stepCount == 16
         assert len(channel_rack.groups) >= 1
+        # Bottom overlay remains Live Kit only — openChannelRack must not force
+        # a Rack cavity into Edit when Live Kit is collapsed/hidden.
+        if bottom is not None and not bool(adapter.live_kit_drawer_open):
+            assert bottom.height() == 0 or not bottom.isVisible()
 
         before = controller.state
         assert before is not None
@@ -882,7 +886,9 @@ def test_qml_runtime_add_assign_selected_toggle_play(tmp_path):
         rack_screen = window.findChild(QQuickItem, "channelRackScreen")
         bottom = window.findChild(QQuickItem, "bottomRackPane")
         assert rack_screen is not None and rack_screen.property("visible") is False
-        assert bottom is not None and bottom.isVisible()
+        # #1077: Channel Rack domain ops do not require Live Kit bottom geometry.
+        assert bottom is not None
+        assert window.findChild(QQuickItem, "bottomRackStepList") is None
     finally:
         engine.deleteLater()
         app.processEvents()

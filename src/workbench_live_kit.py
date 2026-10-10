@@ -69,6 +69,20 @@ class LiveKitState:
         if self._on_assignment_changed is not None:
             self._on_assignment_changed()
 
+    def clear_slot(self, group: str, slot: str, *, notify: bool = True) -> bool:
+        """Clear one slot through the same validate/notify contract as assign.
+
+        Returns True when a prior assignment was cleared. Empty slots are an
+        idempotent no-op without notify. Invalid group/slot raise like assign.
+        """
+        self._validate_slot(group, slot)
+        if self._assignments[group][slot] is None:
+            return False
+        self._assignments[group][slot] = None
+        if notify and self._on_assignment_changed is not None:
+            self._on_assignment_changed()
+        return True
+
     def clear_assignments(self, *, notify: bool = True) -> None:
         """Clear all musical assignments, optionally without persistence callback."""
         changed = False
