@@ -218,16 +218,37 @@ def test_evidence_framebuffer_scale_match_helper():
     from tools.screen1_live_kit_edit_1077_evidence import _framebuffer_matches_scale
 
     assert _framebuffer_matches_scale(
-        1600, 900, scale_factor=1.0, client_width=1600, client_height=900
+        1600,
+        900,
+        scale_factor=1.0,
+        device_pixel_ratio=1.0,
+        logical_width=1600,
+        logical_height=900,
     )
+    # OS-clamped logical height is OK when DPR matches the requested scale.
     assert _framebuffer_matches_scale(
-        2000, 1125, scale_factor=1.25, client_width=1600, client_height=900
-    )
-    assert _framebuffer_matches_scale(
-        2400, 1350, scale_factor=1.5, client_width=1600, client_height=900
+        2000,
+        1061,
+        scale_factor=1.25,
+        device_pixel_ratio=1.25,
+        logical_width=1600,
+        logical_height=849,
     )
     assert not _framebuffer_matches_scale(
-        1600, 900, scale_factor=1.25, client_width=1600, client_height=900
+        1600,
+        900,
+        scale_factor=1.25,
+        device_pixel_ratio=1.0,
+        logical_width=1600,
+        logical_height=900,
+    )
+    assert not _framebuffer_matches_scale(
+        2000,
+        1125,
+        scale_factor=1.25,
+        device_pixel_ratio=1.25,
+        logical_width=1600,
+        logical_height=900,
     )
 
 

@@ -63,15 +63,25 @@ def _framebuffer_matches_scale(
     actual_h: int,
     *,
     scale_factor: float,
-    client_width: int,
-    client_height: int,
+    device_pixel_ratio: float,
+    logical_width: int,
+    logical_height: int,
 ) -> bool:
-    """Fail closed when requested scale does not match captured pixels."""
-    if scale_factor <= 0:
+    """Fail closed when requested scale is not the effective Qt scale.
+
+    Compares the capture to ``logical_* * devicePixelRatio`` (OS may clamp the
+    logical window below CLIENT_*), and requires DPR ≈ ``scale_factor`` so a
+    plain 100% run cannot be labeled 125/150.
+    """
+    if scale_factor <= 0 or device_pixel_ratio <= 0:
         return False
-    expected_w = int(round(client_width * scale_factor))
-    expected_h = int(round(client_height * scale_factor))
-    tol = max(2, int(round(scale_factor)))
+    if abs(device_pixel_ratio - scale_factor) > 0.05:
+        return False
+    if logical_width <= 0 or logical_height <= 0:
+        return False
+    expected_w = int(round(logical_width * device_pixel_ratio))
+    expected_h = int(round(logical_height * device_pixel_ratio))
+    tol = max(2, int(round(device_pixel_ratio)))
     return abs(actual_w - expected_w) <= tol and abs(actual_h - expected_h) <= tol
 
 
@@ -173,8 +183,11 @@ def main() -> int:
         # require a non-black, minimum-usable frame.
         raw = path.read_bytes()
         actual_w, actual_h = struct.unpack(">II", raw[16:24])
-        expected_w = int(round(CLIENT_WIDTH * scale_factor))
-        expected_h = int(round(CLIENT_HEIGHT * scale_factor))
+        dpr = float(window.devicePixelRatio())
+        logical_w = int(window.width())
+        logical_h = int(window.height())
+        expected_w = int(round(logical_w * dpr))
+        expected_h = int(round(logical_h * dpr))
         check = validate_capture_sanity(
             path, expected_width=expected_w, expected_height=expected_h
         )
@@ -182,12 +195,17 @@ def main() -> int:
             actual_w,
             actual_h,
             scale_factor=scale_factor,
-            client_width=CLIENT_WIDTH,
-            client_height=CLIENT_HEIGHT,
+            device_pixel_ratio=dpr,
+            logical_width=logical_w,
+            logical_height=logical_h,
         )
         usable = actual_w >= CLIENT_WIDTH and actual_h >= max(600, CLIENT_HEIGHT // 2)
         check["note"] = note
         check["scale_factor"] = scale_factor
+        check["qt_scale_factor"] = os.environ.get("QT_SCALE_FACTOR")
+        check["device_pixel_ratio"] = dpr
+        check["logical_width"] = logical_w
+        check["logical_height"] = logical_h
         check["actual_width"] = actual_w
         check["actual_height"] = actual_h
         check["expected_width"] = expected_w
