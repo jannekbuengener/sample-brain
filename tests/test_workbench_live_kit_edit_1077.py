@@ -379,6 +379,34 @@ def test_hide_preserves_musical_assignments():
     assert adapter.visible_live_kit_slot_keys() == ()
 
 
+def test_browser_collapse_hides_live_kit_targets_and_docking():
+    """Live Kit hosts under Browser — collapsed host must not advertise #1072 drops."""
+    adapter = _adapter()
+    adapter._live_kit_drawer_open = True
+    adapter.live_kit_collapsed = False
+    adapter.view_model.live_kit_materialized = True
+    adapter.toggle_live_kit_group("Kick + Bass")
+    assert adapter.browser_collapsed is False
+    assert adapter.live_kit_is_visible() is True
+    assert adapter.visible_live_kit_slot_keys()
+    assert adapter.edit_docking_materialization().live_kit is True
+
+    assert adapter.toggle_browser_collapsed() is True
+    assert adapter.browser_collapsed is True
+    assert adapter.live_kit_is_visible() is False
+    assert adapter.visible_live_kit_slot_keys() == ()
+    assert adapter.edit_docking_materialization().live_kit is False
+    # Drawer preference / materialization stay; only effective visibility closes.
+    assert adapter._live_kit_drawer_open is True
+    assert adapter.view_model.live_kit_materialized is True
+
+    assert adapter.toggle_browser_collapsed() is False
+    assert adapter.browser_collapsed is False
+    assert adapter.live_kit_is_visible() is True
+    assert adapter.visible_live_kit_slot_keys()
+    assert adapter.edit_docking_materialization().live_kit is True
+
+
 def test_repeated_reveal_hide_no_assignment_drift():
     adapter = _adapter()
     kit = adapter._live_kit.state
@@ -592,6 +620,18 @@ def test_visible_preference_without_active_source_fails_closed(
 
 
 # --- Preference write fail-soft (#1077 Codex P2) ------------------------------
+
+
+def test_load_visibility_preference_fail_soft_when_is_file_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Stat/traversal failures must default hidden, not abort Workbench startup."""
+
+    def _boom(self: Path) -> bool:
+        raise OSError("ACL denied directory traversal")
+
+    monkeypatch.setattr(Path, "is_file", _boom)
+    assert load_live_kit_visibility_preference(state_dir=tmp_path) is False
 
 
 def test_try_save_visibility_preference_swallows_oserror(

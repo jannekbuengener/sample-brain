@@ -74,9 +74,9 @@ def load_live_kit_visibility_preference(
 ) -> bool:
     """Workspace UI preference; default hidden. Corrupt/missing → False."""
     path_file = live_kit_visibility_preference_path(state_dir=state_dir, env=env)
-    if not path_file.is_file():
-        return False
     try:
+        if not path_file.is_file():
+            return False
         raw = json.loads(path_file.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, TypeError, ValueError):
         return False

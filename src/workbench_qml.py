@@ -1802,7 +1802,11 @@ class Screen1QmlInteractionAdapter:
 
         Presentation-open includes the pending Add-to-Kit chooser even when the
         drawer preference stays closed (#954), matching QML ``bottomExpanded``.
+        Effective visibility also requires the Browser host not to be collapsed
+        (#1077): a zero-width Browser must not advertise #1072 Live Kit drops.
         """
+        if self.browser_collapsed:
+            return False
         presentation_open = bool(self._live_kit_drawer_open) or (
             self._pending_live_kit_row is not None
         )
