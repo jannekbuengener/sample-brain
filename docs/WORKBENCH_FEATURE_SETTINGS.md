@@ -55,6 +55,7 @@ overloading those owners or inventing a gesture-specific ad-hoc store.
 @dataclass(frozen=True)
 class WorkbenchFeatureSettings:
     gesture_rack_apply_enabled: bool = False
+    workspace_panel_docking_enabled: bool = False  # #1070 Edit docking gate
     schema_version: int = 1  # FEATURE_SETTINGS_SCHEMA_VERSION
 ```
 
@@ -83,6 +84,24 @@ code.
 
 This slice only establishes/configures the flag. It does **not** wire apply
 mutation.
+
+### Edit docking key — `workspace_panel_docking_enabled` (#1070)
+
+| Property | Value |
+|----------|-------|
+| Serialized key | `workspace_panel_docking_enabled` |
+| Default | `False` (disabled) |
+| Persist | yes, across restart |
+| User control | yes, through the canonical Functional Settings surface (when wired) |
+| Owner | topology / lock / move semantics in `src/workbench_edit_docking.py`; QML visuals remain #1071 |
+
+**OFF (`False`) means:** no Edit panel-docking mutation, no hidden reorder work; canonical Edit layout still works.
+
+**ON (`True`) means:** docking capability is available; actual moves still require workspace `UNLOCKED` (default remains `LOCKED`).
+
+Legacy feature JSON without this key loads with `workspace_panel_docking_enabled=False` and must not reset `gesture_rack_apply_enabled`.
+
+See [`WORKBENCH_EDIT_DOCKING_TOPOLOGY.md`](WORKBENCH_EDIT_DOCKING_TOPOLOGY.md).
 
 ### Product-path key — `arrangement_mode_enabled` (#1076 docs freeze)
 
