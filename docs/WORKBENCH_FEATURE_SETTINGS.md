@@ -56,6 +56,7 @@ overloading those owners or inventing a gesture-specific ad-hoc store.
 class WorkbenchFeatureSettings:
     gesture_rack_apply_enabled: bool = False
     workspace_panel_docking_enabled: bool = False  # #1070 Edit docking gate
+    internal_sample_dnd_enabled: bool = False  # #1072 internal Sample DnD gate
     schema_version: int = 1  # FEATURE_SETTINGS_SCHEMA_VERSION
 ```
 
@@ -102,6 +103,24 @@ mutation.
 Legacy feature JSON without this key loads with `workspace_panel_docking_enabled=False` and must not reset `gesture_rack_apply_enabled`.
 
 See [`WORKBENCH_EDIT_DOCKING_TOPOLOGY.md`](WORKBENCH_EDIT_DOCKING_TOPOLOGY.md).
+
+### Internal Sample DnD key — `internal_sample_dnd_enabled` (#1072)
+
+| Property | Value |
+|----------|-------|
+| Serialized key | `internal_sample_dnd_enabled` |
+| Default | `False` (disabled) |
+| Persist | yes, across restart |
+| User control | yes, through the canonical Functional Settings surface (when wired) |
+| Owner | descriptor / target / assign routing in `src/workbench_internal_sample_dnd.py`; QML visuals remain #1073 |
+
+**OFF (`False`) means:** no internal Sample-drag descriptor/target discovery or drop mutation; existing non-drag Add/Replace remains fully usable.
+
+**ON (`True`) means:** Browser/Harmony may send typed internal Sample drop intents to valid visible Edit Live-Kit assignment targets.
+
+Legacy feature JSON without this key loads with `internal_sample_dnd_enabled=False` and must not reset `gesture_rack_apply_enabled` or `workspace_panel_docking_enabled`.
+
+See [`WORKBENCH_INTERNAL_SAMPLE_DND_CONTRACT.md`](WORKBENCH_INTERNAL_SAMPLE_DND_CONTRACT.md).
 
 ### Product-path key — `arrangement_mode_enabled` (#1076 docs freeze)
 
