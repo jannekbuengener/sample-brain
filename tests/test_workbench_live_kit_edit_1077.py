@@ -242,9 +242,10 @@ def test_evidence_framebuffer_scale_match_helper():
         logical_width=1600,
         logical_height=900,
     )
+    # Capture pixels that do not match logical_* * DPR must fail.
     assert not _framebuffer_matches_scale(
-        2000,
-        1125,
+        1600,
+        900,
         scale_factor=1.25,
         device_pixel_ratio=1.25,
         logical_width=1600,
