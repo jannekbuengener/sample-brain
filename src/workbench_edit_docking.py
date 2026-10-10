@@ -360,6 +360,18 @@ def _docking_feature_enabled(features: Any) -> bool:
     return value is True
 
 
+def _parse_canonical_slot_index(slot_id: str) -> int | None:
+    """Accept only ``edit_slot_<non-negative decimal without adornment>``."""
+    prefix = "edit_slot_"
+    if not slot_id.startswith(prefix):
+        return None
+    suffix = slot_id[len(prefix) :]
+    if not suffix or not suffix.isdigit() or suffix != str(int(suffix)):
+        # Reject leading zeros, signs, spaces, and non-decimal spellings.
+        return None
+    return int(suffix)
+
+
 def _apply_panel_move(
     state: EditDockingState,
     intent: PanelMoveIntent,
@@ -391,23 +403,8 @@ def _apply_panel_move(
             intent_kind=INTENT_PANEL_MOVE,
             reason="panel_not_active",
         )
-    if not target_slot.startswith("edit_slot_"):
-        return EditDockingApplyResult(
-            accepted=False,
-            state=state,
-            intent_kind=INTENT_PANEL_MOVE,
-            reason="invalid_slot",
-        )
-    try:
-        target_index = int(target_slot.removeprefix("edit_slot_"))
-    except ValueError:
-        return EditDockingApplyResult(
-            accepted=False,
-            state=state,
-            intent_kind=INTENT_PANEL_MOVE,
-            reason="invalid_slot",
-        )
-    if target_index < 0 or target_index >= len(active):
+    target_index = _parse_canonical_slot_index(target_slot)
+    if target_index is None or target_index < 0 or target_index >= len(active):
         return EditDockingApplyResult(
             accepted=False,
             state=state,

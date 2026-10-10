@@ -533,3 +533,20 @@ def test_moving_dematerialized_panel_is_rejected():
     )
     assert result.accepted is False
     assert result.state == state
+
+
+@pytest.mark.parametrize(
+    "bad_slot",
+    ["edit_slot_01", "edit_slot_+1", "edit_slot_ 1", "edit_slot_1 ", "edit_slot_-0"],
+)
+def test_noncanonical_slot_spellings_are_rejected(bad_slot: str):
+    state = _state(lock_state="UNLOCKED")
+    result = edit_docking.apply_edit_docking_intent(
+        state,
+        edit_docking.PanelMoveIntent(panel_id="library", target_slot_id=bad_slot),
+        features=_features(docking=True),
+        materialization=_mat(),
+    )
+    assert result.accepted is False
+    assert result.state == state
+    assert result.reason == "invalid_slot"

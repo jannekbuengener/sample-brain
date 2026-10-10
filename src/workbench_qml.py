@@ -1039,13 +1039,19 @@ class Screen1QmlInteractionAdapter:
     ) -> bool:
         """Persist gesture→Rack apply toggle via WorkbenchFeatureSettings only."""
         from .workbench_feature_settings import (
-            WorkbenchFeatureSettings,
+            load_workbench_feature_settings,
+            replace_workbench_feature_settings,
             save_workbench_feature_settings,
         )
 
         value = bool(enabled)
+        current = load_workbench_feature_settings(state_dir=state_dir, env=env)
+        updated = replace_workbench_feature_settings(
+            current,
+            gesture_rack_apply_enabled=value,
+        )
         if save_workbench_feature_settings(
-            WorkbenchFeatureSettings(gesture_rack_apply_enabled=value),
+            updated,
             state_dir=state_dir,
             env=env,
         ):
