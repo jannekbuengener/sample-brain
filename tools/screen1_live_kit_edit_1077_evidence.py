@@ -188,8 +188,10 @@ def main() -> int:
         logical_h = int(window.height())
         expected_w = int(round(logical_w * dpr))
         expected_h = int(round(logical_h * dpr))
+        # Sanity checks existence/non-black against the captured frame; scale
+        # authority is the DPR/framebuffer gate (rounding may be ±1–2 px).
         check = validate_capture_sanity(
-            path, expected_width=expected_w, expected_height=expected_h
+            path, expected_width=actual_w, expected_height=actual_h
         )
         scale_ok = _framebuffer_matches_scale(
             actual_w,
