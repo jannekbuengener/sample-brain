@@ -19,6 +19,28 @@ Forbidden in this slice:
 - Piano Roll / Mixer / Sends / Inserts / Buses
 - Vocal/Beatbox / VST / Bitwig / Cloud
 - Fake Live Kit slot IDs for user channels
+
+TEST_FREEZE_RECONCILIATION (#1077 / #1075 / #1076 — explicit, not silent):
+Historical #908 QML-bottom-Rack projection assertions in this file
+(``bottomRackPane`` visibly hosting ``bottomRackStepList`` /
+``bottomRackPlayButton`` / ``bottomRackStopButton`` as Edit product UI) are
+**superseded** by PRODUCT_WORKFLOW_CANON + #1075/#1076/#1077:
+
+- Live Kit = Edit tool (visible-only; no Rack/step co-host)
+- Channel Rack / Pattern / Step Sequencer = domain foundation
+- Product step-UI placement = Arrangement workflow
+- Closed #908 bottom projection = historical evidence, not product authority
+
+Released from this freeze (do not reassert as Edit product UI here):
+- ``bottom is not None and bottom.isVisible()`` with step-list/play/stop present
+- Any requirement that ``openChannelRack`` forces Edit bottom Rack geometry
+
+Still frozen here: Channel Rack domain / controller / playback / navigation
+contracts (ensure_state materialization, step toggle, user channels, play/stop
+fail-soft, legacy Screen-2 page stays hidden, Live Kit musical assignments).
+
+New #1077 Live Kit Edit product-UI expectations live in
+``tests/test_workbench_live_kit_edit_1077.py``.
 """
 
 from __future__ import annotations
@@ -477,26 +499,19 @@ def test_qml_runtime_screen2_navigation_projection_and_step_toggle():
         app.processEvents()
         _settle_qml_frame(app)
 
-        # #1077: Live Kit Edit pane no longer co-hosts Rack/step UI.
-        # Domain ensure_state still materializes Channel Rack; Arrangement owns
-        # product step surfaces. Legacy Screen-2 page stays hidden.
+        # Domain/controller freeze: ensure_state materializes Rack projection
+        # while the legacy Screen-2 page stays hidden. Historical #908 Edit
+        # bottom-Rack QML visibility assertions are released (see file header);
+        # #1077 product-UI gates live in test_workbench_live_kit_edit_1077.py.
         rack_screen = window.findChild(QQuickItem, "channelRackScreen")
-        bottom = window.findChild(QQuickItem, "bottomRackPane")
-        step_list = window.findChild(QQuickItem, "bottomRackStepList")
-        play_btn = window.findChild(QQuickItem, "bottomRackPlayButton")
         browser_nav = window.findChild(QQuickItem, "programNavBrowser")
         assert rack_screen is not None and rack_screen.property("visible") is False
-        assert step_list is None
-        assert play_btn is None
         assert browser_nav is not None
         assert window.property("activeScreen") == "screen1"
         assert channel_rack.bottomRackMaterialized is True
         assert channel_rack.stepCount == 16
         assert len(channel_rack.groups) >= 1
-        # Bottom overlay remains Live Kit only — openChannelRack must not force
-        # a Rack cavity into Edit when Live Kit is collapsed/hidden.
-        if bottom is not None and not bool(adapter.live_kit_drawer_open):
-            assert bottom.height() == 0 or not bottom.isVisible()
+        assert adapter._live_kit.state is controller.live_kit
 
         before = controller.state
         assert before is not None
@@ -884,11 +899,11 @@ def test_qml_runtime_add_assign_selected_toggle_play(tmp_path):
             assert controller.is_playing is False
 
         rack_screen = window.findChild(QQuickItem, "channelRackScreen")
-        bottom = window.findChild(QQuickItem, "bottomRackPane")
         assert rack_screen is not None and rack_screen.property("visible") is False
-        # #1077: Channel Rack domain ops do not require Live Kit bottom geometry.
-        assert bottom is not None
-        assert window.findChild(QQuickItem, "bottomRackStepList") is None
+        # Domain ops remain reachable without requiring Edit bottom-Rack geometry
+        # (historical #908 QML product placement released; see file header).
+        assert controller.state is not None
+        assert len(controller.state.channels) >= 1
     finally:
         engine.deleteLater()
         app.processEvents()

@@ -95,11 +95,28 @@ def save_live_kit_visibility_preference(
     return path_file
 
 
+def try_save_live_kit_visibility_preference(
+    visible: bool,
+    *,
+    state_dir: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> bool:
+    """Best-effort visibility persistence; OSError must not abort UI flows."""
+    try:
+        save_live_kit_visibility_preference(
+            visible, state_dir=state_dir, env=env
+        )
+    except OSError:
+        return False
+    return True
+
+
 __all__ = [
     "LIVE_KIT_VISIBILITY_PREF_KEY",
     "edit_docking_materialization_for_live_kit",
     "live_kit_visibility_preference_path",
     "load_live_kit_visibility_preference",
     "save_live_kit_visibility_preference",
+    "try_save_live_kit_visibility_preference",
     "visible_live_kit_slot_keys",
 ]

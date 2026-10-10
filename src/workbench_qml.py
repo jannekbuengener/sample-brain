@@ -30,7 +30,7 @@ from .workbench_live_kit import LiveKitPresentationState, LiveKitState
 from .workbench_live_kit_edit import (
     edit_docking_materialization_for_live_kit,
     load_live_kit_visibility_preference,
-    save_live_kit_visibility_preference,
+    try_save_live_kit_visibility_preference,
     visible_live_kit_slot_keys,
 )
 from .workbench_live_kit_export import LiveKitExportResult, export_live_kit
@@ -1371,7 +1371,7 @@ class Screen1QmlInteractionAdapter:
             self._live_kit_auto_disclosure_consumed = True
             self._live_kit_drawer_open = True
             self.live_kit_collapsed = False
-            save_live_kit_visibility_preference(True)
+            try_save_live_kit_visibility_preference(True)
             self._reveal_live_kit_pane()
             self._close_harmonic_match_presentation()
         return True
@@ -1696,7 +1696,8 @@ class Screen1QmlInteractionAdapter:
             return False
         self._live_kit_drawer_open = not self._live_kit_drawer_open
         self.live_kit_collapsed = not self._live_kit_drawer_open
-        save_live_kit_visibility_preference(self._live_kit_drawer_open)
+        # Best-effort UI persistence — must not abort drawer/bridge refresh.
+        try_save_live_kit_visibility_preference(self._live_kit_drawer_open)
         return self._live_kit_drawer_open
 
     def toggle_live_kit_collapsed(self) -> bool:
@@ -1711,10 +1712,12 @@ class Screen1QmlInteractionAdapter:
             self.live_kit_collapsed = True
             return False
         # Preference may say open, but progressive disclosure still requires
-        # materialization before geometry/targets appear.
+        # materialization before geometry/targets appear. Reuse the canonical
+        # reveal seam — do not invent a second materialization truth.
         self._live_kit_drawer_open = True
         self.live_kit_collapsed = False
-        return True
+        self._reveal_live_kit_pane()
+        return self.live_kit_is_visible()
 
     def live_kit_is_visible(self) -> bool:
         """True only when Live Kit is materialized and presentation-open."""

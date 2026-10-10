@@ -84,6 +84,10 @@ def main() -> int:
         ("1077-live-kit-compact-resized", "Live Kit compact/resized drawer"),
         ("1077-live-kit-populated", "Populated slots + Remove/Export"),
         ("1077-live-kit-hidden-restored", "Hidden again; Edit area restored"),
+        (
+            "1077-live-kit-restart-restored-visible",
+            "Restart with live_kit_visible=true rematerializes Live Kit",
+        ),
     ]
 
     def grab(label: str, note: str) -> None:
@@ -143,6 +147,39 @@ def main() -> int:
     adapter.live_kit_collapsed = True
     refresh()
     grab(*labels_notes[4])
+
+    # Restart-visible preference path: rematerialize via reveal seam (#1077 P1).
+    # Keep preference I/O inside evidence_dir — never touch the user state home.
+    from src.workbench_library_navigation import LibraryScope, LibraryScopeKind
+    from src.workbench_live_kit_edit import save_live_kit_visibility_preference
+    from src.workbench_qml_runtime import Screen1BrowserState, Screen1QmlRuntimeComposition
+
+    pref_dir = evidence_dir / "pref-state"
+    pref_dir.mkdir(parents=True, exist_ok=True)
+    view_model.set_workspace_materialization(
+        has_active_source=True,
+        calm_canvas_visible=False,
+        browser_materialized=True,
+        live_kit_materialized=False,
+    )
+    adapter._live_kit_drawer_open = False
+    adapter.live_kit_collapsed = True
+    composition = Screen1QmlRuntimeComposition()
+    composition._selected_node_id = "root:evidence"
+    composition.browser_state = Screen1BrowserState(
+        scope=LibraryScope(LibraryScopeKind.ROOT, folder_id=1, folder_path="synthetic"),
+        browser_context="Evidence active source",
+    )
+    adapter._runtime_composition = composition
+    save_live_kit_visibility_preference(True, state_dir=pref_dir)
+    # Point load path at evidence_dir for the restore call.
+    import os
+
+    os.environ["SAMPLE_BRAIN_WORKBENCH_STATE_DIR"] = str(pref_dir)
+    assert adapter.apply_live_kit_visibility_preference() is True
+    assert adapter.live_kit_is_visible() is True
+    refresh()
+    grab(*labels_notes[5])
 
     head = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=args.runtime_root, text=True

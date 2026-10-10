@@ -68,7 +68,14 @@ clears musical assignments or active-track kit state.
 
 Default clean Edit startup: Live Kit hidden/collapsed (preference default
 `live_kit_visible=False`). Restart respects the persisted visibility preference
-and must not auto-open when the preference says hidden.
+and must not auto-open when the preference says hidden. When the preference is
+`true` under an active Source, restore must rematerialize Live Kit through the
+existing runtime disclosure seam (`reveal_live_kit` / `_reveal_live_kit_pane`);
+drawer flags alone are not sufficient. Without an active Source, materialization
+fails closed (preference may stage open flags, but `live_kit_is_visible()` stays
+false until progressive disclosure can succeed). Visibility preference writes are
+best-effort UI persistence and must fail-soft (`OSError` must not abort
+reveal/hide or bridge refresh).
 
 ## Mutation seams
 

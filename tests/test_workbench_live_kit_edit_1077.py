@@ -3,6 +3,9 @@
 Live Kit is an Edit/Kit tool: visible-only projection, no Rack/step co-host,
 Python-owned mutations (including clear_slot), #1070 materialization binding,
 and #1072 visible targets without #1073 drag visuals.
+
+Product-UI expectations that supersede historical #908 bottom-Rack QML
+projection live here (not in the Channel Rack domain freeze suite).
 """
 
 from __future__ import annotations
@@ -24,15 +27,27 @@ from src.workbench_edit_docking import (
 )
 from src.workbench_feature_settings import WorkbenchFeatureSettings
 from src.workbench_internal_sample_dnd import list_visible_live_kit_targets
+from src.workbench_library_navigation import (
+    LibraryAvailability,
+    LibraryNode,
+    LibraryNodeKind,
+    LibraryScope,
+    LibraryScopeKind,
+)
+
+_SAMPLE_SOURCES = "container:sample-sources"
 from src.workbench_live_kit import LIVE_KIT_SLOT_MAPPING, LiveKitState
 from src.workbench_live_kit_edit import (
     LIVE_KIT_VISIBILITY_PREF_KEY,
     edit_docking_materialization_for_live_kit,
     load_live_kit_visibility_preference,
     save_live_kit_visibility_preference,
+    try_save_live_kit_visibility_preference,
     visible_live_kit_slot_keys,
 )
 from src.workbench_qml import QML_SOURCE, LiveKitPresenter
+from src.workbench_qml_library import LibrarySelectionIntent, WorkbenchLibraryTreeState
+from src.workbench_qml_runtime import Screen1QmlRuntimeComposition
 from src.workbench_qml_spike import (
     Screen1QmlInteractionAdapter,
     build_qml_view_model_from_fixture,
@@ -65,6 +80,92 @@ def _adapter(state: LiveKitState | None = None) -> Screen1QmlInteractionAdapter:
     view_model.live_kit_groups = live_kit.groups
     view_model.live_kit_materialized = True
     return adapter
+
+
+class _FakeNav:
+    def __init__(self) -> None:
+        self.root = LibraryNode(
+            "root:1",
+            LibraryNodeKind.REGISTERED_ROOT,
+            "Samples",
+            _SAMPLE_SOURCES,
+            True,
+            True,
+            LibraryAvailability.AVAILABLE,
+            folder_id=1,
+        )
+        self._top = (
+            LibraryNode(
+                _SAMPLE_SOURCES,
+                LibraryNodeKind.SAMPLE_SOURCES,
+                "Sample Sources",
+                None,
+                False,
+                True,
+                LibraryAvailability.AVAILABLE,
+            ),
+            self.root,
+        )
+
+    @property
+    def library_db_path(self):
+        return None
+
+    def top_level_nodes(self):
+        return self._top
+
+    def children(self, node_id: str):
+        if node_id == _SAMPLE_SOURCES:
+            return (self.root,)
+        return ()
+
+    def resolve_scope(self, node_id: str):
+        if node_id == "root:1":
+            return LibraryScope(
+                LibraryScopeKind.ROOT,
+                folder_id=1,
+                folder_path="C:/samples",
+            )
+        return None
+
+
+def _production_composed_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    state: LiveKitState | None = None,
+    active_source: bool = True,
+) -> tuple[Screen1QmlInteractionAdapter, Screen1QmlRuntimeComposition, LiveKitState]:
+    """Harness that mirrors production: runtime composition + interaction adapter."""
+    from src import workbench_qml_runtime as runtime_mod
+
+    fixture = build_screen1_visual_fixture_v1()
+    view_model = build_qml_view_model_from_fixture(fixture, "screen1-default-3panel")
+    kit_state = state if state is not None else LiveKitState()
+    live_kit = LiveKitPresenter(state=kit_state)
+    composition = Screen1QmlRuntimeComposition(
+        tree_state=WorkbenchLibraryTreeState(_FakeNav())
+    )
+    monkeypatch.setattr(
+        runtime_mod,
+        "load_cached_folder_rows",
+        lambda _folder: [_row("a.wav"), _row("b.wav")],
+    )
+    if active_source:
+        nav = composition.library_tree.navigation
+        scope = nav.resolve_scope("root:1")
+        composition.dispatch_selection(
+            LibrarySelectionIntent(node=nav.root, scope=scope)
+        )
+    adapter = Screen1QmlInteractionAdapter(view_model=view_model, live_kit=live_kit)
+    adapter._runtime_composition = composition
+    view_model.live_kit_groups = live_kit.groups
+    view_model.set_workspace_materialization(
+        has_active_source=composition.has_active_source,
+        calm_canvas_visible=not composition.has_active_source,
+        browser_materialized=composition.browser_materialized,
+        live_kit_materialized=composition.live_kit_materialized,
+    )
+    return adapter, composition, kit_state
 
 
 # --- Domain: clear_slot parity -------------------------------------------------
@@ -250,7 +351,7 @@ def test_qml_has_no_second_musical_kit_truth():
 
 
 def test_visibility_preference_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("SAMPLE_BRAIN_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
     assert load_live_kit_visibility_preference(state_dir=tmp_path) is False
     save_live_kit_visibility_preference(True, state_dir=tmp_path)
     assert load_live_kit_visibility_preference(state_dir=tmp_path) is True
@@ -305,3 +406,174 @@ def test_unlocked_docking_live_kit_only_valid_edit_slots():
 
 def test_clean_edit_startup_pref_default_hidden(tmp_path: Path):
     assert load_live_kit_visibility_preference(state_dir=tmp_path) is False
+
+
+# --- Preference restore rematerializes Live Kit (#1077 Codex P1) --------------
+
+
+def test_persisted_visible_preference_rematerializes_live_kit_on_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
+    save_live_kit_visibility_preference(True, state_dir=tmp_path)
+
+    kit = LiveKitState()
+    kit.assign("Kick + Bass", "Kick", _row("keep.wav"))
+    adapter, composition, kit_state = _production_composed_adapter(
+        monkeypatch, state=kit, active_source=True
+    )
+    assert composition.has_active_source is True
+    assert composition.live_kit_materialized is False
+    assert adapter.view_model.live_kit_materialized is False
+    assert adapter.live_kit_is_visible() is False
+
+    restored = adapter.apply_live_kit_visibility_preference()
+
+    assert restored is True
+    assert composition.live_kit_revealed is True
+    assert composition.live_kit_materialized is True
+    assert adapter.view_model.live_kit_materialized is True
+    assert adapter.live_kit_is_visible() is True
+    assert adapter.edit_docking_materialization().live_kit is True
+    assert len(adapter.visible_live_kit_slot_keys()) == sum(
+        len(slots) for _group, slots in LIVE_KIT_SLOT_MAPPING
+    )
+    targets = list_visible_live_kit_targets(
+        features=WorkbenchFeatureSettings(internal_sample_dnd_enabled=True),
+        live_kit_materialized=adapter.view_model.live_kit_materialized,
+        visible_slot_keys=adapter.visible_live_kit_slot_keys(),
+    )
+    assert len(targets) == len(adapter.visible_live_kit_slot_keys())
+    assert kit_state.assignment_for("Kick + Bass", "Kick") is not None
+    assert kit_state.assignment_for("Kick + Bass", "Kick").display_name == "keep.wav"
+
+
+def test_persisted_hidden_preference_stays_unmaterialized(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
+    save_live_kit_visibility_preference(False, state_dir=tmp_path)
+    kit = LiveKitState()
+    kit.assign("Drums", "Main Drum", _row("md.wav"))
+    adapter, composition, kit_state = _production_composed_adapter(
+        monkeypatch, state=kit, active_source=True
+    )
+
+    restored = adapter.apply_live_kit_visibility_preference()
+
+    assert restored is False
+    assert composition.live_kit_revealed is False
+    assert composition.live_kit_materialized is False
+    assert adapter.view_model.live_kit_materialized is False
+    assert adapter.live_kit_is_visible() is False
+    assert adapter.edit_docking_materialization().live_kit is False
+    assert adapter.visible_live_kit_slot_keys() == ()
+    assert kit_state.assignment_for("Drums", "Main Drum") is not None
+
+
+def test_visible_preference_without_active_source_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
+    save_live_kit_visibility_preference(True, state_dir=tmp_path)
+    adapter, composition, _kit = _production_composed_adapter(
+        monkeypatch, active_source=False
+    )
+
+    adapter.apply_live_kit_visibility_preference()
+
+    assert composition.has_active_source is False
+    assert composition.live_kit_materialized is False
+    assert adapter.view_model.live_kit_materialized is False
+    assert adapter.live_kit_is_visible() is False
+    assert adapter.visible_live_kit_slot_keys() == ()
+
+
+# --- Preference write fail-soft (#1077 Codex P2) ------------------------------
+
+
+def test_try_save_visibility_preference_swallows_oserror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    def _boom(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(
+        "src.workbench_live_kit_edit.save_live_kit_visibility_preference",
+        _boom,
+    )
+    assert try_save_live_kit_visibility_preference(True, state_dir=tmp_path) is False
+
+
+def test_toggle_drawer_remains_functional_when_preference_write_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
+    adapter = _adapter()
+    kit = adapter._live_kit.state
+    kit.assign("Kick + Bass", "Kick", _row("stable.wav"))
+    adapter.view_model.live_kit_materialized = True
+    adapter._live_kit_drawer_open = False
+    adapter.live_kit_collapsed = True
+    refresh_calls: list[str] = []
+
+    def _boom(*_args, **_kwargs):
+        raise OSError("unwritable state dir")
+
+    monkeypatch.setattr(
+        "src.workbench_live_kit_edit.save_live_kit_visibility_preference",
+        _boom,
+    )
+
+    # Simulate bridge slot: toggle then refresh even if persistence fails.
+    opened = adapter.toggle_live_kit_drawer()
+    refresh_calls.append("after-open")
+    assert opened is True
+    assert adapter.live_kit_is_visible() is True
+    assert adapter._live_kit_drawer_open is True
+    assert adapter.live_kit_collapsed is False
+
+    closed = adapter.toggle_live_kit_drawer()
+    refresh_calls.append("after-close")
+    assert closed is False
+    assert adapter.live_kit_is_visible() is False
+    assert refresh_calls == ["after-open", "after-close"]
+    assert kit.assignment_for("Kick + Bass", "Kick") is not None
+    assert kit.assignment_for("Kick + Bass", "Kick").display_name == "stable.wav"
+
+
+def test_assign_auto_disclosure_persists_fail_soft(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
+    adapter, composition, kit_state = _production_composed_adapter(
+        monkeypatch, active_source=True
+    )
+    adapter._pending_live_kit_row = _row("first.wav")
+    adapter._live_kit_auto_disclosure_consumed = False
+
+    def _boom(*_args, **_kwargs):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(
+        "src.workbench_live_kit_edit.save_live_kit_visibility_preference",
+        _boom,
+    )
+
+    assert adapter.assign_live_kit_slot("Kick + Bass", "Kick") is True
+    assert adapter.view_model.live_kit_materialized is True
+    assert adapter.live_kit_is_visible() is True
+    assert kit_state.assignment_for("Kick + Bass", "Kick") is not None
+    assert composition.live_kit_revealed is True
+
+
+# --- Product UI: no Rack/step co-host in Live Kit Edit (#1077) ---------------
+
+
+def test_live_kit_edit_qml_has_no_bottom_rack_step_controls():
+    """#1077 product-UI gate (moved out of Channel Rack freeze suite)."""
+    assert "bottomRackStepList" not in QML_SOURCE
+    assert "bottomRackPlayButton" not in QML_SOURCE
+    assert "bottomRackStopButton" not in QML_SOURCE
+    assert "Live Kit / Rack" not in QML_SOURCE
+    assert 'text: "RACK"' not in QML_SOURCE
