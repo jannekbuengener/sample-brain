@@ -1809,8 +1809,20 @@ class Screen1QmlInteractionAdapter:
         return bool(self.view_model.live_kit_materialized) and presentation_open
 
     def visible_live_kit_slot_keys(self) -> tuple[tuple[str, str], ...]:
-        """#1072 target keys — empty while hidden/collapsed."""
-        return visible_live_kit_slot_keys(live_kit_visible=self.live_kit_is_visible())
+        """#1072 target keys — empty while hidden or when no group is expanded."""
+        if not self.live_kit_is_visible():
+            return ()
+        expanded: tuple[str, ...] = ()
+        if self._live_kit is not None:
+            expanded = tuple(
+                group
+                for group in self._live_kit.state.groups()
+                if not self._live_kit.presentation.is_collapsed(group)
+            )
+        return visible_live_kit_slot_keys(
+            live_kit_visible=True,
+            expanded_groups=expanded,
+        )
 
     def edit_docking_materialization(
         self,

@@ -58,6 +58,23 @@ def _ensure_runtime_manifest(runtime_root: Path, python_exe: Path) -> None:
     )
 
 
+def _framebuffer_matches_scale(
+    actual_w: int,
+    actual_h: int,
+    *,
+    scale_factor: float,
+    client_width: int,
+    client_height: int,
+) -> bool:
+    """Fail closed when requested scale does not match captured pixels."""
+    if scale_factor <= 0:
+        return False
+    expected_w = int(round(client_width * scale_factor))
+    expected_h = int(round(client_height * scale_factor))
+    tol = max(2, int(round(scale_factor)))
+    return abs(actual_w - expected_w) <= tol and abs(actual_h - expected_h) <= tol
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="#1077 Live Kit Edit visual evidence")
     parser.add_argument("--evidence-dir", type=Path, required=True)
@@ -71,6 +88,13 @@ def main() -> int:
     if evidence_dir.is_relative_to(runtime_root):
         print("evidence-dir must be outside the repository", file=sys.stderr)
         return 2
+    scale_factor = float(args.scale_factor)
+    if scale_factor <= 0:
+        print("scale-factor must be > 0", file=sys.stderr)
+        return 2
+    # Must precede QApplication creation so Qt honors the requested scale.
+    os.environ["QT_SCALE_FACTOR"] = str(scale_factor)
+    os.environ.setdefault("QT_QUICK_BACKEND", "software")
 
     from src.workbench_controller import WorkbenchRow
     from src.workbench_qml import LiveKitPresenter, Screen1QmlInteractionAdapter
@@ -149,16 +173,28 @@ def main() -> int:
         # require a non-black, minimum-usable frame.
         raw = path.read_bytes()
         actual_w, actual_h = struct.unpack(">II", raw[16:24])
+        expected_w = int(round(CLIENT_WIDTH * scale_factor))
+        expected_h = int(round(CLIENT_HEIGHT * scale_factor))
         check = validate_capture_sanity(
-            path, expected_width=actual_w, expected_height=actual_h
+            path, expected_width=expected_w, expected_height=expected_h
+        )
+        scale_ok = _framebuffer_matches_scale(
+            actual_w,
+            actual_h,
+            scale_factor=scale_factor,
+            client_width=CLIENT_WIDTH,
+            client_height=CLIENT_HEIGHT,
         )
         usable = actual_w >= CLIENT_WIDTH and actual_h >= max(600, CLIENT_HEIGHT // 2)
         check["note"] = note
-        check["scale_factor"] = args.scale_factor
+        check["scale_factor"] = scale_factor
         check["actual_width"] = actual_w
         check["actual_height"] = actual_h
+        check["expected_width"] = expected_w
+        check["expected_height"] = expected_h
+        check["scale_framebuffer_match"] = scale_ok
         check["usable_framebuffer"] = usable
-        check["pass"] = bool(check.get("pass")) and usable
+        check["pass"] = bool(check.get("pass")) and usable and scale_ok
         captures[label] = str(path)
         (evidence_dir / f"{label}.json").write_text(
             json.dumps(check, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -255,7 +291,7 @@ def main() -> int:
         "issue": 1077,
         "head": head,
         "platform": platform.platform(),
-        "scale_factor": args.scale_factor,
+        "scale_factor": scale_factor,
         "visual_accept_state": "VISUAL_ACCEPT_PENDING",
         "captures": captures,
         "provenance": provenance,

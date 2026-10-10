@@ -8,6 +8,7 @@ drag visuals (#1073), or Arrangement step UI.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Mapping
 
@@ -20,12 +21,24 @@ _LIVE_KIT_VISIBILITY_FILENAME = "live_kit_edit_visibility.json"
 _VISIBILITY_SCHEMA_VERSION = 1
 
 
-def visible_live_kit_slot_keys(*, live_kit_visible: bool) -> tuple[tuple[str, str], ...]:
-    """Canonical assignment targets only while Live Kit is visibly open."""
+def visible_live_kit_slot_keys(
+    *,
+    live_kit_visible: bool,
+    expanded_groups: Iterable[str] = (),
+) -> tuple[tuple[str, str], ...]:
+    """#1072 targets for currently expanded groups only while Live Kit is open.
+
+    Collapsed group headers have no QML slot delegates; keys for those groups
+    must stay empty so drop authorization cannot target a hidden surface.
+    """
     if not live_kit_visible:
         return ()
+    allowed = {str(group) for group in expanded_groups}
     return tuple(
-        (group, slot) for group, slots in LIVE_KIT_SLOT_MAPPING for slot in slots
+        (group, slot)
+        for group, slots in LIVE_KIT_SLOT_MAPPING
+        if group in allowed
+        for slot in slots
     )
 
 

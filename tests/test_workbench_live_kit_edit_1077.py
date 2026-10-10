@@ -214,6 +214,23 @@ def test_clear_slot_notify_false_skips_callback():
 # --- Visibility / geometry / projection ---------------------------------------
 
 
+def test_evidence_framebuffer_scale_match_helper():
+    from tools.screen1_live_kit_edit_1077_evidence import _framebuffer_matches_scale
+
+    assert _framebuffer_matches_scale(
+        1600, 900, scale_factor=1.0, client_width=1600, client_height=900
+    )
+    assert _framebuffer_matches_scale(
+        2000, 1125, scale_factor=1.25, client_width=1600, client_height=900
+    )
+    assert _framebuffer_matches_scale(
+        2400, 1350, scale_factor=1.5, client_width=1600, client_height=900
+    )
+    assert not _framebuffer_matches_scale(
+        1600, 900, scale_factor=1.25, client_width=1600, client_height=900
+    )
+
+
 def test_hidden_live_kit_has_no_visible_slot_keys_or_targets():
     keys = visible_live_kit_slot_keys(live_kit_visible=False)
     assert keys == ()
@@ -226,9 +243,15 @@ def test_hidden_live_kit_has_no_visible_slot_keys_or_targets():
 
 
 def test_visible_live_kit_exposes_canonical_1072_targets():
-    keys = visible_live_kit_slot_keys(live_kit_visible=True)
+    expanded = ("Kick + Bass", "Drums")
+    keys = visible_live_kit_slot_keys(
+        live_kit_visible=True, expanded_groups=expanded
+    )
     expected = tuple(
-        (group, slot) for group, slots in LIVE_KIT_SLOT_MAPPING for slot in slots
+        (group, slot)
+        for group, slots in LIVE_KIT_SLOT_MAPPING
+        if group in expanded
+        for slot in slots
     )
     assert keys == expected
     targets = list_visible_live_kit_targets(
@@ -238,6 +261,26 @@ def test_visible_live_kit_exposes_canonical_1072_targets():
     )
     assert len(targets) == len(expected)
     assert all(t.kind == "live_kit_assignment" and t.visible for t in targets)
+
+
+def test_collapsed_groups_expose_no_1072_slot_keys():
+    assert (
+        visible_live_kit_slot_keys(live_kit_visible=True, expanded_groups=()) == ()
+    )
+    adapter = _adapter()
+    adapter._live_kit_drawer_open = True
+    adapter.live_kit_collapsed = False
+    assert adapter.live_kit_is_visible() is True
+    assert all(
+        adapter._live_kit.presentation.is_collapsed(group)
+        for group in adapter._live_kit.state.groups()
+    )
+    assert adapter.visible_live_kit_slot_keys() == ()
+    adapter.toggle_live_kit_group("Kick + Bass")
+    keys = adapter.visible_live_kit_slot_keys()
+    assert keys
+    assert all(group == "Kick + Bass" for group, _slot in keys)
+    assert "Drums" not in {group for group, _slot in keys}
 
 
 def test_hidden_live_kit_not_in_edit_docking_materialization():
@@ -281,8 +324,13 @@ def test_pending_add_counts_as_visible_for_docking_and_targets():
     assert adapter.pending_live_kit_add == pending.display_name
     assert adapter._live_kit_drawer_open is False
     assert adapter.live_kit_is_visible() is True
-    assert adapter.visible_live_kit_slot_keys()
     assert adapter.edit_docking_materialization().live_kit is True
+    # Groups start collapsed — no slot delegates / #1072 keys until expanded.
+    assert adapter.visible_live_kit_slot_keys() == ()
+    adapter.toggle_live_kit_group("Kick + Bass")
+    keys = adapter.visible_live_kit_slot_keys()
+    assert keys
+    assert all(group == "Kick + Bass" for group, _slot in keys)
     assert kit.assignment_for("Kick + Bass", "Kick") is keep
 
     assert adapter.cancel_live_kit_add() is True
@@ -465,15 +513,17 @@ def test_persisted_visible_preference_rematerializes_live_kit_on_restart(
     assert adapter.view_model.live_kit_materialized is True
     assert adapter.live_kit_is_visible() is True
     assert adapter.edit_docking_materialization().live_kit is True
-    assert len(adapter.visible_live_kit_slot_keys()) == sum(
-        len(slots) for _group, slots in LIVE_KIT_SLOT_MAPPING
-    )
+    assert adapter.visible_live_kit_slot_keys() == ()
+    adapter.toggle_live_kit_group("Kick + Bass")
+    keys = adapter.visible_live_kit_slot_keys()
+    assert keys
+    assert all(group == "Kick + Bass" for group, _slot in keys)
     targets = list_visible_live_kit_targets(
         features=WorkbenchFeatureSettings(internal_sample_dnd_enabled=True),
         live_kit_materialized=adapter.view_model.live_kit_materialized,
-        visible_slot_keys=adapter.visible_live_kit_slot_keys(),
+        visible_slot_keys=keys,
     )
-    assert len(targets) == len(adapter.visible_live_kit_slot_keys())
+    assert len(targets) == len(keys)
     assert kit_state.assignment_for("Kick + Bass", "Kick") is not None
     assert kit_state.assignment_for("Kick + Bass", "Kick").display_name == "keep.wav"
 
@@ -650,6 +700,8 @@ def test_preference_reapplied_after_analysis_disclosure_clear(
     assert composition.live_kit_materialized is True
     assert adapter.live_kit_is_visible() is True
     assert adapter.edit_docking_materialization().live_kit is True
+    assert adapter.visible_live_kit_slot_keys() == ()
+    adapter.toggle_live_kit_group("Kick + Bass")
     assert adapter.visible_live_kit_slot_keys()
     assert kit_state.assignment_for("Kick + Bass", "Kick") is not None
 

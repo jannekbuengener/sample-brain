@@ -60,7 +60,7 @@ hidden   <=>  not visible
 | State | Projection | Geometry | #1070 `live_kit` | #1072 targets |
 |-------|------------|----------|------------------|---------------|
 | Hidden / collapsed | none | height 0; no phantom min-height | `False` | empty |
-| Visible / materialized | exactly one Live Kit projection | compact elastic/drawer bounds | `True` | canonical visible slot keys |
+| Visible / materialized | exactly one Live Kit projection | compact elastic/drawer bounds | `True` | slots of **expanded** groups only (headers-only / all collapsed → empty) |
 
 “Always-on kit projection” applies **only** while visible. Hidden/collapsed must
 retain no hidden projection, target surface, or phantom geometry. Hide never
