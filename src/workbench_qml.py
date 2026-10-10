@@ -890,6 +890,9 @@ class Screen1QmlInteractionAdapter:
         )
         self._waveform_motion_mode = "on"
         self._gesture_rack_apply_enabled = False
+        # #1121 projection only: #1070 remains the single layout/lock owner.
+        self._workspace_panel_docking_enabled = False
+        self._edit_docking_state: object | None = None
         self._preview_playback_cache: object | None = None
         # Optional #742 disclosure owner (set by production engine wiring).
         self._runtime_composition: Screen1QmlRuntimeComposition | None = None
@@ -1037,6 +1040,71 @@ class Screen1QmlInteractionAdapter:
         """Functional #910 toggle — configuration only, not musical state."""
         return bool(self._gesture_rack_apply_enabled)
 
+    @property
+    def workspace_panel_docking_enabled(self) -> bool:
+        """Project the canonical functional #1070 docking feature flag."""
+        return bool(self._workspace_panel_docking_enabled)
+
+    @property
+    def workspace_layout_locked(self) -> bool:
+        """Effective Edit layout lock; feature-off is always fail-closed LOCKED."""
+        from .workbench_edit_docking import LOCK_UNLOCKED
+
+        state = self._edit_docking_state
+        return not (
+            self.workspace_panel_docking_enabled
+            and state is not None
+            and getattr(state, "lock_state", None) == LOCK_UNLOCKED
+        )
+
+    def load_workspace_layout_state(
+        self,
+        *,
+        state_dir: Path | None = None,
+        env: Mapping[str, str] | None = None,
+    ):
+        """Load the Python-owned #1070 topology/lock snapshot fail-closed."""
+        from .workbench_edit_docking import (
+            DEFAULT_EDIT_DOCKING_STATE,
+            load_edit_docking_state,
+        )
+
+        try:
+            loaded = load_edit_docking_state(state_dir=state_dir, env=env)
+        except OSError:
+            loaded = DEFAULT_EDIT_DOCKING_STATE
+        self._edit_docking_state = loaded
+        return loaded
+
+    def set_workspace_layout_locked(
+        self,
+        locked: bool,
+        *,
+        state_dir: Path | None = None,
+        env: Mapping[str, str] | None = None,
+    ) -> str:
+        """Persist one typed LOCKED/UNLOCKED intent through the #1070 owner."""
+        from . import workbench_edit_docking as edit_docking
+
+        if not self.workspace_panel_docking_enabled:
+            return edit_docking.LOCK_LOCKED
+        if self._edit_docking_state is None:
+            self.load_workspace_layout_state(state_dir=state_dir, env=env)
+        state = self._edit_docking_state
+        if not isinstance(state, edit_docking.EditDockingState):
+            state = edit_docking.DEFAULT_EDIT_DOCKING_STATE
+        target = edit_docking.LOCK_LOCKED if bool(locked) else edit_docking.LOCK_UNLOCKED
+        updated = edit_docking.set_edit_docking_lock(state, target)
+        if edit_docking.save_edit_docking_state(updated, state_dir=state_dir, env=env):
+            self._edit_docking_state = updated
+        else:
+            self.load_workspace_layout_state(state_dir=state_dir, env=env)
+        return (
+            edit_docking.LOCK_LOCKED
+            if self.workspace_layout_locked
+            else edit_docking.LOCK_UNLOCKED
+        )
+
     def load_feature_settings(
         self,
         *,
@@ -1057,6 +1125,9 @@ class Screen1QmlInteractionAdapter:
         if not isinstance(loaded, WorkbenchFeatureSettings):
             loaded = WorkbenchFeatureSettings()
         self._gesture_rack_apply_enabled = bool(loaded.gesture_rack_apply_enabled)
+        self._workspace_panel_docking_enabled = bool(
+            loaded.workspace_panel_docking_enabled
+        )
         return loaded
 
     def set_gesture_rack_apply_enabled(
@@ -3158,6 +3229,26 @@ ApplicationWindow {
                             }
                         }
                         Label { text: "Functional"; color: theme.textSecondary; font.pixelSize: 11 }
+                        Button {
+                            id: workspaceLayoutLockToggle
+                            objectName: "workspaceLayoutLockToggle"
+                            Layout.fillWidth: true
+                            flat: true
+                            text: window.interaction.workspaceLayoutLocked
+                                ? "Layout · Locked"
+                                : "Layout · Unlocked"
+                            checkable: true
+                            checked: window.interaction.workspacePanelDockingEnabled
+                                && !window.interaction.workspaceLayoutLocked
+                            enabled: window.interaction.workspacePanelDockingEnabled
+                            opacity: enabled ? 1.0 : 0.55
+                            onClicked: window.interaction.setWorkspaceLayoutLocked(
+                                !window.interaction.workspaceLayoutLocked
+                            )
+                            Accessible.name: window.interaction.workspaceLayoutLocked
+                                ? "Unlock workspace layout"
+                                : "Lock workspace layout"
+                        }
                         Button {
                             id: gestureRackApplyToggle
                             objectName: "gestureRackApplyToggle"
@@ -5553,6 +5644,19 @@ def _qml_interaction_bridge(
         def gestureRackApplyEnabled(self) -> bool:
             return adapter.gesture_rack_apply_enabled
 
+        @Property(bool, notify=state_changed)
+        def workspacePanelDockingEnabled(self) -> bool:
+            return adapter.workspace_panel_docking_enabled
+
+        @Property(bool, notify=state_changed)
+        def workspaceLayoutLocked(self) -> bool:
+            return adapter.workspace_layout_locked
+
+        @Slot(bool)
+        def setWorkspaceLayoutLocked(self, locked: bool) -> None:
+            adapter.set_workspace_layout_locked(bool(locked))
+            self._refresh()
+
         @Slot(bool)
         def setGestureRackApplyEnabled(self, enabled: bool) -> None:
             adapter.set_gesture_rack_apply_enabled(bool(enabled))
@@ -6704,7 +6808,9 @@ def _qml_engine(
         pass
     try:
         adapter.load_feature_settings()
+        adapter.load_workspace_layout_state()
     except Exception:
+        # Functional/docking presentation is fail-closed; Workbench startup continues.
         pass
     library_model = create_qt_library_tree_model(view_model.library_tree)
 
