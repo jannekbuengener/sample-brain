@@ -64,7 +64,9 @@ hidden   <=>  not visible
 
 “Always-on kit projection” applies **only** while visible. Hidden/collapsed must
 retain no hidden projection, target surface, or phantom geometry. Hide never
-clears musical assignments or active-track kit state.
+clears musical assignments or active-track kit state. A pending Add-to-Kit
+chooser counts as presentation-open for `#1070` / `#1072` even when the drawer
+preference remains closed (QML `bottomExpanded` via `liveKitPendingAdd`).
 
 Default clean Edit startup: Live Kit hidden/collapsed (preference default
 `live_kit_visible=False`). Restart respects the persisted visibility preference

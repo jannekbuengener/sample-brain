@@ -264,6 +264,36 @@ def test_visible_live_kit_in_edit_docking_materialization():
     assert EDIT_PANEL_LIVE_KIT in order
 
 
+def test_pending_add_counts_as_visible_for_docking_and_targets():
+    adapter = _adapter()
+    kit = adapter._live_kit.state
+    keep = _row("keep.wav")
+    kit.assign("Kick + Bass", "Kick", keep)
+    adapter._live_kit_drawer_open = False
+    adapter.live_kit_collapsed = True
+    adapter.view_model.live_kit_materialized = True
+    assert adapter.live_kit_is_visible() is False
+    assert adapter.visible_live_kit_slot_keys() == ()
+    assert adapter.edit_docking_materialization().live_kit is False
+
+    pending = _row("pending.wav")
+    adapter._request_add_to_kit_row(pending)
+    assert adapter.pending_live_kit_add == pending.display_name
+    assert adapter._live_kit_drawer_open is False
+    assert adapter.live_kit_is_visible() is True
+    assert adapter.visible_live_kit_slot_keys()
+    assert adapter.edit_docking_materialization().live_kit is True
+    assert kit.assignment_for("Kick + Bass", "Kick") is keep
+
+    assert adapter.cancel_live_kit_add() is True
+    assert adapter.pending_live_kit_add == ""
+    assert adapter._live_kit_drawer_open is False
+    assert adapter.live_kit_is_visible() is False
+    assert adapter.visible_live_kit_slot_keys() == ()
+    assert adapter.edit_docking_materialization().live_kit is False
+    assert kit.assignment_for("Kick + Bass", "Kick") is keep
+
+
 def test_hide_preserves_musical_assignments():
     adapter = _adapter()
     kit = adapter._live_kit.state

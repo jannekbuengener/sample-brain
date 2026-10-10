@@ -936,7 +936,8 @@ class Screen1QmlInteractionAdapter:
 
         #742/#1077: Add-to-Kit materializes Live Kit disclosure. Pending-add
         expands chooser geometry without forcing drawer_open, so a manual
-        close (#954) remains respected on later assignments.
+        close (#954) remains respected on later assignments. Visibility
+        predicates still treat pending-add as presentation-open for #1070/#1072.
         """
         self._pending_live_kit_row = row
         self._reveal_live_kit_pane()
@@ -1797,10 +1798,15 @@ class Screen1QmlInteractionAdapter:
         return int(self._live_kit_user_height_px)
 
     def live_kit_is_visible(self) -> bool:
-        """True only when Live Kit is materialized and presentation-open."""
-        return bool(self.view_model.live_kit_materialized) and bool(
-            self._live_kit_drawer_open
+        """True when Live Kit is materialized and presentation-open.
+
+        Presentation-open includes the pending Add-to-Kit chooser even when the
+        drawer preference stays closed (#954), matching QML ``bottomExpanded``.
+        """
+        presentation_open = bool(self._live_kit_drawer_open) or (
+            self._pending_live_kit_row is not None
         )
+        return bool(self.view_model.live_kit_materialized) and presentation_open
 
     def visible_live_kit_slot_keys(self) -> tuple[tuple[str, str], ...]:
         """#1072 target keys — empty while hidden/collapsed."""
