@@ -1063,11 +1063,15 @@ class Screen1QmlInteractionAdapter:
         return rows[row_index].source_row
 
     def _internal_sample_catalog(self) -> tuple:
-        """Visible Browser/Harmony catalog, deduped by normalized relative path.
+        """Visible Browser/Harmony catalog for #1072 resolution.
 
-        A sample may be visible on both surfaces simultaneously; the adapter
-        hands the contract one entry per sample so Add/Replace resolution does
-        not see a self-inflicted ambiguity.
+        Dedupes only genuine re-projections of the *same underlying sample*
+        (identical absolute path), so a sample visible on both surfaces is
+        handed to the contract once and does not become a self-inflicted
+        ambiguity. Distinct underlying samples that merely share a normalized
+        ``relative_path`` are kept separate, letting the authoritative resolver
+        fail closed with ``ambiguous_sample`` instead of silently assigning the
+        wrong sample.
         """
         seen: set[str] = set()
         catalog: list = []
@@ -1076,13 +1080,28 @@ class Screen1QmlInteractionAdapter:
             *self.view_model.harmony_rows,
         ):
             row = projected.source_row
-            key = str(getattr(row, "relative_path", "") or "").replace("\\", "/")
-            if key and key in seen:
+            identity = self._internal_sample_row_identity(row)
+            if identity is not None and identity in seen:
                 continue
-            if key:
-                seen.add(key)
+            if identity is not None:
+                seen.add(identity)
             catalog.append(row)
         return tuple(catalog)
+
+    @staticmethod
+    def _internal_sample_row_identity(row: object) -> str | None:
+        """Underlying-sample identity (normalized absolute path) or ``None``.
+
+        ``None`` when no stable path is available, so unidentified rows are
+        never collapsed together and cannot hide an ambiguity.
+        """
+        raw = getattr(row, "path", None)
+        if not isinstance(raw, str):
+            return None
+        text = raw.strip()
+        if not text:
+            return None
+        return os.path.normcase(os.path.normpath(text))
 
     def _internal_sample_visible_slot_keys(self) -> tuple[tuple[str, str], ...]:
         """Authoritative visible (group, slot) keys (#1072/#1073).

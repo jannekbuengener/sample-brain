@@ -534,3 +534,57 @@ def test_replace_other_slot_keeps_unrelated_audition(tmp_path: Path):
 
     assert result["accepted"] is True and result["mutation"] == "replace"
     assert adapter._auditioning_live_kit_slot == ("Kick + Bass", "Bass")
+
+
+# --- P1 (review-3): distinct samples sharing a relative path stay distinct ----
+
+
+def test_distinct_samples_sharing_relative_path_fail_closed_ambiguous(
+    tmp_path: Path,
+):
+    """Two distinct samples projecting to the same relative_path must not be
+    collapsed into one catalog row: the authoritative resolver must fail closed
+    with ``ambiguous_sample`` so no wrong sample is silently assigned.
+    """
+    adapter, live_kit = _adapter()
+    a = _row(
+        tmp_path / "root_a", name="same.wav", relative="packs/same.wav"
+    )
+    b = _row(tmp_path / "root_b", name="same.wav", relative="packs/same.wav")
+    assert a.relative_path == b.relative_path
+    assert a.path != b.path
+    adapter.view_model.browser_rows = (_qml_browser_row(a), _qml_browser_row(b))
+    adapter.toggle_live_kit_group("Kick + Bass")
+
+    result = adapter.apply_internal_sample_drop(
+        a.relative_path, "browser", "Kick + Bass", "Kick", "ambiguous-1"
+    )
+
+    assert result["accepted"] is False
+    assert result["reason"] == "ambiguous_sample"
+    assert result["mutation"] is None
+    assert live_kit.state.assignment_for("Kick + Bass", "Kick") is None
+    evidence = json.dumps(result)
+    assert a.path not in evidence and b.path not in evidence
+
+
+def test_same_underlying_sample_on_both_surfaces_not_self_ambiguous(tmp_path: Path):
+    adapter, live_kit = _adapter()
+    row = _row(tmp_path, relative="packs/kick.wav")
+    browser = list(adapter.view_model.browser_rows)
+    browser[0] = _qml_browser_row(row)
+    adapter.view_model.browser_rows = tuple(browser)
+    harmony = list(adapter.view_model.harmony_rows)
+    if harmony:
+        harmony[0] = _qml_harmony_row(row)
+    else:
+        harmony = [_qml_harmony_row(row)]
+    adapter.view_model.harmony_rows = tuple(harmony)
+    adapter.toggle_live_kit_group("Kick + Bass")
+
+    result = adapter.apply_internal_sample_drop(
+        row.relative_path, "browser", "Kick + Bass", "Kick", "both-surfaces-1"
+    )
+
+    assert result["accepted"] is True and result["mutation"] == "assign"
+    assert live_kit.state.assignment_for("Kick + Bass", "Kick") is row
