@@ -159,13 +159,20 @@ def main() -> int:
     _settle_qml_frame(app)
     _wait_for_screen1_background_ready(window, app)
 
-    # Open the display preferences popover so the layout lock control is rendered
-    from PySide6.QtQuick import QQuickItem
-    prefs_popover = window.findChild(QQuickItem, "displayPreferencesPopover")
-    if prefs_popover is not None:
-        prefs_popover.open()
-        _settle_qml_frame(app)
-        app.processEvents()
+    def open_display_preferences_popover() -> None:
+        """Open the display preferences popover and wait for content to render."""
+        from PySide6.QtCore import QObject, QEventLoop, QTimer, QMetaObject, Qt
+        overflow_btn = window.findChild(QObject, 'displayPreferencesOverflow')
+        if overflow_btn is not None:
+            QMetaObject.invokeMethod(overflow_btn, 'click', Qt.QueuedConnection)
+            # Wait for popup content to fully instantiate and render
+            for _ in range(15):
+                loop = QEventLoop()
+                QTimer.singleShot(100, loop.quit)
+                loop.exec()
+                app.processEvents()
+        else:
+            raise RuntimeError("displayPreferencesOverflow button not found")
 
     def refresh() -> None:
         """Refresh QML state and wait for UI to fully update."""
@@ -182,6 +189,9 @@ def main() -> int:
 
     captures: dict[str, str] = {}
     failed_checks: list[str] = []
+
+    # Open the display preferences popover once at the start
+    open_display_preferences_popover()
 
     def grab(label: str, note: str) -> None:
         import struct
