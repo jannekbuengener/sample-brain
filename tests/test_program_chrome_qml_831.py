@@ -1,4 +1,21 @@
-"""#831 program chrome — QML structure and runtime geometry (TEST_FREEZE)."""
+"""#831 program chrome — QML structure and runtime geometry (TEST_FREEZE).
+
+## TEST_FREEZE_RECONCILIATION (#1077 / PRODUCT_WORKFLOW_CANON)
+
+Historical #831 treated center “Live Kit” as mode-adjacent nav that only
+*opened* the drawer. Current product authority (#1075/#1076/#1077 +
+`PROGRAM_CHROME_CONTRACT.md`) classifies Live Kit as an **Edit tool**; the
+chrome control is a reveal/hide tool toggle, not a product mode.
+
+Consciously released from this freeze suite (moved to
+`tests/test_workbench_live_kit_edit_1077.py`):
+- open-only click semantics (`if (!liveKitDrawerOpen) toggle…`)
+- `navActive: false` forever (mode-underline suppressed without tool-active)
+
+Still frozen here: three-zone header geometry, label/objectName presence,
+inert-before-materialization gate, Screen-2 return + reveal via the same
+`toggleLiveKitDrawer` seam, footer/transport chrome structure.
+"""
 
 from __future__ import annotations
 
@@ -117,15 +134,16 @@ def test_program_nav_browser_handler_reveals_collapsed_browser() -> None:
 
 
 def test_program_nav_live_kit_handler_opens_drawer_after_screen2_return() -> None:
-    """#954: Live Kit nav opens the transient Drawer after Screen-2 return."""
+    """#954/#1077: Edit-tool chrome toggles drawer after Screen-2 return."""
     block = QML_SOURCE.split('objectName: "programNavLiveKit"', 1)[1].split(
         "ToolButton", 1
     )[0]
     assert "returnToScreen1" in block
-    assert "liveKitDrawerOpen" in block
     assert "toggleLiveKitDrawer" in block
     # Must not be an exclusive if/else that skips reveal after Screen-2 return.
     assert "else if (!window.interaction.liveKitDrawerOpen)" not in block
+    # Reveal control toggles both ways — not open-only.
+    assert "if (!window.interaction.liveKitDrawerOpen)" not in block
 
 
 def test_program_chrome_header_reserves_three_zones_without_free_center_overlap() -> None:
@@ -165,10 +183,13 @@ def _assert_centered(zone, reference, *, label: str) -> None:
 def _build_screen1_window(
     *,
     live_kit_materialized: bool = True,
+    live_kit_drawer_open: bool | None = None,
+    clear_live_kit_assignments: bool = False,
     with_session: bool = False,
 ):
     from src.workbench_harmony import HarmonicMatchLibraryController
-    from src.workbench_qml import Screen1QmlInteractionAdapter
+    from src.workbench_live_kit import LiveKitState
+    from src.workbench_qml import LiveKitPresenter, Screen1QmlInteractionAdapter
     from src.workbench_qml_spike import (
         _qml_engine,
         _settle_qml_frame,
@@ -179,6 +200,11 @@ def _build_screen1_window(
     fixture = build_screen1_visual_fixture_v1()
     view_model = build_qml_view_model_from_fixture(fixture, "screen1-default-3panel")
     view_model.set_library_revealed(True)
+    live_kit = None
+    if clear_live_kit_assignments:
+        # Fixture ships populated kit slots; inert chrome needs empty assignments.
+        live_kit = LiveKitPresenter(state=LiveKitState())
+        view_model.live_kit_groups = live_kit.groups
     view_model.set_workspace_materialization(
         has_active_source=True,
         calm_canvas_visible=False,
@@ -189,10 +215,14 @@ def _build_screen1_window(
         # Compose-owned Channel Rack / Screen-2 navigation (#678).
         app, engine, window = _qml_engine(view_model)
         adapter = engine._screen1_interaction_adapter
+        if live_kit is not None:
+            adapter._live_kit = live_kit
+            view_model.live_kit_groups = live_kit.groups
     else:
         adapter = Screen1QmlInteractionAdapter(
             view_model=view_model,
             harmony_controller=HarmonicMatchLibraryController(),
+            live_kit=live_kit,
         )
         app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
     view_model.set_workspace_materialization(
@@ -201,8 +231,17 @@ def _build_screen1_window(
         browser_materialized=True,
         live_kit_materialized=live_kit_materialized,
     )
+    # #1077 default is hidden; tests that need an open tool must opt in.
+    if live_kit_drawer_open is None:
+        live_kit_drawer_open = bool(live_kit_materialized)
+    adapter._live_kit_drawer_open = bool(live_kit_drawer_open)
+    adapter.live_kit_collapsed = not bool(live_kit_drawer_open)
     window.show()
     _settle_qml_frame(app)
+    bridge = getattr(engine, "_screen1_interaction_bridge", None)
+    if bridge is not None and hasattr(bridge, "refreshState"):
+        bridge.refreshState()
+        _settle_qml_frame(app)
     return app, engine, window, adapter, _settle_qml_frame
 
 
@@ -325,33 +364,37 @@ def test_runtime_live_kit_nav_inert_when_unmaterialized() -> None:
     from PySide6.QtQuick import QQuickItem
 
     app, engine, window, adapter, settle = _build_screen1_window(
-        live_kit_materialized=False
+        live_kit_materialized=False,
+        live_kit_drawer_open=False,
+        clear_live_kit_assignments=True,
     )
     try:
         nav = window.findChild(QQuickItem, "programNavLiveKit")
         assert nav is not None
         assert nav.isEnabled() is False
-        assert adapter.live_kit_collapsed is False
+        assert adapter.live_kit_collapsed is True
+        assert adapter._live_kit_drawer_open is False
     finally:
         window.close()
         app.processEvents()
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
-def test_runtime_live_kit_nav_keeps_visible_materialized() -> None:
+def test_runtime_live_kit_nav_toggles_hide_when_already_open() -> None:
+    """#1077: Edit-tool chrome hides an already-open Live Kit (not sticky-open)."""
     from PySide6.QtQuick import QQuickItem
 
     app, engine, window, adapter, settle = _build_screen1_window(
-        live_kit_materialized=True
+        live_kit_materialized=True,
+        live_kit_drawer_open=True,
     )
     try:
         assert adapter.live_kit_collapsed is False
         nav = window.findChild(QQuickItem, "programNavLiveKit")
-        pane = window.findChild(QQuickItem, "liveKitPane")
-        assert nav is not None and pane is not None
+        assert nav is not None
         _click_item(window, nav, settle, app)
-        assert adapter.live_kit_collapsed is False
-        assert pane.isVisible()
+        assert adapter.live_kit_collapsed is True
+        assert adapter._live_kit_drawer_open is False
     finally:
         window.close()
         app.processEvents()
@@ -362,11 +405,10 @@ def test_runtime_live_kit_nav_reveals_collapsed_on_screen1() -> None:
     from PySide6.QtQuick import QQuickItem
 
     app, engine, window, adapter, settle = _build_screen1_window(
-        live_kit_materialized=True
+        live_kit_materialized=True,
+        live_kit_drawer_open=False,
     )
     try:
-        adapter.toggle_live_kit_collapsed()
-        settle(app)
         assert adapter.live_kit_collapsed is True
         nav = window.findChild(QQuickItem, "programNavLiveKit")
         pane = window.findChild(QQuickItem, "liveKitPane")
@@ -385,11 +427,10 @@ def test_runtime_live_kit_nav_from_screen2_returns_and_reveals() -> None:
 
     app, engine, window, adapter, settle = _build_screen1_window(
         live_kit_materialized=True,
+        live_kit_drawer_open=False,
         with_session=True,
     )
     try:
-        adapter.toggle_live_kit_collapsed()
-        settle(app)
         assert adapter.live_kit_collapsed is True
         channel_rack = engine.rootContext().contextProperty("channelRackModel")
         assert channel_rack is not None

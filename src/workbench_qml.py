@@ -2775,9 +2775,11 @@ ApplicationWindow {
                     }
                 }
                 ToolButton {
+                    // #1077: Edit-tool reveal/hide control — not a product mode.
                     id: programNavLiveKit
                     objectName: "programNavLiveKit"
                     text: "Live Kit"
+                    Accessible.name: "Live Kit Edit tool"
                     flat: true
                     font.pixelSize: 10
                     padding: 0
@@ -2787,9 +2789,12 @@ ApplicationWindow {
                     bottomPadding: 0
                     implicitHeight: screen1Header.height
                     Layout.preferredHeight: screen1Header.height
+                    // Inert until materialization or kit assignments (#831/#1077).
                     enabled: window.interaction.liveKitRevealed
                              || window.screenData.liveKitAssignedCount > 0
-                    readonly property bool navActive: false
+                    // Tool-active while presentation is open (drawer or pending Add).
+                    readonly property bool navActive: window.interaction.liveKitDrawerOpen
+                            || window.interaction.liveKitPendingAdd !== ""
                     background: Item {
                         implicitHeight: screen1Header.height
                         Rectangle {
@@ -2817,8 +2822,8 @@ ApplicationWindow {
                     onClicked: {
                         if (window.activeScreen === "screen2")
                             window.interaction.returnToScreen1()
-                        if (!window.interaction.liveKitDrawerOpen)
-                            window.interaction.toggleLiveKitDrawer()
+                        // Full toggle via #1077 visibility owner (show and hide).
+                        window.interaction.toggleLiveKitDrawer()
                     }
                 }
                 ToolButton {

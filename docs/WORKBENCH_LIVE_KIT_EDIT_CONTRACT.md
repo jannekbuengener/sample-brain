@@ -87,6 +87,14 @@ adapter (`live_kit_user_height_px`, `0` = auto row-derived height), clamped to
 compact minimum and the existing 40% workspace cap. Resize intents are separate
 from collapse/hide, panel-move, and sample-drag.
 
+### Upper chrome (`programNavLiveKit`)
+
+Program-chrome “Live Kit” is an **Edit-tool reveal/hide control**, not a top-level
+mode (see `PROGRAM_CHROME_CONTRACT.md`). It reuses the #1077 visibility owner
+(`toggle_live_kit_drawer` / preference / reveal seam) and must not open a second
+loader. While unmaterialized and empty it stays inert; once the tool can be
+shown it toggles presentation open/closed and reflects tool-active when open.
+
 ## Mutation seams
 
 Reuse one Python-owned kit truth:

@@ -729,6 +729,30 @@ def test_live_kit_edit_qml_has_no_bottom_rack_step_controls():
     assert 'text: "RACK"' not in QML_SOURCE
 
 
+def test_program_chrome_live_kit_is_edit_tool_reveal_control():
+    """Upper chrome Live Kit is Edit-tool reveal/hide — not a product mode."""
+    block = QML_SOURCE.split('objectName: "programNavLiveKit"', 1)[1].split(
+        "ToolButton", 1
+    )[0]
+    assert "Edit-tool" in block or "Edit tool" in block
+    assert "navActive: window.interaction.liveKitDrawerOpen" in block
+    assert "toggleLiveKitDrawer" in block
+    assert "if (!window.interaction.liveKitDrawerOpen)" not in block
+    # Must not claim mode navigation for Arrangement/Live peers.
+    assert "navActive: false" not in block.split("onClicked", 1)[0]
+
+
+def test_toggle_live_kit_drawer_hides_when_open():
+    adapter = _adapter()
+    adapter.view_model.live_kit_materialized = True
+    adapter._live_kit_drawer_open = True
+    adapter.live_kit_collapsed = False
+    assert adapter.toggle_live_kit_drawer() is False
+    assert adapter._live_kit_drawer_open is False
+    assert adapter.live_kit_collapsed is True
+    assert adapter.live_kit_is_visible() is False
+
+
 def test_preference_reapplied_after_analysis_disclosure_clear(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

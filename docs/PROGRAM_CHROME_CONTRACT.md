@@ -78,14 +78,17 @@ Classification of common chrome / historical terms:
 | Arrangement Entry | ACTION (full version) | Deliberate Edit→Arrangement transition (#1078); CTA copy open; ≠ Export Kit |
 | Screen 1 / Screen 2 / Screen 3 | HISTORICAL_TERM | Delivery evidence only; not current product pages |
 
-**Live Kit** reveal/collapse remains owned by the #1077 Edit Live Kit visibility owner (progressive-disclosure / adapter seams; see `WORKBENCH_LIVE_KIT_EDIT_CONTRACT.md`). Program chrome must not invent a second Live Kit state owner. When a center control still names Live Kit historically, treat it as Edit-tool summon/reveal — not mode navigation.
+**Live Kit** reveal/collapse remains owned by the #1077 Edit Live Kit visibility owner (progressive-disclosure / adapter seams; see `WORKBENCH_LIVE_KIT_EDIT_CONTRACT.md`). Program chrome must not invent a second Live Kit state owner.
 
-| Session state | Center **Live Kit** chrome |
+Upper-chrome `programNavLiveKit` is **not** a product mode. It is the Edit **Live Kit tool** reveal/hide control (label may still read “Live Kit”). It must not use mode-underline semantics that compete with Edit / Arrangement / Live.
+
+| Session state | Center **Live Kit** chrome (`programNavLiveKit`) |
 |---|---|
-| Active source, `live_kit_materialized == false` | Visible label may name Live Kit; the action is **disabled / inert**. It must **not** materialize the Live Kit merely by activating this program-chrome control. Progressive disclosure stays owned by the existing Add-to-Kit / materialization path. |
-| After materialization (`live_kit_materialized == true`) | Uses **only** the existing Live Kit presentation / reveal / collapse seams (#845 and current adapter commands). No second loader, no new panel owner. |
+| No materialization and no kit assignments | **Disabled / inert.** Must not invent a parallel materialization path; first materialization stays on Add-to-Kit / preference / progressive-disclosure seams. |
+| After materialization **or** kit has assignments | Enabled Edit-tool reveal control. Click uses **only** `toggle_live_kit_drawer` / adapter reveal-collapse (may rematerialize via `_reveal_live_kit_pane` when opening). Toggle must **hide** as well as show. |
+| Tool presentation open (`liveKitDrawerOpen` / pending Add) | Control shows **tool-active** (not mode-active). |
 
-#831 must implement that table; it must not invent a parallel Live Kit domain or
+#831/#1077 must implement that table; they must not invent a parallel Live Kit domain or
 materialization path from program chrome.
 
 **Arrangement** mode navigation is gated by docs-frozen `arrangement_mode_enabled` (default False; see `WORKBENCH_FEATURE_SETTINGS.md`) and later #1078/#1082 eligibility. **Live** remains unavailable / parked under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) until explicit re-entry.
