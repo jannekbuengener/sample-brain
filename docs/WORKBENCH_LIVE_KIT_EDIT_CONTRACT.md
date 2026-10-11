@@ -87,13 +87,16 @@ adapter (`live_kit_user_height_px`, `0` = auto row-derived height), clamped to
 compact minimum and the existing 40% workspace cap. Resize intents are separate
 from collapse/hide, panel-move, and sample-drag.
 
-### Upper chrome (`programNavLiveKit`)
+### Edit-scoped reveal (`editLiveKitRevealControl`)
 
-Program-chrome “Live Kit” is an **Edit-tool reveal/hide control**, not a top-level
-mode (see `PROGRAM_CHROME_CONTRACT.md`). It reuses the #1077 visibility owner
-(`toggle_live_kit_drawer` / preference / reveal seam) and must not open a second
-loader. While unmaterialized and empty it stays inert; once the tool can be
-shown it toggles presentation open/closed and reflects tool-active when open.
+“Live Kit” must **not** appear in upper mode navigation (`headerNavRow`) beside
+Browser / Step Sequencer / Arrangement (Owner visual gate — see
+`PROGRAM_CHROME_CONTRACT.md`). Reveal/hide is an **Edit workspace tool control**
+(`editLiveKitRevealControl`): Screen-1 only, uses the #1077 visibility owner
+(`toggle_live_kit_drawer` / preference / reveal seam), and must not invent a
+second loader. While unmaterialized and empty it stays hidden; once the tool can
+be shown and is currently closed, the workspace control reveals it. Collapse
+while open stays on the pane-local handle.
 
 ## Mutation seams
 

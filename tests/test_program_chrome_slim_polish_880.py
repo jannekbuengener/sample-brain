@@ -131,7 +131,6 @@ def test_runtime_nav_hit_areas_remain_usable_and_flat() -> None:
         assert header is not None
         for name in (
             "programNavBrowser",
-            "programNavLiveKit",
             "programNavStepSequencer",
             "programNavArrangement",
         ):
@@ -142,6 +141,8 @@ def test_runtime_nav_hit_areas_remain_usable_and_flat() -> None:
             assert float(btn.height()) <= float(header.height()) + 1.0
             # Compact text tabs stay clickable; "Browser" can land just under 48px.
             assert float(btn.width()) >= 40.0
+        # #1077: Live Kit is Edit-scoped, not an upper mode peer.
+        assert window.findChild(QQuickItem, "programNavLiveKit") is None
     finally:
         window.close()
         app.processEvents()

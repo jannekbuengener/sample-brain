@@ -2774,58 +2774,7 @@ ApplicationWindow {
                             window.interaction.toggleBrowserCollapsed()
                     }
                 }
-                ToolButton {
-                    // #1077: Edit-tool reveal/hide control — not a product mode.
-                    id: programNavLiveKit
-                    objectName: "programNavLiveKit"
-                    text: "Live Kit"
-                    Accessible.name: "Live Kit Edit tool"
-                    flat: true
-                    font.pixelSize: 10
-                    padding: 0
-                    leftPadding: 6
-                    rightPadding: 6
-                    topPadding: 0
-                    bottomPadding: 0
-                    implicitHeight: screen1Header.height
-                    Layout.preferredHeight: screen1Header.height
-                    // Inert until materialization or kit assignments (#831/#1077).
-                    enabled: window.interaction.liveKitRevealed
-                             || window.screenData.liveKitAssignedCount > 0
-                    // Tool-active while presentation is open (drawer or pending Add).
-                    readonly property bool navActive: window.interaction.liveKitDrawerOpen
-                            || window.interaction.liveKitPendingAdd !== ""
-                    background: Item {
-                        implicitHeight: screen1Header.height
-                        Rectangle {
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.bottom: parent.bottom
-                            height: 1
-                            color: theme.actionActive
-                            visible: programNavLiveKit.navActive
-                            opacity: 0.85
-                        }
-                    }
-                    contentItem: Text {
-                        text: programNavLiveKit.text
-                        font: programNavLiveKit.font
-                        color: programNavLiveKit.enabled
-                            ? (programNavLiveKit.navActive ? theme.textPrimary : theme.textSecondary)
-                            : theme.textDisabled
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        opacity: programNavLiveKit.enabled
-                            ? (programNavLiveKit.navActive ? 1.0 : 0.72)
-                            : 0.4
-                    }
-                    onClicked: {
-                        if (window.activeScreen === "screen2")
-                            window.interaction.returnToScreen1()
-                        // Full toggle via #1077 visibility owner (show and hide).
-                        window.interaction.toggleLiveKitDrawer()
-                    }
-                }
+                // #1077 Owner gate: no Live Kit peer in upper mode navigation.
                 ToolButton {
                     id: programNavStepSequencer
                     objectName: "programNavStepSequencer"
@@ -5357,57 +5306,64 @@ ApplicationWindow {
         }
     }
 
+    // Historical edge affordance kept for findChild probes; product reveal is
+    // editLiveKitRevealControl (must stay invisible — not a second owner).
     Item {
         id: liveKitCollapseAffordance
         objectName: "liveKitCollapseAffordance"
         z: 21
         width: 18
         height: 72
-        // #954: Drawer reopening lives in the Screen-1 program navigation;
-        // it no longer reserves a competing right-edge affordance.
         visible: false
         x: workspaceRow.x + workspaceRow.width - width
         y: workspaceRow.y + Math.max(0, (workspaceRow.height - height) / 2)
-           + (window.interaction.browserCollapsed ? 44 : 0)
-        activeFocusOnTab: visible
-        Accessible.role: Accessible.Button
-        Accessible.name: "Expand Live Kit"
-        Accessible.onPressAction: window.interaction.toggleLiveKitCollapsed()
-        property bool hovered: false
-        Rectangle {
-            anchors.fill: parent
+        Accessible.ignored: true
+    }
+
+    // #1077: Edit-scoped Live Kit reveal — workspace tool, not upper mode nav.
+    ToolButton {
+        id: editLiveKitRevealControl
+        objectName: "editLiveKitRevealControl"
+        z: 22
+        text: "Live Kit"
+        Accessible.name: "Reveal Live Kit Edit tool"
+        flat: true
+        font.pixelSize: 11
+        padding: 6
+        leftPadding: 10
+        rightPadding: 10
+        // Summon only on Edit (screen1) while the tool is currently hidden and
+        // may be shown via the #1077 visibility owner (not first materialization).
+        readonly property bool canReveal: window.interaction.liveKitRevealed
+                || window.screenData.liveKitAssignedCount > 0
+        visible: window.activeScreen === "screen1"
+                 && window.interaction.hasActiveSource
+                 && canReveal
+                 && !window.interaction.liveKitDrawerOpen
+                 && window.interaction.liveKitPendingAdd === ""
+        enabled: visible
+        anchors.horizontalCenter: workspaceRow.horizontalCenter
+        anchors.bottom: workspaceRow.bottom
+        anchors.bottomMargin: 10
+        implicitHeight: 28
+        background: Rectangle {
+            implicitHeight: 28
             radius: 3
             color: theme.surfaceElevated
-            opacity: liveKitCollapseAffordance.hovered || liveKitCollapseAffordance.activeFocus ? 0.95 : 0.72
-            border.width: liveKitCollapseAffordance.activeFocus ? 1 : 0
+            opacity: editLiveKitRevealControl.hovered || editLiveKitRevealControl.activeFocus ? 0.95 : 0.82
+            border.width: editLiveKitRevealControl.activeFocus ? 1 : 0
             border.color: theme.selectionBorder
         }
-        Text {
-            anchors.centerIn: parent
-            text: "‹"
+        contentItem: Text {
+            text: editLiveKitRevealControl.text
+            font: editLiveKitRevealControl.font
             color: theme.textSecondary
-            opacity: liveKitCollapseAffordance.hovered || liveKitCollapseAffordance.activeFocus ? 1.0 : 0.85
-            font.pixelSize: 16
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            opacity: 0.9
         }
-        MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onEntered: liveKitCollapseAffordance.hovered = true
-            onExited: liveKitCollapseAffordance.hovered = false
-            onClicked: {
-                liveKitCollapseAffordance.forceActiveFocus()
-                window.interaction.toggleLiveKitCollapsed()
-            }
-        }
-        Keys.onReturnPressed: window.interaction.toggleLiveKitCollapsed()
-        Keys.onEnterPressed: window.interaction.toggleLiveKitCollapsed()
-        Keys.onPressed: function(event) {
-            if (event.key === Qt.Key_Space) {
-                window.interaction.toggleLiveKitCollapsed()
-                event.accepted = true
-            }
-        }
+        hoverEnabled: true
+        onClicked: window.interaction.toggleLiveKitDrawer()
     }
 }
 '''

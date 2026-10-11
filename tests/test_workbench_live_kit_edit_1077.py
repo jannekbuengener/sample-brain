@@ -729,17 +729,39 @@ def test_live_kit_edit_qml_has_no_bottom_rack_step_controls():
     assert 'text: "RACK"' not in QML_SOURCE
 
 
-def test_program_chrome_live_kit_is_edit_tool_reveal_control():
-    """Upper chrome Live Kit is Edit-tool reveal/hide — not a product mode."""
-    block = QML_SOURCE.split('objectName: "programNavLiveKit"', 1)[1].split(
-        "ToolButton", 1
-    )[0]
-    assert "Edit-tool" in block or "Edit tool" in block
-    assert "navActive: window.interaction.liveKitDrawerOpen" in block
+def test_live_kit_absent_from_upper_mode_navigation():
+    """Owner gate: Live Kit must not peer with Browser / Step Sequencer / Arrangement."""
+    header = QML_SOURCE[
+        QML_SOURCE.index('objectName: "screen1Header"') : QML_SOURCE.index(
+            'objectName: "workspaceRow"'
+        )
+    ]
+    nav = header[
+        header.index('objectName: "headerNavZone"') : header.index(
+            'objectName: "headerTransportZone"'
+        )
+    ]
+    assert "programNavLiveKit" not in nav
+    assert 'text: "Live Kit"' not in nav
+    assert 'objectName: "programNavBrowser"' in nav
+    assert 'objectName: "programNavStepSequencer"' in nav
+    assert 'objectName: "programNavArrangement"' in nav
+
+
+def test_edit_scoped_live_kit_reveal_control_projection():
+    """Reveal lives on Edit workspace tool control, not header mode nav."""
+    assert 'objectName: "editLiveKitRevealControl"' in QML_SOURCE
+    block = QML_SOURCE.split('objectName: "editLiveKitRevealControl"', 1)[1]
+    assert "Reveal Live Kit Edit tool" in block
     assert "toggleLiveKitDrawer" in block
-    assert "if (!window.interaction.liveKitDrawerOpen)" not in block
-    # Must not claim mode navigation for Arrangement/Live peers.
-    assert "navActive: false" not in block.split("onClicked", 1)[0]
+    assert "workspaceRow" in block
+    assert "hasActiveSource" in block
+    # Control objectName must not be declared inside headerNavRow children.
+    header_nav = QML_SOURCE.split('objectName: "headerNavRow"', 1)[1].split(
+        'objectName: "headerTransportZone"', 1
+    )[0]
+    assert 'objectName: "editLiveKitRevealControl"' not in header_nav
+    assert 'objectName: "programNavLiveKit"' not in header_nav
 
 
 def test_toggle_live_kit_drawer_hides_when_open():

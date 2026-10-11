@@ -80,13 +80,19 @@ Classification of common chrome / historical terms:
 
 **Live Kit** reveal/collapse remains owned by the #1077 Edit Live Kit visibility owner (progressive-disclosure / adapter seams; see `WORKBENCH_LIVE_KIT_EDIT_CONTRACT.md`). Program chrome must not invent a second Live Kit state owner.
 
-Upper-chrome `programNavLiveKit` is **not** a product mode. It is the Edit **Live Kit tool** reveal/hide control (label may still read “Live Kit”). It must not use mode-underline semantics that compete with Edit / Arrangement / Live.
+**Owner visual gate (#1077):** “Live Kit” must **not** appear in upper center mode navigation beside Browser / Step Sequencer / Arrangement. That reading as a top-level mode is a `VISUAL_ACCEPT_FAIL`.
 
-| Session state | Center **Live Kit** chrome (`programNavLiveKit`) |
+| Surface | Live Kit |
 |---|---|
-| No materialization and no kit assignments | **Disabled / inert.** Must not invent a parallel materialization path; first materialization stays on Add-to-Kit / preference / progressive-disclosure seams. |
-| After materialization **or** kit has assignments | Enabled Edit-tool reveal control. Click uses **only** `toggle_live_kit_drawer` / adapter reveal-collapse (may rematerialize via `_reveal_live_kit_pane` when opening). Toggle must **hide** as well as show. |
-| Tool presentation open (`liveKitDrawerOpen` / pending Add) | Control shows **tool-active** (not mode-active). |
+| `headerNavRow` / upper mode navigation | **Absent** — no `programNavLiveKit`, no “Live Kit” label among mode peers |
+| Edit workspace (`editLiveKitRevealControl`) | Edit-scoped reveal tool: visible on Screen-1 Edit when the tool may be shown and is currently hidden; click uses **only** `toggle_live_kit_drawer` |
+| Open Live Kit pane | Collapse via existing pane-local `#845` handle — not upper chrome |
+
+| Session state | `editLiveKitRevealControl` |
+|---|---|
+| No materialization and no kit assignments | **Not shown / inert.** First materialization stays on Add-to-Kit / preference / progressive disclosure. |
+| After materialization **or** kit has assignments, drawer closed | Visible Edit-tool reveal on the workspace surface (not header). |
+| Drawer open or pending Add | Reveal control hidden; pane owns collapse. |
 
 #831/#1077 must implement that table; they must not invent a parallel Live Kit domain or
 materialization path from program chrome.
