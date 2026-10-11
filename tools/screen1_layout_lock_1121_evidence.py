@@ -141,7 +141,6 @@ def main() -> int:
     adapter = Screen1QmlInteractionAdapter(view_model=view_model, live_kit=presenter)
 
     # Apply the visual state (materialization, etc.)
-    from src.workbench_visual_acceptance import apply_screen1_visual_state_v2
     apply_screen1_visual_state_v2(view_model, adapter, fixture, state)
 
     # Ensure we have an active source with live_kit_materialized=True for the preferences popover
