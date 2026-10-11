@@ -116,6 +116,7 @@ def main() -> int:
         _require_fresh_qml_capture_process,
         _settle_qml_frame,
         _wait_for_screen1_background_ready,
+        apply_screen1_visual_state_v2,
         build_qml_view_model_from_fixture_v2,
         validate_capture_sanity,
         validate_qml_renderer_provenance,
