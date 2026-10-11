@@ -176,14 +176,14 @@ def test_qml_projects_horizontal_responsive_group_cards():
     assert "groupCardMinWidth" in QML_SOURCE
     assert "groupCardWidth" in QML_SOURCE
     assert "groupCardMinWidth: 200" in QML_SOURCE
+    flow = QML_SOURCE.split('objectName: "liveKitGroupsFlow"', 1)[1][:2500]
+    assert "displayName" in flow
+    assert 'objectName: "liveKitGroupHeader" + index' in QML_SOURCE
 
 
 def test_reveal_control_hidden_when_browser_collapsed():
     block = QML_SOURCE.split('objectName: "editLiveKitRevealControl"', 1)[1][:900]
     assert "!window.interaction.browserCollapsed" in block
-    flow = QML_SOURCE.split('objectName: "liveKitGroupsFlow"', 1)[1][:2500]
-    assert "displayName" in flow
-    assert 'objectName: "liveKitGroupHeader" + index' in QML_SOURCE
 
 
 def test_closed_live_kit_has_no_phantom_bottom_geometry():

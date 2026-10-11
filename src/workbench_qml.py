@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import inspect
-import json
 import math
 import os
 import sys
@@ -1068,7 +1067,6 @@ class Screen1QmlInteractionAdapter:
         if not isinstance(loaded, WorkbenchFeatureSettings):
             loaded = WorkbenchFeatureSettings()
         self._gesture_rack_apply_enabled = bool(loaded.gesture_rack_apply_enabled)
-        self._internal_sample_dnd_enabled = bool(loaded.internal_sample_dnd_enabled)
         return loaded
 
     def set_gesture_rack_apply_enabled(
@@ -1836,139 +1834,6 @@ class Screen1QmlInteractionAdapter:
             live_kit_visible=True,
             expanded_groups=expanded,
         )
-
-    @property
-    def internal_sample_dnd_enabled(self) -> bool:
-        """#1073: public feature gate attribute required by the #1072 contract."""
-        return bool(self._internal_sample_dnd_enabled)
-
-    def internal_sample_drag_enabled(self) -> bool:
-        """#1073: feature gate for internal Sample drag onto Live Kit."""
-        return bool(self._internal_sample_dnd_enabled)
-
-    def _internal_sample_catalog(self) -> list[WorkbenchRow]:
-        """#1073: current visible Browser + Harmony rows are the resolution set."""
-        rows: list[WorkbenchRow] = []
-        for qml_row in self.view_model.browser_rows:
-            if isinstance(getattr(qml_row, "source_row", None), WorkbenchRow):
-                rows.append(qml_row.source_row)
-        for qml_row in getattr(self.view_model, "harmony_rows", ()):
-            if isinstance(getattr(qml_row, "source_row", None), WorkbenchRow):
-                rows.append(qml_row.source_row)
-        return rows
-
-    def build_internal_sample_descriptor(
-        self, index: int, source_surface: str
-    ) -> dict[str, str] | None:
-        """#1073: typed descriptor for a visible Browser or Harmony row."""
-        from .workbench_internal_sample_dnd import descriptor_from_row
-
-        if not self.internal_sample_drag_enabled():
-            return None
-        model_rows = (
-            self.view_model.browser_rows
-            if source_surface == "browser"
-            else getattr(self.view_model, "harmony_rows", ())
-        )
-        if not 0 <= index < len(model_rows):
-            return None
-        qml_row = model_rows[index]
-        row = getattr(qml_row, "source_row", None)
-        descriptor = descriptor_from_row(
-            row,
-            source_surface=source_surface,
-            features=self,
-        )
-        if descriptor is None:
-            return None
-        return descriptor.as_transport_dict()
-
-    def visible_live_kit_drop_targets(self) -> list[dict[str, object]]:
-        """#1073: eligible visible Live-Kit targets as QML-friendly dicts."""
-        from .workbench_internal_sample_dnd import list_visible_live_kit_targets
-
-        if not self.internal_sample_drag_enabled():
-            return []
-        targets = list_visible_live_kit_targets(
-            features=self,
-            live_kit_materialized=bool(self.view_model.live_kit_materialized),
-            visible_slot_keys=self.visible_live_kit_slot_keys(),
-        )
-        return [
-            {
-                "group": t.group,
-                "slot": t.slot,
-                "kind": t.kind,
-                "visible": t.visible,
-            }
-            for t in targets
-        ]
-
-    def apply_internal_sample_drop(
-        self,
-        relative_path: str,
-        source_surface: str,
-        group: str,
-        slot: str,
-        delivery_id: str,
-    ) -> dict[str, object]:
-        """#1073: route an internal Sample drop through the frozen #1072 contract."""
-        from .workbench_internal_sample_dnd import (
-            InternalSampleDescriptor,
-            InternalSampleDropIntent,
-            InternalSampleDropSession,
-            LiveKitAssignmentTarget,
-            apply_internal_sample_drop,
-        )
-
-        if not self.internal_sample_drag_enabled():
-            return {
-                "accepted": False,
-                "mutation": None,
-                "reason": "feature_disabled",
-                "evidence": "Internal Sample drag is disabled.",
-                "intent_kind": "internal_sample_drop",
-            }
-        if self._internal_sample_drop_session is None:
-            self._internal_sample_drop_session = InternalSampleDropSession()
-        intent = InternalSampleDropIntent(
-            descriptor=InternalSampleDescriptor(
-                relative_path=relative_path,
-                source_surface=source_surface,
-            ),
-            target=LiveKitAssignmentTarget(
-                group=group,
-                slot=slot,
-                visible=True,
-            ),
-            delivery_id=delivery_id,
-        )
-        result = apply_internal_sample_drop(
-            intent,
-            kit=self._live_kit.state if self._live_kit is not None else LiveKitState(),
-            catalog=self._internal_sample_catalog(),
-            features=self,
-            live_kit_materialized=bool(self.view_model.live_kit_materialized),
-            visible_slot_keys=self.visible_live_kit_slot_keys(),
-            session=self._internal_sample_drop_session,
-        )
-        if result.mutation is not None:
-            self._sync_live_kit_projection()
-            if not self._live_kit_auto_disclosure_consumed and self._live_kit is not None:
-                self._live_kit_auto_disclosure_consumed = True
-                self._live_kit_drawer_open = True
-                self.live_kit_collapsed = False
-                self._live_kit_visibility_desired = True
-                try_save_live_kit_visibility_preference(True)
-                self._reveal_live_kit_pane()
-                self._close_harmonic_match_presentation()
-        return {
-            "accepted": result.accepted,
-            "mutation": result.mutation,
-            "reason": result.reason,
-            "evidence": result.evidence,
-            "intent_kind": result.intent_kind,
-        }
 
     def edit_docking_materialization(
         self,
@@ -4332,19 +4197,10 @@ ApplicationWindow {
                         delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface : (rowSelection.containsMouse ? theme.surfaceElevated : "transparent"); border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0; border.color: theme.selectionBorder
                             Component.onCompleted: window.browserDelegateCreations += 1
                             property string outboundUrl: window.interaction.outboundFileUrl(index)
-                            property bool internalDragEnabled: window.interaction.internalSampleDragEnabled
-                            property string internalDescriptor: ""
                             Drag.active: rowSelection.dragActive
                             Drag.dragType: Drag.Automatic
                             Drag.supportedActions: Qt.CopyAction
-                            Drag.mimeData: {
-                                var data = {};
-                                if (browserRow.outboundUrl.length > 0)
-                                    data["text/uri-list"] = browserRow.outboundUrl;
-                                if (browserRow.internalDragEnabled && browserRow.internalDescriptor.length > 0)
-                                    data["application/x-sample-brain-internal-sample"] = browserRow.internalDescriptor;
-                                return data;
-                            }
+                            Drag.mimeData: browserRow.outboundUrl.length > 0 ? { "text/uri-list": browserRow.outboundUrl } : {}
                             Drag.onDragFinished: rowSelection.dragActive = false
                             MouseArea {
                                 id: rowSelection
@@ -4362,8 +4218,6 @@ ApplicationWindow {
                                     pressX = mouse.x
                                     pressY = mouse.y
                                     browserRow.outboundUrl = window.interaction.outboundFileUrl(index)
-                                    if (browserRow.internalDragEnabled)
-                                        browserRow.internalDescriptor = window.interaction.requestInternalSampleDragDescriptor(index, "browser")
                                 }
                                 onPositionChanged: function(mouse) {
                                     if (!pressed || dragActive)
@@ -5693,45 +5547,6 @@ def _qml_interaction_bridge(
         def setGestureRackApplyEnabled(self, enabled: bool) -> None:
             adapter.set_gesture_rack_apply_enabled(bool(enabled))
             self._refresh()
-
-        @Property(bool, notify=state_changed)
-        def internalSampleDragEnabled(self) -> bool:
-            return adapter.internal_sample_drag_enabled()
-
-        @Slot(bool)
-        def setInternalSampleDragEnabled(self, enabled: bool) -> None:
-            adapter._internal_sample_dnd_enabled = bool(enabled)
-            self._refresh()
-
-        @Slot(int, str, result=str)
-        def requestInternalSampleDragDescriptor(
-            self, index: int, source_surface: str
-        ) -> str:
-            descriptor = adapter.build_internal_sample_descriptor(
-                int(index), str(source_surface)
-            )
-            return json.dumps(descriptor) if descriptor else ""
-
-        @Slot(result=list)
-        def requestVisibleLiveKitDropTargets(self) -> list[dict]:
-            return adapter.visible_live_kit_drop_targets()
-
-        @Slot(str, str, str, str, str, result=dict)
-        def applyInternalSampleDrop(
-            self,
-            relative_path: str,
-            source_surface: str,
-            group: str,
-            slot: str,
-            delivery_id: str,
-        ) -> dict:
-            return adapter.apply_internal_sample_drop(
-                str(relative_path),
-                str(source_surface),
-                str(group),
-                str(slot),
-                str(delivery_id),
-            )
 
         @Slot()
         def resetLayoutPreferences(self) -> None:
