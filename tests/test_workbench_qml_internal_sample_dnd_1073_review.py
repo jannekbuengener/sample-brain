@@ -582,6 +582,7 @@ def test_drag_keys_match_live_kit_droparea_and_external_dnd_unaffected():
     assert 'window.interaction.internalSampleDragEnabled ? ["application/x-sample-brain-internal-sample"] : []' in qml
     # external text/uri-list path remains independent
     assert '"text/uri-list"' in qml
+    assert 'browserRow.internalSampleDescriptor.length > 0 || browserRow.outboundUrl.length > 0' in qml
 
 
 

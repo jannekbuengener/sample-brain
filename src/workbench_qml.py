@@ -4618,6 +4618,10 @@ ApplicationWindow {
                                     if (browserRow.internalSampleDescriptor.length > 0 && browserRow.internalDeliveryId.length === 0) {
                                         browserRow.internalDeliveryId = window.interaction.beginInternalSampleDrag()
                                     }
+                                    // Activate drag if we have any valid payload for this drag
+                                    if (browserRow.internalSampleDescriptor.length > 0 || browserRow.outboundUrl.length > 0) {
+                                        dragActive = true
+                                    }
                                 }
                                 onClicked: function(mouse) {
                                     if (mouse.button === Qt.RightButton) {
