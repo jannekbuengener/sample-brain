@@ -4606,9 +4606,18 @@ ApplicationWindow {
                                         return
                                     if (Math.abs(mouse.x - pressX) < 8 && Math.abs(mouse.y - pressY) < 8)
                                         return
-                                    if (browserRow.internalSampleDescriptor.length > 0 && browserRow.internalDeliveryId.length === 0)
+                                    if (browserRow.internalSampleDescriptor.length === 0) {
+                                        browserRow.internalSampleDescriptor = window.interaction.requestInternalSampleDragDescriptor(index, "browser")
+                                    } else {
+                                        // #1073 P1: refresh descriptor at drag start (delegate reuse)
+                                        var fresh = window.interaction.requestInternalSampleDragDescriptor(index, "browser")
+                                        if (fresh.length > 0) {
+                                            browserRow.internalSampleDescriptor = fresh
+                                        }
+                                    }
+                                    if (browserRow.internalSampleDescriptor.length > 0 && browserRow.internalDeliveryId.length === 0) {
                                         browserRow.internalDeliveryId = window.interaction.beginInternalSampleDrag()
-                                    dragActive = true
+                                    }
                                 }
                                 onClicked: function(mouse) {
                                     if (mouse.button === Qt.RightButton) {
@@ -4877,7 +4886,10 @@ ApplicationWindow {
                             Drag.dragType: Drag.Automatic
                             Drag.supportedActions: Qt.CopyAction
                             Drag.keys: window.interaction.internalSampleDragEnabled ? ["application/x-sample-brain-internal-sample"] : []
-                            Drag.mimeData: window.interaction.internalSampleDragEnabled ? { "application/x-sample-brain-internal-sample": window.interaction.requestInternalSampleDragDescriptor(index, "harmony"), "application/x-sample-brain-internal-delivery": harmonyRow.internalDeliveryId } : {}
+                            function _freshInternalDescriptor(hi) {
+                                return window.interaction.internalSampleDragEnabled ? window.interaction.requestInternalSampleDragDescriptor(hi, "harmony") : ""
+                            }
+                            Drag.mimeData: window.interaction.internalSampleDragEnabled ? { "application/x-sample-brain-internal-sample": harmonyRow._freshInternalDescriptor(index), "application/x-sample-brain-internal-delivery": harmonyRow.internalDeliveryId } : {}
                             Drag.onDragFinished: harmonyRowHover.dragActive = false
                             MouseArea {
                                 id: harmonyRowHover
