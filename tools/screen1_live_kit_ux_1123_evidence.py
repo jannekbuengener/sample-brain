@@ -252,10 +252,14 @@ def main() -> int:
     refresh()
     grab(*labels_notes[3])
 
-    # Narrow width forces horizontal card wrap.
-    window.setWidth(720)
+    # Narrow width forces horizontal card wrap. Product minimumWidth is 1120;
+    # evidence-only override so wrap is observable without changing product chrome.
+    prior_min_w = int(window.minimumWidth())
+    window.setMinimumWidth(640)
+    window.setWidth(640)
     refresh()
     grab(*labels_notes[4])
+    window.setMinimumWidth(prior_min_w)
     window.setWidth(CLIENT_WIDTH)
     refresh()
 
