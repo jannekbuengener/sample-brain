@@ -4569,6 +4569,7 @@ ApplicationWindow {
                             Drag.active: rowSelection.dragActive
                             Drag.dragType: Drag.Automatic
                             Drag.supportedActions: Qt.CopyAction
+                            Drag.keys: browserRow.internalSampleDescriptor.length > 0 ? ["application/x-sample-brain-internal-sample"] : (browserRow.outboundUrl.length > 0 ? ["text/uri-list"] : [])
                             Drag.mimeData: {
                                 var payload = {}
                                 if (browserRow.internalSampleDescriptor.length > 0)
@@ -4875,6 +4876,7 @@ ApplicationWindow {
                             Drag.active: harmonyRowHover.dragActive
                             Drag.dragType: Drag.Automatic
                             Drag.supportedActions: Qt.CopyAction
+                            Drag.keys: window.interaction.internalSampleDragEnabled ? ["application/x-sample-brain-internal-sample"] : []
                             Drag.mimeData: window.interaction.internalSampleDragEnabled ? { "application/x-sample-brain-internal-sample": window.interaction.requestInternalSampleDragDescriptor(index, "harmony"), "application/x-sample-brain-internal-delivery": harmonyRow.internalDeliveryId } : {}
                             Drag.onDragFinished: harmonyRowHover.dragActive = false
                             MouseArea {

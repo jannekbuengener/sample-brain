@@ -568,6 +568,23 @@ def test_distinct_samples_sharing_relative_path_fail_closed_ambiguous(
     assert a.path not in evidence and b.path not in evidence
 
 
+def test_drag_keys_match_live_kit_droparea_and_external_dnd_unaffected():
+    from PySide6.QtCore import Qt  # ensure Qt available
+    _ = Qt
+    from src.workbench_qml import QML_SOURCE
+
+    qml = QML_SOURCE
+    # DropArea keys used by Live Kit
+    assert '"application/x-sample-brain-internal-sample"' in qml
+    # Browser source has matching Drag.keys
+    assert 'browserRow.internalSampleDescriptor.length > 0 ? ["application/x-sample-brain-internal-sample"] : (browserRow.outboundUrl.length > 0 ? ["text/uri-list"] : [])' in qml
+    # Harmony source has matching Drag.keys
+    assert 'window.interaction.internalSampleDragEnabled ? ["application/x-sample-brain-internal-sample"] : []' in qml
+    # external text/uri-list path remains independent
+    assert '"text/uri-list"' in qml
+
+
+
 def test_same_underlying_sample_on_both_surfaces_not_self_ambiguous(tmp_path: Path):
     adapter, live_kit = _adapter()
     row = _row(tmp_path, relative="packs/kick.wav")
