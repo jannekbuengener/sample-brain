@@ -1081,20 +1081,14 @@ class Screen1QmlInteractionAdapter:
         return tuple(catalog)
 
     def _internal_sample_visible_slot_keys(self) -> tuple[tuple[str, str], ...]:
-        """Visible (group, slot) keys from #1123 disclosure; QML owns none."""
-        if self._live_kit is None:
-            return ()
-        if not self._live_kit_drawer_open or self.live_kit_collapsed:
-            return ()
-        expanded = [
-            group.name
-            for group in self._live_kit.groups
-            if group.active
-        ]
-        return visible_live_kit_slot_keys(
-            live_kit_visible=True,
-            expanded_groups=expanded,
-        )
+        """Authoritative visible (group, slot) keys (#1072/#1073).
+
+        Reuses :meth:`visible_live_kit_slot_keys` so internal Sample drops honour
+        the same effective visibility as every other Live Kit path: the pending
+        Add-to-Kit chooser (#954) can open the slots while the drawer preference
+        stays closed, and a collapsed Browser host (#1077) advertises none.
+        """
+        return self.visible_live_kit_slot_keys()
 
     def _internal_sample_drop_session_owner(self) -> InternalSampleDropSession:
         """One replay session per adapter lifecycle — never per drop."""
@@ -1212,6 +1206,12 @@ class Screen1QmlInteractionAdapter:
             # visible immediately instead of only after an unrelated toggle.
             self._live_kit.reproject()
             self._sync_live_kit_projection()
+            # A replaced/cleared destination slot must drop its audition
+            # projection, mirroring assign_live_kit_slot/remove_live_kit_slot, so
+            # the newly assigned sample is never shown as the auditioning one
+            # while the preview owner may still be playing the previous sample.
+            if self._auditioning_live_kit_slot == (str(group), str(slot)):
+                self._clear_live_kit_audition_projection()
         return self._project_internal_sample_drop_result(result)
 
     @staticmethod

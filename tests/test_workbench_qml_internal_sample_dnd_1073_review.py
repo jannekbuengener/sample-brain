@@ -451,3 +451,86 @@ def test_valid_descriptor_transport_shape_unchanged(tmp_path: Path):
         "relative_path": "packs/kick.wav",
         "source_surface": "browser",
     }
+
+
+# --- P2 (review-2): reuse the effective Live Kit visibility predicate ---------
+
+
+def test_browser_collapsed_hides_drop_targets_and_rejects(tmp_path: Path):
+    adapter, live_kit = _adapter()
+    row = _inject_browser_row(adapter, tmp_path, relative="packs/kick.wav")
+    adapter.toggle_live_kit_group("Kick + Bass")
+    assert adapter.visible_live_kit_drop_targets() != []
+
+    adapter.browser_collapsed = True
+
+    assert adapter.visible_live_kit_drop_targets() == []
+    result = adapter.apply_internal_sample_drop(
+        row.relative_path, "browser", "Kick + Bass", "Kick", "collapsed-1"
+    )
+    assert result["accepted"] is False
+    assert result["reason"] == "hidden_target"
+    assert live_kit.state.assignment_for("Kick + Bass", "Kick") is None
+
+
+def test_pending_add_chooser_exposes_targets_with_drawer_closed(tmp_path: Path):
+    adapter, live_kit = _adapter()
+    row = _inject_browser_row(adapter, tmp_path, relative="packs/kick.wav")
+    adapter.toggle_live_kit_group("Kick + Bass")
+    adapter._live_kit_drawer_open = False
+    adapter._pending_live_kit_row = row
+
+    keys = {
+        (t["group"], t["slot"]) for t in adapter.visible_live_kit_drop_targets()
+    }
+    assert ("Kick + Bass", "Kick") in keys
+
+    result = adapter.apply_internal_sample_drop(
+        row.relative_path, "browser", "Kick + Bass", "Kick", "pending-chooser-1"
+    )
+    assert result["accepted"] is True and result["mutation"] == "assign"
+    assert live_kit.state.assignment_for("Kick + Bass", "Kick") is row
+
+
+# --- P2 (review-2): clear audition when replacing the playing slot ------------
+
+
+def test_replace_clears_audition_of_destination_slot(tmp_path: Path):
+    prior = _row(tmp_path, name="prior.wav", relative="packs/prior.wav")
+    state = LiveKitState()
+    state.assign("Kick + Bass", "Kick", prior)
+    adapter, _live_kit = _adapter(state=state)
+    new = _inject_browser_row(
+        adapter, tmp_path, name="new.wav", relative="packs/new.wav"
+    )
+    adapter.toggle_live_kit_group("Kick + Bass")
+    adapter._auditioning_live_kit_slot = ("Kick + Bass", "Kick")
+    adapter.view_model.auditioning_live_kit_slot = ("Kick + Bass", "Kick")
+
+    result = adapter.apply_internal_sample_drop(
+        new.relative_path, "browser", "Kick + Bass", "Kick", "audition-1"
+    )
+
+    assert result["accepted"] is True and result["mutation"] == "replace"
+    assert adapter._auditioning_live_kit_slot is None
+    assert adapter.view_model.auditioning_live_kit_slot is None
+
+
+def test_replace_other_slot_keeps_unrelated_audition(tmp_path: Path):
+    prior = _row(tmp_path, name="prior.wav", relative="packs/prior.wav")
+    state = LiveKitState()
+    state.assign("Kick + Bass", "Kick", prior)
+    adapter, _live_kit = _adapter(state=state)
+    new = _inject_browser_row(
+        adapter, tmp_path, name="new.wav", relative="packs/new.wav"
+    )
+    adapter.toggle_live_kit_group("Kick + Bass")
+    adapter._auditioning_live_kit_slot = ("Kick + Bass", "Bass")
+    adapter.view_model.auditioning_live_kit_slot = ("Kick + Bass", "Bass")
+
+    result = adapter.apply_internal_sample_drop(
+        new.relative_path, "browser", "Kick + Bass", "Kick", "audition-2"
+    )
+
+    assert result["accepted"] is True and result["mutation"] == "replace"
+    assert adapter._auditioning_live_kit_slot == ("Kick + Bass", "Bass")
