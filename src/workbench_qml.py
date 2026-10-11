@@ -16,7 +16,7 @@ import os
 import sys
 import uuid
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import Any, Callable, Mapping
 
 from .workbench_controller import WorkbenchRow, filter_workbench_rows
 from .workbench_browser_rows import (
@@ -159,6 +159,16 @@ class LiveKitPresenter:
 
     def assign(self, group: str, slot: str, row: WorkbenchRow) -> None:
         self._state.assign(group, slot, row)
+        self._groups = self._project()
+
+    def reproject(self) -> None:
+        """Rebuild the renderer projection from the canonical kit state.
+
+        The frozen #1072 drop contract mutates ``LiveKitState`` directly rather
+        than routing through :meth:`assign`; this re-derives the renderer-only
+        group shape so an accepted drop is visible immediately (audition /
+        remove / replace controls included) without a second kit truth.
+        """
         self._groups = self._project()
 
     def clear_slot(self, group: str, slot: str, *, notify: bool = True) -> bool:
@@ -1144,22 +1154,42 @@ class Screen1QmlInteractionAdapter:
         slot: str,
         delivery_id: str,
     ) -> dict:
-        """Map one QML drop onto the #1072 contract and project the result.
+        """Map structured QML drop args onto the #1072 descriptor contract.
 
-        The adapter decides nothing about slot eligibility, Add/Replace, stale
-        resolution, or replay; it forwards an intent and returns a QML-safe dict.
+        Retained for the structured adapter surface; the transported payload
+        path (:meth:`apply_internal_sample_drop_payload`) is authoritative.
+        """
+        return self.apply_internal_sample_drop_payload(
+            {
+                "kind": KIND_INTERNAL_SAMPLE,
+                "relative_path": relative_path,
+                "source_surface": source_surface,
+            },
+            group,
+            slot,
+            delivery_id,
+        )
+
+    def apply_internal_sample_drop_payload(
+        self,
+        descriptor_payload: Any,
+        group: str,
+        slot: str,
+        delivery_id: str,
+    ) -> dict:
+        """Validate the *full* transported descriptor and route one drop.
+
+        Python stays authoritative for descriptor identity: a foreign or
+        malformed payload (for example a ``panel_move`` docking descriptor)
+        fails closed through :func:`parse_internal_sample_descriptor` and never
+        reaches the kit. On an accepted mutation the renderer projection is
+        rebuilt from the canonical kit state immediately.
         """
         if not self._internal_sample_dnd_enabled:
             return {"accepted": False, "mutation": None, "reason": "feature_disabled"}
         if self._live_kit is None:
             return {"accepted": False, "mutation": None, "reason": "no_live_kit"}
-        descriptor = parse_internal_sample_descriptor(
-            {
-                "kind": KIND_INTERNAL_SAMPLE,
-                "relative_path": relative_path,
-                "source_surface": source_surface,
-            }
-        )
+        descriptor = parse_internal_sample_descriptor(descriptor_payload)
         if descriptor is None:
             return {"accepted": False, "mutation": None, "reason": "invalid_descriptor"}
         intent = InternalSampleDropIntent(
@@ -1176,6 +1206,12 @@ class Screen1QmlInteractionAdapter:
             visible_slot_keys=self._internal_sample_visible_slot_keys(),
             session=self._internal_sample_drop_session_owner(),
         )
+        if result.accepted and result.mutation is not None:
+            # The #1072 contract mutates LiveKitState directly; re-project the
+            # canonical state so the new slot (audition/remove/replace) is
+            # visible immediately instead of only after an unrelated toggle.
+            self._live_kit.reproject()
+            self._sync_live_kit_projection()
         return self._project_internal_sample_drop_result(result)
 
     @staticmethod
@@ -4392,6 +4428,9 @@ ApplicationWindow {
                             property string outboundUrl: window.interaction.outboundFileUrl(index)
                             // #1073: internal Sample payload from the frozen #1072 descriptor.
                             property string internalSampleDescriptor: window.interaction.internalSampleDragEnabled ? window.interaction.requestInternalSampleDragDescriptor(index, "browser") : ""
+                            // One delivery id per drag (minted at drag start) so a repeated
+                            // delivery of the same drag is idempotent, not a second mutation.
+                            property string internalDeliveryId: ""
                             Drag.active: rowSelection.dragActive
                             Drag.dragType: Drag.Automatic
                             Drag.supportedActions: Qt.CopyAction
@@ -4399,6 +4438,8 @@ ApplicationWindow {
                                 var payload = {}
                                 if (browserRow.internalSampleDescriptor.length > 0)
                                     payload["application/x-sample-brain-internal-sample"] = browserRow.internalSampleDescriptor
+                                if (browserRow.internalDeliveryId.length > 0)
+                                    payload["application/x-sample-brain-internal-delivery"] = browserRow.internalDeliveryId
                                 if (browserRow.outboundUrl.length > 0)
                                     payload["text/uri-list"] = browserRow.outboundUrl
                                 return payload
@@ -4417,6 +4458,7 @@ ApplicationWindow {
                                     if (mouse.button === Qt.RightButton)
                                         return
                                     dragActive = false
+                                    browserRow.internalDeliveryId = ""
                                     pressX = mouse.x
                                     pressY = mouse.y
                                     browserRow.outboundUrl = window.interaction.outboundFileUrl(index)
@@ -4428,6 +4470,8 @@ ApplicationWindow {
                                         return
                                     if (Math.abs(mouse.x - pressX) < 8 && Math.abs(mouse.y - pressY) < 8)
                                         return
+                                    if (browserRow.internalSampleDescriptor.length > 0 && browserRow.internalDeliveryId.length === 0)
+                                        browserRow.internalDeliveryId = window.interaction.beginInternalSampleDrag()
                                     dragActive = true
                                 }
                                 onClicked: function(mouse) {
@@ -4691,11 +4735,12 @@ ApplicationWindow {
                                    : (harmonyRowHover.containsMouse ? theme.surfaceElevated : "transparent")
                             border.width: index === window.interaction.selectedHarmonyIndex ? 1 : 0
                             border.color: index === window.interaction.selectedHarmonyIndex ? theme.selectionBorder : "transparent"
-                            // #1073: Harmony reuses the same #1072 internal Sample payload as Browser.
+                            // #1073: one delivery id per drag (repeated delivery = idempotent).
+                            property string internalDeliveryId: ""
                             Drag.active: harmonyRowHover.dragActive
                             Drag.dragType: Drag.Automatic
                             Drag.supportedActions: Qt.CopyAction
-                            Drag.mimeData: window.interaction.internalSampleDragEnabled ? { "application/x-sample-brain-internal-sample": window.interaction.requestInternalSampleDragDescriptor(index, "harmony") } : {}
+                            Drag.mimeData: window.interaction.internalSampleDragEnabled ? { "application/x-sample-brain-internal-sample": window.interaction.requestInternalSampleDragDescriptor(index, "harmony"), "application/x-sample-brain-internal-delivery": harmonyRow.internalDeliveryId } : {}
                             Drag.onDragFinished: harmonyRowHover.dragActive = false
                             MouseArea {
                                 id: harmonyRowHover
@@ -4705,10 +4750,12 @@ ApplicationWindow {
                                 property bool dragActive: false
                                 property real pressX: 0
                                 property real pressY: 0
-                                onPressed: function(mouse) { dragActive = false; pressX = mouse.x; pressY = mouse.y }
+                                onPressed: function(mouse) { dragActive = false; harmonyRow.internalDeliveryId = ""; pressX = mouse.x; pressY = mouse.y }
                                 onPositionChanged: function(mouse) {
-                                    if (window.interaction.internalSampleDragEnabled && pressed && !dragActive && (Math.abs(mouse.x - pressX) >= 8 || Math.abs(mouse.y - pressY) >= 8))
+                                    if (window.interaction.internalSampleDragEnabled && pressed && !dragActive && (Math.abs(mouse.x - pressX) >= 8 || Math.abs(mouse.y - pressY) >= 8)) {
+                                        if (harmonyRow.internalDeliveryId.length === 0) harmonyRow.internalDeliveryId = window.interaction.beginInternalSampleDrag()
                                         dragActive = true
+                                    }
                                 }
                                 onClicked: { if (dragActive) return; harmonicMatchList.forceActiveFocus(); window.interaction.selectHarmonyRow(index) }
                             }
@@ -5114,11 +5161,12 @@ ApplicationWindow {
                                                 anchors.fill: parent
                                                 z: 2
                                                 enabled: window.interaction.internalSampleDragEnabled
-                                                keys: ["application/x-sample-brain-internal-sample"]
+                                                keys: ["application/x-sample-brain-internal-sample", "application/x-sample-brain-internal-delivery"]
                                                 onEntered: function(drag) { drag.accept(Qt.CopyAction) }
                                                 onDropped: function(drop) {
                                                     var descriptor = drop.getDataAsString("application/x-sample-brain-internal-sample")
-                                                    window.interaction.applyInternalSampleDropAtSlot(kitGroupIndex, index, descriptor, "")
+                                                    var deliveryId = drop.getDataAsString("application/x-sample-brain-internal-delivery")
+                                                    window.interaction.applyInternalSampleDropAtSlot(kitGroupIndex, index, descriptor, deliveryId)
                                                 }
                                             }
                                             Rectangle {
@@ -6034,9 +6082,21 @@ def _qml_interaction_bridge(
             slot: str,
             delivery_id: str,
         ) -> dict:
-            return adapter.apply_internal_sample_drop(
+            result = adapter.apply_internal_sample_drop(
                 relative_path, source_surface, group, slot, delivery_id
             )
+            self._refresh()
+            return result
+
+        @Slot(result=str)
+        def beginInternalSampleDrag(self) -> str:
+            """Mint exactly one delivery id for a fresh internal Sample drag.
+
+            QML calls this once at drag start and transports the id to the drop,
+            so a duplicated delivery of the SAME drag collapses to
+            ``duplicate_delivery`` instead of mutating the kit a second time.
+            """
+            return f"qml-drag-{uuid.uuid4().hex}"
 
         @Slot(int, int, str, str, result="QVariantMap")
         def applyInternalSampleDropAtSlot(
@@ -6046,10 +6106,11 @@ def _qml_interaction_bridge(
             descriptor_json: str,
             delivery_id: str,
         ) -> dict:
-            """QML drop entry: resolve (group, slot) from the visible projection.
+            """QML drop entry: resolve (group, slot) and validate the full payload.
 
-            The renderer only supplies indices and the carried #1072 descriptor;
-            group/slot identity, eligibility, Add/Replace, and replay stay Python.
+            The renderer supplies only indices plus the carried #1072 descriptor
+            and its drag delivery id; Python stays authoritative for descriptor
+            validation, target eligibility, Add/Replace, projection, and replay.
             """
             target = self._live_kit_slot_target(group_index, slot_index)
             if target is None:
@@ -6058,18 +6119,12 @@ def _qml_interaction_bridge(
                 payload = json.loads(descriptor_json)
             except (TypeError, ValueError):
                 payload = None
-            if not isinstance(payload, dict):
-                return {"accepted": False, "mutation": None, "reason": "invalid_descriptor"}
             delivery = delivery_id.strip() if isinstance(delivery_id, str) else ""
-            if not delivery:
-                delivery = f"qml-drop-{uuid.uuid4().hex}"
-            return adapter.apply_internal_sample_drop(
-                str(payload.get("relative_path") or ""),
-                str(payload.get("source_surface") or ""),
-                target[0],
-                target[1],
-                delivery,
+            result = adapter.apply_internal_sample_drop_payload(
+                payload, target[0], target[1], delivery
             )
+            self._refresh()
+            return result
 
         @Slot()
         def toggleHarmonicMatch(self) -> None:
