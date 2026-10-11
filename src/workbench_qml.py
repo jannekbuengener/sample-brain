@@ -3197,9 +3197,6 @@ ApplicationWindow {
                             objectName: "workspaceLayoutLockToggle"
                             Layout.fillWidth: true
                             flat: true
-                            text: window.interaction.workspaceLayoutLocked
-                                ? "Layout · Locked"
-                                : "Layout · Unlocked"
                             checkable: true
                             checked: window.interaction.workspacePanelDockingEnabled
                                 && !window.interaction.workspaceLayoutLocked
@@ -3211,6 +3208,33 @@ ApplicationWindow {
                             Accessible.name: window.interaction.workspaceLayoutLocked
                                 ? "Unlock workspace layout"
                                 : "Lock workspace layout"
+                            contentItem: Text {
+                                text: window.interaction.workspaceLayoutLocked
+                                    ? "Layout · Locked"
+                                    : "Layout · Unlocked"
+                                color: !workspaceLayoutLockToggle.enabled ? theme.textDisabled
+                                       : (workspaceLayoutLockToggle.checked ? theme.actionActive
+                                          : (workspaceLayoutLockToggle.pressed ? theme.textPrimary
+                                             : (workspaceLayoutLockToggle.hovered || workspaceLayoutLockToggle.activeFocus ? theme.textPrimary : theme.textSecondary)))
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                font.pixelSize: 11
+                                opacity: workspaceLayoutLockToggle.enabled ? 1.0 : 0.45
+                            }
+                            background: Rectangle {
+                                implicitHeight: 26
+                                radius: 4
+                                color: !workspaceLayoutLockToggle.enabled ? "transparent"
+                                       : (workspaceLayoutLockToggle.checked ? theme.actionActive
+                                          : (workspaceLayoutLockToggle.pressed ? theme.surfaceElevated
+                                             : (workspaceLayoutLockToggle.hovered ? theme.hoverSurface : "transparent")))
+                                border.width: 1
+                                border.color: !workspaceLayoutLockToggle.enabled ? theme.borderSubtle
+                                              : (workspaceLayoutLockToggle.checked ? theme.actionActive
+                                                 : (workspaceLayoutLockToggle.activeFocus ? theme.focusRing
+                                                    : (workspaceLayoutLockToggle.pressed ? theme.selectionBorder : theme.borderSubtle)))
+                                opacity: workspaceLayoutLockToggle.enabled ? 1.0 : 0.4
+                            }
                         }
                         Button {
                             id: gestureRackApplyToggle
