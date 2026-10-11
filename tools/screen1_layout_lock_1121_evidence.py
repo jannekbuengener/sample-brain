@@ -159,6 +159,14 @@ def main() -> int:
     _settle_qml_frame(app)
     _wait_for_screen1_background_ready(window, app)
 
+    # Open the display preferences popover so the layout lock control is rendered
+    from PySide6.QtQuick import QQuickItem
+    prefs_popover = window.findChild(QQuickItem, "displayPreferencesPopover")
+    if prefs_popover is not None:
+        prefs_popover.open()
+        _settle_qml_frame(app)
+        app.processEvents()
+
     def refresh() -> None:
         """Refresh QML state and wait for UI to fully update."""
         bridge = getattr(engine, "_screen1_interaction_bridge", None)
