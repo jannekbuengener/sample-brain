@@ -407,19 +407,39 @@ def test_runtime_header_zones_no_overlap_at_1600() -> None:
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
-def test_visual_accept_program_chrome_baseline_1600x900() -> None:
-    """VISUAL_ACCEPT_PASS evidence: program chrome at 1600x900 (100% scale baseline)."""
+def test_visual_accept_program_chrome_baseline_1600x900(tmp_path) -> None:
+    """VISUAL_ACCEPT_PASS evidence: program chrome at 1600x900 (100% scale baseline).
+
+    #1077 releases only Live Kit upper-nav expectations; footer/transport chrome
+    remains frozen here.
+    """
+    from pathlib import Path
+
     from PySide6.QtQuick import QQuickItem
 
+    evidence = Path(tmp_path) / "program_chrome_831"
+    evidence.mkdir()
     app, engine, window, adapter, settle = _build_screen1_window()
     try:
         window.setWidth(1600)
         window.setHeight(900)
         settle(app)
+        settle(app)
         header = window.findChild(QQuickItem, "screen1Header")
         nav = window.findChild(QQuickItem, "headerNavZone")
-        assert header is not None and nav is not None
+        transport = window.findChild(QQuickItem, "headerTransportZone")
+        footer = window.findChild(QQuickItem, "programFooterBand")
+        bar = window.findChild(QQuickItem, "libraryScopeBar")
+        assert all(x is not None for x in (header, nav, transport, footer, bar))
         assert float(header.width()) == 1600.0
+        # #880 slim corridor (under #831 mass; toward Owner reference language).
+        assert 26.0 <= float(header.height()) <= 34.0
+        assert 18.0 <= float(footer.height()) <= 26.0
+        assert window.findChild(QQuickItem, "programNavLiveKit") is None
+        grab = window.grabWindow()
+        out = evidence / "screen1_program_chrome_1600x900.png"
+        assert grab.save(str(out))
+        assert out.stat().st_size > 0
     finally:
         window.close()
         app.processEvents()

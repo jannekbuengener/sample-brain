@@ -175,6 +175,7 @@ def test_qml_projects_horizontal_responsive_group_cards():
     # Cards wrap; minimum width guard against unreadably narrow cells.
     assert "groupCardMinWidth" in QML_SOURCE
     assert "groupCardWidth" in QML_SOURCE
+    assert "groupCardMinWidth: 156" in QML_SOURCE
     flow = QML_SOURCE.split('objectName: "liveKitGroupsFlow"', 1)[1][:2500]
     assert "displayName" in flow
     assert 'objectName: "liveKitGroupHeader" + index' in QML_SOURCE

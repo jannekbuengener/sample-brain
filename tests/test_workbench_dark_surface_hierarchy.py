@@ -334,7 +334,7 @@ def test_qml_primary_surfaces_have_no_atmosphere_overlays() -> None:
     assert "NoirAtmosphere" not in harmony
 
     # #908: Live Kit content sits under bottomRackPane; panel fill is on the parent.
-    bottom = QML_SOURCE.split('objectName: "bottomRackPane"', 1)[1][:1600]
+    bottom = QML_SOURCE.split('objectName: "bottomRackPane"', 1)[1][:4500]
     assert "theme.surfacePanel" in bottom
     assert "NoirAtmosphere" not in bottom
 

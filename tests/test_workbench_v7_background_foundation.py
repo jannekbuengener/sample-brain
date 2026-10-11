@@ -87,7 +87,7 @@ def test_v7_root_uses_chrome_while_workspace_uses_workspace_depth() -> None:
     assert "color: theme.surfaceBrowser" in _qml_block("browserPane")
     assert "color: theme.surfacePanel" in _qml_block("harmonyPane")
     # #1077: Live Kit height/user-resize properties lengthen the bottom pane header.
-    assert "color: theme.surfacePanel" in _qml_block("bottomRackPane", size=2200)
+    assert "color: theme.surfacePanel" in _qml_block("bottomRackPane", size=4500)
 
 
 def test_v7_touched_qml_style_has_no_foreign_or_unapproved_fallback_colors() -> None:
@@ -104,7 +104,7 @@ def test_v7_background_slice_keeps_current_single_workspace_pane_geometry_contra
     library = _qml_block("libraryPane")
     browser = _qml_block("browserPane")
     harmony = _qml_block("harmonyPane")
-    bottom_rack = _qml_block("bottomRackPane", size=2200)
+    bottom_rack = _qml_block("bottomRackPane", size=4500)
 
     assert "width: layoutModel.libraryWidth" in library
     assert "height: parent.height" in library

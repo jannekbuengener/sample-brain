@@ -757,7 +757,7 @@ def test_edit_scoped_live_kit_reveal_control_projection():
     """Reveal lives on Edit workspace tool control, not header mode nav."""
     assert 'objectName: "editLiveKitRevealControl"' in QML_SOURCE
     block = QML_SOURCE.split('objectName: "editLiveKitRevealControl"', 1)[1]
-    assert "Reveal Live Kit Edit tool" in block
+    assert "Reveal Live Kit tool" in block
     assert "toggleLiveKitDrawer" in block
     assert "workspaceRow" in block
     assert "hasActiveSource" in block

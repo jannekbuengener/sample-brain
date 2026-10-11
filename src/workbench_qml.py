@@ -898,6 +898,8 @@ class Screen1QmlInteractionAdapter:
         )
         self._waveform_motion_mode = "on"
         self._gesture_rack_apply_enabled = False
+        self._internal_sample_dnd_enabled = False
+        self._internal_sample_drop_session: "InternalSampleDropSession | None" = None
         self._preview_playback_cache: object | None = None
         # Optional #742 disclosure owner (set by production engine wiring).
         self._runtime_composition: Screen1QmlRuntimeComposition | None = None
@@ -4605,13 +4607,15 @@ ApplicationWindow {
                 readonly property bool bottomExpanded: liveKitDrawerOpen
                         || window.interaction.liveKitPendingAdd !== ""
                 // #1123: horizontal group cards may wrap; height ≈ wrap rows + expanded slots.
-                readonly property int groupCardMinWidth: 128
+                // Keep cards wide enough that assigned slot name + file stay readable
+                // at the 1120px product minimum (Browser can be ~480px).
+                readonly property int groupCardMinWidth: 156
                 readonly property int groupCardSpacing: 8
                 readonly property int groupCardWidth: {
                     var avail = Math.max(0, width - 28)
                     var gaps = groupCardSpacing * 3
                     var ideal = (avail - gaps) / 4
-                    return Math.max(groupCardMinWidth, Math.min(168, ideal))
+                    return Math.max(groupCardMinWidth, Math.min(200, ideal))
                 }
                 readonly property int groupFlowRows: {
                     var groups = window.screenData.liveKitGroups
@@ -4850,11 +4854,11 @@ ApplicationWindow {
                                 height: 40 + (modelData.active ? modelData.slots.length * 26 + 10 : 0)
                                 radius: 4
                                 color: modelData.active ? theme.hoverSurface
-                                       : (groupHovered ? theme.hoverSurface : theme.surfaceElevated)
+                                       : (groupHovered ? theme.hoverSurface : "transparent")
                                 opacity: modelData.active ? 1.0 : 0.92
-                                border.width: (modelData.active || groupHovered) ? 1 : 1
+                                border.width: (modelData.active || groupHovered) ? 1 : 0
                                 border.color: modelData.active ? theme.actionActive
-                                              : (groupHovered ? theme.borderSubtle : theme.borderSubtle)
+                                              : theme.borderSubtle
                                 ColumnLayout { anchors.fill: parent; anchors.margins: 0; spacing: 0
                                     Item { Layout.fillWidth: true; Layout.preferredHeight: 40; Layout.leftMargin: 10; Layout.rightMargin: 8
                                         RowLayout { anchors.fill: parent; spacing: 4
@@ -4912,14 +4916,14 @@ ApplicationWindow {
                                                         font.pixelSize: 10
                                                     }
                                                 }
-                                                Label { text: modelData.displayName; color: theme.textSecondary; font.pixelSize: 11; Layout.fillWidth: true; elide: Text.ElideRight }
-                                                Label { text: modelData.assignment; color: modelData.auditioning ? theme.actionActive : (modelData.assigned ? theme.textPrimary : theme.textSecondary); font.pixelSize: 10; elide: Text.ElideRight; Layout.maximumWidth: 64 }
+                                                Label { text: modelData.displayName; color: theme.textSecondary; font.pixelSize: 11; Layout.fillWidth: true; Layout.minimumWidth: 48; elide: Text.ElideRight }
+                                                Label { text: modelData.assignment; color: modelData.auditioning ? theme.actionActive : (modelData.assigned ? theme.textPrimary : theme.textSecondary); font.pixelSize: 10; Layout.fillWidth: true; Layout.minimumWidth: 40; elide: Text.ElideRight }
                                                 Rectangle {
                                                     // #895: quieter slot affordance — fine border, accent only when pending/active.
                                                     id: slotAction
                                                     Layout.preferredHeight: 20
                                                     radius: 3
-                                                    Layout.preferredWidth: showReplaceAffordance ? 44 : 20
+                                                    Layout.preferredWidth: showReplaceAffordance ? 36 : 20
                                                     color: hasPendingAdd ? theme.selectionSurface
                                                            : (slotActionMouse.containsMouse ? theme.hoverSurface
                                                               : (showReplaceAffordance ? theme.hoverSurface : "transparent"))
@@ -5344,20 +5348,20 @@ ApplicationWindow {
         Accessible.ignored: true
     }
 
-    // #1077: Edit-scoped Live Kit reveal — workspace tool, not upper mode nav.
-    ToolButton {
-        id: editLiveKitRevealControl
-        objectName: "editLiveKitRevealControl"
-        z: 22
-        text: "Live Kit"
-        Accessible.name: "Reveal Live Kit Edit tool"
-        flat: true
-        font.pixelSize: 11
-        padding: 6
-        leftPadding: 10
-        rightPadding: 10
-        // Summon only on Edit (screen1) while the tool is currently hidden and
-        // may be shown via the #1077 visibility owner (not first materialization).
+    // #1077: workspace-scoped Live Kit reveal — kit tool, not upper mode nav.
+        ToolButton {
+            id: editLiveKitRevealControl
+            objectName: "editLiveKitRevealControl"
+            z: 22
+            text: "Live Kit"
+            Accessible.name: "Reveal Live Kit tool"
+            flat: true
+            font.pixelSize: 11
+            padding: 6
+            leftPadding: 10
+            rightPadding: 10
+            // Summon only on Screen-1 while the tool is currently hidden and
+            // may be shown via the #1077 visibility owner (not first materialization).
         readonly property bool canReveal: window.interaction.liveKitRevealed
                 || window.screenData.liveKitAssignedCount > 0
         visible: window.activeScreen === "screen1"
