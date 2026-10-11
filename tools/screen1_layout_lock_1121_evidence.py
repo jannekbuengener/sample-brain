@@ -160,10 +160,17 @@ def main() -> int:
     _wait_for_screen1_background_ready(window, app)
 
     def refresh() -> None:
+        """Refresh QML state and wait for UI to fully update."""
         bridge = getattr(engine, "_screen1_interaction_bridge", None)
         if bridge is not None:
             bridge.refreshState()
-        _settle_qml_frame(app)
+        # Wait for QML property bindings to propagate and UI to re-render
+        from PySide6.QtCore import QEventLoop, QTimer
+        for _ in range(4):  # Multiple frames to ensure binding updates
+            loop = QEventLoop()
+            QTimer.singleShot(100, loop.quit)
+            loop.exec()
+            app.processEvents()
 
     captures: dict[str, str] = {}
     failed_checks: list[str] = []
