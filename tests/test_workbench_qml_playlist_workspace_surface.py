@@ -51,7 +51,7 @@ def test_library_harmony_live_kit_remain_panel_surfaces() -> None:
 
     # #954: panel surface remains on the Browser-scoped Drawer container
     # (compat liveKitPane is an Item); its geometry has more bindings now.
-    bottom = _snippet_after('objectName: "bottomRackPane"', 1800)
+    bottom = _snippet_after('objectName: "bottomRackPane"', 4500)
     assert "color: theme.surfacePanel" in bottom
 
 

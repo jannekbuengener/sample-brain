@@ -476,7 +476,7 @@ def test_live_kit_module_has_no_step_grid_projection():
     assert "bottomRackPlayButton" not in QML_SOURCE
     assert 'text: "RACK"' not in QML_SOURCE
     assert "Live Kit / Rack" not in QML_SOURCE
-    assert 'objectName: "liveKitGroupsColumn"' in QML_SOURCE
+    assert 'objectName: "liveKitGroupsFlow"' in QML_SOURCE
     assert "objectName: \"liveKitPane\"" in QML_SOURCE
 
 
@@ -547,9 +547,10 @@ def test_clean_edit_startup_pref_default_hidden(tmp_path: Path):
 # --- Preference restore rematerializes Live Kit (#1077 Codex P1) --------------
 
 
-def test_persisted_visible_preference_rematerializes_live_kit_on_restart(
+def test_persisted_visible_preference_does_not_auto_open_on_restart(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
+    """#1123: cold apply always starts closed; kit assignments still persist."""
     monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
     save_live_kit_visibility_preference(True, state_dir=tmp_path)
 
@@ -565,13 +566,19 @@ def test_persisted_visible_preference_rematerializes_live_kit_on_restart(
 
     restored = adapter.apply_live_kit_visibility_preference()
 
-    assert restored is True
-    assert composition.live_kit_revealed is True
-    assert composition.live_kit_materialized is True
-    assert adapter.view_model.live_kit_materialized is True
-    assert adapter.live_kit_is_visible() is True
-    assert adapter.edit_docking_materialization().live_kit is True
+    assert restored is False
+    assert composition.live_kit_revealed is False
+    assert composition.live_kit_materialized is False
+    assert adapter.view_model.live_kit_materialized is False
+    assert adapter.live_kit_is_visible() is False
+    assert adapter.edit_docking_materialization().live_kit is False
     assert adapter.visible_live_kit_slot_keys() == ()
+    assert kit_state.assignment_for("Kick + Bass", "Kick") is not None
+    assert kit_state.assignment_for("Kick + Bass", "Kick").display_name == "keep.wav"
+    # Explicit Edit reveal still rematerializes after closed startup.
+    assert adapter.toggle_live_kit_drawer() is True
+    assert adapter.live_kit_is_visible() is True
+    assert composition.live_kit_materialized is True
     adapter.toggle_live_kit_group("Kick + Bass")
     keys = adapter.visible_live_kit_slot_keys()
     assert keys
@@ -582,8 +589,6 @@ def test_persisted_visible_preference_rematerializes_live_kit_on_restart(
         visible_slot_keys=keys,
     )
     assert len(targets) == len(keys)
-    assert kit_state.assignment_for("Kick + Bass", "Kick") is not None
-    assert kit_state.assignment_for("Kick + Bass", "Kick").display_name == "keep.wav"
 
 
 def test_persisted_hidden_preference_stays_unmaterialized(
@@ -729,43 +734,76 @@ def test_live_kit_edit_qml_has_no_bottom_rack_step_controls():
     assert 'text: "RACK"' not in QML_SOURCE
 
 
-def test_preference_reapplied_after_analysis_disclosure_clear(
+def test_live_kit_absent_from_upper_mode_navigation():
+    """Owner gate: Live Kit must not peer with Browser / Step Sequencer / Arrangement."""
+    header = QML_SOURCE[
+        QML_SOURCE.index('objectName: "screen1Header"') : QML_SOURCE.index(
+            'objectName: "workspaceRow"'
+        )
+    ]
+    nav = header[
+        header.index('objectName: "headerNavZone"') : header.index(
+            'objectName: "headerTransportZone"'
+        )
+    ]
+    assert "programNavLiveKit" not in nav
+    assert 'text: "Live Kit"' not in nav
+    assert 'objectName: "programNavBrowser"' in nav
+    assert 'objectName: "programNavStepSequencer"' in nav
+    assert 'objectName: "programNavArrangement"' in nav
+
+
+def test_edit_scoped_live_kit_reveal_control_projection():
+    """Reveal lives on Edit workspace tool control, not header mode nav."""
+    assert 'objectName: "editLiveKitRevealControl"' in QML_SOURCE
+    block = QML_SOURCE.split('objectName: "editLiveKitRevealControl"', 1)[1]
+    assert "Reveal Live Kit tool" in block
+    assert "toggleLiveKitDrawer" in block
+    assert "workspaceRow" in block
+    assert "hasActiveSource" in block
+    # Control objectName must not be declared inside headerNavRow children.
+    header_nav = QML_SOURCE.split('objectName: "headerNavRow"', 1)[1].split(
+        'objectName: "headerTransportZone"', 1
+    )[0]
+    assert 'objectName: "editLiveKitRevealControl"' not in header_nav
+    assert 'objectName: "programNavLiveKit"' not in header_nav
+
+
+def test_toggle_live_kit_drawer_hides_when_open():
+    adapter = _adapter()
+    adapter.view_model.live_kit_materialized = True
+    adapter._live_kit_drawer_open = True
+    adapter.live_kit_collapsed = False
+    assert adapter.toggle_live_kit_drawer() is False
+    assert adapter._live_kit_drawer_open is False
+    assert adapter.live_kit_collapsed is True
+    assert adapter.live_kit_is_visible() is False
+
+
+def test_session_open_restored_after_analysis_disclosure_clear(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """Staged visible preference must rematerialize after #742 analysis clears."""
+    """#1123: in-session open desired survives #742 analysis clears; cold apply stays closed."""
     monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
     save_live_kit_visibility_preference(True, state_dir=tmp_path)
 
     adapter, composition, kit_state = _production_composed_adapter(
-        monkeypatch, active_source=False
+        monkeypatch, active_source=True
     )
     kit_state.assign("Kick + Bass", "Kick", _row("keep.wav"))
     assert adapter.apply_live_kit_visibility_preference() is False
-    assert composition.live_kit_revealed is True
+    assert composition.live_kit_revealed is False
     assert adapter.live_kit_is_visible() is False
+    assert adapter.toggle_live_kit_drawer() is True
+    assert adapter.live_kit_is_visible() is True
 
     # Analysis working surface: disclosure cleared + presentation closed.
     composition.clear_live_kit_disclosure()
-    adapter._live_kit_drawer_open = False
-    adapter.live_kit_collapsed = True
+    adapter.suspend_live_kit_for_analysis()
     assert adapter.view_model.live_kit_materialized is False
-
-    # Active Source returns (post-analysis sync).
-    nav = composition.library_tree.navigation
-    scope = nav.resolve_scope("root:1")
-    composition.dispatch_selection(
-        LibrarySelectionIntent(node=nav.root, scope=scope)
-    )
-    adapter.view_model.set_workspace_materialization(
-        has_active_source=True,
-        calm_canvas_visible=False,
-        browser_materialized=True,
-        live_kit_materialized=composition.live_kit_materialized,
-    )
-    assert composition.has_active_source is True
     assert adapter.live_kit_is_visible() is False
 
-    restored = adapter.apply_live_kit_visibility_preference()
+    restored = adapter.restore_live_kit_after_active_source()
     assert restored is True
     assert composition.live_kit_materialized is True
     assert adapter.live_kit_is_visible() is True
@@ -778,7 +816,7 @@ def test_preference_reapplied_after_analysis_disclosure_clear(
 
 def test_qml_live_kit_pane_requires_materialization_gate():
     """QML must not show Live Kit from drawer flags alone after analysis clears."""
-    pane = QML_SOURCE.split('objectName: "bottomRackPane"', 1)[1][:2500]
+    pane = QML_SOURCE.split('objectName: "bottomRackPane"', 1)[1][:4500]
     assert "liveKitRevealed" in pane
     assert "hasActiveSource" in pane
     assert "bottomExpanded" in pane
@@ -845,14 +883,16 @@ def test_toggle_open_rematerializes_after_disclosure_clear(
     assert adapter.live_kit_is_visible() is True
 
 
-def test_active_source_restore_reapplies_visible_preference(
+def test_active_source_restore_ignores_disk_open_without_session_desired(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
+    """#1123: disk live_kit_visible=true alone must not reopen after source restore."""
     monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
     save_live_kit_visibility_preference(True, state_dir=tmp_path)
     adapter, composition, _kit = _production_composed_adapter(
         monkeypatch, active_source=True
     )
+    assert adapter.apply_live_kit_visibility_preference() is False
     composition.clear_live_kit_disclosure()
     adapter._live_kit_drawer_open = False
     adapter.live_kit_collapsed = True
@@ -863,7 +903,7 @@ def test_active_source_restore_reapplies_visible_preference(
         live_kit_materialized=False,
     )
     adapter.restore_live_kit_after_active_source()
-    assert adapter.live_kit_is_visible() is True
+    assert adapter.live_kit_is_visible() is False
 
 
 def test_step_sequencer_nav_disabled_until_arrangement_destination():
@@ -907,7 +947,8 @@ def test_session_close_survives_stale_preference_on_source_restore(
         monkeypatch, active_source=True
     )
     kit.assign("Kick + Bass", "Kick", _row("keep.wav"))
-    assert adapter.apply_live_kit_visibility_preference() is True
+    assert adapter.apply_live_kit_visibility_preference() is False
+    assert adapter.toggle_live_kit_drawer() is True
 
     def _boom(*_a, **_k):
         raise OSError("unwritable")
@@ -918,7 +959,7 @@ def test_session_close_survives_stale_preference_on_source_restore(
     )
     assert adapter.toggle_live_kit_drawer() is False
     assert adapter.live_kit_is_visible() is False
-    # Disk still says true; session desired must win on restore.
+    # Disk may still say true; session desired must win on restore.
     assert load_live_kit_visibility_preference(state_dir=tmp_path) is True
     composition.clear_live_kit_disclosure()
     adapter.view_model.set_workspace_materialization(

@@ -137,7 +137,8 @@ def test_qml_declares_distinct_collapse_handle_object_names():
 def test_qml_collapse_handles_use_click_cursor_not_resize_cursor():
     """Collapse = PointingHand; elastic resize strips keep SizeHorCursor."""
     assert "toggleBrowserCollapsed" in QML_SOURCE
-    assert "toggleLiveKitCollapsed" in QML_SOURCE
+    # #1077: Live Kit open/close uses the drawer seam (collapsed is a shim).
+    assert "toggleLiveKitDrawer" in QML_SOURCE or "toggleLiveKitCollapsed" in QML_SOURCE
     assert "browserCollapseHandle" in QML_SOURCE
     assert "PointingHandCursor" in QML_SOURCE
     # Existing elastic resize contract remains present and unchanged in intent.

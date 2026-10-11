@@ -26,6 +26,24 @@ _SLOTS_BY_GROUP = dict(LIVE_KIT_SLOT_MAPPING)
 DRUM_SLOTS = _SLOTS_BY_GROUP["Drums"]
 """Compatibility projection for existing callers that address drum slots."""
 
+# Display-only labels (#1123). Domain taxonomy keys above stay authoritative.
+_LIVE_KIT_GROUP_DISPLAY_NAMES = {
+    "Kick + Bass": "Bassline",
+}
+_LIVE_KIT_SLOT_DISPLAY_NAMES = {
+    ("Kick + Bass", "Kick"): "Kick Drum",
+}
+
+
+def live_kit_group_display_name(group: str) -> str:
+    """Renderer label for a domain group key; unknown keys echo the domain name."""
+    return _LIVE_KIT_GROUP_DISPLAY_NAMES.get(group, group)
+
+
+def live_kit_slot_display_name(group: str, slot: str) -> str:
+    """Renderer label for a domain slot key; unknown keys echo the domain name."""
+    return _LIVE_KIT_SLOT_DISPLAY_NAMES.get((group, slot), slot)
+
 
 class LiveKitState:
     """In-memory musical assignments; deliberately independent of Tk and storage.
@@ -195,4 +213,6 @@ __all__ = [
     "LiveKitSlotView",
     "LiveKitState",
     "RightPanePresentation",
+    "live_kit_group_display_name",
+    "live_kit_slot_display_name",
 ]
