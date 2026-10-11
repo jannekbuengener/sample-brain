@@ -1,0 +1,410 @@
+"""Exact-HEAD QML runtime evidence for #1123 Live Kit UX follow-up.
+
+Evidence is written outside the repository. Synthetic fixture paths only.
+Captures always-closed start, horizontal group cards, Bassline expand, wrap,
+hide→clean Edit, and restart-after-visible stays closed.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import platform
+import subprocess
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+
+
+def _git_head(runtime_root: Path) -> str:
+    return subprocess.check_output(
+        ["git", "-C", str(runtime_root), "rev-parse", "HEAD"],
+        text=True,
+    ).strip()
+
+
+def _ensure_runtime_manifest(runtime_root: Path, python_exe: Path) -> None:
+    from src.runtime_provenance import (
+        MANIFEST_SCHEMA,
+        RuntimeManifest,
+        evaluate_runtime,
+        write_runtime_manifest,
+    )
+
+    report = evaluate_runtime(runtime_root, executable=python_exe)
+    if report.status.value == "valid":
+        return
+    dirty = subprocess.check_output(
+        ["git", "-C", str(runtime_root), "status", "--porcelain"],
+        text=True,
+    ).strip()
+    if dirty:
+        raise SystemExit(
+            "worktree is dirty; commit before writing runtime manifest / capturing evidence"
+        )
+    branch = subprocess.check_output(
+        ["git", "-C", str(runtime_root), "branch", "--show-current"],
+        text=True,
+    ).strip() or "detached"
+    write_runtime_manifest(
+        runtime_root,
+        RuntimeManifest(
+            schema=MANIFEST_SCHEMA,
+            channel=branch,
+            commit=_git_head(runtime_root),
+            runtime_root=str(runtime_root.resolve()),
+            python_executable=str(python_exe.resolve()),
+            installed_at=datetime.now(UTC).isoformat(),
+        ),
+    )
+
+
+def _framebuffer_matches_scale(
+    actual_w: int,
+    actual_h: int,
+    *,
+    scale_factor: float,
+    device_pixel_ratio: float,
+    logical_width: int,
+    logical_height: int,
+) -> bool:
+    if scale_factor <= 0 or device_pixel_ratio <= 0:
+        return False
+    if abs(device_pixel_ratio - scale_factor) > 0.05:
+        return False
+    if logical_width <= 0 or logical_height <= 0:
+        return False
+    expected_w = int(round(logical_width * device_pixel_ratio))
+    expected_h = int(round(logical_height * device_pixel_ratio))
+    tol = max(2, int(round(device_pixel_ratio)))
+    return abs(actual_w - expected_w) <= tol and abs(actual_h - expected_h) <= tol
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="#1123 Live Kit UX visual evidence")
+    parser.add_argument("--evidence-dir", type=Path, required=True)
+    parser.add_argument("--runtime-root", type=Path, default=Path.cwd())
+    parser.add_argument("--scale-factor", type=float, default=1.0)
+    args = parser.parse_args()
+
+    evidence_dir = args.evidence_dir.resolve()
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    runtime_root = args.runtime_root.resolve()
+    if evidence_dir.is_relative_to(runtime_root):
+        print("evidence-dir must be outside the repository", file=sys.stderr)
+        return 2
+    scale_factor = float(args.scale_factor)
+    if scale_factor <= 0:
+        print("scale-factor must be > 0", file=sys.stderr)
+        return 2
+    os.environ["QT_SCALE_FACTOR"] = str(scale_factor)
+    os.environ.setdefault("QT_QUICK_BACKEND", "software")
+
+    from src.workbench_controller import WorkbenchRow
+    from src.workbench_live_kit_edit import save_live_kit_visibility_preference
+    from src.workbench_qml import LiveKitPresenter, Screen1QmlInteractionAdapter
+    from src.workbench_qml_spike import (
+        CLIENT_HEIGHT,
+        CLIENT_WIDTH,
+        _grab_qml_window_png,
+        _qml_engine,
+        _require_fresh_qml_capture_process,
+        _settle_qml_frame,
+        _wait_for_screen1_background_ready,
+        apply_screen1_visual_state_v2,
+        build_qml_view_model_from_fixture_v2,
+        validate_capture_sanity,
+        validate_qml_renderer_provenance,
+    )
+    from src.workbench_visual_acceptance import (
+        build_screen1_visual_fixture_v2,
+        resolve_screen1_visual_state_v2,
+    )
+
+    _require_fresh_qml_capture_process()
+    _ensure_runtime_manifest(runtime_root, Path(sys.executable))
+    report = validate_qml_renderer_provenance(runtime_root)
+    fixture = build_screen1_visual_fixture_v2()
+    state = resolve_screen1_visual_state_v2(fixture, "screen1-active-source")
+    view_model = build_qml_view_model_from_fixture_v2(fixture, "screen1-active-source")
+    presenter = LiveKitPresenter()
+    view_model.live_kit_groups = presenter.groups
+    adapter = Screen1QmlInteractionAdapter(view_model=view_model, live_kit=presenter)
+    apply_screen1_visual_state_v2(view_model, adapter, fixture, state)
+    view_model.set_workspace_materialization(
+        has_active_source=True,
+        calm_canvas_visible=False,
+        browser_materialized=True,
+        live_kit_materialized=False,
+    )
+    adapter.apply_live_kit_visibility_preference()
+
+    app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+    window.setWidth(CLIENT_WIDTH)
+    window.setHeight(CLIENT_HEIGHT)
+    window.show()
+    _settle_qml_frame(app)
+    _wait_for_screen1_background_ready(window, app)
+
+    def refresh() -> None:
+        bridge = getattr(engine, "_screen1_interaction_bridge", None)
+        if bridge is not None:
+            bridge.refreshState()
+        _settle_qml_frame(app)
+
+    captures: dict[str, str] = {}
+    labels_notes = [
+        ("1123-default-closed", "Live Kit default closed; no phantom bottom cavity"),
+        ("1123-open-groups-collapsed", "Live Kit open; all group cards collapsed"),
+        ("1123-bassline-expanded", "Bassline expanded; Kick Drum + Bass slots"),
+        ("1123-populated", "Populated Bassline/Drums; compact cards"),
+        ("1123-narrow-wrap", "Narrow width; group cards wrap cleanly"),
+        ("1123-hide-clean-edit", "Hide → clean Edit; no phantom geometry"),
+        (
+            "1123-restart-stays-closed",
+            "Restart after previously visible kit stays closed",
+        ),
+        (
+            "1123-browser-collapsed-no-reveal",
+            "Browser collapsed; Live Kit reveal control must not be shown",
+        ),
+        (
+            "1123-browser-reopened-reveal",
+            "Browser reopened; Live Kit reveal control available again",
+        ),
+        (
+            "1123-min-width-chrome",
+            "Minimum supported 1120x640; program chrome without zone overlap",
+        ),
+    ]
+
+    failed_checks: list[str] = []
+
+    def grab(label: str, note: str) -> None:
+        import struct
+
+        path = evidence_dir / f"{label}.png"
+        _grab_qml_window_png(window, path, engine=engine)
+        raw = path.read_bytes()
+        actual_w, actual_h = struct.unpack(">II", raw[16:24])
+        dpr = float(window.devicePixelRatio())
+        logical_w = int(window.width())
+        logical_h = int(window.height())
+        expected_w = int(round(logical_w * dpr))
+        expected_h = int(round(logical_h * dpr))
+        check = validate_capture_sanity(
+            path, expected_width=actual_w, expected_height=actual_h
+        )
+        scale_ok = _framebuffer_matches_scale(
+            actual_w,
+            actual_h,
+            scale_factor=scale_factor,
+            device_pixel_ratio=dpr,
+            logical_width=logical_w,
+            logical_height=logical_h,
+        )
+        usable = actual_w >= 640 and actual_h >= 480
+        check["note"] = note
+        check["scale_factor"] = scale_factor
+        check["qt_scale_factor"] = os.environ.get("QT_SCALE_FACTOR")
+        check["device_pixel_ratio"] = dpr
+        check["logical_width"] = logical_w
+        check["logical_height"] = logical_h
+        check["actual_width"] = actual_w
+        check["actual_height"] = actual_h
+        check["expected_width"] = expected_w
+        check["expected_height"] = expected_h
+        check["scale_framebuffer_match"] = scale_ok
+        check["usable_framebuffer"] = usable
+        check["pass"] = bool(check.get("pass")) and usable and scale_ok
+        captures[label] = str(path)
+        (evidence_dir / f"{label}.json").write_text(
+            json.dumps(check, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        if not check.get("pass"):
+            failed_checks.append(label)
+
+    grab(*labels_notes[0])
+
+    view_model.set_workspace_materialization(
+        has_active_source=True,
+        calm_canvas_visible=False,
+        browser_materialized=True,
+        live_kit_materialized=True,
+    )
+    adapter._live_kit_drawer_open = True
+    adapter.live_kit_collapsed = False
+    refresh()
+    grab(*labels_notes[1])
+
+    if presenter.presentation.is_collapsed("Kick + Bass"):
+        presenter.toggle_group("Kick + Bass")
+    adapter._sync_live_kit_projection()
+    refresh()
+    grab(*labels_notes[2])
+
+    row = WorkbenchRow(
+        display_name="kick_synth.wav",
+        relative_path="synthetic/kick_synth.wav",
+        path="synthetic/kick_synth.wav",
+        bpm=128.0,
+        key="Am",
+        key_conf=0.9,
+        loudness=-12.0,
+        brightness=3000.0,
+        sample_class="one_shot",
+        pred_type="Kick",
+        status="ok",
+        details={"duration_sec": "0.2", "source": "synthetic"},
+    )
+    presenter.assign("Kick + Bass", "Kick", row)
+    presenter.assign("Drums", "Closed Hat", row)
+    adapter._sync_live_kit_projection()
+    refresh()
+    grab(*labels_notes[3])
+
+    # Narrow width forces horizontal card wrap. Product minimumWidth is 1120;
+    # evidence-only override so wrap is observable without changing product chrome.
+    prior_min_w = int(window.minimumWidth())
+    window.setMinimumWidth(640)
+    window.setWidth(640)
+    refresh()
+    grab(*labels_notes[4])
+    window.setMinimumWidth(prior_min_w)
+    window.setWidth(CLIENT_WIDTH)
+    refresh()
+
+    adapter._live_kit_drawer_open = False
+    adapter.live_kit_collapsed = True
+    refresh()
+    grab(*labels_notes[5])
+
+    # Browser-collapsed reveal eligibility (#1123 review blocker): the reveal
+    # control must follow the authoritative browserCollapsed state so no
+    # invisible drawer-open state change is possible.
+    from PySide6.QtCore import QPointF
+    from PySide6.QtQuick import QQuickItem
+
+    reveal = window.findChild(QQuickItem, "editLiveKitRevealControl")
+    assert reveal is not None
+    assert adapter.browser_collapsed is False
+    assert reveal.isVisible() is True
+    adapter.toggle_browser_collapsed()
+    refresh()
+    assert adapter.browser_collapsed is True
+    assert reveal.isVisible() is False
+    assert reveal.isEnabled() is False
+    grab(*labels_notes[7])
+
+    adapter.toggle_browser_collapsed()
+    refresh()
+    assert adapter.browser_collapsed is False
+    assert reveal.isVisible() is True
+    assert reveal.isEnabled() is True
+    grab(*labels_notes[8])
+
+    # Minimum supported window width: header/nav/transport stay non-overlapping
+    # and footer chrome stays visible.
+    prior_min_width = int(window.minimumWidth())
+    prior_width = int(window.width())
+    prior_height = int(window.height())
+    window.setMinimumWidth(1120)
+    window.setWidth(1120)
+    window.setHeight(640)
+    refresh()
+    header_item = window.findChild(QQuickItem, "screen1Header")
+    left_item = window.findChild(QQuickItem, "headerLeftZone")
+    nav_item = window.findChild(QQuickItem, "headerNavZone")
+    transport_item = window.findChild(QQuickItem, "headerTransportZone")
+    footer_item = window.findChild(QQuickItem, "programFooterBand")
+    assert all(
+        item is not None
+        for item in (header_item, left_item, nav_item, transport_item, footer_item)
+    )
+    left_right = float(
+        left_item.mapToItem(header_item, QPointF(left_item.width(), 0)).x()
+    )
+    nav_left = float(nav_item.mapToItem(header_item, QPointF(0, 0)).x())
+    nav_right = float(
+        nav_item.mapToItem(header_item, QPointF(nav_item.width(), 0)).x()
+    )
+    transport_left = float(transport_item.mapToItem(header_item, QPointF(0, 0)).x())
+    assert left_right <= nav_left + 1.0
+    assert nav_right <= transport_left + 1.0
+    assert float(transport_item.width()) > 8.0
+    assert footer_item.isVisible()
+    grab(*labels_notes[9])
+    window.setMinimumWidth(prior_min_width)
+    window.setWidth(prior_width)
+    window.setHeight(prior_height)
+    refresh()
+
+    # Restart path: disk says visible, cold apply must stay closed (#1123).
+    from src.workbench_library_navigation import LibraryScope, LibraryScopeKind
+    from src.workbench_qml_runtime import Screen1BrowserState, Screen1QmlRuntimeComposition
+
+    pref_dir = evidence_dir / "pref-state"
+    pref_dir.mkdir(parents=True, exist_ok=True)
+    view_model.set_workspace_materialization(
+        has_active_source=True,
+        calm_canvas_visible=False,
+        browser_materialized=True,
+        live_kit_materialized=False,
+    )
+    adapter._live_kit_drawer_open = False
+    adapter.live_kit_collapsed = True
+    composition = Screen1QmlRuntimeComposition()
+    composition._selected_node_id = "root:evidence"
+    composition.browser_state = Screen1BrowserState(
+        scope=LibraryScope(LibraryScopeKind.ROOT, folder_id=1, folder_path="synthetic"),
+        browser_context="Evidence active source",
+    )
+    adapter._runtime_composition = composition
+    save_live_kit_visibility_preference(True, state_dir=pref_dir)
+    os.environ["SAMPLE_BRAIN_WORKBENCH_STATE_DIR"] = str(pref_dir)
+    assert adapter.apply_live_kit_visibility_preference() is False
+    assert adapter.live_kit_is_visible() is False
+    refresh()
+    grab(*labels_notes[6])
+
+    head = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=args.runtime_root, text=True
+    ).strip()
+    provenance = {
+        "status": getattr(getattr(report, "status", None), "value", str(report.status)),
+        "diagnosis": getattr(report, "diagnosis", None),
+        "commit": getattr(getattr(report, "manifest", None), "commit", None),
+    }
+    manifest = {
+        "issue": 1123,
+        "head": head,
+        "platform": platform.platform(),
+        "scale_factor": scale_factor,
+        "visual_accept_state": "VISUAL_ACCEPT_PENDING",
+        "baseline_owner_pass_head": "001bf60705115dcdc6317ed4bc2f51289dc7b72b",
+        "captures": captures,
+        "provenance": provenance,
+    }
+    if failed_checks:
+        manifest["visual_accept_state"] = "VISUAL_ACCEPT_FAIL"
+        manifest["failed_captures"] = failed_checks
+        (evidence_dir / "1123-manifest.json").write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        print(json.dumps(manifest, indent=2, sort_keys=True))
+        print(
+            f"capture sanity failed: {', '.join(failed_checks)}",
+            file=sys.stderr,
+        )
+        return 1
+
+    (evidence_dir / "1123-manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(json.dumps(manifest, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,7 +1,7 @@
-# Workbench Live Kit Edit Contract (#1077)
+# Workbench Live Kit Edit Contract (#1077 / #1123)
 
 **Status:** ACTIVE_SUPPORTING  
-**Issue:** [#1077](https://github.com/jannekbuengener/sample-brain/issues/1077)  
+**Issue:** [#1077](https://github.com/jannekbuengener/sample-brain/issues/1077) (Edit tool baseline); [#1123](https://github.com/jannekbuengener/sample-brain/issues/1123) (always-closed start + horizontal group cards)  
 **Parent:** [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075)  
 **Depends on:** [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076) product boundary; [#1070](https://github.com/jannekbuengener/sample-brain/issues/1070) Edit docking topology; [#1072](https://github.com/jannekbuengener/sample-brain/issues/1072) internal Sample DnD targets  
 **Related:** [#728](https://github.com/jannekbuengener/sample-brain/issues/728) Export Kit; [#1071](https://github.com/jannekbuengener/sample-brain/issues/1071) docking visuals; [#1073](https://github.com/jannekbuengener/sample-brain/issues/1073) Sample drag visuals; [#1078](https://github.com/jannekbuengener/sample-brain/issues/1078) Arrangement entry
@@ -68,24 +68,54 @@ clears musical assignments or active-track kit state. A pending Add-to-Kit
 chooser counts as presentation-open for `#1070` / `#1072` even when the drawer
 preference remains closed (QML `bottomExpanded` via `liveKitPendingAdd`).
 
-Default clean Edit startup: Live Kit hidden/collapsed (preference default
-`live_kit_visible=False`). Restart respects the persisted visibility preference
-and must not auto-open when the preference says hidden. When the preference is
-`true` under an active Source, restore must rematerialize Live Kit through the
-existing runtime disclosure seam (`reveal_live_kit` / `_reveal_live_kit_pane`);
-drawer flags alone are not sufficient. Without an active Source, materialization
-fails closed (preference may stage open flags, but `live_kit_is_visible()` stays
-false until progressive disclosure can succeed). After Source analysis completes
-and an active Source is restored, re-apply the visibility preference through the
-same reveal seam so staged preference is not lost to `#742` analysis disclosure
-clears. During analysis, presentation stays closed/unmaterialized (no QML/Python
-desync). Visibility preference writes are best-effort UI persistence and must
-fail-soft (`OSError` must not abort reveal/hide or bridge refresh).
+Default clean Edit startup (#1123): Live Kit **always** starts hidden/collapsed.
+`apply_live_kit_visibility_preference` forces closed on workspace/app start and
+must **not** rematerialize from a persisted `live_kit_visible=true`. Musical kit
+assignments remain fully persisted; only chrome visibility defaults closed.
+Session writes may still update the preference file (best-effort), but restart
+and cold apply ignore an open disk value. In-session desired visibility
+(`_live_kit_visibility_desired`) still drives hide→reveal within the same
+session and post-analysis restore via `restore_live_kit_after_active_source`
+after the user (or Add-to-Kit disclosure) has opened the tool. Without an active
+Source, materialization fails closed. During analysis, presentation stays
+closed/unmaterialized (no QML/Python desync). Visibility preference writes are
+best-effort UI persistence and must fail-soft (`OSError` must not abort
+reveal/hide or bridge refresh).
 
 User-controlled Live Kit height is session UI authority on the interaction
 adapter (`live_kit_user_height_px`, `0` = auto row-derived height), clamped to
 compact minimum and the existing 40% workspace cap. Resize intents are separate
 from collapse/hide, panel-move, and sample-drag.
+
+### Group card projection (#1123)
+
+Top-level kit **groups** project as compact horizontal cards (responsive wrap on
+narrow width; never unreadably narrow; no horizontal overflow as the default).
+Domain taxonomy keys stay authoritative (`Kick + Bass`, `Drums`, `Melodic`,
+`Atmos / FX`). Display-only labels may remap presentation without renaming
+domain IDs:
+
+| Domain group | Display label | Domain slots → display |
+|--------------|---------------|------------------------|
+| `Kick + Bass` | `Bassline` | `Kick` → `Kick Drum`; `Bass` → `Bass` |
+| `Drums` | `Drums` | unchanged |
+| `Melodic` | `Melodic` | unchanged |
+| `Atmos / FX` | `Atmos / FX` | unchanged (single domain group → one card; do not invent dual domain in QML) |
+
+Clicking a group card toggles expand/collapse of that group's slots. Collapsed
+groups keep musical assignments. Add / Replace / Remove / Export Kit seams are
+unchanged and remain Python-owned.
+
+### Edit-scoped reveal (`editLiveKitRevealControl`)
+
+“Live Kit” must **not** appear in upper mode navigation (`headerNavRow`) beside
+Browser / Step Sequencer / Arrangement (Owner visual gate — see
+`PROGRAM_CHROME_CONTRACT.md`). Reveal/hide is an **Edit workspace tool control**
+(`editLiveKitRevealControl`): Screen-1 only, uses the #1077 visibility owner
+(`toggle_live_kit_drawer` / preference / reveal seam), and must not invent a
+second loader. While unmaterialized and empty it stays hidden; once the tool can
+be shown and is currently closed, the workspace control reveals it. Collapse
+while open stays on the pane-local handle.
 
 ## Mutation seams
 
