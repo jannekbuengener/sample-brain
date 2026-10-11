@@ -309,17 +309,17 @@ def test_qml_exposes_pending_and_slot_action_wiring():
 
 
 def test_qml_group_header_hit_area_is_structurally_valid():
+    # #1123 compact horizontal cards: shorter header row, tighter margins.
     wrapper = (
-        "Item { Layout.fillWidth: true; Layout.preferredHeight: 44; "
-        "Layout.leftMargin: 12; Layout.rightMargin: 10"
+        "Item { Layout.fillWidth: true; Layout.preferredHeight: 40; "
+        "Layout.leftMargin: 10; Layout.rightMargin: 8"
     )
     assert wrapper in QML_SOURCE
     assert QML_SOURCE.count(wrapper) == 1
-    assert "RowLayout { anchors.fill: parent; spacing: 6" in QML_SOURCE
+    assert 'objectName: "liveKitGroupsFlow"' in QML_SOURCE
     assert 'objectName: "liveKitGroupHeader" + index' in QML_SOURCE
     assert "onPressed: window.interaction.toggleLiveKitGroup(kitGroupIndex)" in QML_SOURCE
     assert "onClicked: window.interaction.toggleLiveKitGroup(kitGroupIndex)" not in QML_SOURCE
-    assert "width: parent.width" in QML_SOURCE
     assert "LiveKitState" not in QML_SOURCE
 
 

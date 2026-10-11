@@ -33,9 +33,12 @@ def test_program_chrome_contract_documents_831_test_supersession() -> None:
 
 def test_program_chrome_live_kit_inert_before_materialization() -> None:
     text = Path("docs/PROGRAM_CHROME_CONTRACT.md").read_text(encoding="utf-8")
-    assert "live_kit_materialized == false" in text
-    assert "disabled / inert" in text or "disabled/inert" in text
-    assert "must **not** materialize" in text or "must not materialize" in text
+    # #1077/#1123: Edit-scoped reveal; absent from upper mode nav; inert until
+    # materialization or kit assignments exist.
+    assert "editLiveKitRevealControl" in text
+    assert "Not shown / inert" in text or "not shown / inert" in text.lower()
+    assert "programNavLiveKit" in text
+    assert "must **not** appear in upper" in text or "must not appear in upper" in text
 
 
 def test_program_chrome_reconciles_843_header_removal() -> None:

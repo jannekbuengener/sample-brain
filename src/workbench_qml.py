@@ -26,10 +26,14 @@ from .workbench_harmony import (
     HarmonySuggestion,
     harmonic_match_key_for_row,
 )
-from .workbench_live_kit import LiveKitPresentationState, LiveKitState
+from .workbench_live_kit import (
+    LiveKitPresentationState,
+    LiveKitState,
+    live_kit_group_display_name,
+    live_kit_slot_display_name,
+)
 from .workbench_live_kit_edit import (
     edit_docking_materialization_for_live_kit,
-    load_live_kit_visibility_preference,
     try_save_live_kit_visibility_preference,
     visible_live_kit_slot_keys,
 )
@@ -558,10 +562,14 @@ class Screen1QmlViewModel:
             "liveKitGroups": [
                 {
                     "name": group.name,
+                    "displayName": live_kit_group_display_name(group.name),
                     "active": group.active,
                     "slots": [
                         {
                             "name": slot.name,
+                            "displayName": live_kit_slot_display_name(
+                                group.name, slot.name
+                            ),
                             "assignment": (
                                 slot.assignment.display_name
                                 if slot.assignment
@@ -1721,31 +1729,28 @@ class Screen1QmlInteractionAdapter:
         return self.toggle_live_kit_drawer()
 
     def apply_live_kit_visibility_preference(self) -> bool:
-        """Restore persisted Edit visibility preference (workspace UI only)."""
-        preferred = load_live_kit_visibility_preference()
-        self._live_kit_visibility_desired = bool(preferred)
-        if not preferred:
-            self._live_kit_drawer_open = False
-            self.live_kit_collapsed = True
-            return False
-        # Preference may say open, but progressive disclosure still requires
-        # materialization before geometry/targets appear. Reuse the canonical
-        # reveal seam — do not invent a second materialization truth.
-        self._live_kit_drawer_open = True
-        self.live_kit_collapsed = False
-        self._reveal_live_kit_pane()
-        return self.live_kit_is_visible()
+        """Cold start always closes Live Kit (#1123); ignore disk open preference.
+
+        Session toggle / Add-to-Kit disclosure still persist preference writes
+        and drive in-session restore via ``_live_kit_visibility_desired``.
+        """
+        self._live_kit_visibility_desired = False
+        self._live_kit_drawer_open = False
+        self.live_kit_collapsed = True
+        return False
 
     def restore_live_kit_after_active_source(self) -> bool:
         """Rematerialize Live Kit after a valid active Source is restored.
 
         Uses the in-session desired visibility when known so a fail-soft
         preference write cannot reopen against an explicit session close.
+        Disk ``live_kit_visible=true`` alone is not restart reopen authority
+        (#1123).
         """
         desired = self._live_kit_visibility_desired
         if desired is None:
-            desired = load_live_kit_visibility_preference()
-            self._live_kit_visibility_desired = bool(desired)
+            desired = False
+            self._live_kit_visibility_desired = False
         if desired:
             self._live_kit_drawer_open = True
             self.live_kit_collapsed = False
@@ -4599,18 +4604,34 @@ ApplicationWindow {
                 property bool liveKitDrawerOpen: window.interaction.liveKitDrawerOpen
                 readonly property bool bottomExpanded: liveKitDrawerOpen
                         || window.interaction.liveKitPendingAdd !== ""
-                // Height from Live Kit rows only (canonical groups when open).
-                readonly property int realRowCount: {
-                    var count = 0
+                // #1123: horizontal group cards may wrap; height ≈ wrap rows + expanded slots.
+                readonly property int groupCardMinWidth: 128
+                readonly property int groupCardSpacing: 8
+                readonly property int groupCardWidth: {
+                    var avail = Math.max(0, width - 28)
+                    var gaps = groupCardSpacing * 3
+                    var ideal = (avail - gaps) / 4
+                    return Math.max(groupCardMinWidth, Math.min(168, ideal))
+                }
+                readonly property int groupFlowRows: {
+                    var groups = window.screenData.liveKitGroups
+                    var avail = Math.max(0, width - 28)
+                    var perRow = Math.max(
+                        1,
+                        Math.floor((avail + groupCardSpacing) / (groupCardWidth + groupCardSpacing))
+                    )
+                    return Math.max(1, Math.ceil(groups.length / perRow))
+                }
+                readonly property int expandedSlotCount: {
+                    var expandedSlots = 0
                     var groups = window.screenData.liveKitGroups
                     for (var gi = 0; gi < groups.length; gi++) {
-                        count += 1
                         if (groups[gi].active)
-                            count += groups[gi].slots.length
+                            expandedSlots += groups[gi].slots.length
                     }
-                    return Math.max(1, count)
+                    return expandedSlots
                 }
-                readonly property int requestedHeight: 64 + realRowCount * 48
+                readonly property int requestedHeight: 72 + groupFlowRows * 44 + expandedSlotCount * 26
                 readonly property int maximumHeight: Math.round(parent.height * 0.40)
                 readonly property int autoHeight: Math.min(requestedHeight, maximumHeight)
                 readonly property int userHeightPx: window.interaction.liveKitUserHeightPx
@@ -4810,32 +4831,35 @@ ApplicationWindow {
                             elide: Text.ElideRight
                         }
                     }
-                    Column {
-                        // #1077: classic kit groups/slots while Live Kit is visible.
-                        // Hidden/collapsed pane height is 0 — no phantom projection.
+                    Flow {
+                        // #1123: top-level kit groups as compact horizontal cards (wrap).
+                        // #1077: classic kit slots while Live Kit is visible; closed height 0.
+                        id: liveKitGroupsFlow
+                        objectName: "liveKitGroupsFlow"
                         visible: bottomRackPane.bottomExpanded
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignTop
-                        spacing: 0
-                        objectName: "liveKitGroupsColumn"
+                        spacing: bottomRackPane.groupCardSpacing
+                        width: Math.max(0, parent.width)
                         Repeater { model: window.screenData.liveKitGroups
-                            // #895: quieter group chrome — no idle box; fine border only when active/hover.
+                            // Calm dark compact card; Blood-A accent only when active/selected.
                             delegate: Rectangle {
                                 property int kitGroupIndex: index
                                 property bool groupHovered: liveKitGroupHeader.containsMouse
-                                width: bottomRackPane.width - 28
-                                height: 44 + (modelData.active ? modelData.slots.length * 26 + 14 : 0)
+                                width: bottomRackPane.groupCardWidth
+                                height: 40 + (modelData.active ? modelData.slots.length * 26 + 10 : 0)
                                 radius: 4
                                 color: modelData.active ? theme.hoverSurface
-                                       : (groupHovered ? theme.hoverSurface : "transparent")
-                                border.width: (modelData.active || groupHovered) ? 1 : 0
-                                border.color: modelData.active ? theme.selectionBorder : theme.borderSubtle
-                                ColumnLayout { anchors.fill: parent; spacing: 0
-                                    Item { Layout.fillWidth: true; Layout.preferredHeight: 44; Layout.leftMargin: 12; Layout.rightMargin: 10
-                                        RowLayout { anchors.fill: parent; spacing: 6
-                                            Label { text: (index + 1) + "  "; color: modelData.active ? theme.actionActive : theme.textSecondary; font.pixelSize: 12; font.bold: true; opacity: modelData.active ? 1.0 : 0.85 }
-                                            Label { text: modelData.name; color: theme.textPrimary; font.pixelSize: 13; font.bold: modelData.active; elide: Text.ElideRight; Layout.fillWidth: true }
-                                            Label { text: modelData.active ? "▾" : "▸"; color: modelData.active ? theme.textPrimary : theme.textSecondary; font.pixelSize: 11; opacity: 0.85 }
+                                       : (groupHovered ? theme.hoverSurface : theme.surfaceElevated)
+                                opacity: modelData.active ? 1.0 : 0.92
+                                border.width: (modelData.active || groupHovered) ? 1 : 1
+                                border.color: modelData.active ? theme.actionActive
+                                              : (groupHovered ? theme.borderSubtle : theme.borderSubtle)
+                                ColumnLayout { anchors.fill: parent; anchors.margins: 0; spacing: 0
+                                    Item { Layout.fillWidth: true; Layout.preferredHeight: 40; Layout.leftMargin: 10; Layout.rightMargin: 8
+                                        RowLayout { anchors.fill: parent; spacing: 4
+                                            Label { text: modelData.displayName; color: theme.textPrimary; font.pixelSize: 12; font.bold: modelData.active; elide: Text.ElideRight; Layout.fillWidth: true }
+                                            Label { text: modelData.active ? "▾" : "▸"; color: modelData.active ? theme.actionActive : theme.textSecondary; font.pixelSize: 11; opacity: 0.85 }
                                         }
                                         MouseArea {
                                             id: liveKitGroupHeader
@@ -4848,7 +4872,7 @@ ApplicationWindow {
                                             onPressed: window.interaction.toggleLiveKitGroup(kitGroupIndex)
                                         }
                                     }
-                                ColumnLayout { visible: modelData.active; Layout.fillWidth: true; Layout.leftMargin: 12; Layout.rightMargin: 10; Layout.topMargin: 2
+                                ColumnLayout { visible: modelData.active; Layout.fillWidth: true; Layout.leftMargin: 8; Layout.rightMargin: 8; Layout.topMargin: 0; Layout.bottomMargin: 6
                                     Repeater { model: modelData.active ? modelData.slots : []
                                         delegate: Item {
                                             objectName: "liveKitSlot" + kitGroupIndex + "_" + index
@@ -4879,8 +4903,8 @@ ApplicationWindow {
                                                 enabled: modelData.assigned
                                                 onClicked: window.interaction.auditionLiveKitSlot(kitGroupIndex, index)
                                             }
-                                            RowLayout { anchors.fill: parent; spacing: 6
-                                                Item { Layout.preferredWidth: 14; Layout.preferredHeight: 26
+                                            RowLayout { anchors.fill: parent; spacing: 4
+                                                Item { Layout.preferredWidth: 12; Layout.preferredHeight: 26
                                                     Label {
                                                         anchors.centerIn: parent
                                                         text: modelData.assigned ? "▶" : ""
@@ -4888,14 +4912,14 @@ ApplicationWindow {
                                                         font.pixelSize: 10
                                                     }
                                                 }
-                                                Label { text: modelData.name; color: theme.textSecondary; font.pixelSize: 11; Layout.fillWidth: true; elide: Text.ElideRight }
-                                                Label { text: modelData.assignment; color: modelData.auditioning ? theme.actionActive : (modelData.assigned ? theme.textPrimary : theme.textSecondary); font.pixelSize: 11; elide: Text.ElideRight }
+                                                Label { text: modelData.displayName; color: theme.textSecondary; font.pixelSize: 11; Layout.fillWidth: true; elide: Text.ElideRight }
+                                                Label { text: modelData.assignment; color: modelData.auditioning ? theme.actionActive : (modelData.assigned ? theme.textPrimary : theme.textSecondary); font.pixelSize: 10; elide: Text.ElideRight; Layout.maximumWidth: 64 }
                                                 Rectangle {
                                                     // #895: quieter slot affordance — fine border, accent only when pending/active.
                                                     id: slotAction
-                                                    Layout.preferredHeight: 22
+                                                    Layout.preferredHeight: 20
                                                     radius: 3
-                                                    Layout.preferredWidth: showReplaceAffordance ? 52 : 22
+                                                    Layout.preferredWidth: showReplaceAffordance ? 44 : 20
                                                     color: hasPendingAdd ? theme.selectionSurface
                                                            : (slotActionMouse.containsMouse ? theme.hoverSurface
                                                               : (showReplaceAffordance ? theme.hoverSurface : "transparent"))
@@ -4907,14 +4931,14 @@ ApplicationWindow {
                                                         objectName: "slotActionLabel" + kitGroupIndex + "_" + index
                                                         text: hasPendingAdd ? "+" : (showReplaceAffordance ? "↻" : "+")
                                                         color: hasPendingAdd ? theme.actionActive : (slotActionMouse.containsMouse ? theme.textPrimary : theme.textSecondary)
-                                                        font.pixelSize: showReplaceAffordance ? 14 : 13
+                                                        font.pixelSize: showReplaceAffordance ? 13 : 12
                                                     }
                                                 }
                                                 Rectangle {
                                                     id: slotRemoveAction
                                                     objectName: "slotRemoveAction" + kitGroupIndex + "_" + index
-                                                    Layout.preferredHeight: 22
-                                                    Layout.preferredWidth: 22
+                                                    Layout.preferredHeight: 20
+                                                    Layout.preferredWidth: 20
                                                     radius: 3
                                                     visible: showRemoveAffordance
                                                     color: slotRemoveMouse.containsMouse ? theme.hoverSurface : "transparent"
@@ -4924,7 +4948,7 @@ ApplicationWindow {
                                                         anchors.centerIn: parent
                                                         text: "×"
                                                         color: slotRemoveMouse.containsMouse ? theme.textPrimary : theme.textSecondary
-                                                        font.pixelSize: 13
+                                                        font.pixelSize: 12
                                                     }
                                                     MouseArea {
                                                         id: slotRemoveMouse
