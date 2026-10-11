@@ -3213,7 +3213,7 @@ ApplicationWindow {
                                     ? "Layout · Locked"
                                     : "Layout · Unlocked"
                                 color: !workspaceLayoutLockToggle.enabled ? theme.textDisabled
-                                       : (workspaceLayoutLockToggle.checked ? theme.actionActive
+                                       : (workspaceLayoutLockToggle.checked ? theme.textPrimary
                                           : (workspaceLayoutLockToggle.pressed ? theme.textPrimary
                                              : (workspaceLayoutLockToggle.hovered || workspaceLayoutLockToggle.activeFocus ? theme.textPrimary : theme.textSecondary)))
                                 horizontalAlignment: Text.AlignHCenter
