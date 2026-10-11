@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from .track_package import (
     OUTCOME_CORRUPT_OR_UNSUPPORTED,
@@ -28,7 +28,9 @@ from .track_package import (
 )
 from .workbench_controller import WorkbenchRow, workbench_state_dir
 from .workbench_live_kit import LiveKitState
-from .workbench_session import WorkbenchSession
+
+if TYPE_CHECKING:
+    from .workbench_session import WorkbenchSession
 
 SCOPE_LIVE_KITS = "live_kits"
 ENTITY_KIND_TRACK_PACKAGE: Literal["track_package"] = "track_package"
