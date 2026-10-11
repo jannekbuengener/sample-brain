@@ -175,7 +175,12 @@ def test_qml_projects_horizontal_responsive_group_cards():
     # Cards wrap; minimum width guard against unreadably narrow cells.
     assert "groupCardMinWidth" in QML_SOURCE
     assert "groupCardWidth" in QML_SOURCE
-    assert "groupCardMinWidth: 156" in QML_SOURCE
+    assert "groupCardMinWidth: 200" in QML_SOURCE
+
+
+def test_reveal_control_hidden_when_browser_collapsed():
+    block = QML_SOURCE.split('objectName: "editLiveKitRevealControl"', 1)[1][:900]
+    assert "!window.interaction.browserCollapsed" in block
     flow = QML_SOURCE.split('objectName: "liveKitGroupsFlow"', 1)[1][:2500]
     assert "displayName" in flow
     assert 'objectName: "liveKitGroupHeader" + index' in QML_SOURCE
