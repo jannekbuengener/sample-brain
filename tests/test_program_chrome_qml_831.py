@@ -351,14 +351,17 @@ def test_runtime_program_footer_remains_visible_on_screen2() -> None:
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
-def test_runtime_header_zones_no_overlap_at_1600() -> None:
+@pytest.mark.parametrize("size", [(1120, 640), (1600, 900)])
+def test_runtime_header_zones_do_not_overlap(size) -> None:
+    """Frozen #831 three-zone header geometry incl. minimum supported width."""
     from PySide6.QtCore import QPointF
     from PySide6.QtQuick import QQuickItem
 
+    width, height = size
     app, engine, window, adapter, settle = _build_screen1_window()
     try:
-        window.setWidth(1600)
-        window.setHeight(900)
+        window.setWidth(width)
+        window.setHeight(height)
         settle(app)
         settle(app)
 
@@ -382,11 +385,25 @@ def test_runtime_header_zones_no_overlap_at_1600() -> None:
         nav_left = float(nav.mapToItem(header, QPointF(0, 0)).x())
         nav_right = float(nav.mapToItem(header, QPointF(nav.width(), 0)).x())
         transport_left = float(transport.mapToItem(header, QPointF(0, 0)).x())
+        transport_right = float(
+            transport.mapToItem(header, QPointF(transport.width(), 0)).x()
+        )
         assert left_right <= nav_left + 1.0
         assert nav_right <= transport_left + 1.0
         # Three mode destinations remain (Live Kit removed from header).
         assert float(nav.width()) >= 240.0
         assert float(transport.width()) > 8.0
+        # Transport stays fully inside the header, footer chrome stays visible
+        # and geometrically valid down to the minimum supported window size.
+        assert transport_right <= float(header.width()) + 1.0
+        footer = window.findChild(QQuickItem, "programFooterBand")
+        assert footer is not None
+        assert footer.isVisible()
+        assert float(footer.height()) > 8.0
+        footer_right = float(
+            footer.mapToItem(window.contentItem(), QPointF(footer.width(), 0)).x()
+        )
+        assert footer_right <= float(header.width()) + 1.0
 
         for name in (
             "programNavBrowser",

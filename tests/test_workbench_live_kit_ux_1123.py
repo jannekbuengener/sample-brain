@@ -6,6 +6,7 @@ Display mapping only — domain taxonomy keys stay authoritative.
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -184,6 +185,122 @@ def test_qml_projects_horizontal_responsive_group_cards():
 def test_reveal_control_hidden_when_browser_collapsed():
     block = QML_SOURCE.split('objectName: "editLiveKitRevealControl"', 1)[1][:900]
     assert "!window.interaction.browserCollapsed" in block
+
+
+PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
+
+
+def _click_window_at(window, app, settle, center) -> None:
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QMouseEvent
+
+    for action in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease):
+        event = QMouseEvent(
+            action,
+            center,
+            window.mapToGlobal(center.toPoint()),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        app.sendEvent(window, event)
+        settle(app)
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_runtime_browser_collapse_gates_reveal_control_and_open_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """#1123 blocker: reveal eligibility follows the authoritative collapsed state.
+
+    Browser open + kit closed => reveal control available; Browser collapsed =>
+    control invisible and inert (no invisible drawer-open state change via
+    click); Browser reopened => control available again; musical kit state
+    unchanged across the whole cycle.
+    """
+    from PySide6.QtCore import QPointF
+    from PySide6.QtQuick import QQuickItem
+
+    from src.workbench_harmony import HarmonicMatchLibraryController
+    from src.workbench_qml import LiveKitPresenter, Screen1QmlInteractionAdapter
+    from src.workbench_qml_spike import (
+        _qml_engine,
+        _settle_qml_frame,
+        build_qml_view_model_from_fixture,
+    )
+
+    monkeypatch.setenv("SAMPLE_BRAIN_WORKBENCH_STATE_DIR", str(tmp_path))
+    fixture = build_screen1_visual_fixture_v1()
+    view_model = build_qml_view_model_from_fixture(fixture, "screen1-default-3panel")
+    view_model.set_library_revealed(True)
+    kit = LiveKitState()
+    kit.assign("Kick + Bass", "Kick", _row("keep.wav"))
+    live_kit = LiveKitPresenter(state=kit)
+    view_model.live_kit_groups = live_kit.groups
+    adapter = Screen1QmlInteractionAdapter(
+        view_model=view_model,
+        harmony_controller=HarmonicMatchLibraryController(),
+        live_kit=live_kit,
+    )
+    app, engine, window = _qml_engine(view_model, interaction_adapter=adapter)
+    view_model.set_workspace_materialization(
+        has_active_source=True,
+        calm_canvas_visible=False,
+        browser_materialized=True,
+        live_kit_materialized=True,
+    )
+    adapter._live_kit_drawer_open = False
+    adapter.live_kit_collapsed = True
+    window.show()
+    _settle_qml_frame(app)
+    bridge = getattr(engine, "_screen1_interaction_bridge", None)
+    assert bridge is not None and hasattr(bridge, "refreshState")
+    bridge.refreshState()
+    _settle_qml_frame(app)
+
+    reveal = window.findChild(QQuickItem, "editLiveKitRevealControl")
+    assert reveal is not None
+    try:
+        # 1) Browser open + kit closed => reveal control available and usable.
+        assert adapter.browser_collapsed is False
+        assert reveal.isVisible() is True
+        assert reveal.isEnabled() is True
+        center = reveal.mapToItem(
+            window.contentItem(), QPointF(reveal.width() / 2, reveal.height() / 2)
+        )
+        _click_window_at(window, app, _settle_qml_frame, center)
+        assert adapter._live_kit_drawer_open is True
+
+        # Close the drawer again for the collapsed-Browser phase.
+        bridge.toggleLiveKitDrawer()
+        _settle_qml_frame(app)
+        assert adapter._live_kit_drawer_open is False
+
+        # 2) Browser collapsed => reveal control neither visible nor enabled.
+        bridge.toggleBrowserCollapsed()
+        _settle_qml_frame(app)
+        assert adapter.browser_collapsed is True
+        assert reveal.isVisible() is False
+        assert reveal.isEnabled() is False
+
+        # 3) Clicking where the control was must not open the drawer invisibly.
+        _click_window_at(window, app, _settle_qml_frame, center)
+        assert adapter._live_kit_drawer_open is False
+
+        # 4) Browser reopened => reveal control available again.
+        bridge.toggleBrowserCollapsed()
+        _settle_qml_frame(app)
+        assert adapter.browser_collapsed is False
+        assert reveal.isVisible() is True
+        assert reveal.isEnabled() is True
+
+        # 5) Musical kit state unchanged across the whole cycle.
+        assignment = kit.assignment_for("Kick + Bass", "Kick")
+        assert assignment is not None
+        assert assignment.display_name == "keep.wav"
+    finally:
+        window.close()
+        app.processEvents()
 
 
 def test_closed_live_kit_has_no_phantom_bottom_geometry():

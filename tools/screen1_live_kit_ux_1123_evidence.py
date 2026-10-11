@@ -165,6 +165,18 @@ def main() -> int:
             "1123-restart-stays-closed",
             "Restart after previously visible kit stays closed",
         ),
+        (
+            "1123-browser-collapsed-no-reveal",
+            "Browser collapsed; Live Kit reveal control must not be shown",
+        ),
+        (
+            "1123-browser-reopened-reveal",
+            "Browser reopened; Live Kit reveal control available again",
+        ),
+        (
+            "1123-min-width-chrome",
+            "Minimum supported 1120x640; program chrome without zone overlap",
+        ),
     ]
 
     failed_checks: list[str] = []
@@ -267,6 +279,66 @@ def main() -> int:
     adapter.live_kit_collapsed = True
     refresh()
     grab(*labels_notes[5])
+
+    # Browser-collapsed reveal eligibility (#1123 review blocker): the reveal
+    # control must follow the authoritative browserCollapsed state so no
+    # invisible drawer-open state change is possible.
+    from PySide6.QtCore import QPointF
+    from PySide6.QtQuick import QQuickItem
+
+    reveal = window.findChild(QQuickItem, "editLiveKitRevealControl")
+    assert reveal is not None
+    assert adapter.browser_collapsed is False
+    assert reveal.isVisible() is True
+    adapter.toggle_browser_collapsed()
+    refresh()
+    assert adapter.browser_collapsed is True
+    assert reveal.isVisible() is False
+    assert reveal.isEnabled() is False
+    grab(*labels_notes[7])
+
+    adapter.toggle_browser_collapsed()
+    refresh()
+    assert adapter.browser_collapsed is False
+    assert reveal.isVisible() is True
+    assert reveal.isEnabled() is True
+    grab(*labels_notes[8])
+
+    # Minimum supported window width: header/nav/transport stay non-overlapping
+    # and footer chrome stays visible.
+    prior_min_width = int(window.minimumWidth())
+    prior_width = int(window.width())
+    prior_height = int(window.height())
+    window.setMinimumWidth(1120)
+    window.setWidth(1120)
+    window.setHeight(640)
+    refresh()
+    header_item = window.findChild(QQuickItem, "screen1Header")
+    left_item = window.findChild(QQuickItem, "headerLeftZone")
+    nav_item = window.findChild(QQuickItem, "headerNavZone")
+    transport_item = window.findChild(QQuickItem, "headerTransportZone")
+    footer_item = window.findChild(QQuickItem, "programFooterBand")
+    assert all(
+        item is not None
+        for item in (header_item, left_item, nav_item, transport_item, footer_item)
+    )
+    left_right = float(
+        left_item.mapToItem(header_item, QPointF(left_item.width(), 0)).x()
+    )
+    nav_left = float(nav_item.mapToItem(header_item, QPointF(0, 0)).x())
+    nav_right = float(
+        nav_item.mapToItem(header_item, QPointF(nav_item.width(), 0)).x()
+    )
+    transport_left = float(transport_item.mapToItem(header_item, QPointF(0, 0)).x())
+    assert left_right <= nav_left + 1.0
+    assert nav_right <= transport_left + 1.0
+    assert float(transport_item.width()) > 8.0
+    assert footer_item.isVisible()
+    grab(*labels_notes[9])
+    window.setMinimumWidth(prior_min_width)
+    window.setWidth(prior_width)
+    window.setHeight(prior_height)
+    refresh()
 
     # Restart path: disk says visible, cold apply must stay closed (#1123).
     from src.workbench_library_navigation import LibraryScope, LibraryScopeKind
