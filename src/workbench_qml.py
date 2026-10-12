@@ -10,11 +10,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import inspect
+import json
 import math
 import os
 import sys
+import uuid
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import Any, Callable, Mapping
 
 from .workbench_controller import WorkbenchRow, filter_workbench_rows
 from .workbench_browser_rows import (
@@ -36,6 +38,17 @@ from .workbench_live_kit_edit import (
     edit_docking_materialization_for_live_kit,
     try_save_live_kit_visibility_preference,
     visible_live_kit_slot_keys,
+)
+from .workbench_internal_sample_dnd import (
+    KIND_INTERNAL_SAMPLE,
+    InternalSampleDropIntent,
+    InternalSampleDropResult,
+    InternalSampleDropSession,
+    LiveKitAssignmentTarget,
+    apply_internal_sample_drop,
+    descriptor_from_row,
+    list_visible_live_kit_targets,
+    parse_internal_sample_descriptor,
 )
 from .workbench_live_kit_export import LiveKitExportResult, export_live_kit
 from .workbench_library import (
@@ -146,6 +159,16 @@ class LiveKitPresenter:
 
     def assign(self, group: str, slot: str, row: WorkbenchRow) -> None:
         self._state.assign(group, slot, row)
+        self._groups = self._project()
+
+    def reproject(self) -> None:
+        """Rebuild the renderer projection from the canonical kit state.
+
+        The frozen #1072 drop contract mutates ``LiveKitState`` directly rather
+        than routing through :meth:`assign`; this re-derives the renderer-only
+        group shape so an accepted drop is visible immediately (audition /
+        remove / replace controls included) without a second kit truth.
+        """
         self._groups = self._project()
 
     def clear_slot(self, group: str, slot: str, *, notify: bool = True) -> bool:
@@ -1002,6 +1025,230 @@ class Screen1QmlInteractionAdapter:
             browser_materialized=self.view_model.browser_materialized,
             live_kit_materialized=live_kit_mat,
         )
+
+    @property
+    def internal_sample_dnd_enabled(self) -> bool:
+        """Feature gate for internal Sample drag-and-drop onto Live Kit targets."""
+        return self._internal_sample_dnd_enabled
+
+    def internal_sample_drag_enabled(self) -> bool:
+        """Return whether internal Sample DnD is enabled (feature gate)."""
+        return self._internal_sample_dnd_enabled
+
+    def _internal_sample_features(self):
+        """Canonical feature snapshot read by the frozen #1072 contract.
+
+        The contract only inspects ``internal_sample_dnd_enabled``; reuse the
+        canonical settings type instead of a second flag object.
+        """
+        from .workbench_feature_settings import WorkbenchFeatureSettings
+
+        return WorkbenchFeatureSettings(
+            internal_sample_dnd_enabled=bool(self._internal_sample_dnd_enabled)
+        )
+
+    def _internal_sample_projected_rows(self, source_surface: str) -> tuple:
+        if source_surface == "browser":
+            return tuple(self.view_model.browser_rows)
+        if source_surface == "harmony":
+            return tuple(self.view_model.harmony_rows)
+        return ()
+
+    def _internal_sample_source_row(self, row_index: int, source_surface: str):
+        rows = self._internal_sample_projected_rows(source_surface)
+        if not isinstance(row_index, int) or isinstance(row_index, bool):
+            return None
+        if not 0 <= row_index < len(rows):
+            return None
+        return rows[row_index].source_row
+
+    def _internal_sample_catalog(self) -> tuple:
+        """Visible Browser/Harmony catalog for #1072 resolution.
+
+        Dedupes only genuine re-projections of the *same underlying sample*
+        (identical absolute path), so a sample visible on both surfaces is
+        handed to the contract once and does not become a self-inflicted
+        ambiguity. Distinct underlying samples that merely share a normalized
+        ``relative_path`` are kept separate, letting the authoritative resolver
+        fail closed with ``ambiguous_sample`` instead of silently assigning the
+        wrong sample.
+        """
+        seen: set[str] = set()
+        catalog: list = []
+        for projected in (
+            *self.view_model.browser_rows,
+            *self.view_model.harmony_rows,
+        ):
+            row = projected.source_row
+            identity = self._internal_sample_row_identity(row)
+            if identity is not None and identity in seen:
+                continue
+            if identity is not None:
+                seen.add(identity)
+            catalog.append(row)
+        return tuple(catalog)
+
+    @staticmethod
+    def _internal_sample_row_identity(row: object) -> str | None:
+        """Underlying-sample identity (normalized absolute path) or ``None``.
+
+        ``None`` when no stable path is available, so unidentified rows are
+        never collapsed together and cannot hide an ambiguity.
+        """
+        raw = getattr(row, "path", None)
+        if not isinstance(raw, str):
+            return None
+        text = raw.strip()
+        if not text:
+            return None
+        return os.path.normcase(os.path.normpath(text))
+
+    def _internal_sample_visible_slot_keys(self) -> tuple[tuple[str, str], ...]:
+        """Authoritative visible (group, slot) keys (#1072/#1073).
+
+        Reuses :meth:`visible_live_kit_slot_keys` so internal Sample drops honour
+        the same effective visibility as every other Live Kit path: the pending
+        Add-to-Kit chooser (#954) can open the slots while the drawer preference
+        stays closed, and a collapsed Browser host (#1077) advertises none.
+        """
+        return self.visible_live_kit_slot_keys()
+
+    def _internal_sample_drop_session_owner(self) -> InternalSampleDropSession:
+        """One replay session per adapter lifecycle — never per drop."""
+        session = self._internal_sample_drop_session
+        if session is None:
+            session = InternalSampleDropSession()
+            self._internal_sample_drop_session = session
+        return session
+
+    def build_internal_sample_descriptor(
+        self, row_index: int, source_surface: str
+    ) -> dict | None:
+        """Map a visible Browser/Harmony row onto the #1072 descriptor contract.
+
+        Returns the QML-safe transport projection, or ``None`` fail-closed when
+        the feature is off, the index/surface is invalid, or the contract
+        rejects the row identity.
+        """
+        if not self._internal_sample_dnd_enabled:
+            return None
+        row = self._internal_sample_source_row(row_index, source_surface)
+        if row is None:
+            return None
+        descriptor = descriptor_from_row(
+            row,
+            source_surface=source_surface,
+            features=self._internal_sample_features(),
+        )
+        if descriptor is None:
+            return None
+        return descriptor.as_transport_dict()
+
+    def visible_live_kit_drop_targets(self) -> list:
+        """Serialized #1072 visible Live Kit targets for the current projection."""
+        if not self._internal_sample_dnd_enabled:
+            return []
+        targets = list_visible_live_kit_targets(
+            features=self._internal_sample_features(),
+            live_kit_materialized=bool(self.view_model.live_kit_materialized),
+            visible_slot_keys=self._internal_sample_visible_slot_keys(),
+        )
+        return [
+            {
+                "kind": target.kind,
+                "group": target.group,
+                "slot": target.slot,
+                "visible": target.visible,
+            }
+            for target in targets
+        ]
+
+    def apply_internal_sample_drop(
+        self,
+        relative_path: str,
+        source_surface: str,
+        group: str,
+        slot: str,
+        delivery_id: str,
+    ) -> dict:
+        """Map structured QML drop args onto the #1072 descriptor contract.
+
+        Retained for the structured adapter surface; the transported payload
+        path (:meth:`apply_internal_sample_drop_payload`) is authoritative.
+        """
+        return self.apply_internal_sample_drop_payload(
+            {
+                "kind": KIND_INTERNAL_SAMPLE,
+                "relative_path": relative_path,
+                "source_surface": source_surface,
+            },
+            group,
+            slot,
+            delivery_id,
+        )
+
+    def apply_internal_sample_drop_payload(
+        self,
+        descriptor_payload: Any,
+        group: str,
+        slot: str,
+        delivery_id: str,
+    ) -> dict:
+        """Validate the *full* transported descriptor and route one drop.
+
+        Python stays authoritative for descriptor identity: a foreign or
+        malformed payload (for example a ``panel_move`` docking descriptor)
+        fails closed through :func:`parse_internal_sample_descriptor` and never
+        reaches the kit. On an accepted mutation the renderer projection is
+        rebuilt from the canonical kit state immediately.
+        """
+        if not self._internal_sample_dnd_enabled:
+            return {"accepted": False, "mutation": None, "reason": "feature_disabled"}
+        if self._live_kit is None:
+            return {"accepted": False, "mutation": None, "reason": "no_live_kit"}
+        descriptor = parse_internal_sample_descriptor(descriptor_payload)
+        if descriptor is None:
+            return {"accepted": False, "mutation": None, "reason": "invalid_descriptor"}
+        intent = InternalSampleDropIntent(
+            descriptor=descriptor,
+            target=LiveKitAssignmentTarget(group=str(group), slot=str(slot)),
+            delivery_id=str(delivery_id),
+        )
+        result = apply_internal_sample_drop(
+            intent,
+            kit=self._live_kit.state,
+            catalog=self._internal_sample_catalog(),
+            features=self._internal_sample_features(),
+            live_kit_materialized=bool(self.view_model.live_kit_materialized),
+            visible_slot_keys=self._internal_sample_visible_slot_keys(),
+            session=self._internal_sample_drop_session_owner(),
+        )
+        if result.accepted and result.mutation is not None:
+            # The #1072 contract mutates LiveKitState directly; re-project the
+            # canonical state so the new slot (audition/remove/replace) is
+            # visible immediately instead of only after an unrelated toggle.
+            self._live_kit.reproject()
+            self._sync_live_kit_projection()
+            # A replaced/cleared destination slot must drop its audition
+            # projection, mirroring assign_live_kit_slot/remove_live_kit_slot, so
+            # the newly assigned sample is never shown as the auditioning one
+            # while the preview owner may still be playing the previous sample.
+            if self._auditioning_live_kit_slot == (str(group), str(slot)):
+                self._clear_live_kit_audition_projection()
+        return self._project_internal_sample_drop_result(result)
+
+    @staticmethod
+    def _project_internal_sample_drop_result(
+        result: InternalSampleDropResult,
+    ) -> dict:
+        projected = {
+            "accepted": bool(result.accepted),
+            "mutation": result.mutation,
+            "reason": result.reason,
+        }
+        if result.evidence is not None:
+            projected["evidence"] = result.evidence
+        return projected
 
     @property
     def selected_browser_index(self) -> int:
@@ -4314,10 +4561,32 @@ ApplicationWindow {
                         delegate: Rectangle { id: browserRow; width: browser.width; height: browser.rowHeight; color: index === window.screenData.selectedBrowserIndex ? theme.selectionSurface : (rowSelection.containsMouse ? theme.surfaceElevated : "transparent"); border.width: index === window.screenData.selectedBrowserIndex ? 1 : 0; border.color: theme.selectionBorder
                             Component.onCompleted: window.browserDelegateCreations += 1
                             property string outboundUrl: window.interaction.outboundFileUrl(index)
+                            // #1073: internal Sample payload from the frozen #1072 descriptor.
+                            property string internalSampleDescriptor: window.interaction.internalSampleDragEnabled ? window.interaction.requestInternalSampleDragDescriptor(index, "browser") : ""
+                            // One delivery id per drag (minted at drag start) so a repeated
+                            // delivery of the same drag is idempotent, not a second mutation.
+                            property string internalDeliveryId: ""
                             Drag.active: rowSelection.dragActive
                             Drag.dragType: Drag.Automatic
                             Drag.supportedActions: Qt.CopyAction
-                            Drag.mimeData: browserRow.outboundUrl.length > 0 ? { "text/uri-list": browserRow.outboundUrl } : {}
+                            Drag.keys: {
+                                var k = []
+                                if (browserRow.internalSampleDescriptor.length > 0)
+                                    k.push("application/x-sample-brain-internal-sample")
+                                if (browserRow.outboundUrl.length > 0)
+                                    k.push("text/uri-list")
+                                return k
+                            }
+                            Drag.mimeData: {
+                                var payload = {}
+                                if (browserRow.internalSampleDescriptor.length > 0)
+                                    payload["application/x-sample-brain-internal-sample"] = browserRow.internalSampleDescriptor
+                                if (browserRow.internalDeliveryId.length > 0)
+                                    payload["application/x-sample-brain-internal-delivery"] = browserRow.internalDeliveryId
+                                if (browserRow.outboundUrl.length > 0)
+                                    payload["text/uri-list"] = browserRow.outboundUrl
+                                return payload
+                            }
                             Drag.onDragFinished: rowSelection.dragActive = false
                             MouseArea {
                                 id: rowSelection
@@ -4332,6 +4601,7 @@ ApplicationWindow {
                                     if (mouse.button === Qt.RightButton)
                                         return
                                     dragActive = false
+                                    browserRow.internalDeliveryId = ""
                                     pressX = mouse.x
                                     pressY = mouse.y
                                     browserRow.outboundUrl = window.interaction.outboundFileUrl(index)
@@ -4339,11 +4609,22 @@ ApplicationWindow {
                                 onPositionChanged: function(mouse) {
                                     if (!pressed || dragActive)
                                         return
-                                    if (browserRow.outboundUrl.length === 0)
+                                    if (browserRow.outboundUrl.length === 0 && browserRow.internalSampleDescriptor.length === 0)
                                         return
                                     if (Math.abs(mouse.x - pressX) < 8 && Math.abs(mouse.y - pressY) < 8)
                                         return
-                                    dragActive = true
+                                    var fresh = window.interaction.requestInternalSampleDragDescriptor(index, "browser")
+                                    browserRow.internalSampleDescriptor = fresh
+                                    if (browserRow.internalSampleDescriptor.length > 0 && browserRow.internalDeliveryId.length === 0) {
+                                        browserRow.internalDeliveryId = window.interaction.beginInternalSampleDrag()
+                                    } else if (browserRow.internalSampleDescriptor.length === 0) {
+                                        // No internal payload; clear any stale delivery if present
+                                        browserRow.internalDeliveryId = ""
+                                    }
+                                    // Activate drag if we have any valid payload for this drag
+                                    if (browserRow.internalSampleDescriptor.length > 0 || browserRow.outboundUrl.length > 0) {
+                                        dragActive = true
+                                    }
                                 }
                                 onClicked: function(mouse) {
                                     if (mouse.button === Qt.RightButton) {
@@ -4606,12 +4887,33 @@ ApplicationWindow {
                                    : (harmonyRowHover.containsMouse ? theme.surfaceElevated : "transparent")
                             border.width: index === window.interaction.selectedHarmonyIndex ? 1 : 0
                             border.color: index === window.interaction.selectedHarmonyIndex ? theme.selectionBorder : "transparent"
+                            // #1073: one delivery id per drag (repeated delivery = idempotent).
+                            property string internalDeliveryId: ""
+                            Drag.active: harmonyRowHover.dragActive
+                            Drag.dragType: Drag.Automatic
+                            Drag.supportedActions: Qt.CopyAction
+                            Drag.keys: window.interaction.internalSampleDragEnabled ? ["application/x-sample-brain-internal-sample"] : []
+                            function _freshInternalDescriptor(hi) {
+                                return window.interaction.internalSampleDragEnabled ? window.interaction.requestInternalSampleDragDescriptor(hi, "harmony") : ""
+                            }
+                            Drag.mimeData: window.interaction.internalSampleDragEnabled ? { "application/x-sample-brain-internal-sample": harmonyRow._freshInternalDescriptor(index), "application/x-sample-brain-internal-delivery": harmonyRow.internalDeliveryId } : {}
+                            Drag.onDragFinished: harmonyRowHover.dragActive = false
                             MouseArea {
                                 id: harmonyRowHover
                                 anchors.fill: parent
                                 z: 0
                                 hoverEnabled: true
-                                onClicked: { harmonicMatchList.forceActiveFocus(); window.interaction.selectHarmonyRow(index) }
+                                property bool dragActive: false
+                                property real pressX: 0
+                                property real pressY: 0
+                                onPressed: function(mouse) { dragActive = false; harmonyRow.internalDeliveryId = ""; pressX = mouse.x; pressY = mouse.y }
+                                onPositionChanged: function(mouse) {
+                                    if (window.interaction.internalSampleDragEnabled && pressed && !dragActive && (Math.abs(mouse.x - pressX) >= 8 || Math.abs(mouse.y - pressY) >= 8)) {
+                                        if (harmonyRow.internalDeliveryId.length === 0) harmonyRow.internalDeliveryId = window.interaction.beginInternalSampleDrag()
+                                        dragActive = true
+                                    }
+                                }
+                                onClicked: { if (dragActive) return; harmonicMatchList.forceActiveFocus(); window.interaction.selectHarmonyRow(index) }
                             }
                             RowLayout {
                                 anchors.fill: parent
@@ -5008,6 +5310,21 @@ ApplicationWindow {
                                             property bool showReplaceAffordance: modelData.assigned && !hasPendingAdd
                                             property bool showRemoveAffordance: modelData.assigned && !hasPendingAdd
                                             property bool showAddAffordance: !modelData.assigned || hasPendingAdd
+                                            // #1073: visible Live Kit slot accepts the internal Sample
+                                            // MIME only; Python owns eligibility, Add/Replace, replay.
+                                            DropArea {
+                                                objectName: "internalSampleDropArea" + kitGroupIndex + "_" + index
+                                                anchors.fill: parent
+                                                z: 2
+                                                enabled: window.interaction.internalSampleDragEnabled
+                                                keys: ["application/x-sample-brain-internal-sample", "application/x-sample-brain-internal-delivery"]
+                                                onEntered: function(drag) { drag.accept(Qt.CopyAction) }
+                                                onDropped: function(drop) {
+                                                    var descriptor = drop.getDataAsString("application/x-sample-brain-internal-sample")
+                                                    var deliveryId = drop.getDataAsString("application/x-sample-brain-internal-delivery")
+                                                    window.interaction.applyInternalSampleDropAtSlot(kitGroupIndex, index, descriptor, deliveryId)
+                                                }
+                                            }
                                             Rectangle {
                                                 id: slotAuditionBackdrop
                                                 anchors.fill: parent
@@ -5905,6 +6222,78 @@ def _qml_interaction_bridge(
                 return ""
             path = adapter.view_model.browser_rows[index].source_row.path
             return outbound_local_file_url(path) or ""
+
+        @Property(bool, notify=state_changed)
+        def internalSampleDragEnabled(self) -> bool:
+            return adapter.internal_sample_drag_enabled()
+
+        @Slot(int, str, result=str)
+        def requestInternalSampleDragDescriptor(
+            self, row_index: int, source_surface: str
+        ) -> str:
+            descriptor = adapter.build_internal_sample_descriptor(
+                row_index, source_surface
+            )
+            if descriptor is None:
+                return ""
+            return json.dumps(descriptor)
+
+        @Slot(result="QVariantList")
+        def requestVisibleLiveKitDropTargets(self) -> list:
+            return adapter.visible_live_kit_drop_targets()
+
+        @Slot(str, str, str, str, str, result="QVariantMap")
+        def applyInternalSampleDrop(
+            self,
+            relative_path: str,
+            source_surface: str,
+            group: str,
+            slot: str,
+            delivery_id: str,
+        ) -> dict:
+            result = adapter.apply_internal_sample_drop(
+                relative_path, source_surface, group, slot, delivery_id
+            )
+            self._refresh()
+            return result
+
+        @Slot(result=str)
+        def beginInternalSampleDrag(self) -> str:
+            """Mint exactly one delivery id for a fresh internal Sample drag.
+
+            QML calls this once at drag start and transports the id to the drop,
+            so a duplicated delivery of the SAME drag collapses to
+            ``duplicate_delivery`` instead of mutating the kit a second time.
+            """
+            return f"qml-drag-{uuid.uuid4().hex}"
+
+        @Slot(int, int, str, str, result="QVariantMap")
+        def applyInternalSampleDropAtSlot(
+            self,
+            group_index: int,
+            slot_index: int,
+            descriptor_json: str,
+            delivery_id: str,
+        ) -> dict:
+            """QML drop entry: resolve (group, slot) and validate the full payload.
+
+            The renderer supplies only indices plus the carried #1072 descriptor
+            and its drag delivery id; Python stays authoritative for descriptor
+            validation, target eligibility, Add/Replace, projection, and replay.
+            """
+            target = self._live_kit_slot_target(group_index, slot_index)
+            if target is None:
+                return {"accepted": False, "mutation": None, "reason": "invalid_target"}
+            try:
+                payload = json.loads(descriptor_json)
+            except (TypeError, ValueError):
+                payload = None
+            delivery = delivery_id.strip() if isinstance(delivery_id, str) else ""
+            result = adapter.apply_internal_sample_drop_payload(
+                payload, target[0], target[1], delivery
+            )
+            self._refresh()
+            return result
 
         @Slot()
         def toggleHarmonicMatch(self) -> None:
