@@ -165,7 +165,12 @@ def test_browser_meta_fields_use_secondary_text_weight():
     assert 'text: modelData.key; color: theme.textPrimary' not in delegate
     assert 'text: modelData.duration; color: theme.textPrimary' not in delegate
 
-    harmonic = _snippet(QML_SOURCE, 'objectName: "harmonicMatchList"', 9000)
+    harmonic_marker = 'objectName: "harmonicMatchList"'
+    harmonic_span = (
+        QML_SOURCE.index("id: bottomRackPane")
+        - QML_SOURCE.index(harmonic_marker)
+    )
+    harmonic = _snippet(QML_SOURCE, harmonic_marker, harmonic_span)
     assert 'text: modelData.key; color: theme.actionActive' in harmonic
     assert 'text: modelData.key; color: theme.textSecondary' not in harmonic
 
