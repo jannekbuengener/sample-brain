@@ -165,16 +165,27 @@ def bar_start_fields() -> tuple[int, ...]:
 def build_32_field_pattern(
     pattern_id: str, triggers: Iterable[Trigger] = ()
 ) -> Pattern:
-    """Build an empty-by-default 32-field Pattern (length 32 quarter notes)."""
-    return Pattern(
+    """Build an empty-by-default 32-field Pattern (length 32 quarter notes).
+
+    Only field-aligned triggers (exact integer quarter-note positions in
+    ``[0, 32)``) are representable in v1; anything else fails closed.
+    """
+    pattern = Pattern(
         pattern_id=pattern_id,
         length_quarter_notes=CYCLE_LENGTH_QUARTER_NOTES,
         triggers=tuple(triggers),
     )
+    return require_32_field_pattern(pattern)
 
 
 def require_32_field_pattern(pattern: object) -> Pattern:
-    """Fail closed unless *pattern* is a valid one-cycle 32-field Pattern."""
+    """Fail closed unless *pattern* is a valid one-cycle 32-field Pattern.
+
+    Every trigger must sit on an exact integer quarter-note field in the
+    half-open cycle interval ``[0, 32)`` — a finer (sub-field) grid is not part
+    of v1, so fractional in-range positions such as ``Fraction(1, 4)`` are
+    rejected, not silently accepted.
+    """
     if not isinstance(pattern, Pattern):
         raise Arrangement32FieldTimeError("pattern must be a Pattern instance")
     if pattern.length_quarter_notes != CYCLE_LENGTH_QUARTER_NOTES:
@@ -183,9 +194,15 @@ def require_32_field_pattern(pattern: object) -> Pattern:
             f"{pattern.length_quarter_notes}"
         )
     for trigger in pattern.triggers:
-        if not (Fraction(0, 1) <= trigger.position < CYCLE_LENGTH_QUARTER_NOTES):
+        position = trigger.position
+        if (
+            position.denominator != 1
+            or not (Fraction(0, 1) <= position < CYCLE_LENGTH_QUARTER_NOTES)
+        ):
             raise Arrangement32FieldTimeError(
-                "trigger_at_or_outside_cycle_end_in_one_cycle_truth"
+                "trigger_at_or_outside_cycle_end_in_one_cycle_truth: position "
+                "must be a field-aligned integer quarter note in [0, 32), got "
+                f"{position}"
             )
     return pattern
 

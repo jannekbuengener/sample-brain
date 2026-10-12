@@ -35,6 +35,7 @@ from src.native_audio import PcmBufferConfig
 from src.pattern_core import Channel, Pattern, Trigger
 from src.session_grid import TempoMap
 from src.sequencer_playback import schedule_pattern_once
+from src.workbench_channel_rack import ChannelRackController
 from src.workbench_live_kit import LiveKitState
 from src.workbench_session_store import (
     load_workbench_session_outcome,
@@ -567,6 +568,154 @@ def test_user_added_unknown_legacy_state_hold():
 
 def test_all_required_fail_closed_ids_are_exposed():
     assert set(REQUIRED_FAIL_CLOSED_IDS) <= set(a32.FAIL_CLOSED_IDS)
+
+
+# --------------------------------------------------------------------------- #
+# field-aligned position gate (code review P2) — only exact integer fields
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("position", [Fraction(1, 4), Fraction(3, 2), Fraction(31, 2)])
+def test_fractional_trigger_rejected_by_builder(position):
+    trigger = Trigger(channel_id="ch_kick", position=position)
+    with pytest.raises(a32.Arrangement32FieldTimeError):
+        a32.build_32_field_pattern("screen2-main", (trigger,))
+
+
+@pytest.mark.parametrize("position", [Fraction(1, 4), Fraction(3, 2), Fraction(31, 2)])
+def test_fractional_trigger_rejected_by_require(position):
+    pattern = Pattern(
+        pattern_id="screen2-main",
+        length_quarter_notes=a32.CYCLE_LENGTH_QUARTER_NOTES,
+        triggers=(Trigger(channel_id="ch_kick", position=position),),
+    )
+    with pytest.raises(a32.Arrangement32FieldTimeError):
+        a32.require_32_field_pattern(pattern)
+
+
+def test_add_and_toggle_reject_fractional_positions():
+    rack = _rack()
+    kick = next(iter(_channels_by_id().values()))
+    trigger = Trigger(channel_id=kick.channel_id, position=Fraction(1, 4))
+    with pytest.raises(a32.Arrangement32FieldTimeError):
+        a32.add_field(rack.pattern, trigger)
+    with pytest.raises(a32.Arrangement32FieldTimeError):
+        a32.toggle_field(rack.pattern, trigger)
+    with pytest.raises(a32.Arrangement32FieldTimeError):
+        a32.set_field(rack, trigger, active=True)
+
+
+# --------------------------------------------------------------------------- #
+# live rack-path reachability (code review P1) — ChannelRackController
+# --------------------------------------------------------------------------- #
+
+
+class _RackStatusTransport:
+    """Minimal transport facade for arrangement_time_status / restore tests."""
+
+    sample_rate = 48_000
+
+    def is_native_available(self) -> bool:
+        return False
+
+
+def _status_controller() -> ChannelRackController:
+    return ChannelRackController(
+        live_kit=LiveKitState(),
+        transport=_RackStatusTransport(),
+    )
+
+
+def test_controller_restore_32_field_rack_surfaces_runtime_semantics():
+    rack = _rack()
+    controller = _status_controller()
+    controller.restore_state(rack)
+    status = controller.arrangement_time_status
+    assert status["semantic_version"] == a32.TIME_SEMANTICS_32_FIELD_V1
+    assert status["migration_outcome"] is None
+    assert status["restored_migration_outcome"] is None
+    assert controller.state is rack
+
+
+def _legacy_default_on_rack() -> ChannelRackState:
+    """Canonical legacy v1 rack: 16 steps seeded at quarter-16th positions."""
+    kick = Channel(
+        channel_id="ch_kick",
+        live_kit_group="Kick + Bass",
+        live_kit_slot="Kick",
+        sample_path=None,
+    )
+    return ChannelRackState(
+        channels=(kick,),
+        pattern=Pattern(
+            pattern_id="screen2-main",
+            length_quarter_notes=Fraction(4, 1),
+            triggers=tuple(
+                Trigger(channel_id="ch_kick", position=Fraction(i, 4))
+                for i in range(16)
+            ),
+        ),
+        step_count=16,
+    )
+
+
+def test_controller_fresh_rack_stays_legacy_and_never_activates():
+    controller = _status_controller()
+    controller.ensure_state()
+    status = controller.arrangement_time_status
+    assert status["semantic_version"] == a32.TIME_SEMANTICS_LEGACY_V1
+    assert status["migration_outcome"] == a32.OUTCOME_MIGRATED_EMPTY
+    assert status["restored_migration_outcome"] is None
+    assert controller.state.step_count == 16
+    assert controller.state.pattern.length_quarter_notes == Fraction(4, 1)
+
+
+def test_controller_restore_legacy_rack_surfaces_no_silent_migration():
+    legacy = _legacy_default_on_rack()
+    controller = _status_controller()
+    controller.restore_state(legacy)
+    status = controller.arrangement_time_status
+    assert status["semantic_version"] == a32.TIME_SEMANTICS_LEGACY_V1
+    assert status["restored_migration_outcome"] == a32.OUTCOME_MIGRATION_REQUIRED
+    assert controller.state is legacy
+    assert legacy.step_count == 16
+    assert legacy.pattern.length_quarter_notes == Fraction(4, 1)
+    result = a32.migrate_legacy_channel_rack_state(legacy)
+    assert result.activated is False
+
+
+def test_controller_restore_empty_legacy_rack_surfaces_migrated_empty():
+    empty_legacy = ChannelRackState(
+        channels=(),
+        pattern=Pattern(
+            pattern_id="screen2-main",
+            length_quarter_notes=Fraction(4, 1),
+            triggers=(),
+        ),
+        step_count=16,
+    )
+    controller = _status_controller()
+    controller.restore_state(empty_legacy)
+    status = controller.arrangement_time_status
+    assert status["semantic_version"] == a32.TIME_SEMANTICS_LEGACY_V1
+    assert status["restored_migration_outcome"] == a32.OUTCOME_MIGRATED_EMPTY
+
+
+def test_controller_restore_unknown_rack_fails_closed_surface():
+    unknown = ChannelRackState(
+        channels=(),
+        pattern=Pattern(
+            pattern_id="screen2-main",
+            length_quarter_notes=Fraction(5, 1),
+            triggers=(),
+        ),
+        step_count=8,
+    )
+    controller = _status_controller()
+    controller.restore_state(unknown)
+    status = controller.arrangement_time_status
+    assert status["semantic_version"] is None
+    assert status["restored_migration_outcome"] == a32.OUTCOME_REJECT_FAIL_CLOSED
 
 
 # --------------------------------------------------------------------------- #
