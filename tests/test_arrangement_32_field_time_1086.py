@@ -35,8 +35,8 @@ from src.native_audio import PcmBufferConfig
 from src.pattern_core import Channel, Pattern, Trigger
 from src.session_grid import TempoMap
 from src.sequencer_playback import schedule_pattern_once
-from src.workbench_channel_rack import ChannelRackController
 from src.workbench_live_kit import LiveKitState
+from src.workbench_session import compose_workbench_session
 from src.workbench_session_store import (
     load_workbench_session_outcome,
     save_workbench_session_snapshot,
@@ -606,35 +606,40 @@ def test_add_and_toggle_reject_fractional_positions():
 
 
 # --------------------------------------------------------------------------- #
-# live rack-path reachability (code review P1) — ChannelRackController
+# live rack-path reachability (code review P1) — session restore seam
 # --------------------------------------------------------------------------- #
 
 
-class _RackStatusTransport:
-    """Minimal transport facade for arrangement_time_status / restore tests."""
-
-    sample_rate = 48_000
-
-    def is_native_available(self) -> bool:
-        return False
-
-
-def _status_controller() -> ChannelRackController:
-    return ChannelRackController(
-        live_kit=LiveKitState(),
-        transport=_RackStatusTransport(),
-    )
+def test_classify_channel_rack_state_is_fail_closed_and_never_raises():
+    assert a32.classify_channel_rack_state(None) == {
+        "semantic_version": None,
+        "migration_outcome": None,
+    }
+    assert a32.classify_channel_rack_state("not-a-rack") == {
+        "semantic_version": None,
+        "migration_outcome": None,
+    }
 
 
-def test_controller_restore_32_field_rack_surfaces_runtime_semantics():
-    rack = _rack()
-    controller = _status_controller()
-    controller.restore_state(rack)
-    status = controller.arrangement_time_status
+def test_classify_32_field_rack():
+    status = a32.classify_channel_rack_state(_rack())
     assert status["semantic_version"] == a32.TIME_SEMANTICS_32_FIELD_V1
     assert status["migration_outcome"] is None
-    assert status["restored_migration_outcome"] is None
-    assert controller.state is rack
+
+
+def test_classify_legacy_empty_rack():
+    empty_legacy = ChannelRackState(
+        channels=(),
+        pattern=Pattern(
+            pattern_id="screen2-main",
+            length_quarter_notes=Fraction(4, 1),
+            triggers=(),
+        ),
+        step_count=16,
+    )
+    status = a32.classify_channel_rack_state(empty_legacy)
+    assert status["semantic_version"] == a32.TIME_SEMANTICS_LEGACY_V1
+    assert status["migration_outcome"] == a32.OUTCOME_MIGRATED_EMPTY
 
 
 def _legacy_default_on_rack() -> ChannelRackState:
@@ -659,49 +664,15 @@ def _legacy_default_on_rack() -> ChannelRackState:
     )
 
 
-def test_controller_fresh_rack_stays_legacy_and_never_activates():
-    controller = _status_controller()
-    controller.ensure_state()
-    status = controller.arrangement_time_status
-    assert status["semantic_version"] == a32.TIME_SEMANTICS_LEGACY_V1
-    assert status["migration_outcome"] == a32.OUTCOME_MIGRATED_EMPTY
-    assert status["restored_migration_outcome"] is None
-    assert controller.state.step_count == 16
-    assert controller.state.pattern.length_quarter_notes == Fraction(4, 1)
-
-
-def test_controller_restore_legacy_rack_surfaces_no_silent_migration():
+def test_classify_legacy_default_on_rack_surfaces_migration_required():
     legacy = _legacy_default_on_rack()
-    controller = _status_controller()
-    controller.restore_state(legacy)
-    status = controller.arrangement_time_status
+    status = a32.classify_channel_rack_state(legacy)
     assert status["semantic_version"] == a32.TIME_SEMANTICS_LEGACY_V1
-    assert status["restored_migration_outcome"] == a32.OUTCOME_MIGRATION_REQUIRED
-    assert controller.state is legacy
-    assert legacy.step_count == 16
-    assert legacy.pattern.length_quarter_notes == Fraction(4, 1)
-    result = a32.migrate_legacy_channel_rack_state(legacy)
-    assert result.activated is False
+    assert status["migration_outcome"] == a32.OUTCOME_MIGRATION_REQUIRED
+    assert a32.migrate_legacy_channel_rack_state(legacy).activated is False
 
 
-def test_controller_restore_empty_legacy_rack_surfaces_migrated_empty():
-    empty_legacy = ChannelRackState(
-        channels=(),
-        pattern=Pattern(
-            pattern_id="screen2-main",
-            length_quarter_notes=Fraction(4, 1),
-            triggers=(),
-        ),
-        step_count=16,
-    )
-    controller = _status_controller()
-    controller.restore_state(empty_legacy)
-    status = controller.arrangement_time_status
-    assert status["semantic_version"] == a32.TIME_SEMANTICS_LEGACY_V1
-    assert status["restored_migration_outcome"] == a32.OUTCOME_MIGRATED_EMPTY
-
-
-def test_controller_restore_unknown_rack_fails_closed_surface():
+def test_classify_unknown_rack_fails_closed():
     unknown = ChannelRackState(
         channels=(),
         pattern=Pattern(
@@ -711,11 +682,75 @@ def test_controller_restore_unknown_rack_fails_closed_surface():
         ),
         step_count=8,
     )
-    controller = _status_controller()
-    controller.restore_state(unknown)
-    status = controller.arrangement_time_status
+    status = a32.classify_channel_rack_state(unknown)
     assert status["semantic_version"] is None
-    assert status["restored_migration_outcome"] == a32.OUTCOME_REJECT_FAIL_CLOSED
+    assert status["migration_outcome"] == a32.OUTCOME_REJECT_FAIL_CLOSED
+
+
+def test_classify_corrupt_32_field_triggers_fail_closed():
+    rack = _rack()
+    corrupt = dataclasses.replace(
+        rack,
+        pattern=Pattern(
+            pattern_id=rack.pattern.pattern_id,
+            length_quarter_notes=a32.CYCLE_LENGTH_QUARTER_NOTES,
+            triggers=(Trigger(channel_id="ch_kick", position=Fraction(1, 4)),),
+        ),
+    )
+    status = a32.classify_channel_rack_state(corrupt)
+    assert status["semantic_version"] == a32.TIME_SEMANTICS_32_FIELD_V1
+    assert status["migration_outcome"] == a32.OUTCOME_REJECT_FAIL_CLOSED
+
+
+def _session_row(name: str, path: str):
+    from src.workbench_controller import WorkbenchRow
+
+    return WorkbenchRow(
+        display_name=name,
+        relative_path=name,
+        path=path,
+        bpm=132.0,
+        key="C",
+        key_conf=0.9,
+        loudness=-12.0,
+        brightness=3000.0,
+        sample_class="one_shot",
+        pred_type="Kick",
+        status="ok",
+        details={"duration_sec": "0.2"},
+    )
+
+
+def test_composed_session_fresh_restore_status_is_none(tmp_path: Path):
+    session = compose_workbench_session(state_dir=tmp_path)
+    assert session.channel_rack.state is None
+    assert session.restored_rack_time_status is None
+    status = session.channel_rack_time_status
+    assert status["semantic_version"] is None
+    assert status["migration_outcome"] is None
+    assert session.channel_rack.ensure_state() is not None
+    status = session.channel_rack_time_status
+    assert status["semantic_version"] == a32.TIME_SEMANTICS_LEGACY_V1
+    assert status["migration_outcome"] == a32.OUTCOME_MIGRATED_EMPTY
+
+
+def test_composed_session_restore_surfaces_legacy_default_on_as_migration_required(
+    tmp_path: Path,
+):
+    kick = str(tmp_path / "kick.wav")
+    Path(kick).write_bytes(b"RIFF")
+    a = compose_workbench_session(state_dir=tmp_path)
+    a.live_kit.assign("Kick + Bass", "Kick", _session_row("kick.wav", kick))
+    assert a.channel_rack.state is not None
+
+    b = compose_workbench_session(state_dir=tmp_path)
+    status = b.channel_rack_time_status
+    assert status["semantic_version"] == a32.TIME_SEMANTICS_LEGACY_V1
+    assert status["migration_outcome"] == a32.OUTCOME_MIGRATION_REQUIRED
+    assert b.restored_rack_time_status == status
+    # No silent migration: the adopted rack stays legacy 16/4.
+    assert b.channel_rack.state.step_count == 16
+    assert b.channel_rack.state.pattern.length_quarter_notes == Fraction(4, 1)
 
 
 # --------------------------------------------------------------------------- #

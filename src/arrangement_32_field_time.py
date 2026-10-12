@@ -348,6 +348,40 @@ def channel_rack_time_semantics_version(state: ChannelRackState) -> str:
     return time_semantics_version(state.step_count, state.pattern.length_quarter_notes)
 
 
+def classify_channel_rack_state(state: object) -> Mapping[str, object]:
+    """Fail-closed, never-raising classification of a live rack state.
+
+    Production entry point for the #1086 runtime on the workbench rack path:
+    derives the semantic version and, for legacy v1 racks, the frozen migration
+    outcome. Never mutates the state and never activates a migration — a legacy
+    DEFAULT_ON rack is surfaced as ``migration_required``, not converted.
+    """
+    if not isinstance(state, ChannelRackState):
+        return {
+            "semantic_version": None,
+            "migration_outcome": None,
+        }
+    try:
+        version = channel_rack_time_semantics_version(state)
+    except Arrangement32FieldTimeError:
+        return {
+            "semantic_version": None,
+            "migration_outcome": OUTCOME_REJECT_FAIL_CLOSED,
+        }
+    migration_outcome: str | None = None
+    if version == TIME_SEMANTICS_LEGACY_V1:
+        migration_outcome = migrate_legacy_channel_rack_state(state).outcome
+    elif version == TIME_SEMANTICS_32_FIELD_V1:
+        try:
+            require_32_field_channel_rack_state(state)
+        except Arrangement32FieldTimeError:
+            migration_outcome = OUTCOME_REJECT_FAIL_CLOSED
+    return {
+        "semantic_version": version,
+        "migration_outcome": migration_outcome,
+    }
+
+
 # --- 16-bar block projection ------------------------------------------------- #
 
 
@@ -623,6 +657,7 @@ __all__ = [
     "build_32_field_channel_rack_state",
     "build_32_field_pattern",
     "channel_rack_time_semantics_version",
+    "classify_channel_rack_state",
     "classify_legacy_v1_rack",
     "classify_unknown_legacy_state",
     "field_in_bar",

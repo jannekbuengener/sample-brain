@@ -24,15 +24,6 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
-from .arrangement_32_field_time import (
-    OUTCOME_REJECT_FAIL_CLOSED,
-    TIME_SEMANTICS_32_FIELD_V1,
-    TIME_SEMANTICS_LEGACY_V1,
-    Arrangement32FieldTimeError,
-    channel_rack_time_semantics_version,
-    migrate_legacy_channel_rack_state,
-    require_32_field_channel_rack_state,
-)
 from .channel_rack import (
     ChannelRackPlayHandle,
     ChannelRackState,
@@ -631,10 +622,6 @@ class ChannelRackController:
             Mapping[str, tuple[str, str | None, float | None]] | None
         ) = None
         self._frozen_user_metadata: UserSampleMetadataBinding | None = None
-        # #1086: frozen classification of the most recently restored rack, so a
-        # persisted legacy v1 state is surfaced as migration_required / hold / 32
-        # field instead of silently adopted. `None` = no restore has happened.
-        self._restored_migration_outcome: str | None = None
 
     # ------------------------------------------------------------------
     # #952 user-channel classification (derived, never persisted)
@@ -1008,63 +995,9 @@ class ChannelRackController:
         self._discard_pending_user_mutation()
         self.stop()
         self._state = state
-        self._restored_migration_outcome = self._classify_restored_rack(state)
         self._user_metadata = self._resolve_user_paths(_distinct_user_paths(state))
         self._clear_loop_session()
         self._active_screen = SCREEN1
-
-    def _classify_restored_rack(self, state: ChannelRackState) -> str | None:
-        """Run the #1086 time-model runtime over a restored rack state.
-
-        Fail-closed and observational: never mutates the adopted state and
-        never activates a migration. Returns the frozen migration outcome for
-        legacy v1 racks, ``None`` for valid 32-field racks, and the reject
-        outcome for anything the runtime cannot classify.
-        """
-        try:
-            version = channel_rack_time_semantics_version(state)
-        except Arrangement32FieldTimeError:
-            return OUTCOME_REJECT_FAIL_CLOSED
-        if version == TIME_SEMANTICS_LEGACY_V1:
-            return migrate_legacy_channel_rack_state(state).outcome
-        if version == TIME_SEMANTICS_32_FIELD_V1:
-            try:
-                require_32_field_channel_rack_state(state)
-            except Arrangement32FieldTimeError:
-                return OUTCOME_REJECT_FAIL_CLOSED
-        return None
-
-    @property
-    def arrangement_time_status(self) -> Mapping[str, object]:
-        """Derived 32-field time-model status of the current rack (read-only).
-
-        Live entry point of the #1086 runtime on the rack path: semantic
-        version derived from ``(step_count, length)`` plus the frozen migration
-        outcome. Never activates anything — a legacy DEFAULT_ON rack stays
-        migration-required and is only surfaced as such.
-        """
-        if self._state is None:
-            return MappingProxyType(
-                {
-                    "semantic_version": None,
-                    "migration_outcome": None,
-                    "restored_migration_outcome": self._restored_migration_outcome,
-                }
-            )
-        try:
-            version = channel_rack_time_semantics_version(self._state)
-        except Arrangement32FieldTimeError:
-            version = None
-        migration_outcome: str | None = None
-        if version == TIME_SEMANTICS_LEGACY_V1:
-            migration_outcome = migrate_legacy_channel_rack_state(self._state).outcome
-        return MappingProxyType(
-            {
-                "semantic_version": version,
-                "migration_outcome": migration_outcome,
-                "restored_migration_outcome": self._restored_migration_outcome,
-            }
-        )
 
     def reconcile_live_kit_state(self, *, notify: bool = True) -> bool:
         """Heal existing rack against current Live Kit without Screen-2 enter (#817).
@@ -1101,7 +1034,6 @@ class ChannelRackController:
         """
         if self._state is None:
             self._state = build_channel_rack_state(self._live_kit)
-            self._restored_migration_outcome = None
             if notify:
                 self._notify_musical_state_changed()
         else:

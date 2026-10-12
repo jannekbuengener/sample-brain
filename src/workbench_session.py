@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .arrangement_32_field_time import classify_channel_rack_state
 from .track_package import (
     OUTCOME_CORRUPT_OR_UNSUPPORTED,
     OUTCOME_OPEN,
@@ -101,6 +102,12 @@ class WorkbenchSession:
     track_package_dirty: bool = False
     _state_dir: Path | None = field(default=None, repr=False, compare=False)
     _env: Mapping[str, str] | None = field(default=None, repr=False, compare=False)
+    # #1086: frozen classification captured at the rack-restore boundary, so a
+    # persisted legacy v1 rack is surfaced as migration_required/hold/32-field
+    # instead of being silently adopted. `None` = no restore has happened yet.
+    _restored_rack_time_status: Mapping[str, object] | None = field(
+        default=None, repr=False, compare=False
+    )
 
     def bind_active_track_package(self, package_root: Path | str) -> TrackPackageResult:
         """Bind one validated package as this session's durable musical authority."""
@@ -140,6 +147,7 @@ class WorkbenchSession:
             rack_state = channel_rack_state_from_snapshot(snapshot)
             if rack_state is not None:
                 self.channel_rack.restore_state(rack_state)
+                self._restored_rack_time_status = classify_channel_rack_state(rack_state)
             self.active_track_id = opened.track_id
             self.active_track_package_root = root.resolve(strict=False)
             self.track_package_status = OUTCOME_OPEN
@@ -195,6 +203,16 @@ class WorkbenchSession:
     def return_to_screen1(self) -> None:
         """Leave Screen 2 quietly: stop pattern, keep Screen-1 audition off."""
         self.channel_rack.leave_screen2()
+
+    @property
+    def channel_rack_time_status(self) -> Mapping[str, object]:
+        """Live #1086 rack time-model status (read-only, never activates)."""
+        return classify_channel_rack_state(self.channel_rack.state)
+
+    @property
+    def restored_rack_time_status(self) -> Mapping[str, object] | None:
+        """Frozen #1086 classification captured at the last rack restore."""
+        return self._restored_rack_time_status
 
 
 class _SessionAuditionPlayRow:
@@ -294,6 +312,9 @@ def _autosave_musical_session(
                 rack_state = channel_rack_state_from_snapshot(refreshed)
                 if rack_state is not None:
                     channel_rack.restore_state(rack_state)
+                    session._restored_rack_time_status = classify_channel_rack_state(
+                        rack_state
+                    )
                     channel_rack.reconcile_live_kit_state(notify=False)
             finally:
                 _wire_session_persistence(session)
@@ -490,10 +511,12 @@ def compose_workbench_session(
         ),
     )
     rack_holder[0] = channel_rack
+    restored_rack_time_status: Mapping[str, object] | None = None
     if snapshot is not None:
         rack_state = channel_rack_state_from_snapshot(snapshot)
         if rack_state is not None:
             channel_rack.restore_state(rack_state)
+            restored_rack_time_status = classify_channel_rack_state(rack_state)
             # After library rehydrate, classification-aware reconcile may strip
             # stale loop-channel triggers without reseeding oneshot/ambiguous.
             channel_rack.reconcile_live_kit_state(notify=False)
@@ -515,6 +538,7 @@ def compose_workbench_session(
         track_package_dirty=False,
         _state_dir=state_dir,
         _env=env,
+        _restored_rack_time_status=restored_rack_time_status,
     )
     # Single ownership: Channel Rack enter/play/leave claim/release audition
     # through the session policy, including bridge-direct paths. Focus release
