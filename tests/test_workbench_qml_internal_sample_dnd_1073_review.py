@@ -568,15 +568,19 @@ def test_distinct_samples_sharing_relative_path_fail_closed_ambiguous(
     assert a.path not in evidence and b.path not in evidence
 
 
-@QT_SKIP
 def test_drag_keys_match_live_kit_droparea_and_external_dnd_unaffected():
     from src.workbench_qml import QML_SOURCE
 
     qml = QML_SOURCE
     # DropArea keys used by Live Kit
     assert '"application/x-sample-brain-internal-sample"' in qml
-    # Browser source has matching Drag.keys
-    assert 'browserRow.internalSampleDescriptor.length > 0 ? ["application/x-sample-brain-internal-sample"] : (browserRow.outboundUrl.length > 0 ? ["text/uri-list"] : [])' in qml
+    # Browser source builds Drag.keys from actual channels
+    assert 'Drag.keys: {' in qml
+    assert 'browserRow.internalSampleDescriptor.length > 0' in qml
+    assert 'k.push("application/x-sample-brain-internal-sample")' in qml
+    assert 'browserRow.outboundUrl.length > 0' in qml
+    assert 'k.push("text/uri-list")' in qml
+    assert 'return k' in qml
     # Harmony source has matching Drag.keys
     assert 'window.interaction.internalSampleDragEnabled ? ["application/x-sample-brain-internal-sample"] : []' in qml
     # external text/uri-list path remains independent
