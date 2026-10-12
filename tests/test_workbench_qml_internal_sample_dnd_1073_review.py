@@ -568,9 +568,8 @@ def test_distinct_samples_sharing_relative_path_fail_closed_ambiguous(
     assert a.path not in evidence and b.path not in evidence
 
 
+@QT_SKIP
 def test_drag_keys_match_live_kit_droparea_and_external_dnd_unaffected():
-    from PySide6.QtCore import Qt  # ensure Qt available
-    _ = Qt
     from src.workbench_qml import QML_SOURCE
 
     qml = QML_SOURCE
