@@ -4569,7 +4569,14 @@ ApplicationWindow {
                             Drag.active: rowSelection.dragActive
                             Drag.dragType: Drag.Automatic
                             Drag.supportedActions: Qt.CopyAction
-                            Drag.keys: browserRow.internalSampleDescriptor.length > 0 ? ["application/x-sample-brain-internal-sample"] : (browserRow.outboundUrl.length > 0 ? ["text/uri-list"] : [])
+                            Drag.keys: {
+                                var k = []
+                                if (browserRow.internalSampleDescriptor.length > 0)
+                                    k.push("application/x-sample-brain-internal-sample")
+                                if (browserRow.outboundUrl.length > 0)
+                                    k.push("text/uri-list")
+                                return k
+                            }
                             Drag.mimeData: {
                                 var payload = {}
                                 if (browserRow.internalSampleDescriptor.length > 0)
