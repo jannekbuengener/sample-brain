@@ -4606,17 +4606,13 @@ ApplicationWindow {
                                         return
                                     if (Math.abs(mouse.x - pressX) < 8 && Math.abs(mouse.y - pressY) < 8)
                                         return
-                                    if (browserRow.internalSampleDescriptor.length === 0) {
-                                        browserRow.internalSampleDescriptor = window.interaction.requestInternalSampleDragDescriptor(index, "browser")
-                                    } else {
-                                        // #1073 P1: refresh descriptor at drag start (delegate reuse)
-                                        var fresh = window.interaction.requestInternalSampleDragDescriptor(index, "browser")
-                                        if (fresh.length > 0) {
-                                            browserRow.internalSampleDescriptor = fresh
-                                        }
-                                    }
+                                    var fresh = window.interaction.requestInternalSampleDragDescriptor(index, "browser")
+                                    browserRow.internalSampleDescriptor = fresh
                                     if (browserRow.internalSampleDescriptor.length > 0 && browserRow.internalDeliveryId.length === 0) {
                                         browserRow.internalDeliveryId = window.interaction.beginInternalSampleDrag()
+                                    } else if (browserRow.internalSampleDescriptor.length === 0) {
+                                        // No internal payload; clear any stale delivery if present
+                                        browserRow.internalDeliveryId = ""
                                     }
                                     // Activate drag if we have any valid payload for this drag
                                     if (browserRow.internalSampleDescriptor.length > 0 || browserRow.outboundUrl.length > 0) {
