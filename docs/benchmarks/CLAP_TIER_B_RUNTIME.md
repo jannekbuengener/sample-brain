@@ -10,7 +10,7 @@ Optional CLAP search-quality evaluation remains local/opt-in. #423 makes the Pyt
 |---|---|
 | Python | `3.12` |
 | PyTorch | `2.14.0` |
-| Transformers | `5.17.0` |
+| Transformers | `5.19.0` |
 | Model | `laion/clap-htsat-unfused` |
 | Model revision | `79b58ed25fc00386262a2bea4b19fd21dc4310a0` |
 | Serialization | `safetensors` required (`use_safetensors=True`) |
