@@ -8,7 +8,7 @@ migration, autosave wiring, or a second musical session authority.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import errno
 from fractions import Fraction
 import json
@@ -18,7 +18,7 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
-from typing import Any
+from typing import Any, Iterable
 import uuid
 
 from .pattern_core import CHANNEL_ID_BY_LIVE_KIT_SLOT
@@ -91,13 +91,20 @@ class TrackPackageManifest:
 
 @dataclass(frozen=True)
 class TrackPackageResult:
-    """Pure create/open/validate outcome (no global active-track side effects)."""
+    """Pure create/open/validate outcome (no global active-track side effects).
+
+    ``media_path_map`` carries the in-memory provider-verified media mapping of
+    the *same successful transaction* (raw source key → confined relpath). It
+    feeds only the B2R evidence-transfer seam
+    (:func:`media_rebase_transfer_map`) and is never persisted.
+    """
 
     outcome: str
     package_root: Path | None = None
     track_id: str | None = None
     manifest: TrackPackageManifest | None = None
     message: str | None = None
+    media_path_map: Mapping[str, str] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -153,12 +160,15 @@ def _failure(
 def _success_open(
     package_root: Path,
     manifest: TrackPackageManifest,
+    *,
+    media_path_map: Mapping[str, str] | None = None,
 ) -> TrackPackageResult:
     return TrackPackageResult(
         outcome=OUTCOME_OPEN,
         package_root=package_root,
         track_id=manifest.track_id,
         manifest=manifest,
+        media_path_map=media_path_map or {},
     )
 
 
@@ -965,7 +975,9 @@ def create_track_package(
     opened = open_track_package(final_root)
     if opened.outcome != OUTCOME_OPEN:
         return opened
-    return _success_open(final_root, opened.manifest)  # type: ignore[arg-type]
+    return _success_open(
+        final_root, opened.manifest, media_path_map=path_map
+    )  # type: ignore[arg-type]
 
 
 def _contains_forbidden_serialized_path(document: str) -> bool:
@@ -1376,7 +1388,7 @@ def save_track_package_musical_state(
                 track_id=manifest.track_id,
                 message="Track package write failed.",
             )
-        return _success_open(root, updated)
+        return _success_open(root, updated, media_path_map=path_map)
     finally:
         for temp_path in temp_files:
             try:
@@ -1403,6 +1415,66 @@ def open_track_package(package_root: Path | str) -> TrackPackageResult:
     return _validate_package_at(Path(package_root), require_bindable=True)
 
 
+def media_rebase_transfer_map(
+    result: TrackPackageResult,
+    source_paths: Iterable[Path | str] | None = None,
+) -> dict[str, str]:
+    """Verified same-transaction Source→Destination package-media pairs (B2R).
+
+    Contract: ``docs/USER_CHANNEL_CLASSIFICATION_AUTHORITY.md`` §4a +
+    ``docs/TRACK_PACKAGE_OWNERSHIP_CONTRACT.md`` §5a
+    (``VERIFIED_PACKAGE_MEDIA_REBASE``). Every returned pair satisfies all
+    four hard preconditions — package-runtime copy, byte-identical
+    verification, same successful package transaction (the pairs can only
+    come from this transaction result), and the caller supplies the candidate
+    sources. Nothing is persisted and no library seam is touched.
+
+    Fail-closed: a missing, changed, or unverified destination produces no
+    pair, never a fabricated identity. Consumed by the session B2R staging
+    seam; pure and side-effect free.
+    """
+    if (
+        not result.ok
+        or result.package_root is None
+        or result.manifest is None
+        or not result.media_path_map
+    ):
+        return {}
+    root = result.package_root.resolve(strict=False)
+    manifest_relpaths = {entry.relpath for entry in result.manifest.media}
+    lookup = result.media_path_map
+    transfer: dict[str, str] = {}
+    for raw in dict.fromkeys(str(path) for path in (source_paths or ()) if path is not None):
+        source = Path(raw)
+        if not source.is_absolute():
+            continue
+        try:
+            source_resolved = source.resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            continue
+        relpath = (
+            lookup.get(str(source_resolved))
+            or lookup.get(_normalize_source_key(source_resolved))
+            or lookup.get(raw)
+        )
+        if not relpath or relpath not in manifest_relpaths:
+            continue
+        if validate_confined_media_relpath(relpath, result.package_root) is not None:
+            continue
+        target = root / Path(*relpath.split("/"))
+        try:
+            if not target.is_file():
+                continue
+            if not _files_byte_identical(source_resolved, target):
+                continue
+            destination = str(target.resolve(strict=True))
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if raw != destination:
+            transfer[raw] = destination
+    return transfer
+
+
 __all__ = [
     "MEDIA_DIR_NAME",
     "MEDIA_ID_PREFIX",
@@ -1425,6 +1497,7 @@ __all__ = [
     "create_track_package",
     "default_repo_root",
     "destination_inside_repository",
+    "media_rebase_transfer_map",
     "new_media_id",
     "new_track_id",
     "open_track_package",

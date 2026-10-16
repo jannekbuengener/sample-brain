@@ -22,24 +22,36 @@ session).
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .arrangement_32_field_time import classify_channel_rack_state
+from .arrangement_32_field_time import (
+    classify_channel_rack_state,
+    require_32_field_channel_rack_state,
+)
 from .arrangement_domain import ArrangementError, ArrangementState
 from .track_package import (
     OUTCOME_CORRUPT_OR_UNSUPPORTED,
     OUTCOME_OPEN,
     OUTCOME_WRITE_FAILED,
+    OUTCOME_DESTINATION_UNAVAILABLE,
+    TrackPackageDraft,
+    TrackPackageMediaSource,
     TrackPackageResult,
+    create_track_package,
+    media_rebase_transfer_map,
     open_track_package,
     save_track_package_musical_state,
 )
-from .workbench_channel_rack import ChannelRackController
+from .workbench_channel_rack import (
+    ChannelRackController,
+    user_channel_sample_paths,
+)
 from .workbench_controller import WorkbenchRow, get_preview_start_ms
 from .workbench_harmony import HarmonicMatchLibraryController
 from .workbench_live_kit import LiveKitState
+from .workbench_feature_settings import load_workbench_feature_settings
 from .workbench_preview import WorkbenchPreviewPlayer
 from .workbench_qml import (
     LiveKitPresenter,
@@ -48,6 +60,7 @@ from .workbench_qml import (
 )
 from .workbench_session_store import (
     ActiveTrackPointer,
+    WorkbenchSessionSnapshot,
     DEFAULT_TEMPO_BPM,
     PERSISTENCE_STATUS_AUTOSAVE_FAILED,
     PERSISTENCE_STATUS_FRESH_MISSING,
@@ -101,6 +114,14 @@ class WorkbenchSession:
     active_track_package_root: Path | None = None
     track_package_status: str | None = None
     track_package_dirty: bool = False
+    # Projection is ephemeral: opening/restoring state does not activate a mode.
+    projection_mode: str = field(default="EDIT", init=False)
+    _arrangement_entry_in_progress: bool = field(default=False, init=False, repr=False)
+    # A committed package whose pointer write failed can be retried without
+    # copying media again. This is transaction recovery, not an active track.
+    _pending_arrangement_entry: TrackPackageResult | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
     # Opaque package seam remains inert until an explicit domain consumer reads
     # or updates it. No Arrangement activation during composition/navigation.
     _arrangement_payload: Any = field(default=None, repr=False, compare=False)
@@ -120,6 +141,196 @@ class WorkbenchSession:
         return ArrangementState.from_payload(
             self._arrangement_payload, self.channel_rack.state
         )
+
+    def enter_arrangement_from_edit(
+        self, *, package_root: Path | str | None = None
+    ) -> TrackPackageResult:
+        """Deliberate #1078 entry through the existing package/domain owners.
+
+        Reject active playback without stopping or replacing its authority.
+        Partial kits are eligible; legacy Patterns require explicit migration.
+        Mode changes only after the package and active pointer are durable.
+        """
+        if not load_workbench_feature_settings(
+            state_dir=self._state_dir, env=self._env
+        ).arrangement_mode_enabled:
+            return TrackPackageResult(
+                "feature_disabled", message="Arrangement mode is disabled."
+            )
+        if self._arrangement_entry_in_progress:
+            return TrackPackageResult(
+                "entry_in_progress", message="Arrangement entry is already in progress."
+            )
+        if (
+            self.transport.playing
+            or self.channel_rack.is_playing
+            or self.audition.playback_snapshot().playing
+            # Legacy preview has no reliable natural-end telemetry/clock.
+            # Its existing intent remains owned until explicit Stop.
+            or (
+                self.audition.active_voice_id is None
+                and self.audition.current_path is not None
+            )
+        ):
+            return TrackPackageResult(
+                "playback_active", message="Stop playback before entering Arrangement."
+            )
+        self._arrangement_entry_in_progress = True
+        try:
+            return self._commit_arrangement_entry(package_root)
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return TrackPackageResult(
+                OUTCOME_WRITE_FAILED,
+                message="Arrangement entry failed; check package destination and media, then retry.",
+            )
+        finally:
+            self._arrangement_entry_in_progress = False
+
+    def _commit_arrangement_entry(
+        self, package_root: Path | str | None
+    ) -> TrackPackageResult:
+        rack = self.channel_rack.state
+        snapshot = snapshot_from_musical_state(self.live_kit, rack, self.transport)
+        musical = track_package_musical_from_snapshot(snapshot)
+        paths = {
+            path
+            for slots in snapshot.live_kit.values()
+            for path in slots.values()
+            if path is not None
+        }
+        if rack is not None:
+            paths.update(c.sample_path for c in rack.channels if c.sample_path)
+        if not paths and self.active_track_id is None:
+            return TrackPackageResult(
+                "empty_draft",
+                message="Assign at least one sample before entering Arrangement.",
+            )
+        try:
+            require_32_field_channel_rack_state(rack)
+        except (TypeError, ValueError):
+            return TrackPackageResult(
+                "migration_required",
+                message="A valid 32-field Pattern is required; migrate explicitly first.",
+            )
+        try:
+            arrangement = (
+                ArrangementState.for_rack(rack)
+                if self._arrangement_payload is None
+                else ArrangementState.from_payload(self._arrangement_payload, rack)
+            )
+        except (TypeError, ValueError) as exc:
+            return TrackPackageResult(
+                OUTCOME_CORRUPT_OR_UNSUPPORTED,
+                message=f"Arrangement state is invalid: {exc}",
+            )
+
+        if (
+            self.active_track_id is not None
+            or self.active_track_package_root is not None
+        ):
+            if self.active_track_id is None or self.active_track_package_root is None:
+                return TrackPackageResult(
+                    OUTCOME_CORRUPT_OR_UNSUPPORTED,
+                    message="Active track selection is incomplete.",
+                )
+            opened = open_track_package(self.active_track_package_root)
+            if not opened.ok:
+                return opened
+            if opened.track_id != self.active_track_id:
+                return TrackPackageResult(
+                    OUTCOME_CORRUPT_OR_UNSUPPORTED,
+                    message="Active track identity does not match its package.",
+                )
+            if opened.manifest is not None and opened.manifest.arrangement is not None:
+                try:
+                    disk_snapshot = snapshot_from_track_package_musical(
+                        opened.manifest.musical, self.active_track_package_root
+                    )
+                    ArrangementState.from_payload(
+                        opened.manifest.arrangement, disk_snapshot.channel_rack
+                    )
+                except (OSError, RuntimeError, TypeError, ValueError):
+                    return TrackPackageResult(
+                        OUTCOME_CORRUPT_OR_UNSUPPORTED,
+                        message="Stored Arrangement state is invalid; package was not changed.",
+                    )
+            if self.projection_mode == "ARRANGEMENT" and not self.track_package_dirty:
+                return opened
+            saved = save_track_package_musical_state(
+                self.active_track_package_root,
+                musical,
+                arrangement=arrangement.to_payload(),
+            )
+            self.track_package_status = saved.outcome
+            self.track_package_dirty = not saved.ok
+            if not saved.ok:
+                return saved
+            try:
+                _adopt_saved_package_media(self, saved)
+            except (OSError, RuntimeError, TypeError, ValueError):
+                self.track_package_status = OUTCOME_WRITE_FAILED
+                self.track_package_dirty = True
+                return TrackPackageResult(
+                    OUTCOME_WRITE_FAILED,
+                    message="Committed package media could not be restored; retry after checking media.",
+                )
+            self._arrangement_payload = arrangement.to_payload()
+            self.projection_mode = "ARRANGEMENT"
+            return saved
+
+        if package_root is None:
+            return TrackPackageResult(
+                OUTCOME_DESTINATION_UNAVAILABLE,
+                message="Choose a track package destination.",
+            )
+        root = Path(package_root).expanduser().resolve(strict=False)
+        pending = self._pending_arrangement_entry
+        transaction_results: tuple[TrackPackageResult, ...]
+        if pending is not None and pending.package_root == root:
+            created = open_track_package(root)
+            if not created.ok:
+                return created
+            if created.manifest != pending.manifest:
+                return TrackPackageResult(
+                    OUTCOME_CORRUPT_OR_UNSUPPORTED,
+                    message="Pending package changed externally; choose another destination.",
+                )
+            created = save_track_package_musical_state(
+                root, musical, arrangement=arrangement.to_payload()
+            )
+            if not created.ok:
+                return created
+            self._pending_arrangement_entry = created
+            # Same successful transaction: the media were byte-identity-verified
+            # by the interrupted create attempt and are carried by `pending`.
+            transaction_results = (pending, created)
+        else:
+            created = create_track_package(
+                TrackPackageDraft(
+                    media_sources=tuple(
+                        TrackPackageMediaSource(Path(path)) for path in sorted(paths)
+                    ),
+                    musical=musical,
+                    arrangement=arrangement.to_payload(),
+                ),
+                root,
+            )
+            if not created.ok:
+                return created
+            self._pending_arrangement_entry = created
+            transaction_results = (created,)
+        _stage_media_rebase_transfer(self, transaction_results, rack)
+        bound = self.bind_active_track_package(root, preserve_draft_metadata=True)
+        if not bound.ok:
+            self.channel_rack.stage_media_rebase_transfer(None)
+            return bound
+        self._pending_arrangement_entry = None
+        self.projection_mode = "ARRANGEMENT"
+        return bound
+
+    def return_to_edit(self) -> None:
+        """Change projection only; keep track, musical state and transport."""
+        self.projection_mode = "EDIT"
 
     def set_arrangement_state(self, state: ArrangementState) -> None:
         """Internal control-plane seam; product transition remains #1078.
@@ -142,8 +353,14 @@ class WorkbenchSession:
             env=self._env,
         )
 
-    def bind_active_track_package(self, package_root: Path | str) -> TrackPackageResult:
-        """Bind one validated package as this session's durable musical authority."""
+    def bind_active_track_package(
+        self, package_root: Path | str, *, preserve_draft_metadata: bool = False
+    ) -> TrackPackageResult:
+        """Bind one validated package as the durable musical authority.
+
+        Only initial draft entry retains analyzed rows while rebasing media.
+        Explicit Open must not inherit metadata from an unrelated current kit.
+        """
         root = Path(package_root)
         opened = open_track_package(root)
         if (
@@ -180,7 +397,9 @@ class WorkbenchSession:
 
         _detach_session_persistence(self)
         try:
-            apply_snapshot_to_live_kit(snapshot, self.live_kit)
+            _apply_package_live_kit(
+                snapshot, self.live_kit, preserve_metadata=preserve_draft_metadata
+            )
             self.transport.set_tempo(float(snapshot.master_bpm))
             self.transport.set_sync_enabled(bool(snapshot.sync_enabled))
             rack_state = channel_rack_state_from_snapshot(snapshot)
@@ -308,6 +527,86 @@ class _SessionAuditionPlayRow:
         return self._audition.play_row(row, start_ms=resolved)
 
 
+def _apply_package_live_kit(
+    snapshot: WorkbenchSessionSnapshot,
+    live_kit: LiveKitState,
+    *,
+    preserve_metadata: bool,
+) -> None:
+    """Reuse snapshot restore, retaining current analyzed rows for media rebase."""
+    rows = (
+        {
+            (group, slot): live_kit.assignment_for(group, slot)
+            for group, slots in snapshot.live_kit.items()
+            for slot in slots
+        }
+        if preserve_metadata
+        else {}
+    )
+    apply_snapshot_to_live_kit(snapshot, live_kit)
+    for (group, slot), row in rows.items():
+        path = snapshot.live_kit[group][slot]
+        if row is not None and path is not None:
+            live_kit.assign(group, slot, replace(row, path=path))
+
+
+def _stage_media_rebase_transfer(
+    session: WorkbenchSession,
+    transaction_results: tuple[TrackPackageResult, ...],
+    rack: ChannelRackState | None,
+) -> None:
+    """Stage B2R evidence for the same-transaction package bind (#1137).
+
+    Canon ``VERIFIED_PACKAGE_MEDIA_REBASE`` (#1138): only runtime-copied,
+    byte-identity-verified package media of *this* transaction produce a
+    Source→Destination pair. The destination is never re-queried and nothing
+    is persisted; a failed bind discards the staging through the controller.
+    """
+    user_paths = user_channel_sample_paths(rack)
+    transfer: dict[str, str] = {}
+    if user_paths:
+        for transaction in transaction_results:
+            transfer.update(media_rebase_transfer_map(transaction, user_paths))
+    session.channel_rack.stage_media_rebase_transfer(transfer or None)
+
+
+def _adopt_saved_package_media(
+    session: WorkbenchSession, result: TrackPackageResult
+) -> None:
+    """Rebind committed media through the existing snapshot seam.
+
+    Unchanged projections keep their Pattern/Rack identity. Media rebinding
+    never creates a second owner or schedules playback. When the committed
+    transaction rebased media, B2R staging carries the verified evidence
+    through the restore instead of dropping derived classification.
+    """
+    if result.manifest is None or session.active_track_package_root is None:
+        raise ValueError("Committed package manifest is required.")
+    refreshed = snapshot_from_track_package_musical(
+        result.manifest.musical, session.active_track_package_root
+    )
+    current = snapshot_from_musical_state(
+        session.live_kit, session.channel_rack.state, session.transport
+    )
+    if refreshed == current:
+        return
+    _stage_media_rebase_transfer(
+        session,
+        (result,),
+        session.channel_rack.state,
+    )
+    _detach_session_persistence(session)
+    try:
+        _apply_package_live_kit(refreshed, session.live_kit, preserve_metadata=True)
+        rack_state = channel_rack_state_from_snapshot(refreshed)
+        if rack_state is not None:
+            session.channel_rack.restore_state(rack_state)
+            session._restored_rack_time_status = classify_channel_rack_state(rack_state)
+            session.channel_rack.reconcile_live_kit_state(notify=False)
+    finally:
+        _wire_session_persistence(session)
+
+
 def _autosave_musical_session(
     *,
     session: WorkbenchSession,
@@ -342,23 +641,10 @@ def _autosave_musical_session(
             and session.active_track_package_root is not None
         ):
             try:
-                refreshed = snapshot_from_track_package_musical(
-                    result.manifest.musical, session.active_track_package_root
-                )
+                _adopt_saved_package_media(session, result)
             except (OSError, RuntimeError, TypeError, ValueError):
-                return
-            _detach_session_persistence(session)
-            try:
-                apply_snapshot_to_live_kit(refreshed, live_kit)
-                rack_state = channel_rack_state_from_snapshot(refreshed)
-                if rack_state is not None:
-                    channel_rack.restore_state(rack_state)
-                    session._restored_rack_time_status = classify_channel_rack_state(
-                        rack_state
-                    )
-                    channel_rack.reconcile_live_kit_state(notify=False)
-            finally:
-                _wire_session_persistence(session)
+                session.track_package_status = OUTCOME_WRITE_FAILED
+                session.track_package_dirty = True
         return
 
     try:
