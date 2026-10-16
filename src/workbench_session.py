@@ -156,7 +156,11 @@ class WorkbenchSession:
             return TrackPackageResult(
                 "entry_in_progress", message="Arrangement entry is already in progress."
             )
-        if self.channel_rack.is_playing or self.audition.playback_snapshot().playing:
+        if (
+            self.transport.playing
+            or self.channel_rack.is_playing
+            or self.audition.playback_snapshot().playing
+        ):
             return TrackPackageResult(
                 "playback_active", message="Stop playback before entering Arrangement."
             )

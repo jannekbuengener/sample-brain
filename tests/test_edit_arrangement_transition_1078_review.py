@@ -93,3 +93,15 @@ def test_committed_media_adoption_failure_keeps_persistence_honest(draft, monkey
     assert s.projection_mode == "EDIT"
     assert s.track_package_status == tp.OUTCOME_WRITE_FAILED
     assert s.track_package_dirty
+
+
+def test_running_shared_transport_rejects_entry_even_without_rack_playback(
+    draft, monkeypatch
+):
+    s, root, _ = draft
+    enable(s)
+    monkeypatch.setattr(type(s.transport), "playing", property(lambda self: True))
+    result = enter(s, root)
+    assert result.outcome == "playback_active"
+    assert s.projection_mode == "EDIT"
+    assert not root.exists()
