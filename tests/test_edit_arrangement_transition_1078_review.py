@@ -167,3 +167,20 @@ def test_edit_replacement_autosave_preserves_replacement_metadata(draft, tmp_pat
     assert Path(actual.path).is_relative_to(root)
     assert enter(s).ok
     assert s.live_kit.assignment_for("Kick + Bass", "Kick") is actual
+
+
+def test_active_package_opaque_disk_payload_is_not_overwritten_on_entry(draft):
+    s, root, _ = draft
+    enable(s)
+    assert enter(s, root).ok
+    s.return_to_edit()
+    opened = tp.open_track_package(root)
+    opaque = {"future": "unknown arrangement schema"}
+    assert tp.save_track_package_musical_state(
+        root, opened.manifest.musical, arrangement=opaque
+    ).ok
+    before = (root / tp.TRACK_PACKAGE_FILENAME).read_bytes()
+    result = enter(s)
+    assert not result.ok
+    assert s.projection_mode == "EDIT"
+    assert (root / tp.TRACK_PACKAGE_FILENAME).read_bytes() == before

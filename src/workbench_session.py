@@ -237,6 +237,19 @@ class WorkbenchSession:
                     OUTCOME_CORRUPT_OR_UNSUPPORTED,
                     message="Active track identity does not match its package.",
                 )
+            if opened.manifest is not None and opened.manifest.arrangement is not None:
+                try:
+                    disk_snapshot = snapshot_from_track_package_musical(
+                        opened.manifest.musical, self.active_track_package_root
+                    )
+                    ArrangementState.from_payload(
+                        opened.manifest.arrangement, disk_snapshot.channel_rack
+                    )
+                except (OSError, RuntimeError, TypeError, ValueError):
+                    return TrackPackageResult(
+                        OUTCOME_CORRUPT_OR_UNSUPPORTED,
+                        message="Stored Arrangement state is invalid; package was not changed.",
+                    )
             if self.projection_mode == "ARRANGEMENT" and not self.track_package_dirty:
                 return opened
             saved = save_track_package_musical_state(
