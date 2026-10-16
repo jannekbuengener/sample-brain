@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .arrangement_32_field_time import classify_channel_rack_state
+from .arrangement_domain import ArrangementError, ArrangementState
 from .track_package import (
     OUTCOME_CORRUPT_OR_UNSUPPORTED,
     OUTCOME_OPEN,
@@ -100,6 +101,9 @@ class WorkbenchSession:
     active_track_package_root: Path | None = None
     track_package_status: str | None = None
     track_package_dirty: bool = False
+    # Opaque package seam remains inert until an explicit domain consumer reads
+    # or updates it. No Arrangement activation during composition/navigation.
+    _arrangement_payload: Any = field(default=None, repr=False, compare=False)
     _state_dir: Path | None = field(default=None, repr=False, compare=False)
     _env: Mapping[str, str] | None = field(default=None, repr=False, compare=False)
     # #1086: frozen classification captured at the rack-restore boundary, so a
@@ -109,14 +113,49 @@ class WorkbenchSession:
         default=None, repr=False, compare=False
     )
 
+    @property
+    def arrangement_state(self) -> ArrangementState | None:
+        if self._arrangement_payload is None:
+            return None
+        return ArrangementState.from_payload(
+            self._arrangement_payload, self.channel_rack.state
+        )
+
+    def set_arrangement_state(self, state: ArrangementState) -> None:
+        """Internal control-plane seam; product transition remains #1078.
+
+        The active package owns persistence. Failed writes preserve dirty intent
+        in memory and retry through the existing musical autosave path.
+        """
+        if self.active_track_package_root is None or self.active_track_id is None:
+            raise ArrangementError("active_track_required")
+        if not isinstance(state, ArrangementState):
+            raise ArrangementError("invalid_arrangement_state")
+        state.validate(self.channel_rack.state)
+        self._arrangement_payload = state.to_payload()
+        _autosave_musical_session(
+            session=self,
+            live_kit=self.live_kit,
+            channel_rack=self.channel_rack,
+            transport=self.transport,
+            state_dir=self._state_dir,
+            env=self._env,
+        )
+
     def bind_active_track_package(self, package_root: Path | str) -> TrackPackageResult:
         """Bind one validated package as this session's durable musical authority."""
         root = Path(package_root)
         opened = open_track_package(root)
-        if opened.outcome != OUTCOME_OPEN or opened.manifest is None or opened.track_id is None:
+        if (
+            opened.outcome != OUTCOME_OPEN
+            or opened.manifest is None
+            or opened.track_id is None
+        ):
             return opened
         try:
-            snapshot = snapshot_from_track_package_musical(opened.manifest.musical, root)
+            snapshot = snapshot_from_track_package_musical(
+                opened.manifest.musical, root
+            )
         except (OSError, RuntimeError, TypeError, ValueError):
             return TrackPackageResult(
                 outcome=OUTCOME_CORRUPT_OR_UNSUPPORTED,
@@ -147,8 +186,11 @@ class WorkbenchSession:
             rack_state = channel_rack_state_from_snapshot(snapshot)
             if rack_state is not None:
                 self.channel_rack.restore_state(rack_state)
-                self._restored_rack_time_status = classify_channel_rack_state(rack_state)
+                self._restored_rack_time_status = classify_channel_rack_state(
+                    rack_state
+                )
             self.active_track_id = opened.track_id
+            self._arrangement_payload = opened.manifest.arrangement
             self.active_track_package_root = root.resolve(strict=False)
             self.track_package_status = OUTCOME_OPEN
             self.track_package_dirty = False
@@ -277,9 +319,7 @@ def _autosave_musical_session(
 ) -> None:
     """Persist current musical state. IO failures must not corrupt memory."""
     try:
-        snapshot = snapshot_from_musical_state(
-            live_kit, channel_rack.state, transport
-        )
+        snapshot = snapshot_from_musical_state(live_kit, channel_rack.state, transport)
     except (TypeError, ValueError):
         if session.active_track_package_root is not None:
             session.track_package_status = OUTCOME_WRITE_FAILED
@@ -292,6 +332,7 @@ def _autosave_musical_session(
         result = save_track_package_musical_state(
             session.active_track_package_root,
             track_package_musical_from_snapshot(snapshot),
+            arrangement=session._arrangement_payload,
         )
         session.track_package_status = result.outcome
         session.track_package_dirty = result.outcome != OUTCOME_OPEN
@@ -392,6 +433,8 @@ def compose_workbench_session(
     active_track_root: Path | None = None
     track_package_status: str | None = None
 
+    arrangement_payload: Any = None
+
     if pointer_present:
         # Presence of an active selection record outranks stale legacy resume.
         # Invalid/missing active package fails closed; legacy remains untouched.
@@ -413,6 +456,7 @@ def compose_workbench_session(
                     snapshot = snapshot_from_track_package_musical(
                         opened.manifest.musical, pointer.package_root
                     )
+                    arrangement_payload = opened.manifest.arrangement
                 except (OSError, RuntimeError, TypeError, ValueError):
                     snapshot = None
                     track_package_status = OUTCOME_CORRUPT_OR_UNSUPPORTED
@@ -536,6 +580,7 @@ def compose_workbench_session(
         active_track_package_root=active_track_root,
         track_package_status=track_package_status,
         track_package_dirty=False,
+        _arrangement_payload=arrangement_payload,
         _state_dir=state_dir,
         _env=env,
         _restored_rack_time_status=restored_rack_time_status,

@@ -243,7 +243,9 @@ def _sanitize_suffix(source_path: Path) -> str:
 
 
 def _media_relpath_for(media_id: str, source_path: Path) -> str:
-    safe_id = _UNSAFE_FILENAME.sub("-", media_id.strip().casefold()).strip("-") or "media"
+    safe_id = (
+        _UNSAFE_FILENAME.sub("-", media_id.strip().casefold()).strip("-") or "media"
+    )
     return f"{MEDIA_DIR_NAME}/{safe_id}{_sanitize_suffix(source_path)}"
 
 
@@ -366,7 +368,9 @@ def _default_copy(src: Path, dst: Path) -> None:
     shutil.copy2(src, dst)
 
 
-def _files_byte_identical(left: Path, right: Path, *, chunk_size: int = 1024 * 1024) -> bool:
+def _files_byte_identical(
+    left: Path, right: Path, *, chunk_size: int = 1024 * 1024
+) -> bool:
     """Compare two files incrementally without buffering both entirely."""
     left_stat = left.stat()
     right_stat = right.stat()
@@ -430,9 +434,7 @@ def _validate_live_kit_shape(live_kit: Mapping[str, Any]) -> str | None:
             if "path" not in slot_payload:
                 return OUTCOME_CORRUPT_OR_UNSUPPORTED
             path = slot_payload.get("path")
-            if path is not None and (
-                not isinstance(path, str) or path.strip() == ""
-            ):
+            if path is not None and (not isinstance(path, str) or path.strip() == ""):
                 return OUTCOME_CORRUPT_OR_UNSUPPORTED
     return None
 
@@ -527,7 +529,10 @@ def _validate_channel_rack_shape(channel_rack: Mapping[str, Any]) -> str | None:
         return OUTCOME_CORRUPT_OR_UNSUPPORTED
     for (group, slot), channel_id in CHANNEL_ID_BY_LIVE_KIT_SLOT.items():
         channel = seed_by_id[channel_id]
-        if channel.get("live_kit_group") != group or channel.get("live_kit_slot") != slot:
+        if (
+            channel.get("live_kit_group") != group
+            or channel.get("live_kit_slot") != slot
+        ):
             return OUTCOME_CORRUPT_OR_UNSUPPORTED
 
     for trigger in triggers:
@@ -545,7 +550,9 @@ def _validate_channel_rack_shape(channel_rack: Mapping[str, Any]) -> str | None:
     return None
 
 
-def _live_kit_slot_path(live_kit: Mapping[str, Any], group: str, slot: str) -> str | None:
+def _live_kit_slot_path(
+    live_kit: Mapping[str, Any], group: str, slot: str
+) -> str | None:
     group_payload = live_kit.get(group)
     if not isinstance(group_payload, Mapping):
         return None
@@ -791,9 +798,7 @@ def create_track_package(
     parent = final_root.parent
     staging: Path | None = None
     try:
-        staging = Path(
-            tempfile.mkdtemp(prefix=_STAGING_PREFIX, dir=str(parent))
-        )
+        staging = Path(tempfile.mkdtemp(prefix=_STAGING_PREFIX, dir=str(parent)))
         media_root = staging / MEDIA_DIR_NAME
         media_root.mkdir(parents=True, exist_ok=True)
 
@@ -1190,6 +1195,7 @@ def save_track_package_musical_state(
     musical: Mapping[str, Any],
     *,
     copy_file: CopyFileFn | None = None,
+    arrangement: Mapping[str, Any] | None = None,
 ) -> TrackPackageResult:
     """Atomically replace package musical state, preserving last valid manifest.
 
@@ -1278,7 +1284,9 @@ def save_track_package_musical_state(
             temp_files.append(temp_target)
             try:
                 copy_fn(source_resolved, temp_target)
-                if not temp_target.is_file() or not _files_byte_identical(source_resolved, temp_target):
+                if not temp_target.is_file() or not _files_byte_identical(
+                    source_resolved, temp_target
+                ):
                     raise OSError("copied media validation failed")
                 os.replace(temp_target, target)
                 temp_files.remove(temp_target)
@@ -1303,9 +1311,13 @@ def save_track_package_musical_state(
         portable = _rewrite_paths(dict(musical), path_map)
         semantic_error = _validate_musical_semantics(portable)
         if semantic_error is not None:
-            return _failure(semantic_error, package_root=root, track_id=manifest.track_id)
+            return _failure(
+                semantic_error, package_root=root, track_id=manifest.track_id
+            )
         media_relpaths = {entry.relpath for entry in media_entries}
-        musical_canon, ref_error = _validate_musical_media_refs(portable, media_relpaths, root)
+        musical_canon, ref_error = _validate_musical_media_refs(
+            portable, media_relpaths, root
+        )
         if ref_error is not None or musical_canon is None:
             return _failure(
                 ref_error or OUTCOME_CORRUPT_OR_UNSUPPORTED,
@@ -1319,7 +1331,9 @@ def save_track_package_musical_state(
             track_id=manifest.track_id,
             media=tuple(sorted(media_entries, key=lambda entry: entry.media_id)),
             musical=dict(musical_canon),
-            arrangement=manifest.arrangement,
+            arrangement=manifest.arrangement
+            if arrangement is None
+            else dict(arrangement),
             midi=manifest.midi,
         )
         payload_probe = {
