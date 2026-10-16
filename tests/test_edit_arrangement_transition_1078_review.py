@@ -105,3 +105,24 @@ def test_running_shared_transport_rejects_entry_even_without_rack_playback(
     assert result.outcome == "playback_active"
     assert s.projection_mode == "EDIT"
     assert not root.exists()
+
+
+def test_legacy_audition_without_native_clock_requires_explicit_stop(
+    draft, monkeypatch
+):
+    s, root, source = draft
+    enable(s)
+    from src.workbench_preview import PreviewResult
+
+    monkeypatch.setattr(s.transport, "_native_available", False)
+    monkeypatch.setattr(
+        s.audition._preview, "_play_fn", lambda *args: PreviewResult(ok=True)
+    )
+    monkeypatch.setattr(s.audition._preview, "_stop_fn", lambda: None)
+    assert s.audition.play(source).ok
+    assert not s.transport.playing
+    assert not s.audition.playback_snapshot().playing
+    assert enter(s, root).outcome == "playback_active"
+    assert not root.exists()
+    s.audition.stop()
+    assert enter(s, root).ok

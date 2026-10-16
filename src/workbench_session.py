@@ -160,6 +160,12 @@ class WorkbenchSession:
             self.transport.playing
             or self.channel_rack.is_playing
             or self.audition.playback_snapshot().playing
+            # Legacy preview has no reliable natural-end telemetry/clock.
+            # Its existing intent remains owned until explicit Stop.
+            or (
+                self.audition.active_voice_id is None
+                and self.audition.current_path is not None
+            )
         ):
             return TrackPackageResult(
                 "playback_active", message="Stop playback before entering Arrangement."
