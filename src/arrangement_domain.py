@@ -198,7 +198,8 @@ class ArrangementState:
         rack: ChannelRackState,
         tempo_map: TempoMap,
     ) -> ArrangementState:
-        self.membership(channel_id, rack)
+        if self.membership(channel_id, rack) == "unmapped":
+            raise ArrangementError("migration_required")
         self._require_horizon(index, tempo_map)
         return replace(
             self,

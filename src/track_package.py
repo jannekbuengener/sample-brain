@@ -1195,7 +1195,7 @@ def save_track_package_musical_state(
     musical: Mapping[str, Any],
     *,
     copy_file: CopyFileFn | None = None,
-    arrangement: Mapping[str, Any] | None = None,
+    arrangement: Any | None = None,
 ) -> TrackPackageResult:
     """Atomically replace package musical state, preserving last valid manifest.
 
@@ -1331,9 +1331,7 @@ def save_track_package_musical_state(
             track_id=manifest.track_id,
             media=tuple(sorted(media_entries, key=lambda entry: entry.media_id)),
             musical=dict(musical_canon),
-            arrangement=manifest.arrangement
-            if arrangement is None
-            else dict(arrangement),
+            arrangement=manifest.arrangement if arrangement is None else arrangement,
             midi=manifest.midi,
         )
         payload_probe = {
