@@ -1,8 +1,8 @@
-﻿# Analysis Extraction Slice 0 — Ownership Boundary Design
+# Analysis Extraction Slice 0 — Ownership Boundary Design
 
-**Date:** 2026-10-17  
-**Status:** design for owner review  
-**Baseline:** `b37031677e3c187c88ce8197287346feaa5deeaf`  
+**Date:** 2026-10-17
+**Status:** design for owner review
+**Baseline:** `b37031677e3c187c88ce8197287346feaa5deeaf`
 **Scope:** internal ownership refactor only; no physical repository split
 
 ## Intent
