@@ -56,6 +56,7 @@ def test_default_settings_object_has_gesture_rack_apply_disabled():
         "gesture_rack_apply_enabled",
         "workspace_panel_docking_enabled",
         "internal_sample_dnd_enabled",
+        "arrangement_mode_enabled",
         "schema_version",
     }
     assert settings.workspace_panel_docking_enabled is False
@@ -72,6 +73,7 @@ def test_serialized_default_is_deterministic_and_versioned(tmp_path: Path):
         "gesture_rack_apply_enabled": False,
         "workspace_panel_docking_enabled": False,
         "internal_sample_dnd_enabled": False,
+        "arrangement_mode_enabled": False,
     }
     assert path.name == "workbench_feature_settings.json"
 
