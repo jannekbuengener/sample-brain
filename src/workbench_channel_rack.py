@@ -429,6 +429,68 @@ def _distinct_user_paths(state: ChannelRackState) -> tuple[str, ...]:
     )
 
 
+def user_channel_sample_paths(state: ChannelRackState | None) -> tuple[str, ...]:
+    """Public B2R staging input: durable user-channel sample paths (#952 §4a).
+
+    One canonical user-channel path view so the session/package seam cannot
+    invent a second user-channel predicate.
+    """
+    if state is None:
+        return ()
+    return _distinct_user_paths(state)
+
+
+def _apply_media_rebase_transfer(
+    binding: UserSampleMetadataBinding,
+    transfer: Mapping[str, str],
+    state: ChannelRackState,
+    prior_binding: UserSampleMetadataBinding | None = None,
+) -> UserSampleMetadataBinding:
+    """B2R evidence overlay: verified-copy rebase of already-derived Evidence.
+
+    Canon ``VERIFIED_PACKAGE_MEDIA_REBASE`` (#1138): a path rebase inside one
+    verified, byte-identical package transaction is not a sample assignment.
+    Each staged pair that still qualifies after the restore:
+
+    - Source evidence must exist — freshly resolved (still-referenced Source)
+      or carried by the prior in-session derived binding — and hold an
+      explicit class (``oneshot`` / ``loop``); unresolved or ``ambiguous``
+      Source adds nothing, so the Destination stays exactly as the normal
+      resolution left it (``ambiguous`` — no laundering);
+    - the Destination is never re-queried and never replaces Library evidence:
+      if the Library already resolved the Destination, its authority wins;
+    - the transferred entry is the *identical* record (``sample_class`` +
+      ``source_bpm``);
+    - Source keys not referenced by any surviving channel are pruned under
+      the same reference-counting rules as §5 — entries still referenced stay.
+
+    Resolve-only: resolves nothing, notifies nothing, persists nothing.
+    """
+    referenced_paths = {
+        channel.sample_path
+        for channel in state.channels
+        if _is_user_channel(channel) and _sample_bearing(channel.sample_path)
+    }
+    entries = dict(binding)
+    prior_entries = dict(prior_binding) if prior_binding is not None else {}
+    for source_path, destination_path in transfer.items():
+        if not source_path or not destination_path:
+            continue
+        if destination_path not in referenced_paths:
+            continue
+        source_entry = entries.get(source_path) or prior_entries.get(source_path)
+        if source_entry is None:
+            continue
+        if classification_kind(source_entry.sample_class) == "ambiguous":
+            continue
+        if destination_path in entries:
+            continue
+        entries[destination_path] = source_entry
+        if source_path not in referenced_paths:
+            entries.pop(source_path, None)
+    return UserSampleMetadataBinding(entries)
+
+
 def _clear_channel_sample_path(
     state: ChannelRackState, channel_id: str
 ) -> ChannelRackState:
@@ -618,6 +680,10 @@ class ChannelRackController:
         self._user_metadata_resolver = user_metadata_resolver
         self._user_metadata: UserSampleMetadataBinding = EMPTY_USER_SAMPLE_METADATA_BINDING
         self._pending_user_mutation: _PendingUserChannelMutation | None = None
+        # B2R: staged verified-copy evidence transfer; consumed exactly once
+        # by the session-bound restore of the same successful package
+        # transaction. In-memory contract data only, never persisted.
+        self._pending_media_rebase_transfer: dict[str, str] = {}
         self._playback_classification_snapshot: (
             Mapping[str, tuple[str, str | None, float | None]] | None
         ) = None
@@ -631,6 +697,19 @@ class ChannelRackController:
     def user_metadata(self) -> UserSampleMetadataBinding:
         """Read-only derived binding keyed by exact durable sample path."""
         return self._user_metadata
+
+    def stage_media_rebase_transfer(self, transfer: Mapping[str, str] | None) -> None:
+        """Stage one transaction-bound B2R evidence transfer (§4a / §5a).
+
+        Called exactly once per succeeded package transaction by the session at
+        the rebase seam, with the verified Source→Destination pairs from
+        :func:`track_package.media_rebase_transfer_map`. The next
+        ``restore_state`` of the same successful transaction consumes the
+        staging; any other restore path consumes-and-discards it so B1 cold
+        restores stay untouched. Resolve-only: no library read, no I/O, no
+        serialization.
+        """
+        self._pending_media_rebase_transfer = dict(transfer or {})
 
     @property
     def playback_classification_snapshot(
@@ -988,14 +1067,28 @@ class ChannelRackController:
         through one read-only library connection. Resolution happens here,
         before observers are wired, so resume writes nothing.
 
+        B2R exception (canon ``VERIFIED_PACKAGE_MEDIA_REBASE``, §4a): when the
+        session staged a verified same-transaction package-media transfer, the
+        restored result receives the identical already-derived Source evidence
+        at the rebase destinations. The staging is consumed exactly once — a
+        cold restore with no staging keeps plain B1 semantics.
+
         Clears playback/loop runtime. Does not claim audio focus. Does not
         rebuild DEFAULT_ON. Does not fire musical-state autosave callbacks —
         callers must wire observers only after restore completes.
         """
+        staged_transfer = self._pending_media_rebase_transfer
+        self._pending_media_rebase_transfer = {}
+        prior_user_metadata = self._user_metadata
         self._discard_pending_user_mutation()
         self.stop()
         self._state = state
-        self._user_metadata = self._resolve_user_paths(_distinct_user_paths(state))
+        resolved = self._resolve_user_paths(_distinct_user_paths(state))
+        if staged_transfer:
+            resolved = _apply_media_rebase_transfer(
+                resolved, staged_transfer, state, prior_user_metadata
+            )
+        self._user_metadata = resolved
         self._clear_loop_session()
         self._active_screen = SCREEN1
 

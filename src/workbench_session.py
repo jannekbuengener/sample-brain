@@ -40,10 +40,14 @@ from .track_package import (
     TrackPackageMediaSource,
     TrackPackageResult,
     create_track_package,
+    media_rebase_transfer_map,
     open_track_package,
     save_track_package_musical_state,
 )
-from .workbench_channel_rack import ChannelRackController
+from .workbench_channel_rack import (
+    ChannelRackController,
+    user_channel_sample_paths,
+)
 from .workbench_controller import WorkbenchRow, get_preview_start_ms
 from .workbench_harmony import HarmonicMatchLibraryController
 from .workbench_live_kit import LiveKitState
@@ -281,6 +285,7 @@ class WorkbenchSession:
             )
         root = Path(package_root).expanduser().resolve(strict=False)
         pending = self._pending_arrangement_entry
+        transaction_results: tuple[TrackPackageResult, ...]
         if pending is not None and pending.package_root == root:
             created = open_track_package(root)
             if not created.ok:
@@ -296,6 +301,9 @@ class WorkbenchSession:
             if not created.ok:
                 return created
             self._pending_arrangement_entry = created
+            # Same successful transaction: the media were byte-identity-verified
+            # by the interrupted create attempt and are carried by `pending`.
+            transaction_results = (pending, created)
         else:
             created = create_track_package(
                 TrackPackageDraft(
@@ -310,8 +318,11 @@ class WorkbenchSession:
             if not created.ok:
                 return created
             self._pending_arrangement_entry = created
+            transaction_results = (created,)
+        _stage_media_rebase_transfer(self, transaction_results, rack)
         bound = self.bind_active_track_package(root, preserve_draft_metadata=True)
         if not bound.ok:
+            self.channel_rack.stage_media_rebase_transfer(None)
             return bound
         self._pending_arrangement_entry = None
         self.projection_mode = "ARRANGEMENT"
@@ -539,13 +550,35 @@ def _apply_package_live_kit(
             live_kit.assign(group, slot, replace(row, path=path))
 
 
+def _stage_media_rebase_transfer(
+    session: WorkbenchSession,
+    transaction_results: tuple[TrackPackageResult, ...],
+    rack: ChannelRackState | None,
+) -> None:
+    """Stage B2R evidence for the same-transaction package bind (#1137).
+
+    Canon ``VERIFIED_PACKAGE_MEDIA_REBASE`` (#1138): only runtime-copied,
+    byte-identity-verified package media of *this* transaction produce a
+    Source→Destination pair. The destination is never re-queried and nothing
+    is persisted; a failed bind discards the staging through the controller.
+    """
+    user_paths = user_channel_sample_paths(rack)
+    transfer: dict[str, str] = {}
+    if user_paths:
+        for transaction in transaction_results:
+            transfer.update(media_rebase_transfer_map(transaction, user_paths))
+    session.channel_rack.stage_media_rebase_transfer(transfer or None)
+
+
 def _adopt_saved_package_media(
     session: WorkbenchSession, result: TrackPackageResult
 ) -> None:
     """Rebind committed media through the existing snapshot seam.
 
     Unchanged projections keep their Pattern/Rack identity. Media rebinding
-    never creates a second owner or schedules playback.
+    never creates a second owner or schedules playback. When the committed
+    transaction rebased media, B2R staging carries the verified evidence
+    through the restore instead of dropping derived classification.
     """
     if result.manifest is None or session.active_track_package_root is None:
         raise ValueError("Committed package manifest is required.")
@@ -557,6 +590,11 @@ def _adopt_saved_package_media(
     )
     if refreshed == current:
         return
+    _stage_media_rebase_transfer(
+        session,
+        (result,),
+        session.channel_rack.state,
+    )
     _detach_session_persistence(session)
     try:
         _apply_package_live_kit(refreshed, session.live_kit, preserve_metadata=True)
