@@ -162,6 +162,55 @@ A successful Arrangement Entry / Create Track Package on a fresh draft (not a le
 
 Large media copies must not run on the realtime audio path or block step-toggle / audio-critical work (#1085 must honor this).
 
+## 5a. VERIFIED_PACKAGE_MEDIA_REBASE (B2R — frozen exception)
+
+```text
+VERIFIED_PACKAGE_MEDIA_REBASE_FROZEN
+```
+
+**Status:** contract-only canon for later package runtime acceptance (shared freeze with the user-channel classification contract, §4a of [`USER_CHANNEL_CLASSIFICATION_AUTHORITY.md`](USER_CHANNEL_CLASSIFICATION_AUTHORITY.md)). This freeze authorizes **no runtime implementation or behavior change** on its own.
+
+Within **one successful track-package transaction**, when the Track-Package runtime itself copies a medium and verifies **byte identity** between the existing package Source and Target, the resulting path rebase (e.g. an already-classified sample media path moving onto its final package-relative `media/` path) is **not a new sample assignment**.
+
+Rules:
+
+- If the Source path already holds an authoritatively resolved UserSampleMetadata binding, the existing **derived in-memory Evidence** may be transferred verbatim to the new package-relative path: identical `sample_class`, identical `source_bpm`, same derived binding Evidence.
+- **No new classification**, no Library Refresh, no B2 Sample Replacement, no second classifier, no Library Write. The Workbench library remains the single classification authority; the binding stays derived and in-memory.
+- Source `ambiguous` ⇒ Destination `ambiguous`. An unverified copy ⇒ **no evidence transfer**. Other channels still referencing the Source ⇒ the Source binding entry is preserved; after the rebase the entry may fall away only when the Source path is no longer referenced.
+- B2R is exclusively **in-session, transaction-bound, verified-copy, identity-preserving**. It creates no lifetime beyond the successful transaction and performs **0** library connections.
+
+Confinement (these remain absolute; the exception relaxes none of them):
+
+- No classification persisted in the `Channel`, in Session JSON, or in the Track Package Manifest.
+- No schema extension (session v2, package manifest, Pattern Core).
+- No original absolute Source path persisted in the package — package-media confinement stays package-relative only (§4/§6).
+- No hash-classifier, no filename heuristic, no third metadata store.
+
+Unchanged interacting behavior:
+
+| Event | Rule |
+|---|---|
+| Genuine user replacement A → B (package-external) | normal resolve over the Library authority (**B2** of the classification contract) |
+| Verified same-transaction package rebase | **B2R** evidence transfer, no classification |
+| Cold restore / reopen of the package | existing restore rules (**B1**) resolve through the normal authority; a B2R transfer does not survive the session |
+
+### B2R contract vectors (1–10)
+
+Normative for later runtime acceptance of this exception; this freeze defines expected outcomes only.
+
+| # | Vector | Expected outcome |
+|---|---|---|
+| 1 | One-shot sample + verified rebase in the same package transaction | Destination carries **`one_shot`** identically; no classifier run, no library read |
+| 2 | Loop sample + verified rebase in the same package transaction | Destination carries **`loop`** identically and the **identical `source_bpm`** |
+| 3 | Source binding `ambiguous` at rebase time | Destination stays **`ambiguous`**; no invented class |
+| 4 | Copy not byte-verified (failed/copy mismatch/interrupted) | **No evidence transfer**; no destination binding produced by the rebase |
+| 5 | Real user replacement A → B while the package is open | **Normal resolve over the Library authority** (regular B2 semantics), never treated as a B2R rebase |
+| 6 | Any rebase path | **No Library Write** — library bytes/state untouched and classification authority stays external |
+| 7 | Any rebase path | **No metadata serialization** — nothing lands in session JSON (`SCHEMA_VERSION` unchanged), package manifest, or channel fields; binding stays derived in-memory |
+| 8 | Shared Source (other channels still reference the Source path) after rebase | **Source binding entry preserved** while referenced |
+| 9 | Last Source reference after rebase | Source binding entry **may drop** when no other channel references the Source path |
+| 10 | Any rebase path | **No second classifier / normalizer** — only `classification_kind` / `normalize_sample_class` produce classes; a rebase only moves already-resolved values |
+
 ## 6. Portability and security (fail-closed)
 
 A complete track package must open from a different Windows path even when the original library root is unavailable.
@@ -327,7 +376,7 @@ Windows evidence for #1085 must use synthetic / repo-safe media only.
 | [#1083](https://github.com/jannekbuengener/sample-brain/issues/1083) | Owns 32-field timing / musical-position mapping. Not owned here. |
 | [#1084](https://github.com/jannekbuengener/sample-brain/issues/1084) | Owns Arrangement blocks / group masks / track masks / end marker. Package may reserve opaque `arrangement` extension only. |
 | [#1078](https://github.com/jannekbuengener/sample-brain/issues/1078) | Owns Edit → Arrangement transition UX/command wiring; consumes this package contract for create-at-transition. |
-| [#1085](https://github.com/jannekbuengener/sample-brain/issues/1085) | Sole runtime implementation owner of this contract. |
+| [#1085](https://github.com/jannekbuengener/sample-brain/issues/1085) | Sole runtime implementation owner of this contract. B2R (§5a) vectors are consumed there; the exception itself is frozen with [`USER_CHANNEL_CLASSIFICATION_AUTHORITY.md`](USER_CHANNEL_CLASSIFICATION_AUTHORITY.md) §4a. |
 
 ## 14. Hard out of scope (#1082)
 

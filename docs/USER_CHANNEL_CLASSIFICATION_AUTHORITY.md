@@ -95,6 +95,60 @@ B3 resolves the **delta only**. `plan.target_channels` is `base_state.channels +
 
 Restore is one bounded connection for the whole set, never N opens. `rehydrate_live_kit_from_library` remains the Live Kit counterpart and keeps its own single connection.
 
+### 4a. VERIFIED_PACKAGE_MEDIA_REBASE (B2R — frozen exception)
+
+```text
+VERIFIED_PACKAGE_MEDIA_REBASE_FROZEN
+```
+
+**Status:** contract-only canon, shared normative freeze with the Track Package contract (§5a of [`TRACK_PACKAGE_OWNERSHIP_CONTRACT.md`](TRACK_PACKAGE_OWNERSHIP_CONTRACT.md)). This freeze authorizes **no runtime behavior change** of its own.
+
+When Sample Brain — through the **Track-Package runtime, not a user action** — copies a medium within the **same successful track-package transaction** and verifies **byte identity** between the existing package Source and Target, the resulting path rebase is **not a new sample assignment**. If the Source path already holds an authoritatively resolved entry in the derived path-keyed binding (`UserSampleMetadata`), that existing **derived in-memory Evidence may be transferred verbatim** to the new package-relative destination path without re-resolution.
+
+This is, by decision:
+
+- **no new classification** — no classifier run, no class decision;
+- **no Library Refresh** — no B4, no rescan, no library read;
+- **no B2 Sample Replacement** — a genuine user assignment Path A → Path B stays a regular B2 event resolved over the Library authority;
+- **no second classifier or normalizer** — `classification_kind` / `normalize_sample_class` remain the only classifier;
+- **no Library Write** — the library remains untouched and remains the sole classification authority.
+
+B2R is exclusively **in-session, transaction-bound, verified-copy, identity-preserving**.
+
+Hard preconditions (all four required, fail-closed otherwise):
+
+1. The copy is performed by the Track-Package runtime.
+2. Byte identity between Source and Target was verified.
+3. It is the **same successful package transaction** (no deferred, split, or later-batched transfer).
+4. The Source path already holds a valid explicit binding entry (a stored resolved `sample_class` / `source_bpm`).
+
+If all four hold, the Destination receives the **identical** `sample_class`, the **identical** `source_bpm`, and the same derived binding evidence. Because the authority stays external, this is an *identity-preserving rebase of already-derived evidence*, not a transfer of authority: the binding entry remains derived, in-memory, per §1.
+
+Boundary conditions:
+
+- **Source `ambiguous` ⇒ Destination `ambiguous`.** No ambiguity may be laundered through a rebase; missing/invalid Source evidence resolves the Destination through the normal fail-closed rules.
+- **Copy not verified (any integrity/fingerprint mismatch, failed or interrupted copy) ⇒ no evidence transfer.** Target then resolves normally if and when it is assigned through a regular boundary.
+- **Other channels still reference the Source ⇒ the Source binding entry is preserved** (shared path entries are reference-counted per §5; only the last-reference case may drop it).
+- **Last-source-reference case:** after a verified rebase the Source binding entry **may** be dropped when no other channel references the Source path (same reference-counting as §5), but this is not required by the rebase itself.
+
+Reading the transfer against §4's boundary list: B2R is **not a new resolution boundary**. It triggers no library read and no re-resolution; it only carries already-resolved derived Evidence to a new path key within one atomic transaction. It therefore consumes **0** library connections and must never insert itself into the Notify-once/Atomic-Apply ordering as a second observer event.
+
+Explicit prohibited outcomes (unchanged from §4/§6, restated for this freeze):
+
+- No `sample_class` / classification in the `Channel`, in Session JSON, or in the Track Package Manifest — the derived binding stays non-persisted in all stores.
+- No schema extension (session v2, package manifest, Pattern Core) — the transfer introduces no new persisted field.
+- No original absolute Source path persisted in the package — package-media convergence remains confined to the package root (§6 of the package contract).
+- No hash-classifier and no Filename Heuristic — classification remains library-owned.
+- No third metadata store.
+
+Unchanged interacting behavior:
+
+| Event | Owner / rule |
+|---|---|
+| Real user assignment Path A → Path B (package-external) | normal **B2** resolve over the Library, unchanged |
+| Package rebase verified in-session (this freeze) | **B2R** evidence transfer, no library read |
+| Cold Restore / Reopen / reload of the package | existing **B1** rules only; a B2R transfer does not survive the session and reopen re-resolves through the normal authority |
+
 ### 5. Assignment / replacement / clear invalidation
 
 | Event | Binding | Durable state | Playback |
@@ -257,6 +311,7 @@ DOCS -> TESTS -> TEST FREEZE -> IMPLEMENTATION -> CHECKS
 | Pattern Core | Shapes unchanged; user channels continue to reference a sample path only. |
 | #680 Gesture slices | Unchanged ranking/action logic; appended channels consume the same path-keyed binding. |
 | #946 Analysis quality | Owns measured `sample_class` correctness. This contract consumes its output unchanged. |
+| Track Package Ownership (#1082) | Freezes `VERIFIED_PACKAGE_MEDIA_REBASE` (§4a / §5a): in-session verified-copy path rebase transfers already-derived Evidence without reclassification; the library stays the classification authority. |
 
 ## Exit
 
