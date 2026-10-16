@@ -1,6 +1,7 @@
 """Additional #1078 retry regressions found during independent review."""
 
 from pathlib import Path
+from dataclasses import replace
 
 from src import workbench_session as ws
 from src import track_package as tp
@@ -126,3 +127,43 @@ def test_legacy_audition_without_native_clock_requires_explicit_stop(
     assert not root.exists()
     s.audition.stop()
     assert enter(s, root).ok
+
+
+def test_initial_entry_preserves_analyzed_assignment_metadata(draft):
+    s, root, _ = draft
+    enable(s)
+    row = replace(
+        s.live_kit.assignment_for("Kick + Bass", "Kick"),
+        bpm=128.0,
+        key="Am",
+        loudness=-12.0,
+        details={"analysis": "retained"},
+    )
+    s.live_kit.assign("Kick + Bass", "Kick", row)
+    s.transport.set_sync_enabled(True)
+    assert enter(s, root).ok
+    actual = s.live_kit.assignment_for("Kick + Bass", "Kick")
+    assert actual.sample_class == "oneshot"
+    assert actual.bpm == 128.0
+    assert actual.key == "Am"
+    assert actual.loudness == -12.0
+    assert actual.details == {"analysis": "retained"}
+    assert Path(actual.path).is_relative_to(root)
+
+
+def test_edit_replacement_autosave_preserves_replacement_metadata(draft, tmp_path):
+    s, root, _ = draft
+    enable(s)
+    assert enter(s, root).ok
+    s.return_to_edit()
+    replacement = tmp_path / "analyzed.wav"
+    write_sine_wav(replacement, duration_sec=0.05, frequency_hz=110)
+    row = replace(_row(replacement), bpm=133.0, key="Dm", sample_class="loop")
+    s.live_kit.assign("Kick + Bass", "Kick", row)
+    actual = s.live_kit.assignment_for("Kick + Bass", "Kick")
+    assert actual.sample_class == "loop"
+    assert actual.bpm == 133.0
+    assert actual.key == "Dm"
+    assert Path(actual.path).is_relative_to(root)
+    assert enter(s).ok
+    assert s.live_kit.assignment_for("Kick + Bass", "Kick") is actual

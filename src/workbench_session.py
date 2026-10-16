@@ -22,7 +22,7 @@ session).
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -56,6 +56,7 @@ from .workbench_qml import (
 )
 from .workbench_session_store import (
     ActiveTrackPointer,
+    WorkbenchSessionSnapshot,
     DEFAULT_TEMPO_BPM,
     PERSISTENCE_STATUS_AUTOSAVE_FAILED,
     PERSISTENCE_STATUS_FRESH_MISSING,
@@ -296,7 +297,7 @@ class WorkbenchSession:
             if not created.ok:
                 return created
             self._pending_arrangement_entry = created
-        bound = self.bind_active_track_package(root)
+        bound = self.bind_active_track_package(root, preserve_draft_metadata=True)
         if not bound.ok:
             return bound
         self._pending_arrangement_entry = None
@@ -328,8 +329,14 @@ class WorkbenchSession:
             env=self._env,
         )
 
-    def bind_active_track_package(self, package_root: Path | str) -> TrackPackageResult:
-        """Bind one validated package as this session's durable musical authority."""
+    def bind_active_track_package(
+        self, package_root: Path | str, *, preserve_draft_metadata: bool = False
+    ) -> TrackPackageResult:
+        """Bind one validated package as the durable musical authority.
+
+        Only initial draft entry retains analyzed rows while rebasing media.
+        Explicit Open must not inherit metadata from an unrelated current kit.
+        """
         root = Path(package_root)
         opened = open_track_package(root)
         if (
@@ -366,7 +373,9 @@ class WorkbenchSession:
 
         _detach_session_persistence(self)
         try:
-            apply_snapshot_to_live_kit(snapshot, self.live_kit)
+            _apply_package_live_kit(
+                snapshot, self.live_kit, preserve_metadata=preserve_draft_metadata
+            )
             self.transport.set_tempo(float(snapshot.master_bpm))
             self.transport.set_sync_enabled(bool(snapshot.sync_enabled))
             rack_state = channel_rack_state_from_snapshot(snapshot)
@@ -494,6 +503,29 @@ class _SessionAuditionPlayRow:
         return self._audition.play_row(row, start_ms=resolved)
 
 
+def _apply_package_live_kit(
+    snapshot: WorkbenchSessionSnapshot,
+    live_kit: LiveKitState,
+    *,
+    preserve_metadata: bool,
+) -> None:
+    """Reuse snapshot restore, retaining current analyzed rows for media rebase."""
+    rows = (
+        {
+            (group, slot): live_kit.assignment_for(group, slot)
+            for group, slots in snapshot.live_kit.items()
+            for slot in slots
+        }
+        if preserve_metadata
+        else {}
+    )
+    apply_snapshot_to_live_kit(snapshot, live_kit)
+    for (group, slot), row in rows.items():
+        path = snapshot.live_kit[group][slot]
+        if row is not None and path is not None:
+            live_kit.assign(group, slot, replace(row, path=path))
+
+
 def _adopt_saved_package_media(
     session: WorkbenchSession, result: TrackPackageResult
 ) -> None:
@@ -514,7 +546,7 @@ def _adopt_saved_package_media(
         return
     _detach_session_persistence(session)
     try:
-        apply_snapshot_to_live_kit(refreshed, session.live_kit)
+        _apply_package_live_kit(refreshed, session.live_kit, preserve_metadata=True)
         rack_state = channel_rack_state_from_snapshot(refreshed)
         if rack_state is not None:
             session.channel_rack.restore_state(rack_state)
