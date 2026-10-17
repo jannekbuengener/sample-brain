@@ -160,9 +160,11 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 
 ### 4.5 Analyzer (`src/feature_analysis.py`, `src/analyze.py`, `src/analysis_contracts.py`)
 
+- **Frozen internal consumer surface:** `src.analysis` is the explicit public import facade for the package-ready Analysis API; its `__all__` is frozen by `tests/test_analysis_contract_boundary.py`. The future distribution/import root for #1151 is `sample-brain-analysis` / `sample_brain_analysis`; #1150 does not create that repository or duplicate its source tree. See [`ANALYSIS_PACKAGE_BOUNDARY_V1.md`](ANALYSIS_PACKAGE_BOUNDARY_V1.md).
 - **Shared contract authority:** `src/analysis_contracts.py` owns neutral analyzer invariants/vocabulary and shared result contracts. `src.config` only re-exports analyzer constants for compatibility. See [`ANALYSIS_PUBLIC_CONTRACT_V1.md`](ANALYSIS_PUBLIC_CONTRACT_V1.md).
 - **Portable computation:** `src.feature_analysis.extract_features()` loads explicit audio input and extracts BPM, key, loudness, brightness, MFCCs, chroma, and duration class into neutral `Features`. Its import closure has no catalog DB/SQLAlchemy/Product dependency.
 - **Application persistence:** `src.analyze.run_analyze()` owns catalog reads, batching/progress, V1 feature upserts, and run accounting; it calls the neutral compute binding and preserves the historical `src.analyze.extract_features` facade.
+- **Other package candidates:** `src.classification`, `src.key_analysis_v2_core`, `src.bpm_matching`, `src.attack_analysis`, `src.gesture_analysis`, `src.harmony`, and `src.key_signature` expose only the frozen neutral surface through `src.analysis`. Their persistence/catalog/Product consumers remain application-owned; the transitive boundary is executable in the Analysis contract tests.
 - **Must not do:** Feature computation must not own DB/session/UI state; the application facade must not redefine DSP algorithms.
 - **Error handling:** Best-effort per file ? corrupt/unreadable audio does not crash the pipeline.
 
