@@ -5963,6 +5963,7 @@ ApplicationWindow {
                                         readonly property string groupId: arrangementGroupRow.groupId
                                         readonly property int blockIndex: cell.blockIndex
                                         readonly property bool effectiveOn: cell.available
+                                        enabled: cell.interactive
                                         width: (parent.width - 8 * (arrangementGroupRow.row.blocks.length - 1)) / arrangementGroupRow.row.blocks.length
                                         height: 42
                                         color: effectiveOn ? theme.surfaceElevated : theme.surfaceRoot
@@ -8400,6 +8401,7 @@ def _qml_engine(
     transport_bridge = _qml_transport_bridge(session_transport)
     persistence_bridge = _qml_session_persistence_bridge(session)
     arrangement_bridge = _qml_arrangement_bridge(session, adapter)
+    transport_bridge.state_changed.connect(arrangement_bridge.refresh)
 
     def open_channel_rack() -> None:
         # #908: materialize bottom Rack via ensure_state; quiet audition through
