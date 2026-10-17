@@ -42,6 +42,7 @@ def _static_imports(module_name: str) -> set[str]:
 def _is_forbidden(module_name: str) -> bool:
     return (
         module_name.startswith("PySide6")
+        or module_name in {"src.workbench", "workbench"}
         or module_name.startswith("src.workbench_")
         or module_name.startswith("workbench_")
     )
@@ -65,6 +66,18 @@ def test_boundary_detects_workbench_imported_from_src_package(
     source_path = tmp_path / "src" / "attack_analysis.py"
     source_path.parent.mkdir()
     source_path.write_text("from src import workbench_waveform\n", encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "REPO_ROOT", tmp_path)
+
+    imports = _static_imports("src.attack_analysis")
+    assert any(_is_forbidden(module) for module in imports)
+
+
+def test_boundary_detects_workbench_root_imported_from_src_package(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source_path = tmp_path / "src" / "attack_analysis.py"
+    source_path.parent.mkdir()
+    source_path.write_text("from src import workbench\n", encoding="utf-8")
     monkeypatch.setattr(sys.modules[__name__], "REPO_ROOT", tmp_path)
 
     imports = _static_imports("src.attack_analysis")
