@@ -8,7 +8,7 @@
 
 The versioned distribution `sample-brain-analysis` (import root
 `sample_brain_analysis`) owns the public Analysis API, result types, and
-computation. Its v1 manifest is canonical in the immutable
+computation. Its v1 manifest is canonical in the versioned
 [v0.1.0 package contract](https://github.com/jannekbuengener/sample-brain-analysis/blob/v0.1.0/docs/contracts/analysis-public-api-v1.md).
 This Sample Brain document defines only how the application consumes that
 package and where application behavior remains owned. It does not restate the
