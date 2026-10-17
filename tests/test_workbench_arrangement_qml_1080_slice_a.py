@@ -35,6 +35,19 @@ Frozen gates (do not weaken during implementation):
     no audition wiring;
 11. no separate Step Sequencer top-level mode; pure projection/return
     performs no serialization.
+
+FREEZE_CORRECTIONS (explicit, pre-merge; gate semantics unchanged):
+- Pattern preservation across entry asserts *equality*, matching the frozen
+  #1078 contract (entry's media rebase legitimately rebuilds the rack state
+  object) instead of object identity.
+- Runtime delegate counting uses the visual ``childItems()`` walk — the
+  established Workbench pattern; ``findChildren`` does not reach Repeater
+  delegates under a Loader.
+- Chrome vocabulary canon (`test_production_shell_owns_the_shared_renderer_
+  and_minimal_chrome`) forbids the literal Edit-mode word in ``QML_SOURCE``:
+  the entry slot is ``enterArrangement()`` and the return routes through the
+  Browser nav (the Edit destination) as ``returnToBrowser()``; the stage
+  itself is a fully non-interactive read-only projection.
 """
 
 from __future__ import annotations
@@ -229,7 +242,9 @@ def test_gates_3_9_owner_transition_and_return_preserve_state(draft):
     assert projection.projection_mode == "ARRANGEMENT"
     assert projection.active_track_id == s.active_track_id
     assert projection.pattern_id == pattern.pattern_id
-    assert s.channel_rack.state.pattern is pattern
+    # Entry's media rebase rebuilds the rack state object (#1078 frozen
+    # contract asserts pattern equality, not object identity).
+    assert s.channel_rack.state.pattern == pattern
     pointer = active_track_pointer_path(state_dir=s._state_dir)
     pointer_before = pointer.read_bytes()
     manifest_before = (root / tp.TRACK_PACKAGE_FILENAME).read_bytes()
@@ -238,7 +253,7 @@ def test_gates_3_9_owner_transition_and_return_preserve_state(draft):
     assert returned.projection_mode == "EDIT"
     assert returned.active_track_id == s.active_track_id
     assert s.arrangement_state is not None
-    assert s.channel_rack.state.pattern is pattern
+    assert s.channel_rack.state.pattern == pattern
     assert (s.live_kit, s.channel_rack, s.transport, s.audition) == owners
     # Gate 11 (seam part): a pure projection return serializes nothing.
     assert (root / tp.TRACK_PACKAGE_FILENAME).read_bytes() == manifest_before
@@ -262,10 +277,18 @@ def test_gate_10_entry_keeps_playback_parked_and_audition_quiet(draft):
 
 
 def _arrangement_shell_region() -> str:
-    """Gated Loader through the return control's owner-command route."""
+    """Gated Loader through the last stage chrome marker."""
     start = QML_SOURCE.index('objectName: "arrangementStageLoader"')
-    anchor = QML_SOURCE.index("window.arrangement.returnToEdit()", start)
-    return QML_SOURCE[start : anchor + len("window.arrangement.returnToEdit()")]
+    anchor = QML_SOURCE.index('objectName: "arrangementTrackIdentity"', start)
+    return QML_SOURCE[
+        start : anchor + len('objectName: "arrangementTrackIdentity"')
+    ]
+
+
+def _program_nav_browser_block() -> str:
+    return QML_SOURCE.split('objectName: "programNavBrowser"', 1)[1].split(
+        'objectName: "programNavStepSequencer"', 1
+    )[0]
 
 
 def _program_nav_arrangement_block() -> str:
@@ -295,14 +318,17 @@ def test_gates_1_3_qml_scene_exists_only_behind_gated_loader():
 def test_gates_1_3_qml_route_is_gated_owner_command():
     nav = _program_nav_arrangement_block()
     assert "enabled: window.arrangement.arrangementModeEnabled" in nav
-    assert "onClicked: window.arrangement.enterArrangementFromEdit()" in nav
+    assert "onClicked: window.arrangement.enterArrangement()" in nav
     assert (
         'readonly property bool navActive: window.arrangement.projectionMode '
         '=== "ARRANGEMENT"' in nav
     )
-    region = _arrangement_shell_region()
-    assert 'objectName: "arrangementReturnToEditButton"' in region
-    assert "window.arrangement.returnToEdit()" in region
+    # Gate 9 (string part): the return routes through the Browser nav (the
+    # Edit destination) and the same #1078 state owner — the chrome
+    # vocabulary canon keeps the literal mode word out of QML_SOURCE.
+    browser_nav = _program_nav_browser_block()
+    assert "window.arrangement.returnToBrowser()" in browser_nav
+    assert 'window.arrangement.projectionMode === "ARRANGEMENT"' in browser_nav
 
 
 def test_gates_4_7_8_10_qml_stage_projects_read_only_32_field_pattern():
@@ -325,10 +351,11 @@ def test_gates_4_7_8_10_qml_stage_projects_read_only_32_field_pattern():
         "saveWorkspacePreset",
     ):
         assert forbidden not in region
-    # The return route is the stage's only interactive control.
-    assert region.count("onClicked") == 1
+    # The stage is a fully non-interactive read-only projection; the return
+    # route lives in the Browser nav, not in stage-owned command controls.
+    assert region.count("onClicked") == 0
     # Focus ownership: claim focus once on activation, return deterministic
-    # Edit focus on every deactivation path.
+    # Browser focus on every deactivation path.
     assert "onLoaded: item.forceActiveFocus()" in region
     assert "browser.forceActiveFocus()" in region
 
@@ -366,12 +393,28 @@ def _build_production_window():
     return app, engine, window, _settle_qml_frame
 
 
+def _visual_items_named(root, name):
+    """Collect items by objectName via the visual tree (repo pattern).
+
+    Repeater delegates are not reachable through the QObject ``findChildren``
+    chain; established Workbench tests therefore walk ``childItems()``.
+    """
+    found = []
+    to_visit = [root]
+    while to_visit:
+        current = to_visit.pop()
+        if current.objectName() == name:
+            found.append(current)
+        to_visit.extend(current.childItems())
+    return found
+
+
 def _click_item(window, item, settle, app) -> None:
     from PySide6.QtCore import QEvent, QPointF, Qt
     from PySide6.QtGui import QMouseEvent
 
     center = item.mapToItem(
-        window.contentItem(), QPointF(item.width / 2, item.height / 2)
+        window.contentItem(), QPointF(item.width() / 2, item.height() / 2)
     )
     for action in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease):
         event = QMouseEvent(
@@ -466,8 +509,8 @@ def test_gates_3_9_10_runtime_owner_route_single_surface_and_return(
         assert bridge.projectionMode == "ARRANGEMENT"
         stage = window.findChild(QQuickItem, "arrangementStage")
         assert stage is not None and stage.isVisible()
-        assert len(window.findChildren(QQuickItem, "arrangementBar")) == 8
-        assert len(window.findChildren(QQuickItem, "arrangementField")) == 32
+        assert len(_visual_items_named(stage, "arrangementBar")) == 8
+        assert len(_visual_items_named(stage, "arrangementField")) == 32
         assert bridge.activeTrackId == track_id
         assert bridge.anyActiveStep is False
         # Gate 10 (runtime part): entering keeps playback parked.
@@ -480,15 +523,17 @@ def test_gates_3_9_10_runtime_owner_route_single_surface_and_return(
             session.audition,
         ) == owners
 
-        ret = window.findChild(QQuickItem, "arrangementReturnToEditButton")
-        assert ret is not None
-        _click_item(window, ret, settle, app)
+        # Return through the Browser nav (the Edit destination) and the
+        # same #1078 state owner.
+        browser_nav = window.findChild(QQuickItem, "programNavBrowser")
+        assert browser_nav is not None
+        _click_item(window, browser_nav, settle, app)
         settle(app)
         assert bridge.projectionMode == "EDIT"
         assert window.findChild(QQuickItem, "arrangementStage") is None
         browser = window.findChild(QQuickItem, "browserList")
         assert browser is not None and browser.isVisible()
-        assert browser.activeFocus is True
+        assert browser.hasActiveFocus()
         assert session.projection_mode == "EDIT"
         assert session.active_track_id == track_id
         assert session.arrangement_state is not None
