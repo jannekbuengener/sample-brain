@@ -68,7 +68,7 @@ These are existing contracts, not behavior changes introduced by this boundary. 
 | scan/catalog | `src.scan`, `src.db` | none | ingestion, schema and catalog persistence | CLI/Product | filesystem discovery and SQLite | application stack | stays exclusively in `sample-brain` |
 | product projection/cache/session/UI | `src.context_analyze`, `src.asset_analysis`, `src.workbench_*`, QML/PySide6 | none | product maps, cache/state, controller/session/UI logic | Product/Workbench | product state, UI/runtime and cache effects | app/runtime stack | stays exclusively in `sample-brain` |
 
-The candidate closure test walks the facade and every listed neutral owner transitively. It rejects DB/SQLAlchemy, CLI/config/profile/state, catalog, Product, Workbench, QML/PySide6, Tk, packaging, and installer imports. Current third-party imports are limited to the existing Analysis needs (`numpy`, `librosa`, `soundfile`); SciPy is allowed only if a future directly used Analysis implementation needs it and the manifest/gate is deliberately updated.
+The candidate closure test walks the facade and every listed neutral owner transitively. It rejects DB/SQLAlchemy, CLI/config/profile/state, catalog, Product, Workbench, QML/PySide6, Tk, packaging, and installer imports. Current third-party imports are limited to the existing Analysis needs (`numpy`, `librosa`, `soundfile`). SciPy is intentionally excluded from the executable allowlist; adding it requires a deliberate contract and gate update.
 
 ## Dependency and clean-consumer contract
 

@@ -126,12 +126,15 @@ ANALYSIS_FORBIDDEN_MODULES = {
     "src.matching", "src.path_metadata", "src.scan",
 }
 ANALYSIS_FORBIDDEN_PREFIXES = ("src.workbench", "workbench", "PySide6", "sqlalchemy", "tkinter", "PyInstaller")
-ANALYSIS_ALLOWED_EXTERNAL_ROOTS = {"librosa", "numpy", "scipy", "soundfile"}
+ANALYSIS_ALLOWED_EXTERNAL_ROOTS = {"librosa", "numpy", "soundfile"}
 
 
 def _is_analysis_forbidden(module_name: str) -> bool:
     return (
-        module_name in ANALYSIS_FORBIDDEN_MODULES
+        any(
+            module_name == forbidden or module_name.startswith(f"{forbidden}.")
+            for forbidden in ANALYSIS_FORBIDDEN_MODULES
+        )
         or any(
             module_name == prefix
             or module_name.startswith(f"{prefix}.")
@@ -161,6 +164,53 @@ def _import_time_nodes(tree: ast.AST):
 
     for statement in tree.body:
         yield from visit(statement)
+
+
+def _product_environment_accesses(tree: ast.AST) -> set[str]:
+    findings: set[str] = set()
+    os_modules = {"os"}
+    getenv_names: set[str] = set()
+    environ_names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "os":
+                    os_modules.add(alias.asname or "os")
+        elif isinstance(node, ast.ImportFrom) and node.module == "os":
+            for alias in node.names:
+                if alias.name == "getenv":
+                    getenv_names.add(alias.asname or alias.name)
+                elif alias.name == "environ":
+                    environ_names.add(alias.asname or alias.name)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            if node.value.id in os_modules and node.attr == "environ":
+                findings.add("os.environ")
+            if node.value.id in os_modules and node.attr == "getenv":
+                findings.add("os.getenv")
+        if isinstance(node, ast.Name) and node.id in environ_names:
+            findings.add("os.environ")
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in getenv_names:
+                findings.add("os.getenv")
+    return findings
+
+
+def test_analysis_forbidden_modules_cover_submodules() -> None:
+    assert _is_analysis_forbidden("src.db.models")
+    assert _is_analysis_forbidden("src.config.profile")
+    assert not _is_analysis_forbidden("src.db_helpers")
+
+
+def test_analysis_environment_gate_resolves_os_import_aliases() -> None:
+    tree = ast.parse(
+        "import os as operating_system\n"
+        "from os import getenv as read_env, environ as environment\n"
+        "value = operating_system.getenv('X')\n"
+        "other = read_env('Y')\n"
+        "third = environment.get('Z')\n"
+    )
+    assert _product_environment_accesses(tree) == {"os.environ", "os.getenv"}
 
 
 def test_analysis_public_api_manifest_is_frozen() -> None:
@@ -216,16 +266,7 @@ def test_analysis_candidates_do_not_own_product_environment_or_import_state() ->
         source = _module_source(module)
         assert source is not None
         tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
-        module_findings: set[str] = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
-                if node.value.id == "os" and node.attr == "environ":
-                    module_findings.add("os.environ")
-            if isinstance(node, ast.Call):
-                func = node.func
-                if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
-                    if func.value.id == "os" and func.attr == "getenv":
-                        module_findings.add("os.getenv")
+        module_findings = _product_environment_accesses(tree)
         for node in _import_time_nodes(tree):
             if not isinstance(node, ast.Call):
                 continue
