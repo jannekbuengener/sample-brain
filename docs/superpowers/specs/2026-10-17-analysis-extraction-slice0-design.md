@@ -91,14 +91,16 @@ The two semantics it currently needs are small and analysis-local:
 1. probe audio duration from the input file;
 2. clamp the returned attack marker into `[0, duration_ms)`.
 
-Implement these as private helpers inside `attack_analysis.py` using the already-required `soundfile` dependency. Preserve the exact existing observable semantics:
+Reuse the existing analysis-owned `src/canon_audio.py::probe_audio` for the audio-duration probe rather than duplicating the `soundfile` probe. Convert its `AudioTimebase.duration_seconds` result to integer milliseconds locally in `attack_analysis.py`. Keep the cue clamp as a private numeric helper inside `attack_analysis.py` because it is not an audio-probing concern.
+
+Preserve the exact existing observable semantics:
 
 - missing/unreadable/non-positive-duration input -> `None` from `suggest_attack_ms`;
 - duration rounds to integer milliseconds and is at least 1 ms when positive;
 - negative cue value clamps to 0;
 - cue value at/after duration clamps to `duration_ms - 1`.
 
-Do not create a new generic shared-utilities module for these two helpers in Slice 0. That would widen architecture before there is evidence for another owner.
+Do not create a new generic shared-utilities module for these helpers in Slice 0. `canon_audio.probe_audio` is already the neutral analysis owner for probing; broader helper extraction would widen architecture without evidence.
 
 ### Compatibility facade
 
@@ -208,7 +210,9 @@ For the Slice 0 analysis set:
 - `src/aq3_onset_attack_candidate_compare.py`
 - `src/gesture_analysis.py`
 
-fail if a static import resolves to:
+This four-module set is intentionally narrow and was checked against the live base commit. The first three are the ownership path changed or introduced by Slice 0. `gesture_analysis.py` is included preventively because it is the sibling AQ3 analysis surface used in the same harness; it has no Workbench/PySide dependency today, and the gate prevents a future regression. Broader modules such as `analyze.py` and other AQ domains remain for the later package-level Analysis boundary gate.
+
+Fail if a static import resolves to:
 
 - any `src.workbench_*` / relative `workbench_*` module;
 - `PySide6`.
@@ -249,7 +253,7 @@ Run at minimum:
 - compatibility-facade tests
 - analysis boundary-contract tests
 
-The existing candidate-parity test must continue proving that the frozen baseline candidate produces the same aggregate metrics as the AQ3 baseline harness.
+The existing candidate-parity test must continue proving that the frozen baseline candidate produces the same aggregate metrics as the AQ3 baseline harness. Existing `monkeypatch.setattr(compare, "suggest_attack_ms", ...)` patches remain valid because `suggest_attack_ms` stays bound as a name in the candidate-compare module namespace regardless of whether its import source is the compatibility facade or `attack_analysis`.
 
 ### Broader validation
 
@@ -273,7 +277,7 @@ Slice 0 is complete only when all are true:
 5. Compatibility object identity passes for `AttackSuggestion` and `suggest_attack_ms`.
 6. Existing attack behavior is unchanged on frozen tests.
 7. AQ3 baseline/candidate metric parity remains unchanged.
-8. `ATTACK_SURFACE` remains the existing string for this slice.
+8. `ATTACK_SURFACE` remains the existing string for this slice, enforced by `tests/test_aq3_onset_attack_baseline.py::test_baseline_identity_constants_are_frozen` and `tests/test_aq3_onset_attack_candidate_compare.py::test_compare_identity_constants_are_frozen`.
 9. Product consumers still pass without being migrated in the same PR.
 10. No persistence/schema/config/package/repository boundary changes are included.
 11. Focused tests, full relevant CI, Ruff, and repository-cleanliness gates pass.
