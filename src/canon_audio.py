@@ -8,7 +8,7 @@ import numpy as np
 import soundfile as sf
 
 from .utils import file_hash
-from .config import ANALYZE_SR
+from .analysis_contracts import ANALYZE_SR
 
 RoundingMode = Literal["floor", "round"]
 

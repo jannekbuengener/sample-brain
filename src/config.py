@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 from typing import Mapping
 
+from .analysis_contracts import ANALYZE_HOP_LENGTH, ANALYZE_SR
+
 # ---- Verzeichnisse (relativ zum Projekt-Root) ----
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data"
@@ -60,8 +62,8 @@ AUDIO_EXTS = {".wav", ".aif", ".aiff", ".flac", ".mp3", ".ogg"}
 
 # ---- Performance/Analyzer Einstellungen ----
 NUM_WORKERS = 0  # 0 = single-thread; >0 = parallel (optional)
-ANALYZE_HOP_LENGTH = 512
-ANALYZE_SR = 44100  # Ziel-Samplerate für Features, wenn resample nötig
+# ANALYZE_SR / ANALYZE_HOP_LENGTH are compatibility re-exports from
+# src.analysis_contracts, the neutral Analysis authority.
 
 # ---- Sonstiges ----
 # Optional: Regex-Map für Dateinamen → Zusatz-Tags (falls vorhanden: ./data/filename_tag_regex.json)

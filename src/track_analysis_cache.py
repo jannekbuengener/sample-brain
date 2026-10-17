@@ -24,7 +24,7 @@ from typing import Any, Optional
 
 from .analyze import KEY_ANALYSIS_CONTRACT_VERSION
 from .canon_audio import CANONICAL_CHANNELS, CANONICAL_SAMPLE_RATE
-from .config import ANALYZE_HOP_LENGTH, ANALYZE_SR
+from .analysis_contracts import ANALYZE_HOP_LENGTH, ANALYZE_SR
 from .content_hash import LEGACY_CONTENT_HASH_ALGORITHM, normalize_hash_record
 
 # Bumped for #212: the analyzer now also emits a separate major/minor mode. Old

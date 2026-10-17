@@ -13,7 +13,7 @@ import soundfile as sf
 from sqlalchemy import text
 from tqdm import tqdm
 
-from .config import ANALYZE_HOP_LENGTH, ANALYZE_SR
+from .analysis_contracts import ANALYZE_HOP_LENGTH, ANALYZE_SR, Features
 from .db import init_db
 from .key_signature import format_key_signature
 
@@ -285,23 +285,6 @@ def _suppress_known_short_audio_librosa_warnings() -> Iterator[None]:
             category=UserWarning,
         )
         yield
-
-
-@dataclass(frozen=True)
-class Features:
-    bpm: float | None
-    key: str | None
-    key_conf: float | None
-    loudness: float | None
-    brightness: float | None
-    mfcc_mean: bytes | None
-    mfcc_std: bytes | None
-    chroma_mean: bytes | None
-    chroma_std: bytes | None
-    clazz: str | None
-    quality_note: str | None = None
-    key_mode: str | None = None
-    key_mode_evidence: dict | None = None
 
 
 def _serialize_key_mode_evidence(evidence: dict | None) -> str | None:

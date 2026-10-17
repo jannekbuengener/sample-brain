@@ -19,7 +19,7 @@ import librosa
 import numpy as np
 
 from .analyze import _effective_n_fft, safe_load
-from .config import ANALYZE_HOP_LENGTH, ANALYZE_SR
+from .analysis_contracts import ANALYZE_HOP_LENGTH, ANALYZE_SR
 
 FEATURE_DIM = 15
 """Documented feature dimension: RMS(1) + spectral centroid(1) + MFCC mean(13)."""
