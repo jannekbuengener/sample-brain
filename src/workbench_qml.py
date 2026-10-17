@@ -5886,8 +5886,8 @@ ApplicationWindow {
             anchors.fill: parent
 
             // #1080 Slice A: the stage is a read-only projection — this
-            // input layer keeps pointer events from reaching the covered
-            // Edit workspace beneath (no invisible mutation or audition).
+            // input layer keeps pointer events from reaching the workspace
+            // beneath (no invisible mutation or audition).
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
