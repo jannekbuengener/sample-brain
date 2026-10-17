@@ -8,6 +8,7 @@ from typing import Literal, cast
 
 ANALYZE_SR = 44100
 ANALYZE_HOP_LENGTH = 512
+KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION = 2
 
 BPMNormalizationMode = Literal["none", "heuristic", "domain_110_170"]
 VALID_BPM_NORMALIZATION_MODES = frozenset(
@@ -44,6 +45,7 @@ class Features:
 __all__ = [
     "ANALYZE_HOP_LENGTH",
     "ANALYZE_SR",
+    "KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION",
     "BPMNormalizationMode",
     "VALID_BPM_NORMALIZATION_MODES",
     "Features",

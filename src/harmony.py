@@ -1,7 +1,7 @@
 """Neutral harmonic relation, rating and ranking logic.
 
-Inputs carry resolved keys. BPM scoring reuses matching; its DB/SQLAlchemy
-import dependencies are intentionally unchanged in this ownership slice.
+Inputs carry resolved keys. BPM scoring consumes the neutral BPM matching
+contract and has no catalog/SQLAlchemy dependency.
 """
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Generic, Optional, Tuple, TypeVar
 
+from .bpm_matching import DEFAULT_BPM_TOLERANCE, _score_bpm_details
 from .key_signature import (
     ParsedKey,
     parse_key_signature,
@@ -208,12 +209,8 @@ def _bpm_score_from_row(
     reference: HarmonyInput, candidate: HarmonyInput
 ) -> Tuple[float, str]:
     """Calculate BPM score using existing matching logic (linear decay)."""
-    from .matching import _score_bpm_details
-
     if reference.bpm is None or candidate.bpm is None:
         return 0.0, "bpm missing"
-
-    from .matching import DEFAULT_BPM_TOLERANCE
 
     bpm_details = _score_bpm_details(
         candidate.bpm, reference.bpm, DEFAULT_BPM_TOLERANCE

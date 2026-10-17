@@ -22,7 +22,7 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 | Product requirements | `docs/PRODUCT_REQUIREMENTS.md` | ACTIVE_CANON | Product intent and non-goals; newer explicit canon overrides superseded historical framing. |
 | System requirements | `docs/SYSTEM_REQUIREMENTS.md` | ACTIVE_CANON | Functional/non-functional system contract. Product-navigation wording (e.g. CST-PLUGIN-02 Screen 1 → Live Kit → Channel Rack → Arrangement) is **superseded for navigation** by [`PRODUCT_WORKFLOW_CANON.md`](PRODUCT_WORKFLOW_CANON.md) / #1075/#1076 (`Edit → Arrangement → later Live`); do not treat that legacy CST row as current mode authority. |
 | Architecture | `docs/TARGET_ARCHITECTURE.md` | ACTIVE_CANON | Current vs target architecture and ownership boundaries. |
-| Analysis public contract | `docs/ANALYSIS_PUBLIC_CONTRACT_V1.md` | ACTIVE_SUPPORTING | #1148 neutral shared analyzer constants/BPM-normalization vocabulary/`Features` DTO; application config adapts into narrow Analysis inputs, persistence decoupling continues in #1149. |
+| Analysis public contract | `docs/ANALYSIS_PUBLIC_CONTRACT_V1.md` | ACTIVE_SUPPORTING | #1148/#1149 neutral Analysis contracts plus computation-vs-application-persistence boundary; final package/public export freeze remains #1150. |
 | Realtime Workbench boundary | `docs/REALTIME_WORKBENCH_SCOPE.md` | ACTIVE_CANON | Local realtime scope; not a general DAW authorization. |
 | Data / artifacts | `docs/DATA_AND_ARTIFACT_POLICY.md` | ACTIVE_CANON | Private/local/generated data boundary. |
 | Merge review-feedback gate | `docs/MERGE_REVIEW_FEEDBACK_GATE.md` | ACTIVE_CANON | Mandatory pre-merge gate: all review feedback seen, dispositioned, inline threads resolved on final head; complements `CI_GREEN`. |

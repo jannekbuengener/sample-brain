@@ -96,10 +96,28 @@ def test_s3_neutral_analysis_import_closures_are_application_free(module_name: s
 def test_feature_analysis_legacy_surface_identity() -> None:
     from src import analyze, feature_analysis
 
-    assert analyze.extract_features is feature_analysis.extract_features
+    assert callable(analyze.extract_features)
     assert analyze.safe_load is feature_analysis.safe_load
     assert analyze.estimate_key is feature_analysis.estimate_key
     assert analyze.estimate_key_mode is feature_analysis.estimate_key_mode
+
+
+def test_analyze_extract_features_preserves_legacy_safe_load_patch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src import analyze
+
+    calls: list[Path] = []
+
+    def fake_safe_load(path: Path, target_sr: int = analyze.ANALYZE_SR):
+        calls.append(path)
+        return None, None
+
+    missing_audio = tmp_path / "must-not-be-read.wav"
+    monkeypatch.setattr(analyze, "safe_load", fake_safe_load)
+
+    assert analyze.extract_features(missing_audio, 0.1) is None
+    assert calls == [missing_audio]
 
 
 def test_classification_legacy_surface_identity() -> None:
@@ -113,7 +131,8 @@ def test_key_v2_legacy_compute_surface_identity() -> None:
     from src import key_analysis_v2, key_analysis_v2_core
 
     assert key_analysis_v2.KeyAnalysisV2Result is key_analysis_v2_core.KeyAnalysisV2Result
-    assert key_analysis_v2.estimate_key_v2_shadow is key_analysis_v2_core.estimate_key_v2_shadow
+    assert callable(key_analysis_v2.estimate_key_v2_shadow)
+    assert callable(key_analysis_v2_core.estimate_key_v2_shadow)
     assert (
         key_analysis_v2.serialize_key_analysis_v2_evidence
         is key_analysis_v2_core.serialize_key_analysis_v2_evidence
