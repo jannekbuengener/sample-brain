@@ -927,6 +927,8 @@ class Screen1QmlInteractionAdapter:
         # #1072/#1123 internal Sample DnD state
         self._internal_sample_dnd_enabled = False
         self._internal_sample_drop_session: "InternalSampleDropSession | None" = None
+        # #1080 Slice A: canonical #1076 Arrangement feature gate (route only).
+        self._arrangement_mode_enabled = False
         self._preview_playback_cache: object | None = None
         # Optional #742 disclosure owner (set by production engine wiring).
         self._runtime_composition: Screen1QmlRuntimeComposition | None = None
@@ -1304,6 +1306,16 @@ class Screen1QmlInteractionAdapter:
         return bool(self._workspace_panel_docking_enabled)
 
     @property
+    def arrangement_mode_enabled(self) -> bool:
+        """Project the canonical #1076/#1080 Arrangement feature gate.
+
+        Route visibility only: eligibility and the transition itself stay
+        owned by ``WorkbenchSession`` (#1078); the session re-checks the
+        canonical settings before any mode change.
+        """
+        return bool(self._arrangement_mode_enabled)
+
+    @property
     def workspace_layout_locked(self) -> bool:
         """Effective Edit layout lock; feature-off is always fail-closed LOCKED."""
         from .workbench_edit_docking import LOCK_UNLOCKED
@@ -1387,6 +1399,7 @@ class Screen1QmlInteractionAdapter:
             loaded.workspace_panel_docking_enabled
         )
         self._internal_sample_dnd_enabled = bool(loaded.internal_sample_dnd_enabled)
+        self._arrangement_mode_enabled = bool(loaded.arrangement_mode_enabled)
         return loaded
 
     def set_gesture_rack_apply_enabled(
@@ -2361,6 +2374,7 @@ ApplicationWindow {
     property var channelRack: channelRackModel
     property var tempoSync: tempoSyncModel
     property var sessionPersistence: sessionPersistenceModel
+    property var arrangement: arrangementModel
     readonly property string activeScreen: channelRack.activeScreen
     // Screen-1 Theme Authority (#785): Theme Core owns colors; QML binds semantics.
     // No competing HEX palette here — see docs/assets/themes/ and workbench_theme.py.
@@ -3074,6 +3088,7 @@ ApplicationWindow {
                     implicitHeight: screen1Header.height
                     Layout.preferredHeight: screen1Header.height
                     readonly property bool navActive: window.activeScreen === "screen1"
+                               && window.arrangement.projectionMode === "EDIT"
                     background: Item {
                         implicitHeight: screen1Header.height
                         Rectangle {
@@ -3094,7 +3109,14 @@ ApplicationWindow {
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
+                    // #1080 Slice A: while the Arrangement shell owns
+                    // projection, the Browser route returns through the
+                    // same #1078 state owner.
                     onClicked: {
+                        if (window.arrangement.projectionMode === "ARRANGEMENT") {
+                            window.arrangement.returnToBrowser()
+                            return
+                        }
                         if (window.activeScreen === "screen2")
                             window.interaction.returnToScreen1()
                         if (window.interaction.browserCollapsed)
@@ -3142,16 +3164,22 @@ ApplicationWindow {
                     bottomPadding: 0
                     implicitHeight: screen1Header.height
                     Layout.preferredHeight: screen1Header.height
-                    enabled: false
+                    // #1080/#1076: route visibility follows the canonical
+                    // feature gate; eligibility and the transition itself
+                    // stay owned by the #1078 session state owner.
+                    readonly property bool navActive: window.arrangement.projectionMode === "ARRANGEMENT"
+                    enabled: window.arrangement.arrangementModeEnabled
                     background: Item { implicitHeight: screen1Header.height }
                     contentItem: Text {
                         text: programNavArrangement.text
                         font: programNavArrangement.font
-                        color: theme.textDisabled
+                        color: !programNavArrangement.enabled ? theme.textDisabled
+                               : (programNavArrangement.navActive ? theme.textPrimary : theme.textSecondary)
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
-                        opacity: 0.4
+                        opacity: programNavArrangement.enabled ? (programNavArrangement.navActive ? 1.0 : 0.9) : 0.4
                     }
+                    onClicked: window.arrangement.enterArrangement()
                 }
             }
         }
@@ -5828,6 +5856,151 @@ ApplicationWindow {
         hoverEnabled: true
         onClicked: window.interaction.toggleLiveKitDrawer()
     }
+
+    // #1080 Slice A: gated Arrangement shell — read-only projection surface.
+    // The scene exists only while the #1078 state owner reports "ARRANGEMENT";
+    // a disabled feature gate can never materialize an Arrangement scene.
+    // Step Sequencer is part of Arrangement (no separate top-level mode); QML
+    // owns projection/presentation only — no Pattern truth copy in this stage.
+    Loader {
+        id: arrangementStageLoader
+        objectName: "arrangementStageLoader"
+        anchors.fill: parent
+        z: 60
+        active: window.arrangement.projectionMode === "ARRANGEMENT"
+        onLoaded: item.forceActiveFocus()
+        // Deterministic Browser focus restoration on every deactivation path.
+        onActiveChanged: {
+            if (!active && window.activeScreen === "screen1")
+                browser.forceActiveFocus()
+        }
+        sourceComponent: arrangementStageComponent
+    }
+
+    Component {
+        id: arrangementStageComponent
+
+        Item {
+            id: arrangementStage
+            objectName: "arrangementStage"
+            anchors.fill: parent
+
+            // Direction B (#1079): subtle 2.5D black stage — solid surface
+            // hierarchy and hairlines from Theme Authority tokens only.
+            Rectangle {
+                anchors.fill: parent
+                color: theme.surfaceRoot
+            }
+
+            // Upper song/Arrangement stage: quiet before the first active
+            // Step; a single action hairline once any canonical Step is set.
+            Rectangle {
+                id: arrangementUpperStage
+                objectName: "arrangementUpperStage"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.bottom: arrangementSequencer.top
+                anchors.bottomMargin: 12
+                color: theme.surfacePanel
+                border.width: 1
+                border.color: window.arrangement.anyActiveStep
+                               ? theme.actionActive : theme.borderSubtle
+                Label {
+                    anchors.centerIn: parent
+                    text: "Arrangement"
+                    color: window.arrangement.anyActiveStep
+                           ? theme.textPrimary : theme.textSecondary
+                    font.pixelSize: 12
+                    opacity: window.arrangement.anyActiveStep ? 0.9 : 0.55
+                }
+            }
+
+            // Bottom-center primary sequencer: exactly 32 fields across 8
+            // bars, four fields per bar — read-only projection of the one
+            // Pattern truth (#1083/#1086); no mutation seams in Slice A.
+            Item {
+                id: arrangementSequencer
+                objectName: "arrangementSequencer"
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 14
+                width: arrangementSequencerRow.implicitWidth
+                height: arrangementSequencerRow.implicitHeight
+
+                Row {
+                    id: arrangementSequencerRow
+                    spacing: 10
+
+                    Repeater {
+                        model: window.arrangement.bars
+
+                        Item {
+                            id: arrangementBar
+                            objectName: "arrangementBar"
+                            readonly property var bar: modelData
+                            width: arrangementBarRow.implicitWidth
+                            height: arrangementBarRow.implicitHeight
+
+                            Row {
+                                id: arrangementBarRow
+                                spacing: 3
+
+                                Repeater {
+                                    model: arrangementBar.bar.fields
+
+                                    Rectangle {
+                                        id: arrangementField
+                                        objectName: "arrangementField"
+                                        width: 18
+                                        height: 18
+                                        radius: 2
+                                        color: modelData.active
+                                               ? theme.selectionSurface
+                                               : theme.surfaceElevated
+                                        border.width: 1
+                                        border.color: modelData.active
+                                                      ? theme.selectionBorder
+                                                      : theme.borderSubtle
+                                        opacity: modelData.active ? 1.0 : 0.85
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Stage chrome: Arrangement identity and active track identity.
+            // The clear return lives in the Browser nav route through the
+            // same #1078 state owner — the stage itself stays a fully
+            // non-interactive read-only projection.
+            Row {
+                id: arrangementStageHeader
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.margins: 10
+                spacing: 8
+
+                Label {
+                    text: "Arrangement"
+                    color: theme.textSecondary
+                    font.pixelSize: 10
+                    anchors.verticalCenter: parent.verticalCenter
+                    opacity: 0.85
+                }
+                Label {
+                    objectName: "arrangementTrackIdentity"
+                    text: window.arrangement.activeTrackId
+                    visible: window.arrangement.activeTrackId.length > 0
+                    color: theme.textSecondary
+                    font.pixelSize: 10
+                    anchors.verticalCenter: parent.verticalCenter
+                    opacity: 0.7
+                }
+            }
+        }
+    }
 }
 '''
 
@@ -6685,6 +6858,145 @@ def _qml_channel_rack_bridge(
             self.state_changed.emit()
 
     return QmlChannelRackBridge()
+
+
+def _qml_arrangement_bridge(session, adapter):
+    """#1080 Slice A: read-only Arrangement projection + #1078 mode commands.
+
+    ``WorkbenchSession`` stays the single projection-mode owner; the bridge
+    only re-projects after command slots. No Pattern/track copy, no
+    persistence, no playback authority. Inert (EDIT, no route) for injected
+    harness adapters without a composed session.
+    """
+    from PySide6.QtCore import QObject, Property, Signal, Slot
+
+    from .workbench_arrangement_qml import project_arrangement_for_qml
+
+    class QmlArrangementBridge(QObject):
+        state_changed = Signal()
+
+        def __init__(self) -> None:
+            super().__init__()
+            self._projection_mode = "EDIT"
+            self._arrangement_mode_enabled = False
+            self._active_track_id = ""
+            self._pattern_id = ""
+            self._field_count = 32
+            self._bar_count = 8
+            self._fields_per_bar = 4
+            self._bars: list = []
+            self._any_active_step = False
+            self._last_entry_outcome = ""
+            self._last_entry_message = ""
+            self._refresh()
+
+        def _refresh(self) -> None:
+            self._arrangement_mode_enabled = bool(
+                getattr(adapter, "arrangement_mode_enabled", False)
+            )
+            try:
+                projection = project_arrangement_for_qml(session)
+            except (TypeError, ValueError):
+                # Fail-soft projection: keep the last owner-reported state.
+                self.state_changed.emit()
+                return
+            self._projection_mode = projection.projection_mode
+            self._active_track_id = projection.active_track_id or ""
+            self._pattern_id = projection.pattern_id
+            self._field_count = int(projection.field_count)
+            self._bar_count = int(projection.bar_count)
+            self._fields_per_bar = int(projection.fields_per_bar)
+            self._any_active_step = bool(projection.any_active_step)
+            self._bars = [
+                {
+                    "index": int(bar.index),
+                    "fields": [
+                        {
+                            "index": int(field.index),
+                            "barIndex": int(field.bar_index),
+                            "indexInBar": int(field.index_in_bar),
+                            "active": bool(field.active),
+                        }
+                        for field in bar.fields
+                    ],
+                }
+                for bar in projection.bars
+            ]
+            self.state_changed.emit()
+
+        @Slot()
+        def refresh(self) -> None:
+            self._refresh()
+
+        @Slot()
+        def enterArrangement(self) -> None:
+            """#1078 transition intent — eligibility stays Python-owned."""
+            if session is None:
+                return
+            result = session.enter_arrangement_from_edit()
+            self._last_entry_outcome = str(getattr(result, "outcome", "") or "")
+            self._last_entry_message = str(getattr(result, "message", "") or "")
+            self._refresh()
+
+        @Slot()
+        def returnToBrowser(self) -> None:
+            """Return to the Browser workspace through the #1078 state owner.
+
+            Chrome vocabulary canon keeps the literal mode word out of
+            QML_SOURCE; the Browser nav route is the Edit destination.
+            """
+            if session is None:
+                return
+            session.return_to_edit()
+            self._last_entry_outcome = ""
+            self._last_entry_message = ""
+            self._refresh()
+
+        @Property(str, notify=state_changed)
+        def projectionMode(self) -> str:
+            return self._projection_mode
+
+        @Property(bool, notify=state_changed)
+        def arrangementModeEnabled(self) -> bool:
+            return self._arrangement_mode_enabled
+
+        @Property(str, notify=state_changed)
+        def activeTrackId(self) -> str:
+            return self._active_track_id
+
+        @Property(str, notify=state_changed)
+        def patternId(self) -> str:
+            return self._pattern_id
+
+        @Property(int, notify=state_changed)
+        def fieldCount(self) -> int:
+            return self._field_count
+
+        @Property(int, notify=state_changed)
+        def barCount(self) -> int:
+            return self._bar_count
+
+        @Property(int, notify=state_changed)
+        def fieldsPerBar(self) -> int:
+            return self._fields_per_bar
+
+        @Property("QVariantList", notify=state_changed)
+        def bars(self) -> list:
+            return self._bars
+
+        @Property(bool, notify=state_changed)
+        def anyActiveStep(self) -> bool:
+            return self._any_active_step
+
+        @Property(str, notify=state_changed)
+        def lastEntryOutcome(self) -> str:
+            return self._last_entry_outcome
+
+        @Property(str, notify=state_changed)
+        def lastEntryMessage(self) -> str:
+            return self._last_entry_message
+
+    return QmlArrangementBridge()
 
 
 def _qml_library_interaction_bridge(
@@ -7763,6 +8075,7 @@ def _qml_engine(
     )
     transport_bridge = _qml_transport_bridge(session_transport)
     persistence_bridge = _qml_session_persistence_bridge(session)
+    arrangement_bridge = _qml_arrangement_bridge(session, adapter)
 
     def open_channel_rack() -> None:
         # #908: materialize bottom Rack via ensure_state; quiet audition through
@@ -7818,6 +8131,7 @@ def _qml_engine(
     engine.rootContext().setContextProperty(
         "sessionPersistenceModel", persistence_bridge
     )
+    engine.rootContext().setContextProperty("arrangementModel", arrangement_bridge)
     engine._screen1_session_persistence_bridge = persistence_bridge
     theme_authority = _qml_theme_authority_bridge()
     engine.rootContext().setContextProperty("themeAuthority", theme_authority)
@@ -7845,6 +8159,7 @@ def _qml_engine(
     engine._screen1_session = session
     engine._screen1_channel_rack = channel_rack_controller
     engine._screen1_channel_rack_bridge = channel_rack_bridge
+    engine._screen1_arrangement_bridge = arrangement_bridge
     engine._screen1_transport = session_transport
     engine._screen1_transport_bridge = transport_bridge
     engine._screen1_runtime_composition = runtime_composition
