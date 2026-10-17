@@ -21,7 +21,7 @@ from .aq3_timing_corpus import (
     generate_aq3_timing_corpus,
 )
 from .gesture_analysis import analyze_gesture_audio
-from .workbench_attack_suggest import suggest_attack_ms
+from .attack_analysis import suggest_attack_ms
 
 DOCUMENT_TYPE = "sample-brain.aq3.onset-attack-baseline.v1"
 SCHEMA_VERSION = "1.0.0"
