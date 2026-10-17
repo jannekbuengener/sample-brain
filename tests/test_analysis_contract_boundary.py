@@ -352,10 +352,11 @@ def test_analysis_public_api_works_from_clean_non_repo_context(tmp_path: Path) -
     consumer_cwd.mkdir()
     baseline_entries = sorted(path.name for path in consumer_cwd.iterdir())
     code = f"""
+import sample_brain_analysis as external_analysis
 import src.analysis as analysis
 from pathlib import Path
-import os
 
+assert analysis is external_analysis
 assert analysis.normalize_bpm(80.0, "heuristic") == 160.0
 assert analysis.rule_type(0.2, -12.0, 6000.0, None, "oneshot")
 assert analysis.score_bpm_match(120.0, 120.0, 8.0) == 1.0
@@ -364,47 +365,14 @@ left = analysis.HarmonyInput("ref", "ref.wav", "ref.wav", 120.0, "Cmaj", None)
 right = analysis.HarmonyInput("candidate", "candidate.wav", "candidate.wav", 120.0, "Cmaj", None)
 assert analysis.rate_harmony(left, right).total_score == 1.0
 assert sorted(path.name for path in Path.cwd().iterdir()) == {baseline_entries!r}
-assert Path(analysis.__file__).resolve().is_relative_to(Path(os.environ["ANALYSIS_INSTALL_ROOT"]).resolve())
 """
     env = {
         key: value for key, value in os.environ.items()
         if not key.upper().startswith("SAMPLE_BRAIN_")
-        and key.upper() not in {"PYTHONPATH", "PYTHONHOME", "PYTHONUSERBASE"}
+        and key.upper() not in {"PYTHONPATH", "PYTHONHOME"}
     }
     env["PYTHONPATH"] = str(REPO_ROOT)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    env["TEMP"] = str(tmp_path)
-    env["TMP"] = str(tmp_path)
-    env["HOME"] = str(tmp_path)
-    env["USERPROFILE"] = str(tmp_path)
-    env["PIP_NO_CACHE_DIR"] = "1"
-    env["PIP_NO_INDEX"] = "1"
-
-    wheel_dir = tmp_path / "wheelhouse"
-    wheel_dir.mkdir()
-    wheel_build = subprocess.run(
-        [
-            sys.executable, "-m", "pip", "wheel", "--no-deps", "--no-build-isolation",
-            "--no-cache-dir", "--wheel-dir", str(wheel_dir), str(REPO_ROOT),
-        ],
-        cwd=tmp_path, env=env, check=False, capture_output=True, text=True,
-    )
-    assert wheel_build.returncode == 0, wheel_build.stdout + wheel_build.stderr
-    wheels = list(wheel_dir.glob("*.whl"))
-    assert len(wheels) == 1
-
-    install_root = tmp_path / "installed"
-    install_root.mkdir()
-    install = subprocess.run(
-        [
-            sys.executable, "-m", "pip", "install", "--no-deps", "--no-index",
-            "--target", str(install_root), str(wheels[0]),
-        ],
-        cwd=tmp_path, env=env, check=False, capture_output=True, text=True,
-    )
-    assert install.returncode == 0, install.stdout + install.stderr
-    env["PYTHONPATH"] = str(install_root)
-    env["ANALYSIS_INSTALL_ROOT"] = str(install_root)
     completed = subprocess.run(
         [sys.executable, "-c", code], cwd=consumer_cwd, env=env,
         check=False, capture_output=True, text=True,

@@ -158,19 +158,18 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 - **Outputs:** Rows in `samples` table
 - **Error handling:** Skip permission-denied directories, skip non-audio files, continue on corrupt files
 
-### 4.5 Analyzer (`src/feature_analysis.py`, `src/analyze.py`, `src/analysis_contracts.py`)
+### 4.5 Analyzer (`sample_brain_analysis`, `src.analyze`)
 
-- **Frozen internal consumer surface:** `src.analysis` is the explicit public import facade for the package-ready Analysis API; its `__all__` is frozen by `tests/test_analysis_contract_boundary.py`. The future distribution/import root for #1151 is `sample-brain-analysis` / `sample_brain_analysis`; #1150 does not create that repository or duplicate its source tree. See [`ANALYSIS_PACKAGE_BOUNDARY_V1.md`](ANALYSIS_PACKAGE_BOUNDARY_V1.md).
-- **Shared contract authority:** `src/analysis_contracts.py` owns neutral analyzer invariants/vocabulary and shared result contracts. `src.config` only re-exports analyzer constants for compatibility. See [`ANALYSIS_PUBLIC_CONTRACT_V1.md`](ANALYSIS_PUBLIC_CONTRACT_V1.md).
-- **Portable computation:** `src.feature_analysis.extract_features()` loads explicit audio input and extracts BPM, key, loudness, brightness, MFCCs, chroma, and duration class into neutral `Features`. Its import closure has no catalog DB/SQLAlchemy/Product dependency.
-- **Application persistence:** `src.analyze.run_analyze()` owns catalog reads, batching/progress, V1 feature upserts, and run accounting; it calls the neutral compute binding and preserves the historical `src.analyze.extract_features` facade.
-- **Other package candidates:** `src.classification`, `src.key_analysis_v2_core`, `src.bpm_matching`, `src.attack_analysis`, `src.gesture_analysis`, `src.harmony`, and `src.key_signature` expose only the frozen neutral surface through `src.analysis`. Their persistence/catalog/Product consumers remain application-owned; the transitive boundary is executable in the Analysis contract tests.
-- **Must not do:** Feature computation must not own DB/session/UI state; the application facade must not redefine DSP algorithms.
-- **Error handling:** Best-effort per file ? corrupt/unreadable audio does not crash the pipeline.
+- **Analysis authority:** The versioned `sample-brain-analysis` distribution, imported as `sample_brain_analysis`, owns the public v1 API, neutral contracts, and reusable computation. Its immutable API contract is [`analysis-public-api-v1.md` at v0.1.0](https://github.com/jannekbuengener/sample-brain-analysis/blob/v0.1.0/docs/contracts/analysis-public-api-v1.md). The consumer pins the released wheel and digest in `pyproject.toml` and `requirements.txt`.
+- **Legacy import compatibility:** The package-owned legacy `src.*` modules are module-identity aliases to the installed package. They contain no duplicate computation. `tests/test_analysis_external_package_consumer.py` freezes the alias map and checks external module identity and source location.
+- **Application persistence:** `src.analyze.run_analyze()` owns catalog reads, batching/progress, V1 feature upserts, and run accounting. Its loader-bound `extract_features` facade preserves the `src.analyze.safe_load` patch contract while delegating analysis computation.
+- **Other application adapters:** `src.classify` owns seed/index/catalog orchestration; `src.key_analysis_v2` owns persistence; `src.matching` owns candidate loading and catalog ranking; `src.db` owns SQLite/SQLAlchemy. Workbench, Session, QML, caches, and product projections remain in Sample Brain.
+- **Must not do:** The package must not own DB/session/UI state; Sample Brain adapters must not redefine package algorithms or thresholds.
+- **Error handling:** Existing best-effort behavior remains covered by the package and consumer regression suites.
 
-### 4.6 Classifier / Autotype (`src/classification.py`, `src/classify.py`)
+### 4.6 Classifier / Autotype (`sample_brain_analysis.classification`, `src.classify`)
 
-- **Portable computation:** `src.classification` owns rule-based type inference and pure kNN decision math from explicit values/vectors; it has no DB/index/seed-file ownership.
+- **Portable computation:** `sample-brain-analysis` owns rule-based type inference and pure kNN decision math from explicit values/vectors; `src.classification` is a module-identity compatibility alias.
 - **Application persistence:** `src.classify` owns seed CSV/index loading, catalog reads, optional kNN orchestration, and `features.pred_type` writes while preserving the `src.classify.rule_type` compatibility surface.
 - **Must not do:** Neutral classification must not extract features, initialize the catalog, load product indexes/seeds, or write persistence.
 - **Dependency rule:** only the application facade may optionally import `from .index import load_embeddings`; missing optional index support continues to degrade gracefully.
@@ -428,8 +427,9 @@ Application pipeline / persistence facades
   ?                         ?
   ? calls explicit values   ???????????????? DB Layer (SQLAlchemy/catalog)
   ?
-Neutral Analysis computation
-(feature_analysis, classification, key_analysis_v2_core, bpm_matching, harmony)
+Versioned Analysis computation
+(sample_brain_analysis.feature_analysis, classification, key_analysis_v2_core,
+ bpm_matching, harmony, and other package-owned modules)
   ?
   ??? must not depend upward on DB/config/Product UI state
 ```
@@ -459,10 +459,10 @@ Neutral Analysis computation
 | `classify.py` | `db.init_db()` | Ensure tables exist |
 | `classify.py` | `db` helpers via SQLAlchemy | Data read/write |
 | `classify.py` | `index.load_embeddings()` (optional, guarded) | kNN seed vectors |
-| `analyze.py` | `feature_analysis.extract_features()` | Portable feature computation behind catalog facade |
-| `classify.py` | `classification.rule_type()` / `_knn_predict()` | Pure classification behind catalog facade |
-| `key_analysis_v2.py` | `key_analysis_v2_core` | Portable V2 estimator/result behind persistence facade |
-| `harmony.py` / `matching.py` | `bpm_matching` | Shared DB-free BPM scoring semantics |
+| `analyze.py` | `sample_brain_analysis.feature_analysis` via legacy alias | Portable feature computation behind catalog facade |
+| `classify.py` | `sample_brain_analysis.classification` via legacy alias | Pure classification behind catalog facade |
+| `key_analysis_v2.py` | `sample_brain_analysis.key_analysis_v2_core` via legacy alias | Portable V2 estimator/result behind persistence facade |
+| `harmony.py` / `matching.py` | `sample_brain_analysis.bpm_matching` via legacy alias | Shared DB-free BPM scoring semantics |
 | `embed.py` | `db` helpers | Model registration, embedding persistence |
 | `export_fl.py` | `db.init_db()` | Ensure tables exist |
 | `export_fl.py` | `db` helpers via SQLAlchemy | Data read |

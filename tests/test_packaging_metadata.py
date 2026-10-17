@@ -12,9 +12,17 @@ DIRECT_CORE_DEPENDENCIES = {
     "pyyaml",
     "scipy",
     "soundfile",
+    "sample-brain-analysis",
     "sqlalchemy",
     "tqdm",
 }
+ANALYSIS_PACKAGE_REQUIREMENT = (
+    "sample-brain-analysis @ https://github.com/jannekbuengener/"
+    "sample-brain-analysis/releases/download/v0.1.1/"
+    "sample_brain_analysis-0.1.1-py3-none-any.whl#sha256="
+    "3c5d3d97dbc5d171b65c19a56bba2317f64ebcbaaf6dcd075c836b8b29385da7"
+)
+
 OPTIONAL_ONLY_DEPENDENCIES = {
     "audio-separator",
     "beat-this",
@@ -60,4 +68,7 @@ def test_requirements_file_remains_repeatable_environment_input() -> None:
     names = {_requirement_name(item) for item in lines}
 
     assert DIRECT_CORE_DEPENDENCIES <= names
-    assert all("==" in item for item in lines)
+    assert ANALYSIS_PACKAGE_REQUIREMENT in lines
+    assert all(
+        "==" in item or item == ANALYSIS_PACKAGE_REQUIREMENT for item in lines
+    )

@@ -31,8 +31,8 @@ internal agent- and process docs are clearly separated.
 | Document | What it is |
 |---|---|
 | [Target Architecture](TARGET_ARCHITECTURE.md) | Module boundaries, pipeline contracts |
-| [Analysis Package Boundary v1](ANALYSIS_PACKAGE_BOUNDARY_V1.md) | #1150 frozen internal API, dependency gate, and #1151 knowledge handoff |
-| [Analysis Public Contract v1](ANALYSIS_PUBLIC_CONTRACT_V1.md) | Shared neutral Analysis config/DTO and compute/persistence contract |
+| [Analysis Package Boundary v1](ANALYSIS_PACKAGE_BOUNDARY_V1.md) | Post-#1151 package ownership, compatibility aliases, and Sample Brain adapter boundary |
+| [Analysis Consumer Contract v1](ANALYSIS_PUBLIC_CONTRACT_V1.md) | Sample Brain config adaptation, loader compatibility, and application persistence contract |
 | [Data & Artifact Policy](DATA_AND_ARTIFACT_POLICY.md) | Committed vs. runtime artifacts |
 | [ADR: sqlite-vec Search Backend](adr/ADR-0004-sqlite-vec-search-backend.md) | Default-search decision |
 | [ADR: Search Quality Evaluation](adr/ADR-0005-search-quality-evaluation.md) | Golden dataset contract |
