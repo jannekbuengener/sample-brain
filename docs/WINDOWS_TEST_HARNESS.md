@@ -33,6 +33,8 @@ Thus previous-test worker leakage is not required for that diagnostic. Its
 native cause remains UNKNOWN; neither passing pytest assertions nor the
 ownership repair proves that diagnostic fixed. Do not suppress it or treat a
 log containing it as a clean native run.
+The separate native investigation is tracked in
+[#1145](https://github.com/jannekbuengener/sample-brain/issues/1145).
 
 ## Reproducible local run
 
