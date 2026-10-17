@@ -103,3 +103,9 @@ def test_duration_ms_rounds_positive_submillisecond_audio_up_to_one() -> None:
 def test_cue_clamp_matches_existing_boundaries() -> None:
     assert attack_analysis._clamp_cue_start_ms(-3, 100) == 0
     assert attack_analysis._clamp_cue_start_ms(100, 100) == 99
+
+
+def test_suggest_attack_ms_unreadable_file_returns_none(tmp_path: Path) -> None:
+    wav = tmp_path / "unreadable.wav"
+    wav.write_bytes(b"not an audio file")
+    assert suggest_attack_ms(wav) is None
