@@ -47,6 +47,15 @@ def _static_imports(module_name: str) -> set[str]:
     return imports
 
 
+def _parent_initializers(module_name: str) -> set[str]:
+    parts = module_name.split(".")
+    return {
+        ".".join(parts[:length])
+        for length in range(1, len(parts))
+        if REPO_ROOT.joinpath(*parts[:length], "__init__.py").is_file()
+    }
+
+
 def _import_closure(module_name: str) -> set[str]:
     pending = [module_name]
     visited: set[str] = set()
@@ -56,7 +65,7 @@ def _import_closure(module_name: str) -> set[str]:
         if current in visited:
             continue
         visited.add(current)
-        direct = _static_imports(current)
+        direct = _static_imports(current) | _parent_initializers(current)
         imports.update(direct)
         pending.extend(name for name in direct if name not in visited and _module_source(name) is not None)
     return imports
@@ -151,3 +160,21 @@ def test_boundary_follows_indirect_package_submodule_imports(tmp_path, monkeypat
     monkeypatch.setattr(sys.modules[__name__], "REPO_ROOT", tmp_path)
     assert "src.workbench_qml" in _import_closure("src.harmony")
     assert any(_is_forbidden(name) for name in _import_closure("src.harmony"))
+
+
+@pytest.mark.parametrize("entry,source,parent", [
+    ("src.harmony", "import src.bridge.child", "src.bridge"),
+    ("src.harmony", "from src.bridge.child import value", "src.bridge"),
+    ("src.harmony", "", "src"),
+    ("src.bridge.child", "", "src.bridge"),
+])
+def test_boundary_follows_implicit_parent_package_initializers(tmp_path, monkeypatch, entry, source, parent):
+    package = tmp_path / "src"
+    bridge = package / "bridge"
+    bridge.mkdir(parents=True)
+    (package / "harmony.py").write_text(source + "\n", encoding="utf-8")
+    (bridge / "child.py").write_text("value = 1\n", encoding="utf-8")
+    initializer = tmp_path.joinpath(*parent.split(".")) / "__init__.py"
+    initializer.write_text("import src.workbench_qml\n", encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "REPO_ROOT", tmp_path)
+    assert "src.workbench_qml" in _import_closure(entry)
