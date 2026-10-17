@@ -8,3 +8,4 @@ numba==0.68.0
 pooch==1.9.0
 audioread==3.1.0
 pyyaml==6.0.3
+sample-brain-analysis @ https://github.com/jannekbuengener/sample-brain-analysis/releases/download/v0.1.0/sample_brain_analysis-0.1.0-py3-none-any.whl#sha256=0c49d054eda265e078b79b4170f0a572b289175177c95c9a4ce9c34fbdc621f5

@@ -1,20 +1,11 @@
-from pathlib import Path
+"""Compatibility alias for the external `sample_brain_analysis.utils` owner.
 
-from .content_hash import DEFAULT_CONTENT_HASH_ALGORITHM, compute_file_hash
+Implementation authority lives in `jannekbuengener/sample-brain-analysis`.
+This module preserves the historical `src.*` import and monkeypatch surface only.
+"""
 
+from importlib import import_module as _import_module
+import sys as _sys
 
-def file_hash(
-    path: Path,
-    blocksize: int = 65536,
-    *,
-    algorithm: str = DEFAULT_CONTENT_HASH_ALGORITHM,
-) -> str:
-    """Return the content digest value for ``path``.
-
-    New callers default to SHA-256. Legacy SHA-1 must be requested explicitly
-    with ``algorithm="sha1"``. External/persisted contracts should carry the
-    algorithm alongside this value rather than serializing a bare digest.
-    """
-    return compute_file_hash(
-        Path(path), algorithm=algorithm, blocksize=blocksize
-    )["value"]
+_external_module = _import_module("sample_brain_analysis.utils")
+_sys.modules[__name__] = _external_module

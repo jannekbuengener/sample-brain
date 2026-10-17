@@ -14,6 +14,7 @@ dependencies = [
     "PyYAML>=6.0.3,<7",
     "scipy>=1.18,<2",
     "soundfile>=0.14,<0.15",
+    "sample-brain-analysis @ https://github.com/jannekbuengener/sample-brain-analysis/releases/download/v0.1.0/sample_brain_analysis-0.1.0-py3-none-any.whl#sha256=0c49d054eda265e078b79b4170f0a572b289175177c95c9a4ce9c34fbdc621f5",
     "SQLAlchemy>=2.0.52,<3",
     "tqdm>=4.70,<5",
 ]
