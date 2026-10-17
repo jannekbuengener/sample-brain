@@ -1,117 +1,67 @@
-# Analysis Public Contract v1
+# Analysis Consumer Contract v1
 
 **Status:** ACTIVE_SUPPORTING
-**Issues:** #1148, #1149
-**Code owner:** `src/analysis_contracts.py`
+**Issues:** #1148, #1149, #1151
+**Application owner:** `jannekbuengener/sample-brain`
 
-## Purpose
+## Authority
 
-Freeze the smallest neutral contract shared by Sample Brain analysis computation before package extraction. This contract is intentionally narrower than a global `AnalysisConfig`: application/profile/session/persistence state is not Analysis input merely because callers already have it available.
+The versioned distribution `sample-brain-analysis` (import root
+`sample_brain_analysis`) owns the public Analysis API, result types, and
+computation. Its v1 manifest is canonical in the versioned
+[v0.1.0 package contract](https://github.com/jannekbuengener/sample-brain-analysis/blob/v0.1.0/docs/contracts/analysis-public-api-v1.md).
+This Sample Brain document defines only how the application consumes that
+package and where application behavior remains owned. It does not restate the
+package's symbol list or DTO fields.
 
-## Shared analysis authority
+Sample Brain pins the released v0.1.0 wheel by URL and SHA-256 in both
+`pyproject.toml` and `requirements.txt`. The released artifact is
+`sample_brain_analysis-0.1.0-py3-none-any.whl`, SHA-256
+`0c49d054eda265e078b79b4170f0a572b289175177c95c9a4ce9c34fbdc621f5`.
 
-`src/analysis_contracts.py` is the canonical owner of the shared values/types below:
+## Consumer ownership
 
-| Contract | v1 semantics |
-|---|---|
-| `ANALYZE_SR` | `44100` Hz feature-analysis target sample rate |
-| `ANALYZE_HOP_LENGTH` | `512` samples |
-| `BPMNormalizationMode` | `none \| heuristic \| domain_110_170` |
-| `VALID_BPM_NORMALIZATION_MODES` | exact frozen set of the three modes above |
-| `Features` | immutable neutral feature-analysis result |
+| Concern | Owner | Sample Brain responsibility |
+|---|---|---|
+| Public Analysis names, DTOs, and computation | `sample-brain-analysis` | Install the declared wheel and test compatibility against the published package |
+| Profile/configuration and environment overrides | `sample-brain` (`src.config`, `src.config_loader`) | Adapt configured values into the package's narrow explicit inputs |
+| Scan, catalog schema, SQLite/SQLAlchemy, reads and writes | `sample-brain` (`src.scan`, `src.db`) | Keep one persistence authority |
+| Analyze batching, progress, upserts, and run accounting | `sample-brain` (`src.analyze`) | Use package computation behind the loader-compatible application facade |
+| Classification seeds, indexes, `pred_type`, and DB orchestration | `sample-brain` (`src.classify`) | Keep product seed policy and persistence outside the package |
+| Key V2 persistence and catalog candidate loading | `sample-brain` (`src.key_analysis_v2`, `src.matching`) | Adapt package-owned compute/results to existing DB contracts |
+| Workbench, Session, QML, product cache/projection, realtime audio | `sample-brain` | Retain product and runtime ownership |
+| AQ evaluation, benchmark orchestration, and promotion decisions | `sample-brain` | Keep evaluation workflows application-owned; extraction alone is not quality evidence |
 
-`src.config` may re-export analyzer constants for compatibility, but it is not their semantic owner. Profile/config loading may validate and adapt user/runtime choices into these narrow Analysis inputs; it must not create a second vocabulary authority.
+There is no global `AnalysisConfig` shared with product, profile, session, or
+persistence state. The application passes explicit values to the package.
+`src.config` may re-export constants for compatibility, but the package remains
+the sole Analysis contract owner.
 
-## `Features` v1
+## Compatibility contract
 
-`Features` remains a frozen value object with these fields and meanings:
-
-| Field | Type / meaning |
-|---|---|
-| `bpm` | detected/normalized BPM or `None` |
-| `key` | canonical key string or `None` |
-| `key_conf` | relative root evidence, not calibrated probability |
-| `loudness` | global RMS dBFS or `None` |
-| `brightness` | mean spectral centroid Hz or `None` |
-| `mfcc_mean` / `mfcc_std` | serialized float32 MFCC aggregates or `None` |
-| `chroma_mean` / `chroma_std` | serialized float32 chroma aggregates or `None` |
-| `clazz` | duration-derived `oneshot` / `loop` or `None` |
-| `quality_note` | optional quality warning text |
-| `key_mode` | `maj` / `min` / `None` |
-| `key_mode_evidence` | optional structured mode evidence |
-
-Existing callers may continue importing `Features` through `src.analyze`; that surface is a compatibility re-export of the neutral owner.
-
-## Dependency direction
-
-```text
-application config / CLI / Workbench
-             |
-             | adapt explicit values
-             v
-      analysis_contracts
-             |
-             v
-   analysis computation
-             |
-             v
-     neutral result values
-```
-
-The neutral shared contract must not import or accept as public domain inputs:
-
-- `src.config` / profile resolution;
-- `src.db`, SQLAlchemy engines/connections/rows, or catalog sessions;
-- Workbench rows/controllers/session state;
-- QML/PySide6 types;
-- product document/cache state;
-- machine-local paths other than explicit audio-file inputs supplied by callers.
-
-## No global `AnalysisConfig`
-
-There is no v1 mega configuration object. Attack, harmony, gesture, key and other domains keep their narrow explicit parameters and domain-local DTOs unless a real shared contract is proven later.
-
-The following remain domain-local rather than being centralized for appearance:
-
-- `AttackSuggestion`;
-- `HarmonyInput` / `HarmonySuggestion`;
-- `ParsedKey`;
-- `GestureEvent` / `GestureAnalysis`;
-- product-adapter results such as `AssetAnalysisResult` and Track Map documents.
-
-## Computation and application ownership after S3
-
-Issue #1149 separates reusable computation from catalog/application orchestration without changing the existing product-facing import surfaces:
-
-- `src.feature_analysis` owns portable feature/DSP computation; `src.analyze` remains the catalog batching/upsert/progress facade and compatibility import surface.
-- `src.classification` owns rule classification and pure kNN decision math; `src.classify` remains the seed/index/catalog persistence facade.
-- `src.key_analysis_v2_core` owns the V2 result/evidence/estimator contract; `src.key_analysis_v2` remains the DB read/write facade.
-- `src.bpm_matching` owns BPM score semantics used by both matching and Harmony; `src.matching` remains the catalog candidate-loading/run facade.
-- `src.harmony` and `src.gesture_analysis` consume neutral computation owners rather than reaching upward through DB-owning facades.
-- `src.scan` remains application/catalog ingestion and is not part of the portable Analysis computation boundary.
-
-SQLite/catalog persistence remains one Sample Brain application authority; no Analysis-owned database, cache database, or duplicate state store is introduced. The shared config/DTO seam remains owned here; the frozen public API and package dependency boundary are owned by [`ANALYSIS_PACKAGE_BOUNDARY_V1.md`](ANALYSIS_PACKAGE_BOUNDARY_V1.md). No physical repository extraction is claimed in this monorepo contract.
-
-## Compatibility requirements
-
-For v1:
-
-- `src.config.ANALYZE_SR == 44100` and `ANALYZE_HOP_LENGTH == 512` remain compatible re-exports;
-- the accepted BPM-normalization modes and invalid-mode rejection behavior remain unchanged;
-- `src.analyze.Features` is the same type object as `src.analysis_contracts.Features`;
-- `src.analyze.extract_features` remains the compatibility binding for `src.feature_analysis.extract_features`;
-- `src.classify.rule_type` remains the compatibility binding for `src.classification.rule_type`;
-- `src.key_analysis_v2` preserves its V2 compute/persistence import surface while the estimator/result owner is DB-free;
-- `src.matching.score_bpm_match` remains the compatibility binding for `src.bpm_matching.score_bpm_match`;
-- analyzer algorithms, thresholds, cache fingerprints and failure semantics are unchanged by this ownership move;
-- offline-first behavior remains unchanged.
+- The package-owned legacy `src.*` module paths in
+  `tests/test_analysis_external_package_consumer.py` resolve to the exact
+  installed `sample_brain_analysis` module objects. They are aliases, not a
+  second implementation.
+- `src.analyze` remains an application adapter. Patching
+  `src.analyze.safe_load` must still affect
+  `src.analyze.extract_features`; `tests/test_analysis_s3_boundary.py` freezes
+  this #1149 compatibility behavior.
+- `src.classify`, `src.key_analysis_v2`, and `src.matching` retain seed/DB,
+  persistence, and catalog orchestration respectively while using the external
+  compute owners through compatibility aliases.
+- The Sample Brain checkout must not shadow the installed package. The
+  external consumer gate verifies package module identity, installed version,
+  and that package source files resolve outside the Sample Brain checkout.
+- No algorithm, threshold, score ordering, cache fingerprint, persistence
+  schema, or CLI behavior is intentionally changed by the extraction.
 
 ## Validation
 
-Primary machine checks:
-
-- `tests/test_analysis_public_contract.py` — constants, modes, `Features`, compatibility aliases;
-- `tests/test_analysis_contract_boundary.py` — product/application-free contract closure and removal of application-config ownership from package-candidate modules;
-- existing config/analyze/canonical-audio/gesture/cache/key/harmony regression tests — behavior parity.
-
-This contract is normative for the shared Analysis config/result seam. Execution history, base SHAs and migration steps remain in Issue/PR evidence rather than this document.
+The consumer proof is `tests/test_analysis_external_package_consumer.py`,
+`tests/test_analysis_contract_boundary.py`, `tests/test_analysis_s3_boundary.py`,
+`tests/test_analysis_s3_no_db.py`, and
+`tests/test_analysis_public_contract.py`, together with the domain and Product
+regressions referenced by [`ANALYSIS_PACKAGE_BOUNDARY_V1.md`](ANALYSIS_PACKAGE_BOUNDARY_V1.md).
+The core CI installs `requirements.txt` before running the full test suite, so
+the consumer gate exercises the released wheel on a fresh runner.

@@ -9,25 +9,31 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 NEUTRAL_ANALYSIS_MODULES = (
-    "src.feature_analysis",
-    "src.classification",
-    "src.key_analysis_v2_core",
-    "src.bpm_matching",
-    "src.gesture_analysis",
-    "src.harmony",
+    "sample_brain_analysis.feature_analysis",
+    "sample_brain_analysis.classification",
+    "sample_brain_analysis.key_analysis_v2_core",
+    "sample_brain_analysis.bpm_matching",
+    "sample_brain_analysis.gesture_analysis",
+    "sample_brain_analysis.harmony",
 )
 FORBIDDEN_PREFIXES = (
     "PySide6",
     "sqlalchemy",
-    "src.config",
-    "src.config_loader",
-    "src.db",
-    "src.index",
-    "src.workbench",
+    "src.",
 )
 
 
 def _module_source(module_name: str) -> Path | None:
+    if module_name == "sample_brain_analysis" or module_name.startswith(
+        "sample_brain_analysis."
+    ):
+        try:
+            spec = importlib.util.find_spec(module_name)
+        except (AttributeError, ModuleNotFoundError, ValueError):
+            return None
+        if spec is None or spec.origin is None:
+            return None
+        return Path(spec.origin)
     path = REPO_ROOT.joinpath(*module_name.split("."))
     for source in (path.with_suffix(".py"), path / "__init__.py"):
         if source.is_file():
@@ -157,6 +163,7 @@ def test_bpm_matching_legacy_surface_identity() -> None:
 
 
 def test_harmony_depends_on_neutral_bpm_matching_not_catalog_matching() -> None:
-    imports = _static_imports("src.harmony")
-    assert "src.bpm_matching" in imports
+    imports = _static_imports("sample_brain_analysis.harmony")
+    assert "sample_brain_analysis.bpm_matching" in imports
+    assert "sample_brain_analysis.matching" not in imports
     assert "src.matching" not in imports
