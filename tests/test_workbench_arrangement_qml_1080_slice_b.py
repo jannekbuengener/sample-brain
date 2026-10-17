@@ -794,7 +794,17 @@ def test_qml_editability_is_bound_to_python_authority_rows():
     assert "enabled: arrangementChannelRow.stepGridEnabled" in region
     # The stage input blocker stays: no pointer fall-through beneath the
     # stage, and it carries no command of its own.
-    assert region.count("onClicked") == 1
+    # Explicit Owner-approved freeze reconciliation for #1080 C2a:
+    # pin both authorized handlers, preserving the field/input contract.
+    assert region.count("onClicked") == 2
+    assert region.count("onClicked: window.arrangement.toggleArrangementField(arrangementChannelRow.channelId, arrangementChannelField.fieldIndex)") == 1
+    assert region.count("onClicked: window.arrangement.toggleArrangementGroupBlock(arrangementGroupRow.groupId, arrangementGroupBlock.blockIndex)") == 1
+    import inspect
+    from src.workbench_qml import _qml_arrangement_bridge
+
+    assert "arrangement_seam.request_arrangement_group_toggle(" in inspect.getsource(
+        _qml_arrangement_bridge
+    )
     assert "MouseArea {" in region
     assert (
         "acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton"

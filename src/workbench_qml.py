@@ -5919,13 +5919,85 @@ ApplicationWindow {
                 border.width: 1
                 border.color: window.arrangement.anyActiveStep
                                ? theme.actionActive : theme.borderSubtle
-                Label {
-                    anchors.centerIn: parent
-                    text: "Arrangement"
-                    color: window.arrangement.anyActiveStep
-                           ? theme.textPrimary : theme.textSecondary
-                    font.pixelSize: 12
-                    opacity: window.arrangement.anyActiveStep ? 0.9 : 0.55
+                Column {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 36
+                    spacing: 2
+                    Repeater {
+                        model: window.arrangement.groupRows
+                        Rectangle {
+                            id: arrangementGroupRow
+                            objectName: "arrangementGroupRow"
+                            readonly property var row: modelData
+                            readonly property string groupId: row.groupId
+                            width: parent.width
+                            height: 64
+                            color: theme.surfacePanel
+                            border.width: 1
+                            border.color: theme.borderSubtle
+                            Label {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 14
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 160
+                                text: arrangementGroupRow.row.displayName
+                                color: theme.textSecondary
+                                font.pixelSize: 12
+                                elide: Text.ElideRight
+                            }
+                            Row {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 190
+                                anchors.right: parent.right
+                                anchors.rightMargin: 14
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 8
+                                Repeater {
+                                    model: arrangementGroupRow.row.blocks
+                                    Rectangle {
+                                        id: arrangementGroupBlock
+                                        objectName: "arrangementGroupBlock"
+                                        readonly property var cell: modelData
+                                        readonly property string groupId: arrangementGroupRow.groupId
+                                        readonly property int blockIndex: cell.blockIndex
+                                        readonly property bool effectiveOn: cell.available
+                                        width: (parent.width - 8 * (arrangementGroupRow.row.blocks.length - 1)) / arrangementGroupRow.row.blocks.length
+                                        height: 42
+                                        color: effectiveOn ? theme.surfaceElevated : theme.surfaceRoot
+                                        border.width: activeFocus ? 2 : 1
+                                        border.color: activeFocus ? theme.actionActive : theme.borderSubtle
+                                        activeFocusOnTab: cell.interactive
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: arrangementGroupRow.row.displayName + " · " + blockIndex + " · " + blockState.text
+                                        Accessible.description: "16 bars"
+                                        Keys.onSpacePressed: function(event) {
+                                            if (cell.interactive) {
+                                                window.arrangement.toggleArrangementGroupBlock(arrangementGroupRow.groupId, arrangementGroupBlock.blockIndex)
+                                                event.accepted = true
+                                            }
+                                        }
+                                        Label {
+                                            id: blockState
+                                            anchors.centerIn: parent
+                                            text: cell.status !== "eligible" ? "—"
+                                                  : !cell.blockEnabled ? "GLOBAL OFF"
+                                                  : cell.groupEnabled ? "ON" : "OFF"
+                                            color: effectiveOn ? theme.textPrimary : theme.textSecondary
+                                            font.pixelSize: 10
+                                        }
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            enabled: arrangementGroupBlock.cell.interactive
+                                            acceptedButtons: Qt.LeftButton
+                                            onClicked: window.arrangement.toggleArrangementGroupBlock(arrangementGroupRow.groupId, arrangementGroupBlock.blockIndex)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -7011,6 +7083,11 @@ def _qml_arrangement_bridge(session, adapter):
         project_arrangement_for_qml,
         request_arrangement_field_toggle,
     )
+    from . import workbench_arrangement_qml as arrangement_seam
+
+    # Presentation budget only; replace with the later viewport request.
+    visible_start_block = 0
+    visible_block_count = 6
 
     def _field_dict(field) -> dict[str, object]:
         return {
@@ -7034,6 +7111,7 @@ def _qml_arrangement_bridge(session, adapter):
             self._fields_per_bar = 4
             self._bars: list = []
             self._channel_rows: list = []
+            self._group_rows: list = []
             self._any_active_step = False
             self._last_entry_outcome = ""
             self._last_entry_message = ""
@@ -7081,6 +7159,37 @@ def _qml_arrangement_bridge(session, adapter):
                 }
                 for row in projection.channel_rows
             ]
+            self._group_rows = []
+            if self._arrangement_mode_enabled and self._projection_mode == "ARRANGEMENT":
+                try:
+                    window = arrangement_seam.project_arrangement_block_window(
+                        session, visible_start_block, visible_block_count
+                    )
+                    blocks = {b.block_index: b for b in window.blocks}
+                    self._group_rows = [
+                        {
+                            "groupId": group.group_id,
+                            "displayName": group.display_name,
+                            "blocks": [
+                                {
+                                    "blockIndex": cell.block_index,
+                                    "status": blocks[cell.block_index].status,
+                                    "blockEnabled": blocks[cell.block_index].enabled,
+                                    "groupEnabled": cell.enabled,
+                                    "available": cell.available,
+                                    # Group OFF is reversible; global OFF and
+                                    # ineligible blocks cannot accept input.
+                                    "interactive": blocks[cell.block_index].status == "eligible"
+                                    and blocks[cell.block_index].enabled,
+                                }
+                                for cell in window.group_blocks
+                                if cell.group_id == group.group_id
+                            ],
+                        }
+                        for group in window.groups
+                    ]
+                except (TypeError, ValueError, AttributeError):
+                    pass  # missing/corrupt authority projects no block controls
             self.state_changed.emit()
 
         @Slot()
@@ -7134,6 +7243,27 @@ def _qml_arrangement_bridge(session, adapter):
         @Property(str, notify=state_changed)
         def projectionMode(self) -> str:
             return self._projection_mode
+
+        @Property("QVariantList", notify=state_changed)
+        def groupRows(self) -> list:
+            return self._group_rows
+
+        @Slot(str, int, result=str)
+        def toggleArrangementGroupBlock(self, group_id: str, block_index: int) -> str:
+            # Revalidate current authority before dispatch, including stale
+            # pointer targets after a feature/tempo/global-mask change.
+            self._refresh()
+            cell = next((cell for row in self._group_rows
+                         if row["groupId"] == group_id
+                         for cell in row["blocks"]
+                         if cell["blockIndex"] == block_index), None)
+            if cell is None or not cell["interactive"]:
+                return "unavailable"
+            result = arrangement_seam.request_arrangement_group_toggle(
+                session, group_id, block_index
+            )
+            self._refresh()
+            return str(result.outcome)
 
         @Property(bool, notify=state_changed)
         def arrangementModeEnabled(self) -> bool:
