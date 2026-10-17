@@ -36,7 +36,7 @@ from .gesture_analysis import (
     _ONSET_WAIT_FRAMES,
     analyze_gesture_audio,
 )
-from .workbench_attack_suggest import (
+from .attack_analysis import (
     _ENERGY_RATIO_THRESHOLD,
     _FRAME_MS,
     _PEAK_FRACTION_THRESHOLD,
