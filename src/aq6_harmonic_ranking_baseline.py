@@ -22,8 +22,7 @@ from .aq6_harmonic_ranking_relevance import (
     load_relevance_benchmark_fixture,
     score_ranking_for_query,
 )
-from .workbench_controller import WorkbenchRow
-from .workbench_harmony import find_harmony_matches, rate_harmony
+from .harmony import HarmonyInput, find_harmony_matches, rate_harmony
 
 DOCUMENT_TYPE = "sample-brain.aq6.harmonic-ranking-baseline.v1"
 SCHEMA_VERSION = "1.0.0"
@@ -68,8 +67,8 @@ def row_from_fixture_item(
     *,
     key_override: Any = ...,
     bpm_override: Any = ...,
-) -> WorkbenchRow:
-    """Build a WorkbenchRow; display_name is the ranking identity (synthetic_id)."""
+) -> HarmonyInput:
+    """Build a HarmonyInput; display_name is the ranking identity (synthetic_id)."""
     sid = str(item["synthetic_id"])
     if key_override is ...:
         key = item.get("key")
@@ -80,18 +79,13 @@ def row_from_fixture_item(
     else:
         bpm = bpm_override
     rel = str(item.get("path") or f"synthetic/aq6_ranking/{sid}.wav")
-    return WorkbenchRow(
+    return HarmonyInput(
         display_name=sid,
         relative_path=rel,
         path=f"/synthetic/aq6-ranking-baseline/{sid}.wav",
         bpm=bpm,
         key=key,
-        key_conf=0.8 if key else None,
-        loudness=-20.0,
-        brightness=2000.0,
-        sample_class="loop",
         pred_type="kick",
-        status="ok",
     )
 
 

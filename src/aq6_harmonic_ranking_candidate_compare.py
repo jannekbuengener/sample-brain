@@ -44,8 +44,8 @@ from .aq6_harmonic_theory_truth_table import (
     score_theory_predictions,
 )
 from .key_signature import parse_key_signature
-from .workbench_controller import WorkbenchRow
-from .workbench_harmony import (
+from .harmony import (
+    HarmonyInput,
     HarmonyRelation,
     HarmonySuggestion,
     _bpm_score_from_row,
@@ -54,7 +54,6 @@ from .workbench_harmony import (
     _parse_key_from_row,
     determine_relation,
     find_harmony_matches,
-    harmonic_match_key_for_row,
 )
 
 DOCUMENT_TYPE = "sample-brain.aq6.harmonic-ranking-candidate-compare.v1"
@@ -194,12 +193,12 @@ def _harmony_score_for_candidate(
 
 
 def rate_harmony_for_candidate(
-    reference: WorkbenchRow,
-    candidate_row: WorkbenchRow,
+    reference: HarmonyInput,
+    candidate_row: HarmonyInput,
     candidate: HarmonicRankingCandidate,
     *,
     key_override: Optional[str] = None,
-) -> HarmonySuggestion:
+) -> HarmonySuggestion[HarmonyInput]:
     """Rate one pair with a declared thin ranking adapter (not production)."""
     ref_key = (
         parse_key_signature(key_override)
@@ -239,14 +238,14 @@ def rate_harmony_for_candidate(
 
 
 def find_harmony_matches_for_candidate(
-    reference: WorkbenchRow,
-    candidates: list[WorkbenchRow],
+    reference: HarmonyInput,
+    candidates: list[HarmonyInput],
     candidate: HarmonicRankingCandidate,
     *,
     query: str = "",
     key_override: Optional[str] = None,
     limit: Optional[int] = None,
-) -> tuple[list[HarmonySuggestion], Optional[str]]:
+) -> tuple[list[HarmonySuggestion[HarmonyInput]], Optional[str]]:
     """Mirror ``find_harmony_matches`` with a thin candidate adapter only."""
     # Baseline identity: reuse production finder when config matches production.
     if (
@@ -274,7 +273,7 @@ def find_harmony_matches_for_candidate(
             display_match = (
                 needle in cand.display_name.casefold()
                 or needle in str(cand.relative_path).casefold()
-                or needle in (harmonic_match_key_for_row(cand) or "").casefold()
+                or needle in (cand.key or "").casefold()
                 or needle in (cand.pred_type or "").casefold()
             )
             if display_match:
@@ -455,31 +454,21 @@ def theory_gate_for_candidate(
         # Theory classification uses production determine_relation path via the
         # candidate rater; relation identity must match the #1017 product path.
         suggestion = rate_harmony_for_candidate(
-            WorkbenchRow(
+            HarmonyInput(
                 display_name="ref",
                 relative_path="ref.wav",
                 path="/synthetic/aq6-compare/ref.wav",
                 bpm=128.0,
                 key=cell.get("source_key"),
-                key_conf=0.8 if cell.get("source_key") else None,
-                loudness=-20.0,
-                brightness=2000.0,
-                sample_class="loop",
                 pred_type="kick",
-                status="ok",
             ),
-            WorkbenchRow(
+            HarmonyInput(
                 display_name="cand",
                 relative_path="cand.wav",
                 path="/synthetic/aq6-compare/cand.wav",
                 bpm=128.0,
                 key=cell.get("target_key"),
-                key_conf=0.8 if cell.get("target_key") else None,
-                loudness=-20.0,
-                brightness=2000.0,
-                sample_class="loop",
                 pred_type="kick",
-                status="ok",
             ),
             candidate,
         )

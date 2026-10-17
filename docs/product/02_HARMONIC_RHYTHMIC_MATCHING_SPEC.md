@@ -191,6 +191,7 @@ Use a reference `sample_id` as context: copy its BPM/key/type as implicit target
 
 A second `ttk.Notebook` page in the Workbench (`src/workbench_harmony.py`, `find_harmony_matches`) finds **musically related already-loaded `WorkbenchRow`s** against a chosen reference. It is a local, similarity-style convenience feature — **not** the configurable target matching contract from §5.
 
+- Musical relation, rating and ranking logic has one neutral owner: `src/harmony.py`. The Workbench entry points delegate through `src/workbench_harmony.py`.
 - Reuses the canonical key parser `src/key_signature.py` (`parse_key_signature`, `format_key_signature`).
 - Relation groups: **Direkt** (same root + known mode), **Verwandt** (relative major/minor, or fifth/fourth with same mode — both modes known), **Transpose** (±3 semitones, both modes known), **Unsicher** (missing/unknown mode).
 - Unknown mode stays cautious: same root with one or both modes unknown is **Unsicher**, never Direkt. No relative/fifth/fourth claim without both modes known.
@@ -200,8 +201,13 @@ A second `ttk.Notebook` page in the Workbench (`src/workbench_harmony.py`, `find
 
 ### 9.1 Screen-1 Harmonic Match reference eligibility (#842)
 
-Authoritative matching remains Python-owned in `src/workbench_harmony.py`
-(`find_harmony_matches` / `rate_harmony` / `HarmonicMatchLibraryController`).
+Authoritative musical calculation remains Python-owned in `src/harmony.py`
+(`determine_relation` / `rate_harmony` / `find_harmony_matches`).
+`src/workbench_harmony.py` is the Product adapter: it resolves V2/legacy keys,
+projects rows onto immutable `HarmonyInput` metadata, and returns the original
+`WorkbenchRow` objects. `HarmonicMatchLibraryController` and reference validation
+remain Workbench-owned. `HarmonySuggestion.row` remains rebindable; projection
+identity preserves distinct candidates even when paths or values are equal.
 QML must not invent matching logic or fabricate a modeful key from a display string.
 
 | Concern | Authority |
