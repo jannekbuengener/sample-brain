@@ -372,5 +372,3 @@ def find_harmony_matches(
         results = results[:limit]
 
     return results, None
-
-
