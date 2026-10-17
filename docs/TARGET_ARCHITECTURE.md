@@ -158,13 +158,13 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 - **Outputs:** Rows in `samples` table
 - **Error handling:** Skip permission-denied directories, skip non-audio files, continue on corrupt files
 
-### 4.5 Analyzer (`src/analyze.py`)
+### 4.5 Analyzer (`src/analyze.py`, `src/analysis_contracts.py`)
 
-- **Responsibility:** Load audio, extract BPM, key, loudness, brightness, MFCCs, chroma; persist to `features` table
-- **Must not do:** Classify, embed, search, export
-- **Inputs:** Path from `samples` table + audio file on disk
-- **Outputs:** Rows in `features` table
-- **Error handling:** Best-effort per-file — never crash on corrupt audio
+- **Shared contract authority:** `src/analysis_contracts.py` owns the neutral analyzer invariants (`ANALYZE_SR`, `ANALYZE_HOP_LENGTH`), BPM-normalization vocabulary, and immutable `Features` result. `src.config` only re-exports the analyzer constants for compatibility. See [`ANALYSIS_PUBLIC_CONTRACT_V1.md`](ANALYSIS_PUBLIC_CONTRACT_V1.md).
+- **Computation responsibility:** `extract_features()` loads explicit audio input and extracts BPM, key, loudness, brightness, MFCCs, chroma, and duration class into neutral `Features`; it does not require Workbench/session/application config objects.
+- **Current persistence/orchestration:** `run_analyze()` still owns catalog reads, batching/progress, and `features` upserts. Issue #1149 owns the later separation of this application/persistence layer from portable computation.
+- **Must not do:** Classify, embed, search, export; shared Analysis contracts must not own DB/session/UI state.
+- **Error handling:** Best-effort per file — corrupt/unreadable audio does not crash the pipeline.
 
 ### 4.6 Classifier / Autotype (`src/classify.py`)
 
