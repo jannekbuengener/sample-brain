@@ -24,8 +24,7 @@ from .aq6_harmonic_theory_truth_table import (
     score_theory_predictions,
 )
 from .key_signature import parse_key_signature
-from .workbench_controller import WorkbenchRow
-from .workbench_harmony import rate_harmony
+from .harmony import HarmonyInput, rate_harmony
 
 DOCUMENT_TYPE = "sample-brain.aq6.harmonic-theory-baseline.v1"
 SCHEMA_VERSION = "1.0.0"
@@ -49,19 +48,14 @@ def _row(
     *,
     key: str | None,
     bpm: float | None = 128.0,
-) -> WorkbenchRow:
-    return WorkbenchRow(
+) -> HarmonyInput:
+    return HarmonyInput(
         display_name=name,
         relative_path=f"{name}.wav",
         path=f"/synthetic/aq6-theory-baseline/{name}.wav",
         bpm=bpm,
         key=key,
-        key_conf=0.8 if key else None,
-        loudness=-20.0,
-        brightness=2000.0,
-        sample_class="loop",
         pred_type="kick",
-        status="ok",
     )
 
 
