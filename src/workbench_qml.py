@@ -9,6 +9,7 @@ deliberately live in :mod:`src.workbench_qml_spike`.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from fractions import Fraction
 import inspect
 import json
 import math
@@ -5903,9 +5904,9 @@ ApplicationWindow {
                 onWheel: {
                     if (wheel.modifiers & Qt.ControlModifier) {
                         if (wheel.angleDelta.y < 0)
-                            window.arrangement.zoomIn()
-                        else
                             window.arrangement.zoomOut()
+else
+                            window.arrangement.zoomIn()
                         wheel.accepted = true
                     } else if (Math.abs(wheel.angleDelta.x) > 0) {
                         window.arrangement.panHorizontal(-wheel.angleDelta.x)
@@ -5959,8 +5960,8 @@ ApplicationWindow {
                         model: window.arrangement.groupRows.length > 0
                             ? window.arrangement.groupRows[0].blocks : []
                         Rectangle {
-                            x: (modelData.blockIndex * 20 - window.arrangement.viewportStartQn) * 2 * 2
-                            width: 20 * 2 * 2
+                            x: (modelData.blockIndex * window.arrangement.arrangementBlockLengthQn - window.arrangement.viewportStartQn) * (timelineViewport.width / window.arrangement.viewportVisibleQn)
+                            width: window.arrangement.arrangementBlockLengthQn * (timelineViewport.width / window.arrangement.viewportVisibleQn)
                             height: 24
                             color: "transparent"
                             border.width: 1
@@ -5975,6 +5976,7 @@ ApplicationWindow {
                             }
                         }
                     }
+                    // Marker geometry follows Direction B bridge bindings (C2c1 review F4).
                 }
 
                 Column {
@@ -6463,6 +6465,8 @@ def _qml_interaction_bridge(
     on_harmony_waveform_request: Callable[[int, int], None] | None = None,
     on_open_channel_rack: Callable[[], None] | None = None,
     on_return_to_screen1: Callable[[], None] | None = None,
+    tempo_map_provider: Callable[[], object] | None = None,
+    on_tempo_map_replaced: Callable[[], None] | None = None,
 ):
     """Expose the pure interaction adapter to QML only when Qt is installed."""
     from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
@@ -6475,6 +6479,8 @@ def _qml_interaction_bridge(
         def __init__(self) -> None:
             super().__init__()
             adapter._on_sample_context_closed = self._emit_sample_context_closed
+            # C2c1 review F3: observe tempo-map replacement from the layout side.
+            self._tempo_map = tempo_map_provider() if tempo_map_provider is not None else None
 
         def _emit_sample_context_closed(self) -> None:
             self.sampleContextClosed.emit()
@@ -6483,6 +6489,12 @@ def _qml_interaction_bridge(
             adapter.sync_visible_state_labels()
             if on_state_changed is not None:
                 on_state_changed()
+            if tempo_map_provider is not None:
+                tempo_map = tempo_map_provider()
+                if tempo_map is not self._tempo_map:
+                    self._tempo_map = tempo_map
+                    if on_tempo_map_replaced is not None:
+                        on_tempo_map_replaced()
             self.state_changed.emit()
 
         @Slot()
@@ -7320,6 +7332,8 @@ def _qml_arrangement_bridge(session, adapter):
         zoom_in,
         zoom_out,
         pan,
+        rebase_viewport_for_tempo_change,
+        ARRANGEMENT_BLOCK_LENGTH_QUARTER_NOTES,
         ArrangementViewportState,
     )
     from . import workbench_arrangement_qml as arrangement_seam
@@ -7436,7 +7450,18 @@ def _qml_arrangement_bridge(session, adapter):
                     # C2c1: Use tempo map from session transport
                     tempo_map = getattr(session.transport, "tempo_map", None)
                     if tempo_map is not None:
-                        self._tempo_map = tempo_map
+                        if tempo_map is not self._tempo_map:
+                            if (
+                                self._viewport is not None
+                                and self._tempo_map is not None
+                            ):
+                                # C2c1 review F3: rebase the same wall-clock
+                                # slice onto the replaced tempo map before
+                                # the new projection runs.
+                                self._viewport = rebase_viewport_for_tempo_change(
+                                    self._viewport, self._tempo_map, tempo_map
+                                )
+                            self._tempo_map = tempo_map
                         if self._viewport is None:
                             self._viewport = viewport_for_initial_view(tempo_map)
                         window = project_visible_blocks(session, self._viewport)
@@ -7627,6 +7652,18 @@ def _qml_arrangement_bridge(session, adapter):
         @Property(float, notify=state_changed)
         def viewportVisibleDurationQn(self) -> float:
             """Visible duration in quarter notes."""
+            if self._viewport is None:
+                return 0.0
+            return float(self._viewport.visible_duration_qn)
+
+        @Property(float, notify=state_changed)
+        def arrangementBlockLengthQn(self) -> float:
+            """C2c1 review F4: authority-defined block length in quarter notes."""
+            return float(ARRANGEMENT_BLOCK_LENGTH_QUARTER_NOTES)
+
+        @Property(float, notify=state_changed)
+        def viewportVisibleQn(self) -> float:
+            """C2c1 review F4: visible duration used by marker geometry."""
             if self._viewport is None:
                 return 0.0
             return float(self._viewport.visible_duration_qn)
@@ -8802,6 +8839,14 @@ def _qml_engine(
         on_harmony_waveform_request=request_harmony_waveforms,
         on_open_channel_rack=open_channel_rack,
         on_return_to_screen1=return_to_screen1,
+        # C2c1 review F3: reconnect the arrangement viewport when the session
+        # replaces the transport's tempo map (ADR C2c1 rebase seam).
+        tempo_map_provider=(
+            (lambda: getattr(session.transport, "tempo_map", None))
+            if session is not None
+            else None
+        ),
+        on_tempo_map_replaced=arrangement_bridge.refresh,
     )
     adapter._runtime_composition = runtime_composition
     # #1077: restore workspace visibility preference only for production-composed

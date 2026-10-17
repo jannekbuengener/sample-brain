@@ -325,6 +325,7 @@ class ArrangementQmlBlock:
     block_index: int
     status: str
     enabled: bool
+    start_quarter_note: Fraction
 
 
 @dataclass(frozen=True)
@@ -436,7 +437,8 @@ def project_arrangement_block_window(
     )
     blocks = tuple(
         ArrangementQmlBlock(i, state.block_status(i, tempo_map),
-                            i not in state.disabled_blocks)
+                            i not in state.disabled_blocks,
+                            _block_index_to_quarter_note(i))
         for i in range(start_block, start_block + block_count)
     )
     group_blocks = tuple(
@@ -620,6 +622,35 @@ def pan(viewport: ArrangementViewportState, delta_qn: Fraction) -> ArrangementVi
     return ArrangementViewportState(
         start_quarter_note=new_start,
         visible_duration_qn=viewport.visible_duration_qn,
+        zoom_level=viewport.zoom_level,
+        logical_horizon_qn=viewport.logical_horizon_qn,
+    )
+
+
+def rebase_viewport_for_tempo_change(viewport: ArrangementViewportState, previous, current) -> ArrangementViewportState:
+    """Rebase a viewport so the same wall-clock slice survives a tempo-map change.
+
+    The visible span keeps its wall-clock duration under the previous tempo map
+    and is re-expressed under the current tempo map. Pan position and zoom are
+    preserved; the start is clamped into the valid range so the viewport never
+    shows beyond the horizon after rebasing. The logical horizon is kept from
+    the incoming viewport so a duration clamp cannot silently shrink it.
+    """
+    old_frames = int(previous.quarter_note_to_frame(viewport.visible_duration_qn))
+    old_seconds = Fraction(old_frames, previous.sample_rate)
+    new_frames = int(old_seconds * current.sample_rate)
+    new_duration = current.frame_to_quarter_note(new_frames)
+    clamped_start = _clamp_viewport_start(
+        ArrangementViewportState(
+            start_quarter_note=viewport.start_quarter_note,
+            visible_duration_qn=new_duration,
+            zoom_level=viewport.zoom_level,
+            logical_horizon_qn=viewport.logical_horizon_qn,
+        )
+    )
+    return ArrangementViewportState(
+        start_quarter_note=clamped_start,
+        visible_duration_qn=new_duration,
         zoom_level=viewport.zoom_level,
         logical_horizon_qn=viewport.logical_horizon_qn,
     )
