@@ -343,12 +343,26 @@ class ArrangementQmlTrackBlock:
 
 
 @dataclass(frozen=True)
+class ArrangementQmlTrackRow:
+    """Renderer-facing track row within an expanded group (C2b).
+
+    Membership comes exclusively from Python-owned arrangement_domain.
+    Each track row shares the visible block window geometry with its parent group.
+    """
+    channel_id: str
+    display_name: str
+    group_id: str
+    blocks: tuple[ArrangementQmlTrackBlock, ...]
+
+
+@dataclass(frozen=True)
 class ArrangementBlockWindow:
     groups: tuple[ArrangementQmlGroup, ...]
     blocks: tuple[ArrangementQmlBlock, ...]
     group_blocks: tuple[ArrangementQmlGroupBlock, ...]
     track_blocks: tuple[ArrangementQmlTrackBlock, ...]
     membership_status: str
+    track_rows_by_group: dict[str, tuple[ArrangementQmlTrackRow, ...]] = ()
 
 
 _GROUP_LABELS = {
@@ -413,8 +427,43 @@ def project_arrangement_block_window(
         )
         for b in blocks for c in rack.channels
     )
+
+    # C2b: Project track rows per group from Python-owned membership
+    track_rows_by_group: dict[str, tuple[ArrangementQmlTrackRow, ...]] = {}
+    for group in groups:
+        group_track_rows: list[ArrangementQmlTrackRow] = []
+        for channel_id in group.channel_ids:
+            # Find the channel in rack to get display name
+            channel = next((c for c in rack.channels if c.channel_id == channel_id), None)
+            if channel is None:
+                continue
+            display_name = _channel_display_name(channel)
+            membership = state.membership(channel_id, rack)
+            if membership == "unmapped":
+                continue
+            track_row_blocks = tuple(
+                ArrangementQmlTrackBlock(
+                    channel_id, group.group_id, b.block_index,
+                    (channel_id, b.block_index) not in state.disabled_track_blocks,
+                    "unresolved" if membership == "unmapped"
+                    else state.effective(channel_id, b.block_index, rack, tempo_map)
+                    if b.status == "eligible" else b.status,
+                )
+                for b in blocks
+            )
+            group_track_rows.append(
+                ArrangementQmlTrackRow(
+                    channel_id=channel_id,
+                    display_name=display_name,
+                    group_id=group.group_id,
+                    blocks=track_row_blocks,
+                )
+            )
+        track_rows_by_group[group.group_id] = tuple(group_track_rows)
+
     return ArrangementBlockWindow(
-        groups, blocks, group_blocks, track_blocks, state.membership_status(rack)
+        groups, blocks, group_blocks, track_blocks, state.membership_status(rack),
+        track_rows_by_group=track_rows_by_group
     )
 
 
@@ -489,6 +538,7 @@ __all__ = [
     "ArrangementQmlBlock",
     "ArrangementQmlGroupBlock",
     "ArrangementQmlTrackBlock",
+    "ArrangementQmlTrackRow",
     "ArrangementBlockWindow",
     "ArrangementMaskToggleResult",
     "project_arrangement_block_window",

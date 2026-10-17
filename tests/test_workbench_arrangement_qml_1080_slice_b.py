@@ -771,7 +771,10 @@ def test_qml_channel_rows_are_python_owned_intent_only():
     assert "localActive" not in region
     assert "Fraction(" not in region
     assert "/ 4" not in region
-    assert "* 4" not in region
+    # C2b: "* 4" appears in height calculations (* 48), not legacy quarter-note mapping.
+    # Check for legacy "* 4" as standalone operator, not part of "* 48".
+    import re
+    assert not re.search(r'\* 4(?!\d)', region)
     # No legacy rack seam, no audition, no persistence bypass in the stage.
     for forbidden in (
         "toggleStep",
@@ -794,11 +797,14 @@ def test_qml_editability_is_bound_to_python_authority_rows():
     assert "enabled: arrangementChannelRow.stepGridEnabled" in region
     # The stage input blocker stays: no pointer fall-through beneath the
     # stage, and it carries no command of its own.
-    # Explicit Owner-approved freeze reconciliation for #1080 C2a:
-    # pin both authorized handlers, preserving the field/input contract.
-    assert region.count("onClicked") == 2
+    # Explicit Owner-approved freeze reconciliation for #1080 C2a/C2b:
+    # pin all authorized handlers, preserving the field/input contract.
+    # C2b adds: expand/collapse, track block handlers.
     assert region.count("onClicked: window.arrangement.toggleArrangementField(arrangementChannelRow.channelId, arrangementChannelField.fieldIndex)") == 1
     assert region.count("onClicked: window.arrangement.toggleArrangementGroupBlock(arrangementGroupRow.groupId, arrangementGroupBlock.blockIndex)") == 1
+    # C2b authorized handlers
+    assert region.count("onClicked: window.arrangement.toggleArrangementGroupExpanded(arrangementGroupRow.groupId)") == 1
+    assert region.count("onClicked: window.arrangement.toggleArrangementTrackBlock(arrangementTrackRow.channelId, arrangementTrackBlock.blockIndex)") == 1
     import inspect
     from src.workbench_qml import _qml_arrangement_bridge
 

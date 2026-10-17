@@ -5887,6 +5887,8 @@ ApplicationWindow {
             // #1080 Slice B: fixed channel-name column so every sequencer
             // row's 32-field grid aligns on one precise device geometry.
             readonly property int channelNameColumnWidth: 96
+            // C2b: indent for track rows under parent group
+            readonly property int trackRowIndent: 24
 
             // #1080: this input layer keeps pointer events that miss the
             // sequencer's field hit targets from reaching the workspace
@@ -5927,76 +5929,245 @@ ApplicationWindow {
                     spacing: 2
                     Repeater {
                         model: window.arrangement.groupRows
-                        Rectangle {
+                        Item {
                             id: arrangementGroupRow
                             objectName: "arrangementGroupRow"
                             readonly property var row: modelData
                             readonly property string groupId: row.groupId
+                            readonly property bool expanded: row.expanded
                             width: parent.width
-                            height: 64
-                            color: theme.surfacePanel
-                            border.width: 1
-                            border.color: theme.borderSubtle
-                            Label {
+                            // Height depends on expansion: collapsed=64, expanded=64 + trackRows * 48
+                            height: expanded ? (64 + (row.trackRows ? row.trackRows.length : 0) * 48) : 64
+
+                            // Parent group header
+                            Rectangle {
                                 anchors.left: parent.left
-                                anchors.leftMargin: 14
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 160
-                                text: arrangementGroupRow.row.displayName
-                                color: theme.textSecondary
-                                font.pixelSize: 12
-                                elide: Text.ElideRight
-                            }
-                            Row {
-                                anchors.left: parent.left
-                                anchors.leftMargin: 190
                                 anchors.right: parent.right
-                                anchors.rightMargin: 14
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 8
-                                Repeater {
-                                    model: arrangementGroupRow.row.blocks
+                                anchors.top: parent.top
+                                height: 64
+                                color: theme.surfacePanel
+                                border.width: 1
+                                border.color: theme.borderSubtle
+                                Row {
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.leftMargin: 14
+                                    anchors.rightMargin: 14
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 8
+
+                                    // Expand/collapse affordance
                                     Rectangle {
-                                        id: arrangementGroupBlock
-                                        objectName: "arrangementGroupBlock"
-                                        readonly property var cell: modelData
-                                        readonly property string groupId: arrangementGroupRow.groupId
-                                        readonly property int blockIndex: cell.blockIndex
-                                        readonly property bool effectiveOn: cell.available
-                                        enabled: cell.interactive
-                                        width: (parent.width - 8 * (arrangementGroupRow.row.blocks.length - 1)) / arrangementGroupRow.row.blocks.length
-                                        height: 42
-                                        color: effectiveOn ? theme.surfaceElevated : theme.surfaceRoot
-                                        border.width: activeFocus ? 2 : 1
-                                        border.color: activeFocus ? theme.actionActive : theme.borderSubtle
-                                        activeFocusOnTab: cell.interactive
+                                        id: expandControl
+                                        objectName: "arrangementExpandControl"
+                                        width: 24
+                                        height: 24
+                                        radius: 2
+                                        color: theme.surfaceElevated
+                                        border.width: 1
+                                        border.color: theme.borderSubtle
+                                        activeFocusOnTab: true
                                         Accessible.role: Accessible.Button
-                                        Accessible.name: arrangementGroupRow.row.displayName + " · " + blockIndex + " · " + blockState.text
-                                        Accessible.description: "16 bars"
+                                        Accessible.name: expanded ? "Collapse " + arrangementGroupRow.row.displayName : "Expand " + arrangementGroupRow.row.displayName
+                                        Accessible.description: "Toggle group visibility"
                                         Accessible.onPressAction: {
-                                            if (cell.interactive)
-                                                window.arrangement.toggleArrangementGroupBlock(arrangementGroupRow.groupId, arrangementGroupBlock.blockIndex)
+                                            window.arrangement.toggleArrangementGroupExpanded(arrangementGroupRow.groupId)
                                         }
                                         Keys.onSpacePressed: function(event) {
-                                            if (cell.interactive) {
-                                                window.arrangement.toggleArrangementGroupBlock(arrangementGroupRow.groupId, arrangementGroupBlock.blockIndex)
-                                                event.accepted = true
-                                            }
+                                            window.arrangement.toggleArrangementGroupExpanded(arrangementGroupRow.groupId)
+                                            event.accepted = true
                                         }
-                                        Label {
-                                            id: blockState
+                                        // Chevron indicator
+                                        Canvas {
                                             anchors.centerIn: parent
-                                            text: cell.status !== "eligible" ? "—"
-                                                  : !cell.blockEnabled ? "GLOBAL OFF"
-                                                  : cell.groupEnabled ? "ON" : "OFF"
-                                            color: effectiveOn ? theme.textPrimary : theme.textSecondary
-                                            font.pixelSize: 10
+                                            width: 12
+                                            height: 12
+                                            onPaint: {
+                                                var ctx = getContext("2d")
+                                                ctx.strokeStyle = theme.textPrimary
+                                                ctx.lineWidth = 2
+                                                ctx.beginPath()
+                                                if (expanded) {
+                                                    // Up chevron
+                                                    ctx.moveTo(2, 8)
+                                                    ctx.lineTo(6, 4)
+                                                    ctx.lineTo(10, 8)
+                                                } else {
+                                                    // Down chevron
+                                                    ctx.moveTo(2, 4)
+                                                    ctx.lineTo(6, 8)
+                                                    ctx.lineTo(10, 4)
+                                                }
+                                                ctx.stroke()
+                                            }
                                         }
                                         MouseArea {
                                             anchors.fill: parent
-                                            enabled: arrangementGroupBlock.cell.interactive
                                             acceptedButtons: Qt.LeftButton
-                                            onClicked: window.arrangement.toggleArrangementGroupBlock(arrangementGroupRow.groupId, arrangementGroupBlock.blockIndex)
+                                            onClicked: window.arrangement.toggleArrangementGroupExpanded(arrangementGroupRow.groupId)
+                                        }
+                                    }
+
+                                    Label {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 160
+                                        text: arrangementGroupRow.row.displayName
+                                        color: theme.textSecondary
+                                        font.pixelSize: 12
+                                        elide: Text.ElideRight
+                                    }
+                                    Row {
+                                        anchors.left: expandControl.right
+                                        anchors.leftMargin: 8
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 14
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 8
+                                        Repeater {
+                                            model: arrangementGroupRow.row.blocks
+                                            Rectangle {
+                                                id: arrangementGroupBlock
+                                                objectName: "arrangementGroupBlock"
+                                                readonly property var cell: modelData
+                                                readonly property string groupId: arrangementGroupRow.groupId
+                                                readonly property int blockIndex: cell.blockIndex
+                                                readonly property bool effectiveOn: cell.available
+                                                enabled: cell.interactive
+                                                width: (parent.width - 8 * (arrangementGroupRow.row.blocks.length - 1)) / arrangementGroupRow.row.blocks.length
+                                                height: 42
+                                                color: effectiveOn ? theme.surfaceElevated : theme.surfaceRoot
+                                                border.width: activeFocus ? 2 : 1
+                                                border.color: activeFocus ? theme.actionActive : theme.borderSubtle
+                                                activeFocusOnTab: cell.interactive
+                                                Accessible.role: Accessible.Button
+                                                Accessible.name: arrangementGroupRow.row.displayName + " · " + blockIndex + " · " + blockState.text
+                                                Accessible.description: "16 bars"
+                                                Accessible.onPressAction: {
+                                                    if (cell.interactive)
+                                                        window.arrangement.toggleArrangementGroupBlock(arrangementGroupRow.groupId, arrangementGroupBlock.blockIndex)
+                                                }
+                                                Keys.onSpacePressed: function(event) {
+                                                    if (cell.interactive) {
+                                                        window.arrangement.toggleArrangementGroupBlock(arrangementGroupRow.groupId, arrangementGroupBlock.blockIndex)
+                                                        event.accepted = true
+                                                    }
+                                                }
+                                                Label {
+                                                    id: blockState
+                                                    anchors.centerIn: parent
+                                                    text: cell.status !== "eligible" ? "—"
+                                                          : !cell.blockEnabled ? "GLOBAL OFF"
+                                                          : cell.groupEnabled ? "ON" : "OFF"
+                                                    color: effectiveOn ? theme.textPrimary : theme.textSecondary
+                                                    font.pixelSize: 10
+                                                }
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    enabled: arrangementGroupBlock.cell.interactive
+                                                    acceptedButtons: Qt.LeftButton
+                                                    onClicked: window.arrangement.toggleArrangementGroupBlock(arrangementGroupRow.groupId, arrangementGroupBlock.blockIndex)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // C2b: Track rows for expanded group
+                            Item {
+                                id: arrangementTrackRows
+                                anchors.left: parent.left
+                                anchors.leftMargin: arrangementStage.trackRowIndent
+                                anchors.right: parent.right
+                                anchors.rightMargin: 14
+                                anchors.top: parent.top
+                                anchors.topMargin: 64
+                                height: expanded ? (row.trackRows ? row.trackRows.length : 0) * 48 : 0
+                                visible: expanded && row.trackRows && row.trackRows.length > 0
+                                Column {
+                                    spacing: 4
+                                    Repeater {
+                                        model: expanded ? (row.trackRows || []) : []
+                                        Item {
+                                            id: arrangementTrackRow
+                                            objectName: "arrangementTrackRow"
+                                            readonly property var track: modelData
+                                            readonly property string channelId: track.channelId
+                                            width: parent.width
+                                            height: 48
+
+                                            Row {
+                                                id: arrangementTrackRowLayout
+                                                anchors.fill: parent
+                                                spacing: 8
+
+                                                Label {
+                                                    objectName: "arrangementTrackRowName"
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    text: track.displayName
+                                                    color: theme.textSecondary
+                                                    font.pixelSize: 10
+                                                    width: arrangementStage.channelNameColumnWidth - arrangementStage.trackRowIndent
+                                                    horizontalAlignment: Text.AlignRight
+                                                    elide: Text.ElideRight
+                                                    opacity: 0.8
+                                                }
+
+                                                Row {
+                                                    id: arrangementTrackBlocksRow
+                                                    anchors.left: parent.left
+                                                    anchors.right: parent.right
+                                                    spacing: 8
+                                                    Repeater {
+                                                        model: track.blocks
+                                                        Rectangle {
+                                                            id: arrangementTrackBlock
+                                                            objectName: "arrangementTrackBlock"
+                                                            readonly property var cell: modelData
+                                                            readonly property string channelId: arrangementTrackRow.channelId
+                                                            readonly property int blockIndex: cell.blockIndex
+                                                            readonly property bool effectiveOn: cell.available && cell.effective === true
+                                                            enabled: cell.interactive
+                                                            width: (parent.width - 8 * (track.blocks.length - 1)) / track.blocks.length
+                                                            height: 36
+                                                            color: effectiveOn ? theme.surfaceElevated : theme.surfaceRoot
+                                                            border.width: activeFocus ? 2 : 1
+                                                            border.color: activeFocus ? theme.actionActive : (cell.effective === "unresolved" ? theme.dividerDefault : theme.borderSubtle)
+                                                            radius: 2
+                                                            activeFocusOnTab: cell.interactive
+                                                            Accessible.role: Accessible.Button
+                                                            Accessible.name: track.displayName + " · " + blockIndex + " · " + trackBlockState.text
+                                                            Accessible.description: "Track block"
+                                                            Accessible.onPressAction: {
+                                                                if (cell.interactive)
+                                                                    window.arrangement.toggleArrangementTrackBlock(arrangementTrackRow.channelId, arrangementTrackBlock.blockIndex)
+                                                            }
+                                                            Keys.onSpacePressed: function(event) {
+                                                                if (cell.interactive) {
+                                                                    window.arrangement.toggleArrangementTrackBlock(arrangementTrackRow.channelId, arrangementTrackBlock.blockIndex)
+                                                                    event.accepted = true
+                                                                }
+                                                            }
+                                                            Label {
+                                                                id: trackBlockState
+                                                                anchors.centerIn: parent
+                                                                text: cell.effective === "unresolved" ? "?"
+                                                                      : cell.effective === "out_of_current_horizon" ? "—"
+                                                                      : !cell.blockEnabled ? "GLOBAL OFF"
+                                                                      : cell.groupEnabled ? (cell.trackEnabled ? "ON" : "OFF") : "GROUP OFF"
+                                                                color: effectiveOn ? theme.textPrimary : theme.textDisabled
+                                                                font.pixelSize: 9
+                                                            }
+                                                            MouseArea {
+                                                                anchors.fill: parent
+                                                                enabled: arrangementTrackBlock.cell.interactive
+                                                                acceptedButtons: Qt.LeftButton
+                                                                onClicked: window.arrangement.toggleArrangementTrackBlock(arrangementTrackRow.channelId, arrangementTrackBlock.blockIndex)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -7087,6 +7258,7 @@ def _qml_arrangement_bridge(session, adapter):
     from .workbench_arrangement_qml import (
         project_arrangement_for_qml,
         request_arrangement_field_toggle,
+        project_arrangement_block_window,
     )
     from . import workbench_arrangement_qml as arrangement_seam
 
@@ -7100,6 +7272,33 @@ def _qml_arrangement_bridge(session, adapter):
             "barIndex": int(field.bar_index),
             "indexInBar": int(field.index_in_bar),
             "active": bool(field.active),
+        }
+
+    def _track_block_dict(block: arrangement_seam.ArrangementQmlTrackBlock) -> dict[str, object]:
+        # Track blocks don't have 'available' field directly; derive from enabled and effective
+        eff = block.effective
+        is_eligible = eff is True
+        is_unresolved = eff == "unresolved"
+        is_ooh = eff == "out_of_current_horizon"
+        is_unavailable = is_unresolved or is_ooh
+        available = bool(block.enabled) and not is_unavailable
+        interactive = available and is_eligible
+        status = eff if isinstance(eff, str) else ("eligible" if eff else "off")
+        return {
+            "blockIndex": int(block.block_index),
+            "status": status,
+            "trackEnabled": bool(block.enabled),
+            "available": available,
+            "interactive": interactive,
+            "effective": block.effective,
+        }
+
+    def _track_row_dict(row: arrangement_seam.ArrangementQmlTrackRow) -> dict[str, object]:
+        return {
+            "channelId": row.channel_id,
+            "displayName": row.display_name,
+            "groupId": row.group_id,
+            "blocks": [_track_block_dict(b) for b in row.blocks],
         }
 
     class QmlArrangementBridge(QObject):
@@ -7117,6 +7316,8 @@ def _qml_arrangement_bridge(session, adapter):
             self._bars: list = []
             self._channel_rows: list = []
             self._group_rows: list = []
+            # C2b: expand/collapse is presentation-only state
+            self._expanded_groups: set[str] = set()
             self._any_active_step = False
             self._last_entry_outcome = ""
             self._last_entry_message = ""
@@ -7171,10 +7372,12 @@ def _qml_arrangement_bridge(session, adapter):
                         session, visible_start_block, visible_block_count
                     )
                     blocks = {b.block_index: b for b in window.blocks}
+                    track_rows_by_group = getattr(window, "track_rows_by_group", {})
                     self._group_rows = [
                         {
                             "groupId": group.group_id,
                             "displayName": group.display_name,
+                            "expanded": group.group_id in self._expanded_groups,
                             "blocks": [
                                 {
                                     "blockIndex": cell.block_index,
@@ -7190,6 +7393,11 @@ def _qml_arrangement_bridge(session, adapter):
                                 for cell in window.group_blocks
                                 if cell.group_id == group.group_id
                             ],
+                            # C2b: track rows only when expanded
+                            "trackRows": [
+                                _track_row_dict(tr)
+                                for tr in track_rows_by_group.get(group.group_id, ())
+                            ] if group.group_id in self._expanded_groups else [],
                         }
                         for group in window.groups
                     ]
@@ -7266,6 +7474,41 @@ def _qml_arrangement_bridge(session, adapter):
                 return "unavailable"
             result = arrangement_seam.request_arrangement_group_toggle(
                 session, group_id, block_index
+            )
+            self._refresh()
+            return str(result.outcome)
+
+        @Slot(str, result=str)
+        def toggleArrangementGroupExpanded(self, group_id: str) -> str:
+            """C2b: Expand/collapse is presentation-only — no musical mutation, no save."""
+            if group_id in self._expanded_groups:
+                self._expanded_groups.discard(group_id)
+            else:
+                self._expanded_groups.add(group_id)
+            self._refresh()
+            return "toggled"
+
+        @Slot(str, int, result=str)
+        def toggleArrangementTrackBlock(self, channel_id: str, block_index: int) -> str:
+            """C2b: Track block toggle routes to Python track-mask intent."""
+            # Revalidate current authority before dispatch
+            self._refresh()
+            # Find the track block to check if interactive
+            track_cell = None
+            for row in self._group_rows:
+                for tr in row.get("trackRows", []):
+                    if tr["channelId"] == channel_id:
+                        for block in tr["blocks"]:
+                            if block["blockIndex"] == block_index:
+                                track_cell = block
+                                break
+                        break
+                if track_cell:
+                    break
+            if track_cell is None or not track_cell["interactive"]:
+                return "unavailable"
+            result = arrangement_seam.request_arrangement_track_toggle(
+                session, channel_id, block_index
             )
             self._refresh()
             return str(result.outcome)
