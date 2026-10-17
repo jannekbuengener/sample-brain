@@ -498,7 +498,7 @@ def test_track_rows_share_visible_block_window_geometry(session, bridge):
 
 
 def test_no_unbounded_horizon_materialization(session, bridge):
-    """No unbounded horizon is materialized — bounded by visible_block_count."""
+    """No unbounded horizon is materialized — bounded by viewport window."""
     bridge.refresh()
     bridge.toggleArrangementGroupExpanded("pg_baseline")
     bridge.refresh()
@@ -509,8 +509,8 @@ def test_no_unbounded_horizon_materialization(session, bridge):
     if track_rows:
         for tr in track_rows:
             track_blocks = tr["blocks"]
-            # Should be bounded by visible_block_count (6 in bridge)
-            assert len(track_blocks) <= 6
+            # Bounded by viewport (~3 min = ~6 blocks + small overscan), not full horizon
+            assert len(track_blocks) <= 8
 
 
 def test_effective_respects_global_group_track_hierarchy(session, bridge):
@@ -615,7 +615,11 @@ def test_qml_visual_contract_maintained():
 
 
 def test_no_timeline_zoom_pan_scope_creep(session, bridge):
-    """C2b scope boundary: no timeline, zoom, pan, viewport, end marker, render eligibility UI."""
+    """C2b scope boundary: no end marker, render eligibility, MIDI, piano roll, etc.
+
+    Note: zoom/pan/viewport are intentionally added by C2c1 and are no longer
+    considered scope creep for the arrangement stage.
+    """
     stage = QML_SOURCE.split('id: arrangementStageComponent', 1)[1].split('id: arrangementStageHeader', 1)[0]
     # These concepts must not appear in C2b as standalone features.
     # Use word-boundary-aware checks to avoid false positives from words like
@@ -623,9 +627,6 @@ def test_no_timeline_zoom_pan_scope_creep(session, bridge):
     import re
     forbidden_patterns = [
         r'\btimeline\b', r'\bTIMELINE\b',
-        r'\bzoom\b', r'\bZOOM\b',
-        r'\bpan\b', r'\bPAN\b',  # panning as standalone, not "expand"
-        r'\bviewport\b', r'\bVIEWPORT\b',
         r'\bendMarker\b', r'\bend_marker\b', r'\bEndMarker\b',
         r'\brenderEligibility\b', r'\brender_eligibility\b',
         r'\bLive\b', r'\bLIVE\b', r'\bMIDI\b', r'\bmidi\b',

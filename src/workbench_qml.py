@@ -5898,6 +5898,20 @@ ApplicationWindow {
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                // C2c1: Ctrl + Mouse Wheel = zoom; Wheel without Ctrl = no-op.
+                // Horizontal wheel (no Ctrl) = pan.
+                onWheel: {
+                    if (wheel.modifiers & Qt.ControlModifier) {
+                        if (wheel.angleDelta.y < 0)
+                            window.arrangement.zoomIn()
+                        else
+                            window.arrangement.zoomOut()
+                        wheel.accepted = true
+                    } else if (Math.abs(wheel.angleDelta.x) > 0) {
+                        window.arrangement.panHorizontal(-wheel.angleDelta.x)
+                        wheel.accepted = true
+                    }
+                }
             }
 
             // Direction B (#1079): subtle 2.5D black stage — solid surface
@@ -5921,6 +5935,48 @@ ApplicationWindow {
                 border.width: 1
                 border.color: window.arrangement.anyActiveStep
                                ? theme.actionActive : theme.borderSubtle
+                // C2c1: Timeline viewport — horizontal scale with block alignment,
+                // subtle bar/block seams. Pure presentation, no musical truth.
+                Item {
+                    id: timelineViewport
+                    objectName: "timelineViewport"
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    height: 40
+
+                    // Horizontal time scale line
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        height: 1
+                        color: theme.borderSubtle
+                    }
+
+                    // Block position markers — derived from viewport block range
+                    Repeater {
+                        model: window.arrangement.groupRows.length > 0
+                            ? window.arrangement.groupRows[0].blocks : []
+                        Rectangle {
+                            x: (modelData.blockIndex * 20 - window.arrangement.viewportStartQn) * 2 * 2
+                            width: 20 * 2 * 2
+                            height: 24
+                            color: "transparent"
+                            border.width: 1
+                            border.color: theme.borderSubtle
+                            opacity: 0.15
+                            Label {
+                                anchors.centerIn: parent
+                                text: modelData.blockIndex
+                                color: theme.textSecondary
+                                font.pixelSize: 9
+                                opacity: 0.6
+                            }
+                        }
+                    }
+                }
+
                 Column {
                     anchors.left: parent.left
                     anchors.right: parent.right
@@ -7259,6 +7315,12 @@ def _qml_arrangement_bridge(session, adapter):
         project_arrangement_for_qml,
         request_arrangement_field_toggle,
         project_arrangement_block_window,
+        project_visible_blocks,
+        viewport_for_initial_view,
+        zoom_in,
+        zoom_out,
+        pan,
+        ArrangementViewportState,
     )
     from . import workbench_arrangement_qml as arrangement_seam
 
@@ -7318,6 +7380,9 @@ def _qml_arrangement_bridge(session, adapter):
             self._group_rows: list = []
             # C2b: expand/collapse is presentation-only state
             self._expanded_groups: set[str] = set()
+            # C2c1: viewport / zoom / pan presentation state
+            self._tempo_map = None
+            self._viewport: ArrangementViewportState | None = None
             self._any_active_step = False
             self._last_entry_outcome = ""
             self._last_entry_message = ""
@@ -7368,9 +7433,17 @@ def _qml_arrangement_bridge(session, adapter):
             self._group_rows = []
             if self._arrangement_mode_enabled and self._projection_mode == "ARRANGEMENT":
                 try:
-                    window = arrangement_seam.project_arrangement_block_window(
-                        session, visible_start_block, visible_block_count
-                    )
+                    # C2c1: Use tempo map from session transport
+                    tempo_map = getattr(session.transport, "tempo_map", None)
+                    if tempo_map is not None:
+                        self._tempo_map = tempo_map
+                        if self._viewport is None:
+                            self._viewport = viewport_for_initial_view(tempo_map)
+                        window = project_visible_blocks(session, self._viewport)
+                    else:
+                        window = arrangement_seam.project_arrangement_block_window(
+                            session, visible_start_block, visible_block_count
+                        )
                     blocks = {b.block_index: b for b in window.blocks}
                     track_rows_by_group = getattr(window, "track_rows_by_group", {})
                     self._group_rows = [
@@ -7512,6 +7585,65 @@ def _qml_arrangement_bridge(session, adapter):
             )
             self._refresh()
             return str(result.outcome)
+
+        @Slot(result=str)
+        def zoomIn(self) -> str:
+            """C2c1: Zoom in (Ctrl+Wheel Up). Reduces visible duration."""
+            if self._viewport is None or self._tempo_map is None:
+                return "fail_closed"
+            self._viewport = zoom_in(
+                self._viewport, self._viewport.start_quarter_note + self._viewport.visible_duration_qn / 2, self._tempo_map
+            )
+            self._refresh()
+            return "zoomed"
+
+        @Slot(result=str)
+        def zoomOut(self) -> str:
+            """C2c1: Zoom out (Ctrl+Wheel Down). Increases visible duration."""
+            if self._viewport is None or self._tempo_map is None:
+                return "fail_closed"
+            self._viewport = zoom_out(
+                self._viewport, self._viewport.start_quarter_note + self._viewport.visible_duration_qn / 2, self._tempo_map
+            )
+            self._refresh()
+            return "zoomed"
+
+        @Slot(float, result=str)
+        def panHorizontal(self, delta_qn: float) -> str:
+            """C2c1: Horizontal pan. Changes only viewport start."""
+            if self._viewport is None:
+                return "fail_closed"
+            self._viewport = pan(self._viewport, Fraction(str(delta_qn)))
+            self._refresh()
+            return "panned"
+
+        @Property(float, notify=state_changed)
+        def viewportStartQn(self) -> float:
+            """Viewport start position in quarter notes."""
+            if self._viewport is None:
+                return 0.0
+            return float(self._viewport.start_quarter_note)
+
+        @Property(float, notify=state_changed)
+        def viewportVisibleDurationQn(self) -> float:
+            """Visible duration in quarter notes."""
+            if self._viewport is None:
+                return 0.0
+            return float(self._viewport.visible_duration_qn)
+
+        @Property(float, notify=state_changed)
+        def viewportZoomLevel(self) -> float:
+            """Current zoom level."""
+            if self._viewport is None:
+                return 1.0
+            return self._viewport.zoom_level
+
+        @Property(float, notify=state_changed)
+        def viewportLogicalHorizonQn(self) -> float:
+            """Logical horizon in quarter notes (10-minute domain max)."""
+            if self._viewport is None:
+                return 0.0
+            return float(self._viewport.logical_horizon_qn)
 
         @Property(bool, notify=state_changed)
         def arrangementModeEnabled(self) -> bool:
