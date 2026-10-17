@@ -90,7 +90,7 @@ Issue #1149 separates reusable computation from catalog/application orchestratio
 - `src.harmony` and `src.gesture_analysis` consume neutral computation owners rather than reaching upward through DB-owning facades.
 - `src.scan` remains application/catalog ingestion and is not part of the portable Analysis computation boundary.
 
-SQLite/catalog persistence remains one Sample Brain application authority; no Analysis-owned database, cache database, or duplicate state store is introduced. Issue #1150 owns the final physical package/public-export manifest; these S3 module boundaries are package candidates, not a repo-split claim.
+SQLite/catalog persistence remains one Sample Brain application authority; no Analysis-owned database, cache database, or duplicate state store is introduced. The shared config/DTO seam remains owned here; the frozen public API and package dependency boundary are owned by [`ANALYSIS_PACKAGE_BOUNDARY_V1.md`](ANALYSIS_PACKAGE_BOUNDARY_V1.md). No physical repository extraction is claimed in this monorepo contract.
 
 ## Compatibility requirements
 
