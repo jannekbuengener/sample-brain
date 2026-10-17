@@ -24,8 +24,10 @@ Composed seams (no duplication):
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fractions import Fraction
 
 from .arrangement_32_field_time import (
+    ARRANGEMENT_BLOCK_LENGTH_QUARTER_NOTES,
     BARS_PER_CYCLE,
     FIELDS_PER_BAR,
     TOTAL_FIELDS,
@@ -323,6 +325,7 @@ class ArrangementQmlBlock:
     block_index: int
     status: str
     enabled: bool
+    start_quarter_note: Fraction
 
 
 @dataclass(frozen=True)
@@ -365,6 +368,35 @@ class ArrangementBlockWindow:
     track_rows_by_group: dict[str, tuple[ArrangementQmlTrackRow, ...]] = ()
 
 
+@dataclass(frozen=True)
+class ArrangementViewportState:
+    """Renderer-facing Arrangement viewport / zoom/pan presentation state.
+
+    All values are pure presentation state — not persistent musical truth.
+    The logical horizon comes from TempoMap / domain authority, never from
+    QML-owned constants.
+    """
+
+    start_quarter_note: Fraction
+    visible_duration_qn: Fraction
+    zoom_level: float
+    logical_horizon_qn: Fraction
+
+
+# --- Viewport / zoom / pan constants ---------------------------------------- #
+
+BASE_VISIBLE_SECONDS = 180  # ~3 minutes initial view
+HORIZON_SECONDS = 600  # 10-minute logical horizon
+MIN_VISIBLE_SECONDS = 30  # minimum visible duration for block readability
+
+# Discrete, deterministic zoom levels (multiplier on base visible duration).
+# Higher = zoomed in (less time visible). Lower = zoomed out.
+ZOOM_LEVELS: tuple[float, ...] = (0.25, 0.5, 1.0, 2.0, 4.0)
+ZOOM_STEP = 2.0
+
+# Small overscan beyond the visible window so edge blocks don't pop in/out.
+OVSCAN_BLOCKS = 1
+
 _GROUP_LABELS = {
     "pg_baseline": "Baseline",
     "pg_drums": "Drums",
@@ -405,7 +437,8 @@ def project_arrangement_block_window(
     )
     blocks = tuple(
         ArrangementQmlBlock(i, state.block_status(i, tempo_map),
-                            i not in state.disabled_blocks)
+                            i not in state.disabled_blocks,
+                            _block_index_to_quarter_note(i))
         for i in range(start_block, start_block + block_count)
     )
     group_blocks = tuple(
@@ -465,6 +498,232 @@ def project_arrangement_block_window(
         groups, blocks, group_blocks, track_blocks, state.membership_status(rack),
         track_rows_by_group=track_rows_by_group
     )
+
+
+def _quarter_note_to_block_index(qn: Fraction) -> int:
+    """Convert a quarter-note position to the containing block index."""
+    return int(qn // ARRANGEMENT_BLOCK_LENGTH_QUARTER_NOTES)
+
+
+def _block_index_to_quarter_note(block_index: int) -> Fraction:
+    """Convert a block index to its starting quarter-note position."""
+    return Fraction(block_index, 1) * ARRANGEMENT_BLOCK_LENGTH_QUARTER_NOTES
+
+
+def viewport_for_initial_view(tempo_map) -> ArrangementViewportState:
+    """Create the initial ~3-minute viewport from TempoMap authority.
+
+    Visible duration is derived from ``BASE_VISIBLE_SECONDS`` through the
+    TempoMap's frame→quarter-note mapping — no QML-owned seconds↔QN math.
+    Logical horizon is the 10-minute domain horizon.
+    At extreme tempos the derived duration is capped at the largest
+    duration that still fits one bounded block window, so the initial
+    projection stays within ``MAX_ARRANGEMENT_BLOCK_WINDOW``.
+    """
+    sample_rate = tempo_map.sample_rate
+    visible_qn = tempo_map.frame_to_quarter_note(BASE_VISIBLE_SECONDS * sample_rate)
+    max_visible_qn = _max_zoom_out_duration_qn()
+    if visible_qn >= max_visible_qn:
+        visible_qn = max_visible_qn
+    horizon_qn = tempo_map.frame_to_quarter_note(HORIZON_SECONDS * sample_rate)
+    return ArrangementViewportState(
+        start_quarter_note=Fraction(0),
+        visible_duration_qn=visible_qn,
+        zoom_level=1.0,
+        logical_horizon_qn=horizon_qn,
+    )
+
+
+def _clamp_viewport_start(viewport: ArrangementViewportState) -> Fraction:
+    """Clamp viewport start to [0, horizon - visible_duration]."""
+    max_start = viewport.logical_horizon_qn - viewport.visible_duration_qn
+    if max_start < 0:
+        max_start = Fraction(0)
+    start = viewport.start_quarter_note
+    if start < 0:
+        return Fraction(0)
+    if start > max_start:
+        return max_start
+    return start
+
+
+def _visible_duration_for_zoom(zoom_level: float, tempo_map) -> Fraction:
+    """Visible duration in QN for a given zoom level, derived from TempoMap."""
+    sample_rate = tempo_map.sample_rate
+    base_qn = tempo_map.frame_to_quarter_note(BASE_VISIBLE_SECONDS * sample_rate)
+    return base_qn / Fraction(str(zoom_level))
+
+
+def zoom_in(viewport: ArrangementViewportState, anchor_qn: Fraction, tempo_map) -> ArrangementViewportState:
+    """Zoom in: reduce visible duration, keep anchor area stable.
+
+    Moves to the next more-zoomed-in discrete level. Clamped at the maximum
+    zoom level for block readability.
+    """
+    try:
+        current_index = list(ZOOM_LEVELS).index(viewport.zoom_level)
+    except ValueError:
+        current_index = 2  # default to 1.0
+    next_index = min(current_index + 1, len(ZOOM_LEVELS) - 1)
+    new_level = ZOOM_LEVELS[next_index]
+    new_duration = _visible_duration_for_zoom(new_level, tempo_map)
+
+    # Re-anchor: keep the anchor within the new visible window where possible.
+    new_start = anchor_qn - (new_duration / 2)
+    new_start = max(Fraction(0), new_start)
+
+    return ArrangementViewportState(
+        start_quarter_note=new_start,
+        visible_duration_qn=new_duration,
+        zoom_level=new_level,
+        logical_horizon_qn=viewport.logical_horizon_qn,
+    )
+
+
+def _max_zoom_out_duration_qn() -> Fraction:
+    """Largest zoom-out duration that still fits one bounded block window.
+
+    ``project_visible_blocks`` materializes at most
+    ``floor(duration / block) + 1 + 2 * OVSCAN_BLOCKS`` blocks per window, so
+    any duration below this cap keeps the window within the consumer budget
+    (``MAX_ARRANGEMENT_BLOCK_WINDOW``) even under ovscan/end clamping.
+    """
+    margin = 1 + 2 * OVSCAN_BLOCKS
+    return Fraction(
+        (MAX_ARRANGEMENT_BLOCK_WINDOW - margin)
+        * ARRANGEMENT_BLOCK_LENGTH_QUARTER_NOTES
+    )
+
+
+def _zoom_out_rung_within_limits(
+    new_duration: Fraction, logical_horizon_qn: Fraction
+) -> bool:
+    """A wider zoom rung is accepted only while it stays comfortable.
+
+    Strictly below the logical horizon (the full 10-minute horizon must never
+    be materialized at once, per DESIGN_CONTRACT) and below the one-window
+    block budget for a bounded ``project_visible_blocks`` read.
+    """
+    if not (new_duration < logical_horizon_qn):
+        return False
+    if not (new_duration < _max_zoom_out_duration_qn()):
+        return False
+    return True
+
+
+def zoom_out(viewport: ArrangementViewportState, anchor_qn: Fraction, tempo_map) -> ArrangementViewportState:
+    """Zoom out: widen the viewport to the next discreet, bounded rung.
+
+    Moves to the next less-zoomed-in discrete level only when that rung stays
+    strictly below the logical horizon and still fits one bounded block
+    window. Otherwise the current viewport is kept unchanged. The viewport
+    recenters around the anchor when a wider rung is accepted.
+    """
+    try:
+        current_index = list(ZOOM_LEVELS).index(viewport.zoom_level)
+    except ValueError:
+        current_index = 2  # default to 1.0
+    next_index = max(current_index - 1, 0)
+    if next_index == current_index:
+        return viewport
+    new_level = ZOOM_LEVELS[next_index]
+    new_duration = _visible_duration_for_zoom(new_level, tempo_map)
+
+    if not _zoom_out_rung_within_limits(new_duration, viewport.logical_horizon_qn):
+        return viewport
+
+    # Re-anchor: keep the anchor in the center of the new visible window.
+    new_start = anchor_qn - new_duration / 2
+    new_start = _clamp_viewport_start(
+        ArrangementViewportState(
+            start_quarter_note=new_start,
+            visible_duration_qn=new_duration,
+            zoom_level=new_level,
+            logical_horizon_qn=viewport.logical_horizon_qn,
+        )
+    )
+
+    return ArrangementViewportState(
+        start_quarter_note=new_start,
+        visible_duration_qn=new_duration,
+        zoom_level=new_level,
+        logical_horizon_qn=viewport.logical_horizon_qn,
+    )
+
+
+def pan(viewport: ArrangementViewportState, delta_qn: Fraction) -> ArrangementViewportState:
+    """Horizontal pan: changes only viewport start, clamped to valid range."""
+    new_start = _clamp_viewport_start(
+        ArrangementViewportState(
+            start_quarter_note=viewport.start_quarter_note + delta_qn,
+            visible_duration_qn=viewport.visible_duration_qn,
+            zoom_level=viewport.zoom_level,
+            logical_horizon_qn=viewport.logical_horizon_qn,
+        )
+    )
+    return ArrangementViewportState(
+        start_quarter_note=new_start,
+        visible_duration_qn=viewport.visible_duration_qn,
+        zoom_level=viewport.zoom_level,
+        logical_horizon_qn=viewport.logical_horizon_qn,
+    )
+
+
+def rebase_viewport_for_tempo_change(viewport: ArrangementViewportState, previous, current) -> ArrangementViewportState:
+    """Rebase a viewport so the same wall-clock slice survives a tempo-map change.
+
+    The visible span keeps its wall-clock duration under the previous tempo map
+    and is re-expressed under the current tempo map. Pan position and zoom are
+    preserved; the start is clamped into the valid range so the viewport never
+    shows beyond the horizon after rebasing. The logical horizon is kept from
+    the incoming viewport so a duration clamp cannot silently shrink it.
+    """
+    old_frames = int(previous.quarter_note_to_frame(viewport.visible_duration_qn))
+    old_seconds = Fraction(old_frames, previous.sample_rate)
+    new_frames = int(old_seconds * current.sample_rate)
+    new_duration = current.frame_to_quarter_note(new_frames)
+    clamped_start = _clamp_viewport_start(
+        ArrangementViewportState(
+            start_quarter_note=viewport.start_quarter_note,
+            visible_duration_qn=new_duration,
+            zoom_level=viewport.zoom_level,
+            logical_horizon_qn=viewport.logical_horizon_qn,
+        )
+    )
+    return ArrangementViewportState(
+        start_quarter_note=clamped_start,
+        visible_duration_qn=new_duration,
+        zoom_level=viewport.zoom_level,
+        logical_horizon_qn=viewport.logical_horizon_qn,
+    )
+
+
+def project_visible_blocks(session, viewport: ArrangementViewportState) -> ArrangementBlockWindow:
+    """Project only blocks visible within the viewport + small overscan.
+
+    Replaces the fixed block-window assumption with a viewport-driven bounded
+    projection. Only currently-visible blocks (plus OVSCAN_BLOCKS overscan)
+    are materialized — never the full horizon.
+    """
+    state, rack, tempo_map = _arrangement_context(session)
+
+    start_qn = viewport.start_quarter_note
+    end_qn = start_qn + viewport.visible_duration_qn
+
+    # Determine block range covering the viewport, plus overscan.
+    start_block = _quarter_note_to_block_index(start_qn) - OVSCAN_BLOCKS
+    end_block = _quarter_note_to_block_index(end_qn) + 1 + OVSCAN_BLOCKS
+
+    # Clamp to valid block range: [0, horizon_blocks]
+    horizon_block = _quarter_note_to_block_index(viewport.logical_horizon_qn)
+    start_block = max(0, start_block)
+    end_block = min(end_block, horizon_block + 1)
+
+    block_count = end_block - start_block
+    if block_count <= 0:
+        block_count = 1
+
+    return project_arrangement_block_window(session, start_block, block_count)
 
 
 @dataclass(frozen=True)
@@ -540,8 +799,14 @@ __all__ = [
     "ArrangementQmlTrackBlock",
     "ArrangementQmlTrackRow",
     "ArrangementBlockWindow",
+    "ArrangementViewportState",
     "ArrangementMaskToggleResult",
     "project_arrangement_block_window",
+    "project_visible_blocks",
+    "viewport_for_initial_view",
+    "zoom_in",
+    "zoom_out",
+    "pan",
     "request_arrangement_block_toggle",
     "request_arrangement_group_toggle",
     "request_arrangement_track_toggle",
