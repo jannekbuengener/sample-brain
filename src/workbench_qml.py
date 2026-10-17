@@ -9,6 +9,7 @@ deliberately live in :mod:`src.workbench_qml_spike`.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from fractions import Fraction
 import inspect
 import json
 import math
@@ -5898,6 +5899,20 @@ ApplicationWindow {
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                // C2c1: Ctrl + Mouse Wheel = zoom; Wheel without Ctrl = no-op.
+                // Horizontal wheel (no Ctrl) = pan.
+                onWheel: {
+                    if (wheel.modifiers & Qt.ControlModifier) {
+                        if (wheel.angleDelta.y < 0)
+                            window.arrangement.zoomOut()
+else
+                            window.arrangement.zoomIn()
+                        wheel.accepted = true
+                    } else if (Math.abs(wheel.angleDelta.x) > 0) {
+                        window.arrangement.panHorizontal(-wheel.angleDelta.x)
+                        wheel.accepted = true
+                    }
+                }
             }
 
             // Direction B (#1079): subtle 2.5D black stage — solid surface
@@ -5921,6 +5936,49 @@ ApplicationWindow {
                 border.width: 1
                 border.color: window.arrangement.anyActiveStep
                                ? theme.actionActive : theme.borderSubtle
+                // C2c1: Timeline viewport — horizontal scale with block alignment,
+                // subtle bar/block seams. Pure presentation, no musical truth.
+                Item {
+                    id: timelineViewport
+                    objectName: "timelineViewport"
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    height: 40
+
+                    // Horizontal time scale line
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        height: 1
+                        color: theme.borderSubtle
+                    }
+
+                    // Block position markers — derived from viewport block range
+                    Repeater {
+                        model: window.arrangement.groupRows.length > 0
+                            ? window.arrangement.groupRows[0].blocks : []
+                        Rectangle {
+                            x: (modelData.blockIndex * window.arrangement.arrangementBlockLengthQn - window.arrangement.viewportStartQn) * (timelineViewport.width / window.arrangement.viewportVisibleQn)
+                            width: window.arrangement.arrangementBlockLengthQn * (timelineViewport.width / window.arrangement.viewportVisibleQn)
+                            height: 24
+                            color: "transparent"
+                            border.width: 1
+                            border.color: theme.borderSubtle
+                            opacity: 0.15
+                            Label {
+                                anchors.centerIn: parent
+                                text: modelData.blockIndex
+                                color: theme.textSecondary
+                                font.pixelSize: 9
+                                opacity: 0.6
+                            }
+                        }
+                    }
+                    // Marker geometry follows Direction B bridge bindings (C2c1 review F4).
+                }
+
                 Column {
                     anchors.left: parent.left
                     anchors.right: parent.right
@@ -6407,6 +6465,8 @@ def _qml_interaction_bridge(
     on_harmony_waveform_request: Callable[[int, int], None] | None = None,
     on_open_channel_rack: Callable[[], None] | None = None,
     on_return_to_screen1: Callable[[], None] | None = None,
+    tempo_map_provider: Callable[[], object] | None = None,
+    on_tempo_map_replaced: Callable[[], None] | None = None,
 ):
     """Expose the pure interaction adapter to QML only when Qt is installed."""
     from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
@@ -6419,6 +6479,8 @@ def _qml_interaction_bridge(
         def __init__(self) -> None:
             super().__init__()
             adapter._on_sample_context_closed = self._emit_sample_context_closed
+            # C2c1 review F3: observe tempo-map replacement from the layout side.
+            self._tempo_map = tempo_map_provider() if tempo_map_provider is not None else None
 
         def _emit_sample_context_closed(self) -> None:
             self.sampleContextClosed.emit()
@@ -6427,6 +6489,12 @@ def _qml_interaction_bridge(
             adapter.sync_visible_state_labels()
             if on_state_changed is not None:
                 on_state_changed()
+            if tempo_map_provider is not None:
+                tempo_map = tempo_map_provider()
+                if tempo_map is not self._tempo_map:
+                    self._tempo_map = tempo_map
+                    if on_tempo_map_replaced is not None:
+                        on_tempo_map_replaced()
             self.state_changed.emit()
 
         @Slot()
@@ -7259,6 +7327,14 @@ def _qml_arrangement_bridge(session, adapter):
         project_arrangement_for_qml,
         request_arrangement_field_toggle,
         project_arrangement_block_window,
+        project_visible_blocks,
+        viewport_for_initial_view,
+        zoom_in,
+        zoom_out,
+        pan,
+        rebase_viewport_for_tempo_change,
+        ARRANGEMENT_BLOCK_LENGTH_QUARTER_NOTES,
+        ArrangementViewportState,
     )
     from . import workbench_arrangement_qml as arrangement_seam
 
@@ -7318,6 +7394,9 @@ def _qml_arrangement_bridge(session, adapter):
             self._group_rows: list = []
             # C2b: expand/collapse is presentation-only state
             self._expanded_groups: set[str] = set()
+            # C2c1: viewport / zoom / pan presentation state
+            self._tempo_map = None
+            self._viewport: ArrangementViewportState | None = None
             self._any_active_step = False
             self._last_entry_outcome = ""
             self._last_entry_message = ""
@@ -7368,9 +7447,28 @@ def _qml_arrangement_bridge(session, adapter):
             self._group_rows = []
             if self._arrangement_mode_enabled and self._projection_mode == "ARRANGEMENT":
                 try:
-                    window = arrangement_seam.project_arrangement_block_window(
-                        session, visible_start_block, visible_block_count
-                    )
+                    # C2c1: Use tempo map from session transport
+                    tempo_map = getattr(session.transport, "tempo_map", None)
+                    if tempo_map is not None:
+                        if tempo_map is not self._tempo_map:
+                            if (
+                                self._viewport is not None
+                                and self._tempo_map is not None
+                            ):
+                                # C2c1 review F3: rebase the same wall-clock
+                                # slice onto the replaced tempo map before
+                                # the new projection runs.
+                                self._viewport = rebase_viewport_for_tempo_change(
+                                    self._viewport, self._tempo_map, tempo_map
+                                )
+                            self._tempo_map = tempo_map
+                        if self._viewport is None:
+                            self._viewport = viewport_for_initial_view(tempo_map)
+                        window = project_visible_blocks(session, self._viewport)
+                    else:
+                        window = arrangement_seam.project_arrangement_block_window(
+                            session, visible_start_block, visible_block_count
+                        )
                     blocks = {b.block_index: b for b in window.blocks}
                     track_rows_by_group = getattr(window, "track_rows_by_group", {})
                     self._group_rows = [
@@ -7512,6 +7610,77 @@ def _qml_arrangement_bridge(session, adapter):
             )
             self._refresh()
             return str(result.outcome)
+
+        @Slot(result=str)
+        def zoomIn(self) -> str:
+            """C2c1: Zoom in (Ctrl+Wheel Up). Reduces visible duration."""
+            if self._viewport is None or self._tempo_map is None:
+                return "fail_closed"
+            self._viewport = zoom_in(
+                self._viewport, self._viewport.start_quarter_note + self._viewport.visible_duration_qn / 2, self._tempo_map
+            )
+            self._refresh()
+            return "zoomed"
+
+        @Slot(result=str)
+        def zoomOut(self) -> str:
+            """C2c1: Zoom out (Ctrl+Wheel Down). Increases visible duration."""
+            if self._viewport is None or self._tempo_map is None:
+                return "fail_closed"
+            self._viewport = zoom_out(
+                self._viewport, self._viewport.start_quarter_note + self._viewport.visible_duration_qn / 2, self._tempo_map
+            )
+            self._refresh()
+            return "zoomed"
+
+        @Slot(float, result=str)
+        def panHorizontal(self, delta_qn: float) -> str:
+            """C2c1: Horizontal pan. Changes only viewport start."""
+            if self._viewport is None:
+                return "fail_closed"
+            self._viewport = pan(self._viewport, Fraction(str(delta_qn)))
+            self._refresh()
+            return "panned"
+
+        @Property(float, notify=state_changed)
+        def viewportStartQn(self) -> float:
+            """Viewport start position in quarter notes."""
+            if self._viewport is None:
+                return 0.0
+            return float(self._viewport.start_quarter_note)
+
+        @Property(float, notify=state_changed)
+        def viewportVisibleDurationQn(self) -> float:
+            """Visible duration in quarter notes."""
+            if self._viewport is None:
+                return 0.0
+            return float(self._viewport.visible_duration_qn)
+
+        @Property(float, notify=state_changed)
+        def arrangementBlockLengthQn(self) -> float:
+            """C2c1 review F4: authority-defined block length in quarter notes."""
+            return float(ARRANGEMENT_BLOCK_LENGTH_QUARTER_NOTES)
+
+        @Property(float, notify=state_changed)
+        def viewportVisibleQn(self) -> float:
+            """C2c1 review F4: visible duration used by marker geometry."""
+            if self._viewport is None:
+                return 0.0
+            return float(self._viewport.visible_duration_qn)
+
+        @Property(float, notify=state_changed)
+        def viewportZoomLevel(self) -> float:
+            """Current zoom level."""
+            if self._viewport is None:
+                return 1.0
+            return self._viewport.zoom_level
+
+        @Property(float, notify=state_changed)
+        def viewportLogicalHorizonQn(self) -> float:
+            """Logical horizon in quarter notes (10-minute domain max)."""
+            if self._viewport is None:
+                return 0.0
+            return float(self._viewport.logical_horizon_qn)
 
         @Property(bool, notify=state_changed)
         def arrangementModeEnabled(self) -> bool:
@@ -8670,6 +8839,14 @@ def _qml_engine(
         on_harmony_waveform_request=request_harmony_waveforms,
         on_open_channel_rack=open_channel_rack,
         on_return_to_screen1=return_to_screen1,
+        # C2c1 review F3: reconnect the arrangement viewport when the session
+        # replaces the transport's tempo map (ADR C2c1 rebase seam).
+        tempo_map_provider=(
+            (lambda: getattr(session.transport, "tempo_map", None))
+            if session is not None
+            else None
+        ),
+        on_tempo_map_replaced=arrangement_bridge.refresh,
     )
     adapter._runtime_composition = runtime_composition
     # #1077: restore workspace visibility preference only for production-composed
