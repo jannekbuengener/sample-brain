@@ -3,17 +3,18 @@ from __future__ import annotations
 import ast
 import importlib
 import importlib.metadata
+import math
 import sys
 import tomllib
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "0.1.0"
+EXPECTED_VERSION = "0.1.1"
 EXPECTED_WHEEL_URL = (
     "https://github.com/jannekbuengener/sample-brain-analysis/releases/download/"
-    "v0.1.0/sample_brain_analysis-0.1.0-py3-none-any.whl"
-    "#sha256=0c49d054eda265e078b79b4170f0a572b289175177c95c9a4ce9c34fbdc621f5"
+    "v0.1.1/sample_brain_analysis-0.1.1-py3-none-any.whl"
+    "#sha256=3c5d3d97dbc5d171b65c19a56bba2317f64ebcbaaf6dcd075c836b8b29385da7"
 )
 
 MODULE_ALIASES = {
@@ -44,6 +45,32 @@ def test_sample_brain_pins_released_analysis_wheel() -> None:
     requirements = (REPO_ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
     assert expected in requirements
     assert importlib.metadata.version("sample-brain-analysis") == EXPECTED_VERSION
+
+
+def test_non_finite_reference_bpm_is_rejected_through_legacy_harmony_consumer_path() -> None:
+    harmony = importlib.import_module("src.harmony")
+    candidate = harmony.HarmonyInput(
+        display_name="candidate",
+        relative_path="candidate.wav",
+        path="/synthetic/candidate.wav",
+        bpm=128.0,
+        key="Cmaj",
+        pred_type="kick",
+    )
+
+    for bpm in (math.nan, math.inf, -math.inf):
+        reference = harmony.HarmonyInput(
+            display_name="reference",
+            relative_path="reference.wav",
+            path="/synthetic/reference.wav",
+            bpm=bpm,
+            key="Cmaj",
+            pred_type="kick",
+        )
+        matches, error = harmony.find_harmony_matches(reference, [candidate])
+
+        assert matches == []
+        assert error == "Ähnliche Samples benötigen ein analysiertes BPM."
 
 
 def test_legacy_analysis_modules_are_external_module_aliases() -> None:
