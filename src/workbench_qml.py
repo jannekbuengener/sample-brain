@@ -5885,6 +5885,14 @@ ApplicationWindow {
             objectName: "arrangementStage"
             anchors.fill: parent
 
+            // #1080 Slice A: the stage is a read-only projection — this
+            // input layer keeps pointer events from reaching the covered
+            // Edit workspace beneath (no invisible mutation or audition).
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+            }
+
             // Direction B (#1079): subtle 2.5D black stage — solid surface
             // hierarchy and hairlines from Theme Authority tokens only.
             Rectangle {

@@ -354,6 +354,14 @@ def test_gates_4_7_8_10_qml_stage_projects_read_only_32_field_pattern():
     # The stage is a fully non-interactive read-only projection; the return
     # route lives in the Browser nav, not in stage-owned command controls.
     assert region.count("onClicked") == 0
+    # Input integrity: the read-only stage blocks pointer events from
+    # falling through into the covered Edit workspace beneath it (no
+    # invisible mutation or audition through the overlay).
+    assert "MouseArea {" in region
+    assert (
+        "acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton"
+        in region
+    )
     # Focus ownership: claim focus once on activation, return deterministic
     # Browser focus on every deactivation path.
     assert "onLoaded: item.forceActiveFocus()" in region
@@ -410,17 +418,23 @@ def _visual_items_named(root, name):
 
 
 def _click_item(window, item, settle, app) -> None:
-    from PySide6.QtCore import QEvent, QPointF, Qt
-    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtCore import QPointF
 
     center = item.mapToItem(
         window.contentItem(), QPointF(item.width() / 2, item.height() / 2)
     )
+    _click_point(window, center, settle, app)
+
+
+def _click_point(window, point, settle, app) -> None:
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QMouseEvent
+
     for action in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease):
         event = QMouseEvent(
             action,
-            center,
-            window.mapToGlobal(center.toPoint()),
+            point,
+            window.mapToGlobal(point.toPoint()),
             Qt.MouseButton.LeftButton,
             Qt.MouseButton.LeftButton,
             Qt.KeyboardModifier.NoModifier,
@@ -522,6 +536,23 @@ def test_gates_3_9_10_runtime_owner_route_single_surface_and_return(
             session.transport,
             session.audition,
         ) == owners
+        # Gate 10 (runtime part): pointer input cannot fall through the
+        # read-only stage into the covered Edit workspace — clicking a
+        # covered Browser row must not change Edit selection state.
+        from PySide6.QtCore import QPointF
+
+        vm = engine._screen1_interaction_adapter.view_model
+        selected_before = vm.selected_browser_index
+        browser = window.findChild(QQuickItem, "browserList")
+        assert browser is not None
+        row_height = float(window.property("densityRowHeight"))
+        row_point = browser.mapToItem(
+            window.contentItem(), QPointF(browser.width() / 2, row_height / 2)
+        )
+        _click_point(window, row_point, settle, app)
+        settle(app)
+        assert vm.selected_browser_index == selected_before
+        assert engine._screen1_interaction_adapter.preview_active is False
 
         # Return through the Browser nav (the Edit destination) and the
         # same #1078 state owner.
