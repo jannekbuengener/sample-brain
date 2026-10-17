@@ -47,7 +47,12 @@ FREEZE_CORRECTIONS (explicit, pre-merge; gate semantics unchanged):
   and_minimal_chrome`) forbids the literal Edit-mode word in ``QML_SOURCE``:
   the entry slot is ``enterArrangement()`` and the return routes through the
   Browser nav (the Edit destination) as ``returnToBrowser()``; the stage
-  itself is a fully non-interactive read-only projection.
+  itself is a read-only projection of the aggregate cycle row.
+- Slice B correction (`test_gates_4_7_8_10_qml_stage_projects_read_only_32_
+  field_pattern`): the stage's only ``onClicked`` is the editable
+  channel-field cell routed to the Python interaction seam. Slice A's gate
+  semantics (no misleading interactivity, no audition, no persistence
+  bypass, no legacy rack seam, aggregate row read-only) are unchanged.
 """
 
 from __future__ import annotations
@@ -351,9 +356,13 @@ def test_gates_4_7_8_10_qml_stage_projects_read_only_32_field_pattern():
         "saveWorkspacePreset",
     ):
         assert forbidden not in region
-    # The stage is a fully non-interactive read-only projection; the return
-    # route lives in the Browser nav, not in stage-owned command controls.
-    assert region.count("onClicked") == 0
+    # Slice B correction (explicit, gate semantics unchanged): the stage now
+    # carries exactly ONE click intent — the editable channel-field cell of
+    # the Python-authority one-shot rows. The aggregate row and every other
+    # stage area stay non-interactive; the stage still owns no return,
+    # audition, persistence, or legacy rack command.
+    assert region.count("onClicked") == 1
+    assert "toggleArrangementField(" in region
     # Input integrity: the read-only stage blocks pointer events from
     # falling through into the covered Edit workspace beneath it (no
     # invisible mutation or audition through the overlay).

@@ -69,6 +69,7 @@ import pytest
 
 from src import track_package as tp
 from src import workbench_session as ws
+from src.workbench_session_store import snapshot_from_track_package_musical
 from src.arrangement_32_field_time import (
     TOTAL_FIELDS,
     add_user_channel_32_field,
@@ -628,7 +629,7 @@ def test_gate_15_mutation_persists_through_existing_active_track_owner(draft):
     assert s.track_package_dirty is False
     opened = tp.open_track_package(root)
     assert opened.ok, opened.message
-    snapshot = tp.snapshot_from_track_package_musical(
+    snapshot = snapshot_from_track_package_musical(
         opened.manifest.musical, root
     )
     rack = snapshot.channel_rack
@@ -905,6 +906,18 @@ def _cells_by_field_index(stage, row_channel_id=None):
     return mapping
 
 
+def _click_cell(window, stage, field_index, settle, app) -> None:
+    """Click the *current* cell for one field index.
+
+    Every successful mutation re-projects and rebuilds the row Repeater
+    delegates, so the cell item must be re-resolved for each click — never
+    cached across mutations.
+    """
+    cells = _cells_by_field_index(stage)
+    assert field_index in cells, f"field {field_index} has no rendered cell"
+    _click_item(window, cells[field_index], settle, app)
+
+
 def _owning_row_id(item):
     """Channel id of the arrangementChannelRow owning a delegate item."""
     current = item
@@ -958,7 +971,7 @@ def test_gates_18_runtime_field_clicks_projection_persistence_and_no_fall_throug
         # Click field 0: exactly one Python-owned mutation, immediate
         # reprojection, upper stage active — and no browser audition behind
         # the Arrangement stage.
-        _click_item(window, cells[0], settle, app)
+        _click_cell(window, stage, 0, settle, app)
         settle(app)
         assert bridge.lastFieldToggleOutcome == "mutated"
         assert bridge.anyActiveStep is True
@@ -973,9 +986,9 @@ def test_gates_18_runtime_field_clicks_projection_persistence_and_no_fall_throug
         assert not session.transport.playing
 
         # Click field 1 and field 31: canonical positions, not legacy steps.
-        _click_item(window, cells[1], settle, app)
+        _click_cell(window, stage, 1, settle, app)
         settle(app)
-        _click_item(window, cells[31], settle, app)
+        _click_cell(window, stage, 31, settle, app)
         settle(app)
         rack = session.channel_rack.state
         assert {
@@ -984,11 +997,11 @@ def test_gates_18_runtime_field_clicks_projection_persistence_and_no_fall_throug
 
         # Remove the last active field (31): upper stage stays active while
         # fields remain, then all three removals make it quiet again.
-        _click_item(window, cells[31], settle, app)
+        _click_cell(window, stage, 31, settle, app)
         settle(app)
         assert bridge.anyActiveStep is True
-        _click_item(window, cells[1], settle, app)
-        _click_item(window, cells[0], settle, app)
+        _click_cell(window, stage, 1, settle, app)
+        _click_cell(window, stage, 0, settle, app)
         settle(app)
         assert bridge.anyActiveStep is False
         assert session.channel_rack.state.pattern.triggers == ()
@@ -996,7 +1009,7 @@ def test_gates_18_runtime_field_clicks_projection_persistence_and_no_fall_throug
 
         # Re-set field 12, return to Browser (Edit destination), re-enter via
         # the product route: state and owners survive the round trip.
-        _click_item(window, cells[12], settle, app)
+        _click_cell(window, stage, 12, settle, app)
         settle(app)
         assert bridge.anyActiveStep is True
         track_id = session.active_track_id
@@ -1021,7 +1034,8 @@ def test_gates_18_runtime_field_clicks_projection_persistence_and_no_fall_throug
         )
         stage = window.findChild(QQuickItem, "arrangementStage")
         cells = _cells_by_field_index(stage)
-        _click_item(window, cells[12], settle, app)
+        assert sorted(cells) == list(range(32))
+        _click_cell(window, stage, 12, settle, app)
         settle(app)
         assert session.channel_rack.state.pattern.triggers == ()
         assert bridge.anyActiveStep is False
