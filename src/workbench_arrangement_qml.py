@@ -558,7 +558,10 @@ def zoom_in(viewport: ArrangementViewportState, anchor_qn: Fraction, tempo_map) 
     """Zoom in: reduce visible duration, keep anchor area stable.
 
     Moves to the next more-zoomed-in discrete level. Clamped at the maximum
-    zoom level for block readability.
+    zoom level for block readability. At extreme tempos a rung can be derived
+    from an uncapped base duration; the rung duration is capped with the same
+    projection bound as the initial viewport so ``project_visible_blocks``
+    stays within ``MAX_ARRANGEMENT_BLOCK_WINDOW``.
     """
     try:
         current_index = list(ZOOM_LEVELS).index(viewport.zoom_level)
@@ -567,6 +570,9 @@ def zoom_in(viewport: ArrangementViewportState, anchor_qn: Fraction, tempo_map) 
     next_index = min(current_index + 1, len(ZOOM_LEVELS) - 1)
     new_level = ZOOM_LEVELS[next_index]
     new_duration = _visible_duration_for_zoom(new_level, tempo_map)
+    rung_cap = _max_zoom_out_duration_qn()
+    if new_duration > rung_cap:
+        new_duration = rung_cap
 
     # Re-anchor: keep the anchor within the new visible window where possible.
     new_start = anchor_qn - (new_duration / 2)
@@ -670,13 +676,12 @@ def pan(viewport: ArrangementViewportState, delta_qn: Fraction) -> ArrangementVi
 
 
 def rebase_viewport_for_tempo_change(viewport: ArrangementViewportState, previous, current) -> ArrangementViewportState:
-    """Rebase a viewport so the same wall-clock slice survives a tempo-map change.
+    """The visible span keeps its wall-clock duration under the previous tempo map and is re-expressed under the current tempo map.
 
-    The visible span keeps its wall-clock duration under the previous tempo map
-    and is re-expressed under the current tempo map. Pan position and zoom are
-    preserved; the start is clamped into the valid range so the viewport never
-    shows beyond the horizon after rebasing. The logical horizon is kept from
-    the incoming viewport so a duration clamp cannot silently shrink it.
+    Pan position and zoom are preserved; the start is clamped into the valid
+    range so the viewport never shows beyond the horizon after rebasing. The
+    logical horizon is kept from the incoming viewport so a duration clamp
+    cannot silently shrink it.
     """
     old_frames = int(previous.quarter_note_to_frame(viewport.visible_duration_qn))
     old_seconds = Fraction(old_frames, previous.sample_rate)

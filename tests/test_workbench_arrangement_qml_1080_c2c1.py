@@ -298,6 +298,66 @@ def test_zoom_pan_after_tempo_change_remains_valid(session, tempo_map):
     assert zoomed.visible_duration_qn <= zoomed.logical_horizon_qn
 
 
+def test_zoom_in_at_extreme_tempo_keeps_block_window_bounded(session):
+    """F8 (Codex P2): zoom rungs from uncapped base durations stay bounded.
+
+    At extreme tempos a zoom rung derived from the uncapped base duration can
+    project more blocks than MAX_ARRANGEMENT_BLOCK_WINDOW; the rung duration
+    must be capped like the initial viewport so the group rows stay visible.
+    """
+    fast_tempo = tempo(3000)
+    vp = seam.viewport_for_initial_view(fast_tempo)
+    zoomed = seam.zoom_in(vp, Fraction(100), fast_tempo)
+    assert zoomed.zoom_level == 2.0
+    asserted_cap = seam._max_zoom_out_duration_qn()
+    assert zoomed.visible_duration_qn <= asserted_cap
+    # Projection succeeds and stays within the consumer block budget.
+    window = seam.project_visible_blocks(session, zoomed)
+    assert 0 < len(window.blocks) <= seam.MAX_ARRANGEMENT_BLOCK_WINDOW
+    assert len(window.group_blocks) > 0
+
+
+def test_rebase_viewport_tempo_change_preserves_wall_clock_length(session):
+    """Rebase maps the visible span wall-clock through the tempo change.
+
+    The visible duration is re-expressed under the current tempo map so the
+    slice keeps its wall-clock length, while the musical pan position is
+    carried over and clamped into the new horizon.
+    """
+    previous = tempo(120)
+    current = tempo(60)
+    viewport = seam.ArrangementViewportState(
+        start_quarter_note=Fraction(600),
+        visible_duration_qn=Fraction(360),
+        zoom_level=1.0,
+        logical_horizon_qn=Fraction(1200),
+    )
+    rebased = seam.rebase_viewport_for_tempo_change(viewport, previous, current)
+    # Old span: 360 QN at 120 BPM = 180 s wall clock -> 180 QN at 60 BPM.
+    assert rebased.start_quarter_note == Fraction(600)
+    assert rebased.visible_duration_qn == Fraction(180)
+    assert rebased.zoom_level == 1.0
+    assert rebased.logical_horizon_qn == Fraction(1200)
+    assert rebased.start_quarter_note + rebased.visible_duration_qn <= rebased.logical_horizon_qn
+    # Same slice in QN must project within bounds.
+    window = seam.project_visible_blocks(session, rebased)
+    assert len(window.blocks) > 0
+
+
+def test_rebase_viewport_tempo_change_faster_direction_wall_clock(session):
+    """Rebasing 60 -> 120 BPM keeps the same wall-clock duration."""
+    previous = tempo(60)
+    current = tempo(120)
+    viewport = seam.viewport_for_initial_view(previous)
+    rebased = seam.rebase_viewport_for_tempo_change(viewport, previous, current)
+    # 180 QN at 60 BPM = 180 s wall clock -> 360 QN at 120 BPM.
+    assert rebased.start_quarter_note == Fraction(0)
+    assert rebased.visible_duration_qn == Fraction(360)
+    assert rebased.logical_horizon_qn == Fraction(600)
+    window = seam.project_visible_blocks(session, rebased)
+    assert len(window.blocks) > 0
+
+
 # --- Group/Track alignment --------------------------------------------------- #
 
 def test_visible_group_rows_use_same_block_range(session, tempo_map):
