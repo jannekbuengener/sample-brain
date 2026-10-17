@@ -358,6 +358,10 @@ _GROUP_LABELS = {
     "pg_vocals": "Vocals",
 }
 
+# Allocation budget per call, independent of tempo/musical horizon. Consumers
+# page larger viewports through multiple windows; no implicit horizon list.
+MAX_ARRANGEMENT_BLOCK_WINDOW = 64
+
 
 def _arrangement_context(session: object) -> tuple:
     state = session.arrangement_state
@@ -378,6 +382,8 @@ def project_arrangement_block_window(
     """
     if any(type(v) is not int or v < 0 for v in (start_block, block_count)):
         raise ArrangementError("invalid_block_window")
+    if block_count > MAX_ARRANGEMENT_BLOCK_WINDOW:
+        raise ArrangementError("block_window_too_large")
     state, rack, tempo_map = _arrangement_context(session)
     groups = tuple(
         ArrangementQmlGroup(g, _GROUP_LABELS[g], channels)
@@ -401,7 +407,8 @@ def project_arrangement_block_window(
         ArrangementQmlTrackBlock(
             c.channel_id, state.membership(c.channel_id, rack), b.block_index,
             (c.channel_id, b.block_index) not in state.disabled_track_blocks,
-            state.effective(c.channel_id, b.block_index, rack, tempo_map)
+            "unresolved" if state.membership(c.channel_id, rack) == "unmapped"
+            else state.effective(c.channel_id, b.block_index, rack, tempo_map)
             if b.status == "eligible" else b.status,
         )
         for b in blocks for c in rack.channels
@@ -477,6 +484,7 @@ def request_arrangement_track_toggle(
 
 
 __all__ = [
+    "MAX_ARRANGEMENT_BLOCK_WINDOW",
     "ArrangementQmlGroup",
     "ArrangementQmlBlock",
     "ArrangementQmlGroupBlock",
