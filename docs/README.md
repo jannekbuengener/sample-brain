@@ -30,6 +30,7 @@ internal agent- and process docs are clearly separated.
 
 | Document | What it is |
 |---|---|
+| [Architecture Visuals](visuals/README.md) | Quick orientation for system, ownership, and agent workflow; canon and live state remain authoritative |
 | [Target Architecture](TARGET_ARCHITECTURE.md) | Module boundaries, pipeline contracts |
 | [Analysis Package Boundary v1](ANALYSIS_PACKAGE_BOUNDARY_V1.md) | Post-#1151 package ownership, compatibility aliases, and Sample Brain adapter boundary |
 | [Analysis Consumer Contract v1](ANALYSIS_PUBLIC_CONTRACT_V1.md) | Sample Brain config adaptation, loader compatibility, and application persistence contract |
