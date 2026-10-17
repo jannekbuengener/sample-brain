@@ -109,3 +109,19 @@ def test_suggest_attack_ms_unreadable_file_returns_none(tmp_path: Path) -> None:
     wav = tmp_path / "unreadable.wav"
     wav.write_bytes(b"not an audio file")
     assert suggest_attack_ms(wav) is None
+
+
+def test_attack_near_file_end_uses_rounded_duration_clamp(tmp_path: Path) -> None:
+    sample_rate = 44100
+    samples = np.zeros(904, dtype=np.float32)
+    samples[882:] = 0.5
+    wav = tmp_path / "end.wav"
+    sf.write(wav, samples, sample_rate, subtype="PCM_16")
+
+    timebase = probe_audio(wav)
+    assert timebase is not None
+    assert timebase.n_samples == 904
+    suggestion = suggest_attack_ms(wav)
+
+    assert suggestion is not None
+    assert suggestion.attack_ms == 19
