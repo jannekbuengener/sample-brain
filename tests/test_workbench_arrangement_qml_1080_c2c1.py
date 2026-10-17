@@ -419,3 +419,75 @@ def test_qml_horizontal_pan_binding():
     stage = QML_SOURCE.split('id: arrangementStageComponent', 1)[1].split('id: arrangementStageHeader', 1)[0]
     assert 'horizontal' in stage.lower() or 'Pan' in stage or 'pan' in stage.lower()
 
+
+# --- Review findings F5/F6: anchor recenter + bounded zoom-out rungs ---------- #
+
+def test_zoom_out_recenters_around_anchor(tempo_map):
+    """Zoom out recalculates the start from the anchor, not the old start."""
+    vp = seam.viewport_for_initial_view(tempo_map)  # 0..360 @ 120 BPM
+    zoomed_in = seam.zoom_in(vp, Fraction(180), tempo_map)  # 90..270, dur 180
+    assert zoomed_in.start_quarter_note == Fraction(90)
+    zoomed_out = seam.zoom_out(zoomed_in, Fraction(270), tempo_map)  # dur 360
+    assert zoomed_out.visible_duration_qn == Fraction(360)
+    assert zoomed_out.start_quarter_note == Fraction(90)
+    center = zoomed_out.start_quarter_note + zoomed_out.visible_duration_qn / 2
+    assert center == Fraction(270)
+
+
+def test_zoom_out_anchor_before_clamped_start(tempo_map):
+    """Anchor near the left edge recenter clamps at 0 before clamping."""
+    vp = seam.viewport_for_initial_view(tempo_map)  # 0..360
+    zoomed_in = seam.zoom_in(vp, Fraction(180), tempo_map)  # 90..270, dur 180
+    zoomed_out = seam.zoom_out(zoomed_in, Fraction(90), tempo_map)
+    assert zoomed_out.visible_duration_qn == Fraction(360)
+    assert zoomed_out.start_quarter_note == Fraction(0)
+
+
+def test_zoom_out_widest_rung_stays_strictly_below_horizon(tempo_map):
+    """Repeated zoom-out stops on a discrete rung below the logical horizon."""
+    vp = seam.viewport_for_initial_view(tempo_map)  # dur 360, horizon 1200
+    for _ in range(10):
+        vp = seam.zoom_out(vp, Fraction(180), tempo_map)
+    # Widest rung is 0.5 -> 720 QN at 120 BPM (0.25 -> 1440 is rejected)
+    assert vp.zoom_level == 0.5
+    assert vp.visible_duration_qn < vp.logical_horizon_qn
+    assert vp.visible_duration_qn < seam._max_zoom_out_duration_qn()
+
+
+def test_zoom_out_never_materializes_full_horizon_window(session, tempo_map):
+    """Max zoom-out projection stays within one bounded block window."""
+    vp = seam.viewport_for_initial_view(tempo_map)
+    for _ in range(10):
+        vp = seam.zoom_out(vp, Fraction(180), tempo_map)
+    window = seam.project_visible_blocks(session, vp)
+    assert len(window.blocks) <= seam.MAX_ARRANGEMENT_BLOCK_WINDOW
+    assert len(window.blocks) < 18  # not the full ~10-min horizon
+
+
+def test_zoom_out_skips_rung_that_exceeds_block_window_buget(session, tempo_map):
+    """At very high BPM an otherwise valid rung wider than the window cap is
+    skipped and the viewport stays unchanged (no block_window_too_large)."""
+    fast_map = tempo(800)
+    vp = seam.viewport_for_initial_view(fast_map)  # base 2400 QN < cap 3904
+    zoomed = seam.zoom_out(vp, Fraction(100), fast_map)  # rung 0.5 -> 4800 QN
+    assert zoomed.visible_duration_qn == vp.visible_duration_qn
+    assert zoomed.zoom_level == vp.zoom_level
+    assert zoomed.start_quarter_note == vp.start_quarter_note
+    # Still projectable within one bounded window
+    window = seam.project_visible_blocks(session, vp)
+    assert len(window.blocks) <= seam.MAX_ARRANGEMENT_BLOCK_WINDOW
+
+
+def test_zoom_out_at_large_horizon_stops_at_widest_rung(session):
+    """At a slow tempo every wider rung still fits under the horizon; zoom_out
+    reaches the widest rung and then stays there (zero-mutation at the cap)."""
+    slow_map = tempo(60)  # horizon 600 QN; rung 0.25 -> 720 QN exceeds horizon
+    vp = seam.viewport_for_initial_view(slow_map)
+    for _ in range(10):
+        vp = seam.zoom_out(vp, Fraction(100), slow_map)
+    assert vp.zoom_level == 0.5
+    assert vp.visible_duration_qn == Fraction(360)
+    assert vp.visible_duration_qn < Fraction(600)
+    final = seam.zoom_out(vp, Fraction(100), slow_map)
+    assert final == vp
+

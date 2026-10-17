@@ -574,27 +574,63 @@ def zoom_in(viewport: ArrangementViewportState, anchor_qn: Fraction, tempo_map) 
     )
 
 
-def zoom_out(viewport: ArrangementViewportState, anchor_qn: Fraction, tempo_map) -> ArrangementViewportState:
-    """Zoom out: increase visible duration, clamped at the logical horizon.
+def _max_zoom_out_duration_qn() -> Fraction:
+    """Largest zoom-out duration that still fits one bounded block window.
 
-    Moves to the next less-zoomed-in discrete level. Clamped so the visible
-    duration never exceeds the logical horizon.
+    ``project_visible_blocks`` materializes at most
+    ``floor(duration / block) + 1 + 2 * OVSCAN_BLOCKS`` blocks per window, so
+    any duration below this cap keeps the window within the consumer budget
+    (``MAX_ARRANGEMENT_BLOCK_WINDOW``) even under ovscan/end clamping.
+    """
+    margin = 1 + 2 * OVSCAN_BLOCKS
+    return Fraction(
+        (MAX_ARRANGEMENT_BLOCK_WINDOW - margin)
+        * ARRANGEMENT_BLOCK_LENGTH_QUARTER_NOTES
+    )
+
+
+def _zoom_out_rung_within_limits(
+    new_duration: Fraction, logical_horizon_qn: Fraction
+) -> bool:
+    """A wider zoom rung is accepted only while it stays comfortable.
+
+    Strictly below the logical horizon (the full 10-minute horizon must never
+    be materialized at once, per DESIGN_CONTRACT) and below the one-window
+    block budget for a bounded ``project_visible_blocks`` read.
+    """
+    if not (new_duration < logical_horizon_qn):
+        return False
+    if not (new_duration < _max_zoom_out_duration_qn()):
+        return False
+    return True
+
+
+def zoom_out(viewport: ArrangementViewportState, anchor_qn: Fraction, tempo_map) -> ArrangementViewportState:
+    """Zoom out: widen the viewport to the next discreet, bounded rung.
+
+    Moves to the next less-zoomed-in discrete level only when that rung stays
+    strictly below the logical horizon and still fits one bounded block
+    window. Otherwise the current viewport is kept unchanged. The viewport
+    recenters around the anchor when a wider rung is accepted.
     """
     try:
         current_index = list(ZOOM_LEVELS).index(viewport.zoom_level)
     except ValueError:
         current_index = 2  # default to 1.0
     next_index = max(current_index - 1, 0)
+    if next_index == current_index:
+        return viewport
     new_level = ZOOM_LEVELS[next_index]
     new_duration = _visible_duration_for_zoom(new_level, tempo_map)
 
-    # Clamp visible duration to logical horizon
-    if new_duration > viewport.logical_horizon_qn:
-        new_duration = viewport.logical_horizon_qn
+    if not _zoom_out_rung_within_limits(new_duration, viewport.logical_horizon_qn):
+        return viewport
 
+    # Re-anchor: keep the anchor in the center of the new visible window.
+    new_start = anchor_qn - new_duration / 2
     new_start = _clamp_viewport_start(
         ArrangementViewportState(
-            start_quarter_note=viewport.start_quarter_note,
+            start_quarter_note=new_start,
             visible_duration_qn=new_duration,
             zoom_level=new_level,
             logical_horizon_qn=viewport.logical_horizon_qn,
