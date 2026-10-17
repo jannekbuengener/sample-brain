@@ -1,12 +1,12 @@
-"""#1080 Arrangement QML projection seam — Slice A read-only + Slice B channels.
+"""#1080 Arrangement projection/intents — Slice A/B sequencer + C1 masks.
 
 Immutable renderer-facing projection types over the merged Python-owned
 seams. Python owns the projection mode (``WorkbenchSession`` #1078), the
 single Pattern truth (``channel_rack`` / #1086 frozen 32-field model), the
 channel classification (``sample_class_for_channel`` single consumption
 point), and the active-track identity. This module only *projects* and, since
-Slice B, routes the QML field-click *intent*; it never owns, copies, or
-mutates Pattern, block, mask, marker, or persistence state.
+Slice B, routes field-click intents and, since C1, bounded block/group/track
+mask intents through the existing Python owners. It owns no musical store.
 
 Composed seams (no duplication):
 - ``src.workbench_session`` — sole ``projection_mode`` / transition owner;
@@ -17,6 +17,8 @@ Composed seams (no duplication):
   (``sample_class_for_channel`` / ``is_point_trigger_safe``);
 - ``src.workbench_channel_rack`` — row-kind vocabulary and the single
   ``ChannelRackController.toggle_arrangement_field`` mutation command.
+- ``src.arrangement_domain`` — group membership, masks and block eligibility;
+- ``WorkbenchSession.set_arrangement_state`` — existing active-track save owner.
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ from .arrangement_32_field_time import (
     require_32_field_channel_rack_state,
 )
 from .channel_rack import is_point_trigger_safe, sample_class_for_channel
+from .arrangement_domain import ArrangementError, ArrangementState
 from .workbench_channel_rack import ROW_KIND_LOOP_IDENTITY, ROW_KIND_STEP
 
 PROJECTION_MODE_EDIT = "EDIT"
@@ -308,7 +311,190 @@ def request_arrangement_field_toggle(
     return ArrangementFieldToggleResult(True, ARRANGEMENT_FIELD_TOGGLE_MUTATED)
 
 
+@dataclass(frozen=True)
+class ArrangementQmlGroup:
+    group_id: str
+    display_name: str
+    channel_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ArrangementQmlBlock:
+    block_index: int
+    status: str
+    enabled: bool
+
+
+@dataclass(frozen=True)
+class ArrangementQmlGroupBlock:
+    group_id: str
+    block_index: int
+    enabled: bool
+    available: bool
+
+
+@dataclass(frozen=True)
+class ArrangementQmlTrackBlock:
+    channel_id: str
+    group_id: str
+    block_index: int
+    enabled: bool
+    effective: bool | str
+
+
+@dataclass(frozen=True)
+class ArrangementBlockWindow:
+    groups: tuple[ArrangementQmlGroup, ...]
+    blocks: tuple[ArrangementQmlBlock, ...]
+    group_blocks: tuple[ArrangementQmlGroupBlock, ...]
+    track_blocks: tuple[ArrangementQmlTrackBlock, ...]
+    membership_status: str
+
+
+_GROUP_LABELS = {
+    "pg_baseline": "Baseline",
+    "pg_drums": "Drums",
+    "pg_melodic_atmos_fx": "Melodic / Atmos / FX",
+    "pg_vocals": "Vocals",
+}
+
+# Allocation budget per call, independent of tempo/musical horizon. Consumers
+# page larger viewports through multiple windows; no implicit horizon list.
+MAX_ARRANGEMENT_BLOCK_WINDOW = 64
+
+
+def _arrangement_context(session: object) -> tuple:
+    state = session.arrangement_state
+    if not isinstance(state, ArrangementState):
+        raise ArrangementError("no_arrangement_state")
+    rack = session.channel_rack.state
+    state.validate(rack)
+    return state, rack, session.transport.tempo_map
+
+
+def project_arrangement_block_window(
+    session: object, start_block: int, block_count: int
+) -> ArrangementBlockWindow:
+    """Pure bounded projection; all timing/eligibility comes from #1087.
+
+    Out-of-horizon masks remain visible as intent, with explicit unavailable
+    effective state. Unknown channels remain unmapped, never guessed or lost.
+    """
+    if any(type(v) is not int or v < 0 for v in (start_block, block_count)):
+        raise ArrangementError("invalid_block_window")
+    if block_count > MAX_ARRANGEMENT_BLOCK_WINDOW:
+        raise ArrangementError("block_window_too_large")
+    state, rack, tempo_map = _arrangement_context(session)
+    groups = tuple(
+        ArrangementQmlGroup(g, _GROUP_LABELS[g], channels)
+        for g, channels in state.groups(rack).items()
+    )
+    blocks = tuple(
+        ArrangementQmlBlock(i, state.block_status(i, tempo_map),
+                            i not in state.disabled_blocks)
+        for i in range(start_block, start_block + block_count)
+    )
+    group_blocks = tuple(
+        ArrangementQmlGroupBlock(
+            g.group_id, b.block_index,
+            (g.group_id, b.block_index) not in state.disabled_group_blocks,
+            b.status == "eligible" and b.enabled
+            and (g.group_id, b.block_index) not in state.disabled_group_blocks,
+        )
+        for b in blocks for g in groups
+    )
+    track_blocks = tuple(
+        ArrangementQmlTrackBlock(
+            c.channel_id, state.membership(c.channel_id, rack), b.block_index,
+            (c.channel_id, b.block_index) not in state.disabled_track_blocks,
+            "unresolved" if state.membership(c.channel_id, rack) == "unmapped"
+            else state.effective(c.channel_id, b.block_index, rack, tempo_map)
+            if b.status == "eligible" else b.status,
+        )
+        for b in blocks for c in rack.channels
+    )
+    return ArrangementBlockWindow(
+        groups, blocks, group_blocks, track_blocks, state.membership_status(rack)
+    )
+
+
+@dataclass(frozen=True)
+class ArrangementMaskToggleResult:
+    ok: bool
+    outcome: str
+    projection: ArrangementBlockWindow | None = None
+
+
+def _request_mask_toggle(
+    session: object, kind: str, block_index: int, identity: str | None = None
+) -> ArrangementMaskToggleResult:
+    """Validate before one immutable domain command and one owner save.
+
+    Success denotes accepted musical intent. The existing session owner's
+    dirty/status fields remain authoritative for disk-write failures/retries.
+    """
+    try:
+        state, rack, tempo_map = _arrangement_context(session)
+        status = state.block_status(block_index, tempo_map)
+        if status != "eligible":
+            raise ArrangementError(status)
+        if kind == "group":
+            if not isinstance(identity, str) or identity not in state.groups(rack):
+                raise ArrangementError("unknown_group_id")
+            updated = state.set_group(
+                identity, block_index,
+                (identity, block_index) in state.disabled_group_blocks, tempo_map,
+            )
+        elif kind == "track":
+            membership = state.membership(identity, rack)
+            if membership == "unmapped" or state.membership_status(rack) == "migration_required":
+                raise ArrangementError("migration_required")
+            updated = state.set_track(
+                identity, block_index,
+                (identity, block_index) in state.disabled_track_blocks, rack, tempo_map,
+            )
+        else:
+            updated = state.set_block(
+                block_index, block_index in state.disabled_blocks, tempo_map
+            )
+        session.set_arrangement_state(updated)
+    except (TypeError, ValueError, AttributeError) as exc:
+        return ArrangementMaskToggleResult(False, str(exc))
+    return ArrangementMaskToggleResult(
+        True, "mutated", project_arrangement_block_window(session, block_index, 1)
+    )
+
+
+def request_arrangement_block_toggle(
+    session: object, block_index: int
+) -> ArrangementMaskToggleResult:
+    return _request_mask_toggle(session, "block", block_index)
+
+
+def request_arrangement_group_toggle(
+    session: object, group_id: str, block_index: int
+) -> ArrangementMaskToggleResult:
+    return _request_mask_toggle(session, "group", block_index, group_id)
+
+
+def request_arrangement_track_toggle(
+    session: object, channel_id: str, block_index: int
+) -> ArrangementMaskToggleResult:
+    return _request_mask_toggle(session, "track", block_index, channel_id)
+
+
 __all__ = [
+    "MAX_ARRANGEMENT_BLOCK_WINDOW",
+    "ArrangementQmlGroup",
+    "ArrangementQmlBlock",
+    "ArrangementQmlGroupBlock",
+    "ArrangementQmlTrackBlock",
+    "ArrangementBlockWindow",
+    "ArrangementMaskToggleResult",
+    "project_arrangement_block_window",
+    "request_arrangement_block_toggle",
+    "request_arrangement_group_toggle",
+    "request_arrangement_track_toggle",
     "ARRANGEMENT_FIELD_TOGGLE_FAIL_CLOSED",
     "ARRANGEMENT_FIELD_TOGGLE_INVALID_FIELD",
     "ARRANGEMENT_FIELD_TOGGLE_LEGACY_RACK",
