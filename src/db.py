@@ -7,6 +7,7 @@ from typing import Any, Iterable, Mapping
 from sqlalchemy import create_engine, event, text
 from pathlib import Path
 
+from .analysis_contracts import KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION
 from . import config
 from .content_hash import (
     DEFAULT_CONTENT_HASH_ALGORITHM,
@@ -18,7 +19,6 @@ from .joint_key_profile import SEMITONES as JOINT_KEY_ROOTS
 from .key_signature import format_key_signature
 
 
-KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION = 2
 KEY_ANALYSIS_V2_SHADOW_MODE_CONTRAST_MIN = 0.30
 _KEY_ANALYSIS_V2_ROOT_EVIDENCE_KEYS = frozenset(
     {

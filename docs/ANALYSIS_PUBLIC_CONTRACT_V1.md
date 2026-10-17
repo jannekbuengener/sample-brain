@@ -1,7 +1,7 @@
 # Analysis Public Contract v1
 
 **Status:** ACTIVE_SUPPORTING
-**Issue:** #1148
+**Issues:** #1148, #1149
 **Code owner:** `src/analysis_contracts.py`
 
 ## Purpose
@@ -79,11 +79,18 @@ The following remain domain-local rather than being centralized for appearance:
 - `GestureEvent` / `GestureAnalysis`;
 - product-adapter results such as `AssetAnalysisResult` and Track Map documents.
 
-## Current orchestration boundary
+## Computation and application ownership after S3
 
-This slice does **not** claim that `src.analyze.py` is already a package-ready module. On current `main`, `extract_features` consumes the neutral contract, while `run_analyze` still owns catalog batching/upsert/progress behavior. Likewise classification and key-v2 modules still mix computation with persistence/orchestration in places.
+Issue #1149 separates reusable computation from catalog/application orchestration without changing the existing product-facing import surfaces:
 
-Issue #1149 owns that next decoupling. SQLite/catalog persistence remains one Sample Brain application authority; no second Analysis database or state store is introduced.
+- `src.feature_analysis` owns portable feature/DSP computation; `src.analyze` remains the catalog batching/upsert/progress facade and compatibility import surface.
+- `src.classification` owns rule classification and pure kNN decision math; `src.classify` remains the seed/index/catalog persistence facade.
+- `src.key_analysis_v2_core` owns the V2 result/evidence/estimator contract; `src.key_analysis_v2` remains the DB read/write facade.
+- `src.bpm_matching` owns BPM score semantics used by both matching and Harmony; `src.matching` remains the catalog candidate-loading/run facade.
+- `src.harmony` and `src.gesture_analysis` consume neutral computation owners rather than reaching upward through DB-owning facades.
+- `src.scan` remains application/catalog ingestion and is not part of the portable Analysis computation boundary.
+
+SQLite/catalog persistence remains one Sample Brain application authority; no Analysis-owned database, cache database, or duplicate state store is introduced. Issue #1150 owns the final physical package/public-export manifest; these S3 module boundaries are package candidates, not a repo-split claim.
 
 ## Compatibility requirements
 
@@ -92,6 +99,10 @@ For v1:
 - `src.config.ANALYZE_SR == 44100` and `ANALYZE_HOP_LENGTH == 512` remain compatible re-exports;
 - the accepted BPM-normalization modes and invalid-mode rejection behavior remain unchanged;
 - `src.analyze.Features` is the same type object as `src.analysis_contracts.Features`;
+- `src.analyze.extract_features` remains the compatibility binding for `src.feature_analysis.extract_features`;
+- `src.classify.rule_type` remains the compatibility binding for `src.classification.rule_type`;
+- `src.key_analysis_v2` preserves its V2 compute/persistence import surface while the estimator/result owner is DB-free;
+- `src.matching.score_bpm_match` remains the compatibility binding for `src.bpm_matching.score_bpm_match`;
 - analyzer algorithms, thresholds, cache fingerprints and failure semantics are unchanged by this ownership move;
 - offline-first behavior remains unchanged.
 

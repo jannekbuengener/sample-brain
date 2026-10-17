@@ -158,21 +158,20 @@ Recommendation, API, and UI are future concerns (EPIC 3+).
 - **Outputs:** Rows in `samples` table
 - **Error handling:** Skip permission-denied directories, skip non-audio files, continue on corrupt files
 
-### 4.5 Analyzer (`src/analyze.py`, `src/analysis_contracts.py`)
+### 4.5 Analyzer (`src/feature_analysis.py`, `src/analyze.py`, `src/analysis_contracts.py`)
 
-- **Shared contract authority:** `src/analysis_contracts.py` owns the neutral analyzer invariants (`ANALYZE_SR`, `ANALYZE_HOP_LENGTH`), BPM-normalization vocabulary, and immutable `Features` result. `src.config` only re-exports the analyzer constants for compatibility. See [`ANALYSIS_PUBLIC_CONTRACT_V1.md`](ANALYSIS_PUBLIC_CONTRACT_V1.md).
-- **Computation responsibility:** `extract_features()` loads explicit audio input and extracts BPM, key, loudness, brightness, MFCCs, chroma, and duration class into neutral `Features`; it does not require Workbench/session/application config objects.
-- **Current persistence/orchestration:** `run_analyze()` still owns catalog reads, batching/progress, and `features` upserts. Issue #1149 owns the later separation of this application/persistence layer from portable computation.
-- **Must not do:** Classify, embed, search, export; shared Analysis contracts must not own DB/session/UI state.
-- **Error handling:** Best-effort per file — corrupt/unreadable audio does not crash the pipeline.
+- **Shared contract authority:** `src/analysis_contracts.py` owns neutral analyzer invariants/vocabulary and shared result contracts. `src.config` only re-exports analyzer constants for compatibility. See [`ANALYSIS_PUBLIC_CONTRACT_V1.md`](ANALYSIS_PUBLIC_CONTRACT_V1.md).
+- **Portable computation:** `src.feature_analysis.extract_features()` loads explicit audio input and extracts BPM, key, loudness, brightness, MFCCs, chroma, and duration class into neutral `Features`. Its import closure has no catalog DB/SQLAlchemy/Product dependency.
+- **Application persistence:** `src.analyze.run_analyze()` owns catalog reads, batching/progress, V1 feature upserts, and run accounting; it calls the neutral compute binding and preserves the historical `src.analyze.extract_features` facade.
+- **Must not do:** Feature computation must not own DB/session/UI state; the application facade must not redefine DSP algorithms.
+- **Error handling:** Best-effort per file ? corrupt/unreadable audio does not crash the pipeline.
 
-### 4.6 Classifier / Autotype (`src/classify.py`)
+### 4.6 Classifier / Autotype (`src/classification.py`, `src/classify.py`)
 
-- **Responsibility:** Derive instrument-type tags from features using rules (+ optional kNN)
-- **Must not do:** Extract features, embed audio, generate FL Studio tags directly
-- **Inputs:** `features` table (duration, loudness, brightness, MFCCs, class)
-- **Outputs:** Updates to `features.pred_type`
-- **Dependency rule:** kNN path optionally imports `from .index import load_embeddings` — degrades gracefully if module is missing
+- **Portable computation:** `src.classification` owns rule-based type inference and pure kNN decision math from explicit values/vectors; it has no DB/index/seed-file ownership.
+- **Application persistence:** `src.classify` owns seed CSV/index loading, catalog reads, optional kNN orchestration, and `features.pred_type` writes while preserving the `src.classify.rule_type` compatibility surface.
+- **Must not do:** Neutral classification must not extract features, initialize the catalog, load product indexes/seeds, or write persistence.
+- **Dependency rule:** only the application facade may optionally import `from .index import load_embeddings`; missing optional index support continues to degrade gracefully.
 
 ### 4.7 Embedding Backend Interface (`src/embed.py`)
 
@@ -420,15 +419,17 @@ The public search contract accepts exactly one of text or `--query-audio`. `--in
 
 ```
 CLI Layer
-  │
-  ▼
-Pipeline modules (scan, analyze, classify, embed, export)
-  │
-  ▼
-DB Layer (SQLAlchemy helpers)
-  │
-  ▼
-Config Layer (paths, constants)
+  ?
+  ?
+Application pipeline / persistence facades
+(scan, analyze, classify, key_analysis_v2 persistence, matching, embed, export)
+  ?                         ?
+  ? calls explicit values   ???????????????? DB Layer (SQLAlchemy/catalog)
+  ?
+Neutral Analysis computation
+(feature_analysis, classification, key_analysis_v2_core, bpm_matching, harmony)
+  ?
+  ??? must not depend upward on DB/config/Product UI state
 ```
 
 ### 8.2 What must not import what
@@ -456,6 +457,10 @@ Config Layer (paths, constants)
 | `classify.py` | `db.init_db()` | Ensure tables exist |
 | `classify.py` | `db` helpers via SQLAlchemy | Data read/write |
 | `classify.py` | `index.load_embeddings()` (optional, guarded) | kNN seed vectors |
+| `analyze.py` | `feature_analysis.extract_features()` | Portable feature computation behind catalog facade |
+| `classify.py` | `classification.rule_type()` / `_knn_predict()` | Pure classification behind catalog facade |
+| `key_analysis_v2.py` | `key_analysis_v2_core` | Portable V2 estimator/result behind persistence facade |
+| `harmony.py` / `matching.py` | `bpm_matching` | Shared DB-free BPM scoring semantics |
 | `embed.py` | `db` helpers | Model registration, embedding persistence |
 | `export_fl.py` | `db.init_db()` | Ensure tables exist |
 | `export_fl.py` | `db` helpers via SQLAlchemy | Data read |

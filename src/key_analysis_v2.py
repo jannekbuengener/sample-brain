@@ -1,20 +1,12 @@
-"""Explicit, non-default V2 key-analysis shadow contract (#642).
-
-The normal analyzer remains V1.  This module is deliberately not imported by
-``src.analyze`` and has no automatic consumer path.
-"""
+"""Explicit V2 key-analysis persistence facade over the neutral compute owner."""
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass
-from typing import Any, Mapping
-
 import numpy as np
 
-from .analyze import _chroma_mean, estimate_key_mode
+from .feature_analysis import _chroma_mean, estimate_key_mode
+from .joint_key_profile import rank_joint_key_profiles
 from .db import (
-    KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION,
     KeyAnalysisFeatureRecord,
     read_key_analysis_feature_row,
     read_key_analysis_feature_rows,
@@ -22,71 +14,23 @@ from .db import (
     write_key_analysis_v2_features_row,
     write_key_analysis_v2_shadow_row,
 )
-from .joint_key_profile import JointKeyProfileError, rank_joint_key_profiles
+from .key_analysis_v2_core import (
+    KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION,
+    KeyAnalysisV2Result,
+    _estimate_key_v2_shadow_with,
+    serialize_key_analysis_v2_evidence,
+)
 from .key_signature import format_key_signature
 
-
-_ROOT_EVIDENCE_KIND = "joint_24_profile_pearson"
-
-
-@dataclass(frozen=True)
-class KeyAnalysisV2Result:
-    """One V2 shadow result; raw joint mode is evidence, never product mode."""
-
-    key: str
-    root: str
-    mode: str | None
-    root_evidence: dict[str, Any]
-    mode_evidence: dict[str, Any]
-    contract_version: int = KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION
-
-
-def serialize_key_analysis_v2_evidence(evidence: Mapping[str, Any]) -> str:
-    """Canonical JSON for V2 evidence without NaN/Inf representations."""
-
-    return json.dumps(
-        dict(evidence), sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
-    )
-
-
 def estimate_key_v2_shadow(y: np.ndarray, sr: int) -> KeyAnalysisV2Result | None:
-    """Compute the locked V2 hybrid once, without changing the V1 default.
+    """Compatibility facade preserving legacy monkeypatch seams for V2 compute."""
 
-    The single CQT chroma mean is shared by the joint root ranker and the
-    existing third-contrast mode detector.  ``joint.mode`` remains retained
-    root evidence only; third contrast exclusively selects the output mode.
-    """
-
-    chroma_mean = _chroma_mean(y, sr)
-    if chroma_mean is None:
-        return None
-    try:
-        joint = rank_joint_key_profiles(chroma_mean)
-    except JointKeyProfileError:
-        return None
-
-    mode, mode_evidence = estimate_key_mode(y, sr, root=joint.root, chroma_mean=chroma_mean)
-    if mode_evidence is None:
-        return None
-    augmented_mode_evidence = dict(mode_evidence)
-    augmented_mode_evidence["root"] = joint.root
-    augmented_mode_evidence["root_source"] = _ROOT_EVIDENCE_KIND
-    root_evidence = {
-        "kind": _ROOT_EVIDENCE_KIND,
-        "selected_root": joint.root,
-        "raw_top_score": joint.raw_score,
-        "raw_top_mode": joint.mode,
-        "raw_top_mode_authoritative": False,
-    }
-    key = format_key_signature(joint.root, mode)
-    if key is None:
-        return None
-    return KeyAnalysisV2Result(
-        key=key,
-        root=joint.root,
-        mode=mode,
-        root_evidence=root_evidence,
-        mode_evidence=augmented_mode_evidence,
+    return _estimate_key_v2_shadow_with(
+        y,
+        sr,
+        chroma_mean_fn=_chroma_mean,
+        rank_fn=rank_joint_key_profiles,
+        mode_fn=estimate_key_mode,
     )
 
 
@@ -158,7 +102,6 @@ def read_key_analysis_v2_shadow(
         mode_evidence=row.key_mode_evidence or {},
         contract_version=row.contract_version,
     )
-
 
 __all__ = [
     "KEY_ANALYSIS_V2_SHADOW_CONTRACT_VERSION",

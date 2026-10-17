@@ -18,7 +18,7 @@ from pathlib import Path
 import librosa
 import numpy as np
 
-from .analyze import _effective_n_fft, safe_load
+from .feature_analysis import _effective_n_fft, safe_load
 from .analysis_contracts import ANALYZE_HOP_LENGTH, ANALYZE_SR
 
 FEATURE_DIM = 15
