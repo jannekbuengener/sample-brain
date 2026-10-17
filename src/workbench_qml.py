@@ -5972,6 +5972,10 @@ ApplicationWindow {
                                         Accessible.role: Accessible.Button
                                         Accessible.name: arrangementGroupRow.row.displayName + " · " + blockIndex + " · " + blockState.text
                                         Accessible.description: "16 bars"
+                                        Accessible.onPressAction: {
+                                            if (cell.interactive)
+                                                window.arrangement.toggleArrangementGroupBlock(arrangementGroupRow.groupId, arrangementGroupBlock.blockIndex)
+                                        }
                                         Keys.onSpacePressed: function(event) {
                                             if (cell.interactive) {
                                                 window.arrangement.toggleArrangementGroupBlock(arrangementGroupRow.groupId, arrangementGroupBlock.blockIndex)
