@@ -27,7 +27,9 @@ flowchart LR
         pr["PR"] --> ci["CI"] --> review["Review Feedback"]
         review -->|"Gates erfüllt"| merge["Merge"]
         merge --> verify["main live verifizieren"]
-        verify --> close["Issue schließen"]
+        verify --> complete{"Issue-Kriterien erfüllt?"}
+        complete -->|"ja"| close["Issue schließen"]
+        complete -->|"nein"| update["Issue-Status prüfen / aktualisieren"]
     end
     scope --> branch
     diff --> pr
@@ -36,7 +38,7 @@ flowchart LR
 
 ## Wenn du nur 30 Sekunden hast
 
-Erst den Live-State prüfen, dann das zuständige Repository und dessen lokale Regeln lesen. Nach Änderung und Validierung bestimmen finaler PR-Head, CI und vollständig behandeltes Review-Feedback den Merge-Gate. Nach dem Merge werden `main` und Issue live geprüft.
+Erst den Live-State prüfen, dann das zuständige Repository und dessen lokale Regeln lesen. Nach Änderung und Validierung bestimmen finaler PR-Head, CI und vollständig behandeltes Review-Feedback den Merge-Gate. Nach dem Merge werden `main` und Issue live geprüft. Ein Issue wird nur geschlossen, wenn seine Akzeptanzkriterien vollständig erfüllt sind.
 
 Bei Cross-Repo-Arbeit dient eine Registry nur zum Routing und Systemkontext. Sobald der Agent ein Zielrepo betritt, gilt dessen lokaler Canon. Ein Package-Change führt nur dann zusätzlich ins Consumer-Repo, wenn Scope und Evidence einen Consumer-Change verlangen.
 
