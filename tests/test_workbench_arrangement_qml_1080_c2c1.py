@@ -77,6 +77,36 @@ def test_logical_horizon_never_exceeds_ten_minutes(tempo_map):
     assert vp.logical_horizon_qn == horizon_qn
 
 
+def test_initial_view_below_block_window_cap_is_uncapped():
+    """Below the cap, the initial view keeps the derived ~3-minute duration."""
+    below_cap_map = tempo(1300)  # 3 minutes = 3900 QN < cap 3904 QN
+    vp = seam.viewport_for_initial_view(below_cap_map)
+    expected_qn = below_cap_map.frame_to_quarter_note(180 * below_cap_map.sample_rate)
+    assert vp.visible_duration_qn == expected_qn
+    assert vp.start_quarter_note == Fraction(0)
+
+
+def test_initial_view_capped_at_block_window_budget():
+    """At extreme tempos the initial ~3-minute duration is capped so the
+    projection never exceeds one bounded block window (no blank view)."""
+    fast_map = tempo(1600)  # 3 minutes = 4800 QN >= cap 3904 QN
+    vp = seam.viewport_for_initial_view(fast_map)
+    assert vp.visible_duration_qn == seam._max_zoom_out_duration_qn()
+    assert vp.start_quarter_note == Fraction(0)
+    # Capped view still fits inside the 10-minute horizon
+    assert vp.visible_duration_qn < vp.logical_horizon_qn
+
+
+def test_initial_view_projects_bounded_window_at_extreme_tempo(session):
+    """End-to-end: the initial viewport projects a valid bounded block window
+    at extreme tempos instead of raising block_window_too_large."""
+    fast_map = tempo(1600)
+    vp = seam.viewport_for_initial_view(fast_map)
+    window = seam.project_visible_blocks(session, vp)
+    assert 0 < len(window.blocks) <= seam.MAX_ARRANGEMENT_BLOCK_WINDOW
+    assert window.blocks[0].block_index == 0
+
+
 # --- Bounded / virtualized block projection --------------------------------- #
 
 def test_project_visible_blocks_only_materializes_visible_window(session, tempo_map):

@@ -516,9 +516,15 @@ def viewport_for_initial_view(tempo_map) -> ArrangementViewportState:
     Visible duration is derived from ``BASE_VISIBLE_SECONDS`` through the
     TempoMap's frame→quarter-note mapping — no QML-owned seconds↔QN math.
     Logical horizon is the 10-minute domain horizon.
+    At extreme tempos the derived duration is capped at the largest
+    duration that still fits one bounded block window, so the initial
+    projection stays within ``MAX_ARRANGEMENT_BLOCK_WINDOW``.
     """
     sample_rate = tempo_map.sample_rate
     visible_qn = tempo_map.frame_to_quarter_note(BASE_VISIBLE_SECONDS * sample_rate)
+    max_visible_qn = _max_zoom_out_duration_qn()
+    if visible_qn >= max_visible_qn:
+        visible_qn = max_visible_qn
     horizon_qn = tempo_map.frame_to_quarter_note(HORIZON_SECONDS * sample_rate)
     return ArrangementViewportState(
         start_quarter_note=Fraction(0),
