@@ -56,6 +56,10 @@ def _static_imports(module_name: str) -> set[str]:
 
 def _import_closure(module_name: str) -> set[str]:
     pending = [module_name]
+    if "." in module_name:
+        parts = module_name.split(".")[:-1]
+        parents = (".".join(parts[:index]) for index in range(1, len(parts) + 1))
+        pending.extend(parent for parent in parents if _module_source(parent) is not None)
     visited: set[str] = set()
     imports: set[str] = set()
     while pending:
@@ -119,6 +123,12 @@ ANALYSIS_PACKAGE_CANDIDATES = (
     "src.bpm_matching", "src.attack_analysis", "src.gesture_analysis", "src.harmony",
     "src.key_signature", "src.canon_audio",
 )
+ANALYSIS_ALLOWED_INTERNAL_MODULES = {
+    *ANALYSIS_PACKAGE_CANDIDATES,
+    "src.bpm_display",
+    "src.content_hash",
+    "src.utils",
+}
 
 ANALYSIS_FORBIDDEN_MODULES = {
     "src.analyze", "src.asset_analysis", "src.cli", "src.classify", "src.config",
@@ -127,6 +137,7 @@ ANALYSIS_FORBIDDEN_MODULES = {
 }
 ANALYSIS_FORBIDDEN_PREFIXES = ("src.workbench", "workbench", "PySide6", "sqlalchemy", "tkinter", "PyInstaller")
 ANALYSIS_ALLOWED_EXTERNAL_ROOTS = {"librosa", "numpy", "soundfile"}
+ANALYSIS_FORBIDDEN_STANDARD_LIBRARY_ROOTS = {"sqlite3", "_sqlite3"}
 
 
 def _is_analysis_forbidden(module_name: str) -> bool:
@@ -142,6 +153,17 @@ def _is_analysis_forbidden(module_name: str) -> bool:
             for prefix in ANALYSIS_FORBIDDEN_PREFIXES
         )
     )
+
+
+def _is_analysis_internal_import_allowed(module_name: str) -> bool:
+    return module_name == "src" or any(
+        module_name == allowed or module_name.startswith(f"{allowed}.")
+        for allowed in ANALYSIS_ALLOWED_INTERNAL_MODULES
+    )
+
+
+def _is_forbidden_standard_library_import(module_name: str) -> bool:
+    return module_name.split(".", 1)[0] in ANALYSIS_FORBIDDEN_STANDARD_LIBRARY_ROOTS
 
 
 def _import_time_nodes(tree: ast.AST):
@@ -202,6 +224,15 @@ def test_analysis_forbidden_modules_cover_submodules() -> None:
     assert not _is_analysis_forbidden("src.db_helpers")
 
 
+def test_analysis_import_gate_requires_explicit_internal_and_stdlib_allowlists() -> None:
+    assert _is_analysis_internal_import_allowed("src.bpm_display.format_bpm_display")
+    assert not _is_analysis_internal_import_allowed("src.live_profile")
+    assert not _is_analysis_internal_import_allowed("src.analysis_quality_loop_state")
+    assert _is_forbidden_standard_library_import("sqlite3.dbapi2")
+    assert _is_forbidden_standard_library_import("_sqlite3")
+    assert not _is_forbidden_standard_library_import("statistics")
+
+
 def test_analysis_environment_gate_resolves_os_import_aliases() -> None:
     tree = ast.parse(
         "import os as operating_system\n"
@@ -240,20 +271,45 @@ def test_analysis_public_api_manifest_is_frozen() -> None:
 
 
 def test_analysis_package_import_closure_has_only_neutral_dependencies() -> None:
+    closures = {
+        module: _import_closure(module)
+        for module in ANALYSIS_PACKAGE_CANDIDATES
+    }
     violations = {
         module: sorted(
-            imported for imported in _import_closure(module)
+            imported for imported in imports
             if _is_analysis_forbidden(imported)
             or any(part == "qml" or part.startswith("qml_") for part in imported.split("."))
         )
-        for module in ANALYSIS_PACKAGE_CANDIDATES
+        for module, imports in closures.items()
     }
     assert {module: imports for module, imports in violations.items() if imports} == {}
 
+    internal_imports = {
+        imported
+        for imports in closures.values()
+        for imported in imports
+        if imported == "src" or imported.startswith("src.")
+    }
+    unexpected_internal = sorted(
+        imported
+        for imported in internal_imports
+        if not _is_analysis_internal_import_allowed(imported)
+    )
+    assert unexpected_internal == []
+
+    forbidden_standard_library = sorted(
+        imported
+        for imports in closures.values()
+        for imported in imports
+        if _is_forbidden_standard_library_import(imported)
+    )
+    assert forbidden_standard_library == []
+
     external_imports = {
         imported.split(".", 1)[0]
-        for module in ANALYSIS_PACKAGE_CANDIDATES
-        for imported in _import_closure(module)
+        for imports in closures.values()
+        for imported in imports
         if imported and imported.split(".", 1)[0] not in sys.stdlib_module_names
         and imported.split(".", 1)[0] != "src"
     }
@@ -262,7 +318,17 @@ def test_analysis_package_import_closure_has_only_neutral_dependencies() -> None
 
 def test_analysis_candidates_do_not_own_product_environment_or_import_state() -> None:
     findings: dict[str, list[str]] = {}
+    modules_to_scan: set[str] = set()
     for module in ANALYSIS_PACKAGE_CANDIDATES:
+        modules_to_scan.add(module)
+        for imported in _import_closure(module):
+            parts = imported.split(".")
+            for end in range(len(parts), 0, -1):
+                candidate = ".".join(parts[:end])
+                if _module_source(candidate) is not None:
+                    modules_to_scan.add(candidate)
+                    break
+    for module in sorted(modules_to_scan):
         source = _module_source(module)
         assert source is not None
         tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
