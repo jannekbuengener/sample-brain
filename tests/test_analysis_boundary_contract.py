@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import sys
+
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +33,8 @@ def _static_imports(module_name: str) -> set[str]:
                     imports.update(f"{base}.{alias.name}" for alias in node.names)
             elif node.module:
                 imports.add(node.module)
+                if node.module == "src":
+                    imports.update(f"src.{alias.name}" for alias in node.names)
 
     return imports
 
@@ -53,3 +57,15 @@ def test_analysis_surfaces_do_not_import_workbench_or_pyside() -> None:
     violations = {module: imported for module, imported in violations.items() if imported}
 
     assert violations == {}
+
+
+def test_boundary_detects_workbench_imported_from_src_package(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source_path = tmp_path / "src" / "attack_analysis.py"
+    source_path.parent.mkdir()
+    source_path.write_text("from src import workbench_waveform\n", encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "REPO_ROOT", tmp_path)
+
+    imports = _static_imports("src.attack_analysis")
+    assert any(_is_forbidden(module) for module in imports)
