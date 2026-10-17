@@ -356,12 +356,12 @@ def test_gates_4_7_8_10_qml_stage_projects_read_only_32_field_pattern():
         "saveWorkspacePreset",
     ):
         assert forbidden not in region
-    # Explicit Owner-approved freeze reconciliation for #1080 C2a:
-    # exactly one unchanged sequencer field handler plus one group-block
-    # handler routed through the C1 Python seam; no other click handler.
-    assert region.count("onClicked") == 2
+    # Explicit Owner-approved freeze reconciliation for #1080 C2a/C2b:
+    # authorized handlers: sequencer field, group block, C2b expand/collapse, track block.
     assert region.count("onClicked: window.arrangement.toggleArrangementField(arrangementChannelRow.channelId, arrangementChannelField.fieldIndex)") == 1
     assert region.count("onClicked: window.arrangement.toggleArrangementGroupBlock(arrangementGroupRow.groupId, arrangementGroupBlock.blockIndex)") == 1
+    assert region.count("onClicked: window.arrangement.toggleArrangementGroupExpanded(arrangementGroupRow.groupId)") == 1
+    assert region.count("onClicked: window.arrangement.toggleArrangementTrackBlock(arrangementTrackRow.channelId, arrangementTrackBlock.blockIndex)") == 1
     import inspect
     from src.workbench_qml import _qml_arrangement_bridge
 
