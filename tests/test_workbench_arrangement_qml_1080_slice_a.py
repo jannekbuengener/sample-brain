@@ -356,12 +356,18 @@ def test_gates_4_7_8_10_qml_stage_projects_read_only_32_field_pattern():
         "saveWorkspacePreset",
     ):
         assert forbidden not in region
-    # Slice B correction (explicit, gate semantics unchanged): the stage now
-    # carries exactly ONE click intent — the editable channel-field cell of
-    # the Python-authority one-shot rows. The aggregate row and every other
-    # stage area stay non-interactive; the stage still owns no return,
-    # audition, persistence, or legacy rack command.
-    assert region.count("onClicked") == 1
+    # Explicit Owner-approved freeze reconciliation for #1080 C2a:
+    # exactly one unchanged sequencer field handler plus one group-block
+    # handler routed through the C1 Python seam; no other click handler.
+    assert region.count("onClicked") == 2
+    assert region.count("onClicked: window.arrangement.toggleArrangementField(arrangementChannelRow.channelId, arrangementChannelField.fieldIndex)") == 1
+    assert region.count("onClicked: window.arrangement.toggleArrangementGroupBlock(arrangementGroupRow.groupId, arrangementGroupBlock.blockIndex)") == 1
+    import inspect
+    from src.workbench_qml import _qml_arrangement_bridge
+
+    assert "arrangement_seam.request_arrangement_group_toggle(" in inspect.getsource(
+        _qml_arrangement_bridge
+    )
     assert "toggleArrangementField(" in region
     # Input integrity: the read-only stage blocks pointer events from
     # falling through into the covered Edit workspace beneath it (no
