@@ -378,13 +378,14 @@ assert Path(analysis.__file__).resolve().is_relative_to(Path(os.environ["ANALYSI
     env["HOME"] = str(tmp_path)
     env["USERPROFILE"] = str(tmp_path)
     env["PIP_NO_CACHE_DIR"] = "1"
+    env["PIP_NO_INDEX"] = "1"
 
     wheel_dir = tmp_path / "wheelhouse"
     wheel_dir.mkdir()
     wheel_build = subprocess.run(
         [
-            sys.executable, "-m", "pip", "wheel", "--no-deps", "--no-cache-dir",
-            "--wheel-dir", str(wheel_dir), str(REPO_ROOT),
+            sys.executable, "-m", "pip", "wheel", "--no-deps", "--no-build-isolation",
+            "--no-cache-dir", "--wheel-dir", str(wheel_dir), str(REPO_ROOT),
         ],
         cwd=tmp_path, env=env, check=False, capture_output=True, text=True,
     )
