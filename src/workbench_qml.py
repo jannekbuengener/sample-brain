@@ -5884,10 +5884,15 @@ ApplicationWindow {
             id: arrangementStage
             objectName: "arrangementStage"
             anchors.fill: parent
+            // #1080 Slice B: fixed channel-name column so every sequencer
+            // row's 32-field grid aligns on one precise device geometry.
+            readonly property int channelNameColumnWidth: 96
 
-            // #1080 Slice A: the stage is a read-only projection — this
-            // input layer keeps pointer events from reaching the workspace
-            // beneath (no invisible mutation or audition).
+            // #1080: this input layer keeps pointer events that miss the
+            // sequencer's field hit targets from reaching the workspace
+            // beneath the stage (no invisible mutation or audition). The
+            // Slice B field cells sit above it and own the only stage click
+            // intent; this blocker itself carries no command.
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
@@ -5925,52 +5930,172 @@ ApplicationWindow {
             }
 
             // Bottom-center primary sequencer: exactly 32 fields across 8
-            // bars, four fields per bar — read-only projection of the one
-            // Pattern truth (#1083/#1086); no mutation seams in Slice A.
+            // bars, four fields per bar (#1083/#1086). The aggregate row is
+            // the unchanged Slice A read-only cycle projection; below it the
+            // Slice B channel rows project each channel's own 32 fields.
+            // Only Python-authority one-shot rows carry click hit targets.
             Item {
                 id: arrangementSequencer
                 objectName: "arrangementSequencer"
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 14
-                width: arrangementSequencerRow.implicitWidth
-                height: arrangementSequencerRow.implicitHeight
+                width: arrangementSequencerLayout.implicitWidth
+                height: arrangementSequencerLayout.implicitHeight
 
-                Row {
-                    id: arrangementSequencerRow
-                    spacing: 10
+                Column {
+                    id: arrangementSequencerLayout
+                    spacing: 5
 
-                    Repeater {
-                        model: window.arrangement.bars
+                    // Aggregate cycle row — unchanged read-only geometry,
+                    // indented by the name column so its 8×4 grid aligns
+                    // exactly with the channel rows' grids below.
+                    Row {
+                        id: arrangementSequencerRow
+                        spacing: 8
 
                         Item {
-                            id: arrangementBar
-                            objectName: "arrangementBar"
-                            readonly property var bar: modelData
-                            width: arrangementBarRow.implicitWidth
-                            height: arrangementBarRow.implicitHeight
+                            width: arrangementStage.channelNameColumnWidth
+                            height: 1
+                        }
+
+                        Row {
+                            id: arrangementSequencerBars
+                            spacing: 10
+
+                            Repeater {
+                                model: window.arrangement.bars
+
+                                Item {
+                                    id: arrangementBar
+                                    objectName: "arrangementBar"
+                                    readonly property var bar: modelData
+                                    width: arrangementBarRow.implicitWidth
+                                    height: arrangementBarRow.implicitHeight
+
+                                    Row {
+                                        id: arrangementBarRow
+                                        spacing: 3
+
+                                        Repeater {
+                                            model: arrangementBar.bar.fields
+
+                                            Rectangle {
+                                                id: arrangementField
+                                                objectName: "arrangementField"
+                                                width: 18
+                                                height: 18
+                                                radius: 2
+                                                color: modelData.active
+                                                       ? theme.selectionSurface
+                                                       : theme.surfaceElevated
+                                                border.width: 1
+                                                border.color: modelData.active
+                                                              ? theme.selectionBorder
+                                                              : theme.borderSubtle
+                                                opacity: modelData.active ? 1.0 : 0.85
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // #1080 Slice B: channel-aware rows. Each row projects
+                    // one channel's 32 fields; only rows the Python
+                    // projection marked point-trigger-safe offer the click
+                    // intent. Loop/ambiguous channels stay visible identity
+                    // rows without editable trigger cells.
+                    Repeater {
+                        model: window.arrangement.channelRows
+
+                        Item {
+                            id: arrangementChannelRow
+                            objectName: "arrangementChannelRow"
+                            readonly property var row: modelData
+                            readonly property string channelId: modelData.channelId
+                            readonly property bool stepGridEnabled: modelData.stepGridEnabled
+                            width: arrangementChannelRowLayout.implicitWidth
+                            height: arrangementChannelRowLayout.implicitHeight
 
                             Row {
-                                id: arrangementBarRow
-                                spacing: 3
+                                id: arrangementChannelRowLayout
+                                spacing: 8
 
-                                Repeater {
-                                    model: arrangementBar.bar.fields
+                                Label {
+                                    objectName: "arrangementChannelRowName"
+                                    text: arrangementChannelRow.row.displayName
+                                    color: arrangementChannelRow.stepGridEnabled
+                                           ? theme.textPrimary
+                                           : theme.textSecondary
+                                    font.pixelSize: 10
+                                    width: arrangementStage.channelNameColumnWidth
+                                    horizontalAlignment: Text.AlignRight
+                                    elide: Text.ElideRight
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    opacity: arrangementChannelRow.stepGridEnabled ? 0.9 : 0.6
+                                }
 
-                                    Rectangle {
-                                        id: arrangementField
-                                        objectName: "arrangementField"
-                                        width: 18
-                                        height: 18
-                                        radius: 2
-                                        color: modelData.active
-                                               ? theme.selectionSurface
-                                               : theme.surfaceElevated
-                                        border.width: 1
-                                        border.color: modelData.active
-                                                      ? theme.selectionBorder
-                                                      : theme.borderSubtle
-                                        opacity: modelData.active ? 1.0 : 0.85
+                                Row {
+                                    id: arrangementChannelFieldsRow
+                                    spacing: 10
+
+                                    Repeater {
+                                        model: arrangementChannelRow.row.bars
+
+                                        Item {
+                                            id: arrangementChannelBar
+                                            objectName: "arrangementChannelBar"
+                                            readonly property var bar: modelData
+                                            width: arrangementChannelBarRow.implicitWidth
+                                            height: arrangementChannelBarRow.implicitHeight
+
+                                            Row {
+                                                id: arrangementChannelBarRow
+                                                spacing: 3
+
+                                                Repeater {
+                                                    model: arrangementChannelBar.bar.fields
+
+                                                    Rectangle {
+                                                        id: arrangementChannelField
+                                                        objectName: "arrangementChannelField"
+                                                        readonly property var fieldCell: modelData
+                                                        readonly property int fieldIndex: modelData.index
+                                                        width: 18
+                                                        height: 18
+                                                        // Active state is form + contrast
+                                                        // plus restrained accent — never
+                                                        // color alone: square active cells,
+                                                        // rounded quiet ones.
+                                                        radius: fieldCell.active ? 0 : 2
+                                                        color: fieldCell.active
+                                                               ? theme.selectionSurface
+                                                               : (arrangementChannelRow.stepGridEnabled
+                                                                  ? theme.surfaceElevated
+                                                                  : theme.surfacePanel)
+                                                        border.width: fieldCell.active ? 1 : (arrangementChannelRow.stepGridEnabled ? 1 : 0)
+                                                        border.color: fieldCell.active
+                                                                      ? theme.selectionBorder
+                                                                      : (arrangementChannelRow.stepGridEnabled
+                                                                         ? theme.borderSubtle
+                                                                         : theme.dividerDefault)
+                                                        opacity: fieldCell.active ? 1.0 : (arrangementChannelRow.stepGridEnabled ? 0.9 : 0.45)
+
+                                                        // One click = one intent to the Python
+                                                        // seam; QML owns no quarter-note math
+                                                        // and no local pattern truth.
+                                                        MouseArea {
+                                                            anchors.fill: parent
+                                                            enabled: arrangementChannelRow.stepGridEnabled
+                                                            acceptedButtons: Qt.LeftButton
+                                                            onClicked: window.arrangement.toggleArrangementField(arrangementChannelRow.channelId, arrangementChannelField.fieldIndex)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -6869,16 +6994,31 @@ def _qml_channel_rack_bridge(
 
 
 def _qml_arrangement_bridge(session, adapter):
-    """#1080 Slice A: read-only Arrangement projection + #1078 mode commands.
+    """#1080 Arrangement bridge — projection + #1078 mode + Slice B field intent.
 
     ``WorkbenchSession`` stays the single projection-mode owner; the bridge
-    only re-projects after command slots. No Pattern/track copy, no
+    only re-projects after command slots. The Slice B field click sends only
+    ``channel_id`` + ``field_index`` to the Python interaction seam
+    (:func:`workbench_arrangement_qml.request_arrangement_field_toggle`);
+    QML owns no quarter-note math and no pattern truth. After every command
+    the projection is re-derived from Python truth. No Pattern/track copy, no
     persistence, no playback authority. Inert (EDIT, no route) for injected
     harness adapters without a composed session.
     """
     from PySide6.QtCore import QObject, Property, Signal, Slot
 
-    from .workbench_arrangement_qml import project_arrangement_for_qml
+    from .workbench_arrangement_qml import (
+        project_arrangement_for_qml,
+        request_arrangement_field_toggle,
+    )
+
+    def _field_dict(field) -> dict[str, object]:
+        return {
+            "index": int(field.index),
+            "barIndex": int(field.bar_index),
+            "indexInBar": int(field.index_in_bar),
+            "active": bool(field.active),
+        }
 
     class QmlArrangementBridge(QObject):
         state_changed = Signal()
@@ -6893,9 +7033,11 @@ def _qml_arrangement_bridge(session, adapter):
             self._bar_count = 8
             self._fields_per_bar = 4
             self._bars: list = []
+            self._channel_rows: list = []
             self._any_active_step = False
             self._last_entry_outcome = ""
             self._last_entry_message = ""
+            self._last_field_toggle_outcome = ""
             self._refresh()
 
         def _refresh(self) -> None:
@@ -6918,17 +7060,26 @@ def _qml_arrangement_bridge(session, adapter):
             self._bars = [
                 {
                     "index": int(bar.index),
-                    "fields": [
-                        {
-                            "index": int(field.index),
-                            "barIndex": int(field.bar_index),
-                            "indexInBar": int(field.index_in_bar),
-                            "active": bool(field.active),
-                        }
-                        for field in bar.fields
-                    ],
+                    "fields": [_field_dict(field) for field in bar.fields],
                 }
                 for bar in projection.bars
+            ]
+            self._channel_rows = [
+                {
+                    "channelId": str(row.channel_id),
+                    "displayName": str(row.display_name),
+                    "rowKind": str(row.row_kind),
+                    "stepGridEnabled": bool(row.step_grid_enabled),
+                    "fields": [_field_dict(field) for field in row.fields],
+                    "bars": [
+                        {
+                            "index": int(bar.index),
+                            "fields": [_field_dict(field) for field in bar.fields],
+                        }
+                        for bar in row.bars
+                    ],
+                }
+                for row in projection.channel_rows
             ]
             self.state_changed.emit()
 
@@ -6959,6 +7110,26 @@ def _qml_arrangement_bridge(session, adapter):
             self._last_entry_outcome = ""
             self._last_entry_message = ""
             self._refresh()
+
+        @Slot(str, int, result=str)
+        def toggleArrangementField(self, channel_id: str, field_index: int) -> str:
+            """One click = one Python-owned field mutation intent (#1080 Slice B).
+
+            QML sends only the channel identity and the projected field
+            index; the seam owns editability and the #1086 quarter-note
+            mapping. Visual feedback is derived exclusively from the new
+            Python projection after the command.
+            """
+            if session is None:
+                self._last_field_toggle_outcome = "fail_closed"
+                self._refresh()
+                return self._last_field_toggle_outcome
+            result = request_arrangement_field_toggle(
+                session, str(channel_id), int(field_index)
+            )
+            self._last_field_toggle_outcome = str(result.outcome)
+            self._refresh()
+            return self._last_field_toggle_outcome
 
         @Property(str, notify=state_changed)
         def projectionMode(self) -> str:
@@ -6992,6 +7163,10 @@ def _qml_arrangement_bridge(session, adapter):
         def bars(self) -> list:
             return self._bars
 
+        @Property("QVariantList", notify=state_changed)
+        def channelRows(self) -> list:
+            return self._channel_rows
+
         @Property(bool, notify=state_changed)
         def anyActiveStep(self) -> bool:
             return self._any_active_step
@@ -7003,6 +7178,10 @@ def _qml_arrangement_bridge(session, adapter):
         @Property(str, notify=state_changed)
         def lastEntryMessage(self) -> str:
             return self._last_entry_message
+
+        @Property(str, notify=state_changed)
+        def lastFieldToggleOutcome(self) -> str:
+            return self._last_field_toggle_outcome
 
     return QmlArrangementBridge()
 

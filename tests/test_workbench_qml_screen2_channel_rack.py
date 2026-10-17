@@ -31,6 +31,15 @@ Historical #908 QML-bottom-Rack projection assertions in this file
 - Product step-UI placement = Arrangement workflow
 - Closed #908 bottom projection = historical evidence, not product authority
 
+TEST_FREEZE_RECONCILIATION (#1080 Slice B / #1086 — explicit, not silent):
+The blanket ``arrangement`` substring token in
+``test_controller_does_not_own_second_live_kit_or_transport`` is superseded
+by the frozen #1086 32-field time model: the ONE rack Pattern truth is the
+Arrangement integration seam, and the controller hosts the mandated
+``toggle_arrangement_field`` command over it. The gate keeps its anti-sprawl
+intent through targeted tokens (no Arrangement surface/state/domain import
+in the controller).
+
 Released from this freeze (do not reassert as Edit product UI here):
 - ``bottom is not None and bottom.isVisible()`` with step-list/play/stop present
 - Any requirement that ``openChannelRack`` forces Edit bottom Rack geometry
@@ -364,9 +373,19 @@ def test_controller_does_not_own_second_live_kit_or_transport():
     assert controller.live_kit is kit
     assert controller.transport is transport
     source = Path(module.__file__).read_text(encoding="utf-8")
+    # TEST_FREEZE_RECONCILIATION (#1080 Slice B / #1086 — explicit, not
+    # silent): the historical blanket ``arrangement`` substring token
+    # predates the frozen #1086 32-field time model, which made the ONE rack
+    # Pattern truth the Arrangement integration seam. The controller now
+    # hosts the mandated ``toggle_arrangement_field`` command composing that
+    # seam. The anti-sprawl intent of the gate is preserved with targeted
+    # tokens: the controller still owns no Arrangement surface, state, or
+    # domain object — only the single Pattern-truth mutation command.
     for forbidden in (
         "WorkbenchPreviewPlayer",
-        "arrangement",
+        "workbench_arrangement",
+        "arrangement_domain",
+        "ArrangementState",
         "PianoRoll",
         "mixer",
         "VST",

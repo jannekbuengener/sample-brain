@@ -24,6 +24,11 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
+from .arrangement_32_field_time import (
+    field_to_quarter_note,
+    require_32_field_channel_rack_state,
+    toggle_field,
+)
 from .channel_rack import (
     ChannelRackPlayHandle,
     ChannelRackState,
@@ -1190,6 +1195,55 @@ class ChannelRackController:
                     ),
                 )
             )
+        self._notify_musical_state_changed()
+        return self._state
+
+    def toggle_arrangement_field(
+        self, channel_id: str, field_index: int
+    ) -> ChannelRackState:
+        """Toggle one arrangement field on the single Pattern truth (#1080 Slice B).
+
+        Field semantics are the frozen #1086 quarter-note identity — field 0 →
+        qn 0, field 1 → qn 1, ..., field 31 → qn 31 — validated and mapped
+        *only* through :func:`arrangement_32_field_time.field_to_quarter_note`.
+        Never the legacy 16-step ``step_index / 4`` semantics of
+        :meth:`toggle_step`, which stays the protected legacy seam.
+
+        Fails closed (no mutation, no state replacement, no observer call) for:
+
+        - a missing rack state (``RuntimeError`` via ``_require_state``);
+        - a legacy / non-32-field rack — no silent migration;
+        - a user-channel mutation still deferred from an active Rack Play: the
+          historical ``_QueuedToggleStep`` stream carries ``step_index / 4``
+          semantics and must never absorb an arrangement field;
+        - an unknown ``channel_id``;
+        - an invalid ``field_index`` (negative, ``>= 32``, or non-int).
+
+        Mutates the one Pattern truth via
+        :func:`arrangement_32_field_time.toggle_field`, replaces the controller
+        state exactly once, and fires the existing musical-state observer
+        exactly once so the session autosave owner persists the change.
+        """
+        state = self._require_state()
+        require_32_field_channel_rack_state(state)
+        if self._pending_user_mutation is not None:
+            raise ValueError(
+                "arrangement field toggle is fail-closed while a user-channel "
+                "mutation is deferred from an active Rack Play; stop playback "
+                "first"
+            )
+        known_ids = {channel.channel_id for channel in state.channels}
+        if channel_id not in known_ids:
+            raise ValueError(f"Unknown channel_id: {channel_id!r}")
+        trigger = Trigger(
+            channel_id=channel_id,
+            position=field_to_quarter_note(field_index),
+        )
+        self._state = ChannelRackState(
+            channels=state.channels,
+            pattern=toggle_field(state.pattern, trigger),
+            step_count=state.step_count,
+        )
         self._notify_musical_state_changed()
         return self._state
 
