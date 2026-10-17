@@ -13,6 +13,8 @@ NEUTRAL_ANALYSIS_MODULES = (
     "src.classification",
     "src.key_analysis_v2_core",
     "src.bpm_matching",
+    "src.gesture_analysis",
+    "src.harmony",
 )
 FORBIDDEN_PREFIXES = (
     "PySide6",
