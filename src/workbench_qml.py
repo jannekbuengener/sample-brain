@@ -7557,6 +7557,9 @@ def _qml_engine(
         loader=lambda path: compute_waveform_envelope(path, max_points=96),
         max_pending=14,
     )
+    # Engines may be destroyed while the shared application keeps running.
+    engine.destroyed.connect(waveform_loader.close)
+    app.aboutToQuit.connect(waveform_loader.close)
     # Last viewport ranges — drain re-requests so max_pending saturation
     # still fills the full compact visible window without raising the bound.
     browser_waveform_viewport = [0, 0]
@@ -8152,9 +8155,14 @@ def _qml_engine(
             "_screen1AnalysisCoordinator",
             analysis_coordinator,
         )
-    engine.loadData(QML_SOURCE.encode("utf-8"), QUrl("qrc:/screen1.qml"))
-    if not engine.rootObjects():
-        raise RuntimeError("Qt Quick Screen-1 Renderer konnte keine QML-Oberfläche laden.")
+    try:
+        engine.loadData(QML_SOURCE.encode("utf-8"), QUrl("qrc:/screen1.qml"))
+        if not engine.rootObjects():
+            raise RuntimeError("Qt Quick Screen-1 Renderer konnte keine QML-Oberfläche laden.")
+    except BaseException:
+        waveform_loader.close()
+        engine.deleteLater()
+        raise
     # Keep both Python objects alive for the complete Qt engine lifetime.
     engine._screen1_interaction_adapter = adapter
     engine._screen1_interaction_bridge = bridge
@@ -8185,13 +8193,13 @@ def _qml_engine(
         engine._screen1_preview_player = preview_player
     from PySide6.QtCore import QTimer
 
-    waveform_timer = QTimer()
+    waveform_timer = QTimer(engine)
     waveform_timer.setInterval(50)
     waveform_timer.timeout.connect(drain_waveforms)
     waveform_timer.start()
     engine._screen1_waveform_timer = waveform_timer
 
-    channel_rack_timer = QTimer()
+    channel_rack_timer = QTimer(engine)
     channel_rack_timer.setInterval(20)
 
     def _tick_channel_rack() -> None:
@@ -8208,7 +8216,6 @@ def _qml_engine(
     )
     engine._screen1_channel_rack_timer = channel_rack_timer
     request_visible_browser_waveforms_from_window()
-    app.aboutToQuit.connect(waveform_loader.close)
     if analysis_coordinator is not None:
         app.aboutToQuit.connect(analysis_coordinator.shutdown)
     return app, engine, engine.rootObjects()[0]
