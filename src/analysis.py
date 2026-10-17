@@ -27,7 +27,10 @@ from .harmony import (
     find_harmony_matches,
     rate_harmony,
 )
-from .key_analysis_v2_core import KeyAnalysisV2Result, estimate_key_v2_shadow
+from . import key_analysis_v2_core as _key_analysis_v2_core
+
+KeyAnalysisV2Result = _key_analysis_v2_core.KeyAnalysisV2Result
+estimate_key_v2_shadow = _key_analysis_v2_core.estimate_key_v2_shadow
 from .key_signature import (
     ParsedKey,
     format_key_signature,
