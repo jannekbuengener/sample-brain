@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import inspect
+import sys
 from fractions import Fraction
 from pathlib import Path
 from types import SimpleNamespace
@@ -487,28 +488,30 @@ def test_existing_workbench_smoke_tests_pass():
     assert "workbench" in result.stdout
 
 
-def test_existing_preview_tests_pass():
+def test_existing_preview_tests_pass(tmp_path):
     import subprocess
 
     result = subprocess.run(
-        ["python", "-m", "pytest", "tests/test_workbench_preview.py", "-q"],
+        [sys.executable, "-m", "pytest", "tests/test_workbench_preview.py", "-q",
+         "--basetemp", str(tmp_path / "preview-pytest")],
         capture_output=True,
         text=True,
         cwd=str(Path(__file__).resolve().parents[1]),
     )
-    assert result.returncode == 0, f"Preview tests failed: {result.stdout}"
+    assert result.returncode == 0, f"Preview tests failed: {result.stdout}\n{result.stderr}"
 
 
-def test_session_grid_tests_pass():
+def test_session_grid_tests_pass(tmp_path):
     import subprocess
 
     result = subprocess.run(
-        ["python", "-m", "pytest", "tests/test_session_grid.py", "-q"],
+        [sys.executable, "-m", "pytest", "tests/test_session_grid.py", "-q",
+         "--basetemp", str(tmp_path / "session-grid-pytest")],
         capture_output=True,
         text=True,
         cwd=str(Path(__file__).resolve().parents[1]),
     )
-    assert result.returncode == 0, f"Session grid tests failed: {result.stdout}"
+    assert result.returncode == 0, f"Session grid tests failed: {result.stdout}\n{result.stderr}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

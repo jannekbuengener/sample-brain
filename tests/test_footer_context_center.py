@@ -131,6 +131,40 @@ def test_priority_resolve_order_is_hover_then_selection_then_empty() -> None:
     assert "contextHintState.displayText" in display_bind
 
 
+@pytest.fixture(autouse=True)
+def _owned_qml_engines(monkeypatch):
+    """Release this module's engines even when setup or an assertion fails."""
+    if not PY_SIDE6_AVAILABLE:
+        yield
+        return
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from shiboken6 import isValid
+    from src import workbench_qml
+
+    engines = []
+    original = workbench_qml._qml_engine
+
+    def create(*args, **kwargs):
+        result = original(*args, **kwargs)
+        engines.append(result)
+        return result
+
+    monkeypatch.setattr(workbench_qml, "_qml_engine", create)
+    yield
+    for app, engine, window in reversed(engines):
+        loader = engine._screen1_waveform_loader
+        coordinator = engine._screen1_analysis_coordinator
+        if coordinator is not None:
+            coordinator.shutdown()
+        if isValid(window):
+            window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        loader._worker.join(2)
+        assert not loader._worker.is_alive(), "footer test leaked its waveform worker"
+        assert not isValid(engine)
+
+
 def _open_screen1(
     tmp_path: Path,
     *,
