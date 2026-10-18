@@ -173,3 +173,42 @@ def test_check_conclusions_fail_closed(conclusion, expected):
 
     assert check_state("completed", conclusion) == expected
     assert check_state("queued", conclusion) == "PENDING"
+
+
+def test_bounded_pr_creation_uses_caller_supplied_neutral_title_and_body(tmp_path):
+    from src.analysis_promotion_host import GhHost
+
+    calls = []
+
+    def runner(args):
+        calls.append(args)
+        return ""
+
+    host = GhHost("example/repo", tmp_path, runner=runner)
+    head = "a" * 40
+    base = "b" * 40
+    host.find_pr = lambda branch: {
+        "number": 8,
+        "head_sha": head,
+        "branch": branch,
+        "base": "main",
+        "repository_id": "example/repo",
+    }
+
+    result = host.create_bounded_pr(
+        "recovery/one",
+        head,
+        base,
+        title="Forward repair invalid analysis promotion",
+        body="Bounded S8 forward repair.",
+    )
+
+    command = calls[0]
+    assert command[:3] == ["gh", "pr", "create"]
+    assert (
+        command[command.index("--title") + 1]
+        == "Forward repair invalid analysis promotion"
+    )
+    assert command[command.index("--body") + 1] == "Bounded S8 forward repair."
+    assert "--admin" not in command
+    assert result["number"] == 8
