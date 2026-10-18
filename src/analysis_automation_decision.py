@@ -423,6 +423,13 @@ def validate_decision(decision: Mapping[str, Any]) -> dict[str, Any]:
         raise AnalysisAutomationDecisionError(
             "promotion handoff requires artifact_version=1.1.0"
         )
+    if (
+        next_action != "handoff_promotion_controller"
+        and decision.get("artifact_version") != ARTIFACT_VERSION
+    ):
+        raise AnalysisAutomationDecisionError(
+            "legacy actions require artifact_version=1.0.0"
+        )
 
     if decision.get("production_authorized") is not False:
         raise AnalysisAutomationDecisionError(

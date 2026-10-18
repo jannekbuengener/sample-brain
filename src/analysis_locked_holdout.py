@@ -216,6 +216,24 @@ def _check_claim_decision(invocation, decision):
         raise AnalysisLockedHoldoutError("non-ready invocation requires HOLD evidence")
 
 
+def _sync_entry(path: Path) -> None:
+    """Persist name metadata before dispatch/commit, failing closed on error.
+
+    POSIX requires a separate parent-directory fsync. Windows file flushes also
+    flush file metadata (Microsoft File Caching); reopen the destination after
+    rename so the metadata barrier covers its final name.
+    """
+    if os.name == "nt":
+        with path.open("r+b") as handle:
+            os.fsync(handle.fileno())
+    else:
+        fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+
 def _write_atomic(path: Path, value):
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
@@ -224,6 +242,7 @@ def _write_atomic(path: Path, value):
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
+        _sync_entry(path)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
@@ -293,6 +312,7 @@ def run_locked_holdout_transition(
             raise AnalysisLockedHoldoutError(
                 "committed benchmark differs from invocation"
             )
+        _sync_entry(result_path)
         return {"already_committed": True, "result": result}
     try:
         with claim_path.open("x", encoding="utf-8", newline="\n") as handle:
@@ -303,6 +323,8 @@ def run_locked_holdout_transition(
         raise AnalysisLockedHoldoutError(
             "durable claim exists; uncertain execution requires reconciliation"
         ) from exc
+
+    _sync_entry(claim_path)
 
     outcome = validate_outcome(
         run_orchestration(

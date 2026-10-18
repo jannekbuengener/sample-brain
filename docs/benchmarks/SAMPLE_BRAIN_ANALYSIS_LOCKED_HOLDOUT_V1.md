@@ -44,6 +44,13 @@ entire portable invocation before domain execution, including request, opaque
 evidence claim, explicit policy inputs and freeze-state fingerprint. All callers
 for one state use these derived paths. Concurrent/reentrant callers fail closed.
 The result is flushed, fsynced and atomically replaced before success is returned.
+POSIX additionally fsyncs the parent directory after claim creation (before
+dispatch) and result replacement (before reporting success). Windows flushes
+the claim/final result file metadata, reopening the destination after rename;
+see [Microsoft File Caching](https://learn.microsoft.com/en-us/windows/win32/fileio/file-caching).
+Metadata-barrier errors fail closed. A replay also finishes the result metadata
+barrier before returning a committed outcome. These checks prove barrier ordering
+and error handling, not hardware power-loss testing.
 The claim is retained. A committed identical invocation returns
 `already_committed=true` without adapter execution, policy reinterpretation or
 state mutation. Any changed input, state/provenance, partition or policy fails
