@@ -67,9 +67,18 @@ def _group(identity: object) -> str:
 def _marker(value: object) -> Fraction | None:
     if value is None:
         return None
-    if type(value) not in (int, Fraction) or value <= 0 or value % 4:
+    if type(value) not in (int, Fraction) or value <= 0:
         raise ArrangementError("invalid_end_marker")
     return Fraction(value)
+
+
+def _snapped_marker(value: object) -> Fraction | None:
+    if value is None:
+        return None
+    marker = _marker(value)
+    if marker % 4:
+        raise ArrangementError("invalid_end_marker")
+    return marker
 
 
 def _toggle(values: frozenset, key: object, enabled: bool) -> frozenset:
@@ -209,7 +218,7 @@ class ArrangementState:
         )
 
     def set_end_marker(self, quarter_note: Fraction | None) -> ArrangementState:
-        return replace(self, end_marker_qn=_marker(quarter_note))
+        return replace(self, end_marker_qn=_snapped_marker(quarter_note))
 
     def effective(
         self, channel_id: str, index: int, rack: ChannelRackState, tempo_map: TempoMap
@@ -323,7 +332,7 @@ class ArrangementState:
             if type(marker) is not str:
                 raise ArrangementError("invalid_end_marker")
             try:
-                marker = _marker(Fraction(marker))
+                marker = _snapped_marker(Fraction(marker))
             except (ValueError, ZeroDivisionError) as exc:
                 raise ArrangementError("invalid_end_marker") from exc
         state = cls(

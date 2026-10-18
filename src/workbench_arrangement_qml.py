@@ -796,6 +796,146 @@ def request_arrangement_track_toggle(
     return _request_mask_toggle(session, "track", block_index, channel_id)
 
 
+ARRANGEMENT_END_MARKER_SNAP_QN = 4
+
+_END_MARKER_RESULT_VIEWPORT = ArrangementViewportState(
+    start_quarter_note=Fraction(200),
+    visible_duration_qn=Fraction(360),
+    zoom_level=1.0,
+    logical_horizon_qn=Fraction(1200),
+)
+
+
+@dataclass(frozen=True)
+class ArrangementEndMarkerProjection:
+    """Read-only end-marker projection; eligibility is delegated to the domain."""
+
+    exists: bool
+    quarter_note: Fraction | None
+    visible: bool
+    normalized_position: Fraction | None
+    render_eligible: bool
+
+
+@dataclass(frozen=True)
+class ArrangementEndMarkerSetResult:
+    """Mutation result; projection is present only on a successful save."""
+
+    ok: bool
+    status: str
+    projection: ArrangementEndMarkerProjection | None = None
+
+
+def snap_end_marker_qn(quarter_note: Fraction) -> Fraction:
+    """Snap to the Python-owned grid; ties reduce to the lower multiple."""
+    value = Fraction(quarter_note)
+    step = ARRANGEMENT_END_MARKER_SNAP_QN
+    lower = (value // step) * step
+    upper = lower + step
+    return lower if value - lower <= upper - value else upper
+
+
+def _end_marker_horizon(tempo_map: object) -> Fraction:
+    return tempo_map.frame_to_quarter_note(600 * tempo_map.sample_rate)
+
+
+def preview_end_marker_snap(
+    session: object, quarter_note: Fraction
+) -> Fraction | None:
+    """Preview where a set would land; None means out of range or bad input."""
+    try:
+        snapped = snap_end_marker_qn(quarter_note)
+        _, _, tempo_map = _arrangement_context(session)
+        if snapped <= 0 or snapped > _end_marker_horizon(tempo_map):
+            return None
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return snapped
+
+
+def project_end_marker(
+    session: object, viewport: ArrangementViewportState
+) -> ArrangementEndMarkerProjection:
+    """Project the domain end marker into the given viewport, zero saves."""
+    state, rack, tempo_map = _arrangement_context(session)
+    end_marker = state.end_marker_qn
+    eligibility = state.render_eligible(rack, tempo_map)
+    if end_marker is None:
+        return ArrangementEndMarkerProjection(
+            False, None, False, None, eligibility
+        )
+    duration = viewport.visible_duration_qn
+    if duration == 0:
+        raise ArrangementError("invalid_viewport")
+    normalized = (end_marker - viewport.start_quarter_note) / duration
+    # Two-block lead margin (slice-local projection decision): a marker within
+    # two blocks left of the viewport start is still shown so the song-end
+    # marker stays visible when the final block is clipped at the left edge.
+    visible = (
+        end_marker
+        >= viewport.start_quarter_note - 2 * ARRANGEMENT_BLOCK_LENGTH_QUARTER_NOTES
+        and normalized <= Fraction(1)
+    )
+    return ArrangementEndMarkerProjection(
+        True, end_marker, visible, normalized, eligibility
+    )
+
+
+def request_end_marker_set(
+    session: object, quarter_note: Fraction
+) -> ArrangementEndMarkerSetResult:
+    """Snap, delegate one immutable domain command, and save via the owner."""
+    try:
+        state, _, tempo_map = _arrangement_context(session)
+        snapped = snap_end_marker_qn(Fraction(quarter_note))
+        if snapped <= 0:
+            raise ArrangementError("invalid_end_marker")
+        if snapped > _end_marker_horizon(tempo_map):
+            raise ArrangementError("out_of_current_horizon")
+        session.set_arrangement_state(state.set_end_marker(snapped))
+        projection = project_end_marker(session, _END_MARKER_RESULT_VIEWPORT)
+    except (TypeError, ValueError, AttributeError) as exc:
+        return ArrangementEndMarkerSetResult(False, str(exc), None)
+    return ArrangementEndMarkerSetResult(True, "mutated", projection)
+
+
+def request_end_marker_clear(
+    session: object,
+) -> ArrangementEndMarkerSetResult:
+    try:
+        state, _, _tempo_map = _arrangement_context(session)
+        if state.end_marker_qn is None:
+            return ArrangementEndMarkerSetResult(True, "already_cleared", None)
+        session.set_arrangement_state(state.set_end_marker(None))
+        projection = project_end_marker(session, _END_MARKER_RESULT_VIEWPORT)
+    except (TypeError, ValueError, AttributeError) as exc:
+        return ArrangementEndMarkerSetResult(False, str(exc), None)
+    return ArrangementEndMarkerSetResult(True, "mutated", projection)
+
+
+def request_end_marker_nudge(
+    session: object, direction: int
+) -> ArrangementEndMarkerSetResult:
+    """Move the marker one snap step; bounds are checked before any mutation."""
+    try:
+        state, _, tempo_map = _arrangement_context(session)
+        if type(direction) is not int or direction not in (-1, 1):
+            raise ArrangementError("invalid_nudge_direction")
+        current = state.end_marker_qn
+        if current is None:
+            raise ArrangementError("no_end_marker")
+        target = current + direction * ARRANGEMENT_END_MARKER_SNAP_QN
+        if target <= 0:
+            raise ArrangementError("invalid_end_marker")
+        if target > _end_marker_horizon(tempo_map):
+            raise ArrangementError("out_of_current_horizon")
+        session.set_arrangement_state(state.set_end_marker(target))
+        projection = project_end_marker(session, _END_MARKER_RESULT_VIEWPORT)
+    except (TypeError, ValueError, AttributeError) as exc:
+        return ArrangementEndMarkerSetResult(False, str(exc), None)
+    return ArrangementEndMarkerSetResult(True, "mutated", projection)
+
+
 __all__ = [
     "MAX_ARRANGEMENT_BLOCK_WINDOW",
     "ArrangementQmlGroup",
@@ -831,4 +971,13 @@ __all__ = [
     "PROJECTION_MODE_EDIT",
     "project_arrangement_for_qml",
     "request_arrangement_field_toggle",
+    "ARRANGEMENT_END_MARKER_SNAP_QN",
+    "ArrangementEndMarkerProjection",
+    "ArrangementEndMarkerSetResult",
+    "project_end_marker",
+    "snap_end_marker_qn",
+    "preview_end_marker_snap",
+    "request_end_marker_set",
+    "request_end_marker_clear",
+    "request_end_marker_nudge",
 ]
