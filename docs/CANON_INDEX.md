@@ -18,8 +18,12 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 Locked final evaluation composes the delivered analysis contracts through
 [`benchmarks/SAMPLE_BRAIN_ANALYSIS_LOCKED_HOLDOUT_V1.md`](benchmarks/SAMPLE_BRAIN_ANALYSIS_LOCKED_HOLDOUT_V1.md)
 (ACTIVE_SUPPORTING, #1170): immutable #1097 freeze state, one locked TEST/HOLDOUT
-dispatch, portable terminal result and existing #1043 decision. Promotion remains
-a later controller; `production_authorized=false`.
+dispatch, portable terminal result and existing #1043 decision. The optional S7
+repository controller is specified in
+[`benchmarks/SAMPLE_BRAIN_ANALYSIS_PROMOTION_V1.md`](benchmarks/SAMPLE_BRAIN_ANALYSIS_PROMOTION_V1.md)
+(ACTIVE_SUPPORTING, #1176): explicit bounded domain manifest, isolated worktree,
+PR, exact-head gates and verified merge. S8 baseline acceptance/recovery remains
+separate; `production_authorized=false`.
 
 | Topic | Authority | Class | Notes |
 |---|---|---|---|
