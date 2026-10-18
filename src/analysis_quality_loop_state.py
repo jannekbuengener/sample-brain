@@ -17,7 +17,11 @@ import tempfile
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from src.analysis_automation_decision import TUNABLE_PARTITION_ROLES
+from src.analysis_automation_decision import (
+    DECISION_STATUSES,
+    GATE_VERDICTS,
+    TUNABLE_PARTITION_ROLES,
+)
 from src.analysis_eval_artifact import (
     AnalysisEvalArtifactError,
     assert_portable_value,
@@ -44,6 +48,31 @@ LOOP_STATUSES: frozenset[str] = frozenset(
 _STATE_FP_EXCLUDED: frozenset[str] = frozenset(
     {"generated_at", "state_fingerprint", "artifact_hash"}
 )
+
+# Optional locked-evaluation outcome extension (#1170 / S6).
+LOCKED_EVALUATION_PARTITION_ROLES: frozenset[str] = frozenset({"test", "holdout"})
+LOCKED_EVALUATION_TERMINAL_STATUSES: frozenset[str] = frozenset(
+    {"completed", "held", "controlled_failure"}
+)
+_LOCKED_EVALUATION_KEYS: frozenset[str] = frozenset(
+    {
+        "candidate",
+        "baseline_candidate",
+        "partition",
+        "request_fingerprint",
+        "outcome_fingerprint",
+        "analysis_eval_fingerprint",
+        "evidence_fingerprint",
+        "gate_verdict",
+        "decision",
+        "terminal_status",
+        "production_authorized",
+    }
+)
+_LOCKED_DECISION_REQUIRED_KEYS: frozenset[str] = frozenset(
+    {"decision_status", "next_action", "decision_fingerprint"}
+)
+_LOCKED_DECISION_OPTIONAL_KEYS: frozenset[str] = frozenset({"decision_token"})
 
 
 class AnalysisQualityLoopStateError(ValueError):
@@ -156,6 +185,125 @@ def _optional_mapping(value: object, field: str) -> dict[str, Any] | None:
     if not isinstance(value, Mapping):
         raise AnalysisQualityLoopStateError(f"{field} must be a mapping or null")
     return dict(value)
+
+
+def validate_locked_evaluation_ref(ref: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate the optional ``locked_evaluation`` supervisor-state field (#1170).
+
+    Portable refs / fingerprints only. Exact key set, non-tuning partition
+    role, and ``production_authorized=false`` fail closed.
+    """
+    if not isinstance(ref, Mapping):
+        raise AnalysisQualityLoopStateError("locked_evaluation must be a mapping")
+    extra = set(ref.keys()) - _LOCKED_EVALUATION_KEYS
+    missing = _LOCKED_EVALUATION_KEYS - set(ref.keys())
+    if extra or missing:
+        raise AnalysisQualityLoopStateError(
+            "locked_evaluation has unsupported or missing keys: "
+            f"extra={sorted(extra)} missing={sorted(missing)}"
+        )
+
+    candidate = _require_candidate(ref["candidate"], "locked_evaluation.candidate")
+    baseline = _require_candidate(
+        ref["baseline_candidate"], "locked_evaluation.baseline_candidate"
+    )
+
+    partition = ref["partition"]
+    if not isinstance(partition, Mapping):
+        raise AnalysisQualityLoopStateError(
+            "locked_evaluation.partition must be a mapping"
+        )
+    partition_id = _require_canonical_text(
+        partition.get("partition_id"), "locked_evaluation.partition.partition_id"
+    )
+    role = _require_canonical_text(
+        partition.get("role"), "locked_evaluation.partition.role"
+    )
+    if role not in LOCKED_EVALUATION_PARTITION_ROLES:
+        raise AnalysisQualityLoopStateError(
+            "locked_evaluation.partition.role must be test or holdout, "
+            f"got {role!r}"
+        )
+
+    for key in (
+        "request_fingerprint",
+        "outcome_fingerprint",
+        "analysis_eval_fingerprint",
+        "evidence_fingerprint",
+    ):
+        _require_hex_fingerprint(ref[key], f"locked_evaluation.{key}")
+
+    gate_verdict = ref["gate_verdict"]
+    if gate_verdict not in GATE_VERDICTS:
+        raise AnalysisQualityLoopStateError(
+            "locked_evaluation.gate_verdict must be PASS|FAIL|HOLD, "
+            f"got {gate_verdict!r}"
+        )
+
+    decision = ref["decision"]
+    if not isinstance(decision, Mapping):
+        raise AnalysisQualityLoopStateError("locked_evaluation.decision must be a mapping")
+    extra_dec = set(decision.keys()) - (
+        _LOCKED_DECISION_REQUIRED_KEYS | _LOCKED_DECISION_OPTIONAL_KEYS
+    )
+    missing_dec = _LOCKED_DECISION_REQUIRED_KEYS - set(decision.keys())
+    if extra_dec or missing_dec:
+        raise AnalysisQualityLoopStateError(
+            "locked_evaluation.decision has unsupported or missing keys: "
+            f"extra={sorted(extra_dec)} missing={sorted(missing_dec)}"
+        )
+    decision_status = _require_canonical_text(
+        decision["decision_status"], "locked_evaluation.decision.decision_status"
+    )
+    if decision_status not in DECISION_STATUSES:
+        raise AnalysisQualityLoopStateError(
+            f"locked_evaluation.decision.decision_status unsupported: {decision_status!r}"
+        )
+    token = decision.get("decision_token")
+    if token is not None:
+        token = _require_canonical_text(
+            token, "locked_evaluation.decision.decision_token"
+        )
+    next_action = _require_canonical_text(
+        decision["next_action"], "locked_evaluation.decision.next_action"
+    )
+    decision_fp = _require_hex_fingerprint(
+        decision["decision_fingerprint"],
+        "locked_evaluation.decision.decision_fingerprint",
+    )
+
+    terminal_status = _require_canonical_text(
+        ref["terminal_status"], "locked_evaluation.terminal_status"
+    )
+    if terminal_status not in LOCKED_EVALUATION_TERMINAL_STATUSES:
+        raise AnalysisQualityLoopStateError(
+            f"locked_evaluation.terminal_status unsupported: {terminal_status!r}"
+        )
+    if ref["production_authorized"] is not False:
+        raise AnalysisQualityLoopStateError(
+            "locked_evaluation.production_authorized must be false"
+        )
+
+    normalized_decision: dict[str, Any] = {
+        "decision_status": decision_status,
+        "next_action": next_action,
+        "decision_fingerprint": decision_fp,
+    }
+    if token is not None:
+        normalized_decision["decision_token"] = token
+    return {
+        "candidate": candidate,
+        "baseline_candidate": baseline,
+        "partition": {"partition_id": partition_id, "role": role},
+        "request_fingerprint": ref["request_fingerprint"],
+        "outcome_fingerprint": ref["outcome_fingerprint"],
+        "analysis_eval_fingerprint": ref["analysis_eval_fingerprint"],
+        "evidence_fingerprint": ref["evidence_fingerprint"],
+        "gate_verdict": gate_verdict,
+        "decision": normalized_decision,
+        "terminal_status": terminal_status,
+        "production_authorized": False,
+    }
 
 
 def state_semantic_payload(state: Mapping[str, Any]) -> dict[str, Any]:
@@ -360,6 +508,8 @@ def validate_state(state: Mapping[str, Any]) -> dict[str, Any]:
     last_iter = _optional_mapping(
         copy_state.get("last_iterator_ref"), "last_iterator_ref"
     )
+    locked_raw = copy_state.get("locked_evaluation")
+    locked = None if locked_raw is None else validate_locked_evaluation_ref(locked_raw)
     if last_orch is not None:
         _require_hex_fingerprint(
             last_orch.get("outcome_fingerprint"),
@@ -436,6 +586,8 @@ def validate_state(state: Mapping[str, Any]) -> dict[str, Any]:
         "generation": generation,
         "production_authorized": False,
     }
+    if locked is not None:
+        normalized["locked_evaluation"] = locked
 
     try:
         assert_portable_value(normalized, field="state")
@@ -550,5 +702,6 @@ __all__ = [
     "save_state_atomic",
     "state_semantic_fingerprint",
     "state_semantic_payload",
+    "validate_locked_evaluation_ref",
     "validate_state",
 ]
