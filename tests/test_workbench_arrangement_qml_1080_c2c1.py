@@ -485,14 +485,15 @@ def test_qml_has_timeline_viewport_area():
     assert 'timelineViewport' in stage or 'arrangementTimeline' in stage.lower()
 
 
-def test_qml_no_end_marker_controls():
-    """No End Marker controls in C2c1 QML."""
+def test_end_marker_python_owned_no_qml_drag_surface():
+    """End Marker rendering is C2c2-owned (Python projection); QML adds no drag/keyboard surface."""
     from src.workbench_qml import QML_SOURCE
     stage = QML_SOURCE.split('id: arrangementStageComponent', 1)[1].split('id: arrangementStageHeader', 1)[0]
-    assert 'endMarker' not in stage
-    assert 'end_marker' not in stage
-    assert 'renderEligibility' not in stage
-    assert 'render_eligibility' not in stage
+    assert 'arrangementEndMarker' in stage
+    assert 'arrangementEndMarkerHandle' in stage
+    # No QML-owned manipulation surface: no MouseArea attached to the marker handle.
+    handle_index = stage.find('arrangementEndMarkerHandle')
+    assert 'MouseArea' not in stage[handle_index:]
 
 
 def test_qml_ctrl_wheel_zoom_binding():

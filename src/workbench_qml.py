@@ -5994,8 +5994,8 @@ else
                             readonly property string groupId: row.groupId
                             readonly property bool expanded: row.expanded
                             width: parent.width
-                            // Height depends on expansion: collapsed=64, expanded=64 + trackRows * 48
-                            height: expanded ? (64 + (row.trackRows ? row.trackRows.length : 0) * 48) : 64
+                            // Height depends on expansion: collapsed=64, expanded=64 + trackRows *48
+                            height: expanded ? (64 + (row.trackRows ? row.trackRows.length : 0) *48) : 64
 
                             // Parent group header
                             Rectangle {
@@ -6140,7 +6140,7 @@ else
                                 anchors.rightMargin: 14
                                 anchors.top: parent.top
                                 anchors.topMargin: 64
-                                height: expanded ? (row.trackRows ? row.trackRows.length : 0) * 48 : 0
+                                height: expanded ? (row.trackRows ? row.trackRows.length : 0) *48 : 0
                                 visible: expanded && row.trackRows && row.trackRows.length > 0
                                 Column {
                                     spacing: 4
@@ -6406,6 +6406,47 @@ else
                                 }
                             }
                         }
+                    }
+                }
+                // C2c2: Python-owned end-marker projection. The marker reads
+                // a normalized position from the bridge; QML owns no musical
+                // truth and renders dimmed unless projection says eligible.
+                Item {
+                    id: arrangementEndMarker
+                    objectName: "arrangementEndMarker"
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    x: window.arrangement.endMarkerNormalizedPosition * parent.width
+                    width: 2
+                    visible: window.arrangement.endMarkerVisible
+                    opacity: window.arrangement.endMarkerRenderEligible ? 1.0 : 0.4
+
+                    Rectangle {
+                        anchors.fill: parent
+                        color: theme.actionActive
+                        opacity: 0.35
+                    }
+
+                    Rectangle {
+                        id: arrangementEndMarkerHandle
+                        objectName: "arrangementEndMarkerHandle"
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.top: parent.top
+                        width: 10
+                        height: 10
+                        radius: 2
+                        color: theme.actionActive
+                        Accessible.role: Accessible.Indicator
+                        Accessible.name: "endMarker END"
+                    }
+
+                    Label {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.top: parent.top
+                        anchors.topMargin: 12
+                        text: "END"
+                        color: theme.textSecondary
+                        font.pixelSize: 8
                     }
                 }
             }
@@ -7333,6 +7374,11 @@ def _qml_arrangement_bridge(session, adapter):
         zoom_out,
         pan,
         rebase_viewport_for_tempo_change,
+        project_end_marker,
+        request_end_marker_set,
+        request_end_marker_clear,
+        request_end_marker_nudge,
+        preview_end_marker_snap,
         ARRANGEMENT_BLOCK_LENGTH_QUARTER_NOTES,
         ArrangementViewportState,
     )
@@ -7401,6 +7447,12 @@ def _qml_arrangement_bridge(session, adapter):
             self._last_entry_outcome = ""
             self._last_entry_message = ""
             self._last_field_toggle_outcome = ""
+            # C2c2: end-marker projection state (Python-owned)
+            self._end_marker_exists = False
+            self._end_marker_qn = 0.0
+            self._end_marker_visible = False
+            self._end_marker_render_eligible = False
+            self._end_marker_normalized = 0.0
             self._refresh()
 
         def _refresh(self) -> None:
@@ -7444,6 +7496,12 @@ def _qml_arrangement_bridge(session, adapter):
                 }
                 for row in projection.channel_rows
             ]
+            # C2c2: end-marker projection defaults (fail-closed per refresh)
+            self._end_marker_exists = False
+            self._end_marker_qn = 0.0
+            self._end_marker_visible = False
+            self._end_marker_render_eligible = False
+            self._end_marker_normalized = 0.0
             self._group_rows = []
             if self._arrangement_mode_enabled and self._projection_mode == "ARRANGEMENT":
                 try:
@@ -7469,6 +7527,28 @@ def _qml_arrangement_bridge(session, adapter):
                         window = arrangement_seam.project_arrangement_block_window(
                             session, visible_start_block, visible_block_count
                         )
+                    # C2c2: Python-owned end-marker projection. The marker
+                    # never mutates; projection failure degrades to defaults
+                    # without poisoning the block-group build below.
+                    try:
+                        marker = project_end_marker(session, self._viewport)
+                        self._end_marker_exists = bool(marker.exists)
+                        self._end_marker_qn = (
+                            float(marker.quarter_note)
+                            if marker.quarter_note is not None
+                            else 0.0
+                        )
+                        self._end_marker_visible = bool(marker.visible)
+                        self._end_marker_render_eligible = bool(
+                            marker.render_eligible
+                        )
+                        self._end_marker_normalized = (
+                            float(marker.normalized_position)
+                            if marker.normalized_position is not None
+                            else 0.0
+                        )
+                    except (TypeError, ValueError, AttributeError):
+                        pass  # fail-closed: defaults retained, groups unaffected
                     blocks = {b.block_index: b for b in window.blocks}
                     track_rows_by_group = getattr(window, "track_rows_by_group", {})
                     self._group_rows = [
@@ -7642,6 +7722,52 @@ def _qml_arrangement_bridge(session, adapter):
             self._refresh()
             return "panned"
 
+        @Slot(float, result=str)
+        def requestEndMarkerSet(self, quarter_note: float) -> str:
+            """C2c2: One Python-owned end-marker set intent.
+
+            QML sends only the quarter-note position; the domain owns
+            snap semantics and the horizon decision. Visual feedback is
+            derived exclusively from the new Python projection.
+            """
+            if session is None or self._viewport is None:
+                return "fail_closed"
+            result = request_end_marker_set(
+                session, Fraction(str(float(quarter_note)))
+            )
+            self._refresh()
+            return str(result.status)
+
+        @Slot(int, result=str)
+        def requestEndMarkerNudge(self, direction: int) -> str:
+            """C2c2: One Python-owned end-marker nudge intent."""
+            if session is None or self._viewport is None:
+                return "fail_closed"
+            result = request_end_marker_nudge(session, direction)
+            self._refresh()
+            return str(result.status)
+
+        @Slot(result=str)
+        def requestEndMarkerClear(self) -> str:
+            """C2c2: One Python-owned end-marker clear intent."""
+            if session is None:
+                return "fail_closed"
+            result = request_end_marker_clear(session)
+            self._refresh()
+            return str(result.status)
+
+        @Slot(float, result=float)
+        def previewEndMarkerSnap(self, quarter_note: float) -> float:
+            """C2c2: Snap preview without mutating; -1.0 means unprojected."""
+            if session is None:
+                return -1.0
+            snapped = preview_end_marker_snap(
+                session, Fraction(str(float(quarter_note)))
+            )
+            if snapped is None:
+                return -1.0
+            return float(snapped)
+
         @Property(float, notify=state_changed)
         def viewportStartQn(self) -> float:
             """Viewport start position in quarter notes."""
@@ -7681,6 +7807,23 @@ def _qml_arrangement_bridge(session, adapter):
             if self._viewport is None:
                 return 0.0
             return float(self._viewport.logical_horizon_qn)
+
+        # C2c2: Python-owned end-marker projection surface.
+        @Property(float, notify=state_changed)
+        def endMarkerQn(self) -> float:
+            return 0.0 if self._end_marker_qn is None else float(self._end_marker_qn)
+
+        @Property(bool, notify=state_changed)
+        def endMarkerVisible(self) -> bool:
+            return self._end_marker_visible
+
+        @Property(bool, notify=state_changed)
+        def endMarkerRenderEligible(self) -> bool:
+            return self._end_marker_render_eligible
+
+        @Property(float, notify=state_changed)
+        def endMarkerNormalizedPosition(self) -> float:
+            return 0.0 if self._end_marker_normalized is None else float(self._end_marker_normalized)
 
         @Property(bool, notify=state_changed)
         def arrangementModeEnabled(self) -> bool:

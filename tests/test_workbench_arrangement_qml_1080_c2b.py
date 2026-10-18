@@ -627,8 +627,6 @@ def test_no_timeline_zoom_pan_scope_creep(session, bridge):
     import re
     forbidden_patterns = [
         r'\btimeline\b', r'\bTIMELINE\b',
-        r'\bendMarker\b', r'\bend_marker\b', r'\bEndMarker\b',
-        r'\brenderEligibility\b', r'\brender_eligibility\b',
         r'\bLive\b', r'\bLIVE\b', r'\bMIDI\b', r'\bmidi\b',
         r'\bpianoRoll\b', r'\bPianoRoll\b', r'\bpianoroll\b',
         r'\bmixer\b', r'\bMixer\b', r'\bMIXER\b',
