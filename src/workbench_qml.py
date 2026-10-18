@@ -4638,6 +4638,9 @@ ApplicationWindow {
                                     Layout.preferredWidth: browserPane.effectiveBrowserFavoriteColumnWidth
                                     Layout.preferredHeight: Math.min(window.densityActionHitTarget, window.densityRowHeight - 2 * window.densityVerticalInset)
                                     Layout.maximumHeight: window.densityRowHeight - 2 * window.densityVerticalInset
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: modelData.favorite ? "Remove from Favorites" : "Add to Favorites"
+                                    Accessible.onPressAction: favoriteMouseArea.clicked(null)
                                     Label {
                                         anchors.fill: parent
                                         text: modelData.favorite ? "★" : "☆"
@@ -4647,6 +4650,7 @@ ApplicationWindow {
                                         font.pixelSize: window.textMeta
                                     }
                                     MouseArea {
+                                        id: favoriteMouseArea
                                         anchors.fill: parent
                                         onClicked: {
                                             browser.forceActiveFocus()
