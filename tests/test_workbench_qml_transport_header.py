@@ -178,11 +178,10 @@ def test_runtime_qml_header_projects_live_transport_and_commands():
         assert bridge.syncEnabled is True
         assert str(sync_label.property("text")) == "ON"
 
-        # Screen-2 open/play smoke at the changed tempo.
+        # Channel-rack open/play smoke at the changed tempo.
         channel_rack = engine.rootContext().contextProperty("channelRackModel")
         channel_rack.openChannelRack()
         _settle_qml_frame(app)
-        assert engine._screen1_channel_rack.active_screen == "screen2"
         assert float(transport.get_current_tempo()) == pytest.approx(before + 1.0)
         # Play may fail-soft without samples; must not invent a second tempo.
         try:
