@@ -29,12 +29,27 @@ polling timer surviving the engine. This is a distinct ownership defect.
 
 The native Windows footer baseline reported 13 passed and process exit 0, but
 also emitted `0x8001010d` inside the first runtime test's nested Qt event loop.
-Thus previous-test worker leakage is not required for that diagnostic. Its
-native cause remains UNKNOWN; neither passing pytest assertions nor the
-ownership repair proves that diagnostic fixed. Do not suppress it or treat a
-log containing it as a clean native run.
-The separate native investigation is tracked in
-[#1145](https://github.com/jannekbuengener/sample-brain/issues/1145).
+Thus previous-test worker leakage is not required for that diagnostic.
+
+Investigation in [#1145](https://github.com/jannekbuengener/sample-brain/issues/1145)
+proved the origin (`STATUS: ROOT_CAUSE_PROVEN_UPSTREAM_NO_SAFE_REPO_FIX`): the
+first `WM_GETOBJECT` accessibility call (`lParam = -25`, `UiaRootObjectId`,
+arriving outside a nested send-message call) after a visible
+`QQuickWindow.show()` routes into Qt's Windows UIA path; inside
+`UiaReturnRawElementProvider` in `qwindows.dll` an access call crosses a
+COM/STA boundary and raises the first-chance exception `0x8001010d`
+(`RPC_E_CANTCALLOUT_ININPUTSYNCCALL`). The exception is caught and non-terminating:
+the process exit code and assertion results are unaffected.
+
+Classification: for the exact constellation above (Windows, QML window shown,
+Qt Windows UIA path), `0x8001010d` from the Qt UIA accessibility path is a
+known, proven, non-terminating upstream (Qt) diagnostic, not a sample-brain
+regression. It is no longer classified as UNKNOWN. This classification is
+bound to that exact constellation only: do not generalize it to other exit
+codes, terminating exceptions, or suppressed-output scenarios. Do not
+deliberately re-trigger it in CI logs; assert the pipeline result independently
+of first-chance diagnostics. Reproducing evidence lives in the #1145 report.
+A separate upstream Qt issue may be filed later; that is follow-up work.
 
 ## Reproducible local run
 
