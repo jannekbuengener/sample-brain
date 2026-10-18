@@ -105,7 +105,7 @@ Evidence:
 
 - CALIBRATION baseline macro-F1: `0.457` on support 17.
 - `role.unknown_margin.0.03` raised CALIBRATION macro-F1 to `0.492` but collapsed unknown-reference honesty from `1.0` to `0.0`; it was not justified by the frozen role gate.
-- Locked TEST/HOLDOUT baseline: macro-F1 `0.297`, coverage `0.75`, support 12, one abstention, usable 3/4, gate `HOLD`.
+- Locked TEST/HOLDOUT baseline: macro-F1 `0.297`, coverage `0.75`, support 12, one BeatGrid-held unusable fixture, usable 3/4, gate `HOLD`. The classifier produced zero `pred_role is None` abstentions on usable sections.
 
 Result: the tested role adapter does not dominate the current path because its apparent macro gain violates the independent unknown/abstention constraint. Keep-current means only retention of the best-supported tested path; weak role accuracy and coverage remain explicit limitations.
 
@@ -146,10 +146,10 @@ The following JSON is a **decision projection over existing contracts and artifa
 {
   "automation_v1": {
     "contract": "sample-brain.analysis-automation-decision.v1",
-    "decision_status": "ready",
-    "decision_token": "DEFER_INSUFFICIENT_EVIDENCE",
+    "decision_status": "hold",
     "next_action": "defer_for_evidence",
-    "production_authorized": false
+    "production_authorized": false,
+    "hold_reason": "LOCKED_EVIDENCE_PARTIAL_HOLD_AND_PORTABLE_FINGERPRINTS_NOT_MATERIALIZED"
   },
   "domain": "aq7.structure_role_drop",
   "benchmark": {
@@ -190,18 +190,17 @@ The following JSON is a **decision projection over existing contracts and artifa
   },
   "planes": {
     "aq7.boundary": {
-      "decision_token": "KEEP_CURRENT_BASELINE_PATH",
+      "issue_decision_token": "KEEP_CURRENT_BASELINE_PATH",
       "holdout_gate": "HOLD",
       "hold_reason": "BEATGRID_PROVENANCE_LIMITATION"
     },
     "aq7.role": {
-      "decision_token": "KEEP_CURRENT_BASELINE_PATH",
+      "issue_decision_token": "KEEP_CURRENT_BASELINE_PATH",
       "holdout_gate": "HOLD",
       "hold_reason": "BEATGRID_PROVENANCE_LIMITATION"
     },
     "aq7.drop_event": {
-      "decision_token": "NEED_MORE_EVIDENCE",
-      "automation_v1_token": "DEFER_INSUFFICIENT_EVIDENCE",
+      "issue_decision_token": "NEED_MORE_EVIDENCE",
       "holdout_gate": "HOLD",
       "hold_reason": "BEATGRID_PROVENANCE_LIMITATION"
     }
@@ -222,7 +221,7 @@ The following JSON is a **decision projection over existing contracts and artifa
 }
 ```
 
-The top-level automation token maps the mixed plane result to the existing V1 alias rule: issue token `NEED_MORE_EVIDENCE` -> automation token `DEFER_INSUFFICIENT_EVIDENCE`. It does not blend plane metrics and does not overwrite the two keep-current plane decisions.
+The top-level automation state remains `hold` and emits no ready token because the locked gates are `HOLD` and the required portable evidence fingerprints were not materialized. The three `issue_decision_token` values answer #1031 at the domain plane level; they are not presented as ready #1043 envelope tokens, do not blend plane metrics, and do not authorize production.
 
 ## Production consequence
 
