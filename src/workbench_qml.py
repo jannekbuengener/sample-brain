@@ -6235,6 +6235,49 @@ else
                 }
             }
 
+                // C2c2: Python-owned end-marker projection. The marker reads
+                // a normalized position from the bridge; QML owns no musical
+                // truth and renders dimmed unless projection says eligible.
+                Item {
+                    id: arrangementEndMarker
+                    objectName: "arrangementEndMarker"
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    x: window.arrangement.endMarkerNormalizedPosition * parent.width
+                    width: 2
+                    visible: window.arrangement.endMarkerVisible
+                    opacity: window.arrangement.endMarkerRenderEligible ? 1.0 : 0.4
+
+                    Rectangle {
+                        anchors.fill: parent
+                        color: theme.actionActive
+                        opacity: 0.35
+                    }
+
+                    Rectangle {
+                        id: arrangementEndMarkerHandle
+                        objectName: "arrangementEndMarkerHandle"
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.top: parent.top
+                        width: 10
+                        height: 10
+                        radius: 2
+                        color: theme.actionActive
+                        Accessible.role: Accessible.Indicator
+                        Accessible.name: "endMarker END"
+                    }
+
+                    Label {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.top: parent.top
+                        anchors.topMargin: 12
+                        text: "END"
+                        color: theme.textSecondary
+                        font.pixelSize: 8
+                    }
+                }
+            }
+
             // Bottom-center primary sequencer: exactly 32 fields across 8
             // bars, four fields per bar (#1083/#1086). The aggregate row is
             // the unchanged Slice A read-only cycle projection; below it the
@@ -6408,48 +6451,6 @@ else
                         }
                     }
                 }
-                // C2c2: Python-owned end-marker projection. The marker reads
-                // a normalized position from the bridge; QML owns no musical
-                // truth and renders dimmed unless projection says eligible.
-                Item {
-                    id: arrangementEndMarker
-                    objectName: "arrangementEndMarker"
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    x: window.arrangement.endMarkerNormalizedPosition * parent.width
-                    width: 2
-                    visible: window.arrangement.endMarkerVisible
-                    opacity: window.arrangement.endMarkerRenderEligible ? 1.0 : 0.4
-
-                    Rectangle {
-                        anchors.fill: parent
-                        color: theme.actionActive
-                        opacity: 0.35
-                    }
-
-                    Rectangle {
-                        id: arrangementEndMarkerHandle
-                        objectName: "arrangementEndMarkerHandle"
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.top: parent.top
-                        width: 10
-                        height: 10
-                        radius: 2
-                        color: theme.actionActive
-                        Accessible.role: Accessible.Indicator
-                        Accessible.name: "endMarker END"
-                    }
-
-                    Label {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.top: parent.top
-                        anchors.topMargin: 12
-                        text: "END"
-                        color: theme.textSecondary
-                        font.pixelSize: 8
-                    }
-                }
-            }
 
             // Stage chrome: Arrangement identity and active track identity.
             // The clear return lives in the Browser nav route through the
