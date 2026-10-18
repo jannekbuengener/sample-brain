@@ -84,6 +84,24 @@ class GhHost:
             raise InfrastructureError("incomplete paginated host evidence")
         return [item for page in pages for item in page]
 
+    def _stream_list(self, endpoint):
+        """Consume every array emitted by gh pagination, including one-page replies."""
+        remaining = self._call(["gh", "api", endpoint, "--paginate"]).strip()
+        if not remaining:
+            raise InfrastructureError("missing paginated host evidence")
+        values = []
+        decoder = json.JSONDecoder()
+        while remaining:
+            try:
+                page, end = decoder.raw_decode(remaining)
+            except ValueError as exc:
+                raise InfrastructureError("invalid paginated host JSON") from exc
+            if not isinstance(page, list):
+                raise InfrastructureError("paginated host evidence must contain arrays")
+            values.extend(page)
+            remaining = remaining[end:].lstrip()
+        return values
+
     @_host_evidence
     def main_sha(self):
         return self._json(f"repos/{self.repository_id}/git/ref/heads/main")["object"][
@@ -92,7 +110,7 @@ class GhHost:
 
     @_host_evidence
     def policy(self):
-        rules = self._json(f"repos/{self.repository_id}/rules/branches/main")
+        rules = self._stream_list(f"repos/{self.repository_id}/rules/branches/main")
         checks, methods, approvals = [], None, 0
         for rule in rules:
             kind, params = rule["type"], rule.get("parameters", {})

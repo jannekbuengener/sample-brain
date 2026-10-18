@@ -860,13 +860,19 @@ def _advance(
                 )
                 is True
             ):
-                return state
+                if state["status"] == "merged":
+                    return state
+                state["repository_merge_eligible"] = True
+                return save("merged", "merged")
             return hold("merge_verification_required")
         if state["phase"] == "merging":
             snapshot = host.snapshot(state["pr_number"])
             if snapshot["merged"] and _identity(state, snapshot, manifest):
+                if not isinstance(snapshot["merge_sha"], str) or not _HEX40.fullmatch(
+                    snapshot["merge_sha"]
+                ):
+                    return hold("merge_verification_required")
                 state["merge_sha"] = snapshot["merge_sha"]
-                _hex(state["merge_sha"], _HEX40)
                 if (
                     host.verify_merge(
                         state["pr_number"], state["head_sha"], state["merge_sha"]
@@ -1001,10 +1007,13 @@ def _advance(
         )
         merged = host.snapshot(state["pr_number"])
         _require(_identity(state, merged, manifest), "merged PR head mismatch")
-        if not merged["merged"] or not merged["merge_sha"]:
+        if (
+            merged["merged"] is not True
+            or not isinstance(merged["merge_sha"], str)
+            or not _HEX40.fullmatch(merged["merge_sha"])
+        ):
             return hold("merge_verification_required")
         state["merge_sha"] = merged["merge_sha"]
-        _hex(state["merge_sha"], _HEX40)
         if (
             host.verify_merge(state["pr_number"], state["head_sha"], state["merge_sha"])
             is not True
