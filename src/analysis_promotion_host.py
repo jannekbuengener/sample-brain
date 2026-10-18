@@ -185,8 +185,10 @@ class GhHost:
             raise InfrastructureError("duplicate promotion PRs")
         return self._pr_identity(values[0]) if values else None
 
-    def create_pr(self, branch, head_sha, base_sha):
-        # No local paths, evidence dumps or domain claims in the generated body.
+    def create_bounded_pr(self, branch, head_sha, base_sha, *, title, body):
+        # Caller supplies bounded portable prose; never include host output or paths.
+        if not all(isinstance(value, str) and value.strip() for value in (title, body)):
+            raise ValueError("PR title/body must be non-empty text")
         self._call(
             [
                 "gh",
@@ -199,15 +201,28 @@ class GhHost:
                 "--head",
                 branch,
                 "--title",
-                f"Promote frozen candidate ({branch.rsplit('/', 1)[-1]})",
+                title,
                 "--body",
-                f"Bounded policy-controlled repository promotion.\n\nBase: {base_sha}\nHead: {head_sha}\n\nS8 baseline acceptance remains separate.",
+                body,
             ]
         )
         result = self.find_pr(branch)
         if result is None:
             raise InfrastructureError("created PR not yet visible")
         return result
+
+    def create_pr(self, branch, head_sha, base_sha):
+        return self.create_bounded_pr(
+            branch,
+            head_sha,
+            base_sha,
+            title=f"Promote frozen candidate ({branch.rsplit('/', 1)[-1]})",
+            body=(
+                "Bounded policy-controlled repository promotion.\n\n"
+                f"Base: {base_sha}\nHead: {head_sha}\n\n"
+                "S8 baseline acceptance remains separate."
+            ),
+        )
 
     def _threads(self, number):
         owner, name = self.repository_id.split("/")
