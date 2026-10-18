@@ -15,6 +15,16 @@ A closed issue, old benchmark or historical spec can remain useful evidence with
 
 ## Active canon
 
+Locked final evaluation composes the delivered analysis contracts through
+[`benchmarks/SAMPLE_BRAIN_ANALYSIS_LOCKED_HOLDOUT_V1.md`](benchmarks/SAMPLE_BRAIN_ANALYSIS_LOCKED_HOLDOUT_V1.md)
+(ACTIVE_SUPPORTING, #1170): immutable #1097 freeze state, one locked TEST/HOLDOUT
+dispatch, portable terminal result and existing #1043 decision. The optional S7
+repository controller is specified in
+[`benchmarks/SAMPLE_BRAIN_ANALYSIS_PROMOTION_V1.md`](benchmarks/SAMPLE_BRAIN_ANALYSIS_PROMOTION_V1.md)
+(ACTIVE_SUPPORTING, #1176): explicit bounded domain manifest, isolated worktree,
+PR, exact-head gates and verified merge. S8 baseline acceptance/recovery remains
+separate; `production_authorized=false`.
+
 | Topic | Authority | Class | Notes |
 |---|---|---|---|
 | Product producing flow | `docs/PRODUCT_WORKFLOW_CANON.md` | ACTIVE_CANON | Edit → Arrangement → later Live (#1075/#1076). Progressive disclosure + Python-owned musical truth retained. VST3 remains parked. |

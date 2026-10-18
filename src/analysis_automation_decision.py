@@ -38,12 +38,11 @@ NextAction = Literal[
     "defer_for_evidence",
     "require_human_governance",
     "stop_controlled_failure",
+    "handoff_promotion_controller",
 ]
 GateVerdict = Literal["PASS", "FAIL", "HOLD"]
 
-DECISION_STATUSES: frozenset[str] = frozenset(
-    {"ready", "hold", "controlled_failure"}
-)
+DECISION_STATUSES: frozenset[str] = frozenset({"ready", "hold", "controlled_failure"})
 READY_DECISION_TOKENS: frozenset[str] = frozenset(
     {
         "KEEP_CURRENT_BASELINE_PATH",
@@ -62,6 +61,7 @@ NEXT_ACTIONS: frozenset[str] = frozenset(
         "stop_controlled_failure",
     }
 )
+NEXT_ACTIONS_V1_1: frozenset[str] = NEXT_ACTIONS | {"handoff_promotion_controller"}
 GATE_VERDICTS: frozenset[str] = frozenset({"PASS", "FAIL", "HOLD"})
 DEPRECATED_READY_ALIASES: frozenset[str] = frozenset(
     {
@@ -152,7 +152,7 @@ def _assert_status_token_rules(
         raise AnalysisAutomationDecisionError(
             f"unsupported decision_status: {decision_status}"
         )
-    if next_action not in NEXT_ACTIONS:
+    if next_action not in NEXT_ACTIONS_V1_1:
         raise AnalysisAutomationDecisionError(f"unsupported next_action: {next_action}")
 
     if decision_status == "ready":
@@ -233,9 +233,21 @@ def build_decision(
     )
     _assert_partition_firewall(role=partition_role, next_action=next_action)
 
+    _assert_promotion_handoff(
+        role=partition_role,
+        status=decision_status,
+        token=decision_token,
+        action=next_action,
+        verdict=gate_verdict,
+    )
+
     decision: dict[str, Any] = {
         "document_type": DOCUMENT_TYPE,
-        "artifact_version": ARTIFACT_VERSION,
+        "artifact_version": (
+            "1.1.0"
+            if next_action == "handoff_promotion_controller"
+            else ARTIFACT_VERSION
+        ),
         "domain": _require_text(domain, "domain"),
         "benchmark": {
             "benchmark_id": _require_text(benchmark_id, "benchmark_id"),
@@ -249,7 +261,9 @@ def build_decision(
             "role": partition_role,
         },
         "baseline_candidate": {
-            "candidate_id": _require_text(baseline_candidate_id, "baseline_candidate_id"),
+            "candidate_id": _require_text(
+                baseline_candidate_id, "baseline_candidate_id"
+            ),
             "config_fingerprint": _require_hex_fingerprint(
                 baseline_config_fingerprint, "baseline_config_fingerprint"
             ),
@@ -301,6 +315,18 @@ def build_decision(
     return validate_decision(decision)
 
 
+def _assert_promotion_handoff(*, role, status, token, action, verdict) -> None:
+    if action == "handoff_promotion_controller" and (
+        role not in {"test", "holdout"}
+        or status != "ready"
+        or token != "PROMOTION_CANDIDATE_IDENTIFIED"
+        or verdict != "PASS"
+    ):
+        raise AnalysisAutomationDecisionError(
+            "promotion handoff requires locked TEST/HOLDOUT, ready promotion candidate and PASS"
+        )
+
+
 def validate_decision(decision: Mapping[str, Any]) -> dict[str, Any]:
     """Validate envelope invariants; return a plain dict copy."""
     if not isinstance(decision, Mapping):
@@ -309,7 +335,7 @@ def validate_decision(decision: Mapping[str, Any]) -> dict[str, Any]:
         raise AnalysisAutomationDecisionError(
             f"document_type must be {DOCUMENT_TYPE!r}"
         )
-    if decision.get("artifact_version") != ARTIFACT_VERSION:
+    if decision.get("artifact_version") not in {ARTIFACT_VERSION, "1.1.0"}:
         raise AnalysisAutomationDecisionError(
             f"artifact_version must be {ARTIFACT_VERSION!r}"
         )
@@ -359,7 +385,9 @@ def validate_decision(decision: Mapping[str, Any]) -> dict[str, Any]:
         )
     gate = evidence.get("gate_decision")
     if not isinstance(gate, Mapping):
-        raise AnalysisAutomationDecisionError("evidence.gate_decision must be a mapping")
+        raise AnalysisAutomationDecisionError(
+            "evidence.gate_decision must be a mapping"
+        )
     verdict = gate.get("verdict")
     if verdict not in GATE_VERDICTS:
         raise AnalysisAutomationDecisionError(
@@ -381,6 +409,27 @@ def validate_decision(decision: Mapping[str, Any]) -> dict[str, Any]:
         next_action=next_action,
     )
     _assert_partition_firewall(role=str(role), next_action=next_action)
+    _assert_promotion_handoff(
+        role=role,
+        status=decision_status,
+        token=decision_token,
+        action=next_action,
+        verdict=verdict,
+    )
+    if (
+        next_action == "handoff_promotion_controller"
+        and decision.get("artifact_version") != "1.1.0"
+    ):
+        raise AnalysisAutomationDecisionError(
+            "promotion handoff requires artifact_version=1.1.0"
+        )
+    if (
+        next_action != "handoff_promotion_controller"
+        and decision.get("artifact_version") != ARTIFACT_VERSION
+    ):
+        raise AnalysisAutomationDecisionError(
+            "legacy actions require artifact_version=1.0.0"
+        )
 
     if decision.get("production_authorized") is not False:
         raise AnalysisAutomationDecisionError(
