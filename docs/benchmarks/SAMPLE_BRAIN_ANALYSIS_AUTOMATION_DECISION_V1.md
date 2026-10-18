@@ -7,7 +7,7 @@
 **Consumes:** [#956](https://github.com/jannekbuengener/sample-brain/issues/956) (`sample-brain.analysis-eval.v1`); ARVP Evidence Bundle / Gate by opaque reference (`arvp.evidence.v1`, `GateVerdict`)
 **Tooling:** `src/analysis_automation_decision.py`
 **Conceptual identity:** `sample-brain.analysis-automation-decision.v1`
-**Schema version:** `1.0.0`
+**Schema versions:** `1.0.0`; `1.1.0` for the locked promotion handoff (#1170)
 
 ## Purpose
 
@@ -139,6 +139,17 @@ Never coerce HOLD / controlled failure into a ready decision token.
 | `defer_for_evidence` | Wait / HOLD for evidence |
 | `require_human_governance` | Explicit human/governance decision required |
 | `stop_controlled_failure` | Fail-closed stop |
+| `handoff_promotion_controller` | Version 1.1.0 only: terminal locked promotion-candidate handoff; no production authorization |
+
+The #1170 extension uses the same decision document type and fingerprint rules.
+Only `ready` + `PROMOTION_CANDIDATE_IDENTIFIED` + gate `PASS` + partition
+`test|holdout` may use `handoff_promotion_controller`. The builder emits 1.1.0
+only for this action. Existing builder paths and valid 1.0.0 envelopes remain
+unchanged. `NEXT_ACTIONS` retains the frozen 1.0.0 vocabulary for CALIBRATION
+consumers; `NEXT_ACTIONS_V1_1` exposes the extended decision vocabulary. Older
+readers fail closed rather than interpreting the new action as a tuning action.
+The handoff identifies future controller work; it does not implement that
+controller or require human approval unless explicit governance policy says so.
 
 Preferred pairing when `decision_status=ready`:
 
@@ -147,7 +158,7 @@ Preferred pairing when `decision_status=ready`:
 | `KEEP_CURRENT_BASELINE_PATH` | `keep_baseline_and_stop` |
 | `NO_JUSTIFIED_CANDIDATE` | `keep_baseline_and_stop` |
 | `DEFER_INSUFFICIENT_EVIDENCE` | `defer_for_evidence` |
-| `PROMOTION_CANDIDATE_IDENTIFIED` | `require_human_governance` |
+| `PROMOTION_CANDIDATE_IDENTIFIED` | `require_human_governance`; locked final evidence may use 1.1.0 `handoff_promotion_controller` |
 
 ## Partition firewall
 
