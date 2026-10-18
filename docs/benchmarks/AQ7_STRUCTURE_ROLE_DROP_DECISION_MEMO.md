@@ -4,7 +4,7 @@
 **Class:** ACTIVE_SUPPORTING
 **Parents:** [#949](https://github.com/jannekbuengener/sample-brain/issues/949) (AQ7), [#942](https://github.com/jannekbuengener/sample-brain/issues/942) (program)
 **Depends on (CLOSED):** [#1023](https://github.com/jannekbuengener/sample-brain/issues/1023), [#1024](https://github.com/jannekbuengener/sample-brain/issues/1024), [#1025](https://github.com/jannekbuengener/sample-brain/issues/1025), [#1026](https://github.com/jannekbuengener/sample-brain/issues/1026), [#1027](https://github.com/jannekbuengener/sample-brain/issues/1027), [#1028](https://github.com/jannekbuengener/sample-brain/issues/1028), [#1030](https://github.com/jannekbuengener/sample-brain/issues/1030)
-**Automation contract reused by reference:** [`SAMPLE_BRAIN_ANALYSIS_AUTOMATION_DECISION_V1.md`](SAMPLE_BRAIN_ANALYSIS_AUTOMATION_DECISION_V1.md)
+**Automation vocabulary referenced (not a conforming envelope):** [`SAMPLE_BRAIN_ANALYSIS_AUTOMATION_DECISION_V1.md`](SAMPLE_BRAIN_ANALYSIS_AUTOMATION_DECISION_V1.md)
 
 ## Architecture outcome
 
@@ -138,18 +138,20 @@ Result: no tested path demonstrates positive `drop_onset` detection evidence. Th
 | Runtime | Diagnostic single-pass timing only; #958 cold/steady track-length buckets remain `HOLD`. |
 | ARVP handoff | No committed #956 analysis-eval artifact or ARVP Evidence Bundle fingerprint exists for this decision; references remain explicit and missing fingerprints are not fabricated. |
 
-## Machine-readable handoff (#1040-facing)
+## Machine-readable status projection (not a #1043 handoff)
 
-The following JSON is a **decision projection over existing contracts and artifact identities**, not a second decision schema. `automation_v1` names the existing #1043 vocabulary. Formal #956/ARVP fingerprints remain `null` with an explicit status because those artifacts were not materialized by #1023-#1030.
+The following JSON is a **non-consumable status/reference projection** over existing artifact identities, not a second decision schema and not a valid `sample-brain.analysis-automation-decision.v1` envelope. Formal #956/ARVP fingerprints remain `null` with an explicit status because those artifacts were not materialized by #1023-#1030. Therefore #1040 must not pass this block to `validate_decision` or treat it as a ready handoff.
 
 ```json
 {
-  "automation_v1": {
-    "contract": "sample-brain.analysis-automation-decision.v1",
-    "decision_status": "hold",
-    "next_action": "defer_for_evidence",
+  "status_projection": {
+    "target_contract": "sample-brain.analysis-automation-decision.v1",
+    "contract_conformant": false,
+    "consumable_by_1040": false,
+    "projected_status": "hold",
+    "projected_next_action": "defer_for_evidence",
     "production_authorized": false,
-    "hold_reason": "LOCKED_EVIDENCE_PARTIAL_HOLD_AND_PORTABLE_FINGERPRINTS_NOT_MATERIALIZED"
+    "reason": "LOCKED_EVIDENCE_PARTIAL_HOLD_AND_PORTABLE_FINGERPRINTS_NOT_MATERIALIZED"
   },
   "domain": "aq7.structure_role_drop",
   "benchmark": {
@@ -221,7 +223,7 @@ The following JSON is a **decision projection over existing contracts and artifa
 }
 ```
 
-The top-level automation state remains `hold` and emits no ready token because the locked gates are `HOLD` and the required portable evidence fingerprints were not materialized. The three `issue_decision_token` values answer #1031 at the domain plane level; they are not presented as ready #1043 envelope tokens, do not blend plane metrics, and do not authorize production.
+This projection records the intended fail-closed status as `hold` and emits no ready token. It remains non-consumable until a real #956 analysis-eval artifact and ARVP evidence/gate reference provide the required fingerprints and a conforming #1043 envelope is built. The three `issue_decision_token` values answer #1031 at the domain plane level; they are not #1043 envelope tokens, do not blend plane metrics, and do not authorize production.
 
 ## Production consequence
 
