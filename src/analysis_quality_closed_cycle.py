@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -188,10 +189,13 @@ def _require_simulation_repository(inputs: Mapping[str, Any], manifest: Mapping[
     if repository_path is None:
         raise AnalysisQualityClosedCycleError("S9 promotion requires an isolated Git repository")
     resolved_repository = Path(repository_path).resolve()
-    if not any(part.casefold() in {"temp", "tmp"} for part in resolved_repository.parts):
+    temporary_root = Path(tempfile.gettempdir()).resolve()
+    try:
+        resolved_repository.relative_to(temporary_root)
+    except ValueError:
         raise AnalysisQualityClosedCycleError(
             "S9 promotion repository must live under a temporary directory"
-        )
+        ) from None
     source_root = Path(__file__).resolve().parents[1]
     if resolved_repository == source_root:
         raise AnalysisQualityClosedCycleError("S9 cannot promote into its own Sample Brain repository")
@@ -306,6 +310,24 @@ def _require_cycle_owned_freeze(
         raise AnalysisQualityClosedCycleError(
             "frozen S5 state lacks this cycle's committed selection evidence"
         )
+
+
+def _retry_only_s5_update(identity: Mapping[str, Any], state: Mapping[str, Any]) -> bool:
+    retry_before = identity.get("retry") or {}
+    retry_now = state.get("retry") or {}
+    return (
+        state.get("generation") == identity.get("s5_generation")
+        and (state.get("last_decision") or {}).get("decision_fingerprint")
+        == identity.get("previous_decision_fingerprint")
+        and state.get("active_candidate") == identity.get("active_candidate")
+        and state.get("visited_candidate_ids") == identity.get("visited_candidate_ids")
+        and retry_now.get("budget_remaining", retry_before.get("budget_remaining", 0))
+        < retry_before.get("budget_remaining", 0)
+        and retry_now.get("consecutive_failures", 0)
+        > retry_before.get("consecutive_failures", 0)
+        and bool(retry_now.get("last_failure_class"))
+        and state.get("loop_status") == "ready"
+    )
 
 
 def _require_committed_post_merge_replay(
@@ -535,6 +557,10 @@ def run_quality_cycle(
                 if pending and pending.get("phase") == phase:
                     identity = pending.get("identity") or {}
                     if identity.get("s5_state_fingerprint") != s5["state_fingerprint"]:
+                        if _retry_only_s5_update(identity, s5):
+                            cycle["pending"] = None
+                            _save_attempt(cycle_path, cycle)
+                            continue
                         current_decision = s5.get("last_decision") or {}
                         previous_orchestration = _recovered_orchestration_ref(
                             s5, identity, "S5"
@@ -590,6 +616,10 @@ def run_quality_cycle(
                     "previous_decision_fingerprint": (s5.get("last_decision") or {}).get(
                         "decision_fingerprint"
                     ),
+                    "s5_generation": s5["generation"],
+                    "active_candidate": s5["active_candidate"],
+                    "visited_candidate_ids": list(s5["visited_candidate_ids"]),
+                    "retry": dict(s5["retry"]),
                     "decision_provider_id": policy_id,
                     "request_fingerprint": request_fp,
                 })
@@ -621,6 +651,7 @@ def run_quality_cycle(
             if phase == "locked":
                 if s5["loop_status"] != "frozen":
                     raise AnalysisQualityClosedCycleError("S6 requires frozen S5 state")
+                _require_cycle_owned_freeze(cycle, s5)
                 inputs = dict(locked_inputs(state_path=s5_path, state=s5))
                 policy_id = _provider_id(inputs, remove=False)
                 _pending(cycle, phase, {

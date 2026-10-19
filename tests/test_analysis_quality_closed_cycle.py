@@ -128,6 +128,79 @@ def test_cycle_self_starts_real_aq1_and_stops_on_machine_hold(tmp_path, monkeypa
     assert competing_cycle_blocked == ["cycle generation is already executing"]
 
 
+def test_cycle_retries_after_retry_only_s5_state_update(tmp_path, monkeypatch):
+    _patch_aq1_repo(monkeypatch, tmp_path)
+    state_path = tmp_path / "host" / "quality-state.json"
+    state_path.parent.mkdir()
+    save_state_atomic(state_path, _fresh_aq1_state())
+    attempt_path = tmp_path / "host" / "cycle-attempt.json"
+    work = tmp_path / "retry-work"
+    work.mkdir()
+    provider_calls = {"count": 0}
+
+    def calibration_inputs(*, state_path, state):
+        request = _aq1_path_b_request(
+            work, current_candidate_id=state["active_candidate"]["candidate_id"]
+        )
+
+        def decide(*, request, headless_result, analysis_eval_artifact):
+            provider_calls["count"] += 1
+            if provider_calls["count"] == 1:
+                raise RuntimeError("transient decision provider failure")
+            return {
+                "evidence_fingerprint": fingerprint(
+                    {
+                        "request_fingerprint": request["request_fingerprint"],
+                        "analysis_eval_fingerprint": fingerprint(analysis_eval_artifact),
+                        "domain_artifact_fingerprint": headless_result[
+                            "domain_artifact"
+                        ]["artifact_fingerprint"],
+                    }
+                ),
+                "gate_verdict": "HOLD",
+                "next_action": "defer_for_evidence",
+            }
+
+        return {
+            "request": request,
+            "bind_kwargs": {"work_dir": work},
+            "decision_provider": decide,
+            "decision_provider_id": "aq1-fixture-retry-policy-v1",
+        }
+
+    args = {
+        "state_path": state_path,
+        "attempt_path": attempt_path,
+        "calibration_inputs": calibration_inputs,
+        "locked_inputs": lambda **_: (_ for _ in ()).throw(
+            AssertionError("retry HOLD must not reach S6")
+        ),
+        "promotion_inputs": lambda **_: (_ for _ in ()).throw(
+            AssertionError("retry HOLD must not reach S7")
+        ),
+        "post_merge_inputs": lambda **_: (_ for _ in ()).throw(
+            AssertionError("retry HOLD must not reach S8")
+        ),
+    }
+    try:
+        run_quality_cycle(**args)
+    except Exception as exc:
+        assert "transient decision provider failure" in str(exc)
+    else:
+        raise AssertionError("transient provider failure must consume retry budget")
+
+    failed_state = load_state(state_path)
+    assert failed_state["generation"] == 0
+    assert failed_state["retry"]["budget_remaining"] < failed_state["retry"]["budget_initial"]
+    result = run_quality_cycle(**args)
+
+    assert result["status"] == "held"
+    assert provider_calls["count"] == 2
+    assert load_state(state_path)["last_orchestration_ref"]["decision_provider_id"] == (
+        "aq1-fixture-retry-policy-v1"
+    )
+
+
 def test_malformed_closed_cycle_result_fails_with_contract_error(tmp_path):
     result_path = tmp_path / "cycle.result.json"
     result_path.write_text(json.dumps({"post_merge_ref": None}), encoding="utf-8")
@@ -156,6 +229,29 @@ def test_s9_promotion_rejects_repository_outside_temporary_root():
         assert "temporary directory" in str(exc)
     else:
         raise AssertionError("persistent repositories must not enter S9 proof promotion")
+
+
+def test_s9_temporary_path_component_does_not_authorize_persistent_repository(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(closed_cycle.tempfile, "gettempdir", lambda: str(tmp_path / "system-temp"))
+
+    class Repository:
+        path = tmp_path / "workspace" / "tmp" / "customer-repo"
+
+        @staticmethod
+        def git(*_):
+            return "https://github.com/example/repo.git"
+
+    Repository.path.mkdir(parents=True)
+    try:
+        closed_cycle._require_simulation_repository(
+            {"repository": Repository()}, {"repository_id": "example/repo"}
+        )
+    except AnalysisQualityClosedCycleError as exc:
+        assert "temporary directory" in str(exc)
+    else:
+        raise AssertionError("a tmp-named child of a persistent root is not temporary")
 
 
 def test_terminal_cycle_phases_reload_and_unrelated_s5_invocation_is_rejected(
@@ -196,11 +292,60 @@ def test_terminal_cycle_phases_reload_and_unrelated_s5_invocation_is_rejected(
         assert "lacks this cycle's committed selection evidence" in str(exc)
     else:
         raise AssertionError("an unclaimed frozen S5 state must not enter S6")
+    try:
+        closed_cycle._require_cycle_owned_freeze(
+            {
+                "calibration_refs": [
+                    {
+                        "next_action": "freeze_candidate",
+                        "decision_fingerprint": "expected",
+                        "candidate": {"candidate_id": "expected"},
+                    }
+                ]
+            },
+            {
+                "last_decision": {
+                    "next_action": "freeze_candidate",
+                    "decision_fingerprint": "foreign",
+                },
+                "active_candidate": {"candidate_id": "foreign"},
+            },
+        )
+    except AnalysisQualityClosedCycleError as exc:
+        assert "lacks this cycle's committed selection evidence" in str(exc)
+    else:
+        raise AssertionError("a different frozen decision must not enter S6")
+
+
+def test_retry_only_s5_update_is_distinguished_from_committed_decision():
+    identity = {
+        "s5_generation": 4,
+        "previous_decision_fingerprint": "decision-fp",
+        "active_candidate": {"candidate_id": "candidate-a"},
+        "visited_candidate_ids": ["candidate-a"],
+        "retry": {"budget_remaining": 3, "consecutive_failures": 0},
+    }
+    retry_state = {
+        "generation": 4,
+        "last_decision": {"decision_fingerprint": "decision-fp"},
+        "active_candidate": {"candidate_id": "candidate-a"},
+        "visited_candidate_ids": ["candidate-a"],
+        "retry": {
+            "budget_remaining": 2,
+            "consecutive_failures": 1,
+            "last_failure_class": "unknown",
+        },
+        "loop_status": "ready",
+    }
+    assert closed_cycle._retry_only_s5_update(identity, retry_state)
+    retry_state["generation"] = 5
+    assert not closed_cycle._retry_only_s5_update(identity, retry_state)
 
 
 def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
     tmp_path, monkeypatch
 ):
+    monkeypatch.setattr(closed_cycle.tempfile, "gettempdir", lambda: str(tmp_path))
     _patch_aq1_repo(monkeypatch, tmp_path)
     state_path = tmp_path / "host" / "quality-state.json"
     state_path.parent.mkdir()
