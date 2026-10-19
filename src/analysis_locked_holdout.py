@@ -344,6 +344,19 @@ def run_locked_holdout_transition(
     next_state.pop("state_fingerprint", None)
     # loop_status intentionally stays "frozen": CALIBRATION stays refused (#1097).
 
+    # Refuse to overwrite a supervisor update made while orchestration ran.
+    # This is an optimistic guard, not a multi-writer locking protocol.
+    try:
+        current_state = load_state(path)
+    except AnalysisQualityLoopStateError as exc:
+        raise AnalysisLockedHoldoutError(
+            f"freeze state could not be revalidated before commit: {exc}"
+        ) from exc
+    if current_state != state:
+        raise AnalysisLockedHoldoutError(
+            "freeze state changed during locked evaluation; commit refused"
+        )
+
     try:
         committed_state = save_state_atomic(path, next_state)
     except AnalysisQualityLoopStateError as exc:
