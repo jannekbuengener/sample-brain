@@ -1,385 +1,467 @@
-"""Sample Brain analysis locked TEST/HOLDOUT transition + final decision v1 (#1170).
+"""Frozen supervisor → one locked evaluation → terminal #1043 decision (#1170).
 
-One-shot composition, entered only from a persisted supervisor state with
-``loop_status="frozen"``:
-
-    frozen candidate/config identity check
-      → validate #1054 locked headless request (operation=locked_evaluation,
-        partition role test|holdout)
-      → run_orchestration (#1060, unchanged)
-      → existing #1043 final machine-readable decision (unchanged vocabulary)
-      → portable locked-evaluation ref inside supervisor state
-      → atomic save (commit boundary)
-
-TEST/HOLDOUT evidence is terminal for the iteration: it can never feed
-``continue_calibration`` or ``freeze_candidate`` again. ``loop_status`` stays
-``frozen`` so #1097 CALIBRATION refusal is never weakened. No PR, no merge,
-no production mutation; ``production_authorized`` remains false everywhere.
+Keeps #1097 state immutable. Durable claims fail closed after uncertain dispatch;
+portable result references compose the existing orchestration/evidence chain.
 """
 
 from __future__ import annotations
 
+import json
+import os
+import re
+import tempfile
 from pathlib import Path
 from typing import Any, Mapping
 
-from src.analysis_automation_decision import TUNING_NEXT_ACTIONS
+from src.analysis_automation_decision import build_decision, validate_decision
+from src.analysis_candidate_iterator import (
+    SearchSpaceProvider,
+    search_space_fingerprint,
+)
 from src.analysis_eval_artifact import (
-    AnalysisEvalArtifactError,
     assert_portable_value,
+    canonical_json_dumps,
     fingerprint,
 )
-from src.analysis_headless_run import AnalysisHeadlessRunError, validate_request
+from src.analysis_headless_run import validate_request
 from src.analysis_orchestration_run import (
-    AnalysisOrchestrationRunError,
+    POLICY_UNSET,
+    DecisionProvider,
+    resolve_decision_mode,
     run_orchestration,
+    validate_decision_provider_id,
+    validate_outcome,
+    validate_provider_policy,
 )
-from src.analysis_quality_loop_state import (
-    AnalysisQualityLoopStateError,
-    load_state,
-    save_state_atomic,
-    validate_locked_evaluation_ref,
-)
+from src.analysis_quality_loop_state import load_state
+from src.aq_candidate_search_spaces.aq1_tempo import Aq1TempoSearchSpaceProvider
 
-DOCUMENT_TYPE = "sample-brain.analysis-locked-holdout-transition.v1"
+DOCUMENT_TYPE = "sample-brain.analysis-locked-holdout-result.v1"
 ARTIFACT_VERSION = "1.0.0"
-PRODUCER_ID = "sample-brain.analysis-locked-holdout-transition"
-
-LOCKED_OPERATION = "locked_evaluation"
-LOCKED_PARTITION_ROLES = frozenset({"test", "holdout"})
-
-_DECISION_STATUS_TO_TERMINAL: Mapping[str, str] = {
-    "ready": "completed",
-    "hold": "held",
-    "controlled_failure": "controlled_failure",
-}
-
-_RESULT_FP_EXCLUDED: frozenset[str] = frozenset(
-    {"generated_at", "result_fingerprint", "artifact_hash"}
-)
+PROVIDER_ARTIFACT_VERSION = "1.1.0"
 
 
 class AnalysisLockedHoldoutError(ValueError):
-    """Raised when a locked TEST/HOLDOUT transition violates the v1 contract."""
+    """Invalid locked transition, corrupt persistence or uncertain prior dispatch."""
 
 
-def _wrap_portable(exc: AnalysisEvalArtifactError) -> AnalysisLockedHoldoutError:
-    return AnalysisLockedHoldoutError(str(exc))
-
-
-def _require_hex_fingerprint(value: object, field: str) -> str:
-    if type(value) is not str or not value.strip():
-        raise AnalysisLockedHoldoutError(f"{field} must be a non-empty string")
-    text = value.strip().lower()
-    if len(text) != 64 or any(ch not in "0123456789abcdef" for ch in text):
+def _digest(value: object) -> str:
+    if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
         raise AnalysisLockedHoldoutError(
-            f"{field} must be a lowercase sha256 hex digest"
+            "required lowercase sha256 fingerprint missing or invalid"
         )
-    return text
+    return value
 
 
-def build_locked_evaluation_ref(
-    *,
-    outcome: Mapping[str, Any],
-    frozen_candidate: Mapping[str, Any],
-    baseline_candidate: Mapping[str, Any],
-    evidence_fingerprint: str,
-) -> dict[str, Any]:
-    """Bind a validated orchestration outcome into the portable locked ref."""
-    headless_result = outcome["headless_result"]
-    decision = outcome["decision"]
+def _read(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise AnalysisLockedHoldoutError("persisted document must be a mapping")
+    assert_portable_value(value)
+    return value
 
-    if decision["next_action"] in TUNING_NEXT_ACTIONS:
+
+def _check_frozen(state, request, provider):
+    if state["loop_status"] != "frozen":
         raise AnalysisLockedHoldoutError(
-            "locked TEST/HOLDOUT evidence cannot emit tuning next_action "
-            f"{decision['next_action']!r}"
+            "only frozen supervisor state may enter locked evaluation"
         )
-
-    locked_current = {
-        "candidate_id": str(headless_result["current"]["candidate_id"]),
-        "config_fingerprint": str(headless_result["current"]["config_fingerprint"]),
-    }
-    if locked_current != dict(frozen_candidate):
+    freeze = state.get("last_decision") or {}
+    if (
+        freeze.get("next_action") != "freeze_candidate"
+        or freeze.get("decision_status") != "ready"
+    ):
+        raise AnalysisLockedHoldoutError("missing ready freeze provenance")
+    _digest(freeze.get("decision_fingerprint"))
+    if request["operation"] != "locked_evaluation" or request["partition"][
+        "role"
+    ] not in {"test", "holdout"}:
         raise AnalysisLockedHoldoutError(
-            "locked outcome current candidate does not match frozen "
-            "active_candidate; no candidate substitution after freeze"
+            "locked_evaluation requires locked TEST/HOLDOUT partition"
         )
-    locked_baseline = {
-        "candidate_id": str(headless_result["baseline"]["candidate_id"]),
-        "config_fingerprint": str(headless_result["baseline"]["config_fingerprint"]),
-    }
-    if locked_baseline != dict(baseline_candidate):
-        raise AnalysisLockedHoldoutError(
-            "locked outcome baseline does not match frozen baseline_candidate"
-        )
-
-    partition = headless_result["partition"]
-    role = str(partition["role"])
-    if role not in LOCKED_PARTITION_ROLES:
-        raise AnalysisLockedHoldoutError(
-            f"locked outcome partition role must be test or holdout, got {role!r}"
-        )
-
-    terminal_status = _DECISION_STATUS_TO_TERMINAL.get(
-        str(decision["decision_status"])
+    for key, expected in (
+        ("domain", state["domain"]),
+        ("baseline", state["baseline_candidate"]),
+        ("current", state["active_candidate"]),
+    ):
+        if request.get(key) != expected:
+            raise AnalysisLockedHoldoutError(f"frozen identity mismatch: {key}")
+    if provider is None:
+        if state["domain"] != "aq1.tempo":
+            raise AnalysisLockedHoldoutError(
+                "explicit domain search-space provider required"
+            )
+        provider = Aq1TempoSearchSpaceProvider()
+    members = provider.ordered_members()
+    actual_fp = search_space_fingerprint(
+        search_space_id=provider.search_space_id,
+        search_space_version=provider.search_space_version,
+        ordered_members=members,
     )
-    if terminal_status is None:
-        raise AnalysisLockedHoldoutError(
-            f"unsupported decision_status for locked outcome: "
-            f"{decision['decision_status']!r}"
-        )
-
-    ref: dict[str, Any] = {
-        "candidate": dict(locked_current),
-        "baseline_candidate": dict(locked_baseline),
-        "partition": {
-            "partition_id": str(partition["partition_id"]),
-            "role": role,
-        },
-        "request_fingerprint": str(headless_result["request_fingerprint"]),
-        "outcome_fingerprint": str(outcome["outcome_fingerprint"]),
-        "analysis_eval_fingerprint": str(outcome["analysis_eval"]["artifact_fingerprint"]),
-        "evidence_fingerprint": _require_hex_fingerprint(
-            evidence_fingerprint, "evidence_fingerprint"
-        ),
-        "gate_verdict": str(decision["evidence"]["gate_decision"]["verdict"]),
-        "decision": {
-            "decision_status": str(decision["decision_status"]),
-            "next_action": str(decision["next_action"]),
-            "decision_fingerprint": str(decision["decision_fingerprint"]),
-        },
-        "terminal_status": terminal_status,
-        "production_authorized": False,
-    }
-    token = decision.get("decision_token")
-    if token is not None:
-        ref["decision"]["decision_token"] = str(token)
-    try:
-        return validate_locked_evaluation_ref(ref)
-    except AnalysisQualityLoopStateError as exc:
-        raise AnalysisLockedHoldoutError(str(exc)) from exc
-
-
-def _assert_replay_identity(
-    committed: Mapping[str, Any],
-    validated_request: Mapping[str, Any],
-    *,
-    evidence_fingerprint: str,
-    gate_verdict: str | None,
-    decision_token: str | None,
-    next_action: str | None,
-) -> None:
-    """Fail closed unless replay inputs match the already-committed claim."""
-    if committed["request_fingerprint"] != validated_request.get(
-        "request_fingerprint"
+    if (
+        state["search_space_id"] != provider.search_space_id
+        or state["search_space_version"] != provider.search_space_version
+        or state["search_space_fingerprint"] != actual_fp
+        or provider.search_space_fingerprint() != actual_fp
+        or state["active_candidate"] not in members
+        or state["baseline_candidate"] not in members
     ):
         raise AnalysisLockedHoldoutError(
-            "locked evaluation already committed with a different request; "
-            "post-freeze identity change refused"
-        )
-    if committed["evidence_fingerprint"] != evidence_fingerprint:
-        raise AnalysisLockedHoldoutError(
-            "locked evaluation already committed with a different evidence "
-            "claim; post-freeze identity change refused"
-        )
-    if gate_verdict is not None and committed["gate_verdict"] != gate_verdict:
-        raise AnalysisLockedHoldoutError(
-            "locked evaluation already committed with a different gate "
-            "verdict; post-freeze identity change refused"
-        )
-    if decision_token is not None and committed["decision"].get(
-        "decision_token"
-    ) != decision_token:
-        raise AnalysisLockedHoldoutError(
-            "locked evaluation already committed with a different decision "
-            "token; post-freeze identity change refused"
-        )
-    if next_action is not None and committed["decision"]["next_action"] != next_action:
-        raise AnalysisLockedHoldoutError(
-            "locked evaluation already committed with a different next_action; "
-            "post-freeze identity change refused"
+            "frozen search-space identity/content/order mismatch"
         )
 
 
-def _result(
-    *,
-    state: Mapping[str, Any],
-    locked: Mapping[str, Any],
-    already_committed: bool,
-) -> dict[str, Any]:
-    decision_ref = dict(locked["decision"])
-    decision_ref["production_authorized"] = False
-    result: dict[str, Any] = {
-        "document_type": DOCUMENT_TYPE,
-        "artifact_version": ARTIFACT_VERSION,
-        "producer_id": PRODUCER_ID,
-        "production_authorized": False,
-        "already_committed": already_committed,
-        "locked_evaluation": dict(locked),
-        "decision": decision_ref,
-        "state": dict(state),
+def _check_policy(request, evidence_fp, gate, token, action):
+    if action in {"continue_calibration", "freeze_candidate"}:
+        raise AnalysisLockedHoldoutError(
+            "terminal partition firewall forbids tuning actions"
+        )
+    if gate not in {None, "PASS", "FAIL", "HOLD"}:
+        raise AnalysisLockedHoldoutError("invalid gate verdict")
+    if gate in {"PASS", "FAIL"} and (token is None or action is None):
+        raise AnalysisLockedHoldoutError(
+            "explicit domain policy token and next_action required"
+        )
+    if gate is None:
+        if token is not None or action is not None:
+            raise AnalysisLockedHoldoutError(
+                "absent gate requires no ready policy inputs"
+            )
+        return
+    build_decision(
+        domain=request["domain"],
+        **request["benchmark"],
+        partition_id=request["partition"]["partition_id"],
+        partition_role=request["partition"]["role"],
+        baseline_candidate_id=request["baseline"]["candidate_id"],
+        baseline_config_fingerprint=request["baseline"]["config_fingerprint"],
+        current_candidate_id=request["current"]["candidate_id"],
+        current_config_fingerprint=request["current"]["config_fingerprint"],
+        analysis_eval_fingerprint="0" * 64,
+        evidence_fingerprint=evidence_fp,
+        gate_verdict=gate,
+        decision_status="hold" if gate == "HOLD" else "ready",
+        decision_token=token,
+        next_action=action or "defer_for_evidence",
+    )
+    if token == "PROMOTION_CANDIDATE_IDENTIFIED" and action not in {
+        "handoff_promotion_controller",
+        "require_human_governance",
+    }:
+        raise AnalysisLockedHoldoutError(
+            "promotion policy requires explicit handoff or governance"
+        )
+
+
+def validate_locked_result(result: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate the portable terminal reference artifact, including #1043 decision."""
+    expected_keys = {
+        "document_type",
+        "artifact_version",
+        "freeze_state_fingerprint",
+        "invocation_fingerprint",
+        "domain",
+        "baseline_candidate",
+        "current_candidate",
+        "partition",
+        "request_fingerprint",
+        "outcome_fingerprint",
+        "analysis_eval_fingerprint",
+        "decision",
+        "terminal_status",
+        "production_authorized",
+        "result_fingerprint",
     }
+    if not isinstance(result, Mapping):
+        raise AnalysisLockedHoldoutError("invalid locked result fields")
+    provider_mode = result.get("artifact_version") == PROVIDER_ARTIFACT_VERSION
+    if provider_mode:
+        expected_keys.add("decision_provider_provenance")
+    if set(result) != expected_keys:
+        raise AnalysisLockedHoldoutError("invalid locked result fields")
+    if result["document_type"] != DOCUMENT_TYPE or result["artifact_version"] not in {
+        ARTIFACT_VERSION,
+        PROVIDER_ARTIFACT_VERSION,
+    }:
+        raise AnalysisLockedHoldoutError("unsupported locked result version")
+    if result["production_authorized"] is not False:
+        raise AnalysisLockedHoldoutError("production_authorized must be false")
+    assert_portable_value(dict(result))
+    for key in expected_keys:
+        if key.endswith("fingerprint"):
+            _digest(result[key])
+    decision = validate_decision(result["decision"])
+    if result["terminal_status"] != decision["decision_status"]:
+        raise AnalysisLockedHoldoutError("terminal status differs from decision")
+    for key in ("domain", "baseline_candidate", "current_candidate", "partition"):
+        if result[key] != decision[key]:
+            raise AnalysisLockedHoldoutError(
+                f"locked result decision identity mismatch: {key}"
+            )
+    if decision["partition"]["role"] not in {"test", "holdout"} or decision[
+        "next_action"
+    ] in {"continue_calibration", "freeze_candidate"}:
+        raise AnalysisLockedHoldoutError("locked terminal firewall")
+    if (
+        result["analysis_eval_fingerprint"]
+        != decision["evidence"]["analysis_eval_fingerprint"]
+    ):
+        raise AnalysisLockedHoldoutError("locked result eval identity mismatch")
+    if provider_mode:
+        provenance = result["decision_provider_provenance"]
+        if not isinstance(provenance, Mapping) or set(provenance) != {
+            "decision_provider_id",
+            "eval_context_fingerprint",
+            "policy_inputs",
+        }:
+            raise AnalysisLockedHoldoutError("invalid provider provenance")
+        validate_decision_provider_id(provenance["decision_provider_id"])
+        _digest(provenance["eval_context_fingerprint"])
+        policy = validate_provider_policy(provenance["policy_inputs"])
+        # Reader validation compares the receipt to the validated Decision;
+        # it must never invoke policy or construct a second Decision.
+        _check_claim_decision(policy, decision)
+        if decision["decision_status"] != "ready" and (
+            policy["gate_verdict"] not in {None, "HOLD"}
+            or policy["decision_token"] is not None
+            or policy["next_action"] not in {None, decision["next_action"]}
+        ):
+            raise AnalysisLockedHoldoutError(
+                "provider policy differs from committed terminal decision"
+            )
+    payload = {k: v for k, v in result.items() if k != "result_fingerprint"}
+    if fingerprint(payload) != result["result_fingerprint"]:
+        raise AnalysisLockedHoldoutError("locked result fingerprint mismatch")
+    return json.loads(canonical_json_dumps(dict(result)))
+
+
+def _check_claim_decision(invocation, decision):
+    evidence = decision["evidence"]
+    if evidence["evidence_fingerprint"] != invocation["evidence_fingerprint"]:
+        raise AnalysisLockedHoldoutError("committed evidence differs from invocation")
+    status = decision["decision_status"]
+    if status == "ready":
+        if (
+            invocation["gate_verdict"] not in {"PASS", "FAIL"}
+            or decision.get("decision_token") != invocation["decision_token"]
+            or decision["next_action"] != invocation["next_action"]
+            or evidence["gate_decision"]["verdict"] != invocation["gate_verdict"]
+        ):
+            raise AnalysisLockedHoldoutError("committed policy differs from invocation")
+    elif evidence["gate_decision"]["verdict"] != "HOLD":
+        raise AnalysisLockedHoldoutError("non-ready invocation requires HOLD evidence")
+
+
+def _sync_entry(path: Path) -> None:
+    """Persist name metadata before dispatch/commit, failing closed on error.
+
+    POSIX requires a separate parent-directory fsync. Windows file flushes also
+    flush file metadata (Microsoft File Caching); reopen the destination after
+    rename so the metadata barrier covers its final name.
+    """
+    if os.name == "nt":
+        with path.open("r+b") as handle:
+            os.fsync(handle.fileno())
+    else:
+        fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+
+def _write_atomic(path: Path, value):
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
-        assert_portable_value(result, field="locked_holdout_result")
-        result["result_fingerprint"] = fingerprint(
-            {
-                key: value
-                for key, value in result.items()
-                if key not in _RESULT_FP_EXCLUDED
-            }
-        )
-    except AnalysisEvalArtifactError as exc:
-        raise _wrap_portable(exc) from exc
-    return result
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(canonical_json_dumps(value) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        _sync_entry(path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def run_locked_holdout_transition(
     *,
     state_path: str | Path,
     request: Mapping[str, Any],
-    bind_kwargs: Mapping[str, Any] | None = None,
-    evidence_fingerprint: str,
-    gate_verdict: str | None = None,
-    decision_token: str | None = None,
-    next_action: str | None = None,
+    bind_kwargs: Mapping[str, Any],
+    evidence_fingerprint: str | object = POLICY_UNSET,
+    gate_verdict: str | None | object = POLICY_UNSET,
+    decision_token: str | None | object = POLICY_UNSET,
+    next_action: str | None | object = POLICY_UNSET,
+    provider: SearchSpaceProvider | None = None,
+    decision_provider: DecisionProvider | None = None,
+    decision_provider_id: str | None = None,
 ) -> dict[str, Any]:
-    """Execute the one-shot locked TEST/HOLDOUT transition and commit atomically."""
+    """Dispatch at most once; replay an identical durable terminal outcome.
+
+    A durable claim without a result is an uncertain execution, never permission
+    to re-evaluate locked evidence. Host input integrity is owned by the adapter.
+    """
+    policy_inputs = dict(
+        evidence_fingerprint=evidence_fingerprint,
+        gate_verdict=gate_verdict,
+        decision_token=decision_token,
+        next_action=next_action,
+    )
+    provider_id = resolve_decision_mode(
+        decision_provider, decision_provider_id, policy_inputs
+    )
     path = Path(state_path)
-    try:
-        state = load_state(path)
-    except AnalysisQualityLoopStateError as exc:
-        raise AnalysisLockedHoldoutError(
-            f"failed to load supervisor state: {exc}"
-        ) from exc
-
-    loop_status = state["loop_status"]
-    if loop_status != "frozen":
-        raise AnalysisLockedHoldoutError(
-            f"locked TEST/HOLDOUT transition requires loop_status=frozen; "
-            f"got {loop_status!r}"
-        )
-
-    evidence_fp = _require_hex_fingerprint(
-        evidence_fingerprint, "evidence_fingerprint"
-    )
-    bind = {} if bind_kwargs is None else dict(bind_kwargs)
-    if not isinstance(bind, Mapping):
-        raise AnalysisLockedHoldoutError("bind_kwargs must be a mapping")
-
-    try:
-        validated_request = validate_request(request)
-    except AnalysisHeadlessRunError as exc:
-        raise AnalysisLockedHoldoutError(str(exc)) from exc
-
-    committed = state.get("locked_evaluation")
-    if committed is not None:
-        committed_ref = validate_locked_evaluation_ref(committed)
-        _assert_replay_identity(
-            committed_ref,
-            validated_request,
+    state = load_state(path)
+    validated = validate_request(request)
+    _check_frozen(state, validated, provider)
+    invocation = {
+        "freeze_state_fingerprint": state["state_fingerprint"],
+        "request_fingerprint": validated["request_fingerprint"],
+    }
+    if provider_id is None:
+        gate_verdict = None if gate_verdict is POLICY_UNSET else gate_verdict
+        decision_token = None if decision_token is POLICY_UNSET else decision_token
+        next_action = None if next_action is POLICY_UNSET else next_action
+        evidence_fp = _digest(evidence_fingerprint)
+        _check_policy(validated, evidence_fp, gate_verdict, decision_token, next_action)
+        invocation.update(
             evidence_fingerprint=evidence_fp,
             gate_verdict=gate_verdict,
             decision_token=decision_token,
             next_action=next_action,
         )
-        return _result(
-            state=state, locked=committed_ref, already_committed=True
-        )
-
-    operation = str(validated_request["operation"])
-    if operation != LOCKED_OPERATION:
-        raise AnalysisLockedHoldoutError(
-            f"locked transition requires operation={LOCKED_OPERATION!r}; "
-            f"got {operation!r}"
-        )
-    role = str(validated_request["partition"]["role"])
-    if role not in LOCKED_PARTITION_ROLES:
-        raise AnalysisLockedHoldoutError(
-            f"locked transition requires partition role test|holdout; got {role!r}"
-        )
-    if str(validated_request["domain"]) != str(state["domain"]):
-        raise AnalysisLockedHoldoutError(
-            "request domain does not match frozen supervisor domain"
-        )
-    current = validated_request.get("current") or {}
-    if dict(current) != dict(state["active_candidate"]):
-        raise AnalysisLockedHoldoutError(
-            "request current candidate does not match frozen active_candidate; "
-            "no candidate substitution after freeze"
-        )
-    baseline = validated_request.get("baseline") or {}
-    if dict(baseline) != dict(state["baseline_candidate"]):
-        raise AnalysisLockedHoldoutError(
-            "request baseline candidate does not match frozen baseline_candidate"
-        )
-
+    else:
+        invocation.update(mode="provider", decision_provider_id=provider_id)
+    invocation_fp = fingerprint(invocation)
+    claim_path = path.with_name(path.name + ".locked-claim.json")
+    result_path = path.with_name(path.name + ".locked-result.json")
+    if result_path.exists():
+        result = validate_locked_result(_read(result_path))
+        if (
+            _read(claim_path) != invocation
+            or result["invocation_fingerprint"] != invocation_fp
+        ):
+            raise AnalysisLockedHoldoutError(
+                "committed invocation/freeze identity mismatch"
+            )
+        if (
+            result["freeze_state_fingerprint"] != state["state_fingerprint"]
+            or result["request_fingerprint"] != validated["request_fingerprint"]
+        ):
+            raise AnalysisLockedHoldoutError("committed freeze/request mismatch")
+        for key in ("domain", "partition"):
+            if result[key] != validated[key]:
+                raise AnalysisLockedHoldoutError(
+                    "committed invocation identity mismatch"
+                )
+        if (
+            result["current_candidate"] != state["active_candidate"]
+            or result["baseline_candidate"] != state["baseline_candidate"]
+        ):
+            raise AnalysisLockedHoldoutError(
+                "committed frozen candidate identity mismatch"
+            )
+        if provider_id is None:
+            if result["artifact_version"] != ARTIFACT_VERSION:
+                raise AnalysisLockedHoldoutError("committed invocation mode mismatch")
+            _check_claim_decision(invocation, result["decision"])
+        elif (
+            result["artifact_version"] != PROVIDER_ARTIFACT_VERSION
+            or result["decision_provider_provenance"]["decision_provider_id"]
+            != provider_id
+        ):
+            raise AnalysisLockedHoldoutError("committed provider authority mismatch")
+        if result["decision"]["benchmark"] != validated["benchmark"]:
+            raise AnalysisLockedHoldoutError(
+                "committed benchmark differs from invocation"
+            )
+        _sync_entry(result_path)
+        return {"already_committed": True, "result": result}
     try:
-        outcome = run_orchestration(
-            request=validated_request,
-            bind_kwargs=bind,
+        with claim_path.open("x", encoding="utf-8", newline="\n") as handle:
+            handle.write(canonical_json_dumps(invocation) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+    except FileExistsError as exc:
+        raise AnalysisLockedHoldoutError(
+            "durable claim exists; uncertain execution requires reconciliation"
+        ) from exc
+
+    _sync_entry(claim_path)
+
+    provenance = None
+    if provider_id is None:
+        orchestration_policy = dict(
             evidence_fingerprint=evidence_fp,
             gate_verdict=gate_verdict,
             decision_token=decision_token,
             next_action=next_action,
         )
-    except (AnalysisOrchestrationRunError, AnalysisHeadlessRunError) as exc:
-        raise AnalysisLockedHoldoutError(
-            f"locked orchestration failed: {exc}"
-        ) from exc
+    else:
 
-    locked = build_locked_evaluation_ref(
-        outcome=outcome,
-        frozen_candidate=state["active_candidate"],
-        baseline_candidate=state["baseline_candidate"],
-        evidence_fingerprint=evidence_fp,
-    )
+        def decide(context):
+            nonlocal provenance
+            context_fp = context["evidence_fingerprint"]
+            policy = validate_provider_policy(decision_provider(context))
+            _check_policy(
+                validated,
+                policy["evidence_fingerprint"],
+                policy["gate_verdict"],
+                policy["decision_token"],
+                policy["next_action"],
+            )
+            provenance = dict(
+                decision_provider_id=provider_id,
+                eval_context_fingerprint=context_fp,
+                policy_inputs=policy,
+            )
+            return policy
 
-    history = list(state.get("history_refs") or [])
-    history.append(locked["outcome_fingerprint"])
-    history.append(locked["decision"]["decision_fingerprint"])
-
-    next_state: dict[str, Any] = dict(state)
-    next_state["locked_evaluation"] = locked
-    next_state["generation"] = int(state["generation"]) + 1
-    next_state["history_refs"] = history
-    next_state.pop("state_fingerprint", None)
-    # loop_status intentionally stays "frozen": CALIBRATION stays refused (#1097).
-
-    # Refuse to overwrite a supervisor update made while orchestration ran.
-    # This is an optimistic guard, not a multi-writer locking protocol.
-    try:
-        current_state = load_state(path)
-    except AnalysisQualityLoopStateError as exc:
-        raise AnalysisLockedHoldoutError(
-            f"freeze state could not be revalidated before commit: {exc}"
-        ) from exc
-    if current_state != state:
-        raise AnalysisLockedHoldoutError(
-            "freeze state changed during locked evaluation; commit refused"
+        orchestration_policy = dict(
+            decision_provider=decide, decision_provider_id=provider_id
         )
-
-    try:
-        committed_state = save_state_atomic(path, next_state)
-    except AnalysisQualityLoopStateError as exc:
-        raise AnalysisLockedHoldoutError(
-            f"locked-outcome persist failed: {exc}"
-        ) from exc
-    except OSError as exc:
-        raise AnalysisLockedHoldoutError(
-            f"atomic locked-outcome write failed: {exc}"
-        ) from exc
-
-    return _result(
-        state=committed_state, locked=locked, already_committed=False
+    outcome = validate_outcome(
+        run_orchestration(
+            request=validated, bind_kwargs=bind_kwargs, **orchestration_policy
+        )
     )
-
-
-__all__ = [
-    "ARTIFACT_VERSION",
-    "DOCUMENT_TYPE",
-    "LOCKED_OPERATION",
-    "LOCKED_PARTITION_ROLES",
-    "PRODUCER_ID",
-    "AnalysisLockedHoldoutError",
-    "build_locked_evaluation_ref",
-    "run_locked_holdout_transition",
-]
+    decision = outcome["decision"]
+    if decision["benchmark"] != validated["benchmark"]:
+        raise AnalysisLockedHoldoutError("outcome benchmark differs from invocation")
+    headless = outcome["headless_result"]
+    if (
+        headless["request_fingerprint"] != validated["request_fingerprint"]
+        or headless["operation"] != "locked_evaluation"
+        or headless["adapter_id"] != validated["adapter_id"]
+    ):
+        raise AnalysisLockedHoldoutError("outcome differs from locked invocation")
+    result = {
+        "document_type": DOCUMENT_TYPE,
+        "artifact_version": ARTIFACT_VERSION,
+        "freeze_state_fingerprint": state["state_fingerprint"],
+        "invocation_fingerprint": invocation_fp,
+        "domain": state["domain"],
+        "baseline_candidate": state["baseline_candidate"],
+        "current_candidate": state["active_candidate"],
+        "partition": validated["partition"],
+        "request_fingerprint": validated["request_fingerprint"],
+        "outcome_fingerprint": outcome["outcome_fingerprint"],
+        "analysis_eval_fingerprint": outcome["analysis_eval"]["artifact_fingerprint"],
+        "decision": decision,
+        "terminal_status": decision["decision_status"],
+        "production_authorized": False,
+    }
+    if provider_id is not None:
+        result["artifact_version"] = PROVIDER_ARTIFACT_VERSION
+        result["decision_provider_provenance"] = provenance
+    result["result_fingerprint"] = fingerprint(result)
+    result = validate_locked_result(result)
+    if provider_id is None:
+        _check_claim_decision(invocation, result["decision"])
+    if load_state(path) != state:
+        raise AnalysisLockedHoldoutError(
+            "freeze state changed during locked evaluation"
+        )
+    _write_atomic(result_path, result)
+    return {"already_committed": False, "result": result}
