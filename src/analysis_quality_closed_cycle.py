@@ -196,6 +196,14 @@ def _require_simulation_repository(inputs: Mapping[str, Any], manifest: Mapping[
         raise AnalysisQualityClosedCycleError(
             "S9 promotion repository must live under a temporary directory"
         ) from None
+    host = inputs.get("host")
+    if (
+        getattr(repository, "simulation_only", False) is not True
+        or getattr(host, "simulation_only", False) is not True
+    ):
+        raise AnalysisQualityClosedCycleError(
+            "S9 promotion requires explicitly simulation-only repository and host adapters"
+        )
     source_root = Path(__file__).resolve().parents[1]
     if resolved_repository == source_root:
         raise AnalysisQualityClosedCycleError("S9 cannot promote into its own Sample Brain repository")
@@ -298,7 +306,9 @@ def _promotion_authority_fingerprint(
             "repository_path": str(Path(repository.path).resolve()),
             "repository_origin": repository.git("remote", "get-url", "origin"),
             "manifest_repository_id": manifest["repository_id"],
+            "repository_simulation_only": getattr(repository, "simulation_only", False),
             "host_repository_id": getattr(host, "repository_id", manifest["repository_id"]),
+            "host_simulation_only": getattr(host, "simulation_only", False),
             "host_repository": (
                 None if host_repository is None else str(Path(host_repository).resolve())
             ),

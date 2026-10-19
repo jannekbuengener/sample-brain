@@ -233,6 +233,39 @@ def test_s9_promotion_rejects_repository_outside_temporary_root():
         raise AssertionError("persistent repositories must not enter S9 proof promotion")
 
 
+def test_s9_promotion_requires_both_simulation_adapters_even_for_temp_checkout(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(closed_cycle.tempfile, "gettempdir", lambda: str(tmp_path))
+
+    class Repository:
+        path = tmp_path / "proof-repository"
+
+        @staticmethod
+        def git(*_):
+            return "https://github.com/another-owner/production-repo.git"
+
+    class Host:
+        repository_id = "another-owner/production-repo"
+        repository = Repository.path
+
+    Repository.path.mkdir()
+    for repository_is_simulation, host_is_simulation in ((True, False), (False, True)):
+        repository = Repository()
+        repository.simulation_only = repository_is_simulation
+        host = Host()
+        host.simulation_only = host_is_simulation
+        try:
+            closed_cycle._require_simulation_repository(
+                {"repository": repository, "host": host},
+                {"repository_id": "another-owner/production-repo"},
+            )
+        except AnalysisQualityClosedCycleError as exc:
+            assert "explicitly simulation-only" in str(exc)
+        else:
+            raise AssertionError("both S9 proof adapters must be marked simulation-only")
+
+
 def test_s9_temporary_path_component_does_not_authorize_persistent_repository(
     tmp_path, monkeypatch
 ):
@@ -632,6 +665,8 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
             provider = Aq1PromotionProvider()
 
             class CycleHost(S7Host):
+                simulation_only = True
+
                 def merge(self, number, expected_head_sha, method):
                     super().merge(number, expected_head_sha, method)
                     git(repo_root, "update-ref", "refs/remotes/origin/main", expected_head_sha)
@@ -671,12 +706,14 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
                     },
                 }
             )
+            repository = GitRepository(repo_root)
+            repository.simulation_only = True
             s7_cache.update(
                 provider=provider,
                 host=host,
                 base=base,
                 manifest=manifest,
-                repository=GitRepository(repo_root),
+                repository=repository,
                 worktree_root=tmp_path / "promotion-worktrees",
                 attempt_root=tmp_path / "promotion-attempts",
             )
