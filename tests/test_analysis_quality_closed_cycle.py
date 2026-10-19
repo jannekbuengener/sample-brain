@@ -720,6 +720,9 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
         return {key: value for key, value in s7_cache.items() if key != "base"}
 
     def post_merge_inputs(*, locked_result, promotion_manifest, promotion_attempt):
+        class CyclePostMergeHost(S8Host):
+            simulation_only = True
+
         class Aq1PostMergeProvider(PostMergeProvider):
             def verify_candidate(self, worktree, candidate, contract_id, evidence_root):
                 assert contract_id == "synthetic.post-merge.v1"
@@ -794,12 +797,34 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
             "plan": plan,
             "provider": provider,
             "repository": s7_cache["repository"],
-            "host": s8_cache.setdefault("host", S8Host(repo_root, promotion_attempt)),
+            "host": s8_cache.setdefault(
+                "host", CyclePostMergeHost(repo_root, promotion_attempt)
+            ),
             "verification_root": tmp_path / "verification",
             "worktree_root": tmp_path / "s8-worktrees",
             "attempt_root": tmp_path / "s8-attempts",
             "baseline_state_path": tmp_path / "accepted-baseline.json",
         }
+
+    def live_post_merge_host_inputs(**kwargs):
+        post = post_merge_inputs(**kwargs)
+        post["host"] = S8Host(repo_root, kwargs["promotion_attempt"])
+        return post
+
+    try:
+        run_quality_cycle(
+            state_path=state_path,
+            attempt_path=attempt_path,
+            calibration_inputs=calibration_inputs,
+            locked_inputs=locked_inputs,
+            promotion_inputs=promotion_inputs,
+            post_merge_inputs=live_post_merge_host_inputs,
+        )
+    except AnalysisQualityClosedCycleError as exc:
+        assert "explicitly simulation-only" in str(exc)
+    else:
+        raise AssertionError("S8 must reject an unmarked host before recovery can run")
+    assert not s8_cache["provider"].verify_calls
 
     real_run_post_merge = closed_cycle.run_post_merge
     lost_reply = {"pending": True}

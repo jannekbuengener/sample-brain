@@ -337,7 +337,9 @@ def _post_merge_authority_fingerprint(
             "promotion_attempt_path": str(promotion_attempt_path.resolve()),
             "repository_path": str(Path(repository.path).resolve()),
             "repository_origin": repository.git("remote", "get-url", "origin"),
+            "repository_simulation_only": getattr(repository, "simulation_only", False),
             "host_repository_id": getattr(host, "repository_id", None),
+            "host_simulation_only": getattr(host, "simulation_only", False),
             "host_repository": (
                 None if host_repository is None else str(Path(host_repository).resolve())
             ),
@@ -895,6 +897,7 @@ def run_quality_cycle(
                     promotion_attempt=promotion,
                 ))
                 plan = post["plan"]
+                _require_simulation_repository(post, plan)
                 post_authority_fingerprint = _post_merge_authority_fingerprint(
                     post, promotion_attempt_path
                 )
@@ -955,6 +958,7 @@ def run_quality_cycle(
                     promotion_attempt=promotion,
                 ))
                 plan = post["plan"]
+                _require_simulation_repository(post, plan)
                 expected_post = cycle.get("post_merge_ref") or {}
                 post_authority_fingerprint = _post_merge_authority_fingerprint(
                     post, promotion_attempt_path
