@@ -661,7 +661,10 @@ def run_quality_cycle(
             cycle = _new_attempt(s5)
             _save_attempt(cycle_path, cycle)
         if cycle["status"] == "completed":
-            return _read_result(_result_path(cycle_path))
+            completed_result = _read_result(_result_path(cycle_path))
+            if completed_result["cycle_id"] != cycle["cycle_id"]:
+                raise AnalysisQualityClosedCycleError("result belongs to another cycle")
+            return completed_result
         if _result_path(cycle_path).exists():
             completed_result = _read_result(_result_path(cycle_path))
             if completed_result["cycle_id"] != cycle["cycle_id"]:

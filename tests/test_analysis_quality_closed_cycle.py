@@ -1003,3 +1003,25 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
         promotion_inputs=promotion_inputs,
         post_merge_inputs=post_merge_inputs,
     ) == result
+
+    foreign_result = dict(result)
+    foreign_result["cycle_id"] = "another-completed-cycle"
+    foreign_result["result_fingerprint"] = fingerprint(
+        {key: value for key, value in foreign_result.items() if key != "result_fingerprint"}
+    )
+    result_path = closed_cycle._result_path(attempt_path)
+    result_path.write_text(json.dumps(foreign_result), encoding="utf-8")
+    assert _read_result(result_path) == foreign_result
+    try:
+        run_quality_cycle(
+            state_path=state_path,
+            attempt_path=attempt_path,
+            calibration_inputs=calibration_inputs,
+            locked_inputs=locked_inputs,
+            promotion_inputs=promotion_inputs,
+            post_merge_inputs=post_merge_inputs,
+        )
+    except AnalysisQualityClosedCycleError as exc:
+        assert "another cycle" in str(exc)
+    else:
+        raise AssertionError("completed replay must reject a valid foreign cycle result")
