@@ -1,0 +1,79 @@
+name: One-shot S9 replay fix transport
+
+on:
+  push:
+    branches:
+      - feat/1040-first-closed-cycle
+    paths:
+      - .github/workflows/transport-s9-replay-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  transport:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+          ref: feat/1040-first-closed-cycle
+
+      - name: Verify transport parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "05fdc6449b4105f534a5681adcb4eb17de5eaa50"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/transport-s9-replay-fix.yml"
+
+      - name: Materialize verified source bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import re
+          import urllib.request
+
+          url = "https://api.github.com/repos/jannekbuengener/sample-brain/issues/comments/6272359290"
+          request = urllib.request.Request(
+              url,
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+          with urllib.request.urlopen(request) as response:
+              body = json.load(response)["body"]
+          encoded = body.split("BEGIN_GZIP_BASE64", 1)[1].split("END_GZIP_BASE64", 1)[0]
+          encoded = re.sub(r"\s+", "", encoded)
+          raw = gzip.decompress(base64.b64decode(encoded))
+          assert len(raw) == 56027, len(raw)
+          digest = hashlib.sha256(raw).hexdigest()
+          assert digest == "b7ba6193849be5998fdd2bde810f27d67cdfcdcc166c65374921156abea258e8", digest
+          target = pathlib.Path("src/analysis_quality_closed_cycle.py")
+          target.write_bytes(raw)
+          compile(raw, str(target), "exec")
+          PY
+
+      - name: Commit exact fix and self-remove transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/transport-s9-replay-fix.yml
+          git add src/analysis_quality_closed_cycle.py
+          test "$(git diff --cached --name-only | sort | tr '\n' ' ')" = ".github/workflows/transport-s9-replay-fix.yml src/analysis_quality_closed_cycle.py "
+          python -m py_compile src/analysis_quality_closed_cycle.py
+          git diff --cached --check
+          git commit -m "fix(#1182): bind replay to cycle ownership"
+          git push origin HEAD:feat/1040-first-closed-cycle
