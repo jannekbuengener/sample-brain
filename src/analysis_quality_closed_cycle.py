@@ -38,7 +38,10 @@ _ATTEMPT_KEYS = {
     "locked_ref", "promotion_ref", "post_merge_ref", "continuation_ref",
     "reason", "production_authorized", "attempt_fingerprint",
 }
-_PHASES = {"calibration", "locked", "promotion", "post_merge", "continuation", "completed"}
+_PHASES = {
+    "calibration", "locked", "promotion", "post_merge", "continuation",
+    "held", "failed", "completed",
+}
 
 
 class AnalysisQualityClosedCycleError(ValueError):
@@ -234,6 +237,60 @@ def _provider_id(inputs: dict[str, Any], *, remove: bool = True) -> str:
     return provider_id
 
 
+def _replay_committed_promotion(
+    *,
+    cycle: Mapping[str, Any],
+    locked: Mapping[str, Any],
+    state_path: Path,
+    manifest: Mapping[str, Any],
+    promotion_args: Mapping[str, Any],
+) -> dict[str, Any]:
+    expected = cycle.get("promotion_ref") or {}
+    if locked.get("result_fingerprint") != (cycle.get("locked_ref") or {}).get(
+        "result_fingerprint"
+    ):
+        raise AnalysisQualityClosedCycleError("locked S6 result differs from committed cycle identity")
+    if manifest.get("manifest_fingerprint") != expected.get("manifest_fingerprint"):
+        raise AnalysisQualityClosedCycleError("S7 manifest differs from committed cycle identity")
+    promoted = run_promotion(
+        source_state_path=state_path, manifest=manifest, **dict(promotion_args)
+    )
+    actual = {
+        "manifest_fingerprint": manifest.get("manifest_fingerprint"),
+        "attempt_fingerprint": promoted.get("state_fingerprint"),
+        "status": promoted.get("status"),
+        "pr_number": promoted.get("pr_number"),
+        "head_sha": promoted.get("head_sha"),
+        "merge_sha": promoted.get("merge_sha"),
+    }
+    for key, value in actual.items():
+        if expected.get(key) != value:
+            raise AnalysisQualityClosedCycleError(
+                f"replayed S7 {key} differs from committed cycle identity"
+            )
+    if promoted.get("status") != "merged" or promoted.get(
+        "repository_merge_eligible"
+    ) is not True:
+        raise AnalysisQualityClosedCycleError("committed S7 promotion is no longer merge eligible")
+    return promoted
+
+
+def _recovered_orchestration_ref(
+    supervisor_state: Mapping[str, Any],
+    identity: Mapping[str, Any],
+    phase: str,
+) -> Mapping[str, Any]:
+    ref = supervisor_state.get("last_orchestration_ref") or {}
+    if (
+        ref.get("request_fingerprint") != identity.get("request_fingerprint")
+        or ref.get("decision_provider_id") != identity.get("decision_provider_id")
+    ):
+        raise AnalysisQualityClosedCycleError(
+            f"{phase} state changed outside the pending invocation"
+        )
+    return ref
+
+
 def _pending(state: dict[str, Any], phase: str, identity: Mapping[str, Any]) -> None:
     invocation_fp = fingerprint({"phase": phase, "identity": dict(identity)})
     prior = state.get("pending")
@@ -359,6 +416,7 @@ def _write_result(
         },
         "evidence_classifications": {
             "domain_execution": "REAL_SANITIZED_DOMAIN_EXECUTION",
+            "proof_evaluator": "INJECTED_PROOF_EVALUATOR",
             "repository_governance": "INFRASTRUCTURE_SIMULATION",
             "production_quality_claim": False,
         },
@@ -432,46 +490,42 @@ def run_quality_cycle(
                 if pending and pending.get("phase") == phase:
                     identity = pending.get("identity") or {}
                     if identity.get("s5_state_fingerprint") != s5["state_fingerprint"]:
-                        previous_decision = identity.get("previous_decision_fingerprint")
                         current_decision = s5.get("last_decision") or {}
-                        if current_decision.get("decision_fingerprint") != previous_decision:
-                            previous_orchestration = s5.get("last_orchestration_ref") or {}
-                            recovered = {
-                                "orchestration": {
-                                    "outcome_fingerprint": previous_orchestration.get(
-                                        "outcome_fingerprint"
-                                    )
-                                },
-                                "decision": current_decision,
-                            }
-                            cycle["calibration_refs"].append(
-                                _ref_from_supervisor(
-                                    recovered,
-                                    s5,
-                                    identity.get("request_fingerprint"),
+                        previous_orchestration = _recovered_orchestration_ref(
+                            s5, identity, "S5"
+                        )
+                        recovered = {
+                            "orchestration": {
+                                "outcome_fingerprint": previous_orchestration.get(
+                                    "outcome_fingerprint"
                                 )
+                            },
+                            "decision": current_decision,
+                        }
+                        cycle["calibration_refs"].append(
+                            _ref_from_supervisor(
+                                recovered,
+                                s5,
+                                identity.get("request_fingerprint"),
                             )
-                            cycle["calibration_refs"][-1]["decision_provider_id"] = identity.get(
-                                "decision_provider_id"
-                            )
-                            cycle["candidate_history"] = list(
-                                s5["visited_candidate_ids"]
-                            )
-                            action = current_decision.get("next_action")
-                            cycle = _commit_phase(
-                                cycle_path,
-                                cycle,
-                                "locked" if action == "freeze_candidate" else "calibration",
-                            )
-                            if current_decision.get("decision_status") != "ready" or action not in {
-                                "continue_calibration", "freeze_candidate"
-                            }:
-                                cycle["status"] = "held"
-                                cycle["reason"] = "calibration_decision_not_actionable"
-                                return _save_attempt(cycle_path, cycle)
-                            continue
-                        cycle["pending"] = None
-                        cycle = _save_attempt(cycle_path, cycle)
+                        )
+                        cycle["calibration_refs"][-1]["decision_provider_id"] = identity[
+                            "decision_provider_id"
+                        ]
+                        cycle["candidate_history"] = list(s5["visited_candidate_ids"])
+                        action = current_decision.get("next_action")
+                        cycle = _commit_phase(
+                            cycle_path,
+                            cycle,
+                            "locked" if action == "freeze_candidate" else "calibration",
+                        )
+                        if current_decision.get("decision_status") != "ready" or action not in {
+                            "continue_calibration", "freeze_candidate"
+                        }:
+                            cycle["status"] = "held"
+                            cycle["reason"] = "calibration_decision_not_actionable"
+                            return _save_attempt(cycle_path, cycle)
+                        continue
                 if s5["loop_status"] == "frozen":
                     cycle = _commit_phase(cycle_path, cycle, "locked")
                     continue
@@ -494,7 +548,11 @@ def run_quality_cycle(
                     "request_fingerprint": request_fp,
                 })
                 _save_attempt(cycle_path, cycle)
-                result = run_supervisor_step(state_path=s5_path, **inputs)
+                result = run_supervisor_step(
+                    state_path=s5_path,
+                    decision_provider_id=policy_id,
+                    **inputs,
+                )
                 post_state = load_state(s5_path)
                 ref = _ref_from_supervisor(result, post_state, request_fp)
                 ref["decision_provider_id"] = policy_id
@@ -594,7 +652,13 @@ def run_quality_cycle(
                 promotion_args = dict(promotion_inputs(locked_result=locked))
                 manifest = promotion_args.pop("manifest")
                 _require_simulation_repository(promotion_args, manifest)
-                promotion = run_promotion(source_state_path=s5_path, manifest=manifest, **promotion_args)
+                promotion = _replay_committed_promotion(
+                    cycle=cycle,
+                    locked=locked,
+                    state_path=s5_path,
+                    manifest=manifest,
+                    promotion_args=promotion_args,
+                )
                 promotion_attempt_path = Path(promotion_args["attempt_root"]) / manifest["manifest_fingerprint"] / "attempt.json"
                 post = dict(post_merge_inputs(
                     locked_result=locked,
@@ -636,7 +700,13 @@ def run_quality_cycle(
                 promotion_args = dict(promotion_inputs(locked_result=locked))
                 manifest = promotion_args.pop("manifest")
                 _require_simulation_repository(promotion_args, manifest)
-                promotion = run_promotion(source_state_path=s5_path, manifest=manifest, **promotion_args)
+                promotion = _replay_committed_promotion(
+                    cycle=cycle,
+                    locked=locked,
+                    state_path=s5_path,
+                    manifest=manifest,
+                    promotion_args=promotion_args,
+                )
                 promotion_attempt_path = Path(promotion_args["attempt_root"]) / manifest["manifest_fingerprint"] / "attempt.json"
                 post = dict(post_merge_inputs(
                     locked_result=locked,
@@ -687,51 +757,46 @@ def run_quality_cycle(
                         "state_fingerprint"
                     ]:
                         current_decision = continuation_state.get("last_decision") or {}
-                        if current_decision.get("decision_fingerprint") != identity.get(
-                            "previous_decision_fingerprint"
+                        last_orchestration = _recovered_orchestration_ref(
+                            continuation_state, identity, "continuation"
+                        )
+                        iterator_ref = continuation_state.get("last_iterator_ref") or {}
+                        next_candidate = iterator_ref.get("next_candidate")
+                        if (
+                            current_decision.get("next_action")
+                            != "continue_calibration"
+                            or iterator_ref.get("iterator_effect") != "advance"
+                            or not next_candidate
                         ):
-                            iterator_ref = continuation_state.get("last_iterator_ref") or {}
-                            next_candidate = iterator_ref.get("next_candidate")
-                            if (
-                                current_decision.get("next_action")
-                                != "continue_calibration"
-                                or iterator_ref.get("iterator_effect") != "advance"
-                                or not next_candidate
-                            ):
-                                cycle["status"] = "held"
-                                cycle["reason"] = "continuation_not_ready"
-                                return _save_attempt(cycle_path, cycle)
-                            last_orchestration = continuation_state.get(
-                                "last_orchestration_ref"
-                            ) or {}
-                            cycle["continuation_ref"] = {
-                                "baseline_generation": lineage["generation"],
-                                "baseline_fingerprint": lineage["current"][
-                                    "baseline_fingerprint"
-                                ],
-                                "supervisor_state_fingerprint": continuation_state[
-                                    "state_fingerprint"
-                                ],
-                                "next_action": current_decision["next_action"],
-                                "candidate": next_candidate,
-                                "decision_fingerprint": current_decision[
-                                    "decision_fingerprint"
-                                ],
-                                "outcome_fingerprint": last_orchestration.get(
-                                    "outcome_fingerprint"
-                                ),
-                            }
-                            cycle["candidate_history"] = load_state(s5_path)[
-                                "visited_candidate_ids"
-                            ]
-                            cycle["status"] = "completed"
-                            result = _write_result(cycle_path, cycle, lineage)
-                            cycle["phase"] = "completed"
-                            cycle["pending"] = None
-                            _save_attempt(cycle_path, cycle)
-                            return result
+                            cycle["status"] = "held"
+                            cycle["reason"] = "continuation_not_ready"
+                            return _save_attempt(cycle_path, cycle)
+                        cycle["continuation_ref"] = {
+                            "baseline_generation": lineage["generation"],
+                            "baseline_fingerprint": lineage["current"][
+                                "baseline_fingerprint"
+                            ],
+                            "supervisor_state_fingerprint": continuation_state[
+                                "state_fingerprint"
+                            ],
+                            "next_action": current_decision["next_action"],
+                            "candidate": next_candidate,
+                            "decision_fingerprint": current_decision[
+                                "decision_fingerprint"
+                            ],
+                            "outcome_fingerprint": last_orchestration.get(
+                                "outcome_fingerprint"
+                            ),
+                        }
+                        cycle["candidate_history"] = load_state(s5_path)[
+                            "visited_candidate_ids"
+                        ]
+                        cycle["status"] = "completed"
+                        result = _write_result(cycle_path, cycle, lineage)
+                        cycle["phase"] = "completed"
                         cycle["pending"] = None
-                        cycle = _save_attempt(cycle_path, cycle)
+                        _save_attempt(cycle_path, cycle)
+                        return result
                 inputs = dict(calibration_inputs(state_path=continuation_path, state=continuation_state))
                 policy_id = _provider_id(inputs)
                 request = inputs.get("request")
@@ -748,7 +813,11 @@ def run_quality_cycle(
                     "request_fingerprint": request.get("request_fingerprint"),
                 })
                 _save_attempt(cycle_path, cycle)
-                result = run_supervisor_step(state_path=continuation_path, **inputs)
+                result = run_supervisor_step(
+                    state_path=continuation_path,
+                    decision_provider_id=policy_id,
+                    **inputs,
+                )
                 continuation_after = load_state(continuation_path)
                 ref = _ref_from_supervisor(
                     result, continuation_after, request.get("request_fingerprint")

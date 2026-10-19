@@ -27,6 +27,10 @@ recovery are specified separately in
 [`benchmarks/SAMPLE_BRAIN_ANALYSIS_POST_MERGE_V1.md`](benchmarks/SAMPLE_BRAIN_ANALYSIS_POST_MERGE_V1.md)
 (ACTIVE_SUPPORTING, #1178): exact merged-SHA replay, accepted baseline lineage,
 LAST_KNOWN_GOOD and governed forward repair; `production_authorized=false`.
+The first end-to-end closed-cycle composition proof is specified in
+[`benchmarks/SAMPLE_BRAIN_ANALYSIS_CLOSED_CYCLE_V1.md`](benchmarks/SAMPLE_BRAIN_ANALYSIS_CLOSED_CYCLE_V1.md)
+(ACTIVE_SUPPORTING, #1182): real sanitized AQ1 execution + injected proof evaluator +
+simulated S7/S8 repository infrastructure, with real S9 PR/CI/review/merge evidence kept separate.
 
 | Topic | Authority | Class | Notes |
 |---|---|---|---|
@@ -72,6 +76,7 @@ LAST_KNOWN_GOOD and governed forward repair; `production_authorized=false`.
 | Analysis-eval artifact / ARVP bridge | `docs/benchmarks/SAMPLE_BRAIN_ANALYSIS_EVAL_V1.md` | ACTIVE_SUPPORTING | #956 freeze: `sample-brain.analysis-eval.v1` portable envelope + structural ARVP #7 mapping; no runtime `import arvp`; #960 portable baseline consumed; #957/#958/#959 adjacent owners; ARVP #11/#12 deferred. |
 | Analysis automation decision / orchestration handoff | `docs/benchmarks/SAMPLE_BRAIN_ANALYSIS_AUTOMATION_DECISION_V1.md` | ACTIVE_SUPPORTING | #1043 freeze under #1040/#942: `sample-brain.analysis-automation-decision.v1` status/token/next-action + partition & production firewalls; consumes #956 + ARVP evidence/gate by opaque ref; no runner/candidate search/`import arvp`. |
 | Analysis post-merge verification / recovery | `docs/benchmarks/SAMPLE_BRAIN_ANALYSIS_POST_MERGE_V1.md` | ACTIVE_SUPPORTING | #1178 under #1040: successful S7 merge is replay-verified before baseline acceptance; portable baseline lineage binds repository SHA/evidence/policy; previous verified baseline is LAST_KNOWN_GOOD; failed promotion uses governed bounded forward repair, never history rewrite. |
+| Analysis autonomous closed-cycle composition proof | `docs/benchmarks/SAMPLE_BRAIN_ANALYSIS_CLOSED_CYCLE_V1.md` | ACTIVE_SUPPORTING | #1182 S9 under #1040: one self-start/resume entry composes real sanitized AQ1 calibration/iteration/freeze + locked TEST/HOLDOUT with simulated S7/S8 infrastructure; injected proof evaluator is explicitly non-production; `production_authorized=false`; real S9 PR/CI/review/merge evidence remains external delivery evidence. |
 | Analysis headless run / static adapter registry | `docs/benchmarks/SAMPLE_BRAIN_ANALYSIS_HEADLESS_RUN_V1.md` | ACTIVE_SUPPORTING | #1054 freeze under #1040/#942: `sample-brain.analysis-headless-run.v1` request/result + Protocol + static registry + op×partition preflight; AQ1/AQ6 thin proofs; no ARVP/`decision_token`/`next_action`; `production_authorized` always false. |
 | Analysis orchestration run / headless→decision binder | `docs/benchmarks/SAMPLE_BRAIN_ANALYSIS_ORCHESTRATION_RUN_V1.md` | ACTIVE_SUPPORTING | #1060 freeze under #1040/#942: `sample-brain.analysis-orchestration-run.v1` single-shot binder chaining #1054→#956→opaque ARVP→#1043; AQ1 proof; no optimizer/scheduler/ARVP clone; `production_authorized` always false. |
 | Analysis candidate iterator / bounded CALIBRATION search | `docs/benchmarks/SAMPLE_BRAIN_ANALYSIS_CANDIDATE_ITERATOR_V1.md` | ACTIVE_SUPPORTING | #1064 freeze under #1040/#942: `sample-brain.analysis-candidate-iterator.v1` single-shot deterministic next-candidate primitive over domain-owned finite ordered search spaces; AQ1 real-domain proof; TEST/HOLDOUT firewall; no scheduler/ARVP/promotion. |

@@ -118,6 +118,12 @@ def test_cycle_self_starts_real_aq1_and_stops_on_machine_hold(tmp_path, monkeypa
     assert seen["eval"]["document_type"] == "sample-brain.analysis-eval.v1"
     cycle = load_state(state_path)
     assert cycle["loop_status"] == "held"
+    assert cycle["last_orchestration_ref"]["request_fingerprint"] == result[
+        "calibration_refs"
+    ][0]["request_fingerprint"]
+    assert cycle["last_orchestration_ref"]["decision_provider_id"] == (
+        "aq1-fixture-hold-policy-v1"
+    )
     assert call_count == 1
     assert competing_cycle_blocked == ["cycle generation is already executing"]
 
@@ -150,6 +156,38 @@ def test_s9_promotion_rejects_repository_outside_temporary_root():
         assert "temporary directory" in str(exc)
     else:
         raise AssertionError("persistent repositories must not enter S9 proof promotion")
+
+
+def test_terminal_cycle_phases_reload_and_unrelated_s5_invocation_is_rejected(
+    tmp_path,
+):
+    attempt = closed_cycle._new_attempt(_fresh_aq1_state())
+    attempt["phase"] = "failed"
+    attempt["status"] = "failed"
+    attempt_path = tmp_path / "terminal-attempt.json"
+    attempt_path.write_text(
+        json.dumps(closed_cycle._seal_attempt(attempt)), encoding="utf-8"
+    )
+
+    assert closed_cycle._load_attempt(attempt_path)["status"] == "failed"
+    try:
+        closed_cycle._recovered_orchestration_ref(
+            {
+                "last_orchestration_ref": {
+                    "request_fingerprint": "a" * 64,
+                    "decision_provider_id": "other-policy-v1",
+                }
+            },
+            {
+                "request_fingerprint": "b" * 64,
+                "decision_provider_id": "expected-policy-v1",
+            },
+            "S5",
+        )
+    except AnalysisQualityClosedCycleError as exc:
+        assert "outside the pending invocation" in str(exc)
+    else:
+        raise AssertionError("unrelated S5 invocation must not satisfy pending recovery")
 
 
 def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
@@ -496,6 +534,28 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
             f"the simulated lost S8 reply must interrupt the first call: {first_result!r}"
         )
 
+    def changed_promotion_inputs(*, locked_result):
+        inputs = promotion_inputs(locked_result=locked_result)
+        inputs["manifest"] = dict(inputs["manifest"])
+        inputs["manifest"]["manifest_fingerprint"] = "0" * 64
+        return inputs
+
+    try:
+        run_quality_cycle(
+            state_path=state_path,
+            attempt_path=attempt_path,
+            calibration_inputs=calibration_inputs,
+            locked_inputs=locked_inputs,
+            promotion_inputs=changed_promotion_inputs,
+            post_merge_inputs=post_merge_inputs,
+        )
+    except AnalysisQualityClosedCycleError as exc:
+        assert "S7 manifest differs" in str(exc)
+    else:
+        raise AssertionError("S8 replay must reject a changed S7 manifest")
+    assert s7_cache["host"].creates == 1
+    assert s7_cache["host"].merges == 1
+
     result = run_quality_cycle(
         state_path=state_path,
         attempt_path=attempt_path,
@@ -507,6 +567,7 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
 
     assert result["outcome_token"] == "AUTONOMOUS_QUALITY_LOOP_FIRST_CLOSED_CYCLE"
     assert result["evidence_classifications"]["domain_execution"] == "REAL_SANITIZED_DOMAIN_EXECUTION"
+    assert result["evidence_classifications"]["proof_evaluator"] == "INJECTED_PROOF_EVALUATOR"
     assert result["evidence_classifications"]["repository_governance"] == "INFRASTRUCTURE_SIMULATION"
     assert result["locked_ref"]["terminal_status"] == "ready"
     assert result["promotion_ref"]["status"] == "merged"

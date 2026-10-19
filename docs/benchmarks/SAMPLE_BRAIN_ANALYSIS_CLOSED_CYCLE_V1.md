@@ -37,6 +37,13 @@ S9 implementation PR's real GitHub checks, review, merge, and main
 verification are reported separately. Neither proves production analyzer
 quality or changes `production_authorized=false`.
 
+Evidence classes stay explicit and non-interchangeable:
+
+1. `REAL_SANITIZED_DOMAIN_EXECUTION` - real AQ1 domain adapter + bounded candidate provider on sanitized fixtures;
+2. `INJECTED_PROOF_EVALUATOR` - test-only host evaluator derived from actual AQ1 artifacts, not a production threshold;
+3. `INFRASTRUCTURE_SIMULATION` - deterministic temporary Git repositories and injected S7/S8 host behavior;
+4. real S9 PR/CI/review/merge evidence - repository-delivery evidence reported outside the portable cycle artifact.
+
 ## Entry point and persistence
 
 `run_quality_cycle(...)` loads or creates a portable cycle attempt bound to

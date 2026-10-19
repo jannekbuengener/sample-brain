@@ -15,6 +15,7 @@ No persisted ``running``. No reinterpretation of decision vocabulary.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -88,6 +89,9 @@ def _decision_ref(decision: Mapping[str, Any]) -> dict[str, Any]:
 
 def _orchestration_ref(
     outcome: Mapping[str, Any],
+    *,
+    request_fingerprint: str | None = None,
+    decision_provider_id: str | None = None,
 ) -> dict[str, Any]:
     analysis_eval = outcome.get("analysis_eval") or {}
     decision_evidence = (outcome.get("decision") or {}).get("evidence") or {}
@@ -103,6 +107,9 @@ def _orchestration_ref(
     gate = (decision_evidence.get("gate_decision") or {}).get("verdict")
     if gate is not None:
         ref["gate_verdict"] = gate
+    if decision_provider_id is not None:
+        ref["request_fingerprint"] = request_fingerprint
+        ref["decision_provider_id"] = decision_provider_id
     return ref
 
 
@@ -188,6 +195,7 @@ def run_supervisor_step(
     analysis_eval_artifact: Mapping[str, Any] | None = None,
     adapter_id: str | None = None,
     decision_provider=None,
+    decision_provider_id: str | None = None,
 ) -> dict[str, Any]:
     """Execute one supervisor step and commit the next portable state atomically."""
     path = Path(state_path)
@@ -207,6 +215,17 @@ def run_supervisor_step(
         )
 
     bind = {} if bind_kwargs is None else dict(bind_kwargs)
+    if decision_provider is None:
+        if decision_provider_id is not None:
+            raise AnalysisQualityLoopSupervisorError(
+                "decision_provider_id requires decision_provider"
+            )
+    elif not isinstance(decision_provider_id, str) or re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", decision_provider_id
+    ) is None:
+        raise AnalysisQualityLoopSupervisorError(
+            "stable decision_provider_id is required"
+        )
 
     try:
         outcome = run_orchestration(
@@ -340,7 +359,11 @@ def run_supervisor_step(
         "max_iterations": state.get("max_iterations"),
         "loop_status": next_loop_status,
         "last_decision": _decision_ref(decision),
-        "last_orchestration_ref": _orchestration_ref(outcome),
+        "last_orchestration_ref": _orchestration_ref(
+            outcome,
+            request_fingerprint=request.get("request_fingerprint"),
+            decision_provider_id=decision_provider_id,
+        ),
         "last_iterator_ref": (
             None if iterator_result is None else _iterator_ref(iterator_result)
         ),
