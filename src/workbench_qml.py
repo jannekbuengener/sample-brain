@@ -1316,18 +1316,6 @@ class Screen1QmlInteractionAdapter:
         """
         return bool(self._arrangement_mode_enabled)
 
-    @property
-    def workspace_layout_locked(self) -> bool:
-        """Effective Edit layout lock; feature-off is always fail-closed LOCKED."""
-        from .workbench_edit_docking import LOCK_UNLOCKED
-
-        state = self._edit_docking_state
-        return not (
-            self.workspace_panel_docking_enabled
-            and state is not None
-            and getattr(state, "lock_state", None) == LOCK_UNLOCKED
-        )
-
     def load_workspace_layout_state(
         self,
         *,
@@ -1346,35 +1334,6 @@ class Screen1QmlInteractionAdapter:
             loaded = DEFAULT_EDIT_DOCKING_STATE
         self._edit_docking_state = loaded
         return loaded
-
-    def set_workspace_layout_locked(
-        self,
-        locked: bool,
-        *,
-        state_dir: Path | None = None,
-        env: Mapping[str, str] | None = None,
-    ) -> str:
-        """Persist one typed LOCKED/UNLOCKED intent through the #1070 owner."""
-        from . import workbench_edit_docking as edit_docking
-
-        if not self.workspace_panel_docking_enabled:
-            return edit_docking.LOCK_LOCKED
-        if self._edit_docking_state is None:
-            self.load_workspace_layout_state(state_dir=state_dir, env=env)
-        state = self._edit_docking_state
-        if not isinstance(state, edit_docking.EditDockingState):
-            state = edit_docking.DEFAULT_EDIT_DOCKING_STATE
-        target = edit_docking.LOCK_LOCKED if bool(locked) else edit_docking.LOCK_UNLOCKED
-        updated = edit_docking.set_edit_docking_lock(state, target)
-        if edit_docking.save_edit_docking_state(updated, state_dir=state_dir, env=env):
-            self._edit_docking_state = updated
-        else:
-            self.load_workspace_layout_state(state_dir=state_dir, env=env)
-        return (
-            edit_docking.LOCK_LOCKED
-            if self.workspace_layout_locked
-            else edit_docking.LOCK_UNLOCKED
-        )
 
     def load_feature_settings(
         self,
@@ -3469,50 +3428,6 @@ ApplicationWindow {
                         }
                         Label { text: "Functional"; color: theme.textSecondary; font.pixelSize: 11 }
                         Button {
-                            id: workspaceLayoutLockToggle
-                            objectName: "workspaceLayoutLockToggle"
-                            Layout.fillWidth: true
-                            flat: true
-                            checkable: true
-                            checked: window.interaction.workspacePanelDockingEnabled
-                                && !window.interaction.workspaceLayoutLocked
-                            enabled: window.interaction.workspacePanelDockingEnabled
-                            opacity: enabled ? 1.0 : 0.55
-                            onClicked: window.interaction.setWorkspaceLayoutLocked(
-                                !window.interaction.workspaceLayoutLocked
-                            )
-                            Accessible.name: window.interaction.workspaceLayoutLocked
-                                ? "Unlock workspace layout"
-                                : "Lock workspace layout"
-                            contentItem: Text {
-                                text: window.interaction.workspaceLayoutLocked
-                                    ? "Layout · Locked"
-                                    : "Layout · Unlocked"
-                                color: !workspaceLayoutLockToggle.enabled ? theme.textDisabled
-                                       : (workspaceLayoutLockToggle.checked ? theme.textPrimary
-                                          : (workspaceLayoutLockToggle.pressed ? theme.textPrimary
-                                             : (workspaceLayoutLockToggle.hovered || workspaceLayoutLockToggle.activeFocus ? theme.textPrimary : theme.textSecondary)))
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                                font.pixelSize: 11
-                                opacity: workspaceLayoutLockToggle.enabled ? 1.0 : 0.45
-                            }
-                            background: Rectangle {
-                                implicitHeight: 26
-                                radius: 4
-                                color: !workspaceLayoutLockToggle.enabled ? "transparent"
-                                       : (workspaceLayoutLockToggle.checked ? theme.actionActive
-                                          : (workspaceLayoutLockToggle.pressed ? theme.surfaceElevated
-                                             : (workspaceLayoutLockToggle.hovered ? theme.hoverSurface : "transparent")))
-                                border.width: 1
-                                border.color: !workspaceLayoutLockToggle.enabled ? theme.borderSubtle
-                                              : (workspaceLayoutLockToggle.checked ? theme.actionActive
-                                                 : (workspaceLayoutLockToggle.activeFocus ? theme.focusRing
-                                                    : (workspaceLayoutLockToggle.pressed ? theme.selectionBorder : theme.borderSubtle)))
-                                opacity: workspaceLayoutLockToggle.enabled ? 1.0 : 0.4
-                            }
-                        }
-                        Button {
                             id: gestureRackApplyToggle
                             objectName: "gestureRackApplyToggle"
                             Layout.fillWidth: true
@@ -4723,6 +4638,9 @@ ApplicationWindow {
                                     Layout.preferredWidth: browserPane.effectiveBrowserFavoriteColumnWidth
                                     Layout.preferredHeight: Math.min(window.densityActionHitTarget, window.densityRowHeight - 2 * window.densityVerticalInset)
                                     Layout.maximumHeight: window.densityRowHeight - 2 * window.densityVerticalInset
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: modelData.favorite ? "Remove from Favorites" : "Add to Favorites"
+                                    Accessible.onPressAction: favoriteMouseArea.clicked(null)
                                     Label {
                                         anchors.fill: parent
                                         text: modelData.favorite ? "★" : "☆"
@@ -4732,6 +4650,7 @@ ApplicationWindow {
                                         font.pixelSize: window.textMeta
                                     }
                                     MouseArea {
+                                        id: favoriteMouseArea
                                         anchors.fill: parent
                                         onClicked: {
                                             browser.forceActiveFocus()
@@ -6643,15 +6562,6 @@ def _qml_interaction_bridge(
         @Property(bool, notify=state_changed)
         def workspacePanelDockingEnabled(self) -> bool:
             return adapter.workspace_panel_docking_enabled
-
-        @Property(bool, notify=state_changed)
-        def workspaceLayoutLocked(self) -> bool:
-            return adapter.workspace_layout_locked
-
-        @Slot(bool)
-        def setWorkspaceLayoutLocked(self, locked: bool) -> None:
-            adapter.set_workspace_layout_locked(bool(locked))
-            self._refresh()
 
         @Slot(bool)
         def setGestureRackApplyEnabled(self, enabled: bool) -> None:

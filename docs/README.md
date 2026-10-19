@@ -1,5 +1,9 @@
 # Sample Brain — Documentation Index
 
+Analysis automation: [Frozen candidate to locked TEST/HOLDOUT (#1170)](benchmarks/SAMPLE_BRAIN_ANALYSIS_LOCKED_HOLDOUT_V1.md)
+composes immutable supervisor freeze state with the existing evaluation and
+decision contracts; promotion remains a separate controller.
+
 Quick navigation for reviewing the repository. Product-facing docs are listed first;
 internal agent- and process docs are clearly separated.
 

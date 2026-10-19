@@ -269,6 +269,9 @@ def test_browser_favorite_column_is_present_and_not_a_rating():
     assert 'objectName: "browserFavoriteButton"' in delegate
     assert "modelData.favorite" in delegate
     assert "toggleFavorite(index)" in delegate
+    assert "Accessible.role: Accessible.Button" in delegate
+    assert "Accessible.name: modelData.favorite ?" in delegate
+    assert "Accessible.onPressAction:" in delegate
     # No 1–5 rating chrome.
     assert "rating" not in delegate.lower()
     assert "★★★★★" not in QML_SOURCE
