@@ -202,6 +202,15 @@ def load_promotion_source(source_state_path):
         "decision_token": "PROMOTION_CANDIDATE_IDENTIFIED",
         "next_action": "handoff_promotion_controller",
     }
+    if result["artifact_version"] == "1.1.0":
+        expected_claim = {
+            "freeze_state_fingerprint": state["state_fingerprint"],
+            "request_fingerprint": result["request_fingerprint"],
+            "mode": "provider",
+            "decision_provider_id": result["decision_provider_provenance"][
+                "decision_provider_id"
+            ],
+        }
     _require(
         claim == expected_claim
         and fingerprint(claim) == result["invocation_fingerprint"],
