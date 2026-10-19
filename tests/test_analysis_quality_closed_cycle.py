@@ -209,6 +209,60 @@ def test_cycle_retries_after_retry_only_s5_updates_and_holds_on_exhaustion(
     assert result["reason"] == "calibration_retry_exhausted"
     assert provider_calls["count"] == 3
 
+    replayed = run_quality_cycle(**args)
+    assert replayed["attempt_fingerprint"] == result["attempt_fingerprint"]
+    assert provider_calls["count"] == 3
+
+
+def test_cycle_lock_is_stable_across_s5_identity_resets(tmp_path):
+    state_path = tmp_path / "quality-state.json"
+    first = {
+        "domain": "aq1.tempo",
+        "baseline_candidate": {"candidate_id": "baseline-a"},
+        "search_space_fingerprint": "1" * 64,
+    }
+    reset = {
+        "domain": "aq1.tempo",
+        "baseline_candidate": {"candidate_id": "baseline-b"},
+        "search_space_fingerprint": "2" * 64,
+    }
+
+    assert closed_cycle._domain_lock_path(state_path, first) == (
+        closed_cycle._domain_lock_path(state_path, reset)
+    )
+
+
+def test_terminal_attempt_rejects_reset_s5_lineage(tmp_path):
+    state_path = tmp_path / "quality-state.json"
+    initial = _fresh_aq1_state()
+    save_state_atomic(state_path, initial)
+    attempt_path = tmp_path / "cycle-attempt.json"
+    attempt = closed_cycle._new_attempt(initial)
+    attempt["phase"] = "held"
+    attempt["status"] = "held"
+    attempt["reason"] = "transition_budget_exhausted"
+    closed_cycle._save_attempt(attempt_path, attempt)
+
+    reset = dict(initial)
+    reset.pop("state_fingerprint")
+    reset["generation"] = initial["generation"] + 1
+    save_state_atomic(state_path, reset)
+
+    inputs = {
+        "state_path": state_path,
+        "attempt_path": attempt_path,
+        "calibration_inputs": lambda **_: {},
+        "locked_inputs": lambda **_: {},
+        "promotion_inputs": lambda **_: {},
+        "post_merge_inputs": lambda **_: {},
+    }
+    try:
+        run_quality_cycle(**inputs)
+    except AnalysisQualityClosedCycleError as exc:
+        assert "terminal" in str(exc).lower()
+    else:
+        raise AssertionError("stale terminal attempt must fail closed")
+
 
 def test_malformed_closed_cycle_result_fails_with_contract_error(tmp_path):
     result_path = tmp_path / "cycle.result.json"
