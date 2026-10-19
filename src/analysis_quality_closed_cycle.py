@@ -873,6 +873,7 @@ def run_quality_cycle(
                 result = run_supervisor_step(
                     state_path=s5_path,
                     decision_provider_id=policy_id,
+                    expected_state_fingerprint=s5["state_fingerprint"],
                     **inputs,
                 )
                 post_state = load_state(s5_path)
@@ -1213,6 +1214,7 @@ def run_quality_cycle(
                 result = run_supervisor_step(
                     state_path=continuation_path,
                     decision_provider_id=policy_id,
+                    expected_state_fingerprint=continuation_state["state_fingerprint"],
                     **inputs,
                 )
                 continuation_after = load_state(continuation_path)

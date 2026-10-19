@@ -197,6 +197,7 @@ def run_supervisor_step(
     adapter_id: str | None = None,
     decision_provider=None,
     decision_provider_id: str | None = None,
+    expected_state_fingerprint: str | None = None,
 ) -> dict[str, Any]:
     """Execute one supervisor step and commit the next portable state atomically."""
     path = Path(state_path)
@@ -208,6 +209,14 @@ def run_supervisor_step(
         raise AnalysisQualityLoopSupervisorError(
             f"failed to load supervisor state: {exc}"
         ) from exc
+
+    if (
+        expected_state_fingerprint is not None
+        and state["state_fingerprint"] != expected_state_fingerprint
+    ):
+        raise AnalysisQualityLoopSupervisorError(
+            "supervisor state changed before supervisor dispatch"
+        )
 
     loop_status = state["loop_status"]
     if loop_status in _TERMINAL_LOOP_STATUSES:
