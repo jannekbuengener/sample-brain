@@ -15,7 +15,6 @@ No persisted ``running``. No reinterpretation of decision vocabulary.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -25,7 +24,9 @@ from src.analysis_candidate_iterator import (
     iterate_candidates,
 )
 from src.analysis_orchestration_run import (
+    POLICY_UNSET,
     AnalysisOrchestrationRunError,
+    resolve_decision_mode,
     run_orchestration,
 )
 from src.analysis_quality_loop_state import (
@@ -187,10 +188,10 @@ def run_supervisor_step(
     state_path: str | Path,
     request: Mapping[str, Any],
     bind_kwargs: Mapping[str, Any] | None = None,
-    evidence_fingerprint: str | None = None,
-    gate_verdict: str | None = None,
-    decision_token: str | None = None,
-    next_action: str | None = None,
+    evidence_fingerprint: str | object = POLICY_UNSET,
+    gate_verdict: str | None | object = POLICY_UNSET,
+    decision_token: str | None | object = POLICY_UNSET,
+    next_action: str | None | object = POLICY_UNSET,
     provider: SearchSpaceProvider | None = None,
     analysis_eval_artifact: Mapping[str, Any] | None = None,
     adapter_id: str | None = None,
@@ -215,17 +216,16 @@ def run_supervisor_step(
         )
 
     bind = {} if bind_kwargs is None else dict(bind_kwargs)
-    if decision_provider is None:
-        if decision_provider_id is not None:
-            raise AnalysisQualityLoopSupervisorError(
-                "decision_provider_id requires decision_provider"
-            )
-    elif not isinstance(decision_provider_id, str) or re.fullmatch(
-        r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", decision_provider_id
-    ) is None:
-        raise AnalysisQualityLoopSupervisorError(
-            "stable decision_provider_id is required"
-        )
+    policy_inputs = {
+        "evidence_fingerprint": evidence_fingerprint,
+        "gate_verdict": gate_verdict,
+        "decision_token": decision_token,
+        "next_action": next_action,
+    }
+    try:
+        resolve_decision_mode(decision_provider, decision_provider_id, policy_inputs)
+    except AnalysisOrchestrationRunError as exc:
+        raise AnalysisQualityLoopSupervisorError(str(exc)) from exc
 
     try:
         outcome = run_orchestration(
@@ -238,6 +238,7 @@ def run_supervisor_step(
             analysis_eval_artifact=analysis_eval_artifact,
             adapter_id=adapter_id,
             decision_provider=decision_provider,
+            decision_provider_id=decision_provider_id,
         )
     except AnalysisQualityLoopSupervisorError:
         raise
