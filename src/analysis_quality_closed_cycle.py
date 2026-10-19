@@ -183,6 +183,44 @@ def _read_result(path: Path) -> dict[str, Any]:
     return value
 
 
+def _require_completed_s5_ownership(
+    cycle: Mapping[str, Any], supervisor_state: Mapping[str, Any]
+) -> None:
+    refs = cycle.get("calibration_refs") or []
+    expected = (
+        refs[-1].get("committed_state_fingerprint")
+        if refs
+        else cycle.get("initial_state_fingerprint")
+    )
+    if supervisor_state.get("state_fingerprint") != expected:
+        raise AnalysisQualityClosedCycleError(
+            "completed cycle belongs to a different S5 lineage"
+        )
+
+
+def _require_result_attempt_ownership(
+    cycle: Mapping[str, Any], result: Mapping[str, Any]
+) -> None:
+    owned_fields = (
+        "cycle_id", "domain", "initial_baseline_candidate",
+        "initial_baseline_generation", "calibration_refs", "candidate_history",
+        "locked_ref", "promotion_ref", "post_merge_ref", "continuation_ref",
+    )
+    if any(result.get(key) != cycle.get(key) for key in owned_fields):
+        raise AnalysisQualityClosedCycleError(
+            "result differs from the persisted cycle attempt"
+        )
+
+
+def _require_locked_result_ownership(
+    cycle: Mapping[str, Any], locked: Mapping[str, Any]
+) -> None:
+    if locked.get("result_fingerprint") != (cycle.get("locked_ref") or {}).get(
+        "result_fingerprint"
+    ):
+        raise AnalysisQualityClosedCycleError("locked result differs from committed S6 result")
+
+
 def _require_simulation_repository(inputs: Mapping[str, Any], manifest: Mapping[str, Any]) -> None:
     repository = inputs.get("repository")
     repository_path = getattr(repository, "path", None)
@@ -661,14 +699,18 @@ def run_quality_cycle(
             cycle = _new_attempt(s5)
             _save_attempt(cycle_path, cycle)
         if cycle["status"] == "completed":
+            _require_completed_s5_ownership(cycle, s5)
             completed_result = _read_result(_result_path(cycle_path))
             if completed_result["cycle_id"] != cycle["cycle_id"]:
                 raise AnalysisQualityClosedCycleError("result belongs to another cycle")
+            _require_result_attempt_ownership(cycle, completed_result)
             return completed_result
         if _result_path(cycle_path).exists():
+            _require_completed_s5_ownership(cycle, s5)
             completed_result = _read_result(_result_path(cycle_path))
             if completed_result["cycle_id"] != cycle["cycle_id"]:
                 raise AnalysisQualityClosedCycleError("result belongs to another cycle")
+            _require_result_attempt_ownership(cycle, completed_result)
             cycle["status"] = "completed"
             cycle["phase"] = "completed"
             cycle["pending"] = None
@@ -838,6 +880,7 @@ def run_quality_cycle(
                     raise AnalysisQualityClosedCycleError("promotion lacks S6 handoff")
                 locked_path = s5_path.with_name(s5_path.name + ".locked-result.json")
                 locked = _read_json(locked_path)
+                _require_locked_result_ownership(cycle, locked)
                 inputs = dict(promotion_inputs(locked_result=locked))
                 manifest = inputs.pop("manifest")
                 _require_simulation_repository(inputs, manifest)
