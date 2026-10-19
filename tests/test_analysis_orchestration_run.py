@@ -427,6 +427,61 @@ def test_aq1_completed_gate_hold_maps_to_decision_hold(
     assert outcome["decision"]["next_action"] == "defer_for_evidence"
 
 
+def test_decision_provider_receives_real_aq1_result_and_eval(tmp_path, monkeypatch):
+    work = tmp_path / "aq1-decision-provider"
+    work.mkdir()
+    fake_repo = tmp_path / "fake-repo"
+    fake_repo.mkdir()
+    monkeypatch.setattr(
+        "src.fsld_aq1_tempo_candidate_compare.REPOSITORY_ROOT", fake_repo
+    )
+    request = _aq1_path_b_request(work)
+    received = {}
+
+    def decide(*, request, headless_result, analysis_eval_artifact):
+        received.update(
+            request=request,
+            headless_result=headless_result,
+            analysis_eval_artifact=analysis_eval_artifact,
+        )
+        return {
+            "evidence_fingerprint": "c" * 64,
+            "gate_verdict": "PASS",
+            "decision_token": "PROMOTION_CANDIDATE_IDENTIFIED",
+            "next_action": "freeze_candidate",
+        }
+
+    outcome = run_orchestration(
+        request=request,
+        bind_kwargs={"work_dir": work},
+        decision_provider=decide,
+    )
+
+    assert received["request"]["request_fingerprint"] == request["request_fingerprint"]
+    assert received["headless_result"]["run_status"] == "completed"
+    assert received["analysis_eval_artifact"]["document_type"] == "sample-brain.analysis-eval.v1"
+    assert outcome["decision"]["decision_token"] == "PROMOTION_CANDIDATE_IDENTIFIED"
+    assert outcome["decision"]["evidence"]["evidence_fingerprint"] == "c" * 64
+
+
+def test_decision_provider_malformed_output_fails_closed(tmp_path, monkeypatch):
+    work = tmp_path / "aq1-decision-provider-invalid"
+    work.mkdir()
+    fake_repo = tmp_path / "fake-repo"
+    fake_repo.mkdir()
+    monkeypatch.setattr(
+        "src.fsld_aq1_tempo_candidate_compare.REPOSITORY_ROOT", fake_repo
+    )
+    request = _aq1_path_b_request(work)
+
+    with pytest.raises(Exception, match="decision_provider|evidence_fingerprint"):
+        run_orchestration(
+            request=request,
+            bind_kwargs={"work_dir": work},
+            decision_provider=lambda **_: {"gate_verdict": "PASS"},
+        )
+
+
 def test_unknown_operation_fail_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

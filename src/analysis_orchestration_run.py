@@ -693,12 +693,13 @@ def run_orchestration(
     *,
     request: Mapping[str, Any],
     bind_kwargs: Mapping[str, Any],
-    evidence_fingerprint: str,
+    evidence_fingerprint: str | None = None,
     gate_verdict: str | None = None,
     decision_token: str | None = None,
     next_action: str | None = None,
     analysis_eval_artifact: Mapping[str, Any] | None = None,
     adapter_id: str | None = None,
+    decision_provider=None,
 ) -> dict[str, Any]:
     """Execute the single-shot headless → eval → decision binder.
 
@@ -718,9 +719,16 @@ def run_orchestration(
             "adapter_id mismatch between request and orchestration override"
         )
 
-    evidence_fp = _require_hex_fingerprint(
-        evidence_fingerprint, "evidence_fingerprint"
-    )
+    if decision_provider is None:
+        evidence_fp = _require_hex_fingerprint(
+            evidence_fingerprint, "evidence_fingerprint"
+        )
+    elif any(value is not None for value in (
+        evidence_fingerprint, gate_verdict, decision_token, next_action
+    )):
+        raise AnalysisOrchestrationRunError(
+            "decision_provider cannot be combined with precomputed decision inputs"
+        )
 
     if not isinstance(bind_kwargs, Mapping):
         raise AnalysisOrchestrationRunError("bind_kwargs must be a mapping")
@@ -781,6 +789,30 @@ def run_orchestration(
         raise AnalysisOrchestrationRunError(
             "completed headless result requires portable analysis-eval evidence"
         )
+
+    if decision_provider is not None:
+        if not callable(decision_provider):
+            raise AnalysisOrchestrationRunError("decision_provider must be callable")
+        try:
+            supplied = decision_provider(
+                request=validated_request,
+                headless_result=headless_result,
+                analysis_eval_artifact=eval_artifact,
+            )
+        except Exception as exc:
+            raise AnalysisOrchestrationRunError(
+                f"decision_provider failed: {exc}"
+            ) from exc
+        if not isinstance(supplied, Mapping):
+            raise AnalysisOrchestrationRunError(
+                "decision_provider must return a mapping"
+            )
+        evidence_fp = _require_hex_fingerprint(
+            supplied.get("evidence_fingerprint"), "evidence_fingerprint"
+        )
+        gate_verdict = supplied.get("gate_verdict")
+        decision_token = supplied.get("decision_token")
+        next_action = supplied.get("next_action")
 
     decision_status, mapped_token, mapped_action = map_decision_inputs(
         run_status=run_status,

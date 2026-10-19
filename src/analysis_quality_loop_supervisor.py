@@ -88,20 +88,21 @@ def _decision_ref(decision: Mapping[str, Any]) -> dict[str, Any]:
 
 def _orchestration_ref(
     outcome: Mapping[str, Any],
-    *,
-    evidence_fingerprint: str,
-    gate_verdict: str | None,
 ) -> dict[str, Any]:
     analysis_eval = outcome.get("analysis_eval") or {}
+    decision_evidence = (outcome.get("decision") or {}).get("evidence") or {}
     ref: dict[str, Any] = {
         "outcome_fingerprint": outcome["outcome_fingerprint"],
     }
     eval_fp = analysis_eval.get("artifact_fingerprint")
     if eval_fp is not None:
         ref["analysis_eval_fingerprint"] = eval_fp
-    ref["evidence_fingerprint"] = evidence_fingerprint
-    if gate_verdict is not None:
-        ref["gate_verdict"] = gate_verdict
+    evidence_fp = decision_evidence.get("evidence_fingerprint")
+    if evidence_fp is not None:
+        ref["evidence_fingerprint"] = evidence_fp
+    gate = (decision_evidence.get("gate_decision") or {}).get("verdict")
+    if gate is not None:
+        ref["gate_verdict"] = gate
     return ref
 
 
@@ -179,13 +180,14 @@ def run_supervisor_step(
     state_path: str | Path,
     request: Mapping[str, Any],
     bind_kwargs: Mapping[str, Any] | None = None,
-    evidence_fingerprint: str,
+    evidence_fingerprint: str | None = None,
     gate_verdict: str | None = None,
     decision_token: str | None = None,
     next_action: str | None = None,
     provider: SearchSpaceProvider | None = None,
     analysis_eval_artifact: Mapping[str, Any] | None = None,
     adapter_id: str | None = None,
+    decision_provider=None,
 ) -> dict[str, Any]:
     """Execute one supervisor step and commit the next portable state atomically."""
     path = Path(state_path)
@@ -216,6 +218,7 @@ def run_supervisor_step(
             next_action=next_action,
             analysis_eval_artifact=analysis_eval_artifact,
             adapter_id=adapter_id,
+            decision_provider=decision_provider,
         )
     except AnalysisQualityLoopSupervisorError:
         raise
@@ -337,11 +340,7 @@ def run_supervisor_step(
         "max_iterations": state.get("max_iterations"),
         "loop_status": next_loop_status,
         "last_decision": _decision_ref(decision),
-        "last_orchestration_ref": _orchestration_ref(
-            outcome,
-            evidence_fingerprint=evidence_fingerprint,
-            gate_verdict=gate_verdict,
-        ),
+        "last_orchestration_ref": _orchestration_ref(outcome),
         "last_iterator_ref": (
             None if iterator_result is None else _iterator_ref(iterator_result)
         ),

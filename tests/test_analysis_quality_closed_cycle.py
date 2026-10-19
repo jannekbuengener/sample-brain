@@ -1,0 +1,531 @@
+"""S9 composition tests using the real registered AQ1 headless adapter."""
+
+from __future__ import annotations
+
+import json
+
+from src.analysis_eval_artifact import assert_portable_value, fingerprint
+import src.analysis_quality_closed_cycle as closed_cycle
+from src.analysis_quality_closed_cycle import (
+    AnalysisQualityClosedCycleError,
+    _read_result,
+    run_quality_cycle,
+)
+from src.analysis_quality_loop_state import load_state, save_state_atomic
+from src.analysis_post_merge import GitRepository
+from tests.test_analysis_quality_loop_supervisor import (
+    _aq1_path_b_request,
+    _fresh_aq1_state,
+    _patch_aq1_repo,
+)
+from tests.test_analysis_promotion import Host as S7Host
+from tests.test_analysis_promotion import Provider as S7Provider
+from tests.test_analysis_promotion import git, seal as seal_s7, sha
+from tests.test_analysis_post_merge import (
+    PostMergeProvider,
+    S8Host,
+    seal_plan,
+)
+from src.fsld_aq1_tempo_candidate_compare import candidate_by_id
+
+
+def test_cycle_self_starts_real_aq1_and_stops_on_machine_hold(tmp_path, monkeypatch):
+    _patch_aq1_repo(monkeypatch, tmp_path)
+    state_path = tmp_path / "host" / "quality-state.json"
+    state_path.parent.mkdir()
+    save_state_atomic(state_path, _fresh_aq1_state())
+    attempt_path = tmp_path / "host" / "cycle-attempt.json"
+    work = tmp_path / "aq1-work"
+    work.mkdir()
+    seen = {}
+    competing_cycle_blocked = []
+
+    def calibration_inputs(*, state_path, state):
+        try:
+            run_quality_cycle(
+                state_path=state_path,
+                attempt_path=tmp_path / "host" / "competing-cycle.json",
+                calibration_inputs=calibration_inputs,
+                locked_inputs=lambda **_: {},
+                promotion_inputs=lambda **_: {},
+                post_merge_inputs=lambda **_: {},
+            )
+        except closed_cycle.AnalysisQualityClosedCycleError as exc:
+            competing_cycle_blocked.append(str(exc))
+        request = _aq1_path_b_request(
+            work, current_candidate_id=state["active_candidate"]["candidate_id"]
+        )
+
+        def decide(*, request, headless_result, analysis_eval_artifact):
+            seen["headless"] = headless_result
+            seen["eval"] = analysis_eval_artifact
+            return {
+                "evidence_fingerprint": fingerprint(
+                    {
+                        "request_fingerprint": request["request_fingerprint"],
+                        "analysis_eval_fingerprint": fingerprint(analysis_eval_artifact),
+                        "domain_artifact_fingerprint": headless_result[
+                            "domain_artifact"
+                        ]["artifact_fingerprint"],
+                    }
+                ),
+                "gate_verdict": "HOLD",
+            }
+
+        return {
+            "request": request,
+            "bind_kwargs": {"work_dir": work},
+            "decision_provider": decide,
+            "decision_provider_id": "aq1-fixture-hold-policy-v1",
+        }
+
+    def must_not_promote(**_):
+        raise AssertionError("HOLD must not reach S7")
+
+    real_step = closed_cycle.run_supervisor_step
+    call_count = 0
+
+    def step_with_lost_reply(**kwargs):
+        nonlocal call_count
+        call_count += 1
+        result = real_step(**kwargs)
+        raise RuntimeError("simulated S5 reply loss after atomic commit")
+
+    monkeypatch.setattr(closed_cycle, "run_supervisor_step", step_with_lost_reply)
+    inputs = {
+        "state_path": state_path,
+        "attempt_path": attempt_path,
+        "calibration_inputs": calibration_inputs,
+        "locked_inputs": lambda **_: (_ for _ in ()).throw(
+            AssertionError("HOLD must not reach S6")
+        ),
+        "promotion_inputs": must_not_promote,
+        "post_merge_inputs": must_not_promote,
+    }
+    try:
+        run_quality_cycle(**inputs)
+    except RuntimeError as exc:
+        assert "S5 reply loss" in str(exc)
+    else:
+        raise AssertionError("the simulated lost S5 reply must interrupt the first call")
+    monkeypatch.setattr(closed_cycle, "run_supervisor_step", real_step)
+    result = run_quality_cycle(**inputs)
+
+    assert result["status"] == "held"
+    assert result["reason"] == "calibration_decision_not_actionable"
+    assert seen["headless"]["run_status"] == "completed"
+    assert seen["headless"]["adapter_id"] == "aq1.tempo.candidate_compare"
+    assert seen["eval"]["document_type"] == "sample-brain.analysis-eval.v1"
+    cycle = load_state(state_path)
+    assert cycle["loop_status"] == "held"
+    assert call_count == 1
+    assert competing_cycle_blocked == ["cycle generation is already executing"]
+
+
+def test_malformed_closed_cycle_result_fails_with_contract_error(tmp_path):
+    result_path = tmp_path / "cycle.result.json"
+    result_path.write_text(json.dumps({"post_merge_ref": None}), encoding="utf-8")
+
+    try:
+        _read_result(result_path)
+    except AnalysisQualityClosedCycleError as exc:
+        assert "closed-cycle result" in str(exc)
+    else:
+        raise AssertionError("malformed references must fail closed")
+
+
+def test_s9_promotion_rejects_repository_outside_temporary_root():
+    class Repository:
+        path = closed_cycle.Path("C:/Persistent/repository")
+
+        @staticmethod
+        def git(*_):
+            return "https://github.com/example/repo.git"
+
+    try:
+        closed_cycle._require_simulation_repository(
+            {"repository": Repository()}, {"repository_id": "example/repo"}
+        )
+    except AnalysisQualityClosedCycleError as exc:
+        assert "temporary directory" in str(exc)
+    else:
+        raise AssertionError("persistent repositories must not enter S9 proof promotion")
+
+
+def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
+    tmp_path, monkeypatch
+):
+    _patch_aq1_repo(monkeypatch, tmp_path)
+    state_path = tmp_path / "host" / "quality-state.json"
+    state_path.parent.mkdir()
+    save_state_atomic(state_path, _fresh_aq1_state())
+    attempt_path = tmp_path / "host" / "cycle-attempt.json"
+    repo_root = tmp_path / "promotion-repo"
+    s7_cache = {}
+    s8_cache = {}
+
+    def calibration_inputs(*, state_path, state):
+        candidate_id = state["active_candidate"]["candidate_id"]
+        baseline_id = state["baseline_candidate"]["candidate_id"]
+        work = tmp_path / "domain" / state_path.stem / f"{state['generation']}-{candidate_id}"
+        work.mkdir(parents=True, exist_ok=True)
+        request = _aq1_path_b_request(
+            work,
+            current_candidate_id=candidate_id,
+            baseline_candidate_id=baseline_id,
+        )
+
+        def decide(*, request, headless_result, analysis_eval_artifact):
+            output_relpath = request["aq1_inputs"]["output_relpath"]
+            domain_result = json.loads((work / output_relpath).read_text(encoding="utf-8"))
+            by_id = {item["candidate_id"]: item for item in domain_result["candidates"]}
+            baseline_score = by_id[baseline_id]["metrics"]["ma"]["tempo"][
+                "accuracy_within_2_bpm"
+            ]
+            current_score = by_id[candidate_id]["metrics"]["ma"]["tempo"][
+                "accuracy_within_2_bpm"
+            ]
+            improved = current_score > baseline_score
+            locked = request["partition"]["role"] in {"test", "holdout"}
+            if locked and improved:
+                verdict = "PASS"
+                token = "PROMOTION_CANDIDATE_IDENTIFIED"
+                action = "handoff_promotion_controller"
+            elif not locked and improved:
+                verdict = "PASS"
+                token = "PROMOTION_CANDIDATE_IDENTIFIED"
+                action = "freeze_candidate"
+            else:
+                verdict = "FAIL"
+                token = "NO_JUSTIFIED_CANDIDATE"
+                action = "keep_baseline_and_stop" if locked else "continue_calibration"
+            evidence = {
+                "request_fingerprint": request["request_fingerprint"],
+                "domain_artifact_fingerprint": headless_result["domain_artifact"][
+                    "artifact_fingerprint"
+                ],
+                "analysis_eval_fingerprint": fingerprint(analysis_eval_artifact),
+                "baseline_accuracy_within_2_bpm": baseline_score,
+                "candidate_accuracy_within_2_bpm": current_score,
+                "improved": improved,
+            }
+            return {
+                "evidence_fingerprint": fingerprint(evidence),
+                "gate_verdict": verdict,
+                "decision_token": token,
+                "next_action": action,
+            }
+
+        return {
+            "request": request,
+            "bind_kwargs": {"work_dir": work},
+            "decision_provider": decide,
+            "decision_provider_id": "aq1-fixture-metric-comparison-v1",
+        }
+
+    def locked_inputs(*, state_path, state):
+        candidate_id = state["active_candidate"]["candidate_id"]
+        baseline_id = state["baseline_candidate"]["candidate_id"]
+        work = tmp_path / "locked-domain"
+        work.mkdir(exist_ok=True)
+        request = _aq1_path_b_request(
+            work,
+            operation="locked_evaluation",
+            partition_role="holdout",
+            split="TEST",
+            current_candidate_id=candidate_id,
+            baseline_candidate_id=baseline_id,
+        )
+
+        def decide(*, request, headless_result, analysis_eval_artifact):
+            output_relpath = request["aq1_inputs"]["output_relpath"]
+            domain_result = json.loads((work / output_relpath).read_text(encoding="utf-8"))
+            by_id = {item["candidate_id"]: item for item in domain_result["candidates"]}
+            baseline_score = by_id[baseline_id]["metrics"]["ma"]["tempo"][
+                "accuracy_within_2_bpm"
+            ]
+            current_score = by_id[candidate_id]["metrics"]["ma"]["tempo"][
+                "accuracy_within_2_bpm"
+            ]
+            improved = current_score > baseline_score
+            evidence = {
+                "request_fingerprint": request["request_fingerprint"],
+                "domain_artifact_fingerprint": headless_result["domain_artifact"][
+                    "artifact_fingerprint"
+                ],
+                "analysis_eval_fingerprint": fingerprint(analysis_eval_artifact),
+                "baseline_accuracy_within_2_bpm": baseline_score,
+                "candidate_accuracy_within_2_bpm": current_score,
+                "improved": improved,
+            }
+            return {
+                "evidence_fingerprint": fingerprint(evidence),
+                "gate_verdict": "PASS" if improved else "FAIL",
+                "decision_token": (
+                    "PROMOTION_CANDIDATE_IDENTIFIED"
+                    if improved
+                    else "NO_JUSTIFIED_CANDIDATE"
+                ),
+                "next_action": (
+                    "handoff_promotion_controller"
+                    if improved
+                    else "keep_baseline_and_stop"
+                ),
+            }
+
+        return {
+            "request": request,
+            "bind_kwargs": {"work_dir": work},
+            "decision_provider": decide,
+            "decision_provider_id": "aq1-fixture-metric-comparison-v1",
+        }
+
+    def promotion_inputs(*, locked_result):
+        if not s7_cache:
+            repo_root.mkdir()
+            git(repo_root, "init", "-b", "main")
+            git(repo_root, "config", "user.name", "Synthetic Fixture")
+            git(repo_root, "config", "user.email", "fixture@example.invalid")
+            git(repo_root, "config", "core.autocrlf", "false")
+            (repo_root / "config").mkdir()
+            (repo_root / "config/promotion.json").write_text("{}\n", newline="\n")
+            git(repo_root, "add", "config/promotion.json")
+            git(repo_root, "commit", "-m", "synthetic baseline")
+            base = git(repo_root, "rev-parse", "HEAD")
+            git(repo_root, "update-ref", "refs/remotes/origin/main", base)
+            git(repo_root, "remote", "add", "origin", "https://github.com/example/repo.git")
+            selected = candidate_by_id(
+                locked_result["current_candidate"]["candidate_id"]
+            )
+            payload = {
+                "domain": locked_result["domain"],
+                "candidate_id": locked_result["current_candidate"]["candidate_id"],
+                "config_fingerprint": locked_result["current_candidate"][
+                    "config_fingerprint"
+                ],
+                "bpm_normalization": selected.bpm_normalization,
+            }
+            promoted_content = json.dumps(
+                payload, sort_keys=True, separators=(",", ":")
+            ) + "\n"
+
+            class Aq1PromotionProvider(S7Provider):
+                def __init__(self):
+                    super().__init__()
+                    self.payload = {"config/promotion.json": promoted_content}
+                    self.inputs = {
+                        "candidate_id": payload["candidate_id"],
+                        "config_fingerprint": payload["config_fingerprint"],
+                        "bpm_normalization": payload["bpm_normalization"],
+                    }
+
+                def validate_plan(self, manifest, result):
+                    return (
+                        result["current_candidate"]
+                        == locked_result["current_candidate"]
+                        and manifest["current_candidate"]
+                        == locked_result["current_candidate"]
+                        and manifest["materializer"]["inputs"] == self.inputs
+                    )
+
+                def materialize(self, inputs):
+                    assert inputs == self.inputs
+                    self.calls += 1
+                    return self.payload
+
+            provider = Aq1PromotionProvider()
+
+            class CycleHost(S7Host):
+                def merge(self, number, expected_head_sha, method):
+                    super().merge(number, expected_head_sha, method)
+                    git(repo_root, "update-ref", "refs/remotes/origin/main", expected_head_sha)
+
+            host = CycleHost(repo_root, base)
+            manifest = seal_s7(
+                {
+                    "document_type": "sample-brain.analysis-promotion-manifest.v1",
+                    "artifact_version": "1.0.0",
+                    "domain": locked_result["domain"],
+                    "baseline_candidate": locked_result["baseline_candidate"],
+                    "current_candidate": locked_result["current_candidate"],
+                    "locked_result_fingerprint": locked_result["result_fingerprint"],
+                    "decision_fingerprint": locked_result["decision"]["decision_fingerprint"],
+                    "evidence_fingerprint": locked_result["decision"]["evidence"]["evidence_fingerprint"],
+                    "expected_base_sha": base,
+                    "repository_id": "example/repo",
+                    "allowed_paths": ["config/promotion.json"],
+                    "forbidden_paths": ["private"],
+                    "materializer": {
+                        "id": provider.materializer_id,
+                        "version": provider.materializer_version,
+                        "inputs": provider.inputs,
+                    },
+                    "changes": {
+                        "config/promotion.json": {
+                            "before_sha256": sha("{}\n"),
+                            "after_sha256": sha(provider.payload["config/promotion.json"]),
+                        }
+                    },
+                    "validation": ["synthetic.regression.v1"],
+                    "policy": {
+                        "version": "1.0.0",
+                        "required_checks": [{"name": "required", "app_id": 15368}],
+                        "merge_method": "squash",
+                        "review_gate": "all_feedback_dispositioned.v1",
+                    },
+                }
+            )
+            s7_cache.update(
+                provider=provider,
+                host=host,
+                base=base,
+                manifest=manifest,
+                repository=GitRepository(repo_root),
+                worktree_root=tmp_path / "promotion-worktrees",
+                attempt_root=tmp_path / "promotion-attempts",
+            )
+        return {key: value for key, value in s7_cache.items() if key != "base"}
+
+    def post_merge_inputs(*, locked_result, promotion_manifest, promotion_attempt):
+        class Aq1PostMergeProvider(PostMergeProvider):
+            def verify_candidate(self, worktree, candidate, contract_id, evidence_root):
+                assert contract_id == "synthetic.post-merge.v1"
+                head = git(worktree, "rev-parse", "HEAD")
+                content = (worktree / "config/promotion.json").read_text(encoding="utf-8")
+                expected = (
+                    s7_cache["provider"].payload["config/promotion.json"]
+                    if head == self.promoted_sha
+                    else "{}\n"
+                )
+                assert content == expected
+                self.verify_calls.append((candidate["candidate_id"], head, contract_id))
+                outcome = self.outcomes["promoted" if head == self.promoted_sha else "baseline"]
+                return {
+                    "outcome": outcome,
+                    "evidence_fingerprint": fingerprint(
+                        {"candidate": candidate["candidate_id"], "content": content, "outcome": outcome}
+                    ),
+                    "reason_code": None if outcome == "PASS" else "synthetic_verification_failed",
+                }
+
+        provider = s8_cache.setdefault("provider", Aq1PostMergeProvider())
+        provider.promoted_sha = promotion_attempt["merge_sha"]
+        recovery_policy = {
+            "version": "1.0.0",
+            "required_checks": [{"name": "required", "app_id": 15368}],
+            "merge_method": "squash",
+            "review_gate": "all_feedback_dispositioned.v1",
+        }
+        plan = seal_plan(
+            {
+                "document_type": "sample-brain.analysis-post-merge-plan.v1",
+                "artifact_version": "1.0.0",
+                "domain": locked_result["domain"],
+                "promotion_manifest_fingerprint": promotion_manifest["manifest_fingerprint"],
+                "promotion_attempt_fingerprint": promotion_attempt["state_fingerprint"],
+                "locked_result_fingerprint": locked_result["result_fingerprint"],
+                "decision_fingerprint": locked_result["decision"]["decision_fingerprint"],
+                "evidence_fingerprint": locked_result["decision"]["evidence"]["evidence_fingerprint"],
+                "merge_sha": promotion_attempt["merge_sha"],
+                "previous_baseline_candidate": locked_result["baseline_candidate"],
+                "promoted_candidate": locked_result["current_candidate"],
+                "repository_id": "example/repo",
+                "verification": {
+                    "id": provider.verification_id,
+                    "version": provider.verification_version,
+                    "contracts": ["synthetic.post-merge.v1"],
+                },
+                "recovery": {
+                    "expected_base_sha": promotion_attempt["merge_sha"],
+                    "allowed_paths": ["config/promotion.json"],
+                    "forbidden_paths": ["private"],
+                    "materializer": {
+                        "id": provider.recovery_materializer_id,
+                        "version": provider.recovery_materializer_version,
+                        "inputs": {"mode": "last-known-good"},
+                    },
+                    "changes": {
+                        "config/promotion.json": {
+                            "before_sha256": sha(s7_cache["provider"].payload["config/promotion.json"]),
+                            "after_sha256": sha("{}\n"),
+                        }
+                    },
+                    "change_fingerprint": "0" * 64,
+                    "validation": ["synthetic.recovery.v1"],
+                    "policy": recovery_policy,
+                    "policy_fingerprint": "0" * 64,
+                },
+            }
+        )
+        return {
+            "plan": plan,
+            "provider": provider,
+            "repository": s7_cache["repository"],
+            "host": s8_cache.setdefault("host", S8Host(repo_root, promotion_attempt)),
+            "verification_root": tmp_path / "verification",
+            "worktree_root": tmp_path / "s8-worktrees",
+            "attempt_root": tmp_path / "s8-attempts",
+            "baseline_state_path": tmp_path / "accepted-baseline.json",
+        }
+
+    real_run_post_merge = closed_cycle.run_post_merge
+    lost_reply = {"pending": True}
+
+    def run_post_merge_with_one_lost_reply(**kwargs):
+        outcome = real_run_post_merge(**kwargs)
+        if lost_reply["pending"]:
+            lost_reply["pending"] = False
+            raise RuntimeError("simulated lost S8 response after durable acceptance")
+        return outcome
+
+    monkeypatch.setattr(closed_cycle, "run_post_merge", run_post_merge_with_one_lost_reply)
+    first_result = None
+    try:
+        first_result = run_quality_cycle(
+            state_path=state_path,
+            attempt_path=attempt_path,
+            calibration_inputs=calibration_inputs,
+            locked_inputs=locked_inputs,
+            promotion_inputs=promotion_inputs,
+            post_merge_inputs=post_merge_inputs,
+        )
+    except RuntimeError as exc:
+        assert "lost S8 response" in str(exc)
+    else:
+        raise AssertionError(
+            f"the simulated lost S8 reply must interrupt the first call: {first_result!r}"
+        )
+
+    result = run_quality_cycle(
+        state_path=state_path,
+        attempt_path=attempt_path,
+        calibration_inputs=calibration_inputs,
+        locked_inputs=locked_inputs,
+        promotion_inputs=promotion_inputs,
+        post_merge_inputs=post_merge_inputs,
+    )
+
+    assert result["outcome_token"] == "AUTONOMOUS_QUALITY_LOOP_FIRST_CLOSED_CYCLE"
+    assert result["evidence_classifications"]["domain_execution"] == "REAL_SANITIZED_DOMAIN_EXECUTION"
+    assert result["evidence_classifications"]["repository_governance"] == "INFRASTRUCTURE_SIMULATION"
+    assert result["locked_ref"]["terminal_status"] == "ready"
+    assert result["promotion_ref"]["status"] == "merged"
+    assert result["post_merge_ref"]["status"] == "accepted"
+    assert result["accepted_baseline"]["candidate"] == result["final_candidate"]
+    assert result["last_known_good"]["candidate"] == result["initial_baseline_candidate"]
+    assert result["continuation_ref"]["next_action"] == "continue_calibration"
+    assert result["continuation_ref"]["candidate"]["candidate_id"] != result["final_candidate"]["candidate_id"]
+    assert len(result["calibration_refs"]) == 2
+    assert result["calibration_refs"][0]["next_action"] == "continue_calibration"
+    assert result["calibration_refs"][1]["next_action"] == "freeze_candidate"
+    assert s7_cache["host"].creates == 1
+    assert s7_cache["host"].merges == 1
+    assert_portable_value(result)
+    assert run_quality_cycle(
+        state_path=state_path,
+        attempt_path=attempt_path,
+        calibration_inputs=calibration_inputs,
+        locked_inputs=locked_inputs,
+        promotion_inputs=promotion_inputs,
+        post_merge_inputs=post_merge_inputs,
+    ) == result

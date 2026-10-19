@@ -201,6 +201,15 @@ def validate_locked_result(result: Mapping[str, Any]) -> dict[str, Any]:
 
 def _check_claim_decision(invocation, decision):
     evidence = decision["evidence"]
+    if "decision_provider_id" in invocation:
+        _digest(evidence.get("evidence_fingerprint"))
+        if evidence.get("gate_decision", {}).get("verdict") not in {
+            "PASS", "FAIL", "HOLD"
+        }:
+            raise AnalysisLockedHoldoutError(
+                "committed provider decision has invalid gate evidence"
+            )
+        return
     if evidence["evidence_fingerprint"] != invocation["evidence_fingerprint"]:
         raise AnalysisLockedHoldoutError("committed evidence differs from invocation")
     status = decision["decision_status"]
@@ -253,11 +262,13 @@ def run_locked_holdout_transition(
     state_path: str | Path,
     request: Mapping[str, Any],
     bind_kwargs: Mapping[str, Any],
-    evidence_fingerprint: str,
-    gate_verdict: str | None,
-    decision_token: str | None,
-    next_action: str | None,
+    evidence_fingerprint: str | None = None,
+    gate_verdict: str | None = None,
+    decision_token: str | None = None,
+    next_action: str | None = None,
     provider: SearchSpaceProvider | None = None,
+    decision_provider=None,
+    decision_provider_id: str | None = None,
 ) -> dict[str, Any]:
     """Dispatch at most once; replay an identical durable terminal outcome.
 
@@ -268,16 +279,35 @@ def run_locked_holdout_transition(
     state = load_state(path)
     validated = validate_request(request)
     _check_frozen(state, validated, provider)
-    evidence_fp = _digest(evidence_fingerprint)
-    _check_policy(validated, evidence_fp, gate_verdict, decision_token, next_action)
-    invocation = {
-        "freeze_state_fingerprint": state["state_fingerprint"],
-        "request_fingerprint": validated["request_fingerprint"],
-        "evidence_fingerprint": evidence_fp,
-        "gate_verdict": gate_verdict,
-        "decision_token": decision_token,
-        "next_action": next_action,
-    }
+    if decision_provider is None:
+        evidence_fp = _digest(evidence_fingerprint)
+        _check_policy(validated, evidence_fp, gate_verdict, decision_token, next_action)
+        invocation = {
+            "freeze_state_fingerprint": state["state_fingerprint"],
+            "request_fingerprint": validated["request_fingerprint"],
+            "evidence_fingerprint": evidence_fp,
+            "gate_verdict": gate_verdict,
+            "decision_token": decision_token,
+            "next_action": next_action,
+        }
+    else:
+        if not callable(decision_provider):
+            raise AnalysisLockedHoldoutError("decision_provider must be callable")
+        if not isinstance(decision_provider_id, str) or re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", decision_provider_id
+        ) is None:
+            raise AnalysisLockedHoldoutError("decision_provider_id is required")
+        if any(value is not None for value in (
+            evidence_fingerprint, gate_verdict, decision_token, next_action
+        )):
+            raise AnalysisLockedHoldoutError(
+                "decision_provider cannot be combined with precomputed decision inputs"
+            )
+        invocation = {
+            "freeze_state_fingerprint": state["state_fingerprint"],
+            "request_fingerprint": validated["request_fingerprint"],
+            "decision_provider_id": decision_provider_id,
+        }
     invocation_fp = fingerprint(invocation)
     claim_path = path.with_name(path.name + ".locked-claim.json")
     result_path = path.with_name(path.name + ".locked-result.json")
@@ -330,10 +360,11 @@ def run_locked_holdout_transition(
         run_orchestration(
             request=validated,
             bind_kwargs=bind_kwargs,
-            evidence_fingerprint=evidence_fp,
+            evidence_fingerprint=evidence_fp if decision_provider is None else None,
             gate_verdict=gate_verdict,
             decision_token=decision_token,
             next_action=next_action,
+            decision_provider=decision_provider,
         )
     )
     decision = outcome["decision"]

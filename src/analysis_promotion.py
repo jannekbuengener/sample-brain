@@ -202,8 +202,25 @@ def load_promotion_source(source_state_path):
         "decision_token": "PROMOTION_CANDIDATE_IDENTIFIED",
         "next_action": "handoff_promotion_controller",
     }
+    legacy_claim = claim == expected_claim
+    provider_claim = (
+        set(claim)
+        == {
+            "freeze_state_fingerprint",
+            "request_fingerprint",
+            "decision_provider_id",
+        }
+        and claim.get("freeze_state_fingerprint") == state["state_fingerprint"]
+        and claim.get("request_fingerprint") == result["request_fingerprint"]
+        and isinstance(claim.get("decision_provider_id"), str)
+        and re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}",
+            claim["decision_provider_id"],
+        )
+        is not None
+    )
     _require(
-        claim == expected_claim
+        (legacy_claim or provider_claim)
         and fingerprint(claim) == result["invocation_fingerprint"],
         "committed claim provenance mismatch",
     )

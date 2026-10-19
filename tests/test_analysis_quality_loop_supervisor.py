@@ -152,6 +152,7 @@ def _aq1_path_b_request(
     partition_role: str = "calibration",
     split: str = "CALIBRATION",
     current_candidate_id: str | None = None,
+    baseline_candidate_id: str | None = None,
 ) -> dict[str, Any]:
     records = [
         _record("10", split=split, bpm=120.0),
@@ -172,7 +173,7 @@ def _aq1_path_b_request(
             "baseline_predictions_relpath": baseline_rel,
         }
     )
-    baseline_id = _baseline_id()
+    baseline_id = baseline_candidate_id or _baseline_id()
     current_id = current_candidate_id or baseline_id
     return build_request(
         domain=AQ1_DOMAIN,
