@@ -16,7 +16,8 @@ No second status taxonomy. ``production_authorized`` always false.
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+import json
+from typing import Any, Callable, Mapping
 
 from src.analysis_automation_decision import (
     AnalysisAutomationDecisionError,
@@ -33,6 +34,7 @@ from src.analysis_eval_artifact import (
     build_candidate,
     build_observation,
     build_record,
+    canonical_json_dumps,
     fingerprint,
     validate_artifact,
 )
@@ -74,7 +76,9 @@ def _wrap_headless(exc: AnalysisHeadlessRunError) -> AnalysisOrchestrationRunErr
     return AnalysisOrchestrationRunError(str(exc))
 
 
-def _wrap_decision(exc: AnalysisAutomationDecisionError) -> AnalysisOrchestrationRunError:
+def _wrap_decision(
+    exc: AnalysisAutomationDecisionError,
+) -> AnalysisOrchestrationRunError:
     return AnalysisOrchestrationRunError(str(exc))
 
 
@@ -122,29 +126,42 @@ def project_analysis_eval_from_headless(
         run_status = _require_text(headless_result.get("run_status"), "run_status")
         benchmark = headless_result.get("benchmark")
         if not isinstance(benchmark, Mapping):
-            raise AnalysisOrchestrationRunError("headless_result.benchmark must be a mapping")
+            raise AnalysisOrchestrationRunError(
+                "headless_result.benchmark must be a mapping"
+            )
         partition = headless_result.get("partition")
         if not isinstance(partition, Mapping):
-            raise AnalysisOrchestrationRunError("headless_result.partition must be a mapping")
+            raise AnalysisOrchestrationRunError(
+                "headless_result.partition must be a mapping"
+            )
 
-        partition_id = _require_text(partition.get("partition_id"), "partition.partition_id")
+        partition_id = _require_text(
+            partition.get("partition_id"), "partition.partition_id"
+        )
         partition_role = _require_text(partition.get("role"), "partition.role")
         eval_role = map_eval_partition_role(partition_role)
 
         baseline = headless_result.get("baseline")
         current = headless_result.get("current")
         if not isinstance(baseline, Mapping):
-            baseline = request.get("baseline") if isinstance(request.get("baseline"), Mapping) else {}
+            baseline = (
+                request.get("baseline")
+                if isinstance(request.get("baseline"), Mapping)
+                else {}
+            )
         if not isinstance(current, Mapping):
-            current = request.get("current") if isinstance(request.get("current"), Mapping) else {}
+            current = (
+                request.get("current")
+                if isinstance(request.get("current"), Mapping)
+                else {}
+            )
 
         candidate_id = _require_text(
             current.get("candidate_id") or baseline.get("candidate_id"),
             "candidate_id",
         )
         config_fingerprint = _require_hex_fingerprint(
-            current.get("config_fingerprint")
-            or baseline.get("config_fingerprint"),
+            current.get("config_fingerprint") or baseline.get("config_fingerprint"),
             "config_fingerprint",
         )
 
@@ -260,9 +277,7 @@ def map_decision_inputs(
                 "hold mapping requires defer_for_evidence or require_human_governance"
             )
         if decision_token is not None:
-            raise AnalysisOrchestrationRunError(
-                "hold mapping forbids decision_token"
-            )
+            raise AnalysisOrchestrationRunError("hold mapping forbids decision_token")
         return "hold", None, action
 
     if run_status == "controlled_failure":
@@ -309,10 +324,7 @@ def map_decision_inputs(
         token = decision_token or "NO_JUSTIFIED_CANDIDATE"
         action = next_action or "keep_baseline_and_stop"
 
-    if (
-        partition_role not in TUNABLE_PARTITION_ROLES
-        and action in TUNING_NEXT_ACTIONS
-    ):
+    if partition_role not in TUNABLE_PARTITION_ROLES and action in TUNING_NEXT_ACTIONS:
         raise AnalysisOrchestrationRunError(
             f"partition firewall: illegal next_action {action!r} "
             f"for non-tuning role {partition_role!r}"
@@ -327,13 +339,10 @@ def _mapping_or_none(value: object) -> Mapping[str, Any] | None:
 def _candidate_pair_mismatch(
     left: Mapping[str, Any], right: Mapping[str, Any], label: str
 ) -> None:
-    if (
-        left.get("candidate_id") != right.get("candidate_id")
-        or left.get("config_fingerprint") != right.get("config_fingerprint")
-    ):
-        raise AnalysisOrchestrationRunError(
-            f"invocation identity mismatch on {label}"
-        )
+    if left.get("candidate_id") != right.get("candidate_id") or left.get(
+        "config_fingerprint"
+    ) != right.get("config_fingerprint"):
+        raise AnalysisOrchestrationRunError(f"invocation identity mismatch on {label}")
 
 
 def resolve_candidate_authority(
@@ -356,11 +365,15 @@ def resolve_candidate_authority(
     if res_current is not None and req_current is not None:
         _candidate_pair_mismatch(res_current, req_current, "current_candidate")
 
-    baseline = dict(res_baseline) if res_baseline is not None else (
-        dict(req_baseline) if req_baseline is not None else None
+    baseline = (
+        dict(res_baseline)
+        if res_baseline is not None
+        else (dict(req_baseline) if req_baseline is not None else None)
     )
-    current = dict(res_current) if res_current is not None else (
-        dict(req_current) if req_current is not None else None
+    current = (
+        dict(res_current)
+        if res_current is not None
+        else (dict(req_current) if req_current is not None else None)
     )
     if baseline is None:
         raise AnalysisOrchestrationRunError(
@@ -409,8 +422,13 @@ def assert_result_bound_to_invocation(
     result_adapter_id = _require_text(
         headless_result.get("adapter_id"), "headless_result.adapter_id"
     )
-    bound_adapter_id = _require_text(getattr(adapter, "adapter_id", None), "adapter.adapter_id")
-    if result_adapter_id != expected_adapter_id or bound_adapter_id != expected_adapter_id:
+    bound_adapter_id = _require_text(
+        getattr(adapter, "adapter_id", None), "adapter.adapter_id"
+    )
+    if (
+        result_adapter_id != expected_adapter_id
+        or bound_adapter_id != expected_adapter_id
+    ):
         raise AnalysisOrchestrationRunError(
             "headless result adapter_id does not match bound adapter/request"
         )
@@ -444,14 +462,14 @@ def _assert_eval_matches_headless(
     eval_benchmark = eval_artifact.get("benchmark")
     eval_partition = eval_artifact.get("partition")
     eval_candidate = eval_artifact.get("candidate")
-    if not isinstance(eval_benchmark, Mapping) or not isinstance(eval_partition, Mapping):
+    if not isinstance(eval_benchmark, Mapping) or not isinstance(
+        eval_partition, Mapping
+    ):
         raise AnalysisOrchestrationRunError(
             "analysis_eval artifact missing benchmark/partition"
         )
     if not isinstance(eval_candidate, Mapping):
-        raise AnalysisOrchestrationRunError(
-            "analysis_eval artifact missing candidate"
-        )
+        raise AnalysisOrchestrationRunError("analysis_eval artifact missing candidate")
 
     expected_role = map_eval_partition_role(str(partition.get("role")))
     checks = (
@@ -553,11 +571,15 @@ def _assert_decision_matches_headless(
                 f"decision identity mismatch on {field}"
             )
 
-    auth_baseline = baseline if baseline is not None else _mapping_or_none(
-        headless_result.get("baseline")
+    auth_baseline = (
+        baseline
+        if baseline is not None
+        else _mapping_or_none(headless_result.get("baseline"))
     )
-    auth_current = current if current is not None else _mapping_or_none(
-        headless_result.get("current")
+    auth_current = (
+        current
+        if current is not None
+        else _mapping_or_none(headless_result.get("current"))
     )
     if auth_baseline is None or auth_current is None:
         raise AnalysisOrchestrationRunError(
@@ -571,18 +593,18 @@ def _assert_decision_matches_headless(
         raise AnalysisOrchestrationRunError(
             "decision missing baseline_candidate/current_candidate"
         )
-    if (
-        dec_baseline.get("candidate_id") != auth_baseline.get("candidate_id")
-        or dec_baseline.get("config_fingerprint")
-        != auth_baseline.get("config_fingerprint")
+    if dec_baseline.get("candidate_id") != auth_baseline.get(
+        "candidate_id"
+    ) or dec_baseline.get("config_fingerprint") != auth_baseline.get(
+        "config_fingerprint"
     ):
         raise AnalysisOrchestrationRunError(
             "decision identity mismatch on baseline_candidate"
         )
-    if (
-        dec_current.get("candidate_id") != auth_current.get("candidate_id")
-        or dec_current.get("config_fingerprint")
-        != auth_current.get("config_fingerprint")
+    if dec_current.get("candidate_id") != auth_current.get(
+        "candidate_id"
+    ) or dec_current.get("config_fingerprint") != auth_current.get(
+        "config_fingerprint"
     ):
         raise AnalysisOrchestrationRunError(
             "decision identity mismatch on current_candidate"
@@ -592,9 +614,7 @@ def _assert_decision_matches_headless(
 def outcome_semantic_payload(outcome: Mapping[str, Any]) -> dict[str, Any]:
     """Return the portable payload used for outcome fingerprinting."""
     return {
-        key: value
-        for key, value in outcome.items()
-        if key not in _OUTCOME_FP_EXCLUDED
+        key: value for key, value in outcome.items() if key not in _OUTCOME_FP_EXCLUDED
     }
 
 
@@ -611,17 +631,13 @@ def validate_outcome(outcome: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(outcome, Mapping):
         raise AnalysisOrchestrationRunError("outcome must be a mapping")
     if outcome.get("document_type") != DOCUMENT_TYPE:
-        raise AnalysisOrchestrationRunError(
-            f"document_type must be {DOCUMENT_TYPE!r}"
-        )
+        raise AnalysisOrchestrationRunError(f"document_type must be {DOCUMENT_TYPE!r}")
     if outcome.get("artifact_version") != ARTIFACT_VERSION:
         raise AnalysisOrchestrationRunError(
             f"artifact_version must be {ARTIFACT_VERSION!r}"
         )
     if outcome.get("production_authorized") is not False:
-        raise AnalysisOrchestrationRunError(
-            "production_authorized must be false"
-        )
+        raise AnalysisOrchestrationRunError("production_authorized must be false")
     if "decision_token" in outcome or "next_action" in outcome:
         raise AnalysisOrchestrationRunError(
             "orchestration outcome must not hoist decision_token/next_action "
@@ -650,13 +666,12 @@ def validate_outcome(outcome: Mapping[str, Any]) -> dict[str, Any]:
     try:
         decision = validate_decision(outcome["decision"])
     except (AnalysisAutomationDecisionError, KeyError) as exc:
-        raise AnalysisOrchestrationRunError(
-            f"outcome.decision invalid: {exc}"
-        ) from exc
+        raise AnalysisOrchestrationRunError(f"outcome.decision invalid: {exc}") from exc
 
-    if decision["evidence"]["analysis_eval_fingerprint"] != analysis_eval[
-        "artifact_fingerprint"
-    ]:
+    if (
+        decision["evidence"]["analysis_eval_fingerprint"]
+        != analysis_eval["artifact_fingerprint"]
+    ):
         raise AnalysisOrchestrationRunError(
             "decision.evidence.analysis_eval_fingerprint must match "
             "analysis_eval.artifact_fingerprint"
@@ -689,23 +704,101 @@ def validate_outcome(outcome: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+# A sentinel preserves the distinction between omitted legacy inputs and None.
+POLICY_UNSET = object()
+POLICY_FIELDS = frozenset(
+    {"evidence_fingerprint", "gate_verdict", "decision_token", "next_action"}
+)
+DecisionProvider = Callable[[Mapping[str, Any]], Mapping[str, Any]]
+
+
+def validate_decision_provider_id(value: object) -> str:
+    identity = _require_text(value, "decision_provider_id")
+    try:
+        assert_portable_value(identity, field="decision_provider_id")
+    except AnalysisEvalArtifactError as exc:
+        raise _wrap_eval(exc) from exc
+    return identity
+
+
+def resolve_decision_mode(decision_provider, decision_provider_id, policy_inputs):
+    """Reject mixed/partial modes before any adapter or durable claim."""
+    if decision_provider is None and decision_provider_id is None:
+        if policy_inputs["evidence_fingerprint"] is POLICY_UNSET:
+            raise AnalysisOrchestrationRunError("legacy evidence_fingerprint required")
+        return None
+    if not callable(decision_provider) or decision_provider_id is None:
+        raise AnalysisOrchestrationRunError(
+            "decision_provider and decision_provider_id required together"
+        )
+    identity = validate_decision_provider_id(decision_provider_id)
+    if any(value is not POLICY_UNSET for value in policy_inputs.values()):
+        raise AnalysisOrchestrationRunError(
+            "mixed legacy/provider policy inputs refused"
+        )
+    return identity
+
+
+def validate_provider_policy(value):
+    """Validate existing policy inputs, never accept a provider-built Decision."""
+    if not isinstance(value, Mapping) or set(value) != POLICY_FIELDS:
+        raise AnalysisOrchestrationRunError(
+            "provider must return exactly the existing policy inputs"
+        )
+    try:
+        assert_portable_value(dict(value), field="provider policy")
+        policy = json.loads(canonical_json_dumps(dict(value)))
+    except AnalysisEvalArtifactError as exc:
+        raise _wrap_eval(exc) from exc
+    _require_hex_fingerprint(policy["evidence_fingerprint"], "evidence_fingerprint")
+    if policy["gate_verdict"] is not None and (
+        not isinstance(policy["gate_verdict"], str)
+        or policy["gate_verdict"] not in {"PASS", "FAIL", "HOLD"}
+    ):
+        raise AnalysisOrchestrationRunError("invalid provider gate verdict")
+    for field in ("decision_token", "next_action"):
+        if policy[field] is not None:
+            _require_text(policy[field], field)
+    if policy["gate_verdict"] in {"PASS", "FAIL"} and (
+        policy["decision_token"] is None or policy["next_action"] is None
+    ):
+        raise AnalysisOrchestrationRunError(
+            "explicit provider policy token and next_action required"
+        )
+    return policy
+
+
 def run_orchestration(
     *,
     request: Mapping[str, Any],
     bind_kwargs: Mapping[str, Any],
-    evidence_fingerprint: str | None = None,
-    gate_verdict: str | None = None,
-    decision_token: str | None = None,
-    next_action: str | None = None,
+    evidence_fingerprint: str | object = POLICY_UNSET,
+    gate_verdict: str | None | object = POLICY_UNSET,
+    decision_token: str | None | object = POLICY_UNSET,
+    next_action: str | None | object = POLICY_UNSET,
+    decision_provider: DecisionProvider | None = None,
+    decision_provider_id: str | None = None,
     analysis_eval_artifact: Mapping[str, Any] | None = None,
     adapter_id: str | None = None,
-    decision_provider=None,
 ) -> dict[str, Any]:
     """Execute the single-shot headless → eval → decision binder.
 
     ``evidence_fingerprint`` and ``gate_verdict`` are opaque ARVP handoff inputs
     supplied by the host. Sample Brain does not recompute gate semantics.
     """
+    policy_inputs = dict(
+        evidence_fingerprint=evidence_fingerprint,
+        gate_verdict=gate_verdict,
+        decision_token=decision_token,
+        next_action=next_action,
+    )
+    provider_id = resolve_decision_mode(
+        decision_provider, decision_provider_id, policy_inputs
+    )
+    if provider_id is None:
+        gate_verdict = None if gate_verdict is POLICY_UNSET else gate_verdict
+        decision_token = None if decision_token is POLICY_UNSET else decision_token
+        next_action = None if next_action is POLICY_UNSET else next_action
     try:
         validated_request = validate_request(request)
     except AnalysisHeadlessRunError as exc:
@@ -719,16 +812,11 @@ def run_orchestration(
             "adapter_id mismatch between request and orchestration override"
         )
 
-    if decision_provider is None:
-        evidence_fp = _require_hex_fingerprint(
-            evidence_fingerprint, "evidence_fingerprint"
-        )
-    elif any(value is not None for value in (
-        evidence_fingerprint, gate_verdict, decision_token, next_action
-    )):
-        raise AnalysisOrchestrationRunError(
-            "decision_provider cannot be combined with precomputed decision inputs"
-        )
+    evidence_fp = (
+        None
+        if provider_id is not None
+        else _require_hex_fingerprint(evidence_fingerprint, "evidence_fingerprint")
+    )
 
     if not isinstance(bind_kwargs, Mapping):
         raise AnalysisOrchestrationRunError("bind_kwargs must be a mapping")
@@ -750,9 +838,7 @@ def run_orchestration(
         adapter=adapter,
     )
 
-    baseline, current = resolve_candidate_authority(
-        validated_request, headless_result
-    )
+    baseline, current = resolve_candidate_authority(validated_request, headless_result)
     headless_result = seal_headless_result_candidates(
         headless_result, baseline=baseline, current=current
     )
@@ -790,29 +876,27 @@ def run_orchestration(
             "completed headless result requires portable analysis-eval evidence"
         )
 
-    if decision_provider is not None:
-        if not callable(decision_provider):
-            raise AnalysisOrchestrationRunError("decision_provider must be callable")
-        try:
-            supplied = decision_provider(
-                request=validated_request,
-                headless_result=headless_result,
-                analysis_eval_artifact=eval_artifact,
-            )
-        except Exception as exc:
-            raise AnalysisOrchestrationRunError(
-                f"decision_provider failed: {exc}"
-            ) from exc
-        if not isinstance(supplied, Mapping):
-            raise AnalysisOrchestrationRunError(
-                "decision_provider must return a mapping"
-            )
-        evidence_fp = _require_hex_fingerprint(
-            supplied.get("evidence_fingerprint"), "evidence_fingerprint"
+    if provider_id is not None:
+        context = {
+            "domain": headless_result["domain"],
+            "benchmark": headless_result["benchmark"],
+            "partition": headless_result["partition"],
+            "baseline_candidate": baseline,
+            "current_candidate": current,
+            "request_fingerprint": validated_request["request_fingerprint"],
+            "analysis_eval_fingerprint": analysis_eval_fp,
+            "headless_result": headless_result,
+            "analysis_eval": eval_artifact,
+        }
+        assert_portable_value(context, field="decision provider context")
+        context["evidence_fingerprint"] = fingerprint(context)
+        policy = validate_provider_policy(
+            decision_provider(json.loads(canonical_json_dumps(context)))
         )
-        gate_verdict = supplied.get("gate_verdict")
-        decision_token = supplied.get("decision_token")
-        next_action = supplied.get("next_action")
+        evidence_fp = policy["evidence_fingerprint"]
+        gate_verdict = policy["gate_verdict"]
+        decision_token = policy["decision_token"]
+        next_action = policy["next_action"]
 
     decision_status, mapped_token, mapped_action = map_decision_inputs(
         run_status=run_status,

@@ -95,7 +95,9 @@ def test_document_identity_frozen() -> None:
 
 
 def test_no_arvp_import_in_orchestration_module() -> None:
-    tree = ast.parse((SRC_ROOT / "analysis_orchestration_run.py").read_text(encoding="utf-8"))
+    tree = ast.parse(
+        (SRC_ROOT / "analysis_orchestration_run.py").read_text(encoding="utf-8")
+    )
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -240,7 +242,9 @@ def _record(
     }
 
 
-def _write_manifest(work_dir: Path, records: list[dict[str, object]]) -> tuple[str, str]:
+def _write_manifest(
+    work_dir: Path, records: list[dict[str, object]]
+) -> tuple[str, str]:
     manifest = {
         "document_type": "sample_brain.fsld_human_manifest",
         "schema_version": "1.0.0",
@@ -390,9 +394,7 @@ def test_aq1_calibration_orchestration_e2e_deterministic(
 
     eval_fp = validated["analysis_eval"]["artifact_fingerprint"]
     assert len(eval_fp) == 64
-    assert (
-        validated["decision"]["evidence"]["analysis_eval_fingerprint"] == eval_fp
-    )
+    assert validated["decision"]["evidence"]["analysis_eval_fingerprint"] == eval_fp
     decision = validate_decision(validated["decision"])
     assert decision["decision_status"] == "ready"
     assert decision["decision_token"] == "KEEP_CURRENT_BASELINE_PATH"
@@ -425,61 +427,6 @@ def test_aq1_completed_gate_hold_maps_to_decision_hold(
     assert outcome["decision"]["decision_status"] == "hold"
     assert "decision_token" not in outcome["decision"]
     assert outcome["decision"]["next_action"] == "defer_for_evidence"
-
-
-def test_decision_provider_receives_real_aq1_result_and_eval(tmp_path, monkeypatch):
-    work = tmp_path / "aq1-decision-provider"
-    work.mkdir()
-    fake_repo = tmp_path / "fake-repo"
-    fake_repo.mkdir()
-    monkeypatch.setattr(
-        "src.fsld_aq1_tempo_candidate_compare.REPOSITORY_ROOT", fake_repo
-    )
-    request = _aq1_path_b_request(work)
-    received = {}
-
-    def decide(*, request, headless_result, analysis_eval_artifact):
-        received.update(
-            request=request,
-            headless_result=headless_result,
-            analysis_eval_artifact=analysis_eval_artifact,
-        )
-        return {
-            "evidence_fingerprint": "c" * 64,
-            "gate_verdict": "PASS",
-            "decision_token": "PROMOTION_CANDIDATE_IDENTIFIED",
-            "next_action": "freeze_candidate",
-        }
-
-    outcome = run_orchestration(
-        request=request,
-        bind_kwargs={"work_dir": work},
-        decision_provider=decide,
-    )
-
-    assert received["request"]["request_fingerprint"] == request["request_fingerprint"]
-    assert received["headless_result"]["run_status"] == "completed"
-    assert received["analysis_eval_artifact"]["document_type"] == "sample-brain.analysis-eval.v1"
-    assert outcome["decision"]["decision_token"] == "PROMOTION_CANDIDATE_IDENTIFIED"
-    assert outcome["decision"]["evidence"]["evidence_fingerprint"] == "c" * 64
-
-
-def test_decision_provider_malformed_output_fails_closed(tmp_path, monkeypatch):
-    work = tmp_path / "aq1-decision-provider-invalid"
-    work.mkdir()
-    fake_repo = tmp_path / "fake-repo"
-    fake_repo.mkdir()
-    monkeypatch.setattr(
-        "src.fsld_aq1_tempo_candidate_compare.REPOSITORY_ROOT", fake_repo
-    )
-    request = _aq1_path_b_request(work)
-
-    with pytest.raises(Exception, match="decision_provider|evidence_fingerprint"):
-        run_orchestration(
-            request=request,
-            bind_kwargs={"work_dir": work},
-            decision_provider=lambda **_: {"gate_verdict": "PASS"},
-        )
 
 
 def test_unknown_operation_fail_closed(
@@ -778,7 +725,8 @@ def _completed_result_for_request(
         "run_status": "completed",
         "adapter_id": adapter_id or str(request["adapter_id"]),
         "adapter_version": adapter_version,
-        "request_fingerprint": request_fingerprint or str(request["request_fingerprint"]),
+        "request_fingerprint": request_fingerprint
+        or str(request["request_fingerprint"]),
         "domain": domain or str(request["domain"]),
         "operation": str(request["operation"]),
         "partition_id": str(request["partition"]["partition_id"]),
@@ -877,9 +825,7 @@ def _matching_eval_for_request(
 
 def test_stale_request_fingerprint_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     request, _ = _synthetic_completed_headless()
-    stale = _completed_result_for_request(
-        request, request_fingerprint="d" * 64
-    )
+    stale = _completed_result_for_request(request, request_fingerprint="d" * 64)
     _stub_bind(monkeypatch, _StubDomainAdapter(result=stale))
     with pytest.raises(AnalysisOrchestrationRunError, match="request_fingerprint"):
         run_orchestration(
@@ -937,9 +883,18 @@ def test_wrong_adapter_version_on_result_rejected(
 @pytest.mark.parametrize(
     "field,mutate",
     [
-        ("benchmark", lambda r, e: _matching_eval_for_request(r, benchmark_id="OTHER_BENCH")),
-        ("dataset", lambda r, e: _matching_eval_for_request(r, dataset_id="OTHER_DATASET")),
-        ("partition", lambda r, e: _matching_eval_for_request(r, partition_id="OTHER_PART")),
+        (
+            "benchmark",
+            lambda r, e: _matching_eval_for_request(r, benchmark_id="OTHER_BENCH"),
+        ),
+        (
+            "dataset",
+            lambda r, e: _matching_eval_for_request(r, dataset_id="OTHER_DATASET"),
+        ),
+        (
+            "partition",
+            lambda r, e: _matching_eval_for_request(r, partition_id="OTHER_PART"),
+        ),
         (
             "partition_role",
             lambda r, e: _matching_eval_for_request(r, partition_role="validation"),
@@ -967,7 +922,9 @@ def test_supplied_eval_identity_mismatch_rejected(
     )
     foreign_eval = mutate(request, None)
     _stub_bind(monkeypatch, _StubDomainAdapter(result=result))
-    with pytest.raises(AnalysisOrchestrationRunError, match="identity mismatch|candidate"):
+    with pytest.raises(
+        AnalysisOrchestrationRunError, match="identity mismatch|candidate"
+    ):
         run_orchestration(
             request=request,
             bind_kwargs={},
@@ -1252,6 +1209,76 @@ def test_eval_with_matching_identities_accepted_when_result_omits_candidates(
     assert outcome["decision"]["decision_status"] == "ready"
     assert "baseline" in outcome["headless_result"]
     assert "current" in outcome["headless_result"]
-    assert outcome["headless_result"]["baseline"]["candidate_id"] == request[
-        "baseline"
-    ]["candidate_id"]
+    assert (
+        outcome["headless_result"]["baseline"]["candidate_id"]
+        == request["baseline"]["candidate_id"]
+    )
+
+
+@pytest.mark.parametrize(
+    "gate,token,action",
+    [
+        ("PASS", "KEEP_CURRENT_BASELINE_PATH", "keep_baseline_and_stop"),
+        ("FAIL", "NO_JUSTIFIED_CANDIDATE", "keep_baseline_and_stop"),
+        ("HOLD", None, None),
+    ],
+)
+def test_provider_policy_after_real_eval(monkeypatch, gate, token, action):
+    request, result = _synthetic_completed_headless()
+    _stub_bind(monkeypatch, _StubDomainAdapter(result=result))
+    calls = []
+
+    def decide(context):
+        assert context["analysis_eval_fingerprint"] == fingerprint(
+            context["analysis_eval"]
+        )
+        assert (
+            context["headless_result"]["request_fingerprint"]
+            == request["request_fingerprint"]
+        )
+        calls.append(context)
+        return dict(
+            evidence_fingerprint="f" * 64,
+            gate_verdict=gate,
+            decision_token=token,
+            next_action=action,
+        )
+
+    outcome = run_orchestration(
+        request=request,
+        bind_kwargs={},
+        decision_provider=decide,
+        decision_provider_id="policy.synthetic.v1",
+    )
+    assert len(calls) == 1
+    assert (
+        outcome["analysis_eval"]["artifact_fingerprint"]
+        == calls[0]["analysis_eval_fingerprint"]
+    )
+    assert outcome["decision"]["evidence"]["evidence_fingerprint"] == "f" * 64
+    assert validate_outcome(outcome) == outcome
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        dict(evidence_fingerprint=None),
+        dict(gate_verdict=None),
+        dict(decision_token=None),
+        dict(next_action=None),
+    ],
+)
+def test_binder_rejects_mixed_provider_before_adapter(monkeypatch, extra):
+    request, _ = _synthetic_completed_headless()
+    monkeypatch.setattr(
+        "src.analysis_orchestration_run.bind_adapter",
+        lambda *a, **k: pytest.fail("mixed inputs dispatched"),
+    )
+    with pytest.raises(ValueError):
+        run_orchestration(
+            request=request,
+            bind_kwargs={},
+            decision_provider=lambda context: {},
+            decision_provider_id="policy.v1",
+            **extra,
+        )

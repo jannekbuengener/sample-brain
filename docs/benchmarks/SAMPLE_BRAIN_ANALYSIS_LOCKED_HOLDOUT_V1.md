@@ -75,3 +75,49 @@ by #1043. No private audio, ARVP imports, second evaluator/decision engine,
 promotion controller, PR automation, production switch, UI or algorithm tuning.
 
 Exit after all delivery gates: `AQ_LOCKED_HOLDOUT_FINAL_DECISION_V1_FROZEN`.
+
+
+## Additive decision-provider seam (#1179)
+
+Legacy calls, claims and result version 1.0.0 remain unchanged. The optional
+`provider` remains the search-space provider. A separate `decision_provider`
+callable and declared portable `decision_provider_id` select provider mode;
+both are required together. Any explicitly supplied legacy policy argument,
+even None, mixed with provider mode is rejected before claiming or dispatch.
+The ID identifies a declared policy, never a callable repr, address, path or hash.
+
+Provider claims contain exactly freeze_state_fingerprint, request_fingerprint,
+mode=provider and decision_provider_id. The canonical claim fingerprint binds
+the invocation before any adapter/evaluation/provider execution. The immutable
+supervisor state and the existing durable write/barrier protocol remain authority.
+Claim without result always means uncertain execution, including provider failure:
+no automatic evaluation or provider retry is permitted.
+
+The existing orchestration binder invokes the provider once after validating the
+real adapter result and constructing the real analysis-eval artifact, before
+building the decision. The provider receives one defensive portable mapping:
+domain, benchmark, partition, baseline_candidate, current_candidate,
+request_fingerprint, analysis_eval_fingerprint, headless_result and analysis_eval.
+Its evidence_fingerprint is the canonical fingerprint of that mapping before
+adding evidence_fingerprint. This identifies the evaluation context; the provider
+may return a different opaque fingerprint identifying its own gate evidence.
+No bind_kwargs, runtime paths, adapter instances or supervisor state are exposed.
+
+The provider returns exactly evidence_fingerprint, gate_verdict, decision_token,
+and next_action. These use the existing S6 policy validation and #1043 builder;
+PASS/FAIL require explicit policy, tuning actions remain forbidden, and existing
+HOLD/controlled-failure mapping is retained. No provider-supplied Decision is
+accepted. production_authorized remains false.
+
+Provider result version 1.1.0 adds decision_provider_provenance with
+ decision_provider_id, eval_context_fingerprint and policy_inputs. These are
+covered by result_fingerprint; invocation_fingerprint binds the original claim.
+The existing #1043 versions and semantics are unchanged. Replay checks the
+committed result, mode, declared ID, freeze/request identities and stored policy
+against the decision, and returns without calling the adapter or provider.
+The result stores provenance and references, not a full evaluation evidence dump.
+
+The S7 source reader supports both versions, verifies provider claim/provenance
+and stored policy consistency, and retains every existing promotion criterion.
+It never calls providers or recomputes evaluations or decisions. Fingerprints
+provide integrity binding, not a cryptographic signature of a policy's code.
