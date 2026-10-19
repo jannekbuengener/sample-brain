@@ -231,6 +231,52 @@ def _require_terminal_s5_ownership(
     )
 
 
+def _terminal_continuation_ref(
+    lineage: Mapping[str, Any], continuation_state: Mapping[str, Any]
+) -> dict[str, Any]:
+    return {
+        "baseline_generation": lineage["generation"],
+        "supervisor_state_fingerprint": continuation_state["state_fingerprint"],
+    }
+
+
+def _require_terminal_continuation_ownership(
+    cycle: Mapping[str, Any], state_path: Path
+) -> None:
+    reason = cycle.get("reason")
+    if not isinstance(reason, str) or not reason.startswith("continuation_"):
+        return
+    continuation_ref = cycle.get("continuation_ref")
+    if not isinstance(continuation_ref, Mapping):
+        raise AnalysisQualityClosedCycleError(
+            "terminal continuation state lacks committed cycle identity"
+        )
+    generation = continuation_ref.get("baseline_generation")
+    expected_fingerprint = continuation_ref.get("supervisor_state_fingerprint")
+    if (
+        isinstance(generation, bool)
+        or not isinstance(generation, int)
+        or generation < 0
+        or not isinstance(expected_fingerprint, str)
+        or not expected_fingerprint
+    ):
+        raise AnalysisQualityClosedCycleError(
+            "terminal continuation state lacks committed cycle identity"
+        )
+    continuation_path = state_path.with_name(
+        f"{state_path.stem}.continuation-{generation}.json"
+    )
+    if not continuation_path.exists():
+        raise AnalysisQualityClosedCycleError(
+            "terminal continuation state differs from committed cycle identity"
+        )
+    continuation_state = load_state(continuation_path)
+    if continuation_state["state_fingerprint"] != expected_fingerprint:
+        raise AnalysisQualityClosedCycleError(
+            "terminal continuation state differs from committed cycle identity"
+        )
+
+
 def _require_result_attempt_ownership(
     cycle: Mapping[str, Any], result: Mapping[str, Any]
 ) -> None:
@@ -778,6 +824,7 @@ def run_quality_cycle(
             return completed_result
         if cycle["status"] in {"held", "failed"}:
             _require_terminal_s5_ownership(cycle, s5)
+            _require_terminal_continuation_ownership(cycle, s5_path)
             return cycle
 
         for _ in range(max_transitions):
@@ -1150,6 +1197,9 @@ def run_quality_cycle(
                         if _retry_only_s5_update(identity, continuation_state):
                             cycle["pending"] = None
                             if continuation_state["loop_status"] == "retry_exhausted":
+                                cycle["continuation_ref"] = _terminal_continuation_ref(
+                                    lineage, continuation_state
+                                )
                                 cycle["status"] = "held"
                                 cycle["reason"] = "continuation_retry_exhausted"
                                 return _save_attempt(cycle_path, cycle)
@@ -1166,6 +1216,9 @@ def run_quality_cycle(
                             or iterator_ref.get("iterator_effect") != "advance"
                             or not next_candidate
                         ):
+                            cycle["continuation_ref"] = _terminal_continuation_ref(
+                                lineage, continuation_state
+                            )
                             cycle["status"] = "held"
                             cycle["reason"] = "continuation_not_ready"
                             return _save_attempt(cycle_path, cycle)
@@ -1230,6 +1283,9 @@ def run_quality_cycle(
                 ref["decision_provider_id"] = policy_id
                 iterator = result.get("iterator") or {}
                 if result["decision"]["next_action"] != "continue_calibration" or not iterator.get("next_candidate"):
+                    cycle["continuation_ref"] = _terminal_continuation_ref(
+                        lineage, continuation_after
+                    )
                     cycle["status"] = "held"
                     cycle["reason"] = "continuation_not_ready"
                     return _save_attempt(cycle_path, cycle)

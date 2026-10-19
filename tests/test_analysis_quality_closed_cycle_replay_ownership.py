@@ -10,7 +10,10 @@ import src.analysis_quality_closed_cycle as closed_cycle
 import src.analysis_quality_loop_supervisor as supervisor
 from src.analysis_eval_artifact import fingerprint
 from src.aq_candidate_search_spaces.aq1_tempo import Aq1TempoSearchSpaceProvider
-from src.analysis_quality_closed_cycle import run_quality_cycle
+from src.analysis_quality_closed_cycle import (
+    AnalysisQualityClosedCycleError,
+    run_quality_cycle,
+)
 from src.analysis_quality_loop_state import (
     AnalysisQualityLoopStateError,
     load_state,
@@ -225,3 +228,49 @@ def test_cycle_and_direct_supervisor_cannot_both_own_same_s5_commit(
     assert persisted["generation"] == initial["generation"] + 1
     assert persisted["active_candidate"] != initial["active_candidate"]
     assert len(persisted["visited_candidate_ids"]) == 2
+
+
+def test_terminal_continuation_replay_rejects_replaced_continuation_state(
+    tmp_path,
+) -> None:
+    state_path = tmp_path / "quality-state.json"
+    save_state_atomic(state_path, _fresh_aq1_state())
+    initial = load_state(state_path)
+    attempt_path = tmp_path / "cycle-attempt.json"
+    continuation_generation = 1
+    continuation_path = state_path.with_name(
+        f"{state_path.stem}.continuation-{continuation_generation}.json"
+    )
+    save_state_atomic(continuation_path, _fresh_aq1_state())
+    owned_continuation = load_state(continuation_path)
+
+    attempt = closed_cycle._new_attempt(initial)
+    attempt["phase"] = "held"
+    attempt["status"] = "held"
+    attempt["reason"] = "continuation_not_ready"
+    attempt["continuation_ref"] = {
+        "baseline_generation": continuation_generation,
+        "supervisor_state_fingerprint": owned_continuation["state_fingerprint"],
+    }
+    closed_cycle._save_attempt(attempt_path, attempt)
+
+    replaced = dict(owned_continuation)
+    replaced.pop("state_fingerprint")
+    replaced["generation"] = int(owned_continuation["generation"]) + 1
+    save_state_atomic(continuation_path, replaced)
+
+    unexpected = lambda **_: (_ for _ in ()).throw(
+        AssertionError("terminal replay must not invoke cycle factories")
+    )
+    with pytest.raises(
+        AnalysisQualityClosedCycleError,
+        match="terminal continuation state differs from committed cycle identity",
+    ):
+        run_quality_cycle(
+            state_path=state_path,
+            attempt_path=attempt_path,
+            calibration_inputs=unexpected,
+            locked_inputs=unexpected,
+            promotion_inputs=unexpected,
+            post_merge_inputs=unexpected,
+        )
