@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+import src.analysis_quality_closed_cycle as closed_cycle
 from src.analysis_quality_closed_cycle import (
     AnalysisQualityClosedCycleError,
     _require_completed_s5_ownership,
@@ -73,3 +74,87 @@ def test_promotion_rejects_replaced_locked_result() -> None:
 
     with pytest.raises(AnalysisQualityClosedCycleError, match="committed S6"):
         _require_locked_result_ownership(attempt, replacement)
+
+
+def test_supervisor_return_rejects_state_changed_before_reload() -> None:
+    identity = {
+        "request_fingerprint": "2" * 64,
+        "decision_provider_id": "policy.v1",
+    }
+    returned_state = {
+        "state_fingerprint": "3" * 64,
+        "last_orchestration_ref": {
+            "request_fingerprint": identity["request_fingerprint"],
+            "decision_provider_id": identity["decision_provider_id"],
+        },
+    }
+    persisted_state = {
+        **returned_state,
+        "state_fingerprint": "4" * 64,
+    }
+
+    with pytest.raises(AnalysisQualityClosedCycleError, match="changed after supervisor"):
+        closed_cycle._require_supervisor_result_state_ownership(
+            {"state": returned_state}, persisted_state, identity, "S5"
+        )
+
+
+def test_supervisor_return_requires_pending_request_and_provider_identity() -> None:
+    identity = {
+        "request_fingerprint": "2" * 64,
+        "decision_provider_id": "policy.v1",
+    }
+    state = {
+        "state_fingerprint": "3" * 64,
+        "last_orchestration_ref": {
+            "request_fingerprint": "9" * 64,
+            "decision_provider_id": "other-policy.v1",
+        },
+    }
+
+    with pytest.raises(AnalysisQualityClosedCycleError, match="pending invocation"):
+        closed_cycle._require_supervisor_result_state_ownership(
+            {"state": state}, state, identity, "continuation"
+        )
+
+
+def test_completed_result_persists_continuation_ownership_before_publish(
+    monkeypatch, tmp_path
+) -> None:
+    cycle = _attempt()
+    cycle.update(
+        phase="continuation",
+        status="running",
+        pending={"phase": "continuation", "identity": {}, "invocation_fingerprint": "5" * 64},
+        reason=None,
+    )
+    lineage = {
+        "current": {"baseline_fingerprint": "6" * 64},
+        "last_known_good": {"baseline_fingerprint": "7" * 64},
+    }
+    events = []
+
+    def save_attempt(path, state):
+        events.append(("save", dict(state)))
+        return dict(state)
+
+    def write_result(path, attempt, current_lineage):
+        events.append(("write", dict(attempt)))
+        return {"result_fingerprint": "8" * 64}
+
+    def commit_phase(path, state, phase):
+        events.append(("commit", phase, dict(state)))
+        return dict(state)
+
+    monkeypatch.setattr(closed_cycle, "_save_attempt", save_attempt)
+    monkeypatch.setattr(closed_cycle, "_write_result", write_result)
+    monkeypatch.setattr(closed_cycle, "_commit_phase", commit_phase)
+
+    result = closed_cycle._publish_completed_result(
+        tmp_path / "cycle.json", cycle, lineage
+    )
+
+    assert result["result_fingerprint"] == "8" * 64
+    assert [event[0] for event in events] == ["save", "write", "commit"]
+    assert events[0][1]["continuation_ref"] == cycle["continuation_ref"]
+    assert events[0][1]["status"] == "running"
