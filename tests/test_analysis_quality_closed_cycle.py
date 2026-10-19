@@ -128,7 +128,9 @@ def test_cycle_self_starts_real_aq1_and_stops_on_machine_hold(tmp_path, monkeypa
     assert competing_cycle_blocked == ["cycle generation is already executing"]
 
 
-def test_cycle_retries_after_retry_only_s5_state_update(tmp_path, monkeypatch):
+def test_cycle_retries_after_retry_only_s5_updates_and_holds_on_exhaustion(
+    tmp_path, monkeypatch
+):
     _patch_aq1_repo(monkeypatch, tmp_path)
     state_path = tmp_path / "host" / "quality-state.json"
     state_path.parent.mkdir()
@@ -145,7 +147,7 @@ def test_cycle_retries_after_retry_only_s5_state_update(tmp_path, monkeypatch):
 
         def decide(*, request, headless_result, analysis_eval_artifact):
             provider_calls["count"] += 1
-            if provider_calls["count"] == 1:
+            if provider_calls["count"] <= 3:
                 raise RuntimeError("transient decision provider failure")
             return {
                 "evidence_fingerprint": fingerprint(
@@ -182,23 +184,23 @@ def test_cycle_retries_after_retry_only_s5_state_update(tmp_path, monkeypatch):
             AssertionError("retry HOLD must not reach S8")
         ),
     }
-    try:
-        run_quality_cycle(**args)
-    except Exception as exc:
-        assert "transient decision provider failure" in str(exc)
-    else:
-        raise AssertionError("transient provider failure must consume retry budget")
+    for _ in range(3):
+        try:
+            run_quality_cycle(**args)
+        except Exception as exc:
+            assert "transient decision provider failure" in str(exc)
+        else:
+            raise AssertionError("transient provider failure must consume retry budget")
 
-    failed_state = load_state(state_path)
-    assert failed_state["generation"] == 0
-    assert failed_state["retry"]["budget_remaining"] < failed_state["retry"]["budget_initial"]
+    exhausted_state = load_state(state_path)
+    assert exhausted_state["generation"] == 0
+    assert exhausted_state["retry"]["budget_remaining"] == 0
+    assert exhausted_state["loop_status"] == "retry_exhausted"
     result = run_quality_cycle(**args)
 
     assert result["status"] == "held"
-    assert provider_calls["count"] == 2
-    assert load_state(state_path)["last_orchestration_ref"]["decision_provider_id"] == (
-        "aq1-fixture-retry-policy-v1"
-    )
+    assert result["reason"] == "calibration_retry_exhausted"
+    assert provider_calls["count"] == 3
 
 
 def test_malformed_closed_cycle_result_fails_with_contract_error(tmp_path):
@@ -340,6 +342,26 @@ def test_retry_only_s5_update_is_distinguished_from_committed_decision():
     assert closed_cycle._retry_only_s5_update(identity, retry_state)
     retry_state["generation"] = 5
     assert not closed_cycle._retry_only_s5_update(identity, retry_state)
+    retry_state["generation"] = 4
+    retry_state["retry"]["budget_remaining"] = 0
+    retry_state["loop_status"] = "retry_exhausted"
+    assert closed_cycle._retry_only_s5_update(identity, retry_state)
+
+    expected_seed = {"state_fingerprint": "expected-seed"}
+    changed_seed = {"state_fingerprint": "foreign-seed"}
+    try:
+        closed_cycle._require_continuation_seed_ownership(
+            expected_seed, changed_seed, None
+        )
+    except AnalysisQualityClosedCycleError as exc:
+        assert "lacks this cycle's committed S8 seed" in str(exc)
+    else:
+        raise AssertionError("an unclaimed continuation state must not be reused")
+    closed_cycle._require_continuation_seed_ownership(
+        expected_seed,
+        changed_seed,
+        {"phase": "continuation"},
+    )
 
 
 def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(

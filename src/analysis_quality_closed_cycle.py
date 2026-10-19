@@ -326,7 +326,32 @@ def _retry_only_s5_update(identity: Mapping[str, Any], state: Mapping[str, Any])
         and retry_now.get("consecutive_failures", 0)
         > retry_before.get("consecutive_failures", 0)
         and bool(retry_now.get("last_failure_class"))
-        and state.get("loop_status") == "ready"
+        and state.get("loop_status") in {"ready", "retry_exhausted"}
+    )
+
+
+def _require_continuation_seed_ownership(
+    expected_seed: Mapping[str, Any],
+    continuation_state: Mapping[str, Any],
+    pending: Mapping[str, Any] | None,
+) -> None:
+    if continuation_state.get("state_fingerprint") == expected_seed.get(
+        "state_fingerprint"
+    ):
+        return
+    if pending is not None and pending.get("phase") == "continuation":
+        return
+    seed_identity = {
+        "s5_generation": expected_seed.get("generation"),
+        "previous_decision_fingerprint": None,
+        "active_candidate": expected_seed.get("active_candidate"),
+        "visited_candidate_ids": expected_seed.get("visited_candidate_ids"),
+        "retry": expected_seed.get("retry"),
+    }
+    if _retry_only_s5_update(seed_identity, continuation_state):
+        return
+    raise AnalysisQualityClosedCycleError(
+        "existing continuation state lacks this cycle's committed S8 seed"
     )
 
 
@@ -559,6 +584,10 @@ def run_quality_cycle(
                     if identity.get("s5_state_fingerprint") != s5["state_fingerprint"]:
                         if _retry_only_s5_update(identity, s5):
                             cycle["pending"] = None
+                            if s5["loop_status"] == "retry_exhausted":
+                                cycle["status"] = "held"
+                                cycle["reason"] = "calibration_retry_exhausted"
+                                return _save_attempt(cycle_path, cycle)
                             _save_attempt(cycle_path, cycle)
                             continue
                         current_decision = s5.get("last_decision") or {}
@@ -831,27 +860,31 @@ def run_quality_cycle(
                 continuation_path = s5_path.with_name(
                     f"{s5_path.stem}.continuation-{lineage['generation']}.json"
                 )
+                seed_state = fresh_state(
+                    domain=lineage["domain"],
+                    partition_id=f"{initial['partition']['partition_id']}.continuation.{lineage['generation']}",
+                    partition_role="calibration",
+                    baseline_candidate=candidate,
+                    active_candidate=candidate,
+                    last_known_good=(lineage["last_known_good"] or {}).get("candidate"),
+                    search_space_id=provider.search_space_id,
+                    search_space_version=provider.search_space_version,
+                    search_space_fingerprint=provider.search_space_fingerprint(),
+                    visited_candidate_ids=[candidate["candidate_id"]],
+                    retry_budget=initial["retry"]["budget_initial"],
+                    max_iterations=initial.get("max_iterations"),
+                )
+                pending = cycle.get("pending")
                 if continuation_path.exists():
                     continuation_state = load_state(continuation_path)
                     if continuation_state["baseline_candidate"] != candidate:
                         raise AnalysisQualityClosedCycleError("continuation baseline mismatch")
-                else:
-                    continuation_state = fresh_state(
-                        domain=lineage["domain"],
-                        partition_id=f"{initial['partition']['partition_id']}.continuation.{lineage['generation']}",
-                        partition_role="calibration",
-                        baseline_candidate=candidate,
-                        active_candidate=candidate,
-                        last_known_good=(lineage["last_known_good"] or {}).get("candidate"),
-                        search_space_id=provider.search_space_id,
-                        search_space_version=provider.search_space_version,
-                        search_space_fingerprint=provider.search_space_fingerprint(),
-                        visited_candidate_ids=[candidate["candidate_id"]],
-                        retry_budget=initial["retry"]["budget_initial"],
-                        max_iterations=initial.get("max_iterations"),
+                    _require_continuation_seed_ownership(
+                        seed_state, continuation_state, pending
                     )
+                else:
+                    continuation_state = seed_state
                     save_state_atomic(continuation_path, continuation_state)
-                pending = cycle.get("pending")
                 if pending and pending.get("phase") == phase:
                     identity = pending.get("identity") or {}
                     if identity.get("continuation_state_fingerprint") != continuation_state[
@@ -859,6 +892,10 @@ def run_quality_cycle(
                     ]:
                         if _retry_only_s5_update(identity, continuation_state):
                             cycle["pending"] = None
+                            if continuation_state["loop_status"] == "retry_exhausted":
+                                cycle["status"] = "held"
+                                cycle["reason"] = "continuation_retry_exhausted"
+                                return _save_attempt(cycle_path, cycle)
                             _save_attempt(cycle_path, cycle)
                             continue
                         current_decision = continuation_state.get("last_decision") or {}
