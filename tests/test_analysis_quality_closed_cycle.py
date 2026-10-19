@@ -56,7 +56,9 @@ def test_cycle_self_starts_real_aq1_and_stops_on_machine_hold(tmp_path, monkeypa
             work, current_candidate_id=state["active_candidate"]["candidate_id"]
         )
 
-        def decide(*, request, headless_result, analysis_eval_artifact):
+        def decide(context):
+            headless_result = context["headless_result"]
+            analysis_eval_artifact = context["analysis_eval"]
             seen["headless"] = headless_result
             seen["eval"] = analysis_eval_artifact
             return {
@@ -70,6 +72,8 @@ def test_cycle_self_starts_real_aq1_and_stops_on_machine_hold(tmp_path, monkeypa
                     }
                 ),
                 "gate_verdict": "HOLD",
+                "decision_token": None,
+                "next_action": None,
             }
 
         return {
@@ -145,7 +149,9 @@ def test_cycle_retries_after_retry_only_s5_updates_and_holds_on_exhaustion(
             work, current_candidate_id=state["active_candidate"]["candidate_id"]
         )
 
-        def decide(*, request, headless_result, analysis_eval_artifact):
+        def decide(context):
+            headless_result = context["headless_result"]
+            analysis_eval_artifact = context["analysis_eval"]
             provider_calls["count"] += 1
             if provider_calls["count"] <= 3:
                 raise RuntimeError("transient decision provider failure")
@@ -160,6 +166,7 @@ def test_cycle_retries_after_retry_only_s5_updates_and_holds_on_exhaustion(
                     }
                 ),
                 "gate_verdict": "HOLD",
+                "decision_token": None,
                 "next_action": "defer_for_evidence",
             }
 
@@ -498,7 +505,9 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
             baseline_candidate_id=baseline_id,
         )
 
-        def decide(*, request, headless_result, analysis_eval_artifact):
+        def decide(context):
+            headless_result = context["headless_result"]
+            analysis_eval_artifact = context["analysis_eval"]
             if (
                 "continuation-" in state_path.stem
                 and fail_continuation_provider_once["pending"]
@@ -566,7 +575,9 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
             baseline_candidate_id=baseline_id,
         )
 
-        def decide(*, request, headless_result, analysis_eval_artifact):
+        def decide(context):
+            headless_result = context["headless_result"]
+            analysis_eval_artifact = context["analysis_eval"]
             output_relpath = request["aq1_inputs"]["output_relpath"]
             domain_result = json.loads((work / output_relpath).read_text(encoding="utf-8"))
             by_id = {item["candidate_id"]: item for item in domain_result["candidates"]}
