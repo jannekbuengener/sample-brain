@@ -580,6 +580,9 @@ def run_quality_cycle(
                                 identity.get("request_fingerprint"),
                             )
                         )
+                        cycle["calibration_refs"][-1]["candidate"] = identity[
+                            "active_candidate"
+                        ]
                         cycle["calibration_refs"][-1]["decision_provider_id"] = identity[
                             "decision_provider_id"
                         ]
@@ -624,6 +627,7 @@ def run_quality_cycle(
                     "request_fingerprint": request_fp,
                 })
                 _save_attempt(cycle_path, cycle)
+                evaluated_candidate = s5["active_candidate"]
                 result = run_supervisor_step(
                     state_path=s5_path,
                     decision_provider_id=policy_id,
@@ -631,6 +635,7 @@ def run_quality_cycle(
                 )
                 post_state = load_state(s5_path)
                 ref = _ref_from_supervisor(result, post_state, request_fp)
+                ref["candidate"] = evaluated_candidate
                 ref["decision_provider_id"] = policy_id
                 cycle["calibration_refs"].append(ref)
                 cycle["candidate_history"] = list(post_state["visited_candidate_ids"])
@@ -852,6 +857,10 @@ def run_quality_cycle(
                     if identity.get("continuation_state_fingerprint") != continuation_state[
                         "state_fingerprint"
                     ]:
+                        if _retry_only_s5_update(identity, continuation_state):
+                            cycle["pending"] = None
+                            _save_attempt(cycle_path, cycle)
+                            continue
                         current_decision = continuation_state.get("last_decision") or {}
                         last_orchestration = _recovered_orchestration_ref(
                             continuation_state, identity, "continuation"
@@ -903,6 +912,10 @@ def run_quality_cycle(
                     "baseline_generation": lineage["generation"],
                     "baseline_fingerprint": lineage["current"]["baseline_fingerprint"],
                     "continuation_state_fingerprint": continuation_state["state_fingerprint"],
+                    "s5_generation": continuation_state["generation"],
+                    "active_candidate": continuation_state["active_candidate"],
+                    "visited_candidate_ids": list(continuation_state["visited_candidate_ids"]),
+                    "retry": dict(continuation_state["retry"]),
                     "previous_decision_fingerprint": (
                         continuation_state.get("last_decision") or {}
                     ).get("decision_fingerprint"),

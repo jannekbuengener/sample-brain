@@ -354,6 +354,7 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
     repo_root = tmp_path / "promotion-repo"
     s7_cache = {}
     s8_cache = {}
+    fail_continuation_provider_once = {"pending": True}
 
     def calibration_inputs(*, state_path, state):
         candidate_id = state["active_candidate"]["candidate_id"]
@@ -367,6 +368,12 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
         )
 
         def decide(*, request, headless_result, analysis_eval_artifact):
+            if (
+                "continuation-" in state_path.stem
+                and fail_continuation_provider_once["pending"]
+            ):
+                fail_continuation_provider_once["pending"] = False
+                raise RuntimeError("simulated transient continuation provider failure")
             output_relpath = request["aq1_inputs"]["output_relpath"]
             domain_result = json.loads((work / output_relpath).read_text(encoding="utf-8"))
             by_id = {item["candidate_id"]: item for item in domain_result["candidates"]}
@@ -737,6 +744,20 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
     else:
         raise AssertionError("continuation must reject a changed S8 acceptance plan")
 
+    try:
+        run_quality_cycle(
+            state_path=state_path,
+            attempt_path=attempt_path,
+            calibration_inputs=calibration_inputs,
+            locked_inputs=locked_inputs,
+            promotion_inputs=promotion_inputs,
+            post_merge_inputs=post_merge_inputs,
+        )
+    except Exception as exc:
+        assert "transient continuation provider failure" in str(exc)
+    else:
+        raise AssertionError("continuation retry must preserve transient failure")
+
     real_supervisor_step = closed_cycle.run_supervisor_step
     lost_continuation_reply = {"pending": True}
 
@@ -788,6 +809,10 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
     assert len(result["calibration_refs"]) == 2
     assert result["calibration_refs"][0]["next_action"] == "continue_calibration"
     assert result["calibration_refs"][1]["next_action"] == "freeze_candidate"
+    assert result["calibration_refs"][0]["candidate"] == result[
+        "initial_baseline_candidate"
+    ]
+    assert result["calibration_refs"][1]["candidate"] == result["final_candidate"]
     assert s7_cache["host"].creates == 1
     assert s7_cache["host"].merges == 1
     assert_portable_value(result)
