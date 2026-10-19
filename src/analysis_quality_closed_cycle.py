@@ -198,6 +198,39 @@ def _require_completed_s5_ownership(
         )
 
 
+def _require_terminal_s5_ownership(
+    cycle: Mapping[str, Any], supervisor_state: Mapping[str, Any]
+) -> None:
+    refs = cycle.get("calibration_refs") or []
+    expected = (
+        refs[-1].get("committed_state_fingerprint")
+        if refs
+        else cycle.get("initial_state_fingerprint")
+    )
+    if supervisor_state.get("state_fingerprint") == expected:
+        return
+
+    if cycle.get("reason") == "calibration_retry_exhausted":
+        expected_generation = int(cycle["initial_baseline_generation"]) + len(refs)
+        expected_decision = refs[-1].get("decision_fingerprint") if refs else None
+        if (
+            supervisor_state.get("loop_status") == "retry_exhausted"
+            and supervisor_state.get("generation") == expected_generation
+            and (supervisor_state.get("last_decision") or {}).get(
+                "decision_fingerprint"
+            )
+            == expected_decision
+            and list(supervisor_state.get("visited_candidate_ids") or [])
+            == list(cycle.get("candidate_history") or [])
+            and (supervisor_state.get("retry") or {}).get("budget_remaining") == 0
+        ):
+            return
+
+    raise AnalysisQualityClosedCycleError(
+        "terminal cycle belongs to a different S5 lineage"
+    )
+
+
 def _require_result_attempt_ownership(
     cycle: Mapping[str, Any], result: Mapping[str, Any]
 ) -> None:
@@ -274,12 +307,11 @@ def _require_simulation_repository(inputs: Mapping[str, Any], manifest: Mapping[
         raise AnalysisQualityClosedCycleError("S9 promotion remote must be a temporary proof repository")
 
 
-def _domain_lock_path(state_path: Path, state: Mapping[str, Any]) -> Path:
+def _domain_lock_path(state_path: Path, _state: Mapping[str, Any]) -> Path:
     identity = fingerprint(
         {
-            "domain": state["domain"],
-            "baseline_candidate": state["baseline_candidate"],
-            "search_space_fingerprint": state["search_space_fingerprint"],
+            "state_path": os.path.normcase(str(state_path.resolve())),
+            "schema": ARTIFACT_VERSION,
         }
     )[:24]
     return state_path.parent / f".analysis-quality-cycle-{identity}.lock"
@@ -745,6 +777,7 @@ def run_quality_cycle(
             _save_attempt(cycle_path, cycle)
             return completed_result
         if cycle["status"] in {"held", "failed"}:
+            _require_terminal_s5_ownership(cycle, s5)
             return cycle
 
         for _ in range(max_transitions):
