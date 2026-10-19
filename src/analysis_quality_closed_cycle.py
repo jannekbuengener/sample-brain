@@ -221,6 +221,22 @@ def _require_locked_result_ownership(
         raise AnalysisQualityClosedCycleError("locked result differs from committed S6 result")
 
 
+def _require_supervisor_result_state_ownership(
+    result: Mapping[str, Any],
+    persisted_state: Mapping[str, Any],
+    identity: Mapping[str, Any],
+    phase: str,
+) -> None:
+    returned_state = result.get("state")
+    if not isinstance(returned_state, Mapping) or dict(returned_state) != dict(
+        persisted_state
+    ):
+        raise AnalysisQualityClosedCycleError(
+            f"{phase} state changed after supervisor return"
+        )
+    _recovered_orchestration_ref(persisted_state, identity, phase)
+
+
 def _require_simulation_repository(inputs: Mapping[str, Any], manifest: Mapping[str, Any]) -> None:
     repository = inputs.get("repository")
     repository_path = getattr(repository, "path", None)
@@ -660,6 +676,18 @@ def _write_result(
     return result
 
 
+def _publish_completed_result(
+    attempt_path: Path,
+    attempt: dict[str, Any],
+    lineage: Mapping[str, Any],
+) -> dict[str, Any]:
+    persisted = _save_attempt(attempt_path, attempt)
+    result = _write_result(attempt_path, persisted, lineage)
+    persisted["status"] = "completed"
+    _commit_phase(attempt_path, persisted, "completed")
+    return result
+
+
 def run_quality_cycle(
     *,
     state_path: str | os.PathLike[str],
@@ -815,6 +843,12 @@ def run_quality_cycle(
                     **inputs,
                 )
                 post_state = load_state(s5_path)
+                _require_supervisor_result_state_ownership(
+                    result,
+                    post_state,
+                    (cycle.get("pending") or {}).get("identity") or {},
+                    "S5",
+                )
                 ref = _ref_from_supervisor(result, post_state, request_fp)
                 ref["candidate"] = evaluated_candidate
                 ref["committed_state_fingerprint"] = post_state["state_fingerprint"]
@@ -1122,12 +1156,7 @@ def run_quality_cycle(
                         cycle["candidate_history"] = load_state(s5_path)[
                             "visited_candidate_ids"
                         ]
-                        cycle["status"] = "completed"
-                        result = _write_result(cycle_path, cycle, lineage)
-                        cycle["phase"] = "completed"
-                        cycle["pending"] = None
-                        _save_attempt(cycle_path, cycle)
-                        return result
+                        return _publish_completed_result(cycle_path, cycle, lineage)
                 inputs = dict(calibration_inputs(state_path=continuation_path, state=continuation_state))
                 policy_id = _provider_id(inputs)
                 request = inputs.get("request")
@@ -1154,6 +1183,12 @@ def run_quality_cycle(
                     **inputs,
                 )
                 continuation_after = load_state(continuation_path)
+                _require_supervisor_result_state_ownership(
+                    result,
+                    continuation_after,
+                    (cycle.get("pending") or {}).get("identity") or {},
+                    "continuation",
+                )
                 ref = _ref_from_supervisor(
                     result, continuation_after, request.get("request_fingerprint")
                 )
@@ -1174,10 +1209,7 @@ def run_quality_cycle(
                     "decision_provider_id": policy_id,
                 }
                 cycle["candidate_history"] = load_state(s5_path)["visited_candidate_ids"]
-                result = _write_result(cycle_path, cycle, lineage)
-                cycle["status"] = "completed"
-                cycle = _commit_phase(cycle_path, cycle, "completed")
-                return result
+                return _publish_completed_result(cycle_path, cycle, lineage)
 
             raise AnalysisQualityClosedCycleError(f"unknown cycle phase: {phase}")
 
