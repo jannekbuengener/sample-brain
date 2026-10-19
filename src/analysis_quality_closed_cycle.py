@@ -291,6 +291,51 @@ def _recovered_orchestration_ref(
     return ref
 
 
+def _require_cycle_owned_freeze(
+    cycle: Mapping[str, Any], supervisor_state: Mapping[str, Any]
+) -> None:
+    decision = supervisor_state.get("last_decision") or {}
+    refs = cycle.get("calibration_refs") or []
+    last = refs[-1] if refs else {}
+    if (
+        decision.get("next_action") != "freeze_candidate"
+        or last.get("next_action") != "freeze_candidate"
+        or last.get("decision_fingerprint") != decision.get("decision_fingerprint")
+        or last.get("candidate") != supervisor_state.get("active_candidate")
+    ):
+        raise AnalysisQualityClosedCycleError(
+            "frozen S5 state lacks this cycle's committed selection evidence"
+        )
+
+
+def _require_committed_post_merge_replay(
+    cycle: Mapping[str, Any], plan: Mapping[str, Any], merged: Mapping[str, Any]
+) -> None:
+    expected = cycle.get("post_merge_ref") or {}
+    actual = {
+        "plan_fingerprint": plan.get("plan_fingerprint"),
+        "attempt_fingerprint": merged.get("state_fingerprint"),
+        "status": merged.get("status"),
+        "merge_sha": merged.get("merge_sha"),
+        "accepted_baseline_fingerprint": merged.get(
+            "accepted_baseline_fingerprint"
+        ),
+        "last_known_good_fingerprint": merged.get("last_known_good_fingerprint"),
+        "baseline_generation_start": merged.get("baseline_generation_start"),
+        "baseline_verification_refs": merged.get("baseline_verification_refs"),
+        "promoted_verification_refs": merged.get("promoted_verification_refs"),
+        "recovery_verification_refs": merged.get("recovery_verification_refs"),
+    }
+    if any(expected.get(key) != value for key, value in actual.items()):
+        raise AnalysisQualityClosedCycleError(
+            "replayed S8 acceptance differs from committed cycle identity"
+        )
+    if merged.get("status") != "accepted":
+        raise AnalysisQualityClosedCycleError(
+            "committed S8 acceptance is no longer valid"
+        )
+
+
 def _pending(state: dict[str, Any], phase: str, identity: Mapping[str, Any]) -> None:
     invocation_fp = fingerprint({"phase": phase, "identity": dict(identity)})
     prior = state.get("pending")
@@ -527,6 +572,7 @@ def run_quality_cycle(
                             return _save_attempt(cycle_path, cycle)
                         continue
                 if s5["loop_status"] == "frozen":
+                    _require_cycle_owned_freeze(cycle, s5)
                     cycle = _commit_phase(cycle_path, cycle, "locked")
                     continue
                 if s5["loop_status"] != "ready":
@@ -713,15 +759,34 @@ def run_quality_cycle(
                     promotion_manifest=manifest,
                     promotion_attempt=promotion,
                 ))
-                run_post_merge(
+                plan = post["plan"]
+                expected_post = cycle.get("post_merge_ref") or {}
+                if plan.get("plan_fingerprint") != expected_post.get("plan_fingerprint"):
+                    raise AnalysisQualityClosedCycleError(
+                        "S8 plan differs from committed cycle identity"
+                    )
+                merged = run_post_merge(
                     source_state_path=s5_path,
                     promotion_manifest=manifest,
                     promotion_provider=promotion_args["provider"],
                     promotion_attempt_path=promotion_attempt_path,
                     **post,
                 )
+                _require_committed_post_merge_replay(cycle, plan, merged)
                 baseline_path = Path(post["baseline_state_path"])
                 lineage = load_baseline_lineage(baseline_path)
+                if (
+                    lineage["current"]["baseline_fingerprint"]
+                    != expected_post["accepted_baseline_fingerprint"]
+                    or lineage["current"]["candidate"]
+                    != locked["current_candidate"]
+                    or lineage.get("last_known_good") is None
+                    or lineage["last_known_good"]["baseline_fingerprint"]
+                    != expected_post["last_known_good_fingerprint"]
+                ):
+                    raise AnalysisQualityClosedCycleError(
+                        "accepted baseline lineage differs from committed S8 identity"
+                    )
                 candidate = lineage["current"]["candidate"]
                 initial = load_state(s5_path)
                 from src.analysis_quality_loop_supervisor import _default_provider
@@ -787,6 +852,7 @@ def run_quality_cycle(
                             "outcome_fingerprint": last_orchestration.get(
                                 "outcome_fingerprint"
                             ),
+                            "decision_provider_id": identity["decision_provider_id"],
                         }
                         cycle["candidate_history"] = load_state(s5_path)[
                             "visited_candidate_ids"

@@ -188,6 +188,14 @@ def test_terminal_cycle_phases_reload_and_unrelated_s5_invocation_is_rejected(
         assert "outside the pending invocation" in str(exc)
     else:
         raise AssertionError("unrelated S5 invocation must not satisfy pending recovery")
+    try:
+        closed_cycle._require_cycle_owned_freeze(
+            {"calibration_refs": []}, {"last_decision": {"next_action": "freeze_candidate"}}
+        )
+    except AnalysisQualityClosedCycleError as exc:
+        assert "lacks this cycle's committed selection evidence" in str(exc)
+    else:
+        raise AssertionError("an unclaimed frozen S5 state must not enter S6")
 
 
 def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
@@ -556,6 +564,59 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
     assert s7_cache["host"].creates == 1
     assert s7_cache["host"].merges == 1
 
+    post_merge_calls = {"count": 0}
+
+    def changed_post_merge_inputs(*, locked_result, promotion_manifest, promotion_attempt):
+        post = post_merge_inputs(
+            locked_result=locked_result,
+            promotion_manifest=promotion_manifest,
+            promotion_attempt=promotion_attempt,
+        )
+        post_merge_calls["count"] += 1
+        if post_merge_calls["count"] == 2:
+            post["plan"] = dict(post["plan"])
+            post["plan"]["plan_fingerprint"] = "f" * 64
+        return post
+
+    try:
+        run_quality_cycle(
+            state_path=state_path,
+            attempt_path=attempt_path,
+            calibration_inputs=calibration_inputs,
+            locked_inputs=locked_inputs,
+            promotion_inputs=promotion_inputs,
+            post_merge_inputs=changed_post_merge_inputs,
+        )
+    except AnalysisQualityClosedCycleError as exc:
+        assert "S8 plan differs" in str(exc)
+    else:
+        raise AssertionError("continuation must reject a changed S8 acceptance plan")
+
+    real_supervisor_step = closed_cycle.run_supervisor_step
+    lost_continuation_reply = {"pending": True}
+
+    def lose_continuation_reply(**kwargs):
+        outcome = real_supervisor_step(**kwargs)
+        if "continuation-" in closed_cycle.Path(kwargs["state_path"]).stem and lost_continuation_reply["pending"]:
+            lost_continuation_reply["pending"] = False
+            raise RuntimeError("simulated lost continuation response after durable state commit")
+        return outcome
+
+    monkeypatch.setattr(closed_cycle, "run_supervisor_step", lose_continuation_reply)
+    try:
+        run_quality_cycle(
+            state_path=state_path,
+            attempt_path=attempt_path,
+            calibration_inputs=calibration_inputs,
+            locked_inputs=locked_inputs,
+            promotion_inputs=promotion_inputs,
+            post_merge_inputs=post_merge_inputs,
+        )
+    except RuntimeError as exc:
+        assert "lost continuation response" in str(exc)
+    else:
+        raise AssertionError("lost continuation response must interrupt the first call")
+    monkeypatch.setattr(closed_cycle, "run_supervisor_step", real_supervisor_step)
     result = run_quality_cycle(
         state_path=state_path,
         attempt_path=attempt_path,
@@ -575,6 +636,9 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
     assert result["accepted_baseline"]["candidate"] == result["final_candidate"]
     assert result["last_known_good"]["candidate"] == result["initial_baseline_candidate"]
     assert result["continuation_ref"]["next_action"] == "continue_calibration"
+    assert result["continuation_ref"]["decision_provider_id"] == (
+        "aq1-fixture-metric-comparison-v1"
+    )
     assert result["continuation_ref"]["candidate"]["candidate_id"] != result["final_candidate"]["candidate_id"]
     assert len(result["calibration_refs"]) == 2
     assert result["calibration_refs"][0]["next_action"] == "continue_calibration"
