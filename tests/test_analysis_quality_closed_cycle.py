@@ -12,6 +12,7 @@ from src.analysis_quality_closed_cycle import (
     run_quality_cycle,
 )
 from src.analysis_quality_loop_state import load_state, save_state_atomic
+from src.analysis_quality_loop_supervisor import AnalysisQualityLoopSupervisorError
 from src.analysis_post_merge import GitRepository
 from tests.test_analysis_quality_loop_supervisor import (
     _aq1_path_b_request,
@@ -1003,6 +1004,39 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
         raise AssertionError("continuation retry must preserve transient failure")
 
     real_supervisor_step = closed_cycle.run_supervisor_step
+    continuation_race = {"done": False, "path": None, "state": None}
+
+    def race_continuation_dispatch(**kwargs):
+        path = closed_cycle.Path(kwargs["state_path"])
+        if "continuation-" in path.stem and not continuation_race["done"]:
+            continuation_race["done"] = True
+            before = load_state(path)
+            continuation_race["path"] = path
+            continuation_race["state"] = before
+            changed = dict(before)
+            changed.pop("state_fingerprint")
+            changed["generation"] = int(before["generation"]) + 1
+            save_state_atomic(path, changed)
+        return real_supervisor_step(**kwargs)
+
+    monkeypatch.setattr(closed_cycle, "run_supervisor_step", race_continuation_dispatch)
+    try:
+        run_quality_cycle(
+            state_path=state_path,
+            attempt_path=attempt_path,
+            calibration_inputs=calibration_inputs,
+            locked_inputs=locked_inputs,
+            promotion_inputs=promotion_inputs,
+            post_merge_inputs=post_merge_inputs,
+        )
+    except AnalysisQualityLoopSupervisorError as exc:
+        assert "state changed before supervisor dispatch" in str(exc)
+    else:
+        raise AssertionError("continuation dispatch must reject a changed pre-dispatch state")
+    assert continuation_race["path"] is not None
+    save_state_atomic(continuation_race["path"], continuation_race["state"])
+    monkeypatch.setattr(closed_cycle, "run_supervisor_step", real_supervisor_step)
+
     lost_continuation_reply = {"pending": True}
 
     def lose_continuation_reply(**kwargs):
@@ -1069,6 +1103,67 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
         post_merge_inputs=post_merge_inputs,
     ) == result
 
+    # Completed replay is bound to the current S5 lineage through the public cycle API.
+    owned_s5 = load_state(state_path)
+    reset_s5 = dict(owned_s5)
+    reset_s5.pop("state_fingerprint")
+    reset_s5["generation"] = int(owned_s5["generation"]) + 1
+    save_state_atomic(state_path, reset_s5)
+    try:
+        run_quality_cycle(
+            state_path=state_path,
+            attempt_path=attempt_path,
+            calibration_inputs=calibration_inputs,
+            locked_inputs=locked_inputs,
+            promotion_inputs=promotion_inputs,
+            post_merge_inputs=post_merge_inputs,
+        )
+    except AnalysisQualityClosedCycleError as exc:
+        assert "different S5 lineage" in str(exc)
+    else:
+        raise AssertionError("completed replay must reject a reset S5 lineage")
+    save_state_atomic(state_path, owned_s5)
+
+    result_path = closed_cycle._result_path(attempt_path)
+    copied_result = dict(result)
+    copied_result["locked_ref"] = dict(copied_result["locked_ref"])
+    copied_result["locked_ref"]["result_fingerprint"] = "8" * 64
+    copied_result["result_fingerprint"] = fingerprint(
+        {key: value for key, value in copied_result.items() if key != "result_fingerprint"}
+    )
+    result_path.write_text(json.dumps(copied_result), encoding="utf-8")
+    try:
+        run_quality_cycle(
+            state_path=state_path,
+            attempt_path=attempt_path,
+            calibration_inputs=calibration_inputs,
+            locked_inputs=locked_inputs,
+            promotion_inputs=promotion_inputs,
+            post_merge_inputs=post_merge_inputs,
+        )
+    except AnalysisQualityClosedCycleError as exc:
+        assert "persisted cycle attempt" in str(exc)
+    else:
+        raise AssertionError("same-cycle copied result must be bound to its owning attempt")
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+
+    # Recreate the durable crash window after result publication but before the
+    # terminal attempt commit, then recover only through the public entry point.
+    crash_attempt = json.loads(attempt_path.read_text(encoding="utf-8"))
+    crash_attempt.pop("attempt_fingerprint")
+    crash_attempt["phase"] = "continuation"
+    crash_attempt["status"] = "running"
+    crash_attempt["pending"] = None
+    closed_cycle._save_attempt(attempt_path, crash_attempt)
+    assert run_quality_cycle(
+        state_path=state_path,
+        attempt_path=attempt_path,
+        calibration_inputs=calibration_inputs,
+        locked_inputs=locked_inputs,
+        promotion_inputs=promotion_inputs,
+        post_merge_inputs=post_merge_inputs,
+    ) == result
+
     foreign_result = dict(result)
     foreign_result["cycle_id"] = "another-completed-cycle"
     foreign_result["result_fingerprint"] = fingerprint(
@@ -1090,3 +1185,33 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
         assert "another cycle" in str(exc)
     else:
         raise AssertionError("completed replay must reject a valid foreign cycle result")
+
+    # Recreate a promotion restart with a replaced S6 artifact; the public cycle
+    # must reject it before the S7 input factory can run.
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+    promotion_restart = json.loads(attempt_path.read_text(encoding="utf-8"))
+    promotion_restart.pop("attempt_fingerprint")
+    promotion_restart["phase"] = "promotion"
+    promotion_restart["status"] = "running"
+    promotion_restart["pending"] = None
+    closed_cycle._save_attempt(attempt_path, promotion_restart)
+    result_path.unlink()
+    locked_path = state_path.with_name(state_path.name + ".locked-result.json")
+    replaced_locked = json.loads(locked_path.read_text(encoding="utf-8"))
+    replaced_locked["result_fingerprint"] = "7" * 64
+    locked_path.write_text(json.dumps(replaced_locked), encoding="utf-8")
+    try:
+        run_quality_cycle(
+            state_path=state_path,
+            attempt_path=attempt_path,
+            calibration_inputs=calibration_inputs,
+            locked_inputs=locked_inputs,
+            promotion_inputs=lambda **_: (_ for _ in ()).throw(
+                AssertionError("replaced S6 artifact must fail before S7 input construction")
+            ),
+            post_merge_inputs=post_merge_inputs,
+        )
+    except AnalysisQualityClosedCycleError as exc:
+        assert "committed S6" in str(exc)
+    else:
+        raise AssertionError("promotion restart must reject a replaced S6 result")
