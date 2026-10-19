@@ -248,8 +248,13 @@ def _replay_committed_promotion(
     state_path: Path,
     manifest: Mapping[str, Any],
     promotion_args: Mapping[str, Any],
+    authority_fingerprint: str,
 ) -> dict[str, Any]:
     expected = cycle.get("promotion_ref") or {}
+    if expected.get("authority_fingerprint") != authority_fingerprint:
+        raise AnalysisQualityClosedCycleError(
+            "S7 attempt authority differs from committed cycle identity"
+        )
     if locked.get("result_fingerprint") != (cycle.get("locked_ref") or {}).get(
         "result_fingerprint"
     ):
@@ -279,6 +284,67 @@ def _replay_committed_promotion(
     return promoted
 
 
+def _promotion_authority_fingerprint(
+    inputs: Mapping[str, Any], manifest: Mapping[str, Any]
+) -> str:
+    repository = inputs["repository"]
+    host = inputs["host"]
+    provider = inputs["provider"]
+    host_repository = getattr(host, "repository", None)
+    return fingerprint(
+        {
+            "attempt_root": str(Path(inputs["attempt_root"]).resolve()),
+            "worktree_root": str(Path(inputs["worktree_root"]).resolve()),
+            "repository_path": str(Path(repository.path).resolve()),
+            "repository_origin": repository.git("remote", "get-url", "origin"),
+            "manifest_repository_id": manifest["repository_id"],
+            "host_repository_id": getattr(host, "repository_id", manifest["repository_id"]),
+            "host_repository": (
+                None if host_repository is None else str(Path(host_repository).resolve())
+            ),
+            "host_type": f"{type(host).__module__}.{type(host).__qualname__}",
+            "provider_type": f"{type(provider).__module__}.{type(provider).__qualname__}",
+            "provider_domain": getattr(provider, "domain", None),
+            "materializer_id": getattr(provider, "materializer_id", None),
+            "materializer_version": getattr(provider, "materializer_version", None),
+        }
+    )
+
+
+def _post_merge_authority_fingerprint(
+    post: Mapping[str, Any], promotion_attempt_path: Path
+) -> str:
+    repository = post["repository"]
+    host = post["host"]
+    provider = post["provider"]
+    host_repository = getattr(host, "repository", None)
+    return fingerprint(
+        {
+            "attempt_root": str(Path(post["attempt_root"]).resolve()),
+            "baseline_state_path": str(Path(post["baseline_state_path"]).resolve()),
+            "verification_root": str(Path(post["verification_root"]).resolve()),
+            "worktree_root": str(Path(post["worktree_root"]).resolve()),
+            "promotion_attempt_path": str(promotion_attempt_path.resolve()),
+            "repository_path": str(Path(repository.path).resolve()),
+            "repository_origin": repository.git("remote", "get-url", "origin"),
+            "host_repository_id": getattr(host, "repository_id", None),
+            "host_repository": (
+                None if host_repository is None else str(Path(host_repository).resolve())
+            ),
+            "host_type": f"{type(host).__module__}.{type(host).__qualname__}",
+            "provider_type": f"{type(provider).__module__}.{type(provider).__qualname__}",
+            "verification_id": getattr(provider, "verification_id", None),
+            "verification_version": getattr(provider, "verification_version", None),
+            "recovery_materializer_id": getattr(
+                provider, "recovery_materializer_id", None
+            ),
+            "recovery_materializer_version": getattr(
+                provider, "recovery_materializer_version", None
+            ),
+        }
+    )
+
+
 def _recovered_orchestration_ref(
     supervisor_state: Mapping[str, Any],
     identity: Mapping[str, Any],
@@ -298,6 +364,7 @@ def _recovered_orchestration_ref(
 def _require_cycle_owned_freeze(
     cycle: Mapping[str, Any], supervisor_state: Mapping[str, Any]
 ) -> None:
+    _require_cycle_owned_ready(cycle, supervisor_state, allow_frozen=True)
     decision = supervisor_state.get("last_decision") or {}
     refs = cycle.get("calibration_refs") or []
     last = refs[-1] if refs else {}
@@ -309,6 +376,28 @@ def _require_cycle_owned_freeze(
     ):
         raise AnalysisQualityClosedCycleError(
             "frozen S5 state lacks this cycle's committed selection evidence"
+        )
+
+
+def _require_cycle_owned_ready(
+    cycle: Mapping[str, Any],
+    supervisor_state: Mapping[str, Any],
+    *,
+    allow_frozen: bool = False,
+) -> None:
+    refs = cycle.get("calibration_refs") or []
+    expected = (
+        refs[-1].get("committed_state_fingerprint")
+        if refs
+        else cycle.get("initial_state_fingerprint")
+    )
+    allowed = {"ready", "frozen"} if allow_frozen else {"ready"}
+    if (
+        supervisor_state.get("loop_status") not in allowed
+        or supervisor_state.get("state_fingerprint") != expected
+    ):
+        raise AnalysisQualityClosedCycleError(
+            "S5 state differs from this cycle's committed calibration lineage"
         )
 
 
@@ -578,6 +667,7 @@ def run_quality_cycle(
             s5 = load_state(s5_path)
 
             if phase == "calibration":
+                retry_only_update = False
                 pending = cycle.get("pending")
                 if pending and pending.get("phase") == phase:
                     identity = pending.get("identity") or {}
@@ -588,47 +678,50 @@ def run_quality_cycle(
                                 cycle["status"] = "held"
                                 cycle["reason"] = "calibration_retry_exhausted"
                                 return _save_attempt(cycle_path, cycle)
-                            _save_attempt(cycle_path, cycle)
-                            continue
-                        current_decision = s5.get("last_decision") or {}
-                        previous_orchestration = _recovered_orchestration_ref(
-                            s5, identity, "S5"
-                        )
-                        recovered = {
-                            "orchestration": {
-                                "outcome_fingerprint": previous_orchestration.get(
-                                    "outcome_fingerprint"
-                                )
-                            },
-                            "decision": current_decision,
-                        }
-                        cycle["calibration_refs"].append(
-                            _ref_from_supervisor(
-                                recovered,
-                                s5,
-                                identity.get("request_fingerprint"),
+                            retry_only_update = True
+                        else:
+                            current_decision = s5.get("last_decision") or {}
+                            previous_orchestration = _recovered_orchestration_ref(
+                                s5, identity, "S5"
                             )
-                        )
-                        cycle["calibration_refs"][-1]["candidate"] = identity[
-                            "active_candidate"
-                        ]
-                        cycle["calibration_refs"][-1]["decision_provider_id"] = identity[
-                            "decision_provider_id"
-                        ]
-                        cycle["candidate_history"] = list(s5["visited_candidate_ids"])
-                        action = current_decision.get("next_action")
-                        cycle = _commit_phase(
-                            cycle_path,
-                            cycle,
-                            "locked" if action == "freeze_candidate" else "calibration",
-                        )
-                        if current_decision.get("decision_status") != "ready" or action not in {
-                            "continue_calibration", "freeze_candidate"
-                        }:
-                            cycle["status"] = "held"
-                            cycle["reason"] = "calibration_decision_not_actionable"
-                            return _save_attempt(cycle_path, cycle)
-                        continue
+                            recovered = {
+                                "orchestration": {
+                                    "outcome_fingerprint": previous_orchestration.get(
+                                        "outcome_fingerprint"
+                                    )
+                                },
+                                "decision": current_decision,
+                            }
+                            cycle["calibration_refs"].append(
+                                _ref_from_supervisor(
+                                    recovered,
+                                    s5,
+                                    identity.get("request_fingerprint"),
+                                )
+                            )
+                            cycle["calibration_refs"][-1]["candidate"] = identity[
+                                "active_candidate"
+                            ]
+                            cycle["calibration_refs"][-1]["committed_state_fingerprint"] = s5[
+                                "state_fingerprint"
+                            ]
+                            cycle["calibration_refs"][-1]["decision_provider_id"] = identity[
+                                "decision_provider_id"
+                            ]
+                            cycle["candidate_history"] = list(s5["visited_candidate_ids"])
+                            action = current_decision.get("next_action")
+                            cycle = _commit_phase(
+                                cycle_path,
+                                cycle,
+                                "locked" if action == "freeze_candidate" else "calibration",
+                            )
+                            if current_decision.get("decision_status") != "ready" or action not in {
+                                "continue_calibration", "freeze_candidate"
+                            }:
+                                cycle["status"] = "held"
+                                cycle["reason"] = "calibration_decision_not_actionable"
+                                return _save_attempt(cycle_path, cycle)
+                            continue
                 if s5["loop_status"] == "frozen":
                     _require_cycle_owned_freeze(cycle, s5)
                     cycle = _commit_phase(cycle_path, cycle, "locked")
@@ -637,6 +730,8 @@ def run_quality_cycle(
                     cycle["status"] = "held"
                     cycle["reason"] = f"calibration_{s5['loop_status']}"
                     return _save_attempt(cycle_path, cycle)
+                if not retry_only_update:
+                    _require_cycle_owned_ready(cycle, s5)
                 inputs = dict(calibration_inputs(state_path=s5_path, state=s5))
                 policy_id = _provider_id(inputs)
                 request = inputs.get("request")
@@ -665,6 +760,7 @@ def run_quality_cycle(
                 post_state = load_state(s5_path)
                 ref = _ref_from_supervisor(result, post_state, request_fp)
                 ref["candidate"] = evaluated_candidate
+                ref["committed_state_fingerprint"] = post_state["state_fingerprint"]
                 ref["decision_provider_id"] = policy_id
                 cycle["calibration_refs"].append(ref)
                 cycle["candidate_history"] = list(post_state["visited_candidate_ids"])
@@ -730,11 +826,19 @@ def run_quality_cycle(
                 inputs = dict(promotion_inputs(locked_result=locked))
                 manifest = inputs.pop("manifest")
                 _require_simulation_repository(inputs, manifest)
-                _pending(cycle, phase, {"manifest_fingerprint": manifest["manifest_fingerprint"], "locked_result_fingerprint": locked["result_fingerprint"]})
+                authority_fingerprint = _promotion_authority_fingerprint(
+                    inputs, manifest
+                )
+                _pending(cycle, phase, {
+                    "manifest_fingerprint": manifest["manifest_fingerprint"],
+                    "locked_result_fingerprint": locked["result_fingerprint"],
+                    "authority_fingerprint": authority_fingerprint,
+                })
                 _save_attempt(cycle_path, cycle)
                 promoted = run_promotion(source_state_path=s5_path, manifest=manifest, **inputs)
                 cycle["promotion_ref"] = {
                     "manifest_fingerprint": manifest["manifest_fingerprint"],
+                    "authority_fingerprint": authority_fingerprint,
                     "attempt_fingerprint": promoted["state_fingerprint"],
                     "status": promoted["status"],
                     "pr_number": promoted.get("pr_number"),
@@ -763,12 +867,16 @@ def run_quality_cycle(
                 promotion_args = dict(promotion_inputs(locked_result=locked))
                 manifest = promotion_args.pop("manifest")
                 _require_simulation_repository(promotion_args, manifest)
+                authority_fingerprint = _promotion_authority_fingerprint(
+                    promotion_args, manifest
+                )
                 promotion = _replay_committed_promotion(
                     cycle=cycle,
                     locked=locked,
                     state_path=s5_path,
                     manifest=manifest,
                     promotion_args=promotion_args,
+                    authority_fingerprint=authority_fingerprint,
                 )
                 promotion_attempt_path = Path(promotion_args["attempt_root"]) / manifest["manifest_fingerprint"] / "attempt.json"
                 post = dict(post_merge_inputs(
@@ -777,7 +885,14 @@ def run_quality_cycle(
                     promotion_attempt=promotion,
                 ))
                 plan = post["plan"]
-                _pending(cycle, phase, {"plan_fingerprint": plan["plan_fingerprint"], "merge_sha": promotion.get("merge_sha")})
+                post_authority_fingerprint = _post_merge_authority_fingerprint(
+                    post, promotion_attempt_path
+                )
+                _pending(cycle, phase, {
+                    "plan_fingerprint": plan["plan_fingerprint"],
+                    "merge_sha": promotion.get("merge_sha"),
+                    "authority_fingerprint": post_authority_fingerprint,
+                })
                 _save_attempt(cycle_path, cycle)
                 merged = run_post_merge(
                     source_state_path=s5_path,
@@ -788,6 +903,7 @@ def run_quality_cycle(
                 )
                 cycle["post_merge_ref"] = {
                     "plan_fingerprint": plan["plan_fingerprint"],
+                    "authority_fingerprint": post_authority_fingerprint,
                     "attempt_fingerprint": merged["state_fingerprint"],
                     "status": merged["status"],
                     "merge_sha": merged.get("merge_sha"),
@@ -811,12 +927,16 @@ def run_quality_cycle(
                 promotion_args = dict(promotion_inputs(locked_result=locked))
                 manifest = promotion_args.pop("manifest")
                 _require_simulation_repository(promotion_args, manifest)
+                authority_fingerprint = _promotion_authority_fingerprint(
+                    promotion_args, manifest
+                )
                 promotion = _replay_committed_promotion(
                     cycle=cycle,
                     locked=locked,
                     state_path=s5_path,
                     manifest=manifest,
                     promotion_args=promotion_args,
+                    authority_fingerprint=authority_fingerprint,
                 )
                 promotion_attempt_path = Path(promotion_args["attempt_root"]) / manifest["manifest_fingerprint"] / "attempt.json"
                 post = dict(post_merge_inputs(
@@ -826,6 +946,15 @@ def run_quality_cycle(
                 ))
                 plan = post["plan"]
                 expected_post = cycle.get("post_merge_ref") or {}
+                post_authority_fingerprint = _post_merge_authority_fingerprint(
+                    post, promotion_attempt_path
+                )
+                if post_authority_fingerprint != expected_post.get(
+                    "authority_fingerprint"
+                ):
+                    raise AnalysisQualityClosedCycleError(
+                        "S8 attempt authority differs from committed cycle identity"
+                    )
                 if plan.get("plan_fingerprint") != expected_post.get("plan_fingerprint"):
                     raise AnalysisQualityClosedCycleError(
                         "S8 plan differs from committed cycle identity"
@@ -896,7 +1025,6 @@ def run_quality_cycle(
                                 cycle["status"] = "held"
                                 cycle["reason"] = "continuation_retry_exhausted"
                                 return _save_attempt(cycle_path, cycle)
-                            _save_attempt(cycle_path, cycle)
                             continue
                         current_decision = continuation_state.get("last_decision") or {}
                         last_orchestration = _recovered_orchestration_ref(

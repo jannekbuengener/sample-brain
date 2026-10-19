@@ -256,6 +256,58 @@ def test_s9_temporary_path_component_does_not_authorize_persistent_repository(
         raise AssertionError("a tmp-named child of a persistent root is not temporary")
 
 
+def test_s9_attempt_authority_fingerprints_bind_durable_storage(tmp_path):
+    class Repository:
+        path = tmp_path / "repository"
+
+        @staticmethod
+        def git(*_):
+            return "https://github.com/example/repo.git"
+
+    class Host:
+        repository_id = "example/repo"
+        repository = Repository.path
+
+    class Provider:
+        domain = "aq1.tempo"
+        materializer_id = "materializer-v1"
+        materializer_version = "1.0"
+        verification_id = "verify-v1"
+        verification_version = "1.0"
+        recovery_materializer_id = "recover-v1"
+        recovery_materializer_version = "1.0"
+
+    inputs = {
+        "repository": Repository(),
+        "host": Host(),
+        "provider": Provider(),
+        "attempt_root": tmp_path / "s7-attempts",
+        "worktree_root": tmp_path / "s7-worktrees",
+    }
+    manifest = {"repository_id": "example/repo"}
+    s7_fingerprint = closed_cycle._promotion_authority_fingerprint(inputs, manifest)
+    inputs["attempt_root"] = tmp_path / "alternate-s7-attempts"
+    assert closed_cycle._promotion_authority_fingerprint(inputs, manifest) != s7_fingerprint
+
+    post = {
+        "repository": Repository(),
+        "host": Host(),
+        "provider": Provider(),
+        "attempt_root": tmp_path / "s8-attempts",
+        "baseline_state_path": tmp_path / "baseline.json",
+        "verification_root": tmp_path / "verification",
+        "worktree_root": tmp_path / "s8-worktrees",
+    }
+    promotion_attempt_path = tmp_path / "s7-attempts" / "attempt.json"
+    s8_fingerprint = closed_cycle._post_merge_authority_fingerprint(
+        post, promotion_attempt_path
+    )
+    post["baseline_state_path"] = tmp_path / "alternate-baseline.json"
+    assert closed_cycle._post_merge_authority_fingerprint(
+        post, promotion_attempt_path
+    ) != s8_fingerprint
+
+
 def test_terminal_cycle_phases_reload_and_unrelated_s5_invocation_is_rejected(
     tmp_path,
 ):
@@ -288,7 +340,12 @@ def test_terminal_cycle_phases_reload_and_unrelated_s5_invocation_is_rejected(
         raise AssertionError("unrelated S5 invocation must not satisfy pending recovery")
     try:
         closed_cycle._require_cycle_owned_freeze(
-            {"calibration_refs": []}, {"last_decision": {"next_action": "freeze_candidate"}}
+            {"calibration_refs": [], "initial_state_fingerprint": "s5-state"},
+            {
+                "state_fingerprint": "s5-state",
+                "loop_status": "frozen",
+                "last_decision": {"next_action": "freeze_candidate"},
+            },
         )
     except AnalysisQualityClosedCycleError as exc:
         assert "lacks this cycle's committed selection evidence" in str(exc)
@@ -302,6 +359,7 @@ def test_terminal_cycle_phases_reload_and_unrelated_s5_invocation_is_rejected(
                         "next_action": "freeze_candidate",
                         "decision_fingerprint": "expected",
                         "candidate": {"candidate_id": "expected"},
+                        "committed_state_fingerprint": "s5-state",
                     }
                 ]
             },
@@ -310,6 +368,8 @@ def test_terminal_cycle_phases_reload_and_unrelated_s5_invocation_is_rejected(
                     "next_action": "freeze_candidate",
                     "decision_fingerprint": "foreign",
                 },
+                "state_fingerprint": "s5-state",
+                "loop_status": "frozen",
                 "active_candidate": {"candidate_id": "foreign"},
             },
         )
@@ -317,6 +377,22 @@ def test_terminal_cycle_phases_reload_and_unrelated_s5_invocation_is_rejected(
         assert "lacks this cycle's committed selection evidence" in str(exc)
     else:
         raise AssertionError("a different frozen decision must not enter S6")
+    initial = _fresh_aq1_state()
+    closed_cycle._require_cycle_owned_ready(
+        {"initial_state_fingerprint": initial["state_fingerprint"], "calibration_refs": []},
+        initial,
+    )
+    changed_ready = dict(initial)
+    changed_ready["state_fingerprint"] = "external-advance"
+    try:
+        closed_cycle._require_cycle_owned_ready(
+            {"initial_state_fingerprint": initial["state_fingerprint"], "calibration_refs": []},
+            changed_ready,
+        )
+    except AnalysisQualityClosedCycleError as exc:
+        assert "committed calibration lineage" in str(exc)
+    else:
+        raise AssertionError("an unclaimed ready S5 advance must not be evaluated")
 
 
 def test_retry_only_s5_update_is_distinguished_from_committed_decision():
@@ -737,6 +813,25 @@ def test_cycle_composes_real_aq1_s5_s6_with_s7_s8_and_continuation(
         raise AssertionError("S8 replay must reject a changed S7 manifest")
     assert s7_cache["host"].creates == 1
     assert s7_cache["host"].merges == 1
+
+    def changed_post_merge_authority(**kwargs):
+        post = post_merge_inputs(**kwargs)
+        post["attempt_root"] = tmp_path / "alternate-s8-attempts"
+        return post
+
+    try:
+        run_quality_cycle(
+            state_path=state_path,
+            attempt_path=attempt_path,
+            calibration_inputs=calibration_inputs,
+            locked_inputs=locked_inputs,
+            promotion_inputs=promotion_inputs,
+            post_merge_inputs=changed_post_merge_authority,
+        )
+    except AnalysisQualityClosedCycleError as exc:
+        assert "pending cycle invocation identity mismatch" in str(exc)
+    else:
+        raise AssertionError("S8 replay must reject a changed attempt authority")
 
     post_merge_calls = {"count": 0}
 
