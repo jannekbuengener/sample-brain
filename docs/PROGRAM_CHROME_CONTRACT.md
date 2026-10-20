@@ -97,7 +97,7 @@ Classification of common chrome / historical terms:
 #831/#1077 must implement that table; they must not invent a parallel Live Kit domain or
 materialization path from program chrome.
 
-**Arrangement** mode navigation is gated by docs-frozen `arrangement_mode_enabled` (default False; see `WORKBENCH_FEATURE_SETTINGS.md`) and later #1078/#1082 eligibility. **Live** remains unavailable / parked under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) until explicit re-entry.
+**Arrangement** mode navigation is gated by runtime-backed `arrangement_mode_enabled` (default False; see `WORKBENCH_FEATURE_SETTINGS.md`) plus the #1078/#1082 eligibility contracts; remaining product/QML delivery is owned by #1080. **Live** remains unavailable / parked under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) until explicit re-entry.
 
 ## Footer reuse
 

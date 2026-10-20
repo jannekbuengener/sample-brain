@@ -1,6 +1,6 @@
 # CURRENT_STATUS
 
-**Last reconciled:** 2026-10-07
+**Last reconciled:** 2026-10-20
 
 ## Truth Rule
 
@@ -17,16 +17,23 @@ Do **not** infer current issue counts, PR counts, or the current `main` SHA from
 
 ## Current Operational Picture
 
-At the 2026-10-07 reconciliation, durable system state is as follows. This is orientation, not a frozen issue count; query GitHub before execution. Open issues are not automatically active work.
+At the 2026-10-20 reconciliation, durable system state is as follows. This is orientation, not a frozen issue count; query GitHub before execution. Open issues are not automatically active work.
 
 ### Current product navigation (Edit → Arrangement → later Live)
 
 - Product sequence authority: [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076) + [`docs/PRODUCT_WORKFLOW_CANON.md`](../docs/PRODUCT_WORKFLOW_CANON.md).
-- Arrangement owner: [#679](https://github.com/jannekbuengener/sample-brain/issues/679) — **ACTIVE** (Owner-reactivated 2026-10-07).
-- Later Live: [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) — parked until Arrangement delivery + Owner gates.
+- Arrangement owner: [#679](https://github.com/jannekbuengener/sample-brain/issues/679) — **ACTIVE / RECONCILED**. Product/contract/domain/transition foundations #1076, #1078/#1079 and #1082–#1087 are delivered; [#1080](https://github.com/jannekbuengener/sample-brain/issues/1080) is the remaining active QML/Sequencer-Timeline product-integration blocker.
+- Later Live: [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) — **PARKED** as a separate follow-on; it does not block #679 completion and requires explicit re-entry.
 - Edit tools / Live Kit: [#1069](https://github.com/jannekbuengener/sample-brain/issues/1069)–[#1073](https://github.com/jannekbuengener/sample-brain/issues/1073), [#1077](https://github.com/jannekbuengener/sample-brain/issues/1077).
 - Closed [#691](https://github.com/jannekbuengener/sample-brain/issues/691) is delivered historical authority, not an active parent. Closed [#494](https://github.com/jannekbuengener/sample-brain/issues/494) and [#703](https://github.com/jannekbuengener/sample-brain/issues/703) are historical governance evidence.
 - #905 Single Workspace exclusive-nav thesis is historical / superseded on conflict; progressive disclosure evidence remains in [`docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](../docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md).
+
+### Analyzer quality automation — delivered through S8; closed-cycle proof active
+
+- Program owner [#1040](https://github.com/jannekbuengener/sample-brain/issues/1040) remains **OPEN**.
+- Delivered reusable chain on `main`: #1043 decision contract, #1054 headless run, #1060 orchestration binder, #1064 bounded CALIBRATION iterator, #1097 persistent supervisor state, S6 [#1170](https://github.com/jannekbuengener/sample-brain/issues/1170) locked TEST/HOLDOUT, S7 [#1176](https://github.com/jannekbuengener/sample-brain/issues/1176) promotion controller, and S8 [#1178](https://github.com/jannekbuengener/sample-brain/issues/1178) post-merge verification / LAST_KNOWN_GOOD recovery.
+- Current remaining delivery object is S9 [#1182](https://github.com/jannekbuengener/sample-brain/issues/1182): the first autonomous closed-cycle composition proof. It is not durable shipped state until its normal PR/CI/review/merge/post-merge gates complete.
+- `production_authorized=false` remains invariant. S9 is a bounded composition proof, not a claim of production analyzer quality or authorization.
 
 ### Shipped — Workbench Library / Live Kit runtime capabilities (historical “Screen 1” delivery)
 
@@ -43,8 +50,8 @@ Workbench Library/Live Kit surfaces on `main` include Calm/Clean Start, compact 
 - [#469](https://github.com/jannekbuengener/sample-brain/issues/469) — VST3 integration is explicitly **parked / not active**.
 - [#74](https://github.com/jannekbuengener/sample-brain/issues/74) — upstream sqlite-vec ANN readiness tracker only; no private ANN replacement.
 - [#615](https://github.com/jannekbuengener/sample-brain/issues/615) / [#620](https://github.com/jannekbuengener/sample-brain/issues/620) — Bitwig is an **R&D playground only**, not a Sample-Brain product integration decision.
-- [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) — later **Live** performance perspective — **PARKED** until Arrangement delivery + Owner gates.
-- [#680](https://github.com/jannekbuengener/sample-brain/issues/680) — vocal/beatbox → sample-pattern is **parked / future R&D**.
+- [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) — later **Live** performance perspective — **PARKED** as a separate follow-on; explicit re-entry required.
+- [#680](https://github.com/jannekbuengener/sample-brain/issues/680) — **ACTIVE / UNPARKED R&D** for the future vocal/beatbox → sample-pattern input mode (explicit Owner-GO 2026-10-03); it is not an Arrangement delivery blocker.
 
 Closed historical work such as #392, #405, #503, #579, #196, #198, #73, #494, #691, and #703 remains useful evidence but is not active roadmap work.
 

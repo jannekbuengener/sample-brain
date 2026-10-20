@@ -22,7 +22,7 @@ Auf `main` sind unter anderem verfügbar:
 - Workbench (Library, Preview, Matching, Live Kit) mit QML-Produktionsrichtung (`LOCK_PYSIDE6_QML`; Start via `workbench --qml-screen1`),
 - Channel Rack / Pattern-Domain (Pattern/Trigger über Live-Kit-Kanäle) auf `main` (historische Delivery #675/#678).
 
-**Nicht als fertig dargestellt werden:** geparktes VST3, Realtime Fit & Transform, Arrangement-Runtime/UI (Owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679) ist ACTIVE, Delivery läuft über Contract-/Domain-Children), later Live ([#1088](https://github.com/jannekbuengener/sample-brain/issues/1088)), und alle Funktionen, deren Evidence noch nicht für einen Produktionsclaim reicht. Geschlossenes [#908](https://github.com/jannekbuengener/sample-brain/issues/908) ist historische Rack-Projektions-Evidence. Die detaillierte Statusmatrix steht direkt im nächsten Abschnitt.
+**Nicht als fertig dargestellt werden:** geparktes VST3, Realtime Fit & Transform, die Arrangement-QML/Produktoberfläche (Owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679) ist ACTIVE; Product-/Contract-/Domain-/Transition-Grundlagen #1076/#1078/#1079/#1082–#1087 sind geliefert, verbleibender aktiver UI-Blocker ist [#1080](https://github.com/jannekbuengener/sample-brain/issues/1080)), later Live ([#1088](https://github.com/jannekbuengener/sample-brain/issues/1088)), und alle Funktionen, deren Evidence noch nicht für einen Produktionsclaim reicht. Geschlossenes [#908](https://github.com/jannekbuengener/sample-brain/issues/908) ist historische Rack-Projektions-Evidence. Die detaillierte Statusmatrix steht direkt im nächsten Abschnitt.
 
 ### Meine Rolle / AI-assisted Development Model
 
@@ -130,7 +130,7 @@ Für die Produktstory und Entscheidungen siehe [Case Study](docs/CASE_STUDY.md).
 | **Stem Separation** | 🧪 optional / experimentell | Technisch validiert: `htdemucs` & `htdemucs_ft` getestet (8/8 Runs), blinder Hörvergleich: `htdemucs` 4/4 bevorzugt, ~2× schneller (`docs/STEM_MODEL_BENCHMARK_V1.md`). Weight-Status für beide Modelle: **RESEARCH_ONLY / COMMERCIAL_USE_NOT_GRANTED** — deshalb **kein** Produktions-Default. Optionaler Stem-Pfad in Deconstruction/Packs existiert; Core-Flow bleibt ohne Stem-Pflicht. |
 | **Workbench (Edit)** | ✅ verfügbar | Edit-Mode: Library, Preview, Matching, klassisches Live Kit als Tool, Harmonie-Finder. **Produktionsrichtung Visuals:** PySide6 / Qt Quick / QML (`LOCK_PYSIDE6_QML`, `src/workbench_qml.py`, Start: `workbench --qml-screen1`). **Tkinter** (`workbench` ohne Flag) bleibt funktionaler Default sowie Legacy-/Fallback- und Verhaltensreferenz — nicht die Autorisierung für neue Workbench-Visuals. |
 | **Channel Rack / Pattern domain** | ✅ verfügbar | Pattern/Trigger-Domain auf `main` (Python-Core + QML; historische Delivery #675/#678/#908). Produktseitig gehört der Step Sequencer zu **Arrangement** (#679); dieser Status-Claim ist Runtime-Foundation, nicht Arrangement-UI-Fertigstellung. |
-| **Arrangement** | 🚧 ACTIVE Owner / Delivery offen | Owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679) **ACTIVE**; Contracts/Domain/UI über Children (#1082–#1084). Feature-Key `arrangement_mode_enabled` ist Docs-Freeze (default False) — noch kein Runtime-Consumer in diesem Slice. |
+| **Arrangement** | 🚧 ACTIVE / UI noch offen | Owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679) **ACTIVE**; Product-/Contract-/Domain-/Transition-Grundlagen (#1076, #1078/#1079, #1082–#1087) sind geliefert. Verbleibender aktiver Blocker ist [#1080](https://github.com/jannekbuengener/sample-brain/issues/1080) — QML Arrangement shell + Sequencer/Timeline projection. `arrangement_mode_enabled` existiert als Python-/QML-Runtime-Gate und bleibt standardmäßig `False`. |
 | **Live** | 🚧 later / geparkt | Later performance perspective unter [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088); nicht Top-Level-Peer zu Live Kit oder Sequencer. |
 | **VST3 / Realtime Transform** | 🚧 geparkt / nicht shipped | VST3 / Host-Plugin ist **geparkt** und kein Primärpfad. Realtime Fit & Transform ist Zielvision, nicht als fertiges Produkt shipped. |
 
@@ -140,8 +140,8 @@ Für die Produktstory und Entscheidungen siehe [Case Study](docs/CASE_STUDY.md).
 
 - VST3 / Host-Plugin (geparkt, nicht aktiver Primärpfad)
 - Realtime Fit & Transform Engine
-- Arrangement Runtime/UI (Owner #679 **ACTIVE**; Delivery über Contract-/Domain-Children — nicht als fertiges Produkt claimen)
-- later Live (#1088, geparkt bis Arrangement-Delivery + Owner-Gates)
+- Arrangement-QML/Produktoberfläche ([#1080](https://github.com/jannekbuengener/sample-brain/issues/1080); Grundlagen #1076/#1078/#1079/#1082–#1087 geliefert — nicht als fertiges Arrangement-Produkt claimen)
+- later Live (#1088, separater geparkter Follow-on; explizite Reaktivierung erforderlich)
 - Stem-Produktions-Default (Weight-Lizenz blockiert kommerziellen Default; optionaler technischer Pfad existiert)
 - CLAP-Qualität auf echten Producer-Libraries ist noch nicht validiert; aktuelle Tier-B-Evidence (historisch #216/#217 gemessen, #219 konsolidiert) ist synthetisch (6/6 Klassen, Text + Audio getrennt).
 - Relative Key / Camelot / Circle-of-Fifths Kompatibilität im Matching

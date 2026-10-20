@@ -1,6 +1,6 @@
 # ACTIVE_ROADMAP
 
-**Last reconciled:** 2026-10-07
+**Last reconciled:** 2026-10-20
 
 ## How to Use This Roadmap
 
@@ -14,13 +14,21 @@ This roadmap intentionally groups durable work rather than mirroring every open 
 
 ### Active — Edit → Arrangement → later Live product track
 
-Product-navigation authority is Edit → Arrangement → later Live ([#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076), [`PRODUCT_WORKFLOW_CANON.md`](../docs/PRODUCT_WORKFLOW_CANON.md)). Arrangement owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679) is **ACTIVE**. Next Arrangement contract wave: [#1082](https://github.com/jannekbuengener/sample-brain/issues/1082)–[#1084](https://github.com/jannekbuengener/sample-brain/issues/1084). Later Live stays parked under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088).
+Product-navigation authority is Edit → Arrangement → later Live ([#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076), [`PRODUCT_WORKFLOW_CANON.md`](../docs/PRODUCT_WORKFLOW_CANON.md)). Arrangement owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679) is **ACTIVE / RECONCILED**. Product/contract/domain/transition foundations #1076, #1078/#1079 and #1082–#1087 are delivered; the remaining active Arrangement blocker is [#1080](https://github.com/jannekbuengener/sample-brain/issues/1080) for the QML shell + sequencer/timeline projection. Later Live stays parked separately under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) and does not block #679 completion.
 
 Authorized historical Workbench UI delivery under [#691](https://github.com/jannekbuengener/sample-brain/issues/691) is complete on `main`. Closed #691 / #905-era exclusive Single Workspace nav are **historical evidence**, not the current exclusive product route. New Workbench product work requires a scoped child under [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#679](https://github.com/jannekbuengener/sample-brain/issues/679) / [#1069](https://github.com/jannekbuengener/sample-brain/issues/1069) plus live GitHub confirmation.
 
 Closed governance/audit campaigns [#494](https://github.com/jannekbuengener/sample-brain/issues/494) and [#703](https://github.com/jannekbuengener/sample-brain/issues/703) are historical evidence, not active campaigns.
 
 Do not restore Screen 1/2/3 page navigation or exclusive Single-Workspace-only modes as current authority.
+
+### Active — Analyzer quality automation closed-cycle proof
+
+Program owner [#1040](https://github.com/jannekbuengener/sample-brain/issues/1040) remains open. The reusable automation chain is delivered through S8: #1043/#1054/#1060/#1064/#1097 plus S6 [#1170](https://github.com/jannekbuengener/sample-brain/issues/1170), S7 [#1176](https://github.com/jannekbuengener/sample-brain/issues/1176), and S8 [#1178](https://github.com/jannekbuengener/sample-brain/issues/1178). The current remaining delivery slice is S9 [#1182](https://github.com/jannekbuengener/sample-brain/issues/1182), which composes the first autonomous closed-cycle proof. Do not describe S9 as shipped before normal PR/CI/review/merge/post-merge completion. `production_authorized=false` remains invariant, and the proof is not a production-quality claim.
+
+### Active R&D — Vocal/Beatbox → Sample Pattern
+
+[#680](https://github.com/jannekbuengener/sample-brain/issues/680) is **ACTIVE / UNPARKED R&D** within its existing Owner-authorized scope. It remains separate from Arrangement delivery and does not authorize microphone UI, cloud inference, model training, independent pattern generation, Arrangement, Mixer, external-DAW or pitch/stretch expansion.
 
 ### Shipped — Workbench Library / Live Kit cluster (historical “Screen 1”)
 
@@ -42,8 +50,7 @@ Python/session/sequencer foundations and Channel Rack QML are **DONE** on `main`
 - [#74](https://github.com/jannekbuengener/sample-brain/issues/74) — external upstream sqlite-vec ANN tracker only; NumPy remains the default search backend; no private ANN substitute.
 - [#469](https://github.com/jannekbuengener/sample-brain/issues/469) — VST3 product integration is parked.
 - [#615](https://github.com/jannekbuengener/sample-brain/issues/615) / [#620](https://github.com/jannekbuengener/sample-brain/issues/620) — Bitwig work is R&D/playground only; no product integration.
-- [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) — later Live is **PARKED** until Arrangement delivery + Owner gates.
-- [#680](https://github.com/jannekbuengener/sample-brain/issues/680) — vocal/beatbox input-mode remains future R&D — not a current delivery blocker.
+- [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) — later Live is **PARKED** as a separate follow-on; explicit re-entry required.
 
 Closed #392/#405/#503/#579/#196/#198/#73/#494/#703/#468 are historical evidence, not current roadmap items.
 

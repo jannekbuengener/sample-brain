@@ -62,8 +62,8 @@ Later performance perspective after Arrangement. Design/layout/MIDI/multi-track 
 | Library / Sources + Browser + Harmonic Matches | Browse, select, and match samples in Edit | Partial/shipped QML Workbench shell; Tk remains default/fallback; `LOCK_PYSIDE6_QML` for new visuals |
 | Live Kit | Assign samples into canonical kit slots (Edit tool) | Edit-module path [#1077](https://github.com/jannekbuengener/sample-brain/issues/1077) (`WORKBENCH_LIVE_KIT_EDIT_CONTRACT.md`); historical bottom co-host [#908](https://github.com/jannekbuengener/sample-brain/issues/908) is not current Edit authority |
 | Channel Rack / Pattern / Step-Sequencer | Program patterns/triggers over kit-referenced and user channels | Domain foundations **DONE** — historical delivery [#675](https://github.com/jannekbuengener/sample-brain/issues/675)/[#678](https://github.com/jannekbuengener/sample-brain/issues/678). Product placement: Arrangement workflow (not a top-level mode; not mandatory Edit Live Kit content) |
-| Arrangement | Song-structure mode after Edit / Kit | **ACTIVE** owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679); next contracts [#1082](https://github.com/jannekbuengener/sample-brain/issues/1082)–[#1084](https://github.com/jannekbuengener/sample-brain/issues/1084); broader children [#1082](https://github.com/jannekbuengener/sample-brain/issues/1082)–[#1087](https://github.com/jannekbuengener/sample-brain/issues/1087) |
-| Live | Later performance perspective | **PARKED** under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) until Arrangement delivery + Owner gates |
+| Arrangement | Song-structure mode after Edit / Kit | **ACTIVE / RECONCILED** owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679); #1076, #1078/#1079 and #1082–#1087 delivered; remaining active QML/product integration [#1080](https://github.com/jannekbuengener/sample-brain/issues/1080) |
+| Live | Later performance perspective | **PARKED** under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) as a separate follow-on; explicit re-entry required |
 
 Historical issues/PRs may still say “Screen 1 / Screen 2 / Screen 3” as delivery evidence. That wording is not current product-navigation authority.
 
@@ -114,11 +114,9 @@ Foundation gates that unlocked Channel Rack domain UI (technical readiness; deli
 
 ### Current product follow-ups (Edit → Arrangement → later Live)
 
-1. Canon / open-issue boundary freeze — [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076) under [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075)
-2. Edit Live Kit module — [#1077](https://github.com/jannekbuengener/sample-brain/issues/1077); Edit docking/DnD — [#1069](https://github.com/jannekbuengener/sample-brain/issues/1069)–[#1073](https://github.com/jannekbuengener/sample-brain/issues/1073)
-3. Arrangement contract wave — [#1082](https://github.com/jannekbuengener/sample-brain/issues/1082) / [#1083](https://github.com/jannekbuengener/sample-brain/issues/1083) / [#1084](https://github.com/jannekbuengener/sample-brain/issues/1084) (after #1076)
-4. Arrangement domain + transition + visual/QML — [#1085](https://github.com/jannekbuengener/sample-brain/issues/1085)–[#1087](https://github.com/jannekbuengener/sample-brain/issues/1087), [#1078](https://github.com/jannekbuengener/sample-brain/issues/1078), [#1079](https://github.com/jannekbuengener/sample-brain/issues/1079), [#1080](https://github.com/jannekbuengener/sample-brain/issues/1080)
-5. Later Live — [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) after Arrangement delivery
+1. **Delivered Arrangement foundations:** [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076), [#1078](https://github.com/jannekbuengener/sample-brain/issues/1078)/[#1079](https://github.com/jannekbuengener/sample-brain/issues/1079), and [#1082](https://github.com/jannekbuengener/sample-brain/issues/1082)–[#1087](https://github.com/jannekbuengener/sample-brain/issues/1087). Do not route new work back into these completed slices.
+2. **Remaining active Arrangement delivery:** [#1080](https://github.com/jannekbuengener/sample-brain/issues/1080) — QML Arrangement shell + sequencer/timeline projection over the delivered Python-owned foundations.
+3. **Later Live:** [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) — **PARKED** as a separate follow-on; explicit re-entry required.
 
 Closed [#908](https://github.com/jannekbuengener/sample-brain/issues/908) is historical bottom Rack projection evidence (geometry superseded by [#954](https://github.com/jannekbuengener/sample-brain/issues/954) where relevant), not an open product epic.
 
@@ -143,7 +141,7 @@ Existing runtime seams that still use screen-transition names (for example `ente
 | Product sequence / navigation | This file + [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076) |
 | Edit progressive disclosure / geometry evidence | [`WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md) (exclusive nav thesis superseded where conflicting) |
 | Program chrome modes vs tools | [`PROGRAM_CHROME_CONTRACT.md`](PROGRAM_CHROME_CONTRACT.md) |
-| Functional settings (`arrangement_mode_enabled` docs freeze) | [`WORKBENCH_FEATURE_SETTINGS.md`](WORKBENCH_FEATURE_SETTINGS.md) |
+| Functional settings (`arrangement_mode_enabled` runtime-backed gate, default False) | [`WORKBENCH_FEATURE_SETTINGS.md`](WORKBENCH_FEATURE_SETTINGS.md) |
 | Realtime Workbench boundary | `docs/REALTIME_WORKBENCH_SCOPE.md` |
 | Workbench QML renderer lock | `LOCK_PYSIDE6_QML` in `docs/TARGET_ARCHITECTURE.md` |
 | Session ownership (step 2 — done) | [`SESSION_OWNERSHIP_CONTRACT.md`](SESSION_OWNERSHIP_CONTRACT.md), `src/workbench_session.py` |
