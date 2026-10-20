@@ -10,6 +10,17 @@ Use GitHub live for current execution/PR state.
 Quick navigation for reviewing the repository. Product-facing docs are listed first;
 internal agent- and process docs are clearly separated.
 
+## Start here - front doors
+
+| Need | Front door |
+|---|---|
+| Product landing / quickstart | [Root README](../README.md) |
+| Product/system authority | [Canon Index](CANON_INDEX.md) |
+| Repository ownership / cross-repo routing | [Repository Ecosystem](REPOSITORY_ECOSYSTEM.md) |
+| Product/component architecture | [Architecture Visuals](visuals/README.md) |
+| Agent capabilities / internal routing | [Operations / Capabilities](operations/README.md) |
+| Agent session startup | [SB.BOOTLOADER](../SB.BOOTLOADER.md) + [AGENTS](../AGENTS.md) |
+
 ## Portfolio & Product Story
 
 | Document | What it is |
@@ -38,6 +49,7 @@ internal agent- and process docs are clearly separated.
 | Document | What it is |
 |---|---|
 | [Architecture Visuals](visuals/README.md) | Quick orientation for system, ownership, and agent workflow; canon and live state remain authoritative |
+| [Repository Ecosystem](REPOSITORY_ECOSYSTEM.md) | Human/agent routing across Sample Brain, its Analysis component, and optional shared meta/metatool repositories |
 | [Target Architecture](TARGET_ARCHITECTURE.md) | Module boundaries, pipeline contracts |
 | [Analysis Package Boundary v1](ANALYSIS_PACKAGE_BOUNDARY_V1.md) | Post-#1151 package ownership, compatibility aliases, and Sample Brain adapter boundary |
 | [Analysis Consumer Contract v1](ANALYSIS_PUBLIC_CONTRACT_V1.md) | Sample Brain config adaptation, loader compatibility, and application persistence contract |

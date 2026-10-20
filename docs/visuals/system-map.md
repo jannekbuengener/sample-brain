@@ -4,6 +4,7 @@
 - **Audience:** Maintainer, Owner und technische Reviewer.
 - **Source of truth:** [Canon Index](../CANON_INDEX.md), [Target Architecture](../TARGET_ARCHITECTURE.md), [Analysis Package Boundary](../ANALYSIS_PACKAGE_BOUNDARY_V1.md).
 - **Not covered:** Modulgraph, Release-Prozess, geplante Repositories oder vollständiger Produktstatus.
+- **Shared ecosystem:** Meta/context/validation repositories are intentionally omitted from this product/component map; see [Repository Ecosystem](../REPOSITORY_ECOSYSTEM.md).
 
 ```mermaid
 flowchart LR
