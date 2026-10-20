@@ -9,8 +9,8 @@ Optional CLAP search-quality evaluation remains local/opt-in. #423 makes the Pyt
 | Field | Value |
 |---|---|
 | Python | `3.12` |
-| PyTorch | `2.14.0` |
-| Transformers | `5.20.1` |
+| PyTorch | exact manifest pin (`pyproject.toml` / `requirements-clap.txt`) |
+| Transformers | exact manifest pin (`pyproject.toml` / `requirements-clap.txt`) |
 | Model | `laion/clap-htsat-unfused` |
 | Model revision | `79b58ed25fc00386262a2bea4b19fd21dc4310a0` |
 | Serialization | `safetensors` required (`use_safetensors=True`) |
@@ -19,7 +19,9 @@ Optional CLAP search-quality evaluation remains local/opt-in. #423 makes the Pyt
 | Modality | `audio_text` |
 | Provider | `laion` |
 
-`requirements-clap.txt` and the `clap` extra in `pyproject.toml` carry the same exact package pins. `src.embed.ClapEmbeddingBackend` passes the immutable model revision to both `ClapModel.from_pretrained()` and `ClapProcessor.from_pretrained()`. The model loader additionally requires `use_safetensors=True`, so the supported path does not fall back to the repository's legacy Pickle checkpoint.
+`requirements-clap.txt` and the `clap` extra in `pyproject.toml` carry the same exact package pins and are the package-version source of truth. `src.model_readiness` derives its exported CLAP package-version constants from that manifest-owned contract rather than duplicating the numbers. Consequently a normal Dependabot package bump can update the supported package identity through the two install manifests alone; malformed or non-exact package specs fail closed.
+
+`src.embed.ClapEmbeddingBackend` passes the immutable model revision to both `ClapModel.from_pretrained()` and `ClapProcessor.from_pretrained()`. The model loader additionally requires `use_safetensors=True`, so the supported path does not fall back to the repository's legacy Pickle checkpoint.
 
 Transformers has changed the documented shape/type of `get_text_features()` and `get_audio_features()` across releases. Sample Brain normalizes direct tensors, pooled model-output objects, and non-empty tuple/list output at the CLAP adapter boundary; the existing worker still rejects any vector that is not the configured 512 dimensions.
 
@@ -128,4 +130,4 @@ The pinned Hugging Face model card declares `Apache-2.0`; Sample Brain records t
 - No Pickle fallback in the supported CLAP model loader.
 - No model weights/caches/DB/index/WAV benchmark artifacts in git.
 - Do not alter CLAP search-quality thresholds as part of runtime-readiness work.
-- Do not float package versions or the Hugging Face model revision in the supported #423 matrix.
+- Package versions remain exact in `pyproject.toml` and `requirements-clap.txt`; do not replace them with floating ranges. The Hugging Face model revision remains immutable.
