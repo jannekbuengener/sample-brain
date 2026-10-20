@@ -8,8 +8,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-CLAP_TORCH_VERSION = "2.14.0"
-CLAP_TRANSFORMERS_VERSION = "5.20.1"
+from .clap_runtime_contract import resolve_clap_runtime_pins
+
+
+_CLAP_RUNTIME_PINS = resolve_clap_runtime_pins()
+CLAP_TORCH_VERSION = _CLAP_RUNTIME_PINS.torch
+CLAP_TRANSFORMERS_VERSION = _CLAP_RUNTIME_PINS.transformers
 CLAP_MODEL_NAME = "laion/clap-htsat-unfused"
 # Official model-repository commit adding a safetensors variant on top of the
 # prior main snapshot. Runtime loading also enforces use_safetensors=True.
