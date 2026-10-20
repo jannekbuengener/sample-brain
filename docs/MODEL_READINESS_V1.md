@@ -2,7 +2,7 @@
 
 **Issue:** #423  
 **Status:** canonical readiness contract  
-**Last reconciled:** 2026-09-29
+**Last reconciled:** 2026-10-20
 
 ## 1. Purpose
 
@@ -21,15 +21,15 @@ The supported optional CLAP matrix for this revision is:
 | Component | Pinned identity | Evidence |
 |---|---|---|
 | Python | 3.12 | Sample Brain project baseline |
-| PyTorch | `2.14.0` | Current repo contract: `src/model_readiness.py`, `requirements-clap.txt`, and the `[clap]` extra |
-| Transformers | `5.20.1` | Current repo contract: `src/model_readiness.py`, `requirements-clap.txt`, and the `[clap]` extra |
+| PyTorch | exact manifest pin | `pyproject.toml` `[clap]` extra + `requirements-clap.txt`; runtime identity is derived from this manifest-owned contract |
+| Transformers | exact manifest pin | `pyproject.toml` `[clap]` extra + `requirements-clap.txt`; runtime identity is derived from this manifest-owned contract |
 | Model | `laion/clap-htsat-unfused` | Hugging Face model repository |
 | Model revision | `79b58ed25fc00386262a2bea4b19fd21dc4310a0` | immutable Hugging Face safetensors conversion commit |
 | Serialization | `safetensors` required | model loader passes `use_safetensors=True` |
 | Declared model license | `Apache-2.0` | model-card metadata in the official repository |
 | Embedding dimension | `512` | existing Sample Brain CLAP contract |
 
-Install surfaces (`requirements-clap.txt` and `[project.optional-dependencies].clap`) must stay identical for the two Python packages.
+Install surfaces (`requirements-clap.txt` and `[project.optional-dependencies].clap` in `pyproject.toml`) must stay identical for the two Python packages. They are the package-version source of truth. `src/model_readiness.py` derives its exported CLAP package-version constants from that manifest contract instead of carrying another copied version. This deliberately lets a normal Dependabot package bump update the supported runtime identity without a manual source/doc version-sync commit; malformed or non-exact package specs fail closed.
 
 The model and processor loaders must pass the immutable model `revision`. The model loader additionally requires `use_safetensors=True`; it must not silently fall back to the repository's Pickle checkpoint. `model_info().model_version` reports the safetensors revision rather than a floating or planned value.
 
@@ -104,8 +104,8 @@ This compatibility token is internal to the existing v1 cache identity. It is no
 
 ## 8. Primary-source evidence used for this decision
 
-- Sample Brain's current CLAP package identity is `torch==2.14.0` + `transformers==5.20.1`, enforced by `src/model_readiness.py`, `requirements-clap.txt`, the `[clap]` extra, focused tests, and the path-scoped CLAP runtime matrix.
-- Upstream package/model documentation remains external supporting evidence; repo version identity must be read from the current pinned install surfaces rather than copied from an older readiness snapshot.
+- Sample Brain's current CLAP package identity is the pair of exact pins in `pyproject.toml` `[project.optional-dependencies].clap` and `requirements-clap.txt`; focused tests require those install surfaces to agree, and `src/model_readiness.py` derives its package-version constants from that same manifest-owned contract.
+- Upstream package/model documentation remains external supporting evidence; repo version identity must be read from the current pinned install surfaces rather than copied into readiness documentation.
 - Hugging Face repository `laion/clap-htsat-unfused`: model metadata declares `Apache-2.0`; immutable commit `79b58ed25fc00386262a2bea4b19fd21dc4310a0` adds the official safetensors representation used by Sample Brain.
 - Hugging Face and PyTorch security guidance distinguish safetensors from untrusted Pickle-backed model loading; Sample Brain therefore fails closed to safetensors for this model path.
 - `audio-separator` / Demucs code-license metadata is treated only as code/package evidence and is not promoted into a weight-license grant.
