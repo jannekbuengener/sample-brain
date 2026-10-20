@@ -22,7 +22,7 @@ The supported optional CLAP matrix for this revision is:
 |---|---|---|
 | Python | 3.12 | Sample Brain project baseline |
 | PyTorch | `2.14.0` | Current repo contract: `src/model_readiness.py`, `requirements-clap.txt`, and the `[clap]` extra |
-| Transformers | `5.20.0` | Current repo contract: `src/model_readiness.py`, `requirements-clap.txt`, and the `[clap]` extra |
+| Transformers | `5.20.1` | Current repo contract: `src/model_readiness.py`, `requirements-clap.txt`, and the `[clap]` extra |
 | Model | `laion/clap-htsat-unfused` | Hugging Face model repository |
 | Model revision | `79b58ed25fc00386262a2bea4b19fd21dc4310a0` | immutable Hugging Face safetensors conversion commit |
 | Serialization | `safetensors` required | model loader passes `use_safetensors=True` |
@@ -104,7 +104,7 @@ This compatibility token is internal to the existing v1 cache identity. It is no
 
 ## 8. Primary-source evidence used for this decision
 
-- Sample Brain's current CLAP package identity is `torch==2.14.0` + `transformers==5.20.0`, enforced by `src/model_readiness.py`, `requirements-clap.txt`, the `[clap]` extra, focused tests, and the path-scoped CLAP runtime matrix.
+- Sample Brain's current CLAP package identity is `torch==2.14.0` + `transformers==5.20.1`, enforced by `src/model_readiness.py`, `requirements-clap.txt`, the `[clap]` extra, focused tests, and the path-scoped CLAP runtime matrix.
 - Upstream package/model documentation remains external supporting evidence; repo version identity must be read from the current pinned install surfaces rather than copied from an older readiness snapshot.
 - Hugging Face repository `laion/clap-htsat-unfused`: model metadata declares `Apache-2.0`; immutable commit `79b58ed25fc00386262a2bea4b19fd21dc4310a0` adds the official safetensors representation used by Sample Brain.
 - Hugging Face and PyTorch security guidance distinguish safetensors from untrusted Pickle-backed model loading; Sample Brain therefore fails closed to safetensors for this model path.
