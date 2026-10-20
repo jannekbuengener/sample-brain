@@ -19,6 +19,7 @@ internal agent- and process docs are clearly separated.
 | Repository ownership / cross-repo routing | [Repository Ecosystem](REPOSITORY_ECOSYSTEM.md) |
 | Product/component architecture | [Architecture Visuals](visuals/README.md) |
 | Agent capabilities / internal routing | [Operations / Capabilities](operations/README.md) |
+| External technical references | [External References](external-docs/index.md) |
 | Agent session startup | [SB.BOOTLOADER](../SB.BOOTLOADER.md) + [AGENTS](../AGENTS.md) |
 
 ## Portfolio & Product Story
