@@ -44,8 +44,6 @@ _MODEL_READINESS = {
     ),
     "htdemucs": ModelReadiness(
         model_id="htdemucs",
-        name=current.name if False else "htdemucs",
-        checkpoint="htdemucs",
         technical_status="OPTIONAL_EXPERIMENTAL",
         code_license="MIT",
         weight_license=WEIGHT_LICENSE_UNKNOWN_UNVERIFIED,
