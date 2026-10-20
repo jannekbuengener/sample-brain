@@ -122,15 +122,15 @@ Legacy feature JSON without this key loads with `internal_sample_dnd_enabled=Fal
 
 See [`WORKBENCH_INTERNAL_SAMPLE_DND_CONTRACT.md`](WORKBENCH_INTERNAL_SAMPLE_DND_CONTRACT.md).
 
-### Product-path key — `arrangement_mode_enabled` (#1076 docs freeze)
+### Product-path key — `arrangement_mode_enabled` (#1076 contract; runtime consumed by #1078/#1080)
 
 | Property | Value |
 |----------|-------|
 | Serialized key | `arrangement_mode_enabled` |
 | Default | `False` (disabled) |
-| Persist | yes, across restart (when runtime field is implemented) |
+| Persist | yes, across restart |
 | User control | yes, through the canonical Functional Settings surface (when wired) |
-| Slice status | **Contract/docs-frozen only** in #1076 — not yet a runtime field on `WorkbenchFeatureSettings` |
+| Slice status | **Runtime-backed gate** — implemented on `WorkbenchFeatureSettings` and consumed by the Edit → Arrangement transition/QML path; default remains `False` |
 
 This key is the sole Arrangement product rollout gate for the Edit → Arrangement path.
 Do **not** introduce `performance_mode_enabled`. Do **not** invent a Live feature key here;
@@ -147,13 +147,14 @@ Do **not** introduce `performance_mode_enabled`. Do **not** invent a Live featur
 
 **ON (`True`) means:**
 
-- full-version Arrangement Entry **may** be offered later, subject to package/state/eligibility
-  contracts ([#1082](https://github.com/jannekbuengener/sample-brain/issues/1082),
-  [#1078](https://github.com/jannekbuengener/sample-brain/issues/1078)).
+- Arrangement Entry may be offered only when the package/state/eligibility contracts
+  ([#1082](https://github.com/jannekbuengener/sample-brain/issues/1082),
+  [#1078](https://github.com/jannekbuengener/sample-brain/issues/1078)) pass; the active QML/product
+  projection remains owned by [#1080](https://github.com/jannekbuengener/sample-brain/issues/1080).
 
-Runtime implementation of the field on `src/workbench_feature_settings.py` is deferred to the
-first real consumer slice. Group A / #1076 must not claim the Python dataclass already contains
-this key.
+The runtime field is present in `src/workbench_feature_settings.py` and consumed by the Workbench
+session/QML routing path. The gate being present does **not** mean the Arrangement UI is complete;
+#1080 remains the active product/UI delivery owner.
 
 Internal Arrangement helpers (#1082–#1087) do not each need duplicate product toggles while this
 gate remains OFF and product UI cannot reach them.

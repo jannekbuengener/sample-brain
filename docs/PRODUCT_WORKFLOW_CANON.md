@@ -63,7 +63,7 @@ Later performance perspective after Arrangement. Design/layout/MIDI/multi-track 
 | Live Kit | Assign samples into canonical kit slots (Edit tool) | Edit-module path [#1077](https://github.com/jannekbuengener/sample-brain/issues/1077) (`WORKBENCH_LIVE_KIT_EDIT_CONTRACT.md`); historical bottom co-host [#908](https://github.com/jannekbuengener/sample-brain/issues/908) is not current Edit authority |
 | Channel Rack / Pattern / Step-Sequencer | Program patterns/triggers over kit-referenced and user channels | Domain foundations **DONE** — historical delivery [#675](https://github.com/jannekbuengener/sample-brain/issues/675)/[#678](https://github.com/jannekbuengener/sample-brain/issues/678). Product placement: Arrangement workflow (not a top-level mode; not mandatory Edit Live Kit content) |
 | Arrangement | Song-structure mode after Edit / Kit | **ACTIVE** owner [#679](https://github.com/jannekbuengener/sample-brain/issues/679); next contracts [#1082](https://github.com/jannekbuengener/sample-brain/issues/1082)–[#1084](https://github.com/jannekbuengener/sample-brain/issues/1084); broader children [#1082](https://github.com/jannekbuengener/sample-brain/issues/1082)–[#1087](https://github.com/jannekbuengener/sample-brain/issues/1087) |
-| Live | Later performance perspective | **PARKED** under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) until Arrangement delivery + Owner gates |
+| Live | Later performance perspective | **PARKED** under [#1088](https://github.com/jannekbuengener/sample-brain/issues/1088) as a separate follow-on; explicit re-entry required |
 
 Historical issues/PRs may still say “Screen 1 / Screen 2 / Screen 3” as delivery evidence. That wording is not current product-navigation authority.
 
@@ -143,7 +143,7 @@ Existing runtime seams that still use screen-transition names (for example `ente
 | Product sequence / navigation | This file + [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076) |
 | Edit progressive disclosure / geometry evidence | [`WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md`](WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md) (exclusive nav thesis superseded where conflicting) |
 | Program chrome modes vs tools | [`PROGRAM_CHROME_CONTRACT.md`](PROGRAM_CHROME_CONTRACT.md) |
-| Functional settings (`arrangement_mode_enabled` docs freeze) | [`WORKBENCH_FEATURE_SETTINGS.md`](WORKBENCH_FEATURE_SETTINGS.md) |
+| Functional settings (`arrangement_mode_enabled` runtime-backed gate, default False) | [`WORKBENCH_FEATURE_SETTINGS.md`](WORKBENCH_FEATURE_SETTINGS.md) |
 | Realtime Workbench boundary | `docs/REALTIME_WORKBENCH_SCOPE.md` |
 | Workbench QML renderer lock | `LOCK_PYSIDE6_QML` in `docs/TARGET_ARCHITECTURE.md` |
 | Session ownership (step 2 — done) | [`SESSION_OWNERSHIP_CONTRACT.md`](SESSION_OWNERSHIP_CONTRACT.md), `src/workbench_session.py` |

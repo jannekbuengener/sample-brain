@@ -1,8 +1,11 @@
 # Sample Brain — Documentation Index
 
-Analysis automation: [Frozen candidate to locked TEST/HOLDOUT (#1170)](benchmarks/SAMPLE_BRAIN_ANALYSIS_LOCKED_HOLDOUT_V1.md)
-composes immutable supervisor freeze state with the existing evaluation and
-decision contracts; promotion remains a separate controller.
+Analysis automation status: [S6 locked TEST/HOLDOUT (#1170)](benchmarks/SAMPLE_BRAIN_ANALYSIS_LOCKED_HOLDOUT_V1.md),
+[S7 promotion (#1176)](benchmarks/SAMPLE_BRAIN_ANALYSIS_PROMOTION_V1.md), and
+[S8 post-merge verification / LAST_KNOWN_GOOD recovery (#1178)](benchmarks/SAMPLE_BRAIN_ANALYSIS_POST_MERGE_V1.md)
+are delivered on `main`. The remaining first end-to-end closed-cycle composition proof is active under
+[#1182](https://github.com/jannekbuengener/sample-brain/issues/1182); `production_authorized=false` remains invariant.
+Use GitHub live for current execution/PR state.
 
 Quick navigation for reviewing the repository. Product-facing docs are listed first;
 internal agent- and process docs are clearly separated.
