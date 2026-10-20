@@ -11,6 +11,12 @@
 - `agents/` -> shared cross-agent charter (`agents/AGENTS.md`)
 - `SB.*` root files -> Sample-Brain-Orchestrator: `SB.BOOTLOADER.md` (session startup), `SB.AGENT.LIST.json` (agent registry), `SB.AGENT.RULESET.md` (agent operating rules), `SB.VERFUEGBARE.SKILLS.md` (available skill matrix)
 
+## Repository ownership / cross-repo routing
+- Start with `docs/REPOSITORY_ECOSYSTEM.md` when deciding whether work belongs in `sample-brain`, `sample-brain-analysis`, `agent-workforce`, `agent-brain`, or `arvp`.
+- `sample-brain` local `AGENTS.md`, canon, contracts, issues, PRs and CI remain authoritative for this repository; shared meta repositories never override that authority.
+- `sample-brain-analysis` is a real component dependency for package-owned Analysis API/compute. `agent-workforce`, `agent-brain`, and `arvp` are shared meta/metatool surfaces, not implicit Sample Brain runtime dependencies.
+- Cross-repository meta classification is owned by [agent-workforce META_TOPOLOGY](https://github.com/jannekbuengener/agent-workforce/blob/main/docs/META_TOPOLOGY.md); use the ecosystem page for Sample Brain routing rather than duplicating that canon here.
+
 ## Project Baseline
 - Stack: Python (3.12+), sqlite, librosa/soundfile, numpy/scipy, sqlalchemy.
 - CLI entrypoint: `src/cli.py`.

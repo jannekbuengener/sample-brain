@@ -371,6 +371,9 @@ Der vollständige Navigations-Index liegt in [docs/README.md](docs/README.md).
 
 - [Canon Index](docs/CANON_INDEX.md) — Authority-Map (aktiv vs. supporting vs. historisch)
 - [Product Workflow Canon](docs/PRODUCT_WORKFLOW_CANON.md) — Workbench-first Producer-Pfad
+- [Repository Ecosystem](docs/REPOSITORY_ECOSYSTEM.md) - repository ownership, component-vs-meta routing and external repository entry points
+- [Architecture Visuals](docs/visuals/README.md) - product/component system and ownership orientation
+- [Operations / Capabilities](docs/operations/README.md) - agent/capability routing front door (not product canon)
 - [Portfolio Case Study](docs/CASE_STUDY.md) — Produktstory, Rolle, Product Decisions, Evidence
 - [Screen-1 Visual Acceptance](docs/WORKBENCH_VISUAL_ACCEPTANCE.md) — Runtime-Capture-Pfad für UI-Evidence
 - [Workbench QML Proof / Renderer](docs/WORKBENCH_QML_PROOF_SPIKE.md) — `LOCK_PYSIDE6_QML` und Evidence-Grenze

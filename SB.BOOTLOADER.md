@@ -8,6 +8,7 @@ Minimal session startup sequence for agents working on `jannekbuengener/sample-b
 
 1. `AGENTS.md` — root scope, global rules, quality gates
 2. `docs/CANON_INDEX.md` — authority/front-door map; classifies active canon, supporting contracts, durable snapshots and historical records
+2b. `docs/REPOSITORY_ECOSYSTEM.md` - repository ownership/routing across Sample Brain, its Analysis component and optional shared meta/metatool surfaces; navigation only, not an authority override
 3. `.cursor/rules/sample-brain-project.mdc` — project guardrails
 4. `.cursor/rules/skill-routing.mdc` — task-to-skill mapping (generated from `docs/operations/CAPABILITY_REGISTRY.json`)
 4b. `docs/operations/README.md` — operations/capability front door (not product canon)
@@ -37,6 +38,7 @@ Closed [#908](https://github.com/jannekbuengener/sample-brain/issues/908) is his
 
 | Domain | Documents |
 |--------|-----------|
+| Repository ownership / cross-repo routing | `docs/REPOSITORY_ECOSYSTEM.md`; Sample Brain local authority remains primary; shared meta topology is linked from that page |
 | Product nav / Workbench UI | `docs/PRODUCT_WORKFLOW_CANON.md`, `docs/PROGRAM_CHROME_CONTRACT.md`, `docs/WORKBENCH_SINGLE_WORKSPACE_CONTRACT.md` (Edit geometry), `docs/TARGET_ARCHITECTURE.md`, `docs/WORKBENCH_QML_PROOF_SPIKE.md`, live `main` + [#1075](https://github.com/jannekbuengener/sample-brain/issues/1075) / [#1076](https://github.com/jannekbuengener/sample-brain/issues/1076); closed/historical #691/#503/#579/#905 are delivery evidence only |
 | Channel Rack / Pattern domain | `docs/PRODUCT_WORKFLOW_CANON.md`, closed #675/#678 (historical evidence), `docs/SESSION_OWNERSHIP_CONTRACT.md`, `docs/PATTERN_CORE_CONTRACT.md`, `docs/SEQUENCER_PLAYBACK_CONTRACT.md`; product placement in Arrangement workflow |
 | Session / audio-focus audit | [#907](https://github.com/jannekbuengener/sample-brain/issues/907), `docs/SESSION_OWNERSHIP_CONTRACT.md` (runtime seams are not product-page authority) |

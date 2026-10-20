@@ -4,6 +4,7 @@
 - **Audience:** Maintainer, Owner und technische Reviewer.
 - **Source of truth:** [Analysis Package Boundary](../ANALYSIS_PACKAGE_BOUNDARY_V1.md), [Analysis Consumer Contract](../ANALYSIS_PUBLIC_CONTRACT_V1.md), [Canon Index](../CANON_INDEX.md).
 - **Not covered:** API-Symbolliste, DTO-Felder, Algorithmen oder einzelne Persistenzschemas.
+- **Shared ecosystem:** Cross-repository meta/metatool ownership remains outside this Product/Analysis map; see [Repository Ecosystem](../REPOSITORY_ECOSYSTEM.md).
 
 ```mermaid
 flowchart LR
