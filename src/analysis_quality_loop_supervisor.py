@@ -15,6 +15,9 @@ No persisted ``running``. No reinterpretation of decision vocabulary.
 
 from __future__ import annotations
 
+import hashlib
+import os
+import tempfile
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -24,7 +27,9 @@ from src.analysis_candidate_iterator import (
     iterate_candidates,
 )
 from src.analysis_orchestration_run import (
+    POLICY_UNSET,
     AnalysisOrchestrationRunError,
+    resolve_decision_mode,
     run_orchestration,
 )
 from src.analysis_quality_loop_state import (
@@ -69,6 +74,82 @@ class AnalysisQualityLoopSupervisorError(ValueError):
     """Raised when supervisor composition violates the v1 contract."""
 
 
+def _state_commit_lock_path(state_path: Path) -> Path:
+    normalized = os.path.normcase(str(state_path.resolve()))
+    identity = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    return Path(tempfile.gettempdir()) / f"sample-brain-s5-state-{identity}.lock"
+
+
+def _state_commit_lock(state_path: Path):
+    """Serialize only the compare-and-commit section for one S5 state path."""
+    lock_path = _state_commit_lock_path(state_path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = lock_path.open("a+b")
+    if os.name == "nt":
+        import msvcrt
+
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.seek(0)
+            handle.write(b"0")
+            handle.flush()
+        handle.seek(0)
+        try:
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+        except OSError as exc:
+            handle.close()
+            raise AnalysisQualityLoopStateError(
+                "failed to acquire supervisor state commit lock"
+            ) from exc
+
+        class _Lock:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                handle.close()
+
+        return _Lock()
+
+    import fcntl
+
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    except OSError as exc:
+        handle.close()
+        raise AnalysisQualityLoopStateError(
+            "failed to acquire supervisor state commit lock"
+        ) from exc
+
+    class _Lock:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            handle.close()
+
+    return _Lock()
+
+
+def _commit_state_if_unchanged(
+    *,
+    state_path: Path,
+    expected_state_fingerprint: str,
+    next_state: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Compare current S5 ownership and atomically commit under one path lock."""
+    with _state_commit_lock(state_path):
+        current = load_state(state_path)
+        if current["state_fingerprint"] != expected_state_fingerprint:
+            raise AnalysisQualityLoopStateError(
+                "supervisor state changed before atomic commit"
+            )
+        return save_state_atomic(state_path, next_state)
+
+
 def _default_provider(domain: str) -> SearchSpaceProvider:
     if domain == "aq1.tempo":
         return Aq1TempoSearchSpaceProvider()
@@ -89,19 +170,26 @@ def _decision_ref(decision: Mapping[str, Any]) -> dict[str, Any]:
 def _orchestration_ref(
     outcome: Mapping[str, Any],
     *,
-    evidence_fingerprint: str,
-    gate_verdict: str | None,
+    request_fingerprint: str | None = None,
+    decision_provider_id: str | None = None,
 ) -> dict[str, Any]:
     analysis_eval = outcome.get("analysis_eval") or {}
+    decision_evidence = (outcome.get("decision") or {}).get("evidence") or {}
     ref: dict[str, Any] = {
         "outcome_fingerprint": outcome["outcome_fingerprint"],
     }
     eval_fp = analysis_eval.get("artifact_fingerprint")
     if eval_fp is not None:
         ref["analysis_eval_fingerprint"] = eval_fp
-    ref["evidence_fingerprint"] = evidence_fingerprint
-    if gate_verdict is not None:
-        ref["gate_verdict"] = gate_verdict
+    evidence_fp = decision_evidence.get("evidence_fingerprint")
+    if evidence_fp is not None:
+        ref["evidence_fingerprint"] = evidence_fp
+    gate = (decision_evidence.get("gate_decision") or {}).get("verdict")
+    if gate is not None:
+        ref["gate_verdict"] = gate
+    if decision_provider_id is not None:
+        ref["request_fingerprint"] = request_fingerprint
+        ref["decision_provider_id"] = decision_provider_id
     return ref
 
 
@@ -156,6 +244,7 @@ def _persist_retry_failure(
     state_path: Path,
     state: Mapping[str, Any],
     failure_class: str,
+    expected_state_fingerprint: str,
 ) -> dict[str, Any]:
     """Decrement persisted retry budget after a counted infrastructure failure."""
     retry = dict(state["retry"])
@@ -171,7 +260,11 @@ def _persist_retry_failure(
         updated["loop_status"] = "retry_exhausted"
     # Keep generation unchanged; failure is not a committed iteration.
     updated.pop("state_fingerprint", None)
-    return save_state_atomic(state_path, updated)
+    return _commit_state_if_unchanged(
+        state_path=state_path,
+        expected_state_fingerprint=expected_state_fingerprint,
+        next_state=updated,
+    )
 
 
 def run_supervisor_step(
@@ -179,13 +272,16 @@ def run_supervisor_step(
     state_path: str | Path,
     request: Mapping[str, Any],
     bind_kwargs: Mapping[str, Any] | None = None,
-    evidence_fingerprint: str,
-    gate_verdict: str | None = None,
-    decision_token: str | None = None,
-    next_action: str | None = None,
+    evidence_fingerprint: str | object = POLICY_UNSET,
+    gate_verdict: str | None | object = POLICY_UNSET,
+    decision_token: str | None | object = POLICY_UNSET,
+    next_action: str | None | object = POLICY_UNSET,
     provider: SearchSpaceProvider | None = None,
     analysis_eval_artifact: Mapping[str, Any] | None = None,
     adapter_id: str | None = None,
+    decision_provider=None,
+    decision_provider_id: str | None = None,
+    expected_state_fingerprint: str | None = None,
 ) -> dict[str, Any]:
     """Execute one supervisor step and commit the next portable state atomically."""
     path = Path(state_path)
@@ -198,6 +294,14 @@ def run_supervisor_step(
             f"failed to load supervisor state: {exc}"
         ) from exc
 
+    if (
+        expected_state_fingerprint is not None
+        and state["state_fingerprint"] != expected_state_fingerprint
+    ):
+        raise AnalysisQualityLoopSupervisorError(
+            "supervisor state changed before supervisor dispatch"
+        )
+
     loop_status = state["loop_status"]
     if loop_status in _TERMINAL_LOOP_STATUSES:
         raise AnalysisQualityLoopSupervisorError(
@@ -205,6 +309,16 @@ def run_supervisor_step(
         )
 
     bind = {} if bind_kwargs is None else dict(bind_kwargs)
+    policy_inputs = {
+        "evidence_fingerprint": evidence_fingerprint,
+        "gate_verdict": gate_verdict,
+        "decision_token": decision_token,
+        "next_action": next_action,
+    }
+    try:
+        resolve_decision_mode(decision_provider, decision_provider_id, policy_inputs)
+    except AnalysisOrchestrationRunError as exc:
+        raise AnalysisQualityLoopSupervisorError(str(exc)) from exc
 
     try:
         outcome = run_orchestration(
@@ -216,6 +330,8 @@ def run_supervisor_step(
             next_action=next_action,
             analysis_eval_artifact=analysis_eval_artifact,
             adapter_id=adapter_id,
+            decision_provider=decision_provider,
+            decision_provider_id=decision_provider_id,
         )
     except AnalysisQualityLoopSupervisorError:
         raise
@@ -225,6 +341,7 @@ def run_supervisor_step(
                 state_path=path,
                 state=state,
                 failure_class="unknown",
+                expected_state_fingerprint=state["state_fingerprint"],
             )
         except AnalysisQualityLoopStateError as persist_exc:
             raise AnalysisQualityLoopSupervisorError(
@@ -281,6 +398,7 @@ def run_supervisor_step(
                     state_path=path,
                     state=state,
                     failure_class="iterator_failure",
+                    expected_state_fingerprint=state["state_fingerprint"],
                 )
             except AnalysisQualityLoopStateError as persist_exc:
                 raise AnalysisQualityLoopSupervisorError(
@@ -339,8 +457,8 @@ def run_supervisor_step(
         "last_decision": _decision_ref(decision),
         "last_orchestration_ref": _orchestration_ref(
             outcome,
-            evidence_fingerprint=evidence_fingerprint,
-            gate_verdict=gate_verdict,
+            request_fingerprint=request.get("request_fingerprint"),
+            decision_provider_id=decision_provider_id,
         ),
         "last_iterator_ref": (
             None if iterator_result is None else _iterator_ref(iterator_result)
@@ -352,7 +470,11 @@ def run_supervisor_step(
     }
 
     try:
-        committed = save_state_atomic(path, validate_state(next_state))
+        committed = _commit_state_if_unchanged(
+            state_path=path,
+            expected_state_fingerprint=state["state_fingerprint"],
+            next_state=validate_state(next_state),
+        )
     except AnalysisQualityLoopStateError:
         # Observable write failure; previous committed state remains authoritative.
         raise
