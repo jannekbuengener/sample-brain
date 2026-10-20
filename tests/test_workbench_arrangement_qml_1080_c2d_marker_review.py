@@ -18,10 +18,11 @@ def _rect_in_window(item, window):
     return float(p.x()), float(p.y()), float(item.width()), float(item.height())
 
 
-def test_end_marker_renders_in_upper_arrangement_timeline_not_sequencer(tmp_path, monkeypatch):
+@pytest.mark.parametrize("size", [(1600, 900), (1280, 720), (1120, 640)])
+def test_end_marker_renders_in_upper_arrangement_timeline_not_sequencer(tmp_path, monkeypatch, size):
     app, engine, window, settle, session, bridge = _enter_populated_arrangement(tmp_path, monkeypatch)
     try:
-        window.resize(1600, 900)
+        window.resize(*size)
         assert bridge.requestEndMarkerSet(64.0) == "mutated"
         bridge.refresh()
         settle(app)
@@ -39,7 +40,7 @@ def test_end_marker_renders_in_upper_arrangement_timeline_not_sequencer(tmp_path
         assert my >= uy
         assert my + mh <= uy + uh + 0.5
         assert my + mh <= sy + 0.5
-        assert not (mx + mw <= sx or sx + sw <= mx or my + mh <= sy or sy + sh <= my)
+        assert mx + mw <= sx or sx + sw <= mx or my + mh <= sy or sy + sh <= my
     finally:
         window.close()
         app.processEvents()

@@ -5805,6 +5805,13 @@ ApplicationWindow {
             readonly property int channelNameColumnWidth: 96
             // C2b: indent for track rows under parent group
             readonly property int trackRowIndent: 24
+            // Shared presentation geometry for group and track block columns.
+            readonly property int groupRowMargin: 14
+            readonly property int groupControlWidth: 24
+            readonly property int groupLabelWidth: 160
+            readonly property int blockColumnSpacing: 8
+            readonly property int blockColumnOrigin: groupRowMargin + groupControlWidth
+                                                     + groupLabelWidth + 2 * blockColumnSpacing
 
             // #1080: this input layer keeps pointer events that miss the
             // sequencer's field hit targets from reaching the workspace
@@ -5911,6 +5918,18 @@ else
                     flickableDirection: Flickable.VerticalFlick
                     boundsBehavior: Flickable.StopAtBounds
 
+                    WheelHandler {
+                        acceptedModifiers: Qt.ControlModifier
+                        target: null
+                        onWheel: function(event) {
+                            if (event.angleDelta.y < 0)
+                                window.arrangement.zoomOut()
+                            else if (event.angleDelta.y > 0)
+                                window.arrangement.zoomIn()
+                            event.accepted = true
+                        }
+                    }
+
                     Column {
                         id: arrangementGroupColumn
                         width: arrangementGroupViewport.width
@@ -5923,6 +5942,8 @@ else
                             readonly property var row: modelData
                             readonly property string groupId: row.groupId
                             readonly property bool expanded: row.expanded
+                            readonly property real blockColumnWidth: Math.max(
+                                0, width - arrangementStage.blockColumnOrigin - arrangementStage.groupRowMargin)
                             width: parent.width
                             // Height depends on expansion: collapsed=64, expanded=64 + trackRows *48
                             height: expanded ? (64 + (row.trackRows ? row.trackRows.length : 0) *48) : 64
@@ -5939,16 +5960,16 @@ else
                                 Row {
                                     anchors.left: parent.left
                                     anchors.right: parent.right
-                                    anchors.leftMargin: 14
-                                    anchors.rightMargin: 14
+                                    anchors.leftMargin: arrangementStage.groupRowMargin
+                                    anchors.rightMargin: arrangementStage.groupRowMargin
                                     anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 8
+                                    spacing: arrangementStage.blockColumnSpacing
 
                                     // Expand/collapse affordance
                                     Rectangle {
                                         id: expandControl
                                         objectName: "arrangementExpandControl"
-                                        width: 24
+                                        width: arrangementStage.groupControlWidth
                                         height: 24
                                         radius: 2
                                         color: theme.surfaceElevated
@@ -5998,7 +6019,7 @@ else
 
                                     Label {
                                         anchors.verticalCenter: parent.verticalCenter
-                                        width: 160
+                                        width: arrangementStage.groupLabelWidth
                                         text: arrangementGroupRow.row.displayName
                                         color: theme.textSecondary
                                         font.pixelSize: 12
@@ -6006,10 +6027,10 @@ else
                                     }
                                     Row {
                                         id: arrangementGroupBlocksRow
-                                        width: Math.max(0, parent.width - expandControl.width - 160 - 16)
+                                        width: arrangementGroupRow.blockColumnWidth
                                         height: 42
                                         anchors.verticalCenter: parent.verticalCenter
-                                        spacing: 8
+                                        spacing: arrangementStage.blockColumnSpacing
                                         Repeater {
                                             model: arrangementGroupRow.row.blocks
                                             Rectangle {
@@ -6020,7 +6041,7 @@ else
                                                 readonly property int blockIndex: cell.blockIndex
                                                 readonly property bool effectiveOn: cell.available
                                                 enabled: cell.interactive
-                                                width: (parent.width - 8 * (arrangementGroupRow.row.blocks.length - 1)) / arrangementGroupRow.row.blocks.length
+                                                width: (parent.width - parent.spacing * (arrangementGroupRow.row.blocks.length - 1)) / arrangementGroupRow.row.blocks.length
                                                 height: 42
                                                 color: effectiveOn ? theme.surfaceElevated : theme.surfaceRoot
                                                 border.width: activeFocus ? 2 : 1
@@ -6066,7 +6087,7 @@ else
                                 anchors.left: parent.left
                                 anchors.leftMargin: arrangementStage.trackRowIndent
                                 anchors.right: parent.right
-                                anchors.rightMargin: 14
+                                anchors.rightMargin: arrangementStage.groupRowMargin
                                 anchors.top: parent.top
                                 anchors.topMargin: 64
                                 height: expanded ? (row.trackRows ? row.trackRows.length : 0) *48 : 0
@@ -6087,7 +6108,7 @@ else
                                             Row {
                                                 id: arrangementTrackRowLayout
                                                 anchors.fill: parent
-                                                spacing: 8
+                                                spacing: arrangementStage.blockColumnSpacing
 
                                                 Label {
                                                     objectName: "arrangementTrackRowName"
@@ -6095,7 +6116,7 @@ else
                                                     text: track.displayName
                                                     color: theme.textSecondary
                                                     font.pixelSize: 10
-                                                    width: arrangementStage.channelNameColumnWidth - arrangementStage.trackRowIndent
+                                                    width: arrangementStage.blockColumnOrigin - arrangementStage.trackRowIndent - arrangementStage.blockColumnSpacing
                                                     horizontalAlignment: Text.AlignRight
                                                     elide: Text.ElideRight
                                                     opacity: 0.8
@@ -6103,9 +6124,9 @@ else
 
                                                 Row {
                                                     id: arrangementTrackBlocksRow
-                                                    width: Math.max(0, parent.width - (arrangementStage.channelNameColumnWidth - arrangementStage.trackRowIndent) - 8)
+                                                    width: arrangementGroupRow.blockColumnWidth
                                                     height: 36
-                                                    spacing: 8
+                                                    spacing: arrangementStage.blockColumnSpacing
                                                     Repeater {
                                                         model: track.blocks
                                                         Rectangle {
@@ -6116,7 +6137,7 @@ else
                                                             readonly property int blockIndex: cell.blockIndex
                                                             readonly property bool effectiveOn: cell.available && cell.effective === true
                                                             enabled: cell.interactive
-                                                            width: (parent.width - 8 * (track.blocks.length - 1)) / track.blocks.length
+                                                            width: (parent.width - parent.spacing * (track.blocks.length - 1)) / track.blocks.length
                                                             height: 36
                                                             color: effectiveOn ? theme.surfaceElevated : theme.surfaceRoot
                                                             border.width: activeFocus ? 2 : 1
