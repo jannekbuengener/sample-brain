@@ -3204,7 +3204,9 @@ ApplicationWindow {
                                 readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "all"
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 32
-                                onClicked: libraryInteraction.showLibrarySection("all")
+                                onClicked: {
+                                    libraryInteraction.selectLibraryNode("scope:all-library")
+                                }
                                 Accessible.name: "All Samples"
                                 onHoveredChanged: {
                                     if (hovered)
@@ -3330,7 +3332,9 @@ ApplicationWindow {
                                 readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "favorites"
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 32
-                                onClicked: libraryInteraction.showLibrarySection("favorites")
+                                onClicked: {
+                                    libraryInteraction.selectLibraryNode("scope:favorites")
+                                }
                                 Accessible.name: "Favorites"
                                 onHoveredChanged: {
                                     if (hovered)
@@ -3413,7 +3417,9 @@ ApplicationWindow {
                                 readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "recordings"
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 32
-                                onClicked: libraryInteraction.showLibrarySection("recordings")
+                                onClicked: {
+                                    libraryInteraction.selectLibraryNode("scope:recordings")
+                                }
                                 Accessible.name: "Recordings"
                                 onHoveredChanged: {
                                     if (hovered)
