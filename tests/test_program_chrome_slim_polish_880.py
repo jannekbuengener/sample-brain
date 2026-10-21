@@ -130,8 +130,7 @@ def test_runtime_nav_hit_areas_remain_usable_and_flat() -> None:
         header = window.findChild(QQuickItem, "screen1Header")
         assert header is not None
         for name in (
-            "programNavBrowser",
-            "programNavStepSequencer",
+            "programNavEdit",
             "programNavArrangement",
         ):
             btn = window.findChild(QQuickItem, name)
@@ -139,8 +138,11 @@ def test_runtime_nav_hit_areas_remain_usable_and_flat() -> None:
             # Hit band may match header height; visual chrome stays text-only.
             assert float(btn.height()) >= _MIN_HIT
             assert float(btn.height()) <= float(header.height()) + 1.0
-            # Compact text tabs stay clickable; "Browser" can land just under 48px.
-            assert float(btn.width()) >= 40.0
+            # Compact text tabs stay clickable; Edit is narrower than the
+            # former Browser label while Arrangement keeps the prior floor.
+            min_width = 24.0 if name == "programNavEdit" else 40.0
+            assert float(btn.width()) >= min_width
+        assert window.findChild(QQuickItem, "programNavStepSequencer") is None
         # #1077: Live Kit is Edit-scoped, not an upper mode peer.
         assert window.findChild(QQuickItem, "programNavLiveKit") is None
     finally:

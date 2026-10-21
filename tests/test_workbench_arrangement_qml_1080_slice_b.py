@@ -1030,7 +1030,7 @@ def test_gates_18_runtime_field_clicks_projection_persistence_and_no_fall_throug
         assert bridge.anyActiveStep is True
         track_id = session.active_track_id
 
-        browser_nav = window.findChild(QQuickItem, "programNavBrowser")
+        browser_nav = window.findChild(QQuickItem, "programNavEdit")
         assert browser_nav is not None
         _click_item(window, browser_nav, settle, app)
         settle(app)

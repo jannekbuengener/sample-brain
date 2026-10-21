@@ -290,21 +290,15 @@ def _arrangement_shell_region() -> str:
     ]
 
 
-def _program_nav_browser_block() -> str:
-    return QML_SOURCE.split('objectName: "programNavBrowser"', 1)[1].split(
-        'objectName: "programNavStepSequencer"', 1
+def _program_nav_edit_block() -> str:
+    return QML_SOURCE.split('objectName: "programNavEdit"', 1)[1].split(
+        'objectName: "programNavArrangement"', 1
     )[0]
 
 
 def _program_nav_arrangement_block() -> str:
     return QML_SOURCE.split('objectName: "programNavArrangement"', 1)[1].split(
         'objectName: "headerTransportZone"', 1
-    )[0]
-
-
-def _program_nav_step_sequencer_block() -> str:
-    return QML_SOURCE.split('objectName: "programNavStepSequencer"', 1)[1].split(
-        'objectName: "programNavArrangement"', 1
     )[0]
 
 
@@ -331,7 +325,7 @@ def test_gates_1_3_qml_route_is_gated_owner_command():
     # Gate 9 (string part): the return routes through the Browser nav (the
     # Edit destination) and the same #1078 state owner — the chrome
     # vocabulary canon keeps the literal mode word out of QML_SOURCE.
-    browser_nav = _program_nav_browser_block()
+    browser_nav = _program_nav_edit_block()
     assert "window.arrangement.returnToBrowser()" in browser_nav
     assert 'window.arrangement.projectionMode === "ARRANGEMENT"' in browser_nav
 
@@ -384,10 +378,8 @@ def test_gates_4_7_8_10_qml_stage_projects_read_only_32_field_pattern():
 
 
 def test_gate_11_qml_step_sequencer_stays_no_top_level_mode():
-    seq = _program_nav_step_sequencer_block()
-    assert "enabled: false" in seq
-    assert "onClicked" not in seq
-    assert QML_SOURCE.count('text: "Step Sequencer"') == 1
+    assert 'objectName: "programNavStepSequencer"' not in QML_SOURCE
+    assert 'text: "Step Sequencer"' not in QML_SOURCE
 
 
 # --- runtime gates (PySide6) ----------------------------------------------------
@@ -476,13 +468,14 @@ def test_gate_1_runtime_feature_off_edit_functional_without_scene(
         nav = window.findChild(QQuickItem, "programNavArrangement")
         assert nav is not None
         assert nav.property("enabled") is False
+        _click_item(window, nav, settle, app)
+        assert bridge.projectionMode == "EDIT"
         # Edit stays fully functional with the route off.
         assert window.property("activeScreen") == "screen1"
         browser = window.findChild(QQuickItem, "browserList")
         assert browser is not None and browser.isVisible()
         # Gate 11 (runtime part): Step Sequencer stays a non-mode.
-        seq = window.findChild(QQuickItem, "programNavStepSequencer")
-        assert seq is not None and seq.property("enabled") is False
+        assert window.findChild(QQuickItem, "programNavStepSequencer") is None
     finally:
         window.close()
         app.processEvents()
@@ -571,7 +564,7 @@ def test_gates_3_9_10_runtime_owner_route_single_surface_and_return(
 
         # Return through the Browser nav (the Edit destination) and the
         # same #1078 state owner.
-        browser_nav = window.findChild(QQuickItem, "programNavBrowser")
+        browser_nav = window.findChild(QQuickItem, "programNavEdit")
         assert browser_nav is not None
         _click_item(window, browser_nav, settle, app)
         settle(app)
@@ -583,8 +576,7 @@ def test_gates_3_9_10_runtime_owner_route_single_surface_and_return(
         assert session.projection_mode == "EDIT"
         assert session.active_track_id == track_id
         assert session.arrangement_state is not None
-        seq = window.findChild(QQuickItem, "programNavStepSequencer")
-        assert seq.property("enabled") is False
+        assert window.findChild(QQuickItem, "programNavStepSequencer") is None
     finally:
         window.close()
         app.processEvents()

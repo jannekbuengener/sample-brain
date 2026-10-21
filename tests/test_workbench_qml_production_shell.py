@@ -14,7 +14,9 @@ def test_production_shell_owns_the_shared_renderer_and_minimal_chrome():
     assert "Sample Brain" in workbench_qml.QML_SOURCE
     for required in ("MASTER", "GRID", "SYNC"):
         assert required in workbench_qml.QML_SOURCE
-    for forbidden in ("proof spike", "LIVE KIT READY", "Tools", "Ansicht", "Edit"):
+    assert 'objectName: "programNavEdit"' in workbench_qml.QML_SOURCE
+    assert 'text: "Edit"' in workbench_qml.QML_SOURCE
+    for forbidden in ("proof spike", "LIVE KIT READY", "Tools", "Ansicht"):
         assert forbidden not in workbench_qml.QML_SOURCE
 
 

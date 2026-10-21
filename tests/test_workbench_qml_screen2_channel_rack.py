@@ -400,8 +400,7 @@ def test_qml_source_exposes_screen2_channel_rack_surface():
     for token in (
         'objectName: "channelRackScreen"',
         'objectName: "channelRackStepGrid"',
-        'objectName: "programNavStepSequencer"',
-        'objectName: "programNavBrowser"',
+        'objectName: "programNavEdit"',
         'objectName: "channelRackPlayButton"',
         'objectName: "channelRackStopButton"',
         'objectName: "addUserChannelButton"',
@@ -509,8 +508,7 @@ def test_qml_runtime_screen2_navigation_projection_and_step_toggle():
     window.show()
     _settle_qml_frame(app)
     try:
-        step_nav = window.findChild(QQuickItem, "programNavStepSequencer")
-        assert step_nav is not None
+        assert window.findChild(QQuickItem, "programNavStepSequencer") is None
 
         channel_rack = engine.rootContext().contextProperty("channelRackModel")
         assert channel_rack is not None
@@ -523,7 +521,7 @@ def test_qml_runtime_screen2_navigation_projection_and_step_toggle():
         # bottom-Rack QML visibility assertions are released (see file header);
         # #1077 product-UI gates live in test_workbench_live_kit_edit_1077.py.
         rack_screen = window.findChild(QQuickItem, "channelRackScreen")
-        browser_nav = window.findChild(QQuickItem, "programNavBrowser")
+        browser_nav = window.findChild(QQuickItem, "programNavEdit")
         assert rack_screen is not None and rack_screen.property("visible") is False
         assert browser_nav is not None
         assert window.property("activeScreen") == "screen1"

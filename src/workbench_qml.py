@@ -3035,9 +3035,9 @@ ApplicationWindow {
                 width: Math.min(implicitWidth, parent.width)
                 spacing: 2
                 ToolButton {
-                    id: programNavBrowser
-                    objectName: "programNavBrowser"
-                    text: "Browser"
+                    id: programNavEdit
+                    objectName: "programNavEdit"
+                    text: "Edit"
                     flat: true
                     font.pixelSize: 10
                     padding: 0
@@ -3057,21 +3057,21 @@ ApplicationWindow {
                             anchors.bottom: parent.bottom
                             height: 1
                             color: theme.actionActive
-                            visible: programNavBrowser.navActive
+                            visible: programNavEdit.navActive
                             opacity: 0.85
                         }
                     }
                     contentItem: Text {
-                        text: programNavBrowser.text
-                        font: programNavBrowser.font
-                        color: programNavBrowser.navActive ? theme.textPrimary : theme.textSecondary
-                        opacity: programNavBrowser.navActive ? 1.0 : 0.72
+                        text: programNavEdit.text
+                        font: programNavEdit.font
+                        color: programNavEdit.navActive ? theme.textPrimary : theme.textSecondary
+                        opacity: programNavEdit.navActive ? 1.0 : 0.72
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
                     // #1080 Slice A: while the Arrangement shell owns
-                    // projection, the Browser route returns through the
-                    // same #1078 state owner.
+                    // projection, the Edit route returns through the same
+                    // #1078 state owner and retains Browser reveal intent.
                     onClicked: {
                         if (window.arrangement.projectionMode === "ARRANGEMENT") {
                             window.arrangement.returnToBrowser()
@@ -3081,34 +3081,6 @@ ApplicationWindow {
                             window.interaction.returnToScreen1()
                         if (window.interaction.browserCollapsed)
                             window.interaction.toggleBrowserCollapsed()
-                    }
-                }
-                // #1077 Owner gate: no Live Kit peer in upper mode navigation.
-                ToolButton {
-                    id: programNavStepSequencer
-                    objectName: "programNavStepSequencer"
-                    text: "Step Sequencer"
-                    flat: true
-                    font.pixelSize: 10
-                    padding: 0
-                    leftPadding: 6
-                    rightPadding: 6
-                    topPadding: 0
-                    bottomPadding: 0
-                    implicitHeight: screen1Header.height
-                    Layout.preferredHeight: screen1Header.height
-                    // #1077/#1076: product Step Sequencer lives in Arrangement.
-                    // Keep the chrome label, but disable until that destination exists.
-                    enabled: false
-                    readonly property bool navActive: false
-                    background: Item { implicitHeight: screen1Header.height }
-                    contentItem: Text {
-                        text: programNavStepSequencer.text
-                        font: programNavStepSequencer.font
-                        color: theme.textDisabled
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        opacity: 0.4
                     }
                 }
                 ToolButton {
@@ -3151,7 +3123,7 @@ ApplicationWindow {
             anchors.rightMargin: 10
             anchors.verticalCenter: parent.verticalCenter
             height: parent.height
-            // Reserve a usable nav band (~380px) for four destinations at min width.
+            // Reserve a usable nav band (~380px) for two top-level destinations at min width.
             readonly property real maxWidth: Math.max(
                 240,
                 parent.width - headerLeftZone.width - 380 - 56
