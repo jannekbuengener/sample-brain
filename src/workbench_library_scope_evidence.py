@@ -72,10 +72,11 @@ def assert_scope_bar_pinned(
     max_offset_from_header_px: float = 80.0,
 ) -> None:
     """#1201: secondary scope bar is kept inside the Library header."""
-    if presentation.scope_bar_y > max_offset_from_header_px:
+    header_boundary = min(presentation.header_bottom_y, max_offset_from_header_px)
+    if not 0.0 <= presentation.scope_bar_y <= header_boundary:
         raise ScopeCaptureError(
             "libraryScopeBar not inside Library header: "
-            f"bar_y={presentation.scope_bar_y} max_offset={max_offset_from_header_px}"
+            f"bar_y={presentation.scope_bar_y} header_boundary={header_boundary}"
         )
 
 

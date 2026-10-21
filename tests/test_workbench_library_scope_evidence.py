@@ -60,6 +60,20 @@ def test_capture_helper_rejects_footer_scope_bar() -> None:
         assert_presentation_matches(SCOPE_FAVORITES, observed)
 
 
+def test_capture_helper_rejects_scope_bar_outside_header_bounds() -> None:
+    for scope_bar_y in (-1.0, 60.0):
+        observed = expected_presentation(
+            SCOPE_ALL,
+            browser_title="All Samples",
+            tree_visible=False,
+            collections_visible=False,
+            scope_bar_y=scope_bar_y,
+            header_bottom_y=23.0,
+        )
+        with pytest.raises(ScopeCaptureError, match="not inside Library header"):
+            assert_presentation_matches(SCOPE_ALL, observed)
+
+
 def test_capture_helper_accepts_distinct_presentation_states() -> None:
     cases = (
         (
