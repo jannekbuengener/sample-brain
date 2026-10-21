@@ -314,11 +314,11 @@ def test_scope_button_hover_and_focus_drive_shared_hint(tmp_path: Path) -> None:
         # Library scope navigation remains operable.
         bar = window.findChild(QQuickItem, "libraryScopeBar")
         assert bar is not None
-        bar.setProperty("mode", "favorites")
         engine._screen1_library_bridge.selectLibraryNode("scope:favorites")
         settle(app)
         assert view_model.browser_context == "Favorites"
-        bar.setProperty("mode", "collections")
+        assert engine._screen1_library_bridge.activeLibrarySection == "favorites"
+        engine._screen1_library_bridge.showLibrarySection("collections")
         settle(app)
         coll_list = window.findChild(QQuickItem, "libraryCollectionList")
         assert coll_list is not None and coll_list.isVisible()

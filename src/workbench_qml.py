@@ -3107,6 +3107,11 @@ ApplicationWindow {
                     ColumnLayout {
                         id: libraryScopeBar
                         objectName: "libraryScopeBar"
+                        // Flow does not apply Layout.fillWidth to children;
+                        // keep the five vertical rows wide enough for their
+                        // text and comfortable pointer/keyboard hit areas.
+                        width: 180
+                        implicitWidth: width
                         Layout.fillWidth: true
                         spacing: 3
                         z: 2
@@ -3488,9 +3493,6 @@ ApplicationWindow {
                         leftPadding: 10
                         rightPadding: 10
                         Accessible.name: "Add Source"
-                        ToolTip.visible: hovered
-                        ToolTip.delay: 350
-                        ToolTip.text: "Add Source"
                         contentItem: Text {
                             text: libraryAddSourceButton.text
                             color: !libraryAddSourceButton.enabled ? theme.textDisabled

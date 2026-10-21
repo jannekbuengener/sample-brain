@@ -69,23 +69,22 @@ def _extract_named_control(source: str, object_name: str, *, window: int = 2400)
 def test_library_add_remove_use_named_theme_bound_secondary_chrome() -> None:
     header = _library_header_block()
     add = _extract_named_control(header, "libraryAddSourceButton")
-    remove = _extract_named_control(header, "libraryRemoveSourceButton")
-
-    for block, label in ((add, "Add Source"), (remove, "Remove")):
-        assert f'text: "{label}"' in block or f"text: '{label}'" in block
-        assert "flat: true" in block
-        assert "contentItem: Text" in block
-        assert "background: Rectangle" in block
-        assert "theme.textSecondary" in block or "theme.textPrimary" in block
-        assert "theme.borderSubtle" in block
-        assert "theme.focusRing" in block or "theme.selectionBorder" in block
-        assert "theme.hoverSurface" in block or "theme.surfaceElevated" in block
-        for bright in _FORBIDDEN_BRIGHT_FILLS:
-            assert bright not in block.lower() and bright not in block
-
+    assert 'text: "+"' in add
+    assert 'Accessible.name: "Add Source"' in add
+    assert "flat: true" in add
+    assert "contentItem: Text" in add
+    assert "background: Rectangle" in add
+    assert "theme.textSecondary" in add or "theme.textPrimary" in add
+    assert "theme.borderSubtle" in add
+    assert "theme.focusRing" in add or "theme.selectionBorder" in add
+    assert "theme.hoverSurface" in add or "theme.surfaceElevated" in add
+    for bright in _FORBIDDEN_BRIGHT_FILLS:
+        assert bright not in add.lower() and bright not in add
     assert "addSourceDialog.open()" in add
-    assert "libraryInteraction.prepareRemoveSource()" in remove
-    assert "libraryInteraction.canRemoveSelectedSource" in remove
+    assert 'objectName: "libraryRemoveSourceButton"' not in header
+    assert 'objectName: "librarySourceActionsButton"' in QML_SOURCE
+    assert "libraryInteraction.canRemoveSource(model.nodeId)" in QML_SOURCE
+    assert "libraryInteraction.prepareRemoveSourceForNode(model.nodeId)" in QML_SOURCE
 
 
 def test_browser_search_is_dark_theme_native_field() -> None:
@@ -190,8 +189,10 @@ def test_docs_gate_documents_895_secondary_control_contract() -> None:
 def test_add_remove_action_wiring_unchanged() -> None:
     header = _library_header_block()
     assert "addSourceDialog.open()" in header
-    assert "libraryInteraction.prepareRemoveSource()" in header
-    assert "canRemoveSelectedSource" in header
+    assert "libraryInteraction.prepareRemoveSource()" not in header
+    assert 'objectName: "libraryRemoveSourceButton"' not in header
+    assert "libraryInteraction.prepareRemoveSourceForNode(model.nodeId)" in QML_SOURCE
+    assert "libraryInteraction.canRemoveSource(model.nodeId)" in QML_SOURCE
     # Calm-canvas Add Source path remains (First View) — not this polish target,
     # but must not be deleted as collateral.
     assert 'objectName: "calmCanvasAddSource"' in QML_SOURCE
@@ -220,7 +221,7 @@ def test_runtime_library_add_remove_are_dark_not_default_white() -> None:
 
         add = window.findChild(QQuickItem, "libraryAddSourceButton")
         assert add is not None
-        assert str(add.property("text")) == "Add Source"
+        assert str(add.property("text")) == "+"
         assert bool(add.property("flat")) is True
 
         bg = add.property("background")

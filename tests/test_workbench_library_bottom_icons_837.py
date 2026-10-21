@@ -116,17 +116,20 @@ def test_qml_bottom_icon_bar_contract_and_accessible_names() -> None:
     assert 'selectLibraryNode("scope:favorites")' in source
     assert 'selectLibraryNode("scope:recordings")' in source
     assert 'selectLibraryNode("scope:all-library")' in source
-    assert 'libraryScopeBar.mode = "recordings"' in source
+    assert 'libraryScopeBar.mode' not in source
     assert 'library.scope.recordings' in source
     assert "lokale Aufnahmen" in source
     # Add Source remains in the Library header alongside the compact scope bar.
     header = source.split('id: libraryHeaderRow', 1)[1].split(
         'objectName: "libraryContentHost"', 1
     )[0]
-    assert 'text: "Add Source"' in header
+    assert 'text: "+"' in header
+    assert 'Accessible.name: "Add Source"' in header
     assert 'objectName: "libraryScopeBar"' in header
     assert 'onClicked: addSourceDialog.open()' in header
-    assert 'onClicked: libraryInteraction.prepareRemoveSource()' in header
+    assert 'objectName: "libraryRemoveSourceButton"' not in source
+    assert 'objectName: "librarySourceActionsButton"' in source
+    assert 'libraryInteraction.prepareRemoveSourceForNode(model.nodeId)' in source
     # Favorites uses a geometric star canvas path, not emoji glyphs.
     favorites_block = source.split('objectName: "libraryFavoritesScopeButton"', 1)[1].split(
         'objectName: "libraryRecordingsScopeButton"', 1
@@ -152,10 +155,12 @@ def test_qml_bottom_icon_bar_contract_and_accessible_names() -> None:
     assert "ToolTip." not in scope_block
     assert "contextHintState.reportHover" in scope_block
     assert "contextHintState.reportFocus" in scope_block
-    assert 'readonly property int controlSize: 28' in scope_block
+    assert 'Layout.preferredHeight: 32' in scope_block
     assert 'readonly property int iconPad: 5' in scope_block
     assert "scopeActive" in scope_block
-    assert "theme.selectionSurface" in scope_block
+    assert "theme.surfaceElevated" in scope_block
+    assert "theme.hoverSurface" in scope_block
+    assert "theme.focusRing" in scope_block
     assert "checkable: true" not in scope_block
     assert "anchors.bottom: parent.bottom" not in scope_block
     assert "height: 1" not in scope_block
@@ -352,8 +357,8 @@ def test_runtime_library_scope_bar_in_header_not_footer(tmp_path: Path) -> None:
                 and host is not None
                 and bar is not None
                 and add_source is not None
-                and remove_source is not None
             )
+            assert remove_source is None
             assert footer is not None
             assert add_source.isVisible()
             assert catalog is None
@@ -374,10 +379,13 @@ def test_runtime_library_scope_bar_in_header_not_footer(tmp_path: Path) -> None:
             bar_in_pane = bar.mapToItem(pane, QPointF(0, 0))
             assert bar_in_pane.x() >= -1.0
             assert bar_in_pane.y() >= -1.0
-            assert bar_in_pane.y() + bar.height() <= 60.0
+            header_bottom_in_pane = header.mapToItem(
+                pane, QPointF(0, header.height())
+            ).y()
+            assert bar_in_pane.y() + bar.height() <= header_bottom_in_pane + 1.0
             # The Flow header keeps the scope/actions chrome inside the
             # supported Library minimum instead of overlapping.
-            for control in (bar, add_source, remove_source):
+            for control in (bar, add_source):
                 if not control.isVisible():
                     continue
                 control_in_header = control.mapToItem(header, QPointF(0, 0))
@@ -399,7 +407,7 @@ def test_runtime_library_scope_bar_in_header_not_footer(tmp_path: Path) -> None:
                 click_item(window, button, app, _settle_qml_frame)
                 app.processEvents()
                 _settle_qml_frame(app)
-                assert bar.property("mode") == mode
+                assert engine._screen1_library_bridge.activeLibrarySection == mode
                 assert sum(bool(scope_button.property("scopeActive")) for scope_button in scope_buttons) == 1
                 assert bool(button.property("scopeActive"))
                 assert all(
