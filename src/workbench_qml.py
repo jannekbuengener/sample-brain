@@ -3195,6 +3195,7 @@ ApplicationWindow {
                 padding: 2
                 Layout.alignment: Qt.AlignVCenter
                 Accessible.name: "SYNC"
+                Accessible.description: window.tempoSync.syncEnabled ? "SYNC enabled" : "SYNC disabled"
                 background: Rectangle {
                     objectName: "syncButtonBackground"
                     radius: 2

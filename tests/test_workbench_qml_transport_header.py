@@ -39,6 +39,7 @@ def test_qml_source_has_no_hardcoded_decorative_transport_truth():
     assert 'text: "GRID"' not in center
     assert center.count('text: "SYNC"') == 1
     assert 'objectName: "syncButton"' in center
+    assert 'Accessible.description: window.tempoSync.syncEnabled ? "SYNC enabled" : "SYNC disabled"' in center
     assert 'syncStateLabel' not in center
     assert 'text: "ON"' not in center
     assert 'text: "OFF"' not in center
