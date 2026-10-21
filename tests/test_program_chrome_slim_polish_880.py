@@ -89,7 +89,7 @@ def test_runtime_transport_and_scope_controls_are_lighter() -> None:
         settle(app)
         settle(app)
 
-        sync = window.findChild(QQuickItem, "syncIndicator")
+        sync = window.findChild(QQuickItem, "syncButton")
         overflow = window.findChild(QQuickItem, "displayPreferencesOverflow")
         sources = window.findChild(QQuickItem, "librarySourcesScopeButton")
         transport = window.findChild(QQuickItem, "headerTransportZone")

@@ -36,8 +36,12 @@ def test_qml_source_has_no_hardcoded_decorative_transport_truth():
     # Decorative literals from pre-#805 chrome must be gone.
     assert re.search(r'text:\s*"132"', center) is None
     assert re.search(r'text:\s*"4/4"', center) is None
-    # SYNC must not hardcode an ON pill without binding.
-    assert 'text: "ON"' not in center or "syncEnabled" in center
+    assert 'text: "GRID"' not in center
+    assert center.count('text: "SYNC"') == 1
+    assert 'objectName: "syncButton"' in center
+    assert 'syncStateLabel' not in center
+    assert 'text: "ON"' not in center
+    assert 'text: "OFF"' not in center
     assert "tempoSync." in center or "window.tempoSync" in center
     assert "adjustTempo" in center
     assert "toggleSync" in center
@@ -139,26 +143,25 @@ def test_runtime_qml_header_projects_live_transport_and_commands():
 
         tempo_label = window.findChild(QQuickItem, "masterTempoValue")
         grid_label = window.findChild(QQuickItem, "gridValue")
-        sync_indicator = window.findChild(QQuickItem, "syncIndicator")
-        sync_label = window.findChild(QQuickItem, "syncStateLabel")
+        sync_button = window.findChild(QQuickItem, "syncButton")
+        sync_background = window.findChild(QQuickItem, "syncButtonBackground")
         tempo_down = window.findChild(QQuickItem, "tempoDownButton")
         tempo_up = window.findChild(QQuickItem, "tempoUpButton")
         assert all(
             item is not None
             for item in (
                 tempo_label,
-                grid_label,
-                sync_indicator,
-                sync_label,
+                sync_button,
+                sync_background,
                 tempo_down,
                 tempo_up,
             )
         )
 
         assert str(tempo_label.property("text")) == f"{transport.get_current_tempo():g}"
-        ts = transport.tempo_map.time_signature
-        assert str(grid_label.property("text")) == f"{ts.numerator}/{ts.denominator}"
-        assert str(sync_label.property("text")) == "OFF"
+        assert grid_label is None
+        assert str(sync_button.property("text")) == "SYNC"
+        inactive_sync_color = sync_background.property("color")
 
         before = float(transport.get_current_tempo())
         point = tempo_up.mapToScene(QPointF(4, 4)).toPoint()
@@ -171,12 +174,13 @@ def test_runtime_qml_header_projects_live_transport_and_commands():
             engine._screen1_channel_rack.transport.tempo_map is transport.tempo_map
         )
 
-        sync_point = sync_indicator.mapToScene(QPointF(8, 8)).toPoint()
+        sync_point = sync_button.mapToScene(QPointF(8, 8)).toPoint()
         QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier, sync_point)
         _settle_qml_frame(app)
         assert transport.is_sync_enabled() is True
         assert bridge.syncEnabled is True
-        assert str(sync_label.property("text")) == "ON"
+        assert str(sync_button.property("text")) == "SYNC"
+        assert sync_background.property("color") != inactive_sync_color
 
         # Channel-rack open/play smoke at the changed tempo.
         channel_rack = engine.rootContext().contextProperty("channelRackModel")

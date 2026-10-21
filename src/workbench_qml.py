@@ -3137,7 +3137,7 @@ ApplicationWindow {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 2
                 width: implicitWidth
-            // #805: MASTER/GRID/SYNC project session tempo/SYNC authority only.
+            // #805/#1216: MASTER/SYNC project session tempo/SYNC authority only.
             // #880: compact tempo-zone group (no stretched utility widgets).
             Label { text: "MASTER"; color: theme.textSecondary; font.pixelSize: 9; Layout.alignment: Qt.AlignVCenter; opacity: 0.85 }
             Button {
@@ -3185,42 +3185,32 @@ ApplicationWindow {
                 onClicked: window.tempoSync.adjustTempo(1.0)
             }
             Label { text: "BPM"; color: theme.textSecondary; font.pixelSize: 9; Layout.alignment: Qt.AlignVCenter; opacity: 0.85 }
-            Item { width: 6 }
-            Label { text: "GRID"; color: theme.textSecondary; font.pixelSize: 9; Layout.alignment: Qt.AlignVCenter; opacity: 0.85 }
-            Label {
-                objectName: "gridValue"
-                text: window.tempoSync.gridText
-                color: theme.textPrimary
-                font.pixelSize: 12
-                font.bold: false
-                Layout.alignment: Qt.AlignVCenter
-            }
-            Item { width: 6 }
-            Label { text: "SYNC"; color: theme.textSecondary; font.pixelSize: 9; Layout.alignment: Qt.AlignVCenter; opacity: 0.85 }
-            Rectangle {
-                id: syncIndicator
-                objectName: "syncIndicator"
-                width: 28; height: 14; radius: 1
-                color: window.tempoSync.syncEnabled ? theme.actionActive : "transparent"
-                border.width: 1
-                border.color: window.tempoSync.syncEnabled ? theme.actionActive : theme.borderSubtle
+            Button {
+                id: syncButton
+                objectName: "syncButton"
+                text: "SYNC"
+                implicitWidth: 42
+                implicitHeight: 18
+                flat: true
+                padding: 2
                 Layout.alignment: Qt.AlignVCenter
                 Accessible.name: "SYNC"
-                Label {
-                    objectName: "syncStateLabel"
-                    anchors.centerIn: parent
-                    text: window.tempoSync.syncEnabled ? "ON" : "OFF"
+                background: Rectangle {
+                    objectName: "syncButtonBackground"
+                    radius: 2
+                    color: window.tempoSync.syncEnabled ? theme.actionActive : "transparent"
+                    border.width: 1
+                    border.color: window.tempoSync.syncEnabled ? theme.actionActive : theme.borderSubtle
+                }
+                contentItem: Text {
+                    text: syncButton.text
                     color: window.tempoSync.syncEnabled ? theme.textOnAction : theme.textSecondary
-                    font.pixelSize: 8
+                    font.pixelSize: 9
                     font.bold: false
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
                 }
-                MouseArea {
-                    // Expand hit area slightly beyond the slim visual chip.
-                    anchors.fill: parent
-                    anchors.margins: -3
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: window.tempoSync.toggleSync()
-                }
+                onClicked: window.tempoSync.toggleSync()
             }
             Item { width: 4 }
             // #819: calm Python-owned persistence honesty (hidden when OK/fresh).

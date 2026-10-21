@@ -82,8 +82,13 @@ def test_program_chrome_transport_on_right_without_harmonic_header() -> None:
     header = _header_block()
     transport = header[header.index('objectName: "headerTransportZone"') :]
     assert 'text: "MASTER"' in transport
-    assert 'text: "GRID"' in transport
+    assert 'text: "GRID"' not in transport
     assert 'text: "SYNC"' in transport
+    assert transport.count('text: "SYNC"') == 1
+    assert 'objectName: "syncButton"' in transport
+    assert 'syncStateLabel' not in transport
+    assert 'text: "ON"' not in transport
+    assert 'text: "OFF"' not in transport
     assert 'objectName: "displayPreferencesOverflow"' in transport
     assert 'objectName: "harmonicMatchButton"' not in transport
     nav_snip = header[
