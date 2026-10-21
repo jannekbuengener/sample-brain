@@ -67,11 +67,13 @@ candidate, weight or threshold is introduced to make the proof progress.
 
 ## Cross-domain neutrality
 
-The generic S5-S9 modules contain no AQ6 special-case path; AQ1 and AQ6 differ
-only through their domain-owned adapter, search-space and policy inputs. The
-AQ1 first-closed-cycle proof stays green unchanged. Persisted artifacts stay
-portable and bind the exact domain, candidate, config, search-space and
-evidence fingerprints.
+The generic S5-S9 chain is domain-parametric: a never-before-seen domain
+resolves through the same registry and advances through the same generic
+iterator without any generic change, so no AQ6 special-case path exists. AQ1
+and AQ6 differ only through their domain-owned adapter, search-space and policy
+inputs. The AQ1 first-closed-cycle proof stays green unchanged. Persisted
+artifacts stay portable and bind the exact domain, candidate, config,
+search-space and evidence fingerprints.
 
 ## Boundaries
 

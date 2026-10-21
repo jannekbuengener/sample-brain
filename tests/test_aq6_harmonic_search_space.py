@@ -1,8 +1,8 @@
 """Frozen RED coverage for the AQ6 second-domain search-space provider (#1200).
 
 The AQ6 provider is the only new domain surface for the S10 portability proof.
-Generic S5-S9 code must stay domain-neutral, so these cases also assert that no
-AQ6 special-case path leaked into the generic chain.
+Generic S5-S9 code must stay domain-parametric, so these cases also prove that
+a never-before-seen domain runs through the generic chain unchanged.
 """
 
 from __future__ import annotations
@@ -40,15 +40,6 @@ EXPECTED_CANDIDATE_IDS = (
     "harmonic.rank_filter.drop_uncertain",
 )
 
-# Generic S5-S9 chain that must never learn an AQ6 branch.
-GENERIC_CHAIN_MODULES = (
-    "src/analysis_quality_loop_supervisor.py",
-    "src/analysis_quality_closed_cycle.py",
-    "src/analysis_candidate_iterator.py",
-    "src/analysis_quality_loop_state.py",
-    "src/analysis_locked_holdout.py",
-)
-
 
 def _provider() -> Aq6HarmonicSearchSpaceProvider:
     return Aq6HarmonicSearchSpaceProvider()
@@ -60,10 +51,6 @@ def _baseline_id() -> str:
 
 def _baseline_fp() -> str:
     return fingerprint(candidate_public(candidate_by_id(_baseline_id())))
-
-
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
 
 
 # ---------------------------------------------------------------------------
@@ -343,25 +330,76 @@ def test_generic_iterator_binds_exact_aq6_search_space_identity() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Cross-domain neutrality — generic S5-S9 code keeps no AQ6 special case
+# Cross-domain neutrality — the generic chain is domain-parametric
 # ---------------------------------------------------------------------------
 
 
-def test_generic_chain_modules_contain_no_aq6_special_case() -> None:
-    root = _repo_root()
+def test_generic_registry_resolves_the_aq6_provider() -> None:
+    from src.aq_candidate_search_spaces import (
+        default_search_space_provider,
+        registered_search_space_domains,
+    )
 
-    for relative in GENERIC_CHAIN_MODULES:
-        path = root / relative
-        assert path.exists(), relative
-        text = path.read_text(encoding="utf-8").casefold()
-        assert "aq6" not in text, f"{relative} must not contain an AQ6 special case"
+    assert "aq6.ranking" in registered_search_space_domains()
+    assert isinstance(
+        default_search_space_provider("aq6.ranking"), Aq6HarmonicSearchSpaceProvider
+    )
 
 
-def test_domain_owned_surface_owns_the_aq6_provider() -> None:
-    root = _repo_root()
+def test_generic_chain_serves_a_domain_it_has_never_seen(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A never-before-seen domain runs through the generic chain unchanged.
 
-    provider_path = root / "src" / "aq_candidate_search_spaces" / "aq6_harmonic.py"
-    assert provider_path.exists()
-    assert "aq6" not in Path(
-        root / "src" / "analysis_quality_loop_supervisor.py"
-    ).read_text(encoding="utf-8").casefold()
+    The generic resolver and iterator are domain-parametric: registering a
+    provider for an unknown domain is enough, and no generic module learns the
+    domain. A per-domain branch in the generic chain would make this fail.
+    """
+    from src.aq_candidate_search_spaces import SEARCH_SPACE_PROVIDERS
+
+    class SentinelProvider:
+        search_space_id = "sentinel.domain.candidate-search-space"
+        search_space_version = "1.0.0"
+
+        def ordered_members(self) -> list[dict[str, str]]:
+            return [
+                {"candidate_id": "sentinel.one", "config_fingerprint": "a" * 64},
+                {"candidate_id": "sentinel.two", "config_fingerprint": "b" * 64},
+            ]
+
+        def search_space_fingerprint(self) -> str:
+            return search_space_fingerprint(
+                search_space_id=self.search_space_id,
+                search_space_version=self.search_space_version,
+                ordered_members=self.ordered_members(),
+            )
+
+    registry = dict(SEARCH_SPACE_PROVIDERS)
+    registry["sentinel.domain"] = SentinelProvider
+    monkeypatch.setattr(
+        "src.aq_candidate_search_spaces.SEARCH_SPACE_PROVIDERS", registry
+    )
+
+    from src.analysis_quality_loop_supervisor import _default_provider
+
+    provider = _default_provider("sentinel.domain")
+    assert isinstance(provider, SentinelProvider)
+    assert isinstance(provider, SearchSpaceProvider)
+
+    result = iterate_candidates(
+        domain="sentinel.domain",
+        next_action="continue_calibration",
+        partition_role="calibration",
+        provider=provider,
+        current_candidate_id="sentinel.one",
+        current_config_fingerprint="a" * 64,
+        visited_candidate_ids=["sentinel.one"],
+        search_space_fingerprint=provider.search_space_fingerprint(),
+    )
+
+    assert result["iterator_effect"] == "advance"
+    assert result["next_candidate"]["candidate_id"] == "sentinel.two"
+    assert result["search_space"]["search_space_id"] == (
+        "sentinel.domain.candidate-search-space"
+    )
+    assert result["production_authorized"] is False
