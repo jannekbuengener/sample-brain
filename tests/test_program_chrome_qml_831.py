@@ -100,9 +100,9 @@ def test_program_chrome_transport_on_right_without_harmonic_header() -> None:
     assert 'objectName: "masterTempoValue"' in transport
 
 
-def test_program_chrome_footer_hosts_scope_bar_and_centered_hint() -> None:
+def test_program_chrome_footer_hosts_context_status_without_scope_navigation() -> None:
     footer = _footer_block()
-    assert 'objectName: "libraryScopeBar"' in footer
+    assert 'objectName: "libraryScopeBar"' not in footer
     assert 'objectName: "contextHintPlacement"' in footer or 'objectName: "programFooterBand"' in footer
     assert 'objectName: "contextHintDisplay"' in footer
     assert 'objectName: "footerContextCenterLayer"' in footer
@@ -119,7 +119,10 @@ def test_program_chrome_footer_hosts_scope_bar_and_centered_hint() -> None:
     pane = QML_SOURCE.split("id: libraryPane", 1)[1].split(
         'objectName: "elasticHandleAfterLibrary"', 1
     )[0]
-    assert 'objectName: "libraryScopeBar"' not in pane
+    assert 'objectName: "libraryScopeBar"' in pane
+    assert pane.index('objectName: "libraryScopeBar"') < pane.index(
+        'objectName: "libraryAddSourceButton"'
+    )
 
 
 def test_program_footer_is_global_chrome_across_screens() -> None:

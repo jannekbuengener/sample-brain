@@ -1,4 +1,4 @@
-"""Fail-closed Library scope evidence capture helpers for #837.
+"""Fail-closed Library scope evidence capture helpers for #837/#1201.
 
 Capture is only allowed after observable presentation state matches the
 expected scope. Click-only or mislabeled captures must raise.
@@ -34,7 +34,9 @@ class LibraryScopePresentation:
     browser_title: str
     tree_visible: bool
     collections_visible: bool
+    # The scope bar's y-coordinate relative to the Library header.
     scope_bar_y: float
+    # Retained as capture metadata for existing evidence records.
     header_bottom_y: float
     selected_node_id: str | None = None
 
@@ -67,14 +69,13 @@ def expected_presentation(
 def assert_scope_bar_pinned(
     presentation: LibraryScopePresentation,
     *,
-    min_gap_from_header_px: float = 80.0,
+    max_offset_from_header_px: float = 80.0,
 ) -> None:
-    """#837: secondary icon bar is pinned at the Library pane bottom, not under the header."""
-    gap = presentation.scope_bar_y - presentation.header_bottom_y
-    if gap < min_gap_from_header_px:
+    """#1201: secondary scope bar is kept inside the Library header."""
+    if presentation.scope_bar_y > max_offset_from_header_px:
         raise ScopeCaptureError(
-            "libraryScopeBar not pinned at Library pane bottom: "
-            f"bar_y={presentation.scope_bar_y} header_bottom={presentation.header_bottom_y}"
+            "libraryScopeBar not inside Library header: "
+            f"bar_y={presentation.scope_bar_y} max_offset={max_offset_from_header_px}"
         )
 
 

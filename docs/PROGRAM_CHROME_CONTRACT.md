@@ -101,10 +101,10 @@ materialization path from program chrome.
 
 ## Footer reuse
 
-[#837](https://github.com/jannekbuengener/sample-brain/issues/837) still owns which Library scopes exist and that they dispatch the existing scope intents. This contract supersedes only the geometric claim that those icons must sit strictly above a separate hint-only footer: the approved band places existing utility on the left, context info in a true full-width center layer, and existing status on the right.
+[#837](https://github.com/jannekbuengener/sample-brain/issues/837) still owns which Library scopes exist and that they dispatch the existing scope intents. #1201 owns their compact presentation in the Library header; the global footer remains a context/status surface and contains no Library-scope navigation.
 
-- Reuse Collections and Favorites. Do not add a second copy in the Library pane.
-- Sample Sources, All Samples, and Recordings stay available through the existing #837 scope set. Do not delete them to match the crop, and do not invent a new control for them.
+- Reuse the existing five #837 controls in the Library header. Do not add a second copy elsewhere.
+- Sample Sources, All Samples, Collections, Favorites, and Recordings stay available through the existing scope set. Do not delete them to match the crop, and do not invent a new control for them.
 - Do not add Song clock, pattern-step counters, or a `Local` badge unless a current projection already exposes that text.
 - [#770](https://github.com/jannekbuengener/sample-brain/issues/770) still owns hint priority (Hover > Selection/focus > Default/empty) and the rule that the hint surface takes no focus. Selection includes keyboard-focused supported controls and, when none are focused, the existing browser sample selection projection. The focused footer-context centering slice re-authorizes geometric centering on the full footer midpoint inside this band; the hint must not overlap the utility or status hit areas.
 
@@ -116,8 +116,8 @@ materialization path from program chrome.
 | #786 / brand README: no brain logo, lockup, or claim in the header | That prohibition | Nothing. Identity stays product text. |
 | #843 (DONE_MERGED_CLOSED): Harmonic Matches from Sample Context Menu | Open/retarget via `open_harmonic_matches_for_row`; #845 collapse ownership | Header `harmonicMatchButton` is gone. Right program-chrome must not reintroduce it. |
 | #770: hint is bottom-center | Hint semantics; Hover > Selection/focus > empty | #831 temporarily placed the hint on the right. The focused footer-context centering slice restores full-footer-width geometric centering inside this band (not a separate strip outside the footer). |
-| #837: secondary icons above a hint-only footer | Scope set and intent dispatch | Those icons occupy the left side of this footer band (no second Library-pane copy). |
-| `WORKBENCH_LIBRARY_NAVIGATION_CONTRACT.md` historical pane-bottom bar wording | Scope intents and Catalog invisibility | **Placement authority is this file (#830):** global footer left. The navigation contract no longer authorizes a competing pane-local geometry. |
+| #837: secondary icons above a hint-only footer | Scope set and intent dispatch | #1201 places the existing controls compactly in the Library header; the global footer contains context/status only. |
+| `WORKBENCH_LIBRARY_NAVIGATION_CONTRACT.md` historical pane-bottom bar wording | Scope intents and Catalog invisibility | **Placement authority is #1201:** the Library header. The navigation contract does not authorize a second footer copy. |
 
 Screen-1 colors stay on Theme Core. This reference is not a palette.
 

@@ -49,10 +49,11 @@ def test_program_chrome_reconciles_843_header_removal() -> None:
     assert "Sample Context Menu" in text
 
 
-def test_library_navigation_defers_placement_to_830() -> None:
+def test_library_navigation_places_scope_controls_in_header_1201() -> None:
     text = Path("docs/WORKBENCH_LIBRARY_NAVIGATION_CONTRACT.md").read_text(
         encoding="utf-8"
     )
-    assert "PROGRAM_CHROME_CONTRACT.md" in text
+    assert "#1201" in text
+    assert "Library header" in text
     assert "global footer" in text.lower()
-    assert "no longer authorizes a competing Library-pane row" in text
+    assert "contains no scope-navigation copy" in text
