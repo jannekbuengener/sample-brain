@@ -226,6 +226,7 @@ def test_qml_library_model_uses_exact_canonical_taxonomy_without_fake_surface() 
     from src import workbench_qml
 
     source = workbench_qml.QML_SOURCE
+    assert 'objectName: "libraryHeaderRow"' in source
     assert "TreeView" in source
     assert "libraryTreeModel" in source
     assert 'objectName: "libraryScopeBar"' in source
@@ -257,10 +258,9 @@ def test_library_scope_bar_visual_polish_contract() -> None:
     from src import workbench_qml
 
     source = workbench_qml.QML_SOURCE
-    # Footer scope bar ends before program header (#831/#885 centering removed the
-    # old RowLayout fill-width spacer that previously delimited this block).
+    # The compact scope bar is part of the Library header, not global chrome.
     scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
-        "header:", 1
+        'objectName: "libraryContentHost"', 1
     )[0]
     tree_block = source.split('objectName: "libraryTree"', 1)[1].split(
         "delegate: TreeViewDelegate", 1
@@ -271,10 +271,10 @@ def test_library_scope_bar_visual_polish_contract() -> None:
     pane_block = source.split('id: libraryPane', 1)[1].split(
         'objectName: "elasticHandleAfterLibrary"', 1
     )[0]
-    assert 'objectName: "libraryScopeBar"' not in pane_block
+    assert 'objectName: "libraryScopeBar"' in pane_block
     footer_block = source.split("footer:", 1)[1].split("header:", 1)[0]
     assert pane_block.find('objectName: "libraryContentHost"') >= 0
-    assert 'objectName: "libraryScopeBar"' in footer_block
+    assert 'objectName: "libraryScopeBar"' not in footer_block
 
     for glyph in ("⌁", "≡", "▣"):
         assert f'text: "{glyph}"' not in source

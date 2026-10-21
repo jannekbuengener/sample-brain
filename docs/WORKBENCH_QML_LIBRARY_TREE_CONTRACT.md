@@ -15,9 +15,8 @@ and placed `Add Source…` inside `Sample Sources`. It also supersedes the
 visible Catalog control.
 
 #837 remains the authority for which secondary scopes are visible and which
-intents they dispatch. #830 (`docs/PROGRAM_CHROME_CONTRACT.md`) owns the global
-footer placement of that utility set; #837 no longer competes as a pane-local
-geometry authority for those icons.
+intents they dispatch. #1201 owns the compact Library-header placement of that
+utility set; the global footer contains context/status only.
 
 ## Source tree taxonomy
 
@@ -38,12 +37,13 @@ convenience folders.
 The single primary Add Source affordance remains the existing button in the
 Library header. `action:add-source` is not emitted by the navigation model.
 
-## Bottom secondary icon navigation (#837 scope set; #830 placement)
+## Library-header secondary navigation (#837 scope set; #1201 placement)
 
-Historical #837 placement was a compact icon-only row at the bottom of the left Library/Browser pane, directly above the ApplicationWindow footer. That
-pane-local geometry is superseded for #831 by #830: the same utility set moves
-onto the left of the global footer band. This section still owns the scope set
-and the intent dispatch only. Do not render the same scope twice.
+Historical #837 placement was a compact icon-only row at the bottom of the left
+Library/Browser pane, directly above the ApplicationWindow footer. #1201 places
+the same utility set in the Library header beside the existing title/actions.
+This section still owns the scope set and the intent dispatch only. Do not
+render the same scope twice.
 
 Visible secondary controls:
 
@@ -67,7 +67,7 @@ rows.
 Every icon-only control exposes a stable object/semantic identity and accessible
 name. #770 owns the shared context-hint display; the focused footer-context
 centering slice places that hint in a true center layer on the footer band
-(full footer midpoint; left scope / right status zones remain). Scope controls
+(full footer midpoint; the footer retains context/status only). Scope controls
 report hover/focus (selection) intents into that seam and do not rely on
 classic cursor-adjacent ToolTips for Library scope discoverability.
 

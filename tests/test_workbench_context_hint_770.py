@@ -116,9 +116,9 @@ def test_supported_controls_register_stable_distinct_descriptors() -> None:
     assert 'Accessible.name: "Recordings"' in source
     assert 'objectName: "libraryCatalogScopeButton"' not in source
     # Scope controls must not depend on classic ToolTip for discoverability.
-    # libraryScopeBar is the last footer child; truncate at the next chrome section.
+    # libraryScopeBar is a Library-header child; truncate before the content host.
     scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
-        "header:", 1
+        'objectName: "libraryContentHost"', 1
     )[0]
     assert "ToolTip." not in scope_block
     assert 'objectName: "libraryFavoritesScopeButton"' in scope_block

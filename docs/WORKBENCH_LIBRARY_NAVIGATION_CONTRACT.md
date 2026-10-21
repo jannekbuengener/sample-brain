@@ -34,9 +34,11 @@ Presentation split:
 - **Secondary scope controls (intent authority):** All Samples, Collections,
   Favorites (geometric star), and Recordings — same scope set and dispatch as
   #837 / the QML Library Tree contract. No new Library intents and no new scopes.
-- **Secondary scope controls (placement authority):** `#830`
-  (`docs/PROGRAM_CHROME_CONTRACT.md`) owns presentation placement in the
-  **global footer** utility band (left). This navigation contract no longer authorizes a competing Library-pane row directly above the footer. Do not keep a second copy in the Library pane after #831. The visible Catalog control is not presented.
+- **Secondary scope controls (placement authority):** `#1201` owns the compact
+  presentation placement in the **Library header**, alongside the existing
+  Library title and Add Source/Remove controls. The global footer remains a
+  context/status surface and contains no scope-navigation copy. The visible
+  Catalog control is not presented.
 
 Favorites is a dedicated user-organization scope
 (`scope:favorites` / `LibraryScopeKind.FAVORITES`). Recordings is a dedicated

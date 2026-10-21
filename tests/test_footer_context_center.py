@@ -84,7 +84,7 @@ def test_selected_sample_context_hint_formats_existing_projection_fields() -> No
 def test_qml_encodes_true_center_layer_not_rowlayout_leftover() -> None:
     footer = _footer_block()
     assert 'objectName: "programFooterBand"' in footer
-    assert 'objectName: "libraryScopeBar"' in footer
+    assert 'objectName: "libraryScopeBar"' not in footer
     assert 'objectName: "footerContextCenterLayer"' in footer
     assert 'objectName: "contextHintDisplay"' in footer
     assert 'objectName: "footerStatusZone"' in footer

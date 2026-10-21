@@ -54,13 +54,14 @@ def library_db(library_state: Path) -> Path:
     return db_path
 
 
-def test_docs_gate_bottom_icon_presentation_authority() -> None:
+def test_docs_gate_library_header_scope_presentation_authority() -> None:
     tree = Path("docs/WORKBENCH_QML_LIBRARY_TREE_CONTRACT.md").read_text(encoding="utf-8")
     nav = Path("docs/WORKBENCH_LIBRARY_NAVIGATION_CONTRACT.md").read_text(encoding="utf-8")
     hint = Path("docs/WORKBENCH_CONTEXT_HINT_CONTRACT.md").read_text(encoding="utf-8")
     assert "#837" in tree
-    assert "bottom of the left Library/Browser pane" in tree
-    assert "above the" in tree.lower() and "footer" in tree.lower()
+    assert "Library-header secondary navigation" in tree
+    assert "#1201" in tree
+    assert "footer contains context/status only" in tree
     assert "scope:recordings" in tree
     assert "visible Catalog" in tree or "Catalog / Katalog" in tree
     assert "Catalog data ownership" in tree or "Catalog loaders" in tree
@@ -118,11 +119,14 @@ def test_qml_bottom_icon_bar_contract_and_accessible_names() -> None:
     assert 'libraryScopeBar.mode = "recordings"' in source
     assert 'library.scope.recordings' in source
     assert "lokale Aufnahmen" in source
-    # Add Source remains in the Library header, not relocated into the icon bar.
+    # Add Source remains in the Library header alongside the compact scope bar.
     header = source.split('id: libraryHeaderRow', 1)[1].split(
         'objectName: "libraryContentHost"', 1
     )[0]
     assert 'text: "Add Source"' in header
+    assert 'objectName: "libraryScopeBar"' in header
+    assert 'onClicked: addSourceDialog.open()' in header
+    assert 'onClicked: libraryInteraction.prepareRemoveSource()' in header
     # Favorites uses a geometric star canvas path, not emoji glyphs.
     favorites_block = source.split('objectName: "libraryFavoritesScopeButton"', 1)[1].split(
         'objectName: "libraryRecordingsScopeButton"', 1
@@ -130,21 +134,20 @@ def test_qml_bottom_icon_bar_contract_and_accessible_names() -> None:
     assert "★" not in favorites_block
     assert "⭐" not in favorites_block
     assert "for (var i = 0; i < 5; i++)" in favorites_block
-    # #831: scope bar lives in the global program footer band (left).
+    # #1201: the scope bar is Library-local; the global footer remains context/status only.
     footer_block = source.split("footer:", 1)[1].split("header:", 1)[0]
-    assert 'objectName: "libraryScopeBar"' in footer_block
+    assert 'objectName: "libraryScopeBar"' not in footer_block
     assert 'objectName: "programFooterBand"' in footer_block
     pane_block = source.split('id: libraryPane', 1)[1].split(
         'objectName: "elasticHandleAfterLibrary"', 1
     )[0]
-    assert 'objectName: "libraryScopeBar"' not in pane_block
+    assert 'objectName: "libraryScopeBar"' in pane_block
     host_pos = pane_block.find('objectName: "libraryContentHost"')
     assert host_pos >= 0
-    assert pane_block.find('objectName: "libraryScopeBar"') < 0
     # Icon bar must not depend on classic ToolTips for discoverability.
-    # libraryScopeBar is the last footer child; truncate at the next chrome section.
+    # The scope bar retains its existing hover/focus hint wiring after relocation.
     scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
-        "header:", 1
+        'objectName: "libraryContentHost"', 1
     )[0]
     assert "ToolTip." not in scope_block
     assert "contextHintState.reportHover" in scope_block
@@ -253,9 +256,10 @@ def test_catalog_python_core_still_present() -> None:
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
-def test_runtime_bottom_icon_bar_above_footer_not_in_footer(tmp_path: Path) -> None:
-    """Runtime geometry: icon bar in library pane bottom, above app footer."""
-    from PySide6.QtCore import QPointF
+def test_runtime_library_scope_bar_in_header_not_footer(tmp_path: Path) -> None:
+    """Runtime geometry and click routing for the Library-local scope bar."""
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
     from PySide6.QtQuick import QQuickItem
 
     from src.workbench_qml import (
@@ -264,6 +268,25 @@ def test_runtime_bottom_icon_bar_above_footer_not_in_footer(tmp_path: Path) -> N
         apply_clean_start_launch,
     )
     from src.workbench_qml_spike import _settle_qml_frame
+
+    def click_item(window, item, app, settle) -> None:
+        center = item.mapToItem(
+            window.contentItem(), QPointF(item.width() / 2, item.height() / 2)
+        )
+        for event_type in (
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.MouseButtonRelease,
+        ):
+            event = QMouseEvent(
+                event_type,
+                center,
+                window.mapToGlobal(center.toPoint()),
+                Qt.MouseButton.LeftButton,
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier,
+            )
+            app.sendEvent(window, event)
+            settle(app)
 
     db = tmp_path / "library.db"
     state_dir = tmp_path / "state"
@@ -304,16 +327,26 @@ def test_runtime_bottom_icon_bar_above_footer_not_in_footer(tmp_path: Path) -> N
             _settle_qml_frame(app)
 
             pane = window.findChild(QQuickItem, "libraryPane")
+            header = window.findChild(QQuickItem, "libraryHeaderRow")
             host = window.findChild(QQuickItem, "libraryContentHost")
             bar = window.findChild(QQuickItem, "libraryScopeBar")
             footer = window.findChild(QQuickItem, "programFooterBand")
+            add_source = window.findChild(QQuickItem, "libraryAddSourceButton")
+            remove_source = window.findChild(QQuickItem, "libraryRemoveSourceButton")
             catalog = window.findChild(QQuickItem, "libraryCatalogScopeButton")
             favorites = window.findChild(QQuickItem, "libraryFavoritesScopeButton")
             collections = window.findChild(QQuickItem, "libraryCollectionsScopeButton")
             recordings = window.findChild(QQuickItem, "libraryRecordingsScopeButton")
             all_samples = window.findChild(QQuickItem, "libraryAllSamplesScopeButton")
             sources = window.findChild(QQuickItem, "librarySourcesScopeButton")
-            assert pane is not None and host is not None and bar is not None
+            assert (
+                pane is not None
+                and header is not None
+                and host is not None
+                and bar is not None
+                and add_source is not None
+                and remove_source is not None
+            )
             assert footer is not None
             assert catalog is None
             assert favorites is not None and favorites.isVisible()
@@ -322,25 +355,41 @@ def test_runtime_bottom_icon_bar_above_footer_not_in_footer(tmp_path: Path) -> N
             assert all_samples is not None and all_samples.isVisible()
             assert sources is not None and sources.isVisible()
 
-            # Geometry: scope bar in global footer band; library host fills pane.
-            bar_in_footer = bar.mapToItem(footer, QPointF(0, 0))
-            assert bar_in_footer.y() >= -1.0 and bar_in_footer.x() >= -1.0
-            assert bar_in_footer.y() <= float(footer.height()) + 2.0
+            # Geometry: scope bar is a Library-header child, never global footer chrome.
+            assert pane.isAncestorOf(bar)
+            assert not footer.isAncestorOf(bar)
+            bar_in_pane = bar.mapToItem(pane, QPointF(0, 0))
+            assert bar_in_pane.x() >= -1.0
+            assert bar_in_pane.y() >= -1.0
+            assert bar_in_pane.y() + bar.height() <= 60.0
+            # The Flow header keeps the scope/actions chrome inside the
+            # supported Library minimum instead of overlapping.
+            for control in (bar, add_source, remove_source):
+                if not control.isVisible():
+                    continue
+                control_in_header = control.mapToItem(header, QPointF(0, 0))
+                assert control_in_header.x() >= -1.0
+                assert control_in_header.y() >= -1.0
+                assert control_in_header.x() + control.width() <= header.width() + 1.0
+                assert control_in_header.y() + control.height() <= header.height() + 1.0
 
             # Activate each secondary control; tree retreats except Sources.
-            bridge = engine._screen1_library_bridge
-            for mode, node_id in (
-                ("all", "scope:all-library"),
-                ("favorites", "scope:favorites"),
-                ("recordings", "scope:recordings"),
-                ("collections", None),
-                ("sources", None),
+            for mode, button_name, expected_kind in (
+                ("all", "libraryAllSamplesScopeButton", LibraryScopeKind.ALL_SAMPLES),
+                ("favorites", "libraryFavoritesScopeButton", LibraryScopeKind.FAVORITES),
+                ("recordings", "libraryRecordingsScopeButton", LibraryScopeKind.RECORDINGS),
+                ("collections", "libraryCollectionsScopeButton", None),
+                ("sources", "librarySourcesScopeButton", None),
             ):
-                bar.setProperty("mode", mode)
-                if node_id:
-                    bridge.selectLibraryNode(node_id)
+                button = window.findChild(QQuickItem, button_name)
+                assert button is not None
+                click_item(window, button, app, _settle_qml_frame)
                 app.processEvents()
                 _settle_qml_frame(app)
+                assert bar.property("mode") == mode
+                if expected_kind is not None:
+                    assert composition.browser_state.scope is not None
+                    assert composition.browser_state.scope.kind is expected_kind
                 tree = window.findChild(QQuickItem, "libraryTree")
                 coll = window.findChild(QQuickItem, "libraryCollectionList")
                 assert tree is not None and coll is not None
@@ -353,10 +402,13 @@ def test_runtime_bottom_icon_bar_above_footer_not_in_footer(tmp_path: Path) -> N
                 else:
                     assert not tree.isVisible()
                     assert not coll.isVisible()
-                # Mode switches must not relocate the bar out of the footer band.
+                # Mode switches must not relocate the bar out of the Library header.
                 bar2 = window.findChild(QQuickItem, "libraryScopeBar")
                 assert bar2 is not None
-                assert abs(bar2.mapToItem(footer, QPointF(0, 0)).y()) < 8.0
+                assert pane.isAncestorOf(bar2)
+                assert abs(bar2.mapToItem(pane, QPointF(0, 0)).y() - bar_in_pane.y()) < 8.0
+
+            assert composition.audition_dispatches == []
 
             grab = window.grabWindow()
             out = evidence_dir / f"library_bottom_icons_{tag}.png"

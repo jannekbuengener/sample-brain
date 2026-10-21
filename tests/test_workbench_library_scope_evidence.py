@@ -27,7 +27,7 @@ def test_capture_helper_rejects_mislabeled_all_samples_as_favorites() -> None:
         browser_title="All Samples",
         tree_visible=False,
         collections_visible=False,
-        scope_bar_y=568.0,
+        scope_bar_y=0.0,
         header_bottom_y=23.0,
     )
     with pytest.raises(ScopeCaptureError, match="scope mode mismatch"):
@@ -40,24 +40,38 @@ def test_capture_helper_rejects_visible_tree_for_secondary_scopes() -> None:
         browser_title="All Samples",
         tree_visible=True,
         collections_visible=False,
-        scope_bar_y=568.0,
+        scope_bar_y=0.0,
         header_bottom_y=23.0,
     )
     with pytest.raises(ScopeCaptureError, match="hidden Source Tree"):
         assert_presentation_matches(SCOPE_ALL, observed)
 
 
-def test_capture_helper_rejects_header_pinned_scope_bar() -> None:
+def test_capture_helper_rejects_footer_scope_bar() -> None:
     observed = expected_presentation(
         SCOPE_FAVORITES,
         browser_title="Favorites",
         tree_visible=False,
         collections_visible=False,
-        scope_bar_y=28.0,
+        scope_bar_y=568.0,
         header_bottom_y=23.0,
     )
-    with pytest.raises(ScopeCaptureError, match="not pinned"):
+    with pytest.raises(ScopeCaptureError, match="not inside Library header"):
         assert_presentation_matches(SCOPE_FAVORITES, observed)
+
+
+def test_capture_helper_rejects_scope_bar_outside_header_bounds() -> None:
+    for scope_bar_y in (-1.0, 60.0):
+        observed = expected_presentation(
+            SCOPE_ALL,
+            browser_title="All Samples",
+            tree_visible=False,
+            collections_visible=False,
+            scope_bar_y=scope_bar_y,
+            header_bottom_y=23.0,
+        )
+        with pytest.raises(ScopeCaptureError, match="not inside Library header"):
+            assert_presentation_matches(SCOPE_ALL, observed)
 
 
 def test_capture_helper_accepts_distinct_presentation_states() -> None:
@@ -69,7 +83,7 @@ def test_capture_helper_accepts_distinct_presentation_states() -> None:
                 browser_title="Samples",
                 tree_visible=True,
                 collections_visible=False,
-                scope_bar_y=568.0,
+                scope_bar_y=0.0,
                 header_bottom_y=23.0,
             ),
         ),
@@ -80,7 +94,7 @@ def test_capture_helper_accepts_distinct_presentation_states() -> None:
                 browser_title="All Samples",
                 tree_visible=False,
                 collections_visible=False,
-                scope_bar_y=568.0,
+                scope_bar_y=0.0,
                 header_bottom_y=23.0,
             ),
         ),
@@ -91,7 +105,7 @@ def test_capture_helper_accepts_distinct_presentation_states() -> None:
                 browser_title="Favorites",
                 tree_visible=False,
                 collections_visible=False,
-                scope_bar_y=568.0,
+                scope_bar_y=0.0,
                 header_bottom_y=23.0,
             ),
         ),
@@ -102,7 +116,7 @@ def test_capture_helper_accepts_distinct_presentation_states() -> None:
                 browser_title="Recordings",
                 tree_visible=False,
                 collections_visible=False,
-                scope_bar_y=568.0,
+                scope_bar_y=0.0,
                 header_bottom_y=23.0,
             ),
         ),
@@ -113,7 +127,7 @@ def test_capture_helper_accepts_distinct_presentation_states() -> None:
                 browser_title="Collections",
                 tree_visible=False,
                 collections_visible=True,
-                scope_bar_y=568.0,
+                scope_bar_y=0.0,
                 header_bottom_y=23.0,
             ),
         ),
@@ -151,7 +165,7 @@ PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
-    """Runtime: libraryScopeBar stays in the global footer band (#831)."""
+    """Runtime: libraryScopeBar stays in the Library header (#1201)."""
     from PySide6.QtQuick import QQuickItem
 
     from src.workbench_library import init_workbench_library
@@ -218,15 +232,19 @@ def test_scope_bar_y_stable_across_modes(tmp_path) -> None:
             tree = window.findChild(QQuickItem, "libraryTree")
             coll = window.findChild(QQuickItem, "libraryCollectionList")
             footer = window.findChild(QQuickItem, "programFooterBand")
+            header = window.findChild(QQuickItem, "libraryHeaderRow")
             host = window.findChild(QQuickItem, "libraryContentHost")
             fav = window.findChild(QQuickItem, "libraryFavoritesScopeButton")
             catalog = window.findChild(QQuickItem, "libraryCatalogScopeButton")
-            assert bar is not None and footer is not None and host is not None
+            assert bar is not None and footer is not None and header is not None and host is not None
             assert fav is not None
             assert catalog is None
-            bar_in_footer = bar.mapToItem(footer, 0, 0)
-            bar_ys[mode] = float(bar_in_footer.y())
-            assert abs(bar_in_footer.y()) < 8.0, f"{mode} scope bar not in footer band"
+            assert header.isAncestorOf(bar)
+            assert not footer.isAncestorOf(bar)
+            bar_in_header = bar.mapToItem(header, 0, 0)
+            bar_ys[mode] = float(bar_in_header.y())
+            assert bar_in_header.y() >= -1.0
+            assert bar_in_header.y() + bar.height() <= header.height() + 1.0
             if mode == "sources":
                 assert tree is not None and tree.isVisible()
                 assert coll is not None and not coll.isVisible()
