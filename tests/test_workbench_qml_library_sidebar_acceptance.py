@@ -6,11 +6,6 @@ state transitions, visual contracts, and IO-free hover behavior.
 
 from __future__ import annotations
 
-# Disable background waveform loader BEFORE any module imports
-# to avoid COM threading issues (0x8001010d) in test environment
-import os
-os.environ["SAMPLE_BRAIN_TEST_NO_WAVEFORM_LOADER"] = "1"
-
 import importlib.util
 import tempfile
 from pathlib import Path
@@ -148,7 +143,7 @@ class FakeNavigation:
         self.calls: list[str] = []
 
     def top_level_nodes(self):
-        return self.top
+        return self.top[:1]
 
     def children(self, node_id: str):
         self.calls.append(f"children:{node_id}")
@@ -186,7 +181,18 @@ class FakeNavigation:
         }.get(node_id)
 
     def secondary_nodes(self):
-        return ()
+        return self.top[1:]
+
+
+def test_fake_navigation_matches_production_sidebar_topology():
+    nav = FakeNavigation()
+    assert [node.kind for node in nav.top_level_nodes()] == [LibraryNodeKind.SAMPLE_SOURCES]
+    assert [node.kind for node in nav.secondary_nodes()] == [
+        LibraryNodeKind.ALL_SAMPLES,
+        LibraryNodeKind.COLLECTIONS,
+        LibraryNodeKind.FAVORITES,
+        LibraryNodeKind.RECORDINGS,
+    ]
 
 
 class _RecordingHarmonyController:
@@ -240,10 +246,9 @@ def view_model(runtime_composition):
 
 
 @pytest.fixture
-def qml_engine(qapp, runtime_composition, view_model):
-    """Launch the real QML engine with the library sidebar."""
-    # The SAMPLE_BRAIN_TEST_NO_WAVEFORM_LOADER=1 env var is set at module import
-    # which disables the background waveform loader in _qml_engine
+def qml_engine(qapp, runtime_composition, view_model, monkeypatch):
+    """Launch the real QML engine with loader suppression scoped to this fixture."""
+    monkeypatch.setenv("SAMPLE_BRAIN_TEST_NO_WAVEFORM_LOADER", "1")
     app, engine, window = _qml_engine(view_model, runtime_composition=runtime_composition)
     window.show()
     QTest.qWaitForWindowExposed(window, 5000)
