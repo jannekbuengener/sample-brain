@@ -3126,7 +3126,7 @@ ApplicationWindow {
                             return "transparent"
                         }
                         function scopeStroke(active) {
-                            return active ? theme.selectionBorder : "transparent"
+                            return active ? theme.selectionSurface : "transparent"
                         }
                         function scopeInk(active, focused) {
                             return active || focused ? theme.textPrimary : theme.textSecondary
@@ -3139,7 +3139,7 @@ ApplicationWindow {
                                 flat: true
                                 readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "sources"
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 32
+                                Layout.preferredHeight: 36
                                 onClicked: libraryInteraction.showLibrarySection("sources")
                                 Accessible.name: "Sample Sources"
                                 onHoveredChanged: {
@@ -3203,7 +3203,7 @@ ApplicationWindow {
                                 flat: true
                                 readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "all"
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 32
+                                Layout.preferredHeight: 36
                                 onClicked: {
                                     libraryInteraction.selectLibraryNode("scope:all-library")
                                 }
@@ -3270,7 +3270,7 @@ ApplicationWindow {
                                 flat: true
                                 readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "collections"
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 32
+                                Layout.preferredHeight: 36
                                 onClicked: libraryInteraction.showLibrarySection("collections")
                                 Accessible.name: "Collections"
                                 onHoveredChanged: {
@@ -3331,7 +3331,7 @@ ApplicationWindow {
                                 flat: true
                                 readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "favorites"
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 32
+                                Layout.preferredHeight: 36
                                 onClicked: {
                                     libraryInteraction.selectLibraryNode("scope:favorites")
                                 }
@@ -3416,7 +3416,7 @@ ApplicationWindow {
                                 flat: true
                                 readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "recordings"
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 32
+                                Layout.preferredHeight: 36
                                 onClicked: {
                                     libraryInteraction.selectLibraryNode("scope:recordings")
                                 }
@@ -3596,6 +3596,7 @@ ApplicationWindow {
                     enabled: libraryInteraction.activeLibrarySection === "sources"
                     anchors.fill: parent
                     model: libraryTreeModel
+                    rootIndex: libraryTreeModel.presentationRootIndex()
                     clip: true
                     focus: libraryInteraction.activeLibrarySection === "sources"
                     activeFocusOnTab: libraryInteraction.activeLibrarySection === "sources"

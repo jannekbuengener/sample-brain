@@ -358,9 +358,9 @@ class TestVerticalScopeNavigation:
             h = btn.property("height") or btn.property("implicitHeight")
             heights.append(h)
 
-        # All should have same preferred height (32 per QML)
+        # All five scope buttons retain the approved 36px visual polish.
         for h in heights:
-            assert h == 32 or h == 32.0, f"Expected height 32, got {h}"
+            assert h == 36, f"Expected height 36, got {h}"
 
     def test_scope_rows_full_width(self, qml_engine):
         engine, window = qml_engine
@@ -1108,6 +1108,60 @@ def test_scope_column_full_width(qml_engine):
 # ============================================================
 # Helper: run all acceptance tests with xvfb on Linux
 # ============================================================
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
+def test_hidden_root_projects_source_without_empty_row(qml_engine, runtime_composition):
+    from PySide6.QtQml import QQmlExpression
+
+    engine, window = qml_engine
+    tree = _find_item_by_name(window, "libraryTree")
+    model = engine.rootContext().contextProperty("libraryTreeModel")
+    engine.rootContext().contextProperty("interactionModel").revealLibrary()
+
+    def evaluate(expression):
+        script = QQmlExpression(engine.rootContext(), tree, expression)
+        result, _ = script.evaluate()
+        assert not script.hasError(), script.error().toString()
+        return result
+
+    QTest.qWait(100)
+    assert evaluate("rows") == 1
+    assert model.data(evaluate('index(0, 0)'), model.KindRole) == "registered_root"
+    assert model.data(evaluate('index(0, 0)'), model.ParentNodeIdRole) == "container:sample-sources"
+    assert evaluate("itemAtCell(Qt.point(0, 0)).y") == 0
+    assert evaluate("itemAtCell(Qt.point(0, 0)).height") == 34
+    assert evaluate("itemAtCell(Qt.point(0, 0)).depth") == 0
+    assert runtime_composition.library_tree.node("container:sample-sources") is not None
+
+    QTest.mouseClick(window, Qt.LeftButton, Qt.NoModifier,
+                    evaluate("mapToItem(null, width / 2, 17)").toPoint())
+    QCoreApplication.processEvents()
+    assert runtime_composition.library_tree.selected_node_id == "root:1"
+    evaluate("expand(0)")
+    QTest.qWait(100)
+    assert evaluate("rows") == 2
+    assert model.data(evaluate('index(1, 0)'), model.KindRole) == "subfolder"
+    evaluate("collapse(0)")
+    QTest.qWait(100)
+    assert evaluate("rows") == 1
+
+    navigation = runtime_composition.library_tree.navigation
+    children = navigation.children
+    navigation.children = lambda node_id: () if node_id == "container:sample-sources" else children(node_id)
+    assert model.replaceBranch("container:sample-sources")
+    QTest.qWait(100)
+    assert evaluate("rows") == 0
+    navigation.children = children
+    assert model.replaceBranch("container:sample-sources")
+    QTest.qWait(100)
+    assert evaluate("rows") == 1
+    assert model.data(evaluate('index(0, 0)'), model.KindRole) == "registered_root"
+    assert evaluate("itemAtCell(Qt.point(0, 0)).y") == 0
+    assert evaluate("rootIndex").isValid()
+    from src.workbench_qml import QML_SOURCE
+    scope = QML_SOURCE.split('objectName: "librarySourcesScopeButton"', 1)[1].split('objectName: "libraryAllSamplesScopeButton"', 1)[0]
+    assert 'Accessible.name: "Sample Sources"' in scope
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-x"])

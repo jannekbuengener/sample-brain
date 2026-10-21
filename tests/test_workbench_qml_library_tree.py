@@ -341,7 +341,7 @@ def test_scope_active_hover_idle_focus_and_source_action_contracts_are_explicit(
     assert "return theme.hoverSurface" in scope_block
     assert 'return "transparent"' in scope_block
     assert "theme.focusRing" in scope_block
-    assert "theme.selectionSurface" not in scope_block
+    assert 'return active ? theme.selectionSurface : "transparent"' in scope_block
     assert 'text: "+"' in scope_block
     assert 'Accessible.name: "Add Source"' in scope_block
 

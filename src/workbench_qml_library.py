@@ -457,6 +457,18 @@ def create_qt_library_tree_model(state: WorkbenchLibraryTreeState, parent=None):
         def retryNode(self, node_id: str) -> bool:
             return self.replaceBranch(node_id)
 
+        @Slot(result=QModelIndex)
+        def presentationRootIndex(self):
+            """Expose Sources' children to TreeView without flattening the model.
+
+            The container index stays stable when replaceBranch updates its
+            children, including removing the last Source and adding one again.
+            Fetch only this boundary; Source folders remain lazy.
+            """
+            node_id = "container:sample-sources"
+            self.ensureChildren(node_id)
+            return self._parent_index(node_id)
+
         @Slot(str, result=bool)
         def ensureChildren(self, node_id: str) -> bool:
             """Fetch one branch and insert any new rows into the Qt index.
