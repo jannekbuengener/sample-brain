@@ -810,7 +810,17 @@ def _is_pytest_temp_structure(path: Path) -> bool:
     if not _is_under_os_temp_root(path):
         return False
 
-    parts = [p.lower() for p in path.parts]
+    canonical_temp = Path(tempfile.gettempdir()).resolve()
+    resolved = path.resolve()
+    try:
+        # Only inspect components below the canonical temp root.  Components
+        # above it (for example CI's real ``pytest-of-root/pytest-N`` tmp_path
+        # ancestry) must not be mistaken for a pytest-managed layout.
+        rel = resolved.relative_to(canonical_temp)
+    except ValueError:
+        return False
+
+    parts = [p.lower() for p in rel.parts]
 
     # Locate the pytest-of-<user> base component directly under the temp root.
     base_index = None
