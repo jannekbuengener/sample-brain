@@ -531,8 +531,9 @@ def test_z4_nested_pytest_of_component_is_not_deterministic(
 # AB. committed WAL frames must still be visible to the classifier.
 # ---------------------------------------------------------------------------
 def test_aa_catalog_lookup_does_not_create_sidecars_next_to_source(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _fake_temp_root(tmp_path, monkeypatch)
     source_dir = tmp_path / "wal-source"
     source_dir.mkdir()
     db_path = source_dir / "workbench_library.db"
