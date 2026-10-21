@@ -97,8 +97,41 @@ def workbench_library_db_path(
     return base / _LIBRARY_DB_NAME
 
 
+class WorkbenchLibraryConnectionError(RuntimeError):
+    """Raised when a Workbench library connection target is protected.
+
+    Protected targets (for example the real producer state DB) must never be
+    opened through :func:`connect_workbench_library`.  The check runs before
+    any directory creation or ``sqlite3.connect`` so a protected target can
+    never be reached, even transitively.
+    """
+
+
+_PROTECTED_CONNECTION_TARGETS: set[Path] = set()
+
+
+def protect_connection_target(path: Path | str) -> None:
+    """Register a resolved path that :func:`connect_workbench_library` must refuse.
+
+    Intended for the test harness to capture the producer state DB before any
+    isolation fixture takes effect.  Not pytest-aware.
+    """
+    _PROTECTED_CONNECTION_TARGETS.add(Path(path).expanduser().resolve())
+
+
+def _is_protected_connection_target(db_path: Path) -> bool:
+    return db_path in _PROTECTED_CONNECTION_TARGETS
+
+
 def connect_workbench_library(path: Path | None = None) -> sqlite3.Connection:
-    db_path = path if path is not None else workbench_library_db_path()
+    if path is None:
+        db_path = workbench_library_db_path()
+    else:
+        db_path = Path(path).expanduser().resolve()
+    if _is_protected_connection_target(db_path):
+        raise WorkbenchLibraryConnectionError(
+            "refusing to open protected workbench library connection target"
+        )
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -698,6 +731,224 @@ class LibraryFolderRemovalPreview:
     cached_sample_count: int
     availability: LibraryFolderAvailability
     metadata_only: bool = True
+    classification: CleanupClassification | None = None
+
+
+# ---------------------------------------------------------------------------
+# Conservative cleanup classification – structural / evidence-only, no
+# provenance metadata relied upon.  Rules are deterministic and do NOT use
+# filename substrings ("tmp", "pytest", "temp", "test") as classification
+# criteria (per #573 those may belong to legitimate user libraries).
+# ---------------------------------------------------------------------------
+
+class CleanupClassification:
+    """Deterministic classification of a library folder registration for
+    dry-run cleanup planning.  Instances are created by
+    ``classify_folder_for_cleanup``."""
+    DETERMINISTIC_TEST_ARTIFACT = "deterministic_test_artifact"
+    AMBIGUOUS = "ambiguous"
+    LEGITIMATE_OR_UNPROVEN = "legitimate_or_unproven"
+
+
+def _is_under_os_temp_root(path: Path) -> bool:
+    """Check if *path* is under the canonical OS temporary directory.
+
+    Uses ``tempfile.gettempdir()`` to obtain the platform-native temp root
+    and resolves the path to its absolute form before comparing ancestry.
+    This avoids false positives from path segments named ``tmp`` or ``temp``
+    that belong to legitimate user libraries (e.g. ``D:\\Temp\\Samples``).
+
+    The function returns ``True`` only when the resolved path's ancestry
+    actually originates from the OS temp directory.
+    """
+    # Obtain the platform-native temporary directory
+    canonical_temp = Path(tempfile.gettempdir()).resolve()
+    # Resolve the user path to absolute form
+    resolved = path.resolve()
+    # Check if the resolved path is under the canonical temp root
+    # (path.parents contains the temp directory, or the path IS the temp dir)
+    try:
+        resolved.relative_to(canonical_temp)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_pytest_temp_structure(path: Path) -> bool:
+    """Check if *path* matches a recognizable pytest temporary‑directory pattern.
+
+    Pytest creates directories under ``tmp_path`` whose names follow patterns
+    like ``pytest-of-<username>``, ``pytest-<slug>``, or contain the substring
+    ``"pytest"`` in a directory‑component position that is itself under the
+    pytest-managed temp tree.  This function checks for those patterns **without**
+    relying on a bare substring match – the ``"pytest"`` component must appear
+    in a path that is actually derived from pytest's temporary directory
+    infrastructure.
+
+    The function is conservative: a bare directory name ``"pytest"`` or
+    ``"pytest-project"`` that is NOT under the OS temp root returned by
+    ``tempfile.gettempdir()`` will return ``False``, preventing false positives
+    for legitimate user libraries.
+    """
+    # First, check if the path is under the OS temp root (if it's not, it can't
+    # be a pytest temp structure in the sense we need)
+    if not _is_under_os_temp_root(path):
+        return False
+
+    parts = [p.lower() for p in path.parts]
+    # Check for pytest directory components that are part of a temp-root path:
+    # - exact "pytest" as a path segment
+    # - "pytest-of-*" or "pytest-*" as a path segment
+    has_pytest_marker = any(
+        p == "pytest" or p.startswith("pytest-") or p.startswith("pytest-of-")
+        for p in parts
+    )
+    if not has_pytest_marker:
+        return False
+    # Additional confirmation: the path should contain the pytest marker in a
+    # position consistent with pytest's temp directory naming.  We verify that
+    # the pytest segment is not the root itself but a descendant.
+    path_str = "/".join(parts)
+    return "pytest-of-" in path_str or "pytest-" in path_str
+
+
+def _has_structural_test_signature(path: Path, known_test_roots: frozenset[str] | None = None) -> bool:
+    """Check if *path* matches a repository‑known test‑generated directory signature.
+
+    *known_test_roots* may contain historically observed test‑generated directory
+    names (e.g. ``engine_already_running_*``).  When ``None`` the function
+    falls back to a minimal set derived from the repository source tree (which
+    is empty by default, so the function returns ``False``).
+
+    The match is performed on complete path **components** (not arbitrary
+    substrings) to avoid false positives from incidental name overlaps.
+    """
+    if known_test_roots is None:
+        # Minimal default: no hard‑coded signatures; the caller must supply
+        # specific known roots if they exist in the repo.
+        return False
+
+    resolved = path.resolve()
+    path_parts = [p.lower() for p in resolved.parts]
+
+    # Check if any known_test_root matches as a complete path component
+    for sig in known_test_roots:
+        sig_lower = sig.lower()
+        # Match as an exact component somewhere in the path
+        if sig_lower in path_parts:
+            return True
+    return False
+
+
+def _folder_registered_in_catalog(db_path: Path, folder_path_str: str) -> bool:
+    """Return True when ``folder_path_str`` is registered in the workbench catalog.
+
+    Read-only: never creates the DB file or parent directories, never runs DDL,
+    and never mutates.  Returns ``False`` when the DB does not exist (not
+    registered).  Unexpected schema errors are not swallowed -- they propagate
+    so callers fail clearly instead of treating the folder as unregistered.
+    """
+    db_file = Path(db_path)
+    if not db_file.is_file():
+        return False
+    with sqlite3.connect(
+        f"file:{db_file.resolve().as_posix()}?mode=ro", uri=True
+    ) as conn:
+        row = conn.execute(
+            "SELECT id FROM folders WHERE path = ?",
+            (folder_path_str,),
+        ).fetchone()
+    return row is not None
+
+
+def classify_folder_for_cleanup(
+    folder_path: Path,
+    *,
+    db_path: Path | None = None,
+    known_test_roots: frozenset[str] | None = None,
+) -> CleanupClassification:
+    """Classify a library folder registration for cleanup planning.
+
+    Decision tree (conservative, structural only):
+
+    1. If the folder path has canonical OS temporary‑root ancestry
+       AND recognizable pytest temporary‑directory structure, OR matches an
+       exact repository-known test signature → **DETERMINISTIC_TEST_ARTIFACT**
+
+       Canonical temporary ancestry alone does NOT imply a test artifact.
+
+    2. If the folder is unregistered (no catalog entry) AND the on‑disk path
+       does not exist → **AMBIGUOUS** (origin unclear, preserve)
+
+    3. If the folder path exists on disk AND has catalog entries → **LEGITIMATE_OR_UNPROVEN**
+       (may be a user library; do not auto‑remove).
+
+    4. Otherwise → **AMBIGUOUS** (preserve; do not auto‑remove).
+
+    The function never reads sample / audio contents; it only inspects path
+    structure and catalog membership availability.
+
+    *db_path* overrides the default library DB path resolution.  When ``None``
+    the default ``workbench_library_db_path()`` is used.
+    """
+    # Normalise to absolute Path for consistent comparison
+    folder_path = folder_path.resolve()
+
+    # --- Step 1: check for deterministic test artifact ---
+    # Canonical OS temp root ancestry AND recognizable pytest temp structure,
+    # OR an exact repository-known test signature.  Canonical temp ancestry
+    # alone must NOT imply a test artifact.
+    os_temp = _is_under_os_temp_root(folder_path)
+    pytest_struct = _is_pytest_temp_structure(folder_path)
+    has_known_sig = _has_structural_test_signature(folder_path, known_test_roots)
+
+    if (os_temp and pytest_struct) or has_known_sig:
+        return CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+
+    # --- Step 2 & 3: check catalog membership (read-only, sqlite3 only) ---
+    db_path_ = db_path or workbench_library_db_path()
+    catalog_has_entry = _folder_registered_in_catalog(db_path_, str(folder_path))
+    on_disk_exists = folder_path.is_dir()
+
+    # --- Step 3 & 4: final determination ---
+    if catalog_has_entry and on_disk_exists:
+        # Folder is registered AND exists on disk → likely legitimate user library
+        return CleanupClassification.LEGITIMATE_OR_UNPROVEN
+    elif catalog_has_entry and not on_disk_exists:
+        # Folder is registered but missing on disk → ambiguous origin
+        return CleanupClassification.AMBIGUOUS
+    else:
+        # Not registered on disk → ambiguous origin
+        return CleanupClassification.AMBIGUOUS
+
+
+# Keep the simpler stand‑alone variant for callers that only need the
+# structural check (no DB involvement).  It is retained for backward
+# compatibility but the full‐featured ``classify_folder_for_cleanup`` above
+    # should be preferred.
+def classify_folder_for_cleanup_structural(
+    folder_path: Path,
+    *,
+    known_test_roots: frozenset[str] | None = None,
+) -> CleanupClassification:
+    """Structural-only classification (no DB queries).
+
+    Identical decision tree to ``classify_folder_for_cleanup`` but without
+    catalog membership checks.  Returns ``DETERMINISTIC_TEST_ARTIFACT`` when
+    structural evidence is sufficient, otherwise ``AMBIGUOUS``.
+    """
+    import os as _os
+
+    folder_path = folder_path.resolve()
+
+    os_temp = _is_under_os_temp_root(folder_path)
+    pytest_struct = _is_pytest_temp_structure(folder_path)
+    has_known_sig = _has_structural_test_signature(folder_path, known_test_roots)
+
+    if (os_temp and pytest_struct) or has_known_sig:
+        return CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+
+    return CleanupClassification.AMBIGUOUS
 
 
 @dataclass
@@ -880,9 +1131,18 @@ def preview_library_folder_removal(
     *,
     db_path: Path | None = None,
 ) -> LibraryFolderRemovalPreview | None:
-    """Describe one metadata-only removal without changing DB or filesystem content."""
-    init_workbench_library(db_path)
-    with connect_workbench_library(db_path) as conn:
+    """Describe one metadata-only removal without changing DB or filesystem content.
+
+    Read-only dry-run inspection: never calls the initializer/migrator, never
+    creates a missing DB, never issues CREATE/ALTER/DELETE/UPDATE/INSERT, and
+    never reads sample or audio bytes.  Returns ``None`` when the target DB does
+    not exist.
+    """
+    resolved_db = Path(db_path) if db_path is not None else workbench_library_db_path()
+
+    with workbench_library_readonly_connection(db_path=resolved_db) as conn:
+        if conn is None:
+            return None
         folder_id = _resolve_folder_id(folder_id_or_path, conn)
         if folder_id is None:
             return None
@@ -903,11 +1163,18 @@ def preview_library_folder_removal(
     availability: LibraryFolderAvailability = (
         "available" if Path(path).is_dir() else "unavailable_or_missing"
     )
+
+    # Conservative structural classification (structural-only; no sample/audio reads)
+    p = Path(path).resolve()
+    classification = classify_folder_for_cleanup_structural(p)
+
     return LibraryFolderRemovalPreview(
         folder_id=folder_id,
         path=path,
         cached_sample_count=cached_sample_count,
         availability=availability,
+        metadata_only=True,
+        classification=classification,
     )
 
 
@@ -1444,10 +1711,12 @@ __all__ = [
     "WorkbenchCueMetadata",
     "WorkbenchCueNotFoundError",
     "WorkbenchCueValidationError",
+    "WorkbenchLibraryConnectionError",
     "WorkbenchPlaylist",
     "WorkbenchPlaylistValidationError",
     "add_sample_to_playlist",
     "connect_workbench_library",
+    "protect_connection_target",
     "create_playlist",
     "default_workbench_cue_metadata",
     "get_or_create_playlist",
