@@ -781,12 +781,33 @@ def _platform_default_temp_root() -> Path | None:
     return Path("/tmp")
 
 
+def _runtime_temp_root() -> Path | None:
+    """Return the runtime temporary root without probing the filesystem.
+
+    ``tempfile.gettempdir()`` probes candidate directories by creating and
+    deleting a file when it has not cached a temp root yet, which would mutate
+    the inspected library directory when ``TMPDIR``/``TEMP``/``TMP`` point at
+    it.  The cached value is used when available; otherwise the configured env
+    candidates and the platform default are read directly.
+    """
+    cached = getattr(tempfile, "tempdir", None)
+    if cached:
+        return Path(cached)
+    for key in ("TMPDIR", "TEMP", "TMP"):
+        value = os.environ.get(key)
+        if value:
+            return Path(value)
+    return _platform_default_temp_root()
+
+
 def _canonical_temp_roots() -> tuple[Path, ...]:
     """Return the canonical temporary roots of the current platform.
 
-    The list contains the runtime temp root (``tempfile.gettempdir()``) and,
-    when it differs, the platform default temporary root.  Order is stable so
-    classification stays deterministic.
+    The list contains the runtime temp root and, when it differs, the platform
+    default temporary root.  Order is stable so classification stays
+    deterministic.  The roots are resolved without ``tempfile.gettempdir()``
+    so that a read-only inspection never probes (and therefore never mutates)
+    a candidate directory.
     """
     roots: list[Path] = []
 
@@ -800,7 +821,7 @@ def _canonical_temp_roots() -> tuple[Path, ...]:
         if resolved not in roots:
             roots.append(resolved)
 
-    _add(Path(tempfile.gettempdir()))
+    _add(_runtime_temp_root())
     _add(_platform_default_temp_root())
     return tuple(roots)
 
@@ -1287,9 +1308,19 @@ def preview_library_folder_removal(
         "available" if Path(path).is_dir() else "unavailable_or_missing"
     )
 
-    # Conservative structural classification (structural-only; no sample/audio reads)
+    # Classification derived from the evidence already collected: catalog
+    # membership (the folder row above), on-disk availability and the
+    # structural test-artifact rules.  This mirrors
+    # ``classify_folder_for_cleanup`` without opening the catalog a second
+    # time, so a normal registered Source is not reported as ambiguous.
     p = Path(path).resolve()
-    classification = classify_folder_for_cleanup_structural(p)
+    structural = classify_folder_for_cleanup_structural(p)
+    if structural == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT:
+        classification = structural
+    elif availability == "available":
+        classification = CleanupClassification.LEGITIMATE_OR_UNPROVEN
+    else:
+        classification = CleanupClassification.AMBIGUOUS
 
     return LibraryFolderRemovalPreview(
         folder_id=folder_id,

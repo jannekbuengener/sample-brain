@@ -132,12 +132,14 @@ def _fake_temp_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
     Both the runtime temp root and the platform default temp root are pinned
     so the classification result never depends on where pytest happens to put
-    ``tmp_path`` on the current machine.
+    ``tmp_path`` on the current machine.  The runtime root is pinned through
+    ``_runtime_temp_root`` because the classifier resolves it without calling
+    ``tempfile.gettempdir()`` (which would probe the filesystem).
     """
     fake_temp = tmp_path / "temp"
     fake_temp.mkdir()
     monkeypatch.setattr(
-        workbench_library.tempfile, "gettempdir", lambda: str(fake_temp)
+        workbench_library, "_runtime_temp_root", lambda: fake_temp
     )
     monkeypatch.setattr(
         workbench_library, "_platform_default_temp_root", lambda: fake_temp
@@ -619,3 +621,80 @@ def test_ac_isolation_failure_message_is_path_free(
     message = str(excinfo.value)
     assert str(producer_state_dir) not in message
     assert str(tmp_path) not in message
+
+
+# ---------------------------------------------------------------------------
+# AD. resolving the temp root must not probe (and mutate) the inspected dir.
+# AE. the removal preview must classify a registered Source from the catalog
+#     evidence it already collected.
+# ---------------------------------------------------------------------------
+def test_ad_classifier_never_calls_gettempdir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    inspected = tmp_path / "library"
+    inspected.mkdir()
+    monkeypatch.setenv("TMPDIR", str(inspected))
+    monkeypatch.setattr(workbench_library.tempfile, "tempdir", None, raising=False)
+
+    def _boom() -> str:
+        raise AssertionError("tempfile.gettempdir() must not be called")
+
+    monkeypatch.setattr(workbench_library.tempfile, "gettempdir", _boom)
+
+    target = inspected / "samples"
+    target.mkdir()
+
+    # Classification and the removal preview both stay read-only.
+    workbench_library.classify_folder_for_cleanup(target, db_path=tmp_path / "missing.db")
+    assert list(inspected.iterdir()) == [target]
+
+
+def test_ae_preview_classifies_registered_source_from_catalog_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_temp_root(tmp_path, monkeypatch)
+    db_path = tmp_path / "state" / "workbench_library.db"
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    init_workbench_library(db_path)
+    folder_id = register_library_folder(folder, db_path=db_path)
+
+    preview = preview_library_folder_removal(folder_id, db_path=db_path)
+
+    assert preview is not None
+    assert preview.availability == "available"
+    assert preview.classification == CleanupClassification.LEGITIMATE_OR_UNPROVEN
+
+
+def test_ae2_preview_classifies_missing_registered_source_as_ambiguous(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_temp_root(tmp_path, monkeypatch)
+    db_path = tmp_path / "state" / "workbench_library.db"
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    init_workbench_library(db_path)
+    folder_id = register_library_folder(folder, db_path=db_path)
+    folder.rmdir()
+
+    preview = preview_library_folder_removal(folder_id, db_path=db_path)
+
+    assert preview is not None
+    assert preview.availability == "unavailable_or_missing"
+    assert preview.classification == CleanupClassification.AMBIGUOUS
+
+
+def test_ae3_preview_classifies_deterministic_test_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_temp = _fake_temp_root(tmp_path, monkeypatch)
+    db_path = tmp_path / "state" / "workbench_library.db"
+    artifact = fake_temp / "pytest-of-user" / "pytest-123" / "test_node"
+    artifact.mkdir(parents=True)
+    init_workbench_library(db_path)
+    folder_id = register_library_folder(artifact, db_path=db_path)
+
+    preview = preview_library_folder_removal(folder_id, db_path=db_path)
+
+    assert preview is not None
+    assert preview.classification == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
