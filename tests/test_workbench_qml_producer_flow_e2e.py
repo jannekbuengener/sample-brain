@@ -349,6 +349,11 @@ def test_screen1_producer_flow_e2e_pass(tmp_path: Path):
             if live_kit.state.assignment_for(group, slot) is not None
         )
         assert assigned == 11
+        expected_live_kit_paths = {}
+        for group, slot in slots:
+            assignment = live_kit.state.assignment_for(group, slot)
+            assert assignment is not None
+            expected_live_kit_paths[(group, slot)] = assignment.path
 
         # --- 15/16/17/18 Export + source mutation -------------------------
         export_result = adapter.export_live_kit(export_parent)
@@ -440,10 +445,10 @@ def test_screen1_producer_flow_e2e_pass(tmp_path: Path):
         assert adapter2.preview_active is False
         assert adapter2.pending_live_kit_add == ""
         assert composition2.live_kit_materialized is False
-        assert all(
-            live_kit2.state.assignment_for(group, slot) is None
-            for group, slot in _slot_targets()
-        )
+        for (group, slot), expected_path in expected_live_kit_paths.items():
+            restored = live_kit2.state.assignment_for(group, slot)
+            assert restored is not None
+            assert restored.path == expected_path
         library_model2.state.fetch_children(SAMPLE_SOURCES)
         from src.workbench_library_navigation import WorkbenchLibraryNavigation
 
