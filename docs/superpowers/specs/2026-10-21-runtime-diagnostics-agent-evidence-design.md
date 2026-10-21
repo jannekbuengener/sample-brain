@@ -45,13 +45,23 @@ The ADR already anticipates event families useful to diagnostics, including `wor
 
 Therefore this design **extends Measurement; it does not replace it**.
 
-### 2.2 Workbench already owns a measurement session correlation seam
+### 2.2 Workbench already has a measurement session seam, but it is not yet a general session authority
 
-`WorkbenchSession` already carries `measurement_session_id`, and Harmonic Match measurement already uses this session correlation.
+`WorkbenchSession` currently carries `measurement_session_id`, and Harmonic Match measurement uses it when Measurement is enabled.
 
-The diagnostics design reuses this authority rather than inventing another Workbench session identity.
+Live code also shows an important limitation: when Measurement mode is `off`, `make_match_query_finished_observer()` returns `(None, None)`, so `measurement_session_id` is absent. Diagnostics must still correlate a normal Workbench session while Measurement remains at its required default `off`.
 
-### 2.3 Native audio already owns rich snapshot evidence
+Therefore the implementation must converge on **one general Workbench session correlation ID that exists independently of Measurement mode**, then pass/reuse that same ID for Measurement when Measurement is enabled. Do not create one diagnostics session ID plus a second measurement session ID.
+
+Compatibility may preserve `measurement_session_id` temporarily as an alias/projection if needed, but the long-term authority is a general session correlation ID owned by `WorkbenchSession`.
+
+### 2.3 Current Measurement run correlation needs reconciliation
+
+ADR-0006 defines `run_id` as one invocation/run identity. Current `make_match_query_finished_observer()` generates a new `run_id` for each observed match query. That is valid as local uniqueness but does not provide the cross-event process/run correlation needed by diagnostics.
+
+The diagnostics foundation must therefore freeze and later propagate one process/run correlation ID across related Workbench Measurement events without breaking existing event readers unnecessarily.
+
+### 2.4 Native audio already owns rich snapshot evidence
 
 The current native audio snapshot exposes safe diagnostic scalars including:
 
@@ -66,7 +76,7 @@ The current native audio snapshot exposes safe diagnostic scalars including:
 
 This remains the native runtime evidence authority. Diagnostics consume/project it from non-RT code; diagnostics do not create another engine truth.
 
-### 2.4 Windows test harness already establishes useful crash/run evidence
+### 2.5 Windows test harness already establishes useful crash/run evidence
 
 The current Windows harness already records:
 
@@ -144,7 +154,23 @@ It must not contain:
 - credentials/secrets;
 - raw audio/waveform/embeddings.
 
-### 4.3 First event extensions
+### 4.3 Privacy hardening gap proven by self-review
+
+The existing validator is strict for `props`, but currently validates `app` only as a generic mapping and `reason_code` only as `str | None`.
+
+ADR-0006 itself calls for strict allow-lists to prevent path leakage through `reason_code`; the implementation has not yet fully enforced that rule.
+
+Before Measurement events are used as normal agent/CI evidence, Slice #1242 must close this gap:
+
+- define an allowlisted `app` schema/keys and safe value constraints;
+- reject private-path/identity leakage in `app` values;
+- make `reason_code` a stable machine code contract rather than arbitrary free text;
+- apply length/character and preferably event-specific allowlist constraints where practical;
+- keep existing valid Measurement events backward-compatible.
+
+The sanitized bundle must never assume an event is safe merely because it came from the Measurement table; events are revalidated against the hardened contract before inclusion.
+
+### 4.4 First event extensions
 
 Slice #1242 should evaluate and implement the smallest immediately useful subset, preferably:
 
@@ -224,7 +250,7 @@ Runtime diagnostics must be bounded. Later implementation must choose determinis
 
 The bundle is the **only normal worker/agent evidence boundary**.
 
-It converts private/raw diagnostics plus already-safe Measurement events into deterministic, privacy-gated evidence that CI, ChatGPT, Jules, Codex or another worker can inspect without exposing private local runtime state.
+It converts private/raw diagnostics plus revalidated safe Measurement events into deterministic, privacy-gated evidence that CI, ChatGPT, Jules, Codex or another worker can inspect without exposing private local runtime state.
 
 ### 6.2 Document contract
 
@@ -305,10 +331,12 @@ This plane is later work and not part of Slice #1242.
 
 ### 8.1 IDs
 
-- `run_id`: UUID v4 per process/diagnostic run.
-- `session_id`: existing Workbench session UUID when applicable.
+- `run_id`: UUID v4 per process/diagnostic run, generated independently of Measurement enablement.
+- `session_id`: UUID v4 per Workbench session, generated independently of Measurement enablement.
 
-Do not create a second Workbench session ID when `measurement_session_id` already owns the session identity.
+The same `session_id` is reused by Measurement when Measurement is active. A measurement-specific alias may remain temporarily for compatibility, but there must not be two independently generated Workbench session identities.
+
+The same `run_id` should correlate related Workbench events for one process/run. Current per-match-query `run_id` generation is an implementation gap to reconcile rather than a contract to preserve.
 
 ### 8.2 Event order
 
@@ -455,16 +483,16 @@ The design preserves current policy:
 
 Freeze:
 
-- correlation semantics;
+- run/session correlation semantics independent of Measurement enablement;
+- current per-event `run_id` drift and compatibility path;
 - safe event catalog subset;
+- hardened `app` and `reason_code` privacy validation;
 - bundle V1 contract;
 - privacy deny rules;
 - raw/private boundary;
 - realtime no-I/O rule.
 
-Implement only minimal safe Measurement extensions and focused tests.
-
-No QML/native/CI runtime instrumentation yet.
+Implement only minimal safe Measurement extensions, privacy hardening and focused tests. A small Workbench-session correlation helper/field change is allowed only if required to establish the single session authority; do not add QML/native runtime instrumentation yet.
 
 ### Slice 2 — Workbench runtime diagnostics
 
@@ -475,7 +503,8 @@ Implement:
 - faulthandler capture;
 - bounded JSONL writer;
 - Qt message capture;
-- selected QML/Workbench lifecycle events.
+- selected QML/Workbench lifecycle events;
+- propagation of the frozen run/session correlation through production runtime seams.
 
 ### Slice 3 — Native snapshot diagnostics
 
@@ -556,7 +585,8 @@ The architecture is delivered when:
 
 - ADR-0006 remains sole Measurement authority;
 - raw private diagnostics are separate from Measurement;
-- run/session correlation is deterministic;
+- run/session correlation is deterministic and available even when Measurement is off;
+- `app` and `reason_code` cannot bypass privacy rules;
 - QML/Python/native lifecycle can be reconstructed from bounded evidence;
 - no realtime callback diagnostic I/O exists;
 - sanitized bundle has a frozen privacy-tested V1 contract;
