@@ -204,18 +204,16 @@ class WorkbenchLibraryNavigation:
         return self._library_db_path
 
     def top_level_nodes(self) -> tuple[LibraryNode, ...]:
-        """Return only the real Source-tree root rendered by the Library tree."""
-        return (
-            LibraryNode(
-                _SAMPLE_SOURCES_ID,
-                LibraryNodeKind.SAMPLE_SOURCES,
-                "Sample Sources",
-                None,
-                False,
-                True,
-                LibraryAvailability.AVAILABLE,
-            ),
-        )
+        """Return only the real Source-tree root rendered by the Library tree.
+
+        The ``SAMPLE_SOURCES_ID`` container node is intentionally omitted from
+        the visible top-level list: its only purpose is to serve as the logical
+        parent for registered source folders (``parent_id=_SAMPLE_SOURCES_ID``).
+        The visible "Sample Sources" section label is provided by the scope bar
+        button instead, so we avoid the duplicated "Sample Sources" entry that
+        appeared directly under the scope navigation.
+        """
+        return ()
 
     def secondary_nodes(self) -> tuple[LibraryNode, ...]:
         """Return non-folder Library scopes rendered by the bottom icon bar.
