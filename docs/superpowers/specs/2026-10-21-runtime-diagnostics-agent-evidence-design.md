@@ -1,9 +1,9 @@
 # Runtime Diagnostics + Agent Evidence — Design
 
-**Date:** 2026-10-21  
-**Status:** PROPOSED / USER REVIEW REQUIRED BEFORE IMPLEMENTATION  
-**Issue:** #1241  
-**First implementation slice:** #1242  
+**Date:** 2026-10-21
+**Status:** PROPOSED / USER REVIEW REQUIRED BEFORE IMPLEMENTATION
+**Issue:** #1241
+**First implementation slice:** #1242
 **Base:** `main` @ `45ca8b7c8a3d8fe24cf4258984b79e1ad31f4975`
 
 ## 1. Intent
