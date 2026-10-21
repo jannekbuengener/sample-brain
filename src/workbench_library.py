@@ -7,7 +7,6 @@ import os
 import re
 import sqlite3
 import tempfile
-from urllib.parse import quote
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -765,28 +764,79 @@ class CleanupClassification:
     LEGITIMATE_OR_UNPROVEN = "legitimate_or_unproven"
 
 
-def _is_under_os_temp_root(path: Path) -> bool:
-    """Check if *path* is under the canonical OS temporary directory.
+def _platform_default_temp_root() -> Path | None:
+    """Return the platform's default temporary root, if the platform defines one.
 
-    Uses ``tempfile.gettempdir()`` to obtain the platform-native temp root
-    and resolves the path to its absolute form before comparing ancestry.
-    This avoids false positives from path segments named ``tmp`` or ``temp``
-    that belong to legitimate user libraries (e.g. ``D:\\Temp\\Samples``).
+    ``tempfile.gettempdir()`` honours ``TMP`` / ``TEMP`` / ``TMPDIR`` and can
+    therefore point somewhere else than the platform default.  Both roots are
+    canonical temporary locations, so both stay in scope for the deterministic
+    classification rules.  The value is derived from the platform, never from
+    library content.
+    """
+    if os.name == "nt":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if local_app_data:
+            return Path(local_app_data) / "Temp"
+        return None
+    return Path("/tmp")
+
+
+def _canonical_temp_roots() -> tuple[Path, ...]:
+    """Return the canonical temporary roots of the current platform.
+
+    The list contains the runtime temp root (``tempfile.gettempdir()``) and,
+    when it differs, the platform default temporary root.  Order is stable so
+    classification stays deterministic.
+    """
+    roots: list[Path] = []
+
+    def _add(candidate: Path | None) -> None:
+        if candidate is None:
+            return
+        try:
+            resolved = candidate.expanduser().resolve()
+        except (OSError, RuntimeError):
+            return
+        if resolved not in roots:
+            roots.append(resolved)
+
+    _add(Path(tempfile.gettempdir()))
+    _add(_platform_default_temp_root())
+    return tuple(roots)
+
+
+def _relative_to_temp_root(path: Path) -> Path | None:
+    """Return *path* relative to the canonical temp root that contains it.
+
+    ``None`` is returned when the path does not live under any canonical
+    temporary root.  Only components below the matching root are returned, so
+    ancestors above the root (for example CI's ``pytest-of-root/pytest-N``
+    ancestry) can never be mistaken for temp-root content.
+    """
+    try:
+        resolved = path.resolve()
+    except (OSError, RuntimeError):
+        return None
+    for root in _canonical_temp_roots():
+        try:
+            return resolved.relative_to(root)
+        except ValueError:
+            continue
+    return None
+
+
+def _is_under_os_temp_root(path: Path) -> bool:
+    """Check if *path* is under one of the canonical OS temporary roots.
+
+    Uses the platform temporary roots (runtime temp root plus platform
+    default) and resolves the path to its absolute form before comparing
+    ancestry.  This avoids false positives from path segments named ``tmp`` or
+    ``temp`` that belong to legitimate user libraries (e.g. ``D:\\Temp\\Samples``).
 
     The function returns ``True`` only when the resolved path's ancestry
-    actually originates from the OS temp directory.
+    actually originates from an OS temp directory.
     """
-    # Obtain the platform-native temporary directory
-    canonical_temp = Path(tempfile.gettempdir()).resolve()
-    # Resolve the user path to absolute form
-    resolved = path.resolve()
-    # Check if the resolved path is under the canonical temp root
-    # (path.parents contains the temp directory, or the path IS the temp dir)
-    try:
-        resolved.relative_to(canonical_temp)
-        return True
-    except ValueError:
-        return False
+    return _relative_to_temp_root(path) is not None
 
 
 def _is_pytest_temp_structure(path: Path) -> bool:
@@ -803,40 +853,29 @@ def _is_pytest_temp_structure(path: Path) -> bool:
     directory, and must not cause a false positive for legitimate user
     libraries.
 
-    The match requires a ``pytest-of-<segment>`` component directly under the
-    canonical temp root, followed by a ``pytest-<digits>`` or ``pytest-current``
-    run directory, then any node/test descendants.
+    The match requires a ``pytest-of-<segment>`` component *directly* under the
+    canonical temp root (not nested deeper), followed by a ``pytest-<digits>``
+    or ``pytest-current`` run directory, then any node/test descendants.
     """
-    if not _is_under_os_temp_root(path):
-        return False
-
-    canonical_temp = Path(tempfile.gettempdir()).resolve()
-    resolved = path.resolve()
-    try:
-        # Only inspect components below the canonical temp root.  Components
-        # above it (for example CI's real ``pytest-of-root/pytest-N`` tmp_path
-        # ancestry) must not be mistaken for a pytest-managed layout.
-        rel = resolved.relative_to(canonical_temp)
-    except ValueError:
+    rel = _relative_to_temp_root(path)
+    if rel is None:
         return False
 
     parts = [p.lower() for p in rel.parts]
 
-    # Locate the pytest-of-<user> base component directly under the temp root.
-    base_index = None
-    for index, part in enumerate(parts):
-        if part.startswith("pytest-of-"):
-            base_index = index
-            break
-    if base_index is None:
+    # The pytest-of-<user> base component must sit directly under the temp
+    # root.  A nested occurrence (e.g. <temp>/customer/pytest-of-alice/...)
+    # belongs to an unrelated directory tree and must not be treated as
+    # pytest-managed.
+    if not parts or not parts[0].startswith("pytest-of-"):
         return False
 
     # The next component must be a pytest run directory:
     # pytest-current or pytest-<digits>.  A plain pytest-* component (e.g.
     # pytest-project) is not a pytest run directory.
-    if base_index + 1 >= len(parts):
+    if len(parts) < 2:
         return False
-    run_part = parts[base_index + 1]
+    run_part = parts[1]
     if not (
         run_part == "pytest-current"
         or run_part.startswith("pytest-")
@@ -845,6 +884,28 @@ def _is_pytest_temp_structure(path: Path) -> bool:
         return False
 
     return True
+
+
+# pytest's ``tmp_path`` fixture creates one directory per test node.  The
+# directory name follows pytest's node naming convention: the test name with
+# non-alphanumeric characters replaced by ``_``, prefixed with ``test_`` and
+# suffixed with a numeric uniquifier (e.g. ``test_record_with_stopped_trans0``).
+# The pattern is matched against the complete leaf component only.
+_PYTEST_NODE_DIR_PATTERN = re.compile(r"^test_[A-Za-z0-9_]*\d+$")
+
+
+def _is_pytest_node_directory(path: Path) -> bool:
+    """Check if *path* is a pytest ``tmp_path`` node directory.
+
+    Only the leaf component is inspected, and only against pytest's own node
+    naming convention.  A user library named ``samples`` or ``test_samples``
+    (no numeric uniquifier) is therefore never matched.
+    """
+    try:
+        leaf = path.resolve().name
+    except (OSError, RuntimeError):
+        return False
+    return bool(_PYTEST_NODE_DIR_PATTERN.match(leaf))
 
 
 def _has_structural_test_signature(path: Path, known_test_roots: frozenset[str] | None = None) -> bool:
@@ -882,15 +943,16 @@ def _folder_registered_in_catalog(db_path: Path, folder_path_str: str) -> bool:
     and never mutates.  Returns ``False`` when the DB does not exist (not
     registered).  Unexpected schema errors are not swallowed -- they propagate
     so callers fail clearly instead of treating the folder as unregistered.
+
+    The catalog is inspected through the non-mutating temp snapshot connection
+    so that no ``-wal`` / ``-shm`` sidecar can appear next to the source
+    library (a direct ``mode=ro`` open would create one for WAL databases).
     """
     db_file = Path(db_path)
     _assert_connection_target_allowed(db_file)
     if not db_file.is_file():
         return False
-    # Percent-encode URI-reserved characters (?, #, %, spaces) so the complete
-    # filesystem path is preserved on Windows and POSIX.
-    _encoded_path = quote(str(db_file.resolve()), safe="/:")
-    with sqlite3.connect(f"file:{_encoded_path}?mode=ro", uri=True) as conn:
+    with _connect_workbench_library_readonly(db_file) as conn:
         row = conn.execute(
             "SELECT id FROM folders WHERE path = ?",
             (folder_path_str,),
@@ -909,8 +971,10 @@ def classify_folder_for_cleanup(
     Decision tree (conservative, structural only):
 
     1. If the folder path has canonical OS temporary‑root ancestry
-       AND recognizable pytest temporary‑directory structure, OR matches an
-       exact repository-known test signature → **DETERMINISTIC_TEST_ARTIFACT**
+       AND a recognizable pytest artifact shape (pytest‑managed
+       ``pytest-of-<user>/pytest-<run>`` layout, or a pytest ``tmp_path``
+       node directory), OR matches an exact repository‑known test signature
+       → **DETERMINISTIC_TEST_ARTIFACT**
 
        Canonical temporary ancestry alone does NOT imply a test artifact.
 
@@ -932,14 +996,16 @@ def classify_folder_for_cleanup(
     folder_path = folder_path.resolve()
 
     # --- Step 1: check for deterministic test artifact ---
-    # Canonical OS temp root ancestry AND recognizable pytest temp structure,
+    # Canonical OS temp root ancestry AND a recognizable pytest artifact
+    # shape (pytest-managed layout or a pytest tmp_path node directory),
     # OR an exact repository-known test signature.  Canonical temp ancestry
     # alone must NOT imply a test artifact.
     os_temp = _is_under_os_temp_root(folder_path)
     pytest_struct = _is_pytest_temp_structure(folder_path)
+    pytest_node = _is_pytest_node_directory(folder_path)
     has_known_sig = _has_structural_test_signature(folder_path, known_test_roots)
 
-    if (os_temp and pytest_struct) or has_known_sig:
+    if (os_temp and (pytest_struct or pytest_node)) or has_known_sig:
         return CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
 
     # --- Step 2 & 3: check catalog membership (read-only, sqlite3 only) ---
@@ -980,9 +1046,10 @@ def classify_folder_for_cleanup_structural(
 
     os_temp = _is_under_os_temp_root(folder_path)
     pytest_struct = _is_pytest_temp_structure(folder_path)
+    pytest_node = _is_pytest_node_directory(folder_path)
     has_known_sig = _has_structural_test_signature(folder_path, known_test_roots)
 
-    if (os_temp and pytest_struct) or has_known_sig:
+    if (os_temp and (pytest_struct or pytest_node)) or has_known_sig:
         return CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
 
     return CleanupClassification.AMBIGUOUS

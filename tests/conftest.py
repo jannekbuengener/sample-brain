@@ -59,13 +59,15 @@ def isolated_workbench_state_dir(
     # 3. Fail-closed check: the resolver, called through its plain environment
     #    path, must return the isolated tmp_path and not the real producer
     #    directory.  If it ever returns the producer path, the assertion fails
-    #    and the test never runs -- no DB mutation can occur.
+    #    and the test never runs -- no DB mutation can occur.  The failure
+    #    message stays path-free: the resolver may have fallen back to the
+    #    private producer directory, which must never reach CI logs.
     from src.workbench_library import resolve_workbench_state_dir
 
     resolved = resolve_workbench_state_dir()  # reads os.environ
     assert resolved == state_dir.resolve(), (
-        f"Workbench state isolation broken!  "
-        f"Resolver pointed to {resolved}, expected {state_dir.resolve()}."
+        "Workbench state isolation broken! The resolver did not honour "
+        "SAMPLE_BRAIN_WORKBENCH_STATE_DIR."
     )
 
     return state_dir

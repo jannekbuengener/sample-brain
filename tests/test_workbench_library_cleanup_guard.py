@@ -6,7 +6,10 @@ read-only dry-run removal preview.
 """
 from __future__ import annotations
 
+import importlib.util
 import os
+import shutil
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -125,10 +128,19 @@ def test_f_guard_error_contains_no_producer_path(
 # H. canonical temp without pytest structure => not deterministic
 # ---------------------------------------------------------------------------
 def _fake_temp_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Pin the canonical temp roots to a synthetic directory.
+
+    Both the runtime temp root and the platform default temp root are pinned
+    so the classification result never depends on where pytest happens to put
+    ``tmp_path`` on the current machine.
+    """
     fake_temp = tmp_path / "temp"
     fake_temp.mkdir()
     monkeypatch.setattr(
         workbench_library.tempfile, "gettempdir", lambda: str(fake_temp)
+    )
+    monkeypatch.setattr(
+        workbench_library, "_platform_default_temp_root", lambda: fake_temp
     )
     return fake_temp
 
@@ -421,3 +433,175 @@ def test_x_readonly_uri_preserves_path_with_question_mark(
         classify_folder_for_cleanup(folder, db_path=db_path)
         == CleanupClassification.LEGITIMATE_OR_UNPROVEN
     )
+
+
+# ---------------------------------------------------------------------------
+# Y. pytest tmp_path node directory under a canonical temp root is a
+#    deterministic test artifact (any pytest base directory, not only the
+#    default ``pytest-of-<user>/pytest-<run>`` layout).
+# Z. the same directory shape outside a canonical temp root is NOT
+#    deterministic (a user library may carry any name).
+# ---------------------------------------------------------------------------
+def test_y_pytest_node_directory_under_canonical_temp_is_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_temp = _fake_temp_root(tmp_path, monkeypatch)
+    target = fake_temp / "custom-basetemp" / "test_record_with_stopped_trans0"
+    target.mkdir(parents=True)
+    assert (
+        workbench_library.classify_folder_for_cleanup(target)
+        == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_y2_pytest_node_directory_under_platform_default_temp_is_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The platform default temp root stays canonical even when the runtime
+    # temp root (TMP/TEMP) points somewhere else.
+    fake_temp = _fake_temp_root(tmp_path, monkeypatch)
+    platform_temp = tmp_path / "platform-temp"
+    platform_temp.mkdir()
+    monkeypatch.setattr(
+        workbench_library, "_platform_default_temp_root", lambda: platform_temp
+    )
+    target = platform_temp / "sb-run-01" / "test_hw_record_stop_cycle0"
+    target.mkdir(parents=True)
+    assert (
+        workbench_library.classify_folder_for_cleanup(target)
+        == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_z_pytest_node_directory_outside_temp_root_is_not_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_temp = _fake_temp_root(tmp_path, monkeypatch)
+    outside = tmp_path / "user-library" / "test_record_with_stopped_trans0"
+    outside.mkdir(parents=True)
+    assert (
+        workbench_library.classify_folder_for_cleanup(outside)
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_z2_plain_library_name_under_temp_root_is_not_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Canonical temp ancestry alone is not evidence of a test artifact.
+    fake_temp = _fake_temp_root(tmp_path, monkeypatch)
+    target = fake_temp / "my_samples"
+    target.mkdir()
+    assert (
+        workbench_library.classify_folder_for_cleanup(target)
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_z3_user_named_test_folder_without_uniquifier_is_not_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # pytest appends a numeric uniquifier to node directories; a user
+    # library named ``test_samples`` must not be classified as a test artifact.
+    fake_temp = _fake_temp_root(tmp_path, monkeypatch)
+    target = fake_temp / "test_samples"
+    target.mkdir()
+    assert (
+        workbench_library.classify_folder_for_cleanup(target)
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_z4_nested_pytest_of_component_is_not_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The pytest-of-<user> base must sit directly under the temp root.
+    fake_temp = _fake_temp_root(tmp_path, monkeypatch)
+    target = fake_temp / "customer" / "pytest-of-alice" / "pytest-1" / "samples"
+    target.mkdir(parents=True)
+    assert (
+        workbench_library.classify_folder_for_cleanup(target)
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+# ---------------------------------------------------------------------------
+# AA. catalog inspection must not create WAL/SHM sidecars next to the source
+#     library (read-only contract).
+# AB. committed WAL frames must still be visible to the classifier.
+# ---------------------------------------------------------------------------
+def test_aa_catalog_lookup_does_not_create_sidecars_next_to_source(
+    tmp_path: Path,
+) -> None:
+    source_dir = tmp_path / "wal-source"
+    source_dir.mkdir()
+    db_path = source_dir / "workbench_library.db"
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    init_workbench_library(db_path)
+    register_library_folder(folder, db_path=db_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        wal_only = tmp_path / "wal-only"
+        wal_only.mkdir()
+        conn.execute(
+            "INSERT INTO folders (path, last_scan_at, last_opened_at) VALUES (?, ?, ?)",
+            (str(wal_only), "2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00"),
+        )
+        conn.commit()
+
+        # Copy the live main DB plus its WAL so the copy carries a committed
+        # frame that is not present in the main database file.
+        copy_dir = tmp_path / "wal-copy"
+        copy_dir.mkdir()
+        copy_db = copy_dir / "workbench_library.db"
+        shutil.copyfile(db_path, copy_db)
+        shutil.copyfile(f"{db_path}-wal", f"{copy_db}-wal")
+    finally:
+        conn.close()
+
+    assert not (copy_dir / "workbench_library.db-shm").exists()
+
+    # The WAL-only registration is visible through the read-only snapshot.
+    assert (
+        classify_folder_for_cleanup(wal_only, db_path=copy_db)
+        == CleanupClassification.LEGITIMATE_OR_UNPROVEN
+    )
+
+    # Read-only inspection must not create a sidecar next to the source.
+    assert not (copy_dir / "workbench_library.db-shm").exists()
+    assert not (copy_dir / "workbench_library.db-journal").exists()
+
+
+# ---------------------------------------------------------------------------
+# AC. the isolation failure message must not expose a private producer path.
+# ---------------------------------------------------------------------------
+def _load_conftest_module():
+    path = Path(__file__).resolve().parent / "conftest.py"
+    spec = importlib.util.spec_from_file_location("sb_1208_conftest", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_ac_isolation_failure_message_is_path_free(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conftest_module = _load_conftest_module()
+    producer_state_dir = Path.home() / ".sample-brain"
+
+    monkeypatch.setattr(
+        workbench_library,
+        "resolve_workbench_state_dir",
+        lambda *args, **kwargs: producer_state_dir,
+    )
+
+    with pytest.raises(AssertionError) as excinfo:
+        conftest_module.isolated_workbench_state_dir.__wrapped__(tmp_path, monkeypatch)
+
+    message = str(excinfo.value)
+    assert str(producer_state_dir) not in message
+    assert str(tmp_path) not in message
