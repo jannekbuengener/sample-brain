@@ -76,6 +76,9 @@ class WorkbenchLibraryTreeState:
         self._expanded: set[str] = set()
         self.selected_node_id: str | None = None
         self.selection_intent: LibrarySelectionIntent | None = None
+        # The vertical scope navigation is a projection of this state. QML
+        # may request a section, but it never owns the active-section truth.
+        self.active_section = "sources"
         self._remember_nodes(tree_top_level)
         self._remember_nodes(secondary)
         self._secondary_node_ids = tuple(node.node_id for node in secondary)
@@ -202,7 +205,25 @@ class WorkbenchLibraryTreeState:
         intent = LibrarySelectionIntent(node=node, scope=scope)
         self.selected_node_id = node_id
         self.selection_intent = intent
+        self.active_section = self._section_for_node(node)
         return intent
+
+    def show_section(self, section: str) -> bool:
+        """Project the existing navigation into one of the five UI scopes."""
+
+        if section not in {"sources", "all", "collections", "favorites", "recordings"}:
+            return False
+        self.active_section = section
+        return True
+
+    @staticmethod
+    def _section_for_node(node: LibraryNode) -> str:
+        return {
+            LibraryNodeKind.ALL_SAMPLES: "all",
+            LibraryNodeKind.COLLECTION: "collections",
+            LibraryNodeKind.FAVORITES: "favorites",
+            LibraryNodeKind.RECORDINGS: "recordings",
+        }.get(node.kind, "sources")
 
     def clear_selection(self) -> None:
         """Clear selection state after a source is removed or invalidated."""

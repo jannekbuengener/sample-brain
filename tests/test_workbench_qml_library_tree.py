@@ -279,16 +279,23 @@ def test_library_scope_bar_visual_polish_contract() -> None:
     for glyph in ("⌁", "≡", "▣"):
         assert f'text: "{glyph}"' not in source
 
-    # #1201 follow-up: active scope is one quiet selected surface, not an underline.
-    assert "theme.selectionSurface" in scope_block
+    # #1238/#1239: five rows share one Python-owned, neutral state projection.
+    assert 'id: libraryScopeBar\n                        objectName: "libraryScopeBar"' in source
+    assert "ColumnLayout {" in source.split('id: libraryScopeBar', 1)[0][-120:]
+    assert "activeLibrarySection" in scope_block
+    assert "property string mode" not in scope_block
+    assert "libraryScopeBar.mode" not in scope_block
+    assert "theme.surfaceElevated" in scope_block
     assert "theme.selectionBorder" in scope_block
     assert "theme.hoverSurface" in scope_block
+    assert "theme.focusRing" in scope_block
+    assert "theme.actionActive" not in scope_block
     assert "anchors.bottom: parent.bottom" not in scope_block
     assert "height: 1" not in scope_block
 
-    assert 'visible: libraryScopeBar.mode === "sources"' in tree_block
-    assert 'enabled: libraryScopeBar.mode === "sources"' in tree_block
-    assert 'activeFocusOnTab: libraryScopeBar.mode === "sources"' in tree_block
+    assert 'visible: libraryInteraction.activeLibrarySection === "sources"' in tree_block
+    assert 'enabled: libraryInteraction.activeLibrarySection === "sources"' in tree_block
+    assert 'activeFocusOnTab: libraryInteraction.activeLibrarySection === "sources"' in tree_block
     assert 'visible: libraryScopeBar.mode !== "collections"' not in tree_block
     assert 'objectName: "libraryContentHost"' in source
     assert "Layout.fillHeight: true" in source.split(
@@ -304,6 +311,66 @@ def test_library_scope_bar_visual_polish_contract() -> None:
     assert "theme.selectionSurface" in collection_block
     assert "theme.textPrimary" in collection_block
     assert "ItemDelegate" not in collection_block
+
+
+def test_scope_rows_use_one_shared_state_function_and_all_five_named_targets() -> None:
+    from src import workbench_qml
+
+    source = workbench_qml.QML_SOURCE
+    scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
+        'objectName: "libraryContentHost"', 1
+    )[0]
+
+    assert scope_block.count("function scopeFill") == 1
+    assert scope_block.count("scopeFill(") >= 6  # declaration plus each row
+    for label in ("Sample Sources", "All Samples", "Collections", "Favorites", "Recordings"):
+        assert f'text: "{label}"' in scope_block
+    assert 'return theme.surfaceElevated' in scope_block
+    assert 'return theme.hoverSurface' in scope_block
+    assert scope_block.count("border.color:") >= 5
+
+
+def test_scope_active_hover_idle_focus_and_source_action_contracts_are_explicit() -> None:
+    from src import workbench_qml
+
+    source = workbench_qml.QML_SOURCE
+    scope_block = source.split('objectName: "libraryScopeBar"', 1)[1].split(
+        'objectName: "libraryContentHost"', 1
+    )[0]
+    assert "return theme.surfaceElevated" in scope_block
+    assert "return theme.hoverSurface" in scope_block
+    assert 'return "transparent"' in scope_block
+    assert "theme.focusRing" in scope_block
+    assert "theme.selectionSurface" not in scope_block
+    assert 'text: "+"' in scope_block
+    assert 'Accessible.name: "Add Source"' in scope_block
+
+    source_actions = source.split('objectName: "librarySourceActionsButton"', 1)[1].split(
+        'Keys.onPressed:', 1
+    )[0]
+    assert 'model.kind === "registered_root"' in source_actions
+    assert "libraryInteraction.canRemoveSource(model.nodeId)" in source_actions
+    assert "prepareRemoveSourceForNode(model.nodeId)" in source_actions
+    assert 'text: "Remove Source"' in source
+    assert 'objectName: "libraryRemoveSourceButton"' not in source
+
+
+def test_library_state_owns_active_section_and_selection_projects_into_it() -> None:
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+
+    state = WorkbenchLibraryTreeState(FakeNavigation())
+    assert state.active_section == "sources"
+    assert state.show_section("collections") is True
+    assert state.active_section == "collections"
+    assert state.selected_node_id is None
+
+    assert state.select("scope:all-library") is not None
+    assert state.active_section == "all"
+    assert state.select("scope:favorites") is not None
+    assert state.active_section == "favorites"
+    assert state.select("scope:recordings") is not None
+    assert state.active_section == "recordings"
+    assert state.show_section("invalid") is False
 
 
 def test_browser_767_column_and_favorite_wiring_preserved() -> None:

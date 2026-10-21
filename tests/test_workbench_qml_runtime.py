@@ -521,6 +521,64 @@ def test_library_bridge_projects_collections_without_a_second_navigation_backend
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_library_bridge_projects_python_owned_active_section_without_selection_side_effect():
+    from PySide6.QtCore import QCoreApplication
+
+    from src.workbench_qml import _qml_library_interaction_bridge
+    from src.workbench_qml_library import create_qt_library_tree_model
+
+    app = QCoreApplication.instance() or QCoreApplication([])
+    del app
+    state = WorkbenchLibraryTreeState(FakeNavigation())
+    model = create_qt_library_tree_model(state)
+    bridge = _qml_library_interaction_bridge(model)
+
+    assert bridge.activeLibrarySection == "sources"
+    assert bridge.showLibrarySection("collections") is True
+    assert bridge.activeLibrarySection == "collections"
+    assert state.selected_node_id is None
+    assert bridge.showLibrarySection("invalid") is False
+
+    bridge.selectLibraryNode("scope:all-library")
+    assert bridge.activeLibrarySection == "all"
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
+def test_library_bridge_source_actions_use_existing_python_removal_preview_without_selecting():
+    from types import SimpleNamespace
+
+    from PySide6.QtCore import QCoreApplication
+
+    from src.workbench_qml import _qml_library_interaction_bridge
+    from src.workbench_qml_library import create_qt_library_tree_model
+
+    app = QCoreApplication.instance() or QCoreApplication([])
+    del app
+    state = WorkbenchLibraryTreeState(FakeNavigation())
+    state.expand(SAMPLE_SOURCES)
+    model = create_qt_library_tree_model(state)
+    prepared: list[int] = []
+
+    def preview(folder_id: int):
+        prepared.append(folder_id)
+        return SimpleNamespace(
+            folder_id=folder_id,
+            display_name="Samples — one",
+            path="C:/Samples",
+            availability="available",
+            cached_sample_count=0,
+        )
+
+    bridge = _qml_library_interaction_bridge(model, on_prepare_remove=preview)
+
+    assert bridge.canRemoveSource(ROOT_ID) is True
+    assert bridge.prepareRemoveSourceForNode(ROOT_ID) is True
+    assert prepared == [1, 1]
+    assert state.selected_node_id is None
+    assert bridge.canRemoveSource("scope:all-library") is False
+
+
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
 def test_screen_data_bridge_notifies_dynamic_browser_properties():
     from PySide6.QtCore import QCoreApplication
 
