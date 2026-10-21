@@ -781,12 +781,90 @@ def _platform_default_temp_root() -> Path | None:
     return Path("/tmp")
 
 
+def _is_writable_directory(path: Path) -> bool:
+    """Return True when *path* is an existing writable directory.
+
+    Uses ``os.access`` so no probe file is created.  The check mirrors the
+    writability condition ``tempfile`` applies to its own candidates, without
+    the file creation that ``tempfile.gettempdir()`` uses for probing.
+    """
+    try:
+        return path.is_dir() and os.access(path, os.W_OK)
+    except OSError:
+        return False
+
+
+def _temp_candidate_roots() -> tuple[Path, ...]:
+    """Return the temp-root candidates in ``tempfile``'s own order.
+
+    ``tempfile`` accepts the first candidate that is an existing writable
+    directory and only then verifies it by writing a probe file.  The order is
+    mirrored here - the environment candidates, the platform specific
+    fallbacks (``~\\AppData\\Local\\Temp``, ``%SYSTEMROOT%\\Temp``,
+    ``c:\\temp``, ``c:\\tmp``, ``\\temp``, ``\\tmp`` on Windows; ``/tmp``,
+    ``/var/tmp``, ``/usr/tmp`` on POSIX) and the current directory as last
+    resort - so the non-mutating resolver selects the same directory
+    ``tempfile`` would select, without probing any candidate.
+    """
+    candidates: list[Path] = []
+    for key in ("TMPDIR", "TEMP", "TMP"):
+        value = os.environ.get(key)
+        if value:
+            candidates.append(Path(value))
+    if os.name == "nt":
+        candidates.append(Path(os.path.expanduser(r"~\AppData\Local\Temp")))
+        candidates.append(Path(os.path.expandvars(r"%SYSTEMROOT%\Temp")))
+        candidates.extend(
+            (Path(r"c:\temp"), Path(r"c:\tmp"), Path(r"\temp"), Path(r"\tmp"))
+        )
+    else:
+        candidates.extend((Path("/tmp"), Path("/var/tmp"), Path("/usr/tmp")))
+    try:
+        candidates.append(Path(os.getcwd()))
+    except OSError:
+        candidates.append(Path(os.curdir))
+    return tuple(candidates)
+
+
+def _runtime_temp_root() -> Path | None:
+    """Return the runtime temporary root without probing the filesystem.
+
+    ``tempfile.gettempdir()`` probes candidate directories by creating and
+    deleting a file when it has not cached a temp root yet, which would mutate
+    the inspected library directory when ``TMPDIR``/``TEMP``/``TMP`` point at
+    it.  Only a candidate that ``tempfile`` itself would accept is used:
+
+    - the cached ``tempfile.tempdir`` value when it is available (already
+      validated by ``tempfile``), decoded because ``tempfile`` also supports a
+      bytes path;
+    - otherwise the first candidate in ``tempfile``'s own order that exists and
+      is writable, checked with ``os.access`` so that no file is created.
+
+    A candidate that ``tempfile`` would reject (for example a non-writable
+    directory) must not be treated as canonical: paths below it would be
+    classified as deterministic test artifacts although they are outside the
+    actual runtime temp directory.
+    """
+    cached = getattr(tempfile, "tempdir", None)
+    if cached:
+        try:
+            return Path(os.fsdecode(cached))
+        except (TypeError, ValueError):
+            return None
+    for candidate in _temp_candidate_roots():
+        if _is_writable_directory(candidate):
+            return candidate
+    return _platform_default_temp_root()
+
+
 def _canonical_temp_roots() -> tuple[Path, ...]:
     """Return the canonical temporary roots of the current platform.
 
-    The list contains the runtime temp root (``tempfile.gettempdir()``) and,
-    when it differs, the platform default temporary root.  Order is stable so
-    classification stays deterministic.
+    The list contains the runtime temp root and, when it differs, the platform
+    default temporary root.  Order is stable so classification stays
+    deterministic.  The roots are resolved without ``tempfile.gettempdir()``
+    so that a read-only inspection never probes (and therefore never mutates)
+    a candidate directory.
     """
     roots: list[Path] = []
 
@@ -800,7 +878,7 @@ def _canonical_temp_roots() -> tuple[Path, ...]:
         if resolved not in roots:
             roots.append(resolved)
 
-    _add(Path(tempfile.gettempdir()))
+    _add(_runtime_temp_root())
     _add(_platform_default_temp_root())
     return tuple(roots)
 
@@ -1287,9 +1365,19 @@ def preview_library_folder_removal(
         "available" if Path(path).is_dir() else "unavailable_or_missing"
     )
 
-    # Conservative structural classification (structural-only; no sample/audio reads)
+    # Classification derived from the evidence already collected: catalog
+    # membership (the folder row above), on-disk availability and the
+    # structural test-artifact rules.  This mirrors
+    # ``classify_folder_for_cleanup`` without opening the catalog a second
+    # time, so a normal registered Source is not reported as ambiguous.
     p = Path(path).resolve()
-    classification = classify_folder_for_cleanup_structural(p)
+    structural = classify_folder_for_cleanup_structural(p)
+    if structural == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT:
+        classification = structural
+    elif availability == "available":
+        classification = CleanupClassification.LEGITIMATE_OR_UNPROVEN
+    else:
+        classification = CleanupClassification.AMBIGUOUS
 
     return LibraryFolderRemovalPreview(
         folder_id=folder_id,
