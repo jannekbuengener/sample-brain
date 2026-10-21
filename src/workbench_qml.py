@@ -71,6 +71,7 @@ from .workbench_qml_startup import (
     resolve_launch_workspace,
 )
 from .workbench_waveform import compute_waveform_envelope
+from .workbench_window_placement import show_window_on_primary_screen
 
 SCREEN1_QML_STATE_IDS = ("screen1-default-3panel", "screen1-harmonic-4panel")
 
@@ -2320,7 +2321,8 @@ import QtQuick.Layouts
 
 ApplicationWindow {
     id: window
-    visible: true
+    // Python assigns the current OS primary screen before first paint (#1231).
+    visible: false
     width: 1600; height: 900
     minimumWidth: 1120; minimumHeight: 640
     color: theme.surfaceHeader
@@ -8908,8 +8910,11 @@ def _qml_engine(
         )
     try:
         engine.loadData(QML_SOURCE.encode("utf-8"), QUrl("qrc:/screen1.qml"))
-        if not engine.rootObjects():
+        root_objects = engine.rootObjects()
+        if not root_objects:
             raise RuntimeError("Qt Quick Screen-1 Renderer konnte keine QML-Oberfläche laden.")
+        root_window = root_objects[0]
+        show_window_on_primary_screen(app, root_window)
     except BaseException:
         waveform_loader.close()
         engine.deleteLater()
@@ -8969,7 +8974,7 @@ def _qml_engine(
     request_visible_browser_waveforms_from_window()
     if analysis_coordinator is not None:
         app.aboutToQuit.connect(analysis_coordinator.shutdown)
-    return app, engine, engine.rootObjects()[0]
+    return app, engine, root_window
 
 
 def _settle_qml_frame(app: object) -> None:
