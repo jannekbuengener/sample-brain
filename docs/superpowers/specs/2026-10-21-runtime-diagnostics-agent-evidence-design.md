@@ -244,6 +244,18 @@ Raw diagnostics are:
 
 Runtime diagnostics must be bounded. Later implementation must choose deterministic retention by age/count/size. Unbounded append-only log growth is not acceptable.
 
+### 5.5 Runtime diagnostics mode
+
+Runtime diagnostics are separate from ADR-0006 Measurement mode.
+
+Recommended producer behavior:
+
+- `minimal` — default for the production Workbench: bounded local run provenance, high-value lifecycle/failure boundaries, faulthandler target, and warning/critical-class capture needed to make crashes diagnosable without owner setup;
+- `verbose` — explicit opt-in for denser operator diagnostics, additional safe operation boundaries and optional low-frequency native snapshot sampling;
+- `off` — explicit opt-out of the new local runtime diagnostics layer.
+
+`minimal` remains local-only, bounded and fail-soft. It does not enable Measurement, external export or raw dump upload. The exact environment/profile key and retention limits belong to the runtime implementation slice.
+
 ## 6. Evidence plane C — Sanitized Diagnostic Bundle V1
 
 ### 6.1 Purpose
@@ -334,6 +346,8 @@ This plane is later work and not part of Slice #1242.
 - `run_id`: UUID v4 per process/diagnostic run, generated independently of Measurement enablement.
 - `session_id`: UUID v4 per Workbench session, generated independently of Measurement enablement.
 
+Both fields must be structurally validated as UUIDs at persistence/export boundaries; arbitrary non-empty strings are insufficient for an agent-readable evidence contract.
+
 The same `session_id` is reused by Measurement when Measurement is active. A measurement-specific alias may remain temporarily for compatibility, but there must not be two independently generated Workbench session identities.
 
 The same `run_id` should correlate related Workbench events for one process/run. Current per-match-query `run_id` generation is an implementation gap to reconcile rather than a contract to preserve.
@@ -345,6 +359,8 @@ Private runtime diagnostics use:
 - `seq`: monotonically increasing integer per run;
 - `occurred_at`: UTC wall time for human correlation;
 - `monotonic_ns`: monotonic ordering/duration clock.
+
+Persisted/exported `occurred_at` must be validated as a real UTC ISO-8601 timestamp rather than accepted as arbitrary non-empty text.
 
 Measurement keeps the ADR-0006 envelope unless a narrowly justified compatible change is needed. Raw-diagnostics-only fields do not justify a breaking Measurement schema bump.
 
