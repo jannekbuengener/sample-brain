@@ -229,7 +229,10 @@ def test_l_exact_historical_test_signature_is_deterministic(tmp_path: Path) -> N
 # ---------------------------------------------------------------------------
 # M. generic nonexistent path => AMBIGUOUS
 # ---------------------------------------------------------------------------
-def test_m_generic_nonexistent_path_is_ambiguous(tmp_path: Path) -> None:
+def test_m_generic_nonexistent_path_is_ambiguous(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_temp_root(tmp_path, monkeypatch)
     target = tmp_path / "does-not-exist"
     assert (
         workbench_library.classify_folder_for_cleanup(target)
@@ -316,8 +319,9 @@ def test_r_readonly_connection_rejected_for_protected_target(tmp_path: Path) -> 
 
 
 def test_s_classifier_catalog_lookup_rejected_for_protected_target(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _fake_temp_root(tmp_path, monkeypatch)
     protected_db = tmp_path / "protected-state" / "workbench_library.db"
     protected_db.parent.mkdir(parents=True)
     folder = tmp_path / "samples"
@@ -359,7 +363,10 @@ def _seed_catalog_db(db_path: Path, folder: Path) -> None:
     register_library_folder(folder, db_path=db_path)
 
 
-def test_u_readonly_uri_preserves_path_with_space(tmp_path: Path) -> None:
+def test_u_readonly_uri_preserves_path_with_space(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_temp_root(tmp_path, monkeypatch)
     db_path = tmp_path / "my db with spaces" / "workbench_library.db"
     folder = tmp_path / "samples"
     folder.mkdir()
@@ -371,7 +378,10 @@ def test_u_readonly_uri_preserves_path_with_space(tmp_path: Path) -> None:
     )
 
 
-def test_v_readonly_uri_preserves_path_with_hash(tmp_path: Path) -> None:
+def test_v_readonly_uri_preserves_path_with_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_temp_root(tmp_path, monkeypatch)
     db_path = tmp_path / "my#db" / "workbench_library.db"
     folder = tmp_path / "samples"
     folder.mkdir()
@@ -382,7 +392,10 @@ def test_v_readonly_uri_preserves_path_with_hash(tmp_path: Path) -> None:
     )
 
 
-def test_w_readonly_uri_preserves_path_with_percent(tmp_path: Path) -> None:
+def test_w_readonly_uri_preserves_path_with_percent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_temp_root(tmp_path, monkeypatch)
     db_path = tmp_path / "my%db" / "workbench_library.db"
     folder = tmp_path / "samples"
     folder.mkdir()
@@ -393,10 +406,13 @@ def test_w_readonly_uri_preserves_path_with_percent(tmp_path: Path) -> None:
     )
 
 
-def test_x_readonly_uri_preserves_path_with_question_mark(tmp_path: Path) -> None:
+def test_x_readonly_uri_preserves_path_with_question_mark(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # ``?`` is not a valid Windows filename character; skip there.
     if os.name == "nt":
         pytest.skip("? is not a valid filename character on Windows")
+    _fake_temp_root(tmp_path, monkeypatch)
     db_path = tmp_path / "my?db" / "workbench_library.db"
     folder = tmp_path / "samples"
     folder.mkdir()
