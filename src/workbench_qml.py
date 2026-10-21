@@ -3614,6 +3614,11 @@ ApplicationWindow {
                             property bool dropHover: false
                             HoverHandler { id: sourceRowHover }
                             TapHandler {
+                                id: sourceRowTap
+                                // The action button owns intentional clicks in
+                                // its right-hand hit area; do not also select
+                                // or audition the source row.
+                                enabled: !sourceActionsButton.hovered && !sourceActionsButton.activeFocus
                                 onTapped: {
                                     if (model.error) {
                                         libraryInteraction.retryLibraryNode(model.parentNodeId)
@@ -3674,7 +3679,9 @@ ApplicationWindow {
                                     id: sourceActionsButton
                                     objectName: "librarySourceActionsButton"
                                     visible: model.kind === "registered_root"
-                                             && (sourceRowHover.hovered || libraryDelegate.activeFocus || activeFocus)
+                                             && (sourceRowHover.hovered
+                                                 || (libraryDelegate.current && libraryTree.activeFocus)
+                                                 || activeFocus)
                                              && libraryInteraction.canRemoveSource(model.nodeId)
                                     text: "…"
                                     flat: true
