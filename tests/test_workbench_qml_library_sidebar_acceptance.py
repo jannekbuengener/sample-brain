@@ -186,6 +186,15 @@ class TestSidebarNavigation:
         }.get(node_id)
 
 
+def test_disabled_waveform_loader_cleanup_is_none_safe():
+    from src import workbench_qml
+
+    source = Path(workbench_qml.__file__).read_text(encoding="utf-8")
+    cleanup = source.split("except BaseException:", 1)[1].split("# Keep both Python objects alive", 1)[0]
+    assert "if waveform_loader is not None:" in cleanup
+    assert "waveform_loader.close()" in cleanup
+
+
 class _RecordingHarmonyController:
     """Records set_anchor calls for candidate pool verification."""
 

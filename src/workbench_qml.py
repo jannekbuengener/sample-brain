@@ -9002,7 +9002,8 @@ def _qml_engine(
         root_window = root_objects[0]
         show_window_on_primary_screen(app, root_window)
     except BaseException:
-        waveform_loader.close()
+        if waveform_loader is not None:
+            waveform_loader.close()
         engine.deleteLater()
         raise
     # Keep both Python objects alive for the complete Qt engine lifetime.
