@@ -106,7 +106,7 @@ from .workbench_library import (
 from .workbench_editing_ui import attach_workbench_editing_ui
 from .workbench_editing import audio_source_frame_info, load_haeftig_regions
 from .workbench_preview import WorkbenchPreviewPlayer, preview_toggle_action
-from .workbench_window_placement import show_tk_window_on_primary_screen
+from .workbench_window_placement import show_tk_window_on_windows_primary_screen
 from .workbench_waveform import (
     attack_marker_x,
     compute_waveform_envelope,
@@ -4511,7 +4511,7 @@ def run_workbench(on_ready: Callable[[], None] | None = None) -> None:
     root = tk.Tk()
     root.withdraw()
     WorkbenchApp(root)
-    show_tk_window_on_primary_screen(root)
+    show_tk_window_on_windows_primary_screen(root)
     if on_ready is not None:
         on_ready()
     root.mainloop()

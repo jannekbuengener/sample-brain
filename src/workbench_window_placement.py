@@ -61,13 +61,13 @@ def windows_primary_work_area() -> WorkArea | None:
         return None
 
 
-def show_tk_window_on_primary_screen(
+def show_tk_window_on_windows_primary_screen(
     root: Any,
     *,
     primary_work_area: WorkArea | None = None,
     work_area_provider: Callable[[], WorkArea | None] = windows_primary_work_area,
 ) -> bool:
-    """Position a withdrawn Tk root on the primary display, then reveal it once."""
+    """On Windows, place a withdrawn Tk root on primary; elsewhere only reveal."""
     positioned = False
     try:
         work_area = primary_work_area or work_area_provider()

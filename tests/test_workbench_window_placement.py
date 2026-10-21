@@ -170,19 +170,19 @@ class FakeTkRoot:
         self.mainloop_calls += 1
 
 
-def test_show_tk_window_on_primary_screen_centers_and_handles_negative_coordinates():
+def test_show_tk_window_on_windows_primary_screen_centers_and_handles_negative_coordinates():
     module = _placement_module()
     assert module is not None
     positive = FakeTkRoot()
     negative = FakeTkRoot()
 
-    assert module.show_tk_window_on_primary_screen(
+    assert module.show_tk_window_on_windows_primary_screen(
         positive, primary_work_area=(1920, 0, 1920, 1032)
     ) is True
     assert positive.geometry_calls == ["+2280+166"]
     assert positive.deiconify_calls == 1
 
-    assert module.show_tk_window_on_primary_screen(
+    assert module.show_tk_window_on_windows_primary_screen(
         negative, primary_work_area=(-1920, 0, 1920, 1032)
     ) is True
     assert negative.geometry_calls == ["-1560+166"]
@@ -194,19 +194,19 @@ def test_show_tk_window_uses_effective_minimum_size_when_withdrawn():
     assert module is not None
     root = FakeTkRoot(width=200, height=200, min_width=1120, min_height=640)
 
-    assert module.show_tk_window_on_primary_screen(
+    assert module.show_tk_window_on_windows_primary_screen(
         root, primary_work_area=(0, 0, 1920, 1032)
     ) is True
     assert root.geometry_calls == ["+400+196"]
     assert root.deiconify_calls == 1
 
 
-def test_show_tk_window_on_primary_screen_fails_soft_without_work_area():
+def test_show_tk_window_on_windows_primary_screen_fails_soft_without_work_area():
     module = _placement_module()
     assert module is not None
     root = FakeTkRoot()
 
-    assert module.show_tk_window_on_primary_screen(
+    assert module.show_tk_window_on_windows_primary_screen(
         root, primary_work_area=None, work_area_provider=lambda: None
     ) is False
     assert root.geometry_calls == []
@@ -240,7 +240,7 @@ def test_default_run_workbench_withdraws_before_init_then_places_before_mainloop
     monkeypatch.setattr(workbench, "WorkbenchApp", lambda _root: events.append("app"))
     monkeypatch.setattr(
         workbench,
-        "show_tk_window_on_primary_screen",
+        "show_tk_window_on_windows_primary_screen",
         lambda _root: events.append("place") or True,
         raising=False,
     )
