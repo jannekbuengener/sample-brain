@@ -781,22 +781,51 @@ def _platform_default_temp_root() -> Path | None:
     return Path("/tmp")
 
 
+def _is_writable_directory(path: Path) -> bool:
+    """Return True when *path* is an existing writable directory.
+
+    Uses ``os.access`` so no probe file is created.  The check mirrors the
+    writability condition ``tempfile`` applies to its own candidates, without
+    the file creation that ``tempfile.gettempdir()`` uses for probing.
+    """
+    try:
+        return path.is_dir() and os.access(path, os.W_OK)
+    except OSError:
+        return False
+
+
 def _runtime_temp_root() -> Path | None:
     """Return the runtime temporary root without probing the filesystem.
 
     ``tempfile.gettempdir()`` probes candidate directories by creating and
     deleting a file when it has not cached a temp root yet, which would mutate
     the inspected library directory when ``TMPDIR``/``TEMP``/``TMP`` point at
-    it.  The cached value is used when available; otherwise the configured env
-    candidates and the platform default are read directly.
+    it.  Only a candidate that ``tempfile`` itself would accept is used:
+
+    - the cached ``tempfile.tempdir`` value when it is available (already
+      validated by ``tempfile``), decoded because ``tempfile`` also supports a
+      bytes path;
+    - otherwise the first configured candidate that exists and is writable,
+      checked with ``os.access`` so that no file is created.
+
+    A candidate that ``tempfile`` would reject (for example a non-writable
+    directory) must not be treated as canonical: paths below it would be
+    classified as deterministic test artifacts although they are outside the
+    actual runtime temp directory.
     """
     cached = getattr(tempfile, "tempdir", None)
     if cached:
-        return Path(cached)
+        try:
+            return Path(os.fsdecode(cached))
+        except (TypeError, ValueError):
+            return None
     for key in ("TMPDIR", "TEMP", "TMP"):
         value = os.environ.get(key)
-        if value:
-            return Path(value)
+        if not value:
+            continue
+        candidate = Path(value)
+        if _is_writable_directory(candidate):
+            return candidate
     return _platform_default_temp_root()
 
 

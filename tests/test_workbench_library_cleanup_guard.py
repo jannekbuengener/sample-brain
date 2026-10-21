@@ -649,6 +649,70 @@ def test_ad_classifier_never_calls_gettempdir(
     assert list(inspected.iterdir()) == [target]
 
 
+def test_ad2_rejected_temp_candidate_is_not_canonical(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # tempfile skips a candidate that is not writable and continues with the
+    # next one; the classifier must not treat the rejected candidate as the
+    # canonical temp root.
+    rejected = tmp_path / "rejected"
+    rejected.mkdir()
+    accepted = tmp_path / "accepted"
+    accepted.mkdir()
+    monkeypatch.setenv("TMPDIR", str(rejected))
+    monkeypatch.setenv("TEMP", str(accepted))
+    monkeypatch.delenv("TMP", raising=False)
+    monkeypatch.setattr(workbench_library.tempfile, "tempdir", None, raising=False)
+
+    real_access = os.access
+
+    def _access(path, mode, **kwargs):  # type: ignore[no-untyped-def]
+        if str(path) == str(rejected):
+            return False
+        return real_access(path, mode, **kwargs)
+
+    monkeypatch.setattr(workbench_library.os, "access", _access)
+
+    assert workbench_library._runtime_temp_root() == accepted.resolve()
+
+
+def test_ad3_legit_path_under_rejected_candidate_is_not_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rejected = tmp_path / "rejected"
+    rejected.mkdir()
+    monkeypatch.setenv("TMPDIR", str(rejected))
+    monkeypatch.delenv("TEMP", raising=False)
+    monkeypatch.delenv("TMP", raising=False)
+    monkeypatch.setattr(workbench_library.tempfile, "tempdir", None, raising=False)
+
+    real_access = os.access
+
+    def _access(path, mode, **kwargs):  # type: ignore[no-untyped-def]
+        if str(path) == str(rejected):
+            return False
+        return real_access(path, mode, **kwargs)
+
+    monkeypatch.setattr(workbench_library.os, "access", _access)
+
+    target = rejected / "pytest-of-user" / "pytest-1" / "samples"
+    target.mkdir(parents=True)
+    assert (
+        workbench_library.classify_folder_for_cleanup(target)
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_ad4_bytes_cached_temp_root_is_decoded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # tempfile supports a bytes tempdir global; Path() would raise TypeError.
+    monkeypatch.setattr(
+        workbench_library.tempfile, "tempdir", str(tmp_path).encode(), raising=False
+    )
+    assert workbench_library._runtime_temp_root() == tmp_path.resolve()
+
+
 def test_ae_preview_classifies_registered_source_from_catalog_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
