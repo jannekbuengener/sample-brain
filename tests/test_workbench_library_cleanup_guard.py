@@ -681,10 +681,12 @@ def test_ad3_legit_path_under_rejected_candidate_is_not_deterministic(
 ) -> None:
     rejected = tmp_path / "rejected"
     rejected.mkdir()
+    accepted = tmp_path / "accepted"
+    accepted.mkdir()
     platform_temp = tmp_path / "platform-temp"
     platform_temp.mkdir()
     monkeypatch.setenv("TMPDIR", str(rejected))
-    monkeypatch.delenv("TEMP", raising=False)
+    monkeypatch.setenv("TEMP", str(accepted))
     monkeypatch.delenv("TMP", raising=False)
     monkeypatch.setattr(workbench_library.tempfile, "tempdir", None, raising=False)
     # The platform default root must not contain the inspected path either.
@@ -700,6 +702,11 @@ def test_ad3_legit_path_under_rejected_candidate_is_not_deterministic(
         return real_access(path, mode, **kwargs)
 
     monkeypatch.setattr(workbench_library.os, "access", _access)
+
+    # The rejected candidate is not a canonical root, so the path below it is
+    # not inside the runtime temp directory and must not be classified as a
+    # deterministic test artifact.
+    assert workbench_library._runtime_temp_root() == accepted.resolve()
 
     target = rejected / "pytest-of-user" / "pytest-1" / "samples"
     target.mkdir(parents=True)
