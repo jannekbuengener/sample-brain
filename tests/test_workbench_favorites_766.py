@@ -88,8 +88,9 @@ def test_library_scope_bar_exposes_distinct_favorites_control() -> None:
     source = QML_SOURCE
     assert 'objectName: "libraryFavoritesScopeButton"' in source
     assert 'Accessible.name: "Favorites"' in source
-    assert 'libraryScopeBar.mode = "favorites"' in source
+    assert 'libraryScopeBar.mode' not in source
     assert 'selectLibraryNode("scope:favorites")' in source
+    assert 'libraryInteraction.activeLibrarySection === "favorites"' in source
     assert 'Accessible.name: "Collections"' in source
     assert 'objectName: "libraryCollectionsScopeButton"' in source
     # Favorites must remain distinct from Collections and must not use emoji glyphs.
@@ -290,7 +291,6 @@ def test_automated_runtime_visual_acceptance_favorites_scope(
         assert collections_btn is not None and collections_btn.isVisible()
         assert favorites_btn.objectName() != collections_btn.objectName()
 
-        bar.setProperty("mode", "favorites")
         library_bridge.selectLibraryNode("scope:favorites")
         app.processEvents()
         _settle_qml_frame(app)
@@ -304,7 +304,7 @@ def test_automated_runtime_visual_acceptance_favorites_scope(
         coll = window.findChild(QQuickItem, "libraryCollectionList")
         assert tree is not None and not tree.isVisible()
         assert coll is not None and not coll.isVisible()
-        assert float(bar.y()) > 80.0
+        assert 0.0 <= float(bar.y()) < 80.0
 
         drop_index = next(
             index
@@ -318,11 +318,11 @@ def test_automated_runtime_visual_acceptance_favorites_scope(
             "keep_fav.wav"
         ]
 
-        bar.setProperty("mode", "collections")
+        library_bridge.showLibrarySection("collections")
         app.processEvents()
         _settle_qml_frame(app)
         assert window.findChild(QQuickItem, "libraryCollectionList").isVisible()
-        bar.setProperty("mode", "sources")
+        library_bridge.showLibrarySection("sources")
         app.processEvents()
         _settle_qml_frame(app)
         assert window.findChild(QQuickItem, "libraryTree").isVisible()

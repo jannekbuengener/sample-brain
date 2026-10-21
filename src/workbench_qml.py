@@ -2501,6 +2501,15 @@ ApplicationWindow {
         }
     }
 
+    Menu {
+        id: librarySourceContextMenu
+        objectName: "librarySourceContextMenu"
+        MenuItem {
+            text: "Remove Source"
+            onTriggered: removeSourceDialog.open()
+        }
+    }
+
     Connections {
         target: libraryInteraction
         function onRemovalRequested() { removeSourceDialog.open() }
@@ -3095,21 +3104,23 @@ ApplicationWindow {
                     spacing: 6
                     Label { text: "LIBRARY"; color: theme.textSecondary; font.pixelSize: 12; Layout.fillWidth: true }
                     // #1201: existing Python-owned Library scope routes stay compact and local.
-                    RowLayout {
+                    ColumnLayout {
                         id: libraryScopeBar
                         objectName: "libraryScopeBar"
-                        Layout.alignment: Qt.AlignVCenter
-                        Layout.preferredHeight: controlSize
-                        spacing: 2
+                        // Flow does not apply Layout.fillWidth to children;
+                        // keep the five vertical rows wide enough for their
+                        // text and comfortable pointer/keyboard hit areas.
+                        width: 180
+                        implicitWidth: width
+                        Layout.fillWidth: true
+                        spacing: 3
                         z: 2
-                        property string mode: "sources"
-                        readonly property int controlSize: 28
                         readonly property int iconPad: 5
 
-                        // #1201: one quiet selected surface; no independent underline state.
+                        // #1238/#1239: one shared neutral state function for all five rows.
                         function scopeFill(active, hovered) {
                             if (active)
-                                return theme.selectionSurface
+                                return theme.surfaceElevated
                             if (hovered && !active)
                                 return theme.hoverSurface
                             return "transparent"
@@ -3117,19 +3128,19 @@ ApplicationWindow {
                         function scopeStroke(active) {
                             return active ? theme.selectionBorder : "transparent"
                         }
-                        function scopeInk(active) {
-                            return active ? theme.textPrimary : theme.textSecondary
+                        function scopeInk(active, focused) {
+                            return active || focused ? theme.textPrimary : theme.textSecondary
                         }
 
                             ToolButton {
                                 id: sourcesScopeButton
                                 objectName: "librarySourcesScopeButton"
-                                text: ""
+                                text: "Sample Sources"
                                 flat: true
-                                readonly property bool scopeActive: libraryScopeBar.mode === "sources"
-                                Layout.preferredWidth: libraryScopeBar.controlSize
-                                Layout.preferredHeight: libraryScopeBar.controlSize
-                                onClicked: libraryScopeBar.mode = "sources"
+                                readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "sources"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 32
+                                onClicked: libraryInteraction.showLibrarySection("sources")
                                 Accessible.name: "Sample Sources"
                                 onHoveredChanged: {
                                     if (hovered)
@@ -3147,12 +3158,22 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     radius: 4
                                     color: libraryScopeBar.scopeFill(sourcesScopeButton.scopeActive, sourcesScopeButton.hovered)
-                                    border.width: sourcesScopeButton.activeFocus || sourcesScopeButton.scopeActive ? 1 : 0
+                                    border.width: sourcesScopeButton.activeFocus ? 2 : (sourcesScopeButton.scopeActive ? 1 : 0)
                                     border.color: sourcesScopeButton.activeFocus ? theme.focusRing : libraryScopeBar.scopeStroke(sourcesScopeButton.scopeActive)
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
+                                    Text {
+                                        anchors.fill: parent
+                                        leftPadding: 10
+                                        text: sourcesScopeButton.text
+                                        color: libraryScopeBar.scopeInk(sourcesScopeButton.scopeActive, sourcesScopeButton.activeFocus)
+                                        horizontalAlignment: Text.AlignLeft
+                                        verticalAlignment: Text.AlignVCenter
+                                        font.pixelSize: 12
+                                    }
                                     Canvas {
+                                        visible: false
                                         anchors.fill: parent
                                         anchors.margins: libraryScopeBar.iconPad
                                         onPaint: {
@@ -3178,13 +3199,12 @@ ApplicationWindow {
                             ToolButton {
                                 id: allSamplesScopeButton
                                 objectName: "libraryAllSamplesScopeButton"
-                                text: ""
+                                text: "All Samples"
                                 flat: true
-                                readonly property bool scopeActive: libraryScopeBar.mode === "all"
-                                Layout.preferredWidth: libraryScopeBar.controlSize
-                                Layout.preferredHeight: libraryScopeBar.controlSize
+                                readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "all"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 32
                                 onClicked: {
-                                    libraryScopeBar.mode = "all"
                                     libraryInteraction.selectLibraryNode("scope:all-library")
                                 }
                                 Accessible.name: "All Samples"
@@ -3204,12 +3224,22 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     radius: 4
                                     color: libraryScopeBar.scopeFill(allSamplesScopeButton.scopeActive, allSamplesScopeButton.hovered)
-                                    border.width: allSamplesScopeButton.activeFocus || allSamplesScopeButton.scopeActive ? 1 : 0
+                                    border.width: allSamplesScopeButton.activeFocus ? 2 : (allSamplesScopeButton.scopeActive ? 1 : 0)
                                     border.color: allSamplesScopeButton.activeFocus ? theme.focusRing : libraryScopeBar.scopeStroke(allSamplesScopeButton.scopeActive)
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
+                                    Text {
+                                        anchors.fill: parent
+                                        leftPadding: 10
+                                        text: allSamplesScopeButton.text
+                                        color: libraryScopeBar.scopeInk(allSamplesScopeButton.scopeActive, allSamplesScopeButton.activeFocus)
+                                        horizontalAlignment: Text.AlignLeft
+                                        verticalAlignment: Text.AlignVCenter
+                                        font.pixelSize: 12
+                                    }
                                     Canvas {
+                                        visible: false
                                         anchors.fill: parent
                                         anchors.margins: libraryScopeBar.iconPad
                                         onPaint: {
@@ -3236,12 +3266,12 @@ ApplicationWindow {
                             ToolButton {
                                 id: collectionsScopeButton
                                 objectName: "libraryCollectionsScopeButton"
-                                text: ""
+                                text: "Collections"
                                 flat: true
-                                readonly property bool scopeActive: libraryScopeBar.mode === "collections"
-                                Layout.preferredWidth: libraryScopeBar.controlSize
-                                Layout.preferredHeight: libraryScopeBar.controlSize
-                                onClicked: libraryScopeBar.mode = "collections"
+                                readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "collections"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 32
+                                onClicked: libraryInteraction.showLibrarySection("collections")
                                 Accessible.name: "Collections"
                                 onHoveredChanged: {
                                     if (hovered)
@@ -3259,12 +3289,22 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     radius: 4
                                     color: libraryScopeBar.scopeFill(collectionsScopeButton.scopeActive, collectionsScopeButton.hovered)
-                                    border.width: collectionsScopeButton.activeFocus || collectionsScopeButton.scopeActive ? 1 : 0
+                                    border.width: collectionsScopeButton.activeFocus ? 2 : (collectionsScopeButton.scopeActive ? 1 : 0)
                                     border.color: collectionsScopeButton.activeFocus ? theme.focusRing : libraryScopeBar.scopeStroke(collectionsScopeButton.scopeActive)
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
+                                    Text {
+                                        anchors.fill: parent
+                                        leftPadding: 10
+                                        text: collectionsScopeButton.text
+                                        color: libraryScopeBar.scopeInk(collectionsScopeButton.scopeActive, collectionsScopeButton.activeFocus)
+                                        horizontalAlignment: Text.AlignLeft
+                                        verticalAlignment: Text.AlignVCenter
+                                        font.pixelSize: 12
+                                    }
                                     Canvas {
+                                        visible: false
                                         anchors.fill: parent
                                         anchors.margins: libraryScopeBar.iconPad
                                         onPaint: {
@@ -3287,13 +3327,12 @@ ApplicationWindow {
                             ToolButton {
                                 id: favoritesScopeButton
                                 objectName: "libraryFavoritesScopeButton"
-                                text: ""
+                                text: "Favorites"
                                 flat: true
-                                readonly property bool scopeActive: libraryScopeBar.mode === "favorites"
-                                Layout.preferredWidth: libraryScopeBar.controlSize
-                                Layout.preferredHeight: libraryScopeBar.controlSize
+                                readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "favorites"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 32
                                 onClicked: {
-                                    libraryScopeBar.mode = "favorites"
                                     libraryInteraction.selectLibraryNode("scope:favorites")
                                 }
                                 Accessible.name: "Favorites"
@@ -3313,12 +3352,22 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     radius: 4
                                     color: libraryScopeBar.scopeFill(favoritesScopeButton.scopeActive, favoritesScopeButton.hovered)
-                                    border.width: favoritesScopeButton.activeFocus || favoritesScopeButton.scopeActive ? 1 : 0
+                                    border.width: favoritesScopeButton.activeFocus ? 2 : (favoritesScopeButton.scopeActive ? 1 : 0)
                                     border.color: favoritesScopeButton.activeFocus ? theme.focusRing : libraryScopeBar.scopeStroke(favoritesScopeButton.scopeActive)
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
+                                    Text {
+                                        anchors.fill: parent
+                                        leftPadding: 10
+                                        text: favoritesScopeButton.text
+                                        color: libraryScopeBar.scopeInk(favoritesScopeButton.scopeActive, favoritesScopeButton.activeFocus)
+                                        horizontalAlignment: Text.AlignLeft
+                                        verticalAlignment: Text.AlignVCenter
+                                        font.pixelSize: 12
+                                    }
                                     Canvas {
+                                        visible: false
                                         anchors.fill: parent
                                         anchors.margins: libraryScopeBar.iconPad
                                         onPaint: {
@@ -3363,13 +3412,12 @@ ApplicationWindow {
                             ToolButton {
                                 id: recordingsScopeButton
                                 objectName: "libraryRecordingsScopeButton"
-                                text: ""
+                                text: "Recordings"
                                 flat: true
-                                readonly property bool scopeActive: libraryScopeBar.mode === "recordings"
-                                Layout.preferredWidth: libraryScopeBar.controlSize
-                                Layout.preferredHeight: libraryScopeBar.controlSize
+                                readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "recordings"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 32
                                 onClicked: {
-                                    libraryScopeBar.mode = "recordings"
                                     libraryInteraction.selectLibraryNode("scope:recordings")
                                 }
                                 Accessible.name: "Recordings"
@@ -3389,12 +3437,22 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     radius: 4
                                     color: libraryScopeBar.scopeFill(recordingsScopeButton.scopeActive, recordingsScopeButton.hovered)
-                                    border.width: recordingsScopeButton.activeFocus || recordingsScopeButton.scopeActive ? 1 : 0
+                                    border.width: recordingsScopeButton.activeFocus ? 2 : (recordingsScopeButton.scopeActive ? 1 : 0)
                                     border.color: recordingsScopeButton.activeFocus ? theme.focusRing : libraryScopeBar.scopeStroke(recordingsScopeButton.scopeActive)
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
+                                    Text {
+                                        anchors.fill: parent
+                                        leftPadding: 10
+                                        text: recordingsScopeButton.text
+                                        color: libraryScopeBar.scopeInk(recordingsScopeButton.scopeActive, recordingsScopeButton.activeFocus)
+                                        horizontalAlignment: Text.AlignLeft
+                                        verticalAlignment: Text.AlignVCenter
+                                        font.pixelSize: 12
+                                    }
                                     Canvas {
+                                        visible: false
                                         anchors.fill: parent
                                         anchors.margins: libraryScopeBar.iconPad
                                         onPaint: {
@@ -3428,7 +3486,7 @@ ApplicationWindow {
                     Button {
                         id: libraryAddSourceButton
                         objectName: "libraryAddSourceButton"
-                        text: "Add Source"
+                        text: "+"
                         flat: true
                         implicitHeight: 26
                         padding: 8
@@ -3458,41 +3516,18 @@ ApplicationWindow {
                             opacity: libraryAddSourceButton.enabled ? 1.0 : 0.4
                         }
                         onClicked: addSourceDialog.open()
-                    }
-                    Button {
-                        id: libraryRemoveSourceButton
-                        objectName: "libraryRemoveSourceButton"
-                        visible: libraryInteraction.canRemoveSelectedSource
-                        text: "Remove"
-                        flat: true
-                        implicitHeight: 26
-                        padding: 8
-                        leftPadding: 10
-                        rightPadding: 10
-                        Accessible.name: "Remove"
-                        contentItem: Text {
-                            text: libraryRemoveSourceButton.text
-                            color: !libraryRemoveSourceButton.enabled ? theme.textDisabled
-                                   : (libraryRemoveSourceButton.pressed ? theme.textPrimary
-                                      : (libraryRemoveSourceButton.hovered || libraryRemoveSourceButton.activeFocus ? theme.textPrimary : theme.textSecondary))
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                            font.pixelSize: 11
-                            opacity: libraryRemoveSourceButton.enabled ? 1.0 : 0.45
+                        onHoveredChanged: {
+                            if (hovered)
+                                contextHintState.reportHover("library.add_source")
+                            else
+                                contextHintState.clearHover("library.add_source")
                         }
-                        background: Rectangle {
-                            implicitHeight: 26
-                            radius: 4
-                            color: !libraryRemoveSourceButton.enabled ? "transparent"
-                                   : (libraryRemoveSourceButton.pressed ? theme.surfaceElevated
-                                      : (libraryRemoveSourceButton.hovered ? theme.hoverSurface : "transparent"))
-                            border.width: 1
-                            border.color: !libraryRemoveSourceButton.enabled ? theme.borderSubtle
-                                          : (libraryRemoveSourceButton.activeFocus ? theme.focusRing
-                                             : (libraryRemoveSourceButton.pressed ? theme.selectionBorder : theme.borderSubtle))
-                            opacity: libraryRemoveSourceButton.enabled ? 1.0 : 0.4
+                        onActiveFocusChanged: {
+                            if (activeFocus)
+                                contextHintState.reportFocus("library.add_source")
+                            else
+                                contextHintState.clearFocus("library.add_source")
                         }
-                        onClicked: libraryInteraction.prepareRemoveSource()
                     }
                 }
                 Item {
@@ -3503,7 +3538,7 @@ ApplicationWindow {
                 ListView {
                     id: collectionList
                     objectName: "libraryCollectionList"
-                    visible: libraryScopeBar.mode === "collections"
+                    visible: libraryInteraction.activeLibrarySection === "collections"
                     anchors.fill: parent
                     clip: true
                     focus: visible
@@ -3557,13 +3592,13 @@ ApplicationWindow {
                 TreeView {
                     id: libraryTree
                     objectName: "libraryTree"
-                    visible: libraryScopeBar.mode === "sources"
-                    enabled: libraryScopeBar.mode === "sources"
+                    visible: libraryInteraction.activeLibrarySection === "sources"
+                    enabled: libraryInteraction.activeLibrarySection === "sources"
                     anchors.fill: parent
                     model: libraryTreeModel
                     clip: true
-                    focus: libraryScopeBar.mode === "sources"
-                    activeFocusOnTab: libraryScopeBar.mode === "sources"
+                    focus: libraryInteraction.activeLibrarySection === "sources"
+                    activeFocusOnTab: libraryInteraction.activeLibrarySection === "sources"
                     boundsBehavior: Flickable.StopAtBounds
                     delegate: TreeViewDelegate {
                         id: libraryDelegate
@@ -3577,12 +3612,18 @@ ApplicationWindow {
                             implicitHeight: 34
                             implicitWidth: libraryTree.width
                             property bool dropHover: false
+                            HoverHandler { id: sourceRowHover }
                             TapHandler {
+                                id: sourceRowTap
+                                // The action button owns intentional clicks in
+                                // its right-hand hit area; do not also select
+                                // or audition the source row.
+                                enabled: !sourceActionsButton.hovered && !sourceActionsButton.activeFocus
                                 onTapped: {
                                     if (model.error) {
                                         libraryInteraction.retryLibraryNode(model.parentNodeId)
                                     } else if (model.selectable) {
-                                        libraryScopeBar.mode = "sources"
+                                        libraryInteraction.showLibrarySection("sources")
                                         libraryTree.forceActiveFocus()
                                         libraryInteraction.selectLibraryNode(model.nodeId)
                                     }
@@ -3633,6 +3674,43 @@ ApplicationWindow {
                                     text: "Retry"
                                     color: theme.textSecondary
                                     font.pixelSize: 11
+                                }
+                                ToolButton {
+                                    id: sourceActionsButton
+                                    objectName: "librarySourceActionsButton"
+                                    visible: model.kind === "registered_root"
+                                             && (sourceRowHover.hovered
+                                                 || (libraryDelegate.current && libraryTree.activeFocus)
+                                                 || activeFocus)
+                                             && libraryInteraction.canRemoveSource(model.nodeId)
+                                    text: "…"
+                                    flat: true
+                                    activeFocusOnTab: visible
+                                    implicitWidth: 28
+                                    implicitHeight: 28
+                                    Accessible.name: "Source actions"
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: "Source actions"
+                                    onClicked: {
+                                        if (libraryInteraction.prepareRemoveSourceForNode(model.nodeId))
+                                            librarySourceContextMenu.open()
+                                    }
+                                    contentItem: Text {
+                                        text: sourceActionsButton.text
+                                        color: sourceActionsButton.activeFocus || sourceActionsButton.hovered
+                                               ? theme.textPrimary : theme.textSecondary
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                        font.pixelSize: 16
+                                    }
+                                    background: Rectangle {
+                                        radius: 4
+                                        color: sourceActionsButton.activeFocus
+                                               ? theme.surfaceElevated
+                                               : (sourceActionsButton.hovered ? theme.hoverSurface : "transparent")
+                                        border.width: sourceActionsButton.activeFocus ? 2 : 0
+                                        border.color: theme.focusRing
+                                    }
                                 }
                             }
                         }
@@ -7739,6 +7817,10 @@ def _qml_library_interaction_bridge(
         def selectedLibraryNodeId(self) -> str:
             return library_model.state.selected_node_id or ""
 
+        @Property(str, notify=state_changed)
+        def activeLibrarySection(self) -> str:
+            return library_model.state.active_section
+
         @Property(bool, notify=state_changed)
         def canRemoveSelectedSource(self) -> bool:
             node = library_model.state.node(library_model.state.selected_node_id or "")
@@ -7780,6 +7862,13 @@ def _qml_library_interaction_bridge(
                 if on_selection is not None:
                     on_selection()
                 self.state_changed.emit()
+
+        @Slot(str, result=bool)
+        def showLibrarySection(self, section: str) -> bool:
+            if not library_model.state.show_section(str(section)):
+                return False
+            self.state_changed.emit()
+            return True
 
         @Slot(str)
         def retryLibraryNode(self, node_id: str) -> None:
@@ -7823,23 +7912,50 @@ def _qml_library_interaction_bridge(
 
         @Slot()
         def prepareRemoveSource(self) -> None:
-            node = library_model.state.node(library_model.state.selected_node_id or "")
+            if self._prepare_removal_for_node(
+                library_model.state.selected_node_id or ""
+            ):
+                self.removalRequested.emit()
+
+        @Slot(str, result=bool)
+        def canRemoveSource(self, node_id: str) -> bool:
+            node = library_model.state.node(str(node_id))
+            return bool(
+                node is not None
+                and node.kind is LibraryNodeKind.REGISTERED_ROOT
+                and node.folder_id is not None
+                and on_prepare_remove is not None
+            )
+
+        @Slot(str, result=bool)
+        def prepareRemoveSourceForNode(self, node_id: str) -> bool:
+            return self._prepare_removal_for_node(str(node_id))
+
+        def _removal_preview_for_node(self, node_id: str):
+            node = library_model.state.node(node_id)
             if (
                 node is None
                 or node.kind is not LibraryNodeKind.REGISTERED_ROOT
                 or node.folder_id is None
                 or on_prepare_remove is None
             ):
-                return
-            preview = on_prepare_remove(node.folder_id)
-            if preview is None:
-                return
+                return None
+            try:
+                return on_prepare_remove(node.folder_id)
+            except Exception:
+                return None
+
+        def _prepare_removal_for_node(self, node_id: str) -> bool:
+            node = library_model.state.node(node_id)
+            preview = self._removal_preview_for_node(node_id)
+            if node is None or preview is None:
+                return False
             self._removal_folder_id = node.folder_id
             self._removal_path = str(preview.path)
             self._removal_availability = str(preview.availability)
             self._removal_cached_sample_count = int(preview.cached_sample_count)
             self.state_changed.emit()
-            self.removalRequested.emit()
+            return True
 
         @Slot()
         def confirmRemoveSource(self) -> None:
@@ -8252,25 +8368,31 @@ def _qml_engine(
     def refresh_browser_scope() -> None:
         screen_model.refresh_browser_scope()
 
-    waveform_cache = BoundedLazyWaveformCache(
-        capacity=48,
-        loader=lambda path: compute_waveform_envelope(path, max_points=96),
-    )
-    waveform_loader = BoundedBackgroundWaveformLoader(
-        cache=waveform_cache,
-        loader=lambda path: compute_waveform_envelope(path, max_points=96),
-        max_pending=14,
-    )
-    # Engines may be destroyed while the shared application keeps running.
-    engine.destroyed.connect(waveform_loader.close)
-    app.aboutToQuit.connect(waveform_loader.close)
+    # In test environments, disable the background waveform loader to avoid
+    # COM threading issues (0x8001010d) on Windows when running under pytest.
+    if os.environ.get("SAMPLE_BRAIN_TEST_NO_WAVEFORM_LOADER") == "1":
+        waveform_cache = None
+        waveform_loader = None
+    else:
+        waveform_cache = BoundedLazyWaveformCache(
+            capacity=48,
+            loader=lambda path: compute_waveform_envelope(path, max_points=96),
+        )
+        waveform_loader = BoundedBackgroundWaveformLoader(
+            cache=waveform_cache,
+            loader=lambda path: compute_waveform_envelope(path, max_points=96),
+            max_pending=14,
+        )
+        # Engines may be destroyed while the shared application keeps running.
+        engine.destroyed.connect(waveform_loader.close)
+        app.aboutToQuit.connect(waveform_loader.close)
     # Last viewport ranges — drain re-requests so max_pending saturation
     # still fills the full compact visible window without raising the bound.
     browser_waveform_viewport = [0, 0]
     harmony_waveform_viewport = [0, 0]
 
     def request_waveforms(start: int, count: int) -> None:
-        if count <= 0:
+        if count <= 0 or waveform_loader is None:
             return
         first = max(0, start)
         last = min(len(view_model.browser_rows), first + count)
@@ -8282,7 +8404,7 @@ def _qml_engine(
             waveform_loader.schedule(str(row.source_row.path))
 
     def request_harmony_waveforms(start: int, count: int) -> None:
-        if count <= 0:
+        if count <= 0 or waveform_loader is None:
             return
         first = max(0, start)
         last = min(len(view_model.harmony_rows), first + count)
@@ -8295,6 +8417,8 @@ def _qml_engine(
 
     def request_visible_browser_waveforms_from_window() -> None:
         """Python-side viewport seed after model refresh; QML owns scroll/resize."""
+        if waveform_loader is None:
+            return
         try:
             from PySide6.QtQuick import QQuickItem
         except Exception:
@@ -8316,6 +8440,8 @@ def _qml_engine(
         request_waveforms(start, count)
 
     def drain_waveforms() -> None:
+        if waveform_loader is None or waveform_cache is None:
+            return
         if waveform_loader.drain_results() == 0:
             return
         changed = False
@@ -8876,7 +9002,8 @@ def _qml_engine(
         root_window = root_objects[0]
         show_window_on_primary_screen(app, root_window)
     except BaseException:
-        waveform_loader.close()
+        if waveform_loader is not None:
+            waveform_loader.close()
         engine.deleteLater()
         raise
     # Keep both Python objects alive for the complete Qt engine lifetime.
