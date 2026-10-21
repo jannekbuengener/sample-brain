@@ -17,20 +17,25 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from PySide6.QtCore import (
-    QCoreApplication,
-    QEvent,
-    QObject,
-    QPoint,
-    QRect,
-    Qt,
-    QTimer,
-    Signal,
-    Slot,
-)
-from PySide6.QtQuick import QQuickView
-from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+
+# Check if PySide6 is available for Qt tests
+PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
+
+if PY_SIDE6_AVAILABLE:
+    from PySide6.QtCore import (
+        QCoreApplication,
+        QEvent,
+        QObject,
+        QPoint,
+        QRect,
+        Qt,
+        QTimer,
+        Signal,
+        Slot,
+    )
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtQuick import QQuickItem
 
 from src.workbench_controller import WorkbenchRow
 from src.workbench_library_navigation import (
@@ -45,9 +50,8 @@ from src.workbench_qml import (
     Screen1QmlRuntimeComposition,
     Screen1QmlViewModel,
     _qml_engine,
-    _qml_screen_data_bridge,
 )
-from src.workbench_qml_library import WorkbenchLibraryTreeState, create_qt_library_tree_model
+from src.workbench_qml_library import WorkbenchLibraryTreeState
 from src.workbench_library_navigation import WorkbenchLibraryNavigation
 
 PY_SIDE6_AVAILABLE = importlib.util.find_spec("PySide6") is not None
@@ -286,6 +290,7 @@ def _wait_for_property(item: QObject, property_name: str, expected_value: Any, t
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 class TestVerticalScopeNavigation:
     """A. VERTIKALE SCOPE-NAVIGATION -- fünf Scope-Rows, vertikal, konsistent."""
 
@@ -385,6 +390,7 @@ class TestVerticalScopeNavigation:
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 class TestActiveState:
     """B. ACTIVE STATE -- Python-owned authority, exactly one active, content projection."""
 
@@ -455,6 +461,7 @@ class TestActiveState:
         # The visibility is bound to activeLibrarySection - verify Python state
         assert runtime_composition.library_tree.active_section == "collections"
 
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 class TestVisualStateContract:
     """C. VISUAL STATE CONTRACT -- idle/hover/active/focus theme tokens."""
@@ -538,6 +545,7 @@ class TestVisualStateContract:
         assert "height: 1" not in scope_block
 
 
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 class TestHoverBehavior:
     """D. HOVER -- real pointer events, scope hover, source hover with …"""
@@ -639,6 +647,7 @@ class TestHoverBehavior:
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 class TestAddSourceButton:
     """E. ADD SOURCE + -- compact button, accessible name, existing route."""
 
@@ -708,6 +717,7 @@ class TestAddSourceButton:
         assert source.count('onClicked: addSourceDialog.open()') == 2  # header + calm canvas
 
 
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 class TestSourceActions:
     """F. SOURCE ACTION … -- ellipsis on hover/focus, click opens removal flow."""
@@ -791,6 +801,7 @@ class TestSourceActions:
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 class TestKeyboardNavigation:
     """H. KEYBOARD -- Tab/focus, Enter/Space on action, scope navigation."""
 
@@ -871,6 +882,7 @@ class TestKeyboardNavigation:
         assert runtime_composition.library_tree.active_section == "all"
 
 
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 class TestNarrowWindow:
     """I. NARROW WINDOW -- scope column usable, no overlaps, no negative geometry."""
@@ -969,6 +981,7 @@ class TestNarrowWindow:
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 class TestScreenshotEvidence:
     """Visual evidence capture (local only, not committed)."""
 
@@ -1034,6 +1047,7 @@ class TestScreenshotEvidence:
 # ============================================================
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 def test_can_remove_source_io_free(qml_engine, runtime_composition):
     """canRemoveSource() must be completely IO-free -- only reads loaded node state."""
     from src import workbench_qml
@@ -1052,6 +1066,7 @@ def test_can_remove_source_io_free(qml_engine, runtime_composition):
 # ============================================================
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 def test_keyboard_current_shows_source_actions(qml_engine):
     """Keyboard-current tree row must show Source Action."""
     from src import workbench_qml
@@ -1064,6 +1079,7 @@ def test_keyboard_current_shows_source_actions(qml_engine):
 # Regression test for Finding 3: Ellipsis click vs row tap separation
 # ============================================================
 
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 def test_ellipsis_click_separated_from_row_tap(qml_engine):
     """Ellipsis click must not trigger parent row tap."""
@@ -1084,6 +1100,7 @@ def test_ellipsis_click_separated_from_row_tap(qml_engine):
 # Regression test for Finding 4: Scope column full width
 # ============================================================
 
+@pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 nicht installiert")
 def test_scope_column_full_width(qml_engine):
     """Scope rows must have explicit sensible width and hit areas."""
