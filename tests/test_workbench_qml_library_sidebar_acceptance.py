@@ -441,6 +441,30 @@ class TestActiveState:
 
         assert runtime_composition.library_tree.active_section == "collections"
 
+    @pytest.mark.parametrize(
+        ("button_name", "node_id", "scope_kind"),
+        [
+            ("libraryAllSamplesScopeButton", "scope:all-library", LibraryScopeKind.ALL_SAMPLES),
+            ("libraryFavoritesScopeButton", "scope:favorites", LibraryScopeKind.FAVORITES),
+            ("libraryRecordingsScopeButton", "scope:recordings", LibraryScopeKind.RECORDINGS),
+        ],
+    )
+    def test_data_backed_scope_click_dispatches_selection(
+        self, qml_engine, runtime_composition, button_name, node_id, scope_kind
+    ):
+        engine, _window = qml_engine
+        root = engine.rootObjects()[0]
+        runtime_composition._load_scope = lambda _scope: ()
+
+        button = _find_item_by_name(root, button_name)
+        assert button is not None
+        button.clicked.emit()
+        QCoreApplication.processEvents()
+
+        assert runtime_composition.selected_node_id == node_id
+        assert runtime_composition.browser_state.scope is not None
+        assert runtime_composition.browser_state.scope.kind is scope_kind
+
     def test_python_authority_not_qml_local(self, qml_engine, runtime_composition):
         """Active state must come from Python WorkbenchLibraryTreeState, not QML-local state."""
         engine, window = qml_engine
