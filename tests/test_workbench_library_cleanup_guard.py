@@ -746,6 +746,25 @@ def test_ad5_fallback_candidates_are_modelled(
     assert candidates[-1] == str(Path(os.getcwd()))
 
 
+def test_ad6_windows_fallback_candidates_are_modelled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Windows falls back to the user temp dir, the SystemRoot temp dir and the
+    # standard drive-local temp directories before the current directory.
+    monkeypatch.setattr(workbench_library.os, "name", "nt")
+    monkeypatch.delenv("TMPDIR", raising=False)
+    monkeypatch.delenv("TEMP", raising=False)
+    monkeypatch.delenv("TMP", raising=False)
+
+    candidates = [str(candidate).lower() for candidate in workbench_library._temp_candidate_roots()]
+
+    assert str(Path(os.path.expanduser(r"~\AppData\Local\Temp"))).lower() in candidates
+    assert str(Path(os.path.expandvars(r"%SYSTEMROOT%\Temp"))).lower() in candidates
+    for fallback in (r"c:\temp", r"c:\tmp", r"\temp", r"\tmp"):
+        assert fallback in candidates
+    assert candidates[-1] == str(Path(os.getcwd())).lower()
+
+
 def test_ae_preview_classifies_registered_source_from_catalog_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

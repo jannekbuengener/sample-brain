@@ -799,9 +799,12 @@ def _temp_candidate_roots() -> tuple[Path, ...]:
 
     ``tempfile`` accepts the first candidate that is an existing writable
     directory and only then verifies it by writing a probe file.  The order is
-    mirrored here - including the POSIX fallbacks (``/var/tmp``, ``/usr/tmp``)
-    and the current directory - so the non-mutating resolver selects the same
-    directory ``tempfile`` would select, without probing any candidate.
+    mirrored here - the environment candidates, the platform specific
+    fallbacks (``~\\AppData\\Local\\Temp``, ``%SYSTEMROOT%\\Temp``,
+    ``c:\\temp``, ``c:\\tmp``, ``\\temp``, ``\\tmp`` on Windows; ``/tmp``,
+    ``/var/tmp``, ``/usr/tmp`` on POSIX) and the current directory as last
+    resort - so the non-mutating resolver selects the same directory
+    ``tempfile`` would select, without probing any candidate.
     """
     candidates: list[Path] = []
     for key in ("TMPDIR", "TEMP", "TMP"):
@@ -809,9 +812,11 @@ def _temp_candidate_roots() -> tuple[Path, ...]:
         if value:
             candidates.append(Path(value))
     if os.name == "nt":
-        system_root = os.environ.get("SYSTEMROOT") or os.environ.get("WINDIR")
-        if system_root:
-            candidates.append(Path(system_root) / "Temp")
+        candidates.append(Path(os.path.expanduser(r"~\AppData\Local\Temp")))
+        candidates.append(Path(os.path.expandvars(r"%SYSTEMROOT%\Temp")))
+        candidates.extend(
+            (Path(r"c:\temp"), Path(r"c:\tmp"), Path(r"\temp"), Path(r"\tmp"))
+        )
     else:
         candidates.extend((Path("/tmp"), Path("/var/tmp"), Path("/usr/tmp")))
     try:
