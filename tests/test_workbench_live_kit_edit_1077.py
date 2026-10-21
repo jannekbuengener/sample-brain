@@ -735,7 +735,7 @@ def test_live_kit_edit_qml_has_no_bottom_rack_step_controls():
 
 
 def test_live_kit_absent_from_upper_mode_navigation():
-    """Owner gate: Live Kit must not peer with Browser / Step Sequencer / Arrangement."""
+    """Owner gate: Live Kit must not peer with Edit / Arrangement."""
     header = QML_SOURCE[
         QML_SOURCE.index('objectName: "screen1Header"') : QML_SOURCE.index(
             'objectName: "workspaceRow"'
@@ -748,8 +748,8 @@ def test_live_kit_absent_from_upper_mode_navigation():
     ]
     assert "programNavLiveKit" not in nav
     assert 'text: "Live Kit"' not in nav
-    assert 'objectName: "programNavBrowser"' in nav
-    assert 'objectName: "programNavStepSequencer"' in nav
+    assert 'objectName: "programNavEdit"' in nav
+    assert 'objectName: "programNavStepSequencer"' not in nav
     assert 'objectName: "programNavArrangement"' in nav
 
 
@@ -906,10 +906,9 @@ def test_active_source_restore_ignores_disk_open_without_session_desired(
     assert adapter.live_kit_is_visible() is False
 
 
-def test_step_sequencer_nav_disabled_until_arrangement_destination():
-    block = QML_SOURCE.split('objectName: "programNavStepSequencer"', 1)[1][:900]
-    assert "enabled: false" in block
-    assert "openChannelRack()" not in block
+def test_step_sequencer_nav_is_not_a_top_level_control():
+    assert 'objectName: "programNavStepSequencer"' not in QML_SOURCE
+    assert 'text: "Step Sequencer"' not in QML_SOURCE
 
 
 def test_auto_disclosure_updates_session_visibility_desired(

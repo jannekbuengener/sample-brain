@@ -62,12 +62,15 @@ def test_program_chrome_header_zones_and_nav_labels() -> None:
         )
     ]
     for label, obj in (
-        ("Browser", "programNavBrowser"),
-        ("Step Sequencer", "programNavStepSequencer"),
+        ("Edit", "programNavEdit"),
         ("Arrangement", "programNavArrangement"),
     ):
         assert label in nav
         assert f'objectName: "{obj}"' in nav
+    assert nav.count('objectName: "programNavEdit"') == 1
+    assert nav.count('text: "Edit"') == 1
+    assert 'text: "Browser"' not in nav
+    assert 'objectName: "programNavStepSequencer"' not in nav
     # #1077 Owner gate: Live Kit is not a mode peer in upper navigation.
     assert "programNavLiveKit" not in nav
     assert 'text: "Live Kit"' not in nav
@@ -122,13 +125,14 @@ def test_program_footer_is_global_chrome_across_screens() -> None:
     assert "height:" in band
 
 
-def test_program_nav_browser_handler_reveals_collapsed_browser() -> None:
-    """#831 P2: Browser nav must use #845 reveal when Browser is collapsed."""
-    block = QML_SOURCE.split('objectName: "programNavBrowser"', 1)[1].split(
-        "ToolButton", 1
+def test_program_nav_edit_handler_reveals_collapsed_browser() -> None:
+    """#831 P2: Edit nav retains the #845 Browser reveal intent."""
+    block = QML_SOURCE.split('objectName: "programNavEdit"', 1)[1].split(
+        'objectName: "programNavArrangement"', 1
     )[0]
     assert "browserCollapsed" in block
     assert "toggleBrowserCollapsed" in block
+    assert "returnToBrowser" in block
 
 
 def test_program_chrome_header_reserves_three_zones_without_free_center_overlap() -> None:
@@ -285,7 +289,7 @@ def _click_item(window, item, settle, app) -> None:
 
 
 @pytest.mark.skipif(not PY_SIDE6_AVAILABLE, reason="PySide6 ist nicht installiert")
-def test_runtime_browser_nav_from_screen2_returns_and_reveals() -> None:
+def test_runtime_edit_nav_from_screen2_returns_and_reveals_browser() -> None:
     from PySide6.QtQuick import QQuickItem
 
     app, engine, window, adapter, settle = _build_screen1_window(with_session=True)
@@ -298,7 +302,7 @@ def test_runtime_browser_nav_from_screen2_returns_and_reveals() -> None:
         channel_rack.openChannelRack()
         settle(app)
         assert window.property("activeScreen") == "screen1"
-        nav = window.findChild(QQuickItem, "programNavBrowser")
+        nav = window.findChild(QQuickItem, "programNavEdit")
         assert nav is not None
         _click_item(window, nav, settle, app)
         assert window.property("activeScreen") == "screen1"
@@ -319,13 +323,13 @@ def test_runtime_header_nav_has_no_live_kit_mode_peer() -> None:
         nav_row = window.findChild(QQuickItem, "headerNavRow")
         assert header is not None and nav_row is not None
         for name in (
-            "programNavBrowser",
-            "programNavStepSequencer",
+            "programNavEdit",
             "programNavArrangement",
         ):
             btn = window.findChild(QQuickItem, name)
             assert btn is not None
             assert nav_row.isAncestorOf(btn)
+        assert window.findChild(QQuickItem, "programNavStepSequencer") is None
     finally:
         window.close()
         app.processEvents()
@@ -390,7 +394,7 @@ def test_runtime_header_zones_do_not_overlap(size) -> None:
         )
         assert left_right <= nav_left + 1.0
         assert nav_right <= transport_left + 1.0
-        # Three mode destinations remain (Live Kit removed from header).
+        # Two top-level mode destinations remain; Live stays parked.
         assert float(nav.width()) >= 240.0
         assert float(transport.width()) > 8.0
         # Transport stays fully inside the header, footer chrome stays visible
@@ -406,8 +410,7 @@ def test_runtime_header_zones_do_not_overlap(size) -> None:
         assert footer_right <= float(header.width()) + 1.0
 
         for name in (
-            "programNavBrowser",
-            "programNavStepSequencer",
+            "programNavEdit",
             "programNavArrangement",
         ):
             btn = window.findChild(QQuickItem, name)
@@ -417,6 +420,7 @@ def test_runtime_header_zones_do_not_overlap(size) -> None:
             assert btn_left >= nav_left - 1.0
             assert btn_right <= nav_right + 1.0
             assert btn_right <= transport_left + 1.0
+        assert window.findChild(QQuickItem, "programNavStepSequencer") is None
         assert window.findChild(QQuickItem, "programNavLiveKit") is None
     finally:
         window.close()

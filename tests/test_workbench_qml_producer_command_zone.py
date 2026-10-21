@@ -60,7 +60,8 @@ def test_transport_zone_keeps_master_grid_sync_without_harmonic_header():
             'objectName: "headerTransportZone"'
         )
     ]
-    assert 'objectName: "programNavStepSequencer"' in nav
+    assert 'objectName: "programNavEdit"' in nav
+    assert 'objectName: "programNavStepSequencer"' not in nav
     assert 'objectName: "displayPreferencesOverflow"' in transport
     assert 'objectName: "harmonicMatchButton"' not in header
     assert 'objectName: "browserSearch"' not in header
@@ -152,13 +153,15 @@ def test_runtime_nav_zone_is_geometrically_centered(size):
         transport = window.findChild(QQuickItem, "headerTransportZone")
         harmonic = window.findChild(QQuickItem, "harmonicMatchButton")
         search = window.findChild(QQuickItem, "browserSearch")
+        edit_nav = window.findChild(QQuickItem, "programNavEdit")
         step_seq = window.findChild(QQuickItem, "programNavStepSequencer")
         prefs = window.findChild(QQuickItem, "displayPreferencesOverflow")
 
         assert all(
             item is not None
-            for item in (header, left, nav, nav_row, transport, search, step_seq, prefs)
+            for item in (header, left, nav, nav_row, transport, search, edit_nav, prefs)
         )
+        assert step_seq is None
         assert harmonic is None
         assert left.x() < nav.x()
         assert nav.x() + nav.width() <= transport.x() + transport.width() + 1.0
