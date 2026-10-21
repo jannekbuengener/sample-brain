@@ -794,6 +794,33 @@ def _is_writable_directory(path: Path) -> bool:
         return False
 
 
+def _temp_candidate_roots() -> tuple[Path, ...]:
+    """Return the temp-root candidates in ``tempfile``'s own order.
+
+    ``tempfile`` accepts the first candidate that is an existing writable
+    directory and only then verifies it by writing a probe file.  The order is
+    mirrored here - including the POSIX fallbacks (``/var/tmp``, ``/usr/tmp``)
+    and the current directory - so the non-mutating resolver selects the same
+    directory ``tempfile`` would select, without probing any candidate.
+    """
+    candidates: list[Path] = []
+    for key in ("TMPDIR", "TEMP", "TMP"):
+        value = os.environ.get(key)
+        if value:
+            candidates.append(Path(value))
+    if os.name == "nt":
+        system_root = os.environ.get("SYSTEMROOT") or os.environ.get("WINDIR")
+        if system_root:
+            candidates.append(Path(system_root) / "Temp")
+    else:
+        candidates.extend((Path("/tmp"), Path("/var/tmp"), Path("/usr/tmp")))
+    try:
+        candidates.append(Path(os.getcwd()))
+    except OSError:
+        candidates.append(Path(os.curdir))
+    return tuple(candidates)
+
+
 def _runtime_temp_root() -> Path | None:
     """Return the runtime temporary root without probing the filesystem.
 
@@ -805,8 +832,8 @@ def _runtime_temp_root() -> Path | None:
     - the cached ``tempfile.tempdir`` value when it is available (already
       validated by ``tempfile``), decoded because ``tempfile`` also supports a
       bytes path;
-    - otherwise the first configured candidate that exists and is writable,
-      checked with ``os.access`` so that no file is created.
+    - otherwise the first candidate in ``tempfile``'s own order that exists and
+      is writable, checked with ``os.access`` so that no file is created.
 
     A candidate that ``tempfile`` would reject (for example a non-writable
     directory) must not be treated as canonical: paths below it would be
@@ -819,11 +846,7 @@ def _runtime_temp_root() -> Path | None:
             return Path(os.fsdecode(cached))
         except (TypeError, ValueError):
             return None
-    for key in ("TMPDIR", "TEMP", "TMP"):
-        value = os.environ.get(key)
-        if not value:
-            continue
-        candidate = Path(value)
+    for candidate in _temp_candidate_roots():
         if _is_writable_directory(candidate):
             return candidate
     return _platform_default_temp_root()

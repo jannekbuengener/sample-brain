@@ -719,6 +719,26 @@ def test_ad4_bytes_cached_temp_root_is_decoded(
     assert workbench_library._runtime_temp_root() == tmp_path.resolve()
 
 
+def test_ad5_fallback_candidates_are_modelled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # tempfile continues through /var/tmp, /usr/tmp and the current directory
+    # when no configured candidate is usable; the non-mutating resolver must
+    # model the same order so a real pytest tree below the fallback is still
+    # recognized.
+    monkeypatch.setattr(workbench_library.os, "name", "posix")
+    monkeypatch.delenv("TMPDIR", raising=False)
+    monkeypatch.delenv("TEMP", raising=False)
+    monkeypatch.delenv("TMP", raising=False)
+
+    candidates = [str(candidate) for candidate in workbench_library._temp_candidate_roots()]
+
+    assert str(Path("/tmp")) in candidates
+    assert str(Path("/var/tmp")) in candidates
+    assert str(Path("/usr/tmp")) in candidates
+    assert candidates[-1] == str(Path(os.getcwd()))
+
+
 def test_ae_preview_classifies_registered_source_from_catalog_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
