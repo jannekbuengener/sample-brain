@@ -6,6 +6,7 @@ read-only dry-run removal preview.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ import src.workbench_library as workbench_library
 from src.workbench_library import (
     CleanupClassification,
     WorkbenchLibraryConnectionError,
+    classify_folder_for_cleanup,
     connect_workbench_library,
     init_workbench_library,
     preview_library_folder_removal,
@@ -285,3 +287,121 @@ def test_p_filesystem_sentinel_survives_dry_run(tmp_path: Path) -> None:
     assert preview.folder_id is not None
     assert sentinel.is_file()
     assert sentinel.read_text(encoding="utf-8") == "keep"
+
+
+# ---------------------------------------------------------------------------
+# Q. writable connect rejected for protected target (P1)
+# R. readonly connection rejected for protected target (P1)
+# S. classifier/catalog lookup rejected for protected target (P1)
+# T. snapshot/capture path rejects protected target before source reads (P1)
+# ---------------------------------------------------------------------------
+def test_q_writable_connect_rejected_for_protected_target(tmp_path: Path) -> None:
+    protected_db = tmp_path / "protected-state" / "workbench_library.db"
+    protected_db.parent.mkdir(parents=True)
+    workbench_library.protect_connection_target(protected_db)
+    with pytest.raises(WorkbenchLibraryConnectionError):
+        workbench_library.connect_workbench_library(protected_db)
+
+
+def test_r_readonly_connection_rejected_for_protected_target(tmp_path: Path) -> None:
+    protected_db = tmp_path / "protected-state" / "workbench_library.db"
+    protected_db.parent.mkdir(parents=True)
+    protected_db.write_bytes(b"SQLite format 3\x00")
+    workbench_library.protect_connection_target(protected_db)
+    with pytest.raises(WorkbenchLibraryConnectionError):
+        with workbench_library.workbench_library_readonly_connection(
+            db_path=protected_db
+        ) as conn:
+            pass  # never reached: rejected before opening
+
+
+def test_s_classifier_catalog_lookup_rejected_for_protected_target(
+    tmp_path: Path,
+) -> None:
+    protected_db = tmp_path / "protected-state" / "workbench_library.db"
+    protected_db.parent.mkdir(parents=True)
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    workbench_library.protect_connection_target(protected_db)
+    with pytest.raises(WorkbenchLibraryConnectionError):
+        classify_folder_for_cleanup(folder, db_path=protected_db)
+
+
+def test_t_snapshot_capture_rejects_protected_target_before_source_reads(
+    tmp_path: Path,
+) -> None:
+    source_db = tmp_path / "source.db"
+    source_db.write_bytes(b"SQLite format 3\x00")
+    snap_db = tmp_path / "snap" / "readonly_snapshot.db"
+
+    workbench_library.protect_connection_target(source_db)
+
+    # Capture is refused before any source DB/WAL/journal read or copy.
+    with pytest.raises(WorkbenchLibraryConnectionError):
+        workbench_library._capture_sqlite_main_and_wal(source_db.resolve(), snap_db)
+
+    # Source DB and sidecars untouched: no -wal / -journal appeared next to source.
+    source_dir = source_db.parent
+    assert not (source_dir / f"{source_db.name}-wal").exists()
+    assert not (source_dir / f"{source_db.name}-journal").exists()
+    assert source_db.read_bytes() == b"SQLite format 3\x00"
+
+
+# ---------------------------------------------------------------------------
+# U. readonly URI preserves path with space (P2)
+# V. readonly URI preserves path with # (P2)
+# W. readonly URI preserves path with % (P2)
+# X. readonly URI preserves path with ? where platform-valid (P2)
+# ---------------------------------------------------------------------------
+def _seed_catalog_db(db_path: Path, folder: Path) -> None:
+    db_path.parent.mkdir(parents=True)
+    init_workbench_library(db_path)
+    register_library_folder(folder, db_path=db_path)
+
+
+def test_u_readonly_uri_preserves_path_with_space(tmp_path: Path) -> None:
+    db_path = tmp_path / "my db with spaces" / "workbench_library.db"
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    _seed_catalog_db(db_path, folder)
+    # Catalog lookup must open the intended DB, not reinterpret the path.
+    assert (
+        classify_folder_for_cleanup(folder, db_path=db_path)
+        == CleanupClassification.LEGITIMATE_OR_UNPROVEN
+    )
+
+
+def test_v_readonly_uri_preserves_path_with_hash(tmp_path: Path) -> None:
+    db_path = tmp_path / "my#db" / "workbench_library.db"
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    _seed_catalog_db(db_path, folder)
+    assert (
+        classify_folder_for_cleanup(folder, db_path=db_path)
+        == CleanupClassification.LEGITIMATE_OR_UNPROVEN
+    )
+
+
+def test_w_readonly_uri_preserves_path_with_percent(tmp_path: Path) -> None:
+    db_path = tmp_path / "my%db" / "workbench_library.db"
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    _seed_catalog_db(db_path, folder)
+    assert (
+        classify_folder_for_cleanup(folder, db_path=db_path)
+        == CleanupClassification.LEGITIMATE_OR_UNPROVEN
+    )
+
+
+def test_x_readonly_uri_preserves_path_with_question_mark(tmp_path: Path) -> None:
+    # ``?`` is not a valid Windows filename character; skip there.
+    if os.name == "nt":
+        pytest.skip("? is not a valid filename character on Windows")
+    db_path = tmp_path / "my?db" / "workbench_library.db"
+    folder = tmp_path / "samples"
+    folder.mkdir()
+    _seed_catalog_db(db_path, folder)
+    assert (
+        classify_folder_for_cleanup(folder, db_path=db_path)
+        == CleanupClassification.LEGITIMATE_OR_UNPROVEN
+    )

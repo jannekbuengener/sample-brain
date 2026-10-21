@@ -7,6 +7,7 @@ import os
 import re
 import sqlite3
 import tempfile
+from urllib.parse import quote
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -123,15 +124,27 @@ def _is_protected_connection_target(db_path: Path) -> bool:
     return db_path in _PROTECTED_CONNECTION_TARGETS
 
 
+def _assert_connection_target_allowed(path: Path | str) -> None:
+    """Raise ``WorkbenchLibraryConnectionError`` if *path* is a protected target.
+
+    Called at every Workbench Library SQLite boundary before any
+    ``sqlite3.connect``, file open, stat/hash, or WAL/journal access against
+    the source database.  Production behavior is unchanged unless a caller
+    explicitly registered a protected target via ``protect_connection_target``.
+    """
+    resolved = Path(path).expanduser().resolve()
+    if _is_protected_connection_target(resolved):
+        raise WorkbenchLibraryConnectionError(
+            "refusing to open protected workbench library connection target"
+        )
+
+
 def connect_workbench_library(path: Path | None = None) -> sqlite3.Connection:
     if path is None:
         db_path = workbench_library_db_path()
     else:
         db_path = Path(path).expanduser().resolve()
-    if _is_protected_connection_target(db_path):
-        raise WorkbenchLibraryConnectionError(
-            "refusing to open protected workbench library connection target"
-        )
+    _assert_connection_target_allowed(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -179,6 +192,7 @@ def _capture_sqlite_main_and_wal(resolved: Path, snap_db: Path) -> None:
     Raises ``OSError`` if no stable capture is observed so callers can fail soft
     instead of opening an unverified snapshot.
     """
+    _assert_connection_target_allowed(resolved)
     wal_src = Path(f"{resolved}-wal")
     journal_src = Path(f"{resolved}-journal")
     snap_wal = Path(f"{snap_db}-wal")
@@ -329,6 +343,7 @@ def _connect_workbench_library_readonly(db_path: Path) -> Iterator[sqlite3.Conne
     ``-shm`` is intentionally not copied.
     """
     resolved = Path(db_path).resolve()
+    _assert_connection_target_allowed(resolved)
     tmp = _readonly_snapshot_directory(resolved)
     conn: sqlite3.Connection | None = None
     try:
@@ -859,11 +874,13 @@ def _folder_registered_in_catalog(db_path: Path, folder_path_str: str) -> bool:
     so callers fail clearly instead of treating the folder as unregistered.
     """
     db_file = Path(db_path)
+    _assert_connection_target_allowed(db_file)
     if not db_file.is_file():
         return False
-    with sqlite3.connect(
-        f"file:{db_file.resolve().as_posix()}?mode=ro", uri=True
-    ) as conn:
+    # Percent-encode URI-reserved characters (?, #, %, spaces) so the complete
+    # filesystem path is preserved on Windows and POSIX.
+    _encoded_path = quote(str(db_file.resolve()), safe="/:")
+    with sqlite3.connect(f"file:{_encoded_path}?mode=ro", uri=True) as conn:
         row = conn.execute(
             "SELECT id FROM folders WHERE path = ?",
             (folder_path_str,),
@@ -1418,6 +1435,7 @@ def workbench_library_readonly_connection(
     Query errors raised by the caller are not converted into ``None`` here.
     """
     resolved_db = Path(db_path) if db_path is not None else workbench_library_db_path()
+    _assert_connection_target_allowed(resolved_db)
     if not resolved_db.is_file():
         yield None
         return
