@@ -83,6 +83,7 @@ def test_navigation_emits_stable_taxonomy_ids_and_typed_scopes(
     source_children = navigation.children("container:sample-sources")
     root_node = _node(source_children, f"root:{folder_id}")
     assert root_node.kind is LibraryNodeKind.REGISTERED_ROOT
+    assert root_node.parent_id == "container:sample-sources"
     assert root_node.label == "sample-root"
     assert root_node.selectable and root_node.expandable
     assert root_node.availability is LibraryAvailability.AVAILABLE

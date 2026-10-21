@@ -3596,6 +3596,7 @@ ApplicationWindow {
                     enabled: libraryInteraction.activeLibrarySection === "sources"
                     anchors.fill: parent
                     model: libraryTreeModel
+                    rootIndex: libraryTreeModel.presentationRootIndex()
                     clip: true
                     focus: libraryInteraction.activeLibrarySection === "sources"
                     activeFocusOnTab: libraryInteraction.activeLibrarySection === "sources"
