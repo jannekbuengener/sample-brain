@@ -775,41 +775,51 @@ def _is_under_os_temp_root(path: Path) -> bool:
 
 
 def _is_pytest_temp_structure(path: Path) -> bool:
-    """Check if *path* matches a recognizable pytest temporary‑directory pattern.
+    """Check if *path* matches a recognizable pytest‑managed temporary layout.
 
-    Pytest creates directories under ``tmp_path`` whose names follow patterns
-    like ``pytest-of-<username>``, ``pytest-<slug>``, or contain the substring
-    ``"pytest"`` in a directory‑component position that is itself under the
-    pytest-managed temp tree.  This function checks for those patterns **without**
-    relying on a bare substring match – the ``"pytest"`` component must appear
-    in a path that is actually derived from pytest's temporary directory
-    infrastructure.
+    Pytest's default ``tmp_path`` base directory on the current platform is of
+    the form::
 
-    The function is conservative: a bare directory name ``"pytest"`` or
-    ``"pytest-project"`` that is NOT under the OS temp root returned by
-    ``tempfile.gettempdir()`` will return ``False``, preventing false positives
-    for legitimate user libraries.
+        <canonical-temp>/pytest-of-<user>/pytest-<numeric-run>|pytest-current/<node>...
+
+    Only that actually pytest‑managed layout counts as pytest structure.  A
+    bare ``pytest-*`` component (e.g. ``pytest-project`` or ``pytest-backups``)
+    under the temp root is not sufficient evidence that pytest owns the
+    directory, and must not cause a false positive for legitimate user
+    libraries.
+
+    The match requires a ``pytest-of-<segment>`` component directly under the
+    canonical temp root, followed by a ``pytest-<digits>`` or ``pytest-current``
+    run directory, then any node/test descendants.
     """
-    # First, check if the path is under the OS temp root (if it's not, it can't
-    # be a pytest temp structure in the sense we need)
     if not _is_under_os_temp_root(path):
         return False
 
     parts = [p.lower() for p in path.parts]
-    # Check for pytest directory components that are part of a temp-root path:
-    # - exact "pytest" as a path segment
-    # - "pytest-of-*" or "pytest-*" as a path segment
-    has_pytest_marker = any(
-        p == "pytest" or p.startswith("pytest-") or p.startswith("pytest-of-")
-        for p in parts
-    )
-    if not has_pytest_marker:
+
+    # Locate the pytest-of-<user> base component directly under the temp root.
+    base_index = None
+    for index, part in enumerate(parts):
+        if part.startswith("pytest-of-"):
+            base_index = index
+            break
+    if base_index is None:
         return False
-    # Additional confirmation: the path should contain the pytest marker in a
-    # position consistent with pytest's temp directory naming.  We verify that
-    # the pytest segment is not the root itself but a descendant.
-    path_str = "/".join(parts)
-    return "pytest-of-" in path_str or "pytest-" in path_str
+
+    # The next component must be a pytest run directory:
+    # pytest-current or pytest-<digits>.  A plain pytest-* component (e.g.
+    # pytest-project) is not a pytest run directory.
+    if base_index + 1 >= len(parts):
+        return False
+    run_part = parts[base_index + 1]
+    if not (
+        run_part == "pytest-current"
+        or run_part.startswith("pytest-")
+        and run_part[len("pytest-"):].isdigit()
+    ):
+        return False
+
+    return True
 
 
 def _has_structural_test_signature(path: Path, known_test_roots: frozenset[str] | None = None) -> bool:

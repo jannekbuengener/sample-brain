@@ -26,34 +26,32 @@ def _db_bytes(db_path: Path) -> bytes:
     return db_path.read_bytes()
 
 
-def _get_producer_db() -> Path:
-    return Path.home() / ".sample-brain" / "workbench_library.db"
-
-
 # ---------------------------------------------------------------------------
 # A. normal pytest default resolves isolated state
 # ---------------------------------------------------------------------------
 def test_a_normal_pytest_default_resolves_isolated_state(
-    isolated_workbench_state_dir: Path,
+    isolated_workbench_state_dir: Path, tmp_path: Path
 ) -> None:
     db_path = workbench_library_db_path()
     assert db_path == isolated_workbench_state_dir / "workbench_library.db"
 
-    producer_db = _get_producer_db()
-    producer_existed_before = producer_db.is_file()
-    producer_bytes_before = _db_bytes(producer_db) if producer_existed_before else None
-
-    # Default connection resolves to the isolated pytest state, not the producer.
+    # Default connection resolves to the isolated pytest state, not the
+    # producer.  Only the isolated synthetic DB is opened and used; the real
+    # producer DB is never stat'd, read, hashed, or otherwise touched here.
     conn = connect_workbench_library()
     try:
         assert conn.execute("SELECT 1").fetchone()[0] == 1
     finally:
         conn.close()
 
-    # The real producer DB was neither created nor modified by this test.
-    assert producer_db.is_file() == producer_existed_before
-    if producer_existed_before:
-        assert _db_bytes(producer_db) == producer_bytes_before
+    # The fail-closed guard refuses a protected synthetic producer target
+    # before any sqlite connection, proving isolation without touching the
+    # real producer DB.
+    synthetic_producer_db = tmp_path / "producer-state" / "workbench_library.db"
+    synthetic_producer_db.parent.mkdir(parents=True)
+    workbench_library.protect_connection_target(synthetic_producer_db)
+    with pytest.raises(WorkbenchLibraryConnectionError):
+        workbench_library.connect_workbench_library(synthetic_producer_db)
 
 
 # ---------------------------------------------------------------------------
@@ -133,11 +131,23 @@ def _fake_temp_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return fake_temp
 
 
-def test_g_canonical_temp_plus_pytest_structure_is_deterministic(
+def test_g_actual_pytest_managed_layout_under_canonical_temp_is_deterministic(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake_temp = _fake_temp_root(tmp_path, monkeypatch)
     target = fake_temp / "pytest-of-user" / "pytest-123" / "test_node"
+    target.mkdir(parents=True)
+    assert (
+        workbench_library.classify_folder_for_cleanup(target)
+        == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_g_current_pytest_run_is_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_temp = _fake_temp_root(tmp_path, monkeypatch)
+    target = fake_temp / "pytest-of-user" / "pytest-current" / "test_node"
     target.mkdir(parents=True)
     assert (
         workbench_library.classify_folder_for_cleanup(target)
@@ -158,13 +168,39 @@ def test_h_canonical_temp_without_pytest_structure_is_not_deterministic(
 
 
 # ---------------------------------------------------------------------------
-# I. my_pytest_tmp_samples outside pytest tree => not deterministic
-# J. pytest-project outside pytest tree => not deterministic
+# I. pytest-project under canonical temp => not deterministic
+# J. pytest-backups under canonical temp => not deterministic
+# K. my_pytest_tmp_samples under canonical temp => not deterministic
 # ---------------------------------------------------------------------------
-def test_i_my_pytest_tmp_samples_outside_pytest_tree_not_deterministic(
-    tmp_path: Path,
+def test_i_pytest_project_under_canonical_temp_is_not_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    target = tmp_path / "my_pytest_tmp_samples"
+    fake_temp = _fake_temp_root(tmp_path, monkeypatch)
+    target = fake_temp / "pytest-project" / "Samples"
+    target.mkdir(parents=True)
+    assert (
+        workbench_library.classify_folder_for_cleanup(target)
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_j_pytest_backups_under_canonical_temp_is_not_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_temp = _fake_temp_root(tmp_path, monkeypatch)
+    target = fake_temp / "pytest-backups" / "Samples"
+    target.mkdir(parents=True)
+    assert (
+        workbench_library.classify_folder_for_cleanup(target)
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_k_my_pytest_tmp_samples_under_canonical_temp_is_not_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_temp = _fake_temp_root(tmp_path, monkeypatch)
+    target = fake_temp / "my_pytest_tmp_samples"
     target.mkdir()
     assert (
         workbench_library.classify_folder_for_cleanup(target)
@@ -172,21 +208,10 @@ def test_i_my_pytest_tmp_samples_outside_pytest_tree_not_deterministic(
     )
 
 
-def test_j_pytest_project_outside_pytest_tree_not_deterministic(
-    tmp_path: Path,
-) -> None:
-    target = tmp_path / "pytest-project"
-    target.mkdir()
-    assert (
-        workbench_library.classify_folder_for_cleanup(target)
-        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
-    )
-
-
 # ---------------------------------------------------------------------------
-# K. narrowly proven exact historical test signature => deterministic
+# L. exact known signature still deterministic when supplied
 # ---------------------------------------------------------------------------
-def test_k_exact_historical_test_signature_is_deterministic(tmp_path: Path) -> None:
+def test_l_exact_historical_test_signature_is_deterministic(tmp_path: Path) -> None:
     # ``engine_already_running`` is the documented, narrowly-scoped historical
     # test-generated directory family referenced by the classifier contract.
     target = tmp_path / "engine_already_running"
@@ -200,9 +225,9 @@ def test_k_exact_historical_test_signature_is_deterministic(tmp_path: Path) -> N
 
 
 # ---------------------------------------------------------------------------
-# L. generic nonexistent path => AMBIGUOUS
+# M. generic nonexistent path => AMBIGUOUS
 # ---------------------------------------------------------------------------
-def test_l_generic_nonexistent_path_is_ambiguous(tmp_path: Path) -> None:
+def test_m_generic_nonexistent_path_is_ambiguous(tmp_path: Path) -> None:
     target = tmp_path / "does-not-exist"
     assert (
         workbench_library.classify_folder_for_cleanup(target)
@@ -211,11 +236,11 @@ def test_l_generic_nonexistent_path_is_ambiguous(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# M. read-only dry-run does not create missing DB
-# N. read-only dry-run does not change existing DB contents/schema
-# O. filesystem sentinel survives dry-run
+# N. read-only dry-run does not create missing DB
+# O. read-only dry-run does not change existing DB contents/schema
+# P. filesystem sentinel survives dry-run
 # ---------------------------------------------------------------------------
-def test_m_readonly_dry_run_does_not_create_missing_db(tmp_path: Path) -> None:
+def test_n_readonly_dry_run_does_not_create_missing_db(tmp_path: Path) -> None:
     missing_db = tmp_path / "missing" / "workbench_library.db"
     missing_folder = tmp_path / "some-folder"
     assert not missing_db.exists()
@@ -227,7 +252,7 @@ def test_m_readonly_dry_run_does_not_create_missing_db(tmp_path: Path) -> None:
     assert not missing_db.parent.exists()
 
 
-def test_n_readonly_dry_run_does_not_change_existing_db(tmp_path: Path) -> None:
+def test_o_readonly_dry_run_does_not_change_existing_db(tmp_path: Path) -> None:
     db_path = tmp_path / "state" / "workbench_library.db"
     folder = tmp_path / "samples"
     folder.mkdir()
@@ -244,7 +269,7 @@ def test_n_readonly_dry_run_does_not_change_existing_db(tmp_path: Path) -> None:
     assert _db_bytes(db_path) == before
 
 
-def test_o_filesystem_sentinel_survives_dry_run(tmp_path: Path) -> None:
+def test_p_filesystem_sentinel_survives_dry_run(tmp_path: Path) -> None:
     db_path = tmp_path / "state" / "workbench_library.db"
     folder = tmp_path / "samples"
     folder.mkdir()
