@@ -436,13 +436,12 @@ def test_x_readonly_uri_preserves_path_with_question_mark(
 
 
 # ---------------------------------------------------------------------------
-# Y. pytest tmp_path node directory under a canonical temp root is a
-#    deterministic test artifact (any pytest base directory, not only the
-#    default ``pytest-of-<user>/pytest-<run>`` layout).
+# Y. pytest tmp_path node directory needs pytest-of-<user> ancestry directly
+#    under canonical temp root; a bare custom basetemp is NOT deterministic.
 # Z. the same directory shape outside a canonical temp root is NOT
 #    deterministic (a user library may carry any name).
 # ---------------------------------------------------------------------------
-def test_y_pytest_node_directory_under_canonical_temp_is_deterministic(
+def test_y_custom_basetemp_without_pytest_of_is_not_deterministic(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake_temp = _fake_temp_root(tmp_path, monkeypatch)
@@ -450,15 +449,15 @@ def test_y_pytest_node_directory_under_canonical_temp_is_deterministic(
     target.mkdir(parents=True)
     assert (
         workbench_library.classify_folder_for_cleanup(target)
-        == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
     )
 
 
-def test_y2_pytest_node_directory_under_platform_default_temp_is_deterministic(
+def test_y2_platform_default_without_pytest_of_is_not_deterministic(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The platform default temp root stays canonical even when the runtime
-    # temp root (TMP/TEMP) points somewhere else.
+    # Even under the platform default temp root, a directory not under
+    # pytest-of-<user>/pytest-<run> is not a pytest node directory.
     fake_temp = _fake_temp_root(tmp_path, monkeypatch)
     platform_temp = tmp_path / "platform-temp"
     platform_temp.mkdir()
@@ -469,7 +468,7 @@ def test_y2_pytest_node_directory_under_platform_default_temp_is_deterministic(
     target.mkdir(parents=True)
     assert (
         workbench_library.classify_folder_for_cleanup(target)
-        == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
     )
 
 
@@ -505,6 +504,20 @@ def test_z3_user_named_test_folder_without_uniquifier_is_not_deterministic(
     # library named ``test_samples`` must not be classified as a test artifact.
     fake_temp = _fake_temp_root(tmp_path, monkeypatch)
     target = fake_temp / "test_samples"
+    target.mkdir()
+    assert (
+        workbench_library.classify_folder_for_cleanup(target)
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_z3b_node_directory_directly_under_temp_root_is_not_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # pytest never creates a node directory directly under the OS temp root,
+    # so a matching leaf name there is not verifiable pytest evidence.
+    fake_temp = _fake_temp_root(tmp_path, monkeypatch)
+    target = fake_temp / "test_samples0"
     target.mkdir()
     assert (
         workbench_library.classify_folder_for_cleanup(target)

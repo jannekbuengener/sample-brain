@@ -900,12 +900,31 @@ def _is_pytest_node_directory(path: Path) -> bool:
     Only the leaf component is inspected, and only against pytest's own node
     naming convention.  A user library named ``samples`` or ``test_samples``
     (no numeric uniquifier) is therefore never matched.
+
+    A node directory is additionally never a *direct* child of the OS temp
+    root: pytest always creates it inside a base directory (by default
+    ``<temp>/pytest-of-<user>/pytest-<run>``, or a ``--basetemp`` root).
+    Requiring that indirection keeps a user library that merely lives
+    directly under the temp root out of the deterministic test-artifact class.
     """
-    try:
-        leaf = path.resolve().name
-    except (OSError, RuntimeError):
+    rel = _relative_to_temp_root(path)
+    if rel is None:
         return False
-    return bool(_PYTEST_NODE_DIR_PATTERN.match(leaf))
+    parts = [p.lower() for p in rel.parts]
+    # Must sit directly under pytest-of-<user>/pytest-<run>/<node>.
+    if len(parts) < 3:
+        return False
+    if not parts[0].startswith("pytest-of-"):
+        return False
+    run_part = parts[1]
+    if not (
+        run_part == "pytest-current"
+        or run_part.startswith("pytest-")
+        and run_part[len("pytest-"):].isdigit()
+    ):
+        return False
+    # Leaf must match pytest's node directory naming convention.
+    return bool(_PYTEST_NODE_DIR_PATTERN.match(parts[2]))
 
 
 def _has_structural_test_signature(path: Path, known_test_roots: frozenset[str] | None = None) -> bool:
