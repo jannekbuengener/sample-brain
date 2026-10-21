@@ -152,6 +152,13 @@ def test_qml_bottom_icon_bar_contract_and_accessible_names() -> None:
     assert "ToolTip." not in scope_block
     assert "contextHintState.reportHover" in scope_block
     assert "contextHintState.reportFocus" in scope_block
+    assert 'readonly property int controlSize: 28' in scope_block
+    assert 'readonly property int iconPad: 5' in scope_block
+    assert "scopeActive" in scope_block
+    assert "theme.selectionSurface" in scope_block
+    assert "checkable: true" not in scope_block
+    assert "anchors.bottom: parent.bottom" not in scope_block
+    assert "height: 1" not in scope_block
 
 
 def test_recordings_loader_projects_existing_playlist_not_collections_dummy(
@@ -348,12 +355,18 @@ def test_runtime_library_scope_bar_in_header_not_footer(tmp_path: Path) -> None:
                 and remove_source is not None
             )
             assert footer is not None
+            assert add_source.isVisible()
             assert catalog is None
             assert favorites is not None and favorites.isVisible()
             assert collections is not None and collections.isVisible()
             assert recordings is not None and recordings.isVisible()
             assert all_samples is not None and all_samples.isVisible()
             assert sources is not None and sources.isVisible()
+            scope_buttons = (sources, all_samples, collections, favorites, recordings)
+            assert len({round(float(button.width()), 2) for button in scope_buttons}) == 1
+            assert len({round(float(button.height()), 2) for button in scope_buttons}) == 1
+            assert float(sources.width()) >= 26.0
+            assert float(sources.height()) >= 26.0
 
             # Geometry: scope bar is a Library-header child, never global footer chrome.
             assert pane.isAncestorOf(bar)
@@ -387,6 +400,12 @@ def test_runtime_library_scope_bar_in_header_not_footer(tmp_path: Path) -> None:
                 app.processEvents()
                 _settle_qml_frame(app)
                 assert bar.property("mode") == mode
+                assert sum(bool(scope_button.property("scopeActive")) for scope_button in scope_buttons) == 1
+                assert bool(button.property("scopeActive"))
+                assert all(
+                    not bool(scope_button.property("checked"))
+                    for scope_button in scope_buttons
+                )
                 if expected_kind is not None:
                     assert composition.browser_state.scope is not None
                     assert composition.browser_state.scope.kind is expected_kind
