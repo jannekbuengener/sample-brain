@@ -3103,29 +3103,30 @@ ApplicationWindow {
                         spacing: 2
                         z: 2
                         property string mode: "sources"
-                        readonly property int controlSize: 18
-                        readonly property int iconPad: 3
+                        readonly property int controlSize: 28
+                        readonly property int iconPad: 5
 
-                            // Active = fine accent underline + ink tint; no filled toolbar chip.
-                            function scopeFill(active, hovered) {
-                                if (hovered && !active)
-                                    return theme.hoverSurface
-                                return "transparent"
-                            }
-                            function scopeStroke(active) {
-                                return "transparent"
-                            }
-                            function scopeInk(active) {
-                                return active ? theme.actionActive : theme.textSecondary
-                            }
+                        // #1201: one quiet selected surface; no independent underline state.
+                        function scopeFill(active, hovered) {
+                            if (active)
+                                return theme.selectionSurface
+                            if (hovered && !active)
+                                return theme.hoverSurface
+                            return "transparent"
+                        }
+                        function scopeStroke(active) {
+                            return active ? theme.selectionBorder : "transparent"
+                        }
+                        function scopeInk(active) {
+                            return active ? theme.textPrimary : theme.textSecondary
+                        }
 
                             ToolButton {
                                 id: sourcesScopeButton
                                 objectName: "librarySourcesScopeButton"
                                 text: ""
                                 flat: true
-                                checkable: true
-                                checked: libraryScopeBar.mode === "sources"
+                                readonly property bool scopeActive: libraryScopeBar.mode === "sources"
                                 Layout.preferredWidth: libraryScopeBar.controlSize
                                 Layout.preferredHeight: libraryScopeBar.controlSize
                                 onClicked: libraryScopeBar.mode = "sources"
@@ -3142,20 +3143,12 @@ ApplicationWindow {
                                     else
                                         contextHintState.clearFocus("library.scope.sources")
                                 }
-                                background: Item {
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        color: libraryScopeBar.scopeFill(sourcesScopeButton.checked, sourcesScopeButton.hovered)
-                                    }
-                                    Rectangle {
-                                        anchors.left: parent.left
-                                        anchors.right: parent.right
-                                        anchors.bottom: parent.bottom
-                                        height: 1
-                                        color: theme.actionActive
-                                        visible: sourcesScopeButton.checked
-                                        opacity: 0.9
-                                    }
+                                background: Rectangle {
+                                    anchors.fill: parent
+                                    radius: 4
+                                    color: libraryScopeBar.scopeFill(sourcesScopeButton.scopeActive, sourcesScopeButton.hovered)
+                                    border.width: sourcesScopeButton.activeFocus || sourcesScopeButton.scopeActive ? 1 : 0
+                                    border.color: sourcesScopeButton.activeFocus ? theme.focusRing : libraryScopeBar.scopeStroke(sourcesScopeButton.scopeActive)
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
@@ -3165,7 +3158,7 @@ ApplicationWindow {
                                         onPaint: {
                                             var ctx = getContext("2d")
                                             ctx.reset()
-                                            ctx.strokeStyle = libraryScopeBar.scopeInk(sourcesScopeButton.checked)
+                                            ctx.strokeStyle = libraryScopeBar.scopeInk(sourcesScopeButton.scopeActive)
                                             ctx.lineWidth = 1
                                             ctx.strokeRect(1, 4, width - 2, height - 6)
                                             ctx.beginPath()
@@ -3176,7 +3169,7 @@ ApplicationWindow {
                                         Component.onCompleted: requestPaint()
                                         Connections {
                                             target: sourcesScopeButton
-                                            function onCheckedChanged() { parent.requestPaint() }
+                                            function onScopeActiveChanged() { parent.requestPaint() }
                                             function onHoveredChanged() { parent.requestPaint() }
                                         }
                                     }
@@ -3187,8 +3180,7 @@ ApplicationWindow {
                                 objectName: "libraryAllSamplesScopeButton"
                                 text: ""
                                 flat: true
-                                checkable: true
-                                checked: libraryScopeBar.mode === "all"
+                                readonly property bool scopeActive: libraryScopeBar.mode === "all"
                                 Layout.preferredWidth: libraryScopeBar.controlSize
                                 Layout.preferredHeight: libraryScopeBar.controlSize
                                 onClicked: {
@@ -3208,20 +3200,12 @@ ApplicationWindow {
                                     else
                                         contextHintState.clearFocus("library.scope.all_samples")
                                 }
-                                background: Item {
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        color: libraryScopeBar.scopeFill(allSamplesScopeButton.checked, allSamplesScopeButton.hovered)
-                                    }
-                                    Rectangle {
-                                        anchors.left: parent.left
-                                        anchors.right: parent.right
-                                        anchors.bottom: parent.bottom
-                                        height: 1
-                                        color: theme.actionActive
-                                        visible: allSamplesScopeButton.checked
-                                        opacity: 0.9
-                                    }
+                                background: Rectangle {
+                                    anchors.fill: parent
+                                    radius: 4
+                                    color: libraryScopeBar.scopeFill(allSamplesScopeButton.scopeActive, allSamplesScopeButton.hovered)
+                                    border.width: allSamplesScopeButton.activeFocus || allSamplesScopeButton.scopeActive ? 1 : 0
+                                    border.color: allSamplesScopeButton.activeFocus ? theme.focusRing : libraryScopeBar.scopeStroke(allSamplesScopeButton.scopeActive)
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
@@ -3231,7 +3215,7 @@ ApplicationWindow {
                                         onPaint: {
                                             var ctx = getContext("2d")
                                             ctx.reset()
-                                            ctx.strokeStyle = libraryScopeBar.scopeInk(allSamplesScopeButton.checked)
+                                            ctx.strokeStyle = libraryScopeBar.scopeInk(allSamplesScopeButton.scopeActive)
                                             ctx.lineWidth = 1
                                             var y1 = height * 0.25
                                             var y2 = height * 0.5
@@ -3243,7 +3227,7 @@ ApplicationWindow {
                                         Component.onCompleted: requestPaint()
                                         Connections {
                                             target: allSamplesScopeButton
-                                            function onCheckedChanged() { parent.requestPaint() }
+                                            function onScopeActiveChanged() { parent.requestPaint() }
                                             function onHoveredChanged() { parent.requestPaint() }
                                         }
                                     }
@@ -3254,8 +3238,7 @@ ApplicationWindow {
                                 objectName: "libraryCollectionsScopeButton"
                                 text: ""
                                 flat: true
-                                checkable: true
-                                checked: libraryScopeBar.mode === "collections"
+                                readonly property bool scopeActive: libraryScopeBar.mode === "collections"
                                 Layout.preferredWidth: libraryScopeBar.controlSize
                                 Layout.preferredHeight: libraryScopeBar.controlSize
                                 onClicked: libraryScopeBar.mode = "collections"
@@ -3272,20 +3255,12 @@ ApplicationWindow {
                                     else
                                         contextHintState.clearFocus("library.scope.collections")
                                 }
-                                background: Item {
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        color: libraryScopeBar.scopeFill(collectionsScopeButton.checked, collectionsScopeButton.hovered)
-                                    }
-                                    Rectangle {
-                                        anchors.left: parent.left
-                                        anchors.right: parent.right
-                                        anchors.bottom: parent.bottom
-                                        height: 1
-                                        color: theme.actionActive
-                                        visible: collectionsScopeButton.checked
-                                        opacity: 0.9
-                                    }
+                                background: Rectangle {
+                                    anchors.fill: parent
+                                    radius: 4
+                                    color: libraryScopeBar.scopeFill(collectionsScopeButton.scopeActive, collectionsScopeButton.hovered)
+                                    border.width: collectionsScopeButton.activeFocus || collectionsScopeButton.scopeActive ? 1 : 0
+                                    border.color: collectionsScopeButton.activeFocus ? theme.focusRing : libraryScopeBar.scopeStroke(collectionsScopeButton.scopeActive)
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
@@ -3295,7 +3270,7 @@ ApplicationWindow {
                                         onPaint: {
                                             var ctx = getContext("2d")
                                             ctx.reset()
-                                            ctx.strokeStyle = libraryScopeBar.scopeInk(collectionsScopeButton.checked)
+                                            ctx.strokeStyle = libraryScopeBar.scopeInk(collectionsScopeButton.scopeActive)
                                             ctx.lineWidth = 1
                                             ctx.strokeRect(2, 1, width - 6, height - 6)
                                             ctx.strokeRect(5, 4, width - 6, height - 6)
@@ -3303,7 +3278,7 @@ ApplicationWindow {
                                         Component.onCompleted: requestPaint()
                                         Connections {
                                             target: collectionsScopeButton
-                                            function onCheckedChanged() { parent.requestPaint() }
+                                            function onScopeActiveChanged() { parent.requestPaint() }
                                             function onHoveredChanged() { parent.requestPaint() }
                                         }
                                     }
@@ -3314,8 +3289,7 @@ ApplicationWindow {
                                 objectName: "libraryFavoritesScopeButton"
                                 text: ""
                                 flat: true
-                                checkable: true
-                                checked: libraryScopeBar.mode === "favorites"
+                                readonly property bool scopeActive: libraryScopeBar.mode === "favorites"
                                 Layout.preferredWidth: libraryScopeBar.controlSize
                                 Layout.preferredHeight: libraryScopeBar.controlSize
                                 onClicked: {
@@ -3335,20 +3309,12 @@ ApplicationWindow {
                                     else
                                         contextHintState.clearFocus("library.scope.favorites")
                                 }
-                                background: Item {
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        color: libraryScopeBar.scopeFill(favoritesScopeButton.checked, favoritesScopeButton.hovered)
-                                    }
-                                    Rectangle {
-                                        anchors.left: parent.left
-                                        anchors.right: parent.right
-                                        anchors.bottom: parent.bottom
-                                        height: 1
-                                        color: theme.actionActive
-                                        visible: favoritesScopeButton.checked
-                                        opacity: 0.9
-                                    }
+                                background: Rectangle {
+                                    anchors.fill: parent
+                                    radius: 4
+                                    color: libraryScopeBar.scopeFill(favoritesScopeButton.scopeActive, favoritesScopeButton.hovered)
+                                    border.width: favoritesScopeButton.activeFocus || favoritesScopeButton.scopeActive ? 1 : 0
+                                    border.color: favoritesScopeButton.activeFocus ? theme.focusRing : libraryScopeBar.scopeStroke(favoritesScopeButton.scopeActive)
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
@@ -3358,8 +3324,8 @@ ApplicationWindow {
                                         onPaint: {
                                             var ctx = getContext("2d")
                                             ctx.reset()
-                                            ctx.strokeStyle = libraryScopeBar.scopeInk(favoritesScopeButton.checked)
-                                            ctx.fillStyle = libraryScopeBar.scopeInk(favoritesScopeButton.checked)
+                                            ctx.strokeStyle = libraryScopeBar.scopeInk(favoritesScopeButton.scopeActive)
+                                            ctx.fillStyle = libraryScopeBar.scopeInk(favoritesScopeButton.scopeActive)
                                             ctx.lineWidth = 1
                                             var cx = width / 2
                                             var cy = height / 2
@@ -3379,7 +3345,7 @@ ApplicationWindow {
                                             ctx.lineTo(ix, iy)
                                             }
                                             ctx.closePath()
-                                            if (favoritesScopeButton.checked)
+                                            if (favoritesScopeButton.scopeActive)
                                             ctx.fill()
                                             else
                                             ctx.stroke()
@@ -3387,7 +3353,7 @@ ApplicationWindow {
                                         Component.onCompleted: requestPaint()
                                         Connections {
                                             target: favoritesScopeButton
-                                            function onCheckedChanged() { parent.requestPaint() }
+                                            function onScopeActiveChanged() { parent.requestPaint() }
                                             function onHoveredChanged() { parent.requestPaint() }
                                         }
                                     }
@@ -3399,8 +3365,7 @@ ApplicationWindow {
                                 objectName: "libraryRecordingsScopeButton"
                                 text: ""
                                 flat: true
-                                checkable: true
-                                checked: libraryScopeBar.mode === "recordings"
+                                readonly property bool scopeActive: libraryScopeBar.mode === "recordings"
                                 Layout.preferredWidth: libraryScopeBar.controlSize
                                 Layout.preferredHeight: libraryScopeBar.controlSize
                                 onClicked: {
@@ -3420,20 +3385,12 @@ ApplicationWindow {
                                     else
                                         contextHintState.clearFocus("library.scope.recordings")
                                 }
-                                background: Item {
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        color: libraryScopeBar.scopeFill(recordingsScopeButton.checked, recordingsScopeButton.hovered)
-                                    }
-                                    Rectangle {
-                                        anchors.left: parent.left
-                                        anchors.right: parent.right
-                                        anchors.bottom: parent.bottom
-                                        height: 1
-                                        color: theme.actionActive
-                                        visible: recordingsScopeButton.checked
-                                        opacity: 0.9
-                                    }
+                                background: Rectangle {
+                                    anchors.fill: parent
+                                    radius: 4
+                                    color: libraryScopeBar.scopeFill(recordingsScopeButton.scopeActive, recordingsScopeButton.hovered)
+                                    border.width: recordingsScopeButton.activeFocus || recordingsScopeButton.scopeActive ? 1 : 0
+                                    border.color: recordingsScopeButton.activeFocus ? theme.focusRing : libraryScopeBar.scopeStroke(recordingsScopeButton.scopeActive)
                                 }
                                 contentItem: Item {
                                     anchors.fill: parent
@@ -3443,7 +3400,7 @@ ApplicationWindow {
                                         onPaint: {
                                             var ctx = getContext("2d")
                                             ctx.reset()
-                                            ctx.strokeStyle = libraryScopeBar.scopeInk(recordingsScopeButton.checked)
+                                            ctx.strokeStyle = libraryScopeBar.scopeInk(recordingsScopeButton.scopeActive)
                                             ctx.lineWidth = 1
                                             ctx.beginPath()
                                             ctx.moveTo(1, height * 0.55)
@@ -3460,7 +3417,7 @@ ApplicationWindow {
                                         Component.onCompleted: requestPaint()
                                         Connections {
                                             target: recordingsScopeButton
-                                            function onCheckedChanged() { parent.requestPaint() }
+                                            function onScopeActiveChanged() { parent.requestPaint() }
                                             function onHoveredChanged() { parent.requestPaint() }
                                         }
                                     }
