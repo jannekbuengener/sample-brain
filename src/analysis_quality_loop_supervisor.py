@@ -38,7 +38,7 @@ from src.analysis_quality_loop_state import (
     save_state_atomic,
     validate_state,
 )
-from src.aq_candidate_search_spaces.aq1_tempo import Aq1TempoSearchSpaceProvider
+from src.aq_candidate_search_spaces import default_search_space_provider
 
 # Terminal statuses that refuse further supervisor steps.
 _TERMINAL_LOOP_STATUSES: frozenset[str] = frozenset(
@@ -151,11 +151,12 @@ def _commit_state_if_unchanged(
 
 
 def _default_provider(domain: str) -> SearchSpaceProvider:
-    if domain == "aq1.tempo":
-        return Aq1TempoSearchSpaceProvider()
-    raise AnalysisQualityLoopSupervisorError(
-        f"no default search-space provider for domain {domain!r}"
-    )
+    try:
+        return default_search_space_provider(domain)
+    except KeyError:
+        raise AnalysisQualityLoopSupervisorError(
+            f"no default search-space provider for domain {domain!r}"
+        ) from None
 
 
 def _decision_ref(decision: Mapping[str, Any]) -> dict[str, Any]:
