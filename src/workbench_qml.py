@@ -3204,9 +3204,7 @@ ApplicationWindow {
                                 readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "all"
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 32
-                                onClicked: {
-                                    libraryInteraction.selectLibraryNode("scope:all-library")
-                                }
+                                onClicked: libraryInteraction.showLibrarySection("all")
                                 Accessible.name: "All Samples"
                                 onHoveredChanged: {
                                     if (hovered)
@@ -3332,9 +3330,7 @@ ApplicationWindow {
                                 readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "favorites"
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 32
-                                onClicked: {
-                                    libraryInteraction.selectLibraryNode("scope:favorites")
-                                }
+                                onClicked: libraryInteraction.showLibrarySection("favorites")
                                 Accessible.name: "Favorites"
                                 onHoveredChanged: {
                                     if (hovered)
@@ -3417,9 +3413,7 @@ ApplicationWindow {
                                 readonly property bool scopeActive: libraryInteraction.activeLibrarySection === "recordings"
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 32
-                                onClicked: {
-                                    libraryInteraction.selectLibraryNode("scope:recordings")
-                                }
+                                onClicked: libraryInteraction.showLibrarySection("recordings")
                                 Accessible.name: "Recordings"
                                 onHoveredChanged: {
                                     if (hovered)
@@ -8368,25 +8362,31 @@ def _qml_engine(
     def refresh_browser_scope() -> None:
         screen_model.refresh_browser_scope()
 
-    waveform_cache = BoundedLazyWaveformCache(
-        capacity=48,
-        loader=lambda path: compute_waveform_envelope(path, max_points=96),
-    )
-    waveform_loader = BoundedBackgroundWaveformLoader(
-        cache=waveform_cache,
-        loader=lambda path: compute_waveform_envelope(path, max_points=96),
-        max_pending=14,
-    )
-    # Engines may be destroyed while the shared application keeps running.
-    engine.destroyed.connect(waveform_loader.close)
-    app.aboutToQuit.connect(waveform_loader.close)
+    # In test environments, disable the background waveform loader to avoid
+    # COM threading issues (0x8001010d) on Windows when running under pytest.
+    if os.environ.get("SAMPLE_BRAIN_TEST_NO_WAVEFORM_LOADER") == "1":
+        waveform_cache = None
+        waveform_loader = None
+    else:
+        waveform_cache = BoundedLazyWaveformCache(
+            capacity=48,
+            loader=lambda path: compute_waveform_envelope(path, max_points=96),
+        )
+        waveform_loader = BoundedBackgroundWaveformLoader(
+            cache=waveform_cache,
+            loader=lambda path: compute_waveform_envelope(path, max_points=96),
+            max_pending=14,
+        )
+        # Engines may be destroyed while the shared application keeps running.
+        engine.destroyed.connect(waveform_loader.close)
+        app.aboutToQuit.connect(waveform_loader.close)
     # Last viewport ranges — drain re-requests so max_pending saturation
     # still fills the full compact visible window without raising the bound.
     browser_waveform_viewport = [0, 0]
     harmony_waveform_viewport = [0, 0]
 
     def request_waveforms(start: int, count: int) -> None:
-        if count <= 0:
+        if count <= 0 or waveform_loader is None:
             return
         first = max(0, start)
         last = min(len(view_model.browser_rows), first + count)
@@ -8398,7 +8398,7 @@ def _qml_engine(
             waveform_loader.schedule(str(row.source_row.path))
 
     def request_harmony_waveforms(start: int, count: int) -> None:
-        if count <= 0:
+        if count <= 0 or waveform_loader is None:
             return
         first = max(0, start)
         last = min(len(view_model.harmony_rows), first + count)
@@ -8411,6 +8411,8 @@ def _qml_engine(
 
     def request_visible_browser_waveforms_from_window() -> None:
         """Python-side viewport seed after model refresh; QML owns scroll/resize."""
+        if waveform_loader is None:
+            return
         try:
             from PySide6.QtQuick import QQuickItem
         except Exception:
@@ -8432,6 +8434,8 @@ def _qml_engine(
         request_waveforms(start, count)
 
     def drain_waveforms() -> None:
+        if waveform_loader is None or waveform_cache is None:
+            return
         if waveform_loader.drain_results() == 0:
             return
         changed = False
