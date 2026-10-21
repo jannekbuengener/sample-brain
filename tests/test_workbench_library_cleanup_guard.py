@@ -681,10 +681,16 @@ def test_ad3_legit_path_under_rejected_candidate_is_not_deterministic(
 ) -> None:
     rejected = tmp_path / "rejected"
     rejected.mkdir()
+    platform_temp = tmp_path / "platform-temp"
+    platform_temp.mkdir()
     monkeypatch.setenv("TMPDIR", str(rejected))
     monkeypatch.delenv("TEMP", raising=False)
     monkeypatch.delenv("TMP", raising=False)
     monkeypatch.setattr(workbench_library.tempfile, "tempdir", None, raising=False)
+    # The platform default root must not contain the inspected path either.
+    monkeypatch.setattr(
+        workbench_library, "_platform_default_temp_root", lambda: platform_temp
+    )
 
     real_access = os.access
 
