@@ -287,8 +287,9 @@ def test_qml_renders_only_the_projection_without_domain_duplication():
 def test_qml_header_and_panels_remain_structurally_stable():
     assert QML_SOURCE.count("LIVE KIT") == 1
     assert 'text: "MASTER"' in QML_SOURCE
-    assert 'text: "GRID"' in QML_SOURCE
+    assert 'text: "GRID"' not in QML_SOURCE
     assert 'text: "SYNC"' in QML_SOURCE
+    assert QML_SOURCE.count('text: "SYNC"') == 1
     assert "property bool harmonyOpen: window.interaction.harmonicMatchOpen" in QML_SOURCE
     assert "layoutModel.harmonyWidth" in QML_SOURCE
     assert "Layout.preferredWidth: visible ? 360 : 0" not in QML_SOURCE

@@ -43,13 +43,18 @@ def test_header_exposes_left_nav_transport_zones():
     )
 
 
-def test_transport_zone_keeps_master_grid_sync_without_harmonic_header():
-    """#843: Harmonic Matches producer entry leaves the header; MASTER/GRID/SYNC stay."""
+def test_transport_zone_keeps_master_sync_without_harmonic_header():
+    """#843/#1216: Harmonic Matches stays out; MASTER and one SYNC stay."""
     header = _header_block()
     transport = header[header.index('objectName: "headerTransportZone"') :]
     assert 'text: "MASTER"' in transport
-    assert 'text: "GRID"' in transport
+    assert 'text: "GRID"' not in transport
     assert 'text: "SYNC"' in transport
+    assert transport.count('text: "SYNC"') == 1
+    assert 'objectName: "syncButton"' in transport
+    assert 'syncStateLabel' not in transport
+    assert 'text: "ON"' not in transport
+    assert 'text: "OFF"' not in transport
     assert 'objectName: "harmonicMatchButton"' not in transport
     assert 'Accessible.name: "Harmonic Match"' not in transport
     assert "activateHarmonicMatchToggle()" in QML_SOURCE
