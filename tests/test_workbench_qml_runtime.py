@@ -571,9 +571,12 @@ def test_library_bridge_source_actions_use_existing_python_removal_preview_witho
 
     bridge = _qml_library_interaction_bridge(model, on_prepare_remove=preview)
 
+    # Visibility/hover/focus eligibility must be derived from loaded node state;
+    # the removal preview is reserved for deliberate activation.
     assert bridge.canRemoveSource(ROOT_ID) is True
+    assert prepared == []
     assert bridge.prepareRemoveSourceForNode(ROOT_ID) is True
-    assert prepared == [1, 1]
+    assert prepared == [1]
     assert state.selected_node_id is None
     assert bridge.canRemoveSource("scope:all-library") is False
 

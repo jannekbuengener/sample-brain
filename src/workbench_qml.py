@@ -7910,7 +7910,13 @@ def _qml_library_interaction_bridge(
 
         @Slot(str, result=bool)
         def canRemoveSource(self, node_id: str) -> bool:
-            return self._removal_preview_for_node(str(node_id)) is not None
+            node = library_model.state.node(str(node_id))
+            return bool(
+                node is not None
+                and node.kind is LibraryNodeKind.REGISTERED_ROOT
+                and node.folder_id is not None
+                and on_prepare_remove is not None
+            )
 
         @Slot(str, result=bool)
         def prepareRemoveSourceForNode(self, node_id: str) -> bool:
