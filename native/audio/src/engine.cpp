@@ -115,9 +115,7 @@ SAMPLEBRAIN_EXPORT sb_result_t sb_enumerate_devices(int capture, sb_device_info_
 
     *out_count = count;
 
-    // Free device info arrays
-    if (pPlaybackInfos) free(pPlaybackInfos);
-    if (pCaptureInfos) free(pCaptureInfos);
+    // ma_context_get_devices() returns context-owned storage.
     ma_context_uninit(&context);
 
     return SB_OK;
