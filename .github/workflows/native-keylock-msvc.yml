@@ -7,6 +7,7 @@ on:
       - "native/audio/**"
       - "src/native_audio.py"
       - "tests/test_keylock_sync.py"
+      - "tests/test_native_audio_device_enumeration.py"
       - ".python-version"
       - ".github/workflows/native-keylock-msvc.yml"
   workflow_dispatch:
@@ -60,6 +61,10 @@ jobs:
         shell: pwsh
         run: |
           python -c "import src.native_audio as n; assert n._lib is not None, 'fresh samplebrain_audio.dll did not load through ctypes'; print(n._lib_path)"
+
+      - name: Run fresh-process device enumeration regression
+        shell: pwsh
+        run: python -m pytest -q -rs tests/test_native_audio_device_enumeration.py
 
       - name: Run real Key-Lock DSP acceptance
         shell: pwsh

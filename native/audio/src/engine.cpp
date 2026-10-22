@@ -73,7 +73,12 @@ SAMPLEBRAIN_EXPORT sb_result_t sb_enumerate_devices(int capture, sb_device_info_
 
     ma_context context;
     ma_context_config ctx_config = ma_context_config_init();
+#ifdef SAMPLEBRAIN_AUDIO_TEST_NULL_BACKEND
+    ma_backend test_backends[] = {ma_backend_null};
+    ma_result ma_res = ma_context_init(test_backends, 1, &ctx_config, &context);
+#else
     ma_result ma_res = ma_context_init(nullptr, 0, &ctx_config, &context);
+#endif
     if (ma_res != MA_SUCCESS) return SB_ERR_DEVICE_ERROR;
 
     ma_device_info* pPlaybackInfos = nullptr;
@@ -110,9 +115,7 @@ SAMPLEBRAIN_EXPORT sb_result_t sb_enumerate_devices(int capture, sb_device_info_
 
     *out_count = count;
 
-    // Free device info arrays
-    if (pPlaybackInfos) free(pPlaybackInfos);
-    if (pCaptureInfos) free(pCaptureInfos);
+    // ma_context_get_devices() returns context-owned storage.
     ma_context_uninit(&context);
 
     return SB_OK;
