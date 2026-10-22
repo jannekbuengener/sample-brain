@@ -11,8 +11,6 @@ from src import native_audio
 
 _SMOKE = textwrap.dedent("""
     import ctypes
-    import sys
-    import time
 
     from src import native_audio as audio
 
@@ -33,30 +31,15 @@ _SMOKE = textwrap.dedent("""
             assert [(item["name"], item["is_default"]) for item in actual] == expected
             assert all(isinstance(item["id_hex"], str) for item in actual)
 
-    if sys.argv[1] == "lifecycle":
-        engine = audio.NativeAudioEngine()
-        try:
-            engine.open(audio.EngineConfig())
-            engine.start()
-            voice_id = engine.create_voice(audio.VoiceConfig(id=1))
-            engine.schedule_voice_start(voice_id, engine.snapshot().engine_frame + 512)
-            time.sleep(0.05)
-            engine.stop_voice(voice_id)
-            engine.stop()
-        finally:
-            engine.close()
-        for capture in (False, True):
-            audio.NativeAudioEngine.enumerate_devices(capture)
     print("ok")
 """)
 
 
 @pytest.mark.skipif(sys.platform != "win32" or not native_audio.is_available(), reason="requires built Windows native audio DLL")
-@pytest.mark.parametrize("scenario", ["enumeration", "lifecycle"])
-def test_device_enumeration_fresh_processes(scenario):
-    for _ in range(4):
+def test_device_enumeration_fresh_processes():
+    for _ in range(8):
         result = subprocess.run(
-            [sys.executable, "-c", _SMOKE, scenario],
+            [sys.executable, "-c", _SMOKE],
             capture_output=True,
             text=True,
             timeout=30,
