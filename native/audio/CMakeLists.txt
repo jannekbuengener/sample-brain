@@ -108,6 +108,7 @@ target_link_libraries(samplebrain_audio_test_backend PRIVATE ${MINIAUDIO_SYSTEM_
 # executables instead of linking all test translation units into one binary.
 enable_testing()
 set(SAMPLEBRAIN_AUDIO_TESTS
+    device_enumeration
     engine
     voice
     pcm_voice
