@@ -1,0 +1,410 @@
+{
+  "document_type": "sample_brain.workbench_appearance_v2_contract",
+  "contract_schema_version": "1.0.0",
+  "plane": "normative_contract_schema",
+  "not_runtime_serialization": true,
+  "issue": 1252,
+  "parent_issue": 1251,
+  "runtime_implementation_owner_issue": 1253,
+  "persistence_owner_issue": 1254,
+  "qml_bridge_owner_issue": 1255,
+  "settings_ui_owner_issue": 1256,
+  "screen1_adoption_owner_issue": 1257,
+  "final_acceptance_owner_issue": 1258,
+  "exit_marker": "APPEARANCE_V2_CONTRACT_FROZEN",
+  "canonical_markdown": "docs/WORKBENCH_APPEARANCE_V2_CONTRACT.md",
+  "runtime_v1_canon": "docs/assets/themes/presets.v1.json",
+  "appearance_state": {
+    "mode": {
+      "values": ["system", "light", "dark"],
+      "default": "dark",
+      "system_unavailable_fallback": "dark"
+    },
+    "separateLightDark": {
+      "type": "boolean",
+      "default": false
+    },
+    "contrast": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "default": 50,
+      "step": 1
+    },
+    "uiFontSize": {
+      "unit": "logical_px",
+      "type": "integer",
+      "minimum": 12,
+      "maximum": 18,
+      "default": 14,
+      "step": 1
+    },
+    "codeFontSize": {
+      "unit": "logical_px",
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 18,
+      "default": 12,
+      "step": 1
+    },
+    "global_fields": [
+      "mode",
+      "separateLightDark",
+      "uiFontSize",
+      "codeFontSize",
+      "motionMode"
+    ],
+    "profile_fields": [
+      "themeRef",
+      "background",
+      "foreground",
+      "accent",
+      "contrast"
+    ],
+    "profile_resolution": {
+      "shared_overrides_apply_to_both_schemes": true,
+      "per_mode_overrides_when_separated": true,
+      "active_scheme_for_mode_dark": "dark",
+      "active_scheme_for_mode_light": "light",
+      "active_scheme_for_mode_system": "platform_color_scheme_or_dark_fallback",
+      "override_order": [
+        "scheme_variant_from_theme",
+        "shared_profile_overrides_when_unseparated",
+        "scheme_profile_overrides_when_separated",
+        "validate_accessibility",
+        "derive_semantic_tokens"
+      ]
+    }
+  },
+  "profile_model": {
+    "theme_concept": "one theme identity may expose dark and light scheme variants",
+    "v1_dark_variant_migration": "exact_preserve",
+    "v1_light_variant_required": false,
+    "missing_light_variant_fallback": {
+      "background": "#f7f7f5",
+      "foreground": "#171719",
+      "accent": "inherit_selected_theme_accent"
+    },
+    "separate_false": "shared explicit overrides layer onto whichever scheme variant resolves",
+    "separate_true": "light and dark explicit overrides are independently addressable",
+    "switching_mode_must_not_destroy_inactive_profile": true
+  },
+  "motion": {
+    "canonical_field": "motionMode",
+    "values": ["system", "on", "reduced", "off"],
+    "default": "on",
+    "existing_696_values_preserved": ["on", "reduced", "off"],
+    "compatibility_correction": "Issue shorthand reduceMotion must reuse the existing #696 motion authority rather than create a second persisted motion state.",
+    "system_resolution": {
+      "reduce_motion_true": "reduced",
+      "reduce_motion_false": "on",
+      "unavailable": "on"
+    },
+    "meaning": {
+      "on": "full presentation motion allowed",
+      "reduced": "same functional state with reduced presentation motion",
+      "off": "motion work disabled where the existing #696 contract permits",
+      "system": "resolve to reduced/on from a robust platform preference, otherwise on"
+    }
+  },
+  "semantic_tokens": {
+    "surface.canvas": {"owner": "background+foreground+contrast", "legacy_alias": "surfaceWorkspace"},
+    "surface.panel": {"owner": "background+foreground+contrast", "legacy_alias": "surface"},
+    "surface.raised": {"owner": "background+foreground+contrast", "legacy_alias": "surfaceRaised"},
+    "surface.hover": {"owner": "background+foreground+contrast", "legacy_alias": "hover"},
+    "surface.selected": {"owner": "background+accent+contrast", "legacy_alias": "selected"},
+    "text.primary": {"owner": "foreground", "legacy_alias": "textPrimary"},
+    "text.secondary": {"owner": "foreground+background+contrast", "legacy_alias": "textSecondary"},
+    "text.muted": {"owner": "foreground+background+contrast"},
+    "text.disabled": {"owner": "foreground+background+contrast"},
+    "border.subtle": {"owner": "background+foreground+contrast", "legacy_alias": "divider"},
+    "border.default": {"owner": "background+foreground+contrast"},
+    "border.strong": {"owner": "background+foreground+contrast"},
+    "accent.base": {"owner": "accent", "legacy_alias": "accent"},
+    "accent.hover": {"owner": "accent+foreground_fixed_ratio"},
+    "accent.active": {"owner": "accent+foreground_fixed_ratio"},
+    "accent.subtle": {"owner": "background+accent+contrast"},
+    "accent.onAccent": {"owner": "background_or_foreground_wcag_choice"},
+    "interaction.focus": {"owner": "accent_with_accessibility_guard", "legacy_alias": "focusRing"},
+    "interaction.selection": {"owner": "surface.selected"},
+    "interaction.pressed": {"owner": "accent.active"},
+    "interaction.disabled": {"owner": "text.disabled+surface.canvas"},
+    "status.error": {"owner": "protected_status_palette"},
+    "status.warning": {"owner": "protected_status_palette"},
+    "status.success": {"owner": "protected_status_palette"},
+    "status.info": {"owner": "protected_status_palette"},
+    "protectedHighlight.*": {"owner": "consumer_semantic_contract_not_global_accent"},
+    "typography.ui": {"owner": "uiFontSize+semantic_type_scale"},
+    "typography.code": {"owner": "codeFontSize+monospace_role"},
+    "motion.effective": {"owner": "motionMode+platform_preference_when_system"},
+    "windowChrome.background": {"owner": "surface_or_background_semantic_mapping"},
+    "windowChrome.foreground": {"owner": "text.primary_semantic_mapping"},
+    "windowChrome.border": {"owner": "border.subtle_semantic_mapping"}
+  },
+  "theme_core_v1_compatibility": {
+    "neutral_contrast": 50,
+    "preserve_v1_dark_defaults_exactly": true,
+    "base_primitives_remain": ["accent", "background", "foreground"],
+    "legacy_token_aliases": {
+      "accent": "accent.base",
+      "textPrimary": "text.primary",
+      "textSecondary": "text.secondary",
+      "surfaceWorkspace": "surface.canvas",
+      "surface": "surface.panel",
+      "surfaceRaised": "surface.raised",
+      "divider": "border.subtle",
+      "hover": "surface.hover",
+      "selected": "surface.selected",
+      "focusRing": "interaction.focus"
+    },
+    "v1_custom_theme_base_triplet_must_survive_migration": true,
+    "v1_selected_theme_must_survive_when_valid": true
+  },
+  "contrast_model": {
+    "range": [0, 100],
+    "neutral": 50,
+    "interpolation": "piecewise_linear_between_0_50_100_anchors",
+    "color_mix_space": "srgb_channel_linear_existing_mix_hex_rounding",
+    "anchor_mix_ratios": {
+      "text.secondary.foreground_to_background": [0.68, 0.55, 0.42],
+      "text.muted.foreground_to_background": [0.78, 0.68, 0.58],
+      "text.disabled.foreground_to_background": [0.86, 0.78, 0.70],
+      "surface.canvas.background_to_foreground": [0.004, 0.008, 0.016],
+      "surface.panel.background_to_foreground": [0.014, 0.028, 0.056],
+      "surface.raised.background_to_foreground": [0.03, 0.06, 0.12],
+      "surface.hover.background_to_foreground": [0.04, 0.075, 0.13],
+      "surface.selected.background_to_accent": [0.14, 0.22, 0.32],
+      "border.subtle.background_to_foreground": [0.05, 0.10, 0.20],
+      "border.default.background_to_foreground": [0.075, 0.15, 0.30],
+      "border.strong.background_to_foreground": [0.10, 0.20, 0.40],
+      "accent.subtle.background_to_accent": [0.10, 0.16, 0.24]
+    },
+    "fixed_accent_state_ratios": {
+      "accent.hover.accent_to_foreground": 0.12,
+      "accent.active.accent_to_foreground": 0.20
+    },
+    "must_not_modify": [
+      "background",
+      "foreground",
+      "accent.base",
+      "accent.hover",
+      "accent.active",
+      "accent.onAccent",
+      "status.*",
+      "protectedHighlight.*"
+    ]
+  },
+  "protected_status_palette": {
+    "dark": {
+      "error": "#e06a74",
+      "warning": "#d2a64f",
+      "success": "#69ad82",
+      "info": "#75a7c8"
+    },
+    "light": {
+      "error": "#a93245",
+      "warning": "#8a5d12",
+      "success": "#2f714c",
+      "info": "#346f96"
+    },
+    "accent_independent": true,
+    "contrast_independent": true
+  },
+  "protected_highlights": {
+    "must_never_alias_accent_implicitly": true,
+    "required_families": [
+      "destructive_error",
+      "warning",
+      "success_confirmation",
+      "informational_status",
+      "accessibility_critical_feedback",
+      "music_or_product_semantic_highlight"
+    ],
+    "consumer_owned_examples": {
+      "library_navigation_icon_accents": "#1248",
+      "native_close_button_semantics": "platform_owned/#1214"
+    },
+    "rule": "A consumer may use accent only when its semantic role is explicitly accent-owned; colored meaning is not sufficient reason to alias accent."
+  },
+  "typography": {
+    "ui": {
+      "base_size": 14,
+      "range": [12, 18],
+      "unit": "logical_px",
+      "geometry_auto_scale": false,
+      "scale_formula": "uiScale = uiFontSize / 14; scale semantic type sizes and line heights, round to nearest 0.5 logical px",
+      "roles": {
+        "caption": {"fontSize": 12, "lineHeight": 16},
+        "standard": {"fontSize": 14, "lineHeight": 20},
+        "content": {"fontSize": 16, "lineHeight": 26},
+        "section": {"fontSize": 14, "lineHeight": 18, "weight": 500},
+        "page": {"fontSize": 24, "lineHeight": 29}
+      }
+    },
+    "code": {
+      "base_size": 12,
+      "range": [10, 18],
+      "unit": "logical_px",
+      "independent_from_ui": true,
+      "line_height_formula": "round_to_nearest_0.5(codeFontSize * 1.5)",
+      "font_family_policy": "platform_monospace_or_existing_product_monospace; no bundled font required by this contract"
+    }
+  },
+  "accessibility_guards": {
+    "text_primary_min_contrast_ratio": 4.5,
+    "focus_indicator_min_contrast_ratio": 3.0,
+    "invalid_custom_profile": "reject_commit_keep_last_valid_profile",
+    "accent_on_accent": "choose_background_or_foreground_with_higher_wcag_contrast",
+    "protected_status_not_recolored_by_contrast": true,
+    "derived_token_adjustment_must_not_mutate_user_primitives": true
+  },
+  "persistence_boundary": {
+    "owner_issue": 1254,
+    "persist_user_intent_not_derived_tokens": true,
+    "migrate_theme_core_v1": true,
+    "no_second_qml_store": true,
+    "no_cloud_account_dependency": true,
+    "contract_state_is_not_storage_shape": true
+  },
+  "consumer_boundaries": {
+    "1205": "workspace_visual_target_consumer_not_redefined",
+    "1214": "native_window_chrome_consumer",
+    "1248": "library_visual_typography_contract_preserved_at_defaults",
+    "1249": "screen1_typography_contract_preserved_at_defaults",
+    "894": "delivered_no_glow_surface_hierarchy_preserved",
+    "895": "delivered_secondary_control_chrome_preserved"
+  },
+  "golden_cases": {
+    "blood_dark_contrast_low": {
+      "input": {"scheme": "dark", "themeRef": "Blood", "background": "#020203", "foreground": "#e4e6ea", "accent": "#8f0e24", "contrast": 25},
+      "tokens": {
+        "text.primary": "#e4e6ea",
+        "text.secondary": "#595a5c",
+        "text.muted": "#3f4041",
+        "text.disabled": "#2b2b2d",
+        "surface.canvas": "#030304",
+        "surface.panel": "#070708",
+        "surface.raised": "#0c0c0d",
+        "surface.hover": "#0f0f10",
+        "surface.selected": "#1b0409",
+        "border.subtle": "#131314",
+        "border.default": "#1b1c1d",
+        "border.strong": "#242426",
+        "accent.base": "#8f0e24",
+        "accent.subtle": "#140407",
+        "status.error": "#e06a74"
+      }
+    },
+    "blood_dark_contrast_default": {
+      "input": {"scheme": "dark", "themeRef": "Blood", "background": "#020203", "foreground": "#e4e6ea", "accent": "#8f0e24", "contrast": 50},
+      "tokens": {
+        "accent.base": "#8f0e24",
+        "text.primary": "#e4e6ea",
+        "text.secondary": "#68696b",
+        "text.muted": "#4a4b4d",
+        "text.disabled": "#343436",
+        "surface.canvas": "#040405",
+        "surface.panel": "#080809",
+        "surface.raised": "#101011",
+        "surface.hover": "#131314",
+        "surface.selected": "#21050a",
+        "border.subtle": "#19191a",
+        "border.default": "#242426",
+        "border.strong": "#2f3031",
+        "accent.hover": "#99283c",
+        "accent.active": "#a0394c",
+        "accent.subtle": "#190408",
+        "accent.onAccent": "#ffffff",
+        "interaction.focus": "#8f0e24",
+        "status.error": "#e06a74",
+        "status.warning": "#d2a64f",
+        "status.success": "#69ad82",
+        "status.info": "#75a7c8"
+      }
+    },
+    "blood_dark_contrast_high": {
+      "input": {"scheme": "dark", "themeRef": "Blood", "background": "#020203", "foreground": "#e4e6ea", "accent": "#8f0e24", "contrast": 75},
+      "tokens": {
+        "text.primary": "#e4e6ea",
+        "text.secondary": "#76777a",
+        "text.muted": "#565658",
+        "text.disabled": "#3d3d3f",
+        "surface.canvas": "#050506",
+        "surface.panel": "#0b0c0d",
+        "surface.raised": "#161718",
+        "surface.hover": "#19191b",
+        "surface.selected": "#28050c",
+        "border.subtle": "#242426",
+        "border.default": "#353537",
+        "border.strong": "#464648",
+        "accent.base": "#8f0e24",
+        "accent.subtle": "#1e040a",
+        "status.error": "#e06a74"
+      }
+    },
+    "carbon_dark_contrast_default": {
+      "input": {"scheme": "dark", "themeRef": "Carbon", "background": "#030405", "foreground": "#e2e4e8", "accent": "#a8b0b8", "contrast": 50},
+      "tokens": {
+        "text.primary": "#e2e4e8",
+        "text.secondary": "#67696b",
+        "surface.canvas": "#050607",
+        "surface.panel": "#090a0b",
+        "surface.raised": "#101113",
+        "surface.hover": "#141516",
+        "surface.selected": "#272a2c",
+        "border.subtle": "#191a1c",
+        "accent.base": "#a8b0b8",
+        "interaction.focus": "#a8b0b8"
+      }
+    },
+    "custom_dark_primitives": {
+      "input": {"scheme": "dark", "themeRef": "custom", "background": "#05060a", "foreground": "#f1f2f4", "accent": "#3f7ee8", "contrast": 50},
+      "tokens": {
+        "text.primary": "#f1f2f4",
+        "text.secondary": "#6f7073",
+        "surface.canvas": "#07080c",
+        "surface.panel": "#0c0d11",
+        "surface.raised": "#131418",
+        "surface.hover": "#17181c",
+        "surface.selected": "#12203b",
+        "border.subtle": "#1d1e21",
+        "accent.base": "#3f7ee8",
+        "accent.hover": "#548ce9",
+        "accent.active": "#6395ea",
+        "interaction.focus": "#3f7ee8"
+      }
+    },
+    "protected_status_red_accent": {
+      "input": {"scheme": "dark", "background": "#020203", "foreground": "#e4e6ea", "accent": "#ff3030", "contrast": 50},
+      "tokens": {"accent.base": "#ff3030", "status.error": "#e06a74", "status.warning": "#d2a64f", "status.success": "#69ad82", "status.info": "#75a7c8"}
+    },
+    "protected_status_green_accent": {
+      "input": {"scheme": "dark", "background": "#020203", "foreground": "#e4e6ea", "accent": "#30c060", "contrast": 50},
+      "tokens": {"accent.base": "#30c060", "status.error": "#e06a74", "status.warning": "#d2a64f", "status.success": "#69ad82", "status.info": "#75a7c8"}
+    },
+    "profiles_unseparated": {
+      "input": {"mode": "system", "separateLightDark": false, "shared": {"themeRef": "Blood", "accent": "#8f0e24", "contrast": 50}},
+      "expected": {"custom_override_scope": "shared", "dark_v1_values_preserved": true, "inactive_scheme_state_not_deleted": true}
+    },
+    "profiles_separated": {
+      "input": {"mode": "system", "separateLightDark": true, "dark": {"themeRef": "Blood", "contrast": 60}, "light": {"themeRef": "Blood", "background": "#f7f7f5", "foreground": "#171719", "contrast": 45}},
+      "expected": {"custom_override_scope": "per_mode", "light_and_dark_can_diverge": true, "switch_preserves_other_profile": true}
+    },
+    "font_size_independence": {
+      "input": {"uiFontSize": 16, "codeFontSize": 11},
+      "expected": {"uiFontSize": 16, "codeFontSize": 11, "ui_geometry_auto_scaled": false, "code_independent_from_ui": true}
+    }
+  },
+  "hard_out_of_scope": [
+    "runtime_theme_core_v2_implementation",
+    "persistence_schema_migration_execution",
+    "qml_bridge_implementation",
+    "qml_settings_ui",
+    "screen1_component_migration",
+    "windows_dwm_implementation",
+    "arrangement_or_live_work",
+    "cloud_theme_sync",
+    "arbitrary_qml_css_skin_scripting",
+    "private_samples_dbs_indexes_caches_credentials_machine_paths"
+  ]
+}

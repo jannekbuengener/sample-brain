@@ -71,6 +71,22 @@ not derive its palette from that reference.
 - Project ID: `47e8bb1a-efce-43bd-a97f-c05c9750d726`
 - Do not create a new project, remix, or clone for this track.
 
+## Appearance V2 forward contract (#1252)
+
+The delivered runtime remains #785 / `presets.v1.json`. Appearance V2 is now
+frozen separately as a **normative future contract**, not as shipped runtime:
+
+- [`../../WORKBENCH_APPEARANCE_V2_CONTRACT.md`](../../WORKBENCH_APPEARANCE_V2_CONTRACT.md)
+- [`appearance.v2.contract.json`](appearance.v2.contract.json)
+
+#1252 preserves the exact current dark preset result at neutral Contrast while
+freezing the future state/profile model, semantic token families, protected
+Accent-independent status colors, bounded Contrast behavior, independent UI /
+code typography, and reuse of #696 motion semantics. Runtime implementation is
+owned by #1253, preference migration by #1254, and QML projection/settings by
+#1255/#1256. Do not read the V2 contract file as evidence that those runtime
+features have already shipped.
+
 ## Source of truth
 
 Base tokens alone define a theme:
