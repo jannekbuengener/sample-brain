@@ -5813,6 +5813,13 @@ ApplicationWindow {
             readonly property int channelNameColumnWidth: 96
             // C2b: indent for track rows under parent group
             readonly property int trackRowIndent: 24
+            // Shared presentation geometry for group and track block columns.
+            readonly property int groupRowMargin: 14
+            readonly property int groupControlWidth: 24
+            readonly property int groupLabelWidth: 160
+            readonly property int blockColumnSpacing: 8
+            readonly property int blockColumnOrigin: groupRowMargin + groupControlWidth
+                                                     + groupLabelWidth + 2 * blockColumnSpacing
 
             // #1080: this input layer keeps pointer events that miss the
             // sequencer's field hit targets from reaching the workspace
@@ -5902,13 +5909,40 @@ else
                     // Marker geometry follows Direction B bridge bindings (C2c1 review F4).
                 }
 
-                Column {
+                Flickable {
+                    id: arrangementGroupViewport
+                    objectName: "arrangementGroupViewport"
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    anchors.top: parent.top
-                    anchors.margins: 36
-                    spacing: 2
-                    Repeater {
+                    anchors.top: timelineViewport.bottom
+                    anchors.bottom: parent.bottom
+                    anchors.leftMargin: 36
+                    anchors.rightMargin: 36
+                    anchors.topMargin: 8
+                    anchors.bottomMargin: 8
+                    clip: true
+                    contentWidth: width
+                    contentHeight: arrangementGroupColumn.implicitHeight
+                    flickableDirection: Flickable.VerticalFlick
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    WheelHandler {
+                        acceptedModifiers: Qt.ControlModifier
+                        target: null
+                        onWheel: function(event) {
+                            if (event.angleDelta.y < 0)
+                                window.arrangement.zoomOut()
+                            else if (event.angleDelta.y > 0)
+                                window.arrangement.zoomIn()
+                            event.accepted = true
+                        }
+                    }
+
+                    Column {
+                        id: arrangementGroupColumn
+                        width: arrangementGroupViewport.width
+                        spacing: 2
+                        Repeater {
                         model: window.arrangement.groupRows
                         Item {
                             id: arrangementGroupRow
@@ -5916,6 +5950,8 @@ else
                             readonly property var row: modelData
                             readonly property string groupId: row.groupId
                             readonly property bool expanded: row.expanded
+                            readonly property real blockColumnWidth: Math.max(
+                                0, width - arrangementStage.blockColumnOrigin - arrangementStage.groupRowMargin)
                             width: parent.width
                             // Height depends on expansion: collapsed=64, expanded=64 + trackRows *48
                             height: expanded ? (64 + (row.trackRows ? row.trackRows.length : 0) *48) : 64
@@ -5932,16 +5968,16 @@ else
                                 Row {
                                     anchors.left: parent.left
                                     anchors.right: parent.right
-                                    anchors.leftMargin: 14
-                                    anchors.rightMargin: 14
+                                    anchors.leftMargin: arrangementStage.groupRowMargin
+                                    anchors.rightMargin: arrangementStage.groupRowMargin
                                     anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 8
+                                    spacing: arrangementStage.blockColumnSpacing
 
                                     // Expand/collapse affordance
                                     Rectangle {
                                         id: expandControl
                                         objectName: "arrangementExpandControl"
-                                        width: 24
+                                        width: arrangementStage.groupControlWidth
                                         height: 24
                                         radius: 2
                                         color: theme.surfaceElevated
@@ -5991,19 +6027,18 @@ else
 
                                     Label {
                                         anchors.verticalCenter: parent.verticalCenter
-                                        width: 160
+                                        width: arrangementStage.groupLabelWidth
                                         text: arrangementGroupRow.row.displayName
                                         color: theme.textSecondary
                                         font.pixelSize: 12
                                         elide: Text.ElideRight
                                     }
                                     Row {
-                                        anchors.left: expandControl.right
-                                        anchors.leftMargin: 8
-                                        anchors.right: parent.right
-                                        anchors.rightMargin: 14
+                                        id: arrangementGroupBlocksRow
+                                        width: arrangementGroupRow.blockColumnWidth
+                                        height: 42
                                         anchors.verticalCenter: parent.verticalCenter
-                                        spacing: 8
+                                        spacing: arrangementStage.blockColumnSpacing
                                         Repeater {
                                             model: arrangementGroupRow.row.blocks
                                             Rectangle {
@@ -6014,7 +6049,7 @@ else
                                                 readonly property int blockIndex: cell.blockIndex
                                                 readonly property bool effectiveOn: cell.available
                                                 enabled: cell.interactive
-                                                width: (parent.width - 8 * (arrangementGroupRow.row.blocks.length - 1)) / arrangementGroupRow.row.blocks.length
+                                                width: (parent.width - parent.spacing * (arrangementGroupRow.row.blocks.length - 1)) / arrangementGroupRow.row.blocks.length
                                                 height: 42
                                                 color: effectiveOn ? theme.surfaceElevated : theme.surfaceRoot
                                                 border.width: activeFocus ? 2 : 1
@@ -6060,12 +6095,13 @@ else
                                 anchors.left: parent.left
                                 anchors.leftMargin: arrangementStage.trackRowIndent
                                 anchors.right: parent.right
-                                anchors.rightMargin: 14
+                                anchors.rightMargin: arrangementStage.groupRowMargin
                                 anchors.top: parent.top
                                 anchors.topMargin: 64
                                 height: expanded ? (row.trackRows ? row.trackRows.length : 0) *48 : 0
                                 visible: expanded && row.trackRows && row.trackRows.length > 0
                                 Column {
+                                    width: parent.width
                                     spacing: 4
                                     Repeater {
                                         model: expanded ? (row.trackRows || []) : []
@@ -6080,7 +6116,7 @@ else
                                             Row {
                                                 id: arrangementTrackRowLayout
                                                 anchors.fill: parent
-                                                spacing: 8
+                                                spacing: arrangementStage.blockColumnSpacing
 
                                                 Label {
                                                     objectName: "arrangementTrackRowName"
@@ -6088,7 +6124,7 @@ else
                                                     text: track.displayName
                                                     color: theme.textSecondary
                                                     font.pixelSize: 10
-                                                    width: arrangementStage.channelNameColumnWidth - arrangementStage.trackRowIndent
+                                                    width: arrangementStage.blockColumnOrigin - arrangementStage.trackRowIndent - arrangementStage.blockColumnSpacing
                                                     horizontalAlignment: Text.AlignRight
                                                     elide: Text.ElideRight
                                                     opacity: 0.8
@@ -6096,9 +6132,9 @@ else
 
                                                 Row {
                                                     id: arrangementTrackBlocksRow
-                                                    anchors.left: parent.left
-                                                    anchors.right: parent.right
-                                                    spacing: 8
+                                                    width: arrangementGroupRow.blockColumnWidth
+                                                    height: 36
+                                                    spacing: arrangementStage.blockColumnSpacing
                                                     Repeater {
                                                         model: track.blocks
                                                         Rectangle {
@@ -6109,7 +6145,7 @@ else
                                                             readonly property int blockIndex: cell.blockIndex
                                                             readonly property bool effectiveOn: cell.available && cell.effective === true
                                                             enabled: cell.interactive
-                                                            width: (parent.width - 8 * (track.blocks.length - 1)) / track.blocks.length
+                                                            width: (parent.width - parent.spacing * (track.blocks.length - 1)) / track.blocks.length
                                                             height: 36
                                                             color: effectiveOn ? theme.surfaceElevated : theme.surfaceRoot
                                                             border.width: activeFocus ? 2 : 1
@@ -6155,6 +6191,7 @@ else
                             }
                         }
                     }
+                }
                 }
             }
 
@@ -6331,46 +6368,45 @@ else
                         }
                     }
                 }
-                // C2c2: Python-owned end-marker projection. The marker reads
-                // a normalized position from the bridge; QML owns no musical
-                // truth and renders dimmed unless projection says eligible.
-                Item {
-                    id: arrangementEndMarker
-                    objectName: "arrangementEndMarker"
+            }
+
+            // C2d: Python-owned end-marker projection constrained to the upper song area.
+            Item {
+                id: arrangementEndMarker
+                objectName: "arrangementEndMarker"
+                anchors.top: arrangementUpperStage.top
+                anchors.bottom: arrangementUpperStage.bottom
+                x: window.arrangement.endMarkerNormalizedPosition * arrangementUpperStage.width
+                width: 2
+                visible: window.arrangement.endMarkerVisible
+                opacity: window.arrangement.endMarkerRenderEligible ? 1.0 : 0.4
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: theme.actionActive
+                    opacity: 0.35
+                }
+
+                Rectangle {
+                    id: arrangementEndMarkerHandle
+                    objectName: "arrangementEndMarkerHandle"
+                    anchors.horizontalCenter: parent.horizontalCenter
                     anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    x: window.arrangement.endMarkerNormalizedPosition * parent.width
-                    width: 2
-                    visible: window.arrangement.endMarkerVisible
-                    opacity: window.arrangement.endMarkerRenderEligible ? 1.0 : 0.4
+                    width: 10
+                    height: 10
+                    radius: 2
+                    color: theme.actionActive
+                    Accessible.role: Accessible.Indicator
+                    Accessible.name: "endMarker END"
+                }
 
-                    Rectangle {
-                        anchors.fill: parent
-                        color: theme.actionActive
-                        opacity: 0.35
-                    }
-
-                    Rectangle {
-                        id: arrangementEndMarkerHandle
-                        objectName: "arrangementEndMarkerHandle"
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.top: parent.top
-                        width: 10
-                        height: 10
-                        radius: 2
-                        color: theme.actionActive
-                        Accessible.role: Accessible.Indicator
-                        Accessible.name: "endMarker END"
-                    }
-
-                    Label {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.top: parent.top
-                        anchors.topMargin: 12
-                        text: "END"
-                        color: theme.textSecondary
-                        font.pixelSize: 8
-                    }
+                Label {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.top
+                    anchors.topMargin: 12
+                    text: "END"
+                    color: theme.textSecondary
+                    font.pixelSize: 8
                 }
             }
 
@@ -7310,8 +7346,12 @@ def _qml_arrangement_bridge(session, adapter):
             "active": bool(field.active),
         }
 
-    def _track_block_dict(block: arrangement_seam.ArrangementQmlTrackBlock) -> dict[str, object]:
-        # Track blocks don't have 'available' field directly; derive from enabled and effective
+    def _track_block_dict(
+        block: arrangement_seam.ArrangementQmlTrackBlock,
+        *,
+        block_enabled: bool,
+        group_enabled: bool,
+    ) -> dict[str, object]:
         eff = block.effective
         is_eligible = eff is True
         is_unresolved = eff == "unresolved"
@@ -7323,18 +7363,32 @@ def _qml_arrangement_bridge(session, adapter):
         return {
             "blockIndex": int(block.block_index),
             "status": status,
+            "blockEnabled": bool(block_enabled),
+            "groupEnabled": bool(group_enabled),
             "trackEnabled": bool(block.enabled),
             "available": available,
             "interactive": interactive,
             "effective": block.effective,
         }
 
-    def _track_row_dict(row: arrangement_seam.ArrangementQmlTrackRow) -> dict[str, object]:
+    def _track_row_dict(
+        row: arrangement_seam.ArrangementQmlTrackRow,
+        *,
+        block_lookup: dict[int, object],
+        group_block_lookup: dict[tuple[str, int], object],
+    ) -> dict[str, object]:
         return {
             "channelId": row.channel_id,
             "displayName": row.display_name,
             "groupId": row.group_id,
-            "blocks": [_track_block_dict(b) for b in row.blocks],
+            "blocks": [
+                _track_block_dict(
+                    block,
+                    block_enabled=bool(block_lookup[block.block_index].enabled),
+                    group_enabled=bool(group_block_lookup[(row.group_id, block.block_index)].enabled),
+                )
+                for block in row.blocks
+            ],
         }
 
     class QmlArrangementBridge(QObject):
@@ -7464,6 +7518,10 @@ def _qml_arrangement_bridge(session, adapter):
                     except (TypeError, ValueError, AttributeError):
                         pass  # fail-closed: defaults retained, groups unaffected
                     blocks = {b.block_index: b for b in window.blocks}
+                    group_block_lookup = {
+                        (cell.group_id, cell.block_index): cell
+                        for cell in window.group_blocks
+                    }
                     track_rows_by_group = getattr(window, "track_rows_by_group", {})
                     self._group_rows = [
                         {
@@ -7487,7 +7545,11 @@ def _qml_arrangement_bridge(session, adapter):
                             ],
                             # C2b: track rows only when expanded
                             "trackRows": [
-                                _track_row_dict(tr)
+                                _track_row_dict(
+                                    tr,
+                                    block_lookup=blocks,
+                                    group_block_lookup=group_block_lookup,
+                                )
                                 for tr in track_rows_by_group.get(group.group_id, ())
                             ] if group.group_id in self._expanded_groups else [],
                         }
