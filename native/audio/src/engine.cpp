@@ -21,6 +21,9 @@
 #include <cctype>
 #include <cstdio>
 
+static_assert(sizeof(ma_device_id) * 2 + 1 <= sizeof(sb_device_info_t::id_hex),
+              "device ID buffer must hold the full hexadecimal ID and terminator");
+
 // Hex encode/decode for ma_device_id
 static void device_id_to_hex(const ma_device_id* id, char* out_hex, size_t out_len) {
     const uint8_t* bytes = reinterpret_cast<const uint8_t*>(id);
@@ -68,6 +71,10 @@ SAMPLEBRAIN_EXPORT sb_result_t sb_engine_version(char* out, size_t len) {
 }
 
 // Device enumeration
+SAMPLEBRAIN_EXPORT size_t sb_device_info_size(void) {
+    return sizeof(sb_device_info_t);
+}
+
 SAMPLEBRAIN_EXPORT sb_result_t sb_enumerate_devices(int capture, sb_device_info_t* out_list, uint32_t max_count, uint32_t* out_count) {
     if (!out_list || !out_count || max_count == 0) return SB_ERR_INVALID_ARG;
 
@@ -221,6 +228,15 @@ sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_en
     if (config->output_channels == 0 || config->output_channels > 8) return SB_ERR_INVALID_ARG;
     if (config->input_channels > 8) return SB_ERR_INVALID_ARG;
 
+    ma_device_id output_device_id = {};
+    ma_device_id input_device_id = {};
+    if (config->output_device && !hex_to_device_id(config->output_device, &output_device_id)) {
+        return SB_ERR_INVALID_ARG;
+    }
+    if (config->input_device && !hex_to_device_id(config->input_device, &input_device_id)) {
+        return SB_ERR_INVALID_ARG;
+    }
+
     // Allocate engine
     sb_engine_t engine = new (std::nothrow) sb_engine();
     if (!engine) return SB_ERR_OUT_OF_MEMORY;
@@ -241,8 +257,34 @@ sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_en
     ma_result ma_res = ma_context_init(nullptr, 0, &ctx_config, &engine->context);
 #endif
     if (ma_res != MA_SUCCESS) {
+        free((void*)engine->config.output_device);
+        free((void*)engine->config.input_device);
         delete engine;
         return SB_ERR_DEVICE_ERROR;
+    }
+
+    if (config->output_device || config->input_device) {
+        ma_device_info* playback_infos = nullptr;
+        ma_device_info* capture_infos = nullptr;
+        ma_uint32 playback_count = 0;
+        ma_uint32 capture_count = 0;
+        ma_res = ma_context_get_devices(&engine->context, &playback_infos, &playback_count,
+                                        &capture_infos, &capture_count);
+        auto listed = [](const ma_device_id& id, const ma_device_info* infos, ma_uint32 count) {
+            for (ma_uint32 i = 0; i < count; ++i) {
+                if (memcmp(&id, &infos[i].id, sizeof(id)) == 0) return true;
+            }
+            return false;
+        };
+        if (ma_res != MA_SUCCESS ||
+            (config->output_device && !listed(output_device_id, playback_infos, playback_count)) ||
+            (config->input_device && !listed(input_device_id, capture_infos, capture_count))) {
+            free((void*)engine->config.output_device);
+            free((void*)engine->config.input_device);
+            ma_context_uninit(&engine->context);
+            delete engine;
+            return SB_ERR_DEVICE_ERROR;
+        }
     }
 
     // Configure device
@@ -259,23 +301,15 @@ sb_result_t sb_engine_open(const sb_engine_config_t* config, sb_engine_t* out_en
     dev_config.notificationCallback = ma_on_notification;
 
     // Apply output device ID if provided
-    if (config->output_device) {
-        ma_device_id device_id;
-        if (hex_to_device_id(config->output_device, &device_id)) {
-            dev_config.playback.pDeviceID = &device_id;
-        }
-    }
+    if (config->output_device) dev_config.playback.pDeviceID = &output_device_id;
 
     // Apply input device ID if provided
-    if (config->input_device) {
-        ma_device_id device_id;
-        if (hex_to_device_id(config->input_device, &device_id)) {
-            dev_config.capture.pDeviceID = &device_id;
-        }
-    }
+    if (config->input_device) dev_config.capture.pDeviceID = &input_device_id;
 
     ma_res = ma_device_init(&engine->context, &dev_config, &engine->device);
     if (ma_res != MA_SUCCESS) {
+        free((void*)engine->config.output_device);
+        free((void*)engine->config.input_device);
         ma_context_uninit(&engine->context);
         delete engine;
         return SB_ERR_DEVICE_ERROR;

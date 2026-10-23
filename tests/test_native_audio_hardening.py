@@ -67,6 +67,7 @@ def test_valid_library_loads_and_verifies_symbols(tmp_path):
     mock_cdll = MagicMock(spec=ctypes.CDLL)
     for sym in native_audio._REQUIRED_SB_SYMBOLS:
         setattr(mock_cdll, sym, MagicMock())
+    setattr(mock_cdll, "sb_device_info_size", MagicMock(return_value=ctypes.sizeof(native_audio.SbDeviceInfo)))
 
     with patch("src.native_audio._get_trusted_candidates", return_value=[fake_lib_path]):
         with patch("src.native_audio._get_trusted_roots", return_value=[tmp_path]):
@@ -74,6 +75,20 @@ def test_valid_library_loads_and_verifies_symbols(tmp_path):
                 lib, path = native_audio._load_native_library()
                 assert lib is mock_cdll
                 assert path == fake_lib_path
+
+
+def test_library_with_mismatched_device_info_layout_is_unavailable(tmp_path):
+    fake_lib_path = tmp_path / "libsamplebrain_audio.so"
+    fake_lib_path.write_bytes(b"fake library content")
+    mock_cdll = MagicMock(spec=ctypes.CDLL)
+    for sym in native_audio._REQUIRED_SB_SYMBOLS:
+        setattr(mock_cdll, sym, MagicMock())
+    setattr(mock_cdll, "sb_device_info_size", MagicMock(return_value=ctypes.sizeof(native_audio.SbDeviceInfo) - 4))
+
+    with patch("src.native_audio._get_trusted_candidates", return_value=[fake_lib_path]):
+        with patch("src.native_audio._get_trusted_roots", return_value=[tmp_path]):
+            with patch("ctypes.CDLL", return_value=mock_cdll):
+                assert native_audio._load_native_library() == (None, None)
 
 
 def test_escaped_symlink_candidate_rejected_and_cdll_not_called(tmp_path):

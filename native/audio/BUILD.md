@@ -46,6 +46,17 @@ cd sample-brain
 python -m src.native_audio
 ```
 
+## Explicit audio device selection
+
+`sb_enumerate_devices` returns a complete, NUL-terminated hexadecimal device ID.
+Passing that ID as `output_device` or `input_device` must select the requested
+device. A malformed ID returns `SB_ERR_INVALID_ARG`; an unavailable ID returns
+`SB_ERR_DEVICE_ERROR`. An explicit selection must never silently use the default
+device. Passing no ID continues to use the platform default.
+Because the device-info structure is shared across the C/Python boundary, the
+Python loader must reject a DLL whose reported structure size differs from its
+`ctypes` layout. An older DLL must be rebuilt before device enumeration is used.
+
 ## Hardware Validation Matrix
 
 Run the following tests on actual Windows audio hardware:

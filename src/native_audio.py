@@ -18,6 +18,13 @@ from typing import Optional, List, Tuple
 
 import numpy as np
 
+class SbDeviceInfo(ctypes.Structure):
+    _fields_ = [
+        ("name", ctypes.c_char * 256),
+        ("id_hex", ctypes.c_char * 513),
+        ("is_default", ctypes.c_int),
+    ]
+
 # Required exported FFI symbols to verify ABI before function setup
 _REQUIRED_SB_SYMBOLS = (
     "sb_engine_open",
@@ -25,6 +32,7 @@ _REQUIRED_SB_SYMBOLS = (
     "sb_engine_stop",
     "sb_engine_close",
     "sb_engine_version",
+    "sb_device_info_size",
     "sb_enumerate_devices",
     "sb_voice_create",
     "sb_voice_remove",
@@ -127,8 +135,12 @@ def _load_native_library() -> Tuple[Optional[ctypes.CDLL], Optional[Path]]:
                 for sym in _REQUIRED_SB_SYMBOLS:
                     if not hasattr(lib, sym):
                         raise AttributeError(f"Missing required symbol: {sym}")
+                lib.sb_device_info_size.argtypes = []
+                lib.sb_device_info_size.restype = ctypes.c_size_t
+                if lib.sb_device_info_size() != ctypes.sizeof(SbDeviceInfo):
+                    raise ValueError("Native device-info layout mismatch")
                 return lib, resolved
-            except (OSError, AttributeError):
+            except (OSError, AttributeError, ValueError):
                 continue
     return None, None
 
@@ -245,14 +257,6 @@ class SbVoiceConfig(ctypes.Structure):
         ("sync_mode", ctypes.c_int),
         ("source_bpm", ctypes.c_float),
         ("master_bpm", ctypes.c_float),
-    ]
-
-
-class SbDeviceInfo(ctypes.Structure):
-    _fields_ = [
-        ("name", ctypes.c_char * 256),
-        ("id_hex", ctypes.c_char * 512),
-        ("is_default", ctypes.c_int),
     ]
 
 
