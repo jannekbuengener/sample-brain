@@ -58,7 +58,7 @@ def _row(path: Path, name: str = "kick.wav") -> WorkbenchRow:
 
 
 def test_new_library_db_has_favorite_samples_table(library_db: Path) -> None:
-    assert WORKBENCH_LIBRARY_SCHEMA_VERSION == 5
+    assert WORKBENCH_LIBRARY_SCHEMA_VERSION == 6
     with connect_workbench_library(library_db) as conn:
         tables = {
             row[0]

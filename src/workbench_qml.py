@@ -21,8 +21,12 @@ from typing import Any, Callable, Mapping
 
 from .workbench_controller import WorkbenchRow, filter_workbench_rows
 from .workbench_browser_rows import (
+    BACKGROUND_ENRICHMENT,
+    CURRENT_VISIBLE,
     BoundedBackgroundWaveformLoader,
     BoundedLazyWaveformCache,
+    WaveformCacheResult,
+    WaveformDecodeResult,
 )
 from .workbench_harmony import (
     HarmonicMatchLibraryController,
@@ -53,7 +57,11 @@ from .workbench_internal_sample_dnd import (
 )
 from .workbench_live_kit_export import LiveKitExportResult, export_live_kit
 from .workbench_library import (
+    WAVEFORM_POINT_BUDGET,
     list_favorite_sample_paths,
+    list_waveform_enrichment_candidates,
+    load_valid_waveform_artifacts,
+    store_waveform_artifact,
     toggle_sample_favorite,
     workbench_library_db_path,
 )
@@ -201,13 +209,9 @@ def _duration(row: WorkbenchRow) -> str:
 
 
 def _path_in_favorites(path: str, favorites: set[str] | frozenset[str]) -> bool:
-    if path in favorites:
-        return True
-    try:
-        resolved = str(Path(path).expanduser().resolve())
-    except OSError:
+    if not favorites:
         return False
-    return resolved in favorites
+    return os.path.normcase(os.path.normpath(path)) in favorites
 
 
 def _favorite_path_set(*, db_path: Path | None) -> set[str]:
@@ -225,6 +229,18 @@ def _waveform_envelope(row: WorkbenchRow) -> tuple[float, ...]:
         return tuple(max(0.0, min(1.0, float(value))) for value in raw)
     except (TypeError, ValueError):
         return ()
+
+
+def _waveform_fingerprint(row: WorkbenchRow) -> tuple[int, int] | None:
+    details = _row_details(row)
+    try:
+        size_bytes = int(details["source_size_bytes"])
+        mtime_ns = int(details["source_mtime_ns"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if size_bytes < 0 or mtime_ns < 0:
+        return None
+    return size_bytes, mtime_ns
 
 
 def _qml_row(row: WorkbenchRow, *, is_favorite: bool = False) -> QmlBrowserRow:
@@ -383,7 +399,10 @@ class Screen1QmlViewModel:
         error: str | None,
         favorite_paths: set[str] | frozenset[str] | None = None,
     ) -> None:
-        favorites = favorite_paths or set()
+        favorites = {
+            os.path.normcase(os.path.normpath(path))
+            for path in (favorite_paths or ())
+        }
         self._browser_rows_all = tuple(
             _qml_row(
                 row,
@@ -487,6 +506,15 @@ class Screen1QmlViewModel:
                 )
             self._browser_rows_all = tuple(updated_all)
             self._republish_browser_rows(preferred_path=preferred_path)
+        else:
+            updated_visible: list[QmlBrowserRow] = []
+            for row in self.browser_rows:
+                if str(row.source_row.path) == path and row.waveform_envelope != envelope:
+                    row = replace(row, waveform_envelope=envelope)
+                    changed = True
+                updated_visible.append(row)
+            if changed:
+                self.browser_rows = tuple(updated_visible)
         harmony_updated: list[QmlHarmonyRow] = []
         for row in self.harmony_rows:
             if str(row.source_row.path) == path and row.waveform_envelope != envelope:
@@ -8307,6 +8335,53 @@ def _qml_theme_authority_bridge(
     return QmlThemeAuthorityBridge()
 
 
+def _hydrate_waveform_rows(
+    view_model: Screen1QmlViewModel,
+    rows: tuple[QmlBrowserRow | QmlHarmonyRow, ...],
+    *,
+    waveform_cache: BoundedLazyWaveformCache,
+    library_db_path: Path,
+) -> set[str]:
+    """Project valid memory or persisted artifacts into one model update."""
+    changed_paths: set[str] = set()
+    persisted_requests: dict[str, tuple[int, int]] = {}
+    for row in rows:
+        if row.waveform_envelope:
+            continue
+        path = str(row.source_row.path)
+        fingerprint = _waveform_fingerprint(row.source_row)
+        cached = waveform_cache.get(
+            path,
+            source_size_bytes=fingerprint[0] if fingerprint else None,
+            source_mtime_ns=fingerprint[1] if fingerprint else None,
+            touch=True,
+        )
+        if cached is not None and cached.state == "ready" and cached.envelope:
+            if view_model.set_browser_waveform(path, cached.envelope):
+                changed_paths.add(path)
+            continue
+        if fingerprint is not None:
+            persisted_requests[path] = fingerprint
+    if persisted_requests:
+        try:
+            persisted = load_valid_waveform_artifacts(
+                persisted_requests, db_path=library_db_path
+            )
+        except Exception:
+            persisted = {}
+        for path, envelope in persisted.items():
+            size_bytes, mtime_ns = persisted_requests[path]
+            waveform_cache.put_result(
+                path,
+                WaveformCacheResult("ready", envelope),
+                source_size_bytes=size_bytes,
+                source_mtime_ns=mtime_ns,
+            )
+            if view_model.set_browser_waveform(path, envelope):
+                changed_paths.add(path)
+    return changed_paths
+
+
 def _qml_engine(
     view_model: Screen1QmlViewModel,
     *,
@@ -8375,14 +8450,39 @@ def _qml_engine(
         waveform_cache = None
         waveform_loader = None
     else:
+        def persist_waveform_result(completed: WaveformDecodeResult) -> None:
+            if (
+                completed.result.state != "ready"
+                or not completed.result.envelope
+                or completed.source_size_bytes is None
+                or completed.source_mtime_ns is None
+            ):
+                return
+            try:
+                store_waveform_artifact(
+                    completed.path,
+                    source_size_bytes=completed.source_size_bytes,
+                    source_mtime_ns=completed.source_mtime_ns,
+                    envelope=completed.result.envelope,
+                    db_path=adapter.library_db_path,
+                )
+            except Exception:
+                # Optional enrichment must never break Browser interaction.
+                return
+
         waveform_cache = BoundedLazyWaveformCache(
             capacity=48,
-            loader=lambda path: compute_waveform_envelope(path, max_points=96),
+            loader=lambda path: compute_waveform_envelope(
+                path, max_points=WAVEFORM_POINT_BUDGET
+            ),
         )
         waveform_loader = BoundedBackgroundWaveformLoader(
             cache=waveform_cache,
-            loader=lambda path: compute_waveform_envelope(path, max_points=96),
+            loader=lambda path: compute_waveform_envelope(
+                path, max_points=WAVEFORM_POINT_BUDGET
+            ),
             max_pending=14,
+            on_result=persist_waveform_result,
         )
         # Engines may be destroyed while the shared application keeps running.
         engine.destroyed.connect(waveform_loader.close)
@@ -8391,6 +8491,63 @@ def _qml_engine(
     # still fills the full compact visible window without raising the bound.
     browser_waveform_viewport = [0, 0]
     harmony_waveform_viewport = [0, 0]
+    wave2_cursor = [0]
+    wave2_exhausted = [False]
+
+    def begin_waveform_scope() -> None:
+        if waveform_loader is not None:
+            waveform_loader.advance_generation()
+        wave2_cursor[0] = 0
+        wave2_exhausted[0] = False
+
+    def hydrate_waveform_rows(
+        rows: tuple[QmlBrowserRow | QmlHarmonyRow, ...],
+    ) -> set[str]:
+        if waveform_cache is None:
+            return set()
+        return _hydrate_waveform_rows(
+            view_model,
+            rows,
+            waveform_cache=waveform_cache,
+            library_db_path=adapter.library_db_path,
+        )
+
+    def pump_wave2() -> None:
+        if (
+            waveform_loader is None
+            or wave2_exhausted[0]
+            or runtime_composition is None
+            or not runtime_composition.browser_materialized
+            or getattr(adapter, "_preview_active", False)
+            or waveform_loader.pending_count_for(CURRENT_VISIBLE) > 0
+        ):
+            return
+        available = waveform_loader.available_capacity
+        if available <= 0:
+            return
+        try:
+            candidates = list_waveform_enrichment_candidates(
+                db_path=adapter.library_db_path,
+                after_sample_id=wave2_cursor[0],
+                limit=available,
+            )
+        except Exception:
+            wave2_exhausted[0] = True
+            return
+        if not candidates:
+            wave2_exhausted[0] = True
+            return
+        for candidate in candidates:
+            accepted = waveform_loader.schedule(
+                candidate.path,
+                priority=BACKGROUND_ENRICHMENT,
+                generation=waveform_loader.current_generation,
+                source_size_bytes=candidate.source_size_bytes,
+                source_mtime_ns=candidate.source_mtime_ns,
+            )
+            if not accepted:
+                break
+            wave2_cursor[0] = candidate.sample_id
 
     def request_waveforms(start: int, count: int) -> None:
         if count <= 0 or waveform_loader is None:
@@ -8399,10 +8556,23 @@ def _qml_engine(
         last = min(len(view_model.browser_rows), first + count)
         browser_waveform_viewport[0] = first
         browser_waveform_viewport[1] = max(0, last - first)
-        for row in view_model.browser_rows[first:last]:
-            if row.waveform_envelope:
+        rows = view_model.browser_rows[first:last]
+        hydrated = hydrate_waveform_rows(rows)
+        if hydrated:
+            refresh_browser_rows()
+        for row in rows:
+            path = str(row.source_row.path)
+            if row.waveform_envelope or path in hydrated:
                 continue
-            waveform_loader.schedule(str(row.source_row.path))
+            fingerprint = _waveform_fingerprint(row.source_row)
+            waveform_loader.schedule(
+                path,
+                priority=CURRENT_VISIBLE,
+                generation=waveform_loader.current_generation,
+                source_size_bytes=fingerprint[0] if fingerprint else None,
+                source_mtime_ns=fingerprint[1] if fingerprint else None,
+            )
+        pump_wave2()
 
     def request_harmony_waveforms(start: int, count: int) -> None:
         if count <= 0 or waveform_loader is None:
@@ -8411,10 +8581,22 @@ def _qml_engine(
         last = min(len(view_model.harmony_rows), first + count)
         harmony_waveform_viewport[0] = first
         harmony_waveform_viewport[1] = max(0, last - first)
-        for row in view_model.harmony_rows[first:last]:
-            if row.waveform_envelope:
+        rows = view_model.harmony_rows[first:last]
+        hydrated = hydrate_waveform_rows(rows)
+        if hydrated:
+            refresh_browser_rows()
+        for row in rows:
+            path = str(row.source_row.path)
+            if row.waveform_envelope or path in hydrated:
                 continue
-            waveform_loader.schedule(str(row.source_row.path))
+            fingerprint = _waveform_fingerprint(row.source_row)
+            waveform_loader.schedule(
+                path,
+                priority=CURRENT_VISIBLE,
+                generation=waveform_loader.current_generation,
+                source_size_bytes=fingerprint[0] if fingerprint else None,
+                source_mtime_ns=fingerprint[1] if fingerprint else None,
+            )
 
     def request_visible_browser_waveforms_from_window() -> None:
         """Python-side viewport seed after model refresh; QML owns scroll/resize."""
@@ -8443,11 +8625,16 @@ def _qml_engine(
     def drain_waveforms() -> None:
         if waveform_loader is None or waveform_cache is None:
             return
-        if waveform_loader.drain_results() == 0:
-            return
+        waveform_loader.drain_results()
         changed = False
-        for row in view_model.browser_rows:
-            cached = waveform_cache.get(str(row.source_row.path))
+        for row in (*view_model.browser_rows, *view_model.harmony_rows):
+            fingerprint = _waveform_fingerprint(row.source_row)
+            cached = waveform_cache.get(
+                str(row.source_row.path),
+                source_size_bytes=fingerprint[0] if fingerprint else None,
+                source_mtime_ns=fingerprint[1] if fingerprint else None,
+                touch=True,
+            )
             if cached is not None and cached.state == "ready":
                 changed = view_model.set_browser_waveform(
                     str(row.source_row.path), cached.envelope
@@ -8461,6 +8648,7 @@ def _qml_engine(
             request_harmony_waveforms(
                 harmony_waveform_viewport[0], harmony_waveform_viewport[1]
             )
+        pump_wave2()
 
     analysis_coordinator = None
     layout_model = None
@@ -8521,6 +8709,7 @@ def _qml_engine(
     def dispatch_library_selection() -> None:
         if runtime_composition is None:
             return
+        begin_waveform_scope()
         intent = library_model.state.selection_intent
         if intent is None:
             runtime_composition.clear_no_scope(
@@ -8602,6 +8791,7 @@ def _qml_engine(
             # Force immediate materialization of analyzed source (no refresh loop).
             intent = library_model.state.selection_intent
             if intent is not None and runtime_composition is not None:
+                begin_waveform_scope()
                 runtime_composition.dispatch_selection(intent)
                 _sync_runtime_browser_state(view_model, adapter, runtime_composition)
                 request_visible_browser_waveforms_from_window()
@@ -8890,6 +9080,8 @@ def _qml_engine(
     )
 
     def on_interaction_state_changed() -> None:
+        if waveform_loader is not None:
+            waveform_loader.set_background_paused(adapter.preview_active)
         refresh_screen_model()
         # Recompute widths before QML reacts to state_changed so RowLayout
         # never sees a 3-panel width set with a third handle visible.
@@ -8898,6 +9090,8 @@ def _qml_engine(
         rack_bridge = getattr(engine, "_screen1_channel_rack_bridge", None)
         if rack_bridge is not None:
             rack_bridge.refresh()
+        if not adapter.preview_active:
+            pump_wave2()
 
     channel_rack_bridge = _qml_channel_rack_bridge(
         channel_rack_controller,
@@ -8936,10 +9130,14 @@ def _qml_engine(
             return
         channel_rack_bridge.returnToScreen1()
 
+    def refresh_browser_projection() -> None:
+        begin_waveform_scope()
+        refresh_browser_rows()
+
     bridge = _qml_interaction_bridge(
         adapter,
         on_state_changed=on_interaction_state_changed,
-        on_browser_rows_changed=refresh_browser_rows,
+        on_browser_rows_changed=refresh_browser_projection,
         on_waveform_request=request_waveforms,
         on_harmony_waveform_request=request_harmony_waveforms,
         on_open_channel_rack=open_channel_rack,

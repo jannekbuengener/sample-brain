@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from queue import Empty, Full, Queue
+from queue import Empty, Queue
 from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from threading import Event, Lock, Thread
+from threading import Condition, Event, Thread
 from time import monotonic_ns
 from typing import Generic, TypeVar
 
@@ -65,13 +65,42 @@ class WaveformCacheResult:
     failure: str | None = None
 
 
+CURRENT_VISIBLE = "current_visible"
+BACKGROUND_ENRICHMENT = "background_enrichment"
+
+
+@dataclass(frozen=True)
+class WaveformDecodeResult:
+    path: str
+    result: WaveformCacheResult
+    priority: str
+    generation: int
+    source_size_bytes: int | None
+    source_mtime_ns: int | None
+
+
+@dataclass(frozen=True)
+class _WaveformTask:
+    path: str
+    priority: str
+    generation: int
+    source_size_bytes: int | None
+    source_mtime_ns: int | None
+
+    @property
+    def identity(self) -> tuple[str, int | None, int | None]:
+        return (self.path, self.source_size_bytes, self.source_mtime_ns)
+
+
 class BoundedLazyWaveformCache:
     def __init__(self, *, capacity: int, loader: Callable[[str], Sequence[float]]) -> None:
         if capacity <= 0:
             raise ValueError("capacity must be positive")
         self._capacity = capacity
         self._loader = loader
-        self._entries: OrderedDict[str, WaveformCacheResult] = OrderedDict()
+        self._entries: OrderedDict[
+            str, tuple[WaveformCacheResult, int | None, int | None]
+        ] = OrderedDict()
 
     @property
     def size(self) -> int:
@@ -80,35 +109,60 @@ class BoundedLazyWaveformCache:
     def paths(self) -> tuple[str, ...]:
         return tuple(self._entries)
 
-    def get(self, path: str) -> WaveformCacheResult | None:
-        """Read a cached result without loading or changing LRU order."""
-        return self._entries.get(path)
+    def get(
+        self,
+        path: str,
+        *,
+        source_size_bytes: int | None = None,
+        source_mtime_ns: int | None = None,
+        touch: bool = False,
+    ) -> WaveformCacheResult | None:
+        """Read one matching result and optionally mark it recently used."""
+        cached = self._entries.get(path)
+        if cached is None:
+            return None
+        result, cached_size, cached_mtime = cached
+        if source_size_bytes is not None or source_mtime_ns is not None:
+            if (
+                cached_size != source_size_bytes
+                or cached_mtime != source_mtime_ns
+            ):
+                return None
+        if touch:
+            self._entries.move_to_end(path)
+        return result
 
     def request(self, path: str) -> WaveformCacheResult:
-        cached = self._entries.get(path)
+        cached = self.get(path, touch=True)
         if cached is not None:
-            self._entries.move_to_end(path)
             return cached
         try:
             result = WaveformCacheResult("ready", tuple(self._loader(path)))
         except Exception:
             result = WaveformCacheResult("placeholder", (), "load_failed")
-        self._entries[path] = result
+        self._entries[path] = (result, None, None)
         self._entries.move_to_end(path)
         while len(self._entries) > self._capacity:
             self._entries.popitem(last=False)
         return result
 
-    def put_result(self, path: str, result: WaveformCacheResult) -> None:
+    def put_result(
+        self,
+        path: str,
+        result: WaveformCacheResult,
+        *,
+        source_size_bytes: int | None = None,
+        source_mtime_ns: int | None = None,
+    ) -> None:
         """Store a worker result from the UI thread while preserving the LRU bound."""
-        self._entries[path] = result
+        self._entries[path] = (result, source_size_bytes, source_mtime_ns)
         self._entries.move_to_end(path)
         while len(self._entries) > self._capacity:
             self._entries.popitem(last=False)
 
 
 class BoundedBackgroundWaveformLoader:
-    """Single-worker decode queue whose results are applied by the UI thread."""
+    """Bounded single-worker scheduler with foreground priority and generations."""
 
     def __init__(
         self,
@@ -116,21 +170,29 @@ class BoundedBackgroundWaveformLoader:
         cache: BoundedLazyWaveformCache,
         loader: Callable[[str], Sequence[float]],
         max_pending: int,
+        on_result: Callable[[WaveformDecodeResult], None] | None = None,
     ) -> None:
         if max_pending <= 0:
             raise ValueError("max_pending must be positive")
         self._cache = cache
         self._loader = loader
         self._max_pending = max_pending
-        self._tasks: Queue[str | None] = Queue(maxsize=max_pending)
-        self._results: Queue[tuple[str, WaveformCacheResult]] = Queue(
-            maxsize=max_pending
-        )
-        self._pending: OrderedDict[str, None] = OrderedDict()
-        self._pending_lock = Lock()
-        self._results_lock = Lock()
+        self._on_result = on_result
+        self._results: Queue[WaveformDecodeResult] = Queue(maxsize=max_pending)
+        self._visible_tasks: OrderedDict[
+            tuple[str, int | None, int | None], _WaveformTask
+        ] = OrderedDict()
+        self._background_tasks: OrderedDict[
+            tuple[str, int | None, int | None], _WaveformTask
+        ] = OrderedDict()
+        self._pending: OrderedDict[
+            tuple[str, int | None, int | None], _WaveformTask
+        ] = OrderedDict()
+        self._tasks_ready = Condition()
         self._result_ready = Event()
         self._closed = Event()
+        self._background_paused = False
+        self._generation = 0
         self._worker = Thread(
             target=self._run, name="sample-brain-browser-waveform", daemon=True
         )
@@ -138,29 +200,102 @@ class BoundedBackgroundWaveformLoader:
 
     @property
     def pending_count(self) -> int:
-        with self._pending_lock:
+        with self._tasks_ready:
             return len(self._pending)
 
     def pending_paths(self) -> tuple[str, ...]:
-        with self._pending_lock:
-            return tuple(self._pending)
+        with self._tasks_ready:
+            return tuple(task.path for task in self._pending.values())
 
-    def schedule(self, path: str) -> bool:
+    @property
+    def current_generation(self) -> int:
+        with self._tasks_ready:
+            return self._generation
+
+    def pending_count_for(self, priority: str) -> int:
+        with self._tasks_ready:
+            return sum(task.priority == priority for task in self._pending.values())
+
+    @property
+    def available_capacity(self) -> int:
+        with self._tasks_ready:
+            return max(0, self._max_pending - len(self._pending))
+
+    def advance_generation(self) -> int:
+        """Own a new viewport and discard queued work from older viewports."""
+        with self._tasks_ready:
+            self._generation += 1
+            stale = [
+                identity
+                for identity, task in self._visible_tasks.items()
+                if task.generation < self._generation
+            ]
+            for identity in stale:
+                self._visible_tasks.pop(identity, None)
+                self._pending.pop(identity, None)
+            self._tasks_ready.notify_all()
+            return self._generation
+
+    def set_background_paused(self, paused: bool) -> None:
+        """Pause admission from the queued enrichment lane during interaction."""
+        with self._tasks_ready:
+            self._background_paused = bool(paused)
+            self._tasks_ready.notify_all()
+
+    def schedule(
+        self,
+        path: str,
+        *,
+        priority: str = CURRENT_VISIBLE,
+        generation: int | None = None,
+        source_size_bytes: int | None = None,
+        source_mtime_ns: int | None = None,
+    ) -> bool:
         """Queue one uncached path without waiting for its decode."""
-        with self._pending_lock:
+        if priority not in {CURRENT_VISIBLE, BACKGROUND_ENRICHMENT}:
+            raise ValueError("unknown waveform priority")
+        with self._tasks_ready:
+            owned_generation = self._generation if generation is None else int(generation)
+            if priority == CURRENT_VISIBLE and owned_generation != self._generation:
+                return False
+            task = _WaveformTask(
+                path=str(path),
+                priority=priority,
+                generation=owned_generation,
+                source_size_bytes=source_size_bytes,
+                source_mtime_ns=source_mtime_ns,
+            )
             if (
                 self._closed.is_set()
-                or self._cache.get(path) is not None
-                or path in self._pending
-                or len(self._pending) >= self._max_pending
+                or self._cache.get(
+                    task.path,
+                    source_size_bytes=source_size_bytes,
+                    source_mtime_ns=source_mtime_ns,
+                )
+                is not None
             ):
                 return False
-            self._pending[path] = None
-            try:
-                self._tasks.put_nowait(path)
-            except Full:
-                self._pending.pop(path, None)
+            if task.identity in self._pending:
+                if priority == CURRENT_VISIBLE and task.identity in self._background_tasks:
+                    self._background_tasks.pop(task.identity, None)
+                    self._pending[task.identity] = task
+                    self._visible_tasks[task.identity] = task
+                    self._tasks_ready.notify()
+                    return True
                 return False
+            if len(self._pending) >= self._max_pending:
+                if priority != CURRENT_VISIBLE or not self._background_tasks:
+                    return False
+                stale_identity, _stale = self._background_tasks.popitem(last=False)
+                self._pending.pop(stale_identity, None)
+            self._pending[task.identity] = task
+            target = (
+                self._visible_tasks
+                if priority == CURRENT_VISIBLE
+                else self._background_tasks
+            )
+            target[task.identity] = task
+            self._tasks_ready.notify()
         return True
 
     def wait_for_result(self, *, timeout: float) -> bool:
@@ -169,41 +304,73 @@ class BoundedBackgroundWaveformLoader:
 
     def drain_results(self) -> int:
         """Apply completed plain-Python results on the calling/UI thread."""
-        drained: list[tuple[str, WaveformCacheResult]] = []
-        with self._results_lock:
-            while True:
-                try:
-                    drained.append(self._results.get_nowait())
-                except Empty:
-                    break
-            if self._results.empty():
-                self._result_ready.clear()
-        for path, result in drained:
-            self._cache.put_result(path, result)
-            with self._pending_lock:
-                self._pending.pop(path, None)
+        drained: list[WaveformDecodeResult] = []
+        while True:
+            try:
+                drained.append(self._results.get_nowait())
+            except Empty:
+                break
+        if self._results.empty():
+            self._result_ready.clear()
+        for completed in drained:
+            self._cache.put_result(
+                completed.path,
+                completed.result,
+                source_size_bytes=completed.source_size_bytes,
+                source_mtime_ns=completed.source_mtime_ns,
+            )
+            if self._on_result is not None:
+                self._on_result(completed)
+            identity = (
+                completed.path,
+                completed.source_size_bytes,
+                completed.source_mtime_ns,
+            )
+            with self._tasks_ready:
+                self._pending.pop(identity, None)
         return len(drained)
 
     def close(self) -> None:
         """Stop accepting work without waiting for an in-flight file decode."""
         self._closed.set()
-        try:
-            self._tasks.put_nowait(None)
-        except Full:
-            pass
+        with self._tasks_ready:
+            queued_identities = tuple(self._visible_tasks) + tuple(
+                self._background_tasks
+            )
+            self._visible_tasks.clear()
+            self._background_tasks.clear()
+            for identity in queued_identities:
+                self._pending.pop(identity, None)
+            self._tasks_ready.notify_all()
 
     def _run(self) -> None:
-        while not self._closed.is_set():
-            path = self._tasks.get()
-            if path is None or self._closed.is_set():
-                return
+        while True:
+            with self._tasks_ready:
+                self._tasks_ready.wait_for(
+                    lambda: self._closed.is_set()
+                    or bool(self._visible_tasks)
+                    or (bool(self._background_tasks) and not self._background_paused)
+                )
+                if self._closed.is_set():
+                    return
+                if self._visible_tasks:
+                    _identity, task = self._visible_tasks.popitem(last=False)
+                else:
+                    _identity, task = self._background_tasks.popitem(last=False)
             try:
-                result = WaveformCacheResult("ready", tuple(self._loader(path)))
+                result = WaveformCacheResult("ready", tuple(self._loader(task.path)))
             except Exception:
                 result = WaveformCacheResult("placeholder", (), "load_failed")
-            with self._results_lock:
-                self._results.put((path, result))
-                self._result_ready.set()
+            completed = WaveformDecodeResult(
+                path=task.path,
+                result=result,
+                priority=task.priority,
+                generation=task.generation,
+                source_size_bytes=task.source_size_bytes,
+                source_mtime_ns=task.source_mtime_ns,
+            )
+            self._results.put(completed)
+            self._result_ready.set()
 
 
 @dataclass(frozen=True)
