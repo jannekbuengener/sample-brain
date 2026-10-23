@@ -191,6 +191,7 @@ class BoundedBackgroundWaveformLoader:
         self._tasks_ready = Condition()
         self._result_ready = Event()
         self._closed = Event()
+        self._background_paused = False
         self._generation = 0
         self._worker = Thread(
             target=self._run, name="sample-brain-browser-waveform", daemon=True
@@ -234,6 +235,12 @@ class BoundedBackgroundWaveformLoader:
                 self._pending.pop(identity, None)
             self._tasks_ready.notify_all()
             return self._generation
+
+    def set_background_paused(self, paused: bool) -> None:
+        """Pause admission from the queued enrichment lane during interaction."""
+        with self._tasks_ready:
+            self._background_paused = bool(paused)
+            self._tasks_ready.notify_all()
 
     def schedule(
         self,
@@ -342,7 +349,7 @@ class BoundedBackgroundWaveformLoader:
                 self._tasks_ready.wait_for(
                     lambda: self._closed.is_set()
                     or bool(self._visible_tasks)
-                    or bool(self._background_tasks)
+                    or (bool(self._background_tasks) and not self._background_paused)
                 )
                 if self._closed.is_set():
                     return

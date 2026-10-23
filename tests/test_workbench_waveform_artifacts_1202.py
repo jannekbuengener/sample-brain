@@ -400,6 +400,50 @@ def test_visible_request_promotes_same_queued_background_identity():
         loader.close()
 
 
+def test_audition_pressure_pauses_queued_background_after_inflight_decode():
+    started = threading.Event()
+    release = threading.Event()
+    calls: list[str] = []
+    cache = BoundedLazyWaveformCache(capacity=8, loader=lambda _path: ())
+
+    def decoder(path: str):
+        calls.append(path)
+        if path == "background-running.wav":
+            started.set()
+            assert release.wait(timeout=2)
+        return (1.0,)
+
+    loader = BoundedBackgroundWaveformLoader(cache=cache, loader=decoder, max_pending=4)
+    try:
+        assert loader.schedule("background-running.wav", priority=BACKGROUND_ENRICHMENT)
+        assert started.wait(timeout=1)
+        assert loader.schedule("background-queued.wav", priority=BACKGROUND_ENRICHMENT)
+        loader.set_background_paused(True)
+        release.set()
+        assert loader.wait_for_result(timeout=1)
+        loader.drain_results()
+        time.sleep(0.05)
+        assert calls == ["background-running.wav"]
+        assert loader.pending_paths() == ("background-queued.wav",)
+
+        assert loader.schedule("visible.wav", priority=CURRENT_VISIBLE)
+        assert loader.wait_for_result(timeout=1)
+        loader.drain_results()
+        assert calls == ["background-running.wav", "visible.wav"]
+
+        loader.set_background_paused(False)
+        assert loader.wait_for_result(timeout=1)
+        loader.drain_results()
+        assert calls == [
+            "background-running.wav",
+            "visible.wav",
+            "background-queued.wav",
+        ]
+    finally:
+        release.set()
+        loader.close()
+
+
 def test_stale_completion_retains_its_identity_for_fail_closed_persistence():
     started = threading.Event()
     release = threading.Event()

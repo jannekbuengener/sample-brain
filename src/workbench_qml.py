@@ -9080,6 +9080,8 @@ def _qml_engine(
     )
 
     def on_interaction_state_changed() -> None:
+        if waveform_loader is not None:
+            waveform_loader.set_background_paused(adapter.preview_active)
         refresh_screen_model()
         # Recompute widths before QML reacts to state_changed so RowLayout
         # never sees a 3-panel width set with a third handle visible.
@@ -9088,6 +9090,8 @@ def _qml_engine(
         rack_bridge = getattr(engine, "_screen1_channel_rack_bridge", None)
         if rack_bridge is not None:
             rack_bridge.refresh()
+        if not adapter.preview_active:
+            pump_wave2()
 
     channel_rack_bridge = _qml_channel_rack_bridge(
         channel_rack_controller,
