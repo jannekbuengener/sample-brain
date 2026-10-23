@@ -1,4 +1,7 @@
 #include <samplebrain_audio.h>
+// This test needs the ID layout, not miniaudio's static function declarations.
+#undef MA_API
+#define MA_API extern
 #include <miniaudio.h>
 
 #include <cstdio>
