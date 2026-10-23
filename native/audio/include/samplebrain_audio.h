@@ -25,9 +25,11 @@ typedef struct sb_recording* sb_recording_t;
 // Device info for enumeration
 typedef struct {
     char name[256];
-    char id_hex[512];
+    char id_hex[513];
     int is_default;
 } sb_device_info_t;
+
+SAMPLEBRAIN_EXPORT size_t sb_device_info_size(void);
 
 // Identifiers
 typedef uint64_t sb_voice_id_t;

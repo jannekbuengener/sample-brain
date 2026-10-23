@@ -30,7 +30,7 @@ _SMOKE = textwrap.dedent("""
             actual = audio.NativeAudioEngine.enumerate_devices(capture)
             assert len(actual) <= 32
             assert all(isinstance(item["name"], str) and "\\0" not in item["name"] for item in actual)
-            assert all(isinstance(item["id_hex"], str) for item in actual)
+            assert all(isinstance(item["id_hex"], str) and len(item["id_hex"]) == 512 for item in actual)
             assert all(isinstance(item["is_default"], bool) for item in actual)
 
     print("ok")
