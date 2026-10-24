@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
-from typing import Any, Iterator, Literal, Mapping, Sequence
+from typing import Any, Iterable, Iterator, Literal, Mapping, Sequence
 
 # v2: mode-aware key analysis (KEY_ANALYSIS_CONTRACT_VERSION) is part of the
 # persisted analysis contract. Cache rows written before this bump (root-only
@@ -1027,6 +1027,81 @@ def _is_pytest_node_directory(path: Path) -> bool:
     return bool(_PYTEST_NODE_DIR_PATTERN.match(parts[2]))
 
 
+def _is_pytest_node_directory_name(name: str) -> bool:
+    """Check whether a single path component is a pytest node directory name.
+
+    The complete component is matched against pytest's own node naming
+    convention (see ``_PYTEST_NODE_DIR_PATTERN``).  A user library named
+    ``samples`` or ``test_samples`` (no numeric uniquifier) is never matched.
+    """
+    return bool(_PYTEST_NODE_DIR_PATTERN.match(name.lower()))
+
+
+def _is_trusted_pytest_basetemp_artifact(
+    path: Path,
+    trusted_pytest_basetemp_roots: Iterable[Path | str],
+) -> bool:
+    """Check if *path* is a pytest artifact below an explicitly trusted root.
+
+    A caller may hand the classifier pytest ``--basetemp`` roots it explicitly
+    trusts.  Such a root is not discovered on the filesystem and never
+    persisted; it is only supplied for the current classification call.
+
+    The path counts as a pytest artifact when it is a pytest node directory
+    directly below one of the trusted roots, or a descendant of such a proven
+    node directory.  The trusted root itself is never a node directory.
+
+    Safety rules:
+
+    - root and target are resolved before comparison and real path ancestry is
+      used, never string prefixes, so ``<root>-backup`` is not a child of
+      ``<root>``;
+    - a missing target stays fail-closed: the node directory and the
+      classified target must both exist;
+    - a symlink or junction that escapes the trusted root resolves outside it
+      and is therefore not classified as deterministic.
+    """
+    roots: list[Path] = []
+    for root in trusted_pytest_basetemp_roots:
+        try:
+            resolved_root = Path(root).expanduser().resolve()
+        except (OSError, RuntimeError):
+            continue
+        if resolved_root not in roots:
+            roots.append(resolved_root)
+    if not roots:
+        return False
+
+    try:
+        resolved = path.expanduser().resolve()
+    except (OSError, RuntimeError):
+        return False
+
+    for root in roots:
+        if resolved == root:
+            # The trusted root itself is not a pytest node directory.
+            continue
+        try:
+            relative = resolved.relative_to(root)
+        except ValueError:
+            continue
+        parts = relative.parts
+        if not parts:
+            continue
+        if not _is_pytest_node_directory_name(parts[0]):
+            continue
+        # The node directory must exist: a missing target is fail-closed.
+        node_dir = root / parts[0]
+        if not node_dir.is_dir():
+            continue
+        # The classified target itself must exist as well; a missing target
+        # stays fail-closed instead of being reported as deterministic.
+        if not resolved.is_dir():
+            continue
+        return True
+    return False
+
+
 def _has_structural_test_signature(path: Path, known_test_roots: frozenset[str] | None = None) -> bool:
     """Check if *path* matches a repository‑known test‑generated directory signature.
 
@@ -1084,6 +1159,7 @@ def classify_folder_for_cleanup(
     *,
     db_path: Path | None = None,
     known_test_roots: frozenset[str] | None = None,
+    trusted_pytest_basetemp_roots: Iterable[Path | str] = (),
 ) -> CleanupClassification:
     """Classify a library folder registration for cleanup planning.
 
@@ -1092,7 +1168,9 @@ def classify_folder_for_cleanup(
     1. If the folder path has canonical OS temporary‑root ancestry
        AND a recognizable pytest artifact shape (pytest‑managed
        ``pytest-of-<user>/pytest-<run>`` layout, or a pytest ``tmp_path``
-       node directory), OR matches an exact repository‑known test signature
+       node directory), OR the folder path is a pytest artifact below an
+       explicitly trusted pytest ``--basetemp`` root, OR matches an exact
+       repository‑known test signature
        → **DETERMINISTIC_TEST_ARTIFACT**
 
        Canonical temporary ancestry alone does NOT imply a test artifact.
@@ -1110,6 +1188,11 @@ def classify_folder_for_cleanup(
 
     *db_path* overrides the default library DB path resolution.  When ``None``
     the default ``workbench_library_db_path()`` is used.
+
+    *trusted_pytest_basetemp_roots* may carry pytest ``--basetemp`` roots the
+    caller explicitly trusts for this call.  They are never discovered on the
+    filesystem and never persisted; only pytest node directories (or their
+    descendants) below such a root become deterministic test artifacts.
     """
     # Normalise to absolute Path for consistent comparison
     folder_path = folder_path.resolve()
@@ -1117,14 +1200,22 @@ def classify_folder_for_cleanup(
     # --- Step 1: check for deterministic test artifact ---
     # Canonical OS temp root ancestry AND a recognizable pytest artifact
     # shape (pytest-managed layout or a pytest tmp_path node directory),
+    # OR a pytest artifact below an explicitly trusted basetemp root,
     # OR an exact repository-known test signature.  Canonical temp ancestry
     # alone must NOT imply a test artifact.
     os_temp = _is_under_os_temp_root(folder_path)
     pytest_struct = _is_pytest_temp_structure(folder_path)
     pytest_node = _is_pytest_node_directory(folder_path)
+    trusted_basetemp = _is_trusted_pytest_basetemp_artifact(
+        folder_path, trusted_pytest_basetemp_roots
+    )
     has_known_sig = _has_structural_test_signature(folder_path, known_test_roots)
 
-    if (os_temp and (pytest_struct or pytest_node)) or has_known_sig:
+    if (
+        (os_temp and (pytest_struct or pytest_node))
+        or trusted_basetemp
+        or has_known_sig
+    ):
         return CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
 
     # --- Step 2 & 3: check catalog membership (read-only, sqlite3 only) ---
@@ -1152,6 +1243,7 @@ def classify_folder_for_cleanup_structural(
     folder_path: Path,
     *,
     known_test_roots: frozenset[str] | None = None,
+    trusted_pytest_basetemp_roots: Iterable[Path | str] = (),
 ) -> CleanupClassification:
     """Structural-only classification (no DB queries).
 
@@ -1166,9 +1258,16 @@ def classify_folder_for_cleanup_structural(
     os_temp = _is_under_os_temp_root(folder_path)
     pytest_struct = _is_pytest_temp_structure(folder_path)
     pytest_node = _is_pytest_node_directory(folder_path)
+    trusted_basetemp = _is_trusted_pytest_basetemp_artifact(
+        folder_path, trusted_pytest_basetemp_roots
+    )
     has_known_sig = _has_structural_test_signature(folder_path, known_test_roots)
 
-    if (os_temp and (pytest_struct or pytest_node)) or has_known_sig:
+    if (
+        (os_temp and (pytest_struct or pytest_node))
+        or trusted_basetemp
+        or has_known_sig
+    ):
         return CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
 
     return CleanupClassification.AMBIGUOUS

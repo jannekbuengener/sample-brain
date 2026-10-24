@@ -814,3 +814,206 @@ def test_ae3_preview_classifies_deterministic_test_artifact(
 
     assert preview is not None
     assert preview.classification == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+
+
+# ---------------------------------------------------------------------------
+# AF. trusted pytest basetemp roots - explicit trusted roots
+# ---------------------------------------------------------------------------
+def test_af1_trusted_basetemp_with_pytest_node_is_deterministic(
+    tmp_path: Path,
+) -> None:
+    """Trusted basetemp + pytest node directory directly below → deterministic."""
+    trusted_root = tmp_path / "my-trusted-basetemp"
+    trusted_root.mkdir()
+    # pytest node directory directly under trusted root
+    target = trusted_root / "test_example0"
+    target.mkdir()
+    assert (
+        workbench_library.classify_folder_for_cleanup(
+            target, trusted_pytest_basetemp_roots=(trusted_root,)
+        )
+        == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_af2_trusted_basetemp_with_pytest_node_descendant_is_deterministic(
+    tmp_path: Path,
+) -> None:
+    """Trusted basetemp + descendant within pytest node → deterministic."""
+    trusted_root = tmp_path / "my-trusted-basetemp"
+    trusted_root.mkdir()
+    # pytest node with descendant
+    target = trusted_root / "test_example0" / "samples"
+    target.mkdir(parents=True)
+    assert (
+        workbench_library.classify_folder_for_cleanup(
+            target, trusted_pytest_basetemp_roots=(trusted_root,)
+        )
+        == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_af3_same_structure_without_trusted_root_is_not_deterministic(
+    tmp_path: Path,
+) -> None:
+    """Same path shape but without trusted root → not deterministic."""
+    fake_root = tmp_path / "my-basetemp"
+    fake_root.mkdir()
+    target = fake_root / "test_example0"
+    target.mkdir()
+    # No trusted roots provided
+    assert (
+        workbench_library.classify_folder_for_cleanup(target)
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+    # Empty trusted roots tuple
+    assert (
+        workbench_library.classify_folder_for_cleanup(
+            target, trusted_pytest_basetemp_roots=()
+        )
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_af4_samples_folder_under_trusted_root_is_not_deterministic(
+    tmp_path: Path,
+) -> None:
+    """Arbitrary Samples folder under trusted root → not deterministic."""
+    trusted_root = tmp_path / "my-trusted-basetemp"
+    trusted_root.mkdir()
+    target = trusted_root / "Samples"
+    target.mkdir()
+    assert (
+        workbench_library.classify_folder_for_cleanup(
+            target, trusted_pytest_basetemp_roots=(trusted_root,)
+        )
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_af5_test_samples_without_uniquifier_is_not_deterministic(
+    tmp_path: Path,
+) -> None:
+    """test_samples without numeric uniquifier → not deterministic."""
+    trusted_root = tmp_path / "my-trusted-basetemp"
+    trusted_root.mkdir()
+    # No numeric suffix at end
+    target = trusted_root / "test_samples"
+    target.mkdir()
+    assert (
+        workbench_library.classify_folder_for_cleanup(
+            target, trusted_pytest_basetemp_roots=(trusted_root,)
+        )
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_af6_root_vs_backup_prefix_collision_is_not_deterministic(
+    tmp_path: Path,
+) -> None:
+    """root-backup must not be treated as child of root."""
+    trusted_root = tmp_path / "my-trusted-basetemp"
+    trusted_root.mkdir()
+    # A directory that looks like a sibling with -backup suffix
+    target = tmp_path / "my-trusted-basetemp-backup" / "test_example0"
+    target.mkdir(parents=True)
+    assert (
+        workbench_library.classify_folder_for_cleanup(
+            target, trusted_pytest_basetemp_roots=(trusted_root,)
+        )
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_af7_missing_target_is_not_deterministic(
+    tmp_path: Path,
+) -> None:
+    """Missing target path → fail-closed, not deterministic."""
+    trusted_root = tmp_path / "my-trusted-basetemp"
+    trusted_root.mkdir()
+    target = trusted_root / "does_not_exist"
+    assert (
+        workbench_library.classify_folder_for_cleanup(
+            target, trusted_pytest_basetemp_roots=(trusted_root,)
+        )
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_af7b_missing_descendant_under_existing_node_is_not_deterministic(
+    tmp_path: Path,
+) -> None:
+    """A missing descendant below an existing node directory stays fail-closed."""
+    trusted_root = tmp_path / "my-trusted-basetemp"
+    trusted_root.mkdir()
+    node_dir = trusted_root / "test_example0"
+    node_dir.mkdir()
+    target = node_dir / "does_not_exist"
+    assert (
+        workbench_library.classify_folder_for_cleanup(
+            target, trusted_pytest_basetemp_roots=(trusted_root,)
+        )
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_af8_structural_variant_with_trusted_basetemp(
+    tmp_path: Path,
+) -> None:
+    """classify_folder_for_cleanup_structural also respects trusted roots."""
+    trusted_root = tmp_path / "my-trusted-basetemp"
+    trusted_root.mkdir()
+    target = trusted_root / "test_example0"
+    target.mkdir()
+    assert (
+        workbench_library.classify_folder_for_cleanup_structural(
+            target, trusted_pytest_basetemp_roots=(trusted_root,)
+        )
+        == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+    target2 = trusted_root / "test_example0" / "subdir"
+    target2.mkdir(parents=True)
+    assert (
+        workbench_library.classify_folder_for_cleanup_structural(
+            target2, trusted_pytest_basetemp_roots=(trusted_root,)
+        )
+        == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_af9_trusted_root_itself_is_not_deterministic(
+    tmp_path: Path,
+) -> None:
+    """The trusted root itself is not a pytest node."""
+    trusted_root = tmp_path / "my-trusted-basetemp"
+    trusted_root.mkdir()
+    assert (
+        workbench_library.classify_folder_for_cleanup(
+            trusted_root, trusted_pytest_basetemp_roots=(trusted_root,)
+        )
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
+
+
+def test_af10_symlink_escape_not_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Symlink/junction escape from trusted root must not become deterministic."""
+    if os.name == "nt":
+        pytest.skip("Symlink test requires appropriate permissions on Windows")
+    trusted_root = tmp_path / "my-trusted-basetemp"
+    trusted_root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    # Create symlink from trusted_root/evil -> outside
+    evil_link = trusted_root / "evil"
+    evil_link.symlink_to(outside)
+    target = evil_link / "test_example0"
+    target.mkdir(parents=True)
+    # The symlink target is outside the trusted root
+    assert (
+        workbench_library.classify_folder_for_cleanup(
+            target, trusted_pytest_basetemp_roots=(trusted_root,)
+        )
+        != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    )
