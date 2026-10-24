@@ -42,6 +42,7 @@ from src.workbench_qml import (
     _project_ready_cached_waveforms,
     _schedule_wave2_candidates,
 )
+import src.workbench_qml as workbench_qml
 
 
 @pytest.fixture
@@ -458,6 +459,76 @@ def test_rebuilt_qml_rows_hydrate_from_memory_without_decode(prepared_sample):
     ) == {str(sample.resolve())}
     assert view_model.browser_rows[0].waveform_envelope == (0.2, 0.8)
     assert decode_calls == []
+
+
+@pytest.mark.parametrize(
+    "cached_result",
+    [
+        WaveformCacheResult("placeholder", (), "load_failed"),
+        WaveformCacheResult("ready", ()),
+    ],
+)
+def test_terminal_cached_failure_does_not_repeat_persisted_lookup(
+    prepared_sample, monkeypatch, cached_result
+):
+    db_path, sample, _folder_id, size_bytes, mtime_ns = prepared_sample
+    view_model = Screen1QmlViewModel.baseline("screen1-default-3panel")
+    view_model.set_browser_state(
+        rows=(
+            WorkbenchRow(
+                display_name="kick",
+                relative_path="kick.wav",
+                path=str(sample.resolve()),
+                bpm=128.0,
+                key="Am",
+                key_conf=0.9,
+                loudness=-10.0,
+                brightness=1800.0,
+                sample_class="one_shot",
+                pred_type="Kick",
+                status="ok",
+                details={"source_size_bytes": size_bytes, "source_mtime_ns": mtime_ns},
+            ),
+        ),
+        selected_index=0,
+        browser_context="Bank",
+        error=None,
+    )
+    cache = BoundedLazyWaveformCache(capacity=8, loader=lambda _path: ())
+    cache.put_result(
+        str(sample.resolve()),
+        cached_result,
+        source_size_bytes=size_bytes,
+        source_mtime_ns=mtime_ns,
+    )
+    lookups: list[object] = []
+    monkeypatch.setattr(
+        workbench_qml,
+        "load_valid_waveform_artifacts",
+        lambda *args, **kwargs: lookups.append(args) or {},
+    )
+
+    for _ in range(20):
+        assert not _hydrate_waveform_rows(
+            view_model,
+            view_model.browser_rows,
+            waveform_cache=cache,
+            library_db_path=db_path,
+        )
+    assert lookups == []
+    cache.put_result(
+        str(sample.resolve()),
+        cached_result,
+        source_size_bytes=size_bytes + 1,
+        source_mtime_ns=mtime_ns,
+    )
+    _hydrate_waveform_rows(
+        view_model,
+        view_model.browser_rows,
+        waveform_cache=cache,
+        library_db_path=db_path,
+    )
+    assert len(lookups) == 1
 
 
 @pytest.mark.parametrize("persisted", [False, True])

@@ -8358,10 +8358,13 @@ def _hydrate_waveform_rows(
             source_mtime_ns=fingerprint[1] if fingerprint else None,
             touch=True,
         )
-        if cached is not None and cached.state == "ready" and cached.envelope:
-            if view_model.set_browser_waveform(path, cached.envelope):
-                changed_paths.add(path)
-            continue
+        if cached is not None:
+            if cached.state == "ready":
+                if cached.envelope and view_model.set_browser_waveform(path, cached.envelope):
+                    changed_paths.add(path)
+                continue
+            if cached.state == "placeholder" and cached.failure:
+                continue
         if fingerprint is not None:
             persisted_requests[path] = fingerprint
     if persisted_requests:
