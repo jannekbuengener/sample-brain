@@ -4,6 +4,7 @@ import math
 import sqlite3
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -38,6 +39,7 @@ from src.workbench_qml import (
     _hydrate_waveform_rows,
     _qml_screen_data_bridge,
     _apply_cached_waveform_to_model,
+    _project_ready_cached_waveforms,
     _schedule_wave2_candidates,
 )
 
@@ -568,6 +570,36 @@ def test_decoded_harmony_waveform_emits_harmony_notifier():
     assert notified == ["harmony"]
 
 
+def test_idle_ready_cache_does_not_reapply_unchanged_browser_rows(monkeypatch):
+    view_model = Screen1QmlViewModel.baseline("screen1-default-3panel")
+    source = view_model.browser_rows[0].source_row
+    rows = tuple(
+        replace(source, path=f"D:/synthetic/{index}.wav", display_name=str(index))
+        for index in range(2200)
+    )
+    view_model.set_browser_state(
+        rows=rows, selected_index=0, browser_context="Bank", error=None
+    )
+    cache = BoundedLazyWaveformCache(capacity=48, loader=lambda _path: ())
+    for row in view_model.browser_rows[:48]:
+        cache.put_result(
+            str(row.source_row.path),
+            WaveformCacheResult("ready", row.waveform_envelope),
+        )
+    setter_calls: list[str] = []
+    original_setter = view_model.set_browser_waveform
+
+    def count_setter(path, envelope):
+        setter_calls.append(path)
+        return original_setter(path, envelope)
+
+    monkeypatch.setattr(view_model, "set_browser_waveform", count_setter)
+    assert not _project_ready_cached_waveforms(
+        view_model, cache, notify_harmony_rows=lambda: None
+    )
+    assert setter_calls == []
+
+
 def test_empty_favorites_do_not_resolve_each_browser_path(monkeypatch):
     view_model = Screen1QmlViewModel.baseline("screen1-default-3panel")
     row = view_model.browser_rows[0].source_row
@@ -649,6 +681,40 @@ def test_current_visible_outranks_background_enrichment():
             loader.drain_results()
         assert calls == ["background-running.wav", "visible.wav", "background-queued.wav"]
         assert loader.pending_count == 0
+    finally:
+        release.set()
+        loader.close()
+
+
+def test_visible_displacement_retries_admitted_background_identity():
+    started = threading.Event()
+    release = threading.Event()
+    calls: list[str] = []
+    cache = BoundedLazyWaveformCache(capacity=8, loader=lambda _path: ())
+
+    def decoder(path: str):
+        calls.append(path)
+        if path == "background-running.wav":
+            started.set()
+            assert release.wait(timeout=2)
+        return (0.5,)
+
+    loader = BoundedBackgroundWaveformLoader(cache=cache, loader=decoder, max_pending=2)
+    try:
+        assert loader.schedule("background-running.wav", priority=BACKGROUND_ENRICHMENT)
+        assert started.wait(timeout=1)
+        assert loader.schedule("background-queued.wav", priority=BACKGROUND_ENRICHMENT)
+        assert loader.schedule("visible.wav", priority=CURRENT_VISIBLE)
+        assert loader.pending_count == 2
+        assert loader.deferred_count == 1
+        release.set()
+        deadline = time.monotonic() + 2
+        while (loader.pending_count or loader.deferred_count) and time.monotonic() < deadline:
+            if loader.wait_for_result(timeout=0.2):
+                loader.drain_results()
+        assert calls == ["background-running.wav", "visible.wav", "background-queued.wav"]
+        assert loader.pending_count == 0
+        assert loader.deferred_count == 0
     finally:
         release.set()
         loader.close()

@@ -195,6 +195,9 @@ class BoundedBackgroundWaveformLoader:
         self._background_tasks: OrderedDict[
             tuple[str, int | None, int | None], _WaveformTask
         ] = OrderedDict()
+        self._deferred_background: OrderedDict[
+            tuple[str, int | None, int | None], _WaveformTask
+        ] = OrderedDict()
         self._pending: OrderedDict[
             tuple[str, int | None, int | None], _WaveformTask
         ] = OrderedDict()
@@ -213,6 +216,11 @@ class BoundedBackgroundWaveformLoader:
         with self._tasks_ready:
             return len(self._pending)
 
+    @property
+    def deferred_count(self) -> int:
+        with self._tasks_ready:
+            return len(self._deferred_background)
+
     def pending_paths(self) -> tuple[str, ...]:
         with self._tasks_ready:
             return tuple(task.path for task in self._pending.values())
@@ -229,6 +237,8 @@ class BoundedBackgroundWaveformLoader:
     @property
     def available_capacity(self) -> int:
         with self._tasks_ready:
+            if self._deferred_background:
+                return 0
             return max(0, self._max_pending - len(self._pending))
 
     def advance_generation(self) -> int:
@@ -293,11 +303,17 @@ class BoundedBackgroundWaveformLoader:
                     self._tasks_ready.notify()
                     return True
                 return False
+            if priority == BACKGROUND_ENRICHMENT and self._deferred_background:
+                # The displaced lane is finite; refill it before admitting new Wave-2 work.
+                return False
             if len(self._pending) >= self._max_pending:
                 if priority != CURRENT_VISIBLE or not self._background_tasks:
                     return False
-                stale_identity, _stale = self._background_tasks.popitem(last=False)
+                stale_identity, stale_task = self._background_tasks.popitem(last=False)
                 self._pending.pop(stale_identity, None)
+                self._deferred_background[stale_identity] = stale_task
+            if priority == CURRENT_VISIBLE:
+                self._deferred_background.pop(task.identity, None)
             self._pending[task.identity] = task
             target = (
                 self._visible_tasks
@@ -338,6 +354,17 @@ class BoundedBackgroundWaveformLoader:
             )
             with self._tasks_ready:
                 self._pending.pop(identity, None)
+                if not self._closed.is_set():
+                    while (
+                        self._deferred_background
+                        and len(self._pending) < self._max_pending
+                    ):
+                        deferred_identity, deferred_task = (
+                            self._deferred_background.popitem(last=False)
+                        )
+                        self._pending[deferred_identity] = deferred_task
+                        self._background_tasks[deferred_identity] = deferred_task
+                    self._tasks_ready.notify_all()
         return len(drained)
 
     def close(self) -> None:
@@ -349,6 +376,7 @@ class BoundedBackgroundWaveformLoader:
             )
             self._visible_tasks.clear()
             self._background_tasks.clear()
+            self._deferred_background.clear()
             for identity in queued_identities:
                 self._pending.pop(identity, None)
             self._tasks_ready.notify_all()

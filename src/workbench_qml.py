@@ -8419,6 +8419,37 @@ def _apply_cached_waveform_to_model(
     return changed
 
 
+def _project_ready_cached_waveforms(
+    view_model: Screen1QmlViewModel,
+    waveform_cache: BoundedLazyWaveformCache,
+    *,
+    notify_harmony_rows: Callable[[], None],
+) -> bool:
+    """Project only cache results that differ from the published row."""
+    changed = False
+    for row in (*view_model.browser_rows, *view_model.harmony_rows):
+        fingerprint = _waveform_fingerprint(row.source_row)
+        path = str(row.source_row.path)
+        cached = waveform_cache.get(
+            path,
+            source_size_bytes=fingerprint[0] if fingerprint else None,
+            source_mtime_ns=fingerprint[1] if fingerprint else None,
+            touch=True,
+        )
+        if (
+            cached is not None
+            and cached.state == "ready"
+            and row.waveform_envelope != cached.envelope
+        ):
+            changed = _apply_cached_waveform_to_model(
+                view_model,
+                path,
+                cached.envelope,
+                notify_harmony_rows=notify_harmony_rows,
+            ) or changed
+    return changed
+
+
 def _schedule_wave2_candidates(
     candidates: Sequence[WaveformEnrichmentCandidate],
     *,
@@ -8701,22 +8732,11 @@ def _qml_engine(
         if waveform_loader is None or waveform_cache is None:
             return
         waveform_loader.drain_results()
-        changed = False
-        for row in (*view_model.browser_rows, *view_model.harmony_rows):
-            fingerprint = _waveform_fingerprint(row.source_row)
-            cached = waveform_cache.get(
-                str(row.source_row.path),
-                source_size_bytes=fingerprint[0] if fingerprint else None,
-                source_mtime_ns=fingerprint[1] if fingerprint else None,
-                touch=True,
-            )
-            if cached is not None and cached.state == "ready":
-                changed = _apply_cached_waveform_to_model(
-                    view_model,
-                    str(row.source_row.path),
-                    cached.envelope,
-                    notify_harmony_rows=screen_model.harmonyRowsChanged.emit,
-                ) or changed
+        changed = _project_ready_cached_waveforms(
+            view_model,
+            waveform_cache,
+            notify_harmony_rows=screen_model.harmonyRowsChanged.emit,
+        )
         if changed:
             refresh_browser_rows()
         # Freeing pending slots must continue filling the current viewport.
