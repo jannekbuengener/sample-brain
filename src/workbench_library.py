@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import sqlite3
@@ -11,7 +12,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
-from typing import Any, Iterator, Literal, Mapping
+from typing import Any, Iterator, Literal, Mapping, Sequence
 
 # v2: mode-aware key analysis (KEY_ANALYSIS_CONTRACT_VERSION) is part of the
 # persisted analysis contract. Cache rows written before this bump (root-only
@@ -21,7 +22,9 @@ from typing import Any, Iterator, Literal, Mapping
 # BPM/Key/brightness absent under workbench_v2) miss the sticky cache and are
 # re-analyzed by the existing refresh contract. Not a new analyzer algorithm.
 WORKBENCH_ANALYZER_VERSION = "workbench_v3"
-WORKBENCH_LIBRARY_SCHEMA_VERSION = 5
+WORKBENCH_LIBRARY_SCHEMA_VERSION = 6
+WAVEFORM_ARTIFACT_VERSION = "waveform_envelope_v1"
+WAVEFORM_POINT_BUDGET = 96
 _LIBRARY_DB_NAME = "workbench_library.db"
 
 _CUE_SAMPLE_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -417,6 +420,7 @@ def init_workbench_library(db_path: Path | None = None) -> None:
         _migrate_library_schema_v3(conn)
         _migrate_library_schema_v4(conn)
         _migrate_library_schema_v5(conn)
+        _migrate_library_schema_v6(conn)
         conn.commit()
 
 
@@ -527,6 +531,24 @@ def _migrate_library_schema_v5(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS favorite_samples (
             sample_path TEXT PRIMARY KEY NOT NULL,
             added_at TEXT NOT NULL
+        )
+        """
+    )
+
+
+def _migrate_library_schema_v6(conn: sqlite3.Connection) -> None:
+    """Add optional persisted Browser waveform enrichment (#1202)."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS sample_waveform_artifacts (
+            sample_id INTEGER PRIMARY KEY,
+            source_size_bytes INTEGER NOT NULL,
+            source_mtime_ns INTEGER NOT NULL,
+            artifact_version TEXT NOT NULL,
+            point_budget INTEGER NOT NULL,
+            envelope_json TEXT NOT NULL,
+            generated_at TEXT NOT NULL,
+            FOREIGN KEY(sample_id) REFERENCES samples(id) ON DELETE CASCADE
         )
         """
     )
@@ -1181,6 +1203,8 @@ class CachedWorkbenchRow:
             "path": self.original_path,
             "relative_path": self.relative_path,
             "analyzer_version": self.analyzer_version,
+            "source_size_bytes": self.size_bytes,
+            "source_mtime_ns": self.mtime_ns,
         }
         if self.library_folder_path:
             details["library_folder"] = self.library_folder_path
@@ -1740,6 +1764,234 @@ def load_all_cached_samples(*, db_path: Path | None = None) -> list[CachedWorkbe
     return [_cached_row_from_sqlite_row(row) for row in rows]
 
 
+@dataclass(frozen=True)
+class WaveformEnrichmentCandidate:
+    sample_id: int
+    path: str
+    source_size_bytes: int
+    source_mtime_ns: int
+
+
+@dataclass(frozen=True)
+class WaveformEnrichmentPage:
+    candidates: tuple[WaveformEnrichmentCandidate, ...]
+    scanned_through_sample_id: int
+    exhausted: bool
+
+
+def _validated_waveform_envelope(
+    values: object, *, point_budget: int
+) -> tuple[float, ...] | None:
+    if (
+        isinstance(values, (str, bytes, bytearray, Mapping))
+        or not isinstance(values, Sequence)
+        or not 1 <= len(values) <= point_budget
+    ):
+        return None
+    envelope: list[float] = []
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        number = float(value)
+        if not math.isfinite(number) or not 0.0 <= number <= 1.0:
+            return None
+        envelope.append(number)
+    return tuple(envelope)
+
+
+def _validated_waveform_envelope_json(
+    payload_json: object, *, point_budget: int
+) -> tuple[float, ...] | None:
+    try:
+        payload = json.loads(payload_json)
+    except (TypeError, ValueError):
+        return None
+    return _validated_waveform_envelope(payload, point_budget=point_budget)
+
+
+def load_valid_waveform_artifacts(
+    fingerprints: Mapping[str, tuple[int, int]],
+    *,
+    db_path: Path | None = None,
+    artifact_version: str = WAVEFORM_ARTIFACT_VERSION,
+    point_budget: int = WAVEFORM_POINT_BUDGET,
+) -> dict[str, tuple[float, ...]]:
+    """Batch-load valid artifacts without touching source files."""
+    if not fingerprints:
+        return {}
+    if point_budget <= 0:
+        raise ValueError("point_budget must be positive")
+    init_workbench_library(db_path)
+    loaded: dict[str, tuple[float, ...]] = {}
+    paths = tuple(str(path) for path in fingerprints)
+    with connect_workbench_library(db_path) as conn:
+        for offset in range(0, len(paths), 400):
+            chunk = paths[offset : offset + 400]
+            placeholders = ",".join("?" for _ in chunk)
+            rows = conn.execute(
+                f"""
+                SELECT s.original_path, s.size_bytes, s.mtime_ns,
+                       a.source_size_bytes, a.source_mtime_ns,
+                       a.artifact_version, a.point_budget, a.envelope_json
+                FROM samples s
+                JOIN sample_waveform_artifacts a ON a.sample_id = s.id
+                WHERE s.original_path IN ({placeholders})
+                """,
+                chunk,
+            ).fetchall()
+            for row in rows:
+                path = str(row["original_path"])
+                expected = fingerprints.get(path)
+                if expected is None:
+                    continue
+                expected_size, expected_mtime = (int(expected[0]), int(expected[1]))
+                if (
+                    int(row["size_bytes"]) != expected_size
+                    or int(row["mtime_ns"]) != expected_mtime
+                    or int(row["source_size_bytes"]) != expected_size
+                    or int(row["source_mtime_ns"]) != expected_mtime
+                    or str(row["artifact_version"]) != artifact_version
+                    or int(row["point_budget"]) != point_budget
+                ):
+                    continue
+                envelope = _validated_waveform_envelope_json(
+                    row["envelope_json"], point_budget=point_budget
+                )
+                if envelope is not None:
+                    loaded[path] = envelope
+    return loaded
+
+
+def store_waveform_artifact(
+    original_path: Path | str,
+    *,
+    source_size_bytes: int,
+    source_mtime_ns: int,
+    envelope: Sequence[float],
+    db_path: Path | None = None,
+    artifact_version: str = WAVEFORM_ARTIFACT_VERSION,
+    point_budget: int = WAVEFORM_POINT_BUDGET,
+) -> bool:
+    """Persist one result only while its cached sample fingerprint still matches."""
+    validated = _validated_waveform_envelope(envelope, point_budget=point_budget)
+    if validated is None:
+        return False
+    path = str(original_path)
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        sample = conn.execute(
+            """
+            SELECT id FROM samples
+            WHERE original_path = ? AND size_bytes = ? AND mtime_ns = ?
+            """,
+            (path, int(source_size_bytes), int(source_mtime_ns)),
+        ).fetchone()
+        if sample is None:
+            return False
+        conn.execute(
+            """
+            INSERT INTO sample_waveform_artifacts (
+                sample_id, source_size_bytes, source_mtime_ns, artifact_version,
+                point_budget, envelope_json, generated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(sample_id) DO UPDATE SET
+                source_size_bytes=excluded.source_size_bytes,
+                source_mtime_ns=excluded.source_mtime_ns,
+                artifact_version=excluded.artifact_version,
+                point_budget=excluded.point_budget,
+                envelope_json=excluded.envelope_json,
+                generated_at=excluded.generated_at
+            """,
+            (
+                int(sample["id"]),
+                int(source_size_bytes),
+                int(source_mtime_ns),
+                artifact_version,
+                int(point_budget),
+                json.dumps(validated, allow_nan=False, separators=(",", ":")),
+                _utc_now_iso(),
+            ),
+        )
+        conn.commit()
+    return True
+
+
+def list_waveform_enrichment_candidates(
+    *,
+    db_path: Path | None = None,
+    after_sample_id: int = 0,
+    limit: int = 14,
+    artifact_version: str = WAVEFORM_ARTIFACT_VERSION,
+    point_budget: int = WAVEFORM_POINT_BUDGET,
+) -> WaveformEnrichmentPage:
+    """Validate at most ``limit`` sample IDs in one SQL-selected Wave-2 page."""
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+    init_workbench_library(db_path)
+    with connect_workbench_library(db_path) as conn:
+        sample_ids = conn.execute(
+            """
+            SELECT id FROM samples
+            WHERE id > ? AND size_bytes IS NOT NULL AND mtime_ns IS NOT NULL
+            ORDER BY id LIMIT ?
+            """,
+            (int(after_sample_id), int(limit)),
+        ).fetchall()
+        if not sample_ids:
+            return WaveformEnrichmentPage((), int(after_sample_id), True)
+        scanned_through = int(sample_ids[-1]["id"])
+        conn.create_function(
+            "waveform_envelope_valid",
+            1,
+            lambda payload: int(
+                _validated_waveform_envelope_json(
+                    payload, point_budget=point_budget
+                )
+                is not None
+            ),
+        )
+        rows = conn.execute(
+            """
+            SELECT s.id, s.original_path, s.size_bytes, s.mtime_ns
+            FROM samples s
+            LEFT JOIN sample_waveform_artifacts a ON a.sample_id = s.id
+            WHERE s.id > ?
+              AND s.id <= ?
+              AND s.size_bytes IS NOT NULL
+              AND s.mtime_ns IS NOT NULL
+              AND (
+                    a.sample_id IS NULL
+                 OR a.source_size_bytes != s.size_bytes
+                 OR a.source_mtime_ns != s.mtime_ns
+                 OR a.artifact_version != ?
+                 OR a.point_budget != ?
+                 OR NOT waveform_envelope_valid(a.envelope_json)
+              )
+            ORDER BY s.id
+            LIMIT ?
+            """,
+            (
+                int(after_sample_id),
+                scanned_through,
+                artifact_version,
+                int(point_budget),
+                int(limit),
+            ),
+        ).fetchall()
+    candidates = tuple(
+        WaveformEnrichmentCandidate(
+            sample_id=int(row["id"]),
+            path=str(row["original_path"]),
+            source_size_bytes=int(row["size_bytes"]),
+            source_mtime_ns=int(row["mtime_ns"]),
+        )
+        for row in rows
+    )
+    return WaveformEnrichmentPage(
+        candidates, scanned_through, len(sample_ids) < limit
+    )
+
+
 class WorkbenchPlaylistValidationError(ValueError):
     """Raised when song-context playlist input fails validation."""
 
@@ -1915,6 +2167,8 @@ def add_sample_to_playlist(
 __all__ = [
     "WORKBENCH_ANALYZER_VERSION",
     "WORKBENCH_LIBRARY_SCHEMA_VERSION",
+    "WAVEFORM_ARTIFACT_VERSION",
+    "WAVEFORM_POINT_BUDGET",
     "CachedWorkbenchRow",
     "LibraryFolder",
     "LibraryFolderAvailability",
@@ -1926,6 +2180,8 @@ __all__ = [
     "WorkbenchLibraryConnectionError",
     "WorkbenchPlaylist",
     "WorkbenchPlaylistValidationError",
+    "WaveformEnrichmentCandidate",
+    "WaveformEnrichmentPage",
     "add_sample_to_playlist",
     "connect_workbench_library",
     "protect_connection_target",
@@ -1937,13 +2193,16 @@ __all__ = [
     "is_sample_favorite",
     "list_favorite_sample_paths",
     "list_library_folders",
+    "list_waveform_enrichment_candidates",
     "list_playlist_sample_paths",
     "list_playlists",
     "set_sample_favorite",
+    "store_waveform_artifact",
     "toggle_sample_favorite",
     "load_all_cached_samples",
     "load_folder_samples",
     "load_folder_subtree_samples",
+    "load_valid_waveform_artifacts",
     "load_sample_by_path",
     "query_sample_by_path_readonly",
     "query_sample_by_path_on_readonly_connection",
