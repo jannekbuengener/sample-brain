@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import inspect
+import subprocess
 import sys
 from fractions import Fraction
 from pathlib import Path
@@ -488,28 +489,35 @@ def test_existing_workbench_smoke_tests_pass():
     assert "workbench" in result.stdout
 
 
-def test_existing_preview_tests_pass(tmp_path):
-    import subprocess
-
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", "tests/test_workbench_preview.py", "-q",
-         "--basetemp", str(tmp_path / "preview-pytest")],
+def _run_nested_pytest(test_path: str, child_root: Path):
+    return subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            test_path,
+            "-q",
+            "--basetemp",
+            str(child_root),
+        ],
         capture_output=True,
         text=True,
         cwd=str(Path(__file__).resolve().parents[1]),
+    )
+
+
+def test_existing_preview_tests_pass(tmp_path):
+    result = _run_nested_pytest(
+        "tests/test_workbench_preview.py",
+        tmp_path / "preview-pytest",
     )
     assert result.returncode == 0, f"Preview tests failed: {result.stdout}\n{result.stderr}"
 
 
 def test_session_grid_tests_pass(tmp_path):
-    import subprocess
-
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", "tests/test_session_grid.py", "-q",
-         "--basetemp", str(tmp_path / "session-grid-pytest")],
-        capture_output=True,
-        text=True,
-        cwd=str(Path(__file__).resolve().parents[1]),
+    result = _run_nested_pytest(
+        "tests/test_session_grid.py",
+        tmp_path / "session-grid-pytest",
     )
     assert result.returncode == 0, f"Session grid tests failed: {result.stdout}\n{result.stderr}"
 

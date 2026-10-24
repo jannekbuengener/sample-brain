@@ -12,10 +12,15 @@ from tests import test_workbench_tempo_sync_grid as regression_suites
 
 
 @pytest.mark.parametrize(
-    "name",
-    ["test_existing_preview_tests_pass", "test_session_grid_tests_pass"],
+    ("name", "child_root_name"),
+    [
+        ("test_existing_preview_tests_pass", "preview-pytest"),
+        ("test_session_grid_tests_pass", "session-grid-pytest"),
+    ],
 )
-def test_nested_suite_owns_child_temp_root(name, tmp_path, monkeypatch):
+def test_nested_suite_owns_child_temp_root(
+    name, child_root_name, tmp_path, monkeypatch
+):
     calls = []
 
     def run(command, **kwargs):
@@ -25,6 +30,8 @@ def test_nested_suite_owns_child_temp_root(name, tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "run", run)
     parent_marker = tmp_path / "parent-owned.txt"
     parent_marker.write_text("preserve", encoding="utf-8")
+    expected_child_root = tmp_path / child_root_name
+    expected_child_root.mkdir()
     target = getattr(regression_suites, name)
     kwargs = {"tmp_path": tmp_path} if "tmp_path" in inspect.signature(target).parameters else {}
     target(**kwargs)
@@ -34,7 +41,27 @@ def test_nested_suite_owns_child_temp_root(name, tmp_path, monkeypatch):
     assert command[0] == sys.executable
     assert "--basetemp" in command
     child_root = Path(command[command.index("--basetemp") + 1])
+    assert child_root == expected_child_root
     assert child_root.parent == tmp_path
     assert child_root != tmp_path
     assert options["cwd"] == str(Path(regression_suites.__file__).resolve().parents[1])
     assert parent_marker.read_text(encoding="utf-8") == "preserve"
+
+
+def test_nested_child_uses_explicit_parent_root_for_session_provenance(tmp_path):
+    child_root = tmp_path / "nested-provenance-pytest"
+    child_root.mkdir()
+    sentinel = tmp_path / "parent-sentinel.txt"
+    sentinel.write_text("parent-owned", encoding="utf-8")
+
+    result = regression_suites._run_nested_pytest(
+        "tests/test_workbench_library_cleanup_guard.py::"
+        "test_current_pytest_basetemp_roots_fixture_uses_public_pytest_api",
+        child_root,
+    )
+
+    assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+    assert child_root != tmp_path
+    assert child_root.parent == tmp_path
+    assert sentinel.exists()
+    assert sentinel.read_text(encoding="utf-8") == "parent-owned"
