@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import importlib.util
 import sqlite3
 import threading
 import time
@@ -532,6 +533,10 @@ def test_terminal_cached_failure_does_not_repeat_persisted_lookup(
 
 
 @pytest.mark.parametrize("persisted", [False, True])
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="Qt signal validation requires the optional PySide6 runtime.",
+)
 def test_harmony_waveform_hydration_emits_only_harmony_notifier(
     prepared_sample, persisted
 ):
@@ -612,6 +617,10 @@ def test_harmony_waveform_hydration_emits_only_harmony_notifier(
     assert decode_calls == []
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("PySide6") is None,
+    reason="Qt signal validation requires the optional PySide6 runtime.",
+)
 def test_decoded_harmony_waveform_emits_harmony_notifier():
     view_model = Screen1QmlViewModel.baseline("screen1-default-3panel")
     source = view_model.browser_rows[0].source_row
