@@ -8869,7 +8869,6 @@ def _qml_engine(
             if runtime_composition is not None
             else None
         )
-        library_model.replaceBranch("container:sample-sources")
         target_node_id = (
             runtime_composition.post_analysis_node_id(
                 folder_id,
@@ -8878,12 +8877,39 @@ def _qml_engine(
             if runtime_composition is not None
             else f"root:{folder_id}"
         )
-        if (
-            target_node_id.startswith(f"folder:{folder_id}:")
-            and library_model.state.node(f"root:{folder_id}") is not None
-        ):
-            # Keep Qt item index in sync with navigation state (#836).
-            library_model.ensureChildren(f"root:{folder_id}")
+        target_node = library_model.state.node(target_node_id)
+        target_relative_path = (
+            target_node.relative_path
+            if target_node is not None
+            and target_node.kind is LibraryNodeKind.SUBFOLDER
+            and target_node.folder_id == folder_id
+            else None
+        )
+        library_model.replaceBranch("container:sample-sources")
+        root_node_id = f"root:{folder_id}"
+        if target_relative_path:
+            parent_node_id = root_node_id
+            parent_relative_path = ""
+            for part in Path(target_relative_path).parts:
+                library_model.ensureChildren(parent_node_id)
+                parent_relative_path = os.path.join(parent_relative_path, part)
+                child_node = next(
+                    (
+                        node
+                        for node in library_model.state.visible_children(parent_node_id)
+                        if node.kind is LibraryNodeKind.SUBFOLDER
+                        and os.path.normcase(node.relative_path or "")
+                        == os.path.normcase(parent_relative_path)
+                    ),
+                    None,
+                )
+                if child_node is None:
+                    target_node_id = root_node_id
+                    break
+                target_node_id = child_node.node_id
+                parent_node_id = child_node.node_id
+        elif target_node_id.startswith(f"folder:{folder_id}:"):
+            target_node_id = root_node_id
         # #742 default: Live Kit stays hidden after success unless #1077 preference
         # asks to rematerialize through the canonical reveal seam.
         if runtime_composition is not None:

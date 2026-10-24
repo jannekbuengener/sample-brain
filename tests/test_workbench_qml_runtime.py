@@ -818,6 +818,25 @@ def _register_analyzed_root(
     return root, db
 
 
+def _register_analyzed_nested_bank(tmp_path: Path) -> tuple[Path, Path]:
+    from src.workbench_controller import analyze_folder_for_workbench
+    from src.workbench_library import workbench_library_db_path
+    from tests.audio_fixtures import write_kick_transient_wav, write_major_chord_wav
+
+    root = tmp_path / "Bank"
+    (root / "Drums" / "Hats").mkdir(parents=True)
+    (root / "Bass").mkdir()
+    (root / "FX").mkdir()
+    write_major_chord_wav(root / "root.wav")
+    write_kick_transient_wav(root / "Drums" / "kick.wav", bpm=120.0, duration_sec=1.0)
+    write_major_chord_wav(root / "Drums" / "Hats" / "hat.wav")
+    write_major_chord_wav(root / "Bass" / "bass.wav")
+    write_major_chord_wav(root / "FX" / "riser.wav")
+    db = workbench_library_db_path()
+    analyze_folder_for_workbench(root, library_db_path=db)
+    return root, db
+
+
 def test_real_library_root_scope_loads_exact_root_rows_and_candidate_pool(
     tmp_path: Path,
 ):
@@ -1031,6 +1050,88 @@ def test_real_library_scope_switch_swaps_candidate_pool(tmp_path: Path):
     } == {
         "Drums/chord.wav"
     }
+
+
+def test_real_library_nested_scope_navigation_uses_cached_aggregate_rows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from src import workbench_controller
+    from src.workbench_qml import Screen1QmlRuntimeComposition
+    from src.workbench_qml_library import WorkbenchLibraryTreeState
+    from src.workbench_library_navigation import (
+        LibraryNodeKind,
+        WorkbenchLibraryNavigation,
+    )
+
+    _root, db = _register_analyzed_nested_bank(tmp_path)
+    navigation = WorkbenchLibraryNavigation(library_db_path=db)
+    composition = Screen1QmlRuntimeComposition(
+        library_db_path=db,
+        tree_state=WorkbenchLibraryTreeState(navigation),
+    )
+    tree = composition.library_tree
+    tree.fetch_children(SAMPLE_SOURCES)
+    root_node = next(
+        node
+        for node in tree.visible_children(SAMPLE_SOURCES)
+        if node.kind is LibraryNodeKind.REGISTERED_ROOT
+    )
+
+    def select(node_id: str):
+        intent = tree.select(node_id)
+        assert intent is not None
+        assert composition.refresh_target(intent.scope) is None
+        state = composition.dispatch_selection(intent)
+        assert state.error is None
+        assert state.selected_index == -1
+        return [
+            row.details["relative_path"].replace("\\", "/")
+            for row in state.rows
+        ]
+
+    def fail_decode(*_args, **_kwargs):
+        raise AssertionError("Scope-Wechsel darf Audio nicht dekodieren.")
+
+    monkeypatch.setattr(workbench_controller, "safe_audio_info", fail_decode)
+    monkeypatch.setattr(workbench_controller, "extract_features", fail_decode)
+
+    expected_root = sorted(
+        [
+            "root.wav",
+            "Drums/kick.wav",
+            "Drums/Hats/hat.wav",
+            "Bass/bass.wav",
+            "FX/riser.wav",
+        ]
+    )
+    root_paths = select(root_node.node_id)
+    assert sorted(root_paths) == expected_root
+    assert len(root_paths) == len(set(root_paths))
+
+    tree.fetch_children(root_node.node_id)
+    drums_node = next(
+        node
+        for node in tree.visible_children(root_node.node_id)
+        if node.kind is LibraryNodeKind.SUBFOLDER
+        and node.label == "Drums"
+    )
+    drums_paths = select(drums_node.node_id)
+    assert sorted(drums_paths) == ["Drums/Hats/hat.wav", "Drums/kick.wav"]
+
+    tree.fetch_children(drums_node.node_id)
+    hats_node = next(
+        node
+        for node in tree.visible_children(drums_node.node_id)
+        if node.kind is LibraryNodeKind.SUBFOLDER
+        and node.label == "Hats"
+    )
+    hats_paths = select(hats_node.node_id)
+    assert hats_paths == ["Drums/Hats/hat.wav"]
+
+    root_paths_again = select(root_node.node_id)
+    assert sorted(root_paths_again) == expected_root
+    assert len(root_paths_again) == len(set(root_paths_again))
 
 
 def _seed_freshness_root(
