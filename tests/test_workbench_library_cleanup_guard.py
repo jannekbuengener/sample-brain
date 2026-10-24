@@ -1270,3 +1270,102 @@ def test_preview_with_trusted_basetemp_root_is_idempotent(
     assert _db_bytes(db_path) == before
     assert not Path(f"{db_path}-wal").exists()
     assert not Path(f"{db_path}-shm").exists()
+
+
+def test_current_pytest_basetemp_roots_fixture_uses_public_pytest_api(
+    current_pytest_basetemp_roots: tuple[Path, ...],
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    assert current_pytest_basetemp_roots == (
+        tmp_path_factory.getbasetemp().resolve(),
+    )
+
+
+def test_current_session_basetemp_enables_only_explicit_classification(
+    current_pytest_basetemp_roots: tuple[Path, ...],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_temp_root(tmp_path, monkeypatch)
+    target = tmp_path / "samples"
+    target.mkdir()
+
+    explicit = workbench_library.classify_folder_for_cleanup(
+        target,
+        db_path=tmp_path / "missing.db",
+        trusted_pytest_basetemp_roots=current_pytest_basetemp_roots,
+    )
+    without_provenance = workbench_library.classify_folder_for_cleanup(
+        target,
+        db_path=tmp_path / "missing.db",
+    )
+
+    assert explicit == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    assert without_provenance != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+
+
+def test_preview_with_current_session_basetemp_root_is_read_only(
+    current_pytest_basetemp_roots: tuple[Path, ...],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_temp_root(tmp_path, monkeypatch)
+    target = tmp_path / "samples"
+    target.mkdir()
+    sentinel = target / "sentinel.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    sample_path = target / "sample.wav"
+    sample_bytes = b"sample-content-must-not-be-read"
+    sample_path.write_bytes(sample_bytes)
+    db_path = tmp_path / "state" / "workbench_library.db"
+    init_workbench_library(db_path)
+    folder_id = register_library_folder(target, db_path=db_path)
+    with connect_workbench_library(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO samples (
+                folder_id, original_path, relative_path, display_name,
+                size_bytes, mtime_ns
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                folder_id,
+                str(sample_path),
+                sample_path.name,
+                sample_path.name,
+                len(sample_bytes),
+                sample_path.stat().st_mtime_ns,
+            ),
+        )
+        conn.commit()
+
+    before = _db_bytes(db_path)
+    real_path_open = Path.open
+    resolved_sample = sample_path.resolve()
+
+    def guarded_open(
+        path: Path, mode: str = "r", *args: object, **kwargs: object
+    ):
+        if path.resolve() == resolved_sample:
+            raise AssertionError("preview must not open sample content")
+        return real_path_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+
+    preview = preview_library_folder_removal(
+        folder_id,
+        db_path=db_path,
+        trusted_pytest_basetemp_roots=current_pytest_basetemp_roots,
+    )
+
+    assert preview is not None
+    assert preview.classification == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    assert preview.cached_sample_count == 1
+    assert target.is_dir()
+    assert sentinel.is_file()
+    assert sample_path.is_file()
+    with real_path_open(sample_path, "rb") as sample_file:
+        assert sample_file.read() == sample_bytes
+    assert _db_bytes(db_path) == before
+    assert not Path(f"{db_path}-wal").exists()
+    assert not Path(f"{db_path}-shm").exists()

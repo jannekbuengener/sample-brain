@@ -73,6 +73,13 @@ def isolated_workbench_state_dir(
     return state_dir
 
 
+@pytest.fixture(scope="session")
+def current_pytest_basetemp_roots(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> tuple[Path, ...]:
+    return (tmp_path_factory.getbasetemp().resolve(),)
+
+
 def pytest_configure(config):
     config.addinivalue_line(
         "markers",
