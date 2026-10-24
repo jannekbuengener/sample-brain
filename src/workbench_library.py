@@ -1454,6 +1454,7 @@ def preview_library_folder_removal(
     folder_id_or_path: int | str | Path,
     *,
     db_path: Path | None = None,
+    trusted_pytest_basetemp_roots: Iterable[Path | str] = (),
 ) -> LibraryFolderRemovalPreview | None:
     """Describe one metadata-only removal without changing DB or filesystem content.
 
@@ -1488,19 +1489,12 @@ def preview_library_folder_removal(
         "available" if Path(path).is_dir() else "unavailable_or_missing"
     )
 
-    # Classification derived from the evidence already collected: catalog
-    # membership (the folder row above), on-disk availability and the
-    # structural test-artifact rules.  This mirrors
-    # ``classify_folder_for_cleanup`` without opening the catalog a second
-    # time, so a normal registered Source is not reported as ambiguous.
     p = Path(path).resolve()
-    structural = classify_folder_for_cleanup_structural(p)
-    if structural == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT:
-        classification = structural
-    elif availability == "available":
-        classification = CleanupClassification.LEGITIMATE_OR_UNPROVEN
-    else:
-        classification = CleanupClassification.AMBIGUOUS
+    classification = classify_folder_for_cleanup(
+        p,
+        db_path=resolved_db,
+        trusted_pytest_basetemp_roots=trusted_pytest_basetemp_roots,
+    )
 
     return LibraryFolderRemovalPreview(
         folder_id=folder_id,

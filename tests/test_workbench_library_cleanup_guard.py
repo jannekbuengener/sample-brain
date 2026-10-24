@@ -1037,3 +1037,236 @@ def test_af10_symlink_escape_not_deterministic(
         )
         != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
     )
+
+
+def test_preview_forwards_trusted_basetemp_roots_to_classifier(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_temp_root(tmp_path, monkeypatch)
+    db_path = tmp_path / "state" / "workbench_library.db"
+    trusted_root = tmp_path / "my-trusted-basetemp"
+    trusted_root.mkdir()
+    target = trusted_root / "test_example0"
+    target.mkdir()
+    init_workbench_library(db_path)
+    folder_id = register_library_folder(target, db_path=db_path)
+    captured: dict[str, object] = {}
+
+    def tracking_classifier(folder_path: Path, **kwargs: object) -> CleanupClassification:
+        captured["folder_path"] = folder_path
+        captured.update(kwargs)
+        return CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+
+    monkeypatch.setattr(workbench_library, "classify_folder_for_cleanup", tracking_classifier)
+
+    preview = preview_library_folder_removal(
+        folder_id,
+        db_path=db_path,
+        trusted_pytest_basetemp_roots=(trusted_root,),
+    )
+
+    assert preview is not None
+    assert preview.classification == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    assert captured["folder_path"] == target.resolve()
+    assert captured["db_path"] == db_path
+    assert captured["trusted_pytest_basetemp_roots"] == (trusted_root,)
+
+
+def test_preview_classifies_trusted_basetemp_node_as_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_temp_root(tmp_path, monkeypatch)
+    db_path = tmp_path / "state" / "workbench_library.db"
+    trusted_root = tmp_path / "my-trusted-basetemp"
+    trusted_root.mkdir()
+    target = trusted_root / "test_example0"
+    target.mkdir()
+    init_workbench_library(db_path)
+    folder_id = register_library_folder(target, db_path=db_path)
+
+    preview = preview_library_folder_removal(
+        folder_id,
+        db_path=db_path,
+        trusted_pytest_basetemp_roots=(trusted_root,),
+    )
+
+    assert preview is not None
+    assert preview.classification == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+
+
+def test_preview_classifies_trusted_basetemp_descendant_as_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_temp_root(tmp_path, monkeypatch)
+    db_path = tmp_path / "state" / "workbench_library.db"
+    trusted_root = tmp_path / "my-trusted-basetemp"
+    trusted_root.mkdir()
+    target = trusted_root / "test_example0" / "samples"
+    target.mkdir(parents=True)
+    init_workbench_library(db_path)
+    folder_id = register_library_folder(target, db_path=db_path)
+
+    preview = preview_library_folder_removal(
+        folder_id,
+        db_path=db_path,
+        trusted_pytest_basetemp_roots=(trusted_root,),
+    )
+
+    assert preview is not None
+    assert preview.classification == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+
+
+def test_preview_without_trusted_basetemp_root_remains_conservative(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_temp_root(tmp_path, monkeypatch)
+    db_path = tmp_path / "state" / "workbench_library.db"
+    custom_root = tmp_path / "custom-basetemp"
+    custom_root.mkdir()
+    target = custom_root / "test_example0"
+    target.mkdir()
+    init_workbench_library(db_path)
+    folder_id = register_library_folder(target, db_path=db_path)
+
+    preview = preview_library_folder_removal(folder_id, db_path=db_path)
+
+    assert preview is not None
+    assert preview.classification != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+
+
+def test_preview_with_untrusted_basetemp_root_remains_conservative(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_temp_root(tmp_path, monkeypatch)
+    db_path = tmp_path / "state" / "workbench_library.db"
+    target_root = tmp_path / "root-a"
+    target_root.mkdir()
+    trusted_root = tmp_path / "root-b"
+    trusted_root.mkdir()
+    target = target_root / "test_example0"
+    target.mkdir()
+    init_workbench_library(db_path)
+    folder_id = register_library_folder(target, db_path=db_path)
+
+    preview = preview_library_folder_removal(
+        folder_id,
+        db_path=db_path,
+        trusted_pytest_basetemp_roots=(trusted_root,),
+    )
+
+    assert preview is not None
+    assert preview.classification != CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+
+
+def test_preview_with_trusted_basetemp_root_is_read_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_temp_root(tmp_path, monkeypatch)
+    missing_db = tmp_path / "missing" / "workbench_library.db"
+    trusted_root = tmp_path / "my-trusted-basetemp"
+    trusted_root.mkdir()
+    target = trusted_root / "test_example0"
+    target.mkdir()
+
+    assert (
+        preview_library_folder_removal(
+            target,
+            db_path=missing_db,
+            trusted_pytest_basetemp_roots=(trusted_root,),
+        )
+        is None
+    )
+    assert not missing_db.exists()
+    assert not missing_db.parent.exists()
+
+    db_path = tmp_path / "state" / "workbench_library.db"
+    sample_path = target / "sample.wav"
+    sample_bytes = b"sample-content-must-not-be-read"
+    sample_path.write_bytes(sample_bytes)
+    init_workbench_library(db_path)
+    folder_id = register_library_folder(target, db_path=db_path)
+    with connect_workbench_library(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO samples (
+                folder_id, original_path, relative_path, display_name,
+                size_bytes, mtime_ns
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                folder_id,
+                str(sample_path),
+                sample_path.name,
+                sample_path.name,
+                len(sample_bytes),
+                sample_path.stat().st_mtime_ns,
+            ),
+        )
+        conn.commit()
+
+    before = _db_bytes(db_path)
+    real_path_open = Path.open
+    resolved_sample = sample_path.resolve()
+
+    def guarded_open(
+        path: Path, mode: str = "r", *args: object, **kwargs: object
+    ):
+        if path.resolve() == resolved_sample:
+            raise AssertionError("preview must not open sample content")
+        return real_path_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+
+    preview = preview_library_folder_removal(
+        folder_id,
+        db_path=db_path,
+        trusted_pytest_basetemp_roots=(trusted_root,),
+    )
+
+    assert preview is not None
+    assert preview.classification == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    assert preview.cached_sample_count == 1
+    assert target.is_dir()
+    assert sample_path.is_file()
+    with real_path_open(sample_path, "rb") as sample_file:
+        assert sample_file.read() == sample_bytes
+    assert _db_bytes(db_path) == before
+    assert not Path(f"{db_path}-wal").exists()
+    assert not Path(f"{db_path}-shm").exists()
+
+
+def test_preview_with_trusted_basetemp_root_is_idempotent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_temp_root(tmp_path, monkeypatch)
+    db_path = tmp_path / "state" / "workbench_library.db"
+    trusted_root = tmp_path / "my-trusted-basetemp"
+    trusted_root.mkdir()
+    target = trusted_root / "test_example0"
+    target.mkdir()
+    sentinel = target / "sentinel.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    init_workbench_library(db_path)
+    folder_id = register_library_folder(target, db_path=db_path)
+    before = _db_bytes(db_path)
+
+    first = preview_library_folder_removal(
+        folder_id,
+        db_path=db_path,
+        trusted_pytest_basetemp_roots=(trusted_root,),
+    )
+    second = preview_library_folder_removal(
+        folder_id,
+        db_path=db_path,
+        trusted_pytest_basetemp_roots=(trusted_root,),
+    )
+
+    assert first is not None
+    assert second is not None
+    assert first == second
+    assert first.classification == CleanupClassification.DETERMINISTIC_TEST_ARTIFACT
+    assert target.is_dir()
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+    assert _db_bytes(db_path) == before
+    assert not Path(f"{db_path}-wal").exists()
+    assert not Path(f"{db_path}-shm").exists()
