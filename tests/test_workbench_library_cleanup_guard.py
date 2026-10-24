@@ -818,11 +818,21 @@ def test_ae3_preview_classifies_deterministic_test_artifact(
 
 # ---------------------------------------------------------------------------
 # AF. trusted pytest basetemp roots - explicit trusted roots
+#
+# The canonical temp roots are pinned to a synthetic directory for every case
+# below.  Without that pinning the outcome would depend on where pytest places
+# its own ``tmp_path``: on Linux CI that lives under
+# ``<temp>/pytest-of-<user>/pytest-<run>/``, and the pre-existing
+# ``_is_pytest_temp_structure`` rule already classifies everything below such a
+# run directory as a deterministic test artifact.  Pinning the roots keeps the
+# trusted-root rule the only possible reason for a deterministic result and
+# makes these cases hermetic across platforms.
 # ---------------------------------------------------------------------------
 def test_af1_trusted_basetemp_with_pytest_node_is_deterministic(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Trusted basetemp + pytest node directory directly below → deterministic."""
+    _fake_temp_root(tmp_path, monkeypatch)
     trusted_root = tmp_path / "my-trusted-basetemp"
     trusted_root.mkdir()
     # pytest node directory directly under trusted root
@@ -837,9 +847,10 @@ def test_af1_trusted_basetemp_with_pytest_node_is_deterministic(
 
 
 def test_af2_trusted_basetemp_with_pytest_node_descendant_is_deterministic(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Trusted basetemp + descendant within pytest node → deterministic."""
+    _fake_temp_root(tmp_path, monkeypatch)
     trusted_root = tmp_path / "my-trusted-basetemp"
     trusted_root.mkdir()
     # pytest node with descendant
@@ -854,9 +865,10 @@ def test_af2_trusted_basetemp_with_pytest_node_descendant_is_deterministic(
 
 
 def test_af3_same_structure_without_trusted_root_is_not_deterministic(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Same path shape but without trusted root → not deterministic."""
+    _fake_temp_root(tmp_path, monkeypatch)
     fake_root = tmp_path / "my-basetemp"
     fake_root.mkdir()
     target = fake_root / "test_example0"
@@ -876,9 +888,10 @@ def test_af3_same_structure_without_trusted_root_is_not_deterministic(
 
 
 def test_af4_samples_folder_under_trusted_root_is_not_deterministic(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Arbitrary Samples folder under trusted root → not deterministic."""
+    _fake_temp_root(tmp_path, monkeypatch)
     trusted_root = tmp_path / "my-trusted-basetemp"
     trusted_root.mkdir()
     target = trusted_root / "Samples"
@@ -892,9 +905,10 @@ def test_af4_samples_folder_under_trusted_root_is_not_deterministic(
 
 
 def test_af5_test_samples_without_uniquifier_is_not_deterministic(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """test_samples without numeric uniquifier → not deterministic."""
+    _fake_temp_root(tmp_path, monkeypatch)
     trusted_root = tmp_path / "my-trusted-basetemp"
     trusted_root.mkdir()
     # No numeric suffix at end
@@ -909,9 +923,10 @@ def test_af5_test_samples_without_uniquifier_is_not_deterministic(
 
 
 def test_af6_root_vs_backup_prefix_collision_is_not_deterministic(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """root-backup must not be treated as child of root."""
+    _fake_temp_root(tmp_path, monkeypatch)
     trusted_root = tmp_path / "my-trusted-basetemp"
     trusted_root.mkdir()
     # A directory that looks like a sibling with -backup suffix
@@ -926,9 +941,10 @@ def test_af6_root_vs_backup_prefix_collision_is_not_deterministic(
 
 
 def test_af7_missing_target_is_not_deterministic(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Missing target path → fail-closed, not deterministic."""
+    _fake_temp_root(tmp_path, monkeypatch)
     trusted_root = tmp_path / "my-trusted-basetemp"
     trusted_root.mkdir()
     target = trusted_root / "does_not_exist"
@@ -941,9 +957,10 @@ def test_af7_missing_target_is_not_deterministic(
 
 
 def test_af7b_missing_descendant_under_existing_node_is_not_deterministic(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A missing descendant below an existing node directory stays fail-closed."""
+    _fake_temp_root(tmp_path, monkeypatch)
     trusted_root = tmp_path / "my-trusted-basetemp"
     trusted_root.mkdir()
     node_dir = trusted_root / "test_example0"
@@ -958,9 +975,10 @@ def test_af7b_missing_descendant_under_existing_node_is_not_deterministic(
 
 
 def test_af8_structural_variant_with_trusted_basetemp(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """classify_folder_for_cleanup_structural also respects trusted roots."""
+    _fake_temp_root(tmp_path, monkeypatch)
     trusted_root = tmp_path / "my-trusted-basetemp"
     trusted_root.mkdir()
     target = trusted_root / "test_example0"
@@ -982,9 +1000,10 @@ def test_af8_structural_variant_with_trusted_basetemp(
 
 
 def test_af9_trusted_root_itself_is_not_deterministic(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The trusted root itself is not a pytest node."""
+    _fake_temp_root(tmp_path, monkeypatch)
     trusted_root = tmp_path / "my-trusted-basetemp"
     trusted_root.mkdir()
     assert (
@@ -1001,6 +1020,7 @@ def test_af10_symlink_escape_not_deterministic(
     """Symlink/junction escape from trusted root must not become deterministic."""
     if os.name == "nt":
         pytest.skip("Symlink test requires appropriate permissions on Windows")
+    _fake_temp_root(tmp_path, monkeypatch)
     trusted_root = tmp_path / "my-trusted-basetemp"
     trusted_root.mkdir()
     outside = tmp_path / "outside"
