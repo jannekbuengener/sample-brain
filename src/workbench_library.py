@@ -1772,6 +1772,13 @@ class WaveformEnrichmentCandidate:
     source_mtime_ns: int
 
 
+@dataclass(frozen=True)
+class WaveformEnrichmentPage:
+    candidates: tuple[WaveformEnrichmentCandidate, ...]
+    scanned_through_sample_id: int
+    exhausted: bool
+
+
 def _validated_waveform_envelope(
     values: object, *, point_budget: int
 ) -> tuple[float, ...] | None:
@@ -1790,6 +1797,16 @@ def _validated_waveform_envelope(
             return None
         envelope.append(number)
     return tuple(envelope)
+
+
+def _validated_waveform_envelope_json(
+    payload_json: object, *, point_budget: int
+) -> tuple[float, ...] | None:
+    try:
+        payload = json.loads(payload_json)
+    except (TypeError, ValueError):
+        return None
+    return _validated_waveform_envelope(payload, point_budget=point_budget)
 
 
 def load_valid_waveform_artifacts(
@@ -1837,12 +1854,8 @@ def load_valid_waveform_artifacts(
                     or int(row["point_budget"]) != point_budget
                 ):
                     continue
-                try:
-                    payload = json.loads(str(row["envelope_json"]))
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    continue
-                envelope = _validated_waveform_envelope(
-                    payload, point_budget=point_budget
+                envelope = _validated_waveform_envelope_json(
+                    row["envelope_json"], point_budget=point_budget
                 )
                 if envelope is not None:
                     loaded[path] = envelope
@@ -1910,18 +1923,40 @@ def list_waveform_enrichment_candidates(
     limit: int = 14,
     artifact_version: str = WAVEFORM_ARTIFACT_VERSION,
     point_budget: int = WAVEFORM_POINT_BUDGET,
-) -> list[WaveformEnrichmentCandidate]:
-    """Return one bounded page of missing/stale Wave-2 work."""
+) -> WaveformEnrichmentPage:
+    """Validate at most ``limit`` sample IDs in one SQL-selected Wave-2 page."""
     if limit <= 0:
         raise ValueError("limit must be positive")
     init_workbench_library(db_path)
     with connect_workbench_library(db_path) as conn:
+        sample_ids = conn.execute(
+            """
+            SELECT id FROM samples
+            WHERE id > ? AND size_bytes IS NOT NULL AND mtime_ns IS NOT NULL
+            ORDER BY id LIMIT ?
+            """,
+            (int(after_sample_id), int(limit)),
+        ).fetchall()
+        if not sample_ids:
+            return WaveformEnrichmentPage((), int(after_sample_id), True)
+        scanned_through = int(sample_ids[-1]["id"])
+        conn.create_function(
+            "waveform_envelope_valid",
+            1,
+            lambda payload: int(
+                _validated_waveform_envelope_json(
+                    payload, point_budget=point_budget
+                )
+                is not None
+            ),
+        )
         rows = conn.execute(
             """
             SELECT s.id, s.original_path, s.size_bytes, s.mtime_ns
             FROM samples s
             LEFT JOIN sample_waveform_artifacts a ON a.sample_id = s.id
             WHERE s.id > ?
+              AND s.id <= ?
               AND s.size_bytes IS NOT NULL
               AND s.mtime_ns IS NOT NULL
               AND (
@@ -1930,13 +1965,20 @@ def list_waveform_enrichment_candidates(
                  OR a.source_mtime_ns != s.mtime_ns
                  OR a.artifact_version != ?
                  OR a.point_budget != ?
+                 OR NOT waveform_envelope_valid(a.envelope_json)
               )
             ORDER BY s.id
             LIMIT ?
             """,
-            (int(after_sample_id), artifact_version, int(point_budget), int(limit)),
+            (
+                int(after_sample_id),
+                scanned_through,
+                artifact_version,
+                int(point_budget),
+                int(limit),
+            ),
         ).fetchall()
-    return [
+    candidates = tuple(
         WaveformEnrichmentCandidate(
             sample_id=int(row["id"]),
             path=str(row["original_path"]),
@@ -1944,7 +1986,10 @@ def list_waveform_enrichment_candidates(
             source_mtime_ns=int(row["mtime_ns"]),
         )
         for row in rows
-    ]
+    )
+    return WaveformEnrichmentPage(
+        candidates, scanned_through, len(sample_ids) < limit
+    )
 
 
 class WorkbenchPlaylistValidationError(ValueError):
@@ -2136,6 +2181,7 @@ __all__ = [
     "WorkbenchPlaylist",
     "WorkbenchPlaylistValidationError",
     "WaveformEnrichmentCandidate",
+    "WaveformEnrichmentPage",
     "add_sample_to_playlist",
     "connect_workbench_library",
     "protect_connection_target",

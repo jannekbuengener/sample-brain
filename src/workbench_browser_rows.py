@@ -69,6 +69,16 @@ CURRENT_VISIBLE = "current_visible"
 BACKGROUND_ENRICHMENT = "background_enrichment"
 
 
+def waveform_pump_decision(*, cached: WaveformCacheResult | None) -> str:
+    """Skip terminal results already cached for the candidate identity."""
+    if cached is not None and (
+        cached.state == "ready"
+        or (cached.state == "placeholder" and cached.failure)
+    ):
+        return "skip"
+    return "schedule"
+
+
 @dataclass(frozen=True)
 class WaveformDecodeResult:
     path: str

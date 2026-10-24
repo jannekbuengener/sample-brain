@@ -17,7 +17,7 @@ import os
 import sys
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from .workbench_controller import WorkbenchRow, filter_workbench_rows
 from .workbench_browser_rows import (
@@ -27,6 +27,7 @@ from .workbench_browser_rows import (
     BoundedLazyWaveformCache,
     WaveformCacheResult,
     WaveformDecodeResult,
+    waveform_pump_decision,
 )
 from .workbench_harmony import (
     HarmonicMatchLibraryController,
@@ -58,6 +59,7 @@ from .workbench_internal_sample_dnd import (
 from .workbench_live_kit_export import LiveKitExportResult, export_live_kit
 from .workbench_library import (
     WAVEFORM_POINT_BUDGET,
+    WaveformEnrichmentCandidate,
     list_favorite_sample_paths,
     list_waveform_enrichment_candidates,
     load_valid_waveform_artifacts,
@@ -8382,6 +8384,70 @@ def _hydrate_waveform_rows(
     return changed_paths
 
 
+def _hydrate_harmony_waveform_rows(
+    view_model: Screen1QmlViewModel,
+    rows: tuple[QmlHarmonyRow, ...],
+    *,
+    waveform_cache: BoundedLazyWaveformCache,
+    library_db_path: Path,
+    notify_harmony_rows: Callable[[], None],
+) -> set[str]:
+    """Notify QML when memory or persisted hydration changes harmony rows."""
+    hydrated = _hydrate_waveform_rows(
+        view_model,
+        rows,
+        waveform_cache=waveform_cache,
+        library_db_path=library_db_path,
+    )
+    if hydrated:
+        notify_harmony_rows()
+    return hydrated
+
+
+def _apply_cached_waveform_to_model(
+    view_model: Screen1QmlViewModel,
+    path: str,
+    envelope: tuple[float, ...],
+    *,
+    notify_harmony_rows: Callable[[], None],
+) -> bool:
+    """Apply a decoded cache result and notify its harmony projection."""
+    harmony_before = view_model.harmony_rows
+    changed = view_model.set_browser_waveform(path, envelope)
+    if view_model.harmony_rows != harmony_before:
+        notify_harmony_rows()
+    return changed
+
+
+def _schedule_wave2_candidates(
+    candidates: Sequence[WaveformEnrichmentCandidate],
+    *,
+    waveform_cache: BoundedLazyWaveformCache,
+    waveform_loader: BoundedBackgroundWaveformLoader,
+    cursor: int,
+) -> int:
+    """Advance past terminal cache results; retain cursor on admission failure."""
+    for candidate in candidates:
+        cached = waveform_cache.get(
+            candidate.path,
+            source_size_bytes=candidate.source_size_bytes,
+            source_mtime_ns=candidate.source_mtime_ns,
+        )
+        if waveform_pump_decision(cached=cached) == "skip":
+            cursor = candidate.sample_id
+            continue
+        if not waveform_loader.schedule(
+            candidate.path,
+            priority=BACKGROUND_ENRICHMENT,
+            generation=waveform_loader.current_generation,
+            source_size_bytes=candidate.source_size_bytes,
+            source_mtime_ns=candidate.source_mtime_ns,
+        ):
+            break
+        cursor = candidate.sample_id
+    return cursor
+
+
 def _qml_engine(
     view_model: Screen1QmlViewModel,
     *,
@@ -8512,6 +8578,19 @@ def _qml_engine(
             library_db_path=adapter.library_db_path,
         )
 
+    def hydrate_harmony_waveform_rows(
+        rows: tuple[QmlHarmonyRow, ...],
+    ) -> set[str]:
+        if waveform_cache is None:
+            return set()
+        return _hydrate_harmony_waveform_rows(
+            view_model,
+            rows,
+            waveform_cache=waveform_cache,
+            library_db_path=adapter.library_db_path,
+            notify_harmony_rows=screen_model.harmonyRowsChanged.emit,
+        )
+
     def pump_wave2() -> None:
         if (
             waveform_loader is None
@@ -8526,7 +8605,7 @@ def _qml_engine(
         if available <= 0:
             return
         try:
-            candidates = list_waveform_enrichment_candidates(
+            page = list_waveform_enrichment_candidates(
                 db_path=adapter.library_db_path,
                 after_sample_id=wave2_cursor[0],
                 limit=available,
@@ -8534,20 +8613,18 @@ def _qml_engine(
         except Exception:
             wave2_exhausted[0] = True
             return
-        if not candidates:
-            wave2_exhausted[0] = True
-            return
-        for candidate in candidates:
-            accepted = waveform_loader.schedule(
-                candidate.path,
-                priority=BACKGROUND_ENRICHMENT,
-                generation=waveform_loader.current_generation,
-                source_size_bytes=candidate.source_size_bytes,
-                source_mtime_ns=candidate.source_mtime_ns,
+        cursor = wave2_cursor[0]
+        if page.candidates:
+            cursor = _schedule_wave2_candidates(
+                page.candidates,
+                waveform_cache=waveform_cache,
+                waveform_loader=waveform_loader,
+                cursor=cursor,
             )
-            if not accepted:
-                break
-            wave2_cursor[0] = candidate.sample_id
+        if not page.candidates or cursor == page.candidates[-1].sample_id:
+            cursor = page.scanned_through_sample_id
+            wave2_exhausted[0] = page.exhausted
+        wave2_cursor[0] = cursor
 
     def request_waveforms(start: int, count: int) -> None:
         if count <= 0 or waveform_loader is None:
@@ -8582,9 +8659,7 @@ def _qml_engine(
         harmony_waveform_viewport[0] = first
         harmony_waveform_viewport[1] = max(0, last - first)
         rows = view_model.harmony_rows[first:last]
-        hydrated = hydrate_waveform_rows(rows)
-        if hydrated:
-            refresh_browser_rows()
+        hydrated = hydrate_harmony_waveform_rows(rows)
         for row in rows:
             path = str(row.source_row.path)
             if row.waveform_envelope or path in hydrated:
@@ -8636,8 +8711,11 @@ def _qml_engine(
                 touch=True,
             )
             if cached is not None and cached.state == "ready":
-                changed = view_model.set_browser_waveform(
-                    str(row.source_row.path), cached.envelope
+                changed = _apply_cached_waveform_to_model(
+                    view_model,
+                    str(row.source_row.path),
+                    cached.envelope,
+                    notify_harmony_rows=screen_model.harmonyRowsChanged.emit,
                 ) or changed
         if changed:
             refresh_browser_rows()
